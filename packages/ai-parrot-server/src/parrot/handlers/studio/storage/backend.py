@@ -64,6 +64,17 @@ async def _probe(pool: Any) -> migrate.LedgerState | Exception:
         return exc
 
 
+_PHASE2_SWITCHES = ("BYOK_STORE", "VAULT_STORE", "TOOLKIT_OVERRIDES_STORE")
+
+
+def _required_version() -> int:
+    """5 for v1; 8 (``STUDIO_SCHEMA_REQUIRED_PHASE2``) once any phase-2 store switch is ``postgres`` (spec §2.10)."""
+    for key in _PHASE2_SWITCHES:
+        if str(config.get(key, fallback="documentdb") or "documentdb").strip().lower() == "postgres":
+            return migrate.STUDIO_SCHEMA_REQUIRED_PHASE2
+    return migrate.STUDIO_SCHEMA_REQUIRED
+
+
 def _resolve(setting: str, pool: Any, state: migrate.LedgerState | Exception | None) -> tuple[str, str | None]:
     """Pure mapping of (setting, pool, probe result) to (backend, reason) — spec §2.2 matrix."""
     if setting == "filesystem":
@@ -81,7 +92,7 @@ def _resolve(setting: str, pool: Any, state: migrate.LedgerState | Exception | N
         if setting == "auto":
             return "filesystem", "studio schema not migrated"
         return "unavailable", "PARROT_STUDIO_STORAGE=database but the studio schema is not migrated"
-    problems = state.problems(migrate.STUDIO_SCHEMA_REQUIRED, manifest)
+    problems = state.problems(_required_version(), manifest)
     if problems:
         return "unavailable", "studio schema incomplete or drifted: " + "; ".join(problems)
     return "database", None

@@ -12,6 +12,8 @@ from parrot.handlers.studio.storage.migrate import (
 )
 from parrot.handlers.studio.storage.repositories import _exec, studio_transaction
 
+ALL_VERSIONS = [m.version for m in list_migrations()]
+
 _DROP = (
     "DROP TABLE IF EXISTS navigator.ai_agent_assets, navigator.ai_agent_tooling, navigator.ai_agent_drafts, "
     "navigator.ai_agents, navigator.ai_skills_catalog, navigator.studio_drafts, "
@@ -72,7 +74,7 @@ def _cli(*argv: str) -> int:
 async def test_migrations_apply_twice(studio_pool) -> None:
     pool = studio_pool
     await _empty(pool)
-    assert await apply_studio_migrations(pool) == [1, 2, 3, 4, 5]
+    assert await apply_studio_migrations(pool) == ALL_VERSIONS
     assert await apply_studio_migrations(pool) == []
     assert await _ledger(pool) == _manifest()
     assert await asyncio.to_thread(_cli, "--verify") == 0
@@ -102,7 +104,7 @@ async def test_migrations_apply_on_feat467_database(studio_pool) -> None:
         "INSERT INTO navigator.studio_drafts (name, file_path, owner_user_id) VALUES ('d1','/x.py','u')",
     ):
         assert await _run(pool, ddl) is None, ddl
-    assert await apply_studio_migrations(pool) == [1, 2, 3, 4, 5]
+    assert await apply_studio_migrations(pool) == ALL_VERSIONS
     assert await apply_studio_migrations(pool) == []
     assert await asyncio.to_thread(_cli, "--verify") == 0
     row = await _one(pool, "SELECT tenant, visibility FROM navigator.ai_skills_catalog WHERE name = 's1'")
@@ -181,13 +183,13 @@ async def test_migrations_concurrent_runners(studio_pool) -> None:
     for _ in range(10):
         await _empty(pool)
         first, second = await asyncio.gather(apply_studio_migrations(pool), apply_studio_migrations(pool))
-        assert sorted(first + second) == [1, 2, 3, 4, 5]          # each version recorded by exactly one runner
+        assert sorted(first + second) == ALL_VERSIONS          # each version recorded by exactly one runner
         assert await _ledger(pool) == manifest
     for _ in range(5):
         await _empty(pool)
         await asyncio.gather(apply_studio_migrations(pool), _raw_per_file_runner(pool))
         assert await _ledger(pool) == manifest
-        assert (await _one(pool, "SELECT count(*) AS n FROM navigator.ai_studio_migrations"))["n"] == 5
+        assert (await _one(pool, "SELECT count(*) AS n FROM navigator.ai_studio_migrations"))["n"] == len(ALL_VERSIONS)
 
 
 async def test_host_runner_records_same_checksums(studio_pool) -> None:

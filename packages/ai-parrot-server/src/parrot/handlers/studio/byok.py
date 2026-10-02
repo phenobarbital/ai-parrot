@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from navigator_auth.decorators import is_authenticated, user_session
-from parrot.auth.broker import _UserLLMKeyResolver
+from parrot.auth.broker import _UserLLMKeyResolver, byok_store_setting
 from parrot.clients.factory import SUPPORTED_CLIENTS
 from parrot.interfaces.documentdb import DocumentDb
 from parrot.security.credentials_utils import (
@@ -76,7 +76,10 @@ async def resolve_user_api_key(app: Any, user_id: str, provider: str) -> str | N
         ``LLMFactory.create(..., api_key=api_key)``, whose own ``api_key
         =None`` default already falls back to the server's configured key.
     """
-    del app  # reserved for future app-scoped caching; unused today.
+    if byok_store_setting() == "postgres" and app.get("database") is not None:
+        from .storage.byok_store import get_byok_store
+
+        get_byok_store(app)  # registers the Postgres store with the core resolver
     resolver = _UserLLMKeyResolver()
     return await resolver.resolve(provider, user_id)
 
@@ -110,36 +113,39 @@ class StudioKeysHandler(StudioBaseView):
             )
 
         try:
-            async with DocumentDb() as db:
-                docs = await db.read(COLLECTION, {"user_id": user.user_id})
+            keys = await self._list_keys(user, keyring)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("BYOK: failed to list keys for user %s: %s", user.user_id, exc)
             return self._error("Failed to list keys.", status=500, code="list_failed")
 
-        keys = []
-        for doc in docs or []:
-            try:
-                credential = decrypt_credential(
-                    doc["api_key"], llm_key_context(user.user_id, doc.get("provider")), keyring
-                )
-                masked = _mask(credential.get("api_key", ""))
-            except Exception as exc:  # pylint: disable=broad-except
-                # NEVER log the raw doc/ciphertext.
-                self.logger.warning(
-                    "BYOK: failed to decrypt key for masking (provider=%s): %s",
-                    doc.get("provider"),
-                    exc,
-                )
-                masked = "****"
-            keys.append(
-                {
-                    "provider": doc.get("provider"),
-                    "masked": masked,
-                    "created_at": doc.get("created_at"),
-                }
-            )
-
         return self.json_response({"keys": keys, "count": len(keys)})
+
+    async def _list_keys(self, user, keyring) -> list[dict]:
+        """Masked key previews from the store ``BYOK_STORE`` selects."""
+        if byok_store_setting() == "postgres":
+            from .storage.byok_store import get_byok_store
+
+            return await get_byok_store(self.request.app).list_masked(user.user_id)
+        async with DocumentDb() as db:
+            docs = await db.read(COLLECTION, {"user_id": user.user_id})
+        return [self._masked_item(doc, user, keyring) for doc in docs or []]
+
+    def _masked_item(self, doc: dict, user, keyring) -> dict:
+        """One DocumentDB doc as a masked list item (``****`` when it cannot be decrypted)."""
+        try:
+            credential = decrypt_credential(
+                doc["api_key"], llm_key_context(user.user_id, doc.get("provider")), keyring
+            )
+            masked = _mask(credential.get("api_key", ""))
+        except Exception as exc:  # pylint: disable=broad-except
+            # NEVER log the raw doc/ciphertext.
+            self.logger.warning(
+                "BYOK: failed to decrypt key for masking (provider=%s): %s",
+                doc.get("provider"),
+                exc,
+            )
+            masked = "****"
+        return {"provider": doc.get("provider"), "masked": masked, "created_at": doc.get("created_at")}
 
     async def post(self):
         # PBAC (adversarial-review fix: gate was defined but never called).
@@ -195,6 +201,22 @@ class StudioKeysHandler(StudioBaseView):
             except Exception as exc:  # pylint: disable=broad-except
                 self.logger.warning("BYOK: failed to set session vault copy: %s", exc)
 
+        try:
+            await self._persist_key(user, provider, encrypted, plaintext)
+        except Exception as exc:  # pylint: disable=broad-except
+            self.logger.error("BYOK: failed to persist key (provider=%s): %s", provider, exc)
+            return self._error("Failed to store key.", status=500, code="store_failed")
+
+        # NEVER echo the plaintext back — masked preview only.
+        return self.json_response({"provider": provider, "masked": _mask(plaintext)}, status=201)
+
+    async def _persist_key(self, user, provider: str, encrypted: str, plaintext: str) -> None:
+        """Durable write to the store ``BYOK_STORE`` selects."""
+        if byok_store_setting() == "postgres":
+            from .storage.byok_store import get_byok_store
+
+            await get_byok_store(self.request.app).put(user.user_id, provider, plaintext)
+            return
         now = datetime.now(UTC)
         doc = {
             "user_id": user.user_id,
@@ -203,30 +225,33 @@ class StudioKeysHandler(StudioBaseView):
             "created_at": now.isoformat(),
             "updated_at": now.isoformat(),
         }
-        try:
-            async with DocumentDb() as db:
-                await db.documentdb_connect()
-                existing = await db.read_one(COLLECTION, {"user_id": user.user_id, "provider": provider})
-                if existing is not None:
-                    doc["created_at"] = existing.get("created_at", doc["created_at"])
-                # Adversarial-review fix: save_background() is an INSERT —
-                # re-storing a key for a provider the user already has
-                # created a duplicate document, so rotation could silently
-                # keep serving the stale key (read_one on duplicates is
-                # order-dependent). update(..., upsert=True) replaces the
-                # single (user_id, provider) document atomically.
-                await db.update(
-                    COLLECTION,
-                    {"user_id": user.user_id, "provider": provider},
-                    {"$set": doc},
-                    upsert=True,
-                )
-        except Exception as exc:  # pylint: disable=broad-except
-            self.logger.error("BYOK: failed to persist key (provider=%s): %s", provider, exc)
-            return self._error("Failed to store key.", status=500, code="store_failed")
+        async with DocumentDb() as db:
+            await db.documentdb_connect()
+            existing = await db.read_one(COLLECTION, {"user_id": user.user_id, "provider": provider})
+            if existing is not None:
+                doc["created_at"] = existing.get("created_at", doc["created_at"])
+            # Adversarial-review fix: save_background() is an INSERT —
+            # re-storing a key for a provider the user already has
+            # created a duplicate document, so rotation could silently
+            # keep serving the stale key (read_one on duplicates is
+            # order-dependent). update(..., upsert=True) replaces the
+            # single (user_id, provider) document atomically.
+            await db.update(
+                COLLECTION,
+                {"user_id": user.user_id, "provider": provider},
+                {"$set": doc},
+                upsert=True,
+            )
 
-        # NEVER echo the plaintext back — masked preview only.
-        return self.json_response({"provider": provider, "masked": _mask(plaintext)}, status=201)
+    async def _remove_key(self, user, provider: str) -> None:
+        """Durable delete from the store ``BYOK_STORE`` selects."""
+        if byok_store_setting() == "postgres":
+            from .storage.byok_store import get_byok_store
+
+            await get_byok_store(self.request.app).delete(user.user_id, provider)
+            return
+        async with DocumentDb() as db:
+            await db.delete(COLLECTION, {"user_id": user.user_id, "provider": provider})
 
     async def delete(self):
         # PBAC (adversarial-review fix: gate was defined but never called).
@@ -248,8 +273,7 @@ class StudioKeysHandler(StudioBaseView):
                 self.logger.warning("BYOK: failed to clear session vault copy: %s", exc)
 
         try:
-            async with DocumentDb() as db:
-                await db.delete(COLLECTION, {"user_id": user.user_id, "provider": provider})
+            await self._remove_key(user, provider)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.error("BYOK: failed to delete key (provider=%s): %s", provider, exc)
             return self._error("Failed to delete key.", status=500, code="delete_failed")

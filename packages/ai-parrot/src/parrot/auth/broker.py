@@ -324,6 +324,26 @@ class _MCPVaultResolver(CredentialResolver):
         return self._auth_url
 
 
+_PG_STORE: Any = None
+
+
+def set_user_llm_key_store(store: Any) -> None:
+    """Register the Postgres BYOK store (``get(user_id, provider)``); ``None`` unregisters.
+
+    The server calls this at startup when ``BYOK_STORE=postgres`` so core never imports server code.
+    """
+    global _PG_STORE
+    _PG_STORE = store
+
+
+def byok_store_setting() -> str:
+    """The ``BYOK_STORE`` switch: ``documentdb`` (default) or ``postgres``."""
+    from navconfig import config
+
+    value = str(config.get("BYOK_STORE", fallback="documentdb") or "documentdb").strip().lower()
+    return value if value in ("documentdb", "postgres") else "documentdb"
+
+
 class _UserLLMKeyResolver(CredentialResolver):
     """Resolves a per-user "bring your own key" LLM provider API key
     (FEAT-467 TASK-2516).
@@ -359,6 +379,9 @@ class _UserLLMKeyResolver(CredentialResolver):
             The plaintext API key, or ``None`` if none is stored, the
             vault is unavailable, or decryption fails.
         """
+        if byok_store_setting() == "postgres":
+            return await self._resolve_postgres(channel, user_id)
+
         from parrot.interfaces.documentdb import DocumentDb
 
         try:
@@ -403,6 +426,17 @@ class _UserLLMKeyResolver(CredentialResolver):
                 provider,
                 exc,
             )
+            return None
+
+    async def _resolve_postgres(self, channel: str, user_id: str) -> str | None:
+        """``BYOK_STORE=postgres``: read the registered store; fail closed, never touch DocumentDB."""
+        if _PG_STORE is None:
+            logger.warning("_UserLLMKeyResolver: BYOK_STORE=postgres but no store is registered")
+            return None
+        try:
+            return await _PG_STORE.get(user_id, channel.lower())
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("_UserLLMKeyResolver: postgres read failed for provider=%s: %s", channel.lower(), exc)
             return None
 
     async def get_auth_url(self, channel: str, user_id: str) -> str:
