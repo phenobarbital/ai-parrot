@@ -26,6 +26,7 @@ from __future__ import annotations
 from typing import Any
 
 from navigator_auth.decorators import is_authenticated, user_session
+from parrot.auth.confirmation import is_enforced_write_class
 from parrot.clients.factory import LLMFactory
 from parrot.tools.abstract import AbstractTool
 from parrot.tools.discovery import discover_all, resolve_class  # re-exported: tests patch ``testing.discover_all``
@@ -93,6 +94,26 @@ class StudioTestingHandler(
 class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
     """``POST /api/v1/astudio/tools/{slug}/execute`` — deterministic tool call."""
 
+    def _executable_refusal(self, slug: str, cls: type | None):
+        """404 for an unknown / non-tool slug; 403 ``confirmation_required`` for a host write tool.
+
+        A host standalone write tool has no approval channel on this path (FEAT-622 M8), so it is refused
+        before any instantiation.
+        """
+        if (
+            cls is None
+            or not (isinstance(cls, type) and issubclass(cls, AbstractTool))
+            or (isinstance(cls, type) and issubclass(cls, AbstractToolkit))
+        ):
+            return self._error(f"Unknown tool '{slug}'.", status=404, code="not_found")
+        if is_enforced_write_class(cls):
+            return self._error(
+                f"Tool '{slug}' requires confirmation and cannot be executed directly.",
+                status=403,
+                code="confirmation_required",
+            )
+        return None
+
     async def post(self):
         if (denied := await self._require_author()) is not None:
             return denied
@@ -115,12 +136,8 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
         cls = _resolve_registry_class(slug)
-        if (
-            cls is None
-            or not (isinstance(cls, type) and issubclass(cls, AbstractTool))
-            or (isinstance(cls, type) and issubclass(cls, AbstractToolkit))
-        ):
-            return self._error(f"Unknown tool '{slug}'.", status=404, code="not_found")
+        if (refused := self._executable_refusal(slug, cls)) is not None:
+            return refused
 
         try:
             instance = _instantiate_tool(cls, self.request.app)

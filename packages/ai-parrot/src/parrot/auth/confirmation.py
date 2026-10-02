@@ -26,8 +26,10 @@ import hashlib
 import json
 import logging
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Type
+from typing import TYPE_CHECKING, Any, Dict, Iterator, Literal, Optional, Type
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -58,6 +60,35 @@ def compute_args_hash(parameters: dict) -> str:
     """
     canonical = json.dumps(parameters, sort_keys=True, default=str)
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+_APPROVED_CALL: ContextVar[Optional[tuple[int, str]]] = ContextVar("parrot_approved_tool_call", default=None)
+
+
+def current_confirmed_call() -> Optional[tuple[int, str]]:
+    """``(id(tool), args_hash)`` of the call ToolManager approved, or ``None`` (FEAT-622 M8)."""
+    return _APPROVED_CALL.get()
+
+
+@contextmanager
+def _approved_call(tool: Any, parameters: dict) -> Iterator[None]:
+    """Bind the approval token for exactly one ``tool.execute`` (ToolManager only)."""
+    token = _APPROVED_CALL.set((id(tool), compute_args_hash(parameters)))
+    try:
+        yield
+    finally:
+        _APPROVED_CALL.reset(token)
+
+
+def is_enforced_write_class(cls: type) -> bool:
+    """Whether instances of ``cls`` are host write tools whose execution needs an enforced confirmation.
+
+    A standalone host ``AbstractTool`` declaring ``access = "write"``; decided from the class, without
+    instantiating it (FEAT-622 M8).
+    """
+    from parrot.tools.toolkit import _is_host_class  # pylint: disable=import-outside-toplevel
+
+    return getattr(cls, "access", None) == "write" and _is_host_class(cls)
 
 
 # ── Data Models ───────────────────────────────────────────────────────────────

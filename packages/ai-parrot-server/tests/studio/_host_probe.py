@@ -85,7 +85,7 @@ PROBE_MODULE = textwrap.dedent(
         name = "tp_probe_tool_write"
         description = "Probe write tool"
         args_schema = ProbeArgs
-        write = True
+        access = "write"
 
         async def _execute(self, **kwargs):
             COUNTERS["written"] += 1

@@ -882,6 +882,64 @@ class AbstractTool(EventEmitterMixin, ABC):
 
     # ── Core execution ────────────────────────────────────────────────────────
 
+    def _check_approval(self, kwargs: Dict[str, Any]) -> Optional[ToolResult]:
+        """Refuse a ``confirmation_enforced`` tool unless ToolManager approved exactly this call (FEAT-622 M8).
+
+        Only the ContextVar token set by ``ToolManager`` after a ``confirmed`` guard decision counts: it must name
+        this tool instance and the hash of the kwargs received here. Never a kwarg, never an instance flag.
+
+        Args:
+            kwargs: The tool kwargs after the special ``_*`` kwargs were popped.
+
+        Returns:
+            A ``forbidden`` ``ToolResult`` (``error_code="confirmation_required"``), or ``None`` when allowed.
+        """
+        from parrot.auth.confirmation import (  # pylint: disable=import-outside-toplevel
+            compute_args_hash,
+            current_confirmed_call,
+            is_enforced_write_class,
+        )
+
+        enforced = (self.routing_meta or {}).get("confirmation_enforced") or is_enforced_write_class(type(self))
+        if not enforced or current_confirmed_call() == (id(self), compute_args_hash(kwargs)):
+            return None
+        reason = "write tool requires an explicit human confirmation for this exact call"
+        return ToolResult(
+            success=False,
+            status="forbidden",
+            result=None,
+            error=f"Confirmation required: '{self.name}' {reason}",
+            metadata={
+                "tool_name": self.name,
+                "error_type": "ConfirmationRequired",
+                "error_code": "confirmation_required",
+                "reason": reason,
+            },
+        )
+
+    async def _pre_execute_refusal(self, kwargs: Dict[str, Any], pctx: Any, resolver: Any) -> Optional[ToolResult]:
+        """Approval check (FEAT-622 M8) then the Layer 2 permission safety net; ``None`` when both allow."""
+        refused = self._check_approval(kwargs)
+        if refused is not None:
+            return refused
+        if pctx is None or resolver is None:
+            return None
+        required = getattr(self, "_required_permissions", set())
+        if await resolver.can_execute(pctx, self.name, required):
+            return None
+        self.logger.warning("Permission denied: user=%s tool=%s required=%s", pctx.user_id, self.name, required)
+        return ToolResult(
+            success=False,
+            status="forbidden",
+            result=None,
+            error=f"Permission denied: '{self.name}' requires {required}",
+            metadata={
+                "tool_name": self.name,
+                "user_id": pctx.user_id,
+                "required_permissions": list(required),
+            },
+        )
+
     async def execute(self, *args, **kwargs) -> ToolResult:
         """
         Execute the tool with error handling and result standardization.
@@ -920,22 +978,9 @@ class AbstractTool(EventEmitterMixin, ABC):
         _cred_channel: str = kwargs.pop("_cred_channel", "unknown")
         _cred_user_id: Optional[str] = kwargs.pop("_cred_user_id", None)
 
-        if pctx is not None and resolver is not None:
-            required = getattr(self, "_required_permissions", set())
-            allowed = await resolver.can_execute(pctx, self.name, required)
-            if not allowed:
-                self.logger.warning("Permission denied: user=%s tool=%s required=%s", pctx.user_id, self.name, required)
-                return ToolResult(
-                    success=False,
-                    status="forbidden",
-                    result=None,
-                    error=f"Permission denied: '{self.name}' requires {required}",
-                    metadata={
-                        "tool_name": self.name,
-                        "user_id": pctx.user_id,
-                        "required_permissions": list(required),
-                    },
-                )
+        refused = await self._pre_execute_refusal(kwargs, pctx, resolver)
+        if refused is not None:
+            return refused
 
         # Store for lifecycle hooks.  ToolkitTool._execute reads ``_current_pctx``
         # and injects it back into the ``_pre_execute`` / ``_post_execute`` calls
