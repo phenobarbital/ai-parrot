@@ -114,3 +114,16 @@ def test_fit_rows_orders_slots_left_to_right():
 
 def test_fit_rows_skips_empty_bands():
     assert fit_rows([[], _printers()], 2) == fit_rows([_printers()], 2)
+
+
+def test_fit_rows_keeps_tiers_apart_on_a_tiered_shelf():
+    """Scanners stacked in one column of a tiered shelf are facings of their own, slim ones included."""
+    slim = [_shape(f"slim{i}", 100 + i * 300, 640, h=40) for i in range(3)]
+    bands = centre_bands([*_printers(), *slim, *_cartons(900)])
+    assert len(bands) == 3
+
+    assert [len(row) for row in fit_rows(bands, 2)] == [3, 3]
+
+    apart = fit_rows(bands, 2, stack_columns=False)
+    assert [len(row) for row in apart] == [6, 3]
+    assert [shape.shape_id for shape, _ in apart[0]] == ["p0", "slim0", "p1", "slim1", "p2", "slim2"]

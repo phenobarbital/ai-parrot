@@ -122,27 +122,34 @@ def _stack(band: Sequence[RowSlot]) -> List[RowSlot]:
     return sorted(slots, key=lambda item: item[1][0])
 
 
-def fit_rows(bands: Sequence[Sequence[Shape]], max_rows: Optional[int]) -> List[List[RowSlot]]:
+def fit_rows(
+    bands: Sequence[Sequence[Shape]], max_rows: Optional[int], stack_columns: bool = True
+) -> List[List[RowSlot]]:
     """Reduce bands to at most ``max_rows`` rows.
 
-    Only when there are more bands than the fixture has shelves: shapes far smaller than the median
-    anchor are dropped first (cards, tags), then the two vertically closest bands are merged until
-    the count fits; shapes of merged bands that share a column become one stacked slot.
+    Only when there are more bands than the fixture has shelves: the two vertically closest bands are
+    merged until the count fits. With ``stack_columns`` the shapes of merged bands that share a column
+    become one stacked slot (cartons piled two high), and shapes far smaller than the median anchor are
+    dropped first (cards, tags). Without it — a shelf with tiers of different products — every shape
+    stays a slot of its own, slim ones included.
 
     Args:
         bands: Bands top to bottom (``centre_bands`` output or shelf-edge bands).
         max_rows: Shelves the fixture is known to have, or ``None`` when unknown.
+        stack_columns: Whether shapes stacked in one column of a shelf are one slot.
 
     Returns:
-        Rows top to bottom, slots left to right.
+        Rows top to bottom, slots left to right (top first within a column).
     """
     rows: List[List[RowSlot]] = [[(shape, _box(shape)) for shape in band] for band in bands if band]
     if max_rows is not None and len(rows) > max_rows:
-        areas = [_area(shape) for row in rows for shape, _ in row]
-        floor = STRAY_AREA * median(areas)
-        rows = [kept for kept in ([slot for slot in row if _area(slot[0]) >= floor] for row in rows) if kept]
+        if stack_columns:
+            areas = [_area(shape) for row in rows for shape, _ in row]
+            floor = STRAY_AREA * median(areas)
+            rows = [kept for kept in ([slot for slot in row if _area(slot[0]) >= floor] for row in rows) if kept]
         while len(rows) > max(1, max_rows):
             centres = [_band_centre([shape for shape, _ in row]) for row in rows]
             index = min(range(len(rows) - 1), key=lambda k: centres[k + 1] - centres[k])
-            rows[index : index + 2] = [_stack([*rows[index], *rows[index + 1]])]
-    return [sorted(row, key=lambda item: item[1][0]) for row in rows]
+            joined = [*rows[index], *rows[index + 1]]
+            rows[index : index + 2] = [_stack(joined) if stack_columns else joined]
+    return [sorted(row, key=lambda item: (item[1][0], item[1][1])) for row in rows]

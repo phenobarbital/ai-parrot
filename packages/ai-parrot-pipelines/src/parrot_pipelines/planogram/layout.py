@@ -72,6 +72,9 @@ class LayoutProfile(BaseModel):
     anchor_rule: AnchorRule = AnchorRule.SHAPE_IS_SLOT
     fill_gaps: bool = False
     untagged_bottom_row: bool = False
+    #: A shelf holds tiers of different products: shapes stacked in one column are slots of their own
+    #: (default: a stack in one column is one slot, e.g. cartons piled two high).
+    tiered_shelves: bool = False
     identify_strategy: IdentifyStrategy = IdentifyStrategy.FULL_IMAGE
     perception_mode: Literal["cv", "llm_detector"] = "cv"
     #: Locate the fixture with the configuration's ROI prompt before any LLM detection.

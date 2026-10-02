@@ -31,6 +31,12 @@ GENERIC_DETECTION_PROMPT: str = (
 )
 
 
+#: Added to the detection prompt of a fixture whose shelves hold tiers of stacked products.
+TIERED_DETECTION_HINT: str = (
+    "Products stacked on top of one another are separate objects: give each of them its own detection, "
+    "never one box around the whole stack."
+)
+
 ROI_PROMPT_VERSION: str = "roi-v2"
 ROI_STAGE: str = "roi"
 #: Labels a stored ROI prompt uses for the whole fixture and for its header panel.
@@ -338,6 +344,8 @@ async def llm_detect_shapes(image: np.ndarray, image_id: str, ctx: CycleContext,
     Returns:
         Zones first, then the other shapes with membership assigned; ``[]`` on failure.
     """
+    if getattr(ctx.layout, "tiered_shelves", False):
+        prompt = f"{prompt} {TIERED_DETECTION_HINT}"
     roi = await detect_roi(image, image_id, ctx)
     if roi is None:
         return await _detect_shapes(image, image_id, ctx, prompt=prompt)

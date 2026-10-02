@@ -441,3 +441,18 @@ async def test_roi_fixture_running_past_its_components_is_cut_back_sideways():
     # components span x 500..1500; the right edge (2000) is cut to 1500 + 12% of 1000, then padded 4%.
     box = shapes[0].box
     assert 1620 <= box.x2 <= 1680 and box.x1 < 420
+
+
+async def test_a_tiered_fixture_asks_for_one_detection_per_stacked_product():
+    from parrot_pipelines.planogram.identification.detector import TIERED_DETECTION_HINT
+
+    class Layout:
+        tiered_shelves = True
+        roi_zone_labels: list = []
+
+    adapter = StubAdapter(Detections(detections=[_det(0.1, 0.1, 0.5, 0.5)]))
+    await llm_detect_shapes(IMAGE, "img0", _ctx(adapter).model_copy(update={"layout": Layout()}), prompt="p")
+    assert adapter.calls[0][1] == f"p {TIERED_DETECTION_HINT}"
+    plain = StubAdapter(Detections(detections=[_det(0.1, 0.1, 0.5, 0.5)]))
+    await llm_detect_shapes(IMAGE, "img0", _ctx(plain), prompt="p")
+    assert plain.calls[0][1] == "p"

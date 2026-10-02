@@ -140,7 +140,7 @@ async def _rows_shape_is_slot(
 
     rows: List[List[ShapeCandidate]] = []
     by_candidate: Dict[str, str] = {}
-    for slots in fit_rows(bands, max_rows):
+    for slots in fit_rows(bands, max_rows, not profile.tiered_shelves):
         if len(slots) < profile.min_row_items:
             continue
         row = [
