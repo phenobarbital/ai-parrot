@@ -31,6 +31,11 @@
       "version": 6,
       "name": "0006_ai_user_llm_keys",
       "sha256": "24830ce67a39063f74519199d298ae3b9ad256c2913ed63215ee72cd1f628123"
+    },
+    {
+      "version": 7,
+      "name": "0007_ai_user_credentials",
+      "sha256": "1c68ad8e9de4c618f7bfd369008f9c583282bd80d37bd415982bb7bd3cbeca03"
     }
   ]
 }

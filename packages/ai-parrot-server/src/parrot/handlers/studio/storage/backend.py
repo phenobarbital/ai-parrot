@@ -75,6 +75,22 @@ def _required_version() -> int:
     return migrate.STUDIO_SCHEMA_REQUIRED
 
 
+def _vault_store_is_postgres() -> bool:
+    return str(config.get("VAULT_STORE", fallback="documentdb") or "documentdb").strip().lower() == "postgres"
+
+
+def _register_vault_store(backend: str, pool: Any) -> None:
+    """VAULT_STORE=postgres: hand the Postgres vault store to core ``vault_utils`` (only on a verified schema)."""
+    if not _vault_store_is_postgres():
+        return
+    if backend != "database":
+        logger.error("VAULT_STORE=postgres but the studio storage backend is %s; vault stays on DocumentDB", backend)
+        return
+    from .vault_store import get_vault_store  # lazy: pulls in the vault keyring machinery
+
+    get_vault_store(pool)
+
+
 def _resolve(setting: str, pool: Any, state: migrate.LedgerState | Exception | None) -> tuple[str, str | None]:
     """Pure mapping of (setting, pool, probe result) to (backend, reason) — spec §2.2 matrix."""
     if setting == "filesystem":
@@ -116,6 +132,7 @@ async def ensure_studio_storage(app: web.Application) -> StudioStorage:
         else:
             logger.info("Studio storage backend: %s", backend)
         repos = build_studio_repositories(pool) if backend == "database" else None
+        _register_vault_store(backend, pool)
         storage = StudioStorage(backend, reason, repos, app)  # type: ignore[arg-type]
         app[STUDIO_STORAGE_APP_KEY] = storage
         return storage
