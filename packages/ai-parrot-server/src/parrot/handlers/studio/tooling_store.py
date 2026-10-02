@@ -396,7 +396,7 @@ class AgentToolingStore:
 
     @staticmethod
     def _guard(record: Any) -> StudioWriteGuard:
-        return StudioWriteGuard(authorized_version=record.version)
+        return StudioWriteGuard.for_record(record)
 
     async def _studio_put_toolkit(
         self,
@@ -445,7 +445,7 @@ class AgentToolingStore:
         if state.source == "studio":
             part, record, service = state._studio
             await service.replace_from_state(
-                part, name, state.tooling, actor=record.owner, guard=StudioWriteGuard(authorized_version=record.version)
+                part, name, state.tooling, actor=record.owner, guard=StudioWriteGuard.for_record(record)
             )
         elif state.source == "database":
             db = self.handler.request.app.get("database")

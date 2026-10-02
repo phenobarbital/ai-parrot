@@ -498,8 +498,7 @@ class StudioDraftActivateHandler(_StudioDraftsMixin, StudioBaseView):
         if refusal is not None:
             return refusal
         user = await self._get_user()
-        target_guard = StudioWriteGuard(authorized_version=target.version if target else None,
-                                        expected_version=parsed.target_expected_version)
+        target_guard = StudioWriteGuard.for_record(target, expected_version=parsed.target_expected_version)
         agent = await self._studio_write(
             lambda guard: svc.activate(part, name, owner=user.user_id, replace=target is not None, guard=guard,
                                        target_guard=target_guard),

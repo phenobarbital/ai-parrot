@@ -231,6 +231,27 @@ class StudioWriteGuard:
 
     authorized_version: int | None = None
     expected_version: int | None = None
+    # Identity of the authorized row (agent_id / draft_id): a delete + re-create lands on a fresh id even when
+    # its version equals the authorized one (a re-created row starts at version 1), which versions alone miss.
+    authorized_id: Any = None
+
+    @classmethod
+    def for_record(cls, record: Any, *, expected_version: int | None = None) -> "StudioWriteGuard":
+        """The guard authorizing exactly ``record`` (an agent or draft record); no guard fields when ``None``."""
+        if record is None:
+            return cls(expected_version=expected_version)
+        ident = getattr(record, "agent_id", None) or getattr(record, "draft_id", None)
+        return cls(authorized_version=record.version, expected_version=expected_version, authorized_id=ident)
+
+    def check(self, head: "StudioAgentHead", name: str) -> "StudioAgentHead":
+        """Under the row lock: VersionConflict, then StaleAuthorization (version, then identity). Returns ``head``."""
+        if self.expected_version is not None and self.expected_version != head.version:
+            raise StudioVersionConflict(f"{name}: expected {self.expected_version}, found {head.version}")
+        if self.authorized_version is not None and self.authorized_version != head.version:
+            raise StudioStaleAuthorization(f"{name}: authorized {self.authorized_version}, found {head.version}")
+        if self.authorized_id is not None and self.authorized_id != head.agent_id:
+            raise StudioStaleAuthorization(f"{name}: the authorized record was replaced")
+        return head
 
 
 @dataclass(frozen=True, slots=True)

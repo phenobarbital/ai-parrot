@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from typing import Any, Sequence
 from uuid import UUID
@@ -71,7 +72,7 @@ def _combined_guard(patch: StudioAgentPatch, guard: StudioWriteGuard) -> StudioW
     """A body ``expected_version`` applies when the caller's guard carries none."""
     if guard.expected_version is not None or patch.expected_version is None:
         return guard
-    return StudioWriteGuard(authorized_version=guard.authorized_version, expected_version=patch.expected_version)
+    return dataclasses.replace(guard, expected_version=patch.expected_version)
 
 
 class StudioAgentService:

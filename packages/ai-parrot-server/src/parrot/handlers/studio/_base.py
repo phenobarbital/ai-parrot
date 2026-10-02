@@ -304,9 +304,7 @@ class StudioBaseView(BaseView):
         from .storage.models import StudioNotFound, StudioStaleAuthorization, StudioVersionConflict, StudioWriteGuard
 
         for attempt in (1, 2):
-            guard = StudioWriteGuard(
-                authorized_version=record.version if record else None, expected_version=expected_version
-            )
+            guard = StudioWriteGuard.for_record(record, expected_version=expected_version)
             try:
                 return await write(guard)
             except StudioStaleAuthorization as exc:

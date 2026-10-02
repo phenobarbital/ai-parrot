@@ -24,10 +24,8 @@ from .models import (
     StudioNameConflict,
     StudioNotFound,
     StudioPartition,
-    StudioStaleAuthorization,
     StudioStorageError,
     StudioToolingRecord,
-    StudioVersionConflict,
     StudioWriteGuard,
 )
 
@@ -228,11 +226,7 @@ class StudioAgentRepository:
         head = await self._lock_row(conn, part, name)
         if head is None:
             raise StudioNotFound(name)
-        if guard.expected_version is not None and guard.expected_version != head.version:
-            raise StudioVersionConflict(f"{name}: expected {guard.expected_version}, found {head.version}")
-        if guard.authorized_version is not None and guard.authorized_version != head.version:
-            raise StudioStaleAuthorization(f"{name}: authorized {guard.authorized_version}, found {head.version}")
-        return head
+        return guard.check(head, name)
 
     async def insert(
         self,

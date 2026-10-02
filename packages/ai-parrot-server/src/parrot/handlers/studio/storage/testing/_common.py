@@ -12,9 +12,7 @@ from typing import TYPE_CHECKING, Any
 from ..models import (
     StudioAgentHead,
     StudioNameConflict,
-    StudioStaleAuthorization,
     StudioStorageError,
-    StudioVersionConflict,
     StudioWriteGuard,
 )
 
@@ -101,8 +99,4 @@ _ID = {"agents": "agent_id", "drafts": "draft_id", "skills": "skill_id"}
 
 
 def _guard(head: StudioAgentHead, name: str, guard: StudioWriteGuard) -> StudioAgentHead:
-    if guard.expected_version is not None and guard.expected_version != head.version:
-        raise StudioVersionConflict(f"{name}: expected {guard.expected_version}, found {head.version}")
-    if guard.authorized_version is not None and guard.authorized_version != head.version:
-        raise StudioStaleAuthorization(f"{name}: authorized {guard.authorized_version}, found {head.version}")
-    return head
+    return guard.check(head, name)
