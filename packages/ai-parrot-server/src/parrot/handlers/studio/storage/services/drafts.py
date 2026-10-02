@@ -146,9 +146,9 @@ class StudioDraftService:
         if current is None:
             raise StudioNotFound(bundle.name)
         record = dataclasses.replace(current, definition=bundle.definition)
-        kept = {("toolkit", s.slug) for s in bundle.toolkits} | {("mcp", s.name) for s in bundle.mcp_servers}
-        removed = [row for row in before if (row.kind, row.slug) not in kept]
-        return await self._with_current_version(conn, part, record), removed
+        # A bundle carries no secret_refs, so EVERY old row's vault entries are unreferenced after the swap: the
+        # removed slugs AND the kept slugs whose refs the replacement overwrote.
+        return await self._with_current_version(conn, part, record), list(before)
 
     async def _with_current_version(
         self, conn: Any, part: StudioPartition, record: StudioAgentRecord
@@ -158,7 +158,7 @@ class StudioDraftService:
         return dataclasses.replace(record, version=head.version)
 
     async def _cleanup_removed(self, record: StudioAgentRecord, removed: Sequence[StudioToolingRecord]) -> None:
-        """§2.5c: vault entries of the tooling slugs the replacement removed — best effort, after commit."""
+        """§2.5c: vault entries of the replaced tooling rows (removed or overwritten) — best effort, after commit."""
         if not removed:
             return
         from parrot.security.vault_utils import delete_vault_credential

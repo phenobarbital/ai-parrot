@@ -270,3 +270,26 @@ async def test_policy_phases_write_then_activate(repos):
     assert phases == ["write"]
     await svc.activate(GLOBAL, "a1", owner="u1")
     assert phases == ["write", "activate"]
+
+
+async def test_replace_cleans_vault_of_kept_slugs_whose_refs_were_overwritten(repos, svc, monkeypatch):
+    from datetime import datetime, timezone
+    from unittest.mock import AsyncMock
+
+    from parrot.handlers.studio.storage.models import StudioToolingRecord
+
+    agents, _ = _services(repos)
+    rec = await agents.create(GLOBAL, name="a1", owner="u0", definition=StudioAgentDefinition())
+    async with studio_transaction(repos.pool) as conn:
+        await repos.tooling.replace(
+            conn, rec.agent_id, toolkits=[StudioToolingRecord(
+                None, "toolkit", "jira", 0, {}, {"token": "vault-jira"}, "u9", datetime.now(timezone.utc))],
+            mcp_servers=[],
+        )
+    deleted = AsyncMock()
+    monkeypatch.setattr("parrot.security.vault_utils.delete_vault_credential", deleted)
+    # the bundle KEEPS the jira slug (with no secret_refs): the old vault entry is now unreferenced
+    await svc.save_bundle(GLOBAL, owner="u1", bundle=_bundle(toolkits=[ToolkitSpec(slug="jira", params={"k": 1})]))
+    await svc.activate(GLOBAL, "a1", owner="u1", replace=True)
+    deleted.assert_awaited_once_with("u9", "vault-jira")
+    assert [t.secret_refs for t in await repos.tooling.list(GLOBAL, "a1")] == [{}]
