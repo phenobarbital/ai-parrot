@@ -269,7 +269,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -281,9 +281,10 @@
       "parallelism_notes": "Uses StudioAccess/_access()/_studio_partition/VisibilityUpdateRequest from TASK-3964 (access.py, _base.py, models.py); edits studio/drafts.py after TASK-3962 (D1) and TASK-3963 (D3) on the same file.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3967-drafts-visibility-declarative-activation.md",
-      "wave_label": "W3.2"
+      "completed_at": "2026-10-02T14:48:45+00:00",
+      "file": "sdd/tasks/completed/TASK-3967-drafts-visibility-declarative-activation.md",
+      "wave_label": "W3.2",
+      "verification": "verified"
     },
     {
       "id": "TASK-3968",

@@ -253,10 +253,25 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback loop, tramo B2)
+**Date**: 2026-10-02
+**Notes**: Drafts on the tenant path. List/GET carry the visibility fields (`access`, `can_manage`, …) and are filtered by
+`StudioAccess`; legacy Python drafts get the additive fields (`access: "global"`); an opted-in caller with no tenant lists nothing.
+POST: `_require_author` first (so `authoring_denied` precedes `declarative_only`), Python `source` ⇒ 422 `declarative_only`
+(service decision `python_drafts_allowed`), reserved keys in the bundle config ⇒ 400, `validate_visibility` ⇒ 422
+`tenant_required`/`groups_required`/`groups_not_allowed`, stamp via `access.stamp`; a `(tenant, name)` draft the caller cannot manage
+⇒ 409 `name_taken` before anything is written (was 403/404). Activation: access (404/403) BEFORE `authoring_denied` (no existence
+oracle), then name rules (`name_taken` for present row without `replace` / not manageable), the draft's OWNER is passed as the agent
+owner (an admin activating someone's draft does not take ownership); no module import, no AGENTS_DIR write; tooling re-checked at
+save and at activation by FEAT-621's gate (`tooling_not_permitted` 422). `StudioDraftVisibilityHandler` (`drafts/_visibility.py`);
+route registration is TASK-3972.
+Mutations RED (restored by editing): author-first dropped; non-manager save → 403; activate author-before-access; activator-as-owner;
+reserved check; visibility refusal; tenantless list; visibility handler `manage=False`; legacy view fields; list filter; replace
+manage check; `declarative_only`.
+Tests: `test_drafts_tenant.py` (11). `test_drafts_db_mode.py` adapted: (a) non-owner re-save is now `name_taken` (spec), (b)
+the forced-partition `_AcmeDrafts/_AcmeActivate` views also pin `_scope` to the same tenant (a tenant partition on a plain host
+has no scope tenant, so the new tenant_required rule would otherwise refuse their visibility).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: files beyond the listed `drafts.py`: the drafts package modules, `_base` untouched in this task
+(shared `_visibility_refusal` from TASK-3966), `test_drafts_db_mode.py`. `SaveDraftRequest` already carried
+`visibility`/`allowed_groups`/`bundle` (FEAT-621 W3) — no model change needed.
