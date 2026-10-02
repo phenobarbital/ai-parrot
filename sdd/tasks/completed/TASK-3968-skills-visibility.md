@@ -250,10 +250,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback loop, tramo B2)
+**Date**: 2026-10-02
+**Notes**: Skills catalogue visibility. List/GET filtered by `StudioAccess` and carry the visibility fields; legacy items get the
+additive fields (`access: "global"`); tenantless opted-in list is empty. Publish: `_require_author` → reserved keys (400 `owner`,
+`created_by`, `tenant`) → `validate_visibility` (422 codes) → stamp → `StudioNameConflict` ⇒ `name_taken` (legacy duplicate → `name_taken`
+too). `SkillPublishRequest` gains `visibility`/`allowed_groups` with this reading code; PUT refuses them (400, change via `/visibility`).
+PUT/DELETE: 404 (invisible) → 403 (not manageable) via `_db_skill`; import: skill must be visible (404), agent visible (404) and
+manageable (403). `StudioSkillVisibilityHandler` (`skills_catalog/_visibility.py`); route registration is TASK-3972.
+Mutations RED (restored): list filter; name_taken mapping; reserved keys; visibility handler manage; visibility refusal; tenantless
+list; PUT manage; legacy view fields; import skill-visibility.
+Tests: `test_skills_visibility.py` (5); `test_skills_catalog.py` (+legacy additive assertions, `duplicate`→`name_taken`),
+`test_skills_catalog_db_mode.py:96` `duplicate`→`name_taken`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: package modules instead of `skills_catalog.py`; `test_skills_catalog_db_mode.py` and `models.py` touched.

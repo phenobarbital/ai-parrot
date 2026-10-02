@@ -293,7 +293,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -304,9 +304,10 @@
       "parallelism_notes": "Uses StudioAccess/VisibilityUpdateRequest/SkillPublishRequest fields from TASK-3964 (access.py, models.py); edits studio/skills_catalog.py after TASK-3961 (resync gate, same file).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3968-skills-visibility.md",
-      "wave_label": "W3.3"
+      "completed_at": "2026-10-02T14:59:03+00:00",
+      "file": "sdd/tasks/completed/TASK-3968-skills-visibility.md",
+      "wave_label": "W3.3",
+      "verification": "verified"
     },
     {
       "id": "TASK-3969",
