@@ -13,6 +13,7 @@ PROBE_INIT = textwrap.dedent(
     TOOL_REGISTRY = {
         "tp_probe": "plugins.tools.probe.ProbeToolkit",
         "tp_probe_tool": "plugins.tools.probe.ProbeTool",
+        "tp_probe_tool_write": "plugins.tools.probe.ProbeWriteTool",
     }
     '''
 )
@@ -27,7 +28,7 @@ PROBE_MODULE = textwrap.dedent(
     from parrot.tools.server_params import ServerParam
     from parrot.tools.toolkit import AbstractToolkit
 
-    COUNTERS = {"opened": 0, "bump": 0, "options_calls": 0, "executed": 0, "tool_opened": 0}
+    COUNTERS = {"opened": 0, "bump": 0, "options_calls": 0, "executed": 0, "tool_opened": 0, "standalone_write": 0}
 
 
     class ProbeToolkit(AbstractToolkit):
@@ -85,6 +86,18 @@ PROBE_MODULE = textwrap.dedent(
         async def _execute(self, **kwargs):
             COUNTERS["executed"] += 1
             return {"ok": True}
+
+
+    class ProbeWriteTool(AbstractTool):
+        """Standalone host tool declaring NO access: treated as a write tool (None => write)."""
+
+        name = "tp_probe_tool_write"
+        description = "Probe write tool"
+        args_schema = ProbeArgs
+
+        async def _execute(self, **kwargs):
+            COUNTERS["standalone_write"] += 1
+            return {"written": COUNTERS["standalone_write"]}
     '''
 )
 

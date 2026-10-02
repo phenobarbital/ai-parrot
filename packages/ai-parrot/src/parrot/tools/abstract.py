@@ -393,6 +393,7 @@ class AbstractTool(EventEmitterMixin, ABC):
         """
         # routing_meta — per-instance to avoid shared mutable default
         self.routing_meta: Dict = routing_meta if routing_meta is not None else {}
+        self._mark_host_write()
 
         # Remote execution wiring (None = legacy in-process behaviour)
         self.executor: Optional["AbstractToolExecutor"] = executor
@@ -923,6 +924,15 @@ class AbstractTool(EventEmitterMixin, ABC):
         tenant, scope = require_tool_scope(tool_name=self.name)
         values = {"tenant": tenant, "caller": scope.caller, "agent": scope.agent}
         return {**resolved, **{name: values[param.source] for name, param in managed.items() if param.source in values}}
+
+    def _mark_host_write(self) -> None:
+        """Host standalone write tools are strictly confirmed and approvable via ToolManager (FEAT-622 M8)."""
+        from parrot.auth.confirmation import is_enforced_write_class  # pylint: disable=import-outside-toplevel
+
+        if is_enforced_write_class(type(self)):
+            self.routing_meta.update(
+                {"requires_confirmation": True, "confirmation_enforced": True, "confirm_window_seconds": 0}
+            )
 
     def _check_approval(self, kwargs: Dict[str, Any]) -> Optional[ToolResult]:
         """Refuse a ``confirmation_enforced`` tool unless ToolManager approved exactly this call (FEAT-622 M8).

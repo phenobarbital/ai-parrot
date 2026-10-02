@@ -81,6 +81,7 @@ PROBE_MODULE = textwrap.dedent(
         name = "tp_probe_tool"
         description = "Probe tool"
         args_schema = ProbeArgs
+        access = "read"
 
         async def _execute(self, **kwargs):
             COUNTERS["executed"] += 1
@@ -93,6 +94,7 @@ PROBE_MODULE = textwrap.dedent(
         name = "tp_probe_managed"
         description = "Probe tool with a server-managed constructor dependency"
         args_schema = ProbeArgs
+        access = "read"
         server_managed_params = {"store": ServerParam(source="app", key="probe_store")}
 
         def __init__(self, store: object, **kwargs):

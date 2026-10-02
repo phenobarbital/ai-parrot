@@ -96,3 +96,43 @@ async def test_approval_token_not_forgeable(host_plugins):  # noqa: F811
     with _approved_call(bump, {}):  # positive control: the exact token executes
         assert (await bump.execute()).status != "forbidden"
     assert probe.COUNTERS["bump"] == 1
+
+
+def _setup_standalone(human: _FakeHuman | None):
+    probe = importlib.import_module("plugins.tools.probe")
+    probe.COUNTERS["standalone_write"] = 0
+    manager = ToolManager()
+    manager.register_tool(probe.ProbeWriteTool())
+    if human is not None:
+        manager.set_confirmation_guard(ConfirmationGuard(store=InMemoryConfirmationWindowStore(), human_manager=human))
+    return probe, manager
+
+
+async def test_standalone_host_write_marked_enforced(host_plugins):  # noqa: F811
+    _, manager = _setup_standalone(None)
+    meta = manager.get_tool("tp_probe_tool_write").routing_meta
+    assert meta["requires_confirmation"] and meta["confirmation_enforced"] and meta["confirm_window_seconds"] == 0
+
+
+async def test_standalone_host_write_approve_once_one_write(host_plugins):  # noqa: F811
+    human = _FakeHuman(approved=True)
+    probe, manager = _setup_standalone(human)
+    await manager.execute_tool("tp_probe_tool_write", {})
+    assert human.calls == 1 and probe.COUNTERS["standalone_write"] == 1
+    await manager.execute_tool("tp_probe_tool_write", {})  # window 0: asks again, never remembered
+    assert human.calls == 2 and probe.COUNTERS["standalone_write"] == 2
+
+
+async def test_standalone_host_write_rejected_and_unguarded_zero(host_plugins):  # noqa: F811
+    probe, manager = _setup_standalone(_FakeHuman(approved=False))
+    assert (await manager.execute_tool("tp_probe_tool_write", {})).success is False
+    probe, manager = _setup_standalone(None)
+    result = await manager.execute_tool("tp_probe_tool_write", {})
+    assert result.status == "forbidden" and result.metadata["error_code"] == "confirmation_required"
+    assert probe.COUNTERS["standalone_write"] == 0
+
+
+async def test_standalone_host_write_direct_execute_refused(host_plugins):  # noqa: F811
+    probe, _ = _setup_standalone(None)
+    result = await probe.ProbeWriteTool().execute()
+    assert result.status == "forbidden" and probe.COUNTERS["standalone_write"] == 0

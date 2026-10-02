@@ -83,12 +83,16 @@ def _approved_call(tool: Any, parameters: dict) -> Iterator[None]:
 def is_enforced_write_class(cls: type) -> bool:
     """Whether instances of ``cls`` are host write tools whose execution needs an enforced confirmation.
 
-    A standalone host ``AbstractTool`` declaring ``access = "write"``; decided from the class, without
-    instantiating it (FEAT-622 M8).
+    A standalone host ``AbstractTool`` whose ``access`` is ``"write"`` or undeclared (``None`` is treated as write,
+    like host toolkit methods); decided from the class, without instantiating it (FEAT-622 M8).
     """
     from parrot.tools.toolkit import _is_host_class  # pylint: disable=import-outside-toplevel
 
-    return getattr(cls, "access", None) == "write" and _is_host_class(cls)
+    if getattr(cls, "access", None) not in (None, "write"):
+        return False
+    if getattr(cls, "__module__", "").startswith(("parrot.", "parrot_tools.")):
+        return False  # framework classes are never host classes: skip the resolver walk
+    return _is_host_class(cls)
 
 
 # ── Data Models ───────────────────────────────────────────────────────────────
