@@ -11,6 +11,7 @@ from typing import List, Union, Dict, Any, Callable
 from parrot.mcp import MCPServerConfig
 from parrot.tools.dataset_manager.tool import DatasetManager
 from parrot.tools.resolver import get_toolkit_resolver
+from parrot.tools.server_params import constructor_server_params
 from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec, hydrate_mcp, hydrate_params, tooling_revision
 from parrot.tools.tooling_policy import TenantToolingPolicy, TenantToolingRefused, ToolingSubject
 
@@ -247,6 +248,25 @@ class ToolInterface:
             self.enable_tools = True
         return registered
 
+    def _strip_server_params(self, cls: type, slug: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Drop every stored key the class declares server-managed (stripped on load, with a warning)."""
+        declared = getattr(cls, "server_managed_params", None) or {}
+        stripped = sorted(set(params) & set(declared))
+        if stripped:
+            self.logger.warning("Toolkit spec '%s': stripped server-managed params: %s", slug, stripped)
+        return {name: value for name, value in params.items() if name not in declared}
+
+    def _fill_server_params(self, cls: type) -> dict[str, Any]:
+        """Constructor params the server fills at build: ``source="app"`` from ``self.app`` (``"server"``: bespoke)."""
+        declared = getattr(cls, "server_managed_params", None) or {}
+        app = getattr(self, "app", None)
+        filled: dict[str, Any] = {}
+        for name in constructor_server_params(cls):
+            param = declared[name]
+            if param.source == "app" and app is not None and app.get(param.key) is not None:
+                filled[name] = app[param.key]
+        return filled
+
     def _filter_ctor_params(self, slug: str, init: Any, params: dict[str, Any]) -> dict[str, Any]:
         """Keep only constructor parameters ``init`` accepts, warning about the dropped ones."""
         signature = inspect.signature(init).parameters
@@ -274,10 +294,11 @@ class ToolInterface:
         if cls is None:
             self.logger.warning("Toolkit spec '%s': unknown slug, skipped", spec.slug)
             return []
-        params = await hydrate_params(spec)
+        params = self._strip_server_params(cls, spec.slug, await hydrate_params(spec))
         if spec.slug.lower() == "dataset_manager":
             return await self._register_dataset_manager(spec, params)
-        instance = cls(**self._filter_ctor_params(spec.slug, cls.__init__, params))
+        filtered = self._filter_ctor_params(spec.slug, cls.__init__, params)
+        instance = cls(**{**filtered, **self._fill_server_params(cls)})
         tools = self.tool_manager.register_toolkit(instance)
         self._capture_knowledge_toolkit(instance)
         return [tool.name for tool in tools]

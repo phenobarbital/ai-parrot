@@ -891,6 +891,39 @@ class AbstractTool(EventEmitterMixin, ABC):
 
     # ── Core execution ────────────────────────────────────────────────────────
 
+    def _server_param_owner(self) -> type:
+        """The class declaring this tool's ``server_managed_params``: the owning toolkit for a ``ToolkitTool``."""
+        owner = getattr(getattr(self, "bound_method", None), "__self__", None)
+        return type(owner) if owner is not None else type(self)
+
+    def _drop_server_managed(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Drop kwargs naming a server-managed method param (the LLM never sets them), with one warning."""
+        from .server_params import method_server_params  # pylint: disable=import-outside-toplevel
+
+        managed = method_server_params(self._server_param_owner())
+        dropped = sorted(set(kwargs) & set(managed))
+        if not dropped:
+            return kwargs
+        self.logger.warning("Tool %s: dropped server-managed argument(s) supplied by the caller: %s", self.name, dropped)
+        return {key: value for key, value in kwargs.items() if key not in managed}
+
+    def _resolve_call_kwargs(self, validated_args: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """The kwargs ``_execute`` receives: the validated args plus the server-managed scope values."""
+        resolved = self._shallow_dump(validated_args) if hasattr(validated_args, "model_dump") else dict(kwargs)
+        return self._inject_server_managed(resolved)
+
+    def _inject_server_managed(self, resolved: Dict[str, Any]) -> Dict[str, Any]:
+        """Fill ``tenant`` / ``caller`` / ``agent`` method params from the bound ``studio_scope`` (per call)."""
+        from .scope import require_tool_scope  # pylint: disable=import-outside-toplevel
+        from .server_params import method_server_params  # pylint: disable=import-outside-toplevel
+
+        managed = method_server_params(self._server_param_owner())
+        if not managed:
+            return resolved
+        tenant, scope = require_tool_scope(tool_name=self.name)
+        values = {"tenant": tenant, "caller": scope.caller, "agent": scope.agent}
+        return {**resolved, **{name: values[param.source] for name, param in managed.items() if param.source in values}}
+
     def _check_approval(self, kwargs: Dict[str, Any]) -> Optional[ToolResult]:
         """Refuse a ``confirmation_enforced`` tool unless ToolManager approved exactly this call (FEAT-622 M8).
 
@@ -1036,14 +1069,12 @@ class AbstractTool(EventEmitterMixin, ABC):
 
             self.logger.info("Executing tool: %s", self.name)
 
-            # Validate arguments
+            # Validate arguments (FEAT-622: an LLM-supplied server-managed value is dropped first)
+            kwargs = self._drop_server_managed(kwargs)
             validated_args = self.validate_args(**kwargs)
 
-            # Resolve the kwargs dict that the tool actually receives.
-            if hasattr(validated_args, "model_dump"):
-                resolved_kwargs = self._shallow_dump(validated_args)
-            else:
-                resolved_kwargs = dict(kwargs)
+            # Resolve the kwargs dict that the tool actually receives (+ server-managed scope values).
+            resolved_kwargs = self._resolve_call_kwargs(validated_args, kwargs)
 
             # ── FEAT-264: credential seam ─────────────────────────────────────
             # Gate is active only when the tool declares credential_provider
