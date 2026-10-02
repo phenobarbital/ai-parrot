@@ -136,7 +136,9 @@ async def test_global_partition_is_not_policed_by_default(host_plugins, vault): 
     assert response.status == 200 and row.updates == 1
 
 
-async def test_delete_toolkit_rechecks_resulting_tooling(host_plugins, vault, monkeypatch):  # noqa: F811
+async def test_delete_toolkit_is_allowed_when_another_stored_item_became_disallowed(
+    host_plugins, vault, monkeypatch  # noqa: F811
+):
     deleted: list = []
 
     async def _delete(owner, name):
@@ -147,10 +149,12 @@ async def test_delete_toolkit_rechecks_resulting_tooling(host_plugins, vault, mo
     row.mcp_servers = [{"name": "planted", "transport": "stdio", "command": "npx"}]  # planted before the policy
     row.toolkit_config = {"tp_probe": {}}
     store = AgentToolingStore(_handler(TenantToolingPolicy.deny_all(), row))
+    await store.delete_toolkit("agent", "tp_probe")  # removal adds nothing forbidden: never blocked
+    assert row.updates == 1 and deleted and row.toolkit_config == {}
+    # ... but a write that ADDS to that same tooling is still refused by the policy
     with pytest.raises(Exception) as caught:
-        await store.delete_toolkit("agent", "tp_probe")
-    assert getattr(caught.value, "reason", None) == "local_execution"
-    assert row.updates == 0 and deleted == []
+        await store.put_toolkit("agent", "wiki", {}, [])
+    assert getattr(caught.value, "reason", None) == "builtin_not_permitted"
 
 
 async def _assign(handler_slug: str, policy: TenantToolingPolicy | None, tenant: str | None):

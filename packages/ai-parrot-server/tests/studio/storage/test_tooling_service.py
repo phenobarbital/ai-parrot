@@ -221,9 +221,8 @@ async def test_store_studio_path_gates_before_any_vault_call(env, vault, no_subp
     async with studio_transaction(repos.pool) as conn:       # a stored row the policy refuses (written behind the service)
         await repos.tooling.replace(conn, rec.agent_id, toolkits=[], mcp_servers=[StudioToolingRecord(
             None, "mcp", "s", 0, {"transport": "stdio", "command": "/bin/sh"}, {}, None, datetime.now(timezone.utc))])
-    with pytest.raises(StudioToolingRefused):
-        await store.delete_toolkit("a1", "jira")
-    assert calls == [] and len(await _config_rows(repos.pool)) == 1
+    await store.delete_toolkit("a1", "jira")  # a removal adds nothing forbidden: allowed despite the refused row
+    assert all(kind == "delete" for kind, _ in calls) and len(await _config_rows(repos.pool)) == 1
 
 
 async def test_store_studio_path_still_writes_when_allowed(env, vault):

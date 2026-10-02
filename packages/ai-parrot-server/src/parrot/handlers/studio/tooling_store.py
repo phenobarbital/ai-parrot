@@ -364,9 +364,9 @@ class AgentToolingStore:
                 part, name, slug, actor=actor if actor is not None else record.owner, guard=guard or self._guard(record)
             )
             return
-        remaining = [item for item in state.tooling.toolkits if item.slug.lower() != slug.lower()]
-        await self._enforce(state, state.tooling.model_copy(update={"toolkits": remaining}), actor=actor)
-        state.tooling.toolkits = remaining
+        # A removal adds nothing the policy could forbid (the result is a subset of the stored set): always allowed,
+        # even if another stored item has since become disallowed.
+        state.tooling.toolkits = [item for item in state.tooling.toolkits if item.slug.lower() != slug.lower()]
         if state.owner is None:
             raise PermissionError("agent has no owner; cannot store secrets")
         await delete_vault_credential(state.owner, toolkit_vault_name(slug, state.tooling_ref))

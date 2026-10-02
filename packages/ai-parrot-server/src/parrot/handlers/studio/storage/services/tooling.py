@@ -125,8 +125,8 @@ class StudioToolingService:
         """Remove one toolkit and its owner-scoped vault entry. Returns the new version."""
         async with studio_transaction(self._repos.pool) as conn:
             agent_id, record, current = await self._open(conn, part, name, guard)
+            # A removal adds nothing the policy could forbid: always allowed (no gate on a subset of the stored set).
             current.toolkits = [t for t in current.toolkits if t.slug.lower() != slug.lower()]
-            self._gate.enforce(part, current, agent_id=agent_id, actor=actor, phase="write")
             version = await self._commit_rows(conn, part, name, agent_id, current)
         try:   # only after a successful commit: a rolled-back delete must keep its credential
             await delete_vault_credential(record.owner, toolkit_vault_name(slug, record.tooling_ref))
