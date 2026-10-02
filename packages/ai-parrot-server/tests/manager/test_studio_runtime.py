@@ -447,6 +447,19 @@ async def test_evict_retires_base_and_sessions_without_cleaning(repos, tmp_path)
     assert base.cleanup.await_count == session.cleanup.await_count == 1
 
 
+async def test_evict_session_retires_only_that_session(repos, tmp_path):
+    rt, _ = _runtime(repos, tmp_path)
+    await _create(repos)
+    base, s1, s2 = await rt.get(_key()), await rt.get_session(_key(), "t1"), await rt.get_session(_key(), "t2")
+    assert rt.evict_session(_key(), "t1") is True
+    assert rt._cache.session(_key().qualified, "t1") is None
+    assert rt._cache.session(_key().qualified, "t2") is not None and rt._cache.current(_key().qualified) is not None
+    assert base.cleanup.await_count == s1.cleanup.await_count == s2.cleanup.await_count == 0   # never cleans now
+    assert rt.evict_session(_key(), "t1") is False and rt.evict_session(_key(), "nope") is False
+    assert await rt.sweep(now=time.monotonic() + GRACE + 1) == 1                # only the retired session is reclaimed
+    assert s1.cleanup.await_count == 1 and base.cleanup.await_count == s2.cleanup.await_count == 0
+
+
 async def test_clean_is_idempotent_per_entry(repos, tmp_path):
     rt, _ = _runtime(repos, tmp_path)
     await _create(repos)

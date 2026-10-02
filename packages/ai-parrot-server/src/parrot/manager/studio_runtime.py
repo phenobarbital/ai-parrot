@@ -276,6 +276,17 @@ class StudioAgentRuntime:
         """Retire the agent's entries (base and sessions). Never cleans immediately: leases may be held."""
         self._retire_key(key)
 
+    def evict_session(self, key: StudioAgentKey, session_id: str) -> bool:
+        """Retire ONE session entry (test chat teardown); the base entry and other sessions are untouched.
+
+        Never cleans immediately (a lease may be held). Returns whether a live session entry was retired.
+        """
+        entry = self._cache.session(key.qualified, session_id)
+        if entry is None:
+            return False
+        self._cache.retire(entry, now=time.monotonic())
+        return True
+
     # ---- lifecycle --------------------------------------------------------------------------------------------
     async def start(self) -> None:
         """Create the runtime root directory and the sweep task."""
