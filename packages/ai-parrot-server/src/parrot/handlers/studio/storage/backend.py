@@ -91,6 +91,19 @@ def _register_vault_store(backend: str, pool: Any) -> None:
     get_vault_store(pool)
 
 
+def _register_overrides_store(backend: str, pool: Any) -> None:
+    """TOOLKIT_OVERRIDES_STORE=postgres: hand the Postgres override store to ``ToolkitConfigService``."""
+    if str(config.get("TOOLKIT_OVERRIDES_STORE", fallback="documentdb") or "documentdb").strip().lower() != "postgres":
+        return
+    if backend != "database":
+        logger.error("TOOLKIT_OVERRIDES_STORE=postgres but the studio storage backend is %s; overrides stay on "
+                     "DocumentDB", backend)
+        return
+    from .overrides_store import get_override_store
+
+    get_override_store(pool)
+
+
 def _resolve(setting: str, pool: Any, state: migrate.LedgerState | Exception | None) -> tuple[str, str | None]:
     """Pure mapping of (setting, pool, probe result) to (backend, reason) — spec §2.2 matrix."""
     if setting == "filesystem":
@@ -133,6 +146,7 @@ async def ensure_studio_storage(app: web.Application) -> StudioStorage:
             logger.info("Studio storage backend: %s", backend)
         repos = build_studio_repositories(pool) if backend == "database" else None
         _register_vault_store(backend, pool)
+        _register_overrides_store(backend, pool)
         storage = StudioStorage(backend, reason, repos, app)  # type: ignore[arg-type]
         app[STUDIO_STORAGE_APP_KEY] = storage
         return storage

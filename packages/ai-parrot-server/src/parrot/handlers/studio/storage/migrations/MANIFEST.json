@@ -36,6 +36,11 @@
       "version": 7,
       "name": "0007_ai_user_credentials",
       "sha256": "1c68ad8e9de4c618f7bfd369008f9c583282bd80d37bd415982bb7bd3cbeca03"
+    },
+    {
+      "version": 8,
+      "name": "0008_ai_user_toolkit_overrides",
+      "sha256": "fe20c8ff3d59821d21cb26fd8169afc12f330819f5be67817d230d974039048a"
     }
   ]
 }

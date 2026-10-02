@@ -107,8 +107,6 @@ async def test_default_stays_documentdb():
 async def test_startup_registers_store_only_when_switch_is_postgres(pool, monkeypatch):
     monkeypatch.setenv("VAULT_STORE", "postgres")
     monkeypatch.setenv("PARROT_STUDIO_STORAGE", "database")
-    # 0008 (overrides) lands with TASK-3954; until then only 0007 exists, so relax the phase-2 requirement.
-    monkeypatch.setattr(backend_module.migrate, "STUDIO_SCHEMA_REQUIRED_PHASE2", 7)
     app = web.Application()
     app["database"] = pool
     storage = await backend_module.ensure_studio_storage(app)
