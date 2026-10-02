@@ -94,6 +94,26 @@ Decisions taken in the discovery rounds (2026-10-03, Jesus):
 - Keep the `wiki/cli.py` diff to additive command blocks (5.4k-line hot
   file); logic lives in new modules.
 
+Resolved in the open-question round (2026-10-03, Jesus) — see §Open
+Questions for the full trail:
+
+- `page_attrs` is **additive**, `SCHEMA_VERSION` stays `"3"`.
+- Jira status → canonical ticket status mapping lives in `.parrot/wiki.json`
+  (`standup.ticket_status_map`) with a shipped default; raw value kept.
+- Brief file default folder: **always** `${PARROT_HOME}/wikis/briefs/`
+  (`--out` overrides).
+- Jira identity: `IssueFrontmatter` gains `assignee_email`; "me" matches
+  `JIRA_USERNAME` against it, falling back to the display name.
+- Back-fill via a new `wikitoolkit entity reindex` (re-reads stored bodies,
+  no re-ingest, no LLM).
+- FEAT-481 vocabulary is **aliased only**; FEAT-481 is not modified.
+- Spanish: static heading table, item titles verbatim, only the LLM
+  paragraph is written in the requested language.
+- Brief pages use the open-string category `brief`.
+- **Weekly/monthly roll-up is in scope**: `standup --period day|week|month`.
+- This spec **owns** `wiki/entities.py` + `page_attrs`; the sibling
+  `wikitoolkit inbox` spec depends on it and writes attrs.
+
 ---
 
 ## Options Explored
@@ -281,7 +301,11 @@ wikitoolkit standup --no-llm             # skip the summary paragraph even if a 
 wikitoolkit standup --out ~/vaults/work-notes/Briefs   # also write YYYY-MM-DD-daily.md (default from config)
 wikitoolkit standup --no-store           # do not persist the brief page
 wikitoolkit standup --date 2026-10-02    # re-render a past day (diff base is the brief before that date)
+wikitoolkit standup --period week        # roll-up: ISO week containing --date (default: current week)
+wikitoolkit standup --period month       # roll-up: calendar month; diff base = previous period's brief
 
+wikitoolkit entity reindex               # back-fill page_attrs from frontmatter already stored in page bodies (no LLM, no re-ingest)
+wikitoolkit entity reindex --store "${PARROT_HOME}/wikis/issues/.parrot/wiki"   # same for the Jira corpus plane (writes go to THAT plane)
 wikitoolkit entity add meeting "Bullfrog unit-based commissions" --project roadshows \
     --status held --date 2026-09-22 --owner human:jlara
 wikitoolkit entity list --type ticket --status blocked --project roadshows
@@ -319,8 +343,9 @@ Rendered brief (sketch honoured; headings localised):
 ```
 
 In Claude Code: `/parrotwiki standup [--team] [--horizon N]`; the MCP tool
-`wiki_standup(team: bool = False, horizon_days: int = 7, language: str |
-None = None, store: bool = False)` returns the markdown.
+`wiki_standup(team: bool = False, horizon_days: int = 7, period: str =
+"day", language: str | None = None, store: bool = False)` returns the
+markdown.
 
 Empty projects (no items in the horizon, no open tickets) are omitted.
 Each project's identifiers stay in its own section; cross-namespace items
@@ -372,17 +397,42 @@ are rendered with their qualified ids (`issues::file:NAV-10016.md`).
    `_build_triage_adapters` / `_extract_into_graph` through one shared
    `resolve_optional_llm(env_names)` helper.
 6. **Writer** (`wiki/standup/writer.py`): page `brief:daily:<date>`
-   (category `brief`, origin `authored`, `asserted_by` = identity) with
-   attrs `type=deliverable`, `status=draft`, `date`, `owner`, and
-   `items=<json ids>` for the diff; markdown file
-   `<out>/<date>-daily.md` with frontmatter (`type: deliverable`,
-   `status: draft`, `owner`, `wiki_id`) — when `<out>` is inside a
-   registered vault, add the `wiki_sync`/`wiki_scope` markers so
+   (category `brief` — open string, no enum change; origin `authored`,
+   `asserted_by` = identity) with attrs `type=deliverable`,
+   `status=draft`, `date`, `owner`, `period`, and `items=<json ids>` for
+   the diff; markdown file `<out>/<date>-daily.md` with frontmatter
+   (`type: deliverable`, `status: draft`, `owner`, `wiki_id`). `<out>`
+   defaults to `${PARROT_HOME}/wikis/briefs/` (outside the repo, G8
+   precedent); `--out` / `standup.out_dir` override. When `<out>` is
+   inside a registered vault, add the `wiki_sync`/`wiki_scope` markers so
    `sync obsidian --prune` treats it as managed. `WikiBookkeeper.
    log_operation(..., "STANDUP", ...)` records the run.
-7. **Delta**: load the latest `brief:daily:*` page before `--date`,
+7. **Delta**: load the latest `brief:<period>:*` page before `--date`,
    compare item ids → "New since" / "Closed since".
-8. **Surfaces**: lazy click group `standup` (generalised `LazyGroup`);
+8. **Roll-up** (`--period week|month`): same collectors with the window
+   set to the ISO week / calendar month containing `--date` (both
+   directions of the horizon collapse to the period bounds); page ids
+   `brief:weekly:<YYYY-Www>` / `brief:monthly:<YYYY-MM>`, files
+   `<YYYY-Www>-weekly.md` / `<YYYY-MM>-monthly.md`; the renderer drops
+   "On your plate today" and "Upcoming" in favour of "Closed this period"
+   / "Still open" / "Decisions taken"; the diff base is the previous
+   period's brief. Daily briefs stored in the period are listed as
+   sources so the LLM paragraph (if any) summarises them, not raw items.
+9. **Back-fill** (`wikitoolkit entity reindex [--store DIR] [--category C]
+   [--dry-run]`): iterates `list_pages` on the *writable* plane, parses
+   the YAML block already stored in each body, normalises it and upserts
+   attrs; idempotent, no LLM, no source re-read. Because foreign
+   namespaces open read-only, the `issues` corpus is reindexed by pointing
+   `--store` at its own plane (writes go there), never through `--ns`.
+10. **Jira identity**: `IssueFrontmatter.assignee_email` (new, from the
+    assignee object `ingest-jira` already fetches); personal mode matches
+    `standup.me.jira` or `JIRA_USERNAME` against it and falls back to the
+    display name. Canonical ticket status comes from
+    `standup.ticket_status_map` (shipped default: To Do/Open → `open`,
+    In Progress → `in-progress`, Blocked → `blocked`, In Review/Code
+    Review → `in-review`, Done/Closed/Resolved → `closed`); the raw Jira
+    name is kept as `status_raw`.
+11. **Surfaces**: lazy click group `standup` (generalised `LazyGroup`);
    `WikiStandupTool` registered by `create_wiki_tools`; `standup` bullet
    in `SLASH_COMMAND_MD` and `.claude/commands/parrotwiki.md`; docs in
    `docs/wiki/cheatsheet.md` + a `docs/runbooks/wiki-standup.md` with the
@@ -407,24 +457,33 @@ are rendered with their qualified ids (`issues::file:NAV-10016.md`).
   item still appears under "Open tickets" only if the Jira map says so.
 - **Timezone**: dates are compared as ISO calendar dates in the local
   timezone; `--date` is explicit.
-- **Jira status vocabulary** differs per instance: configurable
-  `standup.ticket_open_statuses` with a sensible default
-  (`To Do, Open, In Progress, Blocked, In Review`).
+- **Jira status vocabulary** differs per instance: `standup.ticket_status_map`
+  in `.parrot/wiki.json` with the shipped default above; an unmapped Jira
+  status is reported once in Hygiene ("3 tickets with unmapped status:
+  'Awaiting QA'") and treated as `open`.
 - **Language**: unknown `--language` → error; `es` headings come from a
-  static table, LLM summary is asked in that language.
+  static table, item titles stay verbatim, only the LLM paragraph is
+  written in the requested language.
+- **Roll-up with no daily briefs stored**: the period brief is computed
+  from live items only; the "sources" list is empty and says so.
+- **`entity reindex` on a read-only plane** (`--ns` foreign namespace):
+  refused with the same `write to namespace … requires --ns` style error;
+  the message points at `--store`.
 
 ---
 
 ## Capabilities
 
 ### New Capabilities
-- `wiki-entity-attributes`: page attribute index + entity vocabulary,
-  frontmatter normalisation at every ingest path, mapping rules for
-  ledger/spec/decision planes, `wikitoolkit entity add|list`,
-  `remember` entity flags.
+- `wiki-entity-attributes`: page attribute index (`page_attrs`, additive,
+  no schema bump) + entity vocabulary (`wiki/entities.py`, owned here;
+  the `wikitoolkit inbox` spec depends on it), frontmatter normalisation
+  at every ingest path, mapping rules for ledger/spec/decision planes,
+  `wikitoolkit entity add|list|reindex`, `remember` entity flags.
 - `wiki-standup-brief`: collectors, identity, grouping, rendering
   (en/es), optional LLM summary, brief page + file writer, diff,
-  hygiene, `wikitoolkit standup`, `wiki_standup` MCP tool, slash command.
+  hygiene, `--period day|week|month` roll-ups, `wikitoolkit standup`,
+  `wiki_standup` MCP tool, slash command.
 
 ### Modified Capabilities
 - `llm-wiki` (wiki CLI): lazy `LazyGroup` generalisation; shared
@@ -446,14 +505,14 @@ are rendered with their qualified ids (`issues::file:NAV-10016.md`).
 | `wiki/federation.py` `FederatedWikiStore` | modifies | forward `list_by_attrs` to namespace handles (read-only) |
 | `wiki/vault_scan.py` | modifies | emit attrs from note frontmatter |
 | `wiki/repo_scan.py` / `cli.py::_ingest_files` | modifies | attrs for `.md` documents with a YAML block |
-| `wiki/jira_render.py` / `jira_sync.py` | modifies | attrs from `IssueFrontmatter` at render time |
+| `wiki/jira_render.py` / `jira_sync.py` | modifies | attrs from `IssueFrontmatter` at render time; new `assignee_email` field (tests: `packages/ai-parrot/tests/knowledge/wiki/test_jira_render.py`) |
 | `wiki/cli.py` | extends | `remember` flags, lazy `standup` + `entity` groups (additive blocks) |
 | `wiki/lazy_commands.py` | modifies | `LazyAdrGroup` → generic `LazyGroup` |
 | `wiki/ledger/service.py` | extends | public `list_issues` |
 | `wiki/decisions/repository.py` | depends on | `inventory()` filter only |
 | `wiki/tools.py`, `wiki/mcp_server.py` | extends | `WikiStandupTool` |
 | `wiki/claude_code/assets.py`, `.claude/commands/parrotwiki.md`, `codex/assets.py`, `google/assets.py` | modifies | document `standup` |
-| `wiki/project.py` `WikiProjectConfig` | extends | `standup: StandupConfig` (`default_language`, `horizon_days`, `me`, `out_dir`, `ticket_open_statuses`, `project_map`) |
+| `wiki/project.py` `WikiProjectConfig` | extends | `standup: StandupConfig` (`default_language`, `horizon_days`, `me {wiki, jira, git}`, `out_dir` default `${PARROT_HOME}/wikis/briefs/`, `ticket_status_map`, `project_map`) |
 | `wiki/bookkeeper.py` | depends on | `STANDUP` op tag (free string) |
 | `docs/wiki/cheatsheet.md`, `docs/guides/llm-wiki-guide.md`, new `docs/runbooks/wiki-standup.md` | extends | usage + cron |
 | FEAT-481 vault frontmatter (`type: meeting-source`, `meeting_date`, `primary_project`) | depends on | aliased by the vocabulary; no shared files |
@@ -824,20 +883,22 @@ from parrot.interfaces.obsidian.parser import ObsidianNoteParser
 
 - **Internal parallelism**: mixed. Lane 1 (sequential, first): `page_attrs` store migration + `entities.py` vocabulary + `BaseWikiStore`/`FederatedWikiStore` methods. After Lane 1 lands, four ingest adapters are independent files (`vault_scan.py`, `_ingest_files`/`repo_scan.py`, `jira_render.py`/`jira_sync.py`, `remember`+`entity` CLI) and six collectors under `wiki/standup/` are independent modules sharing only `BriefItem`. Renderer/writer/identity/grouping depend on `BriefItem`; CLI group, MCP tool, assets and docs come last.
 - **Cross-feature independence**: `wiki/cli.py` is hot (FEAT-569 `wikitoolkit-http-mcp`, FEAT-570 `expose-local-mcp-tools` and FEAT-557 `wikitoolkit-sqlite` all have tasks on `dev` with no worktree yet; FEAT-569 also targets `mcp_server.py`). FEAT-481 (in progress) writes the vault frontmatter this feature reads — no shared files, only vocabulary alignment. FEAT-578 (wiki ADR plane) owns `decisions/`; this feature reads `inventory()` only. The sibling `wikitoolkit inbox` brainstorm (2026-10-03) also plans a new `cli.py` command block and a `create_wiki_tools` entry, and its classifier taxonomy (meeting, briefing, decision, report, memo + event date) overlaps the entity vocabulary — the two specs must share one vocabulary module (`wiki/entities.py`) rather than define it twice. Rebase on `dev` before touching `cli.py`, `tools.py`, `mcp_server.py`.
-- **Recommended isolation**: `mixed` — one feature worktree; Lane 1 sequential, then the adapter + collector tasks parallel-safe (distinct files), then a sequential tail for `cli.py`/`tools.py`/assets.
+- **Recommended isolation**: `mixed` — one feature worktree; Lane 1 sequential, then the adapter + collector tasks parallel-safe (distinct files), then a sequential tail for `cli.py`/`tools.py`/assets. The roll-up renderer mode and `entity reindex` are two more file-disjoint tasks in the parallel band. Lane 1 (`page_attrs` + `entities.py`) should be the first PR out of the worktree so the inbox spec can base on it.
 - **Rationale**: the store migration is a single shared dependency and must land first; everything after it is file-disjoint by construction, which is exactly what the sdd-worker's per-task sub-worktrees exploit. The hot-file tail is kept sequential to avoid three concurrent diffs on `cli.py`.
 
 ---
 
 ## Open Questions
 
-- [ ] **Schema bump or additive-only?** A new `page_attrs` table via `CREATE TABLE IF NOT EXISTS` needs no version bump, but keeping `SCHEMA_VERSION="3"` means older code opens a plane it does not fully understand (harmless for reads). Bumping to `"4"` breaks v3 readers (known gotcha). Recommendation: additive, no bump, `status` reports `attrs: N pages indexed`. — *Owner: Jesus*
-- [ ] **Jira "open" status vocabulary**: default `ticket_open_statuses` list and whether `status_raw` → canonical mapping lives in `.parrot/wiki.json` or in the `issues` plane config. — *Owner: Jesus*
-- [ ] **Default brief folder**: `${PARROT_HOME}/wikis/briefs/`, `obsidian_sync.vault_dir/<root_folder>/Briefs/`, or `docs/`? The sketch's `internal/briefs/` is vault-relative. — *Owner: Jesus*
-- [ ] **Identity for "me" in Jira**: `IssueFrontmatter.assignee` is a display name and `assignee_id` an account id; `JIRA_USERNAME` is an email. Which one does `standup.me.jira` match, and do we add `assignee_email` to `IssueFrontmatter`? — *Owner: Jesus*
-- [ ] **Back-fill of existing planes**: is `ingest-jira --force` (full re-render) acceptable to populate attrs for the whole `issues` corpus, or should `build`/`upsert` grow an `--attrs-only` pass that re-reads bodies without re-ingesting? — *Owner: Jesus*
-- [ ] **Vocabulary alignment with FEAT-481**: adopt its `meeting-source` / `daily-note` / `synthesis` as aliases only, or ask FEAT-481 to emit the standup vocabulary (`type: meeting`, `status: held`) directly? — *Owner: Jesus / FEAT-481 owner*
-- [ ] **Spanish rendering**: static heading table only (deterministic) vs. also translating item titles (LLM). Recommendation: headings static, titles verbatim, LLM paragraph in the requested language. — *Owner: Jesus*
-- [ ] **`brief` as a `WikiPageCategory` value** or an open-string category like `note`/`decision`? Affects `export` folder naming (`category_dir` naive plural → `briefs/`). — *Owner: Jesus*
-- [ ] **Weekly/monthly roll-up** (`wiki-roll-up` in the sketch): out of scope here, but the `BriefItem`/attrs design should not block it — confirm it is a follow-up spec, not part of this one. — *Owner: Jesus*
-- [ ] **Ownership of the entity vocabulary vs. `wikitoolkit inbox`**: the inbox brainstorm's charter `taxonomy:` (kind → `WikiPageCategory`) and this feature's `type`/`status`/`date`/`project` attrs describe the same things. Which spec owns `wiki/entities.py`, and does the inbox classifier write `page_attrs` from day one? Sequencing: whichever lands first ships the module. — *Owner: Jesus*
+All resolved 2026-10-03 (Jesus, open-question round after the brainstorm).
+
+- [x] **Schema bump or additive-only?** A new `page_attrs` table via `CREATE TABLE IF NOT EXISTS` needs no version bump, but keeping `SCHEMA_VERSION="3"` means older code opens a plane it does not fully understand (harmless for reads). Bumping to `"4"` breaks v3 readers (known gotcha). — *Owner: Jesus*: additive, `SCHEMA_VERSION` stays `"3"`; `wikitoolkit status` reports `attrs: N pages indexed`.
+- [x] **Jira "open" status vocabulary**: where does the `status_raw` → canonical mapping live? — *Owner: Jesus*: `.parrot/wiki.json` `standup.ticket_status_map` with a shipped default (To Do/Open → open, In Progress → in-progress, Blocked → blocked, In Review/Code Review → in-review, Done/Closed/Resolved → closed); raw value kept as `status_raw`; unmapped statuses treated as open and reported in Hygiene.
+- [x] **Default brief folder**: `${PARROT_HOME}/wikis/briefs/`, the vault, or `docs/`? — *Owner: Jesus*: always `${PARROT_HOME}/wikis/briefs/`; vault users pass `--out` (or `standup.out_dir`), and a vault target gets the `wiki_sync` markers.
+- [x] **Identity for "me" in Jira**: `assignee` is a display name, `assignee_id` an account id, `JIRA_USERNAME` an email. — *Owner: Jesus*: add `assignee_email` to `IssueFrontmatter`; match `standup.me.jira` / `JIRA_USERNAME` against it, fall back to the display name.
+- [x] **Back-fill of existing planes**: `ingest-jira --force` vs. a body re-read pass? — *Owner: Jesus*: new `wikitoolkit entity reindex [--store DIR] [--category] [--dry-run]` — re-reads stored bodies, no re-ingest, no LLM, idempotent; the `issues` plane is reindexed via `--store` (foreign namespaces are read-only).
+- [x] **Vocabulary alignment with FEAT-481**: alias its `meeting-source` / `daily-note` / `synthesis`, or ask FEAT-481 to emit ours? — *Owner: Jesus*: alias only in `entities.py`; FEAT-481 is not modified.
+- [x] **Spanish rendering**: static headings only vs. translating titles. — *Owner: Jesus*: static heading table, item titles verbatim, only the LLM paragraph is written in the requested language.
+- [x] **`brief` as a `WikiPageCategory` value** or an open-string category? — *Owner: Jesus*: open-string `brief` (like `note`/`decision`); `export` lands it under `briefs/`; `memories --category brief` lists past briefs.
+- [x] **Weekly/monthly roll-up** (`wiki-roll-up` in the sketch): follow-up spec or in scope? — *Owner: Jesus*: **in scope** as `standup --period day|week|month` (same collectors, period-bounded window, `brief:weekly:<YYYY-Www>` / `brief:monthly:<YYYY-MM>` pages, "Closed this period / Still open / Decisions taken" sections, diff against the previous period, daily briefs listed as sources). See Internal Behavior step 8.
+- [x] **Ownership of the entity vocabulary vs. `wikitoolkit inbox`**: which spec owns `wiki/entities.py`? — *Owner: Jesus*: this spec owns `entities.py` + `page_attrs`; the inbox spec depends on it and its classifier writes attrs (`type`, `date`, `project`) from day one. Lane 1 of this feature is the first PR so inbox can base on it.
