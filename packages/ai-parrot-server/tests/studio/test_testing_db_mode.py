@@ -20,6 +20,7 @@ from parrot.bots.abstract import AbstractBot
 from parrot.bots.agent import Agent
 from parrot.bots.base import BaseBot
 from parrot.bots.basic import BasicBot
+from parrot.handlers.scope import RequestScope
 from parrot.handlers.studio import agents as agents_module
 from parrot.handlers.studio import setup_studio_routes
 from parrot.handlers.studio.storage.migrate import apply_studio_migrations
@@ -206,3 +207,26 @@ async def test_legacy_agent_test_chat_unchanged(aiohttp_client, pool, asks):
     assert any(name for name in manager._bots)                           # legacy keeps get_bot(new=True) -> _bots
     assert (await client.delete(f"{BASE}/agents/legacy-one/test")).status == 200
     assert not manager._bots
+
+
+class _Resolver:
+    """A real ScopeResolver: the caller is the ``X-User`` header, the tenant is always ``acme`` (opted-in host)."""
+
+    async def resolve(self, request):
+        return RequestScope(user_id=request.headers.get("X-User", "u1"), tenant="acme", groups=frozenset())
+
+
+async def test_invisible_agent_is_404_before_any_validation(aiohttp_client, pool, asks):
+    app = _app(pool)
+    app["scope_resolver"] = _Resolver()
+    client = await aiohttp_client(app)
+    _RUNTIME[:] = [app["bot_manager"].studio]
+    assert (await client.post(f"{BASE}/agents", json={"name": "alpha", "bot_class": "BasicBot"})).status == 201
+    for payload in ({}, {"query": 7}):                                    # invalid bodies: a 400 for a visible caller
+        resp = await client.post(f"{BASE}/agents/alpha/test/ask", json=payload, headers={"X-User": "u2"})
+        assert resp.status == 404 and (await resp.json())["code"] == "not_found"
+    resp = await client.post(f"{BASE}/agents/alpha/test/ask", data="not json", headers={"X-User": "u2"})
+    assert resp.status == 404
+    resp = await client.post(f"{BASE}/agents/alpha/test/ask", json={})    # the owner does see the validation error
+    assert resp.status == 400 and (await resp.json())["code"] == "invalid_request"
+    assert asks == [] and app["bot_manager"].studio._cache.all_entries() == []

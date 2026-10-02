@@ -19,7 +19,6 @@ stashed in the caller's session and reused across calls.
 from __future__ import annotations
 
 import inspect
-import time
 import uuid
 from typing import Any
 
@@ -318,17 +317,19 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
             return await self._legacy_post()
         if not agent_name:
             return self._error("Agent name is required.", status=400, code="missing_name")
+        if rec is None or not (await self._access()).can_see(_store_record("agent", rec.agent_id, rec)):
+            return self._not_found("agent", agent_name)  # access first: an invisible agent never reaches a 400
         ask_request, bad = await self._parse_ask()
         if bad is not None:
             return bad
-        if rec is None or not (await self._access()).can_see(_store_record("agent", rec.agent_id, rec)):
-            return self._not_found("agent", agent_name)
+        return await self._ask_studio(StudioAgentKey(part.tenant, agent_name), agent_name, ask_request)
+
+    async def _ask_studio(self, key: StudioAgentKey, agent_name: str, ask_request: TestAskRequest):
+        """Run one ask on the caller's session instance of ``key`` (a lease is held for the whole ask)."""
         manager = self._manager()
         if manager is None or manager.studio is None:
             raise StudioStorageUnavailable("studio runtime is not installed")
-        key = StudioAgentKey(part.tenant, agent_name)
-        session = await self._resolve_session()
-        sid = self._studio_session_id(session, key)
+        sid = self._studio_session_id(await self._resolve_session(), key)
         try:
             async with manager.studio.use(key, session_id=sid, request=self.request) as bot:
                 return await self._ask_response(bot, agent_name, ask_request)
@@ -386,11 +387,8 @@ class StudioTestingHandler(_StudioTestingMixin, StudioBaseView):
             if part.tenant is None:
                 return await self._legacy_delete()
             return self.json_response({"message": f"No active test session for '{agent_name}'"}, status=200)
-        runtime = getattr(self._manager(), "studio", None)
-        if runtime is not None:
-            entry = runtime._cache.session(key.qualified, sid)  # pylint: disable=protected-access
-            if entry is not None:
-                runtime._cache.retire(entry, now=time.monotonic())  # pylint: disable=protected-access
+        if (runtime := getattr(self._manager(), "studio", None)) is not None:
+            runtime.evict_session(key, sid)
         return self.json_response(
             {"message": f"Test session for '{agent_name}' stopped", "agent_name": agent_name}
         )
