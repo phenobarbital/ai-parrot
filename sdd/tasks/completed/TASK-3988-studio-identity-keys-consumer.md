@@ -226,11 +226,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (tramo B1, sequential fallback)
+**Date**: 2026-10-02
+**Notes**: Inventory of TOOLKITS-added key computations: tooling_store (_toolkit_candidate -> split_toolkit_secrets ref=state.tooling_ref; delete_toolkit toolkit_vault_name(slug, state.tooling_ref); split_mcp_secrets ref=state.tooling_ref; _enforce computes no key), toolkit_overrides (_tooling_ref() -> state.tooling_ref for every override key, vault name and session marker; _params_refusal computes none), tooling_policy build check (f'studio-agent:{subject.agent_id}' with toolkit_vault_name/mcp_vault_name = the storage scheme). ALL already ref-keyed (FEAT-621 M13 landed on this branch): no source edit needed in tooling_policy.py / tooling_store.py / toolkit_overrides.py (honest no-op on the three source files). Added the R3 regression (real Postgres, host toolkit tp_probe with an x-secret token ctor param, same-named MCP server, in-memory vault/override stand-ins, policy bypassed as test_tooling_db_mode does since tenant secrets are refused by the write-phase policy by design); runtime hydration is asserted through AgentTalk._apply_user_toolkit_overrides. git diff touches none of toolkit_persistence.py / agent.py / spec.py. OBSERVATION (not fixed, out of scope): in AgentTalk._apply_user_toolkit_overrides the loop variable 'ref' of 'for key, ref in override.secret_refs.items()' shadows the tooling ref, so request_session[f"{ref}_tool_manager"/marker] after the loop could use a vault name when an override has secret refs (the marker key is computed before the loop, the tool_manager key after). Ledger-filed in the summary.
+**Mutation evidence**: override key by name => KeyError RED; storage toolkit vault by name => RED; hydration by agent name => RED; restored.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (handler modules are now packages; edit sites re-anchored)

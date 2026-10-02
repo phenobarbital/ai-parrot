@@ -309,7 +309,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 3,
@@ -321,8 +321,9 @@
       "parallelism_notes": "Depends on TASK-3987 (same files studio/tooling_store.py and studio/toolkit_overrides.py — last TOOLKITS editor before this one) and TASK-3977 (same file parrot/tools/tooling_policy.py: re-verifies its build-time vault-name check). No edit to toolkit_persistence.py / handlers/agent.py / tools/spec.py.",
       "assigned_to": null,
       "started_at": "2026-10-02T08:17:18+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3988-studio-identity-keys-consumer.md"
+      "completed_at": "2026-10-02T08:42:31+00:00",
+      "file": "sdd/tasks/completed/TASK-3988-studio-identity-keys-consumer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3989",
