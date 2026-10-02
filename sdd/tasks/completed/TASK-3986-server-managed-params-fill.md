@@ -237,11 +237,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (tramo B1, sequential fallback)
+**Date**: 2026-10-02
+**Notes**: AbstractTool: _drop_server_managed (LLM-supplied method server-managed kwargs dropped with one warning, before validate_args), _resolve_call_kwargs/_inject_server_managed (tenant/caller/agent from require_tool_scope after validation; tools without method server params never touch the scope); execute complexity 27->26 (if/else replaced by helper). ToolInterface._strip_server_params / _fill_server_params (source=app from self.app; server left to bespoke builders). A missing scope surfaces as the generic error ToolResult until TASK-3989 (as scoped). Verified ToolkitTool._execute kwarg filter keeps injected names (they are in the bound method signature): no edit. Spec Files table lists test_apply_tooling_server_managed.py twice: created once.
+**Mutation evidence**: drop removed => hidden_and_dropped RED; inject removed => 4 tests RED; strip removed => stripped_on_build RED; fill removed => app_source_filled RED; restored.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none (handler modules are now packages; edit sites re-anchored)
