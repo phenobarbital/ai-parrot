@@ -883,7 +883,8 @@ class StudioSkillsResyncHandler(_StudioSkillsMixin, StudioBaseView):
             return self._error("Admin privileges required.", status=403, code="admin_required")
         svc = storage.services.skills
         rows = await svc.list(part)
-        resynced, failed = await _rebuild_index(svc, part, await self._db_registry(part), rows)
+        registry = await self._db_registry(part) if rows else None  # nothing to index: load no model
+        resynced, failed = await _rebuild_index(svc, part, registry, rows)
         return self.json_response({"resynced": resynced, "failed": failed, "total": len(rows)})
 
     async def _legacy_post(self):
