@@ -221,10 +221,8 @@ def set_vault_credential_store(store: Any) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: Commit 73542f8f2. Migration 0007, PgVaultCredentialStore, VAULT_STORE dispatch in vault_utils, registration at ensure_studio_storage, rotation targets (entry points in pyproject); 7 new tests; mutations RED. Quarantine renames rows (#quarantined:<run>). Entry points need a reinstall for real discovery. Phase-2 required version 8 until 0008 ships.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, deviations, issues.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

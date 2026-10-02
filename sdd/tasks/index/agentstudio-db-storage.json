@@ -685,7 +685,7 @@
       "feature_id": "FEAT-621",
       "feature": "agentstudio-db-storage",
       "spec": "sdd/specs/agentstudio-db-storage.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -695,9 +695,10 @@
       "parallelism_notes": "exclusive: edits packages/ai-parrot-server/pyproject.toml (vault_targets entry points) and the shared MANIFEST.json after TASK-3952 (0006 entry, same file); also edits storage/backend.py after TASK-3952",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3953-p2-vault-credentials-postgres.md",
-      "phase": "P2"
+      "completed_at": "2026-10-02T05:58:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3953-p2-vault-credentials-postgres.md",
+      "phase": "P2",
+      "verification": "verified"
     },
     {
       "id": "TASK-3954",
