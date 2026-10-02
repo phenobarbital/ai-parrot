@@ -66,7 +66,8 @@ def bot_agent_ref(bot: Any) -> StudioAgentRef | None:
         return None
     agent_id = getattr(bot, "_studio_agent_id", None)
     return StudioAgentRef(agent_id=None if agent_id is None else str(agent_id), name=key.name,
-                          owner=getattr(bot, "_tooling_owner", None), tenant=key.tenant, visibility="private")
+                          owner=getattr(bot, "_tooling_owner", None), tenant=key.tenant,
+                          visibility=normalize_visibility(getattr(bot, "_studio_visibility", None)))
 
 
 async def studio_scope_kwargs(app: Any, request: web.Request, chatbot: Any) -> dict:

@@ -141,6 +141,7 @@ async def test_stamps_and_policy_binding_before_configure(configure, root):
     rec = snap.record
     assert (bot._studio_key, bot._studio_version, bot._studio_agent_id) == (rec.key, 4, rec.agent_id)
     assert bot._tooling_ref == f"studio-agent:{rec.agent_id}" == rec.tooling_ref
+    assert bot._studio_visibility == rec.visibility
     subject = seen["subject"]
     assert (subject.tenant, subject.agent_id, subject.phase) == ("acme", rec.agent_id, "build")
     assert seen["applied"] is False and bot._tooling_owner == "u1"

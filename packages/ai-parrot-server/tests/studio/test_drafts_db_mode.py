@@ -69,12 +69,19 @@ async def _session(request, handler):
     return await handler(request)
 
 
+async def _acme_scope(view) -> RequestScope:
+    """A scope built from the real session user (``SessionData`` at ``request[NAV_SESSION]``), tenant ``acme``."""
+    user = await view._get_user()
+    return RequestScope(user_id=user.user_id, tenant="acme", groups=frozenset(user.groups))
+
+
 class _AcmeDrafts(StudioDraftsHandler):
     async def _studio_partition(self):
         return StudioPartition("acme")
 
-    async def _scope(self):  # the partition and the scope agree on the tenant (as an opted-in host would)
-        return RequestScope(user_id=None, tenant="acme", groups=frozenset())
+    async def _scope(self):
+        """The partition and the scope agree on the tenant (as an opted-in host would); the caller is the REAL session user."""
+        return await _acme_scope(self)
 
 
 class _AcmeActivate(StudioDraftActivateHandler):
@@ -82,7 +89,7 @@ class _AcmeActivate(StudioDraftActivateHandler):
         return StudioPartition("acme")
 
     async def _scope(self):
-        return RequestScope(user_id=None, tenant="acme", groups=frozenset())
+        return await _acme_scope(self)
 
 
 def _app(pool) -> web.Application:

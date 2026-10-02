@@ -165,6 +165,7 @@ class StudioAgentBuilder:
         bot._studio_version = rec.version
         bot._studio_agent_id = rec.agent_id
         bot._tooling_ref = rec.tooling_ref
+        bot._studio_visibility = rec.visibility   # carried into ``studio_scope.agent`` (C16)
         bot.bind_tooling_policy(
             get_tenant_tooling_policy(app),
             ToolingSubject(tenant=part.tenant, agent_id=rec.agent_id, actor=None, phase="build"),

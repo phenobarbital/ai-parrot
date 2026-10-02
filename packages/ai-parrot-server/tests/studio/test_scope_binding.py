@@ -104,11 +104,13 @@ async def test_normal_chat_binds_scope(aiohttp_client, seen):
 
 
 async def test_normal_chat_binds_the_studio_agent_ref(aiohttp_client, seen):
-    attrs = {"_studio_key": StudioAgentKey(None, "chat-bot"), "_studio_agent_id": uuid.uuid4(), "_tooling_owner": "u1"}
+    attrs = {"_studio_key": StudioAgentKey(None, "chat-bot"), "_studio_agent_id": uuid.uuid4(), "_tooling_owner": "u1",
+             "_studio_visibility": "groups"}
     client = await _chat_client(aiohttp_client, resolver=Resolver(), bot_attrs=attrs)
     assert (await _chat(client)).status == 200
     agent = seen[-1]["scope"].agent
     assert agent.name == "chat-bot" and agent.tenant is None and agent.owner == "u1"
+    assert agent.visibility == "groups"                                    # the agent's REAL visibility, not a constant
     assert seen[-1]["gate"] == "agent_tenant_unset"                       # v1: tenant-NULL Studio rows refuse in tools
 
 
