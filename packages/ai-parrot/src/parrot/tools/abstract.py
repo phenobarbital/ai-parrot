@@ -24,6 +24,7 @@ from ..conf import BASE_STATIC_URL, STATIC_DIR, OUTPUT_DIR
 # spec's Module 5 census — same mechanical pattern as bots/clients; fixed here
 # because it blocks import of every AbstractTool subclass. See Completion Note.)
 from ..core.events.lifecycle import EventEmitterMixin, TraceContext
+from . import execution_gates as gates
 from ..core.events.lifecycle.events import (
     BeforeToolCallEvent,
     AfterToolCallEvent,
@@ -349,14 +350,7 @@ class AbstractTool(EventEmitterMixin, ABC):
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
-        if "server_managed_params" in cls.__dict__:
-            from .server_params import validate_server_params  # pylint: disable=import-outside-toplevel
-
-            validate_server_params(cls)
-        if cls.server_managed_params and ("server_managed_params" in cls.__dict__ or "args_schema" in cls.__dict__):
-            from .server_params import validate_custom_args_schema  # pylint: disable=import-outside-toplevel
-
-            validate_custom_args_schema(getattr(cls, "args_schema", None), cls.server_managed_params, cls.__name__)
+        gates.validate_tool_subclass(cls)
 
     def __init__(
         self,
@@ -397,10 +391,11 @@ class AbstractTool(EventEmitterMixin, ABC):
         """
         # routing_meta — per-instance to avoid shared mutable default
         self.routing_meta: Dict = routing_meta if routing_meta is not None else {}
-        self._mark_host_write()
+        gates.mark_host_write(self)
 
         # Remote execution wiring (None = legacy in-process behaviour)
         self.executor: Optional["AbstractToolExecutor"] = executor
+        gates.refuse_remote_executor(self, executor)
         self.webhook_callback_url: Optional[str] = webhook_callback_url
         self.remote_timeout_seconds: int = int(remote_timeout_seconds)
 
@@ -896,104 +891,10 @@ class AbstractTool(EventEmitterMixin, ABC):
 
     # ── Core execution ────────────────────────────────────────────────────────
 
-    def _server_param_owner(self) -> type:
-        """The class declaring this tool's ``server_managed_params``: the owning toolkit for a ``ToolkitTool``."""
-        owner = getattr(getattr(self, "bound_method", None), "__self__", None)
-        return type(owner) if owner is not None else type(self)
-
-    def _drop_server_managed(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """Drop kwargs naming a server-managed method param (the LLM never sets them), with one warning."""
-        from .server_params import method_server_params  # pylint: disable=import-outside-toplevel
-
-        managed = method_server_params(self._server_param_owner())
-        dropped = sorted(set(kwargs) & set(managed))
-        if not dropped:
-            return kwargs
-        self.logger.warning("Tool %s: dropped server-managed argument(s) supplied by the caller: %s", self.name, dropped)
-        return {key: value for key, value in kwargs.items() if key not in managed}
-
     def _resolve_call_kwargs(self, validated_args: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         """The kwargs ``_execute`` receives: the validated args plus the server-managed scope values."""
         resolved = self._shallow_dump(validated_args) if hasattr(validated_args, "model_dump") else dict(kwargs)
-        return self._inject_server_managed(resolved)
-
-    def _inject_server_managed(self, resolved: Dict[str, Any]) -> Dict[str, Any]:
-        """Fill ``tenant`` / ``caller`` / ``agent`` method params from the bound ``studio_scope`` (per call)."""
-        from .scope import require_tool_scope  # pylint: disable=import-outside-toplevel
-        from .server_params import method_server_params  # pylint: disable=import-outside-toplevel
-
-        managed = method_server_params(self._server_param_owner())
-        if not managed:
-            return resolved
-        tenant, scope = require_tool_scope(tool_name=self.name)
-        values = {"tenant": tenant, "caller": scope.caller, "agent": scope.agent}
-        return {**resolved, **{name: values[param.source] for name, param in managed.items() if param.source in values}}
-
-    def _mark_host_write(self) -> None:
-        """Host standalone write tools are strictly confirmed and approvable via ToolManager (FEAT-622 M8)."""
-        from parrot.auth.confirmation import is_enforced_write_class  # pylint: disable=import-outside-toplevel
-
-        if is_enforced_write_class(type(self)):
-            self.routing_meta.update(
-                {"requires_confirmation": True, "confirmation_enforced": True, "confirm_window_seconds": 0}
-            )
-
-    def _check_approval(self, kwargs: Dict[str, Any]) -> Optional[ToolResult]:
-        """Refuse a ``confirmation_enforced`` tool unless ToolManager approved exactly this call (FEAT-622 M8).
-
-        Only the ContextVar token set by ``ToolManager`` after a ``confirmed`` guard decision counts: it must name
-        this tool instance and the hash of the kwargs received here. Never a kwarg, never an instance flag.
-
-        Args:
-            kwargs: The tool kwargs after the special ``_*`` kwargs were popped.
-
-        Returns:
-            A ``forbidden`` ``ToolResult`` (``error_code="confirmation_required"``), or ``None`` when allowed.
-        """
-        from parrot.auth.confirmation import (  # pylint: disable=import-outside-toplevel
-            consume_confirmed_call,
-            is_enforced_write_class,
-        )
-
-        enforced = (self.routing_meta or {}).get("confirmation_enforced") or is_enforced_write_class(type(self))
-        if not enforced or consume_confirmed_call(self, kwargs):
-            return None
-        reason = "write tool requires an explicit human confirmation for this exact call"
-        return ToolResult(
-            success=False,
-            status="forbidden",
-            result=None,
-            error=f"Confirmation required: '{self.name}' {reason}",
-            metadata={
-                "tool_name": self.name,
-                "error_type": "ConfirmationRequired",
-                "error_code": "confirmation_required",
-                "reason": reason,
-            },
-        )
-
-    async def _pre_execute_refusal(self, kwargs: Dict[str, Any], pctx: Any, resolver: Any) -> Optional[ToolResult]:
-        """Approval check (FEAT-622 M8) then the Layer 2 permission safety net; ``None`` when both allow."""
-        refused = self._check_approval(kwargs)
-        if refused is not None:
-            return refused
-        if pctx is None or resolver is None:
-            return None
-        required = getattr(self, "_required_permissions", set())
-        if await resolver.can_execute(pctx, self.name, required):
-            return None
-        self.logger.warning("Permission denied: user=%s tool=%s required=%s", pctx.user_id, self.name, required)
-        return ToolResult(
-            success=False,
-            status="forbidden",
-            result=None,
-            error=f"Permission denied: '{self.name}' requires {required}",
-            metadata={
-                "tool_name": self.name,
-                "user_id": pctx.user_id,
-                "required_permissions": list(required),
-            },
-        )
+        return gates.inject_server_managed(self, resolved)
 
     async def execute(self, *args, **kwargs) -> ToolResult:
         """
@@ -1033,7 +934,7 @@ class AbstractTool(EventEmitterMixin, ABC):
         _cred_channel: str = kwargs.pop("_cred_channel", "unknown")
         _cred_user_id: Optional[str] = kwargs.pop("_cred_user_id", None)
 
-        refused = await self._pre_execute_refusal(kwargs, pctx, resolver)
+        refused = await gates.pre_execute_refusal(self, kwargs, pctx, resolver)
         if refused is not None:
             return refused
 
@@ -1083,7 +984,7 @@ class AbstractTool(EventEmitterMixin, ABC):
             self.logger.info("Executing tool: %s", self.name)
 
             # Validate arguments (FEAT-622: an LLM-supplied server-managed value is dropped first)
-            kwargs = self._drop_server_managed(kwargs)
+            kwargs = gates.drop_server_managed(self, kwargs)
             validated_args = self.validate_args(**kwargs)
 
             # Resolve the kwargs dict that the tool actually receives (+ server-managed scope values).
@@ -1304,7 +1205,7 @@ class AbstractTool(EventEmitterMixin, ABC):
                 status="error",
                 result=None,
                 error=error_msg,
-                metadata={"tool_name": self.name, "error_type": type(e).__name__},
+                metadata=gates.scope_metadata(self, e),
             )
         finally:
             # Always clear the per-call context so stale references don't linger.

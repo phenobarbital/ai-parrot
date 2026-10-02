@@ -52,11 +52,11 @@ class ToolkitResolver:
         return sorted(self._ensure().values(), key=lambda item: item.slug)
 
     def entry(self, slug: str) -> ToolkitEntry | None:
-        """Case-insensitive entry lookup; returns rule-5-unavailable entries too."""
+        """Case-insensitive entry lookup; returns entries whose class cannot be imported too."""
         return self._ensure().get(slug.lower())
 
     def resolve(self, slug: str) -> type | None:
-        """Case-insensitive slug → class; ``None`` when unknown, unimportable or unavailable (rule 5)."""
+        """Case-insensitive slug → class; ``None`` when unknown or unimportable."""
         found = self.entry(slug)
         if found is None:
             return None
@@ -67,8 +67,6 @@ class ToolkitResolver:
             cls = resolve_class(found.dotted_path)
         except (ImportError, AttributeError, ValueError):
             return None
-        if found.source == "host" and getattr(cls, "tenant_bound", False):
-            return None  # rule 5: lifted by FEAT-622 M3b
         return cls
 
     def registry_paths(self) -> dict[str, str]:
