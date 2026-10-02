@@ -661,9 +661,11 @@ wikitoolkit inbox [--path ROOT] [--dry-run] [--limit N] [--charter PATH]
   # packages/ai-parrot/src/parrot/knowledge/wiki/inbox/processor.py  (new)
   _FIREFLIES_RE: re.Pattern[str]   # `fireflies[_-]?id:\s*<id>` in frontmatter/body, or `fireflies:<id>` marker
 
-  @dataclass
-  class InboxRuntime:
-      """Everything the processor needs, built once per run (see cli._build_ingest_runtime)."""
+  class InboxRuntime(BaseModel):
+      """Everything the processor needs, built once per run (see cli._build_ingest_runtime). Pydantic v2 like every
+      other wiki runtime object (IngestReport, AcquiredDocument); the fields are live service objects, hence
+      arbitrary_types_allowed; frozen because the processor never rebinds them."""
+      model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
       root: Path; config: WikiProjectConfig; wiki_config: WikiConfig; charter: Charter
       store: BaseWikiStore; sources: SourceCollectionManager; bookkeeper: WikiBookkeeper
       acquirer: DocumentAcquirer; router: IngestTriageRouter; orchestrator: WikiIngestOrchestrator
@@ -686,9 +688,13 @@ wikitoolkit inbox [--path ROOT] [--dry-run] [--limit N] [--charter PATH]
           truncated to limit."""
       async def run(self, *, dry_run: bool = False, limit: int | None = None, force: bool = False,
                     archive: bool = True) -> InboxRunReport:
-          """Hold wiki_write_lock(storage_path, timeout=inbox.lock_timeout) for the whole run (S9) — not acquired →
-          InboxLockBusy. Process every discovered document in order; one failure never stops the run; writes INBOX_RUN
-          (or DRY_RUN) bookkeeper line; returns the report (report.failed when any status == "failed")."""
+          """SOLE OWNER of the write lock (S9): `with wiki_write_lock(config.storage_path, timeout=config.inbox.lock_timeout)
+          as acquired:` wraps the whole run inside this method; `acquired is False` → raise InboxLockBusy before any
+          discovery or write. The CLI never acquires the lock itself — it only maps InboxLockBusy to exit 3 (M8). The
+          context manager is synchronous (flock); its retry wait blocks the loop, which is acceptable because run() is
+          the only coroutine the CLI drives. Process every discovered document in order; one failure never stops the
+          run; writes INBOX_RUN (or DRY_RUN) bookkeeper line; returns the report (report.failed when any status ==
+          "failed"). The lock is released on every exit path, including exceptions."""
       async def process_one(self, ref: DocumentRef, *, dry_run: bool, force: bool, archive: bool) -> InboxDocResult:
           """The per-document pipeline. Invariant: archive_original is called only after verify_persisted() passed
           (admitted/archived_category) or after the orchestrator recorded the rejection (rejected). `force` is forwarded as
@@ -807,7 +813,7 @@ returns canned Pydantic instances. No test touches a real provider.
 | `test_code_pages_only_on_verbatim_mention` | M4 | `sym:`/`file:` hits from search are dropped unless the text names them verbatim |
 | `test_select_verifies_ids_and_relations` | M4 | LLM returns one unknown id, one bad rel, two good → only the two good survive; `LINK_DROPPED` logged |
 | `test_select_degrades_without_adapter` | M4 | adapter None / raising → `deterministic_links` (verbatim mentions, `references`) |
-| `test_write_doc_page_edges` | M5 | doc page upserted with `origin="ingest"`, `asserted_by`, `part_of` edges to `pages_generated`, link edges with provenance `asserted` |
+| `test_write_doc_page_edges` | M5 | doc page upserted with `origin="authored"` (passed explicitly — `WikiPage.origin` defaults to `"ingest"`, L409), `source_id=None`, `asserted_by`, `part_of` edges to `pages_generated`, link edges with provenance `asserted` |
 | `test_ensure_tags_idempotent` | M5 | second call creates no duplicate `tag:` pages or edges |
 | `test_emit_adr_candidate_only_for_decisions` | M5 | `kind="meeting"` → None; `kind="decision"` → record saved with `origin="inferred"`, `source_status="unknown"`, `external_id="inbox:<doc_id>"` |
 | `test_emit_adr_candidate_never_raises` | M5 | repository raising → None + `ADR_CANDIDATE_SKIPPED` |
@@ -1208,11 +1214,17 @@ Verified against: `7b4473649`
 - **Verify before archive (S2).** `IngestReport.status == "ok"` is not
   evidence of persistence; `verify_persisted` re-reads the manifest entry,
   the child pages, the doc page and the markdown file.
-- **Whole-run write lock (S9).** `with wiki_write_lock(storage_path,
-  timeout=config.inbox.lock_timeout) as acquired:` wraps `_run(processor.run(...))`
-  in the CLI thread, exactly like `upsert` (`cli.py:1813`); not acquired →
-  `InboxLockBusy` → exit 3. LLM calls happen under the lock by design
-  (human-paced runs; removes the double-triage race).
+- **Whole-run write lock (S9) — owned by the processor, not the CLI.**
+  `InboxProcessor.run()` wraps its own body in `with wiki_write_lock(
+  config.storage_path, timeout=config.inbox.lock_timeout) as acquired:` and
+  raises `InboxLockBusy` when `acquired` is `False`. The `inbox` command does
+  **not** take the lock (unlike `upsert`, `cli.py:1813`, which locks in the
+  command because it has no processor object); it calls
+  `_run(processor.run(...))` and maps `InboxLockBusy` → exit 3. One owner
+  means a library caller (tests, a future MCP tool) gets the same mutual
+  exclusion as the CLI and the lock can never be taken twice in one process.
+  LLM calls happen under the lock by design (human-paced runs; removes the
+  double-triage race).
 - **Path safety (S10).** `validate_inbox_paths` runs in
   `InboxProcessor.__init__`; `discover` drops symlinks and escapes. Never
   move or stage a file whose resolved path is outside the inbox dir.
@@ -1344,3 +1356,4 @@ Summary: **10** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-03 | Jesus Lara / Claude | Initial draft from the accepted brainstorm (Option A, 11 resolved questions); 10 design-research suggestions confirmed (S1–S10) and folded in: doc page outside the source slice, verify-before-archive, sqlite-scoped crash safety, `page_frontmatter(tags=)`, source repointing, ADR reuse, triage `skip_duplicate_check`, fail-closed structured output, whole-run write lock, path validation |
+| 0.2 | 2026-10-03 | Jesus Lara / Claude | Pre-`/sdd-task` contract fixes: (1) write lock is acquired by `InboxProcessor.run()` only — §7 no longer has the CLI take it too; (2) `test_write_doc_page_edges` now asserts `origin="authored"`, matching M5 / AC6 / §7 (was `"ingest"`); (3) `InboxRuntime` is a frozen Pydantic v2 model (`arbitrary_types_allowed`), not a dataclass, per codebase conventions |
