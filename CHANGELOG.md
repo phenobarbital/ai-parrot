@@ -11,6 +11,19 @@ Everything below comes after `1.1.0`; the FEAT-605 early subset (request-scope s
 `setup_studio_routes(prefix=…, view_wrapper=…)`, `BotManager.setup_registry_only`, `GET /me`, scope-only route gates,
 draft-activation `name_taken`, D1/D3) already shipped in `1.1.0`.
 
+### Breaking / upgrade notes
+
+- **Host tools without a declared `access` now require a human confirmation on every path.** A tool or toolkit
+  method that belongs to the host (`plugins.tools`, declared in `TOOL_REGISTRY` or found by the deprecated walk
+  fallback) and does not declare `access = "read"` (standalone tools) or list the method in `read_tools`
+  (toolkits) is treated as a write tool: it is `confirmation_required` for registry/YAML agents, `AgentTalk`,
+  crews, A2A, voice and the scheduler too — not only for Studio-built agents. Before upgrading, annotate every
+  read-only host tool with `access = "read"` / `read_tools`; unannotated ones stop executing until confirmed.
+- **The `database` storage backend now requires schema level 8.** Run the Studio migrations (`0006`–`0008`;
+  `parrot-studio-migrate`, verify with `parrot-studio-migrate --verify`) BEFORE deploying this release. A host
+  still at level 5 (`1.1.0`) resolves the backend to `unavailable` and every database-mode Studio route answers
+  `503 studio_storage_unavailable`, whatever the `*_STORE` switches say.
+
 ### Added
 
 - **Agent Studio — owner-controlled visibility (FEAT-605 W2+).** Per-record `visibility`
