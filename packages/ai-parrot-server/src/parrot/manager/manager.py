@@ -917,22 +917,20 @@ class BotManager:
             return None
         from ..handlers.studio.storage.models import StudioAgentKey
 
+        await enforce_agent_access(self.registry.evaluator, name, request)      # BEFORE any build (FEAT-153 order)
         try:
-            bot = await self.studio.get(StudioAgentKey(None, name))
+            return await self.studio.get(StudioAgentKey(None, name))
         except Exception as exc:  # noqa: BLE001 — a refused/failed Studio build is "not served" on the legacy path
             self.logger.warning("Studio fallback for '%s' failed: %r", name, exc)
             return None
-        if bot is not None:
-            await enforce_agent_access(self.registry.evaluator, name, request)
-        return bot
 
     async def get_studio_bot(
         self, key: "StudioAgentKey", *, new: bool = False, session_id: str = "", request: Optional[web.Request] = None
     ) -> Optional[AbstractBot]:
         """A Studio agent by qualified key, from the Studio runtime cache (never ``_bots``).
 
-        ``new=False`` → the revalidated base instance, then PBAC on ``key.qualified``. ``new=True`` (test chat) →
-        PBAC first (before any build, the FEAT-153 ordering), then the session instance for ``session_id``.
+        PBAC on ``key.qualified`` runs FIRST in both forms (before any build, the FEAT-153 ordering): ``new=False`` →
+        the revalidated base instance; ``new=True`` (test chat) → the session instance for ``session_id``.
 
         Raises:
             StudioStorageUnavailable: the Studio runtime is not installed (backend is not ``database``).
@@ -942,15 +940,12 @@ class BotManager:
             from ..handlers.studio.storage.models import StudioStorageUnavailable
 
             raise StudioStorageUnavailable("studio runtime is not installed")
+        if new and not session_id:
+            raise ValueError("get_studio_bot(new=True) requires a session_id")
+        await enforce_agent_access(self.registry.evaluator, key.qualified, request)     # BEFORE any build
         if new:
-            if not session_id:
-                raise ValueError("get_studio_bot(new=True) requires a session_id")
-            await enforce_agent_access(self.registry.evaluator, key.qualified, request)
             return await self.studio.get_session(key, session_id)
-        bot = await self.studio.get(key)
-        if bot is not None:
-            await enforce_agent_access(self.registry.evaluator, key.qualified, request)
-        return bot
+        return await self.studio.get(key)
 
     def remove_bot(self, name: str) -> None:
         """Remove a Bot by name."""

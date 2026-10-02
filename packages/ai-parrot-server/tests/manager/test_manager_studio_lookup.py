@@ -37,7 +37,9 @@ GLOBAL = StudioPartition.GLOBAL
 
 @pytest.fixture(autouse=True)
 def configure(monkeypatch):
-    monkeypatch.setattr(AbstractBot, "configure", AsyncMock())
+    mock = AsyncMock()
+    monkeypatch.setattr(AbstractBot, "configure", mock)
+    return mock
 
 
 class _Builder(StudioAgentBuilder):
@@ -139,7 +141,8 @@ async def test_get_studio_bot_pbac_before_build(tmp_path, monkeypatch):
         await manager.get_studio_bot(key, new=True, session_id="t1")
     assert builder.built == [] and denied.await_args.args[1] == key.qualified      # refused BEFORE any build
     with pytest.raises(AgentAccessDenied):
-        await manager.get_studio_bot(key)                                           # base: checked on the result
+        await manager.get_studio_bot(key)                                           # base: ALSO before any build
+    assert builder.built == []
     monkeypatch.setattr(manager_module, "enforce_agent_access", AsyncMock())
     assert await manager.get_studio_bot(StudioAgentKey("acme", "missing")) is None
 
@@ -176,3 +179,17 @@ async def test_fallback_enforces_pbac_on_the_bare_name(tmp_path, monkeypatch):
     with pytest.raises(AgentAccessDenied):
         await manager.get_bot("helper", request=object())
     assert denied.await_args.args[1] == "helper"
+
+
+async def test_denied_caller_triggers_no_configure_or_build_on_any_path(tmp_path, monkeypatch, configure):
+    manager, builder = await _with_studio(tmp_path)
+    denied = AsyncMock(side_effect=AgentAccessDenied("no"))
+    monkeypatch.setattr(manager_module, "enforce_agent_access", denied)
+    for call in (
+        lambda: manager.get_studio_bot(StudioAgentKey("acme", "sales")),
+        lambda: manager.get_studio_bot(StudioAgentKey("acme", "sales"), new=True, session_id="t1"),
+        lambda: manager.get_bot("helper", request=object()),
+    ):
+        with pytest.raises(AgentAccessDenied):
+            await call()
+    assert builder.built == [] and configure.await_count == 0 and manager.studio._cache.all_entries() == []
