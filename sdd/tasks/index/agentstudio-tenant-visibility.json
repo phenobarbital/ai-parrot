@@ -224,7 +224,7 @@
       "feature_id": "FEAT-605",
       "feature": "agentstudio-tenant-visibility",
       "spec": "sdd/specs/agentstudio-tenant-visibility.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -235,9 +235,10 @@
       "parallelism_notes": "Edits setup_registry_only in manager/manager.py, created by TASK-3957 (same file); removes the 'incomplete lifecycle' note in docs/agent_studio_api.md and flips its pin in test_feat605_contract_doc.py, both created by TASK-3958 (same files).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3965-registry-only-studio-runtime.md",
-      "wave_label": "W2.2"
+      "completed_at": "2026-10-02T04:59:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3965-registry-only-studio-runtime.md",
+      "wave_label": "W2.2",
+      "verification": "verified"
     },
     {
       "id": "TASK-3966",

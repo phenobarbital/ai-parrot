@@ -270,10 +270,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (package integration branch, tramo A)
+**Date**: 2026-10-02
+**Notes**: setup_registry_only now calls add_studio_runtime_hooks once; doc marker removed; wiring tests in both mount orders. Mutation (call removed) turned 7 tests RED. Also adjusted test_registry_only_hooks_once counts (+2 startup, +2 cleanup) for the added runtime hook pair.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
