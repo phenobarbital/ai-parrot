@@ -17,7 +17,7 @@ tags: [wiki, wikitoolkit, ingestion, inbox, charter, knowledge-graph, archive]
 **Feature ID**: FEAT-626
 **Date**: 2026-10-03
 **Author**: Jesus Lara (spec: Claude session 2026-10-03)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Brainstorm**: `sdd/proposals/wikitoolkit-new-ingestion.brainstorm.md` (accepted 2026-10-03, Option A)
 **Builds on**: FEAT-402 `supervised-wiki-ingestion`, FEAT-451 `wikitoolkit-ingest-documents`, FEAT-578 `sdd-spec-wiki-adr`
