@@ -803,6 +803,12 @@ class BotManager:
         # Studio ids (qualified keys, session ids, tooling refs) never resolve here: before _bots/_botdef/registry.
         if isinstance(name, str) and name.startswith(_STUDIO_PREFIXES):
             return None
+        return await self._get_bot_legacy(name, new, session_id, request, **kwargs)
+
+    async def _get_bot_legacy(
+        self, name: str, new: bool, session_id: str, request: Optional[web.Request], **kwargs
+    ) -> Optional[AbstractBot]:
+        """The pre-FEAT-621 ``get_bot`` body (registry/``_bots`` lookup) plus the Studio GLOBAL tail fallback."""
         # Handle new instance creation
         if new:
             # FEAT-153: Enforce PBAC on the base name BEFORE constructing the new

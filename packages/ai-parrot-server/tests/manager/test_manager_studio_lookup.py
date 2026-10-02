@@ -5,6 +5,7 @@ import pytest
 from aiohttp import web
 
 from parrot.bots.abstract import AbstractBot
+from parrot.bots.agent import BasicAgent
 from parrot.handlers.studio.storage.models import (
     StudioAgentDefinition,
     StudioAgentKey,
@@ -37,6 +38,8 @@ GLOBAL = StudioPartition.GLOBAL
 
 @pytest.fixture(autouse=True)
 def configure(monkeypatch):
+    # legacy ``get_bot(new=True)`` falls back to ``BasicAgent`` for an unknown name: pin it to an offline LLM
+    monkeypatch.setattr(manager_module, "BasicAgent", _OfflineAgent)
     mock = AsyncMock()
     monkeypatch.setattr(AbstractBot, "configure", mock)
     return mock
@@ -52,6 +55,15 @@ class _Builder(StudioAgentBuilder):
         bot.cleanup = AsyncMock()
         self.built.append(bot)
         return bot, directory
+
+
+class _OfflineAgent(BasicAgent):
+    """The legacy ``get_bot(new=True)`` clone class: an explicit LLM, so the test never depends on the default
+    client (Google), whose SDK may not be installed."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs["llm"] = "openai:gpt-4o-mini"
+        super().__init__(*args, **kwargs)
 
 
 def _manager() -> BotManager:
