@@ -379,7 +379,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 4,
@@ -390,8 +390,9 @@
       "parallelism_notes": "Depends on TASK-3990 (same files studio/testing.py and studio/toolkit_config.py — serialise; binding wraps the calls its checks guard). Sole editor of handlers/chat.py.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3991-scope-binding-chat-execute-options.md"
+      "completed_at": "2026-10-02T15:29:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3991-scope-binding-chat-execute-options.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3992",

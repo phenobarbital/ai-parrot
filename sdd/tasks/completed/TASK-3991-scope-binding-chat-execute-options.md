@@ -224,11 +224,23 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback loop, tramo B2)
+**Date**: 2026-10-02
+**Notes**: Normal chat (`ChatHandler.post`): `chatbot.session(..., **scope_kwargs)` with `studio_scope = build_tool_scope(scope,
+bot_agent_ref(chatbot))` when a resolver is installed (new `access.bot_agent_ref`: a Studio-built bot carries `_studio_key` /
+`_studio_agent_id` / `_tooling_owner`, any other bot binds `agent=None`); the streaming generator is consumed inside the
+`async with` (test asserts the scope is present at consumption). Direct execute and options use the new
+`_StudioStorageMixin._bound_scope(agent)` async context manager: it binds `RequestContext(request, app[, studio_scope])` and resets
+it on exit; `studio_scope` only in opted-in hosts, so with no resolver nothing is bound beyond the request ⇒ a tenant-bound tool
+refuses `no_scope` (403 `tool_scope_unavailable`, `details.reason`). Execute binds `agent=None`; options bind the agent reference
+of the Studio row (`_state_agent_ref`). Execute: `post` now delegates to `_run_tool` (cheaper complexity) and an opted-in caller with
+no tenant gets 422 `tenant_required` (was an unhandled 500). Test-chat binding is asserted in `test_derivative_gates.py`
+(TASK-3969); the meta-agent binding is asserted by TASK-3970's tests.
+Mutations RED (restored): chat binding dropped; `bot_agent_ref` → None; `_bound_scope` binds no scope; context not reset;
+options binding removed; tenant-required mapping.
+Tests: `test_scope_binding.py` (8). 3990's tests updated: refusal reason on a plain host is `no_scope` (a context is now
+bound), options test uses a real opted-in resolver; `test_host_toolkit_paths.py` gets an opted-in resolver in its handler app.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `chat.py` only (AgentTalk `handlers/agent.py` chat paths are not in this task's list and bind nothing
+yet — tenant-bound tools used from there refuse `no_scope`, fail closed); `access.py` gains `bot_agent_ref`; the mismatched-scope
+leg is exercised with a host tool raising `host_tenant_mismatch` (execute binds `agent=None`, so no other mismatch exists).
