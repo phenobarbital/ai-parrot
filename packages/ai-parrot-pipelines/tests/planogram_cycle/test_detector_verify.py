@@ -456,3 +456,78 @@ async def test_a_tiered_fixture_asks_for_one_detection_per_stacked_product():
     plain = StubAdapter(Detections(detections=[_det(0.1, 0.1, 0.5, 0.5)]))
     await llm_detect_shapes(IMAGE, "img0", _ctx(plain), prompt="p")
     assert plain.calls[0][1] == "p"
+
+
+def _unit_layout():
+    class Layout:
+        tiered_shelves = False
+        roi_zone_labels: list = []
+        roi_product_labels = "_on_shelf$"
+
+    return Layout()
+
+
+def _roi_units(*boxes):
+    """ROI answer: a full-image fixture plus one ``*_on_shelf`` unit per box (x1, y1, x2, y2 in 0..1)."""
+    units = [_det(*box, label=f"unit{k}_on_shelf", content=f"NAME{k}") for k, box in enumerate(boxes)]
+    return Detections(detections=[_det(0.0, 0.0, 1.0, 1.0, label="endcap"), *units])
+
+
+async def _detect_with_units(roi, found):
+    image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    ctx = _roi_ctx(StubAdapter(roi, found)).model_copy(update={"layout": _unit_layout()})
+    return await llm_detect_shapes(image, "img0", ctx, prompt="p")
+
+
+async def test_a_box_drawn_around_a_stack_is_split_into_the_roi_units():
+    roi = _roi_units((0.2, 0.2, 0.5, 0.4), (0.18, 0.36, 0.48, 0.5), (0.6, 0.2, 0.9, 0.5))
+    found = Detections(detections=[_det(0.19, 0.2, 0.5, 0.5, content="A"), _det(0.6, 0.2, 0.9, 0.5, content="C")])
+
+    shapes = await _detect_with_units(roi, found)
+
+    boxes = sorted((s.box.x1, s.box.y1, s.box.x2, s.box.y2) for s in shapes)
+    assert boxes == [(180, 360, 480, 500), (200, 200, 500, 400), (600, 200, 900, 500)]
+    split = [s for s in shapes if s.profile == "roi"]
+    # Geometry only: the unit's label and text never reach the shape.
+    assert len(split) == 2 and all(s.ocr_text is None and s.kind == ShapeKind.PRODUCT for s in split)
+
+
+async def test_a_unit_no_product_box_covers_is_added_and_matching_boxes_are_kept():
+    roi = _roi_units((0.2, 0.2, 0.5, 0.4), (0.6, 0.2, 0.9, 0.5), (0.6, 0.55, 0.9, 0.6))
+    found = Detections(detections=[_det(0.21, 0.2, 0.5, 0.41, content="A"), _det(0.6, 0.2, 0.9, 0.5, content="C")])
+
+    shapes = await _detect_with_units(roi, found)
+
+    assert [s.ocr_text for s in shapes if s.profile != "roi"] == ["A", "C"]
+    added = [s for s in shapes if s.profile == "roi"]
+    assert [(s.box.x1, s.box.y1, s.box.x2, s.box.y2) for s in added] == [(600, 550, 900, 600)]
+
+
+async def test_units_are_ignored_without_the_layout_pattern():
+    roi = _roi_units((0.2, 0.2, 0.5, 0.4), (0.18, 0.36, 0.48, 0.5))
+    found = Detections(detections=[_det(0.19, 0.2, 0.5, 0.5, content="A")])
+    image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+    shapes = await llm_detect_shapes(image, "img0", _roi_ctx(StubAdapter(roi, found)), prompt="p")
+    assert len(shapes) == 1 and shapes[0].ocr_text == "A"
+
+
+async def test_two_labels_on_one_object_do_not_split_its_box():
+    roi = _roi_units((0.2, 0.2, 0.5, 0.5), (0.21, 0.21, 0.5, 0.5))
+    found = Detections(detections=[_det(0.18, 0.18, 0.52, 0.52, content="A")])
+    shapes = await _detect_with_units(roi, found)
+    assert len(shapes) == 1 and shapes[0].ocr_text == "A"
+
+
+def test_a_box_cutting_into_the_upper_unit_of_a_stack_is_still_split():
+    """The box starts below the top of the upper unit (a partial merge) and is barely larger than it."""
+    from parrot_pipelines.planogram.contracts import Shape
+    from parrot_pipelines.planogram.identification.detector import _reconcile_units
+
+    merged = Shape(
+        shape_id="img0:llm:1",
+        image_id="img0",
+        kind=ShapeKind.PRODUCT,
+        box=DetectionBox(x1=316, y1=273, x2=621, y2=475, confidence=0.9),
+    )
+    shapes = _reconcile_units([merged], [(355, 226, 625, 408), (315, 346, 604, 480)], "img0")
+    assert sorted(s.box.y1 for s in shapes) == [226, 346] and all(s.profile == "roi" for s in shapes)

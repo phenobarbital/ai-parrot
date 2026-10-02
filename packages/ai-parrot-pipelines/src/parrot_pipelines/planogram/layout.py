@@ -81,6 +81,9 @@ class LayoutProfile(BaseModel):
     roi_detection: bool = True
     #: Labels of the ROI prompt whose detections are observed zones (e.g. ``top_zone``), with their text.
     roi_zone_labels: List[str] = Field(default_factory=list)
+    #: Regular expression of the ROI labels that box one product unit each (e.g. ``_on_shelf$``). Their
+    #: boxes split a detection drawn around a stack and recover a product the detector missed.
+    roi_product_labels: Optional[str] = None
     min_usable_shapes: int = Field(default=1, ge=0)
     min_row_items: int = Field(default=1, ge=1)
     max_row_slope: float = Field(default=0.12, ge=0.0)

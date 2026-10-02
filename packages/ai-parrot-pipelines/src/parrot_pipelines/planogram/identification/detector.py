@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections import defaultdict
 from typing import Any, List, Optional, Sequence, Tuple
 
@@ -54,6 +55,15 @@ ROI_SIDE_EXCESS: float = 0.25
 ROI_SIDE_MARGIN: float = 0.12
 #: A detected "zone" overlapping the header panel and smaller than this fraction of it is a card on it.
 ROI_CARD_AREA: float = 0.25
+
+#: A unit is inside a product box when this fraction of the unit lies in it...
+UNIT_CONTAINED: float = 0.7
+#: ...and the box is a stack when it holds two distinct units and is this many times the largest one.
+UNIT_STACK_AREA: float = 1.15
+#: Two units overlapping this much (IoU) box the same object.
+UNIT_SAME: float = 0.5
+#: A unit sharing less than this fraction (of the smaller box) with every product box was missed.
+UNIT_MISSED: float = 0.3
 
 PixelBox = Tuple[int, int, int, int]
 
@@ -137,6 +147,8 @@ class FixtureRoi(BaseModel):
     panel_text: Optional[str] = None
     #: ``(label, box, text)`` of the ROI components the layout declares as zones (``roi_zone_labels``).
     zones: List[Tuple[str, PixelBox, Optional[str]]] = Field(default_factory=list)
+    #: Boxes of the single product units the ROI prompt locates (``roi_product_labels``); geometry only.
+    units: List[PixelBox] = Field(default_factory=list)
 
 
 def render_roi_prompt(template: Optional[str], *, brand: str = "", tags: Sequence[str] = ()) -> Optional[str]:
@@ -208,6 +220,16 @@ async def detect_roi(image: np.ndarray, image_id: str, ctx: CycleContext) -> Opt
         for label, box in ((label, _best(answer.detections, (label,), (width, height))) for label in zone_labels)
         if box is not None
     ]
+    pattern = getattr(ctx.layout, "roi_product_labels", None)
+    units = [
+        box
+        for box in (
+            _best([detection], (_roi_label(detection),), (width, height))
+            for detection in answer.detections
+            if pattern and re.search(pattern, _roi_label(detection))
+        )
+        if box is not None
+    ]
     fixture = _best(answer.detections, ROI_FIXTURE_LABELS, (width, height))
     if (
         fixture is None
@@ -216,7 +238,7 @@ async def detect_roi(image: np.ndarray, image_id: str, ctx: CycleContext) -> Opt
     ):
         if zones:
             logger.debug("detect_roi[%s]: no fixture box, zones=%s", image_id, [label for label, _, _ in zones])
-            return FixtureRoi(zones=zones)
+            return FixtureRoi(zones=zones, units=units)
         ctx.errors.append(f"roi {image_id}: no usable fixture box; detection ran on the whole image")
         return None
     panel = _best(answer.detections, ROI_PANEL_LABELS, (width, height))
@@ -256,7 +278,7 @@ async def detect_roi(image: np.ndarray, image_id: str, ctx: CycleContext) -> Opt
     )
     texts = [d.content.strip() for d in answer.detections if _roi_label(d) in ROI_TEXT_LABELS and d.content]
     logger.debug("detect_roi[%s]: fixture=%s panel=%s", image_id, padded, panel)
-    return FixtureRoi(fixture=padded, panel=panel, panel_text=" ".join(texts) or None, zones=zones)
+    return FixtureRoi(fixture=padded, panel=panel, panel_text=" ".join(texts) or None, zones=zones, units=units)
 
 
 def downscale_and_encode(image: np.ndarray, max_side: int = MAX_SIDE) -> bytes:
@@ -315,6 +337,75 @@ def _to_shape(detection: Any, index: int, image_id: str, size: Tuple[int, int]) 
     )
 
 
+def _reconcile_units(shapes: Sequence[Shape], units: Sequence[PixelBox], image_id: str) -> List[Shape]:
+    """Correct the detector's product boxes with the single-unit boxes of the ROI call.
+
+    Only geometry is taken from the units, never their label or text. A product box that holds two or
+    more units is one box drawn around a stack and is replaced by those units; a unit no product box
+    covers is a product the detector missed and is added.
+
+    Args:
+        shapes: Detector shapes in source pixels.
+        units: Unit boxes of the ROI call in source pixels.
+        image_id: Image id (ids of the shapes this creates).
+
+    Returns:
+        The corrected shapes; ``shapes`` unchanged without units.
+    """
+    if not units:
+        return list(shapes)
+
+    def area(box: PixelBox) -> int:
+        return max(0, box[2] - box[0]) * max(0, box[3] - box[1])
+
+    def shared(a: PixelBox, b: PixelBox) -> int:
+        return area((max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])))
+
+    def iou(a: PixelBox, b: PixelBox) -> float:
+        common = shared(a, b)
+        return common / float(area(a) + area(b) - common) if common else 0.0
+
+    def unit_shape(index: int, box: PixelBox, like: Optional[Shape] = None) -> Shape:
+        return Shape(
+            shape_id=f"{image_id}:roi:unit{index}",
+            image_id=image_id,
+            kind=like.kind if like is not None else ShapeKind.PRODUCT,
+            box=DetectionBox(x1=box[0], y1=box[1], x2=box[2], y2=box[3], confidence=1.0),
+            profile="roi",
+            source=ObservationSource.LLM,
+        )
+
+    product_kinds = (ShapeKind.PRODUCT, ShapeKind.BOX, ShapeKind.UNKNOWN)
+    result: List[Shape] = []
+    used: set[int] = set()
+    for shape in shapes:
+        box = (shape.box.x1, shape.box.y1, shape.box.x2, shape.box.y2)
+        inside = [
+            index
+            for index, unit in enumerate(units)
+            if shape.kind in product_kinds and area(unit) > 0 and shared(unit, box) >= UNIT_CONTAINED * area(unit)
+        ]
+        # Two labels on one object give two near-identical units: only mutually distinct ones count.
+        distinct: List[int] = []
+        for index in inside:
+            if all(iou(units[index], units[other]) < UNIT_SAME for other in distinct):
+                distinct.append(index)
+        if len(distinct) >= 2 and area(box) >= UNIT_STACK_AREA * max(area(units[index]) for index in distinct):
+            result.extend(unit_shape(index, units[index], shape) for index in distinct if index not in used)
+            used.update(inside)
+        else:
+            result.append(shape)
+    covered = [
+        (shape.box.x1, shape.box.y1, shape.box.x2, shape.box.y2) for shape in result if shape.kind in product_kinds
+    ]
+    for index, unit in enumerate(units):
+        if index in used or area(unit) <= 0:
+            continue
+        if all(shared(unit, box) < UNIT_MISSED * min(area(unit), area(box)) for box in covered):
+            result.append(unit_shape(index, unit))
+    return result
+
+
 def _card_on_panel(shape: Shape, panel: PixelBox) -> Shape:
     """Re-kind a small "zone" that sits on a far larger zone: it is a card stuck on it, not a second header."""
     if shape.kind != ShapeKind.ZONE:
@@ -366,6 +457,7 @@ async def llm_detect_shapes(image: np.ndarray, image_id: str, ctx: CycleContext,
         )
         for shape in shapes
     ]
+    shapes = _reconcile_units(shapes, roi.units, image_id)
     if roi.panel is not None:
         shapes = [_card_on_panel(shape, roi.panel) for shape in shapes]
     if shapes and roi.panel is not None and not any(shape.kind == ShapeKind.ZONE for shape in shapes):
