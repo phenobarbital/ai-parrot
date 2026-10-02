@@ -35,10 +35,6 @@ from ..models import BotModel
 from .storage.models import StudioStorageUnavailable, StudioWriteGuard
 
 logger = logging.getLogger(__name__)
-_SERVER_MANAGED = {
-    "wiki": frozenset({"pageindex_toolkit", "graphindex_toolkit", "okf_toolkit"}),
-    "infographic": frozenset({"artifact_store"}),
-}
 
 
 @dataclass
@@ -99,7 +95,7 @@ def toolkit_schema_for(slug: str) -> tuple[type, dict[str, Any]]:
     cls = get_toolkit_resolver().resolve(slug)
     if cls is None:
         raise LookupError(slug)
-    envelope = build_schema_envelope(slug, cls, server_managed=_SERVER_MANAGED.get(slug, frozenset()))
+    envelope = build_schema_envelope(slug, cls)
     return cls, envelope.schema_
 
 
@@ -123,13 +119,21 @@ def validate_toolkit_params(cls: type, schema: dict[str, Any], params: dict[str,
         raise ValueError(f"Invalid toolkit parameters: {exc}") from exc
 
 
+class ServerManagedParamsRejected(ValueError):
+    """A client supplied constructor parameters the server fills (HTTP 422 ``server_managed``)."""
+
+    def __init__(self, params: list[str]) -> None:
+        self.params = params
+        super().__init__(f"Server-managed parameters cannot be set: {', '.join(params)}")
+
+
 def reject_server_managed(schema: dict[str, Any], params: dict[str, Any]) -> None:
-    """Reject top-level fields reserved for server construction."""
+    """Reject top-level fields reserved for server construction (``ServerManagedParamsRejected``)."""
     forbidden = [
         key for key, value in params.items() if schema.get("properties", {}).get(key, {}).get("x-server-managed") is True
     ]
     if forbidden:
-        raise ValueError(f"Server-managed parameters cannot be set: {', '.join(sorted(forbidden))}")
+        raise ServerManagedParamsRejected(sorted(forbidden))
 
 
 def split_toolkit_secrets(
@@ -454,10 +458,7 @@ class AgentToolingStore:
         return spec
 
     async def _enforce(self, state: ToolingState, tooling: NormalizedTooling, *, actor: str | None = None) -> None:
-        """Apply the host tenant tooling policy to the COMPLETE resulting tooling (FEAT-622 M7, phase ``write``).
-
-        Runs before any vault write or persistence. Studio rows are gated by the storage service instead.
-        """
+        """Tenant tooling policy (phase ``write``) on the COMPLETE resulting tooling, before any vault write (M7)."""
         from .storage.services.tooling import _owner_only_with_refs  # lazy: that module imports this one
 
         locate = getattr(self.handler, "_studio_partition", None)

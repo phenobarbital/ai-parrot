@@ -94,9 +94,9 @@ class StudioTestingHandler(
 class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
     """``POST /api/v1/astudio/tools/{slug}/execute`` — deterministic tool call."""
 
-    async def _executable_refusal(self, slug: str, cls: type | None):
+    async def _executable_refusal(self, slug: str, cls: type | None, args: dict):
         """404 for an unknown / non-tool slug; 403 ``tooling_not_permitted`` (tenant policy, phase ``execute``);
-        403 ``confirmation_required`` for a host write tool.
+        403 ``confirmation_required`` for a host write tool; 422 ``server_managed`` for a body key the server fills.
 
         A host standalone write tool has no approval channel on this path (FEAT-622 M8), so it is refused
         before any instantiation.
@@ -114,6 +114,13 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
                 f"Tool '{slug}' requires confirmation and cannot be executed directly.",
                 status=403,
                 code="confirmation_required",
+            )
+        if sent := sorted(set(args) & set(getattr(cls, "server_managed_params", None) or {})):
+            return self._error(
+                f"Server-managed parameters cannot be set: {', '.join(sent)}",
+                status=422,
+                code="server_managed",
+                details={"params": sent},
             )
         return None
 
@@ -139,7 +146,7 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
 
         cls = _resolve_registry_class(slug)
-        if (refused := await self._executable_refusal(slug, cls)) is not None:
+        if (refused := await self._executable_refusal(slug, cls, execute_request.args)) is not None:
             return refused
 
         try:

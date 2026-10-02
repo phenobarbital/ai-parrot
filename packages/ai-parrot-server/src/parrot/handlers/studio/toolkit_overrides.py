@@ -20,7 +20,7 @@ from ..toolkit_persistence import ToolkitConfigService, UserToolkitOverride
 from ._base import StudioBaseView
 from .agents import _StudioAgentsMixin
 from .models import StudioError
-from .tooling_store import AgentToolingStore
+from .tooling_store import AgentToolingStore, ServerManagedParamsRejected, reject_server_managed
 
 
 def _pop_dotted(target: dict[str, Any], dotted: str) -> tuple[bool, Any]:
@@ -91,6 +91,22 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
         _, schema = store.schema_for(slug)
         return spec, schema
 
+    def _params_refusal(self, spec: Any, schema: dict[str, Any], params: dict[str, Any]):
+        """422 for a server-managed key (``server_managed``) or a key the operator did not allow; else ``None``."""
+        try:
+            reject_server_managed(schema, params)
+        except ServerManagedParamsRejected as exc:
+            return self._error(str(exc), status=422, code="server_managed", details={"params": exc.params})
+        offending = sorted(set(params) - set(spec.user_overridable))
+        if offending:
+            return self._error(
+                "One or more parameters are not user-overridable.",
+                status=422,
+                code="not_overridable",
+                details={"params": offending},
+            )
+        return None
+
     async def _tooling_ref(self, name: str) -> str:
         """Immutable tooling identity of agent ``name`` (spec §2.5c); the bare name for a legacy agent."""
         state = await AgentToolingStore(self).load(name)
@@ -158,14 +174,8 @@ class StudioUserToolkitOverrideHandler(_StudioAgentsMixin, StudioBaseView):
             ref = await self._tooling_ref(name)
         except LookupError:
             return self._error("Requested toolkit was not found.", status=404, code="not_found")
-        offending = sorted(set(params) - set(spec.user_overridable))
-        if offending:
-            return self._error(
-                "One or more parameters are not user-overridable.",
-                status=422,
-                code="not_overridable",
-                details={"params": offending},
-            )
+        if (refused := self._params_refusal(spec, schema, params)) is not None:
+            return refused
         user = await self._get_user()
         service = ToolkitConfigService()
         previous = next(

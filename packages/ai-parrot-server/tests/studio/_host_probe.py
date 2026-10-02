@@ -18,6 +18,7 @@ PROBE_INIT = textwrap.dedent(
         "tp_probe": "plugins.tools.probe.ProbeToolkit",
         "tp_probe_tool": "plugins.tools.probe.ProbeTool",
         "tp_probe_tool_write": "plugins.tools.probe.ProbeWriteTool",
+        "tp_probe_managed": "plugins.tools.probe.ProbeManagedTool",
     }
     '''
 )
@@ -29,6 +30,7 @@ PROBE_MODULE = textwrap.dedent(
     from pydantic import BaseModel
 
     from parrot.tools.abstract import AbstractTool
+    from parrot.tools.server_params import ServerParam
     from parrot.tools.toolkit import AbstractToolkit
 
     COUNTERS = {"opened": 0, "bump": 0, "options_calls": 0, "executed": 0, "written": 0}
@@ -41,6 +43,11 @@ PROBE_MODULE = textwrap.dedent(
         auto_open = True
         read_tools: ClassVar[frozenset] = frozenset({"whoami"})
         options_params = frozenset({"project"})
+        server_managed_params = {"app_store": ServerParam(source="app", key="probe_store")}
+
+        def __init__(self, app_store: object = None, **kwargs):
+            super().__init__(**kwargs)
+            self.app_store = app_store
 
         async def _open(self) -> None:
             COUNTERS["opened"] += 1
@@ -77,6 +84,23 @@ PROBE_MODULE = textwrap.dedent(
         async def _execute(self, **kwargs):
             COUNTERS["executed"] += 1
             return {"ok": True}
+
+
+    class ProbeManagedTool(AbstractTool):
+        """Standalone tool whose constructor REQUIRES an app-sourced server-managed dependency."""
+
+        name = "tp_probe_managed"
+        description = "Probe tool with a server-managed constructor dependency"
+        args_schema = ProbeArgs
+        server_managed_params = {"store": ServerParam(source="app", key="probe_store")}
+
+        def __init__(self, store: object, **kwargs):
+            super().__init__(**kwargs)
+            self.store = store
+
+        async def _execute(self, **kwargs):
+            COUNTERS["executed"] += 1
+            return {"store": self.store}
 
 
     class ProbeWriteTool(AbstractTool):

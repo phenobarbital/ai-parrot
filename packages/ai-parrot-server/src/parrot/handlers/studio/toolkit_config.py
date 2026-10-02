@@ -26,7 +26,7 @@ from .models import (
 from .access import StudioTenantRequired
 from .storage import models as _studio_models
 from .storage.services._common import StudioValidationError
-from .tooling_store import AgentToolingStore
+from .tooling_store import AgentToolingStore, ServerManagedParamsRejected
 
 _STUDIO_ERRORS = (
     _studio_models.StudioStorageUnavailable,
@@ -66,6 +66,8 @@ class _ToolingViewMixin(_StudioAgentsMixin):
         """Map persistence and vault exceptions to the Studio error contract."""
         if isinstance(exc, TenantToolingRefused):
             return self._error(str(exc), status=422, code=exc.code, details={"reason": exc.reason, "item": exc.item})
+        if isinstance(exc, ServerManagedParamsRejected):
+            return self._error(str(exc), status=422, code="server_managed", details={"params": exc.params})
         if isinstance(exc, _STUDIO_ERRORS):
             return self._studio_error(exc)
         if isinstance(exc, PermissionError):

@@ -30,6 +30,7 @@ from parrot.tools.config_schema import build_schema_envelope
 from parrot.tools.dataset_manager.tool import DatasetManager
 from parrot.tools.infographic_toolkit import InfographicToolkit
 from parrot.tools.resolver import get_toolkit_resolver
+from parrot.tools.server_params import constructor_server_params
 from parrot.tools.tooling_policy import (
     TenantToolingRefused,
     ToolingSubject,
@@ -455,10 +456,27 @@ class StudioToolkitsHandler(_StudioAgentsMixin, StudioBaseView):
         registered = bot.tool_manager.register_toolkit(toolkit)
         return [t.name for t in registered], {}
 
+    def _server_managed_inputs(self, cls: type, params: dict) -> dict:
+        """Constructor values the server fills (``source="app"`` from ``request.app``); refuses a client value (422)."""
+        declared = getattr(cls, "server_managed_params", None) or {}
+        sent = sorted(set(params) & set(declared))
+        if sent:
+            raise _ToolkitAssignError(
+                422, "server_managed", f"Server-managed parameters cannot be set: {', '.join(sent)}",
+                details={"params": sent},
+            )
+        app = self.request.app
+        return {
+            name: app[declared[name].key]
+            for name in constructor_server_params(cls)
+            if declared[name].source == "app" and app.get(declared[name].key) is not None
+        }
+
     def _assign_generic(self, bot, slug: str, params: dict) -> tuple[list[str], dict]:
         cls = _resolve_toolkit_class(slug)
         if cls is None:
             raise _ToolkitAssignError(404, "not_found", f"Unknown toolkit '{slug}'.")
+        params = {**params, **self._server_managed_inputs(cls, params)}
         missing = _missing_required_params(cls, params)
         if missing:
             raise _ToolkitAssignError(

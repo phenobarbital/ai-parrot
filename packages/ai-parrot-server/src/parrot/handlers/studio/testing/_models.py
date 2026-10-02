@@ -10,13 +10,6 @@ from pydantic import BaseModel, Field
 
 SESSION_PREFIX = "_studio_test:"
 
-# App-context dependency wiring for tool instantiation (spec §3 Module 9 —
-# "app-context-wired" instantiation for tools whose constructor requires a
-# server-managed resource). Extend this map as more such tools are added.
-_KNOWN_APP_DEPS: dict[str, str] = {
-    "artifact_store": "artifact_store",
-}
-
 
 class _ServerManagedDepsError(Exception):
     """Raised when a tool's constructor requires deps this endpoint can't supply."""
