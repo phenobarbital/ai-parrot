@@ -308,6 +308,9 @@ async def test_delete_override_falls_back_to_bare_name_when_agent_gone(monkeypat
         async def load(self, name):
             raise LookupError(name)
 
+        async def tenant_caller(self):
+            return False  # GLOBAL partition: orphan overrides stay deletable (a tenant gets the 404, F2)
+
     monkeypatch.setattr(overrides, "AgentToolingStore", Gone)
     removed, deleted = AsyncMock(return_value=True), AsyncMock()
     monkeypatch.setattr(overrides.ToolkitConfigService, "remove", removed)

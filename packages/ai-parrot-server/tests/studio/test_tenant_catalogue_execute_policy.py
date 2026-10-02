@@ -6,7 +6,9 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from aiohttp import web
+from parrot.handlers.studio.tooling_store import AgentToolingStore
 from aiohttp.test_utils import make_mocked_request
 from parrot.handlers import tools_catalog
 from parrot.handlers.studio._base import StudioUser
@@ -69,6 +71,18 @@ async def test_tenant_catalogue_and_execute_respect_policy(host_plugins, monkeyp
     handler = _view(StudioToolExecuteHandler, tenant=None, policy=deny, method="POST",
                     match_info={"slug": "shell"}, body={"args": {}})
     assert (await _unwrap(StudioToolExecuteHandler.post)(handler)).status != 403
+
+
+@pytest.fixture(autouse=True)
+def _legacy_row_stands_in_for_a_tenant_row(monkeypatch):
+    """These tests exercise the tenant POLICY on assign; a legacy row is the cheap stand-in for a tenant agent.
+
+    A real tenant caller never reaches a legacy row (PR #1564 F2): pinned in ``test_tenant_legacy_agents``.
+    """
+    async def _no_tenant_guard(self) -> bool:
+        return False
+
+    monkeypatch.setattr(AgentToolingStore, "tenant_caller", _no_tenant_guard)
 
 
 async def _assign(tenant, tools, toolkits):
