@@ -216,3 +216,17 @@ async def test_delete_defers_cleanup_while_an_ask_is_in_flight(aiohttp_client, p
     fresh = probe["built"][1]
     await client.delete(f"{BASE}/assistant", headers=caller)
     assert probe["cleanups"][fresh.name] == 1
+
+
+async def test_an_instance_is_cleaned_at_most_once(probe):
+    class Agent:
+        name = "x"
+
+        async def cleanup(self):
+            probe["cleanups"]["x"] += 1
+
+    agent = Agent()
+    await meta_agent._retire(agent)
+    await meta_agent._retire(agent)
+    await meta_agent._cleanup_once(agent)
+    assert probe["cleanups"]["x"] == 1
