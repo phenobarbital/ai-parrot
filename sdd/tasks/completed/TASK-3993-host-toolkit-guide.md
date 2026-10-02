@@ -172,11 +172,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback loop, tramo B2)
+**Date**: 2026-10-02
+**Notes**: `docs/toolkits/host-toolkits.md`: declaring host tools (`HOST_TOOL_PREFIX`, `TOOL_REGISTRY`, the resolver rules as they are
+implemented — prefix = `tool_prefix` without the trailing underscore, no shadowing, deprecated walk fallback), `tenant_bound` and the
+scope gate (what is enforced before any side effect, refusal reasons, `host_tenant_mismatch` raised in `_pre_execute`),
+`server_managed_params`, `read_tools` + strict confirmation (zero writes without a guard / approval, `app["studio_confirmation_guard"]`),
+the tenant tooling policy (`set_tenant_tooling_policy` example), opting in to scope resolution, the error codes, the unenforced
+conventions (Pydantic returns, `max_rows` + `truncated`, no secrets, no resource acquisition in a tenant-bound constructor — use
+`_open()`), and the mandatory GLOBAL-partition statement at the top. Every name used in the samples exists on this branch.
+Validation: `test_feat593_docs.py` passes. Docs-only task: no mutation to record.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
