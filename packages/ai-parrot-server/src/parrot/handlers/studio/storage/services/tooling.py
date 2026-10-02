@@ -75,7 +75,7 @@ class StudioToolingService:
     async def _open(self, conn: Any, part: StudioPartition, name: str, guard: StudioWriteGuard):
         """Lock the agent, then return (agent_id, record, current tooling) read under the lock."""
         head = await self._repos.agents.lock(conn, part, name, guard)
-        record = await self._repos.agents.get(part, name)
+        record = await self._repos.agents.get(part, name, conn=conn)
         rows = await self._repos.tooling.list_locked(conn, head.agent_id)
         return head.agent_id, record, normalized_tooling_for(record.definition, rows)
 

@@ -57,7 +57,7 @@ class StudioDraftService:
             assets=bundle.assets, phase="write",
         )
         async with studio_transaction(self._repos.pool) as conn:
-            if await self._repos.drafts.get(part, bundle.name) is None:
+            if await self._repos.drafts.get(part, bundle.name, conn=conn) is None:
                 return await self._repos.drafts.insert(
                     conn, part, name=bundle.name, owner=owner, bundle=bundle, visibility=visibility,
                     allowed_groups=allowed_groups,
@@ -103,7 +103,7 @@ class StudioDraftService:
             head = await self._repos.drafts.lock(conn, part, name, guard)
             if head.status not in _ACTIVATABLE:
                 raise StudioVersionConflict(f"draft {name!r} is {head.status}, not activatable")
-            draft = await self._repos.drafts.get(part, name)
+            draft = await self._repos.drafts.get(part, name, conn=conn)
             if draft is None:
                 raise StudioNotFound(name)
             bundle = draft.bundle
@@ -142,7 +142,7 @@ class StudioDraftService:
         await self._agents._replace_children(
             conn, head.agent_id, toolkits=bundle.toolkits, mcp_servers=bundle.mcp_servers, assets=bundle.assets
         )
-        current = await self._repos.agents.get(part, bundle.name)   # committed pre-state: the lock above proved it exists
+        current = await self._repos.agents.get(part, bundle.name, conn=conn)   # read under the target lock
         if current is None:
             raise StudioNotFound(bundle.name)
         record = dataclasses.replace(current, definition=bundle.definition)

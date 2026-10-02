@@ -224,7 +224,7 @@ class StudioAgentService:
         """Lock → merge General fields → validate as create → gate on the CURRENT tooling → update_definition."""
         async with studio_transaction(self._repos.pool) as conn:
             head = await self._repos.agents.lock(conn, part, name, _combined_guard(patch, guard))
-            record = await self._repos.agents.get(part, name)
+            record = await self._repos.agents.get(part, name, conn=conn)
             definition = merge_general_fields(record.definition, patch)
             validate_definition_for(part, definition, allowlist=self._allow, visibility=record.visibility,
                                     allowed_groups=record.allowed_groups)

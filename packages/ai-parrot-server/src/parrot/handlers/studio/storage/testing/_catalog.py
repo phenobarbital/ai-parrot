@@ -34,7 +34,7 @@ class _Drafts(_Repo):
             raise StudioNotFound(name)
         return rec
 
-    async def get(self, part: StudioPartition, name: str) -> StudioDraftRecord | None:
+    async def get(self, part: StudioPartition, name: str, *, conn: Any | None = None) -> StudioDraftRecord | None:
         return self._find("drafts", part.tenant, name)
 
     async def list(self, part: StudioPartition, *, owner: str | None = None) -> list[StudioDraftRecord]:

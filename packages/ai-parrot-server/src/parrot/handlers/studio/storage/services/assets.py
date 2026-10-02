@@ -31,7 +31,7 @@ class StudioAssetService:
     ):
         """Lock the agent (guard checked) and re-check the policy on its CURRENT tooling; returns its head."""
         head = await self._repos.agents.lock(conn, part, agent_name, guard)
-        record = await self._repos.agents.get(part, agent_name)
+        record = await self._repos.agents.get(part, agent_name, conn=conn)
         rows = await self._repos.tooling.list_locked(conn, head.agent_id)
         self._gate.enforce(
             part, normalized_tooling_for(record.definition, rows), agent_id=head.agent_id,
@@ -53,7 +53,7 @@ class StudioAssetService:
         digest = hashlib.sha256(asset.content.encode("utf-8")).hexdigest()
         async with studio_transaction(self._repos.pool) as conn:
             head = await self._locked_agent(conn, part, agent_name, guard, actor)
-            old = await self._repos.assets.get(part, agent_name, asset.kind, asset.name)
+            old = await self._repos.assets.get(part, agent_name, asset.kind, asset.name, conn=conn)
             total = await self._repos.assets.total_size(conn, head.agent_id) + size - (old.size if old else 0)
             if total > self._limits.agent_total_max:
                 raise StudioAgentAssetsQuota(f"agent assets would total {total} > {self._limits.agent_total_max} bytes")
