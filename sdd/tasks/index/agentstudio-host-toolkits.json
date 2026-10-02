@@ -356,7 +356,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 4,
@@ -368,8 +368,9 @@
       "parallelism_notes": "Depends on TASK-3989 (the core gate it relies on for the second check inside execute) and TASK-3987 (same files studio/testing.py and studio/toolkit_config.py — serialise).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3990-scope-enforcement-handlers.md"
+      "completed_at": "2026-10-02T15:11:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3990-scope-enforcement-handlers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3991",

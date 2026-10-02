@@ -213,11 +213,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential fallback loop, tramo B2)
+**Date**: 2026-10-02
+**Notes**: `StudioToolExecuteHandler` calls `ensure_tool_scope(cls, tool_name=slug)` (shared `_scope_refusal` in `_base/_storage.py`)
+right after the tenant policy check and BEFORE `_instantiate_tool` (R-b: no constructor side effect without a valid scope); a
+structured `tool_scope_unavailable` `ToolResult` coming out of `instance.execute` maps to the same 403
+(`StudioToolExecuteHandler._execute_response`). `StudioToolkitOptionsHandler` checks the scope (and then the unknown-param 404) before
+`hydrate_params` and construction (`_options_refusal`; `get` complexity unchanged at 10). Refusal = 403 `tool_scope_unavailable`
+with `details.reason`. R-c: the server host probe gained tenant-bound entries (`tp_tenant` toolkit, `tp_tenant_tool`) and
+`test_host_toolkit_paths.py` now runs every Studio path (catalogue, schema, generic assign, feat593 GET, options, /me, live assign, bot
+build) for both the plain and the tenant-bound entries.
+Mutations RED (restored): scope check before `_instantiate_tool` removed; options refusal removed; structured-result mapping removed;
+`ensure_tool_scope` no-op.
+Tests: `test_scope_enforcement_handlers.py` (3; counters for constructor/executed/options, hydrate spy), paths test (16).
+Server suite vs baseline-package: 0 new (log artifacts/logs/b2-server-3990.log).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-**Mutation evidence**: <for each new assertion: the code reverted, the test that went RED>
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: shared `_scope_refusal` lives in `_base/_storage.py` (not a per-module `_scope_error`); `_host_probe.py` and
+`test_host_toolkit_paths.py` modified for R-c. The mismatched-scope leg of the execute test needs binding (TASK-3991).
