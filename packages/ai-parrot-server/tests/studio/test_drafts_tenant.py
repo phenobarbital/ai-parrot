@@ -4,7 +4,6 @@ from __future__ import annotations
 import pytest
 
 from parrot.handlers.studio import drafts as drafts_module
-from parrot.handlers.studio.drafts import StudioDraftVisibilityHandler
 from parrot.handlers.studio.storage.models import StudioPartition
 from parrot.registry.registry import AgentRegistry
 from parrot.tools import tooling_policy
@@ -24,7 +23,6 @@ def _drafts_dir(monkeypatch, tmp_path):
 
 def _app(pool):  # noqa: F811
     app = tenant_app(pool)
-    app.router.add_view(f"{BASE}/drafts/{{name}}/visibility", StudioDraftVisibilityHandler)
     return app
 
 

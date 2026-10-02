@@ -6,7 +6,6 @@ import uuid
 import pytest
 
 from parrot.handlers.studio import skills_catalog as sc
-from parrot.handlers.studio.skills_catalog import StudioSkillVisibilityHandler
 
 from .test_agents_db_mode import BASE, _offline, pool  # noqa: F401  (fixtures)
 from .test_agents_visibility import create, tenant_app, who
@@ -22,7 +21,6 @@ def _registry(monkeypatch):
 
 def _app(pool):  # noqa: F811
     app = tenant_app(pool)
-    app.router.add_view(f"{BASE}/skills/{{id}}/visibility", StudioSkillVisibilityHandler)
     return app
 
 

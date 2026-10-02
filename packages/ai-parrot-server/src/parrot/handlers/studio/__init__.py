@@ -77,20 +77,22 @@ def _register_me(reg: _Registrar) -> None:
 
 def _register_agents(reg: _Registrar) -> None:
     # Agent lifecycle (FEAT-467 TASK-2512): create/list/read/reload/delete.
-    from .agents import StudioAgentReloadHandler, StudioAgentsHandler
+    from .agents import StudioAgentReloadHandler, StudioAgentsHandler, StudioAgentVisibilityHandler
 
     reg.add("/agents", StudioAgentsHandler)
     reg.add("/agents/{name}", StudioAgentsHandler)
     reg.add("/agents/{name}/reload", StudioAgentReloadHandler)
+    reg.add("/agents/{name}/visibility", StudioAgentVisibilityHandler)
 
 
 def _register_drafts(reg: _Registrar) -> None:
     # Draft pipeline (FEAT-467 TASK-2513): save/list/read/activate/delete.
-    from .drafts import StudioDraftActivateHandler, StudioDraftsHandler
+    from .drafts import StudioDraftActivateHandler, StudioDraftsHandler, StudioDraftVisibilityHandler
 
     reg.add("/drafts", StudioDraftsHandler)
     reg.add("/drafts/{name}", StudioDraftsHandler)
     reg.add("/drafts/{name}/activate", StudioDraftActivateHandler)
+    reg.add("/drafts/{name}/visibility", StudioDraftVisibilityHandler)
 
 
 def _register_files(reg: _Registrar) -> None:
@@ -107,6 +109,7 @@ def _register_skills(reg: _Registrar) -> None:
         StudioSkillsCatalogHandler,
         StudioSkillsImportHandler,
         StudioSkillsResyncHandler,
+        StudioSkillVisibilityHandler,
     )
 
     reg.add("/skills", StudioSkillsCatalogHandler)
@@ -114,6 +117,7 @@ def _register_skills(reg: _Registrar) -> None:
     # dynamic /skills/{id} route — aiohttp matches in registration order and
     # {id} would otherwise swallow "resync" as an id.
     reg.add("/skills/resync", StudioSkillsResyncHandler)
+    reg.add("/skills/{id}/visibility", StudioSkillVisibilityHandler)
     reg.add("/skills/{id}", StudioSkillsCatalogHandler)
     reg.add("/agents/{name}/skills/import/{id}", StudioSkillsImportHandler)
 

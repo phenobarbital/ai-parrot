@@ -204,7 +204,7 @@ async def test_update_by_non_owner_refused(aiohttp_client, pool):
     resp, body = await _save(client, user="u2")
     assert resp.status == 409 and body["code"] == "name_taken"   # FEAT-605: a draft the caller cannot manage is name_taken
     resp, body = await _activate(client, user="u2")
-    assert resp.status == 403 and body["code"] == "forbidden"
+    assert resp.status == 403 and body["code"] == "not_manageable"
 
 
 async def test_concurrent_activation_http(aiohttp_client, pool):
@@ -316,7 +316,7 @@ async def test_delete_declarative_draft(aiohttp_client, pool):
     svc = client.app["studio_storage"].services.drafts
     await _save(client)
     resp, body = await _delete(client, user="u2")                         # not the owner (GLOBAL lists all): 403
-    assert resp.status == 403 and body["code"] == "forbidden"
+    assert resp.status == 403 and body["code"] == "not_manageable"
     assert await svc.get(StudioPartition.GLOBAL, "bundled") is not None
     resp, body = await _delete(client, expected_version="1")              # not an expected_version route (§2.9)
     assert resp.status == 400 and body["code"] == "expected_version_unsupported"
@@ -399,7 +399,7 @@ async def test_delete_stale_authorization_reauthorizes_and_refuses(aiohttp_clien
     client = await _swap_client(aiohttp_client, pool, "other_owner")
     await _save(client)
     resp, body = await _delete(client, prefix="/swap")                    # u1 authorized v1; the row is now u2's v2
-    assert resp.status == 403 and body["code"] == "forbidden"
+    assert resp.status == 403 and body["code"] == "not_manageable"
     rec = await client.app["studio_storage"].services.drafts.get(StudioPartition.GLOBAL, "bundled")
     assert rec is not None and rec.owner == "u2" and rec.version == 2
 

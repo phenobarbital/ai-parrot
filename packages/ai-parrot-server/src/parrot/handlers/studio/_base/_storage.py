@@ -49,7 +49,7 @@ class _StudioStorageMixin:
         if rec is None or not access.can_see(rec):
             return self._not_found(kind, name)
         if manage and not access.can_manage(rec):
-            body = self._json_error("You do not have permission to modify this resource.", "forbidden")
+            body = self._json_error("You do not have permission to modify this resource.", "not_manageable")
             return self.json_response(body, status=403)
         return None
 

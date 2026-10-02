@@ -12,7 +12,6 @@ from aiohttp import web
 from parrot.bots.basic import BasicBot
 from parrot.handlers.scope import RequestScope
 from parrot.handlers.studio import setup_studio_routes
-from parrot.handlers.studio.agents import StudioAgentVisibilityHandler
 from parrot.manager.manager import BotManager
 
 from .test_agents_db_mode import BASE, _offline, _session, pool  # noqa: F401  (fixtures)
@@ -40,7 +39,6 @@ def tenant_app(pool, *, resolver: bool = True) -> web.Application:  # noqa: F811
                          enable_swagger_api=False)
     manager.setup_registry_only(app)
     setup_studio_routes(app)
-    app.router.add_view(f"{BASE}/agents/{{name}}/visibility", StudioAgentVisibilityHandler)
     return app
 
 

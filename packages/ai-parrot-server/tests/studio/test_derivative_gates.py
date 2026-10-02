@@ -49,11 +49,11 @@ async def call(client, route, name, caller):
 
 
 def about_the_agent(status, body) -> bool:
-    """True when the response is the access refusal of the AGENT (404 not_found / 403 forbidden)."""
+    """True when the response is the access refusal of the AGENT (404 not_found / 403 not_manageable)."""
     if not isinstance(body, dict):
         return False
     return (status == 404 and body.get("code") == "not_found" and "Agent '" in str(body.get("message"))) or (
-        status == 403 and body.get("code") == "forbidden")
+        status == 403 and body.get("code") == "not_manageable")
 
 
 @pytest.fixture(autouse=True)
@@ -99,7 +99,7 @@ async def test_visible_not_manageable_is_403(aiohttp_client, pool, route):  # no
     client = await aiohttp_client(tenant_app(pool))
     await seed(client)
     status, body = await call(client, route, "shared", who("u2"))
-    assert status == 403 and body["code"] == "forbidden", (route, status, body)
+    assert status == 403 and body["code"] == "not_manageable", (route, status, body)
 
 
 @pytest.mark.parametrize("route", SEE_ROUTES + OWN_OVERRIDE_ROUTES, ids=lambda r: f"{r[0]} {r[1]}")

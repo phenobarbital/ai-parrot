@@ -215,7 +215,7 @@ async def test_check_record_access_matrix(aiohttp_client):
     assert absent[0] == 404 and absent == other_tenant  # byte-identical
     peer = {"present": "1", "tenant": "acme", "owner": "1", "vis": "tenant"}
     status, body = await _call(aiohttp_client, _INFO, {**peer, "manage": "1"})
-    assert status == 403 and b"forbidden" in body
+    assert status == 403 and b"not_manageable" in body
     assert (await _call(aiohttp_client, _INFO, peer))[0] == 200  # visible, no manage requested
     own = {"present": "1", "tenant": "acme", "owner": "7", "manage": "1"}
     status, body = await _call(aiohttp_client, _INFO, own)
