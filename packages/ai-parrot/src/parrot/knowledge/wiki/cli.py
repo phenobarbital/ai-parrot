@@ -3782,6 +3782,12 @@ def _extract_into_graph(
     " remember when unavailable).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@click.option("--type", "type_", default=None, help="Entity type (project, meeting, ticket, ...).")
+@click.option("--project", default=None, help="Owning project (entity attribute).")
+@click.option("--status", default=None, help="Entity status valid for --type.")
+@click.option("--date", "date_", default=None, help="ISO date (entity attribute).")
+@click.option("--due", default=None, help="ISO due date (entity attribute).")
+@click.option("--owner", default=None, help="Owner identity (entity attribute).")
 def remember(
     text: str,
     path_: str | None,
@@ -3796,6 +3802,12 @@ def remember(
     by: str | None,
     extract_: bool,
     as_json: bool,
+    type_: str | None = None,
+    project: str | None = None,
+    status: str | None = None,
+    date_: str | None = None,
+    due: str | None = None,
+    owner: str | None = None,
 ) -> None:
     """Save a fact, decision, or lesson into the wiki (persistent memory).
 
@@ -3828,6 +3840,27 @@ def remember(
         raise SystemExit(2)
 
     body = text if not source_uri else f"{text}\n\n> Source: {source_uri}"
+    entity_values = {
+        "type": type_,
+        "project": project,
+        "status": status,
+        "date": date_,
+        "due": due,
+        "owner": owner,
+    }
+    attrs_rows: dict[str, str] = {}
+    if any(value is not None for value in entity_values.values()):
+        from parrot.knowledge.wiki.entities import EntityValidationError, normalize_frontmatter
+
+        try:
+            attrs_rows = normalize_frontmatter(
+                {key: value for key, value in entity_values.items() if value is not None},
+                source="memory",
+                strict=True,
+            ).to_rows()
+        except EntityValidationError as exc:
+            click.echo(f"{exc.code}: {exc}", err=True)
+            raise SystemExit(2) from exc
     _run(
         store.upsert_pages(
             [
@@ -3841,6 +3874,7 @@ def remember(
                     token_count=estimate_tokens(body),
                     origin="memory",
                     asserted_by=asserted_by,
+                    attrs=attrs_rows,
                 )
             ]
         )
