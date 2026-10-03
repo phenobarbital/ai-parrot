@@ -45,7 +45,9 @@ def test_cli_lint_exits_nonzero_on_error(built_wiki: Path, monkeypatch: pytest.M
 
     async def run_error(self: LintRunner, options: LintOptions) -> LintReport:
         return LintReport(
-            findings=[Finding(rule_id="fixture", severity="error", message="fixture error", fingerprint="fixture-error")],
+            findings=[
+                Finding(rule_id="fixture", severity="error", message="fixture error", fingerprint="fixture-error")
+            ],
             counts={"info": 0, "warning": 0, "error": 1},
         )
 
