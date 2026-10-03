@@ -22,6 +22,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -379,6 +380,96 @@ class GlobalWikiRegistry(BaseModel):
         return value
 
 
+DEFAULT_TICKET_STATUS_MAP: dict[str, str] = {
+    "To Do": "open",
+    "Open": "open",
+    "Backlog": "open",
+    "In Progress": "in-progress",
+    "Blocked": "blocked",
+    "In Review": "in-review",
+    "Code Review": "in-review",
+    "Done": "closed",
+    "Closed": "closed",
+    "Resolved": "closed",
+}
+
+# Canonical ticket statuses (mirror of ``entities.STATUS_BY_TYPE["ticket"]``). Duplicated here on purpose so this
+# module never imports the entities/standup packages on the startup/hook fast path.
+_CANONICAL_TICKET_STATUSES: frozenset[str] = frozenset({"open", "in-progress", "blocked", "in-review", "closed"})
+
+
+class StandupIdentityConfig(BaseModel):
+    """Explicit non-secret wiki/Jira identity and task-assignment aliases.
+
+    Attributes:
+        wiki: Wiki identity (``human:<user>``); resolved automatically when omitted.
+        jira_account_id: Jira account id used for personal ticket filtering.
+        jira_display_name: Jira display name, used as a fallback match only.
+        aliases: Extra ``assigned_to`` values treated as "me" in the task index.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    wiki: str | None = None
+    jira_account_id: str | None = None
+    jira_display_name: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+
+
+class StandupConfig(BaseModel):
+    """Daily and period brief settings, safe to import on the hook fast path.
+
+    Attributes:
+        default_language: Brief language (``en`` or ``es``).
+        horizon_days: Look-ahead/look-back window in days (1-90).
+        timezone: IANA timezone name; ``None`` means system local.
+        week_start: First day of the week for period briefs.
+        out_dir: Output directory for brief files; ``None`` uses the default.
+        me: Personal identity used to filter briefs.
+        ticket_status_map: Raw Jira status name to canonical ticket status.
+        project_map: Jira key / SDD slug to project page id or label.
+        stale_ticket_days: Days after which an untouched ticket is stale.
+        stale_decision_days: Days after which a proposed decision is stale.
+        llm_env: Environment variable naming the lightweight summarisation model.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    default_language: Literal["en", "es"] = "en"
+    horizon_days: int = Field(default=7, ge=1, le=90)
+    timezone: str | None = None
+    week_start: Literal["monday", "sunday"] = "monday"
+    out_dir: str | None = None
+    me: StandupIdentityConfig = Field(default_factory=StandupIdentityConfig)
+    ticket_status_map: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_TICKET_STATUS_MAP))
+    project_map: dict[str, str] = Field(default_factory=dict)
+    stale_ticket_days: int = 10
+    stale_decision_days: int = 14
+    llm_env: str = "WIKI_LIGHTWEIGHT_MODEL"
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str | None) -> str | None:
+        """Reject names that are not valid IANA timezones."""
+        if value is not None:
+            try:
+                ZoneInfo(value)
+            except (ZoneInfoNotFoundError, ValueError, OSError) as exc:
+                raise ValueError(f"Invalid IANA timezone {value!r}") from exc
+        return value
+
+    @field_validator("ticket_status_map")
+    @classmethod
+    def _validate_ticket_status_map(cls, value: dict[str, str]) -> dict[str, str]:
+        """Require every mapped value to be a canonical ticket status."""
+        bad = sorted({v for v in value.values() if v not in _CANONICAL_TICKET_STATUSES})
+        if bad:
+            raise ValueError(
+                f"Non-canonical ticket status value(s) {bad}; allowed: {sorted(_CANONICAL_TICKET_STATUSES)}"
+            )
+        return value
+
+
 class WikiProjectConfig(BaseModel):
     """Repository-level wiki configuration (``.parrot/wiki.json``).
 
@@ -415,6 +506,7 @@ class WikiProjectConfig(BaseModel):
             budget. Generation is disabled by default.
         schema_plane: SQL schema plane settings (FEAT-600); read from and
             written to the ``"schema"`` key of ``wiki.json``.
+        standup: Daily/period brief settings (FEAT-627).
     """
 
     model_config = ConfigDict(validate_by_name=True, validate_by_alias=True, serialize_by_alias=True)
@@ -494,6 +586,10 @@ class WikiProjectConfig(BaseModel):
         default_factory=SchemaPlaneConfig,
         alias="schema",
         description="SQL schema plane settings (FEAT-600): declared sources (env NAMES only), staleness policy.",
+    )
+    standup: StandupConfig = Field(
+        default_factory=StandupConfig,
+        description="Daily/period standup brief settings (FEAT-627).",
     )
     sqlite_busy_timeout: float = Field(
         default=15.0,
@@ -844,6 +940,7 @@ class WikiEnvOverlay(BaseModel):
         include_suffixes: Scanned file suffixes override.
         exclude_dirs: Extra pruned directory names override.
         claude: Claude Code integration settings override.
+        standup: Standup settings override (replaced wholesale).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -862,6 +959,7 @@ class WikiEnvOverlay(BaseModel):
     include_suffixes: list[str] | None = None
     exclude_dirs: list[str] | None = None
     claude: ClaudeIntegrationConfig | None = None
+    standup: StandupConfig | None = None
 
     @field_validator("namespaces")
     @classmethod

@@ -120,6 +120,14 @@ def _dist(path: str) -> str:
     return distribution_of(path.split("::", 1)[0])
 
 
+def _dist_or_none(path: str) -> str | None:
+    """`_dist`, or None for a path under neither `tests/` nor `packages/<dist>/`."""
+    try:
+        return _dist(path)
+    except ValueError:
+        return None
+
+
 def plan_tests(
     *,
     worktree: Path,
@@ -182,7 +190,8 @@ def plan_tests(
                 for path in changed_files
                 if module_name_for(path) is not None
             }
-            changed_dists = {_dist(path) for path in changed_files}
+            # Non-package changes (sdd/ state, docs, scripts) own no distribution.
+            changed_dists = {_dist(path) for path in changed_files if _dist_or_none(path) is not None}
             for dist, paths in by_dist.items():
                 if len(paths) > policy.impact_cap:
                     # FEAT-618: a cap-only escalation into a distribution that owns
