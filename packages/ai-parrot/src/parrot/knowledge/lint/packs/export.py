@@ -106,19 +106,13 @@ class FrontmatterSchemaRule:
         findings: list[Finding] = []
         for rel, entry in export.items():
             if entry["error"] is not None:
-                findings.append(
-                    _finding(self.rule_id, "error", [rel], f"{rel}: {entry['error']}")
-                )
+                findings.append(_finding(self.rule_id, "error", [rel], f"{rel}: {entry['error']}"))
                 continue
             try:
                 ExportFrontmatter.model_validate(entry["meta"])
             except ValidationError as exc:
-                detail = "; ".join(
-                    f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in exc.errors()
-                )
-                findings.append(
-                    _finding(self.rule_id, "error", [rel], f"{rel}: invalid frontmatter ({detail})")
-                )
+                detail = "; ".join(f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in exc.errors())
+                findings.append(_finding(self.rule_id, "error", [rel], f"{rel}: invalid frontmatter ({detail})"))
         return findings
 
     async def fix(self, ctx: LintContext, finding: Finding) -> FixResult | None:
@@ -144,13 +138,25 @@ class ExportDriftRule:
         findings: list[Finding] = []
         for cid in sorted(pages.keys() - exported.keys()):
             findings.append(
-                _finding(self.rule_id, "warning", [cid], f"Page '{cid}' is not in the export.",
-                         fixable=True, data={"kind": "missing"})
+                _finding(
+                    self.rule_id,
+                    "warning",
+                    [cid],
+                    f"Page '{cid}' is not in the export.",
+                    fixable=True,
+                    data={"kind": "missing"},
+                )
             )
         for cid in sorted(exported.keys() - pages.keys()):
             findings.append(
-                _finding(self.rule_id, "warning", [cid], f"Exported page '{cid}' no longer exists in the plane.",
-                         fixable=True, data={"kind": "extra"})
+                _finding(
+                    self.rule_id,
+                    "warning",
+                    [cid],
+                    f"Exported page '{cid}' no longer exists in the plane.",
+                    fixable=True,
+                    data={"kind": "extra"},
+                )
             )
         for cid in sorted(pages.keys() & exported.keys()):
             if pages[cid] != exported[cid]:

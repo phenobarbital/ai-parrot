@@ -79,7 +79,9 @@ async def test_no_export_dir_is_info(tmp_path):
 
 
 async def test_dangling_relates_to(tmp_path):
-    store = FakeStore(_pages(), [{"src": "a", "dst": "ghost", "rel": "references"}, {"src": "a", "dst": "b", "rel": "references"}])
+    store = FakeStore(
+        _pages(), [{"src": "a", "dst": "ghost", "rel": "references"}, {"src": "a", "dst": "b", "rel": "references"}]
+    )
     await export_okf_bundle(store, tmp_path, "w")  # type: ignore[arg-type]
     findings = await ExportDanglingRelatesToRule().check(_ctx(store, tmp_path))
     assert len(findings) == 1
