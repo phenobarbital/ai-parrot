@@ -6,7 +6,12 @@ import pytest
 
 from parrot.knowledge.wiki.charter import Taxonomy
 from parrot.knowledge.wiki.documents import AcquiredDocument, DocumentMetadata, DocumentRef
-from parrot.knowledge.wiki.inbox.classify import InboxClassificationError, InboxClassifier, normalize_tags, slugify_doc_id
+from parrot.knowledge.wiki.inbox.classify import (
+    InboxClassificationError,
+    InboxClassifier,
+    normalize_tags,
+    slugify_doc_id,
+)
 from parrot.knowledge.wiki.inbox.models import InboxClassification
 from parrot.knowledge.wiki.review import ManifestDocEntry
 
