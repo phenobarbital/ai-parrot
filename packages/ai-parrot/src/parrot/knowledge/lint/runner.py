@@ -29,12 +29,14 @@ class LintRunner:
         config: Any | None = None,
         rules: Sequence[LintRule] | None = None,
         router: Router | None = None,
+        extras: dict[str, Any] | None = None,
     ) -> None:
         self.store = store
         self.root = root
         self.config = config
         self._rules = list(rules) if rules is not None else None
         self._router = router
+        self._extras = dict(extras or {})
         self.logger = logging.getLogger(__name__)
 
     def _select(self, options: LintOptions) -> list[LintRule]:
@@ -66,6 +68,7 @@ class LintRunner:
         """Check → (fix → invalidate → re-check) → route → log LINT."""
         started = time.monotonic()
         ctx = LintContext(self.store, root=self.root, config=self.config, options=options)
+        ctx.extras.update(self._extras)
         rules = self._select(options)
         report = LintReport(
             wiki_name=str(getattr(self.config, "wiki_name", "") or ""),
@@ -90,6 +93,7 @@ class LintRunner:
                 fixed_rule_ids = await self._apply_fixes(rules, findings_by_rule, ctx, report)
                 if fixed_rule_ids:
                     ctx.invalidate()
+                    ctx.extras.update(self._extras)
                     fixed_rules = [rule for rule in rules if rule.rule_id in fixed_rule_ids]
                     refreshed = await self._check_rules(fixed_rules, ctx)
                     findings_by_rule.update(refreshed)
