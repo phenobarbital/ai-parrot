@@ -18,7 +18,9 @@ def service(tmp_path: Path) -> LedgerService:
     """A LedgerService over an isolated temporary ledger root."""
     ledger_dir = tmp_path / ".parrot" / "ledger"
     ledger_dir.mkdir(parents=True)
-    store = LedgerStore(ledger_dir / "ledger.db", wiki_name="ledger", sqlite_policy=SQLitePragmaPolicy(busy_timeout_s=1.0))
+    store = LedgerStore(
+        ledger_dir / "ledger.db", wiki_name="ledger", sqlite_policy=SQLitePragmaPolicy(busy_timeout_s=1.0)
+    )
     log = LedgerLog(str(ledger_dir / "events.jsonl"))
     return LedgerService(LedgerIndex(store, log), store, log, tmp_path)
 
