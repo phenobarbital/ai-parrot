@@ -18,6 +18,7 @@ BASE_TOOLS = {
     "wiki_symbol_lookup",
     "wiki_code_outline",
     "wiki_blast_radius",
+    "wiki_standup",
     "wiki_decisions_for_symbol",
     "wiki_decision_why",
 }
