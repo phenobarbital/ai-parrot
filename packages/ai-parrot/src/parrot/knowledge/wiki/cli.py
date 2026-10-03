@@ -64,6 +64,7 @@ from parrot.knowledge.wiki.federation import (
     open_namespace_store,
     resolve_namespaces,
 )
+from parrot.knowledge.wiki.identity import authoring_identity as _authoring_identity
 from parrot.knowledge.wiki.languages import all_scanners, astgrep
 from parrot.knowledge.wiki.languages.fingerprint import (
     changed_languages,
@@ -3508,28 +3509,6 @@ def export(path_: str | None, output: str) -> None:
 # --------------------------------------------------------------------------
 # Authoring / persistent-memory commands ("save things in the brain")
 # --------------------------------------------------------------------------
-
-
-def _authoring_identity(by: str | None) -> str:
-    """Resolve who is asserting a write.
-
-    Precedence: explicit ``--by`` > ``CLAUDE_AGENT_ID`` /
-    ``PARROT_AGENT_ID`` env (prefixed ``agent:``) > the local user
-    (prefixed ``human:``).
-    """
-    import getpass
-    import os
-
-    if by:
-        return by
-    for env_name in ("CLAUDE_AGENT_ID", "PARROT_AGENT_ID"):
-        value = os.environ.get(env_name)
-        if value:
-            return f"agent:{value}"
-    try:
-        return f"human:{getpass.getuser()}"
-    except Exception:  # noqa: BLE001 — no user db in some containers
-        return "human:unknown"
 
 
 def _authoring_run_id() -> str | None:
