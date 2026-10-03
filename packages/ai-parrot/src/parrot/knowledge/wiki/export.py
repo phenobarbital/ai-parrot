@@ -46,9 +46,7 @@ CATEGORY_TO_OKF_TYPE: dict[str, str] = {
 }
 
 # Inverse map for consumers that read bundles back (file_store backend).
-OKF_TYPE_TO_CATEGORY: dict[str, str] = {
-    v: k for k, v in CATEGORY_TO_OKF_TYPE.items()
-}
+OKF_TYPE_TO_CATEGORY: dict[str, str] = {v: k for k, v in CATEGORY_TO_OKF_TYPE.items()}
 
 
 class WikiExportReport(BaseModel):
@@ -101,9 +99,7 @@ def page_frontmatter(
         "type": okf_type(str(page.get("category") or "concept")),
         "title": page.get("title") or page["concept_id"],
         "id": page["concept_id"],
-        "tags": list(dict.fromkeys(tags))
-        if tags is not None
-        else [str(page.get("category") or "concept")],
+        "tags": list(dict.fromkeys(tags)) if tags is not None else [str(page.get("category") or "concept")],
         "timestamp": page.get("updated_at") or "",
     }
     summary = page.get("summary") or ""
@@ -111,9 +107,7 @@ def page_frontmatter(
         data["summary"] = summary
     if relates_to:
         data["relates_to"] = relates_to
-    rendered = yaml.dump(
-        data, sort_keys=False, allow_unicode=True, default_flow_style=False
-    )
+    rendered = yaml.dump(data, sort_keys=False, allow_unicode=True, default_flow_style=False)
     return f"---\n{rendered}---\n"
 
 
@@ -160,13 +154,9 @@ async def export_okf_bundle(
     known_targets = {p["concept_id"] for p in pages}
     relates_by_src: dict[str, list[dict[str, str]]] = {}
     for edge in edges:
-        relates_by_src.setdefault(edge["src"], []).append(
-            {"concept": edge["dst"], "rel": edge["rel"]}
-        )
+        relates_by_src.setdefault(edge["src"], []).append({"concept": edge["dst"], "rel": edge["rel"]})
 
-    report = WikiExportReport(
-        wiki_name=wiki_name, output_dir=str(output_dir)
-    )
+    report = WikiExportReport(wiki_name=wiki_name, output_dir=str(output_dir))
     index_entries: list[tuple[str, str, str]] = []
 
     def _write(path: Path, content: str) -> None:
@@ -179,13 +169,9 @@ async def export_okf_bundle(
         filename = f"{flatten_concept_id_for_filename(page['concept_id'])}.md"
         rel_path = f"{cat_dir}/{filename}"
 
-        frontmatter = page_frontmatter(
-            page, relates_by_src.get(page["concept_id"], [])
-        )
+        frontmatter = page_frontmatter(page, relates_by_src.get(page["concept_id"], []))
         body = page.get("body") or page.get("summary") or ""
-        await asyncio.to_thread(
-            _write, output_dir / rel_path, frontmatter + "\n" + body
-        )
+        await asyncio.to_thread(_write, output_dir / rel_path, frontmatter + "\n" + body)
 
         report.files_written += 1
         report.categories[cat_dir] = report.categories.get(cat_dir, 0) + 1
@@ -197,11 +183,7 @@ async def export_okf_bundle(
             )
         )
 
-    unknown = {
-        e["dst"]
-        for e in edges
-        if e["dst"] not in known_targets and not e["dst"].startswith("src-")
-    }
+    unknown = {e["dst"] for e in edges if e["dst"] not in known_targets and not e["dst"].startswith("src-")}
     if unknown:
         logger.debug(
             "export_okf_bundle: %d relates_to target(s) are not exported "
@@ -216,7 +198,5 @@ async def export_okf_bundle(
     )
     report.index_generated = True
 
-    logger.info(
-        "export_okf_bundle: %d page(s) → %s", report.files_written, output_dir
-    )
+    logger.info("export_okf_bundle: %d page(s) → %s", report.files_written, output_dir)
     return report

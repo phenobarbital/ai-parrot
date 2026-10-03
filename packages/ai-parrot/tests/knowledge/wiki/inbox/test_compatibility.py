@@ -1,4 +1,5 @@
 """Focused FEAT-626 regression tests for the duplicate-bypass and tags seams."""
+
 from __future__ import annotations
 
 from pathlib import Path
