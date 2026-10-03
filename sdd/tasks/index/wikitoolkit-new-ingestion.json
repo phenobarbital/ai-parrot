@@ -198,7 +198,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -213,8 +213,9 @@
       "parallelism_notes": "Consumes config/path helpers from TASK-4046, InboxClassifier/slugify_doc_id from TASK-4049, LinkProposer from TASK-4050, DocPageWriter from TASK-4051, projection writers from TASK-4052, and archive helpers from TASK-4053. Compatibility seams and data models are transitive prerequisites.",
       "assigned_to": null,
       "started_at": "2026-10-03T00:28:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4054-inbox-processor.md"
+      "completed_at": "2026-10-03T01:16:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4054-inbox-processor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4055",
