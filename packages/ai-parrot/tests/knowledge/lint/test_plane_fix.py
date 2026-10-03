@@ -50,9 +50,7 @@ async def test_broken_target_not_symmetrized(tmp_path):
 
 @pytest.mark.asyncio
 async def test_symmetric_reverse_references_satisfies(tmp_path):
-    store = await _store(
-        tmp_path, [("a", "b", "references", "asserted"), ("b", "a", "references", "asserted")]
-    )
+    store = await _store(tmp_path, [("a", "b", "references", "asserted"), ("b", "a", "references", "asserted")])
     assert await AsymmetricRelatedRule().check(LintContext(store)) == []
 
 
