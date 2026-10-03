@@ -59,20 +59,23 @@ def test_model_serialization_and_defaults(tmp_path: Path, monkeypatch: pytest.Mo
     hygiene.unmapped_statuses["Custom"] = 1
     document.diagnostics.append("offline")
     assert subject.HygieneReport().unmapped_statuses == {}
-    assert subject.BriefDocument(
-        window=window,
-        identity=StandupIdentity(wiki="human:jesus"),
-        team=False,
-        language="en",
-        on_your_plate=[],
-        projects=[],
-        internal=[],
-        delta_new=[],
-        delta_closed=[],
-        sources=[],
-        hygiene=subject.HygieneReport(),
-        item_ids=[],
-    ).diagnostics == []
+    assert (
+        subject.BriefDocument(
+            window=window,
+            identity=StandupIdentity(wiki="human:jesus"),
+            team=False,
+            language="en",
+            on_your_plate=[],
+            projects=[],
+            internal=[],
+            delta_new=[],
+            delta_closed=[],
+            sources=[],
+            hygiene=subject.HygieneReport(),
+            item_ids=[],
+        ).diagnostics
+        == []
+    )
     assert ExportedStandupConfig is StandupConfig
     assert CollectContext.model_config["arbitrary_types_allowed"] is True
     assert set(CollectContext.model_fields) == {
