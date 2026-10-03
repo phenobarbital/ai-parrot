@@ -64,13 +64,11 @@ class TestMcpServerLedgerMount:
         """Provenance should store ledger targets foreign-qualified and code targets locally."""
         # This would require more complex mocking of the actual store
         # For now, we test the logic in the WikiRememberTool
-        pass
 
     def test_ledger_reads_mount_as_overlay(self, mock_root):
         """Ledger reads should mount as overlay (tested through integration)."""
         # This is tested through the federation overlay tests
         # We verify by checking that the overlay configuration is correct
-        pass
 
 
 # Note: More comprehensive integration tests would require setting up

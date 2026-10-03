@@ -47,3 +47,17 @@ def test_lint_fix_end_to_end(tmp_path: Path) -> None:
     after = _lint(repo)
     assert not any(f["rule_id"] == "asymmetric-related" for f in after["findings"])
     assert not any(f.get("fixable") for f in after["findings"])
+
+
+def test_default_lint_leaves_store_unchanged(tmp_path: Path) -> None:
+    """AC1: a default (non --fix) run leaves pages and edges byte-identical."""
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE_REPO, repo)
+    built = CliRunner().invoke(wiki, ["build", "--path", str(repo), "--no-git", "--no-graph", "--quiet"])
+    assert built.exit_code == 0, built.output
+
+    store = SQLiteWikiStore(repo / ".parrot" / "wiki" / "wiki.db", wiki_name="repo")
+    before = (asyncio.run(store.dump_edges()), asyncio.run(LintContext(store).page_ids()))
+    _lint(repo)
+    after = (asyncio.run(store.dump_edges()), asyncio.run(LintContext(store).page_ids()))
+    assert before == after
