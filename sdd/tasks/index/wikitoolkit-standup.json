@@ -395,7 +395,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -410,8 +410,9 @@
       "parallelism_notes": "TASK-4034: consumes entities/jira collect functions; TASK-4035: consumes ledger/tasks/decisions/memories collect functions; TASK-4036: consumes group_items; TASK-4037: consumes render_markdown; TASK-4038: consumes resolve_optional_llm and summarize; TASK-4039: consumes previous_brief, diff and write receipts",
       "assigned_to": null,
       "started_at": "2026-10-03T00:20:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4040-brief-pipeline.md"
+      "completed_at": "2026-10-03T02:51:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4040-brief-pipeline.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4041",
