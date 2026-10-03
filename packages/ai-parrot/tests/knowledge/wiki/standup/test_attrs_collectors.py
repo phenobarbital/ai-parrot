@@ -148,8 +148,9 @@ async def test_jira_identity_statuses_and_periods(tmp_path: Path, monkeypatch: p
 
     items = await jira.collect(context)
 
-    assert [item.id for item in items] == ["issues::file:NAV-1.md", "issues::file:NAV-2.md", "issues::file:NAV-4.md"]
-    assert [item.status for item in items] == ["blocked", "open", "closed"]
+    assert [item.id for item in items] == ["issues::file:NAV-1.md", "issues::file:NAV-4.md", "issues::file:NAV-2.md"]
+    # Collector order: urgent first, then dated before undated, then id.
+    assert [item.status for item in items] == ["blocked", "closed", "open"]
     assert context.unmapped_statuses == {"Custom": 1}
     missing_context = _context(FakeFederation(FakeStore(rows)), period="day")
     assert "issues::file:NAV-4.md" not in [item.id for item in await jira.collect(missing_context)]

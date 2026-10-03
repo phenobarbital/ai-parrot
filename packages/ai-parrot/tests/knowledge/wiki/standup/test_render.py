@@ -19,7 +19,8 @@ from parrot.knowledge.wiki.standup.models import (
 
 def _item(identifier: str, title: str, *, section: str = "tickets", **values: object) -> BriefItem:
     """Build a compact item fixture with safe renderer defaults."""
-    return BriefItem(id=identifier, kind="ticket", title=title, source="jira", **values)
+    values.setdefault("source", "jira")
+    return BriefItem(id=identifier, kind="ticket", title=title, **values)
 
 
 def _document(*, period: str = "day", **values: object) -> BriefDocument:
@@ -33,21 +34,22 @@ def _document(*, period: str = "day", **values: object) -> BriefDocument:
         upcoming_end=date(2026, 10, 7),
         brief_id="brief:daily:2026-10-03",
     )
-    return BriefDocument(
-        window=window,
-        identity=StandupIdentity(wiki="human:test"),
-        team=False,
-        language="en",
-        on_your_plate=[],
-        projects=[],
-        internal=[],
-        delta_new=[],
-        delta_closed=[],
-        sources=[],
-        hygiene=HygieneReport(),
-        item_ids=[],
-        **values,
-    )
+    fields: dict[str, object] = {
+        "window": window,
+        "identity": StandupIdentity(wiki="human:test"),
+        "team": False,
+        "language": "en",
+        "on_your_plate": [],
+        "projects": [],
+        "internal": [],
+        "delta_new": [],
+        "delta_closed": [],
+        "sources": [],
+        "hygiene": HygieneReport(),
+        "item_ids": [],
+    }
+    fields.update(values)
+    return BriefDocument(**fields)
 
 
 def test_daily_en_es_golden(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -79,6 +79,15 @@ async def test_g9_and_offline_fallback(tmp_path: Path, monkeypatch: pytest.Monke
     """Verify cache corruption and missing credentials retain wiki-only identity."""
     monkeypatch.setenv("PARROT_HOME", str(tmp_path))
     (tmp_path / "jira_identity.json").write_text('{"email":"unsafe@example.test"}', encoding="utf-8")
+
+    class _OfflineJira:
+        """Unconfigured Jira stub: no credentials, no transport."""
+
+        auth_type = None
+
+    import parrot.interfaces.jira as jira
+
+    monkeypatch.setattr(jira, "JiraInterface", _OfflineJira)
     result = await subject.resolve_identity(StandupConfig(), explicit="human:offline", root=tmp_path)
     assert result.model_dump() == {
         "wiki": "human:offline",
