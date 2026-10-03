@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from parrot.knowledge.lint.context import LintContext
-from parrot.knowledge.lint.models import SEVERITY_RANK, Finding, FixResult, LintOptions, LintReport, Severity
+from parrot.knowledge.lint.models import SEVERITY_RANK, Finding, LintOptions, LintReport, Severity
 from parrot.knowledge.lint.rule import LintRule, make_fingerprint
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.store import SCHEMA_VERSION, BaseWikiStore
@@ -97,7 +97,7 @@ class LintRunner:
         else:
             report.findings = self._flatten_findings(findings_by_rule)
 
-        report.counts = {severity: 0 for severity in SEVERITY_RANK}
+        report.counts = dict.fromkeys(SEVERITY_RANK, 0)
         for finding in report.findings:
             report.counts[finding.severity] += 1
         if self._router is not None:
@@ -143,7 +143,7 @@ class LintRunner:
                     continue
                 try:
                     result = await rule.fix(ctx, finding)
-                except Exception as exc:
+                except Exception:
                     self.logger.exception("Lint rule %s failed to fix finding %s", rule_id, finding.fingerprint)
                     continue
                 if result is not None and result.applied:
