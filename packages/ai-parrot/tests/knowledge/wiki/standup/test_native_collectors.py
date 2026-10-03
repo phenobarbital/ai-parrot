@@ -92,6 +92,7 @@ async def test_ledger_and_task_mapping(tmp_path: Path, monkeypatch: pytest.Monke
 @pytest.mark.asyncio
 async def test_decision_and_memory_ownership(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify ADR metadata ownership and memory filtering."""
+
     class Record:
         decision_id = "adr:one"
         title = "Proposed"
@@ -110,9 +111,25 @@ async def test_decision_and_memory_ownership(tmp_path: Path, monkeypatch: pytest
     store = FakeStore(
         [
             {"concept_id": "adr:one", "updated_at": "2026-10-02T10:00:00+00:00", "asserted_by": "human:me"},
-            {"concept_id": "memory:mine", "title": "Note", "category": "note", "updated_at": "2026-10-03T10:00:00+00:00", "asserted_by": "human:me"},
-            {"concept_id": "brief:daily", "category": "brief", "updated_at": "2026-10-03T10:00:00+00:00", "asserted_by": "human:me"},
-            {"concept_id": "memory:other", "category": "lesson", "updated_at": "2026-10-03T10:00:00+00:00", "asserted_by": "other"},
+            {
+                "concept_id": "memory:mine",
+                "title": "Note",
+                "category": "note",
+                "updated_at": "2026-10-03T10:00:00+00:00",
+                "asserted_by": "human:me",
+            },
+            {
+                "concept_id": "brief:daily",
+                "category": "brief",
+                "updated_at": "2026-10-03T10:00:00+00:00",
+                "asserted_by": "human:me",
+            },
+            {
+                "concept_id": "memory:other",
+                "category": "lesson",
+                "updated_at": "2026-10-03T10:00:00+00:00",
+                "asserted_by": "other",
+            },
         ]
     )
     context = _context(tmp_path, store)

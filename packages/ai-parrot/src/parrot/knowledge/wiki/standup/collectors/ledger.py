@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
 
 from parrot.knowledge.wiki.ledger.service import LedgerService
 from parrot.knowledge.wiki.project import find_shared_root
@@ -25,8 +24,10 @@ def _in_progress_features(root: Path) -> list[str]:
             continue
         feature_id = payload.get("feature_id")
         tasks = payload.get("tasks")
-        if isinstance(feature_id, str) and isinstance(tasks, list) and any(
-            isinstance(task, dict) and task.get("status") == "in-progress" for task in tasks
+        if (
+            isinstance(feature_id, str)
+            and isinstance(tasks, list)
+            and any(isinstance(task, dict) and task.get("status") == "in-progress" for task in tasks)
         ):
             result.add(feature_id)
     return sorted(result)
