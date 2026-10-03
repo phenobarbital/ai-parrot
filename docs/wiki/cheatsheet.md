@@ -46,6 +46,7 @@ wikitoolkit status                   # estadísticas, namespaces, staleness
 wikitoolkit status --json
 
 wikitoolkit upsert path/a/archivo.py path/b/otro.py   # re-ingesta puntual
+wikitoolkit inbox                                  # ingesta inbox/, verifica y archiva originales
 wikitoolkit upsert --changed --quiet                    # lo que tocó el último commit (git hook)
 ```
 
