@@ -96,7 +96,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -107,8 +107,9 @@
       "parallelism_notes": "TASK-4022: consumes normalize_frontmatter and parse_leading_yaml; TASK-4023: consumes WikiPageRecord.attrs",
       "assigned_to": null,
       "started_at": "2026-10-03T00:20:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4026-ingest-entity-attrs.md"
+      "completed_at": "2026-10-03T02:02:40+00:00",
+      "file": "sdd/tasks/completed/TASK-4026-ingest-entity-attrs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4027",
@@ -117,7 +118,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -125,8 +126,9 @@
       "parallelism_notes": "Independent ledger-issue-list deliverable; uses existing verified code only and owns its declared files.",
       "assigned_to": null,
       "started_at": "2026-10-03T00:20:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4027-ledger-issue-list.md"
+      "completed_at": "2026-10-03T02:02:40+00:00",
+      "file": "sdd/tasks/completed/TASK-4027-ledger-issue-list.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4028",
