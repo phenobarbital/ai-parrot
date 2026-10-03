@@ -16,7 +16,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Independent entity-vocabulary deliverable; uses existing verified code only and owns its declared files.",
       "assigned_to": null,
       "started_at": "2026-10-03T00:20:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4022-entity-vocabulary.md"
+      "completed_at": "2026-10-03T01:48:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4022-entity-vocabulary.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4023",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "Independent sqlite-page-attrs deliverable; uses existing verified code only and owns its declared files.",
       "assigned_to": null,
       "started_at": "2026-10-03T00:20:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4023-sqlite-page-attrs.md"
+      "completed_at": "2026-10-03T01:48:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4023-sqlite-page-attrs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4024",
