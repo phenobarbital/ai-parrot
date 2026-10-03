@@ -99,7 +99,13 @@ class ContradictionLLMRule:
             return count
 
         # Sort by shared links descending, then by concept_id ascending
-        candidates.sort(key=lambda pair: (-shared_links(pair[0], pair[1]), pair[0].get("concept_id", ""), pair[1].get("concept_id", "")))
+        candidates.sort(
+            key=lambda pair: (
+                -shared_links(pair[0], pair[1]),
+                pair[0].get("concept_id", ""),
+                pair[1].get("concept_id", ""),
+            )
+        )
 
         # Cap at max_pairs
         return candidates[: self.max_pairs]
@@ -202,7 +208,7 @@ Example:
                             data={"memory_a": a_id, "memory_b": b_id, "explanation": explanation},
                         )
                         findings.append(finding)
-                except Exception as exc:  # noqa: BLE001 — individual judge failure is a skip
+                except Exception:  # noqa: BLE001 — individual judge failure is a skip
                     # Continue to next pair
                     pass
 
