@@ -220,7 +220,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -230,8 +230,9 @@
       "parallelism_notes": "TASK-4031: consumes Period and PeriodWindow",
       "assigned_to": null,
       "started_at": "2026-10-03T00:20:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4032-standup-periods.md"
+      "completed_at": "2026-10-03T02:24:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4032-standup-periods.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4033",
@@ -264,7 +265,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -275,8 +276,9 @@
       "parallelism_notes": "TASK-4031: consumes CollectContext and BriefItem; TASK-4025: consumes per-namespace attrs reads",
       "assigned_to": null,
       "started_at": "2026-10-03T00:20:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4034-attrs-collectors.md"
+      "completed_at": "2026-10-03T02:24:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4034-attrs-collectors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4035",
