@@ -49,8 +49,10 @@ def test_stable_period_ids(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     }
     sun_cfg = StandupConfig(week_start="sunday")
     # Sunday-start week Sun 2025-12-28 .. Sat 2026-01-03 converges to one id.
-    sun_ids = {subject.window("week", date(2025, 12, 28 + i) if i < 4 else date(2026, 1, i - 3), sun_cfg).brief_id
-               for i in range(7)}
+    sun_ids = {
+        subject.window("week", date(2025, 12, 28 + i) if i < 4 else date(2026, 1, i - 3), sun_cfg).brief_id
+        for i in range(7)
+    }
     assert len(sun_ids) == 1
     months = {subject.window("month", date(2026, 2, d), cfg).brief_id for d in (1, 14, 28)}
     assert months == {"brief:monthly:2026-02"}
