@@ -19,7 +19,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
+
+from parrot.knowledge.lint.models import LintReport as WikiLintReport
 
 
 class WikiPageCategory(str, Enum):
@@ -297,59 +299,3 @@ class WikiSearchResult(BaseModel):
         default=None,
         description="Wiki page category if known",
     )
-
-
-class WikiLintReport(BaseModel):
-    """Extended lint report combining OKF checks with wiki-specific checks.
-
-    Attributes:
-        okf_report: Raw dictionary returned by OKFToolkit.lint_knowledge_base().
-        orphan_sources: Source IDs present in the manifest but with no
-            corresponding wiki pages.
-        stale_sources: Source IDs whose file hash or mtime has changed since
-            the last ingest.
-        uncovered_sources: Source IDs that were never ingested at all.
-        cross_ref_issues: List of dicts describing broken cross-references
-            between wiki pages.
-        total_issues: Aggregate count of all issues across all checks.
-    """
-
-    okf_report: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Raw output from lint_knowledge_base()",
-    )
-    orphan_sources: list[str] = Field(
-        default_factory=list,
-        description="Source IDs with no wiki pages",
-    )
-    stale_sources: list[str] = Field(
-        default_factory=list,
-        description="Source IDs whose content has changed",
-    )
-    uncovered_sources: list[str] = Field(
-        default_factory=list,
-        description="Source IDs that were never ingested",
-    )
-    cross_ref_issues: list[dict[str, Any]] = Field(
-        default_factory=list,
-        description="Broken cross-reference descriptors",
-    )
-    total_issues: int = Field(
-        default=0,
-        description="Aggregate issue count",
-    )
-
-    @model_validator(mode="after")
-    def compute_total_issues(self) -> WikiLintReport:
-        """Recompute total_issues from the individual issue lists.
-
-        Returns:
-            The model instance with an updated ``total_issues`` count.
-        """
-        self.total_issues = (
-            len(self.orphan_sources)
-            + len(self.stale_sources)
-            + len(self.uncovered_sources)
-            + len(self.cross_ref_issues)
-        )
-        return self

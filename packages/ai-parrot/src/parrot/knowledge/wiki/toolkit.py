@@ -24,7 +24,7 @@ from typing import Any, Optional
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results, truncate_to_tokens
 from parrot.knowledge.wiki.ingest import IngestReport, WikiIngestOrchestrator
-from parrot.knowledge.wiki.models import WikiConfig, WikiLintReport, WikiPageCategory
+from parrot.knowledge.wiki.models import WikiConfig, WikiPageCategory
 from parrot.knowledge.wiki.search import WikiCombinedSearch
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, create_wiki_store, estimate_tokens
@@ -417,83 +417,23 @@ class LLMWikiToolkit(AbstractToolkit):
         wiki_name: str,
         fix: bool = False,
     ) -> dict[str, Any]:
-        """Run OKF lint and wiki-specific checks on the wiki.
-
-        Extends OKF's ``lint_knowledge_base()`` with:
-        - Orphan sources (manifest entry with no pages generated)
-        - Stale sources (file changed since last ingest)
-        - Uncovered sources (known files not yet ingested)
+        """Run the shared lint engine against a wiki namespace.
 
         Args:
             wiki_name: Name of the wiki to lint.
-            fix: When ``True``, attempt to fix auto-correctable issues
-                (currently no-op — reserved for future implementation).
+            fix: When ``True``, apply safe auto-correctable fixes.
 
         Returns:
-            A :class:`WikiLintReport` serialised to dict.
+            A serialised :class:`~parrot.knowledge.lint.models.LintReport`.
         """
-        # OKF lint — delegate if OKF toolkit is available
-        okf_result: dict[str, Any] = {}
-        try:
-            okf_result = await self._okf.lint_knowledge_base()
-        except Exception as exc:  # noqa: BLE001
-            self.logger.warning("OKF lint failed: %s", exc)
+        from parrot.knowledge.lint import LintOptions, LintRunner
+        from parrot.knowledge.lint.routing import FindingRouter
 
-        # Wiki-specific checks — answered from the SQLite plane.
-        # Orphans: sources with zero derived pages (SQL join); falls back
-        # to the registry's pages_generated when the pages table is empty
-        # for that source but ids were recorded (e.g. store sync skipped).
-        all_sources = await asyncio.to_thread(self._sources.list_sources)
-        recorded = {s.source_id for s in all_sources if s.pages_generated}
-        orphan_sources = [sid for sid in await self._store.orphan_sources() if sid not in recorded]
-        # is_stale does file I/O (stat + optional hash) — offload to thread pool
-        stale_sources: list[str] = []
-        for s in all_sources:
-            if await asyncio.to_thread(self._sources.is_stale, s.source_id):
-                stale_sources.append(s.source_id)
-
-        # Uncovered: files present in source_dir but never registered.
-        uncovered_sources: list[str] = []
-        source_dir = self._config.source_dir
-        if source_dir and Path(source_dir).is_dir():
-            tracked_uris = {s.source_uri for s in all_sources}
-            for candidate in sorted(Path(source_dir).rglob("*")):
-                if candidate.is_file() and str(candidate.resolve()) not in tracked_uris:
-                    uncovered_sources.append(str(candidate))
-
-        # Cross-reference issues: broken edges + pages without bodies.
-        #
-        # Routed through `_store_for(wiki_name)` (FEAT-532 TASK-2905) so a
-        # federated read context is honored here too: when `wiki_name`
-        # names a specific namespace ("all"/"local"/a declared namespace),
-        # cross-ref checks scope to that namespace's own store (e.g. a
-        # `FederatedWikiStore.broken_edges()` classifies local candidates
-        # at the federated boundary). Source staleness/orphan/uncovered
-        # checks above stay tied to `self._store`'s LOCAL plane regardless
-        # — those are inherently repo-file concerns, never a foreign
-        # namespace's. Non-federated toolkits are unaffected: `_store_for`
-        # returns `self._store` unchanged when nothing is federated.
-        read_store = self._store_for(wiki_name)
-        cross_ref_issues: list[dict[str, Any]] = [
-            {"kind": "broken_edge", **edge} for edge in await read_store.broken_edges()
-        ]
-        cross_ref_issues.extend(
-            {"kind": "missing_body", "concept_id": cid} for cid in await read_store.missing_bodies()
-        )
-
-        report = WikiLintReport(
-            okf_report=okf_result,
-            orphan_sources=orphan_sources,
-            stale_sources=stale_sources,
-            uncovered_sources=uncovered_sources,
-            cross_ref_issues=cross_ref_issues,
-        )
-
-        await asyncio.to_thread(
-            self._bookkeeper.log_operation,
-            self._config_for(wiki_name).storage_dir,
-            "LINT",
-            f"issues: {report.total_issues}, orphans: {len(orphan_sources)}, " f"stale: {len(stale_sources)}",
+        store = self._store_for(wiki_name)
+        config = self._config_for(wiki_name)
+        router = FindingRouter(store, report_dir=None, ledger=None)
+        report = await LintRunner(store, root=config.storage_dir, config=config, router=router).run(
+            LintOptions(fix=fix)
         )
         return report.model_dump()
 
