@@ -1015,68 +1015,87 @@ Exactly one mode required: `--dry-run`, `--review`, `--interactive`, or
 
 ### Inbox ingestion (wikitoolkit inbox)
 
-Drop documents into the configured `inbox/` directory, then run `wikitoolkit inbox`.
-Use `wikitoolkit inbox --dry-run --json` to inspect planned outcomes.
+Drop documents into the repository's inbox directory (default `inbox/`), then run
+`wikitoolkit inbox`. Each file is acquired, triaged, classified against the charter taxonomy,
+linked to existing pages, ingested, projected to markdown, verified and — only then — archived.
+Use `wikitoolkit inbox --dry-run --json` to see the planned outcome of a run first.
 
-#### Command Options
+#### Command options
 
-The `wikitoolkit inbox` command supports the following options:
+| Option | Meaning |
+|---|---|
+| `--path DIR` | Project directory whose `.parrot/wiki.json` and inbox are used (default: the current repository). |
+| `--dry-run` | Acquire, triage, classify and plan links only. Nothing is ingested, written, projected, repointed or archived. |
+| `--limit N` | Process at most `N` documents, oldest first (ordered by modification time, then name). Negative values are rejected. |
+| `--charter PATH` | Charter YAML to use (default `.parrot/charter.yaml`). |
+| `--lightweight-model` / `--model` | Override the triage/classification model and the heavier ingestion model. |
+| `--archive` / `--no-archive` | Archive originals after verification (default), or keep them in place. `--no-archive` still persists and verifies normally. |
+| `--force` | Skip only the duplicate check in triage (same-URI and other-URI duplicates). Size/suffix checks, sensitivity screening, novelty scoring and the model stages still run. |
+| `--json` | Print the run report as a single JSON object on stdout; diagnostics go to stderr. |
 
-- `--dry-run`: Report what would change and output the planned ingestion manifest without writing any files or modifying the database.
-- `--no-archive`: Process and ingest the documents into the wiki, but do not move the original files to the archive directory.
-- `--force`: Force re-processing and re-ingestion of all documents in the inbox, ignoring any staleness or watermark checks.
-- `--json`: Output the final ingestion report as a structured JSON payload.
+Dotfiles are ignored; symlinks and paths that escape the inbox or the repository are skipped and reported as `skipped` rows.
 
 #### Configuration
 
-Inbox ingestion is configured via the project configuration file `.parrot/wiki.json`. A complete configuration example is shown below:
+Inbox behaviour lives under the `inbox` key of `.parrot/wiki.json`; every field is optional:
 
 ```json
 {
-  "wiki_name": "codebase",
-  "backend": "sqlite",
-  "storage_dir": ".parrot/wiki",
   "inbox": {
-    "inbox_dir": "inbox",
-    "archive_dir": "archive",
-    "markdown_dir": "docs/wiki/inbox",
-    "taxonomy_path": ".parrot/taxonomy.json",
-    "tag_graph_path": ".parrot/tag_graph.json",
-    "adr_review_required": true
+    "dir": "inbox",
+    "archive_dir": ".parrot/archive",
+    "rejected_subdir": "rejected",
+    "markdown_dir": null,
+    "date_format": "%Y-%m-%d",
+    "stage_git": true,
+    "max_candidates": 20,
+    "lock_timeout": 30.0
   }
 }
 ```
 
-> **Warning**: The custom `markdown_dir` (e.g., `docs/wiki/inbox`) must be explicitly excluded from build scanning to prevent infinite loops or duplicate page indexing during subsequent `wikitoolkit build` runs.
+- `dir`, `archive_dir` and `markdown_dir` may be absolute or relative to the project root. They must be distinct and not nested inside one another; an invalid layout exits with code 2.
+- `markdown_dir` defaults to `<storage_dir>/inbox`. If you point it somewhere else, **exclude that directory from build scanning**, otherwise `wikitoolkit build` indexes the projected pages again.
+- `max_candidates` (1–100) caps how many link candidates are offered per document; `lock_timeout` is the number of seconds `run` waits for the writer lock.
 
-#### Taxonomy and Tag Graph
+#### Taxonomy and tags
 
-- **Default/Custom Taxonomy**: The inbox processor uses a hierarchical taxonomy (defined in `taxonomy_path`) to classify incoming documents into categories (e.g., `guide`, `runbook`, `specification`, `decision`).
-- **Tag Graph**: Extracted tags are validated against a tag graph (defined in `tag_graph_path`) to ensure consistent categorization and cross-linking.
-- **ADR Review**: If `adr_review_required` is enabled, any document classified as an Architectural Decision Record (ADR) is flagged for human review before final integration.
+The closed document taxonomy is the `taxonomy` section of the charter. When absent, the built-in
+kinds are `meeting`, `briefing`, `decision`, `report`, `memo` and `note` (default), each mapped to a wiki
+category. A custom taxonomy declares `default_kind`, `max_tags` and a list of `kinds`
+(`id`, `description`, `category`, optional `tag_hints`). A model answer outside the taxonomy falls back to the
+default kind. Tags are normalized to kebab-case, capped at `max_tags`, and each becomes a `tag:<name>` page
+connected to the document page with a `tagged` edge.
 
-#### Archive Layout and Collision Naming
+Documents classified as `decision` can additionally emit a candidate ADR in the decision plane
+(when `decisions.enabled`); review it with the normal ADR workflow.
 
-When a document is successfully processed, the original file is moved to the archive directory (`archive_dir`).
-- **Archive Layout**: Files are archived under a date-structured layout: `archive/<YYYY>/<MM>/<DD>/<filename>`.
-- **Collision Naming**: If a file with the same name already exists in the target archive directory, a unique suffix is appended to prevent overwriting (e.g., `document_1.pdf` becomes `document_1_1.pdf`).
+#### Archive layout
 
-#### Git Lifecycle
+After verification, the original is moved to
+`<archive_dir>/<stem>.<date><ext>`, for example `.parrot/archive/design-notes.2026-10-03.md`.
+If that name exists, a counter is inserted before the extension (`design-notes.2026-10-03-1.md`); an existing
+file is never overwritten. Rejected documents go to `<archive_dir>/<rejected_subdir>/` using the same naming.
+If the original was tracked by git and `stage_git` is true, its removal is staged with `git rm --cached`.
+The processor **never commits**; review `git status` and commit yourself.
 
-The inbox processor automatically stages the newly generated markdown pages in git (`git add`) without committing them. This allows developers to review the generated pages and their frontmatter before committing them to the repository.
+#### Exit codes and concurrency
 
-#### Exit Codes and Concurrency
+| Code | Meaning |
+|---|---|
+| `0` | Success, or an empty inbox. |
+| `1` | At least one document failed. |
+| `2` | Usage/configuration error: missing inbox directory, invalid layout, negative `--limit`. |
+| `3` | The writer lock is busy (another inbox run or writer holds it). |
 
-- **Exit Codes**:
-  - `0`: Success (all documents processed and ingested successfully).
-  - `1`: General error or invalid configuration.
-  - `2`: Lock acquisition failed (another inbox run is active).
-  - `3`: Partial failure (some documents failed to process, but others succeeded).
-- **Whole-Run Processor Lock**: To prevent concurrent modifications and race conditions, the inbox processor acquires a nonblocking lock at the start of the run. If another process holds the lock, the command exits immediately with code `2`.
-- **Per-Document Failures**: A failure to process a single document does not abort the entire run. The processor continues with the remaining documents, and exits with code `3` at the end.
-- **Verification-Before-Archive**: Original documents are only moved to the archive directory after their generated markdown pages have been successfully written and verified.
-- **SQLite Transaction Guarantees**: All database updates for a document are executed within a single SQLite transaction, ensuring that the knowledge graph remains consistent.
-- **Best-Effort Memory/ArangoDB Retry**: For in-memory or ArangoDB backends, the processor employs best-effort retry behavior with exponential backoff to handle transient connection issues.
+- **Whole-run lock**: `InboxProcessor.run()` takes the project writer lock once, without blocking the event
+  loop (it polls until `lock_timeout`), and holds it for the whole run. The CLI never acquires it separately.
+- **Per-document failures**: one failing document produces a `failed` row and the run continues; an unreadable
+  source is reported as `skipped`.
+- **Verification before archive**: the page, claimed child pages and the markdown projection are checked
+  before the original is moved. Dry-run and rejected documents report `verified=false`.
+- **Persistence**: with the SQLite backend each ingest/page write is transactional. Memory and ArangoDB
+  writes are best effort; re-running the command reuses the existing document identity instead of creating duplicates.
 
 ### Jira Ticket Extraction (wikitoolkit ingest-jira)
 
