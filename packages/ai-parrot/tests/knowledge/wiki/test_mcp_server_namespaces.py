@@ -19,7 +19,7 @@ from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
 
 BASE_TOOLS = {
     "wiki_query", "wiki_page", "wiki_related",
-    "wiki_remember", "wiki_note", "wiki_status",
+    "wiki_remember", "wiki_note", "wiki_status", "wiki_lint",
 }
 
 

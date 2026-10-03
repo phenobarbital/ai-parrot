@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Any
+
 from parrot.knowledge.lint.context import LintContext
 from parrot.knowledge.lint.models import Finding, FixResult, Severity
 from parrot.knowledge.lint.rule import make_fingerprint
@@ -70,7 +73,7 @@ class StaleMemoryRule(_MemoryRule):
                 continue
             memory_updated_at = memory.get("updated_at")
             target_updated_at = target.get("updated_at")
-            if target_updated_at and memory_updated_at and str(target_updated_at) > str(memory_updated_at):
+            if target_updated_at and memory_updated_at and _is_newer(target_updated_at, memory_updated_at):
                 findings.append(
                     _finding(
                         self.rule_id,
@@ -83,6 +86,18 @@ class StaleMemoryRule(_MemoryRule):
                     )
                 )
         return findings
+
+
+def _is_newer(candidate: Any, reference: Any) -> bool:
+    """Compare timestamps chronologically, falling back to string order when unparseable."""
+    try:
+        left = datetime.fromisoformat(str(candidate).replace("Z", "+00:00"))
+        right = datetime.fromisoformat(str(reference).replace("Z", "+00:00"))
+        if (left.tzinfo is None) != (right.tzinfo is None):
+            left, right = left.replace(tzinfo=None), right.replace(tzinfo=None)
+        return left > right
+    except ValueError:
+        return str(candidate) > str(reference)
 
 
 MEMORY_RULES = [MemoryDanglingLinkRule, StaleMemoryRule]

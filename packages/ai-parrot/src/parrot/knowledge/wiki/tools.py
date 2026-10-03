@@ -538,6 +538,14 @@ class WikiLintInput(BaseModel):
     llm: bool = Field(default=False, description="Run the opt-in LLM contradiction pass.")
 
 
+class _StorageDirConfig:
+    """Minimal config exposing the absolute wiki storage dir to the lint runner."""
+
+    def __init__(self, storage_dir: Path) -> None:
+        self.storage_dir = storage_dir
+        self.wiki_name = ""
+
+
 class WikiLintTool(AbstractTool):
     """Lint the wiki knowledge graph and report integrity findings."""
 
@@ -564,6 +572,8 @@ class WikiLintTool(AbstractTool):
         report_dir = self._storage_dir / "lint" if self._storage_dir is not None else None
         report = await LintRunner(
             self._store,
+            root=self._storage_dir.parent if self._storage_dir is not None else None,
+            config=_StorageDirConfig(self._storage_dir) if self._storage_dir is not None else None,
             router=FindingRouter(self._store, report_dir=report_dir),
         ).run(LintOptions(rules=rules, skip=skip or [], fix=fix, llm=llm, report_dir=report_dir))
         return ToolResult(

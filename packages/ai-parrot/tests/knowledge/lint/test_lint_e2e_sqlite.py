@@ -20,7 +20,7 @@ def _lint(path: Path, *extra: str) -> dict:
     """Run ``wikitoolkit lint --json`` and return the parsed report."""
     result = CliRunner().invoke(wiki, ["lint", "--path", str(path), "--json", "--no-ledger", "--no-notes", *extra])
     assert result.exit_code == 0, result.output
-    return json.loads(result.output[result.output.index("{"):])
+    return json.loads(result.output[result.output.index("{") :])
 
 
 def test_lint_fix_end_to_end(tmp_path: Path) -> None:
@@ -49,15 +49,51 @@ def test_lint_fix_end_to_end(tmp_path: Path) -> None:
     assert not any(f.get("fixable") for f in after["findings"])
 
 
+def _snapshot(store: SQLiteWikiStore) -> tuple:
+    """Pages (ids + bodies) and edges of the plane."""
+    pages = asyncio.run(store.dump_pages())
+    return asyncio.run(store.dump_edges()), sorted((str(p["concept_id"]), str(p.get("body"))) for p in pages)
+
+
 def test_default_lint_leaves_store_unchanged(tmp_path: Path) -> None:
-    """AC1: a default (non --fix) run leaves pages and edges byte-identical."""
+    """AC1: a default run (real defaults: notes off) leaves edges and page bodies identical."""
     repo = tmp_path / "repo"
     shutil.copytree(FIXTURE_REPO, repo)
     built = CliRunner().invoke(wiki, ["build", "--path", str(repo), "--no-git", "--no-graph", "--quiet"])
     assert built.exit_code == 0, built.output
 
     store = SQLiteWikiStore(repo / ".parrot" / "wiki" / "wiki.db", wiki_name="repo")
-    before = (asyncio.run(store.dump_edges()), asyncio.run(LintContext(store).page_ids()))
-    _lint(repo)
-    after = (asyncio.run(store.dump_edges()), asyncio.run(LintContext(store).page_ids()))
-    assert before == after
+    before = _snapshot(store)
+    result = CliRunner().invoke(wiki, ["lint", "--path", str(repo), "--json", "--no-ledger"])
+    assert result.exit_code in (0, 1), result.output
+    assert _snapshot(store) == before
+
+
+def test_wiki_lint_tool_default_leaves_store_unchanged(tmp_path: Path) -> None:
+    """AC1 via the MCP tool: default arguments do not touch pages or edges."""
+    from parrot.knowledge.wiki.tools import WikiLintTool
+
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE_REPO, repo)
+    built = CliRunner().invoke(wiki, ["build", "--path", str(repo), "--no-git", "--no-graph", "--quiet"])
+    assert built.exit_code == 0, built.output
+
+    store = SQLiteWikiStore(repo / ".parrot" / "wiki" / "wiki.db", wiki_name="repo")
+    before = _snapshot(store)
+    tool = WikiLintTool(store, storage_dir=repo / ".parrot" / "wiki")
+    asyncio.run(tool._execute())
+    assert _snapshot(store) == before
+
+
+def test_wiki_lint_tool_fix_writes_audit_log(tmp_path: Path) -> None:
+    """AC3: wiki_lint(fix=true) logs LINT to log.md like the CLI does."""
+    from parrot.knowledge.wiki.tools import WikiLintTool
+
+    repo = tmp_path / "repo"
+    shutil.copytree(FIXTURE_REPO, repo)
+    built = CliRunner().invoke(wiki, ["build", "--path", str(repo), "--no-git", "--no-graph", "--quiet"])
+    assert built.exit_code == 0, built.output
+    wiki_dir = repo / ".parrot" / "wiki"
+    store = SQLiteWikiStore(wiki_dir / "wiki.db", wiki_name="repo")
+    asyncio.run(WikiLintTool(store, storage_dir=wiki_dir)._execute(fix=True))
+    assert "LINT" in (wiki_dir / "log.md").read_text(encoding="utf-8")

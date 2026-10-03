@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable, Sequence
@@ -108,7 +109,7 @@ class LintRunner:
             report.routing = await self._router(report, options)
 
         report.duration_ms = int((time.monotonic() - started) * 1000)
-        self._audit("LINT", f"{len(report.findings)} findings, {len(report.fixed)} fixed")
+        await self._audit("LINT", f"{len(report.findings)} findings, {len(report.fixed)} fixed")
         return report
 
     async def _check_rules(self, rules: Sequence[LintRule], ctx: LintContext) -> dict[str, list[Finding]]:
@@ -153,7 +154,7 @@ class LintRunner:
                 if result is not None and result.applied:
                     report.fixed.append(result)
                     fixed_rule_ids.add(rule_id)
-                    self._audit("LINT_FIX", result.detail or f"{rule_id}: {finding.fingerprint}")
+                    await self._audit("LINT_FIX", result.detail or f"{rule_id}: {finding.fingerprint}")
         return fixed_rule_ids
 
     @staticmethod
@@ -161,12 +162,26 @@ class LintRunner:
         """Return rule findings in selected-rule order."""
         return [finding for findings in findings_by_rule.values() for finding in findings]
 
-    def _audit(self, operation: str, details: str) -> None:
-        """Append to the wiki log.md when root+config are known (best-effort)."""
-        if self.root is None or self.config is None:
-            return
+    def _log_dir(self) -> Path | None:
+        """Resolve the wiki directory holding log.md, or None when unknown."""
+        if self.config is None:
+            return None
+        resolver = getattr(self.config, "storage_path", None)
+        if callable(resolver) and self.root is not None:
+            return Path(resolver(self.root))
+        storage = getattr(self.config, "storage_dir", None)
+        if storage is None:
+            return None
+        storage = Path(storage)
+        return storage if storage.is_absolute() or self.root is None else self.root / storage
+
+    async def _audit(self, operation: str, details: str) -> None:
+        """Append to the wiki log.md when the wiki dir is known (best-effort, off the event loop)."""
         try:
-            WikiBookkeeper().log_operation(self.config.storage_dir, operation, details)
+            wiki_dir = self._log_dir()
+            if wiki_dir is None:
+                return
+            await asyncio.to_thread(WikiBookkeeper().log_operation, wiki_dir, operation, details)
         except Exception:
             self.logger.warning("Could not write %s audit record", operation, exc_info=True)
 

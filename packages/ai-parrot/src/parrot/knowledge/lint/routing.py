@@ -113,7 +113,8 @@ class FindingRouter:
             counts: Mutable routing counters.
         """
         try:
-            open_issues = await self.ledger.ready_work()
+            lister = getattr(self.ledger, "active_issues", None) or self.ledger.ready_work
+            open_issues = await lister()
         except Exception:
             self.logger.exception("Unable to read open ledger issues for lint routing")
             return
@@ -180,7 +181,7 @@ class FindingRouter:
             existing_markers: Bodies and titles of currently open issues.
             counts: Mutable routing counters.
         """
-        fingerprint = make_fingerprint(f"{rule_id}:aggregate", [finding.fingerprint for finding in findings])
+        fingerprint = make_fingerprint(f"{rule_id}:aggregate", [])
         marker = FP_MARKER.format(fp=fingerprint)
         if any(marker in existing for existing in existing_markers):
             counts["ledger_deduped"] += len(findings)
@@ -226,6 +227,8 @@ class FindingRouter:
                     page = await self.store.get_page(subject, include_body=True)
                     if page is None or marker in str(page.get("body") or ""):
                         continue
+                    if page.get("origin") != "authored":
+                        continue  # generated/memory pages are rewritten by build/sync
                     body = str(page.get("body") or "")
                     body += f"\n\n> **Note ({stamp}, lint):** {finding.message} {marker}"
                     await self.store.upsert_pages(

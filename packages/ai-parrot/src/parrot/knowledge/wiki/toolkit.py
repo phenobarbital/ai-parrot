@@ -432,7 +432,8 @@ class LLMWikiToolkit(AbstractToolkit):
         store = self._store_for(wiki_name)
         config = self._config_for(wiki_name)
         router = FindingRouter(store, report_dir=None, ledger=None)
-        report = await LintRunner(store, root=config.storage_dir, config=config, router=router).run(
+        extras = {} if self._is_namespace(wiki_name) else {"sources": self._sources}
+        report = await LintRunner(store, root=config.storage_dir, config=config, router=router, extras=extras).run(
             LintOptions(fix=fix)
         )
         return report.model_dump()

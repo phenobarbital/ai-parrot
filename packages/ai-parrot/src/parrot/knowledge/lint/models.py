@@ -41,7 +41,7 @@ class LintOptions(BaseModel):
     llm_model: str | None = None
     llm_max_pairs: int = 50
     ledger: bool = True
-    notes: bool = True
+    notes: bool = False
     ledger_cap_per_rule: int = 20
     fail_on: Severity | None = "error"
     export_dir: Path | None = None

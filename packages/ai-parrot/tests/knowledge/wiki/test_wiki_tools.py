@@ -167,10 +167,10 @@ class TestWikiStatusTool:
 class TestFactory:
     def test_create_wiki_tools(self, mock_store):
         tools = create_wiki_tools(mock_store)
-        assert len(tools) == 6
+        assert len(tools) == 7
         names = {t.name for t in tools}
         assert names == {"wiki_query", "wiki_page", "wiki_related",
-                         "wiki_remember", "wiki_note", "wiki_status"}
+                         "wiki_remember", "wiki_note", "wiki_status", "wiki_lint"}
 
     def test_create_wiki_tools_wires_storage_dir_for_bookkeeping(self, mock_store, tmp_path):
         from parrot.knowledge.wiki.project import WikiProjectConfig

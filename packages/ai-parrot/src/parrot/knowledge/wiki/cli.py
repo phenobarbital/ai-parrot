@@ -2153,8 +2153,9 @@ def _probe_backend_reachable(root: Path, config: WikiProjectConfig) -> bool | No
 @click.option("--llm-max-pairs", default=50, show_default=True, type=int)
 @click.option("--report", "report_fmt", type=click.Choice(["json", "md"]), default="md", show_default=True)
 @click.option("--output", default=None, help="Report directory (default: <storage>/lint).")
+@click.option("--export-dir", default=None, help="OKF export directory to lint (default: none; export rules skip).")
 @click.option("--ledger/--no-ledger", default=True, show_default=True)
-@click.option("--notes/--no-notes", default=True, show_default=True)
+@click.option("--notes/--no-notes", default=False, show_default=True, help="Append notes to subject pages (writes to the store).")
 @click.option("--fail-on", type=click.Choice(["error", "warning", "none"]), default="error", show_default=True)
 @click.option("--json", "as_json", is_flag=True, help="Emit the report as JSON.")
 def lint(
@@ -2168,6 +2169,7 @@ def lint(
     llm_max_pairs: int,
     report_fmt: str,
     output: str | None,
+    export_dir: str | None,
     ledger: bool,
     notes: bool,
     fail_on: str,
@@ -2195,8 +2197,8 @@ def lint(
     if not report_dir.is_absolute():
         report_dir = root / report_dir
     options = LintOptions(
-        rules=rules.split(",") if rules else None,
-        skip=list(skip),
+        rules=[r.strip() for r in rules.split(",") if r.strip()] if rules else None,
+        skip=[s.strip() for s in skip if s.strip()],
         fix=fix,
         llm=llm,
         llm_model=llm_model,
@@ -2204,7 +2206,7 @@ def lint(
         ledger=ledger,
         notes=notes,
         fail_on=None if fail_on == "none" else fail_on,
-        export_dir=root / "docs/wiki",
+        export_dir=(root / export_dir) if export_dir else None,
         report_dir=report_dir,
     )
     router = FindingRouter(read_store, report_dir=report_dir, ledger=LedgerService.from_root(root) if ledger else None)
@@ -2226,7 +2228,11 @@ def lint(
             f"Lint: {len(report.findings)} findings, {len(report.fixed)} fixed "
             f"(errors: {report.counts.get('error', 0)}, warnings: {report.counts.get('warning', 0)})."
         )
-    sys.exit(LintRunner.exit_code(report, None if fail_on == "none" else fail_on))
+        for finding in report.findings[:20]:
+            click.echo(f"  [{finding.severity}] {finding.rule_id}: {', '.join(finding.subjects) or '-'} — {finding.message}")
+        if len(report.findings) > 20:
+            click.echo(f"  … {len(report.findings) - 20} more (see report files or --json).")
+    click.get_current_context().exit(LintRunner.exit_code(report, None if fail_on == "none" else fail_on))
 
 
 @wiki.command()
@@ -5535,7 +5541,6 @@ def claude_hook() -> None:
     emits a non-blocking nudge toward `wikitoolkit query` before
     search-style tool calls. Always exits 0.
     """
-    import sys
 
     from parrot.knowledge.wiki.claude_code.hook import run_pre_tool_use_hook
 

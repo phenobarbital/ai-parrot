@@ -163,17 +163,19 @@ def test_resolve_spec_order(monkeypatch):
 
 
 def test_build_llm_rule_no_spec(monkeypatch):
-    """No spec configured (auto-detect disabled) -> None."""
+    """No spec configured (auto-detect disabled) -> a skip-reporting rule."""
     _clear_llm_env(monkeypatch)
     monkeypatch.setenv("PARROT_NO_AUTO_LLM", "1")
     options = LintOptions(llm=True, llm_model=None, llm_max_pairs=50)
-    assert build_llm_rule(options) is None
+    from parrot.knowledge.lint.packs.llm import SkippedLLMRule
+
+    assert isinstance(build_llm_rule(options), SkippedLLMRule)
 
 
 def test_build_llm_rule_with_spec(monkeypatch):
     """A configured spec builds a temperature-0 client through LLMFactory."""
     _clear_llm_env(monkeypatch)
-    with patch("parrot.knowledge.lint.packs.llm.LLMFactory.create", return_value=FakeClient()) as create:
+    with patch("parrot.clients.factory.LLMFactory.create", return_value=FakeClient()) as create:
         rule = build_llm_rule(LintOptions(llm=True, llm_model="fake:model", llm_max_pairs=7))
     create.assert_called_once_with("fake:model", model_args={"temperature": 0.0})
     assert isinstance(rule, ContradictionLLMRule)
@@ -185,3 +187,24 @@ def test_finding_fingerprint():
     assert make_fingerprint("contradiction-llm", ["memory1", "memory2"]) == make_fingerprint(
         "contradiction-llm", ["memory2", "memory1"]
     )
+
+
+def test_build_llm_rule_reports_skip_when_client_fails() -> None:
+    """A bad spec/key yields a skip-reporting rule instead of raising out of the run."""
+    from parrot.knowledge.lint.models import LintOptions
+    from parrot.knowledge.lint.packs.llm import SkippedLLMRule, build_llm_rule
+
+    with patch("parrot.clients.factory.LLMFactory.create", side_effect=RuntimeError("no key")):
+        rule = build_llm_rule(LintOptions(llm=True, llm_model="bogus:model"))
+    assert isinstance(rule, SkippedLLMRule)
+
+
+def test_build_llm_rule_reports_skip_when_unconfigured(monkeypatch) -> None:
+    """No configured model still leaves an llm-skipped signal."""
+    from parrot.knowledge.lint.models import LintOptions
+    from parrot.knowledge.lint.packs.llm import SkippedLLMRule, build_llm_rule
+
+    monkeypatch.delenv("WIKI_LINT_LLM", raising=False)
+    monkeypatch.delenv("WIKI_EXTRACT_LLM", raising=False)
+    monkeypatch.setenv("PARROT_NO_AUTO_LLM", "1")
+    assert isinstance(build_llm_rule(LintOptions(llm=True)), SkippedLLMRule)

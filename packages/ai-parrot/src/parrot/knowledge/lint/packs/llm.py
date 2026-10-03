@@ -7,8 +7,6 @@ import json
 import os
 from typing import Any
 
-from parrot.clients.detection import detect_coding_agent_llm
-from parrot.clients.factory import LLMFactory
 from parrot.knowledge.lint.context import LintContext
 from parrot.knowledge.lint.models import Finding, FixResult, LintOptions
 from parrot.knowledge.lint.rule import make_fingerprint
@@ -29,6 +27,8 @@ def resolve_lint_llm_spec(explicit: str | None) -> str | None:
     if spec or os.environ.get("PARROT_NO_AUTO_LLM"):
         return spec or None
     try:
+        from parrot.clients.detection import detect_coding_agent_llm
+
         return detect_coding_agent_llm()
     except Exception:  # noqa: BLE001 — detection is best-effort
         return None
@@ -129,10 +129,12 @@ class ContradictionLLMRule:
 Memory A:
 - Concept ID: {a_id}
 - Title: {a_title}
+- Summary: {a.get("summary") or ""}
 
 Memory B:
 - Concept ID: {b_id}
 - Title: {b_title}
+- Summary: {b.get("summary") or ""}
 
 Return a JSON object with:
 - "contradicts": true if they contradict, false otherwise
@@ -187,12 +189,12 @@ Example:
         Returns:
             List of findings (contradiction-llm warnings or llm-skipped info).
         """
+        findings: list[Finding] = []
         try:
             pairs = await self._pairs(ctx)
-            findings: list[Finding] = []
 
             for a, b in pairs:
-                # A client failure propagates to the outer handler -> single llm-skipped finding.
+                # A client failure keeps the findings already found and adds one llm-skipped note.
                 verdict = await self._judge(a, b)
                 if verdict.get("contradicts", False):
                     explanation = verdict.get("explanation", "No explanation provided")
@@ -211,17 +213,7 @@ Example:
 
             return findings
         except Exception as exc:  # noqa: BLE001 — any failure is a skip
-            # Return a single llm-skipped info finding
-            return [
-                Finding(
-                    rule_id="llm-skipped",
-                    severity="info",
-                    subjects=[],
-                    message=f"LLM contradiction check skipped: {exc}",
-                    fingerprint=make_fingerprint("llm-skipped", []),
-                    data={"error": str(exc)},
-                )
-            ]
+            return [*findings, _skipped(f"LLM contradiction check stopped early: {exc}", error=str(exc))]
 
     async def fix(self, ctx: LintContext, finding: Finding) -> FixResult | None:
         """No automatic fix for contradiction-llm findings.
@@ -236,18 +228,51 @@ Example:
         return None
 
 
-def build_llm_rule(options: LintOptions) -> ContradictionLLMRule | None:
-    """Create the rule with a temperature-0 client, or None when no model is configured.
+def _skipped(message: str, **data: Any) -> Finding:
+    """Build the info finding that records a skipped LLM pass."""
+    return Finding(
+        rule_id="llm-skipped",
+        severity="info",
+        subjects=[],
+        message=message,
+        fingerprint=make_fingerprint("llm-skipped", []),
+        data=data,
+    )
+
+
+class SkippedLLMRule:
+    """Placeholder rule surfacing why the LLM pass could not run (never fails the run)."""
+
+    rule_id, pack, default_severity = "contradiction-llm", "llm", "info"
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    async def check(self, ctx: LintContext) -> list[Finding]:
+        """Return one llm-skipped info finding."""
+        return [_skipped(f"LLM contradiction check skipped: {self.reason}", error=self.reason)]
+
+    async def fix(self, ctx: LintContext, finding: Finding) -> FixResult | None:
+        """No fix."""
+        return None
+
+
+def build_llm_rule(options: LintOptions) -> ContradictionLLMRule | SkippedLLMRule:
+    """Create the rule with a temperature-0 client, or a skip-reporting rule when unavailable.
 
     Args:
         options: Lint options containing llm_model and llm_max_pairs.
 
     Returns:
-        ContradictionLLMRule instance or None if no model is configured.
+        ContradictionLLMRule, or SkippedLLMRule when no model is configured or the client cannot be built.
     """
     spec = resolve_lint_llm_spec(options.llm_model)
     if not spec:
-        return None
+        return SkippedLLMRule("no LLM configured (set --llm-model, WIKI_LINT_LLM or WIKI_EXTRACT_LLM)")
+    try:
+        from parrot.clients.factory import LLMFactory
 
-    client = LLMFactory.create(spec, model_args={"temperature": 0.0})
+        client = LLMFactory.create(spec, model_args={"temperature": 0.0})
+    except Exception as exc:  # noqa: BLE001 — a bad spec/key must not fail the deterministic run
+        return SkippedLLMRule(f"could not build LLM client for {spec!r}: {exc}")
     return ContradictionLLMRule(client, max_pairs=options.llm_max_pairs)

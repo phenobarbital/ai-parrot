@@ -108,16 +108,41 @@ async def test_notes_once() -> None:
                 "category": "concept",
                 "summary": "",
                 "body": "Original body",
-                "origin": "ingest",
+                "origin": "authored",
             }
         }
     )
     router = FindingRouter(store)  # type: ignore[arg-type]
     report = LintReport(findings=[_finding("noted")])
 
-    first = await router.route(report, LintOptions(ledger=False))
-    second = await router.route(report, LintOptions(ledger=False))
+    first = await router.route(report, LintOptions(ledger=False, notes=True))
+    second = await router.route(report, LintOptions(ledger=False, notes=True))
 
     assert first["notes_added"] == 1
     assert second["notes_added"] == 0
     assert store.pages["page:one"]["body"].count("<!-- lint-fp:noted -->") == 1
+
+
+@pytest.mark.asyncio
+async def test_notes_off_by_default_and_skip_generated_pages() -> None:
+    """Notes are opt-in, and never land on non-authored (generated/memory) pages."""
+    assert LintOptions().notes is False
+    store = FakeStore(
+        {
+            "page:gen": {
+                "concept_id": "page:gen",
+                "title": "Gen",
+                "category": "concept",
+                "summary": "",
+                "body": "Body",
+                "origin": "ingest",
+            }
+        }
+    )
+    router = FindingRouter(store)  # type: ignore[arg-type]
+    report = LintReport(findings=[_finding("gen", subject="page:gen")])
+    default = await router.route(report, LintOptions(ledger=False))
+    opted = await router.route(report, LintOptions(ledger=False, notes=True))
+    assert default["notes_added"] == 0
+    assert opted["notes_added"] == 0
+    assert store.pages["page:gen"]["body"] == "Body"
