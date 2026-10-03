@@ -1,6 +1,5 @@
 {
-  "required": 5,
-  "required_phase2": 8,
+  "required": 8,
   "migrations": [
     {
       "version": 1,
@@ -26,6 +25,21 @@
       "version": 5,
       "name": "0005_studio_drafts_baseline",
       "sha256": "2b2d6029d6a52be72b0d296e407b1910b2a2a81ed3e45d5e290e820b0508b3f2"
+    },
+    {
+      "version": 6,
+      "name": "0006_ai_user_llm_keys",
+      "sha256": "24830ce67a39063f74519199d298ae3b9ad256c2913ed63215ee72cd1f628123"
+    },
+    {
+      "version": 7,
+      "name": "0007_ai_user_credentials",
+      "sha256": "1c68ad8e9de4c618f7bfd369008f9c583282bd80d37bd415982bb7bd3cbeca03"
+    },
+    {
+      "version": 8,
+      "name": "0008_ai_user_toolkit_overrides",
+      "sha256": "fe20c8ff3d59821d21cb26fd8169afc12f330819f5be67817d230d974039048a"
     }
   ]
 }

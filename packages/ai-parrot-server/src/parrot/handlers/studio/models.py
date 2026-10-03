@@ -8,7 +8,7 @@ contract for the Studio API stays in one place across the
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from parrot.skills.models import SkillCategory
 from pydantic import BaseModel, Field, SecretStr
@@ -50,6 +50,9 @@ class CreateAgentRequest(BaseModel):
         category: YAML category sub-directory (only relevant when
             ``persist=True``).
         config: Free-form startup config merged into the agent's kwargs.
+        visibility: ``private`` | ``tenant`` | ``groups`` (FEAT-605; read by the create handler, which validates
+            it against the caller's scope before stamping it).
+        allowed_groups: Groups granted access when ``visibility == "groups"``.
     """
 
     name: str
@@ -59,6 +62,8 @@ class CreateAgentRequest(BaseModel):
     persist: bool = False
     category: str = "general"
     config: dict[str, Any] = Field(default_factory=dict)
+    visibility: Literal["private", "tenant", "groups"] = "private"
+    allowed_groups: list[str] = Field(default_factory=list)
 
 
 class DraftValidationReport(BaseModel):
@@ -85,6 +90,9 @@ class SkillPublishRequest(BaseModel):
             out-of-vocabulary values map to ``general`` (handler-side).
         triggers: Trigger phrases/commands for the skill.
         body: Skill markdown body (including frontmatter).
+        visibility: ``private`` | ``tenant`` | ``groups`` (FEAT-605; read by the publish handler, which validates it
+            against the caller's scope before stamping it).
+        allowed_groups: Groups granted access when ``visibility == "groups"``.
     """
 
     name: str
@@ -92,6 +100,8 @@ class SkillPublishRequest(BaseModel):
     category: SkillCategory
     triggers: list[str] = Field(default_factory=list)
     body: str
+    visibility: Literal["private", "tenant", "groups"] = "private"
+    allowed_groups: list[str] = Field(default_factory=list)
 
 
 class ByokKeyRequest(BaseModel):
@@ -133,6 +143,7 @@ class ToolkitPersistResponse(BaseModel):
     slug: str | None = None
     reload_required: bool = True
     persisted: bool = True
+    version: int | None = None  # the agent's version after the write (Studio rows; ``None`` for a legacy agent)
 
 
 class AgentMcpServersPutRequest(BaseModel):
@@ -165,3 +176,10 @@ class StudioCapabilities(BaseModel):
     may_administer: bool
     enabled: bool
     is_superuser: bool
+
+
+class VisibilityUpdateRequest(BaseModel):
+    """``PATCH …/visibility`` body (FEAT-605)."""
+
+    visibility: Literal["private", "tenant", "groups"]
+    allowed_groups: list[str] = Field(default_factory=list)

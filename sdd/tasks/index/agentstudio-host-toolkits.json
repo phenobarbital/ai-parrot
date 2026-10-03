@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-09-30T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-02T15:50:11+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -100,7 +100,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 2,
@@ -111,9 +111,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3975 (get_toolkit_resolver in parrot/tools/resolver.py) and TASK-3978 (same file packages/ai-parrot/src/parrot/interfaces/tools.py — serialise, TK-04 first). Creates the server host fixture tests/studio/_host_probe.py reused by TASK-3980/08/09/10/13/16/17/18.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3979-resolver-adoption-shims.md"
+      "started_at": "2026-10-02T08:17:18+00:00",
+      "completed_at": "2026-10-02T08:19:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3979-resolver-adoption-shims.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3980",
@@ -122,7 +123,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 2,
@@ -132,9 +133,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3979: the integration test exercises the shims it installs and imports the server host fixture tests/studio/_host_probe.py it creates. First editor of handlers/tools_catalog.py; TASK-3984 (access field + tenant filter) follows it on that file.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3980-catalog-from-resolver-and-all-paths.md"
+      "started_at": "2026-10-02T08:17:18+00:00",
+      "completed_at": "2026-10-02T08:21:29+00:00",
+      "file": "sdd/tasks/completed/TASK-3980-catalog-from-resolver-and-all-paths.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3981",
@@ -143,7 +145,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 2,
@@ -155,8 +157,9 @@
       "parallelism_notes": "Depends on TASK-3976 (same files tools/toolkit.py and tools/abstract.py — serialise) and TASK-3975 (resolver entries decide host vs built-in via get_toolkit_resolver; extends tests/tools/_host_probe.py it created). Lands together with TASK-3982 (M8) per spec §9 Wave 2.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3981-host-conventions-access-marker.md"
+      "completed_at": "2026-10-01T21:56:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3981-host-conventions-access-marker.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3982",
@@ -165,7 +168,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 2,
@@ -176,9 +179,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3981 (consumes routing_meta['confirmation_enforced'] it sets; same file tools/abstract.py) and TASK-3979 (same file studio/testing.py; reuses tests/studio/_host_probe.py incl. tp_probe_tool_write).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3982-host-write-confirmation-token.md"
+      "started_at": "2026-10-02T08:17:18+00:00",
+      "completed_at": "2026-10-02T08:24:51+00:00",
+      "file": "sdd/tasks/completed/TASK-3982-host-write-confirmation-token.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3983",
@@ -187,7 +191,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 2,
@@ -198,9 +202,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3979 (same files studio/tooling_store.py and studio/toolkits.py — serialise; reuses tests/studio/_host_probe.py) and TASK-3978 (the regression test's build leg relies on the apply_tooling_specs policy hook / bind_tooling_policy in interfaces/tools.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3983-tenant-policy-wiring-writes.md"
+      "started_at": "2026-10-02T08:17:18+00:00",
+      "completed_at": "2026-10-02T08:28:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3983-tenant-policy-wiring-writes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3984",
@@ -209,7 +214,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 2,
@@ -222,9 +227,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3982 (same file studio/testing.py — serialise), TASK-3980 (same file handlers/tools_catalog.py), TASK-3981 (effective_access from parrot/tools/toolkit.py for the catalogue `access` field) and TASK-3977 (check_tool / TenantToolingRefused from parrot/tools/tooling_policy.py). Sole editor of bots/studio/tools.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3984-tenant-policy-wiring-attach-execute-catalogue.md"
+      "started_at": "2026-10-02T08:17:18+00:00",
+      "completed_at": "2026-10-02T08:32:24+00:00",
+      "file": "sdd/tasks/completed/TASK-3984-tenant-policy-wiring-attach-execute-catalogue.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3985",
@@ -233,7 +239,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 3,
@@ -244,9 +250,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3981 (same files tools/toolkit.py and tests/tools/_host_probe.py) and TASK-3982 (same file tools/abstract.py) — serialise on those files. Sole editor of config_schema.py, knowledge/wiki/toolkit.py and tools/infographic_toolkit.py in this feature.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3985-server-managed-params-declaration.md"
+      "started_at": "2026-10-02T08:17:18+00:00",
+      "completed_at": "2026-10-02T08:35:05+00:00",
+      "file": "sdd/tasks/completed/TASK-3985-server-managed-params-declaration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3986",
@@ -255,7 +262,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 3,
@@ -266,9 +273,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3985 (ServerParam/method_server_params/constructor_server_params from parrot/tools/server_params.py; same file tools/abstract.py) and TASK-3979 (same file interfaces/tools.py — serialise after its shim).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3986-server-managed-params-fill.md"
+      "started_at": "2026-10-02T08:17:18+00:00",
+      "completed_at": "2026-10-02T08:37:09+00:00",
+      "file": "sdd/tasks/completed/TASK-3986-server-managed-params-fill.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3987",
@@ -277,7 +285,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 3,
@@ -289,9 +297,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3985 (constructor_server_params / ServerParam from parrot/tools/server_params.py), TASK-3983 (same files studio/tooling_store.py, studio/toolkit_config.py, studio/toolkits.py) and TASK-3984 (same file studio/testing.py) — serialise on those files.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3987-server-managed-params-server.md"
+      "started_at": "2026-10-02T08:17:18+00:00",
+      "completed_at": "2026-10-02T08:40:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3987-server-managed-params-server.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3988",
@@ -300,7 +309,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 3,
@@ -311,9 +320,10 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-3987 (same files studio/tooling_store.py and studio/toolkit_overrides.py — last TOOLKITS editor before this one) and TASK-3977 (same file parrot/tools/tooling_policy.py: re-verifies its build-time vault-name check). No edit to toolkit_persistence.py / handlers/agent.py / tools/spec.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3988-studio-identity-keys-consumer.md"
+      "started_at": "2026-10-02T08:17:18+00:00",
+      "completed_at": "2026-10-02T08:42:31+00:00",
+      "file": "sdd/tasks/completed/TASK-3988-studio-identity-keys-consumer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3989",
@@ -322,7 +332,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 4,
@@ -335,8 +345,9 @@
       "parallelism_notes": "Depends on TASK-3986 (same file tools/abstract.py; consumes its _inject_server_managed), TASK-3985 (same file tools/toolkit.py; extends the __init_subclass__ it adds) and TASK-3975 (same files tools/resolver.py and tests/tools/test_toolkit_resolver.py: lifts rule 5 and replaces its test).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3989-scope-enforcement-core.md"
+      "completed_at": "2026-10-02T15:06:07+00:00",
+      "file": "sdd/tasks/completed/TASK-3989-scope-enforcement-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3990",
@@ -345,7 +356,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 4,
@@ -357,8 +368,9 @@
       "parallelism_notes": "Depends on TASK-3989 (the core gate it relies on for the second check inside execute) and TASK-3987 (same files studio/testing.py and studio/toolkit_config.py — serialise).",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3990-scope-enforcement-handlers.md"
+      "completed_at": "2026-10-02T15:11:50+00:00",
+      "file": "sdd/tasks/completed/TASK-3990-scope-enforcement-handlers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3991",
@@ -367,7 +379,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "wave": 4,
@@ -378,8 +390,9 @@
       "parallelism_notes": "Depends on TASK-3990 (same files studio/testing.py and studio/toolkit_config.py — serialise; binding wraps the calls its checks guard). Sole editor of handlers/chat.py.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3991-scope-binding-chat-execute-options.md"
+      "completed_at": "2026-10-02T15:29:30+00:00",
+      "file": "sdd/tasks/completed/TASK-3991-scope-binding-chat-execute-options.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3992",
@@ -388,7 +401,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "wave": 4,
@@ -399,8 +412,9 @@
       "parallelism_notes": "Depends on TASK-3991: drives the bindings it installs (chat/execute/options) and FEAT-605's test-chat binding it asserts. Test-only; creates one new test file.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3992-scope-join-regressions.md"
+      "completed_at": "2026-10-02T15:49:25+00:00",
+      "file": "sdd/tasks/completed/TASK-3992-scope-join-regressions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3993",
@@ -409,7 +423,7 @@
       "feature_id": "FEAT-622",
       "feature": "agentstudio-host-toolkits",
       "spec": "sdd/specs/agentstudio-host-toolkits.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "wave": 4,
@@ -421,8 +435,9 @@
       "parallelism_notes": "Depends on TASK-3989 (documents the enforcement behaviour and refusal codes it ships in tools/abstract.py and tools/toolkit.py) and TASK-3991 (documents the binding sites in handlers/chat.py). Docs-only.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3993-host-toolkit-guide.md"
+      "completed_at": "2026-10-02T15:50:11+00:00",
+      "file": "sdd/tasks/completed/TASK-3993-host-toolkit-guide.md",
+      "verification": "verified"
     }
   ]
 }

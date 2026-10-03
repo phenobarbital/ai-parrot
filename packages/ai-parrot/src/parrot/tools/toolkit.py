@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, create_model
 
 from ..conf import BASE_STATIC_URL
 from .abstract import AbstractTool, AbstractToolArgsSchema
-
+from .execution_gates import ServerManagedToolkit, checked_args_schema, checked_executor, toolkit_server_params
 if TYPE_CHECKING:
     from ..auth.permission import PermissionContext
     from ..auth.resolver import AbstractPermissionResolver
@@ -102,11 +102,11 @@ class ToolkitTool(AbstractTool):
             type_hints = get_type_hints(self.bound_method)
 
             # Build fields for Pydantic model
-            fields = {}
+            fields, server_managed = {}, toolkit_server_params(self.bound_method)
 
             for param_name, param in sig.parameters.items():
-                # Skip 'self' parameter (shouldn't be there for bound methods, but just in case)
-                if param_name == "self":
+                # Skip self (and FEAT-622 server-managed params: they never reach the LLM args schema)
+                if param_name == "self" or param_name in server_managed:
                     continue
 
                 # Get type hint
@@ -200,7 +200,29 @@ class ToolkitTool(AbstractTool):
         return result
 
 
-class AbstractToolkit(ABC):  # noqa: B024 -- deliberately has no required abstract methods; see below.
+def _is_host_class(cls: type) -> bool:
+    """Return True iff ``cls`` is the class of a host resolver entry (``source`` ``"host"`` or ``"walk"``).
+
+    Computed from resolver entries (never stamped on the class). The resolver is
+    imported lazily because ``resolver`` imports ``discovery``, which imports this module.
+    """
+    from .resolver import get_toolkit_resolver  # pylint: disable=import-outside-toplevel
+
+    return get_toolkit_resolver().is_host_class(cls)
+
+
+def effective_access(cls: type, method_name: str) -> Optional[str]:
+    """Effective access of toolkit method ``method_name``: ``"read"``, ``"write"`` or ``None``.
+
+    ``"read"`` when listed in ``cls.read_tools``; ``"write"`` (fail-safe) for other
+    methods of a host toolkit; ``None`` for built-ins (unchanged behaviour).
+    """
+    if method_name in getattr(cls, "read_tools", frozenset()):
+        return "read"
+    return "write" if _is_host_class(cls) else None
+
+
+class AbstractToolkit(ServerManagedToolkit, ABC):  # noqa: B024 -- deliberately has no required abstract methods; see below.
     """
     Abstract base class for creating toolkits - collections of related tools.
 
@@ -328,6 +350,9 @@ class AbstractToolkit(ABC):  # noqa: B024 -- deliberately has no required abstra
     #: FEAT-622 — True when this toolkit reads tenant data; tools then refuse without a matching
     #: ``studio_scope`` (enforced by AbstractTool.execute, FEAT-622 M3b). See parrot.tools.scope.
     tenant_bound: ClassVar[bool] = False
+    #: FEAT-622 — method names (pre-prefix) that are read-only. Host toolkit methods not listed are
+    #: treated as writes and require an approval token (strict confirmation).
+    read_tools: ClassVar[frozenset[str]] = frozenset()
 
     def __init__(self, **kwargs):
         """
@@ -351,7 +376,7 @@ class AbstractToolkit(ABC):  # noqa: B024 -- deliberately has no required abstra
         self.credential_provider = kwargs.get("credential_provider", self.credential_provider)
 
         # Remote execution wiring — propagated to every generated tool.
-        self.executor = kwargs.get("executor")
+        self.executor = checked_executor(self, kwargs.get("executor"))
         self.webhook_callback_url = kwargs.get("webhook_callback_url")
         self.remote_timeout_seconds = int(kwargs.get("remote_timeout_seconds", 300))
 
@@ -663,7 +688,7 @@ class AbstractToolkit(ABC):  # noqa: B024 -- deliberately has no required abstra
         description = description.strip()
 
         # Determine args schema - prioritize method-specific schema
-        args_schema = getattr(bound_method, "_args_schema", None)
+        args_schema = checked_args_schema(self, bound_method, name)
 
         # If no custom schema is defined, always generate from method signature
         # This ensures each method only gets the parameters it actually needs
@@ -700,6 +725,16 @@ class AbstractToolkit(ABC):  # noqa: B024 -- deliberately has no required abstra
             if tool.routing_meta is None:
                 tool.routing_meta = {}
             tool.routing_meta["requires_confirmation"] = True
+
+        # FEAT-622: read/write marker; host write tools are strictly confirmed.
+        access = effective_access(type(self), method_name)
+        if tool.routing_meta is None:
+            tool.routing_meta = {}
+        tool.routing_meta["access"] = access
+        if access == "write" and _is_host_class(type(self)):
+            tool.routing_meta["requires_confirmation"] = True
+            tool.routing_meta["confirmation_enforced"] = True
+            tool.routing_meta["confirm_window_seconds"] = 0
 
         return tool
 

@@ -42,7 +42,7 @@ class _Agents(_Repo):
         if rec is not None:
             self._put(rec)
 
-    async def get(self, part: StudioPartition, name: str) -> StudioAgentRecord | None:
+    async def get(self, part: StudioPartition, name: str, *, conn: Any | None = None) -> StudioAgentRecord | None:
         return self._find("agents", part.tenant, name)
 
     async def get_version(self, part: StudioPartition, name: str) -> StudioAgentHead | None:
@@ -142,7 +142,9 @@ class _Assets(_Repo):
         rows = [a for k, a in self._s["assets"].items() if k[0] == agent.agent_id and kind in (None, a.kind)]
         return [replace(a, content=None) for a in sorted(rows, key=lambda a: (a.kind, a.name))]
 
-    async def get(self, part: StudioPartition, agent_name: str, kind: str, name: str) -> StudioAssetRecord | None:
+    async def get(
+        self, part: StudioPartition, agent_name: str, kind: str, name: str, *, conn: Any | None = None
+    ) -> StudioAssetRecord | None:
         agent = self._agent(part, agent_name)
         return self._s["assets"].get((agent.agent_id, kind, name)) if agent else None
 

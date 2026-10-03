@@ -367,3 +367,22 @@ def test_no_name_based_tool_manager_keys_left() -> None:
     source = inspect.getsource(agent_module)
     assert 'f"{agent.name}_tool_manager"' not in source
     assert 'f"{agent_name}_tool_manager"' not in source
+
+
+async def test_name_conflict_is_name_taken_on_every_route_and_discloses_nothing():
+    """FEAT-605 X14: ``StudioNameConflict`` is ``name_taken`` (never ``duplicate``) with a non-enumerating message."""
+    import json
+
+    from aiohttp import web
+    from aiohttp.test_utils import make_mocked_request
+
+    from parrot.handlers.studio.files import StudioFilesHandler
+    from parrot.handlers.studio.storage.models import StudioNameConflict
+    from parrot.handlers.studio.toolkit_config import StudioAgentToolkitsHandler
+
+    for view in (StudioFilesHandler, StudioAgentToolkitsHandler):
+        handler = view(make_mocked_request("PUT", "/x", app=web.Application()))
+        response = handler._studio_error(StudioNameConflict("ai_agents: 'secret' exists for owner u1 in tenant acme"))
+        body = json.loads(response.body)
+        assert response.status == 409 and body["code"] == "name_taken"
+        assert "u1" not in body["message"] and "acme" not in body["message"] and "secret" not in body["message"]

@@ -170,6 +170,35 @@ async def test_same_signals_versions_guards_and_absent(repos) -> None:
     assert await repos.agents.get(ACME, "sales") is None and await repos.assets.list(ACME, "sales") == []
 
 
+async def _draft(repos, name):
+    async with studio_transaction(repos.pool) as conn:
+        return await repos.drafts.insert(
+            conn, ACME, name=name, owner="u1", bundle=StudioAgentBundle(name=name, definition=_def()),
+            visibility="private", allowed_groups=(),
+        )
+
+
+@pytest.mark.parametrize("table", ["agents", "drafts"])
+async def test_same_signals_delete_recreate_at_same_version_is_stale(repos, table) -> None:
+    """The guard's ``authorized_id`` catches what versions cannot: a re-created row restarts at version 1."""
+    make = (lambda: _agent(repos, ACME, "sales")) if table == "agents" else (lambda: _draft(repos, "sales"))
+    repo = getattr(repos, table)
+    old = await make()
+    guard = StudioWriteGuard.for_record(old)
+    async with studio_transaction(repos.pool) as conn:
+        await repo.lock(conn, ACME, "sales", guard)                                # still the authorized row
+        assert await repo.delete(conn, ACME, "sales")
+    new = await make()
+    assert new.version == old.version == 1 and getattr(new, "agent_id" if table == "agents" else "draft_id") != (
+        getattr(old, "agent_id" if table == "agents" else "draft_id")
+    )
+    with pytest.raises(StudioStaleAuthorization):
+        async with studio_transaction(repos.pool) as conn:
+            await repo.lock(conn, ACME, "sales", guard)
+    async with studio_transaction(repos.pool) as conn:
+        await repo.lock(conn, ACME, "sales", StudioWriteGuard.for_record(new))     # the new row's own guard passes
+
+
 async def test_same_signals_rollback_restores_state(repos) -> None:
     await _agent(repos, ACME, "keep")
     with pytest.raises(RuntimeError):

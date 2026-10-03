@@ -64,6 +64,71 @@ async def _probe(pool: Any) -> migrate.LedgerState | Exception:
         return exc
 
 
+_STORE_SWITCHES = ("VAULT_STORE", "TOOLKIT_OVERRIDES_STORE", "BYOK_STORE")
+_PG_STORES_KEY = "_astudio_pg_stores"
+
+
+class StudioStorageMisconfigured(RuntimeError):
+    """A ``*_STORE=postgres`` switch is on but the Studio backend is not ``database`` (fail closed at startup)."""
+
+
+def _postgres_switches() -> list[str]:
+    """The phase-2 store switches currently set to ``postgres``."""
+    return [
+        key for key in _STORE_SWITCHES
+        if str(config.get(key, fallback="documentdb") or "documentdb").strip().lower() == "postgres"
+    ]
+
+
+def _fail_closed(backend: str, reason: str | None) -> None:
+    """Raise when a Postgres store switch is on and the backend cannot serve it (never fall back to DocumentDB)."""
+    switches = _postgres_switches()
+    if switches and backend != "database":
+        raise StudioStorageMisconfigured(
+            f"{', '.join(switches)}=postgres requires the Studio storage backend 'database', "
+            f"but it resolved to {backend!r} ({reason})"
+        )
+
+
+def _register_postgres_stores(app: Any, pool: Any) -> None:
+    """Hand every Postgres store whose switch is ``postgres`` to core, remembering them on ``app`` for cleanup."""
+    switches = _postgres_switches()
+    held: dict[str, Any] = {}
+    if "VAULT_STORE" in switches:
+        from .vault_store import get_vault_store  # lazy: pulls in the vault keyring machinery
+
+        held["vault"] = get_vault_store(pool)
+    if "TOOLKIT_OVERRIDES_STORE" in switches:
+        from .overrides_store import get_override_store
+
+        held["overrides"] = get_override_store(pool)
+    if "BYOK_STORE" in switches:
+        from .byok_store import install_byok_store
+
+        held["byok"] = install_byok_store(app, pool)
+    app[_PG_STORES_KEY] = held
+
+
+async def release_studio_stores(app: web.Application) -> None:
+    """``on_cleanup``: drop this app's process-global store registrations (only those still pointing at its stores)."""
+    held = app.pop(_PG_STORES_KEY, None) or {}
+    from .byok_store import release_byok_store
+    from .overrides_store import release_override_store
+    from .vault_store import release_vault_store
+
+    release_vault_store(held.get("vault"))
+    release_override_store(held.get("overrides"))
+    release_byok_store(held.get("byok"))
+
+
+def install_studio_storage_cleanup(app: web.Application) -> None:
+    """Install :func:`release_studio_stores` once per app. Called by ``add_studio_runtime_hooks`` (BotManager
+    ``setup()`` / ``setup_registry_only()``) and ``setup_studio_routes``, which is also what runs the startup resolve."""
+    from .. import install_startup_hook_once
+
+    install_startup_hook_once(app, release_studio_stores, signal="on_cleanup")
+
+
 def _resolve(setting: str, pool: Any, state: migrate.LedgerState | Exception | None) -> tuple[str, str | None]:
     """Pure mapping of (setting, pool, probe result) to (backend, reason) — spec §2.2 matrix."""
     if setting == "filesystem":
@@ -104,7 +169,10 @@ async def ensure_studio_storage(app: web.Application) -> StudioStorage:
             logger.warning("Studio storage: using the filesystem backend (%s)", reason)
         else:
             logger.info("Studio storage backend: %s", backend)
+        _fail_closed(backend, reason)  # raises before anything is memoised: a retry fails the same way
         repos = build_studio_repositories(pool) if backend == "database" else None
+        if backend == "database":
+            _register_postgres_stores(app, pool)
         storage = StudioStorage(backend, reason, repos, app)  # type: ignore[arg-type]
         app[STUDIO_STORAGE_APP_KEY] = storage
         return storage
