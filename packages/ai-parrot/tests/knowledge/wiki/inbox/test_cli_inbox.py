@@ -120,7 +120,17 @@ def test_ingest_unchanged_after_runtime_factoring(tmp_path: Path, monkeypatch: p
     monkeypatch.setattr(wiki_cli, "_build_ingest_runtime", build_runtime)
     result = CliRunner().invoke(
         wiki_cli.wiki,
-        ["ingest", str(source), "--path", str(tmp_path), "--dry-run", "--model", "test:heavy", "--lightweight-model", "test:light"],
+        [
+            "ingest",
+            str(source),
+            "--path",
+            str(tmp_path),
+            "--dry-run",
+            "--model",
+            "test:heavy",
+            "--lightweight-model",
+            "test:light",
+        ],
     )
     assert result.exit_code != 0
     assert captured == {"lightweight_model_opt": "test:light", "model_opt": "test:heavy", "fetch_timeout": 30.0}
@@ -128,7 +138,7 @@ def test_ingest_unchanged_after_runtime_factoring(tmp_path: Path, monkeypatch: p
 
 def test_ingest_review_without_charter(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep review on its legacy branch instead of requiring a charter path."""
-    assert "if mode == \"review\":" in Path(wiki_cli.__file__).read_text()
+    assert 'if mode == "review":' in Path(wiki_cli.__file__).read_text()
 
 
 def test_cli_dry_run_has_no_setup_writes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

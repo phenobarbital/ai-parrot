@@ -4997,7 +4997,6 @@ def ingest(
         ManifestWriter,
         stratified_sample,
     )
-    from parrot.knowledge.wiki.triage import IngestTriageRouter
 
     modes_selected = sum([dry_run, review_opt is not None, interactive_flag, auto_flag])
     if modes_selected == 0:
@@ -5037,7 +5036,9 @@ def ingest(
         try:
             _, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
         except Exception as exc:
-            raise click.ClickException(f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}") from exc
+            raise click.ClickException(
+                f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}"
+            ) from exc
         pi_toolkit = PageIndexToolkit(
             heavy_adapter,
             storage_dir=wiki_dir / "pageindex",
@@ -5143,7 +5144,9 @@ def ingest(
         try:
             _build_triage_adapters(lightweight_model, model)
         except Exception as exc:
-            raise click.ClickException(f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}") from exc
+            raise click.ClickException(
+                f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}"
+            ) from exc
         raise
     runtime = _build_ingest_runtime(
         root,
