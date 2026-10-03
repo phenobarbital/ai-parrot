@@ -70,9 +70,7 @@ async def test_adr_supersedes_broken(tmp_path: Path) -> None:
 
     findings = await AdrSupersedesBrokenRule().check(context)
 
-    assert [(finding.severity, finding.subjects) for finding in findings] == [
-        ("error", ["adr:current", "adr:missing"])
-    ]
+    assert [(finding.severity, finding.subjects) for finding in findings] == [("error", ["adr:current", "adr:missing"])]
 
 
 @pytest.mark.asyncio
@@ -135,9 +133,7 @@ async def test_memory_dangling_link(tmp_path: Path) -> None:
 
     findings = await MemoryDanglingLinkRule().check(context)
 
-    assert [(finding.severity, finding.subjects) for finding in findings] == [
-        ("error", ["memory:one", "page:missing"])
-    ]
+    assert [(finding.severity, finding.subjects) for finding in findings] == [("error", ["memory:one", "page:missing"])]
 
 
 def test_rule_pack_exports_are_complete() -> None:

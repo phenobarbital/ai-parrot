@@ -69,12 +69,7 @@ class AdrSupersededActiveRule(_AdrRule):
         records = await _records(ctx)
         if records is None:
             return _unavailable_finding(ctx)
-        superseded = {
-            link.target_id
-            for record in records
-            for link in record.links
-            if link.relation == "supersedes"
-        }
+        superseded = {link.target_id for record in records for link in record.links if link.relation == "supersedes"}
         return [
             _finding(
                 self.rule_id,
