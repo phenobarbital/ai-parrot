@@ -1,4 +1,5 @@
 """Date-stamped original archiving and git index bookkeeping."""
+
 from datetime import date
 import errno
 import logging
