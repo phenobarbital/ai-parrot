@@ -71,7 +71,11 @@ async def test_unsupported_and_foreign_write_guards(tmp_path: Path, monkeypatch:
     monkeypatch.setattr(fourth, "list_by_attrs", boom)
     fed = subject.FederatedWikiStore(
         local,
-        handles=[_handle("other", other, tmp_path), _handle("third", third, tmp_path), _handle("fourth", fourth, tmp_path)],
+        handles=[
+            _handle("other", other, tmp_path),
+            _handle("third", third, tmp_path),
+            _handle("fourth", fourth, tmp_path),
+        ],
     )
     rows = await fed.list_by_attrs({"type": "ticket"})
     assert sorted(r["concept_id"] for r in rows) == ["L1", "other::F1"]
