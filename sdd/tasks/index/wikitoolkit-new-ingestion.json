@@ -54,7 +54,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -62,8 +62,9 @@
       "parallelism_notes": "Independent M3 models deliverable; owns packages/ai-parrot/src/parrot/knowledge/wiki/inbox/models.py. No prerequisite-created symbol is consumed.",
       "assigned_to": null,
       "started_at": "2026-10-03T00:28:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4047-inbox-data-models.md"
+      "completed_at": "2026-10-03T00:44:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4047-inbox-data-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4048",
@@ -72,7 +73,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -80,8 +81,9 @@
       "parallelism_notes": "Independent M10 deliverable; owns packages/ai-parrot/src/parrot/knowledge/wiki/triage.py, packages/ai-parrot/src/parrot/knowledge/wiki/export.py. No prerequisite-created symbol is consumed.",
       "assigned_to": null,
       "started_at": "2026-10-03T00:28:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4048-inbox-compatibility-seams.md"
+      "completed_at": "2026-10-03T00:44:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4048-inbox-compatibility-seams.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4049",
