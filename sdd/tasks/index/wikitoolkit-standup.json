@@ -421,7 +421,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -432,8 +432,9 @@
       "parallelism_notes": "TASK-4040: consumes StandupOptions and run; TASK-4033: consumes entity command group and preceding cli.py edit",
       "assigned_to": null,
       "started_at": "2026-10-03T00:20:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4041-standup-cli.md"
+      "completed_at": "2026-10-03T02:59:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4041-standup-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4042",
@@ -442,7 +443,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -452,8 +453,9 @@
       "parallelism_notes": "TASK-4040: consumes run, StandupOptions and write receipts",
       "assigned_to": null,
       "started_at": "2026-10-03T00:20:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4042-standup-mcp.md"
+      "completed_at": "2026-10-03T02:59:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4042-standup-mcp.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4043",
