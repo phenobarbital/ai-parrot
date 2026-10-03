@@ -35,7 +35,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "imports Finding/LintOptions/LintReport/LintRule/LintContext from TASK-4009 (lint/models.py, rule.py, context.py)",
       "assigned_to": null,
       "started_at": "2026-10-02T23:43:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4010-lint-runner.md"
+      "completed_at": "2026-10-03T00:02:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4010-lint-runner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4011",
@@ -74,7 +75,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -84,8 +85,9 @@
       "parallelism_notes": "imports Finding/make_fingerprint from TASK-4009 (lint/models.py, lint/rule.py)",
       "assigned_to": null,
       "started_at": "2026-10-02T23:43:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4012-lint-okf-pack.md"
+      "completed_at": "2026-10-03T00:02:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4012-lint-okf-pack.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4013",
