@@ -161,6 +161,17 @@ class VoiceSession:
 
     # -- turn lifecycle -----------------------------------------------------
 
+    @property
+    def turn_open(self) -> bool:
+        """Whether a turn is currently accepting audio.
+
+        ``True`` between :meth:`start_turn` and the end of that turn's task.
+        A provider that closes its stream after every reply (Nova 2 Sonic)
+        ends the turn on its own, so callers that track "recording" state
+        separately must check this before pushing audio for a new turn.
+        """
+        return self._queue is not None
+
     async def start_turn(self) -> None:
         """Open a new voice turn, cancelling any turn still running."""
         await self._cancel_turn()
