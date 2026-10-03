@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-03T00:22:08.031495+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-03T02:01:05+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -266,7 +266,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -276,8 +276,9 @@
       "parallelism_notes": "Documents final inbox options and exit behavior from TASK-4055. Exclusive: opens/reuses an item in the shared SDD work ledger outside declared documentation files.",
       "assigned_to": null,
       "started_at": "2026-10-03T00:28:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4057-inbox-operations-docs.md"
+      "completed_at": "2026-10-03T02:01:05+00:00",
+      "file": "sdd/tasks/completed/TASK-4057-inbox-operations-docs.md",
+      "verification": "verified"
     }
   ]
 }
