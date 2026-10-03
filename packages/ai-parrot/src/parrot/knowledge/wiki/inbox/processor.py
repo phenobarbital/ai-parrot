@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import time
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SkipValidation
 
 from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
@@ -54,8 +54,8 @@ class InboxRuntime(BaseModel):
     acquirer: DocumentAcquirer
     router: IngestTriageRouter
     orchestrator: WikiIngestOrchestrator
-    light_adapter: PageIndexLLMAdapter
-    heavy_adapter: PageIndexLLMAdapter
+    light_adapter: SkipValidation[PageIndexLLMAdapter]
+    heavy_adapter: SkipValidation[PageIndexLLMAdapter]
     search: WikiCombinedSearch
     models: dict[str, str]
 
