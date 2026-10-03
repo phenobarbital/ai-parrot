@@ -96,7 +96,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -106,8 +106,9 @@
       "parallelism_notes": "imports Finding/make_fingerprint/LintContext from TASK-4009 (lint/models.py, rule.py, context.py)",
       "assigned_to": null,
       "started_at": "2026-10-02T23:43:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4013-lint-plane-pack.md"
+      "completed_at": "2026-10-03T00:08:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4013-lint-plane-pack.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4014",
@@ -116,7 +117,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -127,8 +128,9 @@
       "parallelism_notes": "imports LintContext/Finding from TASK-4009 (lint/context.py, models.py); calls store.rebuild_index/index_drift added by TASK-4011 (wiki/store.py)",
       "assigned_to": null,
       "started_at": "2026-10-02T23:43:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4014-lint-plane-fix-rules.md"
+      "completed_at": "2026-10-03T00:08:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4014-lint-plane-fix-rules.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4015",

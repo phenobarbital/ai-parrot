@@ -266,3 +266,7 @@ async def test_duplicate_slug(tmp_path):
 **Notes**:
 
 **Deviations from spec**: none
+
+## Completion Note
+
+Implemented by gpt-5.6-terra (codex), 1 attempt. Merged via coder_merge. Verified: lint test package passes in worktree (scoped). Closed via close_task.sh.
