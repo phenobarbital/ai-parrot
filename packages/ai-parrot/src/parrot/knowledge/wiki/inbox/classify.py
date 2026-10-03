@@ -68,8 +68,9 @@ def slugify_doc_id(title: str, file_hash: str) -> str:
     Returns:
         A stable document page identifier.
     """
-    slug = normalize_tag(title) or "note"
-    return f"doc:{slug[:48]}-{file_hash[:8]}"
+    folded = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode("ascii").lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", folded).strip("-")[:48].strip("-") or "note"
+    return f"doc:{slug}-{file_hash[:8]}"
 
 
 def build_classification_prompt(
