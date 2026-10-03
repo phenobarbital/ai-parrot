@@ -16,14 +16,14 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent entity-vocabulary deliverable; uses existing verified code only and owns its declared files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4022-entity-vocabulary.md"
     },
@@ -34,14 +34,14 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent sqlite-page-attrs deliverable; uses existing verified code only and owns its declared files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4023-sqlite-page-attrs.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -61,7 +61,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4023: consumes WikiPageRecord.attrs and BaseWikiStore attrs contract",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4024-memory-page-attrs.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,7 +81,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4023: consumes BaseWikiStore attrs methods",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4025-federated-page-attrs.md"
     },
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,7 +102,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4022: consumes normalize_frontmatter and parse_leading_yaml; TASK-4023: consumes WikiPageRecord.attrs",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4026-ingest-entity-attrs.md"
     },
@@ -113,14 +113,14 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent ledger-issue-list deliverable; uses existing verified code only and owns its declared files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4027-ledger-issue-list.md"
     },
@@ -131,14 +131,14 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent jira-current-user deliverable; uses existing verified code only and owns its declared files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4028-jira-current-user.md"
     },
@@ -149,14 +149,14 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent standup-config deliverable; uses existing verified code only and owns its declared files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4029-standup-config.md"
     },
@@ -167,7 +167,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -177,7 +177,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4029: consumes StandupConfig.me; TASK-4028: consumes JiraInterface.myself returning JiraPerson",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4030-standup-identity.md"
     },
@@ -188,7 +188,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -199,7 +199,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4022: consumes EntityType; TASK-4029: consumes StandupConfig; TASK-4030: consumes StandupIdentity",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4031-standup-models.md"
     },
@@ -210,7 +210,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -219,7 +219,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4031: consumes Period and PeriodWindow",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4032-standup-periods.md"
     },
@@ -230,7 +230,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -242,7 +242,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4022: consumes strict normalization API; TASK-4023: consumes attrs persistence; TASK-4025: consumes namespace attrs listing; TASK-4030: consumes shared authoring_identity and earlier cli.py edit",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4033-entity-cli.md"
     },
@@ -253,7 +253,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -263,7 +263,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4031: consumes CollectContext and BriefItem; TASK-4025: consumes per-namespace attrs reads",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4034-attrs-collectors.md"
     },
@@ -274,7 +274,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -284,7 +284,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4031: consumes CollectContext and BriefItem; TASK-4027: consumes LedgerService.list_issues",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4035-native-collectors.md"
     },
@@ -295,7 +295,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -304,7 +304,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4031: consumes BriefItem, ProjectSlice and CollectContext",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4036-brief-grouping.md"
     },
@@ -315,7 +315,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -324,7 +324,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4031: consumes BriefDocument",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4037-brief-rendering.md"
     },
@@ -335,7 +335,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -344,7 +344,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4031: consumes BriefProjection and BriefItem",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4038-brief-optional-llm.md"
     },
@@ -355,7 +355,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -366,7 +366,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4031: consumes BriefDocument and identity; TASK-4023: consumes WikiPageRecord.attrs persistence; TASK-4032: consumes stable brief identities",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4039-brief-delta-writer.md"
     },
@@ -377,7 +377,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -391,7 +391,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4034: consumes entities/jira collect functions; TASK-4035: consumes ledger/tasks/decisions/memories collect functions; TASK-4036: consumes group_items; TASK-4037: consumes render_markdown; TASK-4038: consumes resolve_optional_llm and summarize; TASK-4039: consumes previous_brief, diff and write receipts",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4040-brief-pipeline.md"
     },
@@ -402,7 +402,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -412,7 +412,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4040: consumes StandupOptions and run; TASK-4033: consumes entity command group and preceding cli.py edit",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4041-standup-cli.md"
     },
@@ -423,7 +423,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -432,7 +432,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4040: consumes run, StandupOptions and write receipts",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4042-standup-mcp.md"
     },
@@ -443,7 +443,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -453,7 +453,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4041: consumes final CLI flags/help; TASK-4042: consumes wiki_standup write semantics",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4043-standup-docs-assets.md"
     },
@@ -464,7 +464,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -476,7 +476,7 @@
       "parallel": true,
       "parallelism_notes": "TASK-4026: consumes actual source-boundary attrs; TASK-4024: consumes backend parity coverage; TASK-4041: consumes public CLI dispatch; TASK-4042: consumes read-only and local-write tool",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-03T00:20:05+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4044-standup-integration.md"
     }
