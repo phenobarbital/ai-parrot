@@ -639,21 +639,26 @@ async def test_version_bumped_while_building_is_not_installed_and_the_current_on
     assert await rt.get(_key()) is served                                            # and it is what is cached
 
 
-async def test_agent_that_keeps_changing_while_building_is_not_served_stale(repos, tmp_path):
+async def test_agent_that_keeps_changing_is_served_but_not_stamped_valid(repos, tmp_path):
     rt, builder = _runtime(repos, tmp_path)
     await _create(repos, description="v1")
     real_build = builder.build
 
-    async def always_bump(snapshot, app, *, part):
+    attempts = runtime_module._MAX_REBUILDS
+
+    async def bump_during_every_attempt(snapshot, app, *, part):
         result = await real_build(snapshot, app, part=part)
-        await _patch(repos, description=f"v{len(builder.built) + 1}")
+        if len(builder.built) <= attempts:            # the head moves under each of the first `attempts` builds
+            await _patch(repos, description=f"v{len(builder.built) + 1}")
         return result
 
-    builder.build = always_bump
-    with pytest.raises(RuntimeError):
-        await rt.get(_key())
-    assert rt._cache.all_entries() == []
-    assert all(bot.cleanup.await_count == 1 for bot in builder.built)
+    builder.build = bump_during_every_attempt
+    served = await rt.get(_key())                     # still served (availability), never an error
+    assert len(builder.built) == attempts and served is builder.built[-1]
+    assert all(bot.cleanup.await_count == 1 for bot in builder.built[:-1])          # earlier builds discarded
+    assert _key().qualified not in rt._validated     # outdated: NOT stamped, so the TTL cannot hide the head
+    current = await rt.get(_key())                   # the next lookup revalidates and serves the head
+    assert current is not served and current.description == f"v{attempts + 1}"
 
 
 async def test_refused_memory_and_session_count_are_bounded(repos, tmp_path, monkeypatch):
