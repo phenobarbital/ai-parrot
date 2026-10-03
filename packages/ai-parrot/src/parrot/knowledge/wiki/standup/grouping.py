@@ -114,7 +114,9 @@ def _build_sections(items: list[BriefItem], ctx: CollectContext) -> list[BriefSe
     buckets: dict[str, list[BriefItem]] = {}
     for item in items:
         buckets.setdefault(_section_for(item, ctx), []).append(item)
-    return [BriefSection(key=key, items=sorted(buckets[key], key=_sort_key)) for key in SECTION_ORDER if buckets.get(key)]
+    return [
+        BriefSection(key=key, items=sorted(buckets[key], key=_sort_key)) for key in SECTION_ORDER if buckets.get(key)
+    ]
 
 
 async def group_items(items: list[BriefItem], ctx: CollectContext) -> tuple[list[ProjectSlice], list[BriefSection]]:
