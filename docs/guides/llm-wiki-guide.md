@@ -47,6 +47,7 @@
 - [Obsidian Vaults as Wiki Sources](#obsidian-vaults-as-wiki-sources)
 - [Document Ingestion](#document-ingestion)
   - [Supervised Ingestion (wikitoolkit ingest)](#supervised-ingestion-wikitoolkit-ingest)
+  - [Inbox ingestion (wikitoolkit inbox)](#inbox-ingestion-wikitoolkit-inbox)
   - [Jira Ticket Extraction (wikitoolkit ingest-jira)](#jira-ticket-extraction-wikitoolkit-ingest-jira)
 - [Storage Backends](#storage-backends)
   - [SQLite (default)](#sqlite-default)
@@ -1011,6 +1012,71 @@ wikitoolkit ingest SOURCE [OPTIONS]
 
 Exactly one mode required: `--dry-run`, `--review`, `--interactive`, or
 `--auto`.
+
+### Inbox ingestion (wikitoolkit inbox)
+
+Drop documents into the configured `inbox/` directory, then run `wikitoolkit inbox`.
+Use `wikitoolkit inbox --dry-run --json` to inspect planned outcomes.
+
+#### Command Options
+
+The `wikitoolkit inbox` command supports the following options:
+
+- `--dry-run`: Report what would change and output the planned ingestion manifest without writing any files or modifying the database.
+- `--no-archive`: Process and ingest the documents into the wiki, but do not move the original files to the archive directory.
+- `--force`: Force re-processing and re-ingestion of all documents in the inbox, ignoring any staleness or watermark checks.
+- `--json`: Output the final ingestion report as a structured JSON payload.
+
+#### Configuration
+
+Inbox ingestion is configured via the project configuration file `.parrot/wiki.json`. A complete configuration example is shown below:
+
+```json
+{
+  "wiki_name": "codebase",
+  "backend": "sqlite",
+  "storage_dir": ".parrot/wiki",
+  "inbox": {
+    "inbox_dir": "inbox",
+    "archive_dir": "archive",
+    "markdown_dir": "docs/wiki/inbox",
+    "taxonomy_path": ".parrot/taxonomy.json",
+    "tag_graph_path": ".parrot/tag_graph.json",
+    "adr_review_required": true
+  }
+}
+```
+
+> **Warning**: The custom `markdown_dir` (e.g., `docs/wiki/inbox`) must be explicitly excluded from build scanning to prevent infinite loops or duplicate page indexing during subsequent `wikitoolkit build` runs.
+
+#### Taxonomy and Tag Graph
+
+- **Default/Custom Taxonomy**: The inbox processor uses a hierarchical taxonomy (defined in `taxonomy_path`) to classify incoming documents into categories (e.g., `guide`, `runbook`, `specification`, `decision`).
+- **Tag Graph**: Extracted tags are validated against a tag graph (defined in `tag_graph_path`) to ensure consistent categorization and cross-linking.
+- **ADR Review**: If `adr_review_required` is enabled, any document classified as an Architectural Decision Record (ADR) is flagged for human review before final integration.
+
+#### Archive Layout and Collision Naming
+
+When a document is successfully processed, the original file is moved to the archive directory (`archive_dir`).
+- **Archive Layout**: Files are archived under a date-structured layout: `archive/<YYYY>/<MM>/<DD>/<filename>`.
+- **Collision Naming**: If a file with the same name already exists in the target archive directory, a unique suffix is appended to prevent overwriting (e.g., `document_1.pdf` becomes `document_1_1.pdf`).
+
+#### Git Lifecycle
+
+The inbox processor automatically stages the newly generated markdown pages in git (`git add`) without committing them. This allows developers to review the generated pages and their frontmatter before committing them to the repository.
+
+#### Exit Codes and Concurrency
+
+- **Exit Codes**:
+  - `0`: Success (all documents processed and ingested successfully).
+  - `1`: General error or invalid configuration.
+  - `2`: Lock acquisition failed (another inbox run is active).
+  - `3`: Partial failure (some documents failed to process, but others succeeded).
+- **Whole-Run Processor Lock**: To prevent concurrent modifications and race conditions, the inbox processor acquires a nonblocking lock at the start of the run. If another process holds the lock, the command exits immediately with code `2`.
+- **Per-Document Failures**: A failure to process a single document does not abort the entire run. The processor continues with the remaining documents, and exits with code `3` at the end.
+- **Verification-Before-Archive**: Original documents are only moved to the archive directory after their generated markdown pages have been successfully written and verified.
+- **SQLite Transaction Guarantees**: All database updates for a document are executed within a single SQLite transaction, ensuring that the knowledge graph remains consistent.
+- **Best-Effort Memory/ArangoDB Retry**: For in-memory or ArangoDB backends, the processor employs best-effort retry behavior with exponential backoff to handle transient connection issues.
 
 ### Jira Ticket Extraction (wikitoolkit ingest-jira)
 
