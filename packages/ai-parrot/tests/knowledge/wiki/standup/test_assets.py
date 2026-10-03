@@ -157,16 +157,16 @@ def test_standup_cli_options_match_docs() -> None:
     cli_content = _read_file(cli_path)
 
     # Verify key options are defined in the CLI
-    assert '--period' in cli_content
-    assert '--language' in cli_content
-    assert '--team' in cli_content
-    assert '--me' in cli_content
-    assert '--no-llm' in cli_content
-    assert '--no-store' in cli_content
-    assert '--no-file' in cli_content
-    assert '--json' in cli_content
-    assert '--out' in cli_content
-    assert '--store' in cli_content
+    assert "--period" in cli_content
+    assert "--language" in cli_content
+    assert "--team" in cli_content
+    assert "--me" in cli_content
+    assert "--no-llm" in cli_content
+    assert "--no-store" in cli_content
+    assert "--no-file" in cli_content
+    assert "--json" in cli_content
+    assert "--out" in cli_content
+    assert "--store" in cli_content
 
 
 def test_entity_cli_options_match_docs() -> None:
@@ -178,16 +178,16 @@ def test_entity_cli_options_match_docs() -> None:
     entity_cli_content = _read_file(entity_cli_path)
 
     # Verify add_entity has key options
-    assert '--type' in entity_cli_content or 'type_' in entity_cli_content
-    assert '--title' in entity_cli_content
-    assert '--body' in entity_cli_content
-    assert '--project' in entity_cli_content
-    assert '--status' in entity_cli_content
-    assert '--date' in entity_cli_content
-    assert '--due' in entity_cli_content
-    assert '--owner' in entity_cli_content
-    assert '--store' in entity_cli_content
+    assert "--type" in entity_cli_content or "type_" in entity_cli_content
+    assert "--title" in entity_cli_content
+    assert "--body" in entity_cli_content
+    assert "--project" in entity_cli_content
+    assert "--status" in entity_cli_content
+    assert "--date" in entity_cli_content
+    assert "--due" in entity_cli_content
+    assert "--owner" in entity_cli_content
+    assert "--store" in entity_cli_content
 
     # Verify entity group has reindex command
-    assert 'reindex' in entity_cli_content
-    assert '@entity.command("reindex"' in entity_cli_content or 'entity.command(' in entity_cli_content
+    assert "reindex" in entity_cli_content
+    assert '@entity.command("reindex"' in entity_cli_content or "entity.command(" in entity_cli_content
