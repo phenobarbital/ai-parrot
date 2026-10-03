@@ -13,7 +13,7 @@ def _read_file(path: Path) -> str:
 
 def _repo_root() -> Path:
     """Return the repository root."""
-    return Path(__file__).parents[5].parents[2]
+    return Path(__file__).parents[6]
 
 
 def test_managed_command_parity() -> None:
@@ -179,7 +179,7 @@ def test_entity_cli_options_match_docs() -> None:
 
     # Verify add_entity has key options
     assert "--type" in entity_cli_content or "type_" in entity_cli_content
-    assert "--title" in entity_cli_content
+    assert "@click.argument(\"title\")" in entity_cli_content
     assert "--body" in entity_cli_content
     assert "--project" in entity_cli_content
     assert "--status" in entity_cli_content

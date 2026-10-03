@@ -208,7 +208,7 @@ async def test_build_parity_and_jira_attrs(
     root.mkdir()
     (root / "src").mkdir()
     (root / "src" / "base.py").write_text("VALUE = 1\n", encoding="utf-8")
-    (root / "src" / "consumer.py").write_text("from src.base import VALUE\n", encoding="utf-8")
+    (root / "src" / "consumer.py").write_text("from base import VALUE\n", encoding="utf-8")
     base = build_file_slice(root, "src/base.py")
     consumer = build_file_slice(root, "src/consumer.py")
     assert base is not None and consumer is not None
@@ -228,7 +228,7 @@ async def test_build_parity_and_jira_attrs(
     )
     jira_record = await _scan_into(store, root, "issues/NAV-9372.md")
     rows = await store.list_by_attrs({"type": "ticket", "project": "NAV", "x_assignee_id": "5f8a:abc-123"})
-    assert [(row["concept_id"], row["attrs"])] == [(jira_record.concept_id, jira_record.attrs)]
+    assert [(row["concept_id"], row["attrs"]) for row in rows] == [(jira_record.concept_id, jira_record.attrs)]
 
     effective = _effective(tmp_path)
     before = await store.list_pages(limit=100)
