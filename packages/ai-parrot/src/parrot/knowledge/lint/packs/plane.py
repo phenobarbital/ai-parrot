@@ -140,7 +140,9 @@ class StaleSourceRule(_ReportOnly):
         for entry in entries:
             if await asyncio.to_thread(sources.is_stale, entry.source_id):
                 findings.append(
-                    _finding(self.rule_id, self.default_severity, [entry.source_id], "source has changed since ingestion")
+                    _finding(
+                        self.rule_id, self.default_severity, [entry.source_id], "source has changed since ingestion"
+                    )
                 )
         return findings
 
