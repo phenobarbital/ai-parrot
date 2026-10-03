@@ -124,12 +124,24 @@ async def test_jira_identity_statuses_and_periods(tmp_path: Path, monkeypatch: p
         {
             "concept_id": "file:NAV-3.md",
             "title": "Wrong ID wins",
-            "attrs": {"type": "ticket", "source": "jira", "status_raw": "To Do", "x_assignee_id": "other", "x_assignee": "Me"},
+            "attrs": {
+                "type": "ticket",
+                "source": "jira",
+                "status_raw": "To Do",
+                "x_assignee_id": "other",
+                "x_assignee": "Me",
+            },
         },
         {
             "concept_id": "file:NAV-4.md",
             "title": "Closed rollup",
-            "attrs": {"type": "ticket", "source": "jira", "status_raw": "Done", "x_assignee_id": "acct-1", "date": "2026-10-02"},
+            "attrs": {
+                "type": "ticket",
+                "source": "jira",
+                "status_raw": "Done",
+                "x_assignee_id": "acct-1",
+                "date": "2026-10-02",
+            },
         },
     ]
     context = _context(FakeFederation(FakeStore(rows)), period="week")
