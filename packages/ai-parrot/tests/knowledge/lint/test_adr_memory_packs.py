@@ -17,7 +17,7 @@ from parrot.knowledge.lint.packs.memory import MEMORY_RULES, MemoryDanglingLinkR
 from parrot.knowledge.wiki.decisions.models import DecisionLink, DecisionRecord
 from parrot.knowledge.wiki.decisions.repository import DecisionRepository
 from parrot.knowledge.wiki.file_store import InMemoryWikiStore
-from parrot.knowledge.wiki.store import WikiPageRecord
+from parrot.knowledge.wiki.store import SQLiteWikiStore, WikiPageRecord
 
 
 async def _context(tmp_path: Path) -> LintContext:
@@ -99,7 +99,8 @@ async def test_adr_conflict(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_stale_memory_warning(tmp_path: Path) -> None:
     """A target newer than its memory creates a warning finding."""
-    context = await _context(tmp_path)
+    # InMemoryWikiStore re-stamps updated_at; the SQLite store honours explicit values.
+    context = LintContext(SQLiteWikiStore(tmp_path / "wiki.db"))
     await context.store.upsert_pages(
         [
             WikiPageRecord(

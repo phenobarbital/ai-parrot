@@ -56,7 +56,6 @@ class ContradictionLLMRule:
             List of (memory_a, memory_b) tuples, each a dict from ctx.memories().
         """
         memories = await ctx.memories()
-        pages = await ctx.pages()
         edges = await ctx.edges()
 
         # Build a map from target concept_id to list of sources
@@ -79,7 +78,7 @@ class ContradictionLLMRule:
 
         # Build candidate pairs from groups with at least 2 memories
         candidates: list[tuple[dict[str, Any], dict[str, Any]]] = []
-        for target, group in memory_groups.items():
+        for group in memory_groups.values():
             if len(group) >= 2:
                 # All pairs in this group
                 for i in range(len(group)):
@@ -193,13 +192,14 @@ Example:
             findings: list[Finding] = []
 
             for a, b in pairs:
-                try:
-                    verdict = await self._judge(a, b)
-                    if verdict.get("contradicts", False):
-                        explanation = verdict.get("explanation", "No explanation provided")
-                        a_id = a.get("concept_id", "")
-                        b_id = b.get("concept_id", "")
-                        finding = Finding(
+                # A client failure propagates to the outer handler -> single llm-skipped finding.
+                verdict = await self._judge(a, b)
+                if verdict.get("contradicts", False):
+                    explanation = verdict.get("explanation", "No explanation provided")
+                    a_id = a.get("concept_id", "")
+                    b_id = b.get("concept_id", "")
+                    findings.append(
+                        Finding(
                             rule_id=self.rule_id,
                             severity=self.default_severity,
                             subjects=[a_id, b_id],
@@ -207,10 +207,7 @@ Example:
                             fingerprint=make_fingerprint(self.rule_id, [a_id, b_id]),
                             data={"memory_a": a_id, "memory_b": b_id, "explanation": explanation},
                         )
-                        findings.append(finding)
-                except Exception:  # noqa: BLE001 — individual judge failure is a skip
-                    # Continue to next pair
-                    pass
+                    )
 
             return findings
         except Exception as exc:  # noqa: BLE001 — any failure is a skip

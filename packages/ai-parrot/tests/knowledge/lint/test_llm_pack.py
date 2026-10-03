@@ -1,12 +1,15 @@
 """Tests for the LLM contradiction pack (TASK-4017)."""
 
 import asyncio
+import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from parrot.knowledge.lint.context import LintContext
-from parrot.knowledge.lint.models import Finding, LintOptions
+from parrot.knowledge.lint.models import LintOptions
+from parrot.knowledge.lint.rule import make_fingerprint
 from parrot.knowledge.lint.packs.llm import ContradictionLLMRule, build_llm_rule, resolve_lint_llm_spec
 
 
@@ -25,7 +28,7 @@ class FakeClient:
         """Mock ask method."""
         self.call_count += 1
         response = MagicMock()
-        response.text = self.responses[self.call_count - 1]
+        response.text = json.dumps(self.responses[self.call_count - 1])
         return response
 
 
@@ -140,45 +143,45 @@ async def test_llm_skipped_on_failure(lint_context):
     assert "Network error" in findings[0].message
 
 
+def _clear_llm_env(monkeypatch):
+    for name in ("WIKI_LINT_LLM", "WIKI_EXTRACT_LLM", "PARROT_NO_AUTO_LLM"):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_resolve_spec_order(monkeypatch):
-    """Test the resolution order for LLM spec."""
-    # Set environment variables
-    monkeypatch.setenv("WIKI_EXTRACT_LLM", "b:y")
-    monkeypatch.setenv("WIKI_LINT_LLM", "a:x")
-
-    # Test with no explicit value
-    assert resolve_lint_llm_spec(None) == "a:x"
-
-    # Test with explicit value
-    assert resolve_lint_llm_spec("c:z") == "c:z"
-
-    # Test with PARROT_NO_AUTO_LLM set
+    """Explicit > WIKI_LINT_LLM > WIKI_EXTRACT_LLM > auto-detect (disabled by PARROT_NO_AUTO_LLM)."""
+    _clear_llm_env(monkeypatch)
     monkeypatch.setenv("PARROT_NO_AUTO_LLM", "1")
+    monkeypatch.setenv("WIKI_EXTRACT_LLM", "b:y")
+    assert resolve_lint_llm_spec(None) == "b:y"
+    monkeypatch.setenv("WIKI_LINT_LLM", "a:x")
+    assert resolve_lint_llm_spec(None) == "a:x"
+    assert resolve_lint_llm_spec("c:z") == "c:z"
+    monkeypatch.delenv("WIKI_LINT_LLM")
+    monkeypatch.delenv("WIKI_EXTRACT_LLM")
     assert resolve_lint_llm_spec(None) is None
 
 
-def test_build_llm_rule_no_spec():
-    """Test that build_llm_rule returns None when no spec is configured."""
+def test_build_llm_rule_no_spec(monkeypatch):
+    """No spec configured (auto-detect disabled) -> None."""
+    _clear_llm_env(monkeypatch)
+    monkeypatch.setenv("PARROT_NO_AUTO_LLM", "1")
     options = LintOptions(llm=True, llm_model=None, llm_max_pairs=50)
     assert build_llm_rule(options) is None
 
 
-def test_build_llm_rule_with_spec():
-    """Test that build_llm_rule creates a rule when a spec is configured."""
-    options = LintOptions(llm=True, llm_model="fake-model", llm_max_pairs=50)
-    rule = build_llm_rule(options)
-    assert rule is not None
+def test_build_llm_rule_with_spec(monkeypatch):
+    """A configured spec builds a temperature-0 client through LLMFactory."""
+    _clear_llm_env(monkeypatch)
+    with patch("parrot.knowledge.lint.packs.llm.LLMFactory.create", return_value=FakeClient()) as create:
+        rule = build_llm_rule(LintOptions(llm=True, llm_model="fake:model", llm_max_pairs=7))
+    create.assert_called_once_with("fake:model", model_args={"temperature": 0.0})
     assert isinstance(rule, ContradictionLLMRule)
-    assert rule.max_pairs == 50
+    assert rule.max_pairs == 7
 
 
 def test_finding_fingerprint():
-    """Test that finding fingerprints are stable."""
-    a_id = "memory1"
-    b_id = "memory2"
-    fingerprint = "contradiction-llm" + "\x1f" + "\x1f".join(sorted([a_id, b_id]))
-    expected = "9a7f3c2e1b5d4f6a8c0e2b1d4f6a8c0e"  # Example hash
-
-    # This is just a sanity check that the fingerprint is deterministic
-    # The actual hash will vary based on the input
-    assert len(fingerprint) == 40  # SHA1 hex digest length
+    """Fingerprints are deterministic and independent of subject order."""
+    assert make_fingerprint("contradiction-llm", ["memory1", "memory2"]) == make_fingerprint(
+        "contradiction-llm", ["memory2", "memory1"]
+    )
