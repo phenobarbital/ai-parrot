@@ -94,7 +94,9 @@ class FindingRouter:
             Counts keyed by routing destination.
         """
         counts = {"ledger_opened": 0, "ledger_deduped": 0, "notes_added": 0, "report_files": 0}
-        residue = [finding for finding in report.findings if not finding.fixable and finding.severity in ("warning", "error")]
+        residue = [
+            finding for finding in report.findings if not finding.fixable and finding.severity in ("warning", "error")
+        ]
         if options.ledger and self.ledger is not None:
             await self._to_ledger(residue, options, counts)
         if options.notes:
@@ -117,9 +119,7 @@ class FindingRouter:
             return
 
         existing_markers = {
-            marker
-            for issue in open_issues
-            for marker in (str(issue.get("body", "")), str(issue.get("title", "")))
+            marker for issue in open_issues for marker in (str(issue.get("body", "")), str(issue.get("title", "")))
         }
         grouped: dict[str, list[Finding]] = defaultdict(list)
         for finding in findings:
