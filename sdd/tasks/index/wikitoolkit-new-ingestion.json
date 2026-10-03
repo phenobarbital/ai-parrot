@@ -177,7 +177,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -187,8 +187,9 @@
       "parallelism_notes": "Consumes ArchiveResult from TASK-4047.",
       "assigned_to": null,
       "started_at": "2026-10-03T00:28:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4053-inbox-original-archive.md"
+      "completed_at": "2026-10-03T01:06:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4053-inbox-original-archive.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4054",
