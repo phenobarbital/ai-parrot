@@ -58,11 +58,11 @@ def test_cli_option_matrix_and_status(tmp_path: Path, monkeypatch: pytest.Monkey
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["brief_id"] == "brief:day:2026-10-03"
     options = captured["options"]
-    assert getattr(options, "period") == "week"
-    assert getattr(options, "anchor").isoformat() == "2026-10-03"
-    assert getattr(options, "write_page") is False
-    assert getattr(options, "write_file") is False
-    assert getattr(options, "use_llm") is False
+    assert options.period == "week"
+    assert options.anchor.isoformat() == "2026-10-03"
+    assert options.write_page is False
+    assert options.write_file is False
+    assert options.use_llm is False
 
 
 def test_lazy_dispatch_and_import_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
