@@ -65,9 +65,18 @@ async def test_same_period_delta(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     del tmp_path, monkeypatch
     store = _Store(
         [
-            {"concept_id": "brief:daily:2026-10-02", "attrs": {"period": "day", "date": "2026-10-02", "items": '["TASK-1", "TASK-2"]'}},
-            {"concept_id": "brief:weekly:2026-W40", "attrs": {"period": "week", "date": "2026-10-02", "items": '["OTHER"]'}},
-            {"concept_id": "brief:daily:2026-10-03", "attrs": {"period": "day", "date": "2026-10-03", "items": '["CURRENT"]'}},
+            {
+                "concept_id": "brief:daily:2026-10-02",
+                "attrs": {"period": "day", "date": "2026-10-02", "items": '["TASK-1", "TASK-2"]'},
+            },
+            {
+                "concept_id": "brief:weekly:2026-W40",
+                "attrs": {"period": "week", "date": "2026-10-02", "items": '["OTHER"]'},
+            },
+            {
+                "concept_id": "brief:daily:2026-10-03",
+                "attrs": {"period": "day", "date": "2026-10-03", "items": '["CURRENT"]'},
+            },
         ]
     )
     previous = await delta.previous_brief(store, _document().window)  # type: ignore[arg-type]
@@ -88,15 +97,27 @@ async def test_locked_page_and_atomic_file(tmp_path: Path, monkeypatch: pytest.M
     target.write_text("old", encoding="utf-8")
 
     result = await subject.write(
-        _document(), "# Current\n", store=store, storage_dir=tmp_path / "store", out_dir=output,
-        write_page=True, write_file=True, vault_dir=output,
+        _document(),
+        "# Current\n",
+        store=store,
+        storage_dir=tmp_path / "store",
+        out_dir=output,
+        write_page=True,
+        write_file=True,
+        vault_dir=output,
     )
 
     assert result.written_page is True
     assert result.written_file == str(target)
     assert store.written[0].attrs == {
-        "type": "deliverable", "status": "draft", "date": "2026-10-03", "owner": "human:test",
-        "period": "day", "items": '["TASK-2", "issues::ONE"]', "source": "brief", "language": "en",
+        "type": "deliverable",
+        "status": "draft",
+        "date": "2026-10-03",
+        "owner": "human:test",
+        "period": "day",
+        "items": '["TASK-2", "issues::ONE"]',
+        "source": "brief",
+        "language": "en",
     }
     content = target.read_text(encoding="utf-8")
     assert "wiki_id: brief:daily:2026-10-03" in content
@@ -108,6 +129,7 @@ async def test_locked_page_and_atomic_file(tmp_path: Path, monkeypatch: pytest.M
 @pytest.mark.asyncio
 async def test_partial_failure_and_vault_markers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Retain a successful file when page persistence fails or is lock-contended."""
+
     @contextmanager
     def denied_lock(_: Path) -> Iterator[bool]:
         yield False
@@ -115,8 +137,14 @@ async def test_partial_failure_and_vault_markers(tmp_path: Path, monkeypatch: py
     monkeypatch.setattr(subject, "wiki_write_lock", denied_lock)
     outside = tmp_path / "outside"
     result = await subject.write(
-        _document(), "# Current\n", store=_Store(fail=True), storage_dir=tmp_path / "store", out_dir=outside,
-        write_page=True, write_file=True, vault_dir=tmp_path / "vault",
+        _document(),
+        "# Current\n",
+        store=_Store(fail=True),
+        storage_dir=tmp_path / "store",
+        out_dir=outside,
+        write_page=True,
+        write_file=True,
+        vault_dir=tmp_path / "vault",
     )
 
     assert result.written_page is False
