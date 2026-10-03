@@ -16,7 +16,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Independent M1 deliverable; owns packages/ai-parrot/src/parrot/knowledge/wiki/charter.py. No prerequisite-created symbol is consumed.",
       "assigned_to": null,
       "started_at": "2026-10-03T00:28:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4045-inbox-charter-taxonomy.md"
+      "completed_at": "2026-10-03T00:37:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4045-inbox-charter-taxonomy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4046",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "Independent M2 deliverable; owns packages/ai-parrot/src/parrot/knowledge/wiki/project.py. No prerequisite-created symbol is consumed.",
       "assigned_to": null,
       "started_at": "2026-10-03T00:28:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4046-inbox-config-paths.md"
+      "completed_at": "2026-10-03T00:37:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4046-inbox-config-paths.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4047",
