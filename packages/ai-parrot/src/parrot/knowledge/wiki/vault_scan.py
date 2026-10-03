@@ -132,6 +132,8 @@ def scan_vault(
         ``scan_repository``'s result (so the build pipeline consumes it
         unchanged) plus vault-specific :class:`VaultScanStats`.
     """
+    from parrot.knowledge.wiki.entities import normalize_frontmatter
+
     root = Path(root).resolve()
     parser = ObsidianNoteParser()
     scan = RepoScan(root=root)
@@ -168,6 +170,7 @@ def scan_vault(
             body=body,
             token_count=estimate_tokens(body),
         )
+        record.attrs = normalize_frontmatter(note.frontmatter, source="vault").to_rows()
         scan.files.append(FileSlice(rel_path=rel, record=record))
         stats.notes += 1
 
