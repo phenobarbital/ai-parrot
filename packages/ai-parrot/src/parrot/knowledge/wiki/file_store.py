@@ -201,12 +201,11 @@ class InMemoryWikiStore(BaseWikiStore):
             "created_at": str(front.get("created_at") or front.get("timestamp") or ""),
             "updated_at": str(front.get("timestamp") or ""),
             "content_hash": front.get("content_hash"),
-            "attrs": {
-                str(key): str(value)
-                for key, value in (front.get("attrs") or {}).items()
-            }
-            if isinstance(front.get("attrs"), dict)
-            else {},
+            "attrs": (
+                {str(key): str(value) for key, value in (front.get("attrs") or {}).items()}
+                if isinstance(front.get("attrs"), dict)
+                else {}
+            ),
         }
         relates = [
             (str(item.get("concept")), str(item.get("rel") or "references"))
@@ -645,8 +644,10 @@ class InMemoryWikiStore(BaseWikiStore):
                 continue
             if date_key and (since is not None or until is not None):
                 date_value = attrs.get(date_key)
-                if date_value is None or (since is not None and date_value < since) or (
-                    until is not None and date_value > until
+                if (
+                    date_value is None
+                    or (since is not None and date_value < since)
+                    or (until is not None and date_value > until)
                 ):
                     continue
             rows.append(self._stub(page))
