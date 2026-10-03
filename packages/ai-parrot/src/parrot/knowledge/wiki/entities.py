@@ -9,10 +9,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, Field
 
-
-EntityType = Literal[
-    "project", "engagement", "meeting", "ticket", "task", "decision", "deliverable", "person"
-]
+EntityType = Literal["project", "engagement", "meeting", "ticket", "task", "decision", "deliverable", "person"]
 
 STATUS_BY_TYPE: dict[EntityType, tuple[str, ...]] = {
     "project": ("active", "paused", "done", "archived"),
