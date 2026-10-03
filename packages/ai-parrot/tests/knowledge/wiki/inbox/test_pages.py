@@ -82,8 +82,8 @@ async def test_write_doc_page_edges(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         and acquired.metadata.extra == {"keep": "yes"}
     )
     assert {tuple(edge.values()) for edge in await store.dump_edges()} >= {
-        ("child:1", "doc:1", "part_of", "asserted"),
-        ("doc:1", "other", "references", "asserted"),
+        ("child:1", "doc:1", "part_of"),
+        ("doc:1", "other", "references"),
     }
 
 
