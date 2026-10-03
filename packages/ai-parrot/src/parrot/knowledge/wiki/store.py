@@ -66,7 +66,8 @@ CREATE INDEX IF NOT EXISTS idx_page_attrs_kv ON page_attrs(key, value);
 
 # Shared between WikiStore (async) and SourceCollectionManager (sync
 # sqlite3 connection to the same file) — WAL mode allows both.
-WIKI_TABLES_SQL = """
+WIKI_TABLES_SQL = (
+    """
 PRAGMA journal_mode = WAL;
 
 CREATE TABLE IF NOT EXISTS meta (
@@ -123,7 +124,9 @@ CREATE TABLE IF NOT EXISTS pages (
 CREATE INDEX IF NOT EXISTS idx_pages_category ON pages(category);
 CREATE INDEX IF NOT EXISTS idx_pages_source   ON pages(source_id);
 CREATE INDEX IF NOT EXISTS idx_pages_node     ON pages(node_id);
-""" + _PAGE_ATTRS_SQL + """
+"""
+    + _PAGE_ATTRS_SQL
+    + """
 
 CREATE TABLE IF NOT EXISTS edges (
     src        TEXT NOT NULL,
@@ -169,6 +172,7 @@ CREATE INDEX IF NOT EXISTS idx_symbols_name   ON symbols(name);
 CREATE INDEX IF NOT EXISTS idx_symbols_path   ON symbols(rel_path);
 CREATE INDEX IF NOT EXISTS idx_symbols_source ON symbols(source_id);
 """
+)
 
 #: FTS5 lexical indexes + the triggers that keep them in sync.
 #:
@@ -2193,8 +2197,7 @@ class SQLiteWikiStore(BaseWikiStore):
         self._assert_writable()
         async with self._write("set_meta") as conn:
             await conn.execute(
-                "INSERT INTO meta (key, value) VALUES (?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                "INSERT INTO meta (key, value) VALUES (?, ?) " "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (key, value),
             )
 
