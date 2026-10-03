@@ -32,6 +32,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from collections import Counter
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -2139,6 +2140,93 @@ def _probe_backend_reachable(root: Path, config: WikiProjectConfig) -> bool | No
                     )
 
     return _run(_probe())
+
+
+@wiki.command("lint")
+@path_option
+@ns_option
+@click.option("--rules", default=None, help="Comma-separated rule ids or packs (plane,export,adr,memory,llm).")
+@click.option("--skip", multiple=True, help="Rule id to skip (repeatable).")
+@click.option("--fix", is_flag=True, help="Apply safe, idempotent fixes (never deletes).")
+@click.option("--llm", is_flag=True, help="Run the opt-in LLM contradiction pass.")
+@click.option("--llm-model", default=None, help="LLM spec; else WIKI_LINT_LLM / WIKI_EXTRACT_LLM.")
+@click.option("--llm-max-pairs", default=50, show_default=True, type=int)
+@click.option("--report", "report_fmt", type=click.Choice(["json", "md"]), default="md", show_default=True)
+@click.option("--output", default=None, help="Report directory (default: <storage>/lint).")
+@click.option("--ledger/--no-ledger", default=True, show_default=True)
+@click.option("--notes/--no-notes", default=True, show_default=True)
+@click.option("--fail-on", type=click.Choice(["error", "warning", "none"]), default="error", show_default=True)
+@click.option("--json", "as_json", is_flag=True, help="Emit the report as JSON.")
+def lint(
+    path_: str | None,
+    ns_opt: str | None,
+    rules: str | None,
+    skip: tuple[str, ...],
+    fix: bool,
+    llm: bool,
+    llm_model: str | None,
+    llm_max_pairs: int,
+    report_fmt: str,
+    output: str | None,
+    ledger: bool,
+    notes: bool,
+    fail_on: str,
+    as_json: bool,
+) -> None:
+    """Lint the wiki graph, export, memories and ADRs; --fix applies safe fixes."""
+    from parrot.knowledge.lint import LintOptions, LintRunner
+    from parrot.knowledge.lint.routing import FindingRouter
+
+    root, effective = _resolve_project_effective(path_)
+    config = effective.config
+    if not config.is_built(root):
+        raise click.ClickException(f"Wiki not built for {root} — run `wikitoolkit build`.")
+    store = _open_store(root, config)
+    if config.backend == "arangodb":
+        try:
+            _run(store.initialize())
+        except Exception as exc:
+            raise click.ClickException(
+                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: " f"{exc}"
+            ) from exc
+    sources = _open_sources(root, config, store=store)
+    read_store = _federate(root, config, store, ns_opt)
+    report_dir = Path(output) if output is not None else config.storage_path(root) / "lint"
+    if not report_dir.is_absolute():
+        report_dir = root / report_dir
+    options = LintOptions(
+        rules=rules.split(",") if rules else None,
+        skip=list(skip),
+        fix=fix,
+        llm=llm,
+        llm_model=llm_model,
+        llm_max_pairs=llm_max_pairs,
+        ledger=ledger,
+        notes=notes,
+        fail_on=None if fail_on == "none" else fail_on,
+        export_dir=root / "docs/wiki",
+        report_dir=report_dir,
+    )
+    router = FindingRouter(read_store, report_dir=report_dir, ledger=LedgerService.from_root(root) if ledger else None)
+    report = _run(
+        LintRunner(
+            read_store,
+            root=root,
+            config=config,
+            router=router,
+            extras={"sources": sources},
+        ).run(options)
+    )
+    if as_json:
+        click.echo(report.model_dump_json())
+    elif report_fmt == "json":
+        click.echo(report.model_dump_json(indent=2))
+    else:
+        click.echo(
+            f"Lint: {len(report.findings)} findings, {len(report.fixed)} fixed "
+            f"(errors: {report.counts.get('error', 0)}, warnings: {report.counts.get('warning', 0)})."
+        )
+    sys.exit(LintRunner.exit_code(report, None if fail_on == "none" else fail_on))
 
 
 @wiki.command()
