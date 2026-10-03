@@ -16,9 +16,7 @@ from parrot.knowledge.wiki.search import WikiCombinedSearch
 from parrot.knowledge.wiki.store import BaseWikiStore
 
 # Matches explicit ``sym:``/``file:`` ids (group ``id``) and backticked file paths (group ``path``).
-_VERBATIM_RE = re.compile(
-    r"(?P<id>\b(?:sym|file):[^\s`'\",;)\]>]+)|`(?P<path>[\w./\-]+\.[A-Za-z0-9]+)`"
-)
+_VERBATIM_RE = re.compile(r"(?P<id>\b(?:sym|file):[^\s`'\",;)\]>]+)|`(?P<path>[\w./\-]+\.[A-Za-z0-9]+)`")
 _CODE_PREFIXES = ("sym:", "file:")
 _VERBATIM_WHY = "verbatim mention"
 
@@ -134,7 +132,9 @@ class LinkProposer:
                     self.logger.warning("LINK_DROPPED page_id=%s reason=not_a_candidate", choice.page_id)
                     continue
                 if choice.rel not in RELATIONS:
-                    self.logger.warning("LINK_DROPPED page_id=%s reason=invalid_relation rel=%s", choice.page_id, choice.rel)
+                    self.logger.warning(
+                        "LINK_DROPPED page_id=%s reason=invalid_relation rel=%s", choice.page_id, choice.rel
+                    )
                     continue
                 if choice.page_id in seen:
                     self.logger.warning("LINK_DROPPED page_id=%s reason=duplicate", choice.page_id)
