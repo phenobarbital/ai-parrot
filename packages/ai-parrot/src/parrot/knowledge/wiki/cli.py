@@ -2247,6 +2247,10 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         f"{stats.get('symbols', 0)} symbols, "
         f"~{stats.get('total_tokens', 0)} tokens"
     )
+    if getattr(read_store, "supports_attrs", False):
+        click.echo(f"Attrs     : {stats.get('attrs_pages', 0)} pages indexed")
+    else:
+        click.echo("Attrs     : unsupported")
     click.echo(f"Categories: {stats.get('categories', {})}")
     click.echo(f"Languages : {payload['languages']}")
     click.echo(f"Structural: {payload['structural']}")
@@ -2343,12 +2347,28 @@ def _echo_structural_result(result: Any, as_json: bool) -> None:
 # pulls in) is only imported once an `adr` subcommand is actually resolved,
 # so the `claude-hook` fast path — and every other `wikitoolkit` invocation
 # that never touches ADRs — no longer pays that import cost.
-from parrot.knowledge.wiki.lazy_commands import LazyAdrGroup  # noqa: E402  (bottom import breaks a cycle)
+from parrot.knowledge.wiki.lazy_commands import LazyAdrGroup, LazyGroup  # noqa: E402  (bottom import breaks a cycle)
 
 wiki.add_command(
     LazyAdrGroup(
         name="adr",
         help="Architectural decisions: ingest ADRs, look them up, and review candidates.",
+    )
+)
+wiki.add_command(
+    LazyGroup(
+        name="standup",
+        import_path="parrot.knowledge.wiki.standup.cli",
+        attr="standup",
+        help="Render a daily or period brief.",
+    )
+)
+wiki.add_command(
+    LazyGroup(
+        name="entity",
+        import_path="parrot.knowledge.wiki.entity_cli",
+        attr="entity",
+        help="Manage typed wiki entities.",
     )
 )
 
