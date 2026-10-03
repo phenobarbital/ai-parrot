@@ -301,12 +301,17 @@ class IngestTriageRouter:
         self.allowed_suffixes = allowed_suffixes
         self.logger = logging.getLogger(f"{__name__}.IngestTriageRouter")
 
-    async def triage(self, path: Path, content: str) -> ManifestDocEntry:
+    async def triage(
+        self, path: Path, content: str, *, skip_duplicate_check: bool = False
+    ) -> ManifestDocEntry:
         """Triage one document through the full cascade.
 
         Args:
             path: Path (or path-like identifier) of the document.
             content: The already-loaded document content.
+            skip_duplicate_check: When True, bypass only the two duplicate
+                checks; size, suffix, sensitivity, novelty and both model
+                stages still run.
 
         Returns:
             A :class:`ManifestDocEntry` with ``decision=None`` (the
@@ -315,7 +320,9 @@ class IngestTriageRouter:
         """
         file_hash = self._hash_content(content)
 
-        heuristic_entry = self._heuristic_reject(path, content, file_hash)
+        heuristic_entry = self._heuristic_reject(
+            path, content, file_hash, skip_duplicate_check=skip_duplicate_check
+        )
         if heuristic_entry is not None:
             return heuristic_entry
 
@@ -365,7 +372,12 @@ class IngestTriageRouter:
         return hashlib.sha1(content.encode("utf-8")).hexdigest()
 
     def _heuristic_reject(
-        self, path: Path, content: str, file_hash: str
+        self,
+        path: Path,
+        content: str,
+        file_hash: str,
+        *,
+        skip_duplicate_check: bool = False,
     ) -> ManifestDocEntry | None:
         """Return a heuristic-reject entry, or ``None`` to proceed to Stage 1.
 
@@ -386,6 +398,9 @@ class IngestTriageRouter:
             return self._heuristic_entry(
                 path, file_hash, f"suffix {path.suffix!r} is not in the allowed set"
             )
+
+        if skip_duplicate_check:
+            return None
 
         existing_id = self.sources.find_by_uri(str(path))
         if existing_id is not None:

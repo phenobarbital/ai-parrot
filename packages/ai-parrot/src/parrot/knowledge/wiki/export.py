@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -86,13 +87,23 @@ def category_dir(category: str) -> str:
 def page_frontmatter(
     page: dict[str, Any],
     relates_to: list[dict[str, str]],
+    tags: Sequence[str] | None = None,
 ) -> str:
-    """Render OKF frontmatter for one page (deterministic key order)."""
+    """Render OKF frontmatter for one page (deterministic key order).
+
+    Args:
+        page: Page row.
+        relates_to: Outgoing relation entries.
+        tags: Optional explicit tags (deduped, input order; empty stays empty).
+            ``None`` keeps the category-derived default.
+    """
     data: dict[str, Any] = {
         "type": okf_type(str(page.get("category") or "concept")),
         "title": page.get("title") or page["concept_id"],
         "id": page["concept_id"],
-        "tags": [str(page.get("category") or "concept")],
+        "tags": list(dict.fromkeys(tags))
+        if tags is not None
+        else [str(page.get("category") or "concept")],
         "timestamp": page.get("updated_at") or "",
     }
     summary = page.get("summary") or ""
