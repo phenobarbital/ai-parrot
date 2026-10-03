@@ -1,4 +1,5 @@
 """Focused FEAT-626 regression and failure-path tests for inbox configuration."""
+
 import itertools
 import json
 from pathlib import Path
@@ -40,9 +41,7 @@ def test_inbox_config_defaults_and_paths(tmp_path: Path) -> None:
     assert cfg.archive_path(tmp_path) == tmp_path / ".parrot/archive"
     assert cfg.inbox_markdown_path(tmp_path) == cfg.storage_path(tmp_path) / "inbox"
 
-    custom = WikiProjectConfig(
-        inbox=InboxConfig(dir=str(tmp_path / "abs_in"), archive_dir="arch", markdown_dir="md")
-    )
+    custom = WikiProjectConfig(inbox=InboxConfig(dir=str(tmp_path / "abs_in"), archive_dir="arch", markdown_dir="md"))
     assert custom.inbox_path(tmp_path) == tmp_path / "abs_in"
     assert custom.archive_path(tmp_path) == tmp_path / "arch"
     assert custom.inbox_markdown_path(tmp_path) == tmp_path / "md"
@@ -61,9 +60,7 @@ def test_env_overlay_merges_inbox(tmp_path: Path) -> None:
     """An inbox.dir-only overlay replaces the nested model with its own defaults."""
     parrot = tmp_path / ".parrot"
     parrot.mkdir()
-    (parrot / "wiki.json").write_text(
-        json.dumps({"inbox": {"dir": "base_in", "max_candidates": 5}}), encoding="utf-8"
-    )
+    (parrot / "wiki.json").write_text(json.dumps({"inbox": {"dir": "base_in", "max_candidates": 5}}), encoding="utf-8")
     (parrot / "wiki.dev.json").write_text(json.dumps({"inbox": {"dir": "overlay_in"}}), encoding="utf-8")
     eff = load_effective_config(tmp_path, env="dev")
     assert isinstance(eff.config.inbox, InboxConfig)
