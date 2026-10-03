@@ -616,6 +616,51 @@ async def test_agent_deleted_and_recreated_while_building_is_not_installed(repos
     assert await rt.get(_key()) is None and rt._cache.all_entries() == []     # the old identity is never served
 
 
+async def test_version_bumped_while_building_is_not_installed_and_the_current_one_is_served(repos, tmp_path):
+    """PR #1564 (codex P1): the stale snapshot must never be installed or returned once the head moved."""
+    rt, builder = _runtime(repos, tmp_path)
+    await _create(repos, description="v1")
+    real_build = builder.build
+
+    async def build_then_bump(snapshot, app, *, part):
+        result = await real_build(snapshot, app, part=part)
+        if len(builder.built) == 1:                  # only during the first build
+            await _patch(repos, description="v2")
+        return result
+
+    builder.build = build_then_bump
+    served = await rt.get(_key())
+    assert served is not None and served.description == "v2"
+    assert len(builder.built) == 2
+    stale = builder.built[0]
+    assert stale.cleanup.await_count == 1 and not stale._agents_dir.exists()        # discarded, not leaked
+    entries = rt._cache.all_entries()
+    assert len(entries) == 1 and entries[0].bot is served and entries[0].version == 2
+    assert await rt.get(_key()) is served                                            # and it is what is cached
+
+
+async def test_agent_that_keeps_changing_is_served_but_not_stamped_valid(repos, tmp_path):
+    rt, builder = _runtime(repos, tmp_path)
+    await _create(repos, description="v1")
+    real_build = builder.build
+
+    attempts = runtime_module._MAX_REBUILDS
+
+    async def bump_during_every_attempt(snapshot, app, *, part):
+        result = await real_build(snapshot, app, part=part)
+        if len(builder.built) <= attempts:            # the head moves under each of the first `attempts` builds
+            await _patch(repos, description=f"v{len(builder.built) + 1}")
+        return result
+
+    builder.build = bump_during_every_attempt
+    served = await rt.get(_key())                     # still served (availability), never an error
+    assert len(builder.built) == attempts and served is builder.built[-1]
+    assert all(bot.cleanup.await_count == 1 for bot in builder.built[:-1])          # earlier builds discarded
+    assert _key().qualified not in rt._validated     # outdated: NOT stamped, so the TTL cannot hide the head
+    current = await rt.get(_key())                   # the next lookup revalidates and serves the head
+    assert current is not served and current.description == f"v{attempts + 1}"
+
+
 async def test_refused_memory_and_session_count_are_bounded(repos, tmp_path, monkeypatch):
     monkeypatch.setattr(runtime_module, "_REFUSED_CAP", 3)
     rt, _ = _runtime(repos, tmp_path, max_sessions=2)

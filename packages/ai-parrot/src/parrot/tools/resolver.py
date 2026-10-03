@@ -48,8 +48,10 @@ class ToolkitResolver:
     """Process-wide, lazily built, read-only resolver (spec §2 "Resolution rules")."""
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        # Re-entrant: building imports host modules, which may instantiate tools that ask this resolver again.
+        self._lock = threading.RLock()
         self._entries: dict[str, ToolkitEntry] | None = None  # key: slug.lower()
+        self._building: dict[str, ToolkitEntry] | None = None  # entries gathered so far by the building thread
         self._classes: dict[str, type] = {}  # key: slug.lower(); walked / explicit classes
 
     def entries(self) -> list[ToolkitEntry]:
@@ -97,18 +99,27 @@ class ToolkitResolver:
         """Drop the cache (tests / hot reload only)."""
         with self._lock:
             self._entries = None
+            self._building = None
             self._classes = {}
 
     def _ensure(self) -> dict[str, ToolkitEntry]:
         if self._entries is None:
             with self._lock:
                 if self._entries is None:
-                    self._entries = self._build()
+                    if self._building is not None:
+                        # Re-entrant call from a host module being imported by _build (same thread): answer from
+                        # what is known so far instead of deadlocking; execution re-checks against the full set.
+                        return self._building
+                    try:
+                        self._entries = self._build()
+                    finally:
+                        self._building = None
         return self._entries
 
     def _build(self) -> dict[str, ToolkitEntry]:
         """Apply rules 1–4 once."""
         entries: dict[str, ToolkitEntry] = {}
+        self._building = entries
         for slug, cls in _builtin_classes().items():
             entries[slug.lower()] = ToolkitEntry(slug=slug, dotted_path=None, source="builtin")
             self._classes[slug.lower()] = cls
