@@ -184,18 +184,12 @@ class TestLLMWikiToolkitLint:
         assert isinstance(result, dict)
 
     @pytest.mark.asyncio
-    async def test_lint_calls_okf(self, wiki_toolkit: LLMWikiToolkit, mock_okf):
-        """lint delegates to OKFToolkit.lint_knowledge_base."""
-        await wiki_toolkit.lint("test-wiki")
-        mock_okf.lint_knowledge_base.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_lint_contains_wiki_fields(self, wiki_toolkit: LLMWikiToolkit):
-        """lint result contains orphan_sources, stale_sources, total_issues."""
+    async def test_lint_contains_report_fields(self, wiki_toolkit: LLMWikiToolkit):
+        """lint result is a LintReport dump (findings/counts/rules_run)."""
         result = await wiki_toolkit.lint("test-wiki")
-        assert "orphan_sources" in result
-        assert "stale_sources" in result
-        assert "total_issues" in result
+        assert "findings" in result
+        assert "counts" in result
+        assert "rules_run" in result
 
 
 class TestLLMWikiToolkitSearch:

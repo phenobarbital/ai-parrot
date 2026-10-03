@@ -21,6 +21,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from parrot.knowledge.lint.models import LintReport as WikiLintReport  # noqa: F401  (re-export)
+
 
 class WikiPageCategory(str, Enum):
     """Karpathy's wiki page type taxonomy.

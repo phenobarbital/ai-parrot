@@ -166,7 +166,7 @@ class LintRunner:
         if self.root is None or self.config is None:
             return
         try:
-            WikiBookkeeper().log_operation(self.config.storage_path(self.root), operation, details)
+            WikiBookkeeper().log_operation(self.config.storage_dir, operation, details)
         except Exception:
             self.logger.warning("Could not write %s audit record", operation, exc_info=True)
 
