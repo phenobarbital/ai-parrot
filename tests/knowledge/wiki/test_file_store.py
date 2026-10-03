@@ -223,7 +223,7 @@ class TestToolkitMemoryBackend:
         assert "computational model" in page["content"]
 
         lint = await mem_toolkit.lint("test-wiki")
-        assert "orphan_sources" in lint
+        assert "findings" in lint
 
         out = tmp_path / "okf-out"
         export = await mem_toolkit.export_okf("test-wiki", str(out))
