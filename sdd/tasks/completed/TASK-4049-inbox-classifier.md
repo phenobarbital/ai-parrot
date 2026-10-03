@@ -347,3 +347,7 @@ Run in the activated repository environment; in a feature worktree set `PYTHONPA
 ## Completion Note
 
 Pending. Populated by the finalizer from implementation and validation evidence.
+
+
+### Completion Note (orchestrator)
+Seat: gpt-5.6-terra (codex). Review fix 178135fd0: slugify_doc_id reused normalize_tag (None for >64 chars -> long titles became "note"); replaced with scoped slug. feedback_id coder-feedback:f23f4f0cea244d64a96f5ffd. Merge-tier validation green after fix (55 passed).
