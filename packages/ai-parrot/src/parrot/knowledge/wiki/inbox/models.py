@@ -5,7 +5,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 RELATIONS = ("references", "relates_to", "mentions", "follows_up", "supersedes")
 
 

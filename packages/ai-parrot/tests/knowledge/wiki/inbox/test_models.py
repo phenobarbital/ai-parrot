@@ -57,10 +57,13 @@ def test_report_failed_and_json_roundtrip(tmp_path: Path, monkeypatch: pytest.Mo
     restored = InboxRunReport.model_validate_json(report.model_dump_json())
     assert restored.counts == report.counts
     assert restored.failed is True
-    assert InboxRunReport(
-        **report.model_dump(exclude={"documents"}),
-        documents=[InboxDocResult(source_uri=source.as_uri(), status="skipped")],
-    ).failed is False
+    assert (
+        InboxRunReport(
+            **report.model_dump(exclude={"documents"}),
+            documents=[InboxDocResult(source_uri=source.as_uri(), status="skipped")],
+        ).failed
+        is False
+    )
 
 
 def test_mutable_defaults_are_isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
