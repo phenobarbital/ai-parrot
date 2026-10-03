@@ -18,15 +18,27 @@ from parrot.knowledge.wiki.store import SQLiteWikiStore, WikiPageRecord
 
 def _classification(kind: str = "decision") -> ResolvedClassification:
     return ResolvedClassification(
-        kind=kind, category="concept", title="Inbox decision", summary="Use a stable inbox document page.",
-        tags=["inbox", "decision"], entities=[], event_date=None, classification_source="model",
+        kind=kind,
+        category="concept",
+        title="Inbox decision",
+        summary="Use a stable inbox document page.",
+        tags=["inbox", "decision"],
+        entities=[],
+        event_date=None,
+        classification_source="model",
     )
 
 
 def _triage(path: Path) -> ManifestDocEntry:
     return ManifestDocEntry(
-        source_uri=str(path), file_hash="manifest-hash", briefing="brief", scores=DimensionScores(density=1, novelty=1, durability=1),
-        composite=1, proposed_action="admit", decision="admit", decision_source="model",
+        source_uri=str(path),
+        file_hash="manifest-hash",
+        briefing="brief",
+        scores=DimensionScores(density=1, novelty=1, durability=1),
+        composite=1,
+        proposed_action="admit",
+        decision="admit",
+        decision_source="model",
     )
 
 
@@ -42,24 +54,47 @@ async def _writer(
 @pytest.mark.asyncio
 async def test_write_doc_page_edges(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Assert authored origin, source_id=None, provenance and source identity in frontmatter."""
-    source = tmp_path / "source.md"; source.write_text("source text\n")
+    source = tmp_path / "source.md"
+    source.write_text("source text\n")
     writer, store, sources, source_id = await _writer(tmp_path, source)
     await store.replace_source_slice(source_id, [WikiPageRecord(concept_id="child:1", source_id=source_id)])
     await asyncio.to_thread(sources.mark_ingested, source_id, ["child:1"])
-    acquired = AcquiredDocument(ref=DocumentRef(uri=str(source)), text="source text", metadata=DocumentMetadata(extra={"keep": "yes"}))
-    await writer.write_doc_page("doc:1", source_id, _classification(), acquired, _triage(source), "v1", [VerifiedLink(page_id="other", rel="references", why="x", title="Other")], False)
+    acquired = AcquiredDocument(
+        ref=DocumentRef(uri=str(source)), text="source text", metadata=DocumentMetadata(extra={"keep": "yes"})
+    )
+    await writer.write_doc_page(
+        "doc:1",
+        source_id,
+        _classification(),
+        acquired,
+        _triage(source),
+        "v1",
+        [VerifiedLink(page_id="other", rel="references", why="x", title="Other")],
+        False,
+    )
     page = await store.get_page("doc:1")
-    assert page and page["origin"] == "authored" and page["source_id"] is None and page["asserted_by"] == INBOX_ASSERTED_BY
-    assert f"source_id: {source_id}" in page["body"] and "file_hash: manifest-hash" in page["body"] and acquired.metadata.extra == {"keep": "yes"}
-    assert {tuple(edge.values()) for edge in await store.dump_edges()} >= {("child:1", "doc:1", "part_of", "asserted"), ("doc:1", "other", "references", "asserted")}
+    assert (
+        page and page["origin"] == "authored" and page["source_id"] is None and page["asserted_by"] == INBOX_ASSERTED_BY
+    )
+    assert (
+        f"source_id: {source_id}" in page["body"]
+        and "file_hash: manifest-hash" in page["body"]
+        and acquired.metadata.extra == {"keep": "yes"}
+    )
+    assert {tuple(edge.values()) for edge in await store.dump_edges()} >= {
+        ("child:1", "doc:1", "part_of", "asserted"),
+        ("doc:1", "other", "references", "asserted"),
+    }
 
 
 @pytest.mark.asyncio
 async def test_ensure_tags_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Repeated tags create neither duplicate nodes nor edges."""
-    source = tmp_path / "source.md"; source.write_text("x")
+    source = tmp_path / "source.md"
+    source.write_text("x")
     writer, store, _, _ = await _writer(tmp_path, source)
-    await writer.ensure_tags("doc:1", ["one", "one"]); await writer.ensure_tags("doc:1", ["one"])
+    await writer.ensure_tags("doc:1", ["one", "one"])
+    await writer.ensure_tags("doc:1", ["one"])
     assert [page["concept_id"] for page in await store.dump_pages()].count("tag:one") == 1
     assert len([edge for edge in await store.dump_edges() if edge["dst"] == "tag:one"]) == 1
 
@@ -67,13 +102,19 @@ async def test_ensure_tags_idempotent(tmp_path: Path, monkeypatch: pytest.Monkey
 @pytest.mark.asyncio
 async def test_emit_adr_candidate_only_for_decisions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Only enabled decision documents save valid inferred candidates."""
-    source = tmp_path / "source.md"; source.write_bytes(b"raw source\n")
+    source = tmp_path / "source.md"
+    source.write_bytes(b"raw source\n")
     writer, store, _, _ = await _writer(tmp_path, source)
     acquired = AcquiredDocument(ref=DocumentRef(uri=str(source)), text="raw source", metadata=DocumentMetadata())
-    assert await writer.emit_adr_candidate("doc:1", _classification("note"), acquired, "source.md", WikiProjectConfig()) == (None, False)
-    decision_id, reused = await writer.emit_adr_candidate("doc:1", _classification(), acquired, "source.md", WikiProjectConfig())
+    assert await writer.emit_adr_candidate(
+        "doc:1", _classification("note"), acquired, "source.md", WikiProjectConfig()
+    ) == (None, False)
+    decision_id, reused = await writer.emit_adr_candidate(
+        "doc:1", _classification(), acquired, "source.md", WikiProjectConfig()
+    )
     assert decision_id and not reused
-    record_page = await store.get_page(decision_id); assert record_page and hashlib.sha1(b"raw source\n").hexdigest() in record_page["body"]
+    record_page = await store.get_page(decision_id)
+    assert record_page and hashlib.sha1(b"raw source\n").hexdigest() in record_page["body"]
 
 
 @pytest.mark.asyncio
@@ -83,24 +124,31 @@ async def test_emit_adr_candidate_never_raises(tmp_path: Path, monkeypatch: pyte
     store = SQLiteWikiStore(tmp_path / "wiki.db")
     writer = DocPageWriter(store, SourceCollectionManager(tmp_path / "sources"), WikiBookkeeper(), tmp_path)
     acquired = AcquiredDocument(ref=DocumentRef(uri=str(source)), text="x", metadata=DocumentMetadata())
-    assert await writer.emit_adr_candidate("doc:1", _classification(), acquired, "missing.md", WikiProjectConfig()) == (None, False)
+    assert await writer.emit_adr_candidate("doc:1", _classification(), acquired, "missing.md", WikiProjectConfig()) == (
+        None,
+        False,
+    )
 
 
 @pytest.mark.asyncio
 async def test_emit_adr_candidate_reuses_existing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Preserve an existing reviewed record and report reuse."""
-    source = tmp_path / "source.md"; source.write_text("raw")
+    source = tmp_path / "source.md"
+    source.write_text("raw")
     writer, _, _, _ = await _writer(tmp_path, source)
     acquired = AcquiredDocument(ref=DocumentRef(uri=str(source)), text="raw", metadata=DocumentMetadata())
     first, _ = await writer.emit_adr_candidate("doc:1", _classification(), acquired, "source.md", WikiProjectConfig())
-    second, reused = await writer.emit_adr_candidate("doc:1", _classification(), acquired, "source.md", WikiProjectConfig())
+    second, reused = await writer.emit_adr_candidate(
+        "doc:1", _classification(), acquired, "source.md", WikiProjectConfig()
+    )
     assert first == second and reused
 
 
 @pytest.mark.asyncio
 async def test_doc_page_survives_reingest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Replace the child source slice and retain the doc page and inbound relations."""
-    source = tmp_path / "source.md"; source.write_text("raw")
+    source = tmp_path / "source.md"
+    source.write_text("raw")
     writer, store, _, source_id = await _writer(tmp_path, source)
     await store.replace_source_slice(source_id, [WikiPageRecord(concept_id="child:1", source_id=source_id)])
     await asyncio.to_thread(writer.sources.mark_ingested, source_id, ["child:1"])
