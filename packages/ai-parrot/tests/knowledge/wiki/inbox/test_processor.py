@@ -1,5 +1,6 @@
 """Focused FEAT-626 regression and failure-path tests."""
 
+import os
 import asyncio
 from contextlib import contextmanager
 from pathlib import Path
@@ -93,6 +94,8 @@ def test_discover_skips_symlinks_and_escapes(tmp_path: Path, monkeypatch: pytest
     (inbox / "b.txt").write_text("b")
     (inbox / "a.txt").write_text("a")
     (inbox / ".hidden.txt").write_text("hidden")
+    for name in ("a.txt", "b.txt"):
+        os.utime(inbox / name, (1_000_000, 1_000_000))
     processor.inbox_dir = inbox
     processor.runtime = type("Runtime", (), {"root": tmp_path})()
     processor._discovery_results = []
