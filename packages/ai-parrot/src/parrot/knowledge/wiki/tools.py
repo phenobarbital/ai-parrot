@@ -542,7 +542,10 @@ class WikiLintTool(AbstractTool):
     """Lint the wiki knowledge graph and report integrity findings."""
 
     name = "wiki_lint"
-    description = "Lint the wiki knowledge graph: broken links, duplicate slugs, stale memories, ADR conflicts; fix=true applies safe fixes."
+    description = (
+        "Lint the wiki knowledge graph: broken links, duplicate slugs, stale memories, "
+        "ADR conflicts; fix=true applies safe fixes."
+    )
     args_schema = WikiLintInput
 
     def __init__(self, store: BaseWikiStore, storage_dir: Path | None = None):
