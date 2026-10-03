@@ -32,12 +32,15 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from datetime import date
 from pathlib import Path
 from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
+
+from parrot.knowledge.wiki.models import WikiPageCategory
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +208,107 @@ class Amendment(BaseModel):
     source: str
 
 
+class TaxonomyKind(BaseModel):
+    """One allowed document kind and its wiki category.
+
+    Attributes:
+        id: Stable kebab-case identifier for the document kind.
+        description: Human-readable explanation of the kind.
+        category: Target :class:`WikiPageCategory` value.
+        tag_hints: Suggested tags for documents of this kind.
+    """
+
+    id: str
+    description: str
+    category: str
+    tag_hints: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_kind(self) -> TaxonomyKind:
+        """Reject invalid ids and categories.
+
+        Returns:
+            The validated taxonomy kind.
+
+        Raises:
+            ValueError: If the identifier is not kebab-case or the category
+                is not a declared wiki page category.
+        """
+        if not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*", self.id):
+            raise ValueError("taxonomy kind id must be non-empty kebab-case")
+        try:
+            WikiPageCategory(self.category)
+        except ValueError as exc:
+            raise ValueError(f"unknown wiki page category: {self.category}") from exc
+        return self
+
+
+class Taxonomy(BaseModel):
+    """Closed document taxonomy for inbox classification.
+
+    Attributes:
+        default_kind: Document kind selected when classification is unknown.
+        max_tags: Maximum number of normalized tags to retain.
+        kinds: Declared document kinds and their wiki category mappings.
+    """
+
+    default_kind: str = "note"
+    max_tags: int = Field(default=8, ge=1, le=32)
+    kinds: list[TaxonomyKind]
+
+    @model_validator(mode="after")
+    def _validate_kinds(self) -> Taxonomy:
+        """Require unique ids and a defined default kind.
+
+        Returns:
+            The validated taxonomy.
+
+        Raises:
+            ValueError: If no kinds are defined, identifiers repeat, or the
+                configured default kind is absent.
+        """
+        if not self.kinds:
+            raise ValueError("taxonomy must define at least one kind")
+        kind_ids = [kind.id for kind in self.kinds]
+        if len(kind_ids) != len(set(kind_ids)):
+            raise ValueError("taxonomy kind ids must be unique")
+        if self.default_kind not in kind_ids:
+            raise ValueError("taxonomy default_kind must name a declared kind")
+        return self
+
+    def kind(self, kind_id: str) -> TaxonomyKind | None:
+        """Return the declared kind, or None.
+
+        Args:
+            kind_id: Identifier of the requested document kind.
+
+        Returns:
+            The matching taxonomy kind, if declared.
+        """
+        return next((kind for kind in self.kinds if kind.id == kind_id), None)
+
+
+DEFAULT_TAXONOMY = Taxonomy(
+    kinds=[
+        TaxonomyKind(id="meeting", description="Meeting record.", category="summary"),
+        TaxonomyKind(id="briefing", description="Briefing document.", category="overview"),
+        TaxonomyKind(id="decision", description="Decision record.", category="concept"),
+        TaxonomyKind(id="report", description="Report or analysis.", category="synthesis"),
+        TaxonomyKind(id="memo", description="Memo or announcement.", category="summary"),
+        TaxonomyKind(id="note", description="General note.", category="concept"),
+    ]
+)
+
+
+def default_taxonomy() -> Taxonomy:
+    """Return an independent copy of the built-in taxonomy.
+
+    Returns:
+        A deep copy of :data:`DEFAULT_TAXONOMY`.
+    """
+    return DEFAULT_TAXONOMY.model_copy(deep=True)
+
+
 class Charter(BaseModel):
     """The editorial charter: the versioned policy artifact for triage.
 
@@ -239,6 +343,7 @@ class Charter(BaseModel):
     examples: list[TriageExample] = Field(default_factory=list)
     examples_file: Path | None = None
     amendments: list[Amendment] = Field(default_factory=list)
+    taxonomy: Taxonomy = Field(default_factory=default_taxonomy)
     fingerprint: str = Field(
         default="",
         description=(
