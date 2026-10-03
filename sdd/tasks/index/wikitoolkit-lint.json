@@ -139,7 +139,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -149,8 +149,9 @@
       "parallelism_notes": "imports Finding/LintContext/make_fingerprint from TASK-4009 (lint/models.py, context.py, rule.py)",
       "assigned_to": null,
       "started_at": "2026-10-02T23:43:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4015-lint-export-pack.md"
+      "completed_at": "2026-10-03T00:15:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4015-lint-export-pack.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4016",
@@ -159,7 +160,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -169,8 +170,9 @@
       "parallelism_notes": "imports Finding/LintContext from TASK-4009 (lint/models.py, context.py); LintContext.memories() also from TASK-4009",
       "assigned_to": null,
       "started_at": "2026-10-02T23:43:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4016-lint-adr-memory-packs.md"
+      "completed_at": "2026-10-03T00:15:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4016-lint-adr-memory-packs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4017",
@@ -179,7 +181,7 @@
       "feature_id": "FEAT-625",
       "feature": "wikitoolkit-lint",
       "spec": "sdd/specs/wikitoolkit-lint.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -189,8 +191,9 @@
       "parallelism_notes": "imports Finding/LintContext/make_fingerprint from TASK-4009 (lint/models.py, context.py, rule.py)",
       "assigned_to": null,
       "started_at": "2026-10-02T23:43:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4017-lint-llm-pack.md"
+      "completed_at": "2026-10-03T00:15:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4017-lint-llm-pack.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4018",

@@ -246,3 +246,7 @@ async def test_no_export_dir_is_info(tmp_path): ...
 **Notes**:
 
 **Deviations from spec**: none
+
+## Completion Note
+
+Implemented by sonnet (native), 1 attempt. Added _read_export_if_dir helper (ruff ASYNC240). Closed via close_task.sh. Verified: lint package + store tests 44 passed (scoped), ruff clean.
