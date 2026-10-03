@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date
 import logging
+import os
 from pathlib import Path
 import re
 import time
@@ -150,7 +151,7 @@ class InboxProcessor:
         self._discovery_results: list[InboxDocResult] = []
 
     def discover(self, *, limit: int | None) -> list[DocumentRef]:
-        """Discover safe originals, record skips, sort and apply the limit."""
+        """Discover safe originals recursively, record skips, sort and apply the limit."""
         if limit is not None and limit < 0:
             raise ValueError("limit must be nonnegative")
         discovered: list[tuple[float, str, DocumentRef]] = []
@@ -158,29 +159,45 @@ class InboxProcessor:
         if not self.inbox_dir.exists():
             return []
         root = self.runtime.root.resolve()
-        for entry in self.inbox_dir.iterdir():
-            if entry.name.startswith("."):
-                continue
-            try:
-                resolved = entry.resolve(strict=True)
-                if (
-                    entry.is_symlink()
-                    or not resolved.is_relative_to(self.inbox_dir.resolve())
-                    or not resolved.is_relative_to(root)
-                ):
-                    raise ValueError("unsafe inbox path")
-                if not resolved.is_file():
+        inbox = self.inbox_dir.resolve()
+        for dirpath, dirnames, filenames in os.walk(self.inbox_dir, followlinks=False):
+            base = Path(dirpath)
+            kept: list[str] = []
+            for name in sorted(dirnames):
+                if name.startswith("."):
                     continue
-                refs = resolve_sources(str(entry), recursive=False)
-                for ref in refs:
-                    discovered.append((resolved.stat().st_mtime, resolved.name, ref))
-            except (OSError, ValueError) as exc:
-                self._discovery_results.append(
-                    InboxDocResult(source_uri=str(entry), status="skipped", error=f"unsafe source: {exc}")
-                )
+                if (base / name).is_symlink():
+                    self._skip_entry(base / name, ValueError("unsafe inbox path"))
+                    continue
+                kept.append(name)
+            dirnames[:] = kept
+            for name in sorted(filenames):
+                if not name.startswith("."):
+                    self._consider_entry(base / name, root, inbox, discovered)
         discovered.sort(key=lambda item: (item[0], item[1]))
         refs = [item[2] for item in discovered]
         return refs if limit is None else refs[:limit]
+
+    def _skip_entry(self, entry: Path, exc: Exception) -> None:
+        """Record a skipped discovery row for an unsafe or unreadable entry."""
+        self._discovery_results.append(
+            InboxDocResult(source_uri=str(entry), status="skipped", error=f"unsafe source: {exc}")
+        )
+
+    def _consider_entry(
+        self, entry: Path, root: Path, inbox: Path, discovered: list[tuple[float, str, DocumentRef]]
+    ) -> None:
+        """Validate one file entry and append its refs, or record a skip row."""
+        try:
+            resolved = entry.resolve(strict=True)
+            if entry.is_symlink() or not resolved.is_relative_to(inbox) or not resolved.is_relative_to(root):
+                raise ValueError("unsafe inbox path")
+            if not resolved.is_file():
+                return
+            for ref in resolve_sources(str(entry), recursive=False):
+                discovered.append((resolved.stat().st_mtime, str(resolved.relative_to(inbox)), ref))
+        except (OSError, ValueError) as exc:
+            self._skip_entry(entry, exc)
 
     async def run(
         self, *, dry_run: bool = False, limit: int | None = None, force: bool = False, archive: bool = True
@@ -219,6 +236,21 @@ class InboxProcessor:
                 documents=results,
             )
 
+    async def _is_resumable(self, source_id: str | None, doc_id: str | None) -> bool:
+        """Whether a prior run persisted this source but never completed its document page.
+
+        A retry after a post-ingest failure must resume instead of being rejected by the
+        duplicate check, which would overwrite the admitted manifest with a discard.
+        """
+        if not source_id:
+            return False
+        source = await asyncio.to_thread(self.runtime.sources.get_source, source_id)
+        if source is None or source.destination == "discard" or source.status == "rejected":
+            return False
+        if doc_id and await self.runtime.store.get_page(doc_id, include_body=False) is not None:
+            return False
+        return True
+
     async def _existing_doc_id(self, source_uri: str, external_id: str | None) -> tuple[str | None, str | None]:
         """Recover source and authored document identities before generating a slug."""
         entry = await asyncio.to_thread(self.runtime.sources.find_by_external_id, external_id) if external_id else None
@@ -245,10 +277,12 @@ class InboxProcessor:
         original = Path(ref.uri)
         acquired = await self.runtime.acquirer.acquire(ref)
         fireflies_id = detect_fireflies_id(acquired)
-        known_source_id, existing_doc_id = await self._existing_doc_id(str(original.resolve()), fireflies_id)
+        resolved_original = await asyncio.to_thread(original.resolve)
+        known_source_id, existing_doc_id = await self._existing_doc_id(str(resolved_original), fireflies_id)
         if known_source_id and fireflies_id and not dry_run:
             await asyncio.to_thread(repoint_source, self.runtime.sources, known_source_id, original)
-        triage = await self.runtime.router.triage(original, acquired.text, skip_duplicate_check=force)
+        resumable = await self._is_resumable(known_source_id, existing_doc_id)
+        triage = await self.runtime.router.triage(original, acquired.text, skip_duplicate_check=force or resumable)
         if triage.decision_source != "heuristic":
             triage = triage.model_copy(update={"decision": triage.proposed_action, "decision_source": "auto"})
         decision = triage.decision or triage.proposed_action
@@ -283,6 +317,9 @@ class InboxProcessor:
             await asyncio.to_thread(self.runtime.bookkeeper.log_operation, self.storage_path, "DRY_RUN", ref.uri)
             return InboxDocResult(status="dry_run", **base)
 
+        await asyncio.to_thread(
+            self.runtime.bookkeeper.log_operation, self.storage_path, "TRIAGE", f"{ref.uri} -> {decision}"
+        )
         report = await self.runtime.orchestrator.ingest(
             ref.uri,
             self.runtime.wiki_config,
@@ -304,6 +341,12 @@ class InboxProcessor:
             return InboxDocResult(status="rejected", verified=False, **base, error="; ".join(problems) or None)
 
         classification = await self.classifier.classify(acquired, triage)
+        await asyncio.to_thread(
+            self.runtime.bookkeeper.log_operation,
+            self.storage_path,
+            "CLASSIFY",
+            f"{ref.uri} -> {classification.kind}",
+        )
         doc_id = (
             existing_doc_id
             or await self._doc_id_from_source(source)
@@ -388,10 +431,13 @@ class InboxProcessor:
             loader=acquired.metadata.loader,
         )
 
+    def _is_contained(self, original: Path) -> bool:
+        """Whether the original still resolves inside the inbox directory."""
+        return original.resolve(strict=True).is_relative_to(self.inbox_dir.resolve())
+
     async def _archive(self, original: Path, source_id: str, source: object, *, rejected: bool) -> str:
         """Recheck containment, archive an original and merge archive provenance."""
-        resolved = original.resolve(strict=True)
-        if not resolved.is_relative_to(self.inbox_dir.resolve()):
+        if not await asyncio.to_thread(self._is_contained, original):
             raise WikiConfigError(f"inbox source escaped before archive: {original}")
         destination = await asyncio.to_thread(
             archive_destination,
@@ -419,7 +465,7 @@ class InboxProcessor:
             loader=metadata.get("loader"),
         )
         await asyncio.to_thread(
-            self.runtime.bookkeeper.log_operation, self.storage_path, "INBOX_ARCHIVE", str(result.destination)
+            self.runtime.bookkeeper.log_operation, self.storage_path, "ARCHIVE_ORIGINAL", str(result.destination)
         )
         return str(result.destination)
 

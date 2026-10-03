@@ -112,7 +112,7 @@ class DocPageWriter:
         await asyncio.to_thread(
             self.bookkeeper.log_operation,
             self.wiki_dir,
-            "inbox_doc_page",
+            "DOC_PAGE",
             f"wrote {doc_id}",
         )
         return doc_id

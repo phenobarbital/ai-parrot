@@ -109,3 +109,62 @@ def test_no_archive_and_provenance_merge(tmp_path: Path, monkeypatch: pytest.Mon
     original = tmp_path / "original.txt"
     original.write_text("source")
     assert original.exists()
+
+
+def test_discover_is_recursive_and_skips_dot_dirs_and_symlinked_dirs(tmp_path: Path) -> None:
+    """AC1: nested files are found; dot entries are ignored; symlinked directories are reported."""
+    processor = object.__new__(InboxProcessor)
+    inbox = tmp_path / "inbox"
+    (inbox / "sub" / "deep").mkdir(parents=True)
+    (inbox / ".git").mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "leak.txt").write_text("leak")
+    (inbox / "link").symlink_to(outside, target_is_directory=True)
+    for rel in ("a.txt", "sub/b.txt", "sub/deep/c.txt", ".git/hook.txt", ".hidden.txt"):
+        (inbox / rel).write_text(rel)
+        os.utime(inbox / rel, (1_000_000, 1_000_000))
+    processor.inbox_dir = inbox
+    processor.runtime = type("Runtime", (), {"root": tmp_path})()
+    processor._discovery_results = []
+
+    names = [Path(ref.uri).name for ref in processor.discover(limit=None)]
+
+    assert names == ["a.txt", "b.txt", "c.txt"]
+    assert [row.status for row in processor._discovery_results] == ["skipped"]
+    assert processor._discovery_results[0].source_uri.endswith("link")
+
+
+@pytest.mark.asyncio
+async def test_is_resumable_only_for_unfinished_admitted_sources(tmp_path: Path) -> None:
+    """AC10: a persisted admitted source without its doc page is resumable; discards and finished docs are not."""
+    from types import SimpleNamespace
+
+    class _Sources:
+        def __init__(self, source: object) -> None:
+            self.source = source
+
+        def get_source(self, source_id: str) -> object:
+            return self.source
+
+    class _Store:
+        def __init__(self, page: object) -> None:
+            self.page = page
+
+        async def get_page(self, concept_id: str, include_body: bool = True) -> object:
+            return self.page
+
+    def build(source: object, page: object) -> InboxProcessor:
+        processor = object.__new__(InboxProcessor)
+        processor.runtime = SimpleNamespace(sources=_Sources(source), store=_Store(page))
+        return processor
+
+    admitted = SimpleNamespace(destination="wiki", status="ingested")
+    assert await build(admitted, None)._is_resumable("s1", "doc:1") is True
+    assert await build(admitted, None)._is_resumable("s1", None) is True
+    assert await build(admitted, {"concept_id": "doc:1"})._is_resumable("s1", "doc:1") is False
+    assert (
+        await build(SimpleNamespace(destination="discard", status="rejected"), None)._is_resumable("s1", None) is False
+    )
+    assert await build(None, None)._is_resumable("s1", None) is False
+    assert await build(admitted, None)._is_resumable(None, None) is False
