@@ -1,4 +1,5 @@
 """Tests: Obsidian vault exposure through the wikitoolkit MCP server."""
+
 import asyncio
 import json
 import sys
@@ -14,8 +15,13 @@ from tests.interfaces.obsidian.conftest import fixture_vault  # noqa: F401
 from tests.knowledge.wiki.test_mcp_server import _seed_wiki, _subprocess_env
 
 BASE_TOOLS = {
-    "wiki_query", "wiki_page", "wiki_related",
-    "wiki_remember", "wiki_note", "wiki_status",
+    "wiki_query",
+    "wiki_page",
+    "wiki_related",
+    "wiki_remember",
+    "wiki_note",
+    "wiki_status",
+    "wiki_lint",
 }
 
 
@@ -67,26 +73,18 @@ class TestVaultRegistration:
         ingest = await server.tools["vault_ingest"].execute({})
         assert ingest["isError"] is False
 
-        query = await server.tools["wiki_query"].execute(
-            {"question": "machine learning"}
-        )
+        query = await server.tools["wiki_query"].execute({"question": "machine learning"})
         assert query["isError"] is False
         assert "machine-learning" in query["content"][0]["text"]
 
         # Unconfirmed destructive call is rejected; note untouched.
-        denied = await server.tools["obsidian_delete_note"].execute(
-            {"path": "orphan"}
-        )
+        denied = await server.tools["obsidian_delete_note"].execute({"path": "orphan"})
         assert denied["isError"] is True
-        read = await server.tools["obsidian_read_note"].execute(
-            {"path": "orphan"}
-        )
+        read = await server.tools["obsidian_read_note"].execute({"path": "orphan"})
         assert read["isError"] is False
 
         # Confirmed call goes through.
-        allowed = await server.tools["obsidian_delete_note"].execute(
-            {"path": "orphan", "confirm": True}
-        )
+        allowed = await server.tools["obsidian_delete_note"].execute({"path": "orphan", "confirm": True})
         assert allowed["isError"] is False
 
 
@@ -100,7 +98,9 @@ class TestVaultStdioIntegration:
         await _seed_wiki(fixture_vault)  # .git + config + built plane
 
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "parrot.knowledge.wiki.mcp_server",
+            sys.executable,
+            "-m",
+            "parrot.knowledge.wiki.mcp_server",
             cwd=str(fixture_vault),
             env=_subprocess_env(),
             stdin=asyncio.subprocess.PIPE,
@@ -108,6 +108,7 @@ class TestVaultStdioIntegration:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
+
             async def send(request: dict) -> dict:
                 proc.stdin.write((json.dumps(request) + "\n").encode())
                 await proc.stdin.drain()
@@ -115,14 +116,10 @@ class TestVaultStdioIntegration:
                 assert line, "no response — server exited early"
                 return json.loads(line)
 
-            resp = await send({
-                "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}
-            })
+            resp = await send({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
             assert resp["result"]["serverInfo"]["name"] == "wikitoolkit"
 
-            resp = await send({
-                "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}
-            })
+            resp = await send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
             tools = {t["name"]: t for t in resp["result"]["tools"]}
             assert BASE_TOOLS <= set(tools)
             assert "vault_ingest" in tools
@@ -130,19 +127,27 @@ class TestVaultStdioIntegration:
             delete_schema = tools["obsidian_delete_note"]["inputSchema"]
             assert "confirm" in delete_schema["required"]
 
-            resp = await send({
-                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-                "params": {"name": "vault_ingest", "arguments": {}},
-            })
+            resp = await send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {"name": "vault_ingest", "arguments": {}},
+                }
+            )
             assert resp["result"]["isError"] is False
 
-            resp = await send({
-                "jsonrpc": "2.0", "id": 4, "method": "tools/call",
-                "params": {
-                    "name": "obsidian_delete_note",
-                    "arguments": {"path": "orphan"},
-                },
-            })
+            resp = await send(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 4,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "obsidian_delete_note",
+                        "arguments": {"path": "orphan"},
+                    },
+                }
+            )
             assert resp["result"]["isError"] is True
         finally:
             proc.terminate()

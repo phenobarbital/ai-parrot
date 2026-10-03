@@ -270,3 +270,7 @@ async def test_memory_dangling_link(tmp_path): ...
 **Notes**:
 
 **Deviations from spec**: none
+
+## Completion Note
+
+Implemented by gpt-5.6-terra (codex), 1 attempt. Review fix 1664b9a09: stale-memory test moved to SQLiteWikiStore (feedback coder-feedback:036090ca05a81bd3b378d6e7). Closed via close_task.sh. Verified: lint package + store tests 44 passed (scoped), ruff clean.

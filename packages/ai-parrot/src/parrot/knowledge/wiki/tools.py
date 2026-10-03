@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any, Union
 
 from pydantic import BaseModel, Field
 
+from parrot.knowledge.lint import LintOptions, LintRunner
+from parrot.knowledge.lint.routing import FindingRouter
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results
 from parrot.knowledge.wiki.decisions.models import ADR_CATEGORY, ADR_MANAGED_PAGE
@@ -527,6 +529,63 @@ class WikiStatusTool(AbstractTool):
         return ToolResult(result=stats)
 
 
+class WikiLintInput(BaseModel):
+    """Arguments for wiki_lint."""
+
+    rules: list[str] | None = Field(default=None, description="Rule ids or packs to run (default: all deterministic).")
+    skip: list[str] = Field(default_factory=list, description="Rule ids to skip.")
+    fix: bool = Field(default=False, description="Apply safe, idempotent fixes (never deletes).")
+    llm: bool = Field(default=False, description="Run the opt-in LLM contradiction pass.")
+
+
+class _StorageDirConfig:
+    """Minimal config exposing the absolute wiki storage dir to the lint runner."""
+
+    def __init__(self, storage_dir: Path) -> None:
+        self.storage_dir = storage_dir
+        self.wiki_name = ""
+
+
+class WikiLintTool(AbstractTool):
+    """Lint the wiki knowledge graph and report integrity findings."""
+
+    name = "wiki_lint"
+    description = (
+        "Lint the wiki knowledge graph: broken links, duplicate slugs, stale memories, "
+        "ADR conflicts; fix=true applies safe fixes."
+    )
+    args_schema = WikiLintInput
+
+    def __init__(self, store: BaseWikiStore, storage_dir: Path | None = None):
+        super().__init__(name=self.name, description=self.description)
+        self._store = store
+        self._storage_dir = storage_dir
+
+    async def _execute(
+        self,
+        rules: list[str] | None = None,
+        skip: list[str] | None = None,
+        fix: bool = False,
+        llm: bool = False,
+    ) -> ToolResult:
+        """Run lint and return a compact, machine-readable summary."""
+        report_dir = self._storage_dir / "lint" if self._storage_dir is not None else None
+        report = await LintRunner(
+            self._store,
+            root=self._storage_dir.parent if self._storage_dir is not None else None,
+            config=_StorageDirConfig(self._storage_dir) if self._storage_dir is not None else None,
+            router=FindingRouter(self._store, report_dir=report_dir),
+        ).run(LintOptions(rules=rules, skip=skip or [], fix=fix, llm=llm, report_dir=report_dir))
+        return ToolResult(
+            result={
+                "counts": report.counts,
+                "fixed": len(report.fixed),
+                "top": [finding.model_dump() for finding in report.findings[:20]],
+                "report_dir": str(report_dir) if report_dir is not None else None,
+            }
+        )
+
+
 class VaultIngestTool(AbstractTool):
     """(Re)build the wiki retrieval plane from an Obsidian vault."""
 
@@ -834,6 +893,7 @@ def create_wiki_tools(
         WikiRememberTool(store, storage_dir=storage_dir),
         WikiNoteTool(store, storage_dir=storage_dir),
         WikiStatusTool(store),
+        WikiLintTool(store, storage_dir=storage_dir),
     ]
 
     # Add ledger tools when ledger_service is provided

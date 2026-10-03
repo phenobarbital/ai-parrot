@@ -273,6 +273,11 @@ jobs:
       - name: Run wiki tests with both extras installed
         run: uv run pytest tests/knowledge/wiki/ -q --tb=short --continue-on-collection-errors
 
+      - name: Lint a fixture wiki plane (FEAT-625)
+        run: |
+          uv run wikitoolkit build --path tests/knowledge/lint/fixtures/repo --no-git --quiet
+          uv run wikitoolkit lint --path tests/knowledge/lint/fixtures/repo --fail-on error --no-ledger --no-notes
+
       # FEAT-532: the broad sweep above uses `--continue-on-collection-errors`
       # and pytest's default summary doesn't fail the job on skips — so
       # re-run the Luau/Roblox-specific suites in isolation and fail

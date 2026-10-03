@@ -191,10 +191,8 @@ async def test_lint_end_to_end_sqlite(tmp_path):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (glm seat delivery + orchestrator fixes)
+**Date**: 2026-10-03
+**Notes**: CI lint step, docs/wiki/lint.md delivered. Fidelity gate flagged 5 fixture files under tests/knowledge/lint/fixtures/repo (needed by the declared CI step, omitted from the file table) — accepted. The seat's e2e test used invented store APIs; rewritten by orchestrator to drive the real CLI (build/lint/--fix). lint tests: 51 pass.
 
 **Deviations from spec**: none
