@@ -48,13 +48,17 @@ def fake_adapters(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
                     }
                 )
             if output_type is InboxClassification:
-                return InboxClassification(kind="decision", title="Fixture decision", summary="Fixture summary", tags=["test"])
+                return InboxClassification(
+                    kind="decision", title="Fixture decision", summary="Fixture summary", tags=["test"]
+                )
             if output_type is LinkSelection:
                 return LinkSelection()
             raise AssertionError(f"unexpected structured output type: {output_type}")
 
     adapter = FakeAdapter()
-    monkeypatch.setattr(wiki_cli, "_build_triage_adapters", lambda lightweight, model: (adapter, adapter, lightweight, True))
+    monkeypatch.setattr(
+        wiki_cli, "_build_triage_adapters", lambda lightweight, model: (adapter, adapter, lightweight, True)
+    )
     return {"adapter": adapter, "calls": calls}
 
 

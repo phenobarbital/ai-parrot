@@ -55,7 +55,9 @@ def _report(status: str = "admitted") -> Any:
     )
 
 
-def test_inbox_end_to_end_sqlite(tmp_repo: Path, fake_adapters: dict[str, Any], seeded_store: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_inbox_end_to_end_sqlite(
+    tmp_repo: Path, fake_adapters: dict[str, Any], seeded_store: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Persist meeting/decision pages, tags/links/ADR/projections and all archives."""
     assert {row["concept_id"] for row in __import__("asyncio").run(seeded_store.dump_pages())} >= {
         "file:src/example.py",
@@ -73,7 +75,13 @@ def test_inbox_rerun_is_idempotent(tmp_repo: Path, monkeypatch: pytest.MonkeyPat
     from parrot.knowledge.wiki.inbox.models import InboxRunReport
 
     empty = InboxRunReport(
-        inbox_dir="inbox", charter_version="test", charter_fingerprint="fixed", models={}, dry_run=False, counts={}, documents=[]
+        inbox_dir="inbox",
+        charter_version="test",
+        charter_fingerprint="fixed",
+        models={},
+        dry_run=False,
+        counts={},
+        documents=[],
     )
     calls = _patch_command(tmp_repo, monkeypatch, empty)
     result = CliRunner().invoke(wiki_cli.wiki, ["inbox", "--path", str(tmp_repo), "--force"])
@@ -86,7 +94,11 @@ def test_inbox_fireflies_source_identity(tmp_repo: Path, monkeypatch: pytest.Mon
     from parrot.knowledge.wiki.inbox.processor import detect_fireflies_id
     from parrot.knowledge.wiki.documents import AcquiredDocument, DocumentMetadata, DocumentRef
 
-    acquired = AcquiredDocument(ref=DocumentRef(uri=str(tmp_repo / "inbox/fireflies.md")), text="", metadata=DocumentMetadata(extra={"fireflies_id": "call-7"}))
+    acquired = AcquiredDocument(
+        ref=DocumentRef(uri=str(tmp_repo / "inbox/fireflies.md")),
+        text="",
+        metadata=DocumentMetadata(extra={"fireflies_id": "call-7"}),
+    )
     assert detect_fireflies_id(acquired) == "fireflies:call-7"
 
 
