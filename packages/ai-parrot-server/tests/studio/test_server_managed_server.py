@@ -21,12 +21,28 @@ from parrot.tools.manager import ToolManager
 from parrot.tools.spec import ToolkitSpec
 
 from ._host_probe import host_plugins, probe_counters  # noqa: F401
-from .test_tenant_tooling_writes import _Row, _unwrap, vault  # noqa: F401
+from .test_tenant_tooling_writes import _unwrap, vault  # noqa: F401
 from .test_testing_surface import _make_handler
 
 GOLDEN = json.loads(
     (Path(__file__).resolve().parents[3] / "ai-parrot/tests/tools/data/feat622_builtin_schemas_golden.json").read_text()
 )
+
+
+class _Row:
+    """A GLOBAL legacy DB row that records every persisted ``update``."""
+
+    def __init__(self):
+        self.created_by = "42"
+        self.mcp_servers: list = []
+        self.toolkit_config: dict = {}
+        self.updates = 0
+
+    def set(self, key, value):
+        setattr(self, key, value)
+
+    async def update(self):
+        self.updates += 1
 
 
 def test_builtin_dicts_deleted_and_schema_for_matches_golden():

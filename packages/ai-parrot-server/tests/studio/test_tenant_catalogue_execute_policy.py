@@ -8,7 +8,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp import web
-from parrot.handlers.studio.tooling_store import AgentToolingStore
 from aiohttp.test_utils import make_mocked_request
 from parrot.handlers import tools_catalog
 from parrot.handlers.studio._base import StudioUser
@@ -19,6 +18,7 @@ from parrot.tools.manager import ToolManager
 from parrot.tools.tooling_policy import TenantToolingPolicy, set_tenant_tooling_policy
 
 from ._host_probe import host_plugins  # noqa: F401
+from ._tenant_agent import StudioAgentWorld
 
 
 def _unwrap(method):
@@ -73,23 +73,13 @@ async def test_tenant_catalogue_and_execute_respect_policy(host_plugins, monkeyp
     assert (await _unwrap(StudioToolExecuteHandler.post)(handler)).status != 403
 
 
-@pytest.fixture(autouse=True)
-def _legacy_row_stands_in_for_a_tenant_row(monkeypatch):
-    """These tests exercise the tenant POLICY on assign; a legacy row is the cheap stand-in for a tenant agent.
-
-    A real tenant caller never reaches a legacy row (PR #1564 F2): pinned in ``test_tenant_legacy_agents``.
-    """
-    async def _no_tenant_guard(self) -> bool:
-        return False
-
-    monkeypatch.setattr(AgentToolingStore, "tenant_caller", _no_tenant_guard)
-
-
 async def _assign(tenant, tools, toolkits):
     bot = SimpleNamespace(tool_manager=ToolManager())
     handler = _view(StudioToolAssignHandler, tenant=tenant, policy=TenantToolingPolicy.deny_all(), method="POST",
                     match_info={"name": "agent"}, body={"tools": tools, "toolkits": toolkits}, bot=bot)
-    handler._get_db_agent = AsyncMock(return_value=SimpleNamespace(created_by="42"))
+    world = StudioAgentWorld(handler.request.app)
+    await world.add_agent(tenant)  # a REAL Studio agent of that partition
+    world.wire(handler, tenant)
     response = await _unwrap(StudioToolAssignHandler.post)(handler)
     return response, bot
 
