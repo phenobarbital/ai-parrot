@@ -211,9 +211,7 @@ async def test_toolkit_lint_uses_read_context(fed: FederatedWikiStore, tmp_path:
     assert "roblox::class/Players" not in dsts  # resolved, excluded
     assert "file:DoesNotExist.luau" in dsts  # local broken, still reported
     assert any(f["subjects"][1] == "roblox::class/Typo" and f["data"]["status"] == "broken" for f in broken)
-    assert any(
-        f["subjects"][1] == "unbuilt::class/Whatever" and f["data"]["status"] == "unverifiable" for f in broken
-    )
+    assert any(f["subjects"][1] == "unbuilt::class/Whatever" and f["data"]["status"] == "unverifiable" for f in broken)
     assert "broken-link" in report["rules_run"]
 
 

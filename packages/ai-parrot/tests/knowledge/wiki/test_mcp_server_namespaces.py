@@ -18,8 +18,13 @@ from parrot.knowledge.wiki.project import (
 from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
 
 BASE_TOOLS = {
-    "wiki_query", "wiki_page", "wiki_related",
-    "wiki_remember", "wiki_note", "wiki_status", "wiki_lint",
+    "wiki_query",
+    "wiki_page",
+    "wiki_related",
+    "wiki_remember",
+    "wiki_note",
+    "wiki_status",
+    "wiki_lint",
 }
 
 
@@ -28,18 +33,18 @@ async def _seed(root: Path, config: WikiProjectConfig, concept_id: str) -> None:
     save_project_config(root, config)
     storage = config.storage_path(root)
     storage.mkdir(parents=True, exist_ok=True)
-    store = create_wiki_store(
-        storage_dir=storage, wiki_name=config.wiki_name, backend=config.backend
+    store = create_wiki_store(storage_dir=storage, wiki_name=config.wiki_name, backend=config.backend)
+    await store.upsert_pages(
+        [
+            WikiPageRecord(
+                concept_id=concept_id,
+                title=concept_id,
+                summary="alpha content",
+                body="alpha content",
+                category="concept",
+            )
+        ]
     )
-    await store.upsert_pages([
-        WikiPageRecord(
-            concept_id=concept_id,
-            title=concept_id,
-            summary="alpha content",
-            body="alpha content",
-            category="concept",
-        )
-    ])
 
 
 @pytest.fixture
@@ -92,9 +97,7 @@ class TestFederatedInjection:
     async def test_wiki_page_reads_a_foreign_page(self, two_projects):
         local, _other = two_projects
         server = create_wiki_mcp_server(local)
-        result = await server.tools["wiki_page"].tool._execute(
-            page_id="other::file:other.py"
-        )
+        result = await server.tools["wiki_page"].tool._execute(page_id="other::file:other.py")
         assert result.success
         assert result.result["namespace"] == "other"
 
@@ -107,9 +110,7 @@ class TestFederatedInjection:
         assert result.result["skipped"] == []
 
     @pytest.mark.asyncio
-    async def test_unbuilt_namespace_is_skipped_not_fatal(
-        self, tmp_path: Path
-    ):
+    async def test_unbuilt_namespace_is_skipped_not_fatal(self, tmp_path: Path):
         empty = tmp_path / "empty"
         empty.mkdir()
         local = tmp_path / "local"

@@ -2155,7 +2155,9 @@ def _probe_backend_reachable(root: Path, config: WikiProjectConfig) -> bool | No
 @click.option("--output", default=None, help="Report directory (default: <storage>/lint).")
 @click.option("--export-dir", default=None, help="OKF export directory to lint (default: none; export rules skip).")
 @click.option("--ledger/--no-ledger", default=True, show_default=True)
-@click.option("--notes/--no-notes", default=False, show_default=True, help="Append notes to subject pages (writes to the store).")
+@click.option(
+    "--notes/--no-notes", default=False, show_default=True, help="Append notes to subject pages (writes to the store)."
+)
 @click.option("--fail-on", type=click.Choice(["error", "warning", "none"]), default="error", show_default=True)
 @click.option("--json", "as_json", is_flag=True, help="Emit the report as JSON.")
 def lint(
@@ -2229,7 +2231,9 @@ def lint(
             f"(errors: {report.counts.get('error', 0)}, warnings: {report.counts.get('warning', 0)})."
         )
         for finding in report.findings[:20]:
-            click.echo(f"  [{finding.severity}] {finding.rule_id}: {', '.join(finding.subjects) or '-'} — {finding.message}")
+            click.echo(
+                f"  [{finding.severity}] {finding.rule_id}: {', '.join(finding.subjects) or '-'} — {finding.message}"
+            )
         if len(report.findings) > 20:
             click.echo(f"  … {len(report.findings) - 20} more (see report files or --json).")
     click.get_current_context().exit(LintRunner.exit_code(report, None if fail_on == "none" else fail_on))
