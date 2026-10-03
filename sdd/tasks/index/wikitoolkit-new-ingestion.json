@@ -245,7 +245,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -255,8 +255,9 @@
       "parallelism_notes": "Exercises the inbox command and runtime wiring from TASK-4055. Exclusive: creates inbox/conftest.py, which pytest loads for all inbox tests.",
       "assigned_to": null,
       "started_at": "2026-10-03T00:28:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4056-inbox-lifecycle-integration.md"
+      "completed_at": "2026-10-03T01:56:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4056-inbox-lifecycle-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4057",
