@@ -14,7 +14,13 @@ from pydantic import BaseModel, ConfigDict
 from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.charter import Charter
-from parrot.knowledge.wiki.documents import AcquiredDocument, DocumentAcquirer, DocumentAcquisitionError, DocumentRef, resolve_sources
+from parrot.knowledge.wiki.documents import (
+    AcquiredDocument,
+    DocumentAcquirer,
+    DocumentAcquisitionError,
+    DocumentRef,
+    resolve_sources,
+)
 from parrot.knowledge.wiki.ingest import WikiIngestOrchestrator
 from parrot.knowledge.wiki.inbox.archive import archive_destination, archive_original, repoint_source
 from parrot.knowledge.wiki.inbox.classify import InboxClassifier, slugify_doc_id
@@ -137,7 +143,9 @@ class InboxProcessor:
         self.markdown_dir = runtime.config.inbox_markdown_path(runtime.root)
         validate_inbox_paths(runtime.root, self.inbox_dir, self.archive_dir, self.markdown_dir)
         self.classifier = InboxClassifier(runtime.light_adapter, runtime.charter.taxonomy)
-        self.links = LinkProposer(runtime.store, runtime.search, runtime.heavy_adapter, max_candidates=runtime.config.inbox.max_candidates)
+        self.links = LinkProposer(
+            runtime.store, runtime.search, runtime.heavy_adapter, max_candidates=runtime.config.inbox.max_candidates
+        )
         self.pages = DocPageWriter(runtime.store, runtime.sources, runtime.bookkeeper, self.storage_path)
         self._discovery_results: list[InboxDocResult] = []
 
@@ -155,7 +163,11 @@ class InboxProcessor:
                 continue
             try:
                 resolved = entry.resolve(strict=True)
-                if entry.is_symlink() or not resolved.is_relative_to(self.inbox_dir.resolve()) or not resolved.is_relative_to(root):
+                if (
+                    entry.is_symlink()
+                    or not resolved.is_relative_to(self.inbox_dir.resolve())
+                    or not resolved.is_relative_to(root)
+                ):
                     raise ValueError("unsafe inbox path")
                 if not resolved.is_file():
                     continue
@@ -189,7 +201,10 @@ class InboxProcessor:
                     results.append(InboxDocResult(source_uri=ref.uri, status="failed", error=str(exc)))
             if not dry_run:
                 await asyncio.to_thread(
-                    self.runtime.bookkeeper.log_operation, self.storage_path, "INBOX_RUN", f"processed {len(results)} documents"
+                    self.runtime.bookkeeper.log_operation,
+                    self.storage_path,
+                    "INBOX_RUN",
+                    f"processed {len(results)} documents",
                 )
             counts: dict[str, int] = {}
             for result in results:
@@ -248,16 +263,32 @@ class InboxProcessor:
             if decision != "discard":
                 classification = await self.classifier.classify(acquired, triage)
                 doc_id = existing_doc_id or slugify_doc_id(classification.title, triage.file_hash)
-                source = await asyncio.to_thread(self.runtime.sources.get_source, known_source_id) if known_source_id else None
+                source = (
+                    await asyncio.to_thread(self.runtime.sources.get_source, known_source_id)
+                    if known_source_id
+                    else None
+                )
                 children = list(source.pages_generated) if source else []
-                candidates = await self.links.candidates(acquired.text, classification, triage.claims, {doc_id, *children})
+                candidates = await self.links.candidates(
+                    acquired.text, classification, triage.claims, {doc_id, *children}
+                )
                 links = await self.links.select(acquired.text, classification, candidates)
-                base.update(kind=classification.kind, category=classification.category, tags=classification.tags, links=links, doc_page_id=doc_id)
+                base.update(
+                    kind=classification.kind,
+                    category=classification.category,
+                    tags=classification.tags,
+                    links=links,
+                    doc_page_id=doc_id,
+                )
             await asyncio.to_thread(self.runtime.bookkeeper.log_operation, self.storage_path, "DRY_RUN", ref.uri)
             return InboxDocResult(status="dry_run", **base)
 
         report = await self.runtime.orchestrator.ingest(
-            ref.uri, self.runtime.wiki_config, triage=triage, charter_version=self.runtime.charter.version, acquired=acquired
+            ref.uri,
+            self.runtime.wiki_config,
+            triage=triage,
+            charter_version=self.runtime.charter.version,
+            acquired=acquired,
         )
         if report.status != "ok":
             raise RuntimeError(report.error or "ingest failed")
@@ -265,17 +296,32 @@ class InboxProcessor:
         if source is None:
             raise RuntimeError("ingest did not persist a source manifest")
         if decision == "discard":
-            problems = [] if source.destination == "discard" and source.status == "rejected" else ["discard manifest missing"]
+            problems = (
+                [] if source.destination == "discard" and source.status == "rejected" else ["discard manifest missing"]
+            )
             if archive and not problems:
                 await self._archive(original, report.source_id, source, rejected=True)
             return InboxDocResult(status="rejected", verified=False, **base, error="; ".join(problems) or None)
 
         classification = await self.classifier.classify(acquired, triage)
-        doc_id = existing_doc_id or await self._doc_id_from_source(source) or slugify_doc_id(classification.title, triage.file_hash)
-        candidates = await self.links.candidates(acquired.text, classification, triage.claims, {doc_id, *source.pages_generated})
+        doc_id = (
+            existing_doc_id
+            or await self._doc_id_from_source(source)
+            or slugify_doc_id(classification.title, triage.file_hash)
+        )
+        candidates = await self.links.candidates(
+            acquired.text, classification, triage.claims, {doc_id, *source.pages_generated}
+        )
         links = await self.links.select(acquired.text, classification, candidates)
         await self.pages.write_doc_page(
-            doc_id, report.source_id, classification, acquired, triage, self.runtime.charter.version, links, decision == "archive"
+            doc_id,
+            report.source_id,
+            classification,
+            acquired,
+            triage,
+            self.runtime.charter.version,
+            links,
+            decision == "archive",
         )
         page = await self.runtime.store.get_page(doc_id)
         if page is None:
@@ -291,7 +337,14 @@ class InboxProcessor:
         await self._persist_doc_id(report.source_id, acquired, doc_id)
         problems = await self.verify_persisted(report.source_id, doc_id, markdown, decision)
         if problems:
-            return InboxDocResult(status="failed", verified=False, **base, kind=classification.kind, category=classification.category, error="; ".join(problems))
+            return InboxDocResult(
+                status="failed",
+                verified=False,
+                **base,
+                kind=classification.kind,
+                category=classification.category,
+                error="; ".join(problems),
+            )
         archived_to = None
         if archive:
             archived_to = await self._archive(original, report.source_id, source, rejected=False)
@@ -314,7 +367,11 @@ class InboxProcessor:
         """Read a persisted inbox document identity from manifest metadata."""
         metadata = getattr(source, "doc_metadata", None) or {}
         extra = metadata.get("extra") if isinstance(metadata, dict) else None
-        return extra.get("inbox_doc_id") if isinstance(extra, dict) and isinstance(extra.get("inbox_doc_id"), str) else None
+        return (
+            extra.get("inbox_doc_id")
+            if isinstance(extra, dict) and isinstance(extra.get("inbox_doc_id"), str)
+            else None
+        )
 
     async def _persist_doc_id(self, source_id: str, acquired: AcquiredDocument, doc_id: str) -> None:
         """Merge the inbox identity into source metadata after ingestion replaced it."""
@@ -361,10 +418,14 @@ class InboxProcessor:
             content_type=metadata.get("content_type"),
             loader=metadata.get("loader"),
         )
-        await asyncio.to_thread(self.runtime.bookkeeper.log_operation, self.storage_path, "INBOX_ARCHIVE", str(result.destination))
+        await asyncio.to_thread(
+            self.runtime.bookkeeper.log_operation, self.storage_path, "INBOX_ARCHIVE", str(result.destination)
+        )
         return str(result.destination)
 
-    async def verify_persisted(self, source_id: str, doc_id: str, markdown_path: Path, expected_decision: str) -> list[str]:
+    async def verify_persisted(
+        self, source_id: str, doc_id: str, markdown_path: Path, expected_decision: str
+    ) -> list[str]:
         """Re-read manifest, children, document and markdown, returning every problem."""
         problems: list[str] = []
         source = await asyncio.to_thread(self.runtime.sources.get_source, source_id)
