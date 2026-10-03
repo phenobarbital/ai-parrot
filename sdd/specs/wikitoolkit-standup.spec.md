@@ -17,7 +17,7 @@ tags: [wiki, standup, daily-brief, entities, ledger, jira]
 **Feature ID**: FEAT-627
 **Date**: 2026-10-03
 **Author**: Jesus Lara (discovery + open-question rounds) + Claude
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Brainstorm**: `sdd/proposals/wikitoolkit-standup.brainstorm.md` (accepted 2026-10-03, Option B)
 **Design research**: `sdd/state/FEAT-627/design_research/` (codex `gpt-5.6-luna`, 12 suggestions — §9)
