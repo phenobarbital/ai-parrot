@@ -33,6 +33,7 @@ import math
 import os
 import uuid
 from collections import Counter
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -84,6 +85,8 @@ class InMemoryWikiStore(BaseWikiStore):
         await store.upsert_pages([WikiPageRecord(concept_id="intro", ...)])
         hits = await store.search_fts("neural networks", limit=5)
     """
+
+    supports_attrs: bool = True
 
     def __init__(self, bundle_dir: str | Path, wiki_name: str = "") -> None:
         self._bundle_dir = Path(bundle_dir)
@@ -198,6 +201,12 @@ class InMemoryWikiStore(BaseWikiStore):
             "created_at": str(front.get("created_at") or front.get("timestamp") or ""),
             "updated_at": str(front.get("timestamp") or ""),
             "content_hash": front.get("content_hash"),
+            "attrs": {
+                str(key): str(value)
+                for key, value in (front.get("attrs") or {}).items()
+            }
+            if isinstance(front.get("attrs"), dict)
+            else {},
         }
         relates = [
             (str(item.get("concept")), str(item.get("rel") or "references"))
@@ -219,9 +228,9 @@ class InMemoryWikiStore(BaseWikiStore):
         # Machine fields appended into the same frontmatter block — OKF
         # consumers tolerate unknown keys.
         machine: dict[str, Any] = {}
-        for key in ("category", "node_id", "source_id", "token_count", "created_at", "content_hash"):
+        for key in ("category", "node_id", "source_id", "token_count", "created_at", "content_hash", "attrs"):
             if page.get(key) not in (None, ""):
-                machine[key] = page[key]
+                machine[key] = dict(page[key]) if key == "attrs" else page[key]
         if machine:
             extra = yaml.dump(
                 machine,
@@ -353,7 +362,7 @@ class InMemoryWikiStore(BaseWikiStore):
 
     def _stub(self, page: dict[str, Any]) -> dict[str, Any]:
         """Stub view of a page row (no body)."""
-        return {
+        stub = {
             k: page.get(k)
             for k in (
                 "concept_id",
@@ -369,6 +378,8 @@ class InMemoryWikiStore(BaseWikiStore):
                 "content_hash",
             )
         }
+        stub["attrs"] = dict(page.get("attrs") or {})
+        return stub
 
     # ------------------------------------------------------------------
     # Write API
@@ -397,6 +408,7 @@ class InMemoryWikiStore(BaseWikiStore):
                 "origin": p.origin,
                 "asserted_by": p.asserted_by,
                 "content_hash": p.content_hash,
+                "attrs": dict(p.attrs),
             }
             old_path = self._page_path(existing) if existing else None
             self._index_page(row)
@@ -472,6 +484,7 @@ class InMemoryWikiStore(BaseWikiStore):
                 "origin": page.origin,
                 "asserted_by": page.asserted_by,
                 "content_hash": page.content_hash,
+                "attrs": dict(page.attrs),
             }
             old_path = self._page_path(existing) if existing else None
             self._index_page(row)
@@ -572,6 +585,95 @@ class InMemoryWikiStore(BaseWikiStore):
     # Read API
     # ------------------------------------------------------------------
 
+    async def get_attrs(self, concept_id: str) -> dict[str, str]:
+        """Return a defensive copy of attrs for an existing page.
+
+        Args:
+            concept_id: Page identity to look up.
+
+        Returns:
+            Stored attribute mapping, or an empty mapping for an unknown page.
+        """
+        await self._ensure_loaded()
+        page = self._pages.get(concept_id)
+        if page is None:
+            mapped = self._by_node.get(concept_id)
+            page = self._pages.get(mapped) if mapped else None
+        return dict((page or {}).get("attrs") or {})
+
+    async def list_by_attrs(
+        self,
+        filters: Mapping[str, str | Sequence[str]],
+        *,
+        date_key: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """List attr-bearing page stubs matching AND/IN/date predicates.
+
+        Args:
+            filters: Attribute keys and expected values. Keys are ANDed and
+                sequences are matched with IN semantics.
+            date_key: Attribute key used for inclusive date bounds.
+            since: Inclusive lower ISO-date bound.
+            until: Inclusive upper ISO-date bound.
+            limit: Maximum rows, ordered newest first.
+
+        Returns:
+            Matching stubs with defensive attrs mappings and no bodies.
+
+        Raises:
+            ValueError: If a date bound is supplied without ``date_key``.
+        """
+        if (since is not None or until is not None) and not date_key:
+            raise ValueError("since/until require date_key")
+        await self._ensure_loaded()
+        normalized_filters: list[tuple[str, set[str]]] = []
+        for key, wanted in filters.items():
+            values = {str(wanted)} if isinstance(wanted, str) else {str(value) for value in wanted}
+            if not values:
+                return []
+            normalized_filters.append((str(key), values))
+
+        rows: list[dict[str, Any]] = []
+        for page in self._pages.values():
+            attrs = page.get("attrs") or {}
+            if not attrs:
+                continue
+            if any(attrs.get(key) not in values for key, values in normalized_filters):
+                continue
+            if date_key and (since is not None or until is not None):
+                date_value = attrs.get(date_key)
+                if date_value is None or (since is not None and date_value < since) or (
+                    until is not None and date_value > until
+                ):
+                    continue
+            rows.append(self._stub(page))
+        rows.sort(key=lambda row: str(row["concept_id"]))
+        rows.sort(key=lambda row: str(row.get("updated_at") or ""), reverse=True)
+        return rows[:limit]
+
+    async def upsert_attrs(self, concept_id: str, attrs: Mapping[str, str], *, replace: bool = True) -> int:
+        """Persist attrs for an existing page and rewrite its bundle file.
+
+        Args:
+            concept_id: Existing page identity.
+            attrs: Attribute mapping to merge or replace.
+            replace: Whether to replace the full attrs mapping.
+
+        Returns:
+            Number of supplied attrs written, or zero for an unknown page.
+        """
+        await self._ensure_loaded()
+        page = self._pages.get(concept_id)
+        if page is None:
+            return 0
+        values = {str(key): str(value) for key, value in attrs.items()}
+        page["attrs"] = values if replace else {**page.get("attrs", {}), **values}
+        await self._persist_pages([page])
+        return len(values)
+
     async def get_page(self, concept_id: str, include_body: bool = True) -> dict[str, Any] | None:
         """Fetch a page by ``concept_id`` (falls back to ``node_id``)."""
         await self._ensure_loaded()
@@ -582,6 +684,7 @@ class InMemoryWikiStore(BaseWikiStore):
         if page is None:
             return None
         row = dict(page)
+        row["attrs"] = dict(page.get("attrs") or {})
         if not include_body:
             row.pop("body", None)
         return row
@@ -702,7 +805,13 @@ class InMemoryWikiStore(BaseWikiStore):
     async def dump_pages(self) -> list[dict[str, Any]]:
         """Return every page row WITH bodies (bulk export path)."""
         await self._ensure_loaded()
-        return [dict(self._pages[cid]) for cid in sorted(self._pages)]
+        rows = []
+        for concept_id in sorted(self._pages):
+            page = self._pages[concept_id]
+            row = dict(page)
+            row["attrs"] = dict(page.get("attrs") or {})
+            rows.append(row)
+        return rows
 
     async def dump_edges(self) -> list[dict[str, Any]]:
         """Return every edge row (bulk export path)."""
@@ -725,6 +834,7 @@ class InMemoryWikiStore(BaseWikiStore):
             "symbols": categories.get("symbol", 0),
             "total_tokens": sum(int(p.get("token_count") or 0) for p in self._pages.values()),
             "categories": dict(categories),
+            "attrs_pages": sum(1 for page in self._pages.values() if page.get("attrs")),
         }
 
     # ------------------------------------------------------------------
