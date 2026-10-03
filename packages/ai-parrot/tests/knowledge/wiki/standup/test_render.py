@@ -55,7 +55,14 @@ def test_daily_en_es_golden(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     blocked = _item("issues::OPS-7", "Deploy *now*", status="blocked", age_days=2, urgent=True)
     document = _document(
         on_your_plate=["Deploy *now*", "Review plan", "Third", "Not rendered"],
-        projects=[ProjectSlice(project="Roadshows", status="active", sections=[BriefSection(key="blocked", items=[blocked])], activity=1)],
+        projects=[
+            ProjectSlice(
+                project="Roadshows",
+                status="active",
+                sections=[BriefSection(key="blocked", items=[blocked])],
+                activity=1,
+            )
+        ],
         internal=[BriefSection(key="tasks", items=[_item("TASK-1", "Write docs", source="tasks")])],
         hygiene=HygieneReport(ledger_blockers=1, stale_tickets=2, llm="skipped: no model"),
         diagnostics=["ledger unavailable"],
@@ -97,9 +104,7 @@ def test_daily_en_es_golden(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.mark.parametrize("period,title", [("week", "Weekly brief"), ("month", "Monthly brief")])
-def test_weekly_monthly_golden(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, period: str, title: str
-) -> None:
+def test_weekly_monthly_golden(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, period: str, title: str) -> None:
     """Render period roll-ups with their source identifiers and required sections."""
     open_ticket = _item("issues::OPS-8", "Keep open", status="open")
     decision = BriefItem(id="adr::3", kind="decision", title="Choose path", source="adr", status="proposed")
@@ -109,7 +114,10 @@ def test_weekly_monthly_golden(
         projects=[
             ProjectSlice(
                 project="Roadshows",
-                sections=[BriefSection(key="tickets", items=[open_ticket]), BriefSection(key="decisions", items=[decision])],
+                sections=[
+                    BriefSection(key="tickets", items=[open_ticket]),
+                    BriefSection(key="decisions", items=[decision]),
+                ],
                 activity=2,
             )
         ],

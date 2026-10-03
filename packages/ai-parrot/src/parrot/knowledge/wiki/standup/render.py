@@ -55,6 +55,7 @@ HEADINGS: dict[str, dict[str, str]] = {
     },
 }
 
+
 def _escape(value: str) -> str:
     """Escape inline Markdown syntax without translating its text."""
     for character in ("\\", "`", "*", "_", "{", "}", "[", "]", "<", ">"):
@@ -153,7 +154,9 @@ def render_markdown(doc: BriefDocument, language: str) -> str:
         if doc.on_your_plate:
             lines.extend(["", f"## {headings['plate']}", ""])
             lines.extend(f"- {_escape(item)}" for item in doc.on_your_plate[:3])
-        project_lines = [line for project in doc.projects if project.sections for line in _project_lines(project, headings)]
+        project_lines = [
+            line for project in doc.projects if project.sections for line in _project_lines(project, headings)
+        ]
         if project_lines:
             lines.extend(["", f"## {headings['by_project']}", "", *project_lines])
         internal_lines = _section_lines(doc.internal, headings)
