@@ -53,6 +53,8 @@ The wiki is also persistent memory. Save durable facts, decisions, and lessons
 with `wikitoolkit remember "<fact>" --category <note|decision|lesson|concept>`
 or the `wiki_remember` MCP tool. Use `wikitoolkit note`, `wikitoolkit link`,
 `wikitoolkit memories`, and `wikitoolkit audit` to maintain and review that knowledge.
+Use `wikitoolkit standup` for day/week/month briefs and `wikitoolkit entity`
+for typed authoring, listing and local-plane back-fill.
 """
 
 

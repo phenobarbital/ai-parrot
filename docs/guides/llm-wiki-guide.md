@@ -918,6 +918,56 @@ build — never a dangling reference.
 
 ---
 
+## Standup Briefs and Typed Entities
+
+The standup subsystem (`wikitoolkit standup`) generates deterministic day/week/month
+briefs from Jira issues, decisions and entity changes. Key concepts:
+
+### Attributes Ingest and Back-fill
+
+Entity attributes (type, status, project, date, due, owner) are extracted during
+ingest and stored as page frontmatter. The `wikitoolkit entity reindex --store <path>`
+command back-fills attributes into an existing wiki plane from its stored pages,
+useful for migrating legacy data or syncing foreign planes.
+
+### Personal and Team Filtering
+
+- `--team` includes all team members' activity; default shows only your identity.
+- Identity is resolved from `~/.parrot/identity.json` (or `WIKI_IDENTITY` env var)
+  as `human:<username>`, without requiring email access.
+- Use `--me <identity>` to override the default identity for a single run.
+
+### Period Roll-ups and Delta Meaning
+
+- `day` — activity since yesterday 00:00 UTC
+- `week` — activity since Monday of the current week
+- `month` — activity since the 1st of the current month
+
+The brief includes a "delta" section showing net changes: new, updated and closed
+items. Delta is computed per-period and does not accumulate across periods.
+
+### Model Fallback and Read-Only MCP Defaults
+
+- By default, standup requests an LLM summary (`--no-llm` disables it).
+- If the model fails, the brief still renders with raw data; no partial summary
+  is stored.
+- MCP tool calls default to read-only (`--no-store --no-file`) when invoked via
+  MCP. Use explicit `--store` or `--out` to persist output.
+
+### Cron Scheduling
+
+Run at 07:00 UTC after the 06:17 Jira sweep. Example cron entry (deployment-specific
+paths marked):
+
+```cron
+0 7 * * 1-5 cd /path/to/project && /path/to/venv/bin/wikitoolkit standup --period day --language en --out /var/log/standups/$(date +\%Y-\%m-\%d).md >> /var/log/standup.log 2>&1
+```
+
+Consult the [wiki standup runbook](../runbooks/wiki-standup.md) for identity configuration,
+failure recovery and back-fill recipes.
+
+---
+
 ## Obsidian Vaults as Wiki Sources
 
 Obsidian vaults are first-class wiki sources. The vault scanner

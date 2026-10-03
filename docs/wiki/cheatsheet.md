@@ -486,6 +486,24 @@ wikitoolkit adr export <decision_id>
 
 ---
 
+## 11.1. Standup briefs y entidades
+
+```bash
+wikitoolkit standup                              # daily brief en inglés
+wikitoolkit standup --period week --language es  # weekly brief en español
+wikitoolkit standup --no-llm                     # sin resumen LLM
+wikitoolkit standup --out ./standups             # escribir a archivo
+wikitoolkit standup --team                       # incluir todo el equipo
+wikitoolkit standup --no-store --no-file --json  # solo salida JSON (read-only MCP)
+wikitoolkit entity add <type> <title>            # crear entidad tipada
+wikitoolkit entity list                          # listar entidades
+wikitoolkit entity reindex --store <path>        # reindexar plano foráneo
+```
+
+Consulta el [runbook de standup](../runbooks/wiki-standup.md) para ejemplos de cron y back-fill.
+
+---
+
 ## 12. Exportar el wiki como markdown
 
 ```bash
