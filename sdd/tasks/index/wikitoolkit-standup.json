@@ -372,7 +372,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -384,8 +384,9 @@
       "parallelism_notes": "TASK-4031: consumes BriefDocument and identity; TASK-4023: consumes WikiPageRecord.attrs persistence; TASK-4032: consumes stable brief identities",
       "assigned_to": null,
       "started_at": "2026-10-03T00:20:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4039-brief-delta-writer.md"
+      "completed_at": "2026-10-03T02:42:02+00:00",
+      "file": "sdd/tasks/completed/TASK-4039-brief-delta-writer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4040",
