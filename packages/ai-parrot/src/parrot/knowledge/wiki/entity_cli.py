@@ -147,7 +147,9 @@ def _open_local_write_store(
     return _open_project_store(root, config), config.storage_path(root)
 
 
-def _open_read_store(path_: str | None, store_opt: str | None, backend_opt: str | None, ns_opt: str | None) -> BaseWikiStore:
+def _open_read_store(
+    path_: str | None, store_opt: str | None, backend_opt: str | None, ns_opt: str | None
+) -> BaseWikiStore:
     """Open the local plane federated with its declared namespaces, honouring ``--ns``."""
     store_override = store_opt
     if not store_override and not path_:
@@ -178,7 +180,9 @@ def _open_read_store(path_: str | None, store_opt: str | None, backend_opt: str 
         unknown = sorted(only - set(declared))
         if unknown:
             known = ", ".join(sorted(declared)) or "(none declared)"
-            raise click.ClickException(f"Unknown namespace {', '.join(unknown)!r}. Known: {known} (plus 'all', 'local').")
+            raise click.ClickException(
+                f"Unknown namespace {', '.join(unknown)!r}. Known: {known} (plus 'all', 'local')."
+            )
         if not only:
             return local
     if not declared:

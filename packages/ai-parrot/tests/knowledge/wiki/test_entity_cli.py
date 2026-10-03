@@ -36,8 +36,21 @@ def test_entity_add_list_roundtrip(tmp_path: Path) -> None:
     store_dir = tmp_path / "store"
     base = ["--store", str(store_dir)]
     result = _invoke(
-        "add", "ticket", "Fix login", "--status", "open", "--project", "alpha", "--date", "2026-10-02",
-        "--owner", "ana", "--by", "human:test", "--json", *base,
+        "add",
+        "ticket",
+        "Fix login",
+        "--status",
+        "open",
+        "--project",
+        "alpha",
+        "--date",
+        "2026-10-02",
+        "--owner",
+        "ana",
+        "--by",
+        "human:test",
+        "--json",
+        *base,
     )
     assert result.exit_code == 0, result.output
     created = json.loads(result.output)
@@ -45,7 +58,9 @@ def test_entity_add_list_roundtrip(tmp_path: Path) -> None:
     assert created["attrs"]["source"] == "authored"
     assert created["status"] == "created"
 
-    again = _invoke("add", "ticket", "Fix login", "--status", "open", "--project", "alpha", "--date", "2026-10-02", "--json", *base)
+    again = _invoke(
+        "add", "ticket", "Fix login", "--status", "open", "--project", "alpha", "--date", "2026-10-02", "--json", *base
+    )
     assert json.loads(again.output)["status"] == "updated"
     _invoke("add", "ticket", "Old bug", "--status", "closed", "--project", "beta", "--date", "2026-09-01", *base)
     _invoke("add", "person", "Ana", *base)
@@ -77,9 +92,7 @@ def test_entity_add_links_use_asserted_edges(tmp_path: Path) -> None:
     store_dir = tmp_path / "store"
     base = ["--store", str(store_dir)]
     project = json.loads(_invoke("add", "project", "Alpha", "--json", *base).output)
-    result = _invoke(
-        "add", "task", "Ship it", "--link", project["page_id"], "--link", "missing", "--json", *base
-    )
+    result = _invoke("add", "task", "Ship it", "--link", project["page_id"], "--link", "missing", "--json", *base)
     payload = json.loads(result.output)
     assert payload["linked"] == [project["page_id"]]
     assert payload["skipped_links"] == ["missing"]
@@ -97,11 +110,21 @@ def test_reindex_large_inventory_and_dryrun(tmp_path: Path, monkeypatch: pytest.
     for index in range(total):
         content = f"---\ntype: ticket\nstatus: Open\nupdated_at: 2026-10-02\n---\nbody {index}\n"
         pages.append(
-            WikiPageRecord(concept_id=f"file:docs/n{index}.md", title=f"n{index}", category="document",
-                           body=_wrapped(content, f"docs/n{index}.md"))
+            WikiPageRecord(
+                concept_id=f"file:docs/n{index}.md",
+                title=f"n{index}",
+                category="document",
+                body=_wrapped(content, f"docs/n{index}.md"),
+            )
         )
-    pages.append(WikiPageRecord(concept_id="file:docs/plain.md", title="plain", category="document",
-                                body=_wrapped("no frontmatter here\n", "docs/plain.md")))
+    pages.append(
+        WikiPageRecord(
+            concept_id="file:docs/plain.md",
+            title="plain",
+            category="document",
+            body=_wrapped("no frontmatter here\n", "docs/plain.md"),
+        )
+    )
     pages.append(WikiPageRecord(concept_id="note:vault", title="vault", category="document", body="just text"))
     asyncio.run(store.upsert_pages(pages))
 
@@ -157,16 +180,41 @@ def test_remember_flags_and_ns_rejection(tmp_path: Path) -> None:
     runner = CliRunner()
     ok = runner.invoke(
         wiki,
-        ["remember", "Standup moved to 10am", "--title", "Standup", "--type", "meeting", "--status", "Scheduled",
-         "--project", "alpha", "--date", "2026-10-03", "--due", "2026-10-04", "--owner", "ana", "--by", "human:t",
-         "--json", *base],
+        [
+            "remember",
+            "Standup moved to 10am",
+            "--title",
+            "Standup",
+            "--type",
+            "meeting",
+            "--status",
+            "Scheduled",
+            "--project",
+            "alpha",
+            "--date",
+            "2026-10-03",
+            "--due",
+            "2026-10-04",
+            "--owner",
+            "ana",
+            "--by",
+            "human:t",
+            "--json",
+            *base,
+        ],
     )
     assert ok.exit_code == 0, ok.output
     page_id = json.loads(ok.output)["page_id"]
     attrs = asyncio.run(create_wiki_store(store_dir).get_attrs(page_id))
     assert attrs == {
-        "type": "meeting", "status": "scheduled", "status_raw": "Scheduled", "project": "alpha",
-        "date": "2026-10-03", "due": "2026-10-04", "owner": "ana", "source": "memory",
+        "type": "meeting",
+        "status": "scheduled",
+        "status_raw": "Scheduled",
+        "project": "alpha",
+        "date": "2026-10-03",
+        "due": "2026-10-04",
+        "owner": "ana",
+        "source": "memory",
     }
 
     plain = runner.invoke(wiki, ["remember", "Plain fact", "--by", "human:t", "--json", *base])
