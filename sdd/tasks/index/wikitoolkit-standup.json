@@ -197,7 +197,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -209,8 +209,9 @@
       "parallelism_notes": "TASK-4022: consumes EntityType; TASK-4029: consumes StandupConfig; TASK-4030: consumes StandupIdentity",
       "assigned_to": null,
       "started_at": "2026-10-03T00:20:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4031-standup-models.md"
+      "completed_at": "2026-10-03T02:18:31+00:00",
+      "file": "sdd/tasks/completed/TASK-4031-standup-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4032",
@@ -239,7 +240,7 @@
       "feature_id": "FEAT-627",
       "feature": "wikitoolkit-standup",
       "spec": "sdd/specs/wikitoolkit-standup.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -252,8 +253,9 @@
       "parallelism_notes": "TASK-4022: consumes strict normalization API; TASK-4023: consumes attrs persistence; TASK-4025: consumes namespace attrs listing; TASK-4030: consumes shared authoring_identity and earlier cli.py edit",
       "assigned_to": null,
       "started_at": "2026-10-03T00:20:05+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4033-entity-cli.md"
+      "completed_at": "2026-10-03T02:18:31+00:00",
+      "file": "sdd/tasks/completed/TASK-4033-entity-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4034",
