@@ -171,8 +171,7 @@ class CalibrationPolicy(BaseModel):
         total = self.near_fraction + self.uniform_fraction
         if abs(total - 1.0) > 0.01:
             raise ValueError(
-                "calibration.near_fraction + calibration.uniform_fraction "
-                f"must sum to ~1.0 (got {total:.4f})"
+                "calibration.near_fraction + calibration.uniform_fraction " f"must sum to ~1.0 (got {total:.4f})"
             )
         return self
 
@@ -336,9 +335,7 @@ class Charter(BaseModel):
     scope: CharterScope
     weights: dict[str, float]
     thresholds: Thresholds
-    destinations: list[str] = Field(
-        default_factory=lambda: ["wiki", "archive", "discard"]
-    )
+    destinations: list[str] = Field(default_factory=lambda: ["wiki", "archive", "discard"])
     calibration: CalibrationPolicy
     examples: list[TriageExample] = Field(default_factory=list)
     examples_file: Path | None = None
@@ -347,8 +344,7 @@ class Charter(BaseModel):
     fingerprint: str = Field(
         default="",
         description=(
-            "sha256 of the raw charter YAML bytes, set by load_charter() "
-            "after validation. Empty until then."
+            "sha256 of the raw charter YAML bytes, set by load_charter() " "after validation. Empty until then."
         ),
     )
 
@@ -464,9 +460,7 @@ def append_example(
     """
     target = Path(path) if path is not None else charter.examples_file
     if target is None:
-        raise ValueError(
-            "charter.examples_file is not set and no explicit path was given"
-        )
+        raise ValueError("charter.examples_file is not set and no explicit path was given")
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("a", encoding="utf-8") as fh:

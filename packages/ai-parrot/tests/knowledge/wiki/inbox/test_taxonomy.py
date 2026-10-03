@@ -7,7 +7,6 @@ import pytest
 from parrot.knowledge.wiki.charter import Charter, Taxonomy, TaxonomyKind, default_taxonomy, load_charter
 from pydantic import ValidationError
 
-
 _CHARTER_YAML = """\
 version: "1"
 scope:
