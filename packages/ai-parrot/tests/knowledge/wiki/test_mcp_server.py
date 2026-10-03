@@ -89,7 +89,7 @@ class TestWikiMCPServerIntegration:
             names = {t["name"] for t in resp["result"]["tools"]}
             assert names == {
                 "wiki_query", "wiki_page", "wiki_related",
-                "wiki_remember", "wiki_note", "wiki_status",
+                "wiki_remember", "wiki_note", "wiki_status", "wiki_standup",
             }
 
             resp = await send({

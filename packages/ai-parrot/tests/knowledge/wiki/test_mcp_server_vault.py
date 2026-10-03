@@ -15,7 +15,7 @@ from tests.knowledge.wiki.test_mcp_server import _seed_wiki, _subprocess_env
 
 BASE_TOOLS = {
     "wiki_query", "wiki_page", "wiki_related",
-    "wiki_remember", "wiki_note", "wiki_status",
+    "wiki_remember", "wiki_note", "wiki_status", "wiki_standup",
 }
 
 
