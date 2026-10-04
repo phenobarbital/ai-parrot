@@ -6,6 +6,7 @@ import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
+import pytest
 from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
 from parrot.handlers import tools_catalog
@@ -17,6 +18,7 @@ from parrot.tools.manager import ToolManager
 from parrot.tools.tooling_policy import TenantToolingPolicy, set_tenant_tooling_policy
 
 from ._host_probe import host_plugins  # noqa: F401
+from ._tenant_agent import StudioAgentWorld
 
 
 def _unwrap(method):
@@ -75,7 +77,9 @@ async def _assign(tenant, tools, toolkits):
     bot = SimpleNamespace(tool_manager=ToolManager())
     handler = _view(StudioToolAssignHandler, tenant=tenant, policy=TenantToolingPolicy.deny_all(), method="POST",
                     match_info={"name": "agent"}, body={"tools": tools, "toolkits": toolkits}, bot=bot)
-    handler._get_db_agent = AsyncMock(return_value=SimpleNamespace(created_by="42"))
+    world = StudioAgentWorld(handler.request.app)
+    await world.add_agent(tenant)  # a REAL Studio agent of that partition
+    world.wire(handler, tenant)
     response = await _unwrap(StudioToolAssignHandler.post)(handler)
     return response, bot
 

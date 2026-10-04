@@ -32,6 +32,7 @@ from parrot.tools.spec import (
 )
 
 from ..models import BotModel
+from .access import StudioTenantRequired
 from .storage.models import StudioStorageUnavailable, StudioWriteGuard
 
 logger = logging.getLogger(__name__)
@@ -227,6 +228,8 @@ class AgentToolingStore:
         studio = await self._load_studio(name)
         if studio is not None:
             return studio
+        if await self.tenant_caller():
+            raise LookupError(name)  # a tenant never reaches the global ai_bots / registry agents (FEAT-605: one 404)
         row = await self.handler._get_db_agent(name)
         if row is not None:
             owner = str(row.created_by) if row.created_by is not None else None
@@ -264,6 +267,16 @@ class AgentToolingStore:
         )
         state._registry = registry
         return state
+
+    async def tenant_caller(self) -> bool:
+        """Whether the request partition carries a tenant (only an opted-in host resolves one; else GLOBAL)."""
+        locate = getattr(self.handler, "_studio_partition", None)
+        if locate is None:
+            return False
+        try:
+            return (await locate()).tenant is not None
+        except StudioTenantRequired:
+            return False  # tenant-less caller: handled (refused) by the Studio routes themselves
 
     async def _load_studio(self, name: str) -> ToolingState | None:
         """A Studio agent of this request's partition, when the database backend serves it (spec §2.5)."""

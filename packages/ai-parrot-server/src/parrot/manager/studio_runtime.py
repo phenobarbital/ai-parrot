@@ -64,6 +64,8 @@ def _float_setting(name: str, default: float) -> float:
 
 _HOOKS_KEY = "_astudio_runtime_hooks_installed"
 _REFUSED_CAP = 1024
+_MAX_REBUILDS = 3                  # builds attempted while the agent's version keeps moving under them
+_HEAD_MOVED = object()             # a finished build whose version is no longer the row's: discarded, retry
 
 
 class StudioAgentRuntime:
@@ -183,7 +185,23 @@ class StudioAgentRuntime:
 
     # ---- build / retire ---------------------------------------------------------------------------------------
     async def _build_and_install(self, key: StudioAgentKey, session_id: str | None) -> StudioCacheEntry | None:
-        """Load ONE snapshot, build from it and install; the replaced entry is retired, never cleaned here."""
+        """Build the CURRENT version and install it; a build outdated while it ran is discarded and redone.
+
+        An agent that keeps changing is still served: the last attempt installs its (consistent, committed) build
+        WITHOUT the revalidation stamp, so the very next lookup compares it with the head and rebuilds.
+        """
+        for attempt in range(1, _MAX_REBUILDS + 1):
+            entry = await self._build_once(key, session_id, last=attempt == _MAX_REBUILDS)
+            if entry is not _HEAD_MOVED:
+                return entry
+        return None  # unreachable: the last attempt never answers _HEAD_MOVED
+
+    async def _build_once(self, key: StudioAgentKey, session_id: str | None, *, last: bool = True) -> Any:
+        """Load ONE snapshot, build from it and install; the replaced entry is retired, never cleaned here.
+
+        Returns ``None`` (not served) or, unless ``last``, ``_HEAD_MOVED`` (the row's version moved on while
+        building: discarded). On the ``last`` attempt an outdated build is installed but not marked validated.
+        """
         part = StudioPartition(key.tenant)
         snapshot = await self._repos.agents.load_snapshot(part, key.name)
         if snapshot is None:
@@ -197,6 +215,10 @@ class StudioAgentRuntime:
         if head is None or head.agent_id != rec.agent_id:
             await self._discard_unserved(key, bot, rec, directory)
             return None
+        moved = head.version != rec.version           # a newer version is already active
+        if moved and not last:
+            await self._discard_unserved(key, bot, rec, directory)
+            return _HEAD_MOVED
         now = time.monotonic()
         entry = StudioCacheEntry(
             qualified=key.qualified, session_id=session_id, agent_id=rec.agent_id, version=rec.version, bot=bot,
@@ -204,7 +226,10 @@ class StudioAgentRuntime:
         )
         replaced = self._cache.install(entry)
         if session_id is None:
-            self._validated[key.qualified] = now
+            if moved:
+                self._validated.pop(key.qualified, None)      # outdated: the next lookup must revalidate
+            else:
+                self._validated[key.qualified] = now
         else:
             self._enforce_session_cap(entry, now)
         if replaced is not None:
