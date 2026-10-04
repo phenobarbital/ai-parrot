@@ -214,7 +214,7 @@ async def test_pyright_pinned_navigation(real_fixture_repo: Path) -> None:
             )
             assert ns_result.status == "ok"
             assert any(
-                "helper.py" in loc.range.path for loc in ns_result.locations
+                loc.range.path == "packages/pkg-a/src/pkg_ns/helper.py" for loc in ns_result.locations
             ), f"PEP 420 namespace root import did not resolve: {ns_result.locations!r}"
         finally:
             await ns_toolkit._close()

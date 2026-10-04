@@ -1,0 +1,27 @@
+{
+  "feature": "producers-ddl-fixes",
+  "feature_id": "FEAT-628",
+  "spec": "sdd/specs/producers-ddl-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-05T01:20:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4058",
+      "slug": "schema-plane-fk-dedupe-and-annotations",
+      "title": "Dedupe DDL foreign keys, surface local annotations in schema lookup, cover AC4/AC7",
+      "feature_id": "FEAT-628",
+      "feature": "producers-ddl-fixes",
+      "spec": "sdd/specs/producers-ddl-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "single task",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-4058-schema-plane-fk-dedupe-and-annotations.md"
+    }
+  ]
+}

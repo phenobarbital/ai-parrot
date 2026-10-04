@@ -53,14 +53,26 @@ class ToolkitResolver:
         self._entries: dict[str, ToolkitEntry] | None = None  # key: slug.lower()
         self._building: dict[str, ToolkitEntry] | None = None  # entries gathered so far by the building thread
         self._classes: dict[str, type] = {}  # key: slug.lower(); walked / explicit classes
+        self._aliases: dict[str, str] = {}  # key: class_name.lower() → entry key (non-host entries only)
 
     def entries(self) -> list[ToolkitEntry]:
         """Every entry, sorted by slug (catalogue and policy use this)."""
         return sorted(self._ensure().values(), key=lambda item: item.slug)
 
     def entry(self, slug: str) -> ToolkitEntry | None:
-        """Case-insensitive entry lookup; returns entries whose class cannot be imported too."""
-        return self._ensure().get(slug.lower())
+        """Case-insensitive lookup by slug or class-name alias; returns entries whose class cannot be imported too."""
+        entries = self._ensure()
+        key = slug.lower()
+        found = entries.get(key)
+        if found is not None:
+            return found
+        alias = self._aliases.get(key)
+        return entries.get(alias) if alias else None
+
+    def canonical_slug(self, name: str) -> str | None:
+        """Declared slug for a slug or class-name alias (``"JiraToolkit"`` → ``"jira"``); ``None`` when unknown."""
+        found = self.entry(name)
+        return found.slug if found else None
 
     def is_host_class(self, cls: type) -> bool:
         """True iff ``cls`` is the class of a host entry (declared ``host`` or walked), never stamped on the class."""
@@ -70,11 +82,11 @@ class ToolkitResolver:
         return False
 
     def resolve(self, slug: str) -> type | None:
-        """Case-insensitive slug → class; ``None`` when unknown or unimportable."""
+        """Case-insensitive slug (or class-name alias) → class; ``None`` when unknown or unimportable."""
         found = self.entry(slug)
         if found is None:
             return None
-        key = slug.lower()
+        key = found.slug.lower()
         if found.dotted_path is None:
             return self._classes.get(key)
         try:
@@ -101,6 +113,7 @@ class ToolkitResolver:
             self._entries = None
             self._building = None
             self._classes = {}
+            self._aliases = {}
 
     def _ensure(self) -> dict[str, ToolkitEntry]:
         if self._entries is None:
@@ -131,7 +144,39 @@ class ToolkitResolver:
             for slug, dotted in declared.items():
                 entries.setdefault(slug.lower(), ToolkitEntry(slug=slug, dotted_path=dotted, source="parrot_tools"))
         self._add_host_entries(entries)
+        self._aliases = self._build_aliases(entries)
         return entries
+
+    def _build_aliases(self, entries: dict[str, ToolkitEntry]) -> dict[str, str]:
+        """Class-name → entry-key aliases so legacy YAML naming a toolkit by class resolves to its slug.
+
+        Only non-host entries get an alias: host slugs are namespaced by ``HOST_TOOL_PREFIX`` and a
+        class-name alias would bypass that namespace. A real slug always shadows an alias, and an
+        alias claimed by two different entries is dropped as ambiguous.
+        """
+        aliases: dict[str, str] = {}
+        ambiguous: set[str] = set()
+        for key, entry in entries.items():
+            if entry.is_host:
+                continue
+            if entry.dotted_path is not None:
+                class_name = entry.dotted_path.rsplit(".", 1)[-1]
+            else:
+                cls = self._classes.get(key)
+                class_name = cls.__name__ if cls else None
+            if not class_name:
+                continue
+            alias = class_name.lower()
+            if alias in entries:
+                continue
+            if alias in aliases and aliases[alias] != key:
+                ambiguous.add(alias)
+                continue
+            aliases[alias] = key
+        for alias in ambiguous:
+            logger.warning("Toolkit class-name alias %r claimed by several slugs; dropped as ambiguous", alias)
+            aliases.pop(alias, None)
+        return aliases
 
     def _add_host_entries(self, entries: dict[str, ToolkitEntry]) -> None:
         """Rules 2–4: declared host registry, else deprecated walk fallback, else nothing."""

@@ -355,12 +355,16 @@ class TestPinnedPythonAnalysisConfiguration:
 
         params = session._build_initialize_params(config)
 
-        assert params["initializationOptions"]["python"] == {"pythonPath": str(config.python_path)}
-        assert params["initializationOptions"]["python.analysis"] == {
+        expected_analysis = {
             "extraPaths": [str(source_root)],
             "diagnosticMode": "openFilesOnly",
             "typeCheckingMode": "standard",
         }
+        assert params["initializationOptions"]["python"] == {
+            "pythonPath": str(config.python_path),
+            "analysis": expected_analysis,
+        }
+        assert params["initializationOptions"]["python.analysis"] == expected_analysis
 
     def test_configuration_pull_answers_python_and_python_analysis(self, tmp_path: Path) -> None:
         source_root = tmp_path / "packages" / "pkg-a" / "src"
@@ -369,12 +373,19 @@ class TestPinnedPythonAnalysisConfiguration:
         session = PyrightSession()
         session._config = config
 
-        assert session._resolve_configuration_item({"section": "python"}) == {"pythonPath": str(config.python_path)}
-        assert session._resolve_configuration_item({"section": "python.analysis"}) == {
+        expected_analysis = {
             "extraPaths": [str(source_root)],
             "diagnosticMode": "openFilesOnly",
             "typeCheckingMode": "standard",
         }
+        # Pyright 1.1.414 pulls only ``python`` and reads ``analysis`` nested
+        # inside it — the flat ``python.analysis`` answer is kept for pullers
+        # that ask for that section directly.
+        assert session._resolve_configuration_item({"section": "python"}) == {
+            "pythonPath": str(config.python_path),
+            "analysis": expected_analysis,
+        }
+        assert session._resolve_configuration_item({"section": "python.analysis"}) == expected_analysis
         assert session._resolve_configuration_item({"section": "unrelated"}) == {}
         assert session._resolve_configuration_item({"section": "python"}) != {}  # sanity: config was consulted
 

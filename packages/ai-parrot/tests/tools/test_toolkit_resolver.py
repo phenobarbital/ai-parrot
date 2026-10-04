@@ -145,3 +145,32 @@ def test_resolver_does_not_deadlock_when_host_module_instantiates_a_tool_at_impo
     assert not worker.is_alive(), "resolver deadlocked: host module instantiated a tool at import time"
     assert "acme_ping" in outcome["slugs"]
     assert resolver.entry("acme_ping").source == "host"
+
+
+def test_resolver_class_name_alias_resolves_to_canonical_entry():
+    """Legacy YAML names toolkits by class ("JiraToolkit"); entry()/canonical_slug() accept the alias."""
+    resolver = get_toolkit_resolver()
+    resolver.reload()
+    found = resolver.entry("JiraToolkit")
+    assert found is not None and found.slug == "jira"
+    assert resolver.canonical_slug("JiraToolkit") == "jira"
+    assert resolver.canonical_slug("jirATOOLkit") == "jira"
+    assert resolver.canonical_slug("jira") == "jira"
+    assert resolver.canonical_slug("totally-unknown") is None
+
+
+def test_resolver_class_name_alias_resolves_builtin_class():
+    """An aliased builtin (class entry, no dotted path) resolves to the same class as its slug."""
+    resolver = get_toolkit_resolver()
+    resolver.reload()
+    cls = resolver.resolve("DatasetManager")
+    assert cls is not None and cls is resolver.resolve("dataset_manager")
+
+
+def test_resolver_no_class_name_alias_for_host_entries(host_plugins):
+    """Host entries stay behind HOST_TOOL_PREFIX: their class names never become aliases."""
+    resolver = get_toolkit_resolver()
+    resolver.reload()
+    assert resolver.entry("tp_probe") is not None
+    assert resolver.entry("ProbeToolkit") is None
+    assert resolver.canonical_slug("ProbeToolkit") is None

@@ -502,7 +502,11 @@ class PyrightSession:
         return folders
 
     def _python_settings(self, config: LSPConfig) -> dict[str, Any]:
-        return {"pythonPath": str(config.python_path)}
+        # Pyright pulls only the ``python`` section and reads its analysis
+        # settings from the nested ``analysis`` key — it never requests
+        # ``python.analysis`` on its own, so without this nesting
+        # ``extraPaths`` (and the pinned modes) never reach the server.
+        return {"pythonPath": str(config.python_path), "analysis": self._python_analysis_settings(config)}
 
     def _python_analysis_settings(self, config: LSPConfig) -> dict[str, Any]:
         """Pinned ``python.analysis`` settings per spec §2 point 2.
