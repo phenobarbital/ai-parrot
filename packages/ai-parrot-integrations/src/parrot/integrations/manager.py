@@ -4,6 +4,7 @@ Integration Bot Manager.
 Manages lifecycle of bots (Telegram, MS Teams, WhatsApp) exposing AI-Parrot agents.
 Loads configuration from {ENV_DIR}/integrations_bots.yaml (or telegram_bots.yaml fallback).
 """
+
 # ``annotations`` future-import keeps every annotation a string, so the
 # aiogram symbols (``Bot``/``Dispatcher``) referenced in instance-attribute
 # and method annotations are never evaluated at import time. Combined with the
@@ -33,6 +34,7 @@ from .models import (
     MSAgentIntegrationConfig,
     A2AAgentConfig,
 )
+
 if TYPE_CHECKING:
     from aiogram import Bot, Dispatcher
     from .telegram.wrapper import TelegramAgentWrapper
@@ -44,7 +46,7 @@ if TYPE_CHECKING:
     from parrot.bots.abstract import AbstractBot
 
 
-ENV_DIR = BASE_DIR.joinpath('env')
+ENV_DIR = BASE_DIR.joinpath("env")
 
 
 def _build_jira_toolkit() -> Any:
@@ -99,19 +101,19 @@ class IntegrationBotManager:
     - MS Agent SDK
     """
 
-    def __init__(self, bot_manager: 'BotManager'):
+    def __init__(self, bot_manager: "BotManager"):
         self.bot_manager = bot_manager
         self.logger = logging.getLogger("IntegrationBotManager")
 
         # Active bots
-        self.telegram_bots: Dict[str, Tuple[Bot, Dispatcher, 'TelegramAgentWrapper']] = {}
-        self.msteams_bots: Dict[str, 'MSTeamsAgentWrapper'] = {}
-        self.whatsapp_bots: Dict[str, 'WhatsAppAgentWrapper'] = {}
-        self.slack_bots: Dict[str, 'SlackAgentWrapper'] = {}
+        self.telegram_bots: Dict[str, Tuple[Bot, Dispatcher, "TelegramAgentWrapper"]] = {}
+        self.msteams_bots: Dict[str, "MSTeamsAgentWrapper"] = {}
+        self.whatsapp_bots: Dict[str, "WhatsAppAgentWrapper"] = {}
+        self.slack_bots: Dict[str, "SlackAgentWrapper"] = {}
         # FEAT-555: dev-loop dispatch services, one per Slack bot with `devloop.enabled` (+ their redis clients).
         self._devloop_services: Dict[str, Any] = {}
         self._devloop_redis: Dict[str, Any] = {}
-        self.msagentsdk_bots: Dict[str, 'MSAgentSDKWrapper'] = {}
+        self.msagentsdk_bots: Dict[str, "MSAgentSDKWrapper"] = {}
         self.a2a_bots: Dict[str, Any] = {}
         self.msagent_bots: Dict[str, Any] = {}
 
@@ -140,44 +142,46 @@ class IntegrationBotManager:
     async def load_config(self) -> Optional[IntegrationBotConfig]:
         """Load configuration."""
         config_path = self._get_config_path()
-        
+
         if not config_path.exists():
             self.logger.debug("No integration config found.")
             return None
-            
+
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 data = yaml.safe_load(f)
-                
+
             if not data:
                 return None
-                
+
             # Use the unified config parser
             config = IntegrationBotConfig.from_dict(data)
-            
+
             errors = config.validate()
             if errors:
                 for error in errors:
                     self.logger.error("Config Error: %s", error)
                 return None
-                
+
             self._config = config
             return config
-            
+
         except Exception as e:
             self.logger.error("Error loading integration config: %s", e, exc_info=True)
             return None
 
-    async def _get_agent(self, chatbot_id: str, system_prompt_override: Optional[str] = None) -> Optional['AbstractBot']:
+    async def _get_agent(
+        self, chatbot_id: str, system_prompt_override: Optional[str] = None
+    ) -> Optional["AbstractBot"]:
         """Get agent instance from BotManager."""
         agent = await self.bot_manager.get_bot(chatbot_id)
         if not agent:
             self.logger.error("Agent '%s' not found.", chatbot_id)
             return None
-            
-        if system_prompt_override and hasattr(agent, 'system_prompt'):
+
+        if system_prompt_override and hasattr(agent, "system_prompt"):
             agent.system_prompt = system_prompt_override
-            
+
         return agent
 
     async def startup(self, extra_config: Optional[dict] = None) -> None:
@@ -222,9 +226,7 @@ class IntegrationBotManager:
         if self.human_manager is None:
             import redis.asyncio as aioredis
 
-            self._human_redis = aioredis.from_url(
-                REDIS_URL, decode_responses=True
-            )
+            self._human_redis = aioredis.from_url(REDIS_URL, decode_responses=True)
             self.human_manager = HumanInteractionManager(
                 redis_url=REDIS_URL,
             )
@@ -248,6 +250,7 @@ class IntegrationBotManager:
         bot = Bot(token=config.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
         dp = Dispatcher()
         from .telegram.wrapper import TelegramAgentWrapper
+
         # Resolve the aiohttp app so the wrapper can pull shared services
         # (``jira_oauth_manager``, ``authdb``/``database``, ``redis``) for
         # the FEAT-108 combined auth flow and /connect_jira. If the bot
@@ -286,38 +289,26 @@ class IntegrationBotManager:
             voice_config=config.voice_config,
         )
         human_manager.register_channel(name, human_channel)
-        await human_channel.register_response_handler(
-            human_manager.receive_response
-        )
-        await human_channel.register_cancel_handler(
-            human_manager.cancel_pending
-        )
+        await human_channel.register_response_handler(human_manager.receive_response)
+        await human_channel.register_cancel_handler(human_manager.cancel_pending)
         dp.include_router(human_channel.router)
         dp.include_router(wrapper.router)
 
         # Expose manager + channel key on the agent so tools can find them
         if agent is not None:
-            setattr(agent, "_human_manager", human_manager)
-            setattr(agent, "_human_channel_key", name)
+            agent._human_manager = human_manager
+            agent._human_channel_key = name
 
         self.telegram_bots[name] = (bot, dp, wrapper)
 
-        task = asyncio.create_task(
-            self._run_polling(name, dp, bot),
-            name=f"telegram_polling_{name}"
-        )
+        task = asyncio.create_task(self._run_polling(name, dp, bot), name=f"telegram_polling_{name}")
         self._polling_tasks.append(task)
-        self.logger.info(
-            "Started Telegram bot '%s' (HITL channel registered as '%s')", name, name
-        )
+        self.logger.info("Started Telegram bot '%s' (HITL channel registered as '%s')", name, name)
 
     async def _run_polling(self, name: str, dp: Dispatcher, bot: Bot):
         try:
             await dp.start_polling(
-                bot,
-                allowed_updates=["message", "callback_query"],
-                handle_signals=False,
-                close_bot_session=True
+                bot, allowed_updates=["message", "callback_query"], handle_signals=False, close_bot_session=True
             )
         except asyncio.CancelledError:
             pass
@@ -350,9 +341,7 @@ class IntegrationBotManager:
                         redirect_uri=config.jira_redirect_uri,
                         app=app,
                     )
-                    self.logger.info(
-                        "MS Teams bot '%s': initialized JiraOAuthManager", name
-                    )
+                    self.logger.info("MS Teams bot '%s': initialized JiraOAuthManager", name)
                 except Exception as exc:  # noqa: BLE001
                     self.logger.warning(
                         "MS Teams bot '%s': failed to initialize JiraOAuthManager: %s",
@@ -362,6 +351,7 @@ class IntegrationBotManager:
 
         # Initialize Wrapper (which registers the route)
         from .msteams.wrapper import MSTeamsAgentWrapper
+
         wrapper = MSTeamsAgentWrapper(
             agent=agent,
             config=config,
@@ -379,6 +369,7 @@ class IntegrationBotManager:
 
         # Initialize Wrapper (which registers the webhook routes)
         from .whatsapp.wrapper import WhatsAppAgentWrapper
+
         wrapper = WhatsAppAgentWrapper(
             agent=agent,
             config=config,
@@ -386,7 +377,6 @@ class IntegrationBotManager:
         )
         self.whatsapp_bots[name] = wrapper
         self.logger.info("Started WhatsApp bot '%s'", name)
-
 
     async def _start_msagentsdk_bot(self, name: str, config: MSAgentSDKConfig) -> None:
         """Start a Microsoft 365 Agents SDK bot.
@@ -422,9 +412,7 @@ class IntegrationBotManager:
     # authenticated routes of the agent it belongs to — see ``_wire_a2a_security``.
     _A2A_PROTECTED_SEGMENTS: Tuple[str, ...] = ("message", "tasks", "rpc")
 
-    def _wire_a2a_security(
-        self, app: web.Application, config: Any, base_path: str
-    ) -> None:
+    def _wire_a2a_security(self, app: web.Application, config: Any, base_path: str) -> None:
         """Build and attach a path-scoped ``A2ASecurityMiddleware`` for an A2A agent.
 
         Wires whichever authenticators correspond to the security fields set
@@ -520,9 +508,7 @@ class IntegrationBotManager:
         # keeps agents isolated even when their base paths nest — e.g. agent 1
         # at ``/a2a`` must NOT catch agent 2's ``/a2a/<name>/...`` routes, and
         # the public ``/a2a/directory`` listing must stay unauthenticated.
-        protected_prefixes = tuple(
-            f"{base_path}/{segment}" for segment in self._A2A_PROTECTED_SEGMENTS
-        )
+        protected_prefixes = tuple(f"{base_path}/{segment}" for segment in self._A2A_PROTECTED_SEGMENTS)
         inner_middleware = middleware.middleware
 
         @web.middleware
@@ -533,15 +519,12 @@ class IntegrationBotManager:
 
         app.middlewares.append(scoped_a2a_security)
         self.logger.info(
-            "Wired scoped A2ASecurityMiddleware for agent config '%s' "
-            "(guarding paths under %s)",
+            "Wired scoped A2ASecurityMiddleware for agent config '%s' " "(guarding paths under %s)",
             config.name,
             base_path,
         )
 
-    def _parse_credential_configs(
-        self, raw_configs: List[Dict[str, Any]], bot_name: str
-    ) -> List[Any]:
+    def _parse_credential_configs(self, raw_configs: List[Dict[str, Any]], bot_name: str) -> List[Any]:
         """Parse raw credential dicts into ``ProviderCredentialConfig`` objects.
 
         Each entry is validated independently: a malformed dict is skipped with
@@ -637,6 +620,7 @@ class IntegrationBotManager:
         # ABAC chain. Covers any base_path, including non-default values
         # and collision-avoidance suffixes.
         from navigator_auth.conf import AUTH_EXCLUDE_LIST_KEY  # noqa: E402
+
         exclude_list: list = app.setdefault(AUTH_EXCLUDE_LIST_KEY, [])
         for pattern in (base_path, f"{base_path}/*"):
             if pattern not in exclude_list:
@@ -651,8 +635,7 @@ class IntegrationBotManager:
         )
 
         has_security = bool(
-            config.jwt_secret or config.api_key or config.mtls_ca_cert
-            or config.hmac_secret or config.basic_credentials
+            config.jwt_secret or config.api_key or config.mtls_ca_cert or config.hmac_secret or config.basic_credentials
         )
 
         if config.port:
@@ -848,6 +831,7 @@ class IntegrationBotManager:
             # Exclude this companion's A2A surface from the navigator
             # auth/ABAC chain — same rationale as _start_a2a_bot().
             from navigator_auth.conf import AUTH_EXCLUDE_LIST_KEY  # noqa: E402
+
             exclude_list: list = app.setdefault(AUTH_EXCLUDE_LIST_KEY, [])
             for pattern in (companion_path, f"{companion_path}/*"):
                 if pattern not in exclude_list:
@@ -871,9 +855,7 @@ class IntegrationBotManager:
             # Register the single ``/.well-known/agent.json`` route only if no
             # earlier A2A agent (or companion) already claimed it on this app.
             register_well_known = not app.get("a2a_well_known_registered", False)
-            a2a_server.setup(
-                app, url=config.url, register_well_known=register_well_known
-            )
+            a2a_server.setup(app, url=config.url, register_well_known=register_well_known)
             app["a2a_well_known_registered"] = True
             card = a2a_server.get_agent_card()
             app["a2a_discovery_registry"][name] = card
@@ -891,7 +873,9 @@ class IntegrationBotManager:
         # (heartbeats, raw WebSocket frames, HTTP request dumps, etc.)
         logging.getLogger("slack_sdk").setLevel(logging.WARNING)
 
-        agent = await self._get_agent(config.chatbot_id, config.system_prompt_override if hasattr(config, "system_prompt_override") else None)
+        agent = await self._get_agent(
+            config.chatbot_id, config.system_prompt_override if hasattr(config, "system_prompt_override") else None
+        )
         if not agent:
             return
 
@@ -904,9 +888,7 @@ class IntegrationBotManager:
             existing = app.get("jira_oauth_manager")
             if existing is not None:
                 jira_oauth_manager = existing
-                self.logger.info(
-                    "Slack bot '%s': reusing existing JiraOAuthManager from app", name
-                )
+                self.logger.info("Slack bot '%s': reusing existing JiraOAuthManager from app", name)
             else:
                 try:
                     from parrot.auth.jira_oauth import JiraOAuthManager
@@ -917,9 +899,7 @@ class IntegrationBotManager:
                         redirect_uri=config.jira_redirect_uri,
                         app=app,
                     )
-                    self.logger.info(
-                        "Slack bot '%s': initialized JiraOAuthManager", name
-                    )
+                    self.logger.info("Slack bot '%s': initialized JiraOAuthManager", name)
                 except Exception as exc:  # noqa: BLE001
                     self.logger.warning(
                         "Slack bot '%s': failed to initialize JiraOAuthManager: %s",
@@ -928,6 +908,7 @@ class IntegrationBotManager:
                     )
 
         from .slack.wrapper import SlackAgentWrapper
+
         wrapper = SlackAgentWrapper(
             agent=agent,
             config=config,
@@ -987,6 +968,7 @@ class IntegrationBotManager:
             self.logger.info("Started Slack bot '%s' (Socket Mode)", name)
         else:
             self.logger.info("Started Slack bot '%s' (Webhook Mode)", name)
+
     async def _start_matrix_crew(self, config_path: str) -> None:
         """Start a Matrix multi-agent crew from a YAML config file.
 
@@ -1001,32 +983,27 @@ class IntegrationBotManager:
             self.matrix_crew = transport
             self.logger.info("✅ Started Matrix crew transport from %s", config_path)
         except Exception as exc:
-            self.logger.error(
-                "Failed to start Matrix crew transport: %s", exc, exc_info=True
-            )
+            self.logger.error("Failed to start Matrix crew transport: %s", exc, exc_info=True)
 
     async def shutdown(self) -> None:
         """Shutdown bots."""
         self.logger.info("Shutting down Integration Manager...")
-        
+
         # First, cancel all polling tasks to stop the polling loops
         for task in self._polling_tasks:
             if not task.done():
                 task.cancel()
-        
+
         # Wait for all polling tasks to complete (with timeout)
         if self._polling_tasks:
             try:
-                await asyncio.wait_for(
-                    asyncio.gather(*self._polling_tasks, return_exceptions=True),
-                    timeout=5.0
-                )
+                await asyncio.wait_for(asyncio.gather(*self._polling_tasks, return_exceptions=True), timeout=5.0)
                 self.logger.info("All polling tasks cancelled successfully")
             except asyncio.TimeoutError:
                 self.logger.warning("Timeout waiting for polling tasks to cancel")
             except Exception as e:
                 self.logger.error("Error while cancelling polling tasks: %s", e)
-        
+
         # Now close bot sessions
         for name, (bot, dp, _) in self.telegram_bots.items():
             try:
@@ -1093,7 +1070,7 @@ class IntegrationBotManager:
                 await wrapper.stop()
             except Exception as e:
                 self.logger.error("Error stopping Slack bot '%s': %s", name, e)
-        
+
         # Stop dedicated-port A2A runners (shared-app A2A bots are torn down
         # with the shared app itself and need no explicit cleanup here).
         for runner in self._a2a_runners:
@@ -1109,9 +1086,7 @@ class IntegrationBotManager:
                 await self.matrix_crew.stop()
                 self.logger.info("Matrix crew transport stopped")
             except Exception as exc:
-                self.logger.error(
-                    "Error stopping Matrix crew transport: %s", exc
-                )
+                self.logger.error("Error stopping Matrix crew transport: %s", exc)
             self.matrix_crew = None
 
         # Close HITL manager (cancels pending futures + closes its Redis)
