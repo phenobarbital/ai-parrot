@@ -16,14 +16,14 @@
       "feature_id": "FEAT-631",
       "feature": "scheduler-multiworker-correctness",
       "spec": "sdd/specs/scheduler-multiworker-correctness.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "no dependencies; creates parrot/scheduler/jobs.py (+ its own test file) \u2014 runs concurrently with TASK-4062",
+      "parallelism_notes": "no dependencies; creates parrot/scheduler/jobs.py (+ its own test file) — runs concurrently with TASK-4062",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-04T23:42:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4061-scheduler-job-trampolines.md"
     },
@@ -34,14 +34,14 @@
       "feature_id": "FEAT-631",
       "feature": "scheduler-multiworker-correctness",
       "spec": "sdd/specs/scheduler-multiworker-correctness.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "no dependencies; creates parrot/scheduler/coordination.py (+ its own test file) \u2014 runs concurrently with TASK-4061",
+      "parallelism_notes": "no dependencies; creates parrot/scheduler/coordination.py (+ its own test file) — runs concurrently with TASK-4061",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-04T23:42:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4062-scheduler-fire-coordination.md"
     },
@@ -52,7 +52,7 @@
       "feature_id": "FEAT-631",
       "feature": "scheduler-multiworker-correctness",
       "spec": "sdd/specs/scheduler-multiworker-correctness.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -61,7 +61,7 @@
       "parallel": true,
       "parallelism_notes": "needs jobs.SKIPPED from TASK-4061 (scheduler/jobs.py) for the job_success short-circuit; first of three tasks modifying scheduler/manager.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-04T23:42:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4063-scheduler-listeners-on-aiohttp.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-631",
       "feature": "scheduler-multiworker-correctness",
       "spec": "sdd/specs/scheduler-multiworker-correctness.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -83,7 +83,7 @@
       "parallel": true,
       "parallelism_notes": "imports jobs.run_db_schedule/run_auto_schedule/register_manager from TASK-4061 (scheduler/jobs.py); imports CoordinatedAsyncIOExecutor/build_fire_coordinator from TASK-4062 (scheduler/coordination.py); serialized after TASK-4063 because both modify scheduler/manager.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-04T23:42:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4064-scheduler-manager-recheck-wiring.md"
     },
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-631",
       "feature": "scheduler-multiworker-correctness",
       "spec": "sdd/specs/scheduler-multiworker-correctness.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,7 +103,7 @@
       "parallel": true,
       "parallelism_notes": "modifies scheduler/manager.py after TASK-4064 (shared file) and uses its _execution_fields/_fire_coordinator wiring; also uses jobs.run_db_schedule_now (TASK-4061) and FireCoordinationError (TASK-4062) transitively",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-04T23:42:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4065-scheduler-run-now-cross-worker.md"
     },
@@ -114,7 +114,7 @@
       "feature_id": "FEAT-631",
       "feature": "scheduler-multiworker-correctness",
       "spec": "sdd/specs/scheduler-multiworker-correctness.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -123,7 +123,7 @@
       "parallel": true,
       "parallelism_notes": "integration tests exercise the complete run-now/unavailable behaviour finished in TASK-4065 (scheduler/manager.py) plus RedisFireCoordinator from TASK-4062; docs cite final names",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-04T23:42:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4066-scheduler-multiworker-tests-docs.md"
     }
