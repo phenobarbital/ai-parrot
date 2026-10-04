@@ -29,9 +29,7 @@ async def manager():
 
 class TestStartHeadless:
     async def test_no_dsn_no_redis_memory_jobstore(self, manager):
-        with patch.object(
-            manager, "load_schedules_from_db", new=AsyncMock()
-        ) as mock_load:
+        with patch.object(manager, "load_schedules_from_db", new=AsyncMock()) as mock_load:
             await manager.start_headless()
 
         assert manager.scheduler.running is True
@@ -41,10 +39,9 @@ class TestStartHeadless:
         mock_load.assert_not_awaited()
 
     async def test_redis_not_constructed_when_disabled(self, manager):
-        with patch(
-            "parrot.scheduler.manager.RedisJobStore"
-        ) as mock_redis_cls, patch.object(
-            manager, "load_schedules_from_db", new=AsyncMock()
+        with (
+            patch("parrot.scheduler.manager.RedisJobStore") as mock_redis_cls,
+            patch.object(manager, "load_schedules_from_db", new=AsyncMock()),
         ):
             await manager.start_headless(use_redis=False)
 
@@ -60,10 +57,9 @@ class TestStartHeadless:
         """FEAT-422: the standalone headless-daemon path (no explicit
         `register_listeners=`) must still get `define_listeners()` wired,
         per TASK-2209's original requirement."""
-        with patch.object(
-            manager, "define_listeners", new=MagicMock()
-        ) as mock_define, patch.object(
-            manager, "load_schedules_from_db", new=AsyncMock()
+        with (
+            patch.object(manager, "define_listeners", new=MagicMock()) as mock_define,
+            patch.object(manager, "load_schedules_from_db", new=AsyncMock()),
         ):
             await manager.start_headless()
 
@@ -73,10 +69,9 @@ class TestStartHeadless:
         """`register_listeners=False` (used by `on_startup()`) must NOT
         wire the APScheduler event listeners -- they were never called on
         the aiohttp path before FEAT-422, and this keeps it that way."""
-        with patch.object(
-            manager, "define_listeners", new=MagicMock()
-        ) as mock_define, patch.object(
-            manager, "load_schedules_from_db", new=AsyncMock()
+        with (
+            patch.object(manager, "define_listeners", new=MagicMock()) as mock_define,
+            patch.object(manager, "load_schedules_from_db", new=AsyncMock()),
         ):
             await manager.start_headless(register_listeners=False)
 
@@ -84,11 +79,10 @@ class TestStartHeadless:
 
     async def test_dsn_creates_pool_and_loads_db(self, manager):
         fake_pool = AsyncMock()
-        with patch(
-            "parrot.scheduler.manager.AsyncDB", return_value=fake_pool
-        ) as mock_asyncdb, patch.object(
-            manager, "load_schedules_from_db", new=AsyncMock()
-        ) as mock_load:
+        with (
+            patch("parrot.scheduler.manager.AsyncDB", return_value=fake_pool) as mock_asyncdb,
+            patch.object(manager, "load_schedules_from_db", new=AsyncMock()) as mock_load,
+        ):
             await manager.start_headless(dsn="postgres://fake")
 
         mock_asyncdb.assert_called_once_with("pg", dsn="postgres://fake")
@@ -104,9 +98,10 @@ class TestStartHeadless:
 
     async def test_stop_headless_closes_owned_pool(self, manager):
         fake_pool = AsyncMock()
-        with patch(
-            "parrot.scheduler.manager.AsyncDB", return_value=fake_pool
-        ), patch.object(manager, "load_schedules_from_db", new=AsyncMock()):
+        with (
+            patch("parrot.scheduler.manager.AsyncDB", return_value=fake_pool),
+            patch.object(manager, "load_schedules_from_db", new=AsyncMock()),
+        ):
             await manager.start_headless(dsn="postgres://fake")
 
         await manager.stop_headless()
@@ -125,9 +120,7 @@ class TestAiohttpDelegation:
         fake_conn = MagicMock(name="agentdb-pool")
         fake_app = {"bot_manager": None}
 
-        with patch.object(
-            manager, "start_headless", new=AsyncMock()
-        ) as mock_start:
+        with patch.object(manager, "start_headless", new=AsyncMock()) as mock_start:
             await manager.on_startup(fake_app, fake_conn)
 
         assert manager._pool is fake_conn
@@ -138,10 +131,9 @@ class TestAiohttpDelegation:
         fake_conn = MagicMock(name="agentdb-pool")
         fake_app = {"bot_manager": None}
 
-        with patch.object(
-            manager, "define_listeners", new=MagicMock()
-        ) as mock_define, patch.object(
-            manager, "load_schedules_from_db", new=AsyncMock()
+        with (
+            patch.object(manager, "define_listeners", new=MagicMock()) as mock_define,
+            patch.object(manager, "load_schedules_from_db", new=AsyncMock()),
         ):
             await manager.on_startup(fake_app, fake_conn)
 

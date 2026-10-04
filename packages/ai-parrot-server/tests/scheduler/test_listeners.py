@@ -32,9 +32,7 @@ def test_job_status_tolerates_missing_job(manager):
 
 def test_job_success_ignores_skipped(manager):
     """An intentionally skipped execution does not schedule success processing."""
-    manager.scheduler.get_job = MagicMock(
-        return_value=SimpleNamespace(name="n", kwargs={"schedule_id": "s1"})
-    )
+    manager.scheduler.get_job = MagicMock(return_value=SimpleNamespace(name="n", kwargs={"schedule_id": "s1"}))
     manager._job_context["s1"] = {"agent_name": "agent"}
     event = SimpleNamespace(
         job_id="job-1",
