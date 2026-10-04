@@ -1,0 +1,30 @@
+{
+  "feature": "schema-service-fixes",
+  "feature_id": "FEAT-632",
+  "spec": "sdd/specs/schema-service-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-05T01:50:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4067",
+      "slug": "atomic-ddl-fold",
+      "title": "Atomic DDL fold in SchemaPlaneService.ingest_ddl",
+      "feature_id": "FEAT-632",
+      "feature": "schema-service-fixes",
+      "spec": "sdd/specs/schema-service-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Single task.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4067-atomic-ddl-fold.md",
+      "from_issue": "issue:c8423fbace97"
+    }
+  ]
+}
