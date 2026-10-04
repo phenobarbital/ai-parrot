@@ -142,7 +142,7 @@ dependencies = [
     "aiohttp-sse-client==0.2.1",
     "aiohttp-cors>=0.8.1",
     "brotli==1.2.0",
-    "urllib3==2.7.0",
+    "urllib3==2.8.0",
     # parrot.interfaces.http imports proxylists.proxies unconditionally at
     # module level, so HTTPService (the base of most HTTP toolkits) cannot be
     # imported without it. It was previously undeclared — a bare install of
