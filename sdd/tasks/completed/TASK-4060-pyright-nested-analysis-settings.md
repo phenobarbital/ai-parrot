@@ -58,4 +58,12 @@ ruff check packages/ai-parrot-tools/src/parrot_tools/lsp/session.py packages/ai-
 ```
 
 ## Completion Note
-_(filled on close)_
+**Completed**: 2026-10-05 by agent:sdd-fix, code commit `ea68e7ad9`. Verified.
+
+- Root cause, confirmed from live JSON-RPC traffic: Pyright 1.1.414 pulls only the `python` and
+  `pyright` sections and never requests `python.analysis`, so `extraPaths` was never applied.
+- Fix: `_python_settings` nests `analysis` under the `python` section. This one change covers both
+  the pull and `initializationOptions`. The flat `python.analysis` answer is kept.
+- Validation: `tests/lsp/` 168 passed. `PARROT_LSP_REQUIRE_PYRIGHT=1` real-Pyright module 3 passed,
+  run with pyright 1.1.414 on PATH (not skipped). ruff and black are clean.
+- Resolves ledger `issue:f439688c6651`.
