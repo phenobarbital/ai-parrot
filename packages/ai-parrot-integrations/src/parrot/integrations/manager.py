@@ -148,8 +148,8 @@ class IntegrationBotManager:
             return None
 
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
+            raw = await asyncio.to_thread(config_path.read_text, encoding="utf-8")
+            data = yaml.safe_load(raw)
 
             if not data:
                 return None
@@ -1005,7 +1005,7 @@ class IntegrationBotManager:
                 self.logger.error("Error while cancelling polling tasks: %s", e)
 
         # Now close bot sessions
-        for name, (bot, dp, _) in self.telegram_bots.items():
+        for name, (bot, _dp, _) in self.telegram_bots.items():
             try:
                 self.logger.debug("Closing session for bot '%s'", name)
                 await bot.session.close()
