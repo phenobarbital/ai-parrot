@@ -1051,6 +1051,21 @@ class IntegrationBotManager:
             except Exception as e:
                 self.logger.error("Error stopping MSAgent bot '%s': %s", name, e)
 
+        # Release MS Teams wrapper resources (FormDesigner aiohttp session,
+        # voice transcriber); each close is isolated so one failure never
+        # skips the other.
+        for name, wrapper in self.msteams_bots.items():
+            try:
+                self.logger.debug("Closing FormDesigner client for MS Teams bot '%s'", name)
+                await wrapper.close_formdesigner_client()
+            except Exception as e:
+                self.logger.error("Error closing FormDesigner client for MS Teams bot '%s': %s", name, e)
+            try:
+                self.logger.debug("Closing voice transcriber for MS Teams bot '%s'", name)
+                await wrapper.close_voice_transcriber()
+            except Exception as e:
+                self.logger.error("Error closing voice transcriber for MS Teams bot '%s': %s", name, e)
+
         # FEAT-555: stop dev-loop services first (cancels state tails only — children keep running by decision).
         for name, service in self._devloop_services.items():
             try:
