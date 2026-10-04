@@ -1,6 +1,6 @@
 {
-  "next_task_id": 4061,
+  "next_task_id": 4067,
   "next_feature_id": 632,
-  "updated_at": "2026-10-04T23:22:43+00:00",
-  "updated_by": "lsp-test-pyright-integration-fixes"
+  "updated_at": "2026-10-04T23:29:38+00:00",
+  "updated_by": "scheduler-multiworker-correctness"
 }
