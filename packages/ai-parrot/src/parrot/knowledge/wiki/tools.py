@@ -9,15 +9,18 @@ via a Bash-invoked CLI.
 
 import asyncio
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, date as _date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, Literal, Union
 
 from pydantic import BaseModel, Field
 
+from parrot.knowledge.lint import LintOptions, LintRunner
+from parrot.knowledge.lint.routing import FindingRouter
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results
 from parrot.knowledge.wiki.decisions.models import ADR_CATEGORY, ADR_MANAGED_PAGE
+from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
 from parrot.knowledge.wiki.project import WikiProjectConfig
 from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, estimate_tokens
 from parrot.tools.abstract import AbstractTool, ToolResult
@@ -526,6 +529,136 @@ class WikiStatusTool(AbstractTool):
         return ToolResult(result=stats)
 
 
+class WikiLintInput(BaseModel):
+    """Arguments for wiki_lint."""
+
+    rules: list[str] | None = Field(default=None, description="Rule ids or packs to run (default: all deterministic).")
+    skip: list[str] = Field(default_factory=list, description="Rule ids to skip.")
+    fix: bool = Field(default=False, description="Apply safe, idempotent fixes (never deletes).")
+    llm: bool = Field(default=False, description="Run the opt-in LLM contradiction pass.")
+
+
+class _StorageDirConfig:
+    """Minimal config exposing the absolute wiki storage dir to the lint runner."""
+
+    def __init__(self, storage_dir: Path) -> None:
+        self.storage_dir = storage_dir
+        self.wiki_name = ""
+
+
+class WikiLintTool(AbstractTool):
+    """Lint the wiki knowledge graph and report integrity findings."""
+
+    name = "wiki_lint"
+    description = (
+        "Lint the wiki knowledge graph: broken links, duplicate slugs, stale memories, "
+        "ADR conflicts; fix=true applies safe fixes."
+    )
+    args_schema = WikiLintInput
+
+    def __init__(self, store: BaseWikiStore, storage_dir: Path | None = None):
+        super().__init__(name=self.name, description=self.description)
+        self._store = store
+        self._storage_dir = storage_dir
+
+    async def _execute(
+        self,
+        rules: list[str] | None = None,
+        skip: list[str] | None = None,
+        fix: bool = False,
+        llm: bool = False,
+    ) -> ToolResult:
+        """Run lint and return a compact, machine-readable summary."""
+        report_dir = self._storage_dir / "lint" if self._storage_dir is not None else None
+        report = await LintRunner(
+            self._store,
+            root=self._storage_dir.parent if self._storage_dir is not None else None,
+            config=_StorageDirConfig(self._storage_dir) if self._storage_dir is not None else None,
+            router=FindingRouter(self._store, report_dir=report_dir),
+        ).run(LintOptions(rules=rules, skip=skip or [], fix=fix, llm=llm, report_dir=report_dir))
+        return ToolResult(
+            result={
+                "counts": report.counts,
+                "fixed": len(report.fixed),
+                "top": [finding.model_dump() for finding in report.findings[:20]],
+                "report_dir": str(report_dir) if report_dir is not None else None,
+            }
+        )
+
+
+class WikiStandupInput(BaseModel):
+    """Explicit brief options; persistence and model calls are opt-in over MCP."""
+
+    period: Literal["day", "week", "month"] = Field(default="day", description="Brief period.")
+    date: str | None = Field(default=None, description="Anchor date (YYYY-MM-DD); default today.")
+    team: bool = Field(default=False, description="Include team items, not only yours.")
+    horizon_days: int | None = Field(default=None, description="Meeting horizon in days (1-90).")
+    language: Literal["en", "es"] | None = Field(default=None, description="Brief language.")
+    store: bool = Field(default=False, description="Persist the brief as a wiki page on the local plane.")
+    write_file: bool = Field(default=False, description="Also write the brief Markdown file.")
+    use_llm: bool = Field(default=False, description="Allow a model call to summarise the plate.")
+
+
+class WikiStandupTool(AbstractTool):
+    """Render a wiki brief; write only when explicitly requested, to local storage."""
+
+    name = "wiki_standup"
+    description = "Render a daily, weekly or monthly wiki brief. Read-only unless writes are explicitly enabled."
+    args_schema = WikiStandupInput
+
+    def __init__(self, store: BaseWikiStore, root: Path, config: WikiProjectConfig) -> None:
+        super().__init__(name=self.name, description=self.description)
+        self._store = store
+        self._root = root
+        self._config = config
+
+    async def _execute(self, **kwargs: Any) -> ToolResult:
+        """Run the shared pipeline and return Markdown with write receipts."""
+        from parrot.knowledge.wiki.standup.pipeline import StandupOptions, StandupStoreError, run
+        from parrot.knowledge.wiki.project import WikiEffectiveConfig, resolve_wiki_env
+        from parrot.knowledge.wiki.standup.render import render_markdown
+
+        try:
+            params = WikiStandupInput(**kwargs)
+            anchor = _date.fromisoformat(params.date) if params.date else None
+            horizon = params.horizon_days
+            if horizon is not None and not 1 <= horizon <= 90:
+                raise ValueError("horizon_days must be between 1 and 90")
+        except ValueError as exc:  # pydantic ValidationError is a ValueError
+            return ToolResult(success=False, status="error", result=None, error=f"Invalid wiki_standup input: {exc}")
+
+        writing = params.store or params.write_file
+        options = StandupOptions(
+            period=params.period,
+            anchor=anchor,
+            horizon_days=horizon,
+            team=params.team,
+            language=params.language,
+            use_llm=params.use_llm,
+            write_page=params.store,
+            write_file=params.write_file,
+        )
+        # Writes must land on the true local plane resolved from root/config, never on a
+        # (possibly federated / namespace-scoped) facade; a read-only run reads through the given store.
+        try:
+            effective = WikiEffectiveConfig(config=self._config, env=resolve_wiki_env())
+            doc = await run(self._root, options, store=None if writing else self._store, effective=effective)
+        except StandupStoreError as exc:
+            return ToolResult(success=False, status="error", result=None, error=str(exc))
+        except Exception as exc:  # noqa: BLE001 -- surfaced as a structured tool error
+            self.logger.warning("wiki_standup failed: %s", exc)
+            return ToolResult(success=False, status="error", result=None, error=str(exc))
+        return ToolResult(
+            result={
+                "markdown": render_markdown(doc, doc.language),
+                "brief_id": doc.window.brief_id,
+                "written_page": doc.written_page,
+                "written_file": doc.written_file,
+                "diagnostics": list(doc.diagnostics),
+            }
+        )
+
+
 class VaultIngestTool(AbstractTool):
     """(Re)build the wiki retrieval plane from an Obsidian vault."""
 
@@ -643,26 +776,39 @@ if TYPE_CHECKING:
     from parrot.knowledge.wiki.ledger.service import LedgerService
 
 
+# The ledger tool schemas mirror the `wikitoolkit ledger` CLI options one for
+# one — same choices, same required fields — so an agent filing through MCP
+# cannot persist a kind or severity the CLI would have rejected.
+
+
 class LedgerOpenInput(BaseModel):
-    title: str = Field(..., description="Issue title")
-    body: str = Field(..., description="Issue description")
-    kind: str = Field(default="bug", description="Issue kind: bug|task|insight|spec")
-    severity: str = Field(default="minor", description="Issue severity: minor|major|critical")
-    discovered_from: str = Field(default="", description="Source of discovery")
-    about: list[str] | None = Field(default=None, description="List of related page IDs")
+    title: str = Field(..., description="One-line issue title")
+    body: str = Field(..., description="What is wrong, where (file + symbol), why it matters, suggested fix")
+    kind: IssueKind = Field(default="bug", description="Issue kind: bug|tech_debt|feature_gap|vulnerability")
+    severity: IssueSeverity = Field(default="minor", description="Issue severity: critical|major|minor|low")
+    discovered_from: str = Field(
+        ..., min_length=1, description="Source: spec:<FEAT-ID>, task:<TASK-ID> or review:<TASK-ID>"
+    )
+    about: list[str] | None = Field(
+        default=None, description="Affected symbols/files, repo-relative, e.g. sym:pkg/mod.py#Func"
+    )
 
 
 class LedgerReadyInput(BaseModel):
-    kind: str | None = Field(default=None, description="Filter by issue kind: bug|task|insight|spec")
+    kind: IssueKind | None = Field(
+        default=None, description="Filter by issue kind: bug|tech_debt|feature_gap|vulnerability"
+    )
 
 
 class LedgerClaimInput(BaseModel):
     issue_id: str = Field(..., description="Issue ID to claim")
+    actor: str = Field(default="agent:mcp", description="Actor claiming the issue, e.g. agent:sdd-fix")
 
 
 class LedgerCloseInput(BaseModel):
     issue_id: str = Field(..., description="Issue ID to close")
     reason: str = Field(..., description="Reason for closing")
+    actor: str = Field(default="agent:mcp", description="Actor closing the issue, e.g. agent:sdd-fix")
     resolved_by: str | None = Field(
         default=None, description="Evidence that resolved the issue, e.g. commit:<sha> or task:TASK-<NNN> (FEAT-572 S4)"
     )
@@ -688,17 +834,17 @@ class LedgerOpenTool(AbstractTool):
         self,
         title: str,
         body: str,
-        kind: str = "bug",
-        severity: str = "minor",
-        discovered_from: str = "",
+        discovered_from: str,
+        kind: IssueKind = "bug",
+        severity: IssueSeverity = "minor",
         about: list[str] | None = None,
     ) -> ToolResult:
         try:
             issue_id = await self._ledger_service.open_issue(
                 title=title,
                 body=body,
-                kind=kind,  # type: ignore
-                severity=severity,  # type: ignore
+                kind=kind,
+                severity=severity,
                 discovered_from=discovered_from,
                 about=about,
                 actor="agent:mcp",
@@ -719,13 +865,11 @@ class LedgerReadyTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._ledger_service = ledger_service
 
-    async def _execute(self, kind: str | None = None) -> ToolResult:
+    async def _execute(self, kind: IssueKind | None = None) -> ToolResult:
         try:
-            # Convert string kind to IssueKind enum if provided
-            from parrot.knowledge.wiki.ledger.events import IssueKind
-
-            kind_enum = IssueKind(kind) if kind else None  # type: ignore
-            issues = await self._ledger_service.ready_work(kind_enum)
+            # IssueKind is a typing.Literal: the schema already validated the
+            # value, and calling the Literal would raise TypeError.
+            issues = await self._ledger_service.ready_work(kind)
             return ToolResult(result={"issues": issues})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
@@ -742,9 +886,9 @@ class LedgerClaimTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._ledger_service = ledger_service
 
-    async def _execute(self, issue_id: str) -> ToolResult:
+    async def _execute(self, issue_id: str, actor: str = "agent:mcp") -> ToolResult:
         try:
-            success = await self._ledger_service.claim(issue_id, "agent:mcp")
+            success = await self._ledger_service.claim(issue_id, actor)
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
@@ -761,11 +905,13 @@ class LedgerCloseTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._ledger_service = ledger_service
 
-    async def _execute(self, issue_id: str, reason: str, resolved_by: str | None = None) -> ToolResult:
-        """Close a ledger issue, carrying the evidence reference through (actor stays ``agent:mcp``)."""
+    async def _execute(
+        self, issue_id: str, reason: str, resolved_by: str | None = None, actor: str = "agent:mcp"
+    ) -> ToolResult:
+        """Close a ledger issue, carrying the evidence reference and actor through."""
         try:
             kwargs = {"resolved_by": resolved_by} if resolved_by is not None else {}
-            success = await self._ledger_service.close_issue(issue_id, reason, "agent:mcp", **kwargs)
+            success = await self._ledger_service.close_issue(issue_id, reason, actor, **kwargs)
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
@@ -820,7 +966,13 @@ def create_wiki_tools(
         WikiRememberTool(store, storage_dir=storage_dir),
         WikiNoteTool(store, storage_dir=storage_dir),
         WikiStatusTool(store),
+        WikiLintTool(store, storage_dir=storage_dir),
     ]
+
+    # wiki_standup needs the project root + config to resolve the true local plane for opt-in writes;
+    # context-free callers (no root/config) deliberately get no standup tool.
+    if root is not None and config is not None:
+        tools.append(WikiStandupTool(store, root, config))
 
     # Add ledger tools when ledger_service is provided
     if ledger_service is not None:

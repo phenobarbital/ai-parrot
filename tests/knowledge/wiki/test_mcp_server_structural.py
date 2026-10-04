@@ -33,6 +33,8 @@ class TestMCPServerStructuralRegistration:
             "wiki_remember",
             "wiki_note",
             "wiki_status",
+            "wiki_lint",
+            "wiki_standup",
             "wiki_symbol_lookup",
             "wiki_code_outline",
             "wiki_blast_radius",

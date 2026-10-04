@@ -1,0 +1,35 @@
+- **`parrot.interfaces.*` is a mixins package.** Its docstring defines it as
+  "Mixins for bot functionality" — connection/capability interfaces (aws,
+  database, http). Placing `ToolCallDelegate` there breaks the convention.
+  The protocol and models belong in `parrot/bots/flows/plan/delegate.py` or a
+  `plan/delegate/` subpackage.
+  *Evidence*: F004
+
+- **FEAT-585 (plan-then-execute-hardening) is active but non-conflicting.**
+  16 tasks (TASK-3589..3604) add checkpointing, `plan_resume`, `plan_repair`.
+  Explicitly declares changes to `bots/flows/plan/` models/validator/guards/
+  compiler as **non-goals**. The delegate safely extends those files.
+  *Evidence*: F009
+
+- **NODE_REGISTRY registration requires Node subclass.** `register_node(name)`
+  checks `issubclass(cls, Node)` and raises on duplicates. `DelegateToolNode`
+  must extend `Node` from `parrot.bots.flows.core.node`.
+  *Evidence*: F002
+
+- **make_tool_node_factory closure pattern.** The factory closes over
+  `tool_manager`, `working_memory`, `permission_context`, `plan_run_id`,
+  `step_mapping` — runtime bindings, not plan text. `make_delegate_node_factory`
+  must follow the same pattern, additionally closing over the delegate pool.
+  *Evidence*: F001
+
+- **No existing delegate_safe flag or ToolSpec.** AbstractTool has no metadata
+  flags for delegation safety. `ToolSchemaAdapter` exists for Bedrock format
+  adaptation but is not a standalone schema-export type.
+  *Evidence*: F006
+
+- **Design doc reference path was wrong.** The original proposal cited
+  `claude/handle-only-execution-design.md` — the actual file is at
+  `sdd/proposals/handle-only-execution-design.input.md`. Canonical specs:
+  `sdd/specs/execution-plan-tool.spec.md` (FEAT-419) and
+  `sdd/specs/plan-then-execute-hardening.spec.md` (FEAT-585).
+  *Evidence*: F010

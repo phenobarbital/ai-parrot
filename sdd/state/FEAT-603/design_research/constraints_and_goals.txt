@@ -1,0 +1,55 @@
+- **Contract fidelity**: implement every abstract method of
+  `FileManagerInterface` (`list_files`, `get_file_url`, `upload_file`,
+  `download_file`, `copy_file`, `delete_file`, `exists`, `get_file_metadata`,
+  `create_file`) with the exact signatures at
+  `navigator/utils/file/abstract.py:53-155`, plus the optional folder/rename
+  hooks (`create_folder`, `remove_folder`, `rename_folder`, `rename_file`,
+  lines 170-212), the inherited `create_from_bytes`/`create_from_text`
+  helpers and a server-side `find_files` override.
+- **Home & reuse (decided)**: new modules under
+  `packages/ai-parrot/src/parrot/interfaces/file/` that **compose** the
+  existing `SharepointClient` / `OneDriveClient` (auth, site/drive
+  resolution, upload sessions). No second Graph auth stack.
+- **Shape (decided)**: two public classes, `SharePointFileManager` and
+  `OneDriveFileManager`, over one shared abstract `GraphDriveFileManager`
+  that owns drive-item operations. Paths are **drive-relative**, exactly
+  like S3 `prefix + key`.
+- **Auth (decided)**: app-only client credentials, delegated/OBO, and
+  username/password (ROPC) — i.e. every mode `O365Client._create_credential`
+  already supports. Credentials arrive as a `credentials` dict or fall back
+  to the `SHAREPOINT_*` / `O365_*` values in `parrot/conf.py:598-617`.
+- **OneDrive scope (decided)**: any user's drive via `users/{upn|id}/drive`
+  under app-only auth, or `me/drive` under delegated auth. Port flowtask's
+  `_resolve_user_drive` into `OneDriveClient`; do **not** port the
+  `drive.type=onedrive` shim into `SharepointClient` (the class split makes
+  it redundant).
+- **URLs (decided)**: `get_file_url` returns a Graph `createLink` sharing
+  link (organization scope by default, `expirationDateTime` derived from
+  `expiry` when the tenant allows it).
+- **Batch (decided)**: `upload_files` / `download_files` return per-item
+  results and never raise mid-batch; a bounded semaphore (default 5) drives
+  concurrency; Graph 429/503 `Retry-After` is honoured.
+- **Registration (decided, all four)**: `parrot.interfaces.file` lazy
+  re-exports; `FileManagerFactory` + `FileManagerTool`/`FileManagerToolkit`
+  `manager_type` literals `sharepoint` / `onedrive`; refactor
+  `SharePointToolkit`/`OneDriveToolkit` tools onto the managers; mirror
+  S3's `setup(app, route)` HTTP file-serving extension.
+- **Verification (decided)**: mocked unit tests in CI + an opt-in
+  `@pytest.mark.live` suite gated on `SHAREPOINT_*`/`O365_*` env vars, run
+  manually before `/sdd-done`.
+- **Conflict semantics (assumed, user did not object)**: uploads default to
+  `@microsoft.graph.conflictBehavior=replace` (S3 overwrite parity);
+  `delete_file` is a Graph DELETE (recycle bin), not permanent deletion.
+- **Conventions**: aiohttp only for raw HTTP (upload-session chunk PUTs
+  already use `aiohttp.ClientSession` at `sharepoint.py:417`); the
+  `import httpx` at `sharepoint.py:11` / `onedrive.py:10` is unused legacy
+  and must not spread into new modules (ruff TID251 bans it). msgraph-sdk
+  itself depends on httpx transitively via kiota — that is an accepted,
+  pre-existing dependency (`ai-parrot[agents]` extra,
+  `packages/ai-parrot/pyproject.toml:440-442`).
+- **No blocking I/O** in async paths; Pydantic v2 models for batch results;
+  Google docstrings; `self.logger`.
+- **Backwards compatibility**: `SharepointClient`/`OneDriveClient` public
+  methods stay (flowtask and the delta tools call them); additions only.
+
+---

@@ -7,6 +7,269 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+Everything below comes after `1.1.0`; the FEAT-605 early subset (request-scope seam, `RequestScope`,
+`setup_studio_routes(prefix=…, view_wrapper=…)`, `BotManager.setup_registry_only`, `GET /me`, scope-only route gates,
+draft-activation `name_taken`, D1/D3) already shipped in `1.1.0`.
+
+### Breaking / upgrade notes
+
+- **Host tools without a declared `access` now require a human confirmation on every path.** A tool or toolkit
+  method that belongs to the host (`plugins.tools`, declared in `TOOL_REGISTRY` or found by the deprecated walk
+  fallback) and does not declare `access = "read"` (standalone tools) or list the method in `read_tools`
+  (toolkits) is treated as a write tool: it is `confirmation_required` for registry/YAML agents, `AgentTalk`,
+  crews, A2A, voice and the scheduler too — not only for Studio-built agents. Before upgrading, annotate every
+  read-only host tool with `access = "read"` / `read_tools`; unannotated ones stop executing until confirmed.
+- **The `database` storage backend now requires schema level 8.** Run the Studio migrations (`0006`–`0008`;
+  `parrot-studio-migrate`, verify with `parrot-studio-migrate --verify`) BEFORE deploying this release. A host
+  still at level 5 (`1.1.0`) resolves the backend to `unavailable` and every database-mode Studio route answers
+  `503 studio_storage_unavailable`, whatever the `*_STORE` switches say.
+
+### Added
+
+- **Agent Studio — owner-controlled visibility (FEAT-605 W2+).** Per-record `visibility`
+  (`private | tenant | groups`) with `allowed_groups`, and three new routes —
+  `PATCH /astudio/agents/{name}/visibility`, `/drafts/{name}/visibility`, `/skills/{id}/visibility`. Every route
+  follows one access rule (404 for an invisible record, identical to an absent one; 403 `not_manageable` for a
+  visible record the caller cannot manage), the assistant is partitioned by (tenant, user), and tool calls from
+  `test/ask`, chat and execute carry a `studio_scope`. Contract: `docs/agent_studio_api.md`; host guides
+  `docs/agentstudio/db-storage.md` and `docs/toolkits/host-toolkits.md`.
+- **Agent Studio database storage, waves 2–4 and phase 2 (FEAT-621).** Visibility columns and services over the
+  partitioned repositories, per-user LLM keys, credentials and toolkit overrides (migrations `0006`–`0008`).
+- **Agent Studio host toolkits, waves 2–4 (FEAT-622).** Tenant-bound tools and the scope gate, server-managed
+  parameters, strictly confirmed host write tools (walk-discovered host entries included) and the tenant tooling
+  policy on tooling writes.
+- New Studio error codes: `declarative_only`, `tenant_required`, `groups_required`, `groups_not_allowed` (422),
+  `studio_disabled` (404), `tenant_mismatch`, `authoring_denied`, `not_manageable` (403),
+  `reserved_config_key` (400); `name_taken` (409) now also covers agents, draft saves and skills.
+- `PUT`/`DELETE /astudio/agents/{name}/toolkits/{slug}` and `PUT …/mcp-servers` return the agent's `version` after the
+  write when the agent is a database-backed Studio agent (additive).
+
+### Changed
+
+- **Agent Studio, plain hosts too (FEAT-605):** duplicate names on agents, draft saves and skills answer
+  `409 name_taken` (no owner, source or tenant in the body) — previously `duplicate` / `name_collision` /
+  `not_owner`. Every agent/draft/skill item gains additive `tenant`, `owner`, `visibility`, `allowed_groups`,
+  `access` (`"global"` without a resolver) and, on single-record reads, `can_manage`. Non-private visibility
+  without a tenant is `422 tenant_required`. Reload, files GET and tool execute keep their old, ungated behaviour
+  without a resolver.
+- **Agent Studio (FEAT-605):** the 403 for "visible but not manageable" on a database-backed Studio record is now
+  `not_manageable` (it was `forbidden`).
+- **Agent Studio storage:** with the `database` backend the required migration level is 8 (phase 2 is part of
+  the release); `parrot-studio-migrate --verify` checks versions 1-8.
+
+---
+
+## [1.1.0] — 2026-10-02 — Agent Studio multi-tenant storage, linked-dashboard derived sources, planogram fact tags
+
+Eleven core-line distributions move to `1.1.0` (`ai-parrot-pipelines` to `1.2.0`).
+The seventeen satellites move to `0.3.0` and are re-pinned to `ai-parrot>=1.1.0`.
+
+### Added
+
+- **FEAT-621: Agent Studio database storage.** Studio agents, drafts, assets,
+  tooling and the skill catalog can live in a database instead of the
+  filesystem: partitioned repositories (`StudioAgentRepository`,
+  `StudioDraftRepository`, `StudioAssetRepository`, `StudioToolingRepository`,
+  `StudioSkillCatalogRepository`) behind a `StudioRepositories` container,
+  `studio_transaction` primitives, migrations `0001`–`0005` with a checksummed
+  manifest and the `parrot-studio-migrate` CLI, backend selection through
+  `ensure_studio_storage`, and an `InMemoryStudioRepositories` fake for
+  DB-free tests.
+- **FEAT-605: Agent Studio tenant visibility.** A request-scope seam, host
+  mount hooks, a Studio base scope, scope-only route gates and a capabilities
+  endpoint `GET /me`; the API contract is documented first.
+- **FEAT-622: Agent Studio host toolkits.** `ToolkitResolver`, a tool-scope
+  contract and a tenant tooling policy enforced by a build hook that runs the
+  policy and secret checks before hydration (`precheck_toolkit` /
+  `precheck_mcp`); unknown tool shapes are refused.
+- **Linked dashboards: dashboard-owned data sources and derived views.**
+  `parrot_data_sources` gains a second source kind, `derived`
+  (`{"kind": "derived", "from": "<sibling>", "transform": {"ops": […]}}`): a
+  view computed from a sibling source's full frame with the transform DSL,
+  never fetched, snapshotted like any source and recomputed whenever its
+  parent runs. The Python executor, `LinkedSurfaceService`, surface
+  validation, the admin UI lane and the example lane all understand it, and
+  every `query_slug` source is now fetched once per pass however many widgets
+  bind it. `qs_build_linked_dashboard` takes a `sources` map owned by the
+  dashboard; each widget declares one data origin — `source` (direct binding,
+  or a derived view with `transform`), `slug` (its own source, the previous
+  shape) or `data` (inline rows). The Polestar example loads with 4
+  QuerySource calls instead of 8. Contract: regenerated `LinkedSources`
+  schema/TS types, `envelopes/linked_dashboard_derived.json` and
+  `parity/derived_dashboard.json`. Definition-only linked surfaces render
+  from a one-row probe; a finance linked-dashboard example ships alongside.
+- **FEAT-623: infographic / A2UI display hints.** Model display hints lowered
+  losslessly by the adapter, typed table columns from dtypes, `format_cell`
+  parity with `formatA2UIValue`, and admin-UI chart axis mapping with a dual
+  value axis.
+- **FEAT-624: planogram fact-tag rule.** Fact and price tags become a
+  first-class compliance rule.
+- **Planogram detection and registration.** Fixture ROI before LLM detection
+  with native `box_2d` boxes; ROI components as observed zones
+  (`roi_zone_labels`) and ROI unit boxes that split stacked detections and
+  recover misses; free-order and tiered shelves; shape-is-slot fixtures keep
+  one row per shelf and fill empty columns; identity resolved by contained
+  name and matched reference; zone-crop phrases count as text evidence.
+- **Teams notifications:** a card can play a podcast it does not host.
+
+### Changed
+
+- **Agent Studio drafts (FEAT-605, plain hosts too):** `POST /astudio/drafts/{name}/activate` now answers
+  `409 name_taken` instead of `409 name_collision` / `409 not_owner`; the body never discloses the owner.
+- **A2UI:** single query slugs and linked surfaces fetch from
+  `/api/v2/services/queries` instead of MultiQS.
+- **FEAT-620: test-scope impact.** `source_fanin` counts direct importers
+  (threshold 30) and `CORE_PATHS` is re-derived from them (724 → 29 entries),
+  so merge-tier selection stops escalating whole package suites.
+- Dependencies: `onnxruntime>=1.30.0`; `coverage` 7.16.2 (dev).
+
+### Fixed
+
+- **Agent Studio D1:** `POST /astudio/drafts` no longer overwrites another user's draft file or row; it answers
+  `409 name_taken` before anything is written (superusers and the owner are unaffected).
+- **Agent Studio D3:** draft activation with `replace=true` over an agent without an owner, or owned by someone
+  else, is refused (`409 name_taken`) unless the caller is a superuser.
+- **Agent Studio storage:** draft-ownership lookup errors fail closed; tooling
+  references key their sessions consistently; orphan deletes, atomic purge,
+  commit rollback and a `503` when storage is unavailable.
+- **Tooling policy** honours the global opt-in and requires host-toolkit
+  prefixes; a malformed dotted path resolves as unavailable.
+- **A2UI linked lane:** deadlock, stale derived joins, ignored params and
+  cycle-check findings fixed.
+- **Planogram:** surplus identities, foreign strays and mangled reference
+  labels; references never rename a product read as something else; oversized
+  fixture ROIs cut back; no synthesized bottom row once every shelf is
+  anchored; `reference_id` dropped without references; truncated responses
+  retried; converter no longer loses rules.
+- **Teams notifications:** no more `Action.OpenUrl` with a placeholder URL.
+
+---
+
+## [1.0.7] — 2026-10-01 — A2UI linked surfaces, SharePoint file manager, Hooba and Odoo toolkits
+
+Twelve core-line distributions move to `1.0.7` (`ai-parrot-pipelines` to `1.1.1`).
+The sixteen satellites move to `0.2.7` and are re-pinned to `ai-parrot>=1.0.7`.
+
+### Added
+
+- **FEAT-611 / FEAT-610: A2UI linked surfaces.** `qs_build_linked_surface`,
+  multi-slug query surfaces, an A2UI output mode in the chat selector, a Svelte
+  renderer that resolves v1.0 id-referenced children, and an end-to-end lane
+  (linked + parallel) with golden fixtures and PBAC grants.
+- **FEAT-603: SharePoint file manager.**
+- **FEAT-601: training agent** — durable guided-mode state, export tips,
+  WhatsApp `media_urls`.
+- **Hooba toolkit** working against the real Hooba API.
+- **Odoo toolkit upgrades** — `odoo_helpdesk` registered in `TOOL_REGISTRY`,
+  `get_ticket(include_history)`, `mass_update` post-condition checks.
+- **Form designer: idempotent file upload** via `X-Parrot-Client-Upload-Id`.
+- **Bookstore: `update_card` + `bookstore update`**, atomic re-index swap,
+  manual card edits preserved on in-place re-index.
+- **Admin UI:** canvas swap-with-chat layout and maximize.
+
+### Fixed
+
+- PBAC is built in `BotManager.setup()` before the app freezes; middleware
+  order corrected.
+- `frame_to_records`: UUID/inet cells stringified, non-UTF-8 cells sanitised,
+  float precision kept; pivot/join dtype parity between TS and pandas.
+- `jira_add_comment` now forwards `is_internal`.
+- Pillow bumped to `>=12.3.0` (Dependabot); CodeQL clear-text logging alert.
+- **sdd-coder merge-tier validation scope.** `coder_run_validation(tier='merge')`
+  planned its selection from the feature branch's whole cumulative diff against
+  `origin/dev`, so every merge re-validated every task merged before it; past a
+  few dozen changed files the impact cap and the core-path list escalate whole
+  package suites and the "changed scope" check degenerated into a serial,
+  monorepo-wide sweep (26 full suites on a mid-size feature). The engine now
+  resolves the fork point of the merged tasks' own attempt branches and plans
+  from there, falling back to the cumulative base when it cannot resolve one
+  (slower, never less covered). `tier='feature'` keeps the cumulative base on
+  purpose — it is the whole-feature gate.
+- **`coder_bg_wait`: the missing blocking wait for a background handle.** A
+  `coder_run_validation` handle raises no host task notification and
+  `coder_bg_status` is non-blocking by contract, so an orchestrator holding one
+  had no sanctioned way to wait — it ended its turn expecting a wake-up that
+  structurally never arrives, stalling unattended runs until a human intervened.
+  The new tool mirrors `coder_wait`'s bounded-blocking contract (1..300s),
+  checks ownership before waiting, and never cancels the supervised run.
+- **`sdd-worker` prompt twins reconciled.** `.claude/agents/sdd-worker.md` and
+  the packaged `_subagent_data/sdd-worker.md` had drifted into contradicting
+  each other about MCP server concurrency; `test_prompt_parity[sdd-worker]`
+  was red on `dev`. The packaged copy is byte-identical to the repo copy again.
+
+---
+
+## [1.0.6] — 2026-09-24 — Plan-then-execute hardening, tool-call delegates and Agent Studio tooling
+
+Twelve core-line distributions move to `1.0.6`. The sixteen satellites
+(`ai-parrot-client-*`, `ai-parrot-openlit-bridge`) move to `0.2.6` and are
+re-pinned to `ai-parrot>=1.0.6`.
+
+Code changed in eight distributions: `ai-parrot` (220 files),
+`ai-parrot-pipelines` (74), `ai-parrot-server` (61),
+`ai-parrot-integrations`, `ai-parrot-tools`, `ai-parrot-client-google`,
+`ai-parrot-client-anthropic`, `navrules`. The rest are version-only bumps.
+
+### Added
+
+- **FEAT-585: plan-then-execute hardening.** Checkpoint run resolver,
+  `PlanPlanner.replan` / `repair_delta`, delta eligibility/merge/validation
+  (`repair.py`) and a bounded `plan_repair(run_id)` runtime tool, covered by
+  crash-matrix, contention and budget integration tests.
+- **FEAT-590: tool-call delegates.** Plan-language discriminated union,
+  `PlanToolNode` invoke-hook refactor, `DelegateToolNode` + factory, and
+  `LlamaCppDelegate` / `NeedleDelegate` backends (new `needle` extra on
+  `ai-parrot`).
+- **FEAT-593: tool configuration in Agent Studio.** JSON Schema envelope for
+  toolkit config (`GET /toolkits/{slug}/schema`), `DatasourceSpec`
+  discriminated union, `AgentRegistry.update_agent_tooling()` atomic YAML
+  rewrite, per-session tooling persistence, schema-driven `SchemaForm` in the
+  Admin UI and a Chat "My tool settings" tab.
+- **FEAT-574: new planogram pipeline.** Provider-neutral `VisionAdapter` and
+  call sites, perceive/identify/compare cycle template, deterministic
+  registration, slot geometry, scoring and multi-photo merge, plus an
+  optional lazy `OcrReader` (`planogram` extra). `roi_client` and the
+  Google-only client are removed from `AbstractPipeline`.
+- **FEAT-592: Nova image planogram** example on AWS.
+- **FEAT-591: speech-report models** — multiple TTS backends for
+  `speech_report()`, documented.
+- **FEAT-578: ADR decision plane in the wiki.** Decision models, parser,
+  `DecisionService` (sync/generate/review/why), `compare_and_swap_page` on
+  every wiki store, `adr` CLI group and MCP decision tools.
+- **FEAT-589: Laya adoption** — async `LayaWorker`, token-budget preflight
+  and a paired primary/routed evaluation harness.
+- **FEAT-584: SDD execution optimization.** Durable execution evidence,
+  background validation supervisor, `coder_bg_status`, compact coder
+  responses and bounded concurrent read-only inspection.
+- **FEAT-572: `/sdd-fix` ledger lane** completed; **FEAT-586** install guide.
+
+### Changed
+
+- **FEAT-595:** a dedicated light `wikitoolkit` console entry for the Claude
+  hook, with stdlib prefilter and lazy imports.
+- **Import-time cuts:** `clients/base.py` no longer imports pandas or
+  `PythonREPLTool` eagerly; wiki/graphindex imports are lazy and excluded
+  directories are pruned during the walk.
+
+### Fixed
+
+- **FEAT-597 / FEAT-594 sdd-coder engine:** an attempt that changed nothing is
+  never merged; declared `sdd/` targets pass fidelity; retry-ladder hygiene;
+  outstanding MCP jobs count only still-running jobs; the engine extracts and
+  force-stages gitignored declared files.
+- **SDD tasks** no longer stall in `sdd/tasks/active`; worktree agents can
+  file ledger issues.
+- **Sandbox:** Claude's scratchpad root is bound through the private `/tmp`;
+  the command timeout is a backstop rather than the first kill.
+- **Scheduler:** the required checkpoint barrier fires in definition-driven
+  mode.
+- **Telegram:** `/add_mcp` DocumentDB persistence is gated behind
+  `USE_DOCUMENTDB` with a 10 s connect timeout.
+- **Google GenAI client** ensures its client before model calls.
+- **`speech_report()`** uses exactly `num_speakers` speakers.
+- **`DetectionBox`** `class_id` / `class_name` / `area` are optional.
+- **codex seats** receive a strict output schema and surface stdout errors.
+
 ---
 
 ## [1.0.5] — 2026-09-20 — SDD tooling, CLI agent UI and client reliability

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -122,3 +123,136 @@ def test_run_rearms_escalation_on_a_later_red_run(fixture_monorepo, capsys, monk
     ledger = kernel.context.read_ledger(fixture_monorepo)
     assert "a" not in ledger  # re-armed: the stale/red entry was dropped, not left in place
     assert "b" in ledger  # "b" was green and got a fresh, correct record
+
+
+def test_run_records_green_cap_escalation(fixture_monorepo, monkeypatch):
+    """--run on a green cap-escalated invocation writes impact blobs and its impacted hash."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    from test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
+
+    driving_file = "packages/a/src/pa/x.py"
+    plan = ScopePlan(
+        tier="merge",
+        invocations=(
+            PytestInvocation(
+                distribution="a",
+                argv=("pytest", "packages/a/tests"),
+                targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
+            ),
+        ),
+        escalated=("a",),
+        core_hits=(),
+        skipped_escalations=(),
+        notes=(),
+        cap_hits={"a": (driving_file,)},
+        cap_impacted={"a": "cap-impact-hash"},
+    )
+    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
+    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
+    monkeypatch.setattr(
+        "scripts.sdd.select_tests.subprocess",
+        SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=0)),
+    )
+
+    assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run"]) == 0
+
+    ledger = kernel.context.read_ledger(fixture_monorepo)
+    assert driving_file in ledger["a"].impact_blobs
+    assert ledger["a"].impacted_hash == "cap-impact-hash"
+
+
+def test_run_rearms_red_cap_escalation(fixture_monorepo, monkeypatch):
+    """--run on a red cap-escalated invocation drops the previous ledger entry."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    from test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
+
+    plan = ScopePlan(
+        tier="merge",
+        invocations=(
+            PytestInvocation(
+                distribution="a",
+                argv=("pytest", "packages/a/tests"),
+                targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
+            ),
+        ),
+        escalated=("a",),
+        core_hits=(),
+        skipped_escalations=(),
+        notes=(),
+        cap_hits={"a": ("packages/a/src/pa/x.py",)},
+        cap_impacted={"a": "cap-impact-hash"},
+    )
+    kernel.context.record_green_escalation(
+        fixture_monorepo,
+        ["a"],
+        [],
+        impact_files=["packages/a/src/pa/x.py"],
+        impacted_hashes={"a": "cap-impact-hash"},
+    )
+    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
+    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
+    monkeypatch.setattr(
+        "scripts.sdd.select_tests.subprocess",
+        SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=1)),
+    )
+
+    assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run"]) == 1
+    assert "a" not in kernel.context.read_ledger(fixture_monorepo)
+
+
+# ── FEAT-617: --timeout bounds a hung test in the merge-tier sweep ──────────
+
+
+def _captured_argvs(monkeypatch) -> list[list[str]]:
+    """Record the pytest argvs `--run` dispatches, without executing them.
+
+    Only pytest invocations are intercepted: `test_scope.select` shells out to
+    `git diff` through the same `subprocess` module, and stubbing that too would
+    break change detection before any invocation is ever planned.
+    """
+    import scripts.sdd.select_tests as sel
+
+    seen: list[list[str]] = []
+    real_run = sel.subprocess.run
+
+    def _fake_run(argv, **kwargs):
+        argv = list(argv)
+        if any("pytest" in part for part in argv):
+            seen.append(argv)
+            return SimpleNamespace(returncode=0)
+        return real_run(argv, **kwargs)
+
+    monkeypatch.setattr(sel.subprocess, "run", _fake_run)
+    return seen
+
+
+def test_run_without_timeout_adds_no_timeout_flag(fixture_monorepo, monkeypatch):
+    """Default behaviour is unchanged: no --timeout token reaches pytest."""
+    seen = _captured_argvs(monkeypatch)
+    (fixture_monorepo / "packages/a/src/pa/x.py").write_text("X = 2\n")
+
+    rc = main(["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--run"])
+
+    assert rc == 0
+    assert seen, "expected at least one planned invocation"
+    for argv in seen:
+        assert not any(a.startswith("--timeout") for a in argv), argv
+
+
+def test_run_with_timeout_appends_flag_to_every_invocation(fixture_monorepo, monkeypatch):
+    """--timeout N reaches every pytest subprocess so a hang fails loudly, by name."""
+    seen = _captured_argvs(monkeypatch)
+    (fixture_monorepo / "packages/a/src/pa/x.py").write_text("X = 2\n")
+
+    rc = main(
+        ["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--run", "--timeout", "60"]
+    )
+
+    assert rc == 0
+    assert seen, "expected at least one planned invocation"
+    for argv in seen:
+        assert argv[-1] == "--timeout=60", argv

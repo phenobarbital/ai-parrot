@@ -47,7 +47,10 @@ def _load_mcp_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {"mcpServers": {}}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        raw = path.read_text(encoding="utf-8").strip()
+        if not raw:
+            return {"mcpServers": {}}
+        data = json.loads(raw)
     except (OSError, ValueError) as exc:
         raise RuntimeError(f"Cannot parse {path} — fix or remove it first: {exc}") from exc
     if not isinstance(data, dict):

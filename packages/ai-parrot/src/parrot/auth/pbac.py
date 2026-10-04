@@ -14,6 +14,9 @@ Typical usage in app.py::
 
 Public API:
     - ``setup_pbac``: Initialize PBAC engine from YAML policies directory.
+    - ``setup_dataplane_guard``: Build the default FEAT-598
+      ``DataPlanePolicyGuard`` and register it as ``app["dataplane_guard"]``
+      when PBAC can initialize; leaves the key unset otherwise.
 """
 
 from __future__ import annotations
@@ -25,6 +28,8 @@ from typing import Optional, TYPE_CHECKING
 from aiohttp import web
 
 from parrot.conf import PARROT_SAAS_MODE
+from parrot.auth.dataplane_guard import DataPlanePolicyGuard
+from parrot.auth.rls_registry import RlsRegistry
 
 if TYPE_CHECKING:
     from navigator_auth.abac.pdp import PDP
@@ -57,10 +62,7 @@ def _fail_open_or_closed(
         RuntimeError: When ``PARROT_SAAS_MODE`` is true.
     """
     if PARROT_SAAS_MODE:
-        raise RuntimeError(
-            f"PBAC initialization failed with PARROT_SAAS_MODE=true "
-            f"(fail-closed): {reason}"
-        )
+        raise RuntimeError(f"PBAC initialization failed with PARROT_SAAS_MODE=true " f"(fail-closed): {reason}")
     return None, None, None
 
 
@@ -135,13 +137,10 @@ def setup_pbac(
     policy_path = Path(policy_dir)
     if not policy_path.exists() or not policy_path.is_dir():
         logger.warning(
-            "PBAC policy directory '%s' not found or not a directory. "
-            "PBAC disabled — using default resolver.",
+            "PBAC policy directory '%s' not found or not a directory. " "PBAC disabled — using default resolver.",
             policy_dir,
         )
-        return _fail_open_or_closed(
-            f"policy directory '{policy_dir}' not found or not a directory"
-        )
+        return _fail_open_or_closed(f"policy directory '{policy_dir}' not found or not a directory")
 
     # Determine default effect
     if default_effect is None:
@@ -172,8 +171,7 @@ def setup_pbac(
         policies = PolicyLoader.load_from_directory(policy_path)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error(
-            "PBAC: error loading policies from '%s': %s. "
-            "PBAC disabled.",
+            "PBAC: error loading policies from '%s': %s. " "PBAC disabled.",
             policy_dir,
             exc,
         )
@@ -193,8 +191,7 @@ def setup_pbac(
                 )
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(
-                "PBAC: error loading per-agent policies from '%s': %s. "
-                "Continuing without per-agent policies.",
+                "PBAC: error loading per-agent policies from '%s': %s. " "Continuing without per-agent policies.",
                 str(agents_subdir),
                 exc,
             )
@@ -224,8 +221,7 @@ def setup_pbac(
                 )
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning(
-                "PBAC: error loading per-dataset policies from '%s': %s. "
-                "Continuing without per-dataset policies.",
+                "PBAC: error loading per-dataset policies from '%s': %s. " "Continuing without per-dataset policies.",
                 str(datasets_subdir),
                 exc,
             )
@@ -242,8 +238,7 @@ def setup_pbac(
         evaluator.load_policies(policies)
     except Exception as exc:  # pylint: disable=broad-except
         logger.error(
-            "PBAC: error loading policies into evaluator: %s. "
-            "PBAC disabled.",
+            "PBAC: error loading policies into evaluator: %s. " "PBAC disabled.",
             exc,
         )
         return _fail_open_or_closed(f"error loading policies into evaluator: {exc}")
@@ -289,9 +284,65 @@ def setup_pbac(
 
     guardian = app.get("security")
     if guardian is None:
-        logger.warning(
-            "PBAC: PDP.setup() did not register 'security' in app. "
-            "Guardian may not be available."
-        )
+        logger.warning("PBAC: PDP.setup() did not register 'security' in app. " "Guardian may not be available.")
 
     return pdp, evaluator, guardian
+
+
+def setup_dataplane_guard(
+    app: web.Application,
+    *,
+    policy_dir: str = "policies",
+    cache_ttl: int = 30,
+) -> Optional[DataPlanePolicyGuard]:
+    """Build and register the default FEAT-598 data-plane authorization guard.
+
+    Runs :func:`setup_pbac` and, when it yields a working
+    ``PolicyEvaluator``, wraps it in a fresh :class:`DataPlanePolicyGuard`
+    (backed by a fresh :class:`~parrot.auth.rls_registry.RlsRegistry`),
+    registers it as ``app["dataplane_guard"]``, and returns it.
+
+    When PBAC cannot initialize (``setup_pbac`` returns ``(None, None,
+    None)`` — e.g. navigator-auth is not installed or no policy directory
+    exists), this function sets **nothing** on ``app`` and returns
+    ``None``. Linked A2UI surfaces (FEAT-598) must keep answering 403
+    (``LinkedGuardRequired``) in that state — wiring a guard that itself
+    fails open without navigator-auth would silently disable the owner
+    check, so absence of the key is the safe default on bare installs.
+
+    Idempotent: an existing ``app["dataplane_guard"]`` (set by a prior call,
+    a test, or an operator) is respected and returned unchanged.
+
+    Args:
+        app: The aiohttp ``web.Application`` to register the guard into.
+        policy_dir: Path to the PBAC policy directory. Defaults to
+            ``"policies"`` (see :data:`parrot.conf.PARROT_PBAC_POLICY_DIR`).
+        cache_ttl: Seconds before a cached policy decision expires. Passed
+            straight through to :func:`setup_pbac`.
+
+    Returns:
+        The registered :class:`DataPlanePolicyGuard`, or ``None`` when PBAC
+        is unavailable.
+
+    Raises:
+        RuntimeError: Propagated from :func:`setup_pbac` when
+            ``PARROT_SAAS_MODE=true`` and PBAC initialization fails
+            (fail-closed startup — never silently disables enforcement).
+    """
+    existing = app.get("dataplane_guard")
+    if existing is not None:
+        return existing
+
+    _pdp, evaluator, _guardian = setup_pbac(app, policy_dir=policy_dir, cache_ttl=cache_ttl)
+    if evaluator is None:
+        logger.info(
+            "PBAC unavailable — linked A2UI surfaces (FEAT-598) remain "
+            "disabled (fail-closed 403) until PBAC is configured via "
+            "PARROT_PBAC_POLICY_DIR (currently '%s').",
+            policy_dir,
+        )
+        return None
+
+    guard = DataPlanePolicyGuard(evaluator=evaluator, rls_registry=RlsRegistry())
+    app["dataplane_guard"] = guard
+    return guard

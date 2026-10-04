@@ -10,7 +10,7 @@ tags: [execution-plan, checkpointing, working-memory, replan, result-policy]
 **Feature ID**: FEAT-585
 **Date**: 2026-09-21
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 Source of requirements: `sdd/proposals/plan-then-execute-hardening.brainstorm.md`, Option B.

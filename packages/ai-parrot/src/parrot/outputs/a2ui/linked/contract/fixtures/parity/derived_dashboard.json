@@ -1,0 +1,120 @@
+{
+  "description": "Linked dashboard with dashboard-owned sources: `activity` (query_slug) feeds the derived views `by_program` (group_by+sort) and `top_program` (derived-of-derived, limit 1); `kpis` is a second query_slug shared by several KPICards. Every executor must (1) run sources in `expected_order`, fetching `activity` and `kpis` exactly once and never fetching a derived key, (2) compute derived rows from the parent's FULL frame, (3) ignore every param addressed to a derived key (`param_cases`), and (4) produce `expected_rows` byte-for-byte after records serialisation.",
+  "max_fetch_rows": 5000,
+  "input_frames": {
+    "epson_e2e_activity": [
+      {"day": "2026-09-01", "visits": 10, "program": "epson"},
+      {"day": "2026-09-02", "visits": 20, "program": "pokemon"},
+      {"day": "2026-09-03", "visits": 30, "program": "epson"},
+      {"day": "2026-09-04", "visits": 5, "program": null},
+      {"day": "2026-09-05", "visits": 15, "program": "pokemon"}
+    ],
+    "epson_e2e_kpis": [
+      {"total_visits": 80, "programs": 2}
+    ]
+  },
+  "sources": {
+    "top_program": {
+      "kind": "derived",
+      "from": "by_program",
+      "transform": {"ops": [{"op": "limit", "n": 1}], "ref": null},
+      "target": "/top_program/rows",
+      "snapshot_at": null,
+      "snapshot_truncated": false
+    },
+    "by_program": {
+      "kind": "derived",
+      "from": "activity",
+      "transform": {
+        "ops": [
+          {"op": "group_by", "by": ["program"], "aggregate": {"visits": "sum"}},
+          {"op": "sort", "by": [{"column": "visits", "direction": "desc"}]}
+        ],
+        "ref": null
+      },
+      "target": "/by_program/rows",
+      "snapshot_at": null,
+      "snapshot_truncated": false
+    },
+    "activity": {
+      "kind": "query_slug",
+      "slug": "epson_e2e_activity",
+      "tenant": null,
+      "is_multiquery": false,
+      "multi_output": null,
+      "conditions": {"firstdate": "2026-09-01", "lastdate": "2026-09-07"},
+      "request": {
+        "placeholders": {"firstdate": "2026-09-01", "lastdate": "2026-09-07"},
+        "filter": {}, "fields": [], "ordering": [], "grouping": [], "limit": null, "offset": null
+      },
+      "params": {
+        "firstdate": {"type": "date", "default": null, "required": false, "editable": true, "accepts_keywords": true},
+        "lastdate": {"type": "date", "default": null, "required": false, "editable": true, "accepts_keywords": true}
+      },
+      "locked": [],
+      "transform": null,
+      "target": "/activity/rows",
+      "snapshot_at": null,
+      "snapshot_truncated": false,
+      "refresh": {"policy": "on_mount", "interval_seconds": null}
+    },
+    "kpis": {
+      "kind": "query_slug",
+      "slug": "epson_e2e_kpis",
+      "tenant": null,
+      "is_multiquery": false,
+      "multi_output": null,
+      "conditions": {"firstdate": "2026-09-01", "lastdate": "2026-09-07"},
+      "request": {
+        "placeholders": {"firstdate": "2026-09-01", "lastdate": "2026-09-07"},
+        "filter": {}, "fields": [], "ordering": [], "grouping": [], "limit": null, "offset": null
+      },
+      "params": {
+        "firstdate": {"type": "date", "default": null, "required": false, "editable": true, "accepts_keywords": true},
+        "lastdate": {"type": "date", "default": null, "required": false, "editable": true, "accepts_keywords": true}
+      },
+      "locked": [],
+      "transform": null,
+      "target": "/kpis/rows",
+      "snapshot_at": null,
+      "snapshot_truncated": false,
+      "refresh": {"policy": "on_mount", "interval_seconds": null}
+    }
+  },
+  "expected_order": ["activity", "by_program", "top_program", "kpis"],
+  "expected_fetches": ["activity", "kpis"],
+  "param_cases": [
+    {
+      "id": "derived_ignores_everything",
+      "source": "by_program",
+      "overrides": {"firstdate": "2026-09-02", "z": 1},
+      "expected_ignored": ["firstdate", "z"]
+    },
+    {
+      "id": "parent_declared_param",
+      "source": "activity",
+      "overrides": {"firstdate": "2026-09-02"},
+      "expected_ignored": [],
+      "expected_conditions": {"firstdate": "2026-09-02", "lastdate": "2026-09-07", "querylimit": 5000}
+    }
+  ],
+  "expected_rows": {
+    "activity": [
+      {"day": "2026-09-01", "visits": 10, "program": "epson"},
+      {"day": "2026-09-02", "visits": 20, "program": "pokemon"},
+      {"day": "2026-09-03", "visits": 30, "program": "epson"},
+      {"day": "2026-09-04", "visits": 5, "program": null},
+      {"day": "2026-09-05", "visits": 15, "program": "pokemon"}
+    ],
+    "kpis": [
+      {"total_visits": 80, "programs": 2}
+    ],
+    "by_program": [
+      {"program": "epson", "visits": 40},
+      {"program": "pokemon", "visits": 35}
+    ],
+    "top_program": [
+      {"program": "epson", "visits": 40}
+    ]
+  }
+}

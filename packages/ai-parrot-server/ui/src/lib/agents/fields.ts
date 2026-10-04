@@ -17,6 +17,7 @@ export type TabId =
   | "behavior"
   | "ai"
   | "capabilities"
+  | "tools"
   | "data_memory"
   | "advanced";
 
@@ -123,7 +124,7 @@ export const FIELD_TAB: Record<keyof BotWritePayload, TabId> = {
   tools_enabled: "capabilities",
   auto_tool_detection: "capabilities",
   tool_threshold: "capabilities",
-  tools: "capabilities",
+  tools: "tools",
   operation_mode: "capabilities",
   use_kb: "capabilities",
   kb: "capabilities",

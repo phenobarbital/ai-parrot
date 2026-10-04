@@ -16,6 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, truncate_to_tokens
+from parrot.knowledge.wiki.federation import FederatedWikiStore
 from parrot.knowledge.wiki.project import WikiProjectConfig
 from parrot.knowledge.wiki.store import BaseWikiStore
 from parrot.knowledge.wiki.structural.service import (
@@ -71,9 +72,9 @@ class BlastRadiusInput(BaseModel):
     """Arguments for ``wiki_blast_radius`` / ``code_blast_radius``."""
 
     symbol: str = Field(..., description="A sym: id or an exact qualname")
-    relations: list[Literal["calls", "extends", "implements", "references", "contains"]] | None = Field(
+    relations: list[Literal["calls", "extends", "implements", "uses", "references", "contains"]] | None = Field(
         default=None,
-        description="Edge relations to follow (default: calls, extends, implements)",
+        description="Edge relations to follow (default: calls, extends, implements, uses)",
     )
     depth: int = Field(default=2, ge=1, le=5, description="Maximum BFS depth")
     include_inferred: bool = Field(
@@ -240,7 +241,10 @@ def create_structural_tools(
         ``[WikiSymbolLookupTool, WikiCodeOutlineTool, WikiBlastRadiusTool]``,
         all three sharing one ``service_factory``.
     """
-    local_service = StructuralService(store, root, config)
+    # A store scoped to ONE foreign namespace (``--ns <name>``) serves that plane as
+    # its "local" one; it must never be read-repaired from this checkout.
+    scoped_foreign = isinstance(store, FederatedWikiStore) and getattr(store, "_qualify_local", False)
+    local_service = StructuralService(store, root, config, read_repair=not scoped_foreign)
 
     def service_factory(namespace: str | None) -> StructuralService:
         try:
@@ -250,11 +254,9 @@ def create_structural_tools(
         if scoped is store:
             return local_service
         # A foreign/federated namespace: read-repair is local-root-only
-        # (Module 7's own contract), so this service's _ensure_fresh
-        # naturally never finds a matching on-disk file for a foreign
-        # store's rel_paths and performs no write — see TASK-2750's
-        # Completion Note for the full reasoning.
-        return StructuralService(scoped, root, config)
+        # (Module 7's own contract) and is now explicitly off (FEAT-609 M5),
+        # so a foreign plane is never written.
+        return StructuralService(scoped, root, config, read_repair=False)
 
     return [
         WikiSymbolLookupTool(service_factory),

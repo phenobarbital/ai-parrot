@@ -1,0 +1,7 @@
+- [ ] **Which Hooba tags form the default allowlist, and what is the hard cap on generated tools per agent?** — *Owner*: spec author
+  *Blocks claims*: C9
+  *Plausible answers*: a) the 17 tags in §3 (~217 ops) · b) a narrower "drafting" set (Invoice*, PurchaseInvoice*, Contact, Tax*) · c) configurable per agent definition
+- [ ] **Exact BBVA export layout** (sheet name, preamble row count, column headers, date/amount formats) for the anonymized fixture — *Owner*: Jesús (provide one anonymized workbook)
+  *Blocks claims*: C11
+- [ ] **Initial content of the v1 rule table** (categories, IVA/IRPF flags, simplified-invoice threshold, `legal_basis` citations) — *Owner*: Jesús / gestoría review
+  *Blocks claims*: C7

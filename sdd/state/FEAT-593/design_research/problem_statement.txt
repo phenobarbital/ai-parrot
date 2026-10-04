@@ -1,0 +1,52 @@
+Operators can pick *which* tools an agent has, but nowhere can they configure
+*how* a toolkit is built for that agent. Original request (verbatim):
+
+> Tool-configuration support para AgentStudio
+> - configuración de atributos per-Tool (por ejemplo Jira Toolkit > Jira
+>   workspace, o si pongo QuerySlugToolkit > ¿cuáles WS?)
+>   si hay un endpoint que retorna todas las tools activas: crear una UI para
+>   configurarlo
+> :: Mover el actual dataset config (del DatasetManager) y el MCP config a
+>    Agent Studio.
+
+Concretely, today:
+
+- **The Admin UI agent form** (`/admin/agents/:name`, FEAT-475) offers the
+  Capabilities tab: a checkbox list of tool *names* sourced from
+  `GET /api/v1/agent_tools`. `BotModel.tools` is `List[str]`, so a database
+  agent can say "jira" but never "jira against
+  `https://troc.atlassian.net`, default project TROC". `JiraToolkit` therefore
+  falls back to environment variables; `QuerysourceToolkit` gets no `programs`
+  scope at all.
+- **The Agent Studio backend** (`/api/v1/astudio/*`, FEAT-467) already exposes
+  `GET /toolkits/{slug}/schema` (constructor introspection) and
+  `POST /agents/{name}/toolkits` (`{slug, params}`) — but the assignment
+  mutates only the live shared instance and answers `persisted: false`.
+  Persistence was explicitly left out of TASK-2518. Nothing in the SPA
+  consumes `/astudio` yet.
+- **YAML agents** declare `toolkits: [str]` in `BotConfig`, but the loader loop
+  that should register them is a `pass` stub (`registry.py:943-950`), and the
+  `toolkits` kwarg the factory forwards is not consumed by `AbstractBot`. Only
+  `tools: [str]` strings actually register toolkits (via
+  `ToolInterface._initialize_tools` → `ToolkitRegistry.get(name)` →
+  `register_toolkit(name)` with **no kwargs**).
+- **Dataset and MCP configuration live inside the chat**: `DatasetTab.svelte`,
+  `DatasetConfigModal.svelte` and `MCPServerTab.svelte` are mounted from
+  `AgentChat.svelte`, backed by per-user, session-scoped state
+  (`/api/v1/agents/datasets/{agent_id}` over a cloned `DatasetManager`;
+  `GET /api/v1/agents/chat/{name}/mcp_servers` + `PATCH` over the session
+  `ToolManager`, persisted per `(user, agent)` in DocumentDB by
+  `MCPPersistenceService` and restored by
+  `AgentTalk._restore_user_mcp_servers`). Operators have no agent-level surface
+  for either.
+
+**Who is affected**: operators building agents in the Admin UI (primary),
+end users who need their own Jira credentials / query-slug scope (secondary),
+and developers who today hand-edit YAML or write Python to wire a toolkit with
+parameters.
+
+**Why now**: FEAT-558 (`QuerysourceToolkit`, tenant-scoped `programs`) and
+the Jira OAuth work make "which workspace / which tenants" a per-agent
+decision that cannot be expressed in the UI; the Studio schema + assign
+endpoints exist and are unused; the chat is accumulating configuration UI that
+belongs to the agent, not the conversation.

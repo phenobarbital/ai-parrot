@@ -7,10 +7,12 @@ Tests cover:
 - voice-in → voice-out end-to-end flow (fully mocked)
 - Text input does NOT trigger TTS (zero regression)
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from parrot.voice.tts import (
+    AmazonPollyTTSBackend,
     AbstractTTSBackend,
     GoogleTTSBackend,
     SynthesisResult,
@@ -18,16 +20,16 @@ from parrot.voice.tts import (
     VoiceSynthesizer,
 )
 
-
 # ---------------------------------------------------------------------------
 # Public export smoke tests
 # ---------------------------------------------------------------------------
 
 
 def test_public_exports_present():
-    """All five public symbols are importable from parrot.voice.tts."""
+    """All TTS public symbols are importable from parrot.voice.tts."""
     assert AbstractTTSBackend is not None
     assert GoogleTTSBackend is not None
+    assert AmazonPollyTTSBackend is not None
     assert VoiceSynthesizer is not None
     assert TTSConfig is not None
     assert SynthesisResult is not None
@@ -44,7 +46,16 @@ def test_voice_tts_all_list():
     """parrot.voice.tts.__all__ contains the expected names."""
     import parrot.voice.tts as tts_module
 
-    expected = {"VoiceSynthesizer", "AbstractTTSBackend", "GoogleTTSBackend", "TTSConfig", "SynthesisResult"}
+    expected = {
+        "VoiceSynthesizer",
+        "get_shared_synthesizer",
+        "close_shared_synthesizers",
+        "AbstractTTSBackend",
+        "GoogleTTSBackend",
+        "AmazonPollyTTSBackend",
+        "TTSConfig",
+        "SynthesisResult",
+    }
     actual = set(tts_module.__all__)
     assert expected == actual
 
@@ -58,9 +69,7 @@ def test_voice_tts_all_list():
 def synth_mock():
     """Return a mocked VoiceSynthesizer that produces fake audio."""
     s = MagicMock()
-    s.synthesize = AsyncMock(
-        return_value=SynthesisResult(audio=b"OGG...", mime_format="audio/ogg")
-    )
+    s.synthesize = AsyncMock(return_value=SynthesisResult(audio=b"OGG...", mime_format="audio/ogg"))
     return s
 
 
@@ -74,9 +83,7 @@ def _make_config_with_tts():
         bot_token="test:token",
         tts_enabled=True,
         reply_in_kind=True,
-        voice_config=VoiceTranscriberConfig(
-            enabled=True, max_audio_duration_seconds=60, show_transcription=False
-        ),
+        voice_config=VoiceTranscriberConfig(enabled=True, max_audio_duration_seconds=60, show_transcription=False),
     )
 
 
@@ -174,14 +181,16 @@ async def test_voice_in_voice_out_flow(synth_mock):
     fake_parsed = MagicMock(spec=ParsedResponse)
     fake_parsed.text = "Integration reply text"
 
-    with patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Integration reply text")), \
-         patch.object(wrapper, "_parse_response", return_value=fake_parsed), \
-         patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=99))), \
-         patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()), \
-         patch.object(wrapper, "_get_synthesizer", new=AsyncMock(return_value=synth_mock)), \
-         patch("parrot.integrations.telegram.wrapper.asyncio.to_thread", new=AsyncMock(return_value=b"OGG...")), \
-         patch("tempfile.NamedTemporaryFile") as mock_ntf, \
-         patch("parrot.integrations.telegram.wrapper.Path") as mock_path:
+    with (
+        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Integration reply text")),
+        patch.object(wrapper, "_parse_response", return_value=fake_parsed),
+        patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=99))),
+        patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()),
+        patch.object(wrapper, "_get_synthesizer", new=AsyncMock(return_value=synth_mock)),
+        patch("parrot.integrations.telegram.wrapper.asyncio.to_thread", new=AsyncMock(return_value=b"OGG...")),
+        patch("tempfile.NamedTemporaryFile") as mock_ntf,
+        patch("parrot.integrations.telegram.wrapper.Path") as mock_path,
+    ):
         tmp = MagicMock()
         tmp.name = "/tmp/tg_integ_test.ogg"
         mock_ntf.return_value = tmp
@@ -191,9 +200,7 @@ async def test_voice_in_voice_out_flow(synth_mock):
         path_inst.suffix = ".ogg"
         mock_path.return_value = path_inst
         mock_path.side_effect = lambda x: (
-            MagicMock(suffix=".ogg")
-            if isinstance(x, str) and "integ.ogg" in x
-            else path_inst
+            MagicMock(suffix=".ogg") if isinstance(x, str) and "integ.ogg" in x else path_inst
         )
 
         await wrapper.handle_voice(message)
@@ -221,15 +228,17 @@ async def test_text_input_unaffected(synth_mock):
     fake_parsed = MagicMock(spec=ParsedResponse)
     fake_parsed.text = "Text response"
 
-    with patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Text response")), \
-         patch.object(wrapper, "_parse_response", return_value=fake_parsed), \
-         patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=10))), \
-         patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()), \
-         patch.object(wrapper, "_cache_message_id", return_value=None), \
-         patch.object(wrapper, "_extract_reply_context", return_value=""), \
-         patch.object(wrapper, "_is_authorized", return_value=True), \
-         patch.object(wrapper, "_check_authentication", new=AsyncMock(return_value=True)), \
-         patch.object(wrapper, "_state_manager") as mock_sm:
+    with (
+        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Text response")),
+        patch.object(wrapper, "_parse_response", return_value=fake_parsed),
+        patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=10))),
+        patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()),
+        patch.object(wrapper, "_cache_message_id", return_value=None),
+        patch.object(wrapper, "_extract_reply_context", return_value=""),
+        patch.object(wrapper, "_is_authorized", return_value=True),
+        patch.object(wrapper, "_check_authentication", new=AsyncMock(return_value=True)),
+        patch.object(wrapper, "_state_manager") as mock_sm,
+    ):
         mock_sm.get_suspended_session = AsyncMock(return_value=None)
         # Route the message through the real handle_message code path
         await wrapper.handle_message(message)

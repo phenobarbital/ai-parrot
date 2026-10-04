@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from scripts.sdd.profile_execution import main
+from scripts.sdd.profile_execution import ProfileEventRecord, ProfileTranscriptRow, main
 
 _T0 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
 
@@ -227,3 +227,60 @@ def test_unknown_tokens_long_requests_and_clock(tmp_path: Path) -> None:
     assert same_process_span["clock_basis"] == "identity_paired+monotonic_same_process"
     assert same_process_span["duration_s"] == 40.0  # wall clock, still reported
     assert same_process_span["duration_precise_s"] == pytest.approx(39.0)  # monotonic, tracked separately
+
+
+# ---------------------------------------------------------------------------
+# Schema parity tests (FEAT-596): detect drift between the profiler's
+# duck-typed schema and the authoritative WorkflowEvent Pydantic model.
+# ---------------------------------------------------------------------------
+
+
+def test_event_schema_parity_with_workflow_event() -> None:
+    """Every field ProfileEventRecord expects must exist on WorkflowEvent."""
+    import importlib.util
+    import sys
+
+    module_path = (
+        Path(__file__).resolve().parents[4]
+        / "src"
+        / "parrot"
+        / "flows"
+        / "dev_loop"
+        / "sdd_coder"
+        / "optimization_models.py"
+    )
+    spec = importlib.util.spec_from_file_location("_optimization_models", module_path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    WorkflowEvent = mod.WorkflowEvent
+
+    profiler_keys = ProfileEventRecord.__required_keys__ | ProfileEventRecord.__optional_keys__
+    model_fields = set(WorkflowEvent.model_fields.keys())
+
+    missing = profiler_keys - model_fields
+    assert not missing, (
+        f"ProfileEventRecord expects fields that WorkflowEvent does not have: {missing}. "
+        f"Update either the TypedDict or the Pydantic model to restore parity."
+    )
+
+
+def test_transcript_row_schema_documents_expected_fields() -> None:
+    """ProfileTranscriptRow keys cover every field the test fixtures actually use."""
+    transcript_keys = ProfileTranscriptRow.__required_keys__ | ProfileTranscriptRow.__optional_keys__
+
+    fixture_keys: set[str] = set()
+    for fixture in [
+        {"role": "assistant", "request_id": "req-1", "timestamp": ""},
+        {"role": "tool", "request_id": "req-bg-ack", "timestamp": "", "tool_name": "Bash", "is_tool_result": True},
+        {"role": "assistant", "request_id": "req-A", "timestamp": "", "usage": {"input_tokens": 100}},
+        {"role": "assistant", "request_id": "req-B", "timestamp": "", "usage": {"input_tokens": 10}},
+    ]:
+        fixture_keys.update(fixture.keys())
+
+    undocumented = fixture_keys - transcript_keys
+    assert not undocumented, (
+        f"Test fixtures use transcript fields not in ProfileTranscriptRow: {undocumented}. "
+        f"Add them to the TypedDict to keep the contract complete."
+    )

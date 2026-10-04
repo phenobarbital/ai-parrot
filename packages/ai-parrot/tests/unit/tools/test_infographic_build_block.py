@@ -34,7 +34,7 @@ sys.modules["parrot.storage.models"] = _rsm
 import parrot.tools.infographic_toolkit as _rtk  # noqa: E402
 sys.modules["parrot.tools.infographic_toolkit"] = _rtk
 
-from parrot.tools.infographic_toolkit import InfographicToolkit  # noqa: E402
+from parrot.tools.infographic_toolkit import InfographicToolkit, _column_type_for  # noqa: E402
 # Capture these at module load (collection time) so they reference the SAME
 # registry/module objects the toolkit (_rtk) bound to — later test files pop &
 # re-import these modules, so a late in-function import would resolve to a
@@ -132,6 +132,29 @@ class TestBuildChart:
 # build_block — table
 # ---------------------------------------------------------------------------
 
+class TestColumnTypeFor:
+    @pytest.mark.parametrize(
+        "series, expected",
+        [
+            (pd.Series([1, 2], dtype="int64"), "integer"),
+            (pd.Series([1, pd.NA], dtype="Int64"), "integer"),
+            (pd.Series([1.5, 2.5], dtype="float64"), "number"),
+            (pd.Series([1.5, pd.NA], dtype="Float64"), "number"),
+            (pd.Series([True, False], dtype="bool"), "boolean"),
+            (pd.Series([True, pd.NA], dtype="boolean"), "boolean"),
+            (pd.Series(pd.to_datetime(["2026-01-01", "2026-01-02"])), "datetime"),
+            (pd.Series(pd.to_datetime(["2026-01-01"], utc=True)), "datetime"),
+            (pd.Series(["a", "b"], dtype="category"), None),
+            (pd.Series(["a", "b"], dtype="object"), None),
+            (pd.Series([1, "a", None], dtype="object"), None),
+        ],
+        ids=["int64", "Int64", "float64", "Float64", "bool", "boolean", "datetime", "datetime-utc",
+             "category", "object", "mixed"],
+    )
+    def test_dtype_map(self, series, expected):
+        assert _column_type_for(series) == expected
+
+
 class TestBuildTable:
     @pytest.mark.asyncio
     async def test_table_from_dataframe(self, toolkit, repl):
@@ -142,13 +165,23 @@ class TestBuildTable:
         assert r["ok"] is True
         block = repl["infographic_blocks"][0]
         assert block["type"] == "table"
-        assert block["columns"] == ["date", "rev_dod"]
+        assert [(c["header"], c.get("type")) for c in block["columns"]] == [("date", None), ("rev_dod", "integer")]
         assert block["rows"] == [["D1", 10], ["D2", 20], ["D3", 30]]
 
     @pytest.mark.asyncio
     async def test_table_defaults_to_all_columns(self, toolkit, repl):
         await toolkit.build_block(block_type="table", data_variable="rev")
-        assert repl["infographic_blocks"][0]["columns"] == ["date", "rev_dod", "ebitda"]
+        columns = repl["infographic_blocks"][0]["columns"]
+        assert [(c["header"], c.get("type")) for c in columns] == [
+            ("date", None),
+            ("rev_dod", "integer"),
+            ("ebitda", "number"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_table_never_emits_format(self, toolkit, repl):
+        await toolkit.build_block(block_type="table", data_variable="rev")
+        assert all(c.get("format") is None for c in repl["infographic_blocks"][0]["columns"])
 
     @pytest.mark.asyncio
     async def test_table_missing_data_variable(self, toolkit):

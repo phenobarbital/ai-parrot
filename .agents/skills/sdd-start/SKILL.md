@@ -5,6 +5,14 @@ description: Start and complete a single SDD task from a per-spec index, impleme
 
 # SDD Start
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-start procedure](../../../.claude/commands/sdd-start.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks to run `sdd-start`, pick up a task, or
 implement a single SDD task.
 
@@ -23,7 +31,7 @@ validate it, and close it in the same branch/worktree.
   to resume.
 - Code and per-spec index state live together in the worktree.
 - Touch only files listed in the task unless the user approves a scope update.
-- Use `scripts/sdd/close_task.sh`; do not hand-copy active tasks to completed.
+- Use `scripts.sdd.finalize_task`; do not hand-copy active tasks to completed.
 - Commit only scoped files at each step.
 
 ## Workflow
@@ -56,7 +64,7 @@ Codex/Antigravity without a verified adapter report unsupported_host, never call
    - update only the task entry in `sdd/tasks/index/<feature>.json`
    - set `status: in-progress`
    - set `started_at`
-   - clear staging, stage only the index, verify cached names
+   - preserve unrelated staging; stage only the index and verify cached names
    - commit `sdd: start TASK-NNN - <title>`
    - (FEAT-566, best-effort) append `task.started` to the shared ledger's
      `events.jsonl` — log-only, never blocks on failure (missing ledger
@@ -116,15 +124,23 @@ implement the task yourself — the normal route is the default.
    - fix failures within scope
    - stop after three failed attempts if the failure is not understood
 10. Commit code:
-    - clear staging with `git reset HEAD`
+    - preserve unrelated staging; stop before committing if it is not task-owned
     - stage only files listed for the task
     - verify cached names
     - commit `feat(<feature-slug>): TASK-NNN - <title>`
 11. Close task:
-    - run `scripts/sdd/close_task.sh TASK-NNN <feature-slug> verified`
-    - fill Completion Note in the completed task file
-    - verify cached names include only the per-spec index and moved task file
-    - commit `sdd: complete TASK-NNN - <title>`
+    - read `TaskCompletionEvidence` in
+      `packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/optimization_models.py`
+      and create its JSON with the task ID, feature slug, exact implementation
+      HEAD, durable green validation references, semantic review evidence and
+      any correction commits; never fabricate evidence or passing outcomes
+    - run `python -m scripts.sdd.finalize_task --evidence <path> --worktree <path> --expected-head <full HEAD SHA>`
+    - on failure, report the evidence/state problem; do not use `close_task.sh`
+      as a fallback or hand-edit the Completion Note
+    - inspect returned `staged_paths` and `removed_paths`; verify cached names
+      include only this task's per-spec index and moved task file
+    - commit using the returned suggested message without a pathspec, so the
+      already-staged deletion of the active copy is included
 12. Report next task or suggest `$sdd-done FEAT-NNN` when complete.
 
 ## Stop Conditions
@@ -143,6 +159,6 @@ Stop and report if:
 
 - `sdd/templates/task.md`
 - `sdd/tasks/index/`
-- `scripts/sdd/close_task.sh`
+- `scripts/sdd/finalize_task.py`
 - `scripts/sdd/ensure_worktree.py`
 - `sdd/WORKFLOW.md`

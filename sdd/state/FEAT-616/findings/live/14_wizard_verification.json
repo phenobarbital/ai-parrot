@@ -1,0 +1,53 @@
+[
+ {
+  "reassign": {
+   "type": "ir.actions.act_window_close"
+  },
+  "ticket": {
+   "id": 71,
+   "user_id": [
+    2103,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "stage_id": [
+    4,
+    "New"
+   ]
+  }
+ },
+ {
+  "mass_update": null,
+  "ticket": {
+   "id": 71,
+   "user_id": [
+    2103,
+    "<name redacted>"
+   ],
+   "stage_id": [
+    22,
+    "Open"
+   ]
+  }
+ },
+ {
+  "note_on_closed": {
+   "id": 71,
+   "stage_id": [
+    21,
+    "Closed"
+   ],
+   "state": "customer_replied"
+  }
+ },
+ {
+  "comment_on_closed": {
+   "id": 71,
+   "stage_id": [
+    22,
+    "Open"
+   ],
+   "state": "customer_replied"
+  }
+ }
+]

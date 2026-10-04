@@ -1,0 +1,33 @@
+{
+  "feature": "pageindex-md-builder-fixes",
+  "feature_id": "FEAT-613",
+  "spec": "sdd/specs/pageindex-md-builder-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-30T21:01:10+00:00",
+  "completed_at": "2026-09-30T21:07:43+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-3882",
+      "slug": "fence-aware-md-parser",
+      "title": "Fence-aware parse_markdown_structure + regression tests",
+      "feature_id": "FEAT-613",
+      "feature": "pageindex-md-builder-fixes",
+      "spec": "sdd/specs/pageindex-md-builder-fixes.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Sole task of the feature; touches only md_builder.py and its new test file, no shared state.",
+      "discovered_from": "issue:8b6d7358c602",
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-09-30T21:05:00+00:00",
+      "completed_at": "2026-09-30T21:06:08+00:00",
+      "file": "sdd/tasks/completed/TASK-3882-fence-aware-md-parser.md",
+      "verification": "verified"
+    }
+  ]
+}

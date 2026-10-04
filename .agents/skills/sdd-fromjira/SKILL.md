@@ -5,6 +5,14 @@ description: Bootstrap an SDD Brainstorm from a Jira ticket, conducting Q&A and 
 
 # SDD From Jira
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-fromjira procedure](../../../.claude/commands/sdd-fromjira.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks to bootstrap an SDD brainstorm from a Jira ticket, run `sdd-fromjira`, or convert a Jira issue into a feature proposal.
 
 Invocation: `sdd-fromjira <JIRA_KEY> [--complexity=fix|simple|standard|complex] [--skip-qa]`.
@@ -26,13 +34,16 @@ Fetch requirements from a Jira ticket, structure them, conduct targeted Q&A, res
 ## Workflow
 
 1. Fetch Jira ticket:
-   - Use Jira MCP tool (`jira_get_issue`) if available, or curl fallback via environment variables (`JIRA_INSTANCE`, `JIRA_API_TOKEN`).
+   - Use Jira MCP tool (`jira_get_issue`) if available, or curl fallback via
+     `JIRA_INSTANCE`, `JIRA_USERNAME`, and `JIRA_API_TOKEN` without logging secrets.
    - Extract summary, description, acceptance criteria, components, labels, subtasks.
 2. Parse content:
    - Convert description/ADF to plain text.
    - Extract acceptance criteria and constraints.
 3. Classify complexity:
    - `fix` (1 round Q&A), `simple` (2 rounds), `standard` (2-3 rounds), `complex` (3+ rounds).
+   - `--complexity` overrides classification; `--skip-qa` skips the interview
+     when the supplied Jira description is exhaustive.
 4. Present ticket context:
    - Show summary, components, AC, and complexity assessment to user.
 5. Interactive Q&A:

@@ -1,0 +1,6 @@
+{
+  "description": "an empty input survives a full core-operation chain",
+  "input": [],
+  "ops": [{"op": "select", "columns": []}, {"op": "filter", "column": "missing", "operator": "eq", "value": 1}, {"op": "sort", "by": [{"column": "missing", "direction": "asc"}]}, {"op": "limit", "n": 2}],
+  "expected": []
+}

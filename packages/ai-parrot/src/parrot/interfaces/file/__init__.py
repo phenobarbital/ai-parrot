@@ -7,11 +7,12 @@ uses parrot.interfaces.file continues to work via this shim.
 
 Eager re-exports: FileManagerInterface, FileMetadata,
                   LocalFileManager, TempFileManager.
-Lazy re-exports:  S3FileManager, GCSFileManager — loaded on first
-                  access via __getattr__ so importing this package
-                  does not pull in aioboto3 or
-                  google-cloud-storage.
+Lazy re-exports:  S3FileManager, GCSFileManager, SharePointFileManager,
+                  OneDriveFileManager — loaded on first access via
+                  __getattr__ so importing this package does not pull in
+                  aioboto3, google-cloud-storage, or msgraph.
 """
+
 import importlib
 import sys
 
@@ -29,11 +30,16 @@ __all__ = (
     "TempFileManager",
     "S3FileManager",
     "GCSFileManager",
+    "SharePointFileManager",
+    "OneDriveFileManager",
 )
 
 _LAZY_MANAGERS = {
     "S3FileManager": "navigator.utils.file.s3",
     "GCSFileManager": "navigator.utils.file.gcs",
+    # Parrot-native Graph managers (FEAT-603) — lazy so importing this package never loads msgraph.
+    "SharePointFileManager": "parrot.interfaces.file.sharepoint",
+    "OneDriveFileManager": "parrot.interfaces.file.onedrive",
 }
 
 

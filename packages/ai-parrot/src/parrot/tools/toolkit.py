@@ -10,6 +10,7 @@ from types import UnionType
 from typing import (
     TYPE_CHECKING,
     Any,
+    ClassVar,
     Optional,
     Union,
     get_args,
@@ -26,10 +27,11 @@ from pydantic import BaseModel, Field, create_model
 
 from ..conf import BASE_STATIC_URL
 from .abstract import AbstractTool, AbstractToolArgsSchema
-
+from .execution_gates import ServerManagedToolkit, checked_args_schema, checked_executor, toolkit_server_params
 if TYPE_CHECKING:
     from ..auth.permission import PermissionContext
     from ..auth.resolver import AbstractPermissionResolver
+    from .config_schema import ConfigOption
 
 
 class ToolkitTool(AbstractTool):
@@ -38,12 +40,7 @@ class ToolkitTool(AbstractTool):
     """
 
     def __init__(
-        self,
-        name: str,
-        bound_method: callable,
-        description: str = None,
-        args_schema: type[BaseModel] = None,
-        **kwargs
+        self, name: str, bound_method: callable, description: str = None, args_schema: type[BaseModel] = None, **kwargs
     ):
         """
         Initialize a toolkit tool.
@@ -105,11 +102,11 @@ class ToolkitTool(AbstractTool):
             type_hints = get_type_hints(self.bound_method)
 
             # Build fields for Pydantic model
-            fields = {}
+            fields, server_managed = {}, toolkit_server_params(self.bound_method)
 
             for param_name, param in sig.parameters.items():
-                # Skip 'self' parameter (shouldn't be there for bound methods, but just in case)
-                if param_name == "self":
+                # Skip self (and FEAT-622 server-managed params: they never reach the LLM args schema)
+                if param_name == "self" or param_name in server_managed:
                     continue
 
                 # Get type hint
@@ -203,7 +200,29 @@ class ToolkitTool(AbstractTool):
         return result
 
 
-class AbstractToolkit(ABC):
+def _is_host_class(cls: type) -> bool:
+    """Return True iff ``cls`` is the class of a host resolver entry (``source`` ``"host"`` or ``"walk"``).
+
+    Computed from resolver entries (never stamped on the class). The resolver is
+    imported lazily because ``resolver`` imports ``discovery``, which imports this module.
+    """
+    from .resolver import get_toolkit_resolver  # pylint: disable=import-outside-toplevel
+
+    return get_toolkit_resolver().is_host_class(cls)
+
+
+def effective_access(cls: type, method_name: str) -> Optional[str]:
+    """Effective access of toolkit method ``method_name``: ``"read"``, ``"write"`` or ``None``.
+
+    ``"read"`` when listed in ``cls.read_tools``; ``"write"`` (fail-safe) for other
+    methods of a host toolkit; ``None`` for built-ins (unchanged behaviour).
+    """
+    if method_name in getattr(cls, "read_tools", frozenset()):
+        return "read"
+    return "write" if _is_host_class(cls) else None
+
+
+class AbstractToolkit(ServerManagedToolkit, ABC):  # noqa: B024 -- deliberately has no required abstract methods; see below.
     """
     Abstract base class for creating toolkits - collections of related tools.
 
@@ -318,6 +337,23 @@ class AbstractToolkit(ABC):
     #: fully backward compatible, no automatic I/O.
     auto_open: bool = False
 
+    #: FEAT-593 — optional Pydantic model describing this toolkit's configuration. When set,
+    #: ``config_schema()`` publishes its ``model_json_schema()``; otherwise the constructor is
+    #: introspected.
+    config_model: ClassVar[type[BaseModel] | None] = None
+    #: FEAT-593 — curated constructor params that are secrets (stored in the vault, masked on GET).
+    secret_params: ClassVar[frozenset[str]] = frozenset()
+    #: FEAT-593 — params whose "users may override" toggle defaults to on in Agent Studio.
+    default_user_overridable: ClassVar[frozenset[str]] = frozenset()
+    #: FEAT-593 — params for which ``config_options()`` returns dynamic choices.
+    options_params: ClassVar[frozenset[str]] = frozenset()
+    #: FEAT-622 — True when this toolkit reads tenant data; tools then refuse without a matching
+    #: ``studio_scope`` (enforced by AbstractTool.execute, FEAT-622 M3b). See parrot.tools.scope.
+    tenant_bound: ClassVar[bool] = False
+    #: FEAT-622 — method names (pre-prefix) that are read-only. Host toolkit methods not listed are
+    #: treated as writes and require an approval token (strict confirmation).
+    read_tools: ClassVar[frozenset[str]] = frozenset()
+
     def __init__(self, **kwargs):
         """
         Initialize the toolkit.
@@ -340,7 +376,7 @@ class AbstractToolkit(ABC):
         self.credential_provider = kwargs.get("credential_provider", self.credential_provider)
 
         # Remote execution wiring — propagated to every generated tool.
-        self.executor = kwargs.get("executor")
+        self.executor = checked_executor(self, kwargs.get("executor"))
         self.webhook_callback_url = kwargs.get("webhook_callback_url")
         self.remote_timeout_seconds = int(kwargs.get("remote_timeout_seconds", 300))
 
@@ -367,19 +403,19 @@ class AbstractToolkit(ABC):
         # a running loop (3.10+).
         self._open_lock: asyncio.Lock = asyncio.Lock()
 
-    async def start(self) -> None:
+    async def start(self) -> None:  # noqa: B027 -- deliberately optional, see class docstring.
         """
         Optional startup logic for the toolkit.
         Override in subclasses if needed.
         """
 
-    async def stop(self) -> None:
+    async def stop(self) -> None:  # noqa: B027 -- deliberately optional, see class docstring.
         """
         Optional shutdown logic for the toolkit.
         Override in subclasses if needed.
         """
 
-    async def cleanup(self) -> None:
+    async def cleanup(self) -> None:  # noqa: B027 -- deliberately optional, see class docstring.
         """
         Optional cleanup logic for the toolkit.
         Override in subclasses if needed.
@@ -387,7 +423,7 @@ class AbstractToolkit(ABC):
 
     # ── FEAT-391: per-tool connection lifecycle ─────────────────────────────
 
-    async def _open(self) -> None:
+    async def _open(self) -> None:  # noqa: B027 -- deliberately optional, see docstring below.
         """
         Acquire external resources (connections, sessions, pools).
 
@@ -557,6 +593,8 @@ class AbstractToolkit(ABC):
                 "start",
                 "stop",
                 "cleanup",
+                "config_schema",
+                "config_options",
                 *self.exclude_tools,
             ):
                 continue
@@ -650,7 +688,7 @@ class AbstractToolkit(ABC):
         description = description.strip()
 
         # Determine args schema - prioritize method-specific schema
-        args_schema = getattr(bound_method, "_args_schema", None)
+        args_schema = checked_args_schema(self, bound_method, name)
 
         # If no custom schema is defined, always generate from method signature
         # This ensures each method only gets the parameters it actually needs
@@ -688,7 +726,32 @@ class AbstractToolkit(ABC):
                 tool.routing_meta = {}
             tool.routing_meta["requires_confirmation"] = True
 
+        # FEAT-622: read/write marker; host write tools are strictly confirmed.
+        access = effective_access(type(self), method_name)
+        if tool.routing_meta is None:
+            tool.routing_meta = {}
+        tool.routing_meta["access"] = access
+        if access == "write" and _is_host_class(type(self)):
+            tool.routing_meta["requires_confirmation"] = True
+            tool.routing_meta["confirmation_enforced"] = True
+            tool.routing_meta["confirm_window_seconds"] = 0
+
         return tool
+
+    @classmethod
+    def config_schema(cls, slug: str) -> dict[str, Any]:
+        """Return the FEAT-593 JSON Schema envelope ``{slug, class_name, source, schema}``."""
+        from .config_schema import build_schema_envelope  # pylint: disable=import-outside-toplevel
+
+        return build_schema_envelope(slug, cls).model_dump(by_alias=True)
+
+    async def config_options(self, param: str) -> list["ConfigOption"]:
+        """Dynamic choices for ``param`` (FEAT-593). Never exposed as an LLM tool.
+
+        Raises:
+            NotImplementedError: the toolkit offers no dynamic options for ``param``.
+        """
+        raise NotImplementedError(f"{type(self).__name__} has no dynamic options for {param!r}")
 
     def get_toolkit_info(self) -> dict[str, Any]:
         """

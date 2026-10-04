@@ -748,6 +748,18 @@ Refine with context you already have: the skill trigger the user typed (`/widget
 
 ### 6.4 FlexDashboard specifics (FEAT-491)
 
+### 6.5 Linked surfaces (FEAT-598)
+
+Linked surfaces carry data-source descriptors in `metadata.extensions.parrot_data_sources` instead of embedding all rows directly. The renderer recognizes these by the presence of this extension key and can re-fetch data dynamically.
+
+The renderer lane fetches data using the viewer's JWT authentication, applying DSL transforms locally when present, and follows a scheduler policy for refresh. Renderer modules referenced by `transform.ref` must be loaded with proper CSP configuration.
+
+Route rule: a single query-slug is fetched from `POST /api/v2/services/queries/{slug}` (the optimised single-query handler); a descriptor with a `tenant` uses `/api/v1/{tenant}/queries/{slug}`; only `is_multiquery` descriptors go to `/api/v3/queries/{slug}` (the MultiQS pipeline handler). Tool-built envelopes are definition-only by default (`rows: []`, `snapshot_at: null`), so the lane's on-mount fetch is the only execution of each query.
+
+Loading states include active fetch indicators, "unavailable" for denied requests, and "data as of" timestamps for share-token views. See [../outputs/a2ui-linked-surfaces.md](../outputs/a2ui-linked-surfaces.md) for complete details.
+
+**Linked dashboards — `kind: "derived"`.** Every `parrot_data_sources` entry carries a `kind`: `query_slug` (fetched; a descriptor without `kind` is one) or `derived` (`{"kind": "derived", "from": "<sibling key>", "transform": {"ops": […]}, "target": "/<key>/rows"}`). The dashboard owns its sources: fetch each `query_slug` source **once per pass** however many components bind `/<key>/rows` or `/<key>/rows/0/<col>` (six KPICards over one `kpis` query), and compute a `derived` view locally from its parent's full fetched frame with the DSL — never POST it, never schedule it, never send it params; recompute it whenever its parent produces a new frame, refresh its parent when the user refreshes it, and mark it `error` when the parent fails (keep the snapshot). `contract/fixtures/parity/derived_dashboard.json` is the executable contract (order, fetched keys, ignored params, rows).
+
 **Datasets** (six lazy `QuerySlugSource`s registered with `add_query`, never eagerly fetched): `msl` → `flex_msl_brian_bi`, `finance` → `Finance_results_bi`, `hours` → `flex_hours_query_pbi`, `employees` → `flex_empolyees_brian_bi` (the typo is real), `region_utilization` → `fm_regions_avg_employees_html`, `rep_utilization` → `fm_rep_utilization`.
 
 **Skills / triggers** (`agents/flex_dashboard/skills/`): `/widget <kpi name> [filters]` and `/infographic <ask>`. The widget skill maps KPIs to shapes: month-series KPIs → `Chart` line (`x: "month"`); Pay Code and Rep Utilization → `DataTable`; Proximity Staffing → `Map` (store + employee layers, defaults `radius_miles=50`, `nearest_n=3`); hero totals (Worked Hours, Payroll, P&L Revenue, Payroll % to Revenue) → one `KPICard` each. Hard rules: never invent numbers, never widen a KPI's own filter scope, always state applied filters.
@@ -814,6 +826,7 @@ What the backend runtime does — and what the Svelte renderer must do identical
 6. UI: searchable multiselect per filter, select-all / clear, selection chips, a global reset, and a summary line reflecting the current selection (`all` for unconstrained filters).
 7. Out of scope by decision: URL / localStorage persistence of filter state, cross-surface filter state.
 8. On non-interactive surfaces (SSR, PDF) the bar degrades to a static summary line + a `degradation_record`, never a dead control.
+9. **Filter vs Refresh vs Reload (FEAT-598)**: *Filter* is local over embedded rows (items 1-8); a filter carrying `parrot_param` is a **Reload** — it re-fetches its linked source from QuerySource with the new param (§6.5); *Refresh* re-runs the server lane (`POST …/ui/surfaces/{id}/refresh` — recipe or descriptor).
 
 ---
 

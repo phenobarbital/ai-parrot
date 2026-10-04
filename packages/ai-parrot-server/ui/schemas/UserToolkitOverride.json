@@ -1,0 +1,40 @@
+{
+  "description": "One user's override of one toolkit on one agent (non-secret params + vault refs).",
+  "properties": {
+    "agent_id": {
+      "title": "Agent Id",
+      "type": "string"
+    },
+    "params": {
+      "additionalProperties": true,
+      "title": "Params",
+      "type": "object"
+    },
+    "secret_refs": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Secret Refs",
+      "type": "object"
+    },
+    "slug": {
+      "title": "Slug",
+      "type": "string"
+    },
+    "updated_at": {
+      "title": "Updated At",
+      "type": "string"
+    },
+    "user_id": {
+      "title": "User Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "user_id",
+    "agent_id",
+    "slug"
+  ],
+  "title": "UserToolkitOverride",
+  "type": "object"
+}

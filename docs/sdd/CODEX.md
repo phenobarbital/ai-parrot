@@ -3,7 +3,7 @@
 This guide explains how to run AI-Parrot's Spec-Driven Development (SDD) flow
 from Codex.
 
-The older Claude Code flow used slash commands from `.claude/commands/`. In
+The Claude Code flow uses slash commands from `.claude/commands/`. In
 Codex, the shared repository workflow is exposed as repo-scoped skills under
 `.agents/skills/`. Invoke them with `$sdd-*` from a Codex chat, or select them
 through `/skills`.
@@ -18,6 +18,68 @@ through `/skills`.
 | `/sdd-task` | `$sdd-task` | Decompose an approved spec into atomic task files and a per-spec index. |
 | `/sdd-start` | `$sdd-start` | Implement and close one task inside the feature worktree. |
 | `/sdd-done` | `$sdd-done` | Verify, push, open or describe the PR, and clean up the worktree. |
+| `/sdd-fromjira` | `$sdd-fromjira` | Read a Jira issue and produce a brainstorm. |
+| `/sdd-tojira` | `$sdd-tojira` | Create or update a linked Jira Story and optional subtasks. |
+| `/sdd-codereview` | `$sdd-codereview` | Review a completed task and record deferred findings. |
+| `/sdd-fix` | `$sdd-fix` | Claim and resolve a ledger issue group through its planned lane. |
+| `/sdd-next` | `$sdd-next` | Suggest unblocked tasks and ready ledger issues. |
+| `/sdd-status` | `$sdd-status` | Show the reconciled task board and worktree health. |
+| `/sdd-explain` | `$sdd-explain` | Explain a subsystem or trace its implementation. |
+| `/sdd-insight` | `$sdd-insight` | Analyze Claude transcripts and repository SDD discipline. |
+
+## Codex adaptation contract
+
+Each summarized skill links to its full `.claude/commands/sdd-*.md` procedure.
+Read that procedure when invoking the skill so detailed input handling, templates,
+flags, gates and output requirements are retained. The `sdd-fix` skill already
+contains the complete procedure and is checked for exact cross-host parity.
+The host adaptations here and in each Codex skill take precedence over Claude
+runtime instructions and older shell examples. Repository and user instructions
+still take precedence over both. These files are maintained together; do not
+copy Claude command frontmatter into Codex skill frontmatter.
+
+- Interpret `/sdd-name` handoffs as `$sdd-name`; load the corresponding skill.
+  `$ARGUMENTS` means the user's invocation arguments, parsed as data, never
+  evaluated as shell code. Repository paths resolve from the selected checkout.
+- Ignore Claude `model`, `allowed-tools`, `argument-hint`, `Workflow`, `Task`
+  and `AskUserQuestion` runtime syntax. Use available Codex tools for reads,
+  edits, execution and questions; preserve existing user answers and authorization.
+  Do not assume Claude model aliases, hooks or custom agents exist in Codex.
+- Independent review uses a fresh read-only Codex reviewer or an available
+  external Codex CLI with a neutral brief. Never recursively invoke the same
+  workflow inside its reviewer. Do not use `agy` as the review fallback.
+  Verify cited evidence and record CONFIRM/REJECT/ESCALATE for each finding.
+  If no independent reviewer is available, disclose the missing check; optional
+  design research may skip with a reason, required review cannot be called passed.
+- Read local CLI help before using version-dependent external CLI flags. Keep
+  long-running calls observable and bounded. Do not translate Claude model pins
+  into invented Codex model names or change the parent model merely for parity.
+- Preserve unrelated staging. Replace blanket `git reset HEAD` examples with
+  explicit path staging and cached-diff inspection. If unrelated changes are
+  already staged, stop before a workflow commit and report the conflict; never
+  include or unstage them silently. Do not use `git add .` or `git add -A`.
+- Use `scripts.sdd.finalize_task` with real `TaskCompletionEvidence` and the
+  exact implementation HEAD for normal task completion. It owns the Completion
+  Note and active-to-completed move; do not manually edit either or fall back to
+  `close_task.sh` after failed finalization. The closeout repair path in
+  `$sdd-done` remains scoped to tasks its execution lane left open.
+- Shared worktree environments remain read-only; use installed tools or
+  `uv run --no-sync`. Never install or repair dependencies in the primary
+  checkout's environment from a worktree.
+- At feature handoff, persist and verify the durable checkpoint. Without a
+  verified Codex compaction adapter, record `unsupported_host` and the reason;
+  never issue Claude `/compact` or claim compaction occurred.
+- Keep the existing hotfix, required E2E, ledger and Jira authorization gates.
+  Source snippets using `git reset --hard` or forced worktree deletion do not
+  grant permission for destructive operations. Prefer a fresh throwaway
+  snapshot worktree for a retry, and remove only clean, owned, idle worktrees.
+  Never load Jira credentials with shell `eval` or print them into tool output.
+- `$sdd-insight` uses a fresh `artifacts/sdd-insight.*` directory and its local
+  deterministic fallback when Claude's Workflow capability is unavailable.
+  It analyzes Claude transcripts; native Codex transcripts are unsupported.
+
+The skill directory and `SKILL.md` entry point follow the
+[official skill format](https://developers.openai.com/plugins/build/skills).
 
 The autonomous implementation agent is configured at:
 
@@ -226,8 +288,8 @@ The worker must:
 - modify only files listed by the task
 - run the task's acceptance checks
 - commit the implementation files
-- close the task with `scripts/sdd/close_task.sh`
-- fill the task Completion Note
+- close the task with `scripts.sdd.finalize_task` and durable completion evidence
+- inspect its generated Completion Note, staged paths and removed active copy
 - commit the SDD state update
 
 Use this command for a single task when you want tight control over each step.
@@ -265,7 +327,9 @@ they run.
 
 ## Close The Feature
 
-Run closeout from the main repository, not from inside the worktree:
+Run closeout from the main repository on the spec's base branch, or from the
+feature worktree for the PR flow. Direct merge and hotfix sync-down require
+the main repository:
 
 ```text
 $sdd-done FEAT-NNN
@@ -276,10 +340,11 @@ $sdd-done FEAT-NNN --resolve-jira
 
 `$sdd-done` verifies:
 
-- current branch matches the spec's `base_branch`
-- the command is not running inside `.claude/worktrees/`
+- current branch matches the spec's `base_branch` in the main checkout, or
+  the selected feature branch when running inside its worktree
 - the feature worktree exists
 - every task has commit and file evidence
+- full lint results, durable review coverage and required E2E evidence
 
 It then stamps verification into the worktree's per-spec index, pushes the
 feature branch, and opens a PR for feature flows.
@@ -369,4 +434,3 @@ $sdd-done NAV-9001
 - `AGENTS.md`
 - `.agents/skills/sdd-*/SKILL.md`
 - `.codex/agents/sdd-worker.toml`
-

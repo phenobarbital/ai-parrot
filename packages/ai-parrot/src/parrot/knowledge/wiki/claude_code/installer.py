@@ -352,6 +352,58 @@ def _managed_server_names(root: Path) -> list[str]:
     return ["wikitoolkit", *toolkit_server_names(root)]
 
 
+def server_tool_rule(server_name: str) -> str:
+    """Return the Claude Code permission rule allowing every tool of an MCP server.
+
+    ``mcp__<server>`` matches all ``mcp__<server>__<tool>`` calls. Approving a
+    server in ``enabledMcpjsonServers`` only makes its tools visible; without
+    this rule every call still prompts, which stalls unattended agents
+    (sdd-worker in tmux filing ledger issues through ``mcp__wikitoolkit__ledger_open``).
+
+    Args:
+        server_name: The ``.mcp.json`` server key, e.g. ``"parrot-sdd-coder"``.
+
+    Returns:
+        The ``permissions.allow`` rule for that server.
+    """
+    return f"mcp__{server_name}"
+
+
+def _merge_server_tool_rules(local: dict[str, Any], local_path: Path, server_names: Sequence[str]) -> list[str]:
+    """Add ``mcp__<server>`` allow rules for ``server_names``; return the rules added.
+
+    Raises:
+        RuntimeError: ``permissions`` / ``permissions.allow`` has the wrong JSON type.
+    """
+    permissions = local.get("permissions")
+    if permissions is None:
+        permissions = local["permissions"] = {}
+    if not isinstance(permissions, dict):
+        raise RuntimeError(f"{local_path}: 'permissions' is not a JSON object")
+    allow = permissions.get("allow")
+    if allow is None:
+        allow = permissions["allow"] = []
+    if not isinstance(allow, list):
+        raise RuntimeError(f"{local_path}: 'permissions.allow' is not a list")
+    missing = [rule for rule in map(server_tool_rule, server_names) if rule not in allow]
+    allow.extend(missing)
+    return missing
+
+
+def _drop_server_tool_rules(local: dict[str, Any], server_names: Sequence[str]) -> int:
+    """Remove the ``mcp__<server>`` allow rules for ``server_names``; return how many were removed."""
+    permissions = local.get("permissions")
+    allow = permissions.get("allow") if isinstance(permissions, dict) else None
+    if not isinstance(allow, list):
+        return 0
+    rules = set(map(server_tool_rule, server_names))
+    kept = [rule for rule in allow if rule not in rules]
+    removed = len(allow) - len(kept)
+    if removed:
+        permissions["allow"] = kept
+    return removed
+
+
 def _install_mcp_approval(root: Path) -> str:
     """Merge the managed server names into `.claude/settings.local.json`.
 
@@ -375,11 +427,15 @@ def _install_mcp_approval(root: Path) -> str:
         names = local["enabledMcpjsonServers"] = []
     if not isinstance(names, list):
         raise RuntimeError(f"{local_path}: 'enabledMcpjsonServers' is not a list")
-    missing = [n for n in _managed_server_names(root) if n not in names]
-    if not missing:
-        return ".claude/settings.local.json — MCP servers already authorized"
+    managed = _managed_server_names(root)
+    missing = [n for n in managed if n not in names]
     names.extend(missing)
+    rules = _merge_server_tool_rules(local, local_path, managed)
+    if not missing and not rules:
+        return ".claude/settings.local.json — MCP servers already authorized"
     _write_settings(local_path, local)
+    if not missing:
+        return f".claude/settings.local.json — {len(rules)} MCP tool allow rule(s) added"
     return f".claude/settings.local.json — {len(missing)} MCP server(s) authorized ({', '.join(missing)})"
 
 
@@ -410,19 +466,18 @@ def _uninstall_mcp_approval(root: Path, removed_toolkit_names: Sequence[str] = (
     if not isinstance(local, dict):
         return None
 
-    names = local.get("enabledMcpjsonServers")
-    if not isinstance(names, list):
-        return None
-
     candidates = {"wikitoolkit", *removed_toolkit_names}
-    to_remove = {n for n in names if n in candidates}
+    rules_removed = _drop_server_tool_rules(local, sorted(candidates))
+
+    names = local.get("enabledMcpjsonServers")
+    to_remove = {n for n in names if n in candidates} if isinstance(names, list) else set()
     if not to_remove:
-        return None
+        if not rules_removed:
+            return None
+        _write_settings(local_path, local)
+        return f".claude/settings.local.json — {rules_removed} MCP tool allow rule(s) removed"
 
     kept = [n for n in names if n not in to_remove]
-    if len(kept) == len(names):
-        return None
-
     if kept:
         local["enabledMcpjsonServers"] = kept
     else:
@@ -458,14 +513,16 @@ def uninstall_toolkit_approvals(root: Path, removed_toolkit_names: Sequence[str]
     if not isinstance(local, dict):
         return None
 
-    names = local.get("enabledMcpjsonServers")
-    if not isinstance(names, list):
-        return None
-
     candidates = set(removed_toolkit_names)
-    to_remove = {n for n in names if n in candidates}
+    rules_removed = _drop_server_tool_rules(local, sorted(candidates))
+
+    names = local.get("enabledMcpjsonServers")
+    to_remove = {n for n in names if n in candidates} if isinstance(names, list) else set()
     if not to_remove:
-        return None
+        if not rules_removed:
+            return None
+        _write_settings(local_path, local)
+        return f".claude/settings.local.json — {rules_removed} MCP tool allow rule(s) removed"
 
     kept = [n for n in names if n not in to_remove]
     if kept:
@@ -502,11 +559,15 @@ def install_toolkit_approvals(root: Path) -> Optional[str]:
     if not isinstance(names, list):
         raise RuntimeError(f"{local_path}: 'enabledMcpjsonServers' is not a list")
 
-    missing = [n for n in toolkit_server_names(root) if n not in names]
-    if not missing:
-        return None
+    toolkit_names = toolkit_server_names(root)
+    missing = [n for n in toolkit_names if n not in names]
     names.extend(missing)
+    rules = _merge_server_tool_rules(local, local_path, toolkit_names)
+    if not missing and not rules:
+        return None
     _write_settings(local_path, local)
+    if not missing:
+        return f".claude/settings.local.json — {len(rules)} MCP tool allow rule(s) added"
     return f".claude/settings.local.json — {len(missing)} MCP server(s) authorized ({', '.join(missing)})"
 
 

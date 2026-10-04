@@ -104,9 +104,10 @@ dependencies = [
     # rs_pep Rust engine's `default_effect` arg, causing every ABAC/PBAC
     # evaluation to fail-closed with a PyO3 TypeError. The latest AI-Parrot
     # changes additionally require the 0.24.0 API surface; 0.28.0 builds on
-    # Python 3.13+. Loose upper
-    # bound on purpose; only the floor is enforced.
-    "navigator-auth>=0.28.0",
+    # Python 3.13+; 0.28.3 keeps abac_middleware after the auth middlewares
+    # when PDP.setup() runs before AuthHandler.setup() (BotManager.setup()
+    # builds PBAC first). Loose upper bound on purpose; only the floor is enforced.
+    "navigator-auth>=0.28.3",
     "navigator-session>=1.0.1",
     # navigator-auth>=0.28 pulls pysaml2; pysaml2 7.5.1+ caps pyopenssl<24.3,
     # which lets a plain pip resolve down to pyopenssl 22.0 — broken against
@@ -141,7 +142,7 @@ dependencies = [
     "aiohttp-sse-client==0.2.1",
     "aiohttp-cors>=0.8.1",
     "brotli==1.2.0",
-    "urllib3==2.7.0",
+    "urllib3==2.8.0",
     # parrot.interfaces.http imports proxylists.proxies unconditionally at
     # module level, so HTTPService (the base of most HTTP toolkits) cannot be
     # imported without it. It was previously undeclared — a bare install of
@@ -153,10 +154,9 @@ dependencies = [
     "openapi-schema-validator==0.6.3",
     "openapi-spec-validator>=0.7.1",
     # async-notify minimal — full notification backends moved to ai-parrot-integrations[messaging].
-    # The base package itself must stay in core: parrot/bots/agent.py imports
-    # NotificationMixin unconditionally, and parrot/notifications/__init__.py
-    # does `from notify import Notify` at module level, so `parrot.bots` cannot
-    # be imported without it. Use `ai-parrot[notify-all]` for the backends.
+    # NotificationMixin defers notify imports until notification features are used.
+    # Keep the base package for its recipient/card models; use
+    # `ai-parrot[notify-all]` for the backends.
     # Floor raised to >=1.6.0 (FEAT-445 TASK-2318) to keep this base pin at
     # or above ai-parrot-server[comm-center]'s own floor — see that extra's
     # comment for why CommCenter requires >=1.6.0.
@@ -201,7 +201,7 @@ parrot = "parrot.cli:cli"
 # GraphIndex CLI — build an interactive knowledge graph from a code repo.
 parrot-graphindex = "parrot.knowledge.graphindex.cli:main"
 # LLM Wiki CLI — machine-first codebase KB for coding assistants (FEAT-260).
-wikitoolkit = "parrot.knowledge.wiki.cli:main"
+wikitoolkit = "parrot.knowledge.wiki.entry:main"
 # Bookstore CLI — personal indexed book library over PageIndex trees.
 bookstore = "parrot.knowledge.bookstore.cli:main"
 # parrot-fs moved to ai-parrot-server in FEAT-203
@@ -222,7 +222,7 @@ notify-all = [
 
 # Database / query tools (querysource, psycopg, advanced asyncdb extras)
 db = [
-    "querysource>=4.1.11",
+    "querysource>=5.1.2",
     "psycopg-binary>=3.2.12",
     "jq==1.7.0",
     "asyncdb[bigquery,mongodb,arangodb,influxdb,boto3,sqlalchemy]>=2.16.2",
@@ -298,6 +298,9 @@ graphindex-postgres = [
 # newer Pythons per the graphindex extra's own precedent) — each ships
 # `abi3` wheels covering py3.10-3.12, verified on PyPI 2026-07-31,
 # following the `tree_sitter_python` pattern already used by graphindex.
+# Since FEAT-609 this extra also brings the structural (symbol) tier:
+# `ast-grep-py` is included, so installing it yields `sym:` pages, not only
+# `## API outline` text.
 wiki-languages = [
     "tree-sitter>=0.23",
     "tree-sitter-php>=0.23",
@@ -306,6 +309,9 @@ wiki-languages = [
     "tree-sitter-rust>=0.23",
     "tree-sitter-perl>=0.23",
     "tree-sitter-luau>=1.2",
+    # FEAT-609 (Q1): for every non-Python language, symbols come ONLY from the
+    # ast-grep seam; without it this extra gave outlines and 0 sym: pages.
+    "ast-grep-py>=0.45",
 ]
 
 # Optional declarative structural backend (FEAT-498): ast-grep-py powers
@@ -343,6 +349,10 @@ bookstore = [
     "pymupdf>=1.27",
     "pymupdf4llm>=0.0.27",
 ]
+
+# Procedure Graph — field-training agent over assembly manuals (FEAT-601).
+# Self-reference so rapidfuzz stays declared only in `graphindex` (test_dependency_boundary.py).
+manuals = ["ai-parrot[graphindex,bookstore]"]
 
 # Task scheduling moved to ai-parrot-server[scheduler] in FEAT-203.
 # FEAT-453 (Decision D1) deliberately, partially REVERSES that move: an
@@ -392,6 +402,13 @@ tokenizer = [
 # ---------------------------------------------------------------------------
 # Pre-existing extras groups (preserved as-is)
 # ---------------------------------------------------------------------------
+# Microsoft Graph file managers (SharePoint / OneDrive) — FEAT-603. Pins mirror the `agents` extra.
+msgraph = [
+    "azure-identity>=1.18.0",
+    "msgraph-sdk>=1.8.0",
+    "microsoft-kiota-authentication-azure>=1.2.0",
+]
+
 agents = [
     "sentence_transformers>=5.3.0",
     "yfinance==0.2.54",
@@ -674,7 +691,7 @@ llms = [
 ]
 
 integrations = [
-    "querysource>=4.1.11",
+    "querysource>=5.1.2",
     # Floor raised to >=1.6.0 (FEAT-445 TASK-2318) — see ai-parrot[agents]'s
     # base async-notify pin and ai-parrot-server[comm-center]'s comment.
     "async-notify[all]>=1.6.0",
@@ -732,6 +749,12 @@ security = [
     # release that added `allow_patterns`/`local_files_only` support to
     # `snapshot_download`/`try_to_load_from_cache`.
     "huggingface_hub>=0.24,<1.0",
+]
+
+# FEAT-590: Needle 3 on-device tool-call delegate backend (NeedleDelegate).
+# Optional and NOT part of `all`; pinned to the version the FEAT-590 spike measured.
+needle = [
+    "cactus-needle==3.0.4",
 ]
 
 # FEAT-523 (TASK-2854): kept for backward compatibility with the
@@ -867,7 +890,7 @@ rust = [
 # Note: chart/infographic/visualization renderers moved to ai-parrot-visualizations in FEAT-200.
 # Note: scheduler extra and server layer moved to ai-parrot-server in FEAT-203.
 all = [
-    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,reddit,mcp,charts,docling,visualizations,rust]",
+    "ai-parrot[agents,images,llms,integrations,db,bigquery,pdf,ocr,audio,finance,flowtask,reddit,mcp,charts,docling,visualizations,rust,msgraph]",
     "ai-parrot-embeddings[all]",
     "ai-parrot-integrations[all]",
     "ai-parrot-server[all]",
@@ -962,6 +985,8 @@ parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]
 "parrot.storage.security_reports" = ["*.sql"]
 # Runtime-loaded bundled pricing tables (calculator.py globs *.json here).
 "parrot.observability.cost.pricing" = ["*.json"]
+# FEAT-598: installable linked-surface contract (JSON Schema + golden fixtures) for renderer teams.
+"parrot.outputs.a2ui.linked" = ["contract/*.json", "contract/fixtures/*/*.json"]
 # Schema DDL shipped for manual application.
 "parrot.security" = ["*.sql"]
 "parrot.pipelines" = ["*.sql"]

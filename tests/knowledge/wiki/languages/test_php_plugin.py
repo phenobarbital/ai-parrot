@@ -162,5 +162,5 @@ def test_scanner_for_php_returns_php_scanner():
     assert isinstance(scanner_for(".php"), PhpScanner)
 
 
-def test_php_scanner_mode_is_heuristic_without_grammar(force_heuristic):
+def test_php_scanner_mode_is_heuristic_without_grammar(force_heuristic, force_no_astgrep):
     assert PhpScanner().mode == "heuristic"

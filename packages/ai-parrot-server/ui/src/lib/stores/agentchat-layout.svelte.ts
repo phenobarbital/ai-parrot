@@ -13,6 +13,10 @@ let canvasOpen = $state(false);
 // Canvas expanded mode — hides the chat thread to maximize canvas space
 let canvasExpanded = $state(false);
 
+// Canvas primary (swapped) mode — the canvas takes the flexible width and the chat becomes the
+// fixed-width side pane (sizes swap, nothing is hidden). Mutually exclusive with expanded mode.
+let canvasPrimary = $state(false);
+
 // Tracks whether we auto-collapsed the global (Program) sidebar
 let _prevGlobalNavState = $state(false);
 let _didCollapseGlobalNav = $state(false);
@@ -71,7 +75,10 @@ export function getCanvasOpen() {
 
 export function toggleCanvas() {
   canvasOpen = !canvasOpen;
-  if (!canvasOpen) canvasExpanded = false;
+  if (!canvasOpen) {
+    canvasExpanded = false;
+    canvasPrimary = false;
+  }
 }
 
 export function openCanvas() {
@@ -82,6 +89,7 @@ export function openCanvas() {
 export function closeCanvas() {
   canvasOpen = false;
   canvasExpanded = false;
+  canvasPrimary = false;
 }
 
 // --- Canvas expanded mode ---
@@ -93,5 +101,16 @@ export function toggleCanvasExpanded() {
   canvasExpanded = !canvasExpanded;
   if (canvasExpanded) {
     historyOpen = false; // close history when going full-screen
+    canvasPrimary = false; // maximize wins over swap
   }
+}
+
+// --- Canvas primary (swap chat <-> canvas sizes) ---
+export function getCanvasPrimary() {
+  return canvasPrimary;
+}
+
+export function toggleCanvasPrimary() {
+  canvasPrimary = !canvasPrimary;
+  if (canvasPrimary) canvasExpanded = false; // swap leaves the chat visible
 }

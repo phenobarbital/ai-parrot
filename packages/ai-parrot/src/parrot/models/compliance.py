@@ -46,6 +46,7 @@ class ShelfAssessment(BaseModel):
     resolved_facings: Optional[int] = Field(default=None)
     unresolved_facing_ids: List[str] = Field(default_factory=list)
     rule_results: List[Dict[str, Any]] = Field(default_factory=list)
+    info_results: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class ComplianceResult(BaseModel):

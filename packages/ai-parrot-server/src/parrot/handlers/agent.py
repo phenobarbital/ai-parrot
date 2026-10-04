@@ -41,13 +41,16 @@ from ..outputs import OutputMode, OutputFormatter
 from ..mcp.integration import MCPServerConfig
 from ..memory import RedisConversation
 from ..interfaces.documentdb import DocumentDb
-from ..tools.manager import ToolManager
+from ..tools.manager import ToolManager, get_toolkit_owner
 from .user_objects import UserObjectsHandler
 from ..mcp.registry import get_factory_map as _get_factory_map
 from .mcp_persistence import MCPPersistenceService as _MCPPersistenceService
 from .credentials_utils import decrypt_credential as _decrypt_credential
+from .toolkit_persistence import ToolkitConfigService
 from ..auth.exceptions import AuthorizationRequired
 from parrot.auth.oauth2.models import AuthRequiredEnvelope
+from parrot.security.vault_utils import retrieve_vault_credential
+from parrot.tools.spec import agent_tooling_ref, hydrate_params
 
 # Canonical PBAC EvalContext builder (FEAT-446) — single source of truth.
 from parrot.auth.eval_context import build_eval_context as _core_build_eval_context
@@ -979,10 +982,11 @@ class AgentTalk(BaseView):
         Configure tool manager and MCP servers from request data.
 
         Used by PATCH to persist a user's ToolManager into the session.
-        The resulting ToolManager is saved under '{agent_name}_tool_manager'.
+        The resulting ToolManager is saved under '{tooling_ref}_tool_manager'.
         """
+        ref = agent_tooling_ref(agent)
         try:
-            tool_manager, mcp_servers = await self._configure_tool_manager(data, request_session, agent_name=agent.name)
+            tool_manager, mcp_servers = await self._configure_tool_manager(data, request_session, agent_name=ref)
         except ValueError as exc:
             return self.error(str(exc), status=400)
 
@@ -1010,6 +1014,9 @@ class AgentTalk(BaseView):
                 request_session=request_session,
                 agent_name=agent.name,
             )
+
+        # FEAT-593: per-user toolkit overrides (always on)
+        tool_manager = await self._apply_user_toolkit_overrides(agent, request_session, tool_manager)
 
         # Optional Jira OAuth 2.0 (3LO) session bootstrap.  Agents that want
         # per-user Jira tokens expose ``jira_credential_resolver`` (and an
@@ -1072,6 +1079,62 @@ class AgentTalk(BaseView):
                 "Failed to bootstrap Jira OAuth session for user %s",
                 user_id,
             )
+
+    async def _apply_user_toolkit_overrides(
+        self, agent: AbstractBot, request_session: Any, tool_manager: Optional[ToolManager]
+    ) -> Optional[ToolManager]:
+        """Build the effective session ToolManager with the user's toolkit overrides (FEAT-593).
+
+        Always on (no opt-in flag). Returns ``tool_manager`` unchanged when the user has no
+        overrides or the stored revision marker is current. Never raises.
+        """
+        user_id = None
+        for attr in ("user_id", "id", "username"):
+            if hasattr(request_session, attr):
+                user_id = getattr(request_session, attr)
+                break
+        if not user_id or request_session is None:
+            return tool_manager
+        svc = ToolkitConfigService()
+        try:
+            ref = agent_tooling_ref(agent)
+            overrides = await svc.load(str(user_id), ref)
+            if not overrides:
+                return tool_manager
+            marker_key = f"{ref}_toolkit_overrides_rev"
+            marker = f"{getattr(agent, '_tooling_revision', '')}:{await svc.revision(str(user_id), ref)}"
+            if tool_manager is not None and request_session.get(marker_key) == marker:
+                return tool_manager
+            base = tool_manager if tool_manager is not None else agent.tool_manager.clone()
+            defaults = {spec.slug: spec for spec in (getattr(agent, "_pending_toolkit_specs", None) or [])}
+            for override in overrides:
+                default_spec = defaults.get(override.slug)
+                if default_spec is None:
+                    continue
+                allowed = set(default_spec.user_overridable)
+                params = await hydrate_params(default_spec)
+                params.update({key: value for key, value in override.params.items() if key in allowed})
+                for key, vault_ref in override.secret_refs.items():
+                    if key in allowed:
+                        params[key] = (await retrieve_vault_credential(str(user_id), vault_ref))[key]
+                cls = agent._resolve_spec_class(override.slug)
+                for tool_name in base.list_tools():
+                    if isinstance(get_toolkit_owner(base.get_tool(tool_name)), cls):
+                        base.remove_tool(tool_name)
+                signature = inspect.signature(cls.__init__).parameters
+                accepted = {
+                    name
+                    for name, parameter in signature.items()
+                    if name != "self" and parameter.kind is not inspect.Parameter.VAR_KEYWORD
+                }
+                filtered = {name: value for name, value in params.items() if name in accepted}
+                base.register_toolkit(cls(**filtered))
+            request_session[f"{ref}_tool_manager"] = base
+            request_session[marker_key] = marker
+            return base
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Toolkit override application failed for '%s': %s", agent.name, type(exc).__name__)
+            return tool_manager
 
     async def _restore_user_mcp_servers(
         self,
@@ -1549,8 +1612,9 @@ class AgentTalk(BaseView):
         # per-system-bot ToolManager swap is not applicable to them.
         user_tool_manager = None
         if request_session and not is_user_bot:
-            session_key = f"{agent.name}_tool_manager"
+            session_key = f"{agent_tooling_ref(agent)}_tool_manager"
             user_tool_manager = request_session.get(session_key)
+            user_tool_manager = await self._apply_user_toolkit_overrides(agent, request_session, user_tool_manager)
 
         # PBAC tool filtering — filter session-scoped ToolManager by policy
         # Only modify the session-scoped clone, never the agent's original
@@ -2060,7 +2124,7 @@ class AgentTalk(BaseView):
             summary: Dict[str, Any] = {
                 "agent": agent_name,
                 "message": "Tool configuration saved to session.",
-                "session_key": f"{agent_name}_tool_manager",
+                "session_key": f"{agent_tooling_ref(agent)}_tool_manager",
             }
             if tool_manager and isinstance(tool_manager, ToolManager):
                 summary["tool_count"] = tool_manager.tool_count()
@@ -2151,8 +2215,8 @@ class AgentTalk(BaseView):
                     self.logger.error("Error processing excel upload: %s", e)
                     return self.error(f"Failed to process file: {str(e)}", status=500)
                 finally:
-                    if os.path.exists(tmp_path):
-                        os.unlink(tmp_path)
+                    if await asyncio.to_thread(os.path.exists, tmp_path):
+                        await asyncio.to_thread(os.unlink, tmp_path)
 
             else:
                 # JSON/Form data for Query Slug
@@ -2211,7 +2275,14 @@ class AgentTalk(BaseView):
 
             mcp_servers_list: list = []
             if request_session:
-                session_key = f"{agent_name}_tool_manager"
+                ref = agent_name
+                manager = self.request.app.get("bot_manager")
+                if manager is not None:
+                    try:
+                        ref = agent_tooling_ref(await manager.get_bot(agent_name))
+                    except Exception:   # unknown agent: legacy name-based key
+                        ref = agent_name
+                session_key = f"{ref}_tool_manager"
                 tool_manager = request_session.get(session_key)
                 if tool_manager and isinstance(tool_manager, ToolManager):
                     # Build serializable list from _mcp_configs

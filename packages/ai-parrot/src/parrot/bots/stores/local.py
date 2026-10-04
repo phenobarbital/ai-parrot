@@ -43,7 +43,7 @@ class LocalKBMixin:
         """
         Get the kb/ directory for this agent.
 
-        Returns path to AGENTS_DIR/<agent_name|agent_id>/kb/
+        Returns path to <_agents_dir or AGENTS_DIR>/<agent_name|agent_id>/kb/
         """
         safe_name = None
         if hasattr(self, 'agent_id'):
@@ -53,7 +53,8 @@ class LocalKBMixin:
             safe_name = self.name.lower().replace(' ', '_')
         else:
             return None
-        kb_dir = Path(AGENTS_DIR) / safe_name / 'kb'
+        base_dir = getattr(self, "_agents_dir", None)
+        kb_dir = (Path(base_dir) if base_dir else Path(AGENTS_DIR)) / safe_name / 'kb'
         return kb_dir
 
     async def configure_local_kb(self) -> None:

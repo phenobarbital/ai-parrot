@@ -35,6 +35,12 @@ from parrot.integrations.telegram.mcp_persistence import (
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _enable_documentdb(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests cover the persistence-enabled path (USE_DOCUMENTDB=True)."""
+    monkeypatch.setattr("parrot.conf.USE_DOCUMENTDB", True, raising=False)
+
+
 @pytest.fixture
 def bearer_payload() -> dict:
     """Minimal bearer-auth /add_mcp payload."""

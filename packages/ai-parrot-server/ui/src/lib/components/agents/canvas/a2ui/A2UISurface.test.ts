@@ -131,3 +131,55 @@ describe('A2UISurface — Infographic root', () => {
     expect(container.querySelector('.h-80')).toBeTruthy();
   });
 });
+
+describe('A2UISurface — v1.0 flat components with id-referenced children (FEAT-611)', () => {
+  const flatEnvelope: A2UIEnvelope = {
+    version: 'v1.0',
+    createSurface: {
+      surfaceId: 'linked-flat',
+      components: [
+        { id: 'root', component: 'Column', children: ['kpi_row', 'note'] },
+        { id: 'kpi_row', component: 'Row', children: ['kpi_a', 'kpi_b'] },
+        { id: 'kpi_a', component: 'KPICard', label: 'Total visits', value: { path: '/kpis/rows/0/visits' } },
+        { id: 'kpi_b', component: 'KPICard', label: 'Stores', value: 5 },
+        { id: 'note', component: 'Text', text: 'flat tree' },
+      ],
+      dataModel: { kpis: { rows: [{ visits: 22 }] } },
+    },
+  };
+
+  it('resolves string children through the surface index instead of rendering "Unknown component"', () => {
+    render(A2UISurface, { envelope: flatEnvelope });
+    expect(screen.getByText('Total visits')).toBeTruthy();
+    expect(screen.getByText('Stores')).toBeTruthy();
+    expect(screen.getByText('22')).toBeTruthy();
+    expect(screen.getByText('flat tree')).toBeTruthy();
+    expect(screen.queryByText(/is not supported in this view/)).toBeNull();
+  });
+});
+
+describe('A2UISurface — FilterBar with two filters on one column (FEAT-611 live S4)', () => {
+  it('renders a From/To pair over the same column without a duplicate-key crash', () => {
+    const envelope: A2UIEnvelope = {
+      version: 'v1.0',
+      createSurface: {
+        surfaceId: 'dup-column-filters',
+        components: [
+          { id: 'root', component: 'Column', children: ['dates'] },
+          {
+            id: 'dates',
+            component: 'FilterBar',
+            filters: [
+              { column: 'day', label: 'From', options: [{ label: 'Mar 1', value: '2025-03-01' }] },
+              { column: 'day', label: 'To', options: [{ label: 'Mar 7', value: '2025-03-07' }] },
+            ],
+          },
+        ],
+        dataModel: {},
+      },
+    };
+    render(A2UISurface, { envelope });
+    expect(screen.getByText('From')).toBeTruthy();
+    expect(screen.getByText('To')).toBeTruthy();
+  });
+});

@@ -1,0 +1,159 @@
+"""Relational DSL ops — semantics fixed in spec §7 (FEAT-598 M2)."""
+
+import json
+from pathlib import Path
+
+import pytest
+from pandas.testing import assert_frame_equal
+
+import parrot.outputs.a2ui.linked
+from parrot.outputs.a2ui.linked.dsl import TransformError, apply_transform, frame_from_records, frame_to_records
+from parrot.outputs.a2ui.linked.models import TransformSpec
+
+
+def _run(
+    rows: list[dict[str, object]],
+    ops: list[dict[str, object]],
+    frames: dict[str, list[dict[str, object]]] | None = None,
+) -> list[dict[str, object]]:
+    """Execute one relational transform with record-shaped sibling frames."""
+    spec = TransformSpec.model_validate({"ops": ops})
+    siblings = {key: frame_from_records(value) for key, value in (frames or {}).items()}
+    return frame_to_records(apply_transform(frame_from_records(rows), spec, frames=siblings))
+
+
+DSL_DIR = Path(parrot.outputs.a2ui.linked.__file__).parent / "contract" / "fixtures" / "dsl"
+RELATIONAL_FIXTURES = [
+    "group_by_sum",
+    "group_by_all_aggs",
+    "pivot_basic",
+    "join_inner",
+    "join_left_null_never_matches",
+    "join_prefix_on_collision",
+    "union_matching_columns",
+]
+
+
+@pytest.mark.parametrize("fixture_name", RELATIONAL_FIXTURES)
+def test_dsl_golden_relational(fixture_name: str) -> None:
+    """Run each relational shared-contract fixture through the Python executor."""
+    case = json.loads((DSL_DIR / f"{fixture_name}.json").read_text())
+    assert _run(case["input"], case["ops"], case.get("frames")) == case["expected"]
+
+
+def test_dsl_join_null_never_matches() -> None:
+    """A left null key survives but cannot match a null sibling key."""
+    result = _run(
+        [{"key": None, "left": 1}],
+        [{"op": "join", "with": "right", "how": "left", "on": [{"left": "key", "right": "key"}]}],
+        {"right": [{"key": None, "value": 2}]},
+    )
+    assert result == [{"key": None, "left": 1, "value": None}]
+
+
+def test_dsl_join_prefix_on_collision() -> None:
+    """A colliding right non-key column is deterministically sibling-prefixed."""
+    result = _run(
+        [{"key": "a", "value": 1}],
+        [{"op": "join", "with": "right", "on": [{"left": "key", "right": "key"}]}],
+        {"right": [{"key": "a", "value": 2}]},
+    )
+    assert result == [{"key": "a", "value": 1, "right_value": 2}]
+
+
+def test_dsl_union_by_matching_columns() -> None:
+    """Union uses only intersecting columns in the own frame's column order."""
+    result = _run(
+        [{"a": 1, "b": 2, "c": 3}],
+        [{"op": "union", "sources": ["right"]}],
+        {"right": [{"b": 4, "a": 5, "d": 6}]},
+    )
+    assert result == [{"a": 1, "b": 2}, {"a": 5, "b": 4}]
+
+
+def test_join_missing_sibling_raises_transform_error() -> None:
+    """An absent sibling source reports the failing join operation index."""
+    spec = TransformSpec.model_validate(
+        {"ops": [{"op": "limit", "n": 1}, {"op": "join", "with": "missing", "on": [{"left": "key", "right": "key"}]}]}
+    )
+    with pytest.raises(TransformError, match="sibling source 'missing' was not executed") as caught:
+        apply_transform(frame_from_records([{"key": "a"}]), spec, frames={})
+    assert caught.value.op_index == 1
+
+
+def test_group_by_first_appearance_order() -> None:
+    """Groups remain in input first-appearance order rather than sorted key order."""
+    result = _run(
+        [{"program": "z", "value": 1}, {"program": "a", "value": 2}, {"program": "z", "value": 3}],
+        [{"op": "group_by", "by": ["program"], "aggregate": {"value": "sum"}}],
+    )
+    assert result == [{"program": "z", "value": 4}, {"program": "a", "value": 2}]
+
+
+def test_relational_ops_do_not_mutate_siblings() -> None:
+    """Join and union read sibling frames without changing their columns or rows."""
+    sibling = frame_from_records([{"key": "a", "value": 2}, {"key": None, "value": 3}])
+    before = sibling.copy(deep=True)
+    join_spec = TransformSpec.model_validate(
+        {"ops": [{"op": "join", "with": "right", "how": "left", "on": [{"left": "key", "right": "key"}]}]}
+    )
+    union_spec = TransformSpec.model_validate({"ops": [{"op": "union", "sources": ["right"]}]})
+    apply_transform(frame_from_records([{"key": "a", "value": 1}]), join_spec, frames={"right": sibling})
+    apply_transform(frame_from_records([{"key": "a", "value": 1}]), union_spec, frames={"right": sibling})
+    assert_frame_equal(sibling, before)
+
+
+@pytest.mark.parametrize(
+    ("cell", "expected"),
+    [
+        (b"caf\xc3\xa9", "café"),
+        (b"\xff\xfe", "//4="),
+        ({"k": b"\xe9", "ok": "x"}, {"k": "6Q==", "ok": "x"}),
+        ([b"\xff", "y"], ["/w==", "y"]),
+        ("caf\udce9", "caf?"),
+    ],
+)
+def test_frame_to_records_sanitises_non_utf8_cells(cell: object, expected: object) -> None:
+    """Binary (top-level or nested) and lone-surrogate cells never break serialisation."""
+    import pandas as pd
+
+    frame = pd.DataFrame({"a": [cell], "n": [1]})
+    assert frame_to_records(frame) == [{"a": expected, "n": 1}]
+
+
+def test_frame_to_records_sanitises_bytes_dtype_column() -> None:
+    """A numpy ``S``-dtype column (not ``object``) is sanitised too."""
+    import pandas as pd
+
+    frame = pd.DataFrame({"a": pd.Series([b"\xe9"]).astype("S")})
+    assert frame_to_records(frame) == [{"a": "6Q=="}]
+
+
+def test_frame_to_records_stringifies_uuid_and_inet_cells() -> None:
+    """uuid/inet cells (asyncpg returns UUID / ipaddress objects) serialise as their text form."""
+    import datetime
+    import ipaddress
+    import uuid
+
+    from asyncpg.pgproto.pgproto import UUID as PgUUID
+
+    uid = uuid.UUID("12345678-1234-5678-1234-567812345678")
+    frame = frame_from_records(
+        [
+            {"u": uid, "pg": PgUUID(str(uid)), "ip": ipaddress.ip_address("10.0.0.1"), "d": datetime.date(2024, 1, 2)},
+            {"u": None, "pg": None, "ip": None, "d": None},
+        ]
+    )
+    records = frame_to_records(frame)
+    assert records[0]["u"] == records[0]["pg"] == str(uid)
+    assert records[0]["ip"] == "10.0.0.1"
+    assert records[0]["d"].startswith("2024-01-02")
+    assert records[1] == {"u": None, "pg": None, "ip": None, "d": None}
+
+
+def test_frame_to_records_preserves_float_precision() -> None:
+    """Floats keep 15 significant digits instead of pandas' default of 10."""
+    import pandas as pd
+
+    frame = pd.DataFrame({"f": [0.39698840256566126]})
+    assert frame_to_records(frame)[0]["f"] == pytest.approx(0.39698840256566126, rel=1e-15)

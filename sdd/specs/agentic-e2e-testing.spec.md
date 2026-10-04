@@ -15,6 +15,18 @@ tags:
   - mcp
   - process-lifecycle
   - sdd
+e2e:
+  policy: required
+  scenario_ids:
+    - http-cli-stays-alive-and-stops
+    - stdio-tool-roundtrip-and-eof
+    - authenticated-minimal-profile
+    - botmanager-offline-boot
+    - controller-and-supervisor-death
+    - timeout-and-grandchild-teardown
+    - two-worktrees-independent
+    - wrong-checkout-cannot-pass
+    - required-evidence-rejections
 ---
 
 # Feature Specification: Deterministic E2E Gate and Agentic Exploration

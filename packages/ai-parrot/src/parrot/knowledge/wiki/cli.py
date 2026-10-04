@@ -32,16 +32,24 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from collections import Counter
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Optional, cast
+import sys
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import click
 from pydantic import ValidationError
 
+from parrot.bots.database.toolkits.sql import _SQLGLOT_DIALECT_MAP
+
+if TYPE_CHECKING:
+    from parrot.knowledge.wiki.schema.service import SchemaPlaneService
+    from parrot.knowledge.wiki.charter import Charter
+    from parrot.knowledge.wiki.inbox.processor import InboxRuntime
 from parrot.knowledge.wiki.context import (
     DEFAULT_BUDGET_TOKENS,
     pack_results,
@@ -60,7 +68,15 @@ from parrot.knowledge.wiki.federation import (
     open_namespace_store,
     resolve_namespaces,
 )
-from parrot.knowledge.wiki.languages import all_scanners
+from parrot.knowledge.wiki.identity import authoring_identity as _authoring_identity
+from parrot.knowledge.wiki.languages import all_scanners, astgrep
+from parrot.knowledge.wiki.languages.fingerprint import (
+    changed_languages,
+    current_fingerprint,
+    load_fingerprint,
+    save_fingerprint,
+)
+from parrot.knowledge.wiki.languages.render import structural_enabled
 from parrot.knowledge.wiki.project import (
     PARROT_DIR,
     WikiConfigError,
@@ -70,10 +86,12 @@ from parrot.knowledge.wiki.project import (
     config_path,
     derive_env_overlay,
     find_project_root,
+    find_shared_root,
     global_registry_path,
     load_effective_config,
     load_global_registry,
     load_project_config,
+    is_linked_worktree,
     merge_namespaces,
     parrot_home,
     resolve_entry_base,
@@ -95,6 +113,7 @@ from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
 from parrot.knowledge.wiki.ledger.service import LedgerService
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
+from parrot.knowledge.wiki.schema.models import SchemaSourceConfig
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
 
@@ -389,6 +408,55 @@ def _resolve_project_effective(path: str | None) -> tuple[Path, WikiEffectiveCon
     except WikiConfigError as exc:
         raise click.ClickException(str(exc)) from exc
     return root, effective
+
+
+_NON_STRUCTURAL_SCANNERS = frozenset({"python", "luau"})
+_STRUCTURAL_INSTALL_HINT = "pip install 'ai-parrot[wiki-languages]'"
+
+
+def _structural_capable_languages() -> list[str]:
+    """Scanner names whose symbols come only from the ast-grep seam (FEAT-609)."""
+    return sorted(name for name in all_scanners() if name not in _NON_STRUCTURAL_SCANNERS)
+
+
+def _structural_gap_warning(scan: Any) -> str | None:
+    """One-line warning when structural-capable files were scanned without ast-grep.
+
+    Pure: no logging, no I/O. ``None`` when the kill switch is off, ast-grep is
+    available, or the scan holds no structural-capable file.
+    """
+    if not structural_enabled() or astgrep.is_available():
+        return None
+    capable = set(_structural_capable_languages())
+    counts: dict[str, int] = {}
+    for file_slice in scan.files:
+        if file_slice.language in capable:
+            counts[file_slice.language] = counts.get(file_slice.language, 0) + 1
+    if not counts:
+        return None
+    total = sum(counts.values())
+    names = ", ".join(sorted(counts))
+    return (
+        f"{total} {names} file(s) scanned without the structural tier: "
+        f"no sym: pages for them. Install 'ai-parrot[wiki-languages]'"
+    )
+
+
+def _symbols_status() -> dict[str, Any]:
+    """``status``'s view of the symbol plane: which languages lack their tier."""
+    if not structural_enabled():
+        return {"enabled": False, "disabled_for": _structural_capable_languages(), "reason": "config"}
+    missing = [name for name in _structural_capable_languages() if all_scanners()[name].mode != "ast-grep"]
+    return {"enabled": not missing, "disabled_for": missing, "reason": "missing-extra" if missing else None}
+
+
+def _format_symbols_status(info: dict[str, Any]) -> str:
+    """Render the ``Symbols`` status line."""
+    if info.get("enabled"):
+        return "enabled"
+    if info.get("reason") == "config":
+        return "disabled by configuration (structural tier switched off)"
+    return f"disabled for {', '.join(info.get('disabled_for') or [])} — {_STRUCTURAL_INSTALL_HINT}"
 
 
 def _require_built(root: Path, config: WikiProjectConfig) -> BaseWikiStore:
@@ -1526,6 +1594,11 @@ def build(
                 use_git=not no_git,
             )
 
+        gap_warning = _structural_gap_warning(scan)
+        if gap_warning:
+            # One channel only: the logger's stderr handler already prints it.
+            _cli_logger.warning(gap_warning)
+
         output_dir = config.storage_path(root)
 
         async def _pipeline() -> dict[str, Any]:
@@ -1541,6 +1614,14 @@ def build(
             enriched_scan, force_rel_paths, enrichment_by_path = await _apply_roblox_enrichment(
                 root, scan, output_dir, sources
             )
+            # FEAT-609 M2: re-ingest every file of a language whose extractor changed
+            # (ast-grep installed/removed, rule file edited) — per-file staleness cannot see it.
+            fp_now = current_fingerprint()
+            changed = changed_languages(await load_fingerprint(store), fp_now)
+            if changed:
+                force_rel_paths = set(force_rel_paths) | {
+                    f.rel_path for f in enriched_scan.files if f.language in changed
+                }
             counts = await _ingest_files(
                 store, sources, root, enriched_scan, force=force, force_rel_paths=force_rel_paths
             )
@@ -1552,6 +1633,7 @@ def build(
             # has succeeded — so a failure anywhere leaves the previous,
             # retryable fingerprint in place for the next run.
             _record_roblox_enrichment_success(output_dir, enrichment_by_path, counts["written_rel_paths"])
+            await save_fingerprint(store, fp_now)
 
             okf_report: dict[str, Any] | None = None
             if not no_export:
@@ -2064,6 +2146,103 @@ def _probe_backend_reachable(root: Path, config: WikiProjectConfig) -> bool | No
     return _run(_probe())
 
 
+@wiki.command("lint")
+@path_option
+@ns_option
+@click.option("--rules", default=None, help="Comma-separated rule ids or packs (plane,export,adr,memory,llm).")
+@click.option("--skip", multiple=True, help="Rule id to skip (repeatable).")
+@click.option("--fix", is_flag=True, help="Apply safe, idempotent fixes (never deletes).")
+@click.option("--llm", is_flag=True, help="Run the opt-in LLM contradiction pass.")
+@click.option("--llm-model", default=None, help="LLM spec; else WIKI_LINT_LLM / WIKI_EXTRACT_LLM.")
+@click.option("--llm-max-pairs", default=50, show_default=True, type=int)
+@click.option("--report", "report_fmt", type=click.Choice(["json", "md"]), default="md", show_default=True)
+@click.option("--output", default=None, help="Report directory (default: <storage>/lint).")
+@click.option("--export-dir", default=None, help="OKF export directory to lint (default: none; export rules skip).")
+@click.option("--ledger/--no-ledger", default=True, show_default=True)
+@click.option(
+    "--notes/--no-notes", default=False, show_default=True, help="Append notes to subject pages (writes to the store)."
+)
+@click.option("--fail-on", type=click.Choice(["error", "warning", "none"]), default="error", show_default=True)
+@click.option("--json", "as_json", is_flag=True, help="Emit the report as JSON.")
+def lint(
+    path_: str | None,
+    ns_opt: str | None,
+    rules: str | None,
+    skip: tuple[str, ...],
+    fix: bool,
+    llm: bool,
+    llm_model: str | None,
+    llm_max_pairs: int,
+    report_fmt: str,
+    output: str | None,
+    export_dir: str | None,
+    ledger: bool,
+    notes: bool,
+    fail_on: str,
+    as_json: bool,
+) -> None:
+    """Lint the wiki graph, export, memories and ADRs; --fix applies safe fixes."""
+    from parrot.knowledge.lint import LintOptions, LintRunner
+    from parrot.knowledge.lint.routing import FindingRouter
+
+    root, effective = _resolve_project_effective(path_)
+    config = effective.config
+    if not config.is_built(root):
+        raise click.ClickException(f"Wiki not built for {root} — run `wikitoolkit build`.")
+    store = _open_store(root, config)
+    if config.backend == "arangodb":
+        try:
+            _run(store.initialize())
+        except Exception as exc:
+            raise click.ClickException(
+                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: " f"{exc}"
+            ) from exc
+    sources = _open_sources(root, config, store=store)
+    read_store = _federate(root, config, store, ns_opt)
+    report_dir = Path(output) if output is not None else config.storage_path(root) / "lint"
+    if not report_dir.is_absolute():
+        report_dir = root / report_dir
+    options = LintOptions(
+        rules=[r.strip() for r in rules.split(",") if r.strip()] if rules else None,
+        skip=[s.strip() for s in skip if s.strip()],
+        fix=fix,
+        llm=llm,
+        llm_model=llm_model,
+        llm_max_pairs=llm_max_pairs,
+        ledger=ledger,
+        notes=notes,
+        fail_on=None if fail_on == "none" else fail_on,
+        export_dir=(root / export_dir) if export_dir else None,
+        report_dir=report_dir,
+    )
+    router = FindingRouter(read_store, report_dir=report_dir, ledger=LedgerService.from_root(root) if ledger else None)
+    report = _run(
+        LintRunner(
+            read_store,
+            root=root,
+            config=config,
+            router=router,
+            extras={"sources": sources},
+        ).run(options)
+    )
+    if as_json:
+        click.echo(report.model_dump_json())
+    elif report_fmt == "json":
+        click.echo(report.model_dump_json(indent=2))
+    else:
+        click.echo(
+            f"Lint: {len(report.findings)} findings, {len(report.fixed)} fixed "
+            f"(errors: {report.counts.get('error', 0)}, warnings: {report.counts.get('warning', 0)})."
+        )
+        for finding in report.findings[:20]:
+            click.echo(
+                f"  [{finding.severity}] {finding.rule_id}: {', '.join(finding.subjects) or '-'} — {finding.message}"
+            )
+        if len(report.findings) > 20:
+            click.echo(f"  … {len(report.findings) - 20} more (see report files or --json).")
+    click.get_current_context().exit(LintRunner.exit_code(report, None if fail_on == "none" else fail_on))
+
+
 @wiki.command()
 @path_option
 @ns_option
@@ -2120,6 +2299,7 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         # named for the structural symbol plane specifically — additive,
         # "languages" itself is unchanged for backward compatibility.
         "structural": {name: s.mode for name, s in all_scanners().items()},
+        "symbols": _symbols_status(),
     }
     if scoped_to is not None:
         name, handle_cfg, storage_dir = scoped_to
@@ -2168,9 +2348,14 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         f"{stats.get('symbols', 0)} symbols, "
         f"~{stats.get('total_tokens', 0)} tokens"
     )
+    if getattr(read_store, "supports_attrs", False):
+        click.echo(f"Attrs     : {stats.get('attrs_pages', 0)} pages indexed")
+    else:
+        click.echo("Attrs     : unsupported")
     click.echo(f"Categories: {stats.get('categories', {})}")
     click.echo(f"Languages : {payload['languages']}")
     click.echo(f"Structural: {payload['structural']}")
+    click.echo(f"Symbols   : {_format_symbols_status(payload['symbols'])}")
     if scoped_to is None:
         click.echo(f"Sources   : {len(entries)} tracked, {len(stale)} stale")
     if namespaces:
@@ -2227,7 +2412,7 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
 # --------------------------------------------------------------------------
 
 
-def _structural_tool(name: str, path_: str | None) -> Any:
+def _structural_tool(name: str, path_: str | None, ns_opt: str | None = None) -> Any:
     """Open the named structural tool (``wiki_symbol_lookup``/etc.) for one call.
 
     Reuses :func:`create_structural_tools` so the CLI's human-readable
@@ -2242,7 +2427,7 @@ def _structural_tool(name: str, path_: str | None) -> Any:
     from parrot.knowledge.wiki.structural.tools import create_structural_tools
 
     root, config = _resolve_project(path_)
-    store = _require_built(root, config)
+    store = _federate(root, config, _require_built(root, config), ns_opt)
     tools = {tool.name: tool for tool in create_structural_tools(store, root, config)}
     return tools[name]
 
@@ -2263,12 +2448,28 @@ def _echo_structural_result(result: Any, as_json: bool) -> None:
 # pulls in) is only imported once an `adr` subcommand is actually resolved,
 # so the `claude-hook` fast path — and every other `wikitoolkit` invocation
 # that never touches ADRs — no longer pays that import cost.
-from parrot.knowledge.wiki.lazy_commands import LazyAdrGroup  # noqa: E402  (bottom import breaks a cycle)
+from parrot.knowledge.wiki.lazy_commands import LazyAdrGroup, LazyGroup  # noqa: E402  (bottom import breaks a cycle)
 
 wiki.add_command(
     LazyAdrGroup(
         name="adr",
         help="Architectural decisions: ingest ADRs, look them up, and review candidates.",
+    )
+)
+wiki.add_command(
+    LazyGroup(
+        name="standup",
+        import_path="parrot.knowledge.wiki.standup.cli",
+        attr="standup",
+        help="Render a daily or period brief.",
+    )
+)
+wiki.add_command(
+    LazyGroup(
+        name="entity",
+        import_path="parrot.knowledge.wiki.entity_cli",
+        attr="entity",
+        help="Manage typed wiki entities.",
     )
 )
 
@@ -2280,6 +2481,7 @@ def symbols() -> None:
 
 @symbols.command("lookup")
 @path_option
+@ns_option
 @click.argument("query")
 @click.option("--kind", default=None, help="Exact symbol kind filter (e.g. function, class).")
 @click.option("--language", default=None, help="Exact scanner-name filter (e.g. python).")
@@ -2288,6 +2490,7 @@ def symbols() -> None:
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
 def symbols_lookup(
     path_: str | None,
+    ns_opt: str | None,
     query: str,
     kind: str | None,
     language: str | None,
@@ -2296,7 +2499,7 @@ def symbols_lookup(
     as_json: bool,
 ) -> None:
     """Find a symbol (function/class/method) by name or qualname."""
-    tool = _structural_tool("wiki_symbol_lookup", path_)
+    tool = _structural_tool("wiki_symbol_lookup", path_, ns_opt)
     kind_enum = SymbolKind(kind) if kind else None
     result = _run(tool._execute(query=query, kind=kind_enum, language=language, path_prefix=path_prefix, limit=limit))
     _echo_structural_result(result, as_json)
@@ -2304,31 +2507,34 @@ def symbols_lookup(
 
 @symbols.command("outline")
 @path_option
+@ns_option
 @click.argument("target")
 @click.option("--depth", default=2, type=int, help="Maximum symbol nesting depth.")
 @click.option("--source", "include_source", is_flag=True, help="Include a capped source excerpt (sym: targets only).")
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
 def symbols_outline(
     path_: str | None,
+    ns_opt: str | None,
     target: str,
     depth: int,
     include_source: bool,
     as_json: bool,
 ) -> None:
     """Get the symbol outline of a file: file:<rel>, sym:<rel>#<q>, or a relative path."""
-    tool = _structural_tool("wiki_code_outline", path_)
+    tool = _structural_tool("wiki_code_outline", path_, ns_opt)
     result = _run(tool._execute(target=target, depth=depth, include_source=include_source))
     _echo_structural_result(result, as_json)
 
 
 @symbols.command("blast")
 @path_option
+@ns_option
 @click.argument("symbol")
 @click.option(
     "--rel",
     "relations",
     multiple=True,
-    help="Edge relation to follow (repeatable); default: calls, extends, implements.",
+    help="Edge relation to follow (repeatable); default: calls, extends, implements, uses.",
 )
 @click.option("--depth", default=2, type=int, help="Maximum BFS depth.")
 @click.option(
@@ -2346,6 +2552,7 @@ def symbols_outline(
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
 def symbols_blast(
     path_: str | None,
+    ns_opt: str | None,
     symbol: str,
     relations: tuple[str, ...],
     depth: int,
@@ -2354,7 +2561,7 @@ def symbols_blast(
     as_json: bool,
 ) -> None:
     """Find every symbol that transitively depends on (calls/extends/implements) SYMBOL."""
-    tool = _structural_tool("wiki_blast_radius", path_)
+    tool = _structural_tool("wiki_blast_radius", path_, ns_opt)
     result = _run(
         tool._execute(
             symbol=symbol,
@@ -3076,6 +3283,206 @@ def ledger_audit() -> None:
         click.echo(f"SQLite: journal={sqlite_info['journal_mode']}, " f"timeout={sqlite_info['busy_timeout_ms']}ms")
 
 
+# --------------------------------------------------------------------------
+# SQL schema-plane commands (FEAT-600)
+# --------------------------------------------------------------------------
+
+
+def _refuse_in_linked_worktree(root: Path) -> None:
+    """Refuse schema-plane writes from a linked worktree."""
+    if is_linked_worktree(root / ".git"):
+        raise click.UsageError("wikitoolkit schema write verbs must run from the main checkout, not a linked worktree.")
+
+
+def _schema_service() -> "SchemaPlaneService":
+    """Create the schema-plane service only when a schema command needs it."""
+    from parrot.knowledge.wiki.schema.service import SchemaPlaneService
+
+    return SchemaPlaneService.from_root()
+
+
+def _changed_ddl_paths(root: Path, origin: str) -> list[Path]:
+    """Return configured DDL files touched by the merge leading to ``HEAD``."""
+    config = load_effective_config(root).config
+    source = config.schema_plane.sources.get(origin)
+    if source is None:
+        raise click.UsageError(f"Unknown schema source {origin!r}.")
+    if not source.ddl_paths:
+        return []
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(root), "diff", "--name-only", "ORIG_HEAD", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise click.ClickException(f"Could not determine changed DDL files: {exc}") from exc
+    changed = proc.stdout.splitlines()
+    return [
+        root / path
+        for path in changed
+        if any(
+            PurePosixPath(path).match(pattern) or path.startswith(f"{pattern.rstrip('/')}/")
+            for pattern in source.ddl_paths
+        )
+        and (root / path).is_file()
+    ]
+
+
+@wiki.group(name="schema")
+def schema() -> None:
+    """Manage the SQL schema plane (sources, sync, DDL ingest, diff, lookup)."""
+
+
+@schema.command("sources")
+def schema_sources() -> None:
+    """List declared sources without exposing DSN values."""
+    for source in _run(_schema_service().sources()):
+        click.echo(f"{source.alias}\t{source.dialect}\t{','.join(source.allowed_schemas)}\t${source.dsn_env}")
+
+
+@schema.command("add-source")
+@click.argument("alias", required=False)
+@click.option("--dialect", required=True, type=click.Choice(sorted(_SQLGLOT_DIALECT_MAP)))
+@click.option("--dsn-env", required=True, help="Environment variable NAME holding the DSN (never the value).")
+@click.option("--schemas", default="public", help="Comma-separated allowed schemas.")
+@click.option("--tables", default=None, help="Comma-separated schema.table allowlist.")
+def schema_add_source(alias: str | None, dialect: str, dsn_env: str, schemas: str, tables: str | None) -> None:
+    """Declare a source in ``.parrot/wiki.json`` under ``schema.sources``."""
+    _refuse_in_linked_worktree(Path.cwd())
+    root = find_shared_root(Path.cwd()) or Path.cwd().resolve()
+    config = load_project_config(root)
+    alias = alias or dialect
+    if alias in config.schema_plane.sources:
+        raise click.ClickException(
+            f"Schema source alias {alias!r} already exists; existing aliases: {', '.join(config.schema_plane.sources)}"
+        )
+    config.schema_plane.sources[alias] = SchemaSourceConfig(
+        alias=alias,
+        dialect=dialect,
+        dsn_env=dsn_env,
+        allowed_schemas=[schema_name.strip() for schema_name in schemas.split(",") if schema_name.strip()],
+        tables=[table.strip() for table in tables.split(",") if table.strip()] if tables else None,
+    )
+    written = save_project_config(root, config)
+    click.echo(f"Added schema source {alias!r} to {written}")
+
+
+@schema.command("sync")
+@click.argument("origin")
+@click.option("--tables", default=None)
+@click.option("--changed", is_flag=True)
+@click.option("--json", "as_json", is_flag=True)
+def schema_sync(origin: str, tables: str | None, changed: bool, as_json: bool) -> None:
+    """Introspect ORIGIN and write its table pages."""
+    _refuse_in_linked_worktree(Path.cwd())
+    report = _run(_schema_service().sync(origin, tables=tables.split(",") if tables else None, changed_only=changed))
+    if as_json:
+        click.echo(report.model_dump_json())
+    else:
+        click.echo(
+            f"created {len(report.created)} updated {len(report.updated)} unchanged {len(report.unchanged)} "
+            f"removed {len(report.removed)} failed {len(report.failed)}"
+        )
+
+
+@schema.command("ingest-ddl")
+@click.argument("paths", nargs=-1, type=click.Path(exists=True, path_type=Path))
+@click.option("--origin", default=None, help="Source alias; omit with --changed to scan every declared source.")
+@click.option(
+    "--dialect",
+    default=None,
+    type=click.Choice(sorted(_SQLGLOT_DIALECT_MAP)),
+    help="SQL dialect; defaults to the source's configured dialect.",
+)
+@click.option("--changed", is_flag=True)
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--quiet", is_flag=True)
+def schema_ingest_ddl(
+    paths: tuple[Path, ...], origin: str | None, dialect: str | None, changed: bool, as_json: bool, quiet: bool
+) -> None:
+    """Fold SQL files into the schema plane without requiring a database.
+
+    With ``--changed`` and neither PATHS nor ``--origin`` (the post-merge
+    hook's invocation), every declared ``schema.sources`` entry is scanned
+    for DDL files touched by the merge, each ingested with its own dialect.
+    """
+    _refuse_in_linked_worktree(Path.cwd())
+    root = find_shared_root(Path.cwd()) or Path.cwd().resolve()
+    sources = load_effective_config(root).config.schema_plane.sources
+    if origin is None:
+        if paths or not changed:
+            raise click.UsageError("--origin is required unless --changed is given without PATHS.")
+        if dialect is not None:
+            raise click.UsageError("--dialect requires --origin.")
+        origins = list(sources)
+    else:
+        if origin not in sources and dialect is None:
+            raise click.UsageError(f"Unknown schema source {origin!r}; pass --dialect or declare it with add-source.")
+        origins = [origin]
+    files = [file for path in paths for file in (path.rglob("*.sql") if path.is_dir() else [path])]
+    for alias in origins:
+        alias_files = files
+        if not alias_files and changed:
+            alias_files = _changed_ddl_paths(root, alias)
+            if not alias_files:
+                continue
+        alias_dialect = dialect or sources[alias].dialect
+        report = _run(
+            _schema_service().ingest_ddl(
+                alias_files, origin=alias, dialect=alias_dialect, changed_only=changed, root=root
+            )
+        )
+        if quiet:
+            continue
+        if as_json:
+            click.echo(report.model_dump_json())
+        else:
+            prefix = f"{alias}: " if len(origins) > 1 else ""
+            click.echo(
+                f"{prefix}created {len(report.created)} updated {len(report.updated)} "
+                f"parse_errors {len(report.parse_errors)}"
+            )
+
+
+@schema.command("diff")
+@click.argument("origin")
+@click.option("--ledger", "to_ledger", is_flag=True, help="File each divergence as a tech_debt ledger issue.")
+def schema_diff(origin: str, to_ledger: bool) -> None:
+    """Report live-vs-DDL divergence for ORIGIN without resolving it."""
+    if to_ledger:
+        _refuse_in_linked_worktree(Path.cwd())
+    rows = _run(_schema_service().diff(origin))
+    for row in rows:
+        click.echo(f"{row['table_id']}\t{row['field']}\tlive={row['live']}\tddl={row['ddl']}")
+    if to_ledger and rows:
+        service = LedgerService.from_root()
+        for row in rows:
+            _run(
+                service.open_issue(
+                    title=f"Schema divergence: {row['table_id']} {row['field']}",
+                    body=f"Live value: {row['live']}\nDDL value: {row['ddl']}",
+                    kind="tech_debt",
+                    severity="minor",
+                    discovered_from=f"schema-diff:{origin}",
+                    about=[row["table_id"]],
+                )
+            )
+
+
+@schema.command("lookup")
+@click.argument("ref")
+@click.option("--json", "as_json", is_flag=True)
+def schema_lookup(ref: str, as_json: bool) -> None:
+    """Show a table page for REF."""
+    result = _run(_schema_service().lookup(ref))
+    if isinstance(result, list):
+        raise click.UsageError("ambiguous reference; candidates: " + ", ".join(result))
+    click.echo(result.model_dump_json(indent=2) if as_json else result.ddl)
+
+
 @wiki.command()
 @path_option
 @click.option(
@@ -3223,28 +3630,6 @@ def export(path_: str | None, output: str) -> None:
 # --------------------------------------------------------------------------
 # Authoring / persistent-memory commands ("save things in the brain")
 # --------------------------------------------------------------------------
-
-
-def _authoring_identity(by: str | None) -> str:
-    """Resolve who is asserting a write.
-
-    Precedence: explicit ``--by`` > ``CLAUDE_AGENT_ID`` /
-    ``PARROT_AGENT_ID`` env (prefixed ``agent:``) > the local user
-    (prefixed ``human:``).
-    """
-    import getpass
-    import os
-
-    if by:
-        return by
-    for env_name in ("CLAUDE_AGENT_ID", "PARROT_AGENT_ID"):
-        value = os.environ.get(env_name)
-        if value:
-            return f"agent:{value}"
-    try:
-        return f"human:{getpass.getuser()}"
-    except Exception:  # noqa: BLE001 — no user db in some containers
-        return "human:unknown"
 
 
 def _authoring_run_id() -> str | None:
@@ -3518,6 +3903,12 @@ def _extract_into_graph(
     " remember when unavailable).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@click.option("--type", "type_", default=None, help="Entity type (project, meeting, ticket, ...).")
+@click.option("--project", default=None, help="Owning project (entity attribute).")
+@click.option("--status", default=None, help="Entity status valid for --type.")
+@click.option("--date", "date_", default=None, help="ISO date (entity attribute).")
+@click.option("--due", default=None, help="ISO due date (entity attribute).")
+@click.option("--owner", default=None, help="Owner identity (entity attribute).")
 def remember(
     text: str,
     path_: str | None,
@@ -3532,6 +3923,12 @@ def remember(
     by: str | None,
     extract_: bool,
     as_json: bool,
+    type_: str | None = None,
+    project: str | None = None,
+    status: str | None = None,
+    date_: str | None = None,
+    due: str | None = None,
+    owner: str | None = None,
 ) -> None:
     """Save a fact, decision, or lesson into the wiki (persistent memory).
 
@@ -3564,6 +3961,27 @@ def remember(
         raise SystemExit(2)
 
     body = text if not source_uri else f"{text}\n\n> Source: {source_uri}"
+    entity_values = {
+        "type": type_,
+        "project": project,
+        "status": status,
+        "date": date_,
+        "due": due,
+        "owner": owner,
+    }
+    attrs_rows: dict[str, str] = {}
+    if any(value is not None for value in entity_values.values()):
+        from parrot.knowledge.wiki.entities import EntityValidationError, normalize_frontmatter
+
+        try:
+            attrs_rows = normalize_frontmatter(
+                {key: value for key, value in entity_values.items() if value is not None},
+                source="memory",
+                strict=True,
+            ).to_rows()
+        except EntityValidationError as exc:
+            click.echo(f"{exc.code}: {exc}", err=True)
+            raise SystemExit(2) from exc
     _run(
         store.upsert_pages(
             [
@@ -3577,6 +3995,7 @@ def remember(
                     token_count=estimate_tokens(body),
                     origin="memory",
                     asserted_by=asserted_by,
+                    attrs=attrs_rows,
                 )
             ]
         )
@@ -4223,6 +4642,32 @@ def _build_triage_adapters(lightweight_model: str, model: str) -> tuple[Any, Any
     return light_adapter, heavy_adapter, light_model_id, same_provider
 
 
+def _resolve_ingest_model_ids(lightweight_model_opt: str | None, model_opt: str | None) -> tuple[str, str]:
+    """Resolve the supervised-ingest model pair with legacy auto-detection."""
+    lightweight_model_value = lightweight_model_opt or _env_setting("WIKI_LIGHTWEIGHT_MODEL")
+    model_value = model_opt or _env_setting("WIKI_MODEL")
+    if not lightweight_model_value and not model_value and not _env_setting("PARROT_NO_AUTO_LLM"):
+        try:
+            from parrot.clients.detection import detect_coding_agent_llm
+
+            detected = detect_coding_agent_llm()
+        except Exception as exc:  # noqa: BLE001 — detection is best-effort
+            click.echo(f"[coding-agent CLI auto-detection failed: {exc}]")
+            detected = None
+        if detected:
+            click.echo(
+                f"[auto-selected {detected} for WIKI_MODEL/WIKI_LIGHTWEIGHT_MODEL — a "
+                "coding-agent CLI session was detected. Set WIKI_MODEL / WIKI_LIGHTWEIGHT_MODEL "
+                "to override, or PARROT_NO_AUTO_LLM=1 to disable auto-detection.]"
+            )
+            lightweight_model_value = detected
+            model_value = detected
+    return (
+        _resolve_model_id(lightweight_model_value, "WIKI_LIGHTWEIGHT_MODEL"),
+        _resolve_model_id(model_value, "WIKI_MODEL"),
+    )
+
+
 def _build_novelty_scorer(root: Path, config: WikiProjectConfig, store: BaseWikiStore) -> Any:
     """Construct a NoveltyScorer: grounding-backed when the graph DB
     exists (mirrors the ``ground`` command's wiring above), else a
@@ -4279,6 +4724,104 @@ def _build_novelty_scorer(root: Path, config: WikiProjectConfig, store: BaseWiki
 
     evaluator = _run(_build_evaluator())
     return NoveltyScorer(grounding_evaluator=evaluator)
+
+
+def _build_ingest_runtime(
+    root: Path,
+    config: WikiProjectConfig,
+    store: BaseWikiStore,
+    sources: SourceCollectionManager,
+    charter: "Charter",
+    charter_path: Path,
+    *,
+    lightweight_model_opt: str | None,
+    model_opt: str | None,
+    fetch_timeout: float = 30.0,
+) -> "InboxRuntime":
+    """Build the shared supervised-ingestion services for one inbox run.
+
+    Args:
+        root: Repository root.
+        config: Resolved project configuration.
+        store: Open retrieval-plane store.
+        sources: Source manifest manager matching ``store``.
+        charter: Parsed editorial charter.
+        charter_path: Source path for ``charter``.
+        lightweight_model_opt: Optional stage-one model override.
+        model_opt: Optional stage-two model override.
+        fetch_timeout: URL acquisition timeout in seconds.
+
+    Returns:
+        Service bindings consumed by :class:`InboxProcessor`.
+
+    Raises:
+        click.ClickException: If neither model can be resolved or an LLM
+            client cannot be constructed.
+    """
+    from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
+    from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+    from parrot.knowledge.wiki.documents import DocumentAcquirer
+    from parrot.knowledge.wiki.inbox.processor import InboxRuntime
+    from parrot.knowledge.wiki.ingest import WikiIngestOrchestrator
+    from parrot.knowledge.wiki.models import WikiConfig
+    from parrot.knowledge.wiki.search import WikiCombinedSearch
+    from parrot.knowledge.wiki.triage import IngestTriageRouter
+
+    lightweight_model, model = _resolve_ingest_model_ids(lightweight_model_opt, model_opt)
+    try:
+        light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
+    except Exception as exc:
+        raise click.ClickException(f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}") from exc
+
+    wiki_dir = config.storage_path(root)
+    pageindex_dir = wiki_dir / "pageindex"
+    pi_toolkit = PageIndexToolkit(
+        heavy_adapter,
+        storage_dir=pageindex_dir,
+        lightweight_model=light_model_id if same_provider else None,
+    )
+    if not same_provider:
+        _cli_logger.info(
+            "Stage-1/Stage-2 triage models use different providers "
+            "(%s / %s); PageIndexToolkit will use the Stage-2 (heavy) "
+            "model for its own internal page-generation steps too.",
+            lightweight_model,
+            model,
+        )
+    bookkeeper = WikiBookkeeper()
+    orchestrator = WikiIngestOrchestrator(
+        pi_toolkit,
+        None,
+        sources,
+        bookkeeper,
+        store=store,
+        sync_graph=config.sync_graph,
+    )
+    novelty_scorer = _build_novelty_scorer(root, config, store)
+    router = IngestTriageRouter(charter, light_adapter, sources, novelty_scorer, heavy_adapter=heavy_adapter)
+    wiki_config = WikiConfig(
+        wiki_name=config.wiki_name,
+        storage_dir=wiki_dir,
+        charter_path=charter_path,
+        sync_graph=config.sync_graph,
+        storage_backend=config.backend,
+    )
+    return InboxRuntime(
+        root=root,
+        config=config,
+        wiki_config=wiki_config,
+        charter=charter,
+        store=store,
+        sources=sources,
+        bookkeeper=bookkeeper,
+        acquirer=DocumentAcquirer(fetch_timeout=fetch_timeout),
+        router=router,
+        orchestrator=orchestrator,
+        light_adapter=light_adapter,
+        heavy_adapter=heavy_adapter,
+        search=WikiCombinedSearch(None, None, store=store),
+        models={"lightweight": lightweight_model, "heavy": model},
+    )
 
 
 def _print_triage_summary(entries: list[Any], skipped: list[str] | None = None) -> None:
@@ -4585,7 +5128,6 @@ def ingest(
         ManifestWriter,
         stratified_sample,
     )
-    from parrot.knowledge.wiki.triage import IngestTriageRouter
 
     modes_selected = sum([dry_run, review_opt is not None, interactive_flag, auto_flag])
     if modes_selected == 0:
@@ -4620,63 +5162,27 @@ def ingest(
             for uri in skipped:
                 click.echo(f"  skipped: {uri}")
 
-    lightweight_model_value = lightweight_model_opt or _env_setting("WIKI_LIGHTWEIGHT_MODEL")
-    model_value = model_opt or _env_setting("WIKI_MODEL")
-    if not lightweight_model_value and not model_value and not _env_setting("PARROT_NO_AUTO_LLM"):
+    if mode == "review":
+        lightweight_model, model = _resolve_ingest_model_ids(lightweight_model_opt, model_opt)
         try:
-            from parrot.clients.detection import detect_coding_agent_llm
-
-            detected = detect_coding_agent_llm()
-        except Exception as exc:  # noqa: BLE001 — detection is best-effort
-            click.echo(f"[coding-agent CLI auto-detection failed: {exc}]")
-            detected = None
-        if detected:
-            click.echo(
-                f"[auto-selected {detected} for WIKI_MODEL/WIKI_LIGHTWEIGHT_MODEL — a "
-                "coding-agent CLI session was detected. Set WIKI_MODEL / WIKI_LIGHTWEIGHT_MODEL "
-                "to override, or PARROT_NO_AUTO_LLM=1 to disable auto-detection.]"
-            )
-            lightweight_model_value = detected
-            model_value = detected
-    lightweight_model = _resolve_model_id(lightweight_model_value, "WIKI_LIGHTWEIGHT_MODEL")
-    model = _resolve_model_id(model_value, "WIKI_MODEL")
-    try:
-        light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
-    except Exception as exc:
-        raise click.ClickException(f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}") from exc
-    pageindex_dir = wiki_dir / "pageindex"
-    pageindex_dir.mkdir(parents=True, exist_ok=True)
-    # PageIndexToolkit builds its OWN internal lightweight adapter as
-    # PageIndexLLMAdapter(client=heavy_adapter.client, model=lightweight_model)
-    # (packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py) — i.e.
-    # it always reuses the HEAVY adapter's client. When --lightweight-model
-    # and --model point at different providers, passing light_model_id
-    # there would send a foreign model id to the heavy provider's client.
-    # Only pass it through when both tiers share a provider; otherwise
-    # PageIndexToolkit falls back to using the heavy adapter for both of
-    # its own internal steps (safe, just not dual-tier for page generation
-    # — the triage router's own light/heavy split above is unaffected).
-    pi_toolkit = PageIndexToolkit(
-        heavy_adapter,
-        storage_dir=pageindex_dir,
-        lightweight_model=light_model_id if same_provider else None,
-    )
-    if not same_provider:
-        _cli_logger.info(
-            "Stage-1/Stage-2 triage models use different providers "
-            "(%s / %s); PageIndexToolkit will use the Stage-2 (heavy) "
-            "model for its own internal page-generation steps too.",
-            lightweight_model,
-            model,
+            _, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
+        except Exception as exc:
+            raise click.ClickException(
+                f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}"
+            ) from exc
+        pi_toolkit = PageIndexToolkit(
+            heavy_adapter,
+            storage_dir=wiki_dir / "pageindex",
+            lightweight_model=light_model_id if same_provider else None,
         )
-    orch = WikiIngestOrchestrator(
-        pi_toolkit,
-        None,
-        sources,
-        bookkeeper,
-        store=store,
-        sync_graph=config.sync_graph,
-    )
+        orch = WikiIngestOrchestrator(
+            pi_toolkit,
+            None,
+            sources,
+            bookkeeper,
+            store=store,
+            sync_graph=config.sync_graph,
+        )
 
     async def _triage_all(
         refs: list[Any], router: Any, acquirer: DocumentAcquirer
@@ -4761,19 +5267,36 @@ def ingest(
         return
 
     # ---- --dry-run / --interactive / --auto: triage first --------------
-    charter_path = _resolve_charter_path(root, charter_opt)
-    charter = load_charter(charter_path)
-    novelty_scorer = _build_novelty_scorer(root, config, store)
-    router = IngestTriageRouter(charter, light_adapter, sources, novelty_scorer, heavy_adapter=heavy_adapter)
-    wiki_config = WikiConfig(
-        wiki_name=config.wiki_name,
-        storage_dir=wiki_dir,
-        charter_path=charter_path,
-        sync_graph=config.sync_graph,
-        storage_backend=config.backend,
+    try:
+        charter_path = _resolve_charter_path(root, charter_opt)
+        charter = load_charter(charter_path)
+    except click.ClickException:
+        lightweight_model, model = _resolve_ingest_model_ids(lightweight_model_opt, model_opt)
+        try:
+            _build_triage_adapters(lightweight_model, model)
+        except Exception as exc:
+            raise click.ClickException(
+                f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}"
+            ) from exc
+        raise
+    runtime = _build_ingest_runtime(
+        root,
+        config,
+        store,
+        sources,
+        charter,
+        charter_path,
+        lightweight_model_opt=lightweight_model_opt,
+        model_opt=model_opt,
+        fetch_timeout=fetch_timeout,
     )
+    bookkeeper = runtime.bookkeeper
+    orch = runtime.orchestrator
+    router = runtime.router
+    wiki_config = runtime.wiki_config
+    novelty_scorer = router.novelty_scorer
     refs = resolve_sources(source, recursive=recursive)
-    acquirer = DocumentAcquirer(fetch_timeout=fetch_timeout)
+    acquirer = runtime.acquirer
     entries, acquired_by_uri, skipped = _run(_triage_all(refs, router, acquirer))
 
     if mode == "dry-run":
@@ -4878,6 +5401,89 @@ def ingest(
         f"fields are filled in via a follow-up `--review` pass over {manifest_path}."
     )
     _report_skipped(skipped)
+
+
+@wiki.command()
+@click.option("--path", "path_", type=click.Path(file_okay=False, path_type=str), default=None)
+@click.option("--dry-run", is_flag=True)
+@click.option("--limit", type=click.IntRange(min=0), default=None)
+@click.option("--charter", "charter_opt", default=None)
+@click.option("--lightweight-model", "lightweight_model_opt", default=None)
+@click.option("--model", "model_opt", default=None)
+@click.option("--archive/--no-archive", default=True)
+@click.option("--force", is_flag=True)
+@click.option("--json", "as_json", is_flag=True)
+def inbox(
+    path_: str | None,
+    dry_run: bool,
+    limit: int | None,
+    charter_opt: str | None,
+    lightweight_model_opt: str | None,
+    model_opt: str | None,
+    archive: bool,
+    force: bool,
+    as_json: bool,
+) -> None:
+    """Ingest every safe document from the configured inbox directory.
+
+    The processor, rather than the CLI, owns the whole-run write lock.
+    """
+    from parrot.knowledge.wiki.charter import load_charter
+    from parrot.knowledge.wiki.inbox.processor import InboxLockBusy, InboxProcessor
+    from parrot.knowledge.wiki.project import validate_inbox_paths
+
+    try:
+        root, config = _resolve_project(path_)
+        inbox_dir = config.inbox_path(root)
+        if not inbox_dir.is_dir():
+            raise click.UsageError(f"Inbox directory does not exist: {inbox_dir}")
+        validate_inbox_paths(root, inbox_dir, config.archive_path(root), config.inbox_markdown_path(root))
+        charter_path = _resolve_charter_path(root, charter_opt)
+        charter = load_charter(charter_path)
+    except WikiConfigError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+    store = _open_store(root, config)
+    sources = _open_sources(root, config, store=store)
+    if as_json:
+        with redirect_stdout(sys.stderr):
+            runtime = _build_ingest_runtime(
+                root,
+                config,
+                store,
+                sources,
+                charter,
+                charter_path,
+                lightweight_model_opt=lightweight_model_opt,
+                model_opt=model_opt,
+            )
+    else:
+        runtime = _build_ingest_runtime(
+            root,
+            config,
+            store,
+            sources,
+            charter,
+            charter_path,
+            lightweight_model_opt=lightweight_model_opt,
+            model_opt=model_opt,
+        )
+    try:
+        report = _run(InboxProcessor(runtime).run(dry_run=dry_run, limit=limit, force=force, archive=archive))
+    except WikiConfigError as exc:
+        raise click.UsageError(str(exc)) from exc
+    except InboxLockBusy as exc:
+        if not as_json:
+            click.echo(str(exc), err=True)
+        raise click.exceptions.Exit(3) from exc
+
+    if as_json:
+        click.echo(report.model_dump_json())
+    else:
+        counts = ", ".join(f"{status}={count}" for status, count in sorted(report.counts.items())) or "empty=0"
+        click.echo(f"Inbox: {counts}")
+    if report.failed:
+        raise click.exceptions.Exit(1)
 
 
 @wiki.command(name="ingest-jira")
@@ -5162,7 +5768,6 @@ def claude_hook() -> None:
     emits a non-blocking nudge toward `wikitoolkit query` before
     search-style tool calls. Always exits 0.
     """
-    import sys
 
     from parrot.knowledge.wiki.claude_code.hook import run_pre_tool_use_hook
 

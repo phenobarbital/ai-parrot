@@ -1,0 +1,65 @@
+{
+  "infographic": {
+    "class_name": "InfographicToolkit",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "artifact_store": {
+          "x-server-managed": true
+        },
+        "dataset_manager": {
+          "x-server-managed": true
+        },
+        "emit_a2ui": {
+          "x-server-managed": true
+        },
+        "recipe_runner": {
+          "x-server-managed": true
+        },
+        "recipe_store": {
+          "x-server-managed": true
+        },
+        "template_dirs": {
+          "x-server-managed": true
+        },
+        "templates": {
+          "x-server-managed": true
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "slug": "infographic",
+    "source": "introspection"
+  },
+  "wiki": {
+    "class_name": "LLMWikiToolkit",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "agent_id": {
+          "x-server-managed": true
+        },
+        "config": {
+          "x-server-managed": true
+        },
+        "graphindex_toolkit": {
+          "x-server-managed": true
+        },
+        "okf_toolkit": {
+          "x-server-managed": true
+        },
+        "pageindex_toolkit": {
+          "x-server-managed": true
+        },
+        "store": {
+          "x-server-managed": true
+        }
+      },
+      "required": [],
+      "type": "object"
+    },
+    "slug": "wiki",
+    "source": "introspection"
+  }
+}

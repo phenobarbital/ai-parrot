@@ -1,0 +1,67 @@
+- **FEAT-603 is not on `dev`.** `git log` on `parrot/interfaces/file/` over 60 days is
+  empty; `graph.py`, `batch.py`, `_PARROT_NATIVE` and the widened `ManagerType` exist only on
+  `feat-FEAT-603-sharepoint-filemanager` (HEAD `e11822c64`, merge-base `8b5c42b3a` vs
+  `origin/dev` `bdaf25b78`, 4 files uncommitted — review fixes in flight).
+  *Implication*: FEAT-608 is sequenced **after** FEAT-603 merges; the spec's §6 anchors
+  must be re-verified against `dev` at that point. *Evidence*: F015, F011
+
+- **`GraphDriveFileManager` is not a reusable base.** Its request builders,
+  `@odata.nextLink` pagination, `createLink` and Graph host allow-list are all
+  Microsoft-specific. *Implication*: `GoogleDriveFileManager(FileManagerInterface)` is a
+  sibling that re-implements the same extension surface; only `batch.py` is shared.
+  *Evidence*: F007, F009
+
+- **`DriveEntry` / `GraphFileManagerError` live in `graph.py`, which imports msgraph.**
+  *Implication*: relocate `DriveEntry` to a backend-neutral module (with `graph.py`
+  re-exporting it) or define a Drive-specific entry model; `gdrive.py` must never import
+  `graph.py`. *Evidence*: F007, F009
+
+- **`parrot.interfaces.google` is heavy at import time** (selenium, webdriver_manager,
+  playwright, redis) and `GoogleClient.__init__` eagerly builds an `aioredis` client.
+  *Implication*: `gdrive.py` is a lazy entry in both shims and constructs the client only
+  in `connect()`; extend `test_no_cloud_sdk_leak_on_import` for `aiogoogle` / `selenium` /
+  `redis`. *Evidence*: F002, F010
+
+- **`execute_api_call` re-discovers the API on every call.** *Implication*: the manager
+  holds one `Aiogoogle` session + discovered `drive` v3 API for its lifetime (a
+  `DriveClient` wrapper in the `CalendarClient` mould), otherwise every listing page,
+  upload chunk and batch item pays discovery. *Evidence*: F002
+
+- **Three Google auth modes already have a branch table** in
+  `GoogleBaseTool._get_client` (`service_account` → `initialize()`; `user` →
+  `interactive_login()` + `initialize()`; `cached` → `initialize()` with fallback to
+  interactive login). *Implication*: `connect()` reproduces it (one credential load per
+  manager) and `adopt_client()` accepts an already-initialised `GoogleClient` from the tool
+  base — the AC3 analogue. *Evidence*: F003
+
+- **Path-addressed contract over an id-addressed store.** `FileManagerInterface` takes
+  paths; Drive addresses items by id and allows same-name siblings. *Implication*: a
+  segment-walk path resolver (`files.list` with `'<parent>' in parents and name = …`)
+  with a per-manager cache, plus an explicit upload/rename conflict policy.
+  *Evidence*: F004, F002 (Drive model is external API knowledge — see C12)
+
+- **aiogoogle 5.19 media support** covers `upload_file` (path), `pipe_from` (async
+  iterable), `download_file`, `pipe_to`, chunked through aiofiles, multipart
+  metadata+media; the `resumable` branch of `_build_upload_media` is only partially
+  wired. *Implication*: small uploads and streaming downloads are free; large-file
+  resumable sessions need a spec-time spike and possibly a direct aiohttp path with
+  FEAT-603's URL-validation discipline (AC21). *Evidence*: F013
+
+- **Toolkit ops are already generic.** `_OP_TO_METHOD` carries `find`, `batch_upload`,
+  `batch_download`; backends without `upload_files`/`download_files` get the single-op
+  fallback; `_DRIVE_RELATIVE_BACKENDS` gates the `default_output_dir` join.
+  *Implication*: no toolkit operation changes — only the six registration edit sites.
+  *Evidence*: F011, F009
+
+- **Nothing to refactor on the tool side.** No Drive tool/loader exists; the existing
+  Google tools bypass `GoogleClient` (`googleapiclient.discovery.build`); only
+  `GoogleCalendarToolkit` and `LyriaToolkit` are toolkits. *Implication*: no M7/M8
+  analogue; a `GoogleDriveToolkit` is net-new. *Evidence*: F006, F014
+
+- **Packaging.** `aiogoogle==5.17.0` is an exact pin inside the `agents` bundles while
+  `5.19.0` is installed; no core extra covers Google Workspace. *Implication*: new
+  `gdrive` extra (`aiogoogle>=5.17,<6`, `aiofiles`) folded into `all`, mirroring
+  `msgraph`. *Evidence*: F012
+
+- **TID251** forbids `httpx`/`requests`; aiogoogle's transport is aiohttp, so it is
+  admissible. *Evidence*: F013, F016

@@ -148,7 +148,7 @@ from parrot.mcp import integration as integ  # noqa: E402
 
 
 def test_factory_has_no_side_effects():
-    with patch.object(integ.ChromeManager, "start", AsyncMock()) as start, \
+    with patch.object(ChromeManager, "start", AsyncMock()) as start, \
          patch.dict(integ._chrome_managers, {}, clear=True):
         cfg = integ.create_chrome_devtools_mcp_server()
         assert integ._chrome_managers == {}
@@ -159,7 +159,7 @@ def test_factory_has_no_side_effects():
 
 async def test_ensure_chrome_running_remote_url_returns_none():
     with patch.dict(integ._chrome_managers, {}, clear=True), \
-         patch.object(integ.ChromeManager, "start", AsyncMock()) as start:
+         patch.object(ChromeManager, "start", AsyncMock()) as start:
         assert await integ.ensure_chrome_running("http://10.0.0.5:9222") is None
         assert integ._chrome_managers == {}
     start.assert_not_called()
@@ -167,7 +167,7 @@ async def test_ensure_chrome_running_remote_url_returns_none():
 
 async def test_ensure_chrome_running_local_reuses_manager():
     with patch.dict(integ._chrome_managers, {}, clear=True), \
-         patch.object(integ.ChromeManager, "start", AsyncMock(return_value=True)) as start:
+         patch.object(ChromeManager, "start", AsyncMock(return_value=True)) as start:
         m1 = await integ.ensure_chrome_running("http://127.0.0.1:9333", headless=True)
         m2 = await integ.ensure_chrome_running("http://localhost:9333")
         assert integ._chrome_managers == {9333: m1}
@@ -179,7 +179,7 @@ async def test_ensure_chrome_running_local_reuses_manager():
 
 async def test_ensure_chrome_running_warns_when_start_fails(caplog):
     with patch.dict(integ._chrome_managers, {}, clear=True), \
-         patch.object(integ.ChromeManager, "start", AsyncMock(return_value=False)), \
+         patch.object(ChromeManager, "start", AsyncMock(return_value=False)), \
          caplog.at_level("WARNING", logger="MCPEnabledMixin"):
         manager = await integ.ensure_chrome_running("http://127.0.0.1:9444")
     assert manager is not None

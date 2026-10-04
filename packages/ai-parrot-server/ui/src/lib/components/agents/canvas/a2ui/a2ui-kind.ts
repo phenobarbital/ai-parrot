@@ -9,6 +9,7 @@
  * `-infographic` surfaceId suffix).
  */
 import type { A2UIEnvelope, CreateSurface, WireComponent } from './a2ui-types';
+import { getDataSources } from './linked/types';
 
 export type SurfaceKind = 'widget' | 'infographic' | 'dashboard';
 
@@ -43,4 +44,12 @@ export function hasInfographicRoot(envelope: A2UIEnvelope | null | undefined): b
   if (!envelope) return false;
   const root = envelope.createSurface.components.find((c) => c.id === 'root');
   return root !== undefined && INFOGRAPHIC_LIKE_ROOTS.has(root.component);
+}
+
+/** True when `envelope` is a FEAT-598 linked surface — its `createSurface` carries a non-empty
+ * `metadata.extensions.parrot_data_sources` (FEAT-611 M6). Root-agnostic: linked surfaces are
+ * usually Chart/DataTable/Column roots, which `hasInfographicRoot` rejects. */
+export function isLinkedSurface(envelope: A2UIEnvelope | null | undefined): boolean {
+  if (!envelope?.createSurface) return false;
+  return getDataSources(envelope.createSurface) !== null;
 }

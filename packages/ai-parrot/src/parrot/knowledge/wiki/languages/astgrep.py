@@ -437,6 +437,46 @@ def php_qualified_container(node: SgNode) -> str:
     return f"{namespace}\\{container_name}" if namespace else container_name
 
 
+_JS_NAMED_SCOPES = ("function_declaration", "method_definition", "class_declaration")
+_JS_FUNCTION_VALUES = ("arrow_function", "function_expression")
+
+
+def js_call_scope(node: SgNode) -> str:
+    """``src_qualname`` of a JS/TS call: the nearest named enclosing function.
+
+    Named declarations (function/method/class) yield their ``name`` exactly as the
+    former ``scope: {ancestor: [...]}`` did. An arrow/function expression yields the
+    identifier of the TOP-LEVEL ``const|let NAME = …`` declaring it (the same
+    declarations the FEAT-609 ``function`` rule extracts); any other arrow — an
+    inline callback, a nested local — is skipped and the walk continues outward.
+    Returns ``""`` for a module-level call (TASK-3826 re-attributes those in
+    ``.svelte`` files to the component).
+    """
+    for ancestor in node.ancestors():
+        kind = ancestor.kind()
+        if kind in _JS_NAMED_SCOPES:
+            name = ancestor.field("name")
+            return name.text() if name is not None else ""
+        if kind not in _JS_FUNCTION_VALUES:
+            continue
+        declarator = ancestor.parent()
+        if declarator is None or declarator.kind() != "variable_declarator":
+            continue
+        name = declarator.field("name")
+        lexical = declarator.parent()
+        container = lexical.parent() if lexical is not None else None
+        if (
+            name is not None
+            and name.kind() == "identifier"
+            and lexical is not None
+            and lexical.kind() == "lexical_declaration"
+            and container is not None
+            and container.kind() in ("program", "export_statement")
+        ):
+            return name.text()
+    return ""
+
+
 def python_call_scope(node: SgNode) -> str:
     """Dotted ``Class.method`` qualname of ``node``'s enclosing scope.
 
@@ -550,6 +590,7 @@ EXTRACTORS: dict[str, Callable[[SgNode], str]] = {
     "preceding_package": preceding_package,
     "php_qualified_container": php_qualified_container,
     "python_call_scope": python_call_scope,
+    "js_call_scope": js_call_scope,
     "perl_sub_parent": perl_sub_parent,
 }
 
@@ -571,6 +612,10 @@ class SymbolSpec(BaseModel):
             ``{"path": [...]}``, or ``{"text": true}``.
         signature: Optional, same shape as ``name``.
         doc: Name of an :data:`EXTRACTORS` entry (``"none"`` for no doc).
+        languages: Optional allow-list of the ast-grep languages (the alias
+            actually in use, e.g. ``"typescript"``, ``"tsx"``) this spec
+            applies to. ``None`` means every language the ``RuleSet``
+            serves; otherwise the spec is skipped for the others (FEAT-609).
         parent: Either ``{"ancestor": <kind>, "name": {...}}`` (structural
             lookup) or the name of an :data:`EXTRACTORS` entry that
             returns the parent qualname directly (e.g.
@@ -599,6 +644,7 @@ class SymbolSpec(BaseModel):
     is_async: dict[str, Any] | str | None = Field(default=None, alias="async")
     depth: int | None = None
     qualname_joiner: str | None = None
+    languages: list[str] | None = None
 
     model_config = {"populate_by_name": True}
 
@@ -632,12 +678,16 @@ class RefSpec(BaseModel):
             that computes ``src_qualname`` directly (e.g.
             ``"python_call_scope"``, for a dotted ``Class.method`` name
             the ancestor-dict form cannot produce in one hop).
+        languages: Optional allow-list of ast-grep languages this ref
+            applies to; ``None`` means every language the ``RuleSet``
+            serves (FEAT-609).
     """
 
     rel: str = Field(pattern=r"^(calls|extends|implements|uses)$")
     rule: dict[str, Any]
     target: dict[str, Any]
     scope: dict[str, Any] | str | None = None
+    languages: list[str] | None = None
 
 
 class ImportSpec(BaseModel):
@@ -890,6 +940,8 @@ def extract(src: str, lang: str, rel_path: str, *, max_depth: int = 2) -> Struct
 
     symbols: list[SymbolRecord] = []
     for spec in ruleset.symbols:
+        if spec.languages is not None and lang not in spec.languages:
+            continue
         for node in _find_all_isolated(root, spec.rule, language=lang, rule_id=spec.id):
             record = _build_symbol_record(node, spec, language=lang, rel_path=rel_path)
             if record is not None and record.depth <= max_depth:
@@ -897,6 +949,8 @@ def extract(src: str, lang: str, rel_path: str, *, max_depth: int = 2) -> Struct
 
     refs: list[SymbolRef] = []
     for ref_spec in ruleset.refs:
+        if ref_spec.languages is not None and lang not in ref_spec.languages:
+            continue
         for node in _find_all_isolated(root, ref_spec.rule, language=lang, rule_id=ref_spec.rel):
             src_qualname = ""
             if isinstance(ref_spec.scope, str):

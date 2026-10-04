@@ -1,0 +1,115 @@
+**Option A** is recommended because:
+
+- It fixes the actual gap — *persistence* of per-toolkit params and a
+  *sanctioned* per-user override path — by extending the exact seams FEAT-467
+  and the MCP work already opened (`StudioToolkitsHandler`,
+  `MCPPersistenceService`, vault helpers, session `ToolManager`), so the
+  first shippable slice (agent-level defaults + Tools tab) does not depend on
+  a data migration.
+- Option B's single model is attractive, but its cost is a cross-package
+  refactor of `BotModel.tools` and a live-table migration, for a divergence
+  (DB vs YAML) that A contains with one shared `ToolkitSpec` model and one
+  round-trip test. We trade some duplication for incremental delivery.
+- Option C solves a real reuse problem, but it is a second feature. A keeps
+  the JSON shape open to it: `ToolkitSpec` can grow a `profile_ref` later
+  without touching the persistence or the override merge.
+- The dead `toolkits` loader loop and the unconsumed `toolkits` kwarg are
+  latent bugs A removes as a side effect.
+
+What we knowingly give up: the checkbox simplicity of the Capabilities tab
+(the Tools tab must still make "just enable weather" a one-click action) and
+secret detection that is heuristic outside the curated toolkits.
+
+### Option A: Toolkit config on the agent definition + session-scoped override layer
+
+Extend the surfaces that already exist instead of introducing a new model
+family.
+
+- **Agent-level defaults** live in a new `toolkit_config` JSONB on `BotModel`
+  (`{slug: {params, user_overridable: [...], secret_refs: {...}}}`) and in the
+  YAML `toolkits:` block, whose entries become `str | {slug, params,
+  user_overridable}` (`BotConfig.toolkits` widened; `create_agent_definition`
+  round-trips it). A single `ToolkitSpec` Pydantic model in core defines the
+  shape once.
+- **Instantiation** flows through the one place toolkits are actually built:
+  `ToolInterface._initialize_tools` learns to accept `ToolkitSpec` entries and
+  calls `tool_manager.register_toolkit(slug, **params)` (which already accepts
+  kwargs, `manager.py:1104`). The dead `toolkits` loop in
+  `registry.py:943-950` is deleted in favour of this path.
+- **Secrets**: the schema endpoint marks `secret` params (curated list per
+  first-class toolkit + heuristics on names like `token`, `password`,
+  `api_key`, `dsn`); on save the handler splits secrets out, stores them with
+  `store_vault_credential(owner_id, f"toolkit_{slug}_{agent}", {...})` and
+  keeps `secret_refs: {param: vault_name}` in the JSON. At build time the
+  resolver hydrates them via `retrieve_vault_credential`.
+- **Per-user overrides**: a new `ToolkitConfigService` mirroring
+  `MCPPersistenceService` (DocumentDB collection `user_toolkit_configs`,
+  keyed `(user_id, agent_id, slug)`, non-secret params + vault ref). Applied
+  in `AgentTalk._configure_tool_manager` next to `_restore_user_mcp_servers`:
+  for each toolkit with an override, register a fresh instance on the
+  *session* `ToolManager` (defaults ⊕ override, only `user_overridable`
+  params honoured; extras rejected 422).
+- **Studio API additions** (all under `/api/v1/astudio`):
+  `GET /agents/{name}/toolkits` (effective agent config, secrets masked),
+  `PUT /agents/{name}/toolkits/{slug}` (persist defaults; returns
+  `reload_required: true`), `DELETE` (remove), `GET
+  /toolkits/{slug}/options/{param}` (dynamic options via the hook),
+  `GET|PUT /agents/{name}/mcp-servers` (agent-level `mcp_servers`) and
+  `GET|PUT /agents/{name}/datasets` (agent-level datasource list). Per-user:
+  `GET|PUT|DELETE /agents/{name}/toolkits/{slug}/me`.
+- **Schema, two tiers**: (a) `AbstractToolkit.config_schema()` classmethod
+  (optional) returns a JSON Schema built from a Pydantic `*Config` model —
+  `oneOf` discriminated unions for choice-shaped config (DatasetManager
+  datasources), `enum` from `Literal`, defaults, descriptions; vendor
+  extensions `x-secret`, `x-user-overridable`, `x-options-endpoint`,
+  `x-ui-help`, `x-server-managed`. (b) toolkits without one keep the current
+  `_introspect_params` path, which the handler lifts into the same JSON Schema
+  shape (`properties`/`required`) so the SPA has a single renderer. First-class
+  config models: `dataset_manager` (datasource union), `jira`, `querysource`;
+  `wiki` already has `WikiConfig`.
+- **UI**: new `TabsTools.svelte` replaces `TabsCapabilities`' checkbox list:
+  left column = active tools/toolkits (from the existing `listTools()` +
+  `/astudio/catalog/tools`), right column = per-toolkit drawer with a
+  schema-driven form (`SchemaForm.svelte`: string/int/bool/list/enum/secret/
+  dynamic-select widgets + `user_overridable` toggles). Sub-panels
+  **Datasets** and **MCP servers** reuse the vendored `DatasetCreatePane` /
+  `MCPServerTab` form pieces against the new agent-level endpoints. The chat
+  keeps a slimmed "My settings" modal for per-user overrides.
+
+✅ **Pros:**
+- Builds on `StudioToolkitsHandler`, `MCPPersistenceService`, the vault
+  helpers, `create_agent_definition` and the FEAT-475 form store — no new
+  persistence technology.
+- Closes the real gap (persistence) exactly where TASK-2518 left it.
+- Per-user overrides reuse the proven session-`ToolManager` pattern, so the
+  shared instance stays untouched.
+- Incremental: agent-level defaults are shippable before the override layer.
+
+❌ **Cons:**
+- Two parallel definitions of truth remain (DB `BotModel` vs YAML
+  `BotConfig`); the `ToolkitSpec` model must be applied to both and kept in
+  sync.
+- Secret classification by name heuristics is fallible; first-class toolkits
+  need a curated list.
+- The Capabilities tab is a hard cut for the checkbox UX (accepted).
+
+📊 **Effort:** High (≈ 5 backend modules, 2 persistence services, 1 UI tab
+with 3 panels, codegen, tests).
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `pydantic` v2 (already a dep) | `ToolkitSpec`, request/response models, `model_json_schema()` | no new dep |
+| `navigator-session` vault (`KeyRing`) via `parrot.security.vault_utils` | AES-GCM secret storage | already used by BYOK/MCP |
+| DocumentDB (`parrot.handlers.mcp_persistence` pattern) | per-user overrides | existing collection style |
+| `json-schema-to-typescript` (`pnpm generate`) | TS types for new payloads | already wired in `ui/package.json` |
+| shadcn-svelte `Tabs`/`Switch`/`Checkbox`/`Slider` (vendored) | form widgets | already in `$lib/ui/internal/shadcn` |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot-server/src/parrot/handlers/studio/toolkits.py` — `_introspect_params`, `_resolve_toolkit_class`, `_missing_required_params`, `ToolkitAssignRequest`.
+- `packages/ai-parrot-server/src/parrot/handlers/mcp_persistence.py` — service shape for `ToolkitConfigService`.
+- `packages/ai-parrot/src/parrot/security/vault_utils.py` — `store_vault_credential` / `retrieve_vault_credential` / `delete_vault_credential`.
+- `packages/ai-parrot-server/src/parrot/handlers/agent.py` — `_configure_tool_manager`, `_restore_user_mcp_servers` (override application point).
+- `packages/ai-parrot/src/parrot/registry/registry.py` — `create_agent_definition` (YAML round-trip).
+- `packages/ai-parrot-server/ui/src/pages/agents/form/TabsCapabilities.svelte`, `ui/src/lib/stores/agent-form.svelte.ts`, `ui/src/lib/agents/fields.ts` — form store + tab plumbing.
+- `packages/ai-parrot-server/ui/src/lib/components/agents/{DatasetCreatePane,MCPServerTab}.svelte` — form pieces for the sub-panels.

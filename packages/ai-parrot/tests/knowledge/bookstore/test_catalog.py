@@ -414,3 +414,10 @@ def test_merged_relations_filters_dangling_and_project_wins(tmp_path):
     merged = merged_relations([("project", project), ("global", global_)], visible_ids={"a", "b"})
     assert len(merged) == 1
     assert merged[0].weight == 1.0
+
+
+def test_find_by_path_roundtrip(store):
+    card = _card()
+    store.upsert(card)
+    assert store.find_by_path(card.source_path).book_id == "clean-code"
+    assert store.find_by_path("/nope.md") is None

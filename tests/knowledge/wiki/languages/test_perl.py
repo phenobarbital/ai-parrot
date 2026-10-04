@@ -262,11 +262,11 @@ class TestTreeSitter:
         result = scanner.outline(pod_source, "lib/MyApp/Utils.pm")
         assert "MyApp::Utils" in result.summary
 
-    def test_mode_is_tree_sitter(self, scanner: PerlScanner):
+    def test_mode_is_tree_sitter(self, scanner: PerlScanner, force_no_astgrep):
         assert scanner.mode == "tree-sitter"
 
 
-def test_mode_is_heuristic_without_grammar(force_heuristic):
+def test_mode_is_heuristic_without_grammar(force_heuristic, force_no_astgrep):
     assert PerlScanner().mode == "heuristic"
 
 

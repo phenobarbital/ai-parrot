@@ -32,7 +32,8 @@ class SymbolKind(str, Enum):
     """Kind of a symbol extracted from a source file.
 
     Mirrors the design's §4.4 symbol table across the five supported
-    languages (Python, TypeScript/JavaScript, PHP, Rust, Perl).
+    languages (Python, TypeScript/JavaScript, PHP, Rust, Perl), plus Svelte
+    single-file components (FEAT-609).
     """
 
     MODULE = "module"
@@ -51,6 +52,7 @@ class SymbolKind(str, Enum):
     FIELD = "field"
     ATTRIBUTE = "attribute"
     MOD = "mod"
+    COMPONENT = "component"
 
 
 class SymbolRecord(BaseModel):
@@ -80,6 +82,9 @@ class SymbolRecord(BaseModel):
         content_hash: SHA-1 hex digest of the symbol's source text.
         depth: Nesting depth — ``1`` for top-level, ``2`` for direct
             members, etc.
+        namespace: Runtime-only provenance (never persisted, excluded from
+            ``model_dump``) set by ``FederatedWikiStore`` on rows read
+            from a foreign namespace (FEAT-609).
     """
 
     rel_path: str
@@ -100,6 +105,10 @@ class SymbolRecord(BaseModel):
     decorators: list[str] = Field(default_factory=list)
     content_hash: str
     depth: int = 1
+    #: FEAT-609 M5: runtime-only provenance set by FederatedWikiStore for rows read
+    #: from a foreign namespace. Never persisted (backends write explicit columns)
+    #: and excluded from model_dump.
+    namespace: str | None = Field(default=None, exclude=True)
 
 
 class SymbolRef(BaseModel):

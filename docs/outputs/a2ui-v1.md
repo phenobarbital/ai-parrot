@@ -154,6 +154,8 @@ is reserved for official extensions, so this codebase's own keys are always
 | `parrot_component_id` | The original (pre-lowering) Parrot component's own id, when a lowered subtree needs to remember it |
 | `parrot_optional` | A list of pointers (`baking.bake_envelope` reads this off a component's own metadata) that may fail to resolve at bake time WITHOUT raising `BakeError` — the key is simply omitted from the baked output |
 | `parrot_unit`, `parrot_trend`, `parrot_series_data`, ... | Component-specific presentation hints (KPICard's unit/trend, a lowered Chart series' original binding, ...) |
+| `parrot_data_sources` | **Surface-level** (`createSurface.metadata.extensions`, FEAT-598): linked data-source descriptors keyed by `dataModel` root key — see [a2ui-linked-surfaces.md](a2ui-linked-surfaces.md). TOOL-origin only (`DATA_SOURCES_NOT_ALLOWED_FOR_LLM`) |
+| `parrot_param` | On a `FilterBar` filter / its lowered `ChoicePicker` (FEAT-598): `{"source": "<key>", "name": "<param>"}` — changing the filter re-fetches that source instead of filtering locally |
 
 `metadata.extensions` validates against the official
 `common_types.json#/$defs/Extensions` (`patternProperties` on the UAX #31

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Polestar graduates — A2UI linked dashboard</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div id="login" style="display: block;">
+    <h2>Login</h2>
+    <form id="loginForm">
+      <div>
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required>
+      </div>
+      <div>
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required>
+      </div>
+      <button type="submit">Login</button>
+    </form>
+  </div>
+
+  <div id="app" style="display: none;">
+    <header>
+      <h1>Polestar graduates — A2UI linked dashboard</h1>
+      <button id="refreshAll">Refresh all</button>
+      <button id="logout">Logout</button>
+    </header>
+    <div id="notice" role="alert"></div>
+    <main id="dashboard"></main>
+  </div>
+
+  <!-- Token storage key: ai_parrot_token -->
+  <script src="/static/vendor/echarts.min.js"></script>
+  <script type="module" src="/static/renderer.js"></script>
+</body>
+</html>

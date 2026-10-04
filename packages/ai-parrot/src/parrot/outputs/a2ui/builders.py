@@ -7,7 +7,8 @@ catalog allowlist (display-only: ``requires_actions`` components are rejected he
 Every envelope carries a component with ``id="root"`` (spec G6) and top-level props
 (no ``properties`` nesting, no ``$bind`` — v1.0 wire throughout).
 
-Pure functions: same input → byte-identical envelope. No clocks, no uuids inside the
+Pure functions: same input → byte-identical envelope. No clocks, except the
+``snapshot_at`` fallback of :func:`build_linked_surface`, no uuids inside the
 component tree (artifact ids live outside the payload), no network, no LLM.
 
 One-way import rule (G8): this module imports only the a2ui core; never agents,
@@ -16,8 +17,16 @@ DatasetManager, LLM clients, or the satellite renderers.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from typing import Any
+import logging
+
+from collections.abc import Collection, Mapping, Sequence
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    import pandas as pd
+
+    from parrot.outputs.a2ui.linked.models import LinkedSource
 
 # Ensure the v1 parrot catalog is registered so allowlist validation resolves components.
 import parrot.outputs.a2ui.catalog.parrot  # noqa: F401
@@ -43,7 +52,7 @@ from parrot.outputs.a2ui.graph import (
     VizSize,
     compute_positions,
 )
-from parrot.outputs.a2ui.models import Action, Component, ComponentMetadata, CreateSurface
+from parrot.outputs.a2ui.models import Action, Component, ComponentMetadata, CreateSurface, Extensions, SurfaceMetadata
 
 __all__ = [
     "build_card",
@@ -53,6 +62,7 @@ __all__ = [
     "build_html_document",
     "build_infographic",
     "build_kpicard",
+    "build_linked_surface",
     "build_map",
     "build_surface",
 ]
@@ -75,6 +85,7 @@ def build_surface(
     data_model: dict[str, Any] | None = None,
     origin: ProducerOrigin = ProducerOrigin.LLM,
     metadata: ComponentMetadata | None = None,
+    surface_metadata: SurfaceMetadata | None = None,
 ) -> CreateSurface:
     """Build and validate a single-component display ``CreateSurface``.
 
@@ -92,6 +103,8 @@ def build_surface(
             ``extensions.parrot_optional``) to attach to the root component
             (FEAT-499). Wins over any ``"metadata"`` key inside
             ``properties``. Omitted entirely (no key emitted) when ``None``.
+        surface_metadata: Optional SURFACE-level metadata (FEAT-598) set on
+            ``CreateSurface.metadata``; independent of the root component's metadata.
 
     Raises:
         CatalogValidationError: If the component is unknown, action-bearing
@@ -108,6 +121,7 @@ def build_surface(
         catalogId=DEFAULT_CATALOG_ID,
         components=[Component(**component_kwargs, **remaining_properties)],
         dataModel=data_model or {},
+        metadata=surface_metadata,
     )
     validate_envelope(envelope, origin=origin)
     return envelope
@@ -439,3 +453,150 @@ def build_graph(
         data_model=data_model,
         origin=origin,
     )
+
+
+logger = logging.getLogger(__name__)
+
+_LINKED_SOURCES_KEY = "parrot_data_sources"
+
+
+def _rows_key(binding: Any, keys: Collection[str]) -> tuple[str, str | None] | None:
+    """Return the data-model root key and optional column from a rows binding (``/<key>/rows[/0/<col>]``)."""
+    if not isinstance(binding, Mapping):
+        return None
+    path = binding.get("path")
+    if not isinstance(path, str) or not path.startswith("/"):
+        return None
+    tokens = path[1:].split("/")
+    if len(tokens) < 2 or tokens[1] != "rows" or tokens[0] not in keys:
+        return None
+    if len(tokens) == 2:
+        return tokens[0], None
+    if len(tokens) == 4 and tokens[2] == "0":
+        return tokens[0], tokens[3]
+    return None
+
+
+def _validate_axes(component: dict[str, Any], keys: Collection[str], frames: Mapping[str, Any]) -> None:
+    """Check bound component axes and columns against the frame of the data-model root they bind to.
+
+    ``keys`` are the roots that carry rows (linked sources, derived views and inline data alike); a binding
+    to any other root is left to ``validate_envelope``.
+    """
+    import pandas as pd
+
+    component_type = component.get("component")
+    binding = component.get("data") if component_type in {"Chart", "DataTable"} else component.get("value")
+    rows_key = _rows_key(binding, keys)
+    if rows_key is None:
+        return
+    key, value_column = rows_key
+    if key not in frames:
+        raise ValueError(f"source '{key}' has no frame")
+    frame = frames[key]
+    columns = list(frame.columns)
+    if not columns:
+        # A definition-only probe that matched no row (executor.is_empty_result): nothing to validate against.
+        logger.warning("source '%s' returned no columns; axes of %s left unvalidated", key, component.get("id"))
+        return
+
+    def validate_column(prop: str, column: Any, *, numeric: bool = False) -> None:
+        if not isinstance(column, str) or column not in frame.columns:
+            raise ValueError(f"{prop} '{column}' not in source '{key}' columns {columns}")
+        series = frame[column]
+        if numeric and not (pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series)):
+            if series.isna().all():
+                return  # a one-row probe whose value is NULL carries no dtype; pandas types it object
+            raise ValueError(f"{prop} '{column}' in source '{key}' is not numeric (dtype {series.dtype})")
+
+    if component_type == "Chart":
+        validate_column("x", component.get("x"))
+        y_values = component.get("y")
+        if isinstance(y_values, str):
+            y_values = [y_values]
+        if isinstance(y_values, list):
+            for column in y_values:
+                validate_column("y", column, numeric=True)
+    elif component_type == "DataTable":
+        for column in component.get("columns", []):
+            if isinstance(column, Mapping):
+                validate_column("columns.name", column.get("name"))
+    elif component_type == "KPICard" and value_column is not None:
+        validate_column("value", value_column)
+
+
+def build_linked_surface(
+    components: Sequence[dict[str, Any]],
+    sources: Mapping[str, "LinkedSource"],
+    frames: Mapping[str, "pd.DataFrame"],
+    *,
+    surface_id: str,
+    snapshot: bool = True,
+    max_snapshot_rows: int = 500,
+    catalog_id: str = DEFAULT_CATALOG_ID,
+    inline: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
+) -> CreateSurface:
+    """Build a TOOL-origin linked ``CreateSurface`` (FEAT-598 M4; linked dashboards).
+
+    Axis props are validated against fetched frames — ``frames`` must carry one frame per source, derived
+    views included (the executor computes them). When ``snapshot`` is false, every source still receives an
+    empty rows collection so bindings resolve. ``inline`` embeds extra data-model roots
+    (``dataModel[key] = {"rows": rows}``) that carry no descriptor: widgets whose data is baked into the
+    dashboard; their axes are validated too.
+
+    Raises:
+        ValueError: A bound axis is missing, non-numeric, has no frame, or an inline key collides with a source.
+        CatalogValidationError: The generated envelope fails TOOL-origin validation.
+    """
+    inline = dict(inline or {})
+    collisions = sorted(set(inline) & set(sources))
+    if collisions:
+        raise ValueError(f"inline data keys collide with source keys: {collisions}")
+    all_frames: dict[str, Any] = dict(frames)
+    if inline:
+        import pandas as pd
+
+        for key, rows in inline.items():
+            all_frames[key] = pd.DataFrame.from_records(list(rows))
+    keys = set(sources) | set(inline)
+    for component in components:
+        _validate_axes(component, keys, all_frames)
+
+    data_model: dict[str, Any] = {key: {"rows": [dict(row) for row in rows]} for key, rows in inline.items()}
+    stamped: dict[str, Any] = {}
+    for key, source in sources.items():
+        if key not in frames:
+            raise ValueError(f"source '{key}' has no frame")
+        frame = frames[key]
+        if snapshot:
+            from parrot.outputs.a2ui.linked.dsl import frame_to_records
+
+            rows = frame_to_records(frame.head(max_snapshot_rows))
+            snapshot_at = source.snapshot_at if source.snapshot_at is not None else datetime.now(timezone.utc)
+            snapshot_truncated = len(frame) > max_snapshot_rows
+        else:
+            rows = []
+            snapshot_at = None
+            snapshot_truncated = False
+        data_model[key] = {"rows": rows}
+        stamped[key] = source.model_copy(update={"snapshot_at": snapshot_at, "snapshot_truncated": snapshot_truncated})
+
+    metadata = SurfaceMetadata(
+        extensions=Extensions(
+            {
+                _LINKED_SOURCES_KEY: {
+                    key: source.model_dump(mode="json", by_alias=True, exclude_none=False)
+                    for key, source in stamped.items()
+                }
+            }
+        )
+    )
+    envelope = CreateSurface(
+        surfaceId=surface_id,
+        catalogId=catalog_id,
+        components=[Component(**component) for component in components],
+        dataModel=data_model,
+        metadata=metadata,
+    )
+    validate_envelope(envelope, origin=ProducerOrigin.TOOL)
+    return envelope

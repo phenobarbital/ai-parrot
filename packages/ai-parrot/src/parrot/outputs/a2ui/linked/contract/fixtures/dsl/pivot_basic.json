@@ -1,0 +1,6 @@
+{
+  "description": "pivot uses first-appearance row and column order with null missing cells",
+  "input": [{"day": "mon", "program": "epson", "visits": 3}, {"day": "mon", "program": "hisense", "visits": 5}, {"day": "tue", "program": "epson", "visits": 2}],
+  "ops": [{"op": "pivot", "index": ["day"], "columns": "program", "values": "visits", "aggregate": "sum"}],
+  "expected": [{"day": "mon", "epson": 3.0, "hisense": 5.0}, {"day": "tue", "epson": 2.0, "hisense": null}]
+}

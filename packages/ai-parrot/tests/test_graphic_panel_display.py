@@ -1,354 +1,231 @@
-"""Unit tests for GraphicPanelDisplay planogram type composable.
+"""GraphicPanelDisplay on the shared cycle: zone-only, evidence-based text and illumination (FEAT-612, Module 9)."""
 
-Tests cover:
-- Zone detection (all present / missing zone)
-- Illumination check (OFF pass, OFF fail, ON pass)
-- Configurable illumination penalty
-- Text requirement evaluation (pass / fail)
-- No fact-tag / product-counting logic
-- Type registration in _PLANOGRAM_TYPES
-"""
 from __future__ import annotations
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock
+import inspect
+from unittest.mock import MagicMock
+from typing import List, Optional
 
+import pytest
+
+from parrot.models.detections import DetectionBox
 from parrot.pipelines.planogram.types.graphic_panel_display import GraphicPanelDisplay
 from parrot.pipelines.planogram.plan import PlanogramCompliance
-from parrot.models.compliance import ComplianceStatus
+from parrot_pipelines.planogram.comparison.definition import RuleBinding, SlotsDefinition, load_slots_definition
+from parrot_pipelines.planogram.contracts import (
+    AssessmentStatus,
+    CycleContext,
+    FixtureMembership,
+    IdentificationResult,
+    ObservationSource,
+    PerceptionResult,
+    RuleObservation,
+    Shape,
+    ShapeKind,
+)
+from parrot_pipelines.planogram.layout import ZoneSelector
+from parrot_pipelines.planogram.types import graphic_panel_display as panel_module
+
+LEGACY = (
+    "compute_roi",
+    "detect_objects_roi",
+    "detect_objects",
+    "check_planogram_compliance",
+    "_generate_virtual_shelves",
+    "_assign_products_to_shelves",
+    "_find_display_roi",
+    "_check_illumination_from_roi",
+    "_enrich_zone",
+    "_get_illumination_penalty",
+)
+ZONE_KINDS = ("graphic", "backlit", "advertisement")
 
 
-# ---------------------------------------------------------------------------
-# Helpers / fixtures
-# ---------------------------------------------------------------------------
-
-def _make_pipeline_mock():
-    """Mock PlanogramCompliance pipeline with logger."""
-    mock = MagicMock()
-    mock.logger = MagicMock()
-    return mock
+class _RaisingVision:
+    def __getattr__(self, name):
+        raise AssertionError(f"compare touched vision.{name}")
 
 
-def _make_shelf_product(
-    name: str,
-    visual_features=None,
-    text_requirements=None,
-    illumination_penalty=None,
-):
-    """Build a minimal shelf-product config mock."""
-    p = MagicMock()
-    p.name = name
-    p.product_type = "graphic_zone"
-    p.visual_features = visual_features or []
-    p.text_requirements = text_requirements or []
-    if illumination_penalty is not None:
-        p.illumination_penalty = illumination_penalty
-    else:
-        # Mimic "attribute not set" so getattr returns None
-        del p.illumination_penalty
-    return p
+def _shape(index: int, text: Optional[str] = None) -> Shape:
+    return Shape(
+        shape_id=f"img0:zone{index}",
+        image_id="img0",
+        kind=ShapeKind.ZONE,
+        box=DetectionBox(x1=10, y1=10 + index * 60, x2=190, y2=50 + index * 60, confidence=1.0),
+        membership=FixtureMembership.ON_FIXTURE,
+        source=ObservationSource.CV,
+        ocr_text=text,
+    )
 
 
-def _make_shelf_cfg(level: str, products, illumination_penalty=None, compliance_threshold=0.8):
-    """Build a minimal shelf config mock."""
-    s = MagicMock()
-    s.level = level
-    s.products = products
-    s.compliance_threshold = compliance_threshold
-    if illumination_penalty is not None:
-        s.illumination_penalty = illumination_penalty
-    else:
-        del s.illumination_penalty
-    return s
+def _definition(kinds=ZONE_KINDS) -> SlotsDefinition:
+    return load_slots_definition(
+        {"version": "1", "zones": [{"zone_id": f"z{i}", "kind": k} for i, k in enumerate(kinds)]}
+    )
 
 
-def _make_planogram_description(shelves, brand="Epson", global_compliance_threshold=0.8):
-    """Build a minimal planogram description mock."""
-    pd = MagicMock()
-    pd.brand = brand
-    pd.shelves = shelves
-    pd.global_compliance_threshold = global_compliance_threshold
-    return pd
+def _perception(count: int, texts: Optional[List[Optional[str]]] = None) -> PerceptionResult:
+    texts = texts or [None] * count
+    return PerceptionResult(image_id="img0", image_size=(200, 400), zones=[_shape(i, texts[i]) for i in range(count)])
 
 
-def _make_identified_product(name: str, shelf_level: str, confidence=1.0, visual_features=None):
-    """Build an IdentifiedProduct mock."""
-    p = MagicMock()
-    p.product_model = name
-    p.product_type = "graphic_zone"
-    p.shelf_location = shelf_level
-    p.confidence = confidence
-    p.visual_features = visual_features or []
-    p.detection_box = None
-    p.brand = "Epson"
-    return p
+def _ctx(definition, bindings) -> CycleContext:
+    layout = GraphicPanelDisplay.default_layout_profile().model_copy(
+        update={
+            "zone_selectors": [
+                ZoneSelector(zone_id=z.zone_id, kind="zone", ordinal=i) for i, z in enumerate(definition.zones)
+            ]
+        }
+    )
+    return CycleContext(vision=_RaisingVision(), definition=definition, bindings=bindings, layout=layout)
 
 
-def _make_config(shelves):
-    """Build a PlanogramConfig mock."""
-    cfg = MagicMock()
-    cfg.roi_detection_prompt = "Find zones"
-    cfg.get_planogram_description = MagicMock(return_value=_make_planogram_description(shelves))
-    return cfg
+def _presence(definition) -> List[RuleBinding]:
+    return [RuleBinding(rule_id=f"p-{z.zone_id}", kind="zone_present", target_id=z.zone_id) for z in definition.zones]
 
 
-def _make_type(pipeline_mock=None, config_mock=None, shelves=None):
-    """Instantiate GraphicPanelDisplay with mocks."""
-    shelves = shelves or []
-    pipeline = pipeline_mock or _make_pipeline_mock()
-    config = config_mock or _make_config(shelves)
-    return GraphicPanelDisplay(pipeline=pipeline, config=config)
+def _obs(target: str, kind: str, value, assessed: bool = True) -> RuleObservation:
+    return RuleObservation(
+        image_id="img0", target_id=target, kind=kind, value=value, assessed=assessed, source=ObservationSource.CV
+    )
 
 
-# ---------------------------------------------------------------------------
-# Tests: zone detection
-# ---------------------------------------------------------------------------
+def _type() -> GraphicPanelDisplay:
+    config = MagicMock()
+    config.get_planogram_description.side_effect = ValueError("no shelves")
+    config.planogram_config = {}
+    return GraphicPanelDisplay(MagicMock(), config)
 
-class TestZoneDetection:
-    """check_planogram_compliance — zone presence logic."""
 
-    def test_zone_detection_all_present(self):
-        """All expected zones detected → compliance_score == 1.0 for each shelf."""
-        header_prod = _make_shelf_product("Epson_Top_Not_Backlit")
-        middle_prod = _make_shelf_product("Epson_Comparison_Table")
-        bottom_prod = _make_shelf_product("Epson_Base_Special_Offer")
+async def _compare(definition, bindings, perception, observations=()):
+    ctx = _ctx(definition, bindings)
+    ident = IdentificationResult(image_id="img0", rule_observations=list(observations))
+    return await _type().compare([perception], [ident], ctx)
 
-        shelves = [
-            _make_shelf_cfg("header", [header_prod]),
-            _make_shelf_cfg("middle", [middle_prod]),
-            _make_shelf_cfg("bottom", [bottom_prod]),
+
+class TestDefaultLayout:
+    def test_zone_only_and_fresh(self):
+        a, b = GraphicPanelDisplay.default_layout_profile(), GraphicPanelDisplay.default_layout_profile()
+        assert a is not b
+        assert a.shape_profiles[0] is not b.shape_profiles[0]
+        assert {p.kind for p in a.shape_profiles} == {"zone"}
+        assert a.min_usable_shapes == 1 and a.perception_mode == "cv" and a.identify_strategy.value == "full_image"
+
+    def test_compat_classvars(self):
+        assert GraphicPanelDisplay.requires_slots_definition is True
+        assert GraphicPanelDisplay.uses_enhanced_image is False
+        assert GraphicPanelDisplay.min_usable_shapes == 1
+
+
+class TestNoLegacyContract:
+    def test_legacy_members_removed(self):
+        for name in LEGACY:
+            assert name not in GraphicPanelDisplay.__dict__
+        source = inspect.getsource(panel_module)
+        assert "_DEFAULT_ILLUMINATION_PENALTY" not in source and "ask_to_image" not in source
+
+
+class TestZoneEvidence:
+    @pytest.mark.asyncio
+    async def test_hooks_delegate_to_shared_stages(self, monkeypatch):
+        seen = {}
+
+        async def fake_perceive(image, image_id, ctx):
+            seen["perceive"] = (image, image_id, ctx)
+            return "P"
+
+        async def fake_identify(image, perception, ctx):
+            seen["identify"] = (image, perception, ctx)
+            return "I"
+
+        def fake_compare(perceptions, identifications, ctx, description):
+            seen["compare"] = (perceptions, identifications, ctx, description)
+            return "C"
+
+        monkeypatch.setattr(panel_module, "perceive_image", fake_perceive)
+        monkeypatch.setattr(panel_module, "identify_image", fake_identify)
+        monkeypatch.setattr(panel_module, "compare_observations", fake_compare)
+        ctx = CycleContext()
+        panel = _type()
+        monkeypatch.setattr(GraphicPanelDisplay, "_description", lambda self: "D")
+        assert await panel.perceive("img", "img0", ctx) == "P"
+        assert await panel.identify("img", "P", ctx) == "I"
+        assert await panel.compare(["P"], ["I"], ctx) == "C"
+        assert seen["perceive"][2] is ctx and seen["identify"][2] is ctx and seen["compare"][2] is ctx
+        assert seen["compare"][3] == "D"
+
+    @pytest.mark.asyncio
+    async def test_all_configured_zones_present_is_compliant(self):
+        definition = _definition()
+        result = await _compare(definition, _presence(definition), _perception(3))
+        assert result.overall_compliant is True
+        assert result.detected_products == 0
+        assert result.position_results == []
+
+    @pytest.mark.asyncio
+    async def test_missing_zone_only_fails_when_region_inspected(self):
+        definition = _definition(("advertisement",))
+        bindings = _presence(definition)
+        inspected = _obs("img0:zone-region:z0", "zone_present", False)
+        failed = await _compare(definition, bindings, _perception(0), [inspected])
+        assert failed.overall_compliant is False
+        assert failed.assessment_status == AssessmentStatus.COMPLETE
+        unknown = await _compare(definition, bindings, _perception(0))
+        assert unknown.overall_compliant is False
+        assert unknown.assessment_status == AssessmentStatus.INCONCLUSIVE
+
+
+class TestIllumination:
+    def _setup(self):
+        definition = _definition(("backlit",))
+        bindings = _presence(definition) + [
+            RuleBinding(rule_id="ill", kind="illumination", target_id="z0", params={"required": "on", "penalty": 1.0})
         ]
-        planogram_description = _make_planogram_description(shelves)
+        return definition, bindings
 
-        identified = [
-            _make_identified_product("Epson_Top_Not_Backlit", "header", confidence=0.95),
-            _make_identified_product("Epson_Comparison_Table", "middle", confidence=0.90),
-            _make_identified_product("Epson_Base_Special_Offer", "bottom", confidence=0.88),
-        ]
+    @pytest.mark.asyncio
+    async def test_off_when_on_required_fails(self):
+        definition, bindings = self._setup()
+        result = await _compare(definition, bindings, _perception(1), [_obs("img0:zone0", "illumination", "off")])
+        assert result.overall_compliant is False
+        assert result.assessment_status == AssessmentStatus.COMPLETE
 
-        gp = _make_type(shelves=shelves)
-        results = gp.check_planogram_compliance(identified, planogram_description)
+    @pytest.mark.asyncio
+    async def test_matching_state_passes(self):
+        definition, bindings = self._setup()
+        result = await _compare(definition, bindings, _perception(1), [_obs("img0:zone0", "illumination", "on")])
+        assert result.overall_compliant is True
 
-        assert len(results) == 3
-        for r in results:
-            assert r.compliance_score == pytest.approx(1.0)
-            assert r.compliance_status == ComplianceStatus.COMPLIANT
+    @pytest.mark.asyncio
+    async def test_unknown_state_is_inconclusive(self):
+        definition, bindings = self._setup()
+        result = await _compare(definition, bindings, _perception(1))
+        assert result.assessment_status == AssessmentStatus.INCONCLUSIVE
+        assert result.overall_compliant is False
 
-    def test_zone_detection_missing_zone(self):
-        """Missing mandatory zone → non-compliant with score 0.0."""
-        header_prod = _make_shelf_product("Epson_Top_Not_Backlit")
-        shelves = [_make_shelf_cfg("header", [header_prod])]
-        planogram_description = _make_planogram_description(shelves)
-
-        # No identified products for this shelf
-        identified = []
-
-        gp = _make_type(shelves=shelves)
-        results = gp.check_planogram_compliance(identified, planogram_description)
-
-        assert len(results) == 1
-        assert results[0].compliance_score == pytest.approx(0.0)
-        assert results[0].compliance_status == ComplianceStatus.MISSING
-        assert "Epson_Top_Not_Backlit" in results[0].missing_products
-
-
-# ---------------------------------------------------------------------------
-# Tests: illumination check
-# ---------------------------------------------------------------------------
-
-class TestIlluminationCheck:
-    """Illumination state compliance and configurable penalty."""
-
-    def _run(self, expected_state: str, detected_state: str, penalty=None) -> float:
-        """Helper: build a single-shelf planogram and return compliance_score."""
-        prod_cfg = _make_shelf_product(
-            "Epson_Top_Not_Backlit",
-            visual_features=[f"illumination_status: {expected_state}"],
-        )
-        shelf_cfg = _make_shelf_cfg("header", [prod_cfg])
-        if penalty is not None:
-            shelf_cfg.illumination_penalty = penalty
-
-        planogram_description = _make_planogram_description([shelf_cfg])
-
-        identified = [
-            _make_identified_product(
-                "Epson_Top_Not_Backlit",
-                "header",
-                confidence=0.95,
-                visual_features=[f"illumination_status: {detected_state}"],
-            )
-        ]
-
-        gp = _make_type(shelves=[shelf_cfg])
-        results = gp.check_planogram_compliance(identified, planogram_description)
-        return results[0].compliance_score
-
-    def test_illumination_check_off_pass(self):
-        """Zone expected OFF, detected OFF → no penalty applied."""
-        score = self._run("OFF", "OFF")
-        assert score == pytest.approx(1.0)
-
-    def test_illumination_check_off_fail(self):
-        """Zone expected OFF but detected ON → default penalty=1.0 → score=0."""
-        score = self._run("OFF", "ON")
-        assert score == pytest.approx(0.0)
-
-    def test_illumination_check_on_pass(self):
-        """Zone expected ON, detected ON → no penalty applied."""
-        score = self._run("ON", "ON")
-        assert score == pytest.approx(1.0)
-
-    def test_illumination_penalty_configurable(self):
-        """Custom penalty=0.5 → score halved, not zeroed."""
-        score = self._run("OFF", "ON", penalty=0.5)
-        # zone_score = 1.0, penalty=0.5 → 1.0 * (1 - 0.5) = 0.5
-        assert score == pytest.approx(0.5)
-
-    def test_illumination_no_penalty_when_state_matches(self):
-        """Correct illumination state detected → score unaffected."""
-        score = self._run("ON", "ON", penalty=0.9)
-        assert score == pytest.approx(1.0)
-
-
-# ---------------------------------------------------------------------------
-# Tests: text requirement evaluation
-# ---------------------------------------------------------------------------
 
 class TestTextRequirements:
-    """Text requirement check via visual_features."""
-
-    def test_text_requirement_pass(self):
-        """Required text found in OCR features → compliant."""
-        text_req = MagicMock()
-        text_req.required_text = "EcoTank"
-        text_req.match_type = "contains"
-        text_req.case_sensitive = False
-        text_req.confidence_threshold = 0.6
-        text_req.mandatory = True
-
-        prod_cfg = _make_shelf_product(
-            "Epson_Top_Not_Backlit",
-            text_requirements=[text_req],
-        )
-        shelf_cfg = _make_shelf_cfg("header", [prod_cfg])
-        planogram_description = _make_planogram_description([shelf_cfg])
-
-        identified = [
-            _make_identified_product(
-                "Epson_Top_Not_Backlit",
-                "header",
-                visual_features=["ocr: EcoTank Printer"],
+    @pytest.mark.asyncio
+    async def test_mandatory_text_missing_fails(self):
+        definition = _definition(("graphic",))
+        bindings = _presence(definition) + [
+            RuleBinding(
+                rule_id="txt",
+                kind="text_requirements",
+                target_id="z0",
+                params={"requirements": [{"required_text": "EPSON", "match_type": "contains"}]},
             )
         ]
-
-        gp = _make_type(shelves=[shelf_cfg])
-
-        from unittest.mock import patch
-        from parrot.models.compliance import TextComplianceResult
-
-        found_result = TextComplianceResult(
-            required_text="EcoTank",
-            found=True,
-            matched_features=["ocr: EcoTank Printer"],
-            confidence=0.9,
-            match_type="contains",
-        )
-
-        with patch(
-            "parrot.pipelines.planogram.types.graphic_panel_display.TextMatcher.check_text_match",
-            return_value=found_result,
-        ):
-            results = gp.check_planogram_compliance(identified, planogram_description)
-
-        assert results[0].overall_text_compliant is True
-        assert any(r.found for r in results[0].text_compliance_results)
-
-    def test_text_requirement_fail(self):
-        """Required text missing from OCR → non-compliant."""
-        text_req = MagicMock()
-        text_req.required_text = "EcoTank"
-        text_req.match_type = "contains"
-        text_req.case_sensitive = False
-        text_req.confidence_threshold = 0.6
-        text_req.mandatory = True
-
-        prod_cfg = _make_shelf_product(
-            "Epson_Top_Not_Backlit",
-            text_requirements=[text_req],
-        )
-        shelf_cfg = _make_shelf_cfg("header", [prod_cfg])
-        planogram_description = _make_planogram_description([shelf_cfg])
-
-        identified = [
-            _make_identified_product(
-                "Epson_Top_Not_Backlit",
-                "header",
-                visual_features=["ocr: some other text"],
-            )
-        ]
-
-        gp = _make_type(shelves=[shelf_cfg])
-
-        from unittest.mock import patch
-        from parrot.models.compliance import TextComplianceResult
-
-        not_found_result = TextComplianceResult(
-            required_text="EcoTank",
-            found=False,
-            matched_features=[],
-            confidence=0.0,
-            match_type="contains",
-        )
-
-        with patch(
-            "parrot.pipelines.planogram.types.graphic_panel_display.TextMatcher.check_text_match",
-            return_value=not_found_result,
-        ):
-            results = gp.check_planogram_compliance(identified, planogram_description)
-
-        assert results[0].overall_text_compliant is False
-        assert all(not r.found for r in results[0].text_compliance_results)
-
-
-# ---------------------------------------------------------------------------
-# Tests: no fact-tag / product counting
-# ---------------------------------------------------------------------------
-
-class TestNoFactTagLogic:
-    """Verify no fact-tag attributes or product-counting logic in compliance output."""
-
-    def test_no_fact_tag_logic(self):
-        """ComplianceResult must not contain fact-tag related attributes."""
-        prod_cfg = _make_shelf_product("Epson_Top_Not_Backlit")
-        shelf_cfg = _make_shelf_cfg("header", [prod_cfg])
-        planogram_description = _make_planogram_description([shelf_cfg])
-
-        identified = [
-            _make_identified_product("Epson_Top_Not_Backlit", "header", confidence=0.9)
-        ]
-
-        gp = _make_type(shelves=[shelf_cfg])
-        results = gp.check_planogram_compliance(identified, planogram_description)
-
-        assert len(results) == 1
-        result = results[0]
-
-        # No brand compliance (graphic panels don't check brand logo)
-        assert result.brand_compliance_result is None
-
-        # No unexpected products (graphic panels don't penalise extras)
-        assert result.unexpected_products == []
-
-        # Compliance result does not have any fact_tag attributes
-        result_dict = result.model_dump()
-        for key in result_dict:
-            assert "fact" not in key.lower(), f"Unexpected fact-related key: {key}"
+        bad = await _compare(definition, bindings, _perception(1, ["hello world"]))
+        assert bad.overall_compliant is False
+        good = await _compare(definition, bindings, _perception(1, ["EPSON ink"]))
+        assert good.overall_compliant is True
 
 
 # ---------------------------------------------------------------------------
 # Tests: type registration
 # ---------------------------------------------------------------------------
+
 
 class TestRegistration:
     """Verify GraphicPanelDisplay is registered in _PLANOGRAM_TYPES."""

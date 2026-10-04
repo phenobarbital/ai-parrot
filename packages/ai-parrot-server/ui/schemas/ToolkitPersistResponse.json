@@ -1,0 +1,36 @@
+{
+  "description": "Response of every agent-level tooling write.",
+  "properties": {
+    "agent": {
+      "title": "Agent",
+      "type": "string"
+    },
+    "persisted": {
+      "default": true,
+      "title": "Persisted",
+      "type": "boolean"
+    },
+    "reload_required": {
+      "default": true,
+      "title": "Reload Required",
+      "type": "boolean"
+    },
+    "slug": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Slug"
+    }
+  },
+  "required": [
+    "agent"
+  ],
+  "title": "ToolkitPersistResponse",
+  "type": "object"
+}

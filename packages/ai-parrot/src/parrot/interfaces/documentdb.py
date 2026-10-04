@@ -21,8 +21,9 @@ Usage:
     await db.documentdb_connect()
     db.save_background("logs", {"event": "user_login"})
 """
+
 from __future__ import annotations
-from typing import Optional, Union, Any, List, Dict, Callable, TYPE_CHECKING
+from typing import Optional, Union, Any, List, Dict, Callable
 import asyncio
 from collections import deque
 from collections.abc import AsyncGenerator
@@ -45,6 +46,7 @@ class FailedWrite:
         timestamp: When the failure occurred (UTC)
         retries: Number of retry attempts made
     """
+
     collection: str
     data: Union[dict, List[dict]]
     error: Exception
@@ -93,7 +95,7 @@ class DocumentDb:
         max_retries: int = DEFAULT_MAX_RETRIES,
         failed_writes_limit: int = DEFAULT_FAILED_WRITES_LIMIT,
         retry_base_delay: float = DEFAULT_RETRY_BASE_DELAY,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize the DocumentDb interface.
@@ -106,7 +108,7 @@ class DocumentDb:
         """
         self._document_db: Optional[AsyncDB] = None
         self._connected: bool = False
-        self.logger = logging.getLogger('DocumentDb')
+        self.logger = logging.getLogger("DocumentDb")
 
         # Retry configuration
         self._max_retries = max_retries
@@ -129,7 +131,7 @@ class DocumentDb:
         """Ensure the driver has an active connection, reconnecting if needed."""
         if self._connected and self._document_db is not None:
             # Quick liveness check
-            conn = getattr(self._document_db, '_connection', None)
+            conn = getattr(self._document_db, "_connection", None)
             if conn is not None:
                 return
         # (Re)connect
@@ -142,15 +144,13 @@ class DocumentDb:
         """
         await self._ensure_connected()
         driver = self.db
-        db_obj = getattr(driver, '_database', None)
+        db_obj = getattr(driver, "_database", None)
         if db_obj is None:
             # Trigger database selection if the driver hasn't done it yet
-            if hasattr(driver, '_select_database'):
+            if hasattr(driver, "_select_database"):
                 db_obj = await driver._select_database()
             else:
-                raise RuntimeError(
-                    "Cannot obtain database handle from asyncdb driver"
-                )
+                raise RuntimeError("Cannot obtain database handle from asyncdb driver")
         return db_obj
 
     @property
@@ -192,21 +192,24 @@ class DocumentDb:
             Configured AsyncDB instance (not yet connected)
         """
         # Read credentials from environment (via navconfig)
-        host = config.get('DOCUMENTDB_HOSTNAME', fallback='localhost')
-        port = config.get('DOCUMENTDB_PORT', fallback=27017)
-        username = config.get('DOCUMENTDB_USERNAME')
-        password = config.get('DOCUMENTDB_PASSWORD')
-        database = config.get('DOCUMENTDB_DBNAME', fallback='navigator')
-        use_ssl = config.getboolean('DOCUMENTDB_USE_SSL', fallback=True)
-        dbtype = config.get('DOCUMENTDB_DBTYPE', fallback='mongodb')
+        host = config.get("DOCUMENTDB_HOSTNAME", fallback="localhost")
+        port = config.get("DOCUMENTDB_PORT", fallback=27017)
+        username = config.get("DOCUMENTDB_USERNAME")
+        password = config.get("DOCUMENTDB_PASSWORD")
+        database = config.get("DOCUMENTDB_DBNAME", fallback="navigator")
+        use_ssl = config.getboolean("DOCUMENTDB_USE_SSL", fallback=True)
+        dbtype = config.get("DOCUMENTDB_DBTYPE", fallback="mongodb")
 
         # TLS certificate handling - default to AWS global bundle
-        tls_ca_file = config.get('DOCUMENTDB_TLS_CA_FILE')
+        tls_ca_file = config.get("DOCUMENTDB_TLS_CA_FILE")
         if not tls_ca_file:
-            tls_ca_file = BASE_DIR.joinpath('env', "global-bundle.pem")
+            tls_ca_file = BASE_DIR.joinpath("env", "global-bundle.pem")
 
-        auth_source = config.get('DOCUMENTDB_AUTH_SOURCE', fallback='admin')
-        engine = config.get('DOCUMENTDB_ENGINE', fallback='mongo')
+        auth_source = config.get("DOCUMENTDB_AUTH_SOURCE", fallback="admin")
+        engine = config.get("DOCUMENTDB_ENGINE", fallback="mongo")
+        # Server-selection/connect timeout in seconds. asyncdb defaults to 600s,
+        # which blocks a caller for 10 minutes when DocumentDB is unreachable.
+        timeout = config.getint("DOCUMENTDB_TIMEOUT", fallback=10)
 
         params = {
             "host": host,
@@ -216,7 +219,7 @@ class DocumentDb:
             "database": database,
             "ssl": use_ssl,
             "dbtype": dbtype,
-            "authsource": auth_source
+            "authsource": auth_source,
         }
 
         if use_ssl and tls_ca_file:
@@ -225,7 +228,7 @@ class DocumentDb:
         self.logger.debug(f"Configuring DocumentDB connection to {host}:{port}/{database}")
 
         # "mongo" is the driver name in asyncdb for mongodb/documentdb
-        return AsyncDB(engine, params=params)
+        return AsyncDB(engine, params=params, timeout=timeout)
 
     # =========================================================================
     # Connection Management
@@ -332,7 +335,7 @@ class DocumentDb:
             cursor = cursor.limit(limit)
         results = []
         async for doc in cursor:
-            doc.pop('_id', None)
+            doc.pop("_id", None)
             results.append(doc)
         return results
 
@@ -371,7 +374,7 @@ class DocumentDb:
         limit: Optional[int] = None,
         projection: Optional[dict] = None,
         sort: Optional[List[tuple]] = None,
-        **kwargs
+        **kwargs,
     ) -> List[dict]:
         """
         Read documents from a collection.
@@ -395,23 +398,13 @@ class DocumentDb:
 
         await self._ensure_connected()
         try:
-            result, _ = await self.db.query(
-                collection_name=collection_name,
-                query=query,
-                limit=limit,
-                **kwargs
-            )
+            result, _ = await self.db.query(collection_name=collection_name, query=query, limit=limit, **kwargs)
             return result if result else []
         except Exception as e:
             self.logger.error(f"Error reading from {collection_name}: {e}")
             raise
 
-    async def read_one(
-        self,
-        collection_name: str,
-        query: dict,
-        **kwargs
-    ) -> Optional[dict]:
+    async def read_one(self, collection_name: str, query: dict, **kwargs) -> Optional[dict]:
         """
         Read a single document from a collection.
 
@@ -444,12 +437,7 @@ class DocumentDb:
     # Write Operations
     # =========================================================================
 
-    async def write(
-        self,
-        collection_name: str,
-        data: Union[dict, List[dict]],
-        **kwargs
-    ) -> Any:
+    async def write(self, collection_name: str, data: Union[dict, List[dict]], **kwargs) -> Any:
         """
         Write document(s) to a collection.
 
@@ -473,23 +461,12 @@ class DocumentDb:
             if isinstance(data, dict):
                 data = [data]
 
-            return await self.db.write(
-                collection=collection_name,
-                data=data,
-                **kwargs
-            )
+            return await self.db.write(collection=collection_name, data=data, **kwargs)
         except Exception as e:
             self.logger.error(f"Error writing to {collection_name}: {e}")
             raise
 
-    async def update(
-        self,
-        collection_name: str,
-        query: dict,
-        update_data: dict,
-        upsert: bool = False,
-        **kwargs
-    ) -> Any:
+    async def update(self, collection_name: str, query: dict, update_data: dict, upsert: bool = False, **kwargs) -> Any:
         """
         Update documents matching a query.
 
@@ -505,30 +482,18 @@ class DocumentDb:
         """
         await self._ensure_connected()
         try:
-            if hasattr(self.db, 'update'):
+            if hasattr(self.db, "update"):
                 return await self.db.update(
-                    collection_name=collection_name,
-                    query=query,
-                    data=update_data,
-                    upsert=upsert,
-                    **kwargs
+                    collection_name=collection_name, query=query, data=update_data, upsert=upsert, **kwargs
                 )
             else:
-                self.logger.warning(
-                    "update() not available on driver, "
-                    "attempting raw driver access"
-                )
+                self.logger.warning("update() not available on driver, " "attempting raw driver access")
                 raise NotImplementedError("Update not supported by current driver")
         except Exception as e:
             self.logger.error(f"Error updating {collection_name}: {e}")
             raise
 
-    async def delete(
-        self,
-        collection_name: str,
-        query: dict,
-        **kwargs
-    ) -> Any:
+    async def delete(self, collection_name: str, query: dict, **kwargs) -> Any:
         """
         Delete documents matching a query.
 
@@ -544,23 +509,14 @@ class DocumentDb:
             ValueError: If query is empty (safety check)
         """
         if not query:
-            raise ValueError(
-                "Empty query would delete all documents. "
-                "Use delete_all() if this is intentional."
-            )
+            raise ValueError("Empty query would delete all documents. " "Use delete_all() if this is intentional.")
 
         await self._ensure_connected()
         try:
-            if hasattr(self.db, 'delete'):
-                return await self.db.delete(
-                    collection_name=collection_name,
-                    query=query,
-                    **kwargs
-                )
+            if hasattr(self.db, "delete"):
+                return await self.db.delete(collection_name=collection_name, query=query, **kwargs)
             else:
-                self.logger.warning(
-                    "delete() not available on driver"
-                )
+                self.logger.warning("delete() not available on driver")
                 raise NotImplementedError("Delete not supported by current driver")
         except Exception as e:
             self.logger.error(f"Error deleting from {collection_name}: {e}")
@@ -575,7 +531,7 @@ class DocumentDb:
         collection_name: str,
         data: Union[dict, List[dict]],
         on_success: Optional[Callable[[Any], None]] = None,
-        on_error: Optional[Callable[[Exception], None]] = None
+        on_error: Optional[Callable[[Exception], None]] = None,
     ) -> asyncio.Task:
         """
         Fire-and-forget save operation with automatic retry.
@@ -613,18 +569,15 @@ class DocumentDb:
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError as e:
-            self.logger.error(
-                "save_background() must be called from within an async context"
-            )
+            self.logger.error("save_background() must be called from within an async context")
             raise RuntimeError(
-                "save_background() requires a running event loop. "
-                "Use 'await write()' for synchronous contexts."
+                "save_background() requires a running event loop. " "Use 'await write()' for synchronous contexts."
             ) from e
 
         # Create the background task
         task = loop.create_task(
             self._save_with_retry(collection_name, data, on_success, on_error),
-            name=f"bg_save_{collection_name}_{id(data)}"
+            name=f"bg_save_{collection_name}_{id(data)}",
         )
 
         # Track the task for graceful shutdown
@@ -639,7 +592,7 @@ class DocumentDb:
         data: Union[dict, List[dict]],
         on_success: Optional[Callable[[Any], None]] = None,
         on_error: Optional[Callable[[Exception], None]] = None,
-        retry_count: int = 0
+        retry_count: int = 0,
     ) -> Optional[Any]:
         """
         Internal method that performs the actual save with retry logic.
@@ -648,10 +601,7 @@ class DocumentDb:
         """
         try:
             result = await self.write(collection_name, data)
-            self.logger.debug(
-                f"Background save to '{collection_name}' successful "
-                f"(attempt {retry_count + 1})"
-            )
+            self.logger.debug(f"Background save to '{collection_name}' successful " f"(attempt {retry_count + 1})")
             if on_success:
                 try:
                     on_success(result)
@@ -667,14 +617,12 @@ class DocumentDb:
 
             if retry_count < self._max_retries:
                 # Calculate delay with exponential backoff
-                delay = self._retry_base_delay * (2 ** retry_count)
+                delay = self._retry_base_delay * (2**retry_count)
                 self.logger.debug(f"Retrying in {delay:.1f}s...")
                 await asyncio.sleep(delay)
 
                 # Recursive retry
-                return await self._save_with_retry(
-                    collection_name, data, on_success, on_error, retry_count + 1
-                )
+                return await self._save_with_retry(collection_name, data, on_success, on_error, retry_count + 1)
             else:
                 # All retries exhausted - record the failure
                 self.logger.error(
@@ -682,12 +630,7 @@ class DocumentDb:
                     f"after {self._max_retries + 1} attempts"
                 )
 
-                failed_write = FailedWrite(
-                    collection=collection_name,
-                    data=data,
-                    error=e,
-                    retries=retry_count + 1
-                )
+                failed_write = FailedWrite(collection=collection_name, data=data, error=e, retries=retry_count + 1)
                 self._failed_writes.append(failed_write)
 
                 if on_error:
@@ -714,7 +657,7 @@ class DocumentDb:
             print(f"Recovered {result['successful']} of {result['total']} failed writes")
         """
         if not self._failed_writes:
-            return {'successful': 0, 'failed': 0, 'total': 0}
+            return {"successful": 0, "failed": 0, "total": 0}
 
         total = len(self._failed_writes)
         successful = 0
@@ -729,9 +672,7 @@ class DocumentDb:
             try:
                 await self.write(failed.collection, failed.data)
                 successful += 1
-                self.logger.info(
-                    f"Successfully retried failed write to '{failed.collection}'"
-                )
+                self.logger.info(f"Successfully retried failed write to '{failed.collection}'")
             except Exception as e:
                 failed.retries += 1
                 failed.error = e
@@ -743,19 +684,14 @@ class DocumentDb:
                     still_failing.append(failed)
                 else:
                     self.logger.error(
-                        f"Permanently failed write to '{failed.collection}' "
-                        f"after {failed.retries} total attempts"
+                        f"Permanently failed write to '{failed.collection}' " f"after {failed.retries} total attempts"
                     )
 
         # Re-queue items that still failed
         for item in still_failing:
             self._failed_writes.append(item)
 
-        return {
-            'successful': successful,
-            'failed': len(still_failing),
-            'total': total
-        }
+        return {"successful": successful, "failed": len(still_failing), "total": total}
 
     def clear_failed_writes(self) -> int:
         """
@@ -780,7 +716,7 @@ class DocumentDb:
         collection_name: str,
         query: Optional[dict] = None,
         batch_size: int = 100,
-        projection: Optional[dict] = None
+        projection: Optional[dict] = None,
     ) -> AsyncGenerator[dict, None]:
         """
         Iterate over documents using a cursor (memory-efficient streaming).
@@ -810,15 +746,13 @@ class DocumentDb:
         cursor = None
 
         # Try to get a proper cursor for memory-efficient iteration
-        if hasattr(driver, 'get_cursor'):
-            cursor = await driver.get_cursor(
-                collection_name, query, batch_size=batch_size
-            )
+        if hasattr(driver, "get_cursor"):
+            cursor = await driver.get_cursor(collection_name, query, batch_size=batch_size)
         else:
             # Direct Motor access via _database
             db_obj = await self._get_db()
             cursor = db_obj[collection_name].find(query)
-            if hasattr(cursor, 'batch_size'):
+            if hasattr(cursor, "batch_size"):
                 cursor = cursor.batch_size(batch_size)
 
         if cursor:
@@ -831,20 +765,15 @@ class DocumentDb:
                 f"Falling back to full query - ALL DATA WILL BE LOADED INTO MEMORY! "
                 f"Consider using read() with limit for large collections."
             )
-            result, _ = await driver.query(
-                collection_name=collection_name, query=query
-            )
-            for item in (result or []):
+            result, _ = await driver.query(collection_name=collection_name, query=query)
+            for item in result or []:
                 yield item
 
     # Alias for API compatibility
     read_batch = iterate
 
     async def read_chunks(
-        self,
-        collection_name: str,
-        query: Optional[dict] = None,
-        chunk_size: int = 100
+        self, collection_name: str, query: Optional[dict] = None, chunk_size: int = 100
     ) -> AsyncGenerator[List[dict], None]:
         """
         Yield documents in chunks (batches).
@@ -881,10 +810,7 @@ class DocumentDb:
     # =========================================================================
 
     async def create_collection(
-        self,
-        collection_name: str,
-        indexes: Optional[List[Union[str, dict]]] = None,
-        **kwargs
+        self, collection_name: str, indexes: Optional[List[Union[str, dict]]] = None, **kwargs
     ) -> bool:
         """
         Explicitly create a collection.
@@ -908,7 +834,7 @@ class DocumentDb:
             created = True
         except Exception as e:
             error_str = str(e).lower()
-            if 'already exists' in error_str or 'namespaceexists' in error_str:
+            if "already exists" in error_str or "namespaceexists" in error_str:
                 self.logger.debug(f"Collection '{collection_name}' already exists")
                 created = False
             else:
@@ -939,19 +865,13 @@ class DocumentDb:
             return [key], {}
         if isinstance(key, dict):
             spec = dict(key)  # shallow copy to avoid mutating caller
-            index_keys = spec.pop('keys', spec.pop('key', None))
+            index_keys = spec.pop("keys", spec.pop("key", None))
             if index_keys is None:
-                raise ValueError(
-                    f"Dict index spec must contain 'keys' or 'key': {key}"
-                )
+                raise ValueError(f"Dict index spec must contain 'keys' or 'key': {key}")
             return index_keys, spec
         raise TypeError(f"Unsupported index spec type: {type(key)}")
 
-    async def create_indexes(
-        self,
-        collection_name: str,
-        keys: List[Union[str, tuple, dict]]
-    ) -> None:
+    async def create_indexes(self, collection_name: str, keys: List[Union[str, tuple, dict]]) -> None:
         """
         Create indexes on a collection.
 
@@ -978,32 +898,22 @@ class DocumentDb:
         await self._ensure_connected()
         driver = self.db
         try:
-            if hasattr(driver, 'create_index'):
+            if hasattr(driver, "create_index"):
                 for key in keys:
                     index_keys, index_opts = self._normalize_index_spec(key)
-                    await driver.create_index(
-                        collection_name, index_keys, **index_opts
-                    )
-                    self.logger.debug(
-                        f"Created index on '{collection_name}': {key}"
-                    )
+                    await driver.create_index(collection_name, index_keys, **index_opts)
+                    self.logger.debug(f"Created index on '{collection_name}': {key}")
             else:
                 # Direct access to Motor collection
                 db_obj = await self._get_db()
                 collection = db_obj[collection_name]
                 for key in keys:
                     index_keys, index_opts = self._normalize_index_spec(key)
-                    await collection.create_index(
-                        index_keys, **index_opts
-                    )
-                    self.logger.debug(
-                        f"Created index on '{collection_name}': {key}"
-                    )
+                    await collection.create_index(index_keys, **index_opts)
+                    self.logger.debug(f"Created index on '{collection_name}': {key}")
 
         except Exception as e:
-            self.logger.error(
-                f"Error creating index on '{collection_name}': {e}"
-            )
+            self.logger.error(f"Error creating index on '{collection_name}': {e}")
             raise
 
     async def create_bucket(self, bucket_name: str, **kwargs) -> Any:
@@ -1025,7 +935,7 @@ class DocumentDb:
             GridFS support depends on the underlying driver capabilities.
         """
         driver = self.db
-        if hasattr(driver, 'create_bucket'):
+        if hasattr(driver, "create_bucket"):
             await self._ensure_connected()
             bucket = await driver.create_bucket(bucket_name, **kwargs)
             self.logger.info(f"Created GridFS bucket '{bucket_name}'")
@@ -1035,16 +945,12 @@ class DocumentDb:
             try:
                 db_obj = await self._get_db()
                 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
-                bucket = AsyncIOMotorGridFSBucket(
-                    db_obj, bucket_name=bucket_name, **kwargs
-                )
+
+                bucket = AsyncIOMotorGridFSBucket(db_obj, bucket_name=bucket_name, **kwargs)
                 self.logger.info(f"Created GridFS bucket '{bucket_name}'")
                 return bucket
             except ImportError:
-                self.logger.warning(
-                    "Motor GridFSBucket not available. "
-                    "Install motor for GridFS support."
-                )
+                self.logger.warning("Motor GridFSBucket not available. " "Install motor for GridFS support.")
         return None
 
     async def list_collections(self) -> List[str]:

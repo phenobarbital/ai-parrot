@@ -43,14 +43,16 @@ the plan text itself.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, Tag, model_validator
 
 __all__ = (
     "ARTIFACT_REF_RE",
     "NODE_REF_RE",
+    "AnyPlanNode",
     "ArtifactRef",
+    "DelegatePlanNode",
     "ExecutionManifest",
     "ExecutionPlan",
     "FacetSpec",
@@ -170,17 +172,12 @@ class ForEach(BaseModel):
         return match.group(1)
 
 
-class PlanNode(BaseModel):
-    """A single deterministic tool invocation (or fan-out of invocations).
+class _PlanNodeBase(BaseModel):
+    """Fields and rules shared by every executable plan node.
 
     Attributes:
         id: Unique node identifier; also the handle used by
             ``{nodes.<id>.output}`` and ``{artifacts.<id>}``.
-        tool: Registered tool name. Validated against the live ``ToolManager``
-            at plan-validation time, not at execution time.
-        args: Keyword arguments for the tool. String leaves may contain
-            ``{nodes.<id>.output}``, ``{artifacts.<id>}`` and — inside a
-            ``for_each`` node — ``{item}`` / ``{item.<field>}`` / ``{index}``.
         store_as: Working-memory key template for the result. For a
             ``for_each`` node it MUST vary per item (contain ``{index}`` or an
             ``{item...}`` reference), otherwise every item would overwrite the
@@ -193,6 +190,7 @@ class PlanNode(BaseModel):
             ``ctx.artifacts.<node_id>.<facet>`` and ``ctx.errors``. When it
             evaluates false the node is skipped and publishes a skipped
             :class:`ArtifactRef`.
+        for_each: Fan-out spec; run this node once per item of a source list.
         facets: What to extract into the manifest. Defaults to a structural
             summary when omitted.
         timeout: Per-call timeout in seconds (per item under ``for_each``).
@@ -203,8 +201,6 @@ class PlanNode(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
-    tool: str
-    args: Dict[str, Any] = Field(default_factory=dict)
     store_as: str
     depends_on: List[str] = Field(default_factory=list)
     when: Optional[str] = None
@@ -215,7 +211,7 @@ class PlanNode(BaseModel):
     description: Optional[str] = None
 
     @model_validator(mode="after")
-    def _check_node(self) -> "PlanNode":
+    def _check_node(self) -> "_PlanNodeBase":
         if not _IDENT_RE.match(self.id):
             raise ValueError(f"PlanNode.id {self.id!r} must match {_IDENT_RE.pattern}")
         if not self.store_as.strip():
@@ -239,6 +235,10 @@ class PlanNode(BaseModel):
             raise ValueError(f"Node {self.id!r}: duplicate ids in depends_on")
         return self
 
+    def _template_strings(self) -> List[str]:
+        """String leaves that may carry placeholders; overridden per kind."""
+        return []
+
     def referenced_nodes(self) -> set[str]:
         """Node ids this node references through placeholders or ``for_each``.
 
@@ -246,12 +246,83 @@ class PlanNode(BaseModel):
             The set of referenced node ids (excluding ``depends_on`` itself).
         """
         found: set[str] = set()
-        for text in _iter_strings(self.args):
+        for text in self._template_strings():
             found.update(ARTIFACT_REF_RE.findall(text))
             found.update(NODE_REF_RE.findall(text))
         if self.for_each is not None:
             found.add(self.for_each.source_node)
         return found
+
+    def tool_names(self) -> frozenset[str]:
+        """Every tool this node may dispatch."""
+        raise NotImplementedError
+
+
+class PlanNode(_PlanNodeBase):
+    """A single deterministic tool invocation (or fan-out of invocations).
+
+    Attributes:
+        tool: Registered tool name. Validated against the live ``ToolManager``
+            at plan-validation time, not at execution time.
+        args: Keyword arguments for the tool. String leaves may contain
+            ``{nodes.<id>.output}``, ``{artifacts.<id>}`` and — inside a
+            ``for_each`` node — ``{item}`` / ``{item.<field>}`` / ``{index}``.
+        type: Always ``"tool"``. Excluded from dumps so ``plan_fingerprint``
+            of tool-only plans is unchanged (FEAT-590 AC2).
+    """
+
+    type: Literal["tool"] = Field(default="tool", exclude=True)
+    tool: str
+    args: Dict[str, Any] = Field(default_factory=dict)
+
+    def _template_strings(self) -> List[str]:
+        return list(_iter_strings(self.args))
+
+    def tool_names(self) -> frozenset[str]:
+        return frozenset({self.tool})
+
+
+class DelegatePlanNode(_PlanNodeBase):
+    """A runtime-decided tool call proposed by a ``ToolCallDelegate`` (FEAT-590).
+
+    Attributes:
+        type: Always ``"delegate"`` (serialised — it is the discriminator).
+        instruction: Template text for the delegate; same placeholders as args.
+        facts: Short runtime facts; values are templates too.
+        tools: Candidate tools (1..delegate.max_tools, checked by the validator).
+        min_confidence: Threshold; when set, an unscored (``None``) proposal is rejected.
+        accept_when: Optional CEL guard over ``ctx.proposal.*`` plus the usual activation.
+        on_reject: ``fail`` | ``retry_backend`` | ``escalate``.
+        allow_side_effects: Permit non-``delegate_safe`` tools (host must also allow).
+    """
+
+    type: Literal["delegate"] = "delegate"
+    instruction: str = Field(..., min_length=1)
+    facts: Dict[str, str] = Field(default_factory=dict)
+    tools: List[str] = Field(..., min_length=1)
+    min_confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    accept_when: Optional[str] = None
+    on_reject: Literal["fail", "retry_backend", "escalate"] = "fail"
+    allow_side_effects: bool = False
+
+    def _template_strings(self) -> List[str]:
+        return [self.instruction, *self.facts.values()]
+
+    def tool_names(self) -> frozenset[str]:
+        return frozenset(self.tools)
+
+
+def _node_kind(value: Any) -> str:
+    """Discriminator: the ``type`` tag, defaulting to ``"tool"`` when absent."""
+    if isinstance(value, dict):
+        return value.get("type", "tool")
+    return getattr(value, "type", "tool")
+
+
+AnyPlanNode = Annotated[
+    Union[Annotated[PlanNode, Tag("tool")], Annotated[DelegatePlanNode, Tag("delegate")]],
+    Discriminator(_node_kind),
+]
 
 
 class PlanMetadata(BaseModel):
@@ -295,7 +366,7 @@ class ExecutionPlan(BaseModel):
         ...,
         description="What this plan achieves; carried into the manifest for audit",
     )
-    nodes: List[PlanNode] = Field(..., min_length=1)
+    nodes: List[AnyPlanNode] = Field(..., min_length=1)
     metadata: PlanMetadata = Field(default_factory=PlanMetadata)
 
     @model_validator(mode="after")
@@ -385,14 +456,14 @@ class ExecutionPlan(BaseModel):
             done.update(ready)
         return ordered
 
-    def node(self, node_id: str) -> PlanNode:
+    def node(self, node_id: str) -> AnyPlanNode:
         """Look up a node by id.
 
         Args:
             node_id: The node identifier.
 
         Returns:
-            The matching :class:`PlanNode`.
+            The matching :class:`PlanNode` or :class:`DelegatePlanNode`.
 
         Raises:
             KeyError: If no node has that id.
@@ -431,6 +502,7 @@ class ArtifactRef(BaseModel):
             fully recorded — an unresolved dispatch outcome, or a store
             that landed without an attributable producer. Never used to
             claim durability: it is the honest opposite.
+        escalated: Items a delegate node escalated (on_reject='escalate'); FEAT-590.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -445,6 +517,7 @@ class ArtifactRef(BaseModel):
     bytes_stored: int = 0
     versions: List[str] = Field(default_factory=list)
     tracking_degraded: bool = False
+    escalated: int = 0
 
 
 class ExecutionManifest(BaseModel):

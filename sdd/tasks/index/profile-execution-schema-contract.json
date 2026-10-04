@@ -1,0 +1,23 @@
+{
+  "feature": "profile-execution-schema-contract",
+  "feature_id": "FEAT-596",
+  "spec": "sdd/specs/profile-execution-schema-contract.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-23T20:10:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-3674",
+      "feature_id": "FEAT-596",
+      "feature": "profile-execution-schema-contract",
+      "slug": "profile-schema-typedicts",
+      "title": "Add TypedDict schema contracts and parity test to profile_execution.py",
+      "status": "pending",
+      "priority": "medium",
+      "depends_on": [],
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-3674-profile-schema-typedicts.md"
+    }
+  ]
+}

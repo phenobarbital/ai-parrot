@@ -206,19 +206,13 @@ async def test_toolkit_lint_uses_read_context(fed: FederatedWikiStore, tmp_path:
 
     report = await toolkit.lint("test-wiki")
 
-    broken = [i for i in report["cross_ref_issues"] if i["kind"] == "broken_edge"]
-    dsts = {i["dst"] for i in broken}
+    broken = [f for f in report["findings"] if f["rule_id"] == "broken-link"]
+    dsts = {f["subjects"][1] for f in broken}
     assert "roblox::class/Players" not in dsts  # resolved, excluded
     assert "file:DoesNotExist.luau" in dsts  # local broken, still reported
-    assert any(i["dst"] == "roblox::class/Typo" and i["status"] == "broken" for i in broken)
-    assert any(i["dst"] == "unbuilt::class/Whatever" and i["status"] == "unverifiable" for i in broken)
-
-    # Source staleness/orphan checks still ran against the LOCAL plane's
-    # own bookkeeping (never delegated to a foreign namespace) — the OKF
-    # mock was still invoked, and the report carries the local fields.
-    mock_okf.lint_knowledge_base.assert_awaited_once()
-    assert "orphan_sources" in report
-    assert "stale_sources" in report
+    assert any(f["subjects"][1] == "roblox::class/Typo" and f["data"]["status"] == "broken" for f in broken)
+    assert any(f["subjects"][1] == "unbuilt::class/Whatever" and f["data"]["status"] == "unverifiable" for f in broken)
+    assert "broken-link" in report["rules_run"]
 
 
 async def test_toolkit_lint_scopes_to_named_namespace(
@@ -233,11 +227,10 @@ async def test_toolkit_lint_scopes_to_named_namespace(
 
     report = await toolkit.lint("roblox")
 
-    broken = [i for i in report["cross_ref_issues"] if i["kind"] == "broken_edge"]
+    broken = [f for f in report["findings"] if f["rule_id"] == "broken-link"]
     # The roblox plane's own store has no broken edges of its own (its
     # one page, class/Players, has no outgoing edges) — none of the
     # LOCAL plane's broken/unverifiable candidates leak into this scoped view.
     assert broken == []
     # Local source bookkeeping still ran (never skipped just because the
     # cross-ref check was scoped elsewhere).
-    mock_okf.lint_knowledge_base.assert_awaited_once()

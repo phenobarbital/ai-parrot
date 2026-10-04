@@ -66,6 +66,11 @@
 	// entirely whenever `tabData.html === ''` (rather than `undefined`) —
 	// an empty-but-present string short-circuited straight to `false`
 	// without ever checking `url`. OR the two conditions instead.
+	// FEAT-611 M6: the tab manager keeps tab data in deep `$state`, so the
+	// envelope arrives here as a reactive proxy — which `A2UISurface`'s
+	// `structuredClone(dataModel)` seed cannot clone (DataCloneError on any
+	// linked surface carrying a `dataModel`). Hand it a plain snapshot.
+	let a2uiEnvelope = $derived(tabData?.envelope ? $state.snapshot(tabData.envelope) : undefined);
 	let a2uiHasHtmlFallback = $derived(
 		hasA2ui &&
 			((typeof tabData?.html === 'string' && tabData.html.length > 0) || !!tabData?.url),
@@ -347,10 +352,10 @@
 			</div>
 			<div class="flex-1 min-h-0 overflow-auto">
 				{#if a2uiView === 'rendered' && features.a2ui}
-					<!-- Code-review fix: `tabData?.envelope` — `hasA2ui` proves this
-					     at runtime, but TS can't narrow a derived boolean back to
-					     `tabData` itself. -->
-					<A2UISurface envelope={tabData?.envelope} />
+					<!-- Code-review fix: `a2uiEnvelope` may be `undefined` to TS —
+					     `hasA2ui` proves it at runtime, but TS can't narrow a derived
+					     boolean back to `tabData` itself. -->
+					<A2UISurface envelope={a2uiEnvelope} persistedSurfaceId={tabData?.persistedSurfaceId} />
 				{:else if typeof tabData?.html === 'string' && tabData.html.length > 0}
 					<!-- FEAT-527 code-review fix: srcdoc content must NOT carry
 					     allow-same-origin — combined with allow-scripts it would let

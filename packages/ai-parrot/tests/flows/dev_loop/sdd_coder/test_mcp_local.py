@@ -33,6 +33,9 @@ EXPECTED = {
         "read_artifact",
         # FEAT-584 TASK-3565: background job status and validation-handle gates.
         "bg_status",
+        # The blocking counterpart: a validation handle raises no host
+        # notification, so waiting on one needs its own bounded primitive.
+        "bg_wait",
         "run_validation",
     )
 }

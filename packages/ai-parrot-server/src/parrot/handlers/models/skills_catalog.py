@@ -22,6 +22,7 @@ the same fix applied to TASK-2513's model).
 
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from asyncdb.models import Field, Model
 
@@ -29,10 +30,10 @@ from asyncdb.models import Field, Model
 class SkillCatalogEntry(Model):
     """Database model for the org-wide shared skills catalog (spec §2).
 
-    SQL Table Creation:
+    SQL Table Creation (migration 0004 adds the tenancy columns and constraints):
     CREATE TABLE IF NOT EXISTS navigator.ai_skills_catalog (
-        skill_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        name VARCHAR NOT NULL UNIQUE,
+        skill_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR NOT NULL,
         description TEXT NOT NULL,
         category VARCHAR NOT NULL DEFAULT 'general',
         owner VARCHAR NOT NULL,
@@ -42,9 +43,17 @@ class SkillCatalogEntry(Model):
         status VARCHAR NOT NULL DEFAULT 'active',
         search_index_stale BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        tenant TEXT NULL,                                        -- 0004
+        visibility TEXT NOT NULL DEFAULT 'private',              -- 0004
+        allowed_groups TEXT[] NOT NULL DEFAULT '{}',             -- 0004
+        UNIQUE (tenant, name),                                   -- replaces the global UNIQUE(name)
+        CHECK (visibility IN ('private', 'tenant', 'groups')),
+        CHECK (tenant IS NULL OR tenant ~ '^[a-z0-9][a-z0-9_-]{0,62}$'),
+        CHECK (tenant IS NOT NULL OR visibility = 'private')
     );
-
+    CREATE UNIQUE INDEX ai_skills_catalog_global_name_uq ON navigator.ai_skills_catalog (name) WHERE tenant IS NULL;
+    CREATE INDEX ai_skills_catalog_tenant_visibility_idx ON navigator.ai_skills_catalog (tenant, visibility);
     CREATE INDEX idx_ai_skills_catalog_category ON navigator.ai_skills_catalog(category);
     CREATE INDEX idx_ai_skills_catalog_owner ON navigator.ai_skills_catalog(owner);
 
@@ -67,6 +76,9 @@ class SkillCatalogEntry(Model):
     version: int = Field(required=False, default=1)
     status: str = Field(required=False, default="active")
     search_index_stale: bool = Field(required=False, default=False)
+    tenant: Optional[str] = Field(required=False, default=None)
+    visibility: str = Field(required=False, default="private")
+    allowed_groups: list = Field(required=False, default_factory=list)
     created_at: datetime = Field(required=False, default_factory=datetime.now)
     updated_at: datetime = Field(required=False, default_factory=datetime.now)
 

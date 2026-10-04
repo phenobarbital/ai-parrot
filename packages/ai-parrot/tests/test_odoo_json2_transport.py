@@ -146,6 +146,83 @@ async def test_execute_kw_unsupported_positional_args_raise_rpc_error():
 
 
 @pytest.mark.asyncio
+async def test_execute_kw_formatted_read_group_maps_domain_and_kwargs():
+    session = _mock_aiohttp_response([{"team_id": [1, "Support"], "__count": 3}])
+    transport = Json2Transport(_config())
+
+    with patch("aiohttp.ClientSession", return_value=session):
+        await transport.execute_kw(
+            "sh.helpdesk.ticket",
+            "formatted_read_group",
+            [[("stage_id.name", "=", "New")]],
+            {"groupby": ["team_id"], "aggregates": ["id:count"]},
+        )
+
+    url = session.post.call_args.args[0]
+    body = session.post.call_args.kwargs["json"]
+    assert url == "https://odoo.example.com/json/2/sh.helpdesk.ticket/formatted_read_group"
+    assert body == {
+        "domain": [("stage_id.name", "=", "New")],
+        "groupby": ["team_id"],
+        "aggregates": ["id:count"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_execute_kw_read_group_maps_domain_and_kwargs():
+    session = _mock_aiohttp_response([])
+    transport = Json2Transport(_config())
+
+    with patch("aiohttp.ClientSession", return_value=session):
+        await transport.execute_kw(
+            "sale.order",
+            "read_group",
+            [[("state", "=", "sale")]],
+            {"groupby": ["state"], "fields": ["state", "amount_total:sum"], "lazy": False},
+        )
+
+    url = session.post.call_args.args[0]
+    body = session.post.call_args.kwargs["json"]
+    assert url == "https://odoo.example.com/json/2/sale.order/read_group"
+    assert body == {
+        "domain": [("state", "=", "sale")],
+        "groupby": ["state"],
+        "fields": ["state", "amount_total:sum"],
+        "lazy": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_execute_kw_domain_first_empty_domain_is_sent_as_domain_not_ids():
+    session = _mock_aiohttp_response([])
+    transport = Json2Transport(_config())
+
+    with patch("aiohttp.ClientSession", return_value=session):
+        await transport.execute_kw(
+            "sh.helpdesk.ticket",
+            "formatted_read_group",
+            [[]],
+            {"groupby": ["stage_id"]},
+        )
+
+    body = session.post.call_args.kwargs["json"]
+    assert body["domain"] == []
+    assert "ids" not in body
+
+
+@pytest.mark.asyncio
+async def test_execute_kw_domain_first_rejects_extra_positional_args():
+    session = _mock_aiohttp_response([])
+    transport = Json2Transport(_config())
+
+    with patch("aiohttp.ClientSession", return_value=session):
+        with pytest.raises(OdooRPCError):
+            await transport.execute_kw("sale.order", "read_group", [[], ["state"], ["state"]], None)
+
+    session.post.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_version_uses_web_version_endpoint_and_normalizes_response():
     session = _mock_aiohttp_response({"version": "19.0", "version_info": [19, 0, 0, "final", 0, ""]})
     transport = Json2Transport(_config())
@@ -166,3 +243,91 @@ async def test_json2_unauthorized_maps_to_authentication_error():
     with patch("aiohttp.ClientSession", return_value=session):
         with pytest.raises(OdooAuthenticationError):
             await transport.authenticate()
+
+
+def _session_with_responses(responses):
+    """Return a session whose successive posts yield ordered status and body pairs."""
+    response_contexts = []
+    for status, body in responses:
+        response = AsyncMock()
+        response.status = status
+        response.json = AsyncMock(return_value=body)
+        response.__aenter__ = AsyncMock(return_value=response)
+        response.__aexit__ = AsyncMock(return_value=None)
+        response_contexts.append(response)
+
+    session = MagicMock()
+    session.closed = False
+    session.post = MagicMock(side_effect=response_contexts)
+    session.close = AsyncMock(return_value=None)
+    return session
+
+
+@pytest.mark.asyncio
+async def test_execute_kw_create_falls_back_to_web_save_on_missing_argument():
+    session = _session_with_responses(
+        [
+            (422, {"message": "missing a required argument: 'values'"}),
+            (200, [{"id": 70}]),
+        ]
+    )
+    transport = Json2Transport(_config())
+
+    with patch("aiohttp.ClientSession", return_value=session):
+        result = await transport.execute_kw("sh.helpdesk.ticket", "create", [{"partner_id": 1}], None)
+
+    assert result == 70
+    urls = [call.args[0] for call in session.post.call_args_list]
+    assert urls[0].endswith("/json/2/sh.helpdesk.ticket/create")
+    assert urls[1].endswith("/json/2/sh.helpdesk.ticket/web_save")
+    assert session.post.call_args_list[1].kwargs["json"] == {
+        "vals": {"partner_id": 1},
+        "specification": {"id": {}},
+    }
+
+
+@pytest.mark.asyncio
+async def test_execute_kw_create_falls_back_on_unexpected_keyword():
+    session = _session_with_responses(
+        [
+            (500, {"message": "HelpdeskTags.create() got an unexpected keyword argument 'vals'"}),
+            (200, [{"id": 5}]),
+        ]
+    )
+    transport = Json2Transport(_config())
+
+    with patch("aiohttp.ClientSession", return_value=session):
+        result = await transport.execute_kw("sh.helpdesk.tags", "create", [{"name": "Urgent"}], None)
+
+    assert result == 5
+    assert session.post.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_kw_create_list_uses_one_web_save_per_record():
+    session = _session_with_responses(
+        [
+            (422, {"message": "missing a required argument: 'values'"}),
+            (200, [{"id": 1}]),
+            (200, [{"id": 2}]),
+        ]
+    )
+    transport = Json2Transport(_config())
+
+    with patch("aiohttp.ClientSession", return_value=session):
+        result = await transport.execute_kw("sh.helpdesk.ticket", "create", [[{"name": "a"}, {"name": "b"}]], None)
+
+    assert result == [1, 2]
+    assert session.post.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_execute_kw_create_does_not_retry_other_errors():
+    session = _session_with_responses([(422, {"message": "Invalid field 'x' on 'res.partner'"})])
+    transport = Json2Transport(_config())
+
+    with patch("aiohttp.ClientSession", return_value=session):
+        with pytest.raises(OdooRPCError):
+            await transport.execute_kw("res.partner", "create", [{"name": "Acme"}], None)
+
+    assert session.post.call_count == 1

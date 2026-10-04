@@ -2,13 +2,16 @@
 Unit tests for GoogleTTSBackend (TASK-1408).
 
 Tests cover:
-- synthesize calls generate_speech and returns audio from AIMessage.output
+- synthesize calls generate_speech and returns WAV audio from AIMessage.output
 - synthesize raises ValueError on empty text
 - synthesize raises RuntimeError when generate_speech returns no audio
 - custom voice is passed through
 - close() clears the client reference
 """
+
 import pytest
+import io
+import wave
 from unittest.mock import AsyncMock, MagicMock
 
 from parrot.voice.tts.google_backend import GoogleTTSBackend
@@ -44,17 +47,35 @@ async def test_google_backend_wraps_generate_speech():
 
     client.generate_speech.assert_awaited_once()
     assert isinstance(result, SynthesisResult)
-    assert result.audio == b"PCM-AUDIO-BYTES"
+    assert result.audio.startswith(b"RIFF")
+    assert result.mime_format == "audio/wav"
 
 
 @pytest.mark.asyncio
-async def test_google_backend_returns_correct_mime_format():
-    """synthesize passes mime_format through to SynthesisResult."""
+async def test_google_backend_returns_wav_metadata():
+    """synthesize returns a 24 kHz mono 16-bit WAV regardless of request."""
     client = _make_mock_client(b"bytes")
     backend = GoogleTTSBackend(client=client)
 
-    result = await backend.synthesize("test", mime_format="audio/wav")
+    result = await backend.synthesize("test", mime_format="audio/ogg")
 
+    assert result.mime_format == "audio/wav"
+    with wave.open(io.BytesIO(result.audio), "rb") as wav_file:
+        assert wav_file.getframerate() == 24000
+        assert wav_file.getnchannels() == 1
+        assert wav_file.getsampwidth() == 2
+
+
+@pytest.mark.asyncio
+async def test_google_backend_does_not_double_wrap_wav():
+    """An already-RIFF response is returned without a second WAV header."""
+    existing_wav = b"RIFF-existing-wav"
+    client = _make_mock_client(existing_wav)
+    backend = GoogleTTSBackend(client=client)
+
+    result = await backend.synthesize("test")
+
+    assert result.audio == existing_wav
     assert result.mime_format == "audio/wav"
 
 

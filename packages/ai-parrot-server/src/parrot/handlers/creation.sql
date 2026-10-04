@@ -203,6 +203,15 @@ ALTER TABLE navigator.ai_bots
 COMMENT ON COLUMN navigator.ai_bots.reranker_config        IS 'FEAT-133 — reranker factory config';
 COMMENT ON COLUMN navigator.ai_bots.parent_searcher_config IS 'FEAT-133 — parent searcher factory config';
 
+-- FEAT-593: Agent Studio tool configuration (idempotent)
+ALTER TABLE navigator.ai_bots
+    ADD COLUMN IF NOT EXISTS toolkit_config JSONB DEFAULT '{}'::JSONB;
+ALTER TABLE navigator.ai_bots
+    ADD COLUMN IF NOT EXISTS mcp_servers    JSONB DEFAULT '[]'::JSONB;
+
+COMMENT ON COLUMN navigator.ai_bots.toolkit_config IS 'FEAT-593 — per-toolkit config {slug: ToolkitSpec}; secrets in vault';
+COMMENT ON COLUMN navigator.ai_bots.mcp_servers    IS 'FEAT-593 — agent-level MCP servers; auth/headers/env in vault';
+
 CREATE INDEX IF NOT EXISTS idx_ai_bots_reranker_config
     ON navigator.ai_bots USING GIN (reranker_config);
 

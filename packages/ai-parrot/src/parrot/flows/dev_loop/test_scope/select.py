@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Sequence
@@ -9,7 +10,7 @@ from typing import Sequence
 from .context import pending_escalations
 from .contract import is_broad_pytest
 from .datatypes import CoreHit, ScopePlan, TestTarget
-from .impact import ImportIndex, detect_core, impacted_tests
+from .impact import ImportIndex, detect_core, impacted_tests, module_name_for
 from .mirror import distribution_of, pytest_targets
 from .planner import build_plan
 from .policy import TIERS, ScopePolicy
@@ -119,6 +120,14 @@ def _dist(path: str) -> str:
     return distribution_of(path.split("::", 1)[0])
 
 
+def _dist_or_none(path: str) -> str | None:
+    """`_dist`, or None for a path under neither `tests/` nor `packages/<dist>/`."""
+    try:
+        return _dist(path)
+    except ValueError:
+        return None
+
+
 def plan_tests(
     *,
     worktree: Path,
@@ -144,6 +153,8 @@ def plan_tests(
     escalated: list[str] = []
     hits: list[CoreHit] = []
     skipped: list[str] = []
+    cap_hits: dict[str, tuple[str, ...]] = {}
+    cap_impacted: dict[str, str] = {}
     if tier != "task":
         try:
             is_git = (
@@ -168,41 +179,102 @@ def plan_tests(
             except OSError:
                 notes.append("could not build the import index; skipping impact/core detection")
 
+        cap_candidates: dict[str, list[str]] = {}
         if index is not None and tier == "merge":
             impacted = impacted_tests(index, list(changed_files), worktree=worktree, depth=policy.impact_depth)
             by_dist: dict[str, list[str]] = {}
             for path in impacted:
                 by_dist.setdefault(_dist(path), []).append(path)
+            per_file_impact: dict[str, set[str]] = {
+                path: set(impacted_tests(index, [path], worktree=worktree, depth=policy.impact_depth))
+                for path in changed_files
+                if module_name_for(path) is not None
+            }
+            # Non-package changes (sdd/ state, docs, scripts) own no distribution.
+            changed_dists = {_dist(path) for path in changed_files if _dist_or_none(path) is not None}
             for dist, paths in by_dist.items():
                 if len(paths) > policy.impact_cap:
-                    escalated.append(dist)
-                    suite = _suite_for(dist, worktree)
-                    if suite:
-                        targets.append(TestTarget(path=suite, distribution=dist, reason="escalated"))
+                    # FEAT-618: a cap-only escalation into a distribution that owns
+                    # none of the changed files used to contribute that whole suite,
+                    # so a merge verdict absorbed unrelated packages' failing
+                    # baselines (issue:181bd0c01bb4 -- an outputs/a2ui/linked-only
+                    # diff pulled in ~2800 tests and parrot-formdesigner's 40 reds).
+                    # Skip BEFORE cap_candidates so the distribution stays out of
+                    # cap_hits/cap_impacted and therefore out of `escalated` too,
+                    # matching the invariant documented below. detect_core() runs
+                    # after this loop, so a core-reached distribution is still
+                    # escalated via `hits` -- the guard cannot suppress that.
+                    if not policy.escalate_foreign_dists and dist not in changed_dists:
+                        notes.append(
+                            f"{dist}: cap-only escalation into a distribution owning none of the "
+                            f"changed files; skipped (ScopePolicy.escalate_foreign_dists=False)"
+                        )
+                        continue
+                    cap_candidates[dist] = paths
                     notes.append(
                         f"{dist}: {len(paths)} impacted tests exceed cap {policy.impact_cap}, escalated to suite"
                     )
                 else:
                     targets += [TestTarget(path=path, distribution=dist, reason="import") for path in paths]
+            cap_hits = {
+                dist: tuple(sorted(path for path, tests in per_file_impact.items() if tests & set(paths)))
+                for dist, paths in cap_candidates.items()
+            }
+            cap_impacted = {
+                dist: hashlib.sha256("\n".join(sorted(paths)).encode("utf-8")).hexdigest()
+                for dist, paths in cap_candidates.items()
+            }
+            # NOTE: `escalated` is populated below, once we know which of these
+            # cap candidates the ledger actually skipped -- a distribution whose
+            # cap escalation was proven unchanged and ran zero invocations must
+            # NOT appear in `escalated` too (that would put it in both
+            # `escalated` and `skipped_escalations` for the same zero-invocation
+            # outcome, inconsistent with how a ledger-skipped core escalation is
+            # handled below). Extending `escalated` unconditionally here, before
+            # the ledger is even consulted, was the previous (inconsistent) behavior.
 
         if index is not None and tier in ("merge", "feature"):
             hits = detect_core(index, list(changed_files), policy=policy)
-            if hits:
-                to_run, ledger_skipped = pending_escalations(worktree, hits)
-                skipped = ledger_skipped
-                for dist in to_run:
-                    suite = _suite_for(dist, worktree)
-                    if suite:
-                        targets.append(TestTarget(path=suite, distribution=dist, reason="core"))
-                        # FEAT-563 review (I1): `escalated` used to be impact-cap-only, so a
-                        # core-only escalation was invisible to the plain-text CLI ("# escalated:
-                        # <dist>") and to the spec's own datatypes.py contract ("distributions
-                        # escalated (core or cap)"). Both escalation kinds are visible here now;
-                        # `core_hits`/`reason=="core"` targets remain the authoritative source
-                        # every real consumer (the ledger, QANode) already reads.
-                        escalated.append(dist)
-                    else:
-                        notes.append(f"{dist}: core escalation target suite does not exist, skipped")
+            to_run, ledger_skipped = pending_escalations(worktree, hits, cap_hits, cap_impacted)
+            unattributed_caps = {dist for dist, paths in cap_hits.items() if not paths}
+            to_run = sorted(set(to_run) | unattributed_caps)
+            ledger_skipped = [dist for dist in ledger_skipped if dist not in unattributed_caps]
+            skipped = ledger_skipped
+            core_dists = {dist for hit in hits for dist in hit.distributions}
+            for dist in to_run:
+                suite = _suite_for(dist, worktree)
+                reason = "core" if dist in core_dists else "escalated"
+                if suite:
+                    targets.append(TestTarget(path=suite, distribution=dist, reason=reason))
+                    # FEAT-563 review (I1): `escalated` used to be impact-cap-only, so a
+                    # core-only escalation was invisible to the plain-text CLI ("# escalated:
+                    # <dist>") and to the spec's own datatypes.py contract ("distributions
+                    # escalated (core or cap)"). Both escalation kinds are visible here now.
+                    # FEAT-604 review: append for BOTH reasons ("core" and "escalated"/cap),
+                    # and only once we know this distribution actually got a real
+                    # invocation added (this loop only runs over `to_run`, never over a
+                    # ledger-skipped distribution) -- a cap escalation the ledger proved
+                    # unchanged must not appear in `escalated` while also appearing in
+                    # `skipped_escalations`, symmetric with how a ledger-skipped core
+                    # escalation was already excluded from `escalated`.
+                    escalated.append(dist)
+                else:
+                    notes.append(f"{dist}: {reason} escalation target suite does not exist, skipped")
+            skipped_cap_dists = {dist for dist in ledger_skipped if dist in cap_candidates}
+            for dist in ledger_skipped:
+                if dist in cap_candidates:
+                    notes.append(f"{dist}: cap escalation skipped — ledger blobs and impacted hash match")
+            if skipped_cap_dists:
+                # A ledger-skipped cap escalation must produce NO invocation for its
+                # distribution at all — a "mirror" target added earlier (top of this
+                # function, before cap detection ran) for the exact changed file that
+                # drove the escalation is otherwise a leftover invocation for content
+                # the ledger already proved green (spec §3 M2; TASK-3798 scope).
+                targets = [
+                    target
+                    for target in targets
+                    if not (target.reason == "mirror" and target.distribution in skipped_cap_dists)
+                ]
 
     return build_plan(
         targets,
@@ -212,5 +284,7 @@ def plan_tests(
         escalated=escalated,
         core_hits=hits,
         skipped_escalations=skipped,
+        cap_hits=cap_hits,
+        cap_impacted=cap_impacted,
         notes=notes,
     )

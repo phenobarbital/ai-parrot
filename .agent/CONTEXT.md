@@ -163,40 +163,6 @@ class MyAgent(Agent):
     ...
 ```
 
-### Async everywhere
-```python
-# CORRECT
-async def process(self, data: str) -> Result:
-    result = await self.client.completion(data)
-    return result
-
-# WRONG — never block the event loop
-def process(self, data: str) -> Result:
-    return requests.post(...)
-```
-
-### Logging pattern
-```python
-import logging
-
-class MyComponent:
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
-    
-    async def method(self):
-        self.logger.info("Starting operation")
-        self.logger.debug("Detail: %s", detail)
-```
-
-### Pydantic for all structured data
-```python
-from pydantic import BaseModel, Field
-
-class ToolInput(BaseModel):
-    query: str = Field(..., description="Used as tool description for LLM")
-    top_k: int = Field(default=5, ge=1, le=20)
-```
-
 ---
 
 ## What Lives Where
@@ -279,9 +245,6 @@ See `docs/migration/feat-201-ai-parrot-embeddings.md` for migration details.
 ---
 
 ## Current Active Development
-Branch: `finance-agents`
-Main: `main`
-
 Active areas (check these before modifying):
 - `parrot/bots/flows/` — AgentCrew + AgentsFlow DAG execution
 - `parrot/memory/` — Redis-based conversation memory; `memory/compaction/` — per-turn retention (Stage 0/0.5/1)

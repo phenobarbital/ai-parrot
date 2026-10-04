@@ -15,11 +15,14 @@ Per-tree storage is split into two artefacts:
 This matches the upstream PageIndex contract: vectorless retrieval over
 a hierarchical index, with bodies fetched on demand by node_id.
 """
+
 from __future__ import annotations
 
 import asyncio
 import fnmatch
 import logging
+import secrets
+import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
@@ -41,10 +44,11 @@ from .tree_ops import (
 )
 from .utils import find_node_by_id
 
-
 logger = logging.getLogger("parrot.knowledge.pageindex.toolkit")
 
 _MAX_TREES_HARD_CAP = 10
+REPLACED_MARKER = "--replaced-"
+_REPLACED_MARKER = REPLACED_MARKER  # backwards-compatible alias
 
 
 class PageIndexToolkit(AbstractToolkit):
@@ -105,14 +109,10 @@ class PageIndexToolkit(AbstractToolkit):
         super().__init__(**kwargs)
         self._adapter = adapter
         self._light_adapter: Optional[PageIndexLLMAdapter] = (
-            PageIndexLLMAdapter(client=adapter.client, model=lightweight_model)
-            if lightweight_model
-            else None
+            PageIndexLLMAdapter(client=adapter.client, model=lightweight_model) if lightweight_model else None
         )
         self._store = JSONTreeStore(storage_dir)
-        self._content_store = NodeContentStore(
-            storage_dir, cache_size=content_cache_size
-        )
+        self._content_store = NodeContentStore(storage_dir, cache_size=content_cache_size)
         self._reranker = reranker
         self._model = model or adapter.model
         self._default_bm25_k = default_bm25_k
@@ -128,6 +128,7 @@ class PageIndexToolkit(AbstractToolkit):
         if use_vec_rank or use_embedding_walk:
             from parrot.conf import EMBEDDING_DEFAULT_MODEL
             from parrot.embeddings.registry import EmbeddingRegistry
+
             emb_model_name = embedding_model or EMBEDDING_DEFAULT_MODEL
             self._embedding_store = NodeEmbeddingStore(
                 storage_dir=storage_dir,
@@ -150,6 +151,7 @@ class PageIndexToolkit(AbstractToolkit):
                         wrapper = registry.get_or_create_sync(name, "huggingface", **kw)
                         _raw_model = wrapper.model  # underlying SentenceTransformer
                     import numpy as _np
+
                     result = _raw_model.encode(texts, convert_to_numpy=True)
                     return _np.asarray(result, dtype=_np.float32)
 
@@ -251,11 +253,10 @@ class PageIndexToolkit(AbstractToolkit):
             return
         try:
             from parrot.knowledge.pageindex.okf.projection import project_sidecars
+
             project_sidecars(tree, tree_name, self._content_store)
         except Exception:
-            logger.exception(
-                "OKF sidecar projection failed for tree %r — skipping", tree_name
-            )
+            logger.exception("OKF sidecar projection failed for tree %r — skipping", tree_name)
 
     async def _run_t3_classification(
         self,
@@ -309,9 +310,8 @@ class PageIndexToolkit(AbstractToolkit):
             try:
                 if self._adapter is not None:
                     from parrot.knowledge.pageindex.okf.migrate import _classify_type
-                    result: str = await _classify_type(
-                        node, self._adapter, cache, force_reclassify=False
-                    )
+
+                    result: str = await _classify_type(node, self._adapter, cache, force_reclassify=False)
                     node["type"] = result
                 else:
                     node["type"] = ConceptType.SECTION.value
@@ -407,6 +407,112 @@ class PageIndexToolkit(AbstractToolkit):
             "sidecars_removed": sidecars_removed,
         }
 
+    async def rename_tree(
+        self,
+        src: str,
+        dst: str,
+        *,
+        overwrite: bool = False,
+    ) -> dict[str, Any]:
+        """Rename a tree and its sidecars, optionally replacing the destination.
+
+        Args:
+            src: Existing filesystem-safe tree name.
+            dst: New filesystem-safe tree name, distinct from ``src``.
+            overwrite: Replace an existing destination when true.
+
+        Returns:
+            Source, destination and whether a destination was replaced.
+
+        Raises:
+            KeyError: Source tree does not exist.
+            ValueError: Invalid names, identical names, an open batch, or a
+                destination collision without overwrite.
+        """
+        self._store._validate_name(src)
+        self._store._validate_name(dst)
+        if src == dst:
+            raise ValueError("Source and destination tree names must differ")
+        if self._batch_depth.get(src, 0) > 0 or self._batch_depth.get(dst, 0) > 0:
+            raise ValueError("Cannot rename a tree participating in an open batch")
+        if not self._store.exists(src):
+            raise KeyError(f"Tree {src!r} does not exist")
+
+        replaced = self._store.exists(dst)
+        if replaced and not overwrite:
+            raise ValueError(f"Tree {dst!r} already exists")
+
+        backup: str | None = None
+        if replaced:
+            backup_prefix = dst[: 128 - len(_REPLACED_MARKER) - 8]
+            for _ in range(32):
+                candidate = f"{backup_prefix}{_REPLACED_MARKER}{secrets.token_hex(4)}"
+                if candidate != src and not self._store.exists(candidate):
+                    backup = candidate
+                    break
+            if backup is None:
+                raise ValueError("Could not allocate a replacement backup name")
+
+        moves: list[tuple[str, str, str]] = []
+
+        def move_json(old: str, new: str) -> None:
+            self._store.rename(old, new)
+            moves.append(("json", old, new))
+
+        def move_content(old: str, new: str) -> None:
+            if self._content_store.rename_tree(old, new):
+                moves.append(("content", old, new))
+
+        def rollback() -> None:
+            for artifact, old, new in reversed(moves):
+                try:
+                    if artifact == "json":
+                        self._store.rename(new, old)
+                    else:
+                        self._content_store.rename_tree(new, old)
+                except Exception:
+                    logger.exception("Failed to roll back %s move from %r to %r", artifact, new, old)
+
+        affected_names = {src, dst}
+        if backup is not None:
+            affected_names.add(backup)
+
+        try:
+            if backup is not None:
+                move_json(dst, backup)
+                move_content(dst, backup)
+
+            if self._embedding_store is not None:
+                self._embedding_store.invalidate_tree(src)
+            move_content(src, dst)
+            move_json(src, dst)
+        except Exception:
+            rollback()
+            raise
+        finally:
+            for tree_name in affected_names:
+                self._trees.pop(tree_name, None)
+                self._search.pop(tree_name, None)
+                self._content_store._cache_evict_tree(tree_name)
+                self._okf_toolkits.pop(tree_name, None)
+
+        if backup is not None:
+            try:
+                self._store.delete(backup)
+                self._content_store.delete_tree(backup)
+                # delete_tree only removes *.md sidecars; drop leftovers such as embeddings/.
+                shutil.rmtree(self._content_store._tree_dir(backup), ignore_errors=True)
+            except Exception:
+                logger.exception("Failed to delete replacement backup tree %r", backup)
+
+        # The swap is committed: a projection failure must not look like a failed rename.
+        try:
+            tree = self._load_tree(dst)
+            self._project_okf_sidecars(dst, tree)
+        except Exception:
+            logger.exception("Tree %r was renamed to %r but OKF sidecar projection failed", src, dst)
+        return {"src": src, "dst": dst, "replaced": replaced}
+
     async def get_tree(self, tree_name: str) -> dict[str, Any]:
         """Return the full tree dict for ``tree_name``."""
         return self._load_tree(tree_name)
@@ -451,9 +557,7 @@ class PageIndexToolkit(AbstractToolkit):
             use_vec=self._use_vec_rank,
         )
         if categories or metadata_filter:
-            results = self._apply_filters(
-                tree_name, results, categories, metadata_filter
-            )
+            results = self._apply_filters(tree_name, results, categories, metadata_filter)
         return results[:top_k]
 
     def _apply_filters(
@@ -475,9 +579,7 @@ class PageIndexToolkit(AbstractToolkit):
                     continue
             if metadata_filter:
                 node_meta = node.get("metadata") or {}
-                if not all(
-                    node_meta.get(k) == v for k, v in metadata_filter.items()
-                ):
+                if not all(node_meta.get(k) == v for k, v in metadata_filter.items()):
                     continue
             filtered.append(cand)
         return filtered
@@ -514,12 +616,7 @@ class PageIndexToolkit(AbstractToolkit):
             title = node.get("title") or "Section"
             body = self._content_store.load(tree_name, cand["node_id"])
             if not body:
-                body = (
-                    node.get("text")
-                    or node.get("summary")
-                    or node.get("prefix_summary")
-                    or ""
-                )
+                body = node.get("text") or node.get("summary") or node.get("prefix_summary") or ""
             if body:
                 parts.append(f"## {title}\n{body}")
         return "\n\n".join(parts)
@@ -575,7 +672,7 @@ class PageIndexToolkit(AbstractToolkit):
         if not tree_names:
             return {"status": "empty", "scoped_results": []}
 
-        effective = tree_names[: max_trees]
+        effective = tree_names[:max_trees]
         if len(tree_names) > max_trees:
             logger.debug(
                 "search_documents_scoped: capping tree_names from %d to %d",
@@ -610,11 +707,7 @@ class PageIndexToolkit(AbstractToolkit):
                 title = node.get("title") or "Section"
                 body = self._content_store.load(tree_name, node_id)
                 if not body:
-                    body = (
-                        node.get("summary")
-                        or node.get("prefix_summary")
-                        or ""
-                    )
+                    body = node.get("summary") or node.get("prefix_summary") or ""
                 if body:
                     context_parts.append(f"## {title}\n{body}")
 
@@ -920,14 +1013,12 @@ class PageIndexToolkit(AbstractToolkit):
 
         async def _process_dir(dir_path: Path, parent_id: Optional[str]) -> None:
             files = [
-                p for p in sorted(dir_path.iterdir())
-                if p.is_file()
-                and not p.name.startswith(".")
-                and fnmatch.fnmatch(p.name, glob_pattern)
+                p
+                for p in sorted(dir_path.iterdir())
+                if p.is_file() and not p.name.startswith(".") and fnmatch.fnmatch(p.name, glob_pattern)
             ]
             subdirs = (
-                [p for p in sorted(dir_path.iterdir())
-                 if p.is_dir() and not p.name.startswith(".")]
+                [p for p in sorted(dir_path.iterdir()) if p.is_dir() and not p.name.startswith(".")]
                 if recursive
                 else []
             )
@@ -1047,10 +1138,8 @@ class PageIndexToolkit(AbstractToolkit):
             save_key = new_id
             structure = tree.get("structure", [])
             from parrot.knowledge.pageindex.utils import structure_to_list as _stl
-            is_okf = any(
-                n.get("concept_id") and n.get("type")
-                for n in _stl(structure)
-            )
+
+            is_okf = any(n.get("concept_id") and n.get("type") for n in _stl(structure))
             if is_okf:
                 inserted = find_node_by_id(structure, new_id)
                 if inserted is not None:
@@ -1060,6 +1149,7 @@ class PageIndexToolkit(AbstractToolkit):
                             from parrot.knowledge.pageindex.okf.projection import (
                                 flatten_concept_id_for_filename,
                             )
+
                             save_key = flatten_concept_id_for_filename(cid)
                         except ImportError:
                             pass
@@ -1145,6 +1235,7 @@ class PageIndexToolkit(AbstractToolkit):
 
 # ---- module-level helpers ----------------------------------------------
 
+
 def _pop_node_field(subtree: Any, field: str) -> dict[str, str]:
     """Remove ``field`` from every node and return ``{node_id: value}``.
 
@@ -1185,6 +1276,7 @@ def _strip_keys_in_place(subtree: Any, keys: tuple[str, ...]) -> None:
     build-time scratch fields like ``token_count`` and ``line_num``
     have no consumer at retrieval time and would bloat the JSON.
     """
+
     def _walk(node: Any) -> None:
         if isinstance(node, dict):
             for k in keys:

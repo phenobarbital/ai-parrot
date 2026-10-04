@@ -55,6 +55,7 @@ from parrot.flows.dev_loop.sdd_coder.background import (
     BackgroundNotFoundError,
     BackgroundRegistry,
 )
+from parrot.flows.dev_loop.procs import git_env, run_bounded
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.models import ExecutionSnapshot
 from parrot.flows.dev_loop.sdd_coder.optimization_models import (
@@ -99,6 +100,9 @@ _TELEMETRY_ROOT_ENV = "SDD_CODER_TELEMETRY_DIR"
 
 _CRITERIA_HEADING = re.compile(r"^## Acceptance Criteria\s*$", re.M)
 _NEXT_HEADING = re.compile(r"^## ", re.M)
+
+#: Wall-clock cap for one read-only ``git`` child (see `parrot.flows.dev_loop.procs`).
+GIT_TIMEOUT_S: float = 300.0
 
 
 class CheckpointError(RuntimeError):
@@ -158,12 +162,8 @@ def _validate_execution_id(execution_id: str) -> str:
 
 
 async def _git(*args: str, cwd: Path) -> Tuple[int, str, str]:
-    """Run git read-only in *cwd*. Local, minimal mirror of `inspection.py`'s own `_git`."""
-    proc = await asyncio.create_subprocess_exec(
-        "git", *args, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    out, err = await proc.communicate()
-    return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
+    """Run git read-only in *cwd*: bounded and headless like `engine.py`'s own `_git` (`run_bounded`)."""
+    return await run_bounded(["git", *args], cwd=str(cwd), timeout_s=GIT_TIMEOUT_S, env=git_env())
 
 
 def _confined_path(worktree: Path, relative_path: str) -> Path:

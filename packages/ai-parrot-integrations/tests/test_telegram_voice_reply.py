@@ -10,6 +10,7 @@ Tests cover:
 - _get_synthesizer creates a VoiceSynthesizer with TTSConfig from config
 - close() releases the synthesizer
 """
+
 from __future__ import annotations
 
 import pytest
@@ -18,7 +19,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from parrot.integrations.telegram.models import TelegramAgentConfig
 from parrot.voice.tts.models import SynthesisResult, TTSConfig
 from parrot.voice.transcriber import VoiceTranscriberConfig
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -93,11 +93,54 @@ def _make_voice_message(chat_id: int = 12345, file_id: str = "vf_001") -> MagicM
 def _make_synth_mock(audio: bytes = b"OGG...") -> MagicMock:
     """Return a MagicMock acting as a VoiceSynthesizer."""
     s = MagicMock()
-    s.synthesize = AsyncMock(
-        return_value=SynthesisResult(audio=audio, mime_format="audio/ogg")
-    )
+    s.synthesize = AsyncMock(return_value=SynthesisResult(audio=audio, mime_format="audio/ogg"))
     s.close = AsyncMock()
     return s
+
+
+@pytest.mark.parametrize(
+    ("mime_format", "source_format"),
+    [
+        ("audio/wav", "wav"),
+        ("audio/mpeg", "mp3"),
+        ("audio/ogg", "ogg"),
+    ],
+)
+def test_tts_audio_to_ogg_decodes_container_by_mime(mime_format: str, source_format: str):
+    """Containerized TTS audio is decoded with the format matching its MIME."""
+    from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
+    with patch("pydub.AudioSegment") as audio_segment:
+        segment = audio_segment.from_file.return_value
+        segment.export.side_effect = lambda target, **kwargs: target.write(b"converted")
+
+        result = TelegramAgentWrapper._tts_audio_to_ogg(b"container", mime_format)
+
+    audio_segment.from_file.assert_called_once()
+    assert audio_segment.from_file.call_args.kwargs["format"] == source_format
+    segment.export.assert_called_once()
+    assert segment.export.call_args.kwargs == {"format": "ogg", "codec": "libopus"}
+    assert result == b"converted"
+
+
+def test_tts_audio_to_ogg_keeps_unknown_mime_as_raw_pcm():
+    """Unknown MIME types retain the legacy 24 kHz mono PCM fallback."""
+    from parrot.integrations.telegram.wrapper import TelegramAgentWrapper
+
+    with patch("pydub.AudioSegment") as audio_segment:
+        segment = audio_segment.return_value
+        segment.export.side_effect = lambda target, **kwargs: target.write(b"converted")
+
+        result = TelegramAgentWrapper._tts_audio_to_ogg(b"pcm", "audio/unknown")
+
+    audio_segment.from_file.assert_not_called()
+    audio_segment.assert_called_once_with(
+        data=b"pcm",
+        sample_width=2,
+        frame_rate=24000,
+        channels=1,
+    )
+    assert result == b"converted"
 
 
 # ---------------------------------------------------------------------------
@@ -215,16 +258,19 @@ async def test_handle_voice_replies_with_voice():
 
     # Mock the agent invocation and response parsing to isolate TTS wiring
     from parrot.integrations.telegram.wrapper import ParsedResponse
+
     fake_parsed = MagicMock(spec=ParsedResponse)
     fake_parsed.text = "Agent reply text"
 
-    with patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Agent reply text")), \
-         patch.object(wrapper, "_parse_response", return_value=fake_parsed), \
-         patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=42))), \
-         patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()), \
-         patch("parrot.integrations.telegram.wrapper.asyncio.to_thread", new=AsyncMock(return_value=b"CONVERTED_OGG")), \
-         patch("tempfile.NamedTemporaryFile") as mock_ntf, \
-         patch("parrot.integrations.telegram.wrapper.Path") as mock_path:
+    with (
+        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Agent reply text")),
+        patch.object(wrapper, "_parse_response", return_value=fake_parsed),
+        patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=42))),
+        patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()),
+        patch("parrot.integrations.telegram.wrapper.asyncio.to_thread", new=AsyncMock(return_value=b"CONVERTED_OGG")),
+        patch("tempfile.NamedTemporaryFile") as mock_ntf,
+        patch("parrot.integrations.telegram.wrapper.Path") as mock_path,
+    ):
         tmp = MagicMock()
         tmp.name = "/tmp/tg_tts_test.ogg"
         mock_ntf.return_value = tmp
@@ -234,9 +280,7 @@ async def test_handle_voice_replies_with_voice():
         path_inst.suffix = ".ogg"
         mock_path.return_value = path_inst
         mock_path.side_effect = lambda x: (
-            MagicMock(suffix=".ogg")
-            if isinstance(x, str) and "abc.ogg" in x
-            else path_inst
+            MagicMock(suffix=".ogg") if isinstance(x, str) and "abc.ogg" in x else path_inst
         )
 
         await wrapper.handle_voice(message)
@@ -282,12 +326,14 @@ async def test_handle_voice_degrades_on_tts_error():
     fake_parsed = MagicMock(spec=ParsedResponse)
     fake_parsed.text = "Text reply"
 
-    with patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Text reply")), \
-         patch.object(wrapper, "_parse_response", return_value=fake_parsed), \
-         patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=42))), \
-         patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()), \
-         patch("tempfile.NamedTemporaryFile") as mock_ntf, \
-         patch("parrot.integrations.telegram.wrapper.Path") as mock_path:
+    with (
+        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Text reply")),
+        patch.object(wrapper, "_parse_response", return_value=fake_parsed),
+        patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=42))),
+        patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()),
+        patch("tempfile.NamedTemporaryFile") as mock_ntf,
+        patch("parrot.integrations.telegram.wrapper.Path") as mock_path,
+    ):
         tmp = MagicMock()
         tmp.name = "/tmp/tg_degrade_test.ogg"
         mock_ntf.return_value = tmp
@@ -297,9 +343,7 @@ async def test_handle_voice_degrades_on_tts_error():
         path_inst.suffix = ".ogg"
         mock_path.return_value = path_inst
         mock_path.side_effect = lambda x: (
-            MagicMock(suffix=".ogg")
-            if isinstance(x, str) and "abc.ogg" in x
-            else path_inst
+            MagicMock(suffix=".ogg") if isinstance(x, str) and "abc.ogg" in x else path_inst
         )
 
         # Must complete without raising — TTS error is swallowed
@@ -340,12 +384,14 @@ async def test_tts_disabled_synth_never_invoked():
     fake_parsed = MagicMock(spec=ParsedResponse)
     fake_parsed.text = "Text only reply"
 
-    with patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Text only reply")), \
-         patch.object(wrapper, "_parse_response", return_value=fake_parsed), \
-         patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=42))), \
-         patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()), \
-         patch("tempfile.NamedTemporaryFile") as mock_ntf, \
-         patch("parrot.integrations.telegram.wrapper.Path") as mock_path:
+    with (
+        patch.object(wrapper, "_invoke_agent", new=AsyncMock(return_value="Text only reply")),
+        patch.object(wrapper, "_parse_response", return_value=fake_parsed),
+        patch.object(wrapper, "_send_parsed_response", new=AsyncMock(return_value=MagicMock(message_id=42))),
+        patch.object(wrapper, "_store_telegram_metadata", new=AsyncMock()),
+        patch("tempfile.NamedTemporaryFile") as mock_ntf,
+        patch("parrot.integrations.telegram.wrapper.Path") as mock_path,
+    ):
         tmp = MagicMock()
         tmp.name = "/tmp/tg_disabled_test.ogg"
         mock_ntf.return_value = tmp
@@ -355,9 +401,7 @@ async def test_tts_disabled_synth_never_invoked():
         path_inst.suffix = ".ogg"
         mock_path.return_value = path_inst
         mock_path.side_effect = lambda x: (
-            MagicMock(suffix=".ogg")
-            if isinstance(x, str) and "abc.ogg" in x
-            else path_inst
+            MagicMock(suffix=".ogg") if isinstance(x, str) and "abc.ogg" in x else path_inst
         )
 
         await wrapper.handle_voice(message)

@@ -1,0 +1,685 @@
+name: procedures
+version: "1.0"
+extends: base
+description: >
+  Equipment procedure graph (FEAT-601). Vocabulary the ManualCard is projected
+  into by the ManualGraphLoader. Technician-owned collections (tech_tip,
+  tech_tip_on, tech_tip_by) are declared so initialize_tenant creates them,
+  but they carry no `source:` and are never reconciled by the loader.
+  Authorization is tenant-wide has_role technician / manual_curator (Q1).
+
+entities:
+  Equipment:
+    collection: equipment
+    source: manualcard
+    key_field: equipment_id
+    properties:
+      - equipment_id:
+          type: string
+          required: true
+          unique: true
+          description: Slug of the equipment identity (family + model)
+      - model:
+          type: string
+          required: true
+          description: Vendor model designation
+      - family:
+          type: string
+          description: Product family this model belongs to
+      - revision:
+          type: string
+          description: Vendor hardware revision, when published
+      - aliases:
+          type: list
+          description: Other spellings / model numbers seen across manuals
+    vectorize:
+      - model
+
+  Manual:
+    collection: manual
+    source: manualcard
+    key_field: manual_id
+    properties:
+      - manual_id:
+          type: string
+          required: true
+          unique: true
+          description: PageIndex tree-name slug identifying the source document
+      - revision:
+          type: string
+          required: true
+          description: Manual revision label (e.g. rev-a, rev-b)
+      - source_sha256:
+          type: string
+          description: Hash of the source document bytes
+      - active:
+          type: boolean
+          default: true
+          description: False once the manual card is retracted / superseded
+      - versions:
+          type: list
+          description: Bitemporal ManualVersion history for this manual card
+
+  Procedure:
+    collection: procedure
+    source: manualcard
+    key_field: procedure_id
+    properties:
+      - procedure_id:
+          type: string
+          required: true
+          unique: true
+          description: Identity of one procedure embedded in a manual card
+      - manual_id:
+          type: string
+          required: true
+          description: Owning manual (for documents discovery)
+      - slug:
+          type: string
+          required: true
+          description: Manual-scoped unique slug for this procedure
+      - kind:
+          type: string
+          required: true
+          enum: [assembly, disassembly, maintenance, inspection, troubleshooting]
+          description: Closed ProcedureKind taxonomy
+      - title:
+          type: string
+          required: true
+          description: Display title of the procedure
+      - estimated_minutes:
+          type: int
+          description: Estimated time to complete the procedure
+      - skill_level:
+          type: string
+          description: Free-text skill level qualifier
+      - active:
+          type: boolean
+          default: true
+          description: False once the procedure is retracted / superseded
+      - verification:
+          type: string
+          enum: [extracted, verified, stale]
+          default: extracted
+          description: Per-procedure verification state
+      - versions:
+          type: list
+          description: Bitemporal ManualVersion history for this procedure
+    vectorize:
+      - title
+
+  Step:
+    collection: step
+    source: manualcard
+    key_field: step_id
+    properties:
+      - step_id:
+          type: string
+          required: true
+          unique: true
+          description: Minted immutable step identity (R1)
+      - procedure_id:
+          type: string
+          required: true
+          description: Owning procedure (for has_step discovery)
+      - order:
+          type: int
+          required: true
+          description: Display order within the procedure
+      - source_identity:
+          type: string
+          description: Optional stable identity read from the source document
+      - content_hash:
+          type: string
+          required: true
+          description: Exact-equality hash (never similarity)
+      - text:
+          type: string
+          required: true
+          description: Evidenced step instruction text
+      - torque:
+          type: string
+          description: Torque specification, when applicable
+      - duration_minutes:
+          type: int
+          description: Estimated duration of this step
+      - applies_models:
+          type: list
+          description: Equipment models this step applies to (empty applies globally)
+      - applies_serial_ranges:
+          type: list
+          description: Vendor-preserved serial intervals this step applies to
+      - node_id:
+          type: string
+          description: PageIndex node the step was read from
+      - page:
+          type: int
+          description: Physical page (PDF sources)
+      - active:
+          type: boolean
+          default: true
+          description: False once the step is retracted / superseded
+
+  Part:
+    collection: part
+    source: manualcard
+    key_field: part_id
+    properties:
+      - part_id:
+          type: string
+          required: true
+          unique: true
+          description: Canonical part identity
+      - part_number:
+          type: string
+          description: Vendor part number
+      - name:
+          type: string
+          required: true
+          description: Display name of the part
+
+  Tool:
+    collection: tool
+    source: manualcard
+    key_field: tool_id
+    properties:
+      - tool_id:
+          type: string
+          required: true
+          unique: true
+          description: Canonical tool identity
+      - name:
+          type: string
+          required: true
+          description: Display name of the tool
+      - spec:
+          type: string
+          description: Tool specification (size, type)
+
+  Hazard:
+    collection: hazard
+    source: manualcard
+    key_field: hazard_id
+    properties:
+      - hazard_id:
+          type: string
+          required: true
+          unique: true
+          description: Canonical hazard identity
+      - severity:
+          type: string
+          required: true
+          enum: [caution, warning, danger]
+          description: Closed HazardSeverity taxonomy
+      - text:
+          type: string
+          required: true
+          description: Evidenced hazard warning text
+
+  Media:
+    collection: media
+    source: manualcard
+    key_field: media_id
+    properties:
+      - media_id:
+          type: string
+          required: true
+          unique: true
+          description: Canonical media identity
+      - kind:
+          type: string
+          required: true
+          enum: [figure, photo, video_segment]
+          description: Closed MediaKind taxonomy
+      - storage_key:
+          type: string
+          description: Object storage key (figures/photos)
+      - uri:
+          type: string
+          description: Reference URI (video segments) — never a stored URL for figures/photos (G4)
+      - page:
+          type: int
+          description: Physical page (PDF sources)
+      - caption:
+          type: string
+          description: Vision/manual caption text
+      - label:
+          type: string
+          description: Display label (e.g. "Fig. 3")
+      - t_start:
+          type: float
+          description: Video segment start (seconds)
+      - t_end:
+          type: float
+          description: Video segment end (seconds)
+      - origin:
+          type: string
+          description: Provenance of this media reference
+      - unresolved_callouts:
+          type: list
+          description: Vision-structured callouts not yet linked to a canonical part
+    vectorize:
+      - caption
+
+  Tip:
+    collection: tech_tip
+    key_field: tip_id
+    properties:
+      - tip_id:
+          type: string
+          required: true
+          unique: true
+          description: Canonical tip identity
+      - text:
+          type: string
+          required: true
+          description: Tip body text
+      - origin:
+          type: string
+          enum: [manual, technician, memory]
+          default: technician
+          description: Closed TipOrigin taxonomy
+      - author_employee_id:
+          type: string
+          description: Base-layer employee_id of the authoring technician (for tech_tip_by discovery)
+      - created_at:
+          type: date
+          required: true
+          description: When the tip was recorded
+      - active:
+          type: boolean
+          default: true
+          description: False once the tip is retired
+      - orphaned:
+          type: boolean
+          default: false
+          description: True when the attached step no longer exists
+      - source_revision:
+          type: string
+          required: true
+          description: Manual/procedure revision the tip was recorded against
+      - attached_step_id:
+          type: string
+          description: Step this tip is currently attached to (for tech_tip_on discovery)
+      - history:
+          type: list
+          description: Prior attachment/edit history entries
+
+relations:
+  documents:
+    from: Manual
+    to: Procedure
+    edge_collection: documents
+
+  assembles:
+    from: Procedure
+    to: Equipment
+    edge_collection: assembles
+
+  has_step:
+    from: Procedure
+    to: Step
+    edge_collection: has_step
+    properties:
+      - order:
+          type: int
+          description: Display order of the step within the procedure
+
+  precedes:
+    from: Step
+    to: Step
+    edge_collection: precedes
+    properties:
+      - kind:
+          type: string
+          description: Precedence relationship kind
+
+  requires_part:
+    from: Step
+    to: Part
+    edge_collection: requires_part
+    properties:
+      - quantity:
+          type: int
+          description: Number of units of this part required
+      - contexts:
+          type: list
+          description: Applicability contexts for this requirement
+
+  requires_tool:
+    from: Step
+    to: Tool
+    edge_collection: requires_tool
+
+  warns:
+    from: Step
+    to: Hazard
+    edge_collection: warns
+
+  illustrated_by:
+    from: Step
+    to: Media
+    edge_collection: illustrated_by
+    properties:
+      - roles:
+          type: list
+          description: Presentation roles this media plays for the step
+      - confidence:
+          type: float
+          description: Link confidence
+      - origin:
+          type: string
+          description: Provenance of the link (manual, llm)
+
+  overview_media:
+    from: Procedure
+    to: Media
+    edge_collection: overview_media
+
+  depicts:
+    from: Media
+    to: Part
+    edge_collection: depicts
+    properties:
+      - callouts:
+          type: list
+          description: Callout labels on the media that resolve to this part
+      - confidence:
+          type: float
+          description: Link confidence
+      - origin:
+          type: string
+          description: Provenance of the link (vision)
+
+  shares_module:
+    from: Equipment
+    to: Equipment
+    edge_collection: shares_module
+    properties:
+      - module:
+          type: string
+          description: Shared module identity
+
+  supersedes:
+    from: Procedure
+    to: Procedure
+    edge_collection: supersedes
+
+  tech_tip_on:
+    from: Tip
+    to: Step
+    edge_collection: tech_tip_on
+    properties:
+      - linked_by:
+          type: string
+          description: Who/what attached the tip to this step
+      - linked_at:
+          type: date
+          description: When the tip was attached to this step
+
+  tech_tip_by:
+    from: Tip
+    to: Employee
+    edge_collection: tech_tip_by
+    discovery:
+      strategy: field_match
+      rules:
+        - source_field: author_employee_id
+          target_field: employee_id
+          match_type: exact
+          description: Technician-authored tip linked to the base-layer Employee
+
+traversal_patterns:
+  procedure_steps:
+    description: >
+      Ordered steps of one active procedure with their evidence anchors.
+      Binds: @@procedure, @@has_step, @procedure_id.
+    trigger_intents:
+      - how do i assemble
+      - "cómo ensamblo"
+      - steps for
+      - "pasos para"
+    query_template: >
+      FOR p IN @@procedure
+        FILTER p._key == @procedure_id AND p.active != false AND p._active != false
+        FOR s, e IN 1..1 OUTBOUND p @@has_step
+          FILTER s.active != false AND s._active != false
+          SORT e.order
+          RETURN { procedure: p, step: s, order: e.order }
+    post_action: none
+    authorization:
+      rules:
+        - rule: has_role
+          role: technician
+        - rule: has_role
+          role: manual_curator
+      default_deny: true
+
+  procedure_prerequisites:
+    description: >
+      Parts, tools and hazards required across every active step of a
+      procedure — the checklist a technician reviews before starting.
+      Binds: @@procedure, @@has_step, @@requires_part, @@requires_tool,
+      @@warns, @procedure_id.
+    trigger_intents:
+      - what do i need for
+      - "qué necesito para"
+      - parts and tools for
+      - prerequisites for
+    query_template: >
+      FOR p IN @@procedure
+        FILTER p._key == @procedure_id AND p.active != false AND p._active != false
+        FOR s IN 1..1 OUTBOUND p @@has_step
+          FILTER s.active != false AND s._active != false
+          LET parts = (
+            FOR pt IN 1..1 OUTBOUND s @@requires_part
+              FILTER pt.active != false AND pt._active != false
+              RETURN pt
+          )
+          LET tools = (
+            FOR tl IN 1..1 OUTBOUND s @@requires_tool
+              FILTER tl.active != false AND tl._active != false
+              RETURN tl
+          )
+          LET hazards = (
+            FOR hz IN 1..1 OUTBOUND s @@warns
+              FILTER hz.active != false AND hz._active != false
+              RETURN hz
+          )
+          RETURN { step: s, parts: parts, tools: tools, hazards: hazards }
+    post_action: none
+    authorization:
+      rules:
+        - rule: has_role
+          role: technician
+        - rule: has_role
+          role: manual_curator
+      default_deny: true
+
+  procedures_for_equipment:
+    description: >
+      Every active procedure that assembles a given piece of equipment.
+      Binds: @@equipment, @@assembles, @equipment_id.
+    trigger_intents:
+      - procedures for equipment
+      - "procedimientos para"
+      - what procedures apply to
+    query_template: >
+      FOR eq IN @@equipment
+        FILTER eq._key == @equipment_id AND eq.active != false AND eq._active != false
+        FOR p IN 1..1 INBOUND eq @@assembles
+          FILTER p.active != false AND p._active != false
+          SORT p.title
+          RETURN p
+    post_action: none
+    authorization:
+      rules:
+        - rule: has_role
+          role: technician
+        - rule: has_role
+          role: manual_curator
+      default_deny: true
+
+  step_detail:
+    description: >
+      Full evidence for one step: its media, required parts, tools and
+      hazards. Binds: @@step, @@illustrated_by, @@requires_part,
+      @@requires_tool, @@warns, @step_id.
+    trigger_intents:
+      - show me step
+      - detail for step
+      - "detalle del paso"
+    query_template: >
+      FOR s IN @@step
+        FILTER s._key == @step_id AND s.active != false AND s._active != false
+        LET media = (
+          FOR m IN 1..1 OUTBOUND s @@illustrated_by
+            FILTER m.active != false AND m._active != false
+            RETURN m
+        )
+        LET parts = (
+          FOR pt IN 1..1 OUTBOUND s @@requires_part
+            FILTER pt.active != false AND pt._active != false
+            RETURN pt
+        )
+        LET tools = (
+          FOR tl IN 1..1 OUTBOUND s @@requires_tool
+            FILTER tl.active != false AND tl._active != false
+            RETURN tl
+        )
+        LET hazards = (
+          FOR hz IN 1..1 OUTBOUND s @@warns
+            FILTER hz.active != false AND hz._active != false
+            RETURN hz
+        )
+        RETURN { step: s, media: media, parts: parts, tools: tools, hazards: hazards }
+    post_action: none
+    authorization:
+      rules:
+        - rule: has_role
+          role: technician
+        - rule: has_role
+          role: manual_curator
+      default_deny: true
+
+  equipment_sharing_module:
+    description: >
+      Other equipment sharing a named module with a given piece of
+      equipment. Binds: @@equipment, @@shares_module, @equipment_id.
+    trigger_intents:
+      - what else shares
+      - equipment sharing module
+      - "que otros equipos comparten"
+    query_template: >
+      FOR eq IN @@equipment
+        FILTER eq._key == @equipment_id AND eq.active != false AND eq._active != false
+        FOR other, edge IN 1..1 ANY eq @@shares_module
+          FILTER other.active != false AND other._active != false
+          RETURN { equipment: other, module: edge.module }
+    post_action: none
+    authorization:
+      rules:
+        - rule: has_role
+          role: technician
+        - rule: has_role
+          role: manual_curator
+      default_deny: true
+
+  procedure_in_force:
+    description: >
+      The procedure version in force at a given date (effective time, not
+      recorded time — GraphIndex temporal plane convention). Binds:
+      @@procedure, @procedure_id, @as_of.
+    trigger_intents:
+      - which revision applies
+      - version in force
+      - "qué revisión aplica"
+    query_template: >
+      FOR p IN @@procedure
+        FILTER p._key == @procedure_id AND p.active != false AND p._active != false
+        FOR v IN p.versions
+          FILTER v.valid_from <= @as_of
+          FILTER v.valid_to == null OR v.valid_to > @as_of
+          RETURN { procedure: p, version: v }
+    post_action: none
+    authorization:
+      rules:
+        - rule: has_role
+          role: technician
+        - rule: has_role
+          role: manual_curator
+      default_deny: true
+
+  tips_for_procedure:
+    description: >
+      Non-orphaned technician tips attached to the active steps of a
+      procedure. Binds: @@procedure, @@has_step, @@tech_tip_on,
+      @procedure_id.
+    trigger_intents:
+      - tips for
+      - "consejos para"
+      - technician notes for
+    query_template: >
+      FOR p IN @@procedure
+        FILTER p._key == @procedure_id AND p.active != false AND p._active != false
+        FOR s IN 1..1 OUTBOUND p @@has_step
+          FILTER s.active != false AND s._active != false
+          FOR tip IN 1..1 INBOUND s @@tech_tip_on
+            FILTER tip.active != false AND tip._active != false
+            FILTER tip.orphaned != true
+            RETURN { step: s, tip: tip }
+    post_action: none
+    authorization:
+      rules:
+        - rule: has_role
+          role: technician
+        - rule: has_role
+          role: manual_curator
+      default_deny: true
+
+  part_for_callout:
+    description: >
+      Resolve one numbered callout on a media reference to its canonical
+      part. Binds: @@media, @@depicts, @media_id, @callout.
+    trigger_intents:
+      - what is part number
+      - which part is callout
+      - "qué pieza es"
+    query_template: >
+      FOR m IN @@media
+        FILTER m._key == @media_id AND m.active != false AND m._active != false
+        FOR pt, edge IN 1..1 OUTBOUND m @@depicts
+          FILTER pt.active != false AND pt._active != false
+          FILTER edge.callouts != null AND @callout IN edge.callouts
+          RETURN { part: pt, confidence: edge.confidence, origin: edge.origin }
+    post_action: none
+    authorization:
+      rules:
+        - rule: has_role
+          role: technician
+        - rule: has_role
+          role: manual_curator
+      default_deny: true
+
+  verification_queue_procedures:
+    description: >
+      Active procedures sitting at a given verification state — the
+      manual curator's review queue. Curator-only (excludes technician).
+      Binds: @@procedure, @verification_state (always bound explicitly,
+      never defaulted inside AQL).
+    trigger_intents:
+      - verification queue
+      - procedures to verify
+      - "procedimientos por verificar"
+    query_template: >
+      FOR p IN @@procedure
+        FILTER p.active != false AND p._active != false
+        FILTER p.verification == @verification_state
+        SORT p.title
+        RETURN p
+    post_action: none
+    authorization:
+      rules:
+        - rule: has_role
+          role: manual_curator
+      default_deny: true

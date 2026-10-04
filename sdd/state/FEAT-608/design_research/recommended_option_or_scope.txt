@@ -1,0 +1,139 @@
+### What's New
+
+- **`packages/ai-parrot/src/parrot/interfaces/file/gdrive.py`** —
+  `GoogleDriveFileManager(FileManagerInterface)` + `GoogleDriveFileManagerError`.
+  Locator: root folder (id or path) and optional shared-drive id (U1); auth kwargs
+  `credentials` / `auth_mode` / `scopes` / `user_creds_cache_file`; `manager_name =
+  "gdrivefile"`; `prefix` semantics as S3/GCS; the nine interface methods, the four
+  folder/rename hooks, and the FEAT-603 extension surface: `list_entries`, server-side
+  `find_files` (`q=` on `name contains` / `mimeType`), `upload_file_from_bytes`,
+  `create_sharing_link` (`permissions.create` + `webViewLink`, U3), `upload_files` /
+  `download_files` returning `BatchItemResult`, `setup()` / `handle_file` with the 413
+  guard. *Evidence*: F004, F007, F008, F009
+- **`DriveClient` wrapper** — one `Aiogoogle` session + discovered `drive` v3 API per
+  manager exposing `list` / `get` / `create` / `update` / `copy` / `delete` /
+  `permissions.create` / `export` with media kwargs; promoted from
+  `GoogleClient.get_drive_client()` as FEAT-453 did for Calendar (U5, default) or
+  private to `gdrive.py`. *Evidence*: F002
+- **`packages/ai-parrot-tools/src/parrot_tools/google/drive.py`** —
+  `GoogleDriveToolkit(AbstractToolkit)` delegating to the manager (list / search /
+  download / upload / share, optionally Workspace `export`), exported from
+  `parrot_tools.google` (U4). *Evidence*: F014, F003
+- **Tests** — `packages/ai-parrot/tests/interfaces/_gdrive_fakes.py` (fake `Aiogoogle`
+  + drive resource with scripted pages, errors and media), `test_gdrive_filemanager.py`,
+  `test_gdrive_filemanager_live.py` (`@pytest.mark.live`, env-gated),
+  `packages/ai-parrot-tools/tests/google/test_drive_toolkit.py`. *Evidence*: F014, F016
+- **Docs** — `docs/interfaces/gdrive-filemanager.md`, `docs/integrations/google-oauth2.md`
+  (scopes, SA vs OAuth, shared-drive permissions). *Evidence*: F014
+- **Packaging** — `gdrive` extra in `packages/ai-parrot/pyproject.toml`, added to `all`.
+  *Evidence*: F012
+
+### What Changes
+
+- **`parrot/interfaces/file/__init__.py`::`_LAZY_MANAGERS` / `__all__`** — add
+  `GoogleDriveFileManager → parrot.interfaces.file.gdrive`. *Evidence*: F010
+- **`parrot_tools/file/__init__.py`::`__getattr__` / `__all__`** — widen the lazy branch.
+  *Evidence*: F010
+- **`parrot/tools/filemanager.py`** — `ManagerType` gains `"gdrive"`;
+  `FileManagerFactory._PARROT_NATIVE["gdrive"] = ("parrot.interfaces.file.gdrive",
+  "GoogleDriveFileManager")`; both `_DRIVE_RELATIVE_BACKENDS` sets gain `"gdrive"`;
+  docstrings list it. *Evidence*: F011
+- **`parrot/interfaces/google.py`::`GoogleClient.get_drive_client`** — (U5, default yes)
+  return a live `DriveClient` instead of the config dict; no callers exist. *Evidence*:
+  F002, F006
+- **`parrot/interfaces/file/graph.py`::`DriveEntry`** — (design choice) relocate to a
+  backend-neutral module and re-export; behaviour unchanged. *Evidence*: F007
+- **`parrot_tools/google/__init__.py`::`__all__`** — export `GoogleDriveToolkit`.
+  *Evidence*: F014
+
+### What's Untouched (Non-Goals)
+
+- `navigator.utils.file` (`GCSFileManager`, `S3FileManager`, `FileServingExtension`) —
+  upstream, unchanged.
+- `GraphDriveFileManager` behaviour, `SharePointFileManager`, `OneDriveFileManager`, all
+  FEAT-603 O365 tools and Delta tools.
+- `GoogleClient` auth paths (`interactive_login`, Redis/file cache), `GoogleBaseTool`,
+  the existing Search / Places / Routes / Calendar / Lyria tools.
+- `FileManagerToolkit` operations and `_OP_TO_METHOD`.
+- `parrot_loaders` — no Drive **loader** in v1 (a RAG loader over the manager is a
+  natural follow-up).
+- Google Cloud Storage — already covered by `GCSFileManager` (`manager_type="gcs"`).
+
+### Patterns to Follow
+
+- Thin concrete manager: `manager_name` + `client_class` + `__init__` + `_build_client` +
+  `_resolve_drive_id`; AC2 analogue asserts no other overrides. *Evidence*: F008
+- Lazy shim registration + `test_no_cloud_sdk_leak_on_import` extension (AC10 analogue
+  for `aiogoogle` / `selenium` / `redis`). *Evidence*: F010
+- `_PARROT_NATIVE` map + `ValueError` listing all keys (AC11 analogue: seven keys).
+  *Evidence*: F011
+- Batch engine contract (AC8): input-order `BatchItemResult`, never raise per item,
+  bounded concurrency, retry 429/5xx honouring `Retry-After`, skip remainder on auth
+  failure. *Evidence*: F009, F016
+- Auth branch table copied from the tool base into `connect()`; `adopt_client()` for an
+  already-authenticated client (AC3). *Evidence*: F003, F007
+- Fake-client harness + env-gated live suite + signature-snapshot test (M0 / M10 / AC19).
+  *Evidence*: F014, F016
+- `manager_name` `"<backend>file"` and prefix normalisation as in GCS/S3. *Evidence*: F005
+
+### Integration Risks
+
+- **Sequencing on FEAT-603**: edit sites and shared models are not on `dev`; a worktree
+  cut too early would conflict. Mitigation: gate `/sdd-task` on the FEAT-603 merge and
+  re-verify §6 then. *Evidence*: F015
+- **Path semantics over an id-addressed store with duplicate names**: ambiguous
+  list/upload/rename. Mitigation: segment resolver with cache, deterministic first match,
+  `conflict_behavior` replace | fail | rename (U2). *Evidence*: F004, F002
+- **Heavy transitive imports** in `parrot.interfaces.google`. Mitigation: lazy shim entry
+  + client built in `connect()` + leak test. *Evidence*: F002, F010
+- **aiogoogle resumable uploads partially wired**: files above ~5 MB may fail or buffer.
+  Mitigation: spec-time spike; fallback to a direct aiohttp resumable session with URL
+  validation. *Evidence*: F013
+- **Service-account ownership / storage-quota limits on My Drive**: uploads into a
+  service account's own Drive may be rejected in real tenants. Mitigation: target shared
+  drives, folders shared with the SA, or domain-wide delegation (`subject`) — U1.
+  *Evidence*: — (external, C15)
+- **aiogoogle exact pin drift** (`==5.17.0` vs installed `5.19.0`). Mitigation: the new
+  extra uses `>=5.17,<6`; the `agents` bundles are left alone or relaxed in the same PR.
+  *Evidence*: F012
+
+---
+
+Decisions already taken (resolved questions):
+- [x] **U1 — Which Drive targets must v1 support?** — *Resolved* (2026-09-25):
+  **My Drive + shared drives** — the principal's My Drive by default, plus an optional
+  `shared_drive_id` (Drive `driveId` + `supportsAllDrives=True` /
+  `includeItemsFromAllDrives=True` on every call). Domain-wide delegation (`subject=`)
+  is **out of scope** for v1 (future constructor kwarg, no design impact).
+  *Resolves claims*: C15 (mitigated: uploads can target a shared drive)
+
+- [x] **U2 — How should paths map onto Drive's id-addressed model?** — *Resolved*
+  (2026-09-25): **path-based, like S3/Graph** — a segment-walk resolver over `files.list`
+  (`'<parent>' in parents and name = '<seg>' and trashed = false`) with a per-manager
+  path→id cache, deterministic first match (newest `modifiedTime`, then `id`), and an
+  upload `conflict_behavior` of `replace` (default) | `fail` | `rename`, mirroring
+  FEAT-603. `FileManagerToolkit` semantics stay identical across backends.
+  *Resolves claims*: C12
+
+- [x] **U3 — What should `get_file_url()` return by default?** — *Resolved*
+  (2026-09-25): **`webViewLink` with no permission change** — `get_file_url(path,
+  expiry)` never widens access (`expiry` is accepted for signature parity and ignored
+  with a debug log); explicit sharing goes through the extension
+  `create_sharing_link(path, *, scope="user"|"domain"|"anyone", role="reader"|"writer",
+  expiry, email_address=None)` which calls `permissions.create` and returns
+  `webViewLink`. `expirationTime` is only applied for `user`/`group` permissions (Drive
+  does not support it on `anyone`/`domain`).
+  *Resolves claims*: — (policy decision)
+
+- [x] **U4 — Which agent-facing surface is in scope?** — *Resolved* (2026-09-25):
+  **`FileManagerToolkit` + `GoogleDriveToolkit`** — `manager_type="gdrive"` in
+  `FileManagerToolkit` / `FileManagerTool` / `FileManagerFactory`, plus a net-new
+  `GoogleDriveToolkit(AbstractToolkit)` under `parrot_tools.google` (list / search /
+  download / upload / share) delegating to the manager, in the `GoogleCalendarToolkit`
+  mould. Workspace `files.export` is **out of scope** for v1.
+  *Resolves claims*: — (scope decision)
+
+- [x] **U5 — Should `GoogleClient.get_drive_client()` be promoted to return a live
+  `DriveClient`?** — *Resolved by default*: yes, promote — no callers exist (F006) and
+  internal hard cuts need no shims. Override at spec time if disagreed.
+  *Resolves claims*: C14

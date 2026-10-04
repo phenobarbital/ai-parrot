@@ -1,0 +1,239 @@
+{
+ "schema_version": "1.0",
+ "feat_id": "FEAT-616",
+ "generated_at": "2026-09-30T23:58:00+00:00",
+ "mode_hint": "enrichment",
+ "wiki_available": true,
+ "notes": "Executed autonomously in the same session (plan gate deferred to the review gate). Live-instance queries (type rpc) are outside the budget table and tracked separately.",
+ "queries": [
+  {
+   "id": "Q001",
+   "type": "wiki_query",
+   "intent": "locate OdooToolkit and prior Odoo SDD artifacts",
+   "params": {
+    "question": "OdooToolkit odoo interface toolkit"
+   },
+   "priority": 1
+  },
+  {
+   "id": "Q002",
+   "type": "read",
+   "intent": "OdooToolkit class shape: config, init, transport, _execute chokepoint",
+   "params": {
+    "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py",
+    "lines": "1-15,149-300"
+   },
+   "priority": 1
+  },
+  {
+   "id": "Q003",
+   "type": "read",
+   "intent": "existing tool patterns (discovery, CRUD, action+read-back, profile/catalog)",
+   "params": {
+    "path": "packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py",
+    "lines": "348-460,792-812,1151-1330"
+   },
+   "priority": 1
+  },
+  {
+   "id": "Q004",
+   "type": "read",
+   "intent": "three-layer Pydantic model split and exports",
+   "params": {
+    "paths": [
+     "models/inputs.py",
+     "models/envelopes.py",
+     "models/entities.py",
+     "models/__init__.py",
+     "__init__.py"
+    ]
+   },
+   "priority": 1
+  },
+  {
+   "id": "Q005",
+   "type": "read",
+   "intent": "transport detection + JSON-2 auth/body mapping limits",
+   "params": {
+    "paths": [
+     "transport/detect.py",
+     "transport/json2.py",
+     "transport/base.py"
+    ]
+   },
+   "priority": 1
+  },
+  {
+   "id": "Q006",
+   "type": "read",
+   "intent": "in-flight FEAT-614 JSON-2 fix touching the same files",
+   "params": {
+    "path": "sdd/specs/odoo-json2-domain-first-methods.spec.md"
+   },
+   "priority": 2
+  },
+  {
+   "id": "Q007",
+   "type": "read",
+   "intent": "FEAT-216 fieldservice precedent: how a domain toolkit extends OdooToolkit",
+   "params": {
+    "paths": [
+     "sdd/specs/odoo-fieldservice-toolkit.spec.md",
+     "sdd/proposals/odoo-fieldservice-toolkit.proposal.md"
+    ]
+   },
+   "priority": 2
+  },
+  {
+   "id": "Q008",
+   "type": "grep",
+   "intent": "where ODOO_HELPDESK_* / helpdesk / odoo_hd are referenced",
+   "params": {
+    "patterns": [
+     "ODOO_HELPDESK",
+     "helpdesk",
+     "odoo_hd|sh\\.helpdesk"
+    ]
+   },
+   "priority": 2
+  },
+  {
+   "id": "Q009",
+   "type": "read",
+   "intent": "test conventions for the Odoo toolkit",
+   "params": {
+    "paths": [
+     "packages/ai-parrot/tests/test_odoo_toolkit.py:1-90",
+     "packages/ai-parrot/tests/test_odoo_json2_transport.py:1-40"
+    ]
+   },
+   "priority": 2
+  },
+  {
+   "id": "Q010",
+   "type": "git_log",
+   "intent": "recent activity on parrot_tools/odoo",
+   "params": {
+    "path": "packages/ai-parrot-tools/src/parrot_tools/odoo",
+    "since": "120 days"
+   },
+   "priority": 3
+  },
+  {
+   "id": "Q011",
+   "type": "read",
+   "intent": "tool_schema / requires_permission decorators and smart_fields helper",
+   "params": {
+    "paths": [
+     "packages/ai-parrot/src/parrot/tools/decorators.py:39-60",
+     "packages/ai-parrot-tools/src/parrot_tools/odoo/smart_fields.py:1-40"
+    ]
+   },
+   "priority": 3
+  },
+  {
+   "id": "L001",
+   "type": "rpc",
+   "intent": "live: server version, transport, database resolution",
+   "params": {
+    "calls": [
+     "GET /web/version",
+     "POST /web/database/list",
+     "json2 res.users.context_get"
+    ]
+   },
+   "priority": 1
+  },
+  {
+   "id": "L002",
+   "type": "rpc",
+   "intent": "live: installed helpdesk/softhealer/troc modules and dependencies",
+   "params": {
+    "model": "ir.module.module"
+   },
+   "priority": 1
+  },
+  {
+   "id": "L003",
+   "type": "rpc",
+   "intent": "live: helpdesk models (ir.model) and fields_get of each",
+   "params": {
+    "models": "helpdesk.* sh.helpdesk.* sh.ticket.*"
+   },
+   "priority": 1
+  },
+  {
+   "id": "L004",
+   "type": "rpc",
+   "intent": "live: ticket form/kanban/list views -> transition buttons",
+   "params": {
+    "model": "ir.ui.view"
+   },
+   "priority": 1
+  },
+  {
+   "id": "L005",
+   "type": "rpc",
+   "intent": "live: stages semantics, stage history, server actions, crons",
+   "params": {
+    "models": [
+     "helpdesk.stages",
+     "sh.helpdesk.ticket.stage.info",
+     "ir.actions.server",
+     "ir.cron"
+    ]
+   },
+   "priority": 1
+  },
+  {
+   "id": "L006",
+   "type": "rpc",
+   "intent": "live: SLA models, alarms, reference data counts",
+   "params": {
+    "models": [
+     "sh.helpdesk.sla",
+     "sh.helpdesk.sla.status",
+     "sh.ticket.alarm",
+     "helpdesk.category",
+     "helpdesk.priority",
+     "sh.helpdesk.team"
+    ]
+   },
+   "priority": 2
+  },
+  {
+   "id": "L007",
+   "type": "rpc",
+   "intent": "live: TROC customisations (extra_fields, dynamic forms, xml ids)",
+   "params": {
+    "models": [
+     "ir.model.data",
+     "sh.helpdesk.ticket.extra_fields",
+     "dynamic.form",
+     "dynamic.form.submission"
+    ]
+   },
+   "priority": 2
+  },
+  {
+   "id": "L008",
+   "type": "rpc",
+   "intent": "live: ACL of the API user on the ticket model",
+   "params": {
+    "models": [
+     "res.users",
+     "res.groups",
+     "check_access_rights"
+    ]
+   },
+   "priority": 2
+  },
+  {
+   "id": "L009",
+   "type": "rpc",
+   "intent": "live: reproduce JSON-2 mapping gaps (formatted_read_group, get_views, name_search, mail.message)",
+   "params": {},
+   "priority": 3
+  }
+ ]
+}

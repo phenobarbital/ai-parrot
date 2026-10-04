@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Dict, Sequence
 from unittest.mock import AsyncMock
 
 import pytest
@@ -382,3 +383,78 @@ class TestAgyEventExtraction:
             fields = call.args[1]
             decoded = json.loads(fields["event"])
             assert decoded["payload"]["summary"]
+
+
+# ---------------------------------------------------------------------------
+# FEAT-606: the --json-schema file must be readable by ``agy --sandbox``,
+# which can only see its workspace (the dispatch cwd).
+# ---------------------------------------------------------------------------
+
+
+def _schema_arg(cmd: Sequence[str]) -> str:
+    return cmd[list(cmd).index("--json-schema") + 1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("return_code", [0, 1])
+async def test_schema_file_is_inside_cwd_and_cleaned_up(dispatcher, brief, monkeypatch, return_code):
+    stream_lines = [json.dumps({"type": "result", "result": _development_payload()}) + "\n"]
+    seen: Dict[str, Any] = {}
+
+    async def fake_create_subprocess_exec(*cmd, **kwargs):
+        schema_path = _schema_arg(cmd)
+        seen["path"] = schema_path
+        seen["schema"] = json.loads(Path(schema_path).read_text(encoding="utf-8"))
+        seen["gitignore"] = (Path(schema_path).parent / ".gitignore").read_text(encoding="utf-8")
+        return _FakeAgyProcess(stdout_lines=stream_lines, stderr="boom", return_code=return_code)
+
+    monkeypatch.setattr("asyncio.create_subprocess_exec", fake_create_subprocess_exec)
+
+    cwd = Path(brief.worktree_path)
+    coro = dispatcher.dispatch(
+        brief=brief,
+        profile=GoogleCodingDispatchProfile(model="auto", sandbox=True),
+        output_model=DevelopmentOutput,
+        run_id="run-agy-schema",
+        node_id="development",
+        cwd=str(cwd),
+    )
+    if return_code:
+        with pytest.raises(DispatchExecutionError):
+            await coro
+    else:
+        await coro
+
+    schema_path = Path(seen["path"])
+    assert schema_path.is_relative_to(cwd.resolve())
+    assert seen["schema"] == DevelopmentOutput.model_json_schema()
+    assert seen["gitignore"].strip() == "*"
+    assert not schema_path.exists()
+    assert not schema_path.parent.exists()
+
+
+def test_schema_dir_is_git_ignored(dispatcher, tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    path = dispatcher._materialize_json_schema(DevelopmentOutput, str(tmp_path))
+    try:
+        status = subprocess.run(
+            ["git", "-C", str(tmp_path), "status", "--porcelain", "--untracked-files=all"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert Path(path).exists()
+        assert status == ""
+    finally:
+        dispatcher._cleanup_json_schema(path)
+    assert not Path(path).parent.exists()
+
+
+def test_concurrent_schemas_use_distinct_dirs(dispatcher, tmp_path):
+    first = dispatcher._materialize_json_schema(DevelopmentOutput, str(tmp_path))
+    second = dispatcher._materialize_json_schema(DevelopmentOutput, str(tmp_path))
+    assert Path(first).parent != Path(second).parent
+    dispatcher._cleanup_json_schema(first)
+    assert Path(second).exists()
+    dispatcher._cleanup_json_schema(second)
+    assert list(tmp_path.iterdir()) == []

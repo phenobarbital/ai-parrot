@@ -1,0 +1,3 @@
+- [ ] **Should the spike be the first task of FEAT-590 or a separate pre-feature experiment?** — *Owner*: tbd
+- [ ] **Is the Epson 5-15% residue estimate based on observed data?** — *Owner*: tbd
+- [ ] **Should the delegate support standalone use outside execution plans (e.g., in AgentCrew or ad-hoc triage)?** — *Owner*: tbd

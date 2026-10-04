@@ -358,7 +358,12 @@ class GoogleClient(CredentialsInterface, ABC):
             elif scope in DEFAULT_SCOPES:
                 result.extend(DEFAULT_SCOPES[scope])
             else:
-                self.logger.warning(f"Unknown scope: {scope}")
+                # Never log the raw value: scope lists can be fed from stored credential
+                # payloads (py/clear-text-logging-sensitive-data, code-scanning #221).
+                self.logger.warning(
+                    "Unknown scope skipped (not an https:// URL or one of: %s)",
+                    ", ".join(sorted(DEFAULT_SCOPES)),
+                )
 
         return list(set(result))  # Remove duplicates
 

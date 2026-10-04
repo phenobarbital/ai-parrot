@@ -5,6 +5,14 @@ description: Aggregate task state across per-spec indexes and display the SDD ta
 
 # SDD Status
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-status procedure](../../../.claude/commands/sdd-status.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks for SDD status, runs `sdd-status`, or wants to see the task board.
 
 Invocation: `sdd-status [<feature-name>] [--project <project>] [--tag <tag>]`.
@@ -43,7 +51,8 @@ Aggregate task states across all per-spec indexes (`sdd/tasks/index/*.json`) and
 5. Print summary totals (done, done-with-issues, in-progress, pending, total).
 6. Show worktree summary (FEAT-582):
    - List all SDD worktrees with: name, branch, task progress (N/M done), health flags, ready-for-done.
-   - Non-SDD worktrees show health only, no task counts.
+   - Non-SDD worktrees (`flow_type: "non-sdd"`) show health only, no task counts; mark them ` (non-SDD)`.
+   - A `dirty_unknown`/`unpushed_unknown` worktree renders `unknown`, never `clean`, and is never ready for `/sdd-done`.
    - Flag `✅ Ready for /sdd-done` when `ready_for_done: true`, and `🧹 Stale — dev is ahead` when the feature's reconciled entry has `worktree_stale: true`.
    - Include worktree count in the summary line.
 

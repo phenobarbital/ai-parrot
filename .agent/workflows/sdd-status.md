@@ -180,6 +180,13 @@ Health flags:
 - `N dirty` = dirty_count > 0
 - `N unpushed` = unpushed_count > 0
 - `N live processes` = live_process_count > 0
+- `dirty:unknown` = `dirty_unknown: true` — `git status` failed; the worktree is
+  NOT known to be clean
+- `unpushed:unknown` = `unpushed_unknown: true` — `git log origin/<base>..HEAD`
+  failed, usually a missing remote-tracking ref
+
+`clean` means every signal was read successfully and all were zero. A worktree
+with either `unknown` flag is never `clean` and never `ready_for_done`.
 
 Ready-for-done flag:
 - `✅ Ready for /sdd-done` when `ready_for_done: true`
@@ -189,8 +196,10 @@ Ready-for-done flag:
   `worktree_stale: true`; add `— feature already closed, /remove-worktree`
   when `dev_closed` is also true
 
-Non-SDD worktrees (those with no parsed feature_id) show health only, no task
-counts.
+Non-SDD worktrees are the `WT_REPORTS` entries with `flow_type: "non-sdd"`
+(`feature_id: null`, empty `tasks[]`, `ready_for_done: false`). Show health
+only, no task counts, and append ` (non-SDD)` to the name as in the example
+above. They never appear on the task board — `--reconcile` excludes them.
 
 Update the Summary line to include:
 ```

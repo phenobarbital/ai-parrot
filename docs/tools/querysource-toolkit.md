@@ -32,7 +32,7 @@ toolkit = QuerysourceToolkit(programs=["pokemon"], allow_write=True)
 
 ## Tools
 
-Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Seven tools are always present; the eighth
+Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Nine tools are always present; the tenth
 (`qs_save_multiquery`) appears only when the toolkit is constructed with `allow_write=True`, and is marked
 `requires_confirmation` (HITL) via `confirming_tools`.
 
@@ -40,16 +40,16 @@ Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Seven tools are a
   become placeholders, which become WHERE filters, the WHERE value grammar with examples, and the
   `@variables` this deployment accepts as values (e.g. `@today`). Call this before building conditions.
 - **`qs_list_slugs`** — Lists query-slugs visible to this toolkit (allowlist-filtered). `search` matches slug
-  or description.
+  or description. Optional `tenant` argument selects a QuerySource tenant store schema.
 - **`qs_describe_slug`** — Explains a slug: placeholders and types, stored defaults,
   filtering/fields/ordering/grouping, provider, program, and — when the toolkit is configured with
   `include_sql` — the SQL or pipeline JSON. `dry_run=True` also returns the rendered query via `QS.dry_run()`
-  (this performs provider setup, not a pure catalog read).
+  (this performs provider setup, not a pure catalog read). Optional `tenant` argument selects a QuerySource tenant store schema.
 - **`qs_execute_slug`** — Runs a query-slug. `placeholders` fill the slug's declared conditions (see
   `qs_describe_slug`); `filter` adds WHERE clauses in the dialect grammar (see `qs_get_dialect_reference`);
   `fields`, `ordering`, `grouping` override the stored projection; `limit` is capped at the toolkit's
   `max_rows`; `refresh` bypasses the QuerySource cache. Returns bounded rows plus
-  `returned_rows`/`total_rows`/`truncated`.
+  `returned_rows`/`total_rows`/`truncated`. Optional `tenant` argument selects a QuerySource tenant store schema.
 - **`qs_list_components`** — Lists MultiQuery pipeline components (Operators, Transformations, Sources,
   Destinations) with their JSON schema and a usage example — the same catalog as
   `GET /api/v3/qs/components`. Optional `category` filter.
@@ -61,6 +61,33 @@ Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Seven tools are a
   queries/Join/Concat/…/Output) or a saved multi-query slug (`slug`). Every referenced slug must be
   executable by this toolkit; raw SQL nodes, external sources and destination steps follow the instance
   configuration (see `qs_validate_pipeline`). Results are bounded per frame.
+- **`qs_build_linked_surface`** — (FEAT-598) Emits a linked A2UI surface for a query-slug: checks the slug
+  (and `tenant`) against the allowlist, derives `params` from `qs_describe_slug`, builds `conditions` (forced
+  keys become `locked`; `@variables` are rejected), **probes the slug with `querylimit=1`** to validate the
+  component's axes/columns and dtypes against the real columns, and returns a definition-only envelope
+  (`rows: []`, `snapshot_at: null`) that the renderer fills on mount. Pass `snapshot=True` only when viewers
+  cannot fetch for themselves (share links, offline export): it then runs the full query and embeds ≤ 500 rows.
+  Returns `{a2ui_envelope, artifacts}`. See [A2UI linked surfaces](../outputs/a2ui-linked-surfaces.md).
+- **`qs_build_linked_dashboard`** — (FEAT-610, linked dashboards) Emits ONE linked A2UI dashboard whose data
+  sources are **owned by the dashboard**. `sources` maps a key to `{slug, request?, tenant?, refresh?,
+  transform?}`; each is fetched once on load and shared by every widget that reads it. Each widget
+  `{key, component, section?}` declares exactly one data origin:
+  - `source: "<key>"` — binds the dashboard source's rows directly (six KPICards over one `kpis` query that
+    computes six aggregates: `{"source": "kpis", "component": {"component": "KPICard", "value": "total_visits"}}`);
+  - `source` + `transform: {ops: [...]}` — a **derived view** (`kind: "derived"` on the wire) computed from the
+    parent's full frame with the transform DSL, on the client and on the server, without another fetch — e.g. a
+    grid shows every row of `rows` while a pie chart groups those same rows by category;
+  - `slug` (+ `request?`, `tenant?`, `refresh?`) — the widget's own query-slug source, refreshed independently
+    (the FEAT-610 shape, still supported);
+  - `data: [...]` — inline rows (≤ 500) baked into the data model, never refreshed.
+
+  KPIs, charts and tables are laid out in rows. KPICards name their column in `value`. Filters accept the
+  JSONB operators `@>`, `<@`, `@>|`, `->` and `->>` in the `{op: value}` filter form (querysource >= 5.1).
+  Derived views aggregate what the parent fetched (bounded by the 5000-row fetch cap): when the full data set
+  is larger, put the aggregation in the parent's `request` (`fields` + `grouping`) and derive from that.
+  Same `snapshot` semantics as `qs_build_linked_surface`: definition-only by default (one-row probe per
+  query-slug source; derived views are validated over the probed parent), full fetch + ≤ 500 rows per source
+  only with `snapshot=True`.
 - **`qs_save_multiquery`** *(only when `allow_write=True`)* — Persists a validated MultiQuery pipeline as a
   query-slug owned by `program` (forced to the single allowed program when this toolkit is tenant-restricted).
   Requires operator opt-in (`allow_write`) and user confirmation. Refuses to overwrite a slug owned by another
@@ -71,6 +98,8 @@ Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Seven tools are a
 Tenancy is a static `program_slug` allowlist passed at construction time (`programs=[...]`), re-checked on
 **every** call against `public.queries` — there is no positive authorization cache, so a `program_slug`
 change takes effect immediately. `None` means unrestricted.
+
+The `qs_list_slugs`, `qs_describe_slug`, `qs_execute_slug`, `qs_build_linked_surface`, and `qs_build_linked_dashboard` tools accept an optional `tenant` argument for selecting a QuerySource tenant store schema. Omit it for public/legacy slugs. Routing, not security.
 
 | Capability | Restricted (`programs=[...]`) | Unrestricted (`programs=None`) |
 |---|---|---|

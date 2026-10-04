@@ -1,0 +1,85 @@
+{
+  "feature": "sdd-coder-engine-fixes-2",
+  "feature_id": "FEAT-599",
+  "spec": "sdd/specs/sdd-coder-engine-fixes-2.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-09-24T18:30:00+00:00",
+  "completed_at": "2026-09-24T16:21:49+00:00",
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-3677",
+      "slug": "lazy-attempt-number-and-settlement-regression",
+      "title": "Lazy attempt number in snapshot enrichment + settlement regression test",
+      "feature_id": "FEAT-599",
+      "feature": "sdd-coder-engine-fixes-2",
+      "spec": "sdd/specs/sdd-coder-engine-fixes-2.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "First writer of engine.py in this feature; no upstream symbol needed.",
+      "discovered_from": [
+        "issue:c1e28856ab0c",
+        "issue:5944887877e1",
+        "issue:971e11917b19"
+      ],
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-09-24T18:35:00+00:00",
+      "completed_at": "2026-09-24T18:50:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3677-lazy-attempt-number-and-settlement-regression.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3678",
+      "slug": "suspension-attribution-surfacing",
+      "title": "Surface suspension attribution (AC-12) in pool views and coder_plan",
+      "feature_id": "FEAT-599",
+      "feature": "sdd-coder-engine-fixes-2",
+      "spec": "sdd/specs/sdd-coder-engine-fixes-2.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3677"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies engine.py after TASK-3677 (same file, serialized); adds fields to models.py/pool.py that TASK-3679 builds on.",
+      "discovered_from": [
+        "issue:bd1c792a5afc"
+      ],
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-09-24T18:55:00+00:00",
+      "completed_at": "2026-09-24T19:25:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3678-suspension-attribution-surfacing.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-3679",
+      "slug": "execution-pool-public-api",
+      "title": "ExecutionPool public API; engine stops reaching into pool internals",
+      "feature_id": "FEAT-599",
+      "feature": "sdd-coder-engine-fixes-2",
+      "spec": "sdd/specs/sdd-coder-engine-fixes-2.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-3678"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies pool.py, engine.py and test_pool.py after TASK-3678 (same files, serialized); converts the ExecutionPool(...) call sites TASK-3678 touches.",
+      "discovered_from": [
+        "issue:700660c7f663"
+      ],
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-09-24T19:30:00+00:00",
+      "completed_at": "2026-09-24T19:55:00+00:00",
+      "file": "sdd/tasks/completed/TASK-3679-execution-pool-public-api.md",
+      "verification": "verified"
+    }
+  ]
+}

@@ -1,0 +1,125 @@
+*(mode = enrichment)*
+
+### What's New
+
+- **`packages/ai-parrot-tools/src/parrot_tools/hooba/`** — new subpackage
+  (already anticipated by the auto-finance brainstorm impact table). F013
+- **`hooba/openapi.py`** — `HoobaOpenAPIToolkit`, a bound `OpenAPIToolkit`
+  subclass (pattern: `_build_toolkit_subclass`) over the pinned spec digest
+  with a **tag allowlist** (Authentication, Account, Member, Invoice,
+  InvoiceLine, InvoiceSerie, PurchaseInvoice, PurchaseInvoiceLine, Contact,
+  Tax, IncomeTax, AccountingAccount, PaymentMethod, PaymentTerm, Document,
+  DocumentType, InboxFile) and a **SUBMIT blocklist** (`:issue`, `:confirm`,
+  `:cancel`, `:send*`, `DELETE *`, `*:delete`, `:bulk-*`) — decision U2/U5.
+  F001, F015
+- **`hooba/session.py`** — `HoobaSession`: settings from `HOOBA_ACCOUNT_ID` /
+  `HOOBA_MEMBER_ID` / `HOOBA_USER_ID` / `HOOBA_SUBSCRIPTION_ID`, login via
+  `POST /auth/login` with credentials resolved from `CredentialBroker`
+  provider `hooba`, `sid` cookie jar on `HTTPService`, explicit `origin`,
+  `x-hooba-language`, `ngsw-bypass` headers, `GET /auth/check` probe, re-login
+  on 401, account-scoped path substitution (`{accountId}` injected so the LLM
+  never supplies it). F015, F009, F003
+- **`hooba/models.py`** — Pydantic: `InvoiceDraft` + `InvoiceLineDraft`,
+  `PurchaseInvoiceDraft` + `PurchaseInvoiceLineDraft` (gastos y compras),
+  `ContactMatch`, `BankExpenseRow`, `ExpenseDraftBatch`, `DraftReceipt` (Hooba
+  id + `state`). F015
+- **`hooba/toolkit.py`** — `HoobaToolkit(AbstractToolkit, auto_open=True)`
+  composing the generated API tools with **composite draft tools**:
+  `create_invoice_draft` (resolves `invoiceSerieId`, `contactId`, `taxId`,
+  posts header + lines), `create_purchase_invoice_draft` (same for expenses,
+  `simplified` for tickets), `attach_document`, `list_drafts`,
+  `import_bbva_statement`; every tool tagged with `OperationKind`; routing
+  policy "API when the endpoint exists, web action otherwise". F006, F015
+- **`hooba/web.py`** — thin adapter wiring `WebBrowsingToolkit` with
+  `catalog_dir = $HOOBA_CATALOG_DIR` (private, U1) and the broker-backed
+  `credential_resolver`; v1 web operations: login/session recovery (export
+  `sid` via `exec_get_cookies` into the REST session), download invoice PDF,
+  uploads the API lacks. F002, F007, F010
+- **`hooba/bank/bbva.py`** — BBVA Excel layout parser (preamble-row detection,
+  date/concept/amount/balance columns, `compute_statement_digest`) →
+  `BankExpenseRow` list; debits only; dedupe by digest+row; row-count
+  cross-check and `reconcile()` reuse. F004, F005, F012
+- **`hooba/rules/autonomo_es_v1.yaml` + `hooba/rules/engine.py`** — v1
+  data-driven deductibility table for autónomos (category matchers → `taxId`,
+  `subjectToIncomeTax`, `simplified`, deductible %, `legal_basis`), shaped
+  like Spec A's `AeatRule`/`DeductibilityVerdict` for later extraction to
+  `parrot_tools/finance` — decision U4. F005, F012
+- **`TOOL_REGISTRY["hooba"]`** + `hooba` extra in `ai-parrot-tools`
+  (composes `business_automation` + `excel` + `scraping`). F011
+- **`packages/ai-parrot-tools/tests/hooba/`** — aiohttp test server replaying
+  the spec digest, anonymized BBVA fixture, rule-table tests, a "no SUBMIT
+  path reachable" guarantee test, allowlist/blocklist tests. F011
+- **Docs** — Hooba section in the business-automation runbook: env vars, spec
+  pin `2026.6.17`, `HOOBA_CATALOG_DIR`, seed helper.
+
+### What Changes
+
+- **`packages/ai-parrot/src/parrot/tools/openapitoolkit.py`::`OpenAPIToolkit`**
+  — add `auth_type="cookie"` (or `session`): an async `login_hook` invoked
+  lazily before the first request, a cookie jar passed to `HTTPService`,
+  `extra_headers`, and a `path_defaults` map for `{accountId}`-style
+  parameters; plus `include_tags` / `exclude_paths` filters in
+  `_parse_operations`. Required by decision U2 (full generation). *Evidence*:
+  F009, F001
+- **`packages/ai-parrot-tools/src/parrot_tools/__init__.py`::`TOOL_REGISTRY`**
+  — add `"hooba": "parrot_tools.hooba.toolkit.HoobaToolkit"`. *Evidence*: F011
+- **`packages/ai-parrot-tools/pyproject.toml`** — new `hooba` extra; include
+  in `all`. *Evidence*: F011
+- **`examples/agents/web/services/`** (untracked) — stays private; only a
+  `seed_catalog` helper is generalized into the package. *Evidence*: F007
+
+### What's Untouched (Non-Goals)
+
+Explicitly out of scope, to prevent later scope creep:
+- `parrot/clients/base.py` and every LLM client
+- `BusinessAutomationToolkit`, `PlanDirectoryStore`, `ConfirmationGuard` —
+  consumed as-is (Decision D2)
+- Issuing invoices (`:issue`), confirming purchase invoices (`:confirm`),
+  cancel/delete, sending emails, remittances/payments — SUBMIT-kind, never in
+  v1 (U5)
+- Norma 43 ingestion, DuckDB analytics, ExpenseWiki, ML classifier — Spec A
+  (FEAT-478) scope
+- Telegram / WhatsApp / Teams channels — CLI channel only for the example agent
+- Hooba-side master data (invoice series, taxes, accounting accounts) — read
+  via API, never created
+- New Playwright data-entry scripts — the API covers the three capabilities
+
+### Patterns to Follow
+
+- Bound-subclass pattern from `openapi_register._build_toolkit_subclass` for
+  the generated toolkit. *Evidence*: F001
+- `auto_open=True` + `_open`/`_close` for the HTTP session and the lazy
+  browser. *Evidence*: F006
+- `OperationKind` tagging and D2 gate semantics for anything with legal effect.
+  *Evidence*: F006, F016
+- `compute_statement_digest` + manifest/resume + `reconcile()` for idempotent
+  Excel imports. *Evidence*: F004
+- Broker-backed credentials via `_credential_resolver_from_broker`; never
+  literal secrets in JSON. *Evidence*: F003
+- Catalog JSON DSL (`navigate` / `conditional` / `authenticate` / `wait`,
+  `requires: ["hooba-login"]`) for any new web action. *Evidence*: F007, F002
+
+### Integration Risks
+
+- **Session semantics unknown at runtime** (cookie TTL, CSRF, whether the
+  `origin`/`ngsw-bypass` headers are enforced): mitigate with the
+  `GET /auth/check` probe, re-login on 401, and a live integration test gated
+  by `HOOBA_LIVE=1`. *Evidence*: F015
+- **Spec drift**: version `2026.6.17`, no `servers` block, Nelmio-generated —
+  pin the digest in-repo, validate required fields at import, fail loudly on
+  schema change. *Evidence*: F015
+- **Tool-budget flood** with full generation: the tag allowlist bounds it to
+  roughly the 217 digested operations; the spec must state a hard cap and a
+  per-agent sub-allowlist. *Evidence*: F001, F015
+- **Line bodies are `oneOf`** (product | title) and need `invoiceSerieId`,
+  `contactId`, `taxId` lookups first — the composite tools must resolve ids
+  before creating drafts. *Evidence*: F015
+- **BBVA layout parser is net-new**; wrong column detection silently produces
+  wrong drafts — row-count cross-check, `reconcile`, and an anonymized fixture
+  are mandatory. *Evidence*: F004, F005
+- **Regulatory correctness** of the deductibility table cannot be verified
+  from the codebase — drafts only, `legal_basis` on every draft, human review
+  before any confirmation. *Evidence*: F012, F005
+- **Public/private seam**: the catalog stays private (U1), so CI cannot run
+  the web half against real selectors — tests use the FEAT-455 fixture site.
+  *Evidence*: F008, F016

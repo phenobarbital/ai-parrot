@@ -120,6 +120,10 @@ def _render_javascript(symbols: list[SymbolRecord]) -> list[str]:
     for sym in symbols:
         if sym.kind not in _JS_RENDERED_KINDS:
             continue
+        if sym.node_kind == "variable_declarator":
+            # FEAT-609 M4: module-local arrow/function-expression symbols feed the
+            # symbol plane only — the tree-sitter walker never rendered them (G5).
+            continue
         prefix = "export " if sym.exported else ""
         keyword = "const" if sym.kind == SymbolKind.CONST else sym.kind.value
         lines.append(f"{prefix}{keyword} {sym.name}: {sym.doc}".rstrip(": "))

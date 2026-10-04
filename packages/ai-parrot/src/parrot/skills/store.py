@@ -140,7 +140,7 @@ class SkillRegistry:
     ``"<org_id>/_shared"`` — for the org-wide shared skills catalog. No
     behavioral special-casing is needed here: a shared-namespace registry
     is constructed and used exactly like any other (see
-    ``handlers/studio/skills_catalog.py``'s dual-write with the NEW
+    ``handlers/studio/skills_catalog/``'s dual-write with the NEW
     ``navigator.ai_skills_catalog`` Postgres table, the durable record and
     SQL query plane for that catalog).
     """

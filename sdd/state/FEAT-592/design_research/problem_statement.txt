@@ -1,0 +1,25 @@
+The planogram cycle (`perceive → identify → compare`, FEAT-574) can today only
+run its Stage-2 identification on Google, Anthropic or OpenAI. Amazon Nova 2 Lite
+is a cheap, 1M-context, natively multimodal model that AWS explicitly markets for
+grounded object detection, and it is the natural candidate for the high-volume
+store-photo workload — but **no parrot client can send it an image**, so it has
+never been measured against the incumbents on real ink-wall photos.
+
+Two independent facts block it:
+
+1. `BedrockConverseBase._prepare_messages` logs a warning and **silently drops**
+   every file/image attachment
+   (`packages/ai-parrot-client-amazon/src/parrot/clients/amazon/bedrock.py:725-745`).
+2. `ask_to_image` — the single entry point the planogram vision adapter calls —
+   is implemented only on the Anthropic, Google and OpenAI clients. Bedrock/Nova
+   has no implementation at all.
+
+Affected: the planogram/retail-compliance workstream (cost per photo is the
+dominant operating constraint), and anyone who wants Nova for vision anywhere in
+ai-parrot.
+
+We want an **executable example** — `examples/planogram/aws/nova2.py` — that
+feeds real OpenCV detection boxes to Nova 2 Lite and gets back, per box, whether
+a product is present and which brand/product it is. The example is both a
+demonstrator and the empirical evidence that justifies (or kills) the later
+client-level work.

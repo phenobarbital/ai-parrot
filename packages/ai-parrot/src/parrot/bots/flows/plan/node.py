@@ -66,6 +66,8 @@ from typing import Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Seq
 
 from pydantic import Field, PrivateAttr
 
+from parrot.bots.flows.core.node import Node as _BaseNode
+
 from .facets import estimate_bytes, extract_facets, merge_facets
 from .guards import PlanGuard, compile_guard
 from .models import ARTIFACT_REF_RE, NODE_REF_RE, ArtifactRef, PlanNode, _iter_strings
@@ -83,8 +85,6 @@ __all__ = (
 # are the classic way a "small" manifest stops being small.
 MAX_RECORDED_ERRORS = 20
 _MAX_ERROR_CHARS = 300
-
-from parrot.bots.flows.core.node import Node as _BaseNode
 
 
 class ToolExecutionError(RuntimeError):
@@ -210,7 +210,7 @@ class PlanToolNode(_BaseNode):
             await self.run_post_actions(result=ref, **kwargs)
             return ref
 
-        await self.run_pre_actions(prompt=self.plan_node.tool, **kwargs)
+        await self.run_pre_actions(prompt=self._action_label(), **kwargs)
         try:
             if self.plan_node.for_each is None:
                 ref = await self._run_single(prior)
@@ -225,15 +225,77 @@ class PlanToolNode(_BaseNode):
         await self.run_post_actions(result=ref, **kwargs)
         return ref
 
+    # ── Extension hooks (FEAT-590) — inert for PlanToolNode ────────────────
+
+    def _template_source(self) -> Any:
+        """The structure whose ``{artifacts.<id>}`` bodies are pre-read.
+
+        Returns:
+            The plan node's ``args``, for ``PlanToolNode``.
+        """
+        return self.plan_node.args
+
+    def _action_label(self) -> str:
+        """Label passed to pre-actions.
+
+        Returns:
+            The plan node's tool name, for ``PlanToolNode``.
+        """
+        return self.plan_node.tool
+
+    async def _invoke(
+        self,
+        prior: Mapping[str, ArtifactRef],
+        bodies: Mapping[str, Any],
+        *,
+        item: Any = None,
+        index: Optional[int] = None,
+    ) -> "_Attempt":
+        """Resolve arguments and dispatch once (with retries) — one logical call.
+
+        Args:
+            prior: Completed nodes' artifact refs.
+            bodies: ``{node_id: body}`` pre-read by :meth:`_artifact_bodies`.
+            item: Current item, inside a ``for_each`` node.
+            index: Current item position, inside a ``for_each`` node.
+
+        Returns:
+            The dispatched :class:`_Attempt`.
+        """
+        args = self._resolve_args(self.plan_node.args, prior, bodies, item=item, index=index)
+        return await self._call_with_retry(args, index=index, tool=self.plan_node.tool)
+
+    def _is_escalation(self, exc: BaseException) -> bool:
+        """Whether ``exc`` is an escalation that must always be recorded.
+
+        Args:
+            exc: The exception raised by :meth:`_invoke`.
+
+        Returns:
+            ``False`` for ``PlanToolNode`` — it has no escalation concept.
+        """
+        return False
+
     # ── Single call ───────────────────────────────────────────────────────
 
     async def _run_single(self, prior: Mapping[str, ArtifactRef]) -> ArtifactRef:
         """Execute the node's tool once."""
-        bodies = await self._artifact_bodies(self.plan_node.args)
-        args = self._resolve_args(self.plan_node.args, prior, bodies)
-        attempt = await self._call_with_retry(args)
+        bodies = await self._artifact_bodies(self._template_source())
+        try:
+            attempt = await self._invoke(prior, bodies)
+        except Exception as exc:  # noqa: BLE001 - escalations become a ref, everything else re-raises
+            if not self._is_escalation(exc):
+                raise
+            return ArtifactRef(
+                node_id=self.node_id,
+                status="error",
+                errors=[str(exc)[:_MAX_ERROR_CHARS]],
+                escalated=1,
+            )
         key = self.plan_node.store_as
-        stored = await self._store(key, attempt.payload, index=None, producer_call_id=attempt.producer_call_id)
+        stored = await self._store(
+            key, attempt.payload, index=None, producer_call_id=attempt.producer_call_id, tool=attempt.tool
+        )
         return ArtifactRef(
             node_id=self.node_id,
             keys=[key],
@@ -286,10 +348,11 @@ class PlanToolNode(_BaseNode):
         degraded: List[bool] = [False] * len(items)
         errors: List[str] = []
         entry_types: List[str] = []
+        escalated = 0
         # Read once, before fan-out: every item resolves the same
         # {artifacts.<id>} bodies, and re-reading them per item would
         # multiply an enabled catalog's awaited reads by the item count.
-        bodies = await self._artifact_bodies(self.plan_node.args)
+        bodies = await self._artifact_bodies(self._template_source())
 
         async def run_item(index: int, item: Any) -> None:
             async with semaphore:
@@ -300,13 +363,13 @@ class PlanToolNode(_BaseNode):
                     keys[index] = key
                     self.logger.debug("Node %r: key %r exists, skipping", self.node_id, key)
                     return
-                args = self._resolve_args(self.plan_node.args, prior, bodies, item=item, index=index)
-                attempt = await self._call_with_retry(args, index=index)
+                attempt = await self._invoke(prior, bodies, item=item, index=index)
                 written = await self._store(
                     key,
                     attempt.payload,
                     index=index,
                     producer_call_id=attempt.producer_call_id,
+                    tool=attempt.tool,
                 )
                 sizes[index] = written.byte_size
                 versions[index] = written.version
@@ -316,9 +379,17 @@ class PlanToolNode(_BaseNode):
                 entry_types.append(_entry_type(attempt.payload))
 
         async def guarded(index: int, item: Any) -> None:
+            nonlocal escalated
             try:
                 await run_item(index, item)
             except Exception as exc:  # noqa: BLE001
+                if self._is_escalation(exc):
+                    # Always counted, even past the cap: the count is the
+                    # truth, whatever on_item_error says about the message.
+                    escalated += 1
+                    if len(errors) < MAX_RECORDED_ERRORS:
+                        errors.append(f"escalate: [{index}] {str(exc)[:_MAX_ERROR_CHARS]}")
+                    return
                 if spec.on_item_error == "fail":
                     raise
                 if spec.on_item_error == "collect" and len(errors) < MAX_RECORDED_ERRORS:
@@ -343,6 +414,7 @@ class PlanToolNode(_BaseNode):
             bytes_stored=sum(sizes),
             versions=[version for version in versions if version is not None],
             tracking_degraded=any(degraded),
+            escalated=escalated,
         )
 
     # ── Guard ─────────────────────────────────────────────────────────────
@@ -447,6 +519,7 @@ class PlanToolNode(_BaseNode):
         *,
         index: Optional[int],
         producer_call_id: Optional[str] = None,
+        tool: Optional[str] = None,
     ) -> "_Written":
         """Write ``payload`` to working memory, preserving its provenance.
 
@@ -464,16 +537,19 @@ class PlanToolNode(_BaseNode):
                 ``None`` when task memory is disabled, or when no receipt
                 could be established — in which case the legacy path runs
                 and nothing pretends to know the producer.
+            tool: The tool actually dispatched; defaults to
+                ``plan_node.tool`` (``PlanToolNode``).
 
         Returns:
             What was written: byte size, evidence version (enabled only)
             and whether provenance had to be degraded.
         """
+        name = tool or self.plan_node.tool
         suffix = "" if index is None else f"[{index}]"
-        description = f"{self.node_id}{suffix} via {self.plan_node.tool}"
+        description = f"{self.node_id}{suffix} via {name}"
         metadata = {
             "plan_node": self.node_id,
-            "tool": self.plan_node.tool,
+            "tool": name,
             "index": index,
         }
 
@@ -642,7 +718,9 @@ class PlanToolNode(_BaseNode):
 
     # ── Tool dispatch ─────────────────────────────────────────────────────
 
-    async def _call_with_retry(self, args: Dict[str, Any], *, index: Optional[int] = None) -> "_Attempt":
+    async def _call_with_retry(
+        self, args: Dict[str, Any], *, index: Optional[int] = None, tool: Optional[str] = None
+    ) -> "_Attempt":
         """Dispatch the tool, retrying transient failures per ``retry``.
 
         Each loop iteration is ONE physical attempt and opens exactly one
@@ -655,6 +733,8 @@ class PlanToolNode(_BaseNode):
         Args:
             args: Fully resolved keyword arguments.
             index: Fan-out position, recorded on the receipt.
+            tool: Tool to dispatch; defaults to ``plan_node.tool``
+                (``PlanToolNode``). A delegate picks the tool per call.
 
         Returns:
             The payload plus the receipt that produced it.
@@ -666,24 +746,23 @@ class PlanToolNode(_BaseNode):
         policy = self.plan_node.retry
         last: Optional[BaseException] = None
         session = _current_session()
+        tool_name = tool or self.plan_node.tool
 
         for attempt in range(1, policy.max_attempts + 1):
-            receipt = self._begin_attempt(session, attempt=attempt, index=index)
+            receipt = self._begin_attempt(session, attempt=attempt, index=index, tool=tool_name)
             try:
-                payload = await self._dispatch(args)
+                payload = await self._dispatch(args, tool=tool_name)
                 # execute_tool returns a ToolResult (rather than raising) when
                 # the tool is not registered — the one path where a failure
                 # arrives as a value.
                 if _is_failed_tool_result(payload):
-                    raise ToolExecutionError(
-                        f"Tool {self.plan_node.tool!r} failed: " f"{getattr(payload, 'error', payload)}"
-                    )
+                    raise ToolExecutionError(f"Tool {tool_name!r} failed: " f"{getattr(payload, 'error', payload)}")
             except asyncio.CancelledError:
                 self._end_attempt(session, receipt, error=None, cancelled=True)
                 raise
             except Exception as exc:  # noqa: BLE001
                 self._end_attempt(session, receipt, error=exc, cancelled=False)
-                self._refuse_unknown_retry(session, receipt, exc)
+                self._refuse_unknown_retry(session, receipt, exc, tool=tool_name)
                 last = exc
                 if attempt < policy.max_attempts:
                     self.logger.warning(
@@ -707,24 +786,25 @@ class PlanToolNode(_BaseNode):
                 payload=payload,
                 producer_call_id=None if receipt is None else receipt.record.call_id,
                 degraded=self._attempt_degraded(session, receipt),
+                tool=tool_name,
             )
 
         raise ToolExecutionError(
-            f"Node {self.node_id!r}: tool {self.plan_node.tool!r} failed after "
-            f"{policy.max_attempts} attempt(s): {last}"
+            f"Node {self.node_id!r}: tool {tool_name!r} failed after " f"{policy.max_attempts} attempt(s): {last}"
         ) from last
 
-    async def _dispatch(self, args: Dict[str, Any]) -> Any:
+    async def _dispatch(self, args: Dict[str, Any], *, tool: str) -> Any:
         """Perform one dispatch through the manager, honouring ``timeout``.
 
         Args:
             args: Fully resolved keyword arguments.
+            tool: The tool to dispatch.
 
         Returns:
             Whatever ``execute_tool`` returned.
         """
         coro = self.tool_manager.execute_tool(
-            self.plan_node.tool,
+            tool,
             args,
             permission_context=self.permission_context,
         )
@@ -732,7 +812,7 @@ class PlanToolNode(_BaseNode):
 
     # ── Attempt receipts (FEAT-538) ───────────────────────────────────────
 
-    def _begin_attempt(self, session: Any, *, attempt: int, index: Optional[int]) -> Optional["_Receipt"]:
+    def _begin_attempt(self, session: Any, *, attempt: int, index: Optional[int], tool: str) -> Optional["_Receipt"]:
         """Open this node's receipt for one physical attempt.
 
         The receipt carries the plan's run/node/item/attempt identifiers
@@ -745,6 +825,7 @@ class PlanToolNode(_BaseNode):
             session: The live turn session, or ``None`` when disabled.
             attempt: 1-based attempt number.
             index: Fan-out position, or ``None``.
+            tool: The tool being dispatched for this attempt.
 
         Returns:
             The open receipt, or ``None`` when task memory is disabled.
@@ -753,7 +834,7 @@ class PlanToolNode(_BaseNode):
             return None
         context = _task_memory_context()
         record = session.begin_invocation(
-            self.plan_node.tool,
+            tool,
             attempt=attempt,
             plan_run_id=self.plan_run_id,
             plan_node_id=self.node_id,
@@ -833,13 +914,14 @@ class PlanToolNode(_BaseNode):
         """
         return [r for r in session.records if r.parent_call_id == receipt.record.call_id]
 
-    def _refuse_unknown_retry(self, session: Any, receipt: Any, exc: BaseException) -> None:
+    def _refuse_unknown_retry(self, session: Any, receipt: Any, exc: BaseException, *, tool: str) -> None:
         """Raise instead of retrying when an attempt's outcome is unresolved.
 
         Args:
             session: The live turn session, or ``None``.
             receipt: This node's attempt receipt, or ``None``.
             exc: The exception that ended the attempt.
+            tool: The tool that was dispatched for this attempt.
 
         Raises:
             UnknownToolOutcomeError: If any physical attempt underneath this
@@ -851,7 +933,7 @@ class PlanToolNode(_BaseNode):
             outcome = record.outcome
             if outcome is not None and not outcome.is_resolved:
                 raise UnknownToolOutcomeError(
-                    f"Node {self.node_id!r}: tool {self.plan_node.tool!r} ended with an "
+                    f"Node {self.node_id!r}: tool {tool!r} ended with an "
                     f"unresolved outcome ({outcome.value}); its external effect may "
                     "already have happened, so it is not retried automatically"
                 ) from exc
@@ -892,11 +974,13 @@ class _Attempt(NamedTuple):
         producer_call_id: The attempt receipt that produced it, or ``None``
             when task memory is disabled.
         degraded: Whether that attempt's tracking is degraded.
+        tool: Tool actually dispatched.
     """
 
     payload: Any
     producer_call_id: Optional[str]
     degraded: bool
+    tool: str
 
 
 class _Written(NamedTuple):

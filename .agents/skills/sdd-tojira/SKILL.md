@@ -5,6 +5,14 @@ description: Export an SDD Specification to a Jira Story (and optionally subtask
 
 # SDD To Jira
 
+## Full procedure and Codex adaptations
+
+Before executing, read the [full sdd-tojira procedure](../../../.claude/commands/sdd-tojira.md)
+and the [Codex adaptation contract](../../../docs/sdd/CODEX.md#codex-adaptation-contract).
+Follow the full procedure for details omitted from this summary. The adaptation
+contract and the Codex-specific instructions below override Claude runtime syntax
+and legacy shell examples; retain all workflow gates and evidence requirements.
+
 Use this skill when the user asks to export an SDD spec to Jira, sync tasks as subtasks, or run `sdd-tojira`.
 
 Invocation: `sdd-tojira <spec-path-or-FEAT-ID> [--ticket KEY] [--with-subtasks] [--project KEY]`.
@@ -17,6 +25,12 @@ Export an approved specification (`sdd/specs/*.spec.md`) to Jira as a Story, opt
 
 - Spec should be `status: approved` (confirm if draft).
 - Check for existing ticket linkage to run in idempotent UPDATE mode.
+- Resolve the target in order: `--ticket`, spec metadata/linkage, then search
+  by Feature ID. For a search match, ask whether to UPDATE, link only (SKIP),
+  or CREATE separately; wait for the choice. CREATE directly only with no match.
+  Default project/component/type are `NAV` / `Nav-AI` / `Story`; honor `--project`.
+  Update an existing ticket only when explicitly requested or resolved through
+  `--ticket` or spec metadata; never guess a matching ticket to overwrite.
 - Map acceptance criteria into Jira custom fields (`customfield_10021`, etc.).
 - Commit only the modified spec and task index files.
 

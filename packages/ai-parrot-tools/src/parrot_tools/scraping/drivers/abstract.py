@@ -5,7 +5,7 @@ drivers (Selenium, Playwright, etc.) must implement.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Callable, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional, Sequence
 
 
 class AbstractDriver(ABC):
@@ -76,9 +76,7 @@ class AbstractDriver(ABC):
         """
 
     @abstractmethod
-    async def fill(
-        self, selector: str, value: str, timeout: int = 10
-    ) -> None:
+    async def fill(self, selector: str, value: str, timeout: int = 10) -> None:
         """Clear and fill the input matching *selector* with *value*.
 
         Args:
@@ -140,9 +138,7 @@ class AbstractDriver(ABC):
         """
 
     @abstractmethod
-    async def get_attribute(
-        self, selector: str, attribute: str, timeout: int = 10
-    ) -> Optional[str]:
+    async def get_attribute(self, selector: str, attribute: str, timeout: int = 10) -> Optional[str]:
         """Return the value of *attribute* on the element matching *selector*.
 
         Args:
@@ -155,9 +151,7 @@ class AbstractDriver(ABC):
         """
 
     @abstractmethod
-    async def get_all_texts(
-        self, selector: str, timeout: int = 10
-    ) -> List[str]:
+    async def get_all_texts(self, selector: str, timeout: int = 10) -> List[str]:
         """Return the inner text of every element matching *selector*.
 
         Args:
@@ -166,9 +160,7 @@ class AbstractDriver(ABC):
         """
 
     @abstractmethod
-    async def screenshot(
-        self, path: str, full_page: bool = False
-    ) -> bytes:
+    async def screenshot(self, path: str, full_page: bool = False) -> bytes:
         """Take a screenshot of the current page.
 
         Args:
@@ -182,9 +174,7 @@ class AbstractDriver(ABC):
     # ── Waiting ──────────────────────────────────────────────────
 
     @abstractmethod
-    async def wait_for_selector(
-        self, selector: str, timeout: int = 10, state: str = "visible"
-    ) -> None:
+    async def wait_for_selector(self, selector: str, timeout: int = 10, state: str = "visible") -> None:
         """Wait until an element matching *selector* reaches *state*.
 
         Args:
@@ -203,9 +193,7 @@ class AbstractDriver(ABC):
         """
 
     @abstractmethod
-    async def wait_for_load_state(
-        self, state: str = "load", timeout: int = 30
-    ) -> None:
+    async def wait_for_load_state(self, state: str = "load", timeout: int = 30) -> None:
         """Wait until the page reaches the given load *state*.
 
         Args:
@@ -239,6 +227,20 @@ class AbstractDriver(ABC):
             The expression result.
         """
 
+    async def get_cookies(self, urls: Optional[Sequence[str]] = None) -> List[Dict[str, Any]]:
+        """Return browser-context cookies, HttpOnly included.
+
+        Args:
+            urls: Restrict to cookies that would be sent to these URLs; ``None`` = all.
+
+        Returns:
+            Cookie dicts (``name``, ``value``, ``domain``, ``path``, ``httpOnly``, ``secure``, ...).
+
+        Raises:
+            NotImplementedError: The driver cannot read context-level cookies.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support get_cookies(); use PlaywrightDriver")
+
     # ── Property ─────────────────────────────────────────────────
 
     @property
@@ -262,8 +264,7 @@ class AbstractDriver(ABC):
                 request interception.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} does not support intercept_requests. "
-            "Use PlaywrightDriver for this feature."
+            f"{self.__class__.__name__} does not support intercept_requests. " "Use PlaywrightDriver for this feature."
         )
 
     async def record_har(self, path: str) -> None:
@@ -277,8 +278,7 @@ class AbstractDriver(ABC):
                 recording.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} does not support record_har. "
-            "Use PlaywrightDriver for this feature."
+            f"{self.__class__.__name__} does not support record_har. " "Use PlaywrightDriver for this feature."
         )
 
     async def save_pdf(self, path: str) -> bytes:
@@ -316,8 +316,7 @@ class AbstractDriver(ABC):
             NotImplementedError: If the driver does not support tracing.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} does not support start_tracing. "
-            "Use PlaywrightDriver for this feature."
+            f"{self.__class__.__name__} does not support start_tracing. " "Use PlaywrightDriver for this feature."
         )
 
     async def stop_tracing(self, path: str) -> None:
@@ -330,8 +329,7 @@ class AbstractDriver(ABC):
             NotImplementedError: If the driver does not support tracing.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} does not support stop_tracing. "
-            "Use PlaywrightDriver for this feature."
+            f"{self.__class__.__name__} does not support stop_tracing. " "Use PlaywrightDriver for this feature."
         )
 
     async def mock_route(self, url_pattern: str, handler: Callable) -> None:
@@ -346,6 +344,5 @@ class AbstractDriver(ABC):
                 mocking.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} does not support mock_route. "
-            "Use PlaywrightDriver for this feature."
+            f"{self.__class__.__name__} does not support mock_route. " "Use PlaywrightDriver for this feature."
         )

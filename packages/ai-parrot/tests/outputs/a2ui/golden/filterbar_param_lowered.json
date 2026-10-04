@@ -1,0 +1,50 @@
+{
+  "children": [
+    {
+      "component": "ChoicePicker",
+      "id": "fb-f0",
+      "label": "Program",
+      "metadata": {
+        "extensions": {
+          "parrot_filter_column": "program",
+          "parrot_param": {
+            "name": "program",
+            "source": "activity"
+          },
+          "parrot_role": "filter"
+        }
+      },
+      "options": [
+        {
+          "label": "Epson",
+          "value": "epson"
+        }
+      ],
+      "value": [
+        "epson"
+      ],
+      "variant": "mutuallyExclusive"
+    },
+    {
+      "component": "ChoicePicker",
+      "id": "fb-f1",
+      "label": "Store",
+      "metadata": {
+        "extensions": {
+          "parrot_filter_column": "store",
+          "parrot_role": "filter"
+        }
+      },
+      "options": [],
+      "value": [],
+      "variant": "mutuallyExclusive"
+    }
+  ],
+  "component": "Row",
+  "id": "fb",
+  "metadata": {
+    "extensions": {
+      "parrot_variant": "filter-bar"
+    }
+  }
+}

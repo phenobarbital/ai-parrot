@@ -111,6 +111,64 @@ def test_zero_anchor_alignment_is_ambiguous():
     assert reg.ambiguous is True and reg.assignments == {}
 
 
+def test_full_height_occupancy_registers_without_identity_anchors():
+    """All shelf rows are structurally known; occupancy is enough to retain every facing assessment."""
+    definition = _definition(shelves=2)
+    slots = [_slot("img0", row, idx) for row in range(2) for idx in range(1, 5)]
+    idents = [_ident(slot, product=None).model_copy(update={"occupancy": "occupied"}) for slot in slots]
+
+    reg = register_image("img0", slots, idents, definition)
+
+    assert reg.ambiguous is False
+    assert reg.row_to_shelf == {0: "shelf_1", 1: "shelf_2"}
+    assert len(reg.assignments) == 8
+
+
+def test_identity_anchor_extends_registration_to_occupancy_only_slots():
+    """One identity establishes the offset; neighbouring occupied slots must not disappear as DP gaps."""
+    definition = _definition(shelves=2)
+    slots = [_slot("img0", row, idx) for row in range(2) for idx in range(1, 5)]
+    idents = []
+    for slot in slots:
+        product = f"P{slot.row_index + 1}-{slot.slot_index}" if slot.slot_index == 2 else None
+        idents.append(_ident(slot, product=product).model_copy(update={"occupancy": "occupied"}))
+
+    reg = register_image("img0", slots, idents, definition)
+
+    assert reg.ambiguous is False
+    assert len(reg.assignments) == 8
+
+
+def test_empty_slot_identity_placeholders_do_not_shift_alignment():
+    """LLMs sometimes emit product='empty'; occupancy wins and the placeholder is neutral for registration."""
+    definition = _definition(shelves=1, per_shelf=5)
+    slots = [_slot("img0", 0, idx) for idx in range(1, 6)]
+    idents = [_ident(slot, product=f"P1-{slot.slot_index}") for slot in slots]
+    idents[2] = idents[2].model_copy(update={"product": "empty", "brand": "empty", "occupancy": "empty"})
+
+    reg = register_image("img0", slots, idents, definition)
+
+    assert reg.ambiguous is False
+    assert reg.assignments[slots[2].anchor_shape_id] == "s1_f3"
+    assert len(reg.assignments) == 5
+
+
+def test_partial_view_can_start_after_unobserved_definition_facings():
+    """Leading planogram gaps are free, so a right-side crop aligns to the suffix rather than slot one."""
+    definition = _definition(shelves=2, per_shelf=6)
+    slots = [_slot("img0", row, idx) for row in range(2) for idx in range(1, 4)]
+    idents = []
+    for slot in slots:
+        expected_slot = slot.slot_index + 3
+        idents.append(_ident(slot, product=f"P{slot.row_index + 1}-{expected_slot}"))
+
+    reg = register_image("img0", slots, idents, definition)
+
+    assert reg.ambiguous is False
+    assert reg.assignments["img0:t0:1"] == "s1_f4"
+    assert reg.assignments["img0:t1:3"] == "s2_f6"
+
+
 def test_more_rows_than_shelves_is_ambiguous():
     definition = _definition(shelves=2)
     slots, idents = _rows("img0", (1, 2, 1))
@@ -154,3 +212,107 @@ def test_register_image_is_deterministic():
     first = register_image("img0", slots, idents, definition)
     for _ in range(3):
         assert register_image("img0", list(reversed(slots)), list(reversed(idents)), definition) == first
+
+
+def test_a_shuffled_full_row_registers_position_by_position():
+    """A row holding the shelf's own products in another order keeps every slot on its own facing."""
+    definition = _definition(shelves=2, per_shelf=3)
+    slots = [_slot("img", row, idx) for row in (0, 1) for idx in (1, 2, 3)]
+    rotated = {1: "P1-3", 2: "P1-1", 3: "P1-2"}
+    idents = [
+        _ident(slot, rotated[slot.slot_index] if slot.row_index == 0 else f"P2-{slot.slot_index}", "Alpha")
+        for slot in slots
+    ]
+    registration = register_image("img", slots, idents, definition)
+    assert not registration.ambiguous
+    assert {registration.assignments[f"img:t0:{idx}"] for idx in (1, 2, 3)} == {"s1_f1", "s1_f2", "s1_f3"}
+    assert [registration.assignments[f"img:t0:{idx}"] for idx in (1, 2, 3)] == ["s1_f1", "s1_f2", "s1_f3"]
+
+
+def test_a_row_with_a_foreign_product_keeps_the_evidence_alignment():
+    """A stray on the left is not a shuffle: the two anchored products stay on their own facings."""
+    definition = _definition(shelves=2, per_shelf=3)
+    slots = [_slot("img", row, idx) for row in (0, 1) for idx in (1, 2, 3)]
+    seen = {1: "Stray", 2: "P1-1", 3: "P1-2"}
+    idents = [
+        _ident(slot, seen[slot.slot_index] if slot.row_index == 0 else f"P2-{slot.slot_index}", "Alpha")
+        for slot in slots
+    ]
+    registration = register_image("img", slots, idents, definition)
+    assert registration.assignments["img:t0:2"] == "s1_f1" and registration.assignments["img:t0:3"] == "s1_f2"
+
+
+def _free_order_definition():
+    data = {"version": "1", "shelves": []}
+    for shelf in (1, 2):
+        data["shelves"].append(
+            {
+                "shelf_id": f"shelf_{shelf}",
+                "shelf_number": shelf,
+                "ordered": shelf != 1,
+                "facings": [
+                    {
+                        "facing_id": f"s{shelf}_f{idx}",
+                        "shelf_id": f"shelf_{shelf}",
+                        "slot": idx,
+                        "product": f"P{shelf}-{idx}",
+                        "brand": "Alpha",
+                        "descriptors": {"display_name": f"Product {shelf}-{idx}"},
+                    }
+                    for idx in (1, 2, 3)
+                ],
+            }
+        )
+    return load_slots_definition(data)
+
+
+def test_a_free_order_shelf_assigns_each_product_to_the_facing_that_expects_it():
+    definition = _free_order_definition()
+    assert [shelf.ordered for shelf in definition.shelves] == [False, True]
+    slots = [_slot("img", row, idx) for row in (0, 1) for idx in (1, 2, 3)]
+    rotated = {1: "P1-3", 2: "P1-1", 3: "P1-2"}
+    idents = [
+        _ident(slot, rotated[slot.slot_index] if slot.row_index == 0 else f"P2-{slot.slot_index}", "Alpha")
+        for slot in slots
+    ]
+    registration = register_image("img", slots, idents, definition)
+    assert [registration.assignments[f"img:t0:{idx}"] for idx in (1, 2, 3)] == ["s1_f3", "s1_f1", "s1_f2"]
+    assert [registration.assignments[f"img:t1:{idx}"] for idx in (1, 2, 3)] == ["s2_f1", "s2_f2", "s2_f3"]
+
+
+def test_a_free_order_shelf_reports_a_foreign_slot_on_the_facing_left_over():
+    definition = _free_order_definition()
+    slots = [_slot("img", row, idx) for row in (0, 1) for idx in (1, 2, 3)]
+    seen = {1: "Stray", 2: "P1-1", 3: "P1-3"}
+    idents = [
+        _ident(slot, seen[slot.slot_index] if slot.row_index == 0 else f"P2-{slot.slot_index}", "Alpha")
+        for slot in slots
+    ]
+    registration = register_image("img", slots, idents, definition)
+    assert [registration.assignments[f"img:t0:{idx}"] for idx in (1, 2, 3)] == ["s1_f2", "s1_f1", "s1_f3"]
+
+
+def test_a_full_row_of_another_brand_is_still_registered_to_its_facings():
+    """Foreign products on every facing are reported on those facings, not dropped as unseen."""
+    definition = _definition(shelves=2, per_shelf=3)
+    slots = [_slot("img", row, idx) for row in (0, 1) for idx in (1, 2, 3)]
+    idents = [
+        _ident(slot, f"P1-{slot.slot_index}", "Alpha") if slot.row_index == 0 else _ident(slot, None, "Gamma")
+        for slot in slots
+    ]
+    registration = register_image("img", slots, idents, definition)
+    assert not registration.ambiguous
+    assert [registration.assignments.get(f"img:t1:{idx}") for idx in (1, 2, 3)] == ["s2_f1", "s2_f2", "s2_f3"]
+
+
+def test_a_free_order_shelf_gives_a_leftover_facing_to_its_own_brand_before_a_foreign_one():
+    definition = _free_order_definition()
+    slots = [_slot("img", 0, idx) for idx in (1, 2, 3, 4)] + [_slot("img", 1, idx) for idx in (1, 2, 3)]
+    seen = {1: ("Neighbour", "Gamma"), 2: ("P1-1", "Alpha"), 3: ("Unlisted", "Alpha"), 4: ("P1-3", "Alpha")}
+    idents = [
+        _ident(slot, *seen[slot.slot_index]) if slot.row_index == 0 else _ident(slot, f"P2-{slot.slot_index}", "Alpha")
+        for slot in slots
+    ]
+    registration = register_image("img", slots, idents, definition)
+    assert registration.assignments["img:t0:3"] == "s1_f2"
+    assert "img:t0:1" not in registration.assignments

@@ -1,0 +1,3439 @@
+{
+ "openapi": "3.0.0",
+ "info": {
+  "title": "hooba API",
+  "version": "2026.6.17"
+ },
+ "source_url": "https://api.hooba.com/api/doc.json",
+ "fetched_at": "2026-09-25",
+ "securitySchemes": null,
+ "global_security": null,
+ "totals": {
+  "paths": 656,
+  "operations": 970
+ },
+ "operations": [
+  {
+   "method": "GET",
+   "path": "/accounts",
+   "tags": [
+    "Account"
+   ],
+   "summary": "List accounts",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Create an account",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "legalType",
+    "tin",
+    "vatNumber",
+    "tradeName",
+    "legalName",
+    "firstName",
+    "firstSurname",
+    "secondSurname",
+    "address",
+    "postcode",
+    "city",
+    "region",
+    "countryId",
+    "currencyId",
+    "phone",
+    "email",
+    "website",
+    "subjectToEquivalenceSurcharge",
+    "subjectToIncomeTax",
+    "saleTaxId",
+    "saleAccountingAccountId",
+    "purchaseTaxId",
+    "purchaseAccountingAccountId",
+    "incomeTaxId"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Show an account",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Update an account",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "legalType",
+    "tin",
+    "vatNumber",
+    "tradeName",
+    "legalName",
+    "firstName",
+    "firstSurname",
+    "secondSurname",
+    "address",
+    "postcode",
+    "city",
+    "region",
+    "countryId",
+    "phone",
+    "email",
+    "inboxEmail",
+    "website",
+    "subjectToEquivalenceSurcharge",
+    "subjectToIncomeTax",
+    "saleTaxId",
+    "saleAccountingAccountId",
+    "purchaseTaxId",
+    "purchaseAccountingAccountId",
+    "incomeTaxId"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/accounting-accounts",
+   "tags": [
+    "AccountingAccount"
+   ],
+   "summary": "List accounting accounts",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/accounting-accounts",
+   "tags": [
+    "AccountingAccount"
+   ],
+   "summary": "Create an accounting account",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "code",
+    "name",
+    "obsolete",
+    "groupId"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/accounting-accounts/{accountingAccountId}",
+   "tags": [
+    "AccountingAccount"
+   ],
+   "summary": "Show an accounting account",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/accounting-accounts/{accountingAccountId}",
+   "tags": [
+    "AccountingAccount"
+   ],
+   "summary": "Delete an accounting account",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/accounting-accounts/{accountingAccountId}",
+   "tags": [
+    "AccountingAccount"
+   ],
+   "summary": "Update an accounting account",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "code",
+    "name",
+    "obsolete"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/accounting-accounts:seed",
+   "tags": [
+    "AccountingAccount"
+   ],
+   "summary": "Seed accounting accounts",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/accounting-groups/{accountingGroupId}/accounting-accounts/next-available-code",
+   "tags": [
+    "AccountingAccount"
+   ],
+   "summary": "Next available accounting account code for a group",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/attestation",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Create the attestation",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    {
+     "Business": [
+      "phone",
+      "fullName",
+      "tin"
+     ]
+    },
+    {
+     "Person": [
+      "phone"
+     ]
+    }
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/attestation:check",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Check the attestation",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/attestation:download",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Download the attestation",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/badge-info",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Account badge info",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/budget-footer-logo",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Replace budget footer logo",
+   "content_types": [
+    "multipart/form-data"
+   ],
+   "body_fields": [
+    "file"
+   ]
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/budget-footer-logo",
+   "tags": [
+    "Account",
+    "Budget"
+   ],
+   "summary": "Delete budget footer logo",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/certificate",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Replace certificate",
+   "content_types": [
+    "multipart/form-data"
+   ],
+   "body_fields": [
+    "file",
+    "passphrase"
+   ]
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/certificate",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Delete certificate",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/contacts",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "List contacts",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/contacts",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Create a contact",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "externalId",
+    "code",
+    "legalType",
+    "tinType",
+    "tin",
+    "firstName",
+    "firstSurname",
+    "secondSurname",
+    "legalName",
+    "tradeName",
+    "website",
+    "discount",
+    "salePaymentTermId",
+    "salePaymentMethodId",
+    "saleCurrencyId",
+    "saleTaxId",
+    "purchasePaymentTermId",
+    "purchasePaymentMethodId",
+    "purchaseCurrencyId",
+    "purchaseTaxId",
+    "purchaseTaxIncluded",
+    "purchaseSubjectToIncomeTax",
+    "purchaseIncomeTaxId",
+    "purchaseAccountingAccountId",
+    "customerAccountingAccountId",
+    "supplierAccountingAccountId",
+    "paymentDay1",
+    "paymentDay2",
+    "endMonth",
+    "subjectToSalesEquivalenceSurcharge",
+    "accountingOffice",
+    "managementBody",
+    "processingUnit",
+    "proposingBody",
+    "notes",
+    "countryId",
+    "languageId",
+    "priceListId",
+    "managerId",
+    "budgetSerieId",
+    "deliveryNoteSerieId",
+    "invoiceSerieId",
+    "simplifiedInvoiceSerieId",
+    "orderSerieId"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/contacts/relatable-to/{contactId}",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "List contacts relatable to another contact",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/contacts/{contactId}",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Show a contact",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/contacts/{contactId}",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Delete a contact",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/contacts/{contactId}",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Update a contact",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "externalId",
+    "code",
+    "legalType",
+    "tinType",
+    "tin",
+    "firstName",
+    "firstSurname",
+    "secondSurname",
+    "legalName",
+    "tradeName",
+    "website",
+    "discount",
+    "salePaymentTermId",
+    "salePaymentMethodId",
+    "saleCurrencyId",
+    "saleTaxId",
+    "purchasePaymentTermId",
+    "purchasePaymentMethodId",
+    "purchaseCurrencyId",
+    "purchaseTaxId",
+    "purchaseTaxIncluded",
+    "purchaseSubjectToIncomeTax",
+    "purchaseIncomeTaxId",
+    "purchaseAccountingAccountId",
+    "customerAccountingAccountId",
+    "supplierAccountingAccountId",
+    "paymentDay1",
+    "paymentDay2",
+    "endMonth",
+    "subjectToSalesEquivalenceSurcharge",
+    "accountingOffice",
+    "managementBody",
+    "processingUnit",
+    "proposingBody",
+    "notes",
+    "countryId",
+    "languageId",
+    "priceListId",
+    "managerId",
+    "budgetSerieId",
+    "deliveryNoteSerieId",
+    "invoiceSerieId",
+    "simplifiedInvoiceSerieId",
+    "orderSerieId"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/contacts/{contactId}/avatar",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Replace contact avatar",
+   "content_types": [
+    "multipart/form-data"
+   ],
+   "body_fields": [
+    "file"
+   ]
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/contacts/{contactId}/avatar",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Delete contact avatar",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/contacts/{contactId}/contact-categories",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "List contact categories",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PUT",
+   "path": "/accounts/{accountId}/contacts/{contactId}/contact-categories",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Update contact categories",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/contacts/{contactId}/info",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Show a contact info",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/contacts/{contactId}/outstanding-balance",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Contact outstanding balance",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/contacts/{contactId}:set-enabled",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Enable a contact",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/contacts/{contactId}:unset-enabled",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Disable a contact",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/contacts:bulk-set-enabled",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Bulk set enable contacts",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/contacts:bulk-unset-enabled",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Bulk unset enable contacts",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/contacts:delete",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Bulk delete contacts",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/contacts:export",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Export all contacts and associated entities",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/contacts:import",
+   "tags": [
+    "Contact"
+   ],
+   "summary": "Import contacts and associated entities",
+   "content_types": [
+    "multipart/form-data"
+   ],
+   "body_fields": [
+    "file"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/document-types",
+   "tags": [
+    "DocumentType"
+   ],
+   "summary": "List all document types",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/document-types",
+   "tags": [
+    "DocumentType"
+   ],
+   "summary": "Create a document type",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "entityId",
+    "name",
+    "limit",
+    "public"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/document-types/{documentTypeId}",
+   "tags": [
+    "DocumentType"
+   ],
+   "summary": "Show a document type",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/document-types/{documentTypeId}",
+   "tags": [
+    "DocumentType"
+   ],
+   "summary": "Delete a document type",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/document-types/{documentTypeId}",
+   "tags": [
+    "DocumentType"
+   ],
+   "summary": "Update a document type",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "name",
+    "limit"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/document-types/{documentTypeId}/document-formats",
+   "tags": [
+    "DocumentType"
+   ],
+   "summary": "List document type formats",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PUT",
+   "path": "/accounts/{accountId}/document-types/{documentTypeId}/document-formats",
+   "tags": [
+    "DocumentType"
+   ],
+   "summary": "Update document type formats",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/document-types/{documentTypeId}/translations",
+   "tags": [
+    "DocumentType"
+   ],
+   "summary": "List document type translations",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/documents",
+   "tags": [
+    "Document"
+   ],
+   "summary": "List all documents",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/documents/{documentId}",
+   "tags": [
+    "Document"
+   ],
+   "summary": "Show a document",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/documents/{documentId}",
+   "tags": [
+    "Document"
+   ],
+   "summary": "Delete a document",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/documents/{documentId}",
+   "tags": [
+    "Document"
+   ],
+   "summary": "Update document",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "name"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/documents/{documentId}/translations",
+   "tags": [
+    "Document"
+   ],
+   "summary": "List document translations",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/documents/{documentId}:download",
+   "tags": [
+    "Document"
+   ],
+   "summary": "Download document file",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/documents/{documentTypeId}/{entityRecordId}",
+   "tags": [
+    "Document"
+   ],
+   "summary": "Create a document",
+   "content_types": [
+    "multipart/form-data"
+   ],
+   "body_fields": [
+    "file",
+    "data"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/documents/{documentTypeId}:split-pdf",
+   "tags": [
+    "Document"
+   ],
+   "summary": "Split PDF document",
+   "content_types": [
+    "multipart/form-data"
+   ],
+   "body_fields": [
+    "file",
+    "data"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/documents:delete",
+   "tags": [
+    "Document"
+   ],
+   "summary": "Bulk delete documents",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/documents:download",
+   "tags": [
+    "Document"
+   ],
+   "summary": "Download multiple document files",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/inbox-files",
+   "tags": [
+    "InboxFile"
+   ],
+   "summary": "List inbox files",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/inbox-files/{inboxFileId}",
+   "tags": [
+    "InboxFile"
+   ],
+   "summary": "Show an inbox files",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/inbox-files/{inboxFileId}",
+   "tags": [
+    "InboxFile"
+   ],
+   "summary": "Delete an inbox files",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/inbox-files/{inboxFileId}:download",
+   "tags": [
+    "InboxFile"
+   ],
+   "summary": "Download an inbox file document",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/inbox-files:delete",
+   "tags": [
+    "InboxFile"
+   ],
+   "summary": "Bulk delete inbox files",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoice-footer-logo",
+   "tags": [
+    "Account",
+    "Invoice"
+   ],
+   "summary": "Replace invoice footer logo",
+   "content_types": [
+    "multipart/form-data"
+   ],
+   "body_fields": [
+    "file"
+   ]
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/invoice-footer-logo",
+   "tags": [
+    "Account",
+    "Invoice"
+   ],
+   "summary": "Delete invoice footer logo",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoice-series",
+   "tags": [
+    "InvoiceSerie"
+   ],
+   "summary": "List all invoice series",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoice-series",
+   "tags": [
+    "InvoiceSerie"
+   ],
+   "summary": "Create an invoice serie",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "code",
+    "name",
+    "numberFormat",
+    "corrective",
+    "correctiveSerieId"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoice-series/{invoiceSerieId}",
+   "tags": [
+    "InvoiceSerie"
+   ],
+   "summary": "Show an invoice serie",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/invoice-series/{invoiceSerieId}",
+   "tags": [
+    "InvoiceSerie"
+   ],
+   "summary": "Delete an invoice serie",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/invoice-series/{invoiceSerieId}",
+   "tags": [
+    "InvoiceSerie"
+   ],
+   "summary": "Update an invoice serie",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "code",
+    "name",
+    "numberFormat",
+    "correctiveSerieId"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoice-series/{invoiceSerieId}/invoices/last",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Show last invoice from invoice serie",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoice-series/{invoiceSerieId}:set-default",
+   "tags": [
+    "InvoiceSerie"
+   ],
+   "summary": "Set default an invoice serie",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoice-series/{invoiceSerieId}:set-default-for-simplified",
+   "tags": [
+    "InvoiceSerie"
+   ],
+   "summary": "Set default from simplified an invoice serie",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoices",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "List all invoices",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Create an invoice",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "invoiceSerieId",
+    "simplified",
+    "currencyId",
+    "exchangeRate",
+    "languageId",
+    "contactId",
+    "contactOrganizationalUnitId",
+    "paymentMethodId",
+    "issuerBankAccountId",
+    "recipientBankAccountId",
+    "paymentTermId",
+    "globalDiscount",
+    "earlyPaymentDiscount",
+    "subjectToEquivalenceSurcharge",
+    "subjectToIncomeTax",
+    "reference",
+    "considerations",
+    "periodStart",
+    "periodEnd",
+    "operationDate",
+    "notes",
+    "priceListId"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Show an invoice",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Delete an invoice",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Update an invoice",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    {
+     "Draft state": [
+      "currencyId",
+      "exchangeRate",
+      "languageId",
+      "contactId",
+      "contactOrganizationalUnitId",
+      "paymentMethodId",
+      "issuerBankAccountId",
+      "recipientBankAccountId",
+      "paymentTermId",
+      "globalDiscount",
+      "earlyPaymentDiscount",
+      "subjectToEquivalenceSurcharge",
+      "subjectToIncomeTax",
+      "periodStart",
+      "periodEnd",
+      "reference",
+      "considerations",
+      "notes",
+      "operationDate",
+      "priceListId"
+     ]
+    },
+    {
+     "Issued state": [
+      "paymentMethodId",
+      "issuerBankAccountId",
+      "recipientBankAccountId",
+      "paymentTermId",
+      "periodStart",
+      "periodEnd",
+      "reference",
+      "considerations",
+      "notes"
+     ]
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}/corrective-invoices",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "List corrective invoices of an invoice",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}/email-proposal",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Show invoice email proposal",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}/expected-number",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Show expected invoice number",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}/invoice-lines",
+   "tags": [
+    "InvoiceLine"
+   ],
+   "summary": "List all invoice lines",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}/invoice-lines",
+   "tags": [
+    "InvoiceLine"
+   ],
+   "summary": "Create an invoice line",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    {
+     "Product type": [
+      "type",
+      "name",
+      "price",
+      "quantity",
+      "discount",
+      "incomeTaxId",
+      "accountingAccountId",
+      "deliveryNoteNumber",
+      "deliveryNoteDate",
+      "orderNumber",
+      "orderDate",
+      "fileReference",
+      "fileDate",
+      "issuerContractReference",
+      "issuerContractDate",
+      "issuerTransactionReference",
+      "issuerTransactionDate",
+      "recipientContractReference",
+      "recipientContractDate",
+      "recipientTransactionReference",
+      "recipientTransactionDate",
+      "periodStart",
+      "periodEnd",
+      "notes",
+      "productId",
+      "taxId",
+      "taxRegimeKeyId"
+     ]
+    },
+    {
+     "Title type": [
+      "type",
+      "name"
+     ]
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}/invoice-lines/{invoiceLineId}",
+   "tags": [
+    "InvoiceLine"
+   ],
+   "summary": "Show an invoice line",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}/invoice-lines/{invoiceLineId}",
+   "tags": [
+    "InvoiceLine"
+   ],
+   "summary": "Delete an invoice line",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}/invoice-lines/{invoiceLineId}",
+   "tags": [
+    "InvoiceLine"
+   ],
+   "summary": "Update an invoice line",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    {
+     "Product type on draft invoice": [
+      "name",
+      "price",
+      "quantity",
+      "discount",
+      "incomeTaxId",
+      "accountingAccountId",
+      "deliveryNoteNumber",
+      "deliveryNoteDate",
+      "orderNumber",
+      "orderDate",
+      "fileReference",
+      "fileDate",
+      "issuerContractReference",
+      "issuerContractDate",
+      "issuerTransactionReference",
+      "issuerTransactionDate",
+      "recipientContractReference",
+      "recipientContractDate",
+      "recipientTransactionReference",
+      "recipientTransactionDate",
+      "notes",
+      "periodStart",
+      "periodEnd",
+      "productId",
+      "taxId",
+      "taxRegimeKeyId"
+     ]
+    },
+    {
+     "Title type on draft invoice": [
+      "name"
+     ]
+    },
+    {
+     "Product type on issued invoice": [
+      "accountingAccountId",
+      "deliveryNoteNumber",
+      "deliveryNoteDate",
+      "orderNumber",
+      "orderDate",
+      "fileReference",
+      "fileDate",
+      "issuerContractReference",
+      "issuerContractDate",
+      "issuerTransactionReference",
+      "issuerTransactionDate",
+      "recipientContractReference",
+      "recipientContractDate",
+      "recipientTransactionReference",
+      "recipientTransactionDate",
+      "notes",
+      "periodStart",
+      "periodEnd"
+     ]
+    }
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}/invoice-lines:sort",
+   "tags": [
+    "InvoiceLine"
+   ],
+   "summary": "Sort invoice lines",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}:cancel",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Cancel an invoice",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}:create-corrective",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Create a corrective invoice",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "correctiveMethod"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}:download",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Download an invoice",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}:download-electronic-invoice",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Download electronic invoice",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}:duplicate",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Duplicate invoice",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}:issue",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Issue an invoice",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "date",
+    "code",
+    "exchangeRate",
+    "correctiveType",
+    "correctiveReasonId",
+    "correctiveAdditionalReason"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}:schedule",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Schedule an invoice",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "scheduledAt"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}:send-custom",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Send invoice PDF with custom subject, body and recipients",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "subject",
+    "body",
+    "to"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}:uncollected-remittances-count",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Uncollected remittances count",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices/{invoiceId}:unschedule",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Unschedule an invoice",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices:bulk-collect",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Bulk collect invoices",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "date",
+    "invoiceIds"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices:create-from-budget",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Create an invoice from a budget",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "budgetId",
+    "invoiceSerieId",
+    "simplified"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices:create-from-delivery-notes",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Create an invoice from delivery notes",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "deliveryNoteIds",
+    "invoiceSerieId",
+    "simplified"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices:create-from-order",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Create an invoice from an order",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "orderId",
+    "invoiceSerieId",
+    "simplified"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices:create-from-simplified-invoice",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Create an invoice from a simplified invoice",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "invoiceSerieId",
+    "invoiceId",
+    "contactId"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices:delete",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Bulk delete invoices",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices:duplicate",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Bulk duplicate invoice",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices:pdf-merge",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Download a PDF with selected invoices",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices:pdf-zip",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Download zip with invoices PDFs",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/invoices:send",
+   "tags": [
+    "Invoice"
+   ],
+   "summary": "Send invoices PDF with generic subject, body and recipients",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/logo",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Replace account logo",
+   "content_types": [
+    "multipart/form-data"
+   ],
+   "body_fields": [
+    "file"
+   ]
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/logo",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Delete account logo",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/member",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Show own member",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/member-by-code/{memberCode}",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Show a member by code",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/member-by-external-id/{memberExternalId}",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Show a member by external id",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/member:configure-notifications",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Configure own member notifications",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "enabled",
+    "disabledNotificationIds"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/members",
+   "tags": [
+    "Member"
+   ],
+   "summary": "List members",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/members",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Create a member",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "externalId",
+    "code",
+    "firstName",
+    "firstSurname",
+    "secondSurname",
+    "gender",
+    "birthdate",
+    "tin",
+    "iban",
+    "socialSecurityNumber",
+    "email",
+    "phone",
+    "address",
+    "postcode",
+    "city",
+    "region",
+    "countryId",
+    "absencePolicyId",
+    "timeTrackingPolicyId",
+    "locationId"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/members/{memberId}",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Show a member",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/members/{memberId}",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Delete a member",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/members/{memberId}",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Update a member",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "externalId",
+    "code",
+    "firstName",
+    "firstSurname",
+    "secondSurname",
+    "gender",
+    "birthdate",
+    "tin",
+    "iban",
+    "socialSecurityNumber",
+    "email",
+    "phone",
+    "address",
+    "postcode",
+    "city",
+    "region",
+    "countryId",
+    "absencePolicyId",
+    "timeTrackingPolicyId",
+    "locationId"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/members/{memberId}/actions",
+   "tags": [
+    "Member"
+   ],
+   "summary": "List member actions",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PUT",
+   "path": "/accounts/{accountId}/members/{memberId}/actions",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Update member actions",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/members/{memberId}/avatar",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Replace member avatar",
+   "content_types": [
+    "multipart/form-data"
+   ],
+   "body_fields": [
+    "file"
+   ]
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/members/{memberId}/avatar",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Delete member avatar",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/members/{memberId}/member-groups",
+   "tags": [
+    "Member"
+   ],
+   "summary": "List member groups",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PUT",
+   "path": "/accounts/{accountId}/members/{memberId}/member-groups",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Update member groups",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "PUT",
+   "path": "/accounts/{accountId}/members/{memberId}/roles",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Update member roles",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/members/{memberId}:revoke-access",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Revoke member access",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/members/{memberId}:set-enabled",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Enable a member",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/members/{memberId}:unset-enabled",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Disable a member",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/members:bulk-set-enabled",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Bulk set enable members",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/members:bulk-unset-enabled",
+   "tags": [
+    "Member"
+   ],
+   "summary": "Bulk unset enable members",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/onboarding-steps",
+   "tags": [
+    "Account"
+   ],
+   "summary": "List onboarding steps",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/payment-terms",
+   "tags": [
+    "PaymentTerm"
+   ],
+   "summary": "List all payment terms",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/payment-terms",
+   "tags": [
+    "PaymentTerm"
+   ],
+   "summary": "Create a payment term",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "name",
+    "origin",
+    "considerContactSettings"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/payment-terms/{paymentTermId}",
+   "tags": [
+    "PaymentTerm"
+   ],
+   "summary": "Show a payment term",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/payment-terms/{paymentTermId}",
+   "tags": [
+    "PaymentTerm"
+   ],
+   "summary": "Delete a payment term",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/payment-terms/{paymentTermId}",
+   "tags": [
+    "PaymentTerm"
+   ],
+   "summary": "Update a payment term",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "name",
+    "origin",
+    "considerContactSettings"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/payment-terms/{paymentTermId}/translations",
+   "tags": [
+    "PaymentTerm"
+   ],
+   "summary": "List payment term translations",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/payment-terms/{paymentTermId}:set-default",
+   "tags": [
+    "PaymentTerm"
+   ],
+   "summary": "Set default payment term",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/product-by-barcode/{productBarcode}",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Show a product by barcode",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List all products",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Create a product",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "externalId",
+    "code",
+    "sku",
+    "barcode",
+    "typeId",
+    "name",
+    "description",
+    "productCategoryId",
+    "unitOfMeasureGroupId",
+    "inventoryUnitOfMeasureId",
+    "purchaseUnitOfMeasureId",
+    "purchaseAccountingAccountId",
+    "saleAccountingAccountId",
+    "manufacturerId",
+    "taxId",
+    "incomeTaxExempt",
+    "weight",
+    "weightUnit",
+    "minStock",
+    "maxStock",
+    "cost",
+    "costUnitOfMeasureId",
+    "notes",
+    "imageId"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/alternable-to/{productId}",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List products alternable to another product",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/complementable-to/{productId}",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List products complementable to another product",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/composable-to/{productId}",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List products composable to a composite product",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/{productId}",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Show a product",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/products/{productId}",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Delete a product",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/products/{productId}",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Update a product",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    {
+     "Type not variant": [
+      "externalId",
+      "code",
+      "sku",
+      "barcode",
+      "typeId",
+      "name",
+      "description",
+      "productCategoryId",
+      "unitOfMeasureGroupId",
+      "inventoryUnitOfMeasureId",
+      "purchaseUnitOfMeasureId",
+      "purchaseAccountingAccountId",
+      "saleAccountingAccountId",
+      "manufacturerId",
+      "taxId",
+      "incomeTaxExempt",
+      "weight",
+      "weightUnit",
+      "minStock",
+      "maxStock",
+      "cost",
+      "costUnitOfMeasureId",
+      "notes",
+      "imageId"
+     ]
+    },
+    {
+     "Type variant": [
+      "externalId",
+      "code",
+      "sku",
+      "barcode",
+      "weight",
+      "weightUnit",
+      "minStock",
+      "maxStock",
+      "cost",
+      "costUnitOfMeasureId",
+      "notes",
+      "imageId"
+     ]
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/{productId}/alternatives",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List product alternatives",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products/{productId}/alternatives",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Create product alternatives",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products/{productId}/alternatives:delete",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Delete product alternatives",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/{productId}/complements",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List product complements",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products/{productId}/complements",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Create product complements",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products/{productId}/complements:delete",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Delete product complements",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/{productId}/inbound-stock-forecast",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List inbound stock forecast",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/{productId}/outbound-stock-forecast",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List outbound order forecast",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/{productId}/translations",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List product translations",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/{productId}/variable-attributes",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List all product variable attributes",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PUT",
+   "path": "/accounts/{accountId}/products/{productId}/variable-attributes",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Update product variable attributes",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "attributeIds",
+    "assignToExisting"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/{productId}/warehouse-location-stocks",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List warehouse location stocks",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products/{productId}:duplicate",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Duplicate a product",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products/{productId}:set-discontinued",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Discontinue a product",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products/{productId}:set-enabled",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Enable a product",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/{productId}:stock-forecast",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List stock forecast",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/products/{productId}:stock-movements",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List stock movements",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products/{productId}:unset-discontinued",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Continue a product",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products/{productId}:unset-enabled",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Disable a product",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products:bulk-set-enabled",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Bulk set enable products",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products:bulk-unset-enabled",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Bulk unset enable products",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products:delete",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Bulk delete products",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/products:import",
+   "tags": [
+    "Product"
+   ],
+   "summary": "Import products and associated entities",
+   "content_types": [
+    "multipart/form-data"
+   ],
+   "body_fields": [
+    "file"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/purchase-invoices",
+   "tags": [
+    "PurchaseInvoice"
+   ],
+   "summary": "List purchase invoices",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/purchase-invoices",
+   "tags": [
+    "PurchaseInvoice"
+   ],
+   "summary": "Create a purchase invoice",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "date",
+    "number",
+    "simplified",
+    "currencyId",
+    "exchangeRate",
+    "contactId",
+    "contactOrganizationalUnitId",
+    "issuerBankAccountId",
+    "paymentMethodId",
+    "bankAccountId",
+    "paymentTermId",
+    "periodStart",
+    "periodEnd",
+    "accountingDate",
+    "operationDate",
+    "notes",
+    "subjectToEquivalenceSurcharge",
+    "subjectToIncomeTax",
+    "globalDiscount",
+    "earlyPaymentDiscount",
+    "taxIncluded"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}",
+   "tags": [
+    "PurchaseInvoice"
+   ],
+   "summary": "Show a purchase invoice",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}",
+   "tags": [
+    "PurchaseInvoice"
+   ],
+   "summary": "Delete a purchase invoice",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}",
+   "tags": [
+    "PurchaseInvoice"
+   ],
+   "summary": "Update a purchase invoice",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    {
+     "Draft state": [
+      "date",
+      "number",
+      "currencyId",
+      "exchangeRate",
+      "contactId",
+      "contactOrganizationalUnitId",
+      "issuerBankAccountId",
+      "paymentMethodId",
+      "bankAccountId",
+      "paymentTermId",
+      "periodStart",
+      "periodEnd",
+      "accountingDate",
+      "operationDate",
+      "notes",
+      "subjectToEquivalenceSurcharge",
+      "subjectToIncomeTax",
+      "globalDiscount",
+      "earlyPaymentDiscount",
+      "taxIncluded"
+     ]
+    },
+    {
+     "Confirmed state": [
+      "paymentMethodId",
+      "issuerBankAccountId",
+      "bankAccountId",
+      "paymentTermId",
+      "periodStart",
+      "periodEnd",
+      "notes"
+     ]
+    }
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}/corrective-purchase-invoices",
+   "tags": [
+    "PurchaseInvoice"
+   ],
+   "summary": "List corrective purchase invoices of a purchase invoice",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}/purchase-invoice-lines",
+   "tags": [
+    "PurchaseInvoiceLine"
+   ],
+   "summary": "List purchase invoices",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}/purchase-invoice-lines",
+   "tags": [
+    "PurchaseInvoiceLine"
+   ],
+   "summary": "Create a purchase invoice line",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "accountingAccountId",
+    "productId",
+    "name",
+    "price",
+    "unitOfMeasureId",
+    "quantity",
+    "discount",
+    "taxId",
+    "incomeTaxId",
+    "notes"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}/purchase-invoice-lines/{purchaseInvoiceLineId}",
+   "tags": [
+    "PurchaseInvoiceLine"
+   ],
+   "summary": "Show a purchase invoice line",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}/purchase-invoice-lines/{purchaseInvoiceLineId}",
+   "tags": [
+    "PurchaseInvoiceLine"
+   ],
+   "summary": "Delete a purchase invoice line",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}/purchase-invoice-lines/{purchaseInvoiceLineId}",
+   "tags": [
+    "PurchaseInvoiceLine"
+   ],
+   "summary": "Update a purchase invoice line",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    {
+     "Draft purchase invoice": [
+      "accountingAccountId",
+      "name",
+      "price",
+      "unitOfMeasureId",
+      "quantity",
+      "discount",
+      "taxId",
+      "incomeTaxId",
+      "notes"
+     ]
+    },
+    {
+     "Confirmed purchase invoice": [
+      "accountingAccountId",
+      "notes"
+     ]
+    }
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}/purchase-invoice-lines:sort",
+   "tags": [
+    "PurchaseInvoiceLine"
+   ],
+   "summary": "Sort purchase invoice lines",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}:confirm",
+   "tags": [
+    "PurchaseInvoice"
+   ],
+   "summary": "Confirm a purchase invoice",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}:create-corrective",
+   "tags": [
+    "PurchaseInvoice"
+   ],
+   "summary": "Create a corrective purchase invoice",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "date",
+    "number",
+    "correctiveMethod",
+    "correctiveType",
+    "correctiveReasonId",
+    "correctiveAdditionalReason"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/purchase-invoices/{purchaseInvoiceId}:duplicate",
+   "tags": [
+    "PurchaseInvoice"
+   ],
+   "summary": "Duplicate a purchase invoice",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "date",
+    "number"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/purchase-invoices:create-from-inbox-file",
+   "tags": [
+    "PurchaseInvoice"
+   ],
+   "summary": "Create a purchase invoice from an inbox file",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "inboxFileId",
+    "date",
+    "number",
+    "contactId",
+    "simplified",
+    "subjectToEquivalenceSurcharge",
+    "subjectToIncomeTax",
+    "taxIncluded",
+    "documentTypeId"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/storage-info",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Show storage info",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/unit-of-measure-groups/{unitOfMeasureGroupId}/units-of-measure",
+   "tags": [
+    "UnitOfMeasure"
+   ],
+   "summary": "List units of measure",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/unit-of-measure-groups/{unitOfMeasureGroupId}/units-of-measure",
+   "tags": [
+    "UnitOfMeasure"
+   ],
+   "summary": "Create a unit of measure",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "name",
+    "type",
+    "ratio"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/unit-of-measure-groups/{unitOfMeasureGroupId}/units-of-measure/{unitOfMeasureId}",
+   "tags": [
+    "UnitOfMeasure"
+   ],
+   "summary": "Show a unit of measure",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "DELETE",
+   "path": "/accounts/{accountId}/unit-of-measure-groups/{unitOfMeasureGroupId}/units-of-measure/{unitOfMeasureId}",
+   "tags": [
+    "UnitOfMeasure"
+   ],
+   "summary": "Delete a unit of measure",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "PATCH",
+   "path": "/accounts/{accountId}/unit-of-measure-groups/{unitOfMeasureGroupId}/units-of-measure/{unitOfMeasureId}",
+   "tags": [
+    "UnitOfMeasure"
+   ],
+   "summary": "Update a unit of measure",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "name",
+    "type",
+    "ratio"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}/unit-of-measure-groups/{unitOfMeasureGroupId}/units-of-measure/{unitOfMeasureId}:set-reference",
+   "tags": [
+    "UnitOfMeasure"
+   ],
+   "summary": "Set unit of measure as reference",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/units-of-measure",
+   "tags": [
+    "UnitOfMeasure"
+   ],
+   "summary": "List all account units of measure",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/units-of-measure/{unitOfMeasureId}/translations",
+   "tags": [
+    "UnitOfMeasure"
+   ],
+   "summary": "List unit of measure translations",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/accounts/{accountId}/warehouse-locations/{warehouseLocationId}/products",
+   "tags": [
+    "Product"
+   ],
+   "summary": "List product balance from warehouse locations",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}:accept-signature-delegation",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Accept signature delegation",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}:cancel-deletion",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Cancel account deletion",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}:request-deletion",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Request account deletion",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "password"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/accounts/{accountId}:set-owner",
+   "tags": [
+    "Account"
+   ],
+   "summary": "Set owner",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "userId",
+    "password"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/auth/check",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Get current authenticated user",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/auth/email-change:cancel",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Email change cancel",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/auth/email-change:confirm",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Email change confirm",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "otp"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/auth/email-change:renew",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Email change renew",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/auth/email-change:request",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Email change request",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "currentPassword",
+    "newEmail"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/auth/email-verification",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Email verification request",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "email"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/auth/email-verification/{requestId}:confirm",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Email verification confirm",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "email"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/auth/login",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Login",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "username",
+    "password"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/auth/logout",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Logout",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "POST",
+   "path": "/auth/password-change",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Change password",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "currentPassword",
+    "newPassword",
+    "removeSessions"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/auth/password-reset",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Password reset request",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "email"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/auth/password-reset/{token}:confirm",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Password reset confirm",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "password"
+   ]
+  },
+  {
+   "method": "POST",
+   "path": "/auth/register",
+   "tags": [
+    "Authentication"
+   ],
+   "summary": "Register",
+   "content_types": [
+    "application/json"
+   ],
+   "body_fields": [
+    "firstName",
+    "firstSurname",
+    "secondSurname",
+    "timeZone",
+    "phone",
+    "email",
+    "password",
+    "languageId",
+    "newsletterAllowed",
+    "privacyPolicyAccepted",
+    "invitationToken"
+   ]
+  },
+  {
+   "method": "GET",
+   "path": "/currencies",
+   "tags": [
+    "Currency"
+   ],
+   "summary": "List all currencies",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/currencies/{currencyId}",
+   "tags": [
+    "Currency"
+   ],
+   "summary": "Show currency",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/income-taxes",
+   "tags": [
+    "IncomeTax"
+   ],
+   "summary": "List income taxes",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/payment-methods",
+   "tags": [
+    "PaymentMethod"
+   ],
+   "summary": "List payment methods",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/taxes",
+   "tags": [
+    "Tax"
+   ],
+   "summary": "List taxes",
+   "content_types": [],
+   "body_fields": null
+  },
+  {
+   "method": "GET",
+   "path": "/taxes/{taxId}",
+   "tags": [
+    "Tax"
+   ],
+   "summary": "Show tax",
+   "content_types": [],
+   "body_fields": null
+  }
+ ],
+ "schemas": {
+  "InvoiceState": {
+   "type": "string",
+   "enum": [
+    "canceled",
+    "draft",
+    "issued",
+    "replaced",
+    "scheduled"
+   ]
+  },
+  "PurchaseInvoiceState": {
+   "type": "string",
+   "enum": [
+    "confirmed",
+    "draft",
+    "replaced"
+   ]
+  },
+  "InvoicingDocumentState": {
+   "type": "string",
+   "enum": [
+    "canceled",
+    "closed",
+    "draft",
+    "open"
+   ]
+  },
+  "User": {
+   "required": [
+    "id",
+    "language",
+    "createdAt",
+    "languageId"
+   ],
+   "properties": {
+    "id": {
+     "type": "integer"
+    },
+    "firstName": {
+     "type": "string",
+     "default": ""
+    },
+    "firstSurname": {
+     "type": "string",
+     "default": ""
+    },
+    "secondSurname": {
+     "type": "string",
+     "default": ""
+    },
+    "timeZone": {
+     "type": "string",
+     "default": ""
+    },
+    "phone": {
+     "nullable": true,
+     "oneOf": [
+      {
+       "$ref": "#/components/schemas/PhoneNumber"
+      }
+     ]
+    },
+    "email": {
+     "type": "string",
+     "default": ""
+    },
+    "newEmail": {
+     "type": "string",
+     "default": ""
+    },
+    "emailVerified": {
+     "type": "boolean",
+     "default": false
+    },
+    "newsletterAllowed": {
+     "type": "boolean",
+     "default": false
+    },
+    "newsletterAllowedAt": {
+     "type": "string",
+     "format": "date-time",
+     "nullable": true
+    },
+    "language": {
+     "$ref": "#/components/schemas/Language"
+    },
+    "createdAt": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "languageId": {
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "PurchaseInvoice": {
+   "properties": [
+    "id",
+    "date",
+    "number",
+    "simplified",
+    "state",
+    "exchangeRate",
+    "issuerLegalName",
+    "issuerTin",
+    "issuerBankAccountIban",
+    "issuerBankAccountBic",
+    "collectionState",
+    "collectionStateChangedAt",
+    "installmentDate",
+    "periodStart",
+    "periodEnd",
+    "accountingDate",
+    "operationDate",
+    "notes",
+    "globalDiscount",
+    "earlyPaymentDiscount",
+    "subjectToEquivalenceSurcharge",
+    "subjectToIncomeTax",
+    "taxIncluded",
+    "subtotalAmount",
+    "subtotalAmountInAccountCurrency",
+    "linesDiscountAmount",
+    "linesDiscountAmountInAccountCurrency",
+    "globalDiscountAmount",
+    "globalDiscountAmountInAccountCurrency",
+    "earlyPaymentDiscountAmount",
+    "earlyPaymentDiscountAmountInAccountCurrency",
+    "totalDiscountAmount",
+    "totalDiscountAmountInAccountCurrency",
+    "baseAmount",
+    "baseAmountInAccountCurrency",
+    "taxesBreakdown",
+    "incomeTaxesBreakdown",
+    "totalAmount",
+    "totalAmountInAccountCurrency",
+    "disbursementsAmount",
+    "disbursementsAmountInAccountCurrency",
+    "totalExecutableAmount",
+    "totalExecutableAmountInAccountCurrency",
+    "collectedAmount",
+    "collectedAmountInAccountCurrency",
+    "outstandingAmount",
+    "outstandingAmountInAccountCurrency",
+    "correctiveMethod",
+    "correctiveType",
+    "correctiveAdditionalReason",
+    "correctedPurchaseInvoiceNumber",
+    "correctedPurchaseInvoiceDate",
+    "createdAt",
+    "currencyId",
+    "accountCurrencyId",
+    "contactId",
+    "contactOrganizationalUnitId",
+    "issuerBankAccountId",
+    "bankAccountId",
+    "paymentMethodId",
+    "paymentTermId",
+    "correctiveReasonId",
+    "correctedPurchaseInvoiceId",
+    "createdById"
+   ]
+  },
+  "Invoice": {
+   "properties": [
+    "id",
+    "issuerLegalType",
+    "issuerLegalName",
+    "issuerTradeName",
+    "issuerTin",
+    "issuerVatNumber",
+    "issuerFirstName",
+    "issuerFirstSurname",
+    "issuerSecondSurname",
+    "issuerAddress",
+    "issuerPostcode",
+    "issuerCity",
+    "issuerRegion",
+    "issuerCountryName",
+    "issuerPhone",
+    "issuerEmail",
+    "issuerWebsite",
+    "externalId",
+    "state",
+    "reportingSystem",
+    "date",
+    "code",
+    "invoiceSerieCode",
+    "simplified",
+    "number",
+    "exchangeRate",
+    "recipientLegalType",
+    "recipientLegalName",
+    "recipientFirstName",
+    "recipientFirstSurname",
+    "recipientSecondSurname",
+    "recipientTinType",
+    "recipientTin",
+    "recipientAddress",
+    "recipientPostcode",
+    "recipientCity",
+    "recipientRegion",
+    "recipientBankAccount",
+    "recipientBankAccountIban",
+    "recipientBankAccountBic",
+    "installmentDate",
+    "collectionState",
+    "collectionStateChangedAt",
+    "globalDiscount",
+    "earlyPaymentDiscount",
+    "subjectToEquivalenceSurcharge",
+    "subjectToIncomeTax",
+    "taxIncluded",
+    "notes",
+    "subtotalAmount",
+    "subtotalAmountInAccountCurrency",
+    "linesDiscountAmount",
+    "linesDiscountAmountInAccountCurrency",
+    "globalDiscountAmount",
+    "globalDiscountAmountInAccountCurrency",
+    "earlyPaymentDiscountAmount",
+    "earlyPaymentDiscountAmountInAccountCurrency",
+    "totalDiscountAmount",
+    "totalDiscountAmountInAccountCurrency",
+    "baseAmount",
+    "baseAmountInAccountCurrency",
+    "taxesBreakdown",
+    "incomeTaxesBreakdown",
+    "totalAmount",
+    "totalAmountInAccountCurrency",
+    "disbursementsAmount",
+    "disbursementsAmountInAccountCurrency",
+    "totalExecutableAmount",
+    "totalExecutableAmountInAccountCurrency",
+    "collectedAmount",
+    "collectedAmountInAccountCurrency",
+    "outstandingAmount",
+    "outstandingAmountInAccountCurrency",
+    "posted",
+    "reference",
+    "considerations",
+    "periodStart",
+    "periodEnd",
+    "operationDate",
+    "operationDescription",
+    "replacedSimplifiedInvoiceNumber",
+    "replacedSimplifiedInvoiceDate",
+    "replacedByOrdinaryInvoiceNumber",
+    "replacedByOrdinaryInvoiceDate",
+    "correctiveMethod",
+    "correctiveType",
+    "correctiveAdditionalReason",
+    "correctedInvoiceNumber",
+    "correctedInvoiceDate",
+    "verifactuSubmissionState",
+    "verifactuErrorCode",
+    "verifactuErrorDescription",
+    "createdAt",
+    "issuedAt",
+    "scheduledAt",
+    "scheduledIssueFailed",
+    "issuerCountryId",
+    "issuerBankAccountId",
+    "accountInvoiceReportingSystemId",
+    "invoiceSerieId",
+    "currencyId",
+    "accountCurrencyId",
+    "languageId",
+    "replacedSimplifiedInvoiceId",
+    "replacedByOrdinaryInvoiceId",
+    "contactId",
+    "contactOrganizationalUnitId",
+    "recipientCountryId",
+    "recipientBankAccountId",
+    "paymentMethodId",
+    "paymentTermId",
+    "priceListId",
+    "budgetId",
+    "orderId",
+    "correctiveReasonId",
+    "correctedInvoiceId",
+    "createdById",
+    "scheduledById"
+   ]
+  },
+  "Contact": {
+   "properties": [
+    "id",
+    "externalId",
+    "code",
+    "legalType",
+    "tinType",
+    "tin",
+    "firstName",
+    "firstSurname",
+    "secondSurname",
+    "legalName",
+    "tradeName",
+    "website",
+    "discount",
+    "purchaseTaxIncluded",
+    "purchaseSubjectToIncomeTax",
+    "paymentDay1",
+    "paymentDay2",
+    "endMonth",
+    "subjectToSalesEquivalenceSurcharge",
+    "accountingOffice",
+    "managementBody",
+    "processingUnit",
+    "proposingBody",
+    "notes",
+    "enabled",
+    "avatar",
+    "createdAt",
+    "countryId",
+    "taxTypeId",
+    "taxRegimeKeyId",
+    "languageId",
+    "priceListId",
+    "salePaymentMethodId",
+    "salePaymentTermId",
+    "saleCurrencyId",
+    "saleTaxId",
+    "purchasePaymentMethodId",
+    "purchasePaymentTermId",
+    "purchaseCurrencyId",
+    "purchaseTaxId",
+    "purchaseIncomeTaxId",
+    "purchaseAccountingAccountId",
+    "customerAccountingAccountId",
+    "supplierAccountingAccountId",
+    "budgetSerieId",
+    "deliveryNoteSerieId",
+    "invoiceSerieId",
+    "simplifiedInvoiceSerieId",
+    "orderSerieId",
+    "managerId",
+    "createdById"
+   ]
+  },
+  "Tax": {
+   "properties": [
+    "id",
+    "urn",
+    "operationType",
+    "objectType",
+    "percentage",
+    "equivalenceSurcharge",
+    "selectableForSimplifiedInvoice",
+    "selectableForAccount",
+    "selectableForProduct",
+    "investment",
+    "reverseCharge",
+    "effectiveFrom",
+    "effectiveUntil",
+    "countryId",
+    "taxTypeId"
+   ]
+  },
+  "Document": {
+   "properties": [
+    "id",
+    "entityRecordId",
+    "filename",
+    "originalName",
+    "extension",
+    "mimeType",
+    "size",
+    "createdAt",
+    "entityId",
+    "documentTypeId",
+    "documentFormatId",
+    "createdById"
+   ]
+  },
+  "InboxFile": {
+   "properties": [
+    "id",
+    "state",
+    "fromEmail",
+    "fromName",
+    "subject",
+    "bodyText",
+    "receivedAt",
+    "originalName",
+    "document",
+    "purchaseInvoiceId"
+   ]
+  }
+ }
+}

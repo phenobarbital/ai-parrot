@@ -81,8 +81,8 @@ def test_validate_filter_rejects(flt):
 
 
 def test_version_guard():
-    assert d.check_version_compatibility("4.6.0")
-    assert d.check_version_compatibility("4.5.12") is None
+    assert d.check_version_compatibility("4.5.12")
+    assert d.check_version_compatibility("5.1.9") is None
 
 
 def test_load_variables_from_settings(monkeypatch):

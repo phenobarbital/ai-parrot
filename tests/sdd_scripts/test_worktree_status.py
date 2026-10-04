@@ -85,6 +85,8 @@ def _discover_with_fake_worktree(
     *,
     status_out: str = "",
     log_out: str = "",
+    status_rc: int = 0,
+    log_rc: int = 0,
 ):
     """Build a single fake SDD worktree under tmp_path and run discover_worktree_reports
     against it with every subprocess/filesystem boundary mocked out."""
@@ -109,9 +111,9 @@ def _discover_with_fake_worktree(
         if args[:2] == ("worktree", "list"):
             return _completed(porcelain_output)
         if args[:2] == ("status", "--porcelain"):
-            return _completed(status_out)
+            return _completed(status_out, returncode=status_rc)
         if args and args[0] == "log":
-            return _completed(log_out)
+            return _completed(log_out, returncode=log_rc)
         return _completed("")
 
     with (
@@ -122,6 +124,69 @@ def _discover_with_fake_worktree(
         reports = discover_worktree_reports(tmp_path)
 
     return [r for r in reports if r.feature_id == "FEAT-550"]
+
+
+def _discover_with_branches(
+    tmp_path: Path,
+    branches: list[str],
+    *,
+    registered: set[str] | None = None,
+    status_out: str = "",
+    log_out: str = "",
+):
+    """Run ``discover_worktree_reports`` over several fake worktrees at once.
+
+    Every branch gets a directory under ``tmp_path/.claude/worktrees/<flattened>``
+    carrying a ``.git`` marker file (a real worktree has one; a bare directory
+    such as an sdd-coder ``--pool`` container does not). The primary checkout
+    (``tmp_path`` itself, on ``dev``) is always the first porcelain block, so
+    tests can assert it is never self-reported.
+
+    Args:
+        tmp_path: pytest tmp dir standing in for the primary checkout.
+        branches: branch names to materialize as worktrees.
+        registered: branches that appear in ``git worktree list --porcelain``.
+            Defaults to all of them; anything excluded is an orphan directory.
+        status_out: fake ``git status --porcelain`` stdout.
+        log_out: fake ``git log`` stdout.
+
+    Returns:
+        The full, unfiltered report list.
+    """
+    registered = set(branches) if registered is None else registered
+    worktree_root = tmp_path / ".claude" / "worktrees"
+    worktree_root.mkdir(parents=True, exist_ok=True)
+
+    porcelain = f"worktree {tmp_path}\nHEAD aaa000\nbranch refs/heads/dev\n\n"
+    paths: dict[str, Path] = {}
+    for branch in branches:
+        wt_path = worktree_root / branch.replace("/", "-")
+        wt_path.mkdir(parents=True, exist_ok=True)
+        (wt_path / ".git").write_text(f"gitdir: {tmp_path}/.git/worktrees/{wt_path.name}\n")
+        paths[branch] = wt_path
+        if branch in registered:
+            porcelain += f"worktree {wt_path}\nHEAD bbb111\nbranch refs/heads/{branch}\n\n"
+
+    def fake_git(*args, cwd):
+        if args[:2] == ("worktree", "list"):
+            return _completed(porcelain)
+        if args[:2] == ("status", "--porcelain"):
+            return _completed(status_out)
+        if args and args[0] == "log":
+            return _completed(log_out)
+        if args[:1] == ("rev-parse",):
+            for branch, wt_path in paths.items():
+                if Path(cwd) == wt_path:
+                    return _completed(f"{branch}\n")
+            return _completed("dev\n")
+        return _completed("")
+
+    with (
+        patch("scripts.sdd.worktree_status._git", side_effect=fake_git),
+        patch("scripts.sdd.worktree_status.WORKTREE_ROOT", str(worktree_root)),
+        patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
+    ):
+        return discover_worktree_reports(tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +295,26 @@ class TestReadWorktreeIndex:
         assert len(tasks) == 1
         assert tasks[0].id == "TASK-2"
 
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            PermissionError(13, "Permission denied"),
+            IsADirectoryError(21, "Is a directory"),
+            UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
+        ],
+        ids=["permission", "is-a-directory", "bad-encoding"],
+    )
+    def test_unreadable_index_returns_defaults(self, tmp_path, exc):
+        """One unreadable index must not propagate out of the scan.
+
+        FEAT-619 / issue:8aef2c10c7fd — the original clause named only
+        FileNotFoundError, so these three escaped and aborted the whole run.
+        """
+        with patch("builtins.open", side_effect=exc):
+            tasks, base = _read_worktree_index(tmp_path, "any-slug")
+        assert tasks == []
+        assert base == "dev"
+
 
 # ---------------------------------------------------------------------------
 # TestHealth
@@ -274,6 +359,44 @@ class TestHealth:
         assert health.dirty_count == 0
         assert health.unpushed_count == 2
 
+    def test_health_clean_sets_no_unknown_flags(self):
+        """Both git calls succeeding leaves both unknown flags False."""
+        with (
+            patch("scripts.sdd.worktree_status._git", side_effect=[_completed(""), _completed("")]),
+            patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
+        ):
+            health = _check_health(Path("/fake/wt"), "dev")
+        assert health.dirty_unknown is False
+        assert health.unpushed_unknown is False
+
+    def test_status_failure_marks_dirty_unknown(self):
+        """A non-zero `git status` is 'unknown', never 'clean'."""
+        with (
+            patch(
+                "scripts.sdd.worktree_status._git",
+                side_effect=[_completed("", returncode=1), _completed("")],
+            ),
+            patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
+        ):
+            health = _check_health(Path("/fake/wt"), "dev")
+        assert health.dirty_unknown is True
+        assert health.dirty_count == 0
+        assert health.unpushed_unknown is False
+
+    def test_missing_origin_ref_marks_unpushed_unknown(self):
+        """A missing origin/<base> ref (git exit 128) is 'unknown'."""
+        with (
+            patch(
+                "scripts.sdd.worktree_status._git",
+                side_effect=[_completed(""), _completed("", returncode=128)],
+            ),
+            patch("scripts.sdd.worktree_status._live_process_count", return_value=0),
+        ):
+            health = _check_health(Path("/fake/wt"), "staging")
+        assert health.unpushed_unknown is True
+        assert health.unpushed_count == 0
+        assert health.dirty_unknown is False
+
     def test_git_missing_worktree_directory_does_not_raise(self, tmp_path):
         """A registered-but-deleted worktree directory (rm -rf'd without
         `git worktree remove`/`prune`) must not crash the whole scan (AC9)."""
@@ -284,6 +407,10 @@ class TestHealth:
         health = _check_health(missing, "dev")
         assert health.dirty_count == 0
         assert health.unpushed_count == 0
+        # A deleted worktree directory makes _git return returncode=1, so both
+        # signals are now explicitly unknown rather than silently "clean".
+        assert health.dirty_unknown is True
+        assert health.unpushed_unknown is True
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +449,28 @@ class TestReadyForDone:
         assert len(reports) == 1
         assert reports[0].ready_for_done is False
 
+    def test_not_ready_when_dirty_state_unknown(self, tmp_path, all_done_index):
+        """All done but `git status` failed = NOT ready (issue:6b0b91e1f5b2).
+
+        Before FEAT-619 an unreadable status produced an empty stdout, counted
+        as zero dirty files and reported the worktree as ready — the exact
+        false green light this gate exists to prevent.
+        """
+        reports = _discover_with_fake_worktree(tmp_path, all_done_index, status_rc=1)
+        assert len(reports) == 1
+        assert reports[0].health.dirty_unknown is True
+        assert reports[0].health.dirty_count == 0
+        assert all(t.status in ("done", "done-with-issues") for t in reports[0].tasks)
+        assert reports[0].ready_for_done is False
+
+    def test_not_ready_when_unpushed_state_unknown(self, tmp_path, all_done_index):
+        """All done but `git log origin/<base>..HEAD` failed = NOT ready."""
+        reports = _discover_with_fake_worktree(tmp_path, all_done_index, log_rc=128)
+        assert len(reports) == 1
+        assert reports[0].health.unpushed_unknown is True
+        assert reports[0].health.unpushed_count == 0
+        assert reports[0].ready_for_done is False
+
 
 # ---------------------------------------------------------------------------
 # TestDiscover
@@ -345,6 +494,112 @@ class TestDiscover:
         assert report.tasks[0].status == "done"
         assert report.health.dirty_count == 0
         assert report.health.unpushed_count == 0
+
+
+# ---------------------------------------------------------------------------
+# TestNonSddWorktrees
+# ---------------------------------------------------------------------------
+
+
+class TestNonSddWorktrees:
+    """FEAT-619 / issue:07b75dc7dfae — non-SDD worktrees reach --json."""
+
+    def test_non_sdd_branch_is_reported(self, tmp_path):
+        """A chore-* worktree under WORKTREE_ROOT yields a health-only report."""
+        reports = _discover_with_branches(tmp_path, ["chore-ruff-config"])
+        assert len(reports) == 1
+        report = reports[0]
+        assert report.flow_type == "non-sdd"
+        assert report.feature_slug == "chore-ruff-config"
+        assert report.branch == "chore-ruff-config"
+        assert report.feature_id is None
+        assert report.tasks == []
+        assert report.index_found is False
+        assert report.ready_for_done is False
+
+    def test_non_sdd_report_carries_health(self, tmp_path):
+        """The health signals are the whole point of the row — they are populated."""
+        reports = _discover_with_branches(
+            tmp_path,
+            ["chore-ruff-config"],
+            status_out=" M a.py\n?? b.py\n",
+            log_out="abc1234 one\n",
+        )
+        assert reports[0].health.dirty_count == 2
+        assert reports[0].health.unpushed_count == 1
+
+    def test_primary_checkout_is_not_reported(self, tmp_path):
+        """repo_root is itself a porcelain entry but must never self-report."""
+        reports = _discover_with_branches(tmp_path, ["chore-ruff-config"])
+        assert all(r.worktree_path != str(tmp_path) for r in reports)
+        assert all(r.branch != "dev" for r in reports)
+
+    def test_pool_sub_worktree_is_not_reported(self, tmp_path):
+        """sdd-coder attempt worktrees stay out of the panel."""
+        pool_branch = "feat-FEAT-616-odoo-toolkit-upgrades--TASK-3891-a1-4c8992efd3f44e8a81cc4f0c713c8677"
+        reports = _discover_with_branches(tmp_path, [pool_branch, "chore-ruff-config"])
+        assert [r.branch for r in reports] == ["chore-ruff-config"]
+
+    def test_orphan_directory_without_git_is_not_reported(self, tmp_path):
+        """A bare directory under WORKTREE_ROOT is not a worktree.
+
+        Without a ``.git`` of its own, ``git rev-parse`` run inside it walks up
+        to the primary checkout and reports ITS branch — which would surface a
+        bogus row per sdd-coder ``--pool`` container directory.
+        """
+        worktree_root = tmp_path / ".claude" / "worktrees"
+        reports_before = _discover_with_branches(tmp_path, ["chore-ruff-config"])
+        (worktree_root / "feat-FEAT-616-odoo-toolkit-upgrades--pool").mkdir(parents=True, exist_ok=True)
+        reports_after = _discover_with_branches(tmp_path, ["chore-ruff-config"])
+        assert [r.branch for r in reports_after] == [r.branch for r in reports_before] == ["chore-ruff-config"]
+
+    def test_sdd_worktree_still_reported_alongside(self, tmp_path, sample_index):
+        """Adding non-SDD rows must not regress normal feature discovery."""
+        branches = ["feat-FEAT-550-token-budget-bedrock", "chore-ruff-config"]
+        worktree_root = tmp_path / ".claude" / "worktrees"
+        idx_dir = worktree_root / "feat-FEAT-550-token-budget-bedrock" / "sdd" / "tasks" / "index"
+        idx_dir.mkdir(parents=True, exist_ok=True)
+        (idx_dir / "token-budget-bedrock.json").write_text(json.dumps(sample_index))
+
+        reports = _discover_with_branches(tmp_path, branches)
+        by_branch = {r.branch: r for r in reports}
+        feature = by_branch["feat-FEAT-550-token-budget-bedrock"]
+        assert feature.flow_type == "feature"
+        assert feature.feature_id == "FEAT-550"
+        assert len(feature.tasks) == 2
+        assert by_branch["chore-ruff-config"].flow_type == "non-sdd"
+
+    def test_order_is_deterministic(self, tmp_path):
+        """Repeated scans of unchanged state return identical, sorted order."""
+        branches = ["fix-codeql-pipeline", "chore-ruff-config", "sdd-close-feat-537-human-gate"]
+        first = [r.branch for r in _discover_with_branches(tmp_path, branches)]
+        second = [r.branch for r in _discover_with_branches(tmp_path, branches)]
+        assert first == second
+        assert first == sorted(first)
+
+    def test_non_sdd_excluded_from_reconcile(self, tmp_path):
+        """--reconcile output is unchanged by the presence of non-SDD rows."""
+        sdd_report = WorktreeReport(
+            feature_slug="token-budget-bedrock",
+            feature_id="FEAT-550",
+            flow_type="feature",
+            worktree_path="/repo/.claude/worktrees/feat-FEAT-550-token-budget-bedrock",
+            branch="feat-FEAT-550-token-budget-bedrock",
+            tasks=[WorktreeTaskStatus(id="TASK-3132", status="done")],
+            index_found=True,
+        )
+        non_sdd = WorktreeReport(
+            feature_slug="chore-ruff-config",
+            feature_id=None,
+            flow_type="non-sdd",
+            worktree_path="/repo/.claude/worktrees/chore-ruff-config",
+            branch="chore-ruff-config",
+            tasks=[],
+            index_found=False,
+        )
+        without = reconcile_reports(tmp_path, [sdd_report])
+        with_non_sdd = reconcile_reports(tmp_path, [sdd_report, non_sdd])
+        assert with_non_sdd == without
 
 
 # ---------------------------------------------------------------------------
@@ -388,6 +643,67 @@ class TestCli:
         assert "health" in data[0]
         assert "tasks" in data[0]
         assert data[0]["tasks"][0]["id"] == "TASK-3132"
+
+    def _run_table(self, monkeypatch, reports):
+        """Run main() in plain-table mode over `reports` and return stdout."""
+        monkeypatch.setattr(sys, "argv", ["worktree_status.py"])
+        with (
+            patch("scripts.sdd.worktree_status._git", return_value=_completed("/repo\n")),
+            patch("scripts.sdd.worktree_status.discover_worktree_reports", return_value=reports),
+        ):
+            assert main() == 0
+
+    def test_feature_id_printed_once_per_row(self, capsys, monkeypatch):
+        """The Name column no longer repeats feature_id (issue:4456385c283c)."""
+        report = WorktreeReport(
+            feature_slug="token-budget-bedrock",
+            feature_id="FEAT-550",
+            flow_type="feature",
+            worktree_path="/repo/.claude/worktrees/feat-FEAT-550-token-budget-bedrock",
+            branch="feat-FEAT-550-token-budget-bedrock",
+            tasks=[WorktreeTaskStatus(id="TASK-3132", status="done")],
+        )
+        self._run_table(monkeypatch, [report])
+        row = [ln for ln in capsys.readouterr().out.splitlines() if "token-budget-bedrock" in ln][0]
+        # The Name column is the first 40 characters (f-string width). It must
+        # carry the slug alone; the id belongs to the Feature column only. The
+        # Branch column legitimately embeds the id (it is part of the branch
+        # name), so assert on the Name column rather than on the whole row.
+        assert row[:40].strip() == "token-budget-bedrock"
+        assert "FEAT-550" not in row[:40]
+        assert "FEAT-550" in row[40:]
+
+    def test_non_sdd_row_is_marked(self, capsys, monkeypatch):
+        """A non-SDD row shows the marker, a 0/0 task count and '-' for Feature."""
+        report = WorktreeReport(
+            feature_slug="chore-ruff-config",
+            feature_id=None,
+            flow_type="non-sdd",
+            worktree_path="/repo/.claude/worktrees/chore-ruff-config",
+            branch="chore-ruff-config",
+            tasks=[],
+            index_found=False,
+        )
+        self._run_table(monkeypatch, [report])
+        row = [ln for ln in capsys.readouterr().out.splitlines() if "chore-ruff-config" in ln][0]
+        assert "(non-SDD)" in row
+        assert "0/0" in row
+        assert " - " in row
+
+    def test_unknown_health_is_not_rendered_as_clean(self, capsys, monkeypatch):
+        """dirty_unknown/unpushed_unknown surface in the Health column."""
+        report = WorktreeReport(
+            feature_slug="chore-ruff-config",
+            flow_type="non-sdd",
+            worktree_path="/repo/.claude/worktrees/chore-ruff-config",
+            branch="chore-ruff-config",
+            health=WorktreeHealth(dirty_unknown=True, unpushed_unknown=True),
+        )
+        self._run_table(monkeypatch, [report])
+        row = [ln for ln in capsys.readouterr().out.splitlines() if "chore-ruff-config" in ln][0]
+        assert "dirty:unknown" in row
+        assert "unpushed:unknown" in row
+        assert "clean" not in row
 
     def test_not_a_git_repo(self, capsys, monkeypatch):
         """When repo-root resolution fails, main() returns 1 and prints an error."""

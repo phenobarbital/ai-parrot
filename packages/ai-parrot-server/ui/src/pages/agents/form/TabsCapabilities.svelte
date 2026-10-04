@@ -1,9 +1,7 @@
 <!--
   TabsCapabilities (TASK-2587, FEAT-475) — tools_enabled,
-  auto_tool_detection, tool_threshold (Slider), tools (checkbox list from
-  GET /api/v1/agent_tools + StringListEditor fallback for names the
-  current catalog doesn't know about — those must remain, never silently
-  dropped), operation_mode (from catalog), use_kb, kb (JsonEditor, array
+  auto_tool_detection, tool_threshold (Slider), operation_mode (from catalog),
+  use_kb, kb (JsonEditor, array
   mode), custom_kbs (StringListEditor, catalog.knowledge_bases class paths
   as suggestions).
 -->
@@ -12,8 +10,6 @@
   import StringListEditor from "$lib/components/StringListEditor.svelte";
   import type { AgentFormState } from "$lib/stores/agent-form.svelte";
   import type { AdminCatalog } from "$lib/types/generated/AdminCatalog";
-  import type { ToolInfo } from "$lib/types/generated/ToolsListResponse";
-  import { Checkbox } from "$lib/ui/internal/shadcn/ui/checkbox/index.js";
   import { Label } from "$lib/ui/internal/shadcn/ui/label/index.js";
   import { Slider } from "$lib/ui/internal/shadcn/ui/slider/index.js";
   import { Switch } from "$lib/ui/internal/shadcn/ui/switch/index.js";
@@ -21,23 +17,10 @@
   let {
     state,
     catalog,
-    tools,
   }: {
     state: AgentFormState;
     catalog: AdminCatalog;
-    tools: Record<string, ToolInfo>;
   } = $props();
-
-  const knownToolNames = $derived(Object.keys(tools).sort());
-  const selectedTools = $derived(state.values.tools ?? []);
-  // Selected tool names absent from the current catalog — surfaced, never
-  // silently dropped (e.g. a tool a plugin package removed since save).
-  const unknownTools = $derived(selectedTools.filter((t) => !(t in tools)));
-
-  function toggleTool(name: string, checked: boolean): void {
-    const current = state.values.tools ?? [];
-    state.values.tools = checked ? [...current, name] : current.filter((t) => t !== name);
-  }
 
   const kbSuggestions = $derived(catalog.knowledge_bases.map((kb) => kb.class_path));
 </script>
@@ -79,43 +62,6 @@
         {state.errors.tool_threshold}
       </p>
     {/if}
-  </div>
-
-  <div class="flex flex-col gap-2">
-    <Label>Tools</Label>
-    <div class="flex flex-col gap-1.5" data-testid="tools-checkbox-list">
-      {#each knownToolNames as name (name)}
-        <div class="flex items-center gap-2">
-          <Checkbox
-            id={`tool-${name}`}
-            checked={selectedTools.includes(name)}
-            onCheckedChange={(v: boolean) => toggleTool(name, v)}
-            data-testid={`tool-checkbox-${name}`}
-          />
-          <Label for={`tool-${name}`}>{tools[name].tool_name}</Label>
-        </div>
-      {/each}
-    </div>
-    {#if unknownTools.length > 0}
-      <div class="flex flex-col gap-1" data-testid="tools-unknown-chips">
-        <p class="text-muted-foreground text-xs">
-          Selected but not in the current tools catalog:
-        </p>
-        {#each unknownTools as name (name)}
-          <span class="bg-muted w-fit rounded px-2 py-0.5 text-xs" data-testid={`tool-unknown-${name}`}>
-            {name}
-          </span>
-        {/each}
-      </div>
-    {/if}
-    <StringListEditor
-      id="tools-manual"
-      placeholder="Add a tool name not listed above…"
-      bind:items={
-        () => state.values.tools ?? [],
-        (v) => (state.values.tools = v)
-      }
-    />
   </div>
 
   <div class="flex flex-col gap-1.5">

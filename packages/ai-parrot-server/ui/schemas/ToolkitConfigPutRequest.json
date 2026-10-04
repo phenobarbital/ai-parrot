@@ -1,0 +1,19 @@
+{
+  "description": "``PUT /astudio/agents/{name}/toolkits/{slug}`` payload (FEAT-593).",
+  "properties": {
+    "params": {
+      "additionalProperties": true,
+      "title": "Params",
+      "type": "object"
+    },
+    "user_overridable": {
+      "items": {
+        "type": "string"
+      },
+      "title": "User Overridable",
+      "type": "array"
+    }
+  },
+  "title": "ToolkitConfigPutRequest",
+  "type": "object"
+}

@@ -1,0 +1,6 @@
+{
+  "description": "filter chains ge, lt, in, and case-sensitive contains on non-null values",
+  "input": [{"program": "north-epson", "visits": 3}, {"program": "north-hisense", "visits": 5}, {"program": "south-epson", "visits": 7}, {"program": "north-sony", "visits": 9}],
+  "ops": [{"op": "filter", "column": "visits", "operator": "ge", "value": 3}, {"op": "filter", "column": "visits", "operator": "lt", "value": 8}, {"op": "filter", "column": "program", "operator": "in", "value": ["north-epson", "north-hisense", "south-epson"]}, {"op": "filter", "column": "program", "operator": "contains", "value": "north"}],
+  "expected": [{"program": "north-epson", "visits": 3}, {"program": "north-hisense", "visits": 5}]
+}

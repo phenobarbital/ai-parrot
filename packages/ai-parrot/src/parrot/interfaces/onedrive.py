@@ -10,13 +10,13 @@ from io import BytesIO
 import httpx
 import aiohttp
 import pandas as pd
+
 # Microsoft Graph SDK
 from msgraph.generated.models.drive_item import DriveItem
 from msgraph.generated.models.folder import Folder
-from msgraph.generated.models.file import File
 from msgraph.generated.models.upload_session import UploadSession
 from msgraph.generated.drives.item.items.item.create_upload_session.create_upload_session_post_request_body import (
-    CreateUploadSessionPostRequestBody
+    CreateUploadSessionPostRequestBody,
 )
 from msgraph.generated.models.drive_item_uploadable_properties import DriveItemUploadableProperties
 from .o365 import O365Client
@@ -60,6 +60,9 @@ class OneDriveClient(O365Client):
         # Cached OneDrive objects
         self._drive_id: Optional[str] = None
         self._drive_info: Optional[DriveItem] = None
+
+        # Per-user OneDrive cache for _resolve_user_drive (FEAT-603, S9) — never shares _drive_id/_drive_info.
+        self._user_drives: Dict[str, DriveItem] = {}
 
     def connection(self):
         """
@@ -105,6 +108,48 @@ class OneDriveClient(O365Client):
         except Exception as e:
             raise RuntimeError(f"Failed to resolve OneDrive: {e}") from e
 
+    async def _resolve_user_drive(self, user: str) -> DriveItem:
+        """Resolve a user's personal OneDrive, cached per user (FEAT-603; ported from flowtask).
+
+        Never touches ``_drive_id`` / ``_drive_info`` (owned by :meth:`_resolve_drive`), so one client can resolve
+        several users safely.
+
+        Args:
+            user: UPN, Entra object id, or the literal ``"me"`` (delegated authentication only).
+
+        Returns:
+            The user's OneDrive ``DriveItem``.
+
+        Raises:
+            RuntimeError: ``"me"`` under app-only auth; Graph failure (hint: ``Files.ReadWrite.All``); empty result.
+        """
+        key = (user or "").strip().lower()
+        if not key:
+            raise RuntimeError("OneDrive user is required (UPN, object id, or 'me')")
+        cached = self._user_drives.get(key)
+        if cached is not None:
+            return cached
+        if key == "me" and self.is_app_only:
+            raise RuntimeError(
+                "OneDrive user 'me' requires delegated authentication; pass a UPN or object id for app-only access"
+            )
+        try:
+            if key == "me":
+                drive = await self.graph_client.me.drive.get()
+            else:
+                drive = await self.graph_client.users.by_user_id(user).drive.get()
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to resolve OneDrive for '{user}': {e}. "
+                "For app-only auth this requires the application permission "
+                "'Files.ReadWrite.All' (admin-consented)."
+            ) from e
+        if not drive or not getattr(drive, "id", None):
+            raise RuntimeError(f"Could not resolve OneDrive for user '{user}'")
+        self._user_drives[key] = drive
+        self.logger.info(f"OneDrive resolved for user '{user}': {drive.name or drive.id}")
+        return drive
+
     async def _ensure_folder(self, folder_path: str, create: bool = True) -> DriveItem:
         """Ensure folder exists in OneDrive using Graph API."""
         drive_info = await self._resolve_drive()
@@ -118,8 +163,11 @@ class OneDriveClient(O365Client):
 
         # Try to resolve existing folder
         try:
-            folder_item = await self.graph_client.drives.by_drive_id(drive_id)\
-                .items.by_drive_item_id(f"root:/{folder_path}:").get()
+            folder_item = (
+                await self.graph_client.drives.by_drive_id(drive_id)
+                .items.by_drive_item_id(f"root:/{folder_path}:")
+                .get()
+            )
             if folder_item:
                 return folder_item
         except Exception:
@@ -132,8 +180,9 @@ class OneDriveClient(O365Client):
 
         for segment in [s for s in folder_path.split("/") if s]:
             # Check if segment already exists
-            children = await self.graph_client.drives.by_drive_id(drive_id)\
-                .items.by_drive_item_id(parent_id).children.get()
+            children = (
+                await self.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(parent_id).children.get()
+            )
 
             existing_folder = None
             if children and children.value:
@@ -150,18 +199,18 @@ class OneDriveClient(O365Client):
             new_folder = DriveItem()
             new_folder.name = segment
             new_folder.folder = Folder()
-            new_folder.additional_data = {
-                "@microsoft.graph.conflictBehavior": "replace"
-            }
+            new_folder.additional_data = {"@microsoft.graph.conflictBehavior": "replace"}
 
-            created = await self.graph_client.drives.by_drive_id(drive_id)\
-                .items.by_drive_item_id(parent_id).children.post(new_folder)
+            created = (
+                await self.graph_client.drives.by_drive_id(drive_id)
+                .items.by_drive_item_id(parent_id)
+                .children.post(new_folder)
+            )
             parent_id = created.id
             self.logger.info(f"Created folder: {segment}")
 
         # Return the final folder
-        final_folder = await self.graph_client.drives.by_drive_id(drive_id)\
-            .items.by_drive_item_id(parent_id).get()
+        final_folder = await self.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(parent_id).get()
         return final_folder
 
     async def file_list(self, folder_path: str = None) -> List[dict]:
@@ -176,8 +225,11 @@ class OneDriveClient(O365Client):
                 # Get specific folder
                 folder_path = folder_path.strip("/")
                 try:
-                    folder_item = await self.graph_client.drives.by_drive_id(drive_id)\
-                        .items.by_drive_item_id(f"root:/{folder_path}:").get()
+                    folder_item = (
+                        await self.graph_client.drives.by_drive_id(drive_id)
+                        .items.by_drive_item_id(f"root:/{folder_path}:")
+                        .get()
+                    )
                 except Exception as e:
                     raise RuntimeError(f"Folder '{folder_path}' not found: {e}") from e
             else:
@@ -185,8 +237,11 @@ class OneDriveClient(O365Client):
                 folder_item = await self.graph_client.drives.by_drive_id(drive_id).root.get()
 
             # Get children
-            children = await self.graph_client.drives.by_drive_id(drive_id)\
-                .items.by_drive_item_id(folder_item.id).children.get()
+            children = (
+                await self.graph_client.drives.by_drive_id(drive_id)
+                .items.by_drive_item_id(folder_item.id)
+                .children.get()
+            )
 
             file_list = []
             if children and children.value:
@@ -198,7 +253,7 @@ class OneDriveClient(O365Client):
                         "path": self._get_item_path_from_item(item),
                         "isFolder": item.folder is not None,
                         "size": item.size or 0,
-                        "modified": item.last_modified_date_time.isoformat() if item.last_modified_date_time else None
+                        "modified": item.last_modified_date_time.isoformat() if item.last_modified_date_time else None,
                     }
                     file_list.append(file_info)
 
@@ -217,8 +272,7 @@ class OneDriveClient(O365Client):
             drive_id = drive_info.id
 
             # Use Graph API search
-            search_results = await self.graph_client.drives.by_drive_id(drive_id)\
-                .search_with_q(search_query).get()
+            search_results = await self.graph_client.drives.by_drive_id(drive_id).search_with_q(search_query).get()
 
             results = []
             if search_results and search_results.value:
@@ -231,7 +285,9 @@ class OneDriveClient(O365Client):
                             "path": self._get_item_path_from_item(item),
                             "isFolder": False,
                             "size": item.size or 0,
-                            "modified": item.last_modified_date_time.isoformat() if item.last_modified_date_time else None   # noqa
+                            "modified": (
+                                item.last_modified_date_time.isoformat() if item.last_modified_date_time else None
+                            ),  # noqa
                         }
                         results.append(file_info)
 
@@ -250,8 +306,7 @@ class OneDriveClient(O365Client):
             drive_id = drive_info.id
 
             # Get item info
-            item = await self.graph_client.drives.by_drive_id(drive_id)\
-                .items.by_drive_item_id(item_id).get()
+            item = await self.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(item_id).get()
 
             if not item.file:
                 raise RuntimeError(f"Item {item_id} is not a file")
@@ -279,8 +334,9 @@ class OneDriveClient(O365Client):
                                 await f.write(chunk)
             else:
                 # Fallback: GET /content via Graph
-                content = await self.graph_client.drives.by_drive_id(drive_id)\
-                    .items.by_drive_item_id(item_id).content.get()
+                content = (
+                    await self.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(item_id).content.get()
+                )
                 async with aiofiles.open(destination, "wb") as f:
                     await f.write(content)
 
@@ -326,8 +382,7 @@ class OneDriveClient(O365Client):
             drive_id = drive_info.id
 
             # Get folder info
-            folder_item = await self.graph_client.drives.by_drive_id(drive_id)\
-                .items.by_drive_item_id(folder_id).get()
+            folder_item = await self.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(folder_id).get()
 
             if not folder_item.folder:
                 raise RuntimeError(f"Item {folder_id} is not a folder")
@@ -343,12 +398,13 @@ class OneDriveClient(O365Client):
         """
         Recursively download a folder's contents using Microsoft Graph API.
         """
-        if not local_path.exists():
-            local_path.mkdir(parents=True, exist_ok=True)
+        if not await asyncio.to_thread(local_path.exists):
+            await asyncio.to_thread(local_path.mkdir, parents=True, exist_ok=True)
 
         # Get children
-        children = await self.graph_client.drives.by_drive_id(drive_id)\
-            .items.by_drive_item_id(folder_item.id).children.get()
+        children = (
+            await self.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(folder_item.id).children.get()
+        )
 
         if children and children.value:
             for item in children.value:
@@ -371,8 +427,7 @@ class OneDriveClient(O365Client):
 
             # Get item info for logging
             try:
-                item = await self.graph_client.drives.by_drive_id(drive_id)\
-                    .items.by_drive_item_id(item_id).get()
+                item = await self.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(item_id).get()
                 item_name = item.name
                 item_type = "folder" if item.folder else "file"
             except Exception:
@@ -380,8 +435,7 @@ class OneDriveClient(O365Client):
                 item_type = "item"
 
             # Delete the item
-            await self.graph_client.drives.by_drive_id(drive_id)\
-                .items.by_drive_item_id(item_id).delete()
+            await self.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(item_id).delete()
 
             self.logger.info(f"Deleted {item_type}: {item_name}")
             return True
@@ -429,7 +483,7 @@ class OneDriveClient(O365Client):
                 "name": result.name,
                 "id": result.id,
                 "webUrl": result.web_url,
-                "size": getattr(result, 'size', file_size)
+                "size": getattr(result, "size", file_size),
             }
 
         except Exception as err:
@@ -458,15 +512,13 @@ class OneDriveClient(O365Client):
         """
         try:
             local_path = Path(local_folder)
-            if not local_path.exists() or not local_path.is_dir():
-                raise FileNotFoundError(
-                    f"Local folder does not exist or is not a directory: {local_folder}"
-                )
+            if not await asyncio.to_thread(local_path.exists) or not await asyncio.to_thread(local_path.is_dir):
+                raise FileNotFoundError(f"Local folder does not exist or is not a directory: {local_folder}")
 
             uploaded_items = []
 
             # Get all files in the folder recursively
-            for root, dirs, files in os.walk(local_path):
+            for root, _dirs, files in os.walk(local_path):
                 relative_path = Path(root).relative_to(local_path)
 
                 # Calculate OneDrive destination path
@@ -484,8 +536,7 @@ class OneDriveClient(O365Client):
                     file_path = Path(root) / file_name
                     try:
                         uploaded_item = await self.upload_file(
-                            file_path,
-                            onedrive_path if onedrive_path != "." else None
+                            file_path, onedrive_path if onedrive_path != "." else None
                         )
                         uploaded_items.append(uploaded_item)
                     except Exception as e:
@@ -509,15 +560,13 @@ class OneDriveClient(O365Client):
             drive_id = drive_info.id
 
             # Get item info
-            item = await self.graph_client.drives.by_drive_id(drive_id)\
-                .items.by_drive_item_id(item_id).get()
+            item = await self.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(item_id).get()
 
             if not item.file:
                 raise RuntimeError(f"Item {item_id} is not a file")
 
             # Get file content
-            content = await self.graph_client.drives.by_drive_id(drive_id)\
-                .items.by_drive_item_id(item_id).content.get()
+            content = await self.graph_client.drives.by_drive_id(drive_id).items.by_drive_item_id(item_id).content.get()
 
             if as_pandas:
                 bytes_buffer = BytesIO(content)
@@ -564,8 +613,11 @@ class OneDriveClient(O365Client):
                 encoded_name = quote(file_name)
                 request_path = f"{parent_id}:/{encoded_name}:"
 
-                uploaded_item = await self.graph_client.drives.by_drive_id(drive_id)\
-                    .items.by_drive_item_id(request_path).content.put(excel_content)
+                uploaded_item = (
+                    await self.graph_client.drives.by_drive_id(drive_id)
+                    .items.by_drive_item_id(request_path)
+                    .content.put(excel_content)
+                )
             else:
                 # Large file upload (create upload session)
                 upload_session = await self._create_upload_session(drive_id, parent_id, file_name)
@@ -573,11 +625,7 @@ class OneDriveClient(O365Client):
 
             self.logger.info(f"Uploaded DataFrame as Excel successfully: {uploaded_item.name}")
 
-            return {
-                "name": uploaded_item.name,
-                "id": uploaded_item.id,
-                "webUrl": uploaded_item.web_url
-            }
+            return {"name": uploaded_item.name, "id": uploaded_item.id, "webUrl": uploaded_item.web_url}
 
         except Exception as err:
             self.logger.error(f"Error uploading DataFrame as Excel file {file_name}: {err}")
@@ -595,8 +643,11 @@ class OneDriveClient(O365Client):
             encoded_name = quote(target_name)
             request_path = f"{parent_id}:/{encoded_name}:"
 
-            return await self.graph_client.drives.by_drive_id(drive_id)\
-                .items.by_drive_item_id(request_path).content.put(content)
+            return (
+                await self.graph_client.drives.by_drive_id(drive_id)
+                .items.by_drive_item_id(request_path)
+                .content.put(content)
+            )
 
         except Exception as e:
             raise RuntimeError(f"Small file upload failed for {target_name}: {e}") from e
@@ -611,21 +662,25 @@ class OneDriveClient(O365Client):
             # URL encode the target name to handle special characters
             encoded_name = quote(target_name)
 
-            return await self.graph_client.drives.by_drive_id(drive_id)\
-                .items.by_drive_item_id(f"{parent_id}:/{encoded_name}:/")\
+            return (
+                await self.graph_client.drives.by_drive_id(drive_id)
+                .items.by_drive_item_id(f"{parent_id}:/{encoded_name}:/")
                 .create_upload_session.post(body)
+            )
 
         except Exception as e:
             raise RuntimeError(f"Upload session creation failed for {target_name}: {e}") from e
 
     async def _upload_large_file(self, upload_session: UploadSession, local_path: Union[str, Path]) -> DriveItem:
         """Upload large file using resumable upload session."""
-        file_size = os.path.getsize(local_path)
+        file_size = await asyncio.to_thread(os.path.getsize, local_path)
         uploaded = 0
 
         async with aiohttp.ClientSession() as session:
             async with aiofiles.open(local_path, "rb") as f:
-                with tqdm(total=file_size, unit='B', unit_scale=True, desc=f'Uploading {Path(local_path).name}') as pbar:  # noqa
+                with tqdm(
+                    total=file_size, unit="B", unit_scale=True, desc=f"Uploading {Path(local_path).name}"
+                ) as pbar:  # noqa
                     while uploaded < file_size:
                         chunk = await f.read(self.chunk_size)
                         if not chunk:
@@ -636,14 +691,10 @@ class OneDriveClient(O365Client):
 
                         headers = {
                             "Content-Length": str(len(chunk)),
-                            "Content-Range": f"bytes {start}-{end}/{file_size}"
+                            "Content-Range": f"bytes {start}-{end}/{file_size}",
                         }
 
-                        async with session.put(
-                            upload_session.upload_url,
-                            headers=headers,
-                            data=chunk
-                        ) as response:
+                        async with session.put(upload_session.upload_url, headers=headers, data=chunk) as response:
                             if response.status in (200, 201):
                                 # Upload complete
                                 pbar.update(file_size - uploaded)
@@ -651,9 +702,9 @@ class OneDriveClient(O365Client):
 
                                 # Convert to DriveItem (simplified)
                                 drive_item = DriveItem()
-                                drive_item.name = result_data.get('name')
-                                drive_item.size = result_data.get('size')
-                                drive_item.web_url = result_data.get('webUrl')
+                                drive_item.name = result_data.get("name")
+                                drive_item.size = result_data.get("size")
+                                drive_item.web_url = result_data.get("webUrl")
                                 drive_item.additional_data = result_data
 
                                 return drive_item
@@ -664,7 +715,7 @@ class OneDriveClient(O365Client):
                                 pbar.update(len(chunk))
 
                                 # Check for retry-after header
-                                if (retry_after := response.headers.get('Retry-After')):
+                                if retry_after := response.headers.get("Retry-After"):
                                     await asyncio.sleep(int(retry_after))
                                 continue
 
@@ -675,35 +726,25 @@ class OneDriveClient(O365Client):
         raise RuntimeError("Upload session completed without final item response")
 
     async def _upload_large_file_content(
-        self,
-        upload_session: UploadSession,
-        content: bytes,
-        file_name: str
+        self, upload_session: UploadSession, content: bytes, file_name: str
     ) -> DriveItem:
         """Upload large content using resumable upload session."""
         file_size = len(content)
         uploaded = 0
 
         async with aiohttp.ClientSession() as session:
-            with tqdm(total=file_size, unit='B', unit_scale=True, desc=f'Uploading {file_name}') as pbar:
+            with tqdm(total=file_size, unit="B", unit_scale=True, desc=f"Uploading {file_name}") as pbar:
                 while uploaded < file_size:
-                    chunk = content[uploaded:uploaded + self.chunk_size]
+                    chunk = content[uploaded : uploaded + self.chunk_size]
                     if not chunk:
                         break
 
                     start = uploaded
                     end = uploaded + len(chunk) - 1
 
-                    headers = {
-                        "Content-Length": str(len(chunk)),
-                        "Content-Range": f"bytes {start}-{end}/{file_size}"
-                    }
+                    headers = {"Content-Length": str(len(chunk)), "Content-Range": f"bytes {start}-{end}/{file_size}"}
 
-                    async with session.put(
-                        upload_session.upload_url,
-                        headers=headers,
-                        data=chunk
-                    ) as response:
+                    async with session.put(upload_session.upload_url, headers=headers, data=chunk) as response:
                         if response.status in (200, 201):
                             # Upload complete
                             pbar.update(file_size - uploaded)
@@ -711,9 +752,9 @@ class OneDriveClient(O365Client):
 
                             # Convert to DriveItem (simplified)
                             drive_item = DriveItem()
-                            drive_item.name = result_data.get('name')
-                            drive_item.size = result_data.get('size')
-                            drive_item.web_url = result_data.get('webUrl')
+                            drive_item.name = result_data.get("name")
+                            drive_item.size = result_data.get("size")
+                            drive_item.web_url = result_data.get("webUrl")
                             drive_item.additional_data = result_data
 
                             return drive_item
@@ -724,7 +765,7 @@ class OneDriveClient(O365Client):
                             pbar.update(len(chunk))
 
                             # Check for retry-after header
-                            if (retry_after := response.headers.get('Retry-After')):
+                            if retry_after := response.headers.get("Retry-After"):
                                 await asyncio.sleep(int(retry_after))
                             continue
 
@@ -740,7 +781,7 @@ class OneDriveClient(O365Client):
         """
         try:
             # Try to get path from parent_reference
-            if hasattr(item, 'parent_reference') and item.parent_reference and item.parent_reference.path:
+            if hasattr(item, "parent_reference") and item.parent_reference and item.parent_reference.path:
                 parent_path = item.parent_reference.path or ""
 
                 # Clean up the parent path
@@ -758,7 +799,7 @@ class OneDriveClient(O365Client):
                 return full_path
 
             # Fallback: try to get path from web_url if available
-            if hasattr(item, 'web_url') and item.web_url:
+            if hasattr(item, "web_url") and item.web_url:
                 try:
                     # Extract path from OneDrive web URL
                     web_url = item.web_url
@@ -781,12 +822,7 @@ class OneDriveClient(O365Client):
         """
         Test OneDrive permissions using Microsoft Graph API.
         """
-        results = {
-            "drive_access": False,
-            "folder_access": False,
-            "upload_access": False,
-            "errors": []
-        }
+        results = {"drive_access": False, "folder_access": False, "upload_access": False, "errors": []}
 
         try:
             # Test 1: Drive access

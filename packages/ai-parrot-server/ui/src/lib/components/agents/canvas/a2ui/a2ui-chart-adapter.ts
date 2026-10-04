@@ -56,6 +56,7 @@ export function toChartBlockData(
 
   const labels = rows.map((row) => String(row?.[x] ?? ''));
   const palette = Array.isArray(properties.palette) ? (properties.palette as string[]) : undefined;
+  const seriesAxes = Array.isArray(properties.seriesAxes) ? (properties.seriesAxes as unknown[]) : undefined;
   const series: ChartSeriesItem[] = yCols.map((col, i) => {
     const item: ChartSeriesItem = {
       name: col,
@@ -65,6 +66,8 @@ export function toChartBlockData(
       }),
     };
     if (palette?.[i] !== undefined) item.color = palette[i];
+    const axis = seriesAxes?.[i];
+    if (axis === 'left' || axis === 'right') item.axis = axis;
     return item;
   });
 
@@ -77,6 +80,9 @@ export function toChartBlockData(
   if (typeof properties.description === 'string') data.description = properties.description;
   if (typeof properties.xAxisLabel === 'string') data.x_axis_label = properties.xAxisLabel;
   if (typeof properties.yAxisLabel === 'string') data.y_axis_label = properties.yAxisLabel;
+  if (Array.isArray(properties.yAxisLabels)) {
+    data.y_axis_labels = (properties.yAxisLabels as unknown[]).map((l) => (typeof l === 'string' ? l : null));
+  }
   if (typeof properties.stacked === 'boolean') data.stacked = properties.stacked;
   if (typeof properties.showLegend === 'boolean') data.show_legend = properties.showLegend;
   if (properties.layout === 'full' || properties.layout === 'half') data.layout = properties.layout;

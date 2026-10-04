@@ -52,6 +52,16 @@ FILTERBAR_SCHEMA: dict[str, Any] = {
                         },
                     },
                     "multiple": {"type": "boolean"},
+                    "param": {
+                        "type": "object",
+                        "description": (
+                            "Linked surfaces only: re-fetch data source `source` with QuerySource parameter "
+                            "`name` set to the selected value, instead of filtering rows locally."
+                        ),
+                        "properties": {"source": {"type": "string"}, "name": {"type": "string"}},
+                        "required": ["source", "name"],
+                        "additionalProperties": False,
+                    },
                 },
                 "required": ["column", "label", "options"],
             },
@@ -64,11 +74,21 @@ FILTERBAR_INSTRUCTIONS = (
     "Use FilterBar to declare a bar of filters over this surface's data model. "
     "Provide `filters`: a list of `{column, label, options, multiple?}` — `column` "
     "is the data-model column the filter applies to, `options` is the list of "
-    "`{label, value}` choices. Optional `title`. Display-only."
+    "`{label, value}` choices. Optional `title`. Display-only. "
+    "On linked surfaces a filter may add `param: {source, name}` to re-fetch that data source "
+    "with the selected value."
 )
 
 
-def _lower_filter(*, column: str, label: str, options: list[dict[str, Any]], multiple: bool, node_id: str) -> BasicNode:
+def _lower_filter(
+    *,
+    column: str,
+    label: str,
+    options: list[dict[str, Any]],
+    multiple: bool,
+    node_id: str,
+    param: dict[str, Any] | None = None,
+) -> BasicNode:
     """Lower one declared filter to a ``ChoicePicker`` primitive.
 
     Args:
@@ -79,6 +99,7 @@ def _lower_filter(*, column: str, label: str, options: list[dict[str, Any]], mul
         node_id: Deterministic id for this ``ChoicePicker`` node — derived
             from the parent component's own id, never minted with ``uuid``
             (the golden test lowers twice and compares byte-for-byte).
+        param: Optional {"source", "name"} (FEAT-598) — lowered to parrot_param.
 
     Returns:
         A ``ChoicePicker`` :class:`BasicNode` carrying
@@ -89,6 +110,9 @@ def _lower_filter(*, column: str, label: str, options: list[dict[str, Any]], mul
     # options -> unconstrained ("all") until TASK-2716's client-side
     # behaviour (or a future recipe binding) narrows it.
     value = [choice_options[0]["value"]] if len(choice_options) == 1 else []
+    extensions: dict[str, Any] = {"parrot_role": "filter", "parrot_filter_column": column}
+    if isinstance(param, dict) and param.get("source") and param.get("name"):
+        extensions["parrot_param"] = {"source": param["source"], "name": param["name"]}
     return BasicNode(
         id=node_id,
         component="ChoicePicker",
@@ -96,7 +120,7 @@ def _lower_filter(*, column: str, label: str, options: list[dict[str, Any]], mul
         options=choice_options,
         value=value,
         variant="multipleSelection" if multiple else "mutuallyExclusive",
-        metadata={"extensions": {"parrot_role": "filter", "parrot_filter_column": column}},
+        metadata={"extensions": extensions},
     )
 
 
@@ -118,6 +142,7 @@ class FilterBarComponent:
                 options=f.get("options") or [],
                 multiple=bool(f.get("multiple")),
                 node_id=f"{component.id}-f{i}",
+                param=f.get("param"),
             )
             for i, f in enumerate(filters)
             if isinstance(f, dict)

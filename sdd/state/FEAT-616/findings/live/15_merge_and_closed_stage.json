@@ -1,0 +1,376 @@
+{
+ "company_fields": {
+  "iap_enrich_auto_done": [
+   "boolean",
+   null,
+   "Enrich Done"
+  ],
+  "cash_account_code_prefix": [
+   "char",
+   null,
+   "Prefix of the cash accounts"
+  ],
+  "default_cash_difference_income_account_id": [
+   "many2one",
+   "account.account",
+   "Cash Difference Income"
+  ],
+  "default_cash_difference_expense_account_id": [
+   "many2one",
+   "account.account",
+   "Cash Difference Expense"
+  ],
+  "tax_cash_basis_journal_id": [
+   "many2one",
+   "account.journal",
+   "Cash Basis Journal"
+  ],
+  "account_cash_basis_base_account_id": [
+   "many2one",
+   "account.account",
+   "Base Tax Received Account"
+  ],
+  "auto_close_ticket": [
+   "boolean",
+   null,
+   "Auto Close Ticket"
+  ],
+  "close_days": [
+   "integer",
+   null,
+   "No of Days"
+  ],
+  "new_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Draft/New Stage"
+  ],
+  "done_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Resolved Stage"
+  ],
+  "cancel_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Cancel Stage"
+  ],
+  "reopen_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Re-Opened Stage"
+  ],
+  "close_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Closed Stage"
+  ],
+  "sh_default_team_id": [
+   "many2one",
+   "sh.helpdesk.team",
+   "Default Team"
+  ],
+  "sh_default_user_id": [
+   "many2one",
+   "res.users",
+   "Default Assign User"
+  ],
+  "sh_display_multi_user": [
+   "boolean",
+   null,
+   "Display Multi Users ?"
+  ],
+  "sh_configure_activate": [
+   "boolean",
+   null,
+   "Manage Products"
+  ],
+  "sh_display_ticket_reminder": [
+   "boolean",
+   null,
+   "Ticket Reminder ?"
+  ],
+  "sh_ticket_product_detail": [
+   "boolean",
+   null,
+   "Ticket Product details in Message?"
+  ],
+  "sh_signature": [
+   "boolean",
+   null,
+   "Signature?"
+  ],
+  "sh_display_in_chatter": [
+   "boolean",
+   null,
+   "Display in Chatter Message?"
+  ],
+  "sh_pdf_in_message": [
+   "boolean",
+   null,
+   "Send Report URL in Message?"
+  ],
+  "sh_ticket_url_in_message": [
+   "boolean",
+   null,
+   "Send Ticket URL in Message?"
+  ],
+  "sh_receive_email_seeing_ticket": [
+   "boolean",
+   null,
+   "Get email when customer view ticket ?"
+  ],
+  "sh_auto_add_customer_as_follower": [
+   "boolean",
+   null,
+   "Auto add customer as follower when create ticket ?"
+  ],
+  "sh_customer_replied": [
+   "boolean",
+   null,
+   "Stage change when customer replied ?"
+  ],
+  "sh_customer_replied_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Customer Replied Stage"
+  ],
+  "sh_staff_replied_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Staff Replied Stage"
+  ],
+  "sh_staff_replied": [
+   "boolean",
+   null,
+   "Stage change when staff replied ?"
+  ],
+  "sh_file_size": [
+   "integer",
+   null,
+   "Portal Attachment Size(KB)"
+  ],
+  "sh_default_description": [
+   "boolean",
+   null,
+   "Default Description In Timesheet ?"
+  ],
+  "sh_multiple_ticket_allowed": [
+   "boolean",
+   null,
+   "Multiple Ticket Allowed ?"
+  ]
+ },
+ "company_values": [
+  {
+   "id": 1,
+   "iap_enrich_auto_done": true,
+   "cash_account_code_prefix": "1015",
+   "default_cash_difference_income_account_id": [
+    28,
+    "Cash Difference Gain"
+   ],
+   "default_cash_difference_expense_account_id": [
+    39,
+    "Cash Difference Loss"
+   ],
+   "tax_cash_basis_journal_id": [
+    5,
+    "Cash Basis Taxes"
+   ],
+   "account_cash_basis_base_account_id": false,
+   "auto_close_ticket": false,
+   "close_days": 0,
+   "new_stage_id": [
+    4,
+    "New"
+   ],
+   "done_stage_id": false,
+   "cancel_stage_id": false,
+   "reopen_stage_id": [
+    22,
+    "Open"
+   ],
+   "close_stage_id": [
+    21,
+    "Closed"
+   ],
+   "sh_default_team_id": false,
+   "sh_default_user_id": false,
+   "sh_display_multi_user": false,
+   "sh_configure_activate": false,
+   "sh_display_ticket_reminder": true,
+   "sh_ticket_product_detail": true,
+   "sh_signature": true,
+   "sh_display_in_chatter": true,
+   "sh_pdf_in_message": true,
+   "sh_ticket_url_in_message": true,
+   "sh_receive_email_seeing_ticket": true,
+   "sh_auto_add_customer_as_follower": true,
+   "sh_customer_replied": false,
+   "sh_customer_replied_stage_id": false,
+   "sh_staff_replied_stage_id": [
+    22,
+    "Open"
+   ],
+   "sh_staff_replied": true,
+   "sh_file_size": 700,
+   "sh_default_description": false,
+   "sh_multiple_ticket_allowed": false
+  }
+ ],
+ "settings_fields": {
+  "group_project_stages": [
+   "boolean",
+   null,
+   "Project Stages"
+  ],
+  "auto_close_ticket": [
+   "boolean",
+   null,
+   "Auto Close Ticket"
+  ],
+  "new_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Draft/New Stage"
+  ],
+  "done_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Resolved Stage"
+  ],
+  "cancel_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Cancel Stage"
+  ],
+  "reopen_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Re-Opened Stage"
+  ],
+  "close_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Closed Stage"
+  ],
+  "sh_display_ticket_reminder": [
+   "boolean",
+   null,
+   "Ticket Reminder ?"
+  ],
+  "sh_ticket_product_detail": [
+   "boolean",
+   null,
+   "Ticket Product details in Message?"
+  ],
+  "sh_ticket_url_in_message": [
+   "boolean",
+   null,
+   "Send Ticket URL in Message?"
+  ],
+  "sh_receive_email_seeing_ticket": [
+   "boolean",
+   null,
+   "Get email when customer view ticket ?"
+  ],
+  "sh_customer_replied_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Customer Replied Stage"
+  ],
+  "sh_staff_replied_stage_id": [
+   "many2one",
+   "helpdesk.stages",
+   "Staff Replied Stage"
+  ],
+  "sh_multiple_ticket_allowed": [
+   "boolean",
+   null,
+   "Multiple Ticket Allowed ?"
+  ]
+ },
+ "stage_boolean_combos": {
+  "Open": [
+   [
+    false,
+    false,
+    false,
+    false,
+    false
+   ]
+  ],
+  "Pending close": [
+   [
+    false,
+    true,
+    false,
+    true,
+    false
+   ]
+  ],
+  "Closed": [
+   [
+    true,
+    false,
+    false,
+    true,
+    false
+   ]
+  ],
+  "New": [
+   [
+    false,
+    false,
+    false,
+    false,
+    false
+   ]
+  ]
+ },
+ "merge_result": null,
+ "tickets_after_merge": [
+  {
+   "id": 73,
+   "stage_id": [
+    21,
+    "Closed"
+   ],
+   "sh_merge_ticket_ids": [],
+   "sh_merge_ticket_count": 0,
+   "active": true
+  },
+  {
+   "id": 72,
+   "stage_id": [
+    21,
+    "Closed"
+   ],
+   "sh_merge_ticket_ids": [
+    73,
+    72
+   ],
+   "sh_merge_ticket_count": 2,
+   "active": true
+  }
+ ],
+ "target_messages": [
+  [
+   "notification",
+   ""
+  ],
+  [
+   "notification",
+   ""
+  ],
+  [
+   "notification",
+   "<p>Helpdesk Ticket created</p>"
+  ],
+  [
+   "notification",
+   "<p>Helpdesk Ticket created</p>"
+  ]
+ ]
+}

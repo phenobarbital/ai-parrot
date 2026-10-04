@@ -164,3 +164,20 @@ async def test_event_payload_and_redaction_bounds(store: CoderSuspensionStore) -
     with pytest.raises(ValueError, match="4 KiB"):
         await store.record(oversized)
     assert list(store.log.iter_events()) == []
+
+
+async def test_retired_dirty_delivery_reason_still_replays(store: CoderSuspensionStore) -> None:
+    """FEAT-587 AC-5: a pre-ed267c217 `dirty_delivery` incident must still parse.
+
+    `_replay()` is fail-closed -- one unparseable record raises for the whole
+    history -- and the incident log is append-only and per-machine, so removing
+    the retired member would brick suspension history wherever such a row exists.
+    This test is the reason `dirty_delivery` stays in `SuspensionReason`.
+    """
+    record = suspension(reason="dirty_delivery", exception_class="", explanation="Legacy pre-FEAT-587 incident.")
+    await store.record(record)
+
+    restarted = CoderSuspensionStore(LedgerLog(store.log.path))
+    records = await restarted.recent([_key()], record.occurred_at + timedelta(seconds=1))
+
+    assert [item.reason for item in records] == ["dirty_delivery"]

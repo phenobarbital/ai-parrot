@@ -157,7 +157,7 @@ def test_scanner_for_all_jsts_suffixes():
         assert isinstance(scanner_for(suffix), JavaScriptScanner)
 
 
-def test_jsts_scanner_mode_is_heuristic_without_grammar(force_heuristic):
+def test_jsts_scanner_mode_is_heuristic_without_grammar(force_heuristic, force_no_astgrep):
     assert JavaScriptScanner().mode == "heuristic"
 
 
@@ -573,7 +573,7 @@ class TestModeReporting:
             (("javascript", "typescript"), "tree-sitter"),
         ],
     )
-    def test_mode_requires_both_grammars(self, monkeypatch, available, expected):
+    def test_mode_requires_both_grammars(self, force_no_astgrep, monkeypatch, available, expected):
         """One grammar loading is not tree-sitter mode.
 
         Before FEAT-396 this was an `or`, and the JavaScript grammar

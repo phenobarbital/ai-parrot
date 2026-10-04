@@ -7,6 +7,7 @@ for the LLM — never introspect the parser at runtime.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import importlib
 import logging
 from typing import Any
@@ -16,7 +17,7 @@ from parrot_tools.querysource.models import DialectReference, FilterValue
 
 logger = logging.getLogger(__name__)
 
-DIALECT_VERIFIED_AGAINST: str = "4.5.11"
+DIALECT_VERIFIED_AGAINST: str = "5.1.2"
 OPTION_KEYS: frozenset[str] = frozenset(
     {
         "fields",
@@ -46,6 +47,7 @@ OPTION_KEYS: frozenset[str] = frozenset(
 )
 LIST_OPERATORS: tuple[str, ...] = ("<", ">", ">=", "<=", "<>", "!=", "IS NOT", "IS")  # sql.pyx:96
 DICT_OPERATORS: tuple[str, ...] = (">=", "<=", "<>", "!=", "<", ">")  # sql.pyx:25
+JSONB_OPERATORS: tuple[str, ...] = ("@>", "<@", "@>|", "->", "->>")  # querysource/parsers/pgsql.pyx:29 (>=5.1)
 KEY_SUFFIX_CHARS: str = "|!~#@:"  # sql.pyx:132
 _BETWEEN_FORBIDDEN: tuple[str, ...] = (";", "--", "/*", "UNION", "SELECT")  # sql.pyx:184-189
 
@@ -89,9 +91,11 @@ DIALECT_REFERENCE = DialectReference(
         "col: true → col = True",
         "Keys must be identifier-safe ([A-Za-z0-9_.] after stripping suffix chars |!~#@:); "
         "the parser silently DROPS unsafe keys/operators — this toolkit rejects them up front instead.",
+        "col: {'@>': [{'course': 'X'}]} → col @> '[...]'::jsonb  (single key from operators_jsonb; operand may be dict/list)",
     ],
     operators_list_form=list(LIST_OPERATORS),
     operators_dict_form=list(DICT_OPERATORS),
+    operators_jsonb=list(JSONB_OPERATORS),
     examples=[
         {"slug": "epson_field_activity", "placeholders": {"firstdate": "2026-08-09", "lastdate": "2026-08-15"}},
         {
@@ -144,7 +148,9 @@ def validate_filter(filter: dict[str, FilterValue], *, strict: bool = True) -> l
                 reason = "dict filter must have exactly one operator key"
             else:
                 (op,) = value.keys()
-                if op not in DICT_OPERATORS:
+                if op in JSONB_OPERATORS:
+                    pass  # JSONB form: operand may be dict / list / scalar / JSON text (querysource >= 5.1)
+                elif op not in DICT_OPERATORS:
                     reason = f"unknown dict operator {op!r}"
         elif isinstance(value, list):
             # [op, v] comparison form vs plain IN list — bounded by sql.pyx:160-181.
@@ -202,6 +208,34 @@ def check_version_compatibility(installed: str) -> str | None:
             "the conditions reference may be inaccurate."
         )
     return None
+
+
+def reject_variable_values(conditions: Mapping[str, Any]) -> None:
+    """Raise InvalidConditionsError when any scalar value in ``conditions`` starts with '@'.
+
+    FEAT-558 deployment variables (``@today`` …) are resolved by the deploying app and are not portable on the
+    linked-surface wire (FEAT-598 spec Non-Goals, AC3). Relative dates must use the closed UDF keyword
+    vocabulary instead (TODAY, YESTERDAY, FDOM, LDOM, CURRENT_YEAR, CURRENT_MONTH, LAST_YEAR).
+    """
+    offending: list[str] = []
+
+    def _walk(value: Any, path: str) -> None:
+        if isinstance(value, Mapping):
+            for key, nested_value in value.items():
+                _walk(nested_value, f"{path}.{key}")
+        elif isinstance(value, (list, tuple)):
+            for index, nested_value in enumerate(value):
+                _walk(nested_value, f"{path}[{index}]")
+        elif isinstance(value, str) and value.startswith("@"):
+            offending.append(path)
+
+    for key, value in conditions.items():
+        _walk(value, str(key))
+    if offending:
+        raise InvalidConditionsError(
+            f"'@' variables are not allowed in linked surfaces: {offending}. "
+            "Use a UDF keyword (TODAY, YESTERDAY, FDOM, LDOM, CURRENT_YEAR, CURRENT_MONTH, LAST_YEAR) or a literal."
+        )
 
 
 def load_variables() -> dict[str, str]:

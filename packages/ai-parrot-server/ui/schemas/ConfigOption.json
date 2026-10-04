@@ -1,0 +1,19 @@
+{
+  "description": "One dynamic choice returned by ``AbstractToolkit.config_options``.",
+  "properties": {
+    "label": {
+      "title": "Label",
+      "type": "string"
+    },
+    "value": {
+      "title": "Value",
+      "type": "string"
+    }
+  },
+  "required": [
+    "value",
+    "label"
+  ],
+  "title": "ConfigOption",
+  "type": "object"
+}

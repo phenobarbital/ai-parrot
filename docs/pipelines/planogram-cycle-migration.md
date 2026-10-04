@@ -1,100 +1,114 @@
-# Planogram compliance — migrating configurations to the new cycle (FEAT-574)
+# Planogram compliance — migrating configurations to the new cycle (FEAT-574, FEAT-612)
 
 ## Who needs this
 
-Only configurations whose `planogram_type` is a **migrated** type need a migration:
-`product_on_shelves` and `ink_wall`. Both declare `requires_slots_definition = True`, so a row
-without a valid `slots_definition` now fails at construction with a `ValueError` that points
-here. `ink_wall` definitions are authored by hand (see
-`docs/pipelines/planogram-compliance-cycle.md`); `product_on_shelves` rows can start from the
-candidate conversion described below.
+Every active row using one of the six registered types must migrate before the new runtime is
+deployed. A missing `slots_definition` fails construction with a `ValueError` that names this
+runbook.
 
-The unmigrated types — `graphic_panel_display`, `product_counter`,
-`endcap_no_shelves_promotional`, `endcap_backlit_multitier` — keep running the legacy sequence
-through the legacy adapter. They need nothing new except their two prompts
-(`roi_detection_prompt`, `object_identification_prompt`), which became nullable in the table:
-a legacy row with a NULL prompt now fails fast at construction instead of degrading silently.
+## What changes in scores
 
-## What changes in scores (read before comparing old and new numbers)
+Old and new values are not comparable for the four types that previously used a different path.
+Label new expectations before comparing outcomes.
 
-Scores of migrated types are **not comparable** with the legacy numbers:
+- Every expected facing stays in the denominator.
+- `match` and `expected_empty` earn `1.0` in strict and lenient scoring.
+- `inferred_present` and `variant_unresolved` earn `1.0` lenient credit and `0.0` strict credit;
+  `misplaced` earns `0.5` lenient credit and `0.0` strict credit.
+- Zone-only units measure coverage from assessed mandatory rules, and their threshold is enforced
+  even with zero facings.
+- Inconclusive and all-photo-failure results are never compliant.
 
-- **Every expected facing stays in the denominator.** A shelf scores
-  `Σ credit(facing) / |expected facings|`; a partial photo can no longer reach 100 % by leaving
-  unseen positions out.
-- **Weights are normalised.** The legacy non-header defaults (product 0.8, text 0.1, visual 0.2)
-  summed to 1.1 and the result was silently clamped to 1.0. Migrated types divide by the sum of
-  the weights of the terms that actually apply to the shelf, so `(0.9·0.8 + 0.1 + 0.2) / 1.1 =
-  0.927` instead of the legacy clamped `1.0`.
-- **Strict and lenient credits.** `match` earns 1.0; `misplaced`, `variant_unresolved` and
-  `inferred_present` earn 0.5 only in the lenient score (the value `compliance_score` reports);
-  `strict_compliance_score` is reported next to it.
-- **Coverage is separate from compliance.** `coverage` is resolved facings / expected facings;
-  `evidence_quality` describes how strong the deciding observations were and never changes a
-  credit.
-- **Inconclusive is not compliant.** A shelf with unresolved facings is never `COMPLIANT`, and
-  `overall_compliant` is `False` whenever `assessment_status != "complete"`.
-- **Unseen ≠ missing.** `missing_products` lists only facings proven empty (plus illumination
-  pseudo-entries); a product that simply was not visible is `not_visible`, not missing.
-- **An empty result list is never a pass** — for every type, legacy included.
+## Removed imports and contracts
 
-## Sequence
+Release 1.1.0 removes `PlanogramCompliancePipeline`, `RetailDetector`, `AbstractDetector`,
+`legacy_adapter`, `GridDetector`, `HorizontalBands`, `AbstractGridStrategy`, `CellResultMerger`,
+`LegacyPayload`, `compute_roi`, and `check_planogram_compliance`. There is no compatibility
+replacement; use `PlanogramCompliance` and the cycle contract instead.
 
-1. **Apply the idempotent ALTER script** `alter_planograms_configurations_feat574.sql` (shipped as
-   package data next to `table.sql`). It adds the nullable `slots_definition` / `llm_backend`
-   columns and drops `NOT NULL` from both prompt columns; it is safe to run more than once.
-2. **Export** each active configuration (the whole row or just its `planogram_config` JSON) and run
-   the candidate conversion:
+## Layout and reference policy
 
-   ```bash
-   python -m parrot_pipelines.planogram.migration convert exported_row.json --out candidate.json
-   ```
+Store `layout_profile` inside `planogram_config`. Its validated overrides merge with the type
+default; lists replace rather than append, and unknown fields are rejected with a layout field
+path. Top-level `perception_mode` is an accepted alias only when it agrees with the nested value.
 
-   The output holds `candidate` (a slots definition), `bindings` (rule bindings), `unresolved`
-   and `warnings`. The command exits with code `2` while anything is unresolved, so a script can
-   never mistake a candidate for a finished migration. It never overwrites its input.
-3. **Review the candidate.** Resolve every `unresolved` item (quantity ranges become one
-   placeholder facing — decide the real count), confirm the slot order (taken from the product
-   list order), author descriptors (`display_name`, `identifiers`, `family`, …: the converter
-   never invents them) and review the generated `rule_bindings` (illumination, text
-   requirements, visual features, zone presence).
-4. **Backfill** `slots_definition` and `planogram_config.rule_bindings` with a user-applied
-   `UPDATE`. Keep the original `planogram_config` JSON: thresholds, shelf weights and
-   `advertisement_endcap` stay where they are, and `shelves[].products` is never removed.
-5. **Run the read-only preflight** until every migrated row is `ok`:
+A zone selector matches observed zones to one configured zone in one of three ways: `ordinal` (the
+n-th observed zone top to bottom; the count of observed zones must equal the count of selectors),
+`region` (a box in whole-photo coordinates), or `band` — `[y_start, y_end]` as fractions of the
+observed fixture height. With a band, every detected fragment whose centre falls in that slice is
+evidence of the zone, and fragments that do not share the fixture's column are off-fixture. The
+converter emits bands for a fixture made only of zones whose source shelves all carry
+`y_start_ratio` and `height_ratio`; otherwise it emits ordinals.
 
-   ```bash
-   python -m parrot_pipelines.planogram.migration preflight --dsn "$PLANOGRAM_DSN"
-   ```
+For one release, `roi_detection_prompt`, `object_identification_prompt`, `detection_model`,
+`confidence_threshold`, and `detection_grid` are accepted but ignored. `reference_images` supports
+paths, stable path lists, and PIL images; valid entries are hydrated once per run into opaque
+reference labels.
 
-   It issues a single `SELECT` and reports missing or undecodable definitions, invalid
-   definitions and dangling bindings; it exits with `2` while any row fails.
-6. **Deploy** the new runtime. Optionally set `llm_backend` (`"provider:model"`) per row; without
-   it the package default is used.
+Legacy `fact_tag` and `price_tag` elements become informative `fact_tag_present` bindings on the
+first facing of the product they name (`"ES-60W Fact Tag"` → product `ES-60W`, same shelf),
+carrying `price_required`. A tag that names no product of its shelf is reported as unresolved.
+
+## Deployment sequence
+
+Migration happens before deployment.
+
+1. Apply the existing `alter_planograms_configurations_feat574.sql` ALTER script.
+2. Export original active rows privately.
+3. Run `python -m parrot_pipelines.planogram.migration convert exported.json --out candidate.json`.
+   It supports all six types, never overwrites its input, and reports a `layout_profile`; exit `0`
+   is ready, `2` is unresolved, and `1` is usage or I/O failure.
+4. Review unresolved quantities, descriptors, selectors, expected-empty expectations, bindings,
+   and weights with a human.
+5. Apply the approved SQL update by hand; the converter never writes a database.
+6. Run `python -m parrot_pipelines.planogram.migration preflight --dsn "$PLANOGRAM_DSN"` until every
+   active row is ready, then deploy.
+
+### Whole-table runner
+
+`python -m parrot_pipelines.planogram.migration_runner` runs the same sequence over every active
+row from one work directory; the `/planogram-migrate` command drives it with the human review in
+between. The DSN comes from `--dsn` or, by default, `querysource.conf.default_dsn` of the active
+`ENV`; `target` shows the resolved host and database without credentials.
+
+| Subcommand | Writes to the database | What it does |
+|---|---|---|
+| `alter [--yes]` | only with `--yes` | Prints, or applies, the ALTER script. |
+| `export --dir D` | no | One file per active row in `D/original/`; never overwrites an export. |
+| `convert --dir D` | no | Candidates in `D/candidates/`; reviewed candidates are kept unless `--force`. |
+| `render --dir D` | no | `D/apply.sql` from candidates with an empty `unresolved` list that pass the preflight checks. |
+| `apply --dir D --yes` | yes | Runs `D/apply.sql`: one transaction, aborted when a row changed since the export. |
+| `preflight` | no | Same report as `migration preflight`. |
+
+Exit codes match the converter: `0` ready, `2` unresolved or not-ready rows, `1` usage, I/O or
+database failure.
 
 ## Rollback
 
-Redeploy the previous version. The new columns are nullable and ignored by it, the prompt
-columns still hold their values (the ALTER only relaxed `NOT NULL`), and the original
-`shelves[].products` of every config were never removed — nothing needs to be restored in the
-database.
+Redeploy the prior runtime and retain the exported original row content. This release deletes no
+configuration data, so no same-release database restore is required.
+
+Owner/date: to be assigned before deployment.
 
 ## Process-pool sizing under gunicorn
 
-`PlanogramCompliance(cpu_workers=2)` creates a spawn-based process pool **per run** inside each
-gunicorn worker, so the machine can hold up to `gunicorn workers × concurrent runs ×
-cpu_workers` extra Python processes. Each process that runs local OCR loads the RapidOCR ONNX
-models on first use (hundreds of MB), so budget memory accordingly: for example 4 gunicorn
-workers × 1 run × 2 CPU workers = 8 processes, each with its own OCR models. Lower `cpu_workers`
-(or leave the `ai-parrot-pipelines[planogram]` extra uninstalled, which disables local OCR) on
-small hosts. `llm_concurrency` bounds concurrent vision calls per run.
+Each run creates its own spawn-based CPU pool. Budget for `gunicorn workers × concurrent runs ×
+cpu_workers` processes. OCR auto-enables when the optional planogram extra is installed, so each
+worker may load OCR models; reduce `cpu_workers` or omit the extra on constrained hosts.
+`llm_concurrency` bounds vision calls per run.
+
+## Live verification
+
+The [live E2E harness](../../examples/planogram/e2e/README.md) is opt-in and is not a CI gate.
+Accuracy signoff requires three successful local reports from the documented case types.
 
 ## Troubleshooting
 
-| Message at construction | Fix |
+| Symptom | Action |
 |---|---|
-| `… requires a slots_definition; see the FEAT-574 planogram cycle migration runbook …` | Backfill the row (steps 2-5). |
-| `… uses the legacy contract and requires 'roi_detection_prompt' …` (or the other prompt) | A legacy-type row lost a prompt: restore it. |
-| `SlotsDefinitionError: … slots must be exactly 1..n …` / duplicate ids / zero described positions | Fix the definition JSON and re-run preflight. |
-| `SlotsDefinitionError: rule … dangling target_id …` | A binding targets an id that is not in the definition. |
-| `llm_backend must be 'provider:model' …` | Fix or clear `llm_backend`. |
+| `invalid layout_profile...` | Correct the reported nested field path or remove an unknown override. |
+| Missing `zone_present` binding | Add a binding for every mandatory zone rule and rerun preflight. |
+| Empty or invalid definition | Review slots, expected-empty facings, descriptors, and selector ids. |
+| Unmigrated row in a handler job | Export, convert, review, apply SQL, and preflight before deployment. |
+| Exit code `2` | Resolve every reported candidate or readiness problem; do not deploy it. |
+| `tag '…' matches no product of the shelf` | Bind the tag to the right facing by hand, or drop it. |

@@ -50,9 +50,9 @@ class DetectionBox(BaseModel):
             return float(v)
         except (TypeError, ValueError):
             return 0.5
-    class_id: int = Field(default=None, description="Detected class ID")
-    class_name: str = Field(default=None, description="Detected class name")
-    area: int = Field(default=None, description="Bounding box area in pixels")
+    class_id: Optional[int] = Field(default=None, description="Detected class ID")
+    class_name: Optional[str] = Field(default=None, description="Detected class name")
+    area: Optional[int] = Field(default=None, description="Bounding box area in pixels")
     label: Optional[str] = Field(None, description="Optional label for the detection")
     ocr_text: Optional[str] = Field(
         None,

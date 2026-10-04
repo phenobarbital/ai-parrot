@@ -55,7 +55,8 @@ def _partial_read(identification: Identification) -> bool:
 def pick_candidates(identification: Identification, definition: SlotsDefinition, n: int) -> List[FacingDefinition]:
     """Up to ``n + 1`` distinct-product candidates compatible with the PARTIAL READ (brand / descriptors).
 
-    Returns [] when the identification has no partial read — a closed set is never built from expectation alone.
+    Returns [] when the identification has no partial read — a closed set is never built from expectation alone;
+    expected-empty facings are never candidates.
 
     Args:
         identification: The unresolved identification.
@@ -71,6 +72,8 @@ def pick_candidates(identification: Identification, definition: SlotsDefinition,
     read = {k: _norm(identification.descriptors.get(k)) for k in _COMPARABLE_FIELDS}
     by_product: Dict[str, FacingDefinition] = {}
     for facing in definition.all_facings():
+        if facing.expected_occupancy == "empty":
+            continue
         if brand and _norm(facing.brand) != brand:
             continue
         contradicts = False
@@ -79,6 +82,13 @@ def pick_candidates(identification: Identification, definition: SlotsDefinition,
             if observed and expected and observed != expected:
                 contradicts = True
                 break
+        if not contradicts:
+            for key, value in facing.descriptors.attributes.items():
+                observed = _norm(identification.descriptors.get(key))
+                expected = _norm(value)
+                if observed and expected and observed != expected:
+                    contradicts = True
+                    break
         if contradicts:
             continue
         current = by_product.get(facing.product)
@@ -213,8 +223,8 @@ async def verify_unresolved(
 ) -> List[Identification]:
     """Closed-set pass for unresolved slots. An offered expected SKU is never evidence by itself.
 
-    Returns a NEW list, same order and length. Untouched when: already resolved, no box, no partial read,
-    choice is other/cannot_tell/not offered, evidence gate fails, or the call failed (error → ctx.errors).
+    Returns a NEW list, same order and length. Untouched when: observed empty, already resolved, no box,
+    no partial read, choice is other/cannot_tell/not offered, evidence gate fails, or the call failed.
 
     Args:
         image: Untouched full-resolution BGR image.
@@ -232,6 +242,8 @@ async def verify_unresolved(
     coroutines = []
     indexes: List[int] = []
     for index, ident in enumerate(identifications):
+        if ident.occupancy == "empty":
+            continue
         if ident.product is not None and not ident.uncertain:
             continue
         box = boxes.get(ident.shape_id)

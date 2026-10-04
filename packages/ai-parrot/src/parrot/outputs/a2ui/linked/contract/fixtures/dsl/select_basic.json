@@ -1,0 +1,6 @@
+{
+  "description": "select keeps only the listed columns, in the listed order",
+  "input": [{"day": "2026-09-01", "visits": 3, "program": "epson"}, {"day": "2026-09-02", "visits": 5, "program": "hisense"}, {"day": "2026-09-03", "visits": 2, "program": "epson"}],
+  "ops": [{"op": "select", "columns": ["visits", "day"]}],
+  "expected": [{"visits": 3, "day": "2026-09-01"}, {"visits": 5, "day": "2026-09-02"}, {"visits": 2, "day": "2026-09-03"}]
+}

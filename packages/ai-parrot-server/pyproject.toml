@@ -86,11 +86,14 @@ all = [
 
 [project.scripts]
 parrot-fs = "parrot.autonomous.transport.filesystem.cli:main"
+parrot-studio-migrate = "parrot.handlers.studio.storage.migrate:main"
 
 # Protected stores for navigator-session vault rotation / migration
 # (navigator-vault CLI). See navigator_session/vault/registry.py.
 [project.entry-points."navigator_session.vault_targets"]
 parrot_users_bots = "parrot.handlers.models.vault_target:factory"
+parrot_studio_user_credentials = "parrot.handlers.studio.storage.vault_targets:user_credentials_factory"
+parrot_studio_user_llm_keys = "parrot.handlers.studio.storage.vault_targets:user_llm_keys_factory"
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"
@@ -109,6 +112,7 @@ namespaces = true
 [tool.setuptools.package-data]
 "parrot.handlers" = ["*.sql"]
 "parrot.handlers.models" = ["*.sql"]
+"parrot.handlers.studio.storage.migrations" = ["*.sql", "MANIFEST.json"]
 "parrot.mcp.transports" = ["*.proto"]
 # Embedded Admin UI (FEAT-468): built by release CI (Node 24 LTS + pnpm 9)
 # into src/parrot/server/ui/dist/ before `uv build`; never committed to git.
@@ -125,6 +129,7 @@ markers = [
     "live: hits live external services; opt-in, deselect with -m 'not live'",
     "integration: test lives under an integration/ directory (FEAT-563 auto-mark)",
     "e2e: test lives under an e2e/ directory (FEAT-563 auto-mark)",
+    "staging: live-target tests (FEAT-611): env/staging or env/dev; skipped unless ENV in {staging, dev} and querysource>=5.1.2",
 ]
 
 [tool.uv.sources]

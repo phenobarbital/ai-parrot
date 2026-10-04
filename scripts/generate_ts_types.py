@@ -67,6 +67,20 @@ def _models() -> dict[str, type[BaseModel]]:
         ToolsListResponse,
     )
     from parrot.server.ui.status import AdminStatus, AgentCounts, DependencyHealth
+    from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec
+    from parrot.tools.config_schema import ConfigOption, ToolkitSchemaEnvelope
+    from parrot.handlers.studio.models import (
+        ToolkitConfigPutRequest,
+        AgentToolkitsResponse,
+        ToolkitPersistResponse,
+        AgentMcpServersPutRequest,
+        AgentMcpServersResponse,
+        ToolkitOptionsResponse,
+    )
+    from parrot.handlers.toolkit_persistence import UserToolkitOverride
+
+    # FEAT-598 — linked-surface descriptor (createSurface.metadata.extensions.parrot_data_sources)
+    from parrot.outputs.a2ui.linked.models import LinkedSources
 
     return {
         "AdminStatus": AdminStatus,
@@ -83,6 +97,20 @@ def _models() -> dict[str, type[BaseModel]]:
         "AgentChatResponse": AgentChatResponse,
         "AgentChatMetadata": AgentChatMetadata,
         "AgentToolCall": AgentToolCall,
+        # FEAT-593 — Agent Studio tool configuration
+        "ToolkitSpec": ToolkitSpec,
+        "AgentMCPServerSpec": AgentMCPServerSpec,
+        "ConfigOption": ConfigOption,
+        "ToolkitSchemaEnvelope": ToolkitSchemaEnvelope,
+        "ToolkitConfigPutRequest": ToolkitConfigPutRequest,
+        "AgentToolkitsResponse": AgentToolkitsResponse,
+        "ToolkitPersistResponse": ToolkitPersistResponse,
+        "AgentMcpServersPutRequest": AgentMcpServersPutRequest,
+        "AgentMcpServersResponse": AgentMcpServersResponse,
+        "ToolkitOptionsResponse": ToolkitOptionsResponse,
+        "UserToolkitOverride": UserToolkitOverride,
+        # FEAT-598 — A2UI linked surfaces
+        "LinkedSources": LinkedSources,
     }
 
 
@@ -117,7 +145,7 @@ def main() -> int:
         Process exit code (always ``0`` on success).
     """
     written = export_schemas()
-    for name, path in sorted(written.items()):
+    for _name, path in sorted(written.items()):
         print(f"wrote {path.relative_to(REPO_ROOT)}")
     return 0
 

@@ -7,6 +7,7 @@
     isVoiceRecordingSupported,
     type RecordedVoiceNote,
   } from "$lib/utils/voice-recorder";
+  import { features } from "$lib/features";
   let {
     onSend,
     isLoading,
@@ -190,6 +191,9 @@
     { value: "structured_map", label: "Map" },
     { value: "structured_table", label: "Table" },
     { value: "interactive", label: "Interactive" },
+    // FEAT-611: A2UI (incl. linked surfaces) was unreachable from the chat — no mode sent output_mode=a2ui,
+    // and the canvas only opens a2ui/infographic turns. Offered only when the a2ui build flag is on.
+    ...(features.a2ui ? [{ value: "a2ui", label: "A2UI" }] : []),
   ];
 
   // Supported LLM models (from backend enums: GoogleModel, OpenAIModel, ClaudeModel, GroqModel, GrokModel)

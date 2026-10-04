@@ -116,5 +116,5 @@ class LanguageScanner(ABC):
     @property
     @abstractmethod
     def mode(self) -> str:
-        """Active extraction mode: ``"ast" | "tree-sitter" | "heuristic"``."""
+        """Active extraction mode: ``"ast" | "ast-grep" | "tree-sitter" | "heuristic"``."""
         ...

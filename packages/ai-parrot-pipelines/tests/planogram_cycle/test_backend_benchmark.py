@@ -144,7 +144,7 @@ async def test_report_columns_and_pinned_metadata(bench, photos, config, tmp_pat
     )
     assert meta["repeats"] == 2 and meta["requested_backends"] == ["fake:model-a", "fake:model-b"]
     assert meta["parameters"]["llm_concurrency"] == 4 and meta["retry_limits"]["repair_retries"] == 1
-    assert meta["prompt_versions"]["IDENTIFY_PROMPT_VERSION"] == "identify-v1"
+    assert meta["prompt_versions"]["IDENTIFY_PROMPT_VERSION"] == "identify-v2-ocr"
     assert "ai-parrot-pipelines" in meta["packages"]
     assert meta["resolved_backends"]["fake:model-b"] == ["fake:model-b"]
     agg = report.aggregates["fake:model-a"]

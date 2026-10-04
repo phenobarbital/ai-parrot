@@ -126,13 +126,17 @@ import sys
 from pathlib import Path
 
 task_id, feature_slug, verification = sys.argv[1:4]
+# Resolve the cwd BEFORE importing parrot: parrot.knowledge.wiki.project pulls
+# in parrot.bots -> navigator, and navconfig os.chdir()s to its own project
+# root on import, which would redirect the event to the wrong ledger.
+start_dir = Path.cwd()
 
 try:
     from parrot.knowledge.wiki.ledger.events import LedgerEvent
     from parrot.knowledge.wiki.ledger.log import LedgerLog
     from parrot.knowledge.wiki.project import find_shared_root
 
-    shared_root = find_shared_root(Path.cwd()) or Path.cwd()
+    shared_root = find_shared_root(start_dir) or start_dir
     ledger_dir = shared_root / ".parrot" / "ledger"
     ledger_dir.mkdir(parents=True, exist_ok=True)
 

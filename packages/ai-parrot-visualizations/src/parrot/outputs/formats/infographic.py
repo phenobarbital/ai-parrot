@@ -58,8 +58,10 @@ Inline markers (optional, inside prose text fields):
 
 Rules:
 - Every block MUST include a "type" field
-- hero_card blocks REQUIRE flat "label" and "value" string fields at the top
-  level. Do NOT nest them inside "callout", "card", "data" or "items".
+- hero_card blocks REQUIRE flat "label" and "value" fields at the top
+  level ("value" is a string, or a number with optional "format":
+  "percent"|"currency"|"number" and "unit"; send a percentage as a ratio,
+  0.683 with format "percent"). Do NOT nest them inside "callout", "card", "data" or "items".
   Example:
     {"type": "hero_card", "label": "Total Revenue", "value": "$1.2M",
      "icon": "money", "trend": "up", "trend_value": "+12.5%"}

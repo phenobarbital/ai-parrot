@@ -1,0 +1,3 @@
+- [ ] **The real definition of the `epson_*` slugs in staging**, and whether an Epson multiquery slug already exists or has to be seeded. *Owner*: the spec's first task. *Blocks*: C7
+- [ ] **The PBAC policy for `query_slug:public:epson_*`** in staging. *Owner*: the spec's first task. *Blocks*: S1
+- [ ] **Merge order with FEAT-610** for the multi-widget helper and `linked/index.ts`. *Owner*: Javier + Jesús.

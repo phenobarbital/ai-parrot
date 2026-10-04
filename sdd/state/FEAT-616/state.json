@@ -1,0 +1,86 @@
+{
+ "schema_version": "1.0",
+ "feat_id": "FEAT-616",
+ "feature_slug": "odoo-toolkit-upgrades",
+ "started_at": "2026-09-30T23:55:00+00:00",
+ "updated_at": "2026-10-01T01:05:00+00:00",
+ "source": {
+  "kind": "inline",
+  "jira_key": null,
+  "jira_url": null,
+  "file_path": null,
+  "raw_path": "sdd/state/FEAT-616/source.md",
+  "fetched_at": "2026-09-30T23:55:00+00:00",
+  "summary_oneline": "Extend OdooToolkit (or add an OdooHelpdesk mixin) with typed helpdesk tools for the Softhealer helpdesk on Odoo 19 staging"
+ },
+ "mode": "auto",
+ "phase": "committed",
+ "phases": {
+  "source": {
+   "status": "complete",
+   "started_at": "2026-09-30T23:55:00+00:00",
+   "completed_at": "2026-09-30T23:58:00+00:00"
+  },
+  "plan": {
+   "status": "complete",
+   "queries_total": 20,
+   "approved_by_user": false,
+   "edited_by_user": false,
+   "plan_path": "sdd/state/FEAT-616/research_plan.json"
+  },
+  "research": {
+   "status": "complete",
+   "queries_executed": 20,
+   "queries_skipped": 0,
+   "depth_reached": 1,
+   "files_read": 17,
+   "grep_calls": 8,
+   "git_calls": 2,
+   "truncated": false,
+   "truncation_reason": null,
+   "rpc_calls": 45
+  },
+  "synthesis": {
+   "status": "complete",
+   "synthesis_path": "sdd/state/FEAT-616/synthesis.json",
+   "thinking_path": null,
+   "overall_confidence": "medium",
+   "claims_total": 13,
+   "claims_high_conf": 9,
+   "claims_medium_conf": 3,
+   "claims_low_conf": 1,
+   "unknowns_count": 5,
+   "lint_passed": true,
+   "lint_iterations": 1
+  },
+  "qa": {
+   "status": "complete",
+   "questions_total": 5,
+   "questions_answered": 4,
+   "skipped_reason": "U5 deferred to spec with a recommendation (include extra_fields dict read-only in v1)"
+  },
+  "output": {
+   "status": "complete",
+   "proposal_path": "sdd/proposals/odoo-toolkit-upgrades.proposal.md",
+   "commit_sha": "dd45342da"
+  }
+ },
+ "budget": {
+  "profile": "default",
+  "max_files_read": 40,
+  "max_grep_calls": 25,
+  "max_git_calls": 10,
+  "max_depth": 2,
+  "max_wall_seconds": 300
+ },
+ "consumed": {
+  "files_read": 17,
+  "grep_calls": 8,
+  "git_calls": 2,
+  "depth_reached": 1,
+  "wall_seconds": 1500
+ },
+ "wiki_available": true,
+ "notes": "FEAT-616 reserved via reserve_ids.py on 2026-10-01 (drafted as provisional FEAT-615, which was taken by bookstore-reindex-atomic-swap). Live-instance RPC calls are tracked in phases.research.rpc_calls (not in the budget table).",
+ "detected_mode": "enrichment"
+}

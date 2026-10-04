@@ -35,6 +35,18 @@ from parrot.human.models import (
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _AGENT_PATH = _REPO_ROOT / "agents" / "expense_approval.py"
 
+# FEAT-617 (issue:c3c59277ef77): /agents/ is gitignored (.gitignore:293) and
+# expense_approval.py was deleted in 1fac04add, so this module can never resolve in
+# CI or a fresh worktree -- it raised FileNotFoundError at COLLECTION time, taking the
+# whole tree's collection down with it. Skip cleanly instead; the tests below still
+# run for anyone who has the agent file locally.
+if not _AGENT_PATH.is_file():
+    pytest.skip(
+        f"agents/expense_approval.py not present at {_AGENT_PATH} "
+        "(/agents/ is gitignored); skipping agent wiring tests",
+        allow_module_level=True,
+    )
+
 
 def _load_agent_module():
     spec = importlib.util.spec_from_file_location(

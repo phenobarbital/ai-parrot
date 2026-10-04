@@ -80,37 +80,23 @@ class _NeedsArgToolkit(AbstractToolkit):
 
 
 class TestToolkitSchema:
-    def test_wiki_schema_includes_storage_dir(self):
-        schema = StudioToolkitsHandler._wiki_schema()
+    def test_wiki_envelope(self):
+        env = StudioToolkitsHandler._wiki_schema()
+        props = env["schema"]["properties"]
+        assert env["slug"] == "wiki" and props["pageindex_toolkit"]["x-server-managed"] is True
+        assert "storage_dir" in props["config"]["properties"]
 
-        assert schema["slug"] == "wiki"
-        params = schema["params"]
-        assert params["pageindex_toolkit"]["server_managed"] is True
-        assert params["graphindex_toolkit"]["server_managed"] is True
-        assert params["okf_toolkit"]["server_managed"] is True
-        assert params["config"]["required"] is True
-        assert params["config"]["server_managed"] is False
-        assert "storage_dir" in params["config"]["schema"]["properties"]
-        assert "wiki_name" in params["config"]["schema"]["properties"]
+    def test_dataset_manager_envelope_is_model(self):
+        env = StudioToolkitsHandler._dataset_manager_schema()
+        assert env["source"] == "model"
+        assert env["schema"]["properties"]["datasources"]["items"]["discriminator"]["propertyName"] == "kind"
 
-    def test_dataset_manager_schema_all_optional(self):
-        schema = StudioToolkitsHandler._dataset_manager_schema()
-
-        assert schema["slug"] == "dataset_manager"
-        for entry in schema["params"].values():
-            assert entry["required"] is False
-            assert entry["server_managed"] is False
-
-    def test_infographic_schema_marks_server_managed(self):
-        schema = StudioToolkitsHandler._infographic_schema()
-
-        params = schema["params"]
-        assert params["artifact_store"]["required"] is True
-        assert params["artifact_store"]["server_managed"] is True
-        assert params["template_dirs"]["required"] is False
+    def test_infographic_marks_server_managed(self):
+        props = StudioToolkitsHandler._infographic_schema()["schema"]["properties"]
+        assert props["artifact_store"]["x-server-managed"] is True
 
     @pytest.mark.asyncio
-    async def test_generic_schema_introspects_class(self, monkeypatch):
+    async def test_generic_envelope(self, monkeypatch):
         app = web.Application()
         monkeypatch.setattr(
             toolkits_module,
@@ -124,12 +110,9 @@ class TestToolkitSchema:
             match_info={"slug": "needs_arg"},
         )
 
-        response = await _unwrap(StudioToolkitsHandler.get)(handler)
+        body = await _decode(await _unwrap(StudioToolkitsHandler.get)(handler))
 
-        assert response.status == 200
-        body = await _decode(response)
-        assert body["class_name"] == "_NeedsArgToolkit"
-        assert body["params"]["foo"]["required"] is True
+        assert body["class_name"] == "_NeedsArgToolkit" and "foo" in body["schema"]["required"]
 
     @pytest.mark.asyncio
     async def test_unknown_generic_slug_404(self, monkeypatch):

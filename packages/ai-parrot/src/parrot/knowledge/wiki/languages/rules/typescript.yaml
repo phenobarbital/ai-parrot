@@ -40,6 +40,7 @@ symbols:
 
   - id: interface
     rule: { kind: interface_declaration }
+    languages: [typescript, tsx]
     name: { field: name }
     doc: leading_comment_exported
     exported: { inside: export_statement }
@@ -47,6 +48,7 @@ symbols:
 
   - id: type
     rule: { kind: type_alias_declaration }
+    languages: [typescript, tsx]
     name: { field: name }
     doc: leading_comment_exported
     exported: { inside: export_statement }
@@ -70,11 +72,28 @@ symbols:
     exported: always
     depth: 1
 
+  # FEAT-609 M4: top-level, NON-exported `const|let NAME = () => …` /
+  # `= function () {…}` — the normal shape of a Svelte <script> handler.
+  # Exported ones keep their `const` record above (no duplicates): the
+  # `inside: program` hop excludes them, since their lexical_declaration's
+  # parent is export_statement. Verified against ast-grep-py 0.45.3.
+  # node_kind is `variable_declarator`, which render.py skips (G5 parity).
+  # No `async:` — `async` is an anonymous token, not a kind (see TASK-3823).
+  - id: function
+    rule:
+      kind: variable_declarator
+      has: { field: value, any: [{ kind: arrow_function }, { kind: function_expression }] }
+      inside: { kind: lexical_declaration, inside: { kind: program } }
+    name: { field: name }
+    doc: leading_comment
+    exported: never
+    depth: 1
+
 refs:
   - rel: calls
     rule: { kind: call_expression }
     target: { field: function }
-    scope: { ancestor: [function_declaration, method_definition, class_declaration] }
+    scope: js_call_scope
 
   # extends_clause/implements_clause are two distinct child kinds of
   # class_heritage, with two distinct target-identifier kinds
@@ -82,11 +101,13 @@ refs:
   # hence two separate ref specs rather than one over class_heritage.
   - rel: extends
     rule: { kind: extends_clause }
+    languages: [typescript, tsx]
     target: { each: identifier }
     scope: { ancestor: [class_declaration] }
 
   - rel: implements
     rule: { kind: implements_clause }
+    languages: [typescript, tsx]
     target: { each: type_identifier }
     scope: { ancestor: [class_declaration] }
 

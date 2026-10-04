@@ -1,5 +1,7 @@
 import itertools
+from importlib.resources import files
 
+import yaml
 import pytest
 
 from parrot.flows.dev_loop.task_scheduler import TaskRef
@@ -436,3 +438,25 @@ async def test_smoke_timeout_generates_typed_failure():
     assert not res.available
     assert "timed out" in res.reason.lower() or "timeout" in res.reason.lower()
     assert res.probe_exception_class in ("asyncio.TimeoutError", "TimeoutError")
+
+
+def test_shipped_template_has_two_retry_capable_strong_seats():
+    """FEAT-588 AC-8: the default roster must not be the zero-retry roster.
+
+    The retry ladder skips `kind: native`, so a template whose strong-model
+    allowlist resolves to one MCP seat gives every complex/unknown task an
+    empty retry set (issue:569e81756247).
+    """
+    template_path = files("parrot.mcp") / "_toolkit_templates" / "sdd-coder.yaml"
+    template = yaml.safe_load(template_path.read_text())
+    kwargs = template["sdd-coder"]["kwargs"]
+
+    seats = [RosterSeat(**seat) for seat in kwargs["roster"]]
+    policy = ComplexityPolicy(
+        strong_models=tuple(StrongModelIdentity(**sm) for sm in kwargs["complexity"]["strong_models"])
+    )
+
+    strong_seats = eligible_seats(_assessment("complex"), seats, policy)
+    retry_capable = [seat for seat in strong_seats if seat.kind != "native"]
+
+    assert len(retry_capable) >= 2, f"expected >=2 non-native strong seats, got {[s.label for s in retry_capable]}"

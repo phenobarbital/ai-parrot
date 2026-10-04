@@ -15,6 +15,10 @@ MCP_BEGIN = "# >>> parrot-bookstore Codex MCP >>>"
 MCP_END = "# <<< parrot-bookstore Codex MCP <<<"
 SKILL_PATH = Path(".agents/skills/bookstore/SKILL.md")
 
+#: Action reported when no indexed library exists yet, so a premature
+#: ``parrot codex install`` no longer skips the Bookstore silently.
+BOOKSTORE_SKIPPED = "bookstore — skipped: no indexed library found (run `bookstore add <file>`, then re-run install)"
+
 
 def _config(root: Path) -> tuple[Path, str]:
     """Read and validate before mutating a user-owned configuration."""
@@ -49,7 +53,7 @@ def mcp_block(root: Path) -> str:
 
 
 def install_bookstore(root: Path) -> list[str]:
-    """Install for an existing library; silently omit unavailable Bookstore."""
+    """Install for an existing library; report (not install) when none exists."""
     from .installer import _remove_marker_block, _upsert_marker_block, _validate_toml
 
     path, before = _config(root)
@@ -57,9 +61,11 @@ def install_bookstore(root: Path) -> list[str]:
     if not resolve_locations(cwd=root, require_exists=True):
         # Reconcile an earlier managed registration if its library disappeared.
         # User-owned server settings and existing skills remain untouched.
+        actions = [BOOKSTORE_SKIPPED]
         if outside != before:
             path.write_text(outside, encoding="utf-8")
-        return []
+            actions.append("bookstore MCP — removed (library no longer found)")
+        return actions
     actions: list[str] = []
     if "bookstore" in tomllib.loads(outside).get("mcp_servers", {}):
         actions.append("bookstore MCP — existing user configuration preserved")

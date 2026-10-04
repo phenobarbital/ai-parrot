@@ -8,10 +8,10 @@ import pytest
 from parrot.knowledge.wiki.models import WikiConfig
 from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def wiki_config(tmp_path: Path) -> WikiConfig:
@@ -23,15 +23,13 @@ def wiki_config(tmp_path: Path) -> WikiConfig:
 def mock_pi():
     """Mock PageIndexToolkit."""
     pi = MagicMock()
-    pi.search = AsyncMock(return_value=[
-        {"node_id": "n1", "title": "Page 1", "score": 0.9, "summary": "Snippet 1"},
-    ])
-    pi.insert_markdown = AsyncMock(
-        return_value={"tree_name": "test-wiki", "new_node_ids": ["m1"]}
+    pi.search = AsyncMock(
+        return_value=[
+            {"node_id": "n1", "title": "Page 1", "score": 0.9, "summary": "Snippet 1"},
+        ]
     )
-    pi.insert_content = AsyncMock(
-        return_value={"tree_name": "test-wiki", "new_node_ids": ["0001", "0002"]}
-    )
+    pi.insert_markdown = AsyncMock(return_value={"tree_name": "test-wiki", "new_node_ids": ["m1"]})
+    pi.insert_content = AsyncMock(return_value={"tree_name": "test-wiki", "new_node_ids": ["0001", "0002"]})
     pi.create_tree = AsyncMock(return_value={"tree_name": "test-wiki"})
     return pi
 
@@ -40,9 +38,11 @@ def mock_pi():
 def mock_gi():
     """Mock GraphIndexToolkit."""
     gi = MagicMock()
-    gi.search_hybrid = AsyncMock(return_value=[
-        {"node_id": "g1", "title": "Graph Node 1", "score": 0.8, "summary": "GI snippet"},
-    ])
+    gi.search_hybrid = AsyncMock(
+        return_value=[
+            {"node_id": "g1", "title": "Graph Node 1", "score": 0.8, "summary": "GI snippet"},
+        ]
+    )
     gi.create_node = AsyncMock(return_value={"node_id": "wp-001", "status": "created"})
     gi.link_nodes = AsyncMock(return_value={"status": "ok"})
     gi.get_neighborhood = AsyncMock(return_value={"neighbours": []})
@@ -67,6 +67,7 @@ def wiki_toolkit(wiki_config: WikiConfig, mock_pi, mock_gi, mock_okf) -> LLMWiki
 # Test classes
 # ---------------------------------------------------------------------------
 
+
 class TestLLMWikiToolkitConfig:
     """Tests for toolkit configuration and class-level attributes."""
 
@@ -90,9 +91,7 @@ class TestLLMWikiToolkitCreateWiki:
     """Tests for create_wiki."""
 
     @pytest.mark.asyncio
-    async def test_create_wiki_returns_status_created(
-        self, wiki_toolkit: LLMWikiToolkit
-    ):
+    async def test_create_wiki_returns_status_created(self, wiki_toolkit: LLMWikiToolkit):
         """create_wiki returns status='created'."""
         result = await wiki_toolkit.create_wiki("my-wiki")
         assert result["status"] == "created"
@@ -157,20 +156,14 @@ class TestLLMWikiToolkitQuery:
         mock_pi,
     ):
         """query with file_answer=True calls insert_markdown (page creation)."""
-        result = await wiki_toolkit.query(
-            "test-wiki", "What is deep learning?", file_answer=True
-        )
+        result = await wiki_toolkit.query("test-wiki", "What is deep learning?", file_answer=True)
         # Either filed_page_id is set or insert_markdown was called
         assert result.get("filed_page_id") is not None or mock_pi.insert_markdown.called
 
     @pytest.mark.asyncio
-    async def test_query_filed_page_id_none_without_file(
-        self, wiki_toolkit: LLMWikiToolkit
-    ):
+    async def test_query_filed_page_id_none_without_file(self, wiki_toolkit: LLMWikiToolkit):
         """filed_page_id is None when file_answer=False."""
-        result = await wiki_toolkit.query(
-            "test-wiki", "test", file_answer=False
-        )
+        result = await wiki_toolkit.query("test-wiki", "test", file_answer=False)
         assert result["filed_page_id"] is None
 
 
@@ -184,18 +177,12 @@ class TestLLMWikiToolkitLint:
         assert isinstance(result, dict)
 
     @pytest.mark.asyncio
-    async def test_lint_calls_okf(self, wiki_toolkit: LLMWikiToolkit, mock_okf):
-        """lint delegates to OKFToolkit.lint_knowledge_base."""
-        await wiki_toolkit.lint("test-wiki")
-        mock_okf.lint_knowledge_base.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_lint_contains_wiki_fields(self, wiki_toolkit: LLMWikiToolkit):
-        """lint result contains orphan_sources, stale_sources, total_issues."""
+    async def test_lint_contains_report_fields(self, wiki_toolkit: LLMWikiToolkit):
+        """lint result is a LintReport dump (findings/counts/rules_run)."""
         result = await wiki_toolkit.lint("test-wiki")
-        assert "orphan_sources" in result
-        assert "stale_sources" in result
-        assert "total_issues" in result
+        assert "findings" in result
+        assert "counts" in result
+        assert "rules_run" in result
 
 
 class TestLLMWikiToolkitSearch:
@@ -208,16 +195,10 @@ class TestLLMWikiToolkitSearch:
         assert isinstance(results, list)
 
     @pytest.mark.asyncio
-    async def test_search_answered_from_store(
-        self, wiki_toolkit: LLMWikiToolkit, mock_pi, mock_gi
-    ):
+    async def test_search_answered_from_store(self, wiki_toolkit: LLMWikiToolkit, mock_pi, mock_gi):
         """search is answered by the WikiStore plane — no toolkit fan-out."""
-        await wiki_toolkit.create_page(
-            "test-wiki", "Deep Learning", "Deep learning extends neural nets."
-        )
-        results = await wiki_toolkit.search(
-            "test-wiki", "deep learning", mode="combined"
-        )
+        await wiki_toolkit.create_page("test-wiki", "Deep Learning", "Deep learning extends neural nets.")
+        results = await wiki_toolkit.search("test-wiki", "deep learning", mode="combined")
         assert results and results[0]["source"] == "lexical"
         mock_pi.search.assert_not_called()
         mock_gi.search_hybrid.assert_not_called()
@@ -243,17 +224,13 @@ class TestLLMWikiToolkitBookkeeping:
     """Tests for bookkeeping methods."""
 
     @pytest.mark.asyncio
-    async def test_get_log_empty(
-        self, wiki_toolkit: LLMWikiToolkit, wiki_config: WikiConfig
-    ):
+    async def test_get_log_empty(self, wiki_toolkit: LLMWikiToolkit, wiki_config: WikiConfig):
         """get_log returns empty string before any operations."""
         result = await wiki_toolkit.get_log("test-wiki")
         assert result == ""
 
     @pytest.mark.asyncio
-    async def test_get_index_empty(
-        self, wiki_toolkit: LLMWikiToolkit, wiki_config: WikiConfig
-    ):
+    async def test_get_index_empty(self, wiki_toolkit: LLMWikiToolkit, wiki_config: WikiConfig):
         """get_index returns empty string before index.md is created."""
         result = await wiki_toolkit.get_index("test-wiki")
         assert result == ""
@@ -282,9 +259,7 @@ class TestFederatedInjection:
     """An injected (federated) store gives the toolkit namespaces."""
 
     @pytest.fixture
-    async def federated_toolkit(
-        self, tmp_path: Path, mock_pi, mock_gi, mock_okf
-    ) -> LLMWikiToolkit:
+    async def federated_toolkit(self, tmp_path: Path, mock_pi, mock_gi, mock_okf) -> LLMWikiToolkit:
         """A toolkit over a local plane plus one read-only namespace."""
         from parrot.knowledge.wiki.federation import (
             FederatedWikiStore,
@@ -296,20 +271,28 @@ class TestFederatedInjection:
 
         local_dir = tmp_path / "local"
         local = SQLiteWikiStore(local_dir / "wiki.db", wiki_name="test-wiki")
-        await local.upsert_pages([
-            WikiPageRecord(
-                concept_id="file:local.py", title="local",
-                summary="alpha local", body="alpha local",
-            )
-        ])
+        await local.upsert_pages(
+            [
+                WikiPageRecord(
+                    concept_id="file:local.py",
+                    title="local",
+                    summary="alpha local",
+                    body="alpha local",
+                )
+            ]
+        )
         other_dir = tmp_path / "other"
         writable = SQLiteWikiStore(other_dir / "wiki.db", wiki_name="other")
-        await writable.upsert_pages([
-            WikiPageRecord(
-                concept_id="file:other.py", title="other",
-                summary="alpha other", body="alpha other",
-            )
-        ])
+        await writable.upsert_pages(
+            [
+                WikiPageRecord(
+                    concept_id="file:other.py",
+                    title="other",
+                    summary="alpha other",
+                    body="alpha other",
+                )
+            ]
+        )
         await writable.add_edges([("file:other.py", "file:local.py", "references")])
         other = SQLiteWikiStore(other_dir / "wiki.db", read_only=True)
 
@@ -320,29 +303,25 @@ class TestFederatedInjection:
                 NamespaceHandle(
                     name="other",
                     store=other,
-                    config=WikiNamespaceConfig(
-                        store=str(other_dir), description="sibling lib"
-                    ),
+                    config=WikiNamespaceConfig(store=str(other_dir), description="sibling lib"),
                     origin="repo",
                     storage_dir=other_dir,
                 )
             ],
             skipped=[
                 NamespaceSkip(
-                    name="ghost", reason="unbuilt", detail="no plane",
+                    name="ghost",
+                    reason="unbuilt",
+                    detail="no plane",
                     hint="wikitoolkit build --path /ghost",
                 )
             ],
         )
         config = WikiConfig(wiki_name="test-wiki", storage_dir=local_dir)
-        return LLMWikiToolkit(
-            mock_pi, mock_gi, mock_okf, config, store=federated
-        )
+        return LLMWikiToolkit(mock_pi, mock_gi, mock_okf, config, store=federated)
 
     @pytest.mark.asyncio
-    async def test_injected_store_is_used(
-        self, tmp_path: Path, mock_pi, mock_gi, mock_okf
-    ):
+    async def test_injected_store_is_used(self, tmp_path: Path, mock_pi, mock_gi, mock_okf):
         """The config-driven store construction is bypassed entirely."""
         from unittest.mock import patch
 
@@ -352,9 +331,7 @@ class TestFederatedInjection:
         injected = SQLiteWikiStore(tmp_path / "plane" / "wiki.db")
         config = WikiConfig(wiki_name="test-wiki", storage_dir=tmp_path)
         with patch.object(toolkit_module, "create_wiki_store") as factory:
-            toolkit = LLMWikiToolkit(
-                mock_pi, mock_gi, mock_okf, config, store=injected
-            )
+            toolkit = LLMWikiToolkit(mock_pi, mock_gi, mock_okf, config, store=injected)
         factory.assert_not_called()
         assert toolkit._store is injected
 
@@ -406,14 +383,10 @@ class TestFederatedInjection:
         assert all(i.startswith("other::") for i in ids)
 
     @pytest.mark.asyncio
-    async def test_search_facade_is_cached_per_namespace(
-        self, federated_toolkit
-    ):
+    async def test_search_facade_is_cached_per_namespace(self, federated_toolkit):
         first = federated_toolkit._search_for("other")
         assert federated_toolkit._search_for("other") is first
-        assert federated_toolkit._search_for("test-wiki") is (
-            federated_toolkit._search
-        )
+        assert federated_toolkit._search_for("test-wiki") is (federated_toolkit._search)
 
     @pytest.mark.asyncio
     async def test_config_for_accepts_namespaces(self, federated_toolkit):
@@ -429,18 +402,11 @@ class TestFederatedInjection:
     @pytest.mark.asyncio
     async def test_writes_stay_local(self, federated_toolkit):
         await federated_toolkit._store.upsert_pages([])
-        page = await federated_toolkit.create_page(
-            "test-wiki", "A memory", "Body text."
-        )
+        page = await federated_toolkit.create_page("test-wiki", "A memory", "Body text.")
         assert page.get("page_id")
         stored = await federated_toolkit._store.local.get_page(page["page_id"])
         assert stored is not None
-        assert (
-            await federated_toolkit._store.namespaces["other"].store.get_page(
-                page["page_id"]
-            )
-            is None
-        )
+        assert await federated_toolkit._store.namespaces["other"].store.get_page(page["page_id"]) is None
 
 
 class TestToolkitReviewRegressions:
@@ -457,21 +423,29 @@ class TestToolkitReviewRegressions:
 
         local_dir = tmp_path / "local"
         local = SQLiteWikiStore(local_dir / "wiki.db", wiki_name="test-wiki")
-        await local.upsert_pages([
-            WikiPageRecord(
-                concept_id="file:l.py", title="l",
-                summary="alpha local", body="alpha local",
-            )
-        ])
+        await local.upsert_pages(
+            [
+                WikiPageRecord(
+                    concept_id="file:l.py",
+                    title="l",
+                    summary="alpha local",
+                    body="alpha local",
+                )
+            ]
+        )
         other_dir = tmp_path / "other"
         writable = SQLiteWikiStore(other_dir / "wiki.db", wiki_name="other")
-        await writable.upsert_pages([
-            WikiPageRecord(
-                concept_id=f"file:o{i}.py", title=f"o{i}",
-                summary="alpha other", body="alpha other " * (i + 1),
-            )
-            for i in range(3)
-        ])
+        await writable.upsert_pages(
+            [
+                WikiPageRecord(
+                    concept_id=f"file:o{i}.py",
+                    title=f"o{i}",
+                    summary="alpha other",
+                    body="alpha other " * (i + 1),
+                )
+                for i in range(3)
+            ]
+        )
         other = SQLiteWikiStore(other_dir / "wiki.db", read_only=True)
         fed = FederatedWikiStore(
             local=local,
@@ -480,23 +454,17 @@ class TestToolkitReviewRegressions:
                 NamespaceHandle(
                     name="other",
                     store=other,
-                    config=WikiNamespaceConfig(
-                        store=str(other_dir), weight=0.25
-                    ),
+                    config=WikiNamespaceConfig(store=str(other_dir), weight=0.25),
                     origin="repo",
                     storage_dir=other_dir,
                 )
             ],
         )
         config = WikiConfig(wiki_name="test-wiki", storage_dir=local_dir)
-        return LLMWikiToolkit(
-            mock_pi, mock_gi, mock_okf, config, store=fed
-        )
+        return LLMWikiToolkit(mock_pi, mock_gi, mock_okf, config, store=fed)
 
     @pytest.mark.asyncio
-    async def test_ingest_into_a_namespace_is_refused(
-        self, federated_toolkit, tmp_path
-    ):
+    async def test_ingest_into_a_namespace_is_refused(self, federated_toolkit, tmp_path):
         """M1 — a namespace-addressed write must not land on the local plane."""
         source = tmp_path / "note.md"
         source.write_text("# Note\n\nbody\n", encoding="utf-8")
@@ -522,20 +490,11 @@ class TestToolkitReviewRegressions:
     @pytest.mark.asyncio
     async def test_search_preserves_namespace_weights(self, federated_toolkit):
         """M3 — a second global min-max would erase the 0.25 weight."""
-        results = await federated_toolkit.search(
-            "test-wiki", "alpha", mode="lexical"
-        )
+        results = await federated_toolkit.search("test-wiki", "alpha", mode="lexical")
         assert results
-        by_ns = {
-            r["node_id"]: r["score"]
-            for r in results
-        }
-        local_best = max(
-            score for nid, score in by_ns.items() if not nid.startswith("other::")
-        )
-        foreign_best = max(
-            score for nid, score in by_ns.items() if nid.startswith("other::")
-        )
+        by_ns = {r["node_id"]: r["score"] for r in results}
+        local_best = max(score for nid, score in by_ns.items() if not nid.startswith("other::"))
+        foreign_best = max(score for nid, score in by_ns.items() if nid.startswith("other::"))
         assert local_best == pytest.approx(1.0)
         # Weighted down, not re-stretched back to 1.0.
         assert foreign_best == pytest.approx(0.25)
@@ -550,7 +509,9 @@ class TestToolkitReviewRegressions:
         local = ArangoDBWikiStore(arango_params={}, database="wiki_x")
         fed = FederatedWikiStore(local, "x")
         toolkit = LLMWikiToolkit(
-            mock_pi, mock_gi, mock_okf,
+            mock_pi,
+            mock_gi,
+            mock_okf,
             WikiConfig(
                 wiki_name="x",
                 storage_dir=tmp_path / "x",
@@ -560,13 +521,13 @@ class TestToolkitReviewRegressions:
         )
         assert toolkit._sources.backend == "arangodb"
 
-    def test_sqlite_config_with_injected_store_is_unchanged(
-        self, tmp_path, mock_pi, mock_gi, mock_okf
-    ):
+    def test_sqlite_config_with_injected_store_is_unchanged(self, tmp_path, mock_pi, mock_gi, mock_okf):
         from parrot.knowledge.wiki.store import SQLiteWikiStore
 
         toolkit = LLMWikiToolkit(
-            mock_pi, mock_gi, mock_okf,
+            mock_pi,
+            mock_gi,
+            mock_okf,
             WikiConfig(wiki_name="x", storage_dir=tmp_path / "x"),
             store=SQLiteWikiStore(tmp_path / "x" / "wiki.db"),
         )

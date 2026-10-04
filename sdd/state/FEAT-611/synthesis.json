@@ -1,0 +1,42 @@
+{
+  "feat_id": "FEAT-611",
+  "mode": "enrichment",
+  "overall_confidence": "medium",
+  "summary": "Parallel E2E track for FEAT-598 covering what FEAT-610 excludes: server lane (publish/persist/refresh/share/PBAC), multi-source join + DSL + FilterBar parrot_param, multiquery slugs, and admin-UI chat wiring so the Svelte linked lane is reachable from a real agent. Dataset: epson_field_activity + epson_program_targets (+ epson multiquery). Environment: env/staging.",
+  "localization": [
+    {"path": "packages/ai-parrot/src/parrot/outputs/a2ui/builders.py", "symbol": "build_linked_surface", "evidence": ["F011"]},
+    {"path": "packages/ai-parrot/src/parrot/outputs/a2ui/linked/executor.py", "symbol": "execute_sources", "evidence": ["F010", "F012"]},
+    {"path": "packages/ai-parrot/src/parrot/outputs/a2ui/linked/service.py", "symbol": "LinkedSurfaceService", "evidence": ["F013"]},
+    {"path": "packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py", "symbol": "refresh route", "evidence": ["F013"]},
+    {"path": "packages/ai-parrot-tools/src/parrot_tools/ui_surfaces.py", "symbol": "PublishSurfaceTool", "evidence": ["F013"]},
+    {"path": "packages/ai-parrot/src/parrot/auth/pbac.py", "symbol": "setup_dataplane_guard", "evidence": ["F013"]},
+    {"path": "packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py", "symbol": "QuerysourceToolkit.build_linked_surface", "evidence": ["F011", "F012", "F014"]},
+    {"path": "packages/ai-parrot/src/parrot/bots/base.py", "symbol": "tool-result envelope lifting", "evidence": ["F014"]},
+    {"path": "packages/ai-parrot/src/parrot/outputs/a2ui/emission.py", "symbol": "finalize_a2ui_response", "evidence": ["F014"]},
+    {"path": "packages/ai-parrot-server/ui/src/lib/components/agents/canvas/infographic-tab-builder.ts", "symbol": null, "evidence": ["F014"]},
+    {"path": "packages/ai-parrot-server/ui/src/lib/components/agents/canvas/InfographicCanvas.svelte", "symbol": null, "evidence": ["F014"]},
+    {"path": "packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/A2UISurface.svelte", "symbol": "serverRefresh", "evidence": ["F014", "F015"]},
+    {"path": "packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/index.ts", "symbol": "LinkedLane.setParam", "evidence": ["F011", "F015"]},
+    {"path": "packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/conditions.ts", "symbol": null, "evidence": ["F015"]}
+  ],
+  "claims": [
+    {"id": "C1", "text": "FEAT-610 does not exercise tenant, multiquery, params/locked, transform DSL/ref, refresh policies, server lane", "evidence": ["F010", "F013"], "confidence": "high"},
+    {"id": "C2", "text": "qs_build_linked_surface emits one component/one source; FilterBar+join surfaces need a custom TOOL over builders.build_linked_surface", "evidence": ["F011"], "confidence": "high"},
+    {"id": "C3", "text": "Svelte linked lane unreachable from agent chat (5 blockers)", "evidence": ["F014"], "confidence": "high"},
+    {"id": "C4", "text": "PublishSurfaceTool defaults to guard=None and fails closed; guard only exists when PBAC policies load", "evidence": ["F013"], "confidence": "high"},
+    {"id": "C5", "text": "TS/Python drift: limit and offset:0 in conditions.ts, setParam without declared-param check, serverRefresh discards response, snapshotAt null", "evidence": ["F015"], "confidence": "medium"},
+    {"id": "C6", "text": "Existing E2E fakes Postgres, QS, QueryModel, guard; vitest never ran", "evidence": ["F015"], "confidence": "high"},
+    {"id": "C7", "text": "epson_field_activity (+targets, +multiquery) are the slugs used by FEAT-598 fixtures; real SQL/columns unverified", "evidence": ["F001"], "confidence": "medium"},
+    {"id": "C8", "text": "Installed querysource 4.5.11; env/.env targets production DB; staging env exists", "evidence": ["F003"], "confidence": "high"},
+    {"id": "C9", "text": "Slugs only registrable via public.queries; save_multiquery(allow_write) upserts multiquery rows", "evidence": ["F004"], "confidence": "high"},
+    {"id": "C10", "text": "Python a2ui_renderers ignore parrot_data_sources (snapshot only)", "evidence": ["F014"], "confidence": "high"}
+  ],
+  "unknowns": [
+    {"id": "U1", "question": "Coverage scope", "user_answer": "all four: server lane+share+PBAC, join+DSL+FilterBar, multiquery, admin chat wiring"},
+    {"id": "U2", "question": "Dataset", "user_answer": "Epson (epson_field_activity + epson_program_targets)"},
+    {"id": "U3", "question": "Environment", "user_answer": "Staging (env/staging)"},
+    {"id": "U4", "question": "Real definitions of epson slugs in staging and whether an epson multiquery slug exists", "user_answer": null},
+    {"id": "U5", "question": "querysource version in the runtime venv (4.5.11 vs >=5.1.1) and PBAC policy for query_slug:public:epson_*", "user_answer": null}
+  ],
+  "recommended_next_command": {"command": "sdd-spec", "target": "FEAT-611", "rationale": "Localization is high-confidence and all scope questions are resolved; remaining unknowns are staging environment checks that the first spec task can verify."}
+}

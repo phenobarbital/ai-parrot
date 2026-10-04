@@ -1,0 +1,16 @@
+docs/outputs/a2ui-v1.md
+packages/ai-parrot-server/src/parrot/handlers/models/ui_surfaces.py
+packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py
+packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/a2ui-types.ts
+packages/ai-parrot-tools/src/parrot_tools/querysource/toolkit.py
+packages/ai-parrot-tools/src/parrot_tools/ui_surfaces.py
+packages/ai-parrot/src/parrot/bots/mixins/infographic_authoring.py
+packages/ai-parrot/src/parrot/outputs/a2ui/baking.py
+packages/ai-parrot/src/parrot/outputs/a2ui/builders.py
+packages/ai-parrot/src/parrot/outputs/a2ui/catalog/__init__.py
+packages/ai-parrot/src/parrot/outputs/a2ui/catalog/parrot/filterbar.py
+packages/ai-parrot/src/parrot/outputs/a2ui/models.py
+packages/ai-parrot/src/parrot/outputs/a2ui/recipes/models.py
+packages/ai-parrot/src/parrot/tools/dataset_manager/sources/query_slug.py
+packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py
+sdd/tasks/.id_ledger.json

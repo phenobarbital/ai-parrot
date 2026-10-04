@@ -1,0 +1,39 @@
+{
+  "description": "``GET /astudio/agents/{name}/mcp-servers`` \u2014 masked dumps.",
+  "properties": {
+    "agent": {
+      "title": "Agent",
+      "type": "string"
+    },
+    "editable": {
+      "title": "Editable",
+      "type": "boolean"
+    },
+    "reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reason"
+    },
+    "servers": {
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Servers",
+      "type": "array"
+    }
+  },
+  "required": [
+    "agent",
+    "editable"
+  ],
+  "title": "AgentMcpServersResponse",
+  "type": "object"
+}

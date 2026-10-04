@@ -7,6 +7,12 @@ Stores the *non-secret* subset of each ``/add_mcp`` JSON payload in the
 ``vault_credential_name`` field in each document points to the relevant Vault
 entry.
 
+Persistence is opt-in: it runs only when ``USE_DOCUMENTDB`` (``parrot.conf``,
+default ``False``) is enabled. When disabled, every operation is a no-op —
+``save`` stores nothing, ``list`` returns ``[]``, ``read_one`` returns ``None``
+and ``remove`` reports not-found — so a deployment without DocumentDB never
+blocks a Telegram login on a connection attempt.
+
 This module is Telegram-scoped and intentionally separate from
 :mod:`parrot.handlers.mcp_persistence` which handles catalog-activated MCP
 servers (``UserMCPServerConfig`` / ``user_mcp_configs`` collection).
@@ -20,17 +26,46 @@ Usage::
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import AsyncIterator, Dict, List, Optional
 
 import logging
 
 from pydantic import BaseModel, Field
 
+from parrot import conf as parrot_conf
 from parrot.interfaces.documentdb import DocumentDb
 
 
 logger = logging.getLogger(__name__)
+
+
+def documentdb_enabled() -> bool:
+    """Return whether Telegram MCP persistence may use DocumentDB.
+
+    Read at call time (not import time) so the ``USE_DOCUMENTDB`` setting can
+    be toggled in tests.
+
+    Returns:
+        ``True`` when ``parrot.conf.USE_DOCUMENTDB`` is enabled.
+    """
+    return bool(getattr(parrot_conf, "USE_DOCUMENTDB", False))
+
+
+@asynccontextmanager
+async def _documentdb() -> AsyncIterator[Optional[DocumentDb]]:
+    """Open a DocumentDB connection only when persistence is enabled.
+
+    Yields:
+        A connected :class:`DocumentDb`, or ``None`` when ``USE_DOCUMENTDB``
+        is disabled (no connection is attempted).
+    """
+    if not documentdb_enabled():
+        yield None
+        return
+    async with DocumentDb() as db:
+        yield db
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +141,8 @@ class TelegramMCPPersistenceService:
     Mirrors the pattern of :class:`~parrot.handlers.mcp_persistence.MCPPersistenceService`
     but is dedicated to the Telegram ``/add_mcp`` free-form flow.
 
+    Every method is a no-op when :func:`documentdb_enabled` is ``False``.
+
     Methods:
         save: Upsert a config document.
         list: Retrieve all active configs for a user.
@@ -152,7 +189,10 @@ class TelegramMCPPersistenceService:
             },
         }
 
-        async with DocumentDb() as db:
+        async with _documentdb() as db:
+            if db is None:
+                logger.debug("save: DocumentDB disabled; not persisting name=%r user=%r", name, user_id)
+                return
             await db.update_one(self.COLLECTION, query, update_data, upsert=True)
 
         logger.info(
@@ -175,7 +215,9 @@ class TelegramMCPPersistenceService:
         """
         query = {"user_id": user_id, "active": True}
 
-        async with DocumentDb() as db:
+        async with _documentdb() as db:
+            if db is None:
+                return []
             docs = await db.read(self.COLLECTION, query)
 
         configs: List[UserTelegramMCPConfig] = []
@@ -211,7 +253,9 @@ class TelegramMCPPersistenceService:
         """
         query = {"user_id": user_id, "name": name, "active": True}
 
-        async with DocumentDb() as db:
+        async with _documentdb() as db:
+            if db is None:
+                return None
             doc = await db.read_one(self.COLLECTION, query)
 
         if doc is None:
@@ -250,7 +294,9 @@ class TelegramMCPPersistenceService:
         """
         query = {"user_id": user_id, "name": name}
 
-        async with DocumentDb() as db:
+        async with _documentdb() as db:
+            if db is None:
+                return False, None
             existing = await db.read_one(self.COLLECTION, query)
 
             if existing is None:

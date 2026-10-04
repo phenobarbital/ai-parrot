@@ -50,6 +50,40 @@ mutating affordance is **database-agent-only** (`source: "database"`) —
 registry (YAML/code) rows never get an Edit or Delete action, matching
 FEAT-468's original read-only design for that source.
 
+### Tools Tab (FEAT-593)
+
+**Feature**: FEAT-593 — Tool Configuration for Agent Studio
+
+The agent edit form includes a new **Tools** tab that provides advanced
+toolkit configuration capabilities:
+
+- **Toolkit Catalog**: Lists all available toolkits with on/off switches
+- **Toolkit Configuration Drawer**: Schema-driven forms for configuring
+  toolkit parameters with proper typing, validation, and secret handling
+- **Per-Parameter Override Controls**: Toggle to mark parameters as
+  user-overridable
+- **Dynamic Options**: Multi-select widgets for parameters that support
+  dynamic options (e.g., Jira projects, Querysource programs)
+- **Datasets Panel**: Specialized interface for configuring the
+  `dataset_manager` toolkit with support for multiple datasource kinds
+  (query slug, SQL, table, file, Airtable, Smartsheet, Iceberg, Mongo,
+  Delta)
+- **MCP Servers Panel**: Interface for configuring agent-level MCP server
+  connections with proper secret handling for authentication and headers
+- **Reload Action**: Button to reload the agent after configuration changes
+- **Test Action**: Button to test toolkit assignments on a live agent instance
+
+For registry agents with YAML under `AGENTS_DIR`, the tab provides full
+configuration capabilities. For `.py` agents and YAML outside `AGENTS_DIR`,
+the tab is displayed in read-only mode with an explanation.
+
+### Chat "My tool settings" (FEAT-593)
+
+The chat interface includes a new **My tool settings** tab in the
+DataManagementModal that allows end users to configure their own
+overrides for toolkit parameters marked as user-overridable by the
+operator. User secrets are stored securely in their own vault entries.
+
 ### Registry agents stay read-only
 
 Agents loaded from the repository's YAML/code registry (`source:
@@ -70,6 +104,7 @@ six-tab form covering every user-editable `BotModel` field:
 | **Behavior** | `role`, `goal`, `backstory`, `rationale`, `capabilities`, `pre_instructions`, `system_prompt_template`, `human_prompt_template`, `prompt_config` |
 | **AI** | `llm` (from the catalog), plus `model`/`temperature`/`max_tokens`/`top_p`/`top_k` (stored inside `model_config`), and the raw `model_config` JSON |
 | **Capabilities** | `tools_enabled`, `auto_tool_detection`, `tool_threshold`, `tools` (checkbox list from `/api/v1/agent_tools` + a fallback text list for names not in the catalog), `operation_mode` (from the catalog), `use_kb`, `kb`, `custom_kbs` (suggestions from the catalog's knowledge-base classes) |
+| **Tools** | Agent-level toolkit configurations, per-user overrides, dataset manager, MCP servers |
 | **Data & Memory** | `use_vector`, `vector_store_config`, `reranker_config`, `parent_searcher_config`, `context_search_limit`, `context_score_threshold`, `memory_type` (from the catalog), `memory_config`, `max_context_turns`, `use_conversation_history` |
 | **Advanced** | `bot_class` (plain text, default `BasicBot`), `permissions` (JSON — a dict or a list of rule objects) |
 

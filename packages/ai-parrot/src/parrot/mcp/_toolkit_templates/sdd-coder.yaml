@@ -20,6 +20,11 @@
         # Agent tool accepts for the native seat (it resolves to the host's current
         # Sonnet); the canonical policy name for it is `sonnet-5`.
         - {label: gpt-5.6-terra, kind: mcp,  backend: codex,         model: gpt-5.6-terra}
+        # A SECOND strong MCP seat is required, not optional: the retry ladder
+        # (`SddCoderEngine._select_retry_seat`, `ChunkAssigner.retry_seat`) skips
+        # `kind: native`, so with only one strong MCP seat a complex/unknown task
+        # that fails attempt 1 has an empty retry set (issue:569e81756247).
+        - {label: gpt-5.6-luna, kind: mcp,   backend: codex,         model: gpt-5.6-luna}
         - {label: sonnet,      kind: native, model: sonnet}
       # FEAT-561 — strong-model allowlist (sdd/specs/complex-sdd-tasks.spec.md §2).
       # Sibling of `roster`, forwarded to ComplexityPolicy.strong_models. Complex and
@@ -31,4 +36,5 @@
       complexity:
         strong_models:
           - {canonical_model: gpt-5.6-terra, backend: codex, model: gpt-5.6-terra}
+          - {canonical_model: gpt-5.6-luna, backend: codex, model: gpt-5.6-luna}
           - {canonical_model: sonnet-5, backend: native, model: sonnet}

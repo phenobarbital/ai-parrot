@@ -1,0 +1,140 @@
+**Option A** is recommended because it is the only option that gives the
+renderer a self-sufficient widget (fetch with the viewer's credentials,
+local transform, refresh without an agent) while leaving every existing
+lane untouched: a linked surface with a snapshot is, to `lower()`,
+`bake_envelope`, the six renderers and the HTML lane, just a baked surface.
+Option B is cheaper on validation but puts data access into presentation
+props and cannot express shared sources or joins across a dashboard.
+Option C is the current state of the art (FEAT-492 replay) and stays as the
+server-side lane inside A; on its own it does not meet the goal. Option D is
+worth keeping in mind for streaming KPIs, but it depends on a live session,
+which is the exact limitation FEAT-492 removed.
+
+What A trades off, knowingly: a DSL that must be kept in parity across the
+Python reference and every renderer's executor (mitigated by the published
+JSON Schema, the shared golden fixtures and a small, closed operation set),
+and the fact that this repo does not ship a TypeScript executor for third
+parties — the production renderer lives in `navigator-frontend-next` and
+implements its own; the bundled UI implements one as well, for itself.
+
+---
+
+### Option A: Surface-level `parrot_data_sources` extension + TOOL-origin builder + dual DSL executors
+
+Four pieces, all additive:
+
+1. **Descriptor models** (`parrot/outputs/a2ui/linked/models.py`): Pydantic
+   `LinkedDataSource` (`kind: "query_slug"`, `slug`, `tenant: str | null`,
+   `is_multiquery`, `conditions`,
+   `request: {placeholders, filter, fields, ordering, grouping, limit}`,
+   `params: {name: {type, default, required, editable, accepts_keywords}}`,
+   `locked: [names]`, `transform: TransformSpec | None`, `target` pointer,
+   `snapshot_at`, `refresh: {"policy": "on_mount|manual|interval",
+   "interval_seconds"}`) and `TransformSpec` (either `ops: [...]` inline or
+   `ref: {url, integrity}`), plus the ten `ops` models. JSON Schema is
+   exported for the renderer. A surface-level validator (a new loop in
+   `validate_envelope`, which today iterates components only) checks the
+   extension, the `target` pointers against bindings, and the origin gate
+   (`DATA_SOURCES_NOT_ALLOWED_FOR_LLM`).
+2. **Deterministic builder** (`builders.build_linked_surface`, plus a
+   `surface_metadata` parameter on `build_surface`, which today can only
+   attach metadata to the root component, `builders.py:101-107`): takes
+   the component descriptor(s), one or more `LinkedDataSource`, and an
+   optional snapshot; validates axes/columns against the source's declared
+   columns; emits `CreateSurface` with `origin=ProducerOrigin.TOOL` (the
+   `build_html_document` precedent, `builders.py:311`). The agent-facing
+   tool is **`qs_build_linked_surface`, a new tool on FEAT-558
+   `QuerysourceToolkit`** (`parrot_tools/querysource/toolkit.py`): it
+   reuses the toolkit's `SlugCatalog`/`TenantGuard` **made tenant-aware**
+   (revised 2026-09-24: lookups go through QuerySource's in-process
+   `DefinitionRepository.get(QueryIdentity(registry.resolve(tenant), slug))`
+   and `.list(store, params)` (`repositories/definitions.py:161,175`)
+   instead of `QueryModel` over `public.queries`, which cannot see
+   `"{schema}".queries`; the existing `programs` allowlist keeps working
+   unchanged because a tenant definition's runtime `program_slug` **is**
+   its schema name, `definitions.py:111-119`), `forced_conditions`
+   (→ `locked`), `build_conditions` (→ `conditions`) and the extended
+   `describe_slug(slug, tenant=None)` (→ `params`), always executes the
+   slug once through the Python executor with `tenant=`, and hands the
+   frame to the pure builder. No separate `LinkedSurfaceToolkit`; a
+   DatasetManager wrapper is a follow-up, not v1.
+3. **Python executor** (`parrot/outputs/a2ui/linked/executor.py` +
+   `dsl.py`): fetch through `QuerySlugSource.fetch(**conditions)`
+   (`sources/query_slug.py:122`), apply the DSL over a `pandas.DataFrame`,
+   write into `dataModel[target]`. Wired into `UISurfacesHandler._refresh`
+   as a second path next to `RecipeRunner`, and into the save path
+   (`_pin_save` / `publish_surface`) to produce the snapshot when a linked
+   envelope arrives without one. `GET` lanes never execute. `refreshable`
+   widened. `PublishSurfaceTool` reports `refreshable` accordingly.
+4. **Published contract for renderers + the bundled UI's own executor**:
+   ai-parrot publishes the descriptor/DSL JSON Schema and the golden
+   fixtures (`tests/outputs/a2ui/golden/linked/`), and ai-parrot-server
+   serves `ref` transforms from a static route with a signed manifest.
+   `navigator-frontend-next` implements its executor from that contract.
+   The bundled `ai-parrot-server/ui` implements **its own** executor as one
+   more renderer (not a reference for anyone): `a2ui-types.ts` gains
+   `CreateSurface.metadata`; a `linked/` module (fetch via
+   `POST /api/v3/queries/{slug}` — or `/api/v1/{tenant}/queries/{slug}`
+   when `source.tenant` is set — with the viewer's bearer, DSL
+   executor, refresh scheduler, `ref` loader with SRI check) and an
+   insertion point in `A2UISurface.svelte` (today a stateless renderer
+   with no fetch, `A2UISurface.svelte:12-30`); `FilterBar` gets a branch
+   in `A2UINode.svelte` honouring `parrot_param`.
+
+✅ **Pros:**
+- Matches every discovery decision; no change to the official wire shape
+  (surface `metadata.extensions` already exists and validates,
+  `models.py:470`, `:341-361`).
+- Multiple sources per surface for free; dashboards and widgets use one
+  mechanism.
+- Baked surfaces, `bake_envelope`, the six satellite renderers and
+  `lower()` are untouched: a snapshot makes a linked surface
+  indistinguishable from a baked one for them.
+- Server-side refresh reuses FEAT-492's route, store and owner-context
+  logic; only the executor behind it changes.
+- The origin gate keeps the LLM producer path unable to fabricate data
+  access, exactly like actions and inline data today.
+
+❌ **Cons:**
+- Several executors of the same DSL (Python reference plus one per
+  renderer) must stay in parity; the golden fixtures are the contract and
+  they must be maintained with every DSL change.
+- Net-new frontend surface: the bundled UI has no API client for
+  QuerySource or ui_surfaces at all (`grep` → 0 hits in `ui/src`), so its
+  lane is written from scratch.
+- Viewer-credential fetch means a shared surface (FEAT-492 share token)
+  may render the snapshot but fail to refresh for a viewer without
+  `slug:execute`; the renderer degrades to snapshot + notice + server-side
+  refresh button.
+- Saving a linked envelope without a snapshot makes `POST /api/v1/ui/surfaces`
+  execute the slug (owner context) — a write with a data-plane side effect,
+  bounded to save and refresh only.
+- Surface-level validation is a new concept in `validate_envelope`.
+
+📊 **Effort:** High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `pydantic` v2 | descriptor + DSL models, JSON Schema export | already the wire model stack |
+| `pandas` | Python DSL executor over `QuerySlugSource.fetch()` DataFrames | already a core dependency (DatasetManager) |
+| `querysource` (in-process `QS`) | server-side fetch | already used by `QuerySlugSource` (`lazy_import`, `sources/query_slug.py`) |
+| `jsonschema` | validate `parrot_data_sources` in the conformance suite | already used by `catalog.validate_message` |
+| Svelte 5 + TypeScript | the bundled UI's own renderer lane in `ai-parrot-server/ui` | existing bundled UI stack; not a reference for `navigator-frontend-next` |
+| `aiohttp` static route | serve `ref` transform modules + signed manifest | already the server stack; SRI hash in descriptor |
+
+🔗 **Existing Code to Reuse:**
+- `parrot/outputs/a2ui/builders.py:69` `build_surface` (needs `surface_metadata`), `:116` `build_chart`, `:137` `build_kpicard`, `:179` `build_datatable`, `:311` TOOL-origin precedent in `build_html_document`.
+- `parrot/outputs/a2ui/catalog/__init__.py:499` `validate_envelope`; `:617-632` D10b gate; `:646-661` inline-data gate; `catalog/base.py:78-86` error codes; `base.py:89-98` `ProducerOrigin`.
+- `parrot/outputs/a2ui/models.py:446-470` `CreateSurface` (surface `metadata`), `:338-378` `Extensions`/`SurfaceMetadata`.
+- `parrot/outputs/a2ui/baking.py:356` `bake_envelope`, `:187-191` `parrot_optional`, `:140` `BakeError`.
+- `parrot/outputs/a2ui/recipes/models.py:69` `DataSourceSpec`, `:90` `TransformStep`, `:51` `RecipeParam`; `recipes/params.py:30-39` `DATE_RESOLVERS`/`resolve_date` (the in-house relative-date precedent, to be superseded by QuerySource keywords for linked sources).
+- `parrot/tools/dataset_manager/sources/query_slug.py:36-162` `QuerySlugSource` (`fetch`, `cache_key`, `permanent_filter` wins); `tool.py:966` `add_dataset`; `:60` `DatasetInfo`; `:2766` `list_datasets`.
+- `parrot_tools/querysource/toolkit.py:59` `QuerysourceToolkit` (`describe_slug` L160, `execute_slug` L190, `_open`/`SlugCatalog` L113-117, `forced_conditions` L88); `models.py:24-45` `PlaceholderInfo`/`SlugDetail`, `:47-59` `ExecutionResult`; `dialect.py` `build_conditions`/`validate_placeholders`/`validate_filter`, `load_variables` L207; `catalog.py:39-55` `SlugRecord` (`conditions`, `cond_definition`, `query_raw`), `:97` `TenantGuard`, `:131` `SlugCatalog.get_allowed`.
+- `parrot/handlers/ui_surfaces.py:577-645` `_refresh` (owner ctx, `update_envelope`), `:64-95` request models; `handlers/models/ui_surfaces.py:62-86` `UISurfaceRecord.refreshable`.
+- `parrot_tools/ui_surfaces.py:60-150` `PublishSurfaceTool`; `bots/mixins/infographic_authoring.py:440` `publish_surface`.
+- `parrot/outputs/a2ui/catalog/parrot/filterbar.py:29-129` `FilterBar` (no client state today; `parrot_filter_column` extension).
+- `ui/src/lib/components/agents/canvas/a2ui/a2ui-types.ts:63-68` `CreateSurface` (no `metadata`), `a2ui-binding.ts:33-68` pointer resolution, `a2ui-chart-adapter.ts:46-84` `toChartBlockData`, `A2UISurface.svelte:12-30`, `a2ui-kind.ts:29-37`.
+- `tests/outputs/a2ui/conformance/test_all_emitters.py:115` `_assert_conformant`; `tests/outputs/a2ui/golden/` byte-equality convention (`test_components_filterbar.py:15-42`).
+- `docs/outputs/a2ui-v1.md:140-158` extension key table; `docs/frontend/agentdashboard-a2ui-reference.md:710-818` kinds + client-side filtering contract, `:820-971` renderer design.
+- Prior art for a client-executed declarative descriptor with public/private args: `packages/parrot-formdesigner/scripts/gen_frontend_docs.py:78-101` (`x-parrot-rest`).

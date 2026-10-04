@@ -229,6 +229,19 @@ this; if you still see corruption with a custom toolkit, check whether
 importing it (or any of its transitive dependencies) prints directly to
 `stdout` rather than logging through `self.logger`.
 
+**Every call times out after 30 minutes, even read-only ones.**
+That is Claude Code's stdio idle timeout (`CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT`,
+default 1,800,000 ms) firing on calls queued behind one stuck handler.
+`StdioMCPServer` runs each `tools/call` as its own asyncio task and honours
+the host's `notifications/cancelled`, so a stuck call no longer blocks the
+others and is cancelled once the host gives up on it. If a toolkit still
+pins the server, look for an unbounded `await` inside the tool — a child
+process awaited without a deadline is the usual cause; spawn it through
+`parrot.flows.dev_loop.procs.run_bounded` or wrap it in `asyncio.wait_for`.
+The client log names the culprit: the first `Calling MCP tool: <name>`
+line without a matching `completed` line in
+`~/.cache/claude-cli-nodejs/<cwd-slug>/mcp-logs-<server>/`.
+
 **A tool call rejects with a missing/invalid `confirm` argument.**
 The tool is in the toolkit's `confirming_tools`. This is expected — the
 MCP host's caller (the model) must pass `confirm: true` explicitly.

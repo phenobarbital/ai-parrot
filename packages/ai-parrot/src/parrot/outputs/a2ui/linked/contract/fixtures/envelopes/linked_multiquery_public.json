@@ -1,0 +1,75 @@
+{
+  "catalogId": "https://parrot.dev/catalogs/v1",
+  "components": [
+    {
+      "columns": [
+        {
+          "name": "result"
+        },
+        {
+          "name": "count"
+        }
+      ],
+      "component": "DataTable",
+      "data": {
+        "path": "/mq/rows"
+      },
+      "id": "root"
+    }
+  ],
+  "dataModel": {
+    "mq": {
+      "rows": [
+        {
+          "count": 1,
+          "result": "ok"
+        },
+        {
+          "count": 2,
+          "result": "ok"
+        }
+      ]
+    }
+  },
+  "metadata": {
+    "extensions": {
+      "parrot_data_sources": {
+        "mq": {
+          "conditions": {
+            "firstdate": "YESTERDAY",
+            "lastdate": "TODAY"
+          },
+          "is_multiquery": true,
+          "kind": "query_slug",
+          "locked": [],
+          "multi_output": "result",
+          "params": {},
+          "refresh": {
+            "interval_seconds": null,
+            "policy": "on_mount"
+          },
+          "request": {
+            "fields": [],
+            "filter": {},
+            "grouping": [],
+            "limit": null,
+            "offset": null,
+            "ordering": [],
+            "placeholders": {
+              "firstdate": "YESTERDAY",
+              "lastdate": "TODAY"
+            }
+          },
+          "slug": "epson_multiquery",
+          "snapshot_at": "2026-09-25T00:00:00Z",
+          "snapshot_truncated": false,
+          "target": "/mq/rows",
+          "tenant": null,
+          "transform": null
+        }
+      }
+    }
+  },
+  "sendDataModel": false,
+  "surfaceId": "linked-multiquery-public"
+}

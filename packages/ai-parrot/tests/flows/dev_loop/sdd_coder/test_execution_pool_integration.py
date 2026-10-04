@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -24,10 +25,38 @@ import pytest
 
 from parrot.flows.dev_loop.dispatchers import DispatchExecutionError
 from parrot.flows.dev_loop.models import DevelopmentOutput, LLMCodeDispatchProfile
+from parrot.flows.dev_loop.sdd_coder.complexity_models import ComplexityPolicy, StrongModelIdentity
 from parrot.flows.dev_loop.sdd_coder.engine import SddCoderEngine, CoderFailure
 from parrot.flows.dev_loop.sdd_coder.models import ExecutionSnapshot, RosterConfig, RosterSeat, SeatProbeResult
 from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool, roster_fingerprint
 from parrot.knowledge.wiki.ledger.coder_suspensions import CoderSuspensionStore, ModelKey, SuspensionRecord
+
+
+def _init_git_worktree(worktree_path: Path) -> None:
+    """Git init + identity config + one empty commit, synchronously.
+
+    Kept as a plain (non-async) helper so async tests dispatch it via
+    `asyncio.to_thread` instead of calling blocking `subprocess.run` directly
+    inside an `async def` (ASYNC221).
+
+    An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
+    (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
+    current branch, so every sandbox here needs at least one commit.
+    """
+    subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
+    )
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
+    )
+
+
+def _git_add_commit(cwd, target: str, message: str) -> None:
+    """`git add <target>` + `git commit -m <message>`, synchronously (see `_init_git_worktree`)."""
+    subprocess.run(["git", "add", target], cwd=cwd, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", message], cwd=cwd, check=True, capture_output=True)
 
 
 @pytest.fixture
@@ -53,19 +82,7 @@ async def test_restart_same_execution(tmp_path, roster_config):
     worktree_path.mkdir()
 
     # Initialize git repo
-    import subprocess
-
-    subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
-    # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
-    # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
-    # current branch, so every sandbox here needs at least one commit.
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
-    )
+    await asyncio.to_thread(_init_git_worktree, worktree_path)
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -138,19 +155,7 @@ async def test_close_then_new_execution(tmp_path, roster_config):
     worktree_path = tmp_path / "feature-worktree"
     worktree_path.mkdir()
 
-    import subprocess
-
-    subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
-    # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
-    # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
-    # current branch, so every sandbox here needs at least one commit.
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
-    )
+    await asyncio.to_thread(_init_git_worktree, worktree_path)
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -210,19 +215,7 @@ async def test_persistence_failure_is_explicit(tmp_path, roster_config):
     worktree_path = tmp_path / "feature-worktree"
     worktree_path.mkdir()
 
-    import subprocess
-
-    subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
-    # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
-    # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
-    # current branch, so every sandbox here needs at least one commit.
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
-    )
+    await asyncio.to_thread(_init_git_worktree, worktree_path)
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -299,19 +292,7 @@ async def test_restart_preserves_inherited_exclusions(tmp_path, roster_config):
     worktree_path = tmp_path / "feature-worktree"
     worktree_path.mkdir()
 
-    import subprocess
-
-    subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
-    # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
-    # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
-    # current branch, so every sandbox here needs at least one commit.
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
-    )
+    await asyncio.to_thread(_init_git_worktree, worktree_path)
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -380,19 +361,7 @@ async def test_corrupt_execution_snapshot_requires_recovery(tmp_path, roster_con
     worktree_path = tmp_path / "feature-worktree"
     worktree_path.mkdir()
 
-    import subprocess
-
-    subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
-    # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
-    # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
-    # current branch, so every sandbox here needs at least one commit.
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
-    )
+    await asyncio.to_thread(_init_git_worktree, worktree_path)
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -444,19 +413,7 @@ async def test_uncertain_work_blocks_dispatch(tmp_path, roster_config):
     worktree_path = tmp_path / "feature-worktree"
     worktree_path.mkdir()
 
-    import subprocess
-
-    subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
-    # An unborn branch (zero commits) makes `git rev-parse --abbrev-ref HEAD` fail
-    # (exit 128, "unknown revision") -- `_resolve_feature` needs a resolvable
-    # current branch, so every sandbox here needs at least one commit.
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
-    )
+    await asyncio.to_thread(_init_git_worktree, worktree_path)
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -531,16 +488,7 @@ async def test_timeout_then_next_chunk(tmp_path, roster_config):
     worktree_path = tmp_path / "feature-worktree"
     worktree_path.mkdir()
 
-    import subprocess
-
-    subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
-    )
+    await asyncio.to_thread(_init_git_worktree, worktree_path)
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -645,16 +593,7 @@ async def test_new_execution_uses_durable_history(tmp_path, roster_config):
     worktree_path = tmp_path / "feature-worktree"
     worktree_path.mkdir()
 
-    import subprocess
-
-    subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
-    )
+    await asyncio.to_thread(_init_git_worktree, worktree_path)
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -774,16 +713,7 @@ async def test_new_execution_after_expiry(tmp_path, roster_config):
     worktree_path = tmp_path / "feature-worktree"
     worktree_path.mkdir()
 
-    import subprocess
-
-    subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
-    )
+    await asyncio.to_thread(_init_git_worktree, worktree_path)
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -922,7 +852,6 @@ async def test_overlapping_workers_isolated(tmp_path, roster_config):
     - Create execution C after A's suspension is durable
     - Verify C inherits A's suspension
     """
-    import subprocess
 
     def _make_worktree(name: str) -> Path:
         # Each overlapping worker owns its OWN feature worktree -- the engine's
@@ -932,12 +861,7 @@ async def test_overlapping_workers_isolated(tmp_path, roster_config):
         # CoderSuspensionStore rooted at tmp_path below, not per-worktree.
         wt = tmp_path / name
         wt.mkdir()
-        subprocess.run(["git", "init", "-b", "dev"], cwd=wt, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=wt, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=wt, check=True, capture_output=True)
-        subprocess.run(
-            ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=wt, check=True, capture_output=True
-        )
+        _init_git_worktree(wt)
         index_dir = wt / "sdd" / "tasks" / "index"
         index_dir.mkdir(parents=True)
         (index_dir / "test-feature.json").write_text(
@@ -953,9 +877,9 @@ async def test_overlapping_workers_isolated(tmp_path, roster_config):
         )
         return wt
 
-    worktree_path_b = _make_worktree("feature-worktree-b")
-    worktree_path_a = _make_worktree("feature-worktree-a")
-    worktree_path_c = _make_worktree("feature-worktree-c")
+    worktree_path_b = await asyncio.to_thread(_make_worktree, "feature-worktree-b")
+    worktree_path_a = await asyncio.to_thread(_make_worktree, "feature-worktree-a")
+    worktree_path_c = await asyncio.to_thread(_make_worktree, "feature-worktree-c")
 
     execution_id_a = str(uuid4())
     execution_id_b = str(uuid4())
@@ -1088,16 +1012,7 @@ async def test_all_seats_exhausted(tmp_path, roster_config):
     worktree_path = tmp_path / "feature-worktree"
     worktree_path.mkdir()
 
-    import subprocess
-
-    subprocess.run(["git", "init", "-b", "dev"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"], cwd=worktree_path, check=True, capture_output=True
-    )
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=worktree_path, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "initial commit"], cwd=worktree_path, check=True, capture_output=True
-    )
+    await asyncio.to_thread(_init_git_worktree, worktree_path)
 
     # Create index
     index_dir = worktree_path / "sdd" / "tasks" / "index"
@@ -1379,10 +1294,7 @@ class _TimeoutOnceThenOkDispatcher:
         target = f"pkg/t{n}.py"
         (Path(cwd) / "pkg").mkdir(parents=True, exist_ok=True)
         (Path(cwd) / target).write_text(f"# {brief.task_id}\n")
-        import subprocess
-
-        subprocess.run(["git", "add", target], cwd=cwd, check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", f"impl {brief.task_id}"], cwd=cwd, check=True, capture_output=True)
+        await asyncio.to_thread(_git_add_commit, cwd, target, f"impl {brief.task_id}")
         return DevelopmentOutput(files_changed=[target], commit_shas=["deadbeef"], summary=f"{self.label} done")
 
 
@@ -1467,3 +1379,66 @@ async def test_real_wrapped_timeout_suspends_and_holds_across_chunks(
         assert done2.state == "done"
 
     assert len(fakes["nova"].calls) == 1, "seat 'a' must receive ZERO further invocations after its suspension"
+
+
+def _pool_for_roster_warning(tmp_path: Path, roster: RosterConfig) -> ExecutionPool:
+    """Build an execution pool whose advisory roster state can be inspected."""
+    return ExecutionPool(
+        execution_id=str(uuid4()),
+        feature_id="FEAT-588",
+        worktree_path=str(tmp_path),
+        roster=roster,
+        seats=roster.seats,
+        suspension_store=CoderSuspensionStore.from_root(tmp_path),
+        initial_exclusions=[],
+    )
+
+
+def test_empty_strong_models_is_reported_at_execution_start(tmp_path: Path) -> None:
+    """FEAT-588 AC-2: an empty allowlist blocks every complex task."""
+    roster = RosterConfig(seats=[RosterSeat(label="standard", backend="codex", model="gpt-5.6-terra")])
+
+    view = _pool_for_roster_warning(tmp_path, roster).view()
+
+    assert view.roster_warnings == ["Roster has no strong models; every complex/unknown task will block at admission."]
+    assert view.status == "active"
+    assert not view.fallback_required
+    assert view.fallback_reason == ""
+
+
+def test_single_retry_capable_strong_seat_is_reported(tmp_path: Path) -> None:
+    """FEAT-588 AC-1: a native strong seat cannot provide an MCP retry."""
+    mcp_seat = RosterSeat(label="mcp-strong", backend="codex", model="gpt-5.6-terra")
+    native_seat = RosterSeat(label="native-strong", kind="native", model="haiku")
+    roster = RosterConfig(
+        seats=[mcp_seat, native_seat],
+        complexity=ComplexityPolicy(
+            strong_models=(
+                StrongModelIdentity(canonical_model="terra", backend="codex", model="gpt-5.6-terra"),
+                StrongModelIdentity(canonical_model="haiku", backend="native", model="haiku"),
+            )
+        ),
+    )
+
+    view = _pool_for_roster_warning(tmp_path, roster).view()
+
+    assert len(view.roster_warnings) == 1
+    assert "MCP retry-capable strong seats" in view.roster_warnings[0]
+
+
+def test_two_mcp_strong_seats_produce_no_warning(tmp_path: Path) -> None:
+    """FEAT-588 AC-3: a healthy two-MCP-strong-seat roster stays silent."""
+    roster = RosterConfig(
+        seats=[
+            RosterSeat(label="mcp-one", backend="codex", model="gpt-5.6-terra"),
+            RosterSeat(label="mcp-two", backend="codex", model="gpt-5.6-luna"),
+        ],
+        complexity=ComplexityPolicy(
+            strong_models=(
+                StrongModelIdentity(canonical_model="terra", backend="codex", model="gpt-5.6-terra"),
+                StrongModelIdentity(canonical_model="luna", backend="codex", model="gpt-5.6-luna"),
+            )
+        ),
+    )
+
+    assert _pool_for_roster_warning(tmp_path, roster).view().roster_warnings == []

@@ -1,17 +1,23 @@
 """QuerysourceToolkit — tenant-scoped QuerySource tools for agents (spec FEAT-558 §3 M5/M6).
 
 Generated tool names (tool_prefix 'qs'): qs_get_dialect_reference, qs_list_slugs, qs_describe_slug, qs_execute_slug,
-qs_list_components, qs_validate_pipeline, qs_run_multiquery and — only when allow_write=True — qs_save_multiquery.
+qs_build_linked_surface, qs_build_linked_dashboard, qs_list_components, qs_validate_pipeline, qs_run_multiquery and
+— only when allow_write=True — qs_save_multiquery.
 """
 
 from __future__ import annotations
 
 import asyncio
 import copy
+import re
 import time
+from collections.abc import Mapping
 from dataclasses import asdict
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+import pandas as pd
+
+from parrot.tools.config_schema import ConfigOption
 from parrot.tools.toolkit import AbstractToolkit  # verified: packages/ai-parrot/src/parrot/tools/toolkit.py:206
 
 from parrot_tools.querysource import _qs
@@ -22,15 +28,18 @@ from parrot_tools.querysource.catalog import (
     TenantGuard,
     normalize_pipeline,
 )
+from parrot_tools.querysource.config import QuerysourceToolkitConfig
 from parrot_tools.querysource.dialect import (
     DIALECT_REFERENCE,
     build_conditions,
     check_version_compatibility,
     load_variables,
+    reject_variable_values,
     validate_filter,
     validate_placeholders,
 )
 from parrot_tools.querysource.errors import (
+    InvalidConditionsError,
     QuerysourceToolkitError,
     RawSqlForbiddenError,
     SlugNotFoundError,
@@ -39,6 +48,8 @@ from parrot_tools.querysource.errors import (
 )
 from parrot_tools.querysource.models import (
     ComponentDoc,
+    DashboardSource,
+    DashboardWidget,
     DialectReference,
     ExecutionResult,
     FilterValue,
@@ -52,9 +63,23 @@ from parrot_tools.querysource.models import (
 )
 from parrot_tools.querysource.results import frame_to_result, multi_to_result
 
+if TYPE_CHECKING:
+    from parrot.outputs.a2ui.linked.models import LinkedDataSource, LinkedSource
+
+
+_WIDGET_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_RESERVED_LAYOUT_IDS = frozenset({"root", "title", "row_kpis", "row_charts"})
+_DASHBOARD_COMPONENTS = frozenset({"Chart", "DataTable", "KPICard"})
+_MAX_INLINE_ROWS = 500
+
 
 class QuerysourceToolkit(AbstractToolkit):
     """Explain, list, describe and execute QuerySource query-slugs and MultiQuery pipelines, scoped to tenants."""
+
+    #: FEAT-593 — Agent Studio configuration surface.
+    config_model = QuerysourceToolkitConfig
+    options_params = frozenset({"programs"})
+    secret_params = frozenset({"dsn"})
 
     tool_prefix: str | None = "qs"  # toolkit.py:257
     exclude_tools: tuple[str, ...] = ("open", "close")  # toolkit.py:243
@@ -111,6 +136,13 @@ class QuerysourceToolkit(AbstractToolkit):
         if self._catalog is not None:
             await self._catalog.close()
 
+    async def config_options(self, param: str) -> list[ConfigOption]:
+        """Dynamic choices for Agent Studio (FEAT-593): catalog program slugs for ``programs``."""
+        if param != "programs":
+            return await super().config_options(param)
+        await self._open()
+        return [ConfigOption(value=program, label=program) for program in await self._catalog.list_programs()]
+
     async def _post_execute(self, tool_name: str, result: Any, /, **kwargs: Any) -> Any:
         """Pydantic → dict for the LLM (pattern: databasequery/toolkit.py:180-199)."""
         if hasattr(result, "model_dump"):
@@ -136,25 +168,70 @@ class QuerysourceToolkit(AbstractToolkit):
         return DIALECT_REFERENCE.model_copy(update={"variables": load_variables()})
 
     async def list_slugs(
-        self, search: str | None = None, program: str | None = None, limit: int = 50
+        self, search: str | None = None, program: str | None = None, limit: int = 50, tenant: str | None = None
     ) -> list[SlugSummary]:
-        """List query-slugs visible to this toolkit (allowlist-filtered). `search` matches slug or description."""
+        """List query-slugs visible to this toolkit (allowlist-filtered). `search` matches slug or description.
+        `tenant` selects a QuerySource tenant store schema; omit it for public/legacy slugs. Routing, not security."""
         await self._open()
-        records = await self._catalog.list(search=search, program=program, limit=max(1, min(int(limit), 500)))
+        records = await self._catalog.list(
+            search=search, program=program, limit=max(1, min(int(limit), 500)), tenant=tenant
+        )
         return [self._summary(r) for r in records]
 
-    async def describe_slug(self, slug: str, dry_run: bool = False) -> SlugDetail:
+    def _placeholders_detail(self, rec: SlugRecord) -> tuple[list[PlaceholderInfo], bool]:
+        """Build placeholder detail using QuerySource's canonical describe semantics."""
+        try:
+            describe = _qs.get_describe()
+        except (ImportError, OSError):
+            return self._legacy_placeholders_detail(rec, supported=True, keyword_types=())
+        out = describe.build_variables(rec.query_raw, rec.conditions, rec.cond_definition)
+        variables = out.get("variables")
+        supported = bool(out.get("variables_supported", False))
+        if variables is None:
+            return self._legacy_placeholders_detail(rec, supported=supported, keyword_types=describe.KEYWORD_TYPES)
+        return (
+            [
+                PlaceholderInfo(
+                    **{key: value for key, value in var.model_dump().items() if key in PlaceholderInfo.model_fields}
+                )
+                for var in variables
+            ],
+            supported,
+        )
+
+    @staticmethod
+    def _legacy_placeholders_detail(
+        rec: SlugRecord, *, supported: bool, keyword_types: Any
+    ) -> tuple[list[PlaceholderInfo], bool]:
+        """Build legacy placeholder detail when QuerySource describe data is unavailable."""
+        return (
+            [
+                PlaceholderInfo(
+                    name=name,
+                    type=rec.cond_definition.get(name),
+                    default=rec.conditions.get(name),
+                    required=False,
+                    accepts_keywords=rec.cond_definition.get(name) in keyword_types
+                    or rec.cond_definition.get(name) is None,
+                )
+                for name in rec.placeholder_names
+            ],
+            supported,
+        )
+
+    async def describe_slug(self, slug: str, dry_run: bool = False, tenant: str | None = None) -> SlugDetail:
         """Explain a slug: placeholders and types, stored defaults, filtering/fields/ordering/grouping, provider,
         program, and — when the toolkit is configured with include_sql — the SQL or pipeline JSON. dry_run=True also
-        returns the rendered query via QS.dry_run() (this performs provider setup, not a pure catalog read)."""
+        returns the rendered query via QS.dry_run() (this performs provider setup, not a pure catalog read). `tenant`
+        selects a QuerySource tenant store schema; omit it for public/legacy slugs. Routing, not security. Each
+        placeholder reports `required` and `accepts_keywords`."""
         await self._open()
-        rec = await self._catalog.get_allowed(slug)
+        rec = await self._catalog.get_allowed(slug, tenant=tenant)
+        placeholders_detail, variables_supported = self._placeholders_detail(rec)
         detail = SlugDetail(
             **self._summary(rec).model_dump(),
-            placeholders_detail=[
-                PlaceholderInfo(name=n, type=rec.cond_definition.get(n), default=rec.conditions.get(n))
-                for n in rec.placeholder_names
-            ],
+            placeholders_detail=placeholders_detail,
+            variables_supported=variables_supported,
             filtering=rec.filtering,
             fields=rec.fields,
             ordering=rec.ordering,
@@ -165,7 +242,7 @@ class QuerysourceToolkit(AbstractToolkit):
             pipeline=rec.pipeline if self.include_sql else None,
         )
         if dry_run and not rec.is_multiquery:
-            qs = _qs.get_qs()(slug=slug)  # qs.py:42
+            qs = _qs.get_qs()(slug=slug, tenant=tenant)  # qs.py:56-68
             try:
                 result, error = await qs.dry_run()  # qs.py:529
                 detail.rendered_query = str(result) if result is not None else f"dry_run error: {error}"
@@ -184,14 +261,16 @@ class QuerysourceToolkit(AbstractToolkit):
         limit: int | None = None,
         offset: int | None = None,
         refresh: bool = False,
+        tenant: str | None = None,
     ) -> ExecutionResult:
         """Run a query-slug. `placeholders` fill the slug's declared conditions (see qs_describe_slug);
         `filter` adds WHERE clauses in the dialect grammar (see qs_get_dialect_reference); `fields`, `ordering`,
         `grouping` override the stored projection; `limit` is capped at the toolkit's max_rows; `refresh` bypasses
-        the QuerySource cache. Returns bounded rows plus returned_rows/total_rows/truncated."""
+        the QuerySource cache. `tenant` selects a QuerySource tenant store schema; omit it for public/legacy slugs.
+        Routing, not security. Returns bounded rows plus returned_rows/total_rows/truncated."""
         started = time.monotonic()
         await self._open()
-        rec = await self._catalog.get_allowed(slug)  # tenant check first (spec §2)
+        rec = await self._catalog.get_allowed(slug, tenant=tenant)  # tenant check first (spec §2)
         placeholders = dict(placeholders or {})
         validate_placeholders(placeholders, set(rec.placeholder_names))
         rejected = validate_filter(dict(filter or {}))  # raises when strict (default)
@@ -209,7 +288,11 @@ class QuerysourceToolkit(AbstractToolkit):
         )
         self.logger.info("qs_execute_slug %s querylimit=%s", slug, conditions.get("querylimit"))
         exc_mod = _qs.get_exceptions()
-        qs = _qs.get_qs()(slug=slug, conditions=conditions)  # qs.py:42
+        if rec.is_multiquery:
+            return await self._execute_multi(
+                slug, conditions=conditions, tenant=tenant, rejected=rejected, started=started, exc_mod=exc_mod
+            )
+        qs = _qs.get_qs()(slug=slug, conditions=conditions, tenant=tenant)  # qs.py:56-68
         try:
             result, error = await qs.query(output_format="pandas")  # qs.py:363
             if error:
@@ -227,6 +310,376 @@ class QuerysourceToolkit(AbstractToolkit):
         return frame_to_result(
             result, slug=slug, max_rows=self.max_rows, applied=conditions, rejected=rejected, started=started
         )
+
+    async def _execute_multi(
+        self,
+        slug: str,
+        *,
+        conditions: dict[str, Any],
+        tenant: str | None,
+        rejected: list[str],
+        started: float,
+        exc_mod: Any,
+    ) -> ExecutionResult:
+        """Run a stored MultiQuery slug and normalise its output to one frame."""
+        mq = _qs.get_multiqs()(slug=slug, conditions=dict(conditions), tenant=tenant)
+        try:
+            result, _options = await asyncio.wait_for(mq.query(), timeout=self.multiquery_timeout)
+        except exc_mod.DataNotFound:
+            return frame_to_result(
+                None, slug=slug, max_rows=self.max_rows, applied=conditions, rejected=rejected, started=started
+            )
+        except asyncio.TimeoutError as exc:
+            raise QuerysourceToolkitError(f"multiquery timed out after {self.multiquery_timeout}s") from exc
+        except exc_mod.QueryException as exc:
+            raise QuerysourceToolkitError(str(exc)) from exc
+        if isinstance(result, dict):
+            if "result" in result:
+                frame = result["result"]
+            elif len(result) == 1:
+                frame = next(iter(result.values()))
+            else:
+                raise QuerysourceToolkitError(
+                    f"stored multiquery '{slug}' returned multiple frames {sorted(map(str, result))}; use qs_run_multiquery"
+                )
+        else:
+            frame = result
+        return frame_to_result(
+            frame, slug=slug, max_rows=self.max_rows, applied=conditions, rejected=rejected, started=started
+        )
+
+    async def build_linked_surface(
+        self,
+        slug: str,
+        component: dict[str, Any],
+        request: dict[str, Any] | None = None,
+        tenant: str | None = None,
+        snapshot: bool = False,
+        surface_id: str | None = None,
+        target_key: str | None = None,
+        refresh: dict[str, Any] | None = None,
+        transform: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Emit a linked A2UI surface for a query slug.
+
+        ``component`` is a Chart, DataTable, or KPICard without its data binding;
+        the toolkit adds the binding. ``request`` accepts ``placeholders``,
+        ``filter``, ``fields``, ``ordering``, ``grouping``, ``limit``, and
+        ``offset`` in the ``qs_execute_slug`` grammar. Relative dates use UDF
+        keywords (TODAY, YESTERDAY, FDOM, LDOM, CURRENT_YEAR, CURRENT_MONTH,
+        LAST_YEAR); ``@variables`` are rejected. By default (``snapshot=False``)
+        the surface is definition-only: the slug is only probed with
+        ``querylimit=1`` to validate columns and dtypes, the envelope carries no
+        rows, and the renderer fetches them on mount. Pass ``snapshot=True`` only
+        when viewers cannot fetch for themselves (share links, offline export):
+        it runs the full query and embeds up to 500 current rows.
+        ``refresh`` accepts ``policy`` (on_mount, manual, interval) and
+        ``interval_seconds``; ``transform`` accepts the linked transform DSL.
+        """
+        from parrot.outputs.a2ui.builders import build_linked_surface as _build
+        from parrot.outputs.a2ui.linked.executor import execute_sources
+
+        detail = await self.describe_slug(slug, tenant=tenant)
+        key = target_key or self._default_target_key(slug)
+        spec = DashboardSource(slug=slug, request=request, tenant=tenant, refresh=refresh, transform=transform)
+        source = self._build_linked_source(spec, detail, key=key)
+        self.logger.info("qs_build_linked_surface %s tenant=%s key=%s snapshot=%s", slug, tenant, key, snapshot)
+        self._warn_manual_without_snapshot({key: refresh}, snapshot)
+        execution = await execute_sources({key: source}, pctx=None, guard=None, probe=not snapshot)
+        outcome = execution.outcomes[key]
+        if outcome.error:
+            raise QuerysourceToolkitError(f"query '{slug}' failed while building the linked surface: {outcome.error}")
+        frame: pd.DataFrame = execution.frames[key]
+        envelope = _build(
+            [self._bind_component(component, key)],
+            {key: source},
+            {key: frame},
+            surface_id=surface_id or f"linked-{key}",
+            snapshot=snapshot,
+        )
+        artifacts = [
+            {
+                "type": "a2ui_linked_surface",
+                "surface_id": envelope.surface_id,
+                "sources": [key],
+                "slug": slug,
+                "tenant": tenant,
+            }
+        ]
+        return {
+            "a2ui_envelope": envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
+            "artifacts": artifacts,
+        }
+
+    async def build_linked_dashboard(
+        self,
+        widgets: list[dict[str, Any]],
+        surface_id: str | None = None,
+        title: str | None = None,
+        snapshot: bool = False,
+        sources: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Emit ONE linked A2UI dashboard surface whose data sources are owned by the dashboard.
+
+        ``sources`` maps a source key to ``{slug, request?, tenant?, refresh?, transform?}``: each is fetched ONCE
+        when the dashboard loads and shared by every widget that reads it — e.g. one query computing six KPIs
+        feeds six KPICards. Each widget ``{key, component, section?}`` declares exactly one data origin:
+        ``source`` (a key of ``sources``; add ``transform`` DSL ops to derive a view such as a category
+        aggregation of the rows another widget shows in full), ``slug`` (its own query-slug source with
+        ``request?``/``tenant?``/``refresh?``, refreshed independently), or ``data`` (inline rows, ≤500).
+        Components are Chart, DataTable or KPICard without bindings; a KPICard names its column in ``value``.
+        KPIs, charts and tables are laid out in rows. By default (``snapshot=False``) the dashboard is
+        definition-only: every slug is only probed with ``querylimit=1`` to validate columns and dtypes, the
+        envelope carries no rows, and the renderer fetches them on mount. Pass ``snapshot=True`` only when viewers
+        cannot fetch for themselves (share links, offline export): it runs every query in full and embeds up to
+        500 rows per source. Raises InvalidConditionsError on bad/duplicate keys, unknown sources or grammar;
+        QuerysourceToolkitError when a source fails to execute.
+        """
+        from parrot.outputs.a2ui.builders import build_linked_surface as _build
+        from parrot.outputs.a2ui.linked.executor import execute_sources
+        from parrot.outputs.a2ui.linked.models import DerivedDataSource, TransformSpec
+
+        try:
+            parsed = [DashboardWidget.model_validate(w) for w in widgets]
+            shared = {key: DashboardSource.model_validate(spec) for key, spec in (sources or {}).items()}
+        except ValueError as exc:
+            raise InvalidConditionsError(str(exc)) from exc
+        if not parsed:
+            raise InvalidConditionsError("widgets must not be empty")
+        for key in shared:
+            self._check_key(key, "source")
+        seen: set[str] = set(shared)
+        for widget in parsed:
+            self._check_key(widget.key, "widget")
+            if widget.key in seen:
+                raise InvalidConditionsError(
+                    f"duplicate key '{widget.key}' (widget keys and source keys share one namespace)"
+                )
+            seen.add(widget.key)
+            component_type = widget.component.get("component")
+            if component_type not in _DASHBOARD_COMPONENTS:
+                raise InvalidConditionsError(
+                    f"widget '{widget.key}': component must be one of Chart, DataTable, or KPICard"
+                )
+            if component_type == "KPICard" and not isinstance(widget.component.get("value"), str):
+                raise InvalidConditionsError(
+                    f"widget '{widget.key}': a KPICard must name its aggregate column as a string in `value`"
+                )
+            if widget.source is not None and widget.source not in shared:
+                raise InvalidConditionsError(
+                    f"widget '{widget.key}': source '{widget.source}' is not a key of the dashboard sources"
+                )
+            if widget.data is not None and len(widget.data) > _MAX_INLINE_ROWS:
+                raise InvalidConditionsError(f"widget '{widget.key}': inline data exceeds {_MAX_INLINE_ROWS} rows")
+
+        linked: dict[str, LinkedSource] = {}
+        for key, spec in shared.items():
+            detail = await self.describe_slug(spec.slug, tenant=spec.tenant)
+            linked[key] = self._build_linked_source(spec, detail, key=key)
+        inline: dict[str, list[dict[str, Any]]] = {}
+        derived: list[str] = []
+        for widget in parsed:
+            if widget.origin == "slug":
+                detail = await self.describe_slug(widget.slug, tenant=widget.tenant)
+                linked[widget.key] = self._build_linked_source(widget, detail, key=widget.key)
+            elif widget.origin == "data":
+                inline[widget.key] = list(widget.data or [])
+            elif widget.transform is not None:
+                try:
+                    transform = TransformSpec.model_validate(widget.transform)
+                    linked[widget.key] = DerivedDataSource.model_validate(
+                        {
+                            "kind": "derived",
+                            "from": widget.source,
+                            "transform": transform,
+                            "target": f"/{widget.key}/rows",
+                        }
+                    )
+                except ValueError as exc:
+                    raise InvalidConditionsError(f"widget '{widget.key}': invalid transform — {exc}") from exc
+                derived.append(widget.key)
+        self.logger.info(
+            "qs_build_linked_dashboard %d widgets, %d sources (%d shared, %d derived, %d inline) snapshot=%s",
+            len(parsed),
+            len(linked),
+            len(shared),
+            len(derived),
+            len(inline),
+            snapshot,
+        )
+        self._warn_manual_without_snapshot(
+            {
+                **{key: spec.refresh for key, spec in shared.items()},
+                **{w.key: w.refresh for w in parsed if w.origin == "slug"},
+            },
+            snapshot,
+        )
+        execution = await execute_sources(linked, pctx=None, guard=None, probe=not snapshot)
+        # Sources fail independently; report every failure, not just the first in widget order.
+        failures = [
+            f"'{key}' ({self._source_label(linked[key])}): {outcome.error if outcome is not None else 'no outcome'}"
+            for key in linked
+            if (outcome := execution.outcomes.get(key)) is None or outcome.error
+        ]
+        if failures:
+            raise QuerysourceToolkitError(
+                f"{len(failures)} source(s) failed while building the linked dashboard: {'; '.join(failures)} "
+                "(see the 'linked source ... failed' warnings for the underlying errors)"
+            )
+        components = []
+        for widget in parsed:
+            bind_key = widget.source if widget.origin == "source" and widget.transform is None else widget.key
+            components.append({**self._bind_component(widget.component, bind_key), "id": widget.key})
+        layout = self._dashboard_layout(components, parsed, title)
+        envelope = _build(
+            layout,
+            linked,
+            {k: execution.frames[k] for k in linked},
+            surface_id=surface_id or "linked-dashboard",
+            snapshot=snapshot,
+            inline=inline,
+        )
+        return {
+            "a2ui_envelope": envelope.model_dump(mode="json", by_alias=True, exclude_none=True),
+            "artifacts": [
+                {
+                    "type": "a2ui_linked_surface",
+                    "surface_id": envelope.surface_id,
+                    "sources": list(linked),
+                    "shared": list(shared),
+                    "derived": derived,
+                    "inline": list(inline),
+                }
+            ],
+        }
+
+    def _warn_manual_without_snapshot(self, refreshes: Mapping[str, dict[str, Any] | None], snapshot: bool) -> None:
+        """The admin lane never runs a ``manual`` source on mount, so without a snapshot it renders empty.
+
+        ``refreshes`` maps each query-slug source key to its ``refresh`` payload.
+        """
+        if snapshot:
+            return
+        manual = [key for key, refresh in refreshes.items() if (refresh or {}).get("policy") == "manual"]
+        if manual:
+            self.logger.warning(
+                "linked source(s) %s use refresh.policy='manual' without a snapshot; they render empty until refreshed",
+                ", ".join(manual),
+            )
+
+    @staticmethod
+    def _check_key(key: str, what: str) -> None:
+        """Reject keys that are not JSON-pointer-safe identifiers or collide with the layout ids."""
+        if not _WIDGET_KEY_RE.match(key):
+            raise InvalidConditionsError(f"{what} key '{key}' must match ^[A-Za-z_][A-Za-z0-9_]*$ (JSON-pointer-safe)")
+        if key in _RESERVED_LAYOUT_IDS:
+            raise InvalidConditionsError(f"{what} key '{key}' is reserved for the dashboard layout")
+
+    @staticmethod
+    def _source_label(source: "LinkedSource") -> str:
+        """``slug`` for a query-slug source, ``derived from <key>`` for a derived view (failure reports)."""
+        return getattr(source, "slug", None) or f"derived from {getattr(source, 'from_', '?')}"
+
+    @staticmethod
+    def _dashboard_layout(
+        components: list[dict[str, Any]], widgets: list[DashboardWidget], title: str | None
+    ) -> list[dict[str, Any]]:
+        """Return [root Column, Row(kpis)?, Row(charts)?, *components] with ids = widget keys."""
+        inferred = {"KPICard": "kpis", "Chart": "charts", "DataTable": "table"}
+        kpis: list[str] = []
+        charts: list[str] = []
+        tables: list[str] = []
+        buckets = {"kpis": kpis, "charts": charts, "table": tables}
+        for widget, comp in zip(widgets, components, strict=True):
+            section = widget.section or inferred[str(comp.get("component"))]
+            buckets[section].append(str(comp["id"]))
+        extra: list[dict[str, Any]] = []
+        root_children: list[str] = []
+        if title:
+            extra.append({"id": "title", "component": "Text", "text": title})
+            root_children.append("title")
+        if kpis:
+            extra.append({"id": "row_kpis", "component": "Row", "children": kpis})
+            root_children.append("row_kpis")
+        if charts:
+            extra.append({"id": "row_charts", "component": "Row", "children": charts})
+            root_children.append("row_charts")
+        root_children.extend(tables)
+        root = {"id": "root", "component": "Column", "children": root_children}
+        return [root, *extra, *components]
+
+    def _build_linked_source(
+        self, spec: DashboardSource | DashboardWidget, detail: SlugDetail, *, key: str
+    ) -> LinkedDataSource:
+        """Validate one source spec's request and build its LinkedDataSource targeting ``/<key>/rows``.
+
+        ``spec`` is a dashboard-level ``DashboardSource`` or a widget that owns its slug; both carry
+        ``slug``/``request``/``tenant``/``refresh``, and a ``DashboardSource`` may add a source-level ``transform``.
+        """
+        from parrot.outputs.a2ui.linked.conditions import derive_conditions
+        from parrot.outputs.a2ui.linked.models import LinkedDataSource, RefreshPolicy, SourceRequest, TransformSpec
+
+        req = SourceRequest.model_validate(spec.request or {})
+        validate_placeholders(dict(req.placeholders), set(detail.placeholders))
+        validate_filter(dict(req.filter))
+        forced = dict(self.forced_conditions)
+        reject_variable_values({**req.placeholders, "filter": req.filter, **forced})
+        params, locked = self._linked_params(detail, forced)
+        transform = spec.transform if isinstance(spec, DashboardSource) else None
+        return LinkedDataSource(
+            slug=spec.slug,
+            tenant=spec.tenant,
+            is_multiquery=detail.is_multiquery,
+            conditions=derive_conditions(req, locked={name: forced[name] for name in locked}),
+            request=req,
+            params=params,
+            locked=locked,
+            transform=TransformSpec.model_validate(transform) if transform else None,
+            target=f"/{key}/rows",
+            refresh=RefreshPolicy.model_validate(spec.refresh or {}),
+        )
+
+    def _linked_params(self, detail: SlugDetail, forced: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+        """Build linked parameter metadata and map forced values to locked parameters."""
+        from parrot.outputs.a2ui.linked.models import ParamSpec
+
+        params: dict[str, ParamSpec] = {}
+        if detail.variables_supported:
+            for info in detail.placeholders_detail:
+                params[info.name] = ParamSpec(
+                    type=info.type,
+                    default=info.default,
+                    required=info.required,
+                    accepts_keywords=info.accepts_keywords,
+                )
+        for name, value in forced.items():
+            if name in params:
+                params[name] = params[name].model_copy(update={"default": value, "editable": False})
+            else:
+                params[name] = ParamSpec(default=value, editable=False)
+        return params, list(forced)
+
+    @staticmethod
+    def _default_target_key(slug: str) -> str:
+        """Return a JSON-pointer-safe data-model root key for ``slug``."""
+        key = re.sub(r"\W", "_", slug)
+        return f"s_{key}" if key[:1].isdigit() else key
+
+    @staticmethod
+    def _bind_component(component: dict[str, Any], key: str) -> dict[str, Any]:
+        """Bind one supported component to the source rows."""
+        comp = dict(component)
+        comp.setdefault("id", "root")
+        component_type = comp.get("component")
+        if component_type in {"Chart", "DataTable"}:
+            comp["data"] = {"path": f"/{key}/rows"}
+        elif component_type == "KPICard":
+            value = comp.get("value")
+            if isinstance(value, str):
+                comp["value"] = {"path": f"/{key}/rows/0/{value}"}
+        else:
+            raise InvalidConditionsError("component must be one of Chart, DataTable, or KPICard")
+        return comp
 
     async def _get_catalog(self) -> list[Any]:
         """ComponentRegistry.get_catalog() via to_thread, cached per instance (handlers/components.py:50)."""
@@ -246,14 +699,14 @@ class QuerysourceToolkit(AbstractToolkit):
             catalog = [c for c in catalog if c.category == category]
         return [ComponentDoc(**asdict(c)) for c in catalog]
 
-    async def _policy_check(self, pipeline: dict[str, Any]) -> PipelineValidation:
+    async def _policy_check(self, pipeline: dict[str, Any], *, tenant: str | None = None) -> PipelineValidation:
         """Toolkit policy over normalize_pipeline(): tenancy per slug node, raw nodes, external sources, destinations."""
         norm: NormalizedPipeline = normalize_pipeline(pipeline)
         issues: list[PipelineIssue] = []
         await self._open()
         for node, slug in norm.slug_nodes.items():
             try:
-                await self._catalog.get_allowed(slug)
+                await self._catalog.get_allowed(slug, tenant=tenant)
             except (TenantDeniedError, SlugNotFoundError) as exc:
                 issues.append(PipelineIssue(step=node, field="slug", message=str(exc)))
         destinations = sorted(set(norm.output_steps) & await self._destination_names())
@@ -323,37 +776,44 @@ class QuerysourceToolkit(AbstractToolkit):
             raise WriteDisabledError(f"pipeline rejected: {msg}")
         raise QuerysourceToolkitError(f"pipeline rejected: {msg}")
 
-    async def _assert_pipeline_slugs_allowed(self, pipeline: dict[str, Any]) -> None:
+    async def _assert_pipeline_slugs_allowed(self, pipeline: dict[str, Any], *, tenant: str | None = None) -> None:
         """Re-verify every queries[*] slug node directly against the tenant guard, letting `TenantDeniedError`
         / `SlugNotFoundError` propagate with their real type — `_policy_check` collapses both into a single
         `PipelineIssue(field="slug")` for `validate_pipeline`'s report-only contract, which would otherwise
         surface a generic `QuerysourceToolkitError` from `run_multiquery`/`save_multiquery` (spec §5 AC5:
         a foreign slug must raise `TenantDeniedError`, the same as the top-level `slug=` argument)."""
         for referenced_slug in set(normalize_pipeline(pipeline).slug_nodes.values()):
-            await self._catalog.get_allowed(referenced_slug)
+            await self._catalog.get_allowed(referenced_slug, tenant=tenant)
 
     async def run_multiquery(
-        self, pipeline: dict[str, Any] | None = None, slug: str | None = None, conditions: dict[str, Any] | None = None
+        self,
+        pipeline: dict[str, Any] | None = None,
+        slug: str | None = None,
+        conditions: dict[str, Any] | None = None,
+        tenant: str | None = None,
     ) -> MultiQueryResult:
         """Run a MultiQuery pipeline inline (`pipeline`, the JSON with queries/Join/Concat/…/Output) or a saved
         multi-query slug (`slug`). Every referenced slug must be executable by this toolkit; raw SQL nodes, external
-        sources and destination steps follow the instance configuration (see qs_validate_pipeline). Results are
-        bounded per frame."""
+        sources and destination steps follow the instance configuration (see qs_validate_pipeline). `tenant` selects a
+        QuerySource tenant store schema; omit it for public/legacy slugs. Routing, not security. Results are bounded
+        per frame."""
         started = time.monotonic()
         if (pipeline is None) == (slug is None):
             raise QuerysourceToolkitError("pass exactly one of `pipeline` or `slug`")
         await self._open()
         if slug is not None:
-            rec = await self._catalog.get_allowed(slug)
+            rec = await self._catalog.get_allowed(slug, tenant=tenant)
             if rec.is_multiquery:
-                await self._assert_pipeline_slugs_allowed(rec.pipeline)
-                self._raise_for_issues(await self._policy_check(rec.pipeline))
-            mq = _qs.get_multiqs()(slug=slug, conditions=dict(conditions or {}))  # multi/__init__.py:62
-        else:
-            await self._assert_pipeline_slugs_allowed(pipeline)
-            self._raise_for_issues(await self._policy_check(pipeline))
+                await self._assert_pipeline_slugs_allowed(rec.pipeline, tenant=tenant)
+                self._raise_for_issues(await self._policy_check(rec.pipeline, tenant=tenant))
             mq = _qs.get_multiqs()(
-                query=copy.deepcopy(pipeline), conditions=dict(conditions or {})
+                slug=slug, conditions=dict(conditions or {}), tenant=tenant
+            )  # multi/__init__.py:106-121
+        else:
+            await self._assert_pipeline_slugs_allowed(pipeline, tenant=tenant)
+            self._raise_for_issues(await self._policy_check(pipeline, tenant=tenant))
+            mq = _qs.get_multiqs()(
+                query=copy.deepcopy(pipeline), conditions=dict(conditions or {}), tenant=tenant
             )  # deepcopy: __init__ pops keys (:95-97)
         exc_mod = _qs.get_exceptions()
         self.logger.info("qs_run_multiquery slug=%s inline=%s", slug, pipeline is not None)

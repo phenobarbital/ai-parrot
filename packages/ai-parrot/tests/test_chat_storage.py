@@ -18,11 +18,7 @@ from parrot.storage.models import (
     Source,
     ToolCall,
 )
-from parrot.storage.chat import (
-    ChatStorage,
-    CONVERSATIONS_COLLECTION,
-    MESSAGES_COLLECTION,
-)
+from parrot.storage.chat import ChatStorage
 
 
 # ---------------------------------------------------------------------------
@@ -42,24 +38,27 @@ async def mock_redis():
 
 
 @pytest_asyncio.fixture
-async def mock_docdb():
-    """Mocked DocumentDb instance with persistent connection model."""
-    docdb = AsyncMock()
-    # Core methods called by ChatStorage
-    docdb.documentdb_connect = AsyncMock()
-    docdb.find_documents = AsyncMock(return_value=[])
-    docdb.write = AsyncMock()
-    docdb.update_one = AsyncMock()
-    docdb.delete_many = AsyncMock()
-    docdb.create_indexes = AsyncMock()
-    docdb.close = AsyncMock()
-    return docdb
+async def mock_dynamo():
+    """Mocked DynamoDB backend instance."""
+    dynamo = AsyncMock()
+    dynamo.is_connected = True
+    dynamo.initialize = AsyncMock()
+    dynamo.close = AsyncMock()
+    dynamo.put_thread = AsyncMock()
+    dynamo.update_thread = AsyncMock()
+    dynamo.put_turn = AsyncMock()
+    dynamo.query_turns = AsyncMock(return_value=[])
+    dynamo.query_threads = AsyncMock(return_value=[])
+    dynamo.delete_thread_cascade = AsyncMock(return_value=1)
+    dynamo.delete_session_artifacts = AsyncMock(return_value=0)
+    dynamo.delete_turn = AsyncMock(return_value=True)
+    return dynamo
 
 
 @pytest_asyncio.fixture
-async def storage(mock_redis, mock_docdb):
+async def storage(mock_redis, mock_dynamo):
     """ChatStorage wired with mocked backends."""
-    s = ChatStorage(redis_conversation=mock_redis, document_db=mock_docdb)
+    s = ChatStorage(redis_conversation=mock_redis, dynamodb=mock_dynamo)
     s._initialized = True
     return s
 
@@ -267,19 +266,19 @@ class TestChatStorageLoadConversation:
         assert messages[1]["role"] == "assistant"
 
     @pytest.mark.asyncio
-    async def test_load_falls_back_to_docdb_when_redis_empty(self, storage, mock_redis, mock_docdb):
+    async def test_load_falls_back_to_dynamo_when_redis_empty(self, storage, mock_redis, mock_dynamo):
         mock_redis.get_history.return_value = None
 
-        # DocumentDB returns empty list (mocked cursor)
         messages = await storage.load_conversation("u1", "s1")
         assert messages == []
+        mock_dynamo.query_turns.assert_awaited_once()
 
 
 class TestChatStorageDeleteConversation:
     """Verify delete removes from both stores."""
 
     @pytest.mark.asyncio
-    async def test_delete_conversation(self, storage, mock_redis, mock_docdb):
+    async def test_delete_conversation(self, storage, mock_redis, mock_dynamo):
         deleted = await storage.delete_conversation("u1", "s1")
         assert deleted is True
         mock_redis.delete_history.assert_awaited_once()
@@ -298,11 +297,11 @@ class TestChatStorageEnsureIndexes:
     """Verify that initialize creates DocumentDB indexes."""
 
     @pytest.mark.asyncio
-    async def test_ensure_indexes_called(self, mock_redis, mock_docdb):
-        s = ChatStorage(redis_conversation=mock_redis, document_db=mock_docdb)
+    async def test_initialize_sets_initialized(self, mock_redis, mock_dynamo):
+        s = ChatStorage(redis_conversation=mock_redis, dynamodb=mock_dynamo)
+        assert not s._initialized
         await s.initialize()
-
-        assert mock_docdb.create_indexes.await_count == 2  # conversations + messages
+        assert s._initialized
 
 
 class TestChatStorageGetContext:
@@ -336,7 +335,7 @@ class TestChatStorageCreateConversation:
     """Verify create_conversation writes to DocumentDB."""
 
     @pytest.mark.asyncio
-    async def test_create_conversation_writes_to_docdb(self, storage, mock_docdb):
+    async def test_create_conversation_writes_to_dynamo(self, storage, mock_dynamo):
         result = await storage.create_conversation(
             user_id="u1",
             session_id="s1",
@@ -346,20 +345,22 @@ class TestChatStorageCreateConversation:
         assert result is not None
         assert result["session_id"] == "s1"
         assert result["title"] == "Test Chat"
-        mock_docdb.write.assert_awaited_once()
-        call_args = mock_docdb.write.call_args
-        assert call_args.args[0] == CONVERSATIONS_COLLECTION
+        mock_dynamo.put_thread.assert_awaited_once()
+        call_kwargs = mock_dynamo.put_thread.call_args.kwargs
+        assert call_kwargs["user_id"] == "u1"
+        assert call_kwargs["agent_id"] == "agent_a"
+        assert call_kwargs["session_id"] == "s1"
 
     @pytest.mark.asyncio
-    async def test_create_conversation_returns_none_without_docdb(self, mock_redis):
-        s = ChatStorage(redis_conversation=mock_redis, document_db=None)
+    async def test_create_conversation_returns_none_without_dynamo(self, mock_redis):
+        s = ChatStorage(redis_conversation=mock_redis, dynamodb=None)
         s._initialized = True
         result = await s.create_conversation("u1", "s1", "agent_a")
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_create_conversation_handles_docdb_error(self, storage, mock_docdb):
-        mock_docdb.write.side_effect = RuntimeError("connection lost")
+    async def test_create_conversation_handles_dynamo_error(self, storage, mock_dynamo):
+        mock_dynamo.put_thread.side_effect = RuntimeError("connection lost")
         result = await storage.create_conversation("u1", "s1", "agent_a")
         assert result is None
 
@@ -368,25 +369,33 @@ class TestChatStorageUpdateTitle:
     """Verify update_conversation_title updates DocumentDB."""
 
     @pytest.mark.asyncio
-    async def test_update_title_calls_update_one(self, storage, mock_docdb):
-        updated = await storage.update_conversation_title("s1", "New Title")
+    async def test_update_title_calls_update_thread(self, storage, mock_dynamo):
+        updated = await storage.update_conversation_title(
+            "s1", "New Title", user_id="u1", agent_id="agent_a",
+        )
         assert updated is True
-        mock_docdb.update_one.assert_awaited_once()
-        call_args = mock_docdb.update_one.call_args
-        assert call_args.args[0] == CONVERSATIONS_COLLECTION
-        assert call_args.args[1] == {"session_id": "s1"}
-        assert call_args.args[2]["$set"]["title"] == "New Title"
+        mock_dynamo.update_thread.assert_awaited_once()
+        call_kwargs = mock_dynamo.update_thread.call_args.kwargs
+        assert call_kwargs["session_id"] == "s1"
+        assert call_kwargs["title"] == "New Title"
 
     @pytest.mark.asyncio
-    async def test_update_title_returns_false_without_docdb(self, mock_redis):
-        s = ChatStorage(redis_conversation=mock_redis, document_db=None)
+    async def test_update_title_returns_false_without_dynamo(self, mock_redis):
+        s = ChatStorage(redis_conversation=mock_redis, dynamodb=None)
         s._initialized = True
         result = await s.update_conversation_title("s1", "Title")
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_update_title_handles_docdb_error(self, storage, mock_docdb):
-        mock_docdb.update_one.side_effect = RuntimeError("timeout")
+    async def test_update_title_returns_false_without_pk_fields(self, storage):
         result = await storage.update_conversation_title("s1", "Title")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_update_title_handles_dynamo_error(self, storage, mock_dynamo):
+        mock_dynamo.update_thread.side_effect = RuntimeError("timeout")
+        result = await storage.update_conversation_title(
+            "s1", "Title", user_id="u1", agent_id="agent_a",
+        )
         assert result is False
 

@@ -96,6 +96,9 @@ ENABLE_DASHBOARDS = config.getboolean("ENABLE_DASHBOARDS", fallback=False)
 ENABLE_CREWS = config.getboolean("ENABLE_CREWS", fallback=False)
 ENABLE_DATABASE_BOTS = config.getboolean("ENABLE_DATABASE_BOTS", fallback=False)
 ENABLE_REGISTRY_BOTS = config.getboolean("ENABLE_REGISTRY_BOTS", fallback=True)
+# Opt-in DocumentDB persistence for optional features (e.g. Telegram /add_mcp).
+# Off by default so a deployment without DocumentDB never blocks on a connect.
+USE_DOCUMENTDB = config.getboolean("USE_DOCUMENTDB", fallback=False)
 # FEAT-249: enable the Redis structured-output transport (re-broadcasts
 # structured outputs from any ai-parrot worker to the AgentChat UI over Redis).
 # Renamed from ENABLE_LIVEAVATAR_VOICE (FEAT-243) — operators upgrading must
@@ -106,6 +109,13 @@ ENABLE_STRUCTURED_OUTPUT_TRANSPORT = config.getboolean("ENABLE_STRUCTURED_OUTPUT
 # to "global") fail closed instead. Defaults to false to preserve legacy
 # single-tenant deployment behavior.
 PARROT_SAAS_MODE = config.getboolean("PARROT_SAAS_MODE", fallback=False)
+
+# FEAT-598: default policy directory for the data-plane PBAC guard
+# (DataPlanePolicyGuard) built at BotManager startup via
+# parrot.auth.pbac.setup_dataplane_guard(). When the directory is missing
+# or navigator-auth is not installed, the guard is left unregistered and
+# linked A2UI surfaces keep answering 403 (fail-closed).
+PARROT_PBAC_POLICY_DIR = config.get("PARROT_PBAC_POLICY_DIR", fallback="policies")
 
 # Bot Model Table Configuration:
 PARROT_BOTS_TABLE = config.get("PARROT_BOTS_TABLE", fallback="ai_bots")
@@ -805,6 +815,16 @@ ODOO_USERNAME = config.get("ODOO_USERNAME", fallback=None)
 ODOO_PASSWORD = config.get("ODOO_PASSWORD", fallback=None)
 ODOO_TIMEOUT = config.getint("ODOO_TIMEOUT", fallback=30)
 ODOO_VERIFY_SSL = config.getboolean("ODOO_VERIFY_SSL", fallback=True)
+
+# ── Odoo Helpdesk (Softhealer sh_all_in_one_helpdesk, dedicated instance — FEAT-616) ──
+# Never merged with the ODOO_* keys above: OdooHelpdeskToolkit reads only these.
+ODOO_HELPDESK_URL = config.get("ODOO_HELPDESK_URL", fallback=None)
+ODOO_HELPDESK_USER = config.get("ODOO_HELPDESK_USER", fallback=None)
+ODOO_HELPDESK_PASSWORD = config.get("ODOO_HELPDESK_PASSWORD", fallback=None)
+ODOO_HELPDESK_APIKEY = config.get("ODOO_HELPDESK_APIKEY", fallback=None)
+ODOO_HELPDESK_DATABASE = config.get("ODOO_HELPDESK_DATABASE", fallback="")
+ODOO_HELPDESK_TIMEOUT = config.getint("ODOO_HELPDESK_TIMEOUT", fallback=30)
+ODOO_HELPDESK_VERIFY_SSL = config.getboolean("ODOO_HELPDESK_VERIFY_SSL", fallback=True)
 
 # ── Zammad Helpdesk (REST API v1) ──
 ZAMMAD_INSTANCE = config.get("ZAMMAD_INSTANCE", fallback=None)

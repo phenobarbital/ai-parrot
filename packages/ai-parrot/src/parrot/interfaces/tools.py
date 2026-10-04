@@ -5,7 +5,16 @@ This interface provides methods for initializing, managing, and using tools
 in bot implementations.
 """
 
+import inspect
 from typing import List, Union, Dict, Any, Callable
+
+from parrot.mcp import MCPServerConfig
+from parrot.tools.dataset_manager.tool import DatasetManager
+from parrot.tools.resolver import get_toolkit_resolver
+from parrot.tools.server_params import constructor_server_params
+from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec, hydrate_mcp, hydrate_params, tooling_revision
+from parrot.tools.tooling_policy import TenantToolingPolicy, TenantToolingRefused, ToolingSubject
+
 from ..tools import AbstractTool
 from ..tools.manager import ToolDefinition
 from ..clients.base import AbstractClient
@@ -24,16 +33,11 @@ class ToolInterface:
     - Configuring LLM clients
     """
 
-    def _initialize_tools(
-        self, tools: List[Union[str, Dict[str, Dict[str, Any]], AbstractTool, ToolDefinition]]
-    ) -> None:
+    def _initialize_tools(self, tools: List[Union[str, AbstractTool, ToolDefinition]]) -> None:
         """Initialize tools in the ToolManager.
 
         Supports multiple tool types:
         - String: Can be a toolkit name (e.g., "jira") or individual tool name
-        - Single-key dict ``{name: kwargs}``: Same resolution as the string
-          form, but ``kwargs`` is forwarded to the tool/toolkit constructor
-          (e.g. ``{"JiraToolkit": {"server_url": "https://..."}}``)
         - AbstractToolkit class or instance: Registers all tools from the toolkit
         - AbstractTool or ToolDefinition: Registers the tool directly
         """
@@ -42,27 +46,14 @@ class ToolInterface:
 
         for tool in tools:
             try:
-                if isinstance(tool, dict):
-                    if len(tool) != 1:
-                        self.logger.warning(f"Invalid tool/toolkit spec (expected a single-key mapping): {tool}")
-                        continue
-                    name, tool_kwargs = next(iter(tool.items()))
-                    tool_kwargs = tool_kwargs or {}
+                if isinstance(tool, ToolkitSpec):
+                    # FEAT-593: configured toolkits need async secret hydration → applied in configure()
+                    if getattr(self, "_pending_toolkit_specs", None) is None:
+                        self._pending_toolkit_specs = []
+                    self._pending_toolkit_specs.append(tool)
+                    continue
 
-                    # First check if it's a toolkit name in the registry
-                    if ToolkitRegistry.get(name.lower()) is not None:
-                        self.tool_manager.register_toolkit(name, **tool_kwargs)
-                        self.logger.info(f"Registered toolkit: {name}")
-                        continue
-
-                    # Then try individual tool loading
-                    if self.tool_manager.load_tool(name, **tool_kwargs):
-                        self.logger.info(f"Successfully loaded tool: {name}")
-                        continue
-
-                    self.logger.warning(f"Unknown tool or toolkit: {name}")
-
-                elif isinstance(tool, str):
+                if isinstance(tool, str):
                     # First check if it's a toolkit name in the registry
                     if ToolkitRegistry.get(tool.lower()) is not None:
                         self.tool_manager.register_toolkit(tool)
@@ -155,9 +146,7 @@ class ToolInterface:
         """Whether this bot has GraphIndex tools incorporated."""
         if getattr(self, "_graphindex_toolkit", None) is not None:
             return True
-        return any(
-            name.startswith("graphindex") or name.startswith("graph_") for name in self.tool_manager.list_tools()
-        )
+        return any(name.startswith(("graphindex", "graph_")) for name in self.tool_manager.list_tools())
 
     @property
     def llmwiki_toolkit(self) -> Any:
@@ -185,6 +174,169 @@ class ToolInterface:
     def has_knowledge_index(self) -> bool:
         """Whether the bot exposes any knowledge index (Page or Graph)."""
         return self.has_pageindex_tools or self.has_graphindex_tools
+
+    @staticmethod
+    def _resolve_spec_class(slug: str) -> type | None:
+        """Resolve a toolkit slug through the shared ToolkitResolver (FEAT-622 M2)."""
+        return get_toolkit_resolver().resolve(slug)
+
+    def bind_tooling_policy(
+        self, policy: "TenantToolingPolicy | None", subject: "ToolingSubject", *, owner: str | None = None
+    ) -> None:
+        """Bind the build-time tenant tooling policy for the next ``configure()`` (FEAT-622, RC-9).
+
+        Raises:
+            RuntimeError: tooling was already applied; a late binding would police nothing.
+        """
+        if getattr(self, "_tooling_applied", False):
+            raise RuntimeError("bind_tooling_policy() called after tooling specs were applied")
+        self._tooling_policy = policy
+        self._tooling_subject = subject
+        self._tooling_owner = owner
+
+    def _resolve_tooling_binding(
+        self,
+        tooling_policy: "TenantToolingPolicy | None",
+        tooling_subject: "ToolingSubject | None",
+    ) -> "tuple[TenantToolingPolicy | None, ToolingSubject | None]":
+        """Explicit kwargs win over the bound values; a tenant subject without policy gets ``deny_all()``."""
+        policy = tooling_policy if tooling_policy is not None else getattr(self, "_tooling_policy", None)
+        subject = tooling_subject if tooling_subject is not None else getattr(self, "_tooling_subject", None)
+        if subject is None:
+            return None, None
+        if subject.tenant is None and (policy is None or not policy.apply_to_global):
+            return None, subject
+        if policy is None and subject.tenant is not None:
+            policy = TenantToolingPolicy.deny_all()
+        return policy, subject
+
+    async def apply_tooling_specs(
+        self,
+        *,
+        tooling_policy: "TenantToolingPolicy | None" = None,
+        tooling_subject: "ToolingSubject | None" = None,
+        tooling_owner: str | None = None,
+    ) -> list[str]:
+        """Hydrate and register pending toolkit / MCP specs once (FEAT-593). Never raises."""
+        policy, subject = self._resolve_tooling_binding(tooling_policy, tooling_subject)
+        owner = tooling_owner if tooling_owner is not None else getattr(self, "_tooling_owner", None)
+        toolkits: list[ToolkitSpec] = list(getattr(self, "_pending_toolkit_specs", None) or [])
+        mcp_specs: list[AgentMCPServerSpec] = list(getattr(self, "_pending_mcp_specs", None) or [])
+        self._tooling_revision = tooling_revision(toolkits, mcp_specs)
+        if getattr(self, "_tooling_applied", False):
+            return []
+        self._tooling_applied = True
+
+        registered: list[str] = []
+        for spec in toolkits:
+            try:
+                registered.extend(await self._register_toolkit_spec(spec, policy, subject, owner))
+            except TenantToolingRefused as exc:
+                self.logger.error("Tooling spec '%s' refused by tenant policy: %s", exc.item, exc.reason)
+            except Exception as exc:  # noqa: BLE001 — a bad spec must never fail the agent boot
+                self.logger.warning("Toolkit spec '%s' skipped: %s", spec.slug, type(exc).__name__)
+
+        for mspec in mcp_specs:
+            try:
+                registered.extend(await self._register_mcp_spec(mspec, policy, subject, owner))
+            except TenantToolingRefused as exc:
+                self.logger.error("Tooling spec '%s' refused by tenant policy: %s", exc.item, exc.reason)
+            except Exception as exc:  # noqa: BLE001 — a bad spec must never fail the agent boot
+                self.logger.warning("MCP server spec '%s' skipped: %s", mspec.name, type(exc).__name__)
+
+        if registered and hasattr(self, "enable_tools"):
+            self.enable_tools = True
+        return registered
+
+    def _strip_server_params(self, cls: type, slug: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Drop every stored key the class declares server-managed (stripped on load, with a warning)."""
+        declared = getattr(cls, "server_managed_params", None) or {}
+        stripped = sorted(set(params) & set(declared))
+        if stripped:
+            self.logger.warning("Toolkit spec '%s': stripped server-managed params: %s", slug, stripped)
+        return {name: value for name, value in params.items() if name not in declared}
+
+    def _fill_server_params(self, cls: type) -> dict[str, Any]:
+        """Constructor params the server fills at build: ``source="app"`` from ``self.app`` (``"server"``: bespoke)."""
+        declared = getattr(cls, "server_managed_params", None) or {}
+        app = getattr(self, "app", None)
+        filled: dict[str, Any] = {}
+        for name in constructor_server_params(cls):
+            param = declared[name]
+            if param.source == "app" and app is not None and app.get(param.key) is not None:
+                filled[name] = app[param.key]
+        return filled
+
+    def _filter_ctor_params(self, slug: str, init: Any, params: dict[str, Any]) -> dict[str, Any]:
+        """Keep only constructor parameters ``init`` accepts, warning about the dropped ones."""
+        signature = inspect.signature(init).parameters
+        accepted = {
+            name
+            for name, parameter in signature.items()
+            if name != "self" and parameter.kind is not inspect.Parameter.VAR_KEYWORD
+        }
+        dropped = sorted(set(params) - accepted)
+        if dropped:
+            self.logger.warning("Toolkit spec '%s': dropped unknown constructor params: %s", slug, dropped)
+        return {name: value for name, value in params.items() if name in accepted}
+
+    async def _register_toolkit_spec(
+        self,
+        spec: ToolkitSpec,
+        policy: "TenantToolingPolicy | None",
+        subject: "ToolingSubject | None",
+        owner: str | None,
+    ) -> list[str]:
+        """Policy pre-check (before any vault read), hydrate, construct and register one toolkit spec."""
+        if policy is not None:
+            policy.precheck_toolkit(spec, subject=subject, owner=owner)
+        cls = self._resolve_spec_class(spec.slug)
+        if cls is None:
+            self.logger.warning("Toolkit spec '%s': unknown slug, skipped", spec.slug)
+            return []
+        params = self._strip_server_params(cls, spec.slug, await hydrate_params(spec))
+        if spec.slug.lower() == "dataset_manager":
+            return await self._register_dataset_manager(spec, params)
+        filtered = self._filter_ctor_params(spec.slug, cls.__init__, params)
+        instance = cls(**{**filtered, **self._fill_server_params(cls)})
+        tools = self.tool_manager.register_toolkit(instance)
+        self._capture_knowledge_toolkit(instance)
+        return [tool.name for tool in tools]
+
+    async def _register_dataset_manager(self, spec: ToolkitSpec, params: dict[str, Any]) -> list[str]:
+        """Build (or reuse) the bot's DatasetManager and replay its datasources."""
+        registered: list[str] = []
+        datasources = params.pop("datasources", [])
+        existing = getattr(self, "_dataset_manager", None)
+        if isinstance(existing, DatasetManager):
+            dataset_manager = existing
+        else:
+            filtered = self._filter_ctor_params(spec.slug, DatasetManager.__init__, params)
+            dataset_manager = DatasetManager(**filtered)
+            tools = self.tool_manager.register_toolkit(dataset_manager)
+            self._capture_knowledge_toolkit(dataset_manager)
+            self._dataset_manager = dataset_manager
+            registered.extend(tool.name for tool in tools)
+        await dataset_manager.replay_datasources(datasources)
+        return registered
+
+    async def _register_mcp_spec(
+        self,
+        mspec: AgentMCPServerSpec,
+        policy: "TenantToolingPolicy | None",
+        subject: "ToolingSubject | None",
+        owner: str | None,
+    ) -> list[str]:
+        """Pre-check, hydrate, re-check the final kwargs, connect one MCP server spec."""
+        if policy is not None:
+            policy.precheck_mcp(mspec, subject=subject, owner=owner)
+        kwargs = await hydrate_mcp(mspec)
+        if policy is not None:
+            kwargs = policy.resolve_mcp(kwargs, subject=subject)
+        config = MCPServerConfig(**kwargs)
+        if hasattr(self, "add_mcp_server"):
+            return list(await self.add_mcp_server(config))
+        return []
 
     def _capture_knowledge_toolkit(self, toolkit: Any) -> None:
         """Capture PageIndex / GraphIndex / LLMWiki toolkit instances on the bot.

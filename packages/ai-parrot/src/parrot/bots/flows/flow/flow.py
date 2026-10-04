@@ -2323,6 +2323,12 @@ class AgentsFlow(PersistenceMixin):
                     _spawn(tgt)
                 continue
 
+            # Required checkpoint barrier for definition-driven and legacy
+            # modes: the explicit-mode path above already barriers; this
+            # closes the same gap for flows built from a FlowDefinition.
+            if required and node_succeeded:
+                await _await_required_barrier()
+
             # Legacy AND-join: evaluate outgoing edges of the finished node.
             source_error = errors.get(nid)
             for edge in edges:

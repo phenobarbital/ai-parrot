@@ -1,0 +1,97 @@
+**Option A** is recommended.
+
+It is the only option that satisfies both discovery decisions simultaneously:
+ship the example *now* without touching production clients (ruling out C), and
+still get Set-of-Marks, closed-set prompting and a repair retry without writing
+them from scratch (ruling out B). The `hasattr(client, "ask_to_image")` duck-type
+in `VisionAdapter.__init__` is a genuine, already-intended extension seam — the
+adapter's own docstring says "on **any** client exposing `ask_to_image`" — so
+using it is not a hack around the design, it is the design.
+
+What we trade away, honestly:
+
+- **Coupling to pipeline internals.** The example will import `identify_strips`
+  and construct a `CycleContext`, so a refactor inside `identification/` can
+  break it. Accepted because the alternative (Option B) guarantees divergence
+  rather than merely risking breakage, and a broken import is loud while silent
+  prompt drift is not.
+- **Two prompt builders.** The shared `build_identify_prompt` must stay open-set
+  by contract, so the closed-set variant lives in the example and will not track
+  changes to the shared one. Accepted, and flagged as an Open Question: if the
+  closed-set prompt wins on accuracy, promoting it into the pipeline as an
+  opt-in mode becomes a follow-up in its own right.
+- **Nova stays broken for everyone else.** Option C's real bug is untouched.
+  Accepted deliberately: this example produces the evidence that says whether
+  that bug is worth fixing, and its shim is the prototype implementation.
+
+Option D is not recommended now but is explicitly worth revisiting once
+Option A has a baseline — it is the natural second feature, not a competitor.
+
+---
+
+### Option A: Nova transport shim behind the existing `VisionAdapter`
+
+`VisionAdapter` is **duck-typed**: its only requirement is that the client
+expose `ask_to_image`, checked with `hasattr` at construction
+(`identification/vision.py:157-161`). Nothing else about the client is special.
+
+So the example ships a small `examples/planogram/aws/nova_vision.py` exposing a
+`NovaVisionClient` with `client_name = "nova"` and
+`async def ask_to_image(prompt, image, **kwargs)` implemented over `aioboto3`'s
+`bedrock-runtime` `converse` call, returning a lightweight object carrying the
+model's text in `.output`. `nova2.py` then:
+
+1. runs Stage-1 perception (or loads `--boxes`),
+2. builds a `CycleContext` whose `vision` is a `VisionAdapter` wrapping the Nova
+   shim,
+3. calls the existing `identify_strips(...)` with `marks=True`,
+4. flattens the resulting `IdentificationResult` to the requested
+   `{bbox, brand, product, occupancy}` JSON and draws the annotated image.
+
+Set-of-Marks rendering, per-row chunking, concurrency, the response cache, the
+**repair retry** and id reconciliation all come for free — `VisionAdapter.ask`
+already implements the retry, and `validate_response` already drops hallucinated
+ids and backfills missing ones as `occupancy="unknown"`.
+
+Crucially, `normalise_kwargs` (`vision.py:35-61`) falls back to the common kwarg
+subset for any provider not in `SUPPORTED_KWARGS` — `"nova"` is not listed, so
+it receives `{model, max_tokens, temperature, structured_output,
+reference_images}` and `_final_prompt` folds the system prompt into the user
+prompt automatically. **The pipeline package needs no edit whatsoever.**
+
+One genuine consequence: `build_identify_prompt` is contractually open-set — its
+docstring states it "Must NOT mention a planogram or expected products"
+(`identification/identify.py:119-130`). The closed-set-from-planogram behaviour
+chosen in discovery therefore needs a **local** prompt builder in the example
+(`build_nova_identify_prompt`), not a change to the shared one.
+
+✅ **Pros:**
+- Zero changes to `ai-parrot-pipelines` or any client — pure addition under `examples/`.
+- Reconciliation, repair-retry, caching and Set-of-Marks are reused, not rewritten (~150 lines of new code instead of ~450).
+- The shim's `ask_to_image` body is a near copy-paste lift into `BedrockConverseBase` when the follow-up feature lands, so this example *is* the prototype for that work.
+- Results are directly comparable to the Google/Claude/OpenAI runs because the prompt, marking and validation path are identical apart from the closed-set prompt.
+
+❌ **Cons:**
+- The example is coupled to `parrot_pipelines.planogram` internals, several of which are private-ish (`_targets`, `_id_allocator`, `_finalise`) and may drift.
+- Two prompt builders now exist (shared open-set, example closed-set), which can silently diverge.
+- Reading the example no longer tells the whole story — a reader must also read `identify.py`.
+
+📊 **Effort:** Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `aioboto3` | async `bedrock-runtime` Converse calls | `>=13.2.0`, already declared in `ai-parrot-client-amazon/pyproject.toml:17` |
+| `opencv-python` | image decode, Set-of-Marks drawing, annotation | already used throughout `planogram/` |
+| `numpy` | BGR arrays | already a perception dependency |
+| `pydantic` v2 | `IdentificationResponse` schema + CLI config | already the repo standard |
+
+🔗 **Existing Code to Reuse:**
+- `parrot_pipelines/planogram/identification/vision.py:131` — `VisionAdapter`, duck-typed on `ask_to_image`; brings the repair retry and the on-disk response cache.
+- `parrot_pipelines/planogram/identification/identify.py:90` — `render_marked_strip`, the Set-of-Marks renderer.
+- `parrot_pipelines/planogram/identification/identify.py:464` — `identify_strips`, per-row chunked concurrent calls with per-strip failure isolation.
+- `parrot_pipelines/planogram/identification/identify.py:212` — `validate_response`, id reconciliation and added-shape acceptance.
+- `parrot_pipelines/planogram/perception/slots.py:242,263` — `to_strip_norm` / `from_strip_norm`, the pixel ↔ 0–1000 converters.
+- `parrot_pipelines/planogram/perception/shapes.py:128` + `rows.py:20` + `slots.py:115` — the Stage-1 chain.
+
+---

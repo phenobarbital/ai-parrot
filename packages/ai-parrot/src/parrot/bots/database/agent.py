@@ -10,6 +10,7 @@ import logging
 import re
 import uuid
 import warnings
+from pathlib import Path
 from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple, Union
 
 from ...models import AIMessage, CompletionUsage
@@ -116,6 +117,7 @@ class DatabaseAgent(BasicAgent):
         vector_store: Optional vector store for cache similarity search.
         redis_url: Optional Redis URL for cache persistence.
         retry_config: Optional query retry configuration.
+        schema_plane: Optional schema plane service or directory path.
         **kwargs: Forwarded to ``BasicAgent.__init__``.
     """
 
@@ -132,6 +134,8 @@ class DatabaseAgent(BasicAgent):
         redis_url: Optional[str] = None,
         retry_config: Optional[QueryRetryConfig] = None,
         cache_ttl_by_completeness: Optional[Dict[int, int]] = None,
+        *,
+        schema_plane: Any = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(name=name, **kwargs)
@@ -143,6 +147,7 @@ class DatabaseAgent(BasicAgent):
         self.retry_config = retry_config
         self._cache_ttl_by_completeness = cache_ttl_by_completeness
         self.cache_manager = CacheManager(redis_url=redis_url, vector_store=vector_store)
+        self._schema_plane = self._resolve_schema_plane(schema_plane)
         self.query_router: Optional[SchemaQueryRouter] = None
         self._toolkit_map: Dict[str, DatabaseToolkit] = {}
         self._internal_toolkit: Optional[DatabaseAgentToolkit] = None
@@ -153,6 +158,24 @@ class DatabaseAgent(BasicAgent):
         # Deprecation deduplication: tracks id(tk) for toolkits whose
         # tool_prefix=None fallback has already fired a DeprecationWarning.
         self._warned_none_prefix: Set[int] = set()
+
+    def _resolve_schema_plane(self, schema_plane: Any) -> Any:
+        """Accept a schema plane service, directory path, or ``None``.
+
+        The schema-plane import remains lazy so importing ``bots.database``
+        does not require the wiki package.
+        """
+        if schema_plane is None:
+            return None
+        if isinstance(schema_plane, (str, Path)):
+            from parrot.knowledge.wiki.schema.service import SchemaPlaneService
+
+            schema_plane = SchemaPlaneService.from_dir(Path(schema_plane), read_only=False)
+        self.logger.info(
+            "DatabaseAgent: schema plane enabled (%s)",
+            getattr(schema_plane, "plane_dir", schema_plane),
+        )
+        return schema_plane
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -220,6 +243,12 @@ class DatabaseAgent(BasicAgent):
                     config_kwargs["ttl_by_completeness"] = self._cache_ttl_by_completeness
                 partition = self.cache_manager.create_partition(CachePartitionConfig(**config_kwargs))
                 tk.cache_partition = partition
+
+            if self._schema_plane is not None and tk.cache_partition is not None:
+                tk.cache_partition.plane = self._schema_plane
+                tk.cache_partition.origin = getattr(tk, "origin", None) or tk.database_type
+                tk.cache_partition.dialect = tk.database_type
+                tk.cache_partition.plane_write = True
 
             self.query_router.register_database(tk.database_type, tk_id)
 

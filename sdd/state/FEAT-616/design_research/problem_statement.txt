@@ -1,0 +1,28 @@
+The staging instance is Odoo 19.0 running **Softhealer Technologies' `sh_all_in_one_helpdesk`**
+(19.0.0.0.1) under three TROC-owned layers (`troc_helpdesk` 19.0.1.32.0,
+`dynamic_form_helpdesk`, `troc_helpdesk_dynamic_forms`); tickets are `sh.helpdesk.ticket`
+records whose lifecycle is `stage_id` over five linear stages, with transitions exposed as
+`action_*` server methods and SLAs modelled as `sh.helpdesk.sla` policies. The existing
+`OdooToolkit` (`packages/ai-parrot-tools/src/parrot_tools/odoo/toolkit.py`) already provides
+the transport, lazy auth, the `_execute` chokepoint, the `confirm_sale_order`
+action-then-read-back pattern, and a three-module Pydantic split (`models/inputs.py`,
+`models/envelopes.py`, `models/entities.py`). The repo also holds a directly applicable
+precedent, FEAT-216 `OdooFieldServiceToolkit`, which resolved the same subclass-vs-mixin
+question in favour of a **subclass**. We therefore propose a new
+`OdooHelpdeskToolkit(OdooToolkit)` in `parrot_tools/odoo/helpdesk.py` with typed inputs,
+entities and result envelopes for ticket CRUD, assignment, transitions, comments, SLA policies,
+reference data, stats and wizards — sequenced after the in-flight FEAT-614 JSON-2 fix, which
+edits the same files and is a prerequisite for any aggregate tool. Recommended next step:
+`/sdd-spec`.
+
+---
+
+Original request:
+> En el Odoo expuesto en staging environment: https://pokemon.helpdesk.staging.trocdigital.io/
+> con credenciales acequibles via ODOO_HELPDESK_URL, ODOO_HELPDESK_USER, ODOO_HELPDESK_PASSWORD
+> y ODOO_HELPDESK_APIKEY hay un sistema helpdesk que debemos descubrir cual es (al parecer es un
+> modulo custom de "softhealer", un partner hindú), necesitamos hacer un research sobre este
+> Odoo v.19 para ampliar el OdooToolkit ya sea incorporando métodos o extendiendo con un mixin
+> de OdooHelpdesk para incorporar métodos para operar con el helpdesk system (crear tickets,
+> transicionar tickets, gestionar las incidencias, definir SLAs, etc), esto incluye model inputs
+> para los métodos de entrada y gestión de las salidas (structured outputs)

@@ -1,0 +1,23 @@
+Original request (verbatim): google-drive-interface -- use the FEAT-603 feat-FEAT-603-sharepoint-filemanager
+as example for a Google Drive File Manager interface and integration with toolkit
+
+The request is to give Google Drive the same treatment FEAT-603 gave SharePoint and
+OneDrive: a parrot-native implementation of navigator's `FileManagerInterface`
+(`GoogleDriveFileManager`, in `parrot/interfaces/file/gdrive.py`) that composes the
+existing `GoogleClient` (`parrot/interfaces/google.py`) for service-account / OAuth-user
+/ cached authentication and uses aiogoogle's Drive v3 discovery for transport, plus the
+same registration seams — lazy shim exports, `FileManagerFactory._PARROT_NATIVE["gdrive"]`,
+the `ManagerType` literal and `_DRIVE_RELATIVE_BACKENDS` in `parrot/tools/filemanager.py`
+— so `FileManagerToolkit(manager_type="gdrive")` works out of the box, with an optional
+net-new `GoogleDriveToolkit` under `parrot_tools.google`. Nothing Drive-related exists in
+the repo today, and FEAT-603's `GraphDriveFileManager` is Microsoft-Graph-specific, so the
+Drive manager is a **sibling** class that reuses only the backend-neutral `batch.py`
+models and mirrors the Graph extension surface (`list_entries`, server-side `find_files`,
+`upload_file_from_bytes`, `create_sharing_link`, `upload_files`/`download_files`,
+`setup()`). The main design work is not the transport but (a) mapping the interface's
+path model onto Drive's id-addressed, duplicate-name-tolerant store and (b) sequencing:
+FEAT-603 is not merged into `dev` yet, and every edit site this feature touches only
+exists on its branch. Recommendation: resolve the four open questions, then `/sdd-spec`,
+scheduled after FEAT-603 lands.
+
+---

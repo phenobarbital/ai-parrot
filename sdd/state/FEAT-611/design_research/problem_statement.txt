@@ -1,0 +1,38 @@
+FEAT-598 (A2UI Linked Surfaces) has landed on `dev`, but nobody has tested it end to end yet. Jesús Lara is building FEAT-610, an E2E example over `polestar_graduates_directory`. It is a static renderer (echarts + grid.js) that refreshes each widget with a `POST /api/v3/queries/{slug}`. Jesús asked for an alternative E2E test, because "two people test better than one".
+
+This proposal is **parallel and independent**. It reuses what FEAT-610 builds as a base: the aiohttp server with QuerySource and AuthHandler, the login pattern, and the renderer. With that base it builds **other examples** that cover the parts of FEAT-598 that FEAT-610 leaves out. The raw source is in `sdd/state/FEAT-611/source.md`.
+
+FEAT-610 covers the **browser lane over public slugs**. It uses only `fields`/`filter`/`group_by`, its own renderer, and independent sources. By design it leaves out the following, all of which exist in FEAT-598 code and are untested against real services (F010, F013):
+
+- the server lane (persistence, `/refresh` with params, share tokens, the PBAC guard);
+- sources linked to each other (join/union) and the `transform.ops` DSL;
+- the `FilterBar` with `parrot_param`;
+- multiquery slugs;
+- declared/locked params;
+- refresh policies.
+
+The research surfaced three things that change the approach:
+
+1. **The Svelte linked lane cannot be reached from a real agent chat.** There are five chained blockers (F014):
+   - the tool's envelope is never lifted into `response.a2ui_envelope`;
+   - the shape does not match: the tool emits the inner `CreateSurface`, while Svelte expects `{version:"v1.0", createSurface}`;
+   - the canvas opens no tab when the root is not Infographic/Report;
+   - the canvas never passes `persistedSurfaceId`;
+   - everything sits behind a build flag.
+
+   Without fixing these, FEAT-598 in the admin UI is only reachable from vitest.
+2. **Hidden TS↔Python drift** (F015):
+   - `conditions.ts` emits `limit` and `_offset: 0`;
+   - `setParam` does not validate declared params;
+   - `serverRefresh` discards the response;
+   - failure notices say "data as of never".
+
+   On top of that, the existing E2E test fakes all of Postgres, QS, QueryModel and the guard, and the vitest suites have never run.
+3. **The environment differs from what FEAT-610 assumes** (F003):
+   - `querysource` 4.5.11 is installed (no JSONB `@>` and no tenants);
+   - `QS_PBAC_ENABLED` is not defined;
+   - `env/.env` points at the **production** database.
+
+   This proposal runs against **staging**.
+
+The recommendation is four scenarios over the Epson slugs (`epson_field_activity` + `epson_program_targets`, the ones FEAT-598's own fixtures use, F001), plus the admin-UI chat wiring and the drift fixes.

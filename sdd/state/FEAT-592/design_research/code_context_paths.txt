@@ -1,0 +1,16 @@
+.claude/rules/codebase-conventions.md
+anthropic/claude_agent.py
+clients/anthropic/client.py
+clients/google/client.py
+clients/openai/client.py
+packages/ai-parrot-client-amazon/pyproject.toml
+packages/ai-parrot-client-amazon/src/parrot/clients/amazon/bedrock.py
+packages/ai-parrot-client-amazon/src/parrot/clients/amazon/nova/client.py
+packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/backend.py
+packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/contracts.py
+packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/identify.py
+packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/identification/vision.py
+packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/perception/rows.py
+packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/perception/shapes.py
+packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/perception/slots.py
+perception/__init__.py

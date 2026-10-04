@@ -411,9 +411,12 @@ class PhpScanner(LanguageScanner):
 
     @property
     def mode(self) -> str:
-        """``"tree-sitter"`` when the optional grammar loads, else
+        """Tier the NEXT file would be served by (predictive, FEAT-609).
+
+        ``"ast-grep"`` when the structural seam is enabled and available,
+        else ``"tree-sitter"`` when the optional grammar loads, else
         ``"heuristic"``."""
-        if self._last_mode == "ast-grep":
+        if structural_enabled() and astgrep.supported_language("php"):
             return "ast-grep"
         if treesitter.get_parser("php") is not None:
             return "tree-sitter"

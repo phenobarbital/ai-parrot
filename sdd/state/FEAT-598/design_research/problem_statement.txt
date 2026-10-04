@@ -1,0 +1,48 @@
+Every A2UI surface ai-parrot emits today is **baked**: the agent runs the
+data (pandas, `qs_execute_slug`, a recipe transformer), copies the resulting rows
+into `createSurface.dataModel`, and the renderer only *binds* to them. The
+surface is a photograph. Refreshing it means either re-running an LLM turn or,
+for recipe-backed surfaces, replaying the recipe server-side
+(`RecipeRunner`, FEAT-324/326) through `POST /api/v1/ui/surfaces/{id}/refresh`
+(FEAT-492). A surface without a `recipe_ref` cannot be refreshed at all
+(`UISurfaceRecord.refreshable` is hard-wired to `recipe_name is not None`,
+`handlers/models/ui_surfaces.py:83-86`; the handler answers **409**,
+`handlers/ui_surfaces.py:590-597`).
+
+Navigator already has the opposite model in production: a **widget** in the
+(Vue 2, to be replaced) dashboard is a *structure plus a data reference* —
+it POSTs a QuerySource slug with conditions
+(`POST /api/v2/services/queries/epson_field_activity` with
+`{"firstdate": "2026-08-09", "lastdate": "2026-08-15"}`), post-processes the
+rows client-side, and renders a chart, a KPI hero row or a grid. Reloading a
+widget is just re-issuing that call. Those widgets are hand-built by people;
+nothing lets an agent *produce* one.
+
+The gap this feature closes: an agent that has the `DatasetManager` catalog
+of registered slugs and the QuerySource tool can already *replicate* how the
+data is obtained. It should be able to emit an A2UI surface that carries
+**(1) the component and its presentation props, (2) a data-source descriptor
+saying how to fetch the rows, (3) an optional declarative transform, and
+(4) optionally the current rows as a snapshot** — so the renderer registers
+a fully functional, self-refreshing widget or dashboard, and the same
+descriptor lets the server refresh the persisted surface without an LLM.
+
+Who is affected:
+
+- **Navigator users** get agent-authored widgets and dashboards that stay
+  live (reload, inline filters, bookmark, share) instead of frozen
+  infographics.
+- **The `navigator-frontend-next` team** building the new Svelte 5 A2UI
+  renderer (`docs/frontend/agentdashboard-a2ui-reference.md`): the
+  descriptor is the contract their "widget runtime" executes.
+- **Agent authors** (FlexDashboard-style agents, `agents/flex_dashboard.py`)
+  who today must bake every number.
+- **The ui_surfaces plane** (FEAT-492): persisted surfaces become
+  refreshable by descriptor, not only by recipe.
+
+Why now (revised 2026-09-24): the QuerySource side has shipped —
+`describe`/`columns`/`vocabulary` (FEAT-148), the `/api/v3/queries/{slug}`
+lane and the tenant-scoped slug URLs are in production with QuerySource
+5.0.0 — and ai-parrot's `QuerysourceToolkit` (FEAT-558) landed on
+2026-09-17. The new Svelte renderer is about to be designed. This document
+fixes the wire contract before it does.

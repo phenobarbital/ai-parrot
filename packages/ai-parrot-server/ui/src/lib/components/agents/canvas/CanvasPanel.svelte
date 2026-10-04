@@ -25,6 +25,7 @@
 	let exportMenuOpen = $state(false);
 
 	let expanded = $derived(chatLayout.getCanvasExpanded());
+	let primary = $derived(chatLayout.getCanvasPrimary());
 
 	/** Serialize CanvasBlock[] to text for audio generation */
 	function serializeBlocksToText(blocks: CanvasBlock[]): string {
@@ -324,11 +325,24 @@
 					</button>
 				</div>
 			{/if}
+			<!-- FEAT-611: swap sizes with the chat (canvas wide, chat narrow) without hiding either. -->
+			{#if !expanded}
+				<button
+					class="btn btn-ghost btn-xs btn-square text-muted-foreground hover:text-foreground"
+					class:text-primary={primary}
+					onclick={() => chatLayout.toggleCanvasPrimary()}
+					title={primary ? 'Restore sizes' : 'Swap sizes with chat'}
+					aria-label={primary ? 'Restore sizes' : 'Swap sizes with chat'}
+					aria-pressed={primary}
+				>
+					<Icon icon="mdi:swap-horizontal" class="size-4" />
+				</button>
+			{/if}
 			<button
 				class="btn btn-ghost btn-xs btn-square text-muted-foreground hover:text-foreground"
 				onclick={() => chatLayout.toggleCanvasExpanded()}
-				title={expanded ? 'Restore chat' : 'Expand canvas'}
-				aria-label={expanded ? 'Restore chat' : 'Expand canvas'}
+				title={expanded ? 'Restore chat' : 'Maximize canvas'}
+				aria-label={expanded ? 'Restore chat' : 'Maximize canvas'}
 			>
 				<Icon icon={expanded ? 'mdi:arrow-collapse-right' : 'mdi:arrow-expand-left'} class="size-4" />
 			</button>

@@ -247,7 +247,7 @@ def test_zone_only_shelf_without_binding_is_rejected(native_definition):
     definition = load_slots_definition(native_definition)
     with pytest.raises(SlotsDefinitionError, match="zone-only shelf"):
         validate_bindings(definition, _config(_binding("r2", "f11", "illumination")))
-    assert validate_bindings(definition, _config(_binding("r1", "shelf_header")))
+    assert validate_bindings(definition, _config(_binding("r1", "zone_header")))
 
 
 def test_missing_rule_bindings_key_returns_empty(native_definition):
@@ -261,3 +261,121 @@ def test_missing_rule_bindings_key_returns_empty(native_definition):
     assert validate_bindings(plain, {"brand": "X"}) == []
     with pytest.raises(SlotsDefinitionError, match="zone-only shelf"):
         validate_bindings(definition, {})
+
+
+def _zone_only(*zones) -> dict:
+    """Build a native zone-only definition."""
+    return {"version": "1", "zones": list(zones)}
+
+
+def test_expected_empty_facing_needs_no_product(native_definition):
+    """Expected-empty facings may omit product and remain in the definition."""
+    native_definition["shelves"][1]["facings"][2].update({"product": None, "expected_occupancy": "empty"})
+    definition = load_slots_definition(native_definition)
+    empty = next(f for f in definition.all_facings() if f.facing_id == "f13")
+    assert empty.expected_occupancy == "empty" and empty.product is None
+
+
+def test_occupied_facing_requires_product(native_definition):
+    """Occupied facings reject blank products."""
+    native_definition["shelves"][1]["facings"][2]["product"] = "  "
+    with pytest.raises(SlotsDefinitionError, match="f13"):
+        load_slots_definition(native_definition)
+
+
+def test_all_expected_empty_definition_is_legal():
+    """A definition containing only expected-empty facings is valid and fully covered."""
+    definition = load_slots_definition(
+        {
+            "shelves": [
+                {
+                    "shelf_id": "shelf_1",
+                    "shelf_number": 1,
+                    "facings": [
+                        _facing("f1", "shelf_1", 1, None, expected_occupancy="empty"),
+                        _facing("f2", "shelf_1", 2, None, expected_occupancy="empty"),
+                    ],
+                }
+            ]
+        }
+    )
+    assert definition_coverage(definition) == (1.0, [])
+
+
+def test_zone_only_definition_gets_virtual_shelves():
+    """Unowned zones become deterministic virtual shelves and survive a round trip."""
+    definition = load_slots_definition(
+        _zone_only(
+            {"zone_id": "g1", "kind": "graphic"},
+            {"zone_id": "i1", "kind": "information_label"},
+        )
+    )
+    assert [s.shelf_id for s in definition.shelves] == ["zone:g1", "zone:i1"]
+    assert [z.shelf_id for z in definition.zones] == ["zone:g1", "zone:i1"]
+    assert [s.shelf_number for s in definition.shelves] == [1, 2]
+    assert definition_coverage(definition) == (1.0, [])
+    assert load_slots_definition(definition.model_dump()) == definition
+
+
+def test_virtual_shelf_collision_is_rejected():
+    """An unowned zone cannot claim a physical shelf's virtual id."""
+    with pytest.raises(SlotsDefinitionError, match="collision"):
+        load_slots_definition(
+            {
+                "shelves": [
+                    {
+                        "shelf_id": "zone:g1",
+                        "shelf_number": 1,
+                        "facings": [_facing("f1", "zone:g1", 1, "SKU-1", "Product")],
+                    }
+                ],
+                "zones": [{"zone_id": "g1", "kind": "graphic"}],
+            }
+        )
+
+
+def test_empty_definition_is_rejected():
+    """A definition must contain facings or zones."""
+    with pytest.raises(SlotsDefinitionError, match="empty definition"):
+        load_slots_definition({"shelves": [], "zones": []})
+
+
+@pytest.mark.parametrize("kind", ["graphic", "advertisement", "counter", "information_label", "header"])
+def test_new_zone_kinds_validate(kind):
+    """All supported zone kinds load."""
+    assert load_slots_definition(_zone_only({"zone_id": "z", "kind": kind})).zones[0].kind == kind
+
+
+def test_custom_attributes_and_collision(native_definition):
+    """Custom attributes load, while typed-field collisions fail."""
+    native_definition["shelves"][1]["facings"][0]["descriptors"]["attributes"] = {
+        "finish": "matte",
+        "sizes": ["s"],
+    }
+    assert load_slots_definition(copy.deepcopy(native_definition)).all_facings()
+    native_definition["shelves"][1]["facings"][0]["descriptors"]["attributes"] = {"family": "x"}
+    with pytest.raises(SlotsDefinitionError, match="collide"):
+        load_slots_definition(native_definition)
+
+
+def test_required_zone_needs_mandatory_zone_present(native_definition):
+    """Required zones must have a mandatory zone-present binding targeting the zone."""
+    definition = load_slots_definition(native_definition)
+    shelf_rule = _binding("r0", "shelf_header", "illumination")
+    with pytest.raises(SlotsDefinitionError, match="required zone zone_header"):
+        validate_bindings(
+            definition,
+            _config(shelf_rule, {**_binding("r1", "zone_header"), "mandatory": False}),
+        )
+    assert validate_bindings(definition, _config(_binding("r1", "zone_header")))
+
+
+def test_optional_zone_only_unit_needs_a_mandatory_rule():
+    """Optional zone-only units still need at least one mandatory rule."""
+    definition = load_slots_definition(_zone_only({"zone_id": "g1", "kind": "graphic", "required": False}))
+    with pytest.raises(SlotsDefinitionError, match="zone-only shelf"):
+        validate_bindings(
+            definition,
+            _config({**_binding("r1", "g1", "illumination"), "mandatory": False}),
+        )
+    assert validate_bindings(definition, _config(_binding("r1", "g1", "visual_features")))

@@ -10,6 +10,17 @@ base_branch: dev
 projects: []
 # tags: free-form kebab-case keywords for organizing specs (e.g. memory, mcp).
 tags: []
+# e2e: optional deterministic-E2E-gate policy metadata (FEAT-581). Absent
+#   entirely (the default for every spec written before this feature) means
+#   the generated e2e-plan.md's policy defaults to `optional` when loaded.
+#   `policy` MUST be exactly `required`, `optional` or `none` — an
+#   unrecognized value fails plan loading closed, it is never coerced to a
+#   default. `scenario_ids` are the plan's stable `ScenarioSpec.id` values,
+#   kept in sync with the "### E2E Scenarios" subsection below (§4). Omit
+#   this whole key for a feature with no E2E surface.
+# e2e:
+#   policy: optional
+#   scenario_ids: []
 ---
 
 # Feature Specification: <Feature Name>
@@ -141,6 +152,47 @@ def sample_config():
     return {...}
 ```
 
+### E2E Scenarios
+
+> Optional (FEAT-581) — only for a feature that exercises the deterministic
+> E2E gate (`parrot e2e run` / `parrot e2e verify`). Omit this whole
+> subsection, and the frontmatter `e2e` key above, for a feature with no E2E
+> surface; an absent policy defaults to `optional` once a plan is loaded.
+
+- **Policy**: `required` | `optional` | `none` — must match frontmatter
+  `e2e.policy` exactly. An invalid value fails plan loading closed; it is
+  never silently coerced to a default.
+- **Required deterministic scenarios**: stable `ScenarioSpec.id` values this
+  feature must cover, each with enumerated pytest node IDs (never a bare
+  directory or wildcard — a node ID belongs to exactly one scenario). A
+  `required` policy demands at least one required, codified
+  (non-exploratory, node-bearing) scenario; an empty or all-exploratory
+  scenario list under `required` is a spec defect, not something the loader
+  defaults around.
+- **Live / exploratory scenarios**: listed separately from the deterministic
+  scenarios above, never described as "deterministic". Live scenarios call
+  a real provider under explicit `PARROT_TEST_REAL_LLM=1` opt-in and a
+  request budget; exploratory scenarios declare no node IDs and can never
+  be `required`.
+- **Generated plan**: the complete `e2e-plan.md` frontmatter
+  (`schema_version`, `feature_id`, `spec_path`, `policy`, `targets`,
+  `scenarios`, `budget`, `run_timeout_s`) is produced during task
+  decomposition once node IDs are frozen — do not fabricate concrete node
+  IDs at spec-authoring time; its evidence is not available yet either.
+
+| Scenario ID | Tier | Required | Target(s) | Notes |
+|---|---|---|---|---|
+| `<scenario-id>` | deterministic | yes | `<target-id>` | enumerated node IDs added once frozen |
+| `<scenario-id>` | live | no | `<target-id>` | explicit opt-in only; never called deterministic |
+| `<scenario-id>` | exploratory | no (never required) | `<target-id>` | candidates only, human-reviewed |
+
+Validation commands (exact node IDs supplied by the generated plan):
+```bash
+pytest <package>/tests/unit/e2e/ -q
+PARROT_TEST_E2E=1 parrot e2e run --plan <path-to-generated>/e2e-plan.md
+parrot e2e verify --plan <path-to-generated>/e2e-plan.md
+```
+
 ---
 
 ## 5. Acceptance Criteria
@@ -190,6 +242,28 @@ class ExistingClass(BaseClass):
      Prevents agents from inventing imports or attributes. -->
 - ~~`parrot.module.NonExistentThing`~~ — does not exist
 - ~~`ClassName.phantom_method()`~~ — not a real method
+
+### Edit Sites (Blueprint Anchors)
+<!-- One row per file the §3 modules will touch. `/sdd-task` turns each row into an
+     Implementation Blueprint block, so the anchor is verified ONCE per feature here
+     instead of once per task. Keep it to files the modules actually change — this
+     table is re-read on every downstream turn, so rows must earn their place.
+
+     Verified against: <short SHA of the base commit at spec time>
+
+     Anchors go stale between spec time and task time. `/sdd-task` MUST re-run the
+     `grep -c` for every row it uses; this table saves the search, not the check. -->
+
+| File | Action | Verbatim anchor line | Verified at | Occurrences |
+|---|---|---|---|---|
+| `packages/<dist>/src/<pkg>/module/file.py` | MODIFY | `def existing_method(self) -> None:` | `file.py:NN` | 1 |
+| `packages/<dist>/src/<pkg>/module/new_file.py` | CREATE | — | — | — |
+
+- A **CREATE** row declares only the path the module adds; it needs no anchor.
+- **Occurrences > 1** means the one-line anchor is ambiguous. Quote 2–3 lines of
+  surrounding context in the anchor cell so the blueprint block can attach uniquely.
+- An anchor that cannot be verified is written `(unverified — check before use)`,
+  never guessed.
 
 ---
 

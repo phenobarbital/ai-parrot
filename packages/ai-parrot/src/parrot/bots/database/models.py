@@ -27,26 +27,29 @@ if TYPE_CHECKING:
 
 class UserRole(str, Enum):
     """Define user roles with specific output preferences."""
-    BUSINESS_USER = "business_user"      # Data only, no limits, minimal explanation
-    DATA_ANALYST = "data_analyst"        # Explanations, samples, schema context
-    DATA_SCIENTIST = "data_scientist"    # Schema context + DataFrame conversion (no limits)
-    DATABASE_ADMIN = "database_admin"    # SQL, execution plans, performance, optimization, sample data
-    DEVELOPER = "developer"              # SQL/schema, explanations, examples, no data
+
+    BUSINESS_USER = "business_user"  # Data only, no limits, minimal explanation
+    DATA_ANALYST = "data_analyst"  # Explanations, samples, schema context
+    DATA_SCIENTIST = "data_scientist"  # Schema context + DataFrame conversion (no limits)
+    DATABASE_ADMIN = "database_admin"  # SQL, execution plans, performance, optimization, sample data
+    DEVELOPER = "developer"  # SQL/schema, explanations, examples, no data
     QUERY_DEVELOPER = "query_developer"  # SQL/schema, execution plans, performance, optimization, no data
+
 
 class OutputComponent(Flag):
     """Flags for different response components - allows combinations."""
+
     NONE = 0
-    SQL_QUERY = auto()           # Generated or validated SQL query
-    EXECUTION_PLAN = auto()      # EXPLAIN ANALYZE results with optimizations
-    DATA_RESULTS = auto()        # Actual query results
-    DOCUMENTATION = auto()       # Table/schema metadata and explanations
-    EXAMPLES = auto()            # Usage examples and sample queries
-    PERFORMANCE_METRICS = auto() # Performance analysis and index suggestions
-    SCHEMA_CONTEXT = auto()      # Available tables, columns, relationships
-    OPTIMIZATION_TIPS = auto()   # Query optimization suggestions
-    SAMPLE_DATA = auto()         # Sample rows for understanding data format
-    DATAFRAME_OUTPUT = auto()    # Convert results to pandas DataFrame
+    SQL_QUERY = auto()  # Generated or validated SQL query
+    EXECUTION_PLAN = auto()  # EXPLAIN ANALYZE results with optimizations
+    DATA_RESULTS = auto()  # Actual query results
+    DOCUMENTATION = auto()  # Table/schema metadata and explanations
+    EXAMPLES = auto()  # Usage examples and sample queries
+    PERFORMANCE_METRICS = auto()  # Performance analysis and index suggestions
+    SCHEMA_CONTEXT = auto()  # Available tables, columns, relationships
+    OPTIMIZATION_TIPS = auto()  # Query optimization suggestions
+    SAMPLE_DATA = auto()  # Sample rows for understanding data format
+    DATAFRAME_OUTPUT = auto()  # Convert results to pandas DataFrame
 
     # Convenience combinations
     BASIC_QUERY = SQL_QUERY | DATA_RESULTS
@@ -55,12 +58,14 @@ class OutputComponent(Flag):
     BUSINESS_FOCUS = DATA_RESULTS
     QUERY_DEVELOPER_FOCUS = SQL_QUERY | EXECUTION_PLAN | PERFORMANCE_METRICS | OPTIMIZATION_TIPS | SCHEMA_CONTEXT
 
+
 class OutputFormat(str, Enum):
     """Defines the desired format of the response."""
+
     # Basic formats
-    QUERY_ONLY = "query_only"                      # Just the Query, no execution
-    DATA_ONLY = "data_only"                    # Just the results
-    QUERY_AND_DATA = "query_and_data"          # Query + results
+    QUERY_ONLY = "query_only"  # Just the Query, no execution
+    DATA_ONLY = "data_only"  # Just the results
+    QUERY_AND_DATA = "query_and_data"  # Query + results
     EXPLANATION_ONLY = "explanation_only"
     DOCUMENTATION_ONLY = "documentation_only"
 
@@ -84,15 +89,17 @@ class OutputFormat(str, Enum):
 
 class QueryIntent(str, Enum):
     """Defines the user's query intents for comprehensive database operations."""
-    SHOW_DATA = "show_data"                    # Retrieve and display data
-    GENERATE_QUERY = "generate_query"          # Create SQL from natural language
-    ANALYZE_DATA = "analyze_data"              # Data analysis and insights
-    EXPLORE_SCHEMA = "explore_schema"          # Schema exploration and documentation
-    VALIDATE_QUERY = "validate_query"          # Validate user-provided SQL
-    OPTIMIZE_QUERY = "optimize_query"          # Performance optimization focus
-    EXPLAIN_METADATA = "explain_metadata"      # Table/column documentation
-    CREATE_EXAMPLES = "create_examples"        # Generate usage examples
-    GENERATE_REPORT = "generate_report"        # Create a report from the query results
+
+    SHOW_DATA = "show_data"  # Retrieve and display data
+    GENERATE_QUERY = "generate_query"  # Create SQL from natural language
+    ANALYZE_DATA = "analyze_data"  # Data analysis and insights
+    EXPLORE_SCHEMA = "explore_schema"  # Schema exploration and documentation
+    VALIDATE_QUERY = "validate_query"  # Validate user-provided SQL
+    OPTIMIZE_QUERY = "optimize_query"  # Performance optimization focus
+    EXPLAIN_METADATA = "explain_metadata"  # Table/column documentation
+    CREATE_EXAMPLES = "create_examples"  # Generate usage examples
+    GENERATE_REPORT = "generate_report"  # Create a report from the query results
+
 
 class Completeness(IntEnum):
     """Completeness level of a cached TableMetadata entry.
@@ -100,29 +107,31 @@ class Completeness(IntEnum):
     Ordered so ``meta.completeness >= required`` is the canonical check
     (higher value = strictly subsumes lower levels).
     """
-    NAME_ONLY = 1     # Only schema + table name; no columns introspected
+
+    NAME_ONLY = 1  # Only schema + table name; no columns introspected
     WITH_COLUMNS = 2  # Columns present; indexes/FK/stats may be missing
-    FULL = 3          # Fully introspected entry (columns, PKs, FKs, indexes)
+    FULL = 3  # Fully introspected entry (columns, PKs, FKs, indexes)
 
 
-MetadataSource = Literal["frontend", "information_schema", "pg_catalog", "unknown"]
+MetadataSource = Literal["frontend", "information_schema", "pg_catalog", "ddl", "unknown"]
 
 
 @dataclass
 class SchemaMetadata:
     """Metadata for a single schema (client)."""
+
     database_name: str
     schema: str
     table_count: int
     view_count: int
     total_rows: Optional[int] = None
     last_analyzed: Optional[datetime] = None
-    database_type: Optional[str] = 'postgresql'
-    tables: Dict[str, 'TableMetadata'] = field(default_factory=dict)
-    views: Dict[str, 'TableMetadata'] = field(default_factory=dict)
+    database_type: Optional[str] = "postgresql"
+    tables: Dict[str, "TableMetadata"] = field(default_factory=dict)
+    views: Dict[str, "TableMetadata"] = field(default_factory=dict)
     functions: List[Dict[str, Any]] = field(default_factory=list)
 
-    def get_all_objects(self) -> Dict[str, 'TableMetadata']:
+    def get_all_objects(self) -> Dict[str, "TableMetadata"]:
         """Get all tables and views."""
         return {**self.tables, **self.views}
 
@@ -130,10 +139,11 @@ class SchemaMetadata:
 @dataclass
 class TableMetadata:
     """Enhanced table metadata for large-scale operations."""
+
     schema: str
     tablename: str
     table_type: str  # 'BASE TABLE', 'VIEW'
-    full_name: str   # schema.table for easy reference
+    full_name: str  # schema.table for easy reference
     comment: Optional[str] = None
     columns: List[Dict[str, Any]] = field(default_factory=list)
     primary_keys: List[str] = field(default_factory=list)
@@ -167,34 +177,33 @@ class TableMetadata:
         essential_columns = self.columns[:20]  # Limit to first 20 columns
 
         data: Dict[str, Any] = {
-            'table': self.full_name,
-            'type': self.table_type,
-            'completeness': self.completeness.name,
-            'loaded_at': self.loaded_at.strftime('%Y-%m-%dT%H:%M:%S'),
+            "table": self.full_name,
+            "type": self.table_type,
+            "completeness": self.completeness.name,
+            "loaded_at": self.loaded_at.strftime("%Y-%m-%dT%H:%M:%S"),
         }
 
         if self.completeness < Completeness.FULL:
-            data['_warning'] = (
-                f"{self.completeness.name} stub — call db_describe_table to load columns "
-                "before generating SQL."
+            data["_warning"] = (
+                f"{self.completeness.name} stub — call db_describe_table to load columns " "before generating SQL."
             )
 
-        data['description'] = self.comment or f"{self.table_type.lower()} in {self.schema} schema"
-        data['columns'] = [
+        data["description"] = self.comment or f"{self.table_type.lower()} in {self.schema} schema"
+        data["columns"] = [
             {
-                'name': col['name'],
-                'type': col['type'],
-                'nullable': col.get('nullable', True),
-                'description': col.get('comment')
+                "name": col["name"],
+                "type": col["type"],
+                "nullable": col.get("nullable", True),
+                "description": col.get("comment"),
             }
             for col in essential_columns
         ]
-        data['primary_keys'] = self.primary_keys
-        data['row_count'] = self.row_count
-        data['sample_values'] = self._get_sample_column_values()
+        data["primary_keys"] = self.primary_keys
+        data["row_count"] = self.row_count
+        data["sample_values"] = self._get_sample_column_values()
 
         if len(self.columns) > 20:
-            data['note'] = f"Showing 20 of {len(self.columns)} columns. Use schema search tools for complete structure."
+            data["note"] = f"Showing 20 of {len(self.columns)} columns. Use schema search tools for complete structure."
 
         return yaml.dump(data, default_flow_style=False, sort_keys=False)
 
@@ -234,8 +243,10 @@ class TableMetadata:
 
         return sample_values
 
+
 class QueryExecutionRequest(BaseModel):
     """Structured input for query execution."""
+
     sql_query: str
     limit: Optional[int] = 1000
     timeout: int = 30
@@ -246,6 +257,7 @@ class QueryExecutionRequest(BaseModel):
 
 class QueryExecutionResponse(BaseModel):
     """Structured output from query execution."""
+
     success: bool
     data: Optional[Any] = None
     row_count: int = 0
@@ -276,9 +288,7 @@ class QueryDataset(BaseModel):
 class QueryResponse(BaseModel):
     """Structured LLM output for DatabaseAgent.ask()."""
 
-    explanation: str = Field(
-        description="Human-readable summary of the query and its result."
-    )
+    explanation: str = Field(description="Human-readable summary of the query and its result.")
     query: Optional[str] = Field(
         default=None,
         description="The SQL/DSL the agent generated and executed.",
@@ -330,51 +340,51 @@ class QueryResponse(BaseModel):
 # ============================================================================
 
 ROLE_COMPONENT_DEFAULTS: Dict[UserRole, OutputComponent] = {
-    UserRole.BUSINESS_USER: (
-        OutputComponent.DATA_RESULTS
-    ),
+    UserRole.BUSINESS_USER: (OutputComponent.DATA_RESULTS),
     UserRole.DATA_ANALYST: (
-        OutputComponent.SQL_QUERY |
-        OutputComponent.DATA_RESULTS |
-        OutputComponent.DOCUMENTATION |
-        OutputComponent.SCHEMA_CONTEXT |
-        OutputComponent.SAMPLE_DATA
+        OutputComponent.SQL_QUERY
+        | OutputComponent.DATA_RESULTS
+        | OutputComponent.DOCUMENTATION
+        | OutputComponent.SCHEMA_CONTEXT
+        | OutputComponent.SAMPLE_DATA
     ),
     UserRole.DATA_SCIENTIST: (
-        OutputComponent.SQL_QUERY |
-        OutputComponent.DATAFRAME_OUTPUT |
-        OutputComponent.SCHEMA_CONTEXT |
-        OutputComponent.DOCUMENTATION |
-        OutputComponent.DATA_RESULTS
+        OutputComponent.SQL_QUERY
+        | OutputComponent.DATAFRAME_OUTPUT
+        | OutputComponent.SCHEMA_CONTEXT
+        | OutputComponent.DOCUMENTATION
+        | OutputComponent.DATA_RESULTS
     ),
     UserRole.DATABASE_ADMIN: (
-        OutputComponent.SQL_QUERY |
-        OutputComponent.EXECUTION_PLAN |
-        OutputComponent.PERFORMANCE_METRICS |
-        OutputComponent.OPTIMIZATION_TIPS |
-        OutputComponent.SCHEMA_CONTEXT |
-        OutputComponent.SAMPLE_DATA  # Limited samples, not full data
+        OutputComponent.SQL_QUERY
+        | OutputComponent.EXECUTION_PLAN
+        | OutputComponent.PERFORMANCE_METRICS
+        | OutputComponent.OPTIMIZATION_TIPS
+        | OutputComponent.SCHEMA_CONTEXT
+        | OutputComponent.SAMPLE_DATA  # Limited samples, not full data
     ),
     UserRole.DEVELOPER: (
-        OutputComponent.SQL_QUERY |
-        OutputComponent.DOCUMENTATION |
-        OutputComponent.EXAMPLES |
-        OutputComponent.SCHEMA_CONTEXT
+        OutputComponent.SQL_QUERY
+        | OutputComponent.DOCUMENTATION
+        | OutputComponent.EXAMPLES
+        | OutputComponent.SCHEMA_CONTEXT
         # Note: No DATA_RESULTS for developers by default
     ),
     UserRole.QUERY_DEVELOPER: (
-        OutputComponent.SQL_QUERY |
-        OutputComponent.EXECUTION_PLAN |
-        OutputComponent.PERFORMANCE_METRICS |
-        OutputComponent.OPTIMIZATION_TIPS |
-        OutputComponent.SCHEMA_CONTEXT
+        OutputComponent.SQL_QUERY
+        | OutputComponent.EXECUTION_PLAN
+        | OutputComponent.PERFORMANCE_METRICS
+        | OutputComponent.OPTIMIZATION_TIPS
+        | OutputComponent.SCHEMA_CONTEXT
         # Note: No DATA_RESULTS for query developers by default
-    )
+    ),
 }
+
 
 @dataclass
 class RouteDecision:
     """Query routing decision for schema-centric operations."""
+
     intent: QueryIntent
     components: OutputComponent
     user_role: UserRole
@@ -400,13 +410,16 @@ class RouteDecision:
     target_database: Optional[str] = None  # toolkit identifier
     role_source: str = "default"  # "explicit", "inferred", "default"
 
+
 # ============================================================================
 # RESPONSE COMPONENTS
 # ============================================================================
 
+
 @dataclass
 class DatabaseResponse:
     """Component-based database response."""
+
     query: Optional[str] = None
     data: Optional[Union[List[Dict], pd.DataFrame]] = None
     execution_plan: Optional[str] = None
@@ -485,7 +498,7 @@ class DatabaseResponse:
             "row_count": self.row_count,
             "execution_time_ms": self.execution_time_ms,
             "components_included": components_list,
-            "sample_data": self.sample_data or []
+            "sample_data": self.sample_data or [],
         }
 
         # Handle data serialization
@@ -496,19 +509,12 @@ class DatabaseResponse:
                     "shape": list(self.data.shape),
                     "columns": list(self.data.columns),
                     "dtypes": self.data.dtypes.astype(str).to_dict(),
-                    "data": self.data.to_dict('records')  # Convert to list of dicts
+                    "data": self.data.to_dict("records"),  # Convert to list of dicts
                 }
             elif isinstance(self.data, list):
-                response_dict["data"] = {
-                    "type": "list",
-                    "count": len(self.data),
-                    "data": self.data
-                }
+                response_dict["data"] = {"type": "list", "count": len(self.data), "data": self.data}
             else:
-                response_dict["data"] = {
-                    "type": str(type(self.data).__name__),
-                    "data": str(self.data)
-                }
+                response_dict["data"] = {"type": str(type(self.data).__name__), "data": str(self.data)}
         else:
             response_dict["data"] = None
 
@@ -530,37 +536,37 @@ class DatabaseResponse:
             "has_data": self.data is not None,
             "row_count": self.row_count,
             "execution_time_ms": self.execution_time_ms,
-            "data_type": None
+            "data_type": None,
         }
 
         if self.data is not None:
             if isinstance(self.data, pd.DataFrame):
-                summary.update({
-                    "data_type": "DataFrame",
-                    "shape": list(self.data.shape),
-                    "columns": list(self.data.columns),
-                    "memory_usage": self.data.memory_usage(deep=True).sum()
-                })
+                summary.update(
+                    {
+                        "data_type": "DataFrame",
+                        "shape": list(self.data.shape),
+                        "columns": list(self.data.columns),
+                        "memory_usage": self.data.memory_usage(deep=True).sum(),
+                    }
+                )
             elif isinstance(self.data, list):
-                summary.update({
-                    "data_type": "list",
-                    "count": len(self.data)
-                })
+                summary.update({"data_type": "list", "count": len(self.data)})
 
         return summary
+
 
 # ============================================================================
 # COMPONENT CONFIGURATION HELPERS
 # ============================================================================
 
+
 def get_default_components(user_role: UserRole) -> OutputComponent:
     """Get default output components for a user role."""
     return ROLE_COMPONENT_DEFAULTS.get(user_role, OutputComponent.BASIC_QUERY)
 
+
 def customize_components(
-    base_role: UserRole,
-    add: Optional[OutputComponent] = None,
-    remove: Optional[OutputComponent] = None
+    base_role: UserRole, add: Optional[OutputComponent] = None, remove: Optional[OutputComponent] = None
 ) -> OutputComponent:
     """Customize output components based on base role."""
     components = get_default_components(base_role)
@@ -573,28 +579,30 @@ def customize_components(
 
     return components
 
+
 def components_from_string(components_str: str) -> OutputComponent:
     """Parse components from comma-separated string."""
     component_map = {
-        'sql': OutputComponent.SQL_QUERY,
-        'plan': OutputComponent.EXECUTION_PLAN,
-        'data': OutputComponent.DATA_RESULTS,
-        'docs': OutputComponent.DOCUMENTATION,
-        'examples': OutputComponent.EXAMPLES,
-        'performance': OutputComponent.PERFORMANCE_METRICS,
-        'schema': OutputComponent.SCHEMA_CONTEXT,
-        'optimize': OutputComponent.OPTIMIZATION_TIPS,
-        'samples': OutputComponent.SAMPLE_DATA,
-        'dataframe': OutputComponent.DATAFRAME_OUTPUT
+        "sql": OutputComponent.SQL_QUERY,
+        "plan": OutputComponent.EXECUTION_PLAN,
+        "data": OutputComponent.DATA_RESULTS,
+        "docs": OutputComponent.DOCUMENTATION,
+        "examples": OutputComponent.EXAMPLES,
+        "performance": OutputComponent.PERFORMANCE_METRICS,
+        "schema": OutputComponent.SCHEMA_CONTEXT,
+        "optimize": OutputComponent.OPTIMIZATION_TIPS,
+        "samples": OutputComponent.SAMPLE_DATA,
+        "dataframe": OutputComponent.DATAFRAME_OUTPUT,
     }
 
     result = OutputComponent.NONE
-    for comp in components_str.lower().split(','):
+    for comp in components_str.lower().split(","):
         comp = comp.strip()
         if comp in component_map:
             result |= component_map[comp]
 
     return result
+
 
 # ============================================================================
 # INTENT-TO-COMPONENT MAPPING
@@ -604,10 +612,18 @@ INTENT_COMPONENT_MAPPING: Dict[QueryIntent, OutputComponent] = {
     QueryIntent.SHOW_DATA: OutputComponent.DATA_RESULTS | OutputComponent.SAMPLE_DATA,
     QueryIntent.GENERATE_QUERY: OutputComponent.SQL_QUERY | OutputComponent.DOCUMENTATION,
     QueryIntent.ANALYZE_DATA: OutputComponent.SQL_QUERY | OutputComponent.DATA_RESULTS | OutputComponent.DOCUMENTATION,
-    QueryIntent.EXPLORE_SCHEMA: OutputComponent.DOCUMENTATION | OutputComponent.SCHEMA_CONTEXT | OutputComponent.EXAMPLES,
-    QueryIntent.VALIDATE_QUERY: OutputComponent.SQL_QUERY | OutputComponent.DOCUMENTATION | OutputComponent.OPTIMIZATION_TIPS,
+    QueryIntent.EXPLORE_SCHEMA: OutputComponent.DOCUMENTATION
+    | OutputComponent.SCHEMA_CONTEXT
+    | OutputComponent.EXAMPLES,
+    QueryIntent.VALIDATE_QUERY: OutputComponent.SQL_QUERY
+    | OutputComponent.DOCUMENTATION
+    | OutputComponent.OPTIMIZATION_TIPS,
     QueryIntent.OPTIMIZE_QUERY: OutputComponent.FULL_ANALYSIS,
-    QueryIntent.EXPLAIN_METADATA: OutputComponent.DOCUMENTATION | OutputComponent.SCHEMA_CONTEXT | OutputComponent.EXAMPLES,
+    QueryIntent.EXPLAIN_METADATA: OutputComponent.DOCUMENTATION
+    | OutputComponent.SCHEMA_CONTEXT
+    | OutputComponent.EXAMPLES,
     QueryIntent.CREATE_EXAMPLES: OutputComponent.EXAMPLES | OutputComponent.SCHEMA_CONTEXT,
-    QueryIntent.GENERATE_REPORT: OutputComponent.DATA_RESULTS | OutputComponent.DOCUMENTATION | OutputComponent.SCHEMA_CONTEXT,
+    QueryIntent.GENERATE_REPORT: OutputComponent.DATA_RESULTS
+    | OutputComponent.DOCUMENTATION
+    | OutputComponent.SCHEMA_CONTEXT,
 }

@@ -54,6 +54,18 @@ def _make_handler(
     return handler
 
 
+def _patch_registry(monkeypatch, mapping: dict) -> None:
+    """Point the Studio registry shim at ``mapping`` (FEAT-622 M2: the resolver replaced ``discover_all``)."""
+    from parrot.handlers.studio.testing import _helpers
+
+    class _Resolver:
+        def resolve(self, slug: str):
+            return {key.lower(): value for key, value in mapping.items()}.get(slug.lower())
+
+    monkeypatch.setattr(_helpers, "get_toolkit_resolver", lambda: _Resolver())
+
+
+
 # ---------------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------------
@@ -342,10 +354,9 @@ class TestToolExecute:
     @pytest.mark.asyncio
     async def test_execute_zero_arg_tool(self, monkeypatch):
         app = web.Application()
-        monkeypatch.setattr(
-            testing_module,
-            "discover_all",
-            lambda: {"fake_zero_arg_tool": _ZeroArgTool},
+        _patch_registry(
+            monkeypatch,
+            {"fake_zero_arg_tool": _ZeroArgTool},
         )
         handler = _make_handler(
             StudioToolExecuteHandler,
@@ -366,7 +377,7 @@ class TestToolExecute:
     @pytest.mark.asyncio
     async def test_execute_unknown_slug_404(self, monkeypatch):
         app = web.Application()
-        monkeypatch.setattr(testing_module, "discover_all", dict)
+        _patch_registry(monkeypatch, {})
         handler = _make_handler(
             StudioToolExecuteHandler,
             app,
@@ -383,10 +394,9 @@ class TestToolExecute:
     @pytest.mark.asyncio
     async def test_execute_server_managed_422(self, monkeypatch):
         app = web.Application()
-        monkeypatch.setattr(
-            testing_module,
-            "discover_all",
-            lambda: {"fake_needs_dep_tool": _NeedsDepTool},
+        _patch_registry(
+            monkeypatch,
+            {"fake_needs_dep_tool": _NeedsDepTool},
         )
         handler = _make_handler(
             StudioToolExecuteHandler,
@@ -423,10 +433,9 @@ class TestToolAssignment:
         manager.get_bot = AsyncMock(return_value=bot)
         app["bot_manager"] = manager
 
-        monkeypatch.setattr(
-            testing_module,
-            "discover_all",
-            lambda: {"fake_toolkit": _FakeToolkit},
+        _patch_registry(
+            monkeypatch,
+            {"fake_toolkit": _FakeToolkit},
         )
 
         handler = _make_handler(
@@ -482,7 +491,7 @@ class TestToolAssignment:
         manager.get_bot = AsyncMock(return_value=bot)
         app["bot_manager"] = manager
 
-        monkeypatch.setattr(testing_module, "discover_all", dict)
+        _patch_registry(monkeypatch, {})
 
         handler = _make_handler(
             StudioToolAssignHandler,

@@ -14,6 +14,10 @@ from .bookstore_assets import BOOKSTORE_SKILL
 SKILL_PATH = Path(".agents/skills/bookstore/SKILL.md")
 ALT_BOOKSTORE_SKILL_PATH = Path(".agent/skills/bookstore/SKILL.md")
 
+#: Action reported when no indexed library exists yet, so a premature
+#: ``parrot google install`` no longer skips the Bookstore silently.
+BOOKSTORE_SKIPPED = "bookstore — skipped: no indexed library found (run `bookstore add <file>`, then re-run install)"
+
 
 def _is_managed_bookstore_entry(entry: Any) -> bool:
     """Check if an MCP server entry matches our managed bookstore entry."""
@@ -53,6 +57,7 @@ def install_bookstore(root: Path, mcp_path: Optional[Path] = None) -> list[str]:
 
     locations = resolve_locations(cwd=root, require_exists=True)
     if not locations:
+        actions.append(BOOKSTORE_SKIPPED)
         # Reconcile if library disappeared
         if "bookstore" in servers and _is_managed_bookstore_entry(servers["bookstore"]):
             del servers["bookstore"]

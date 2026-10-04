@@ -11,7 +11,13 @@ from click.testing import CliRunner
 from parrot.cli import cli
 from parrot.knowledge.bookstore.catalog import CatalogStore
 from parrot.knowledge.wiki.google import assets
-from parrot.knowledge.wiki.google.bookstore import SKILL_PATH, bookstore_status, install_bookstore, uninstall_bookstore
+from parrot.knowledge.wiki.google.bookstore import (
+    BOOKSTORE_SKIPPED,
+    SKILL_PATH,
+    bookstore_status,
+    install_bookstore,
+    uninstall_bookstore,
+)
 from parrot.knowledge.wiki.google.bookstore_assets import BOOKSTORE_SKILL
 
 
@@ -97,3 +103,22 @@ def test_cli_default_opt_out_and_uninstall(tmp_path: Path, mcp_config_path: Path
     result = runner.invoke(cli, arguments)
     assert result.exit_code == 0, result.output
     assert all(bookstore_status(tmp_path, mcp_path=mcp_config_path).values())
+
+
+def test_missing_library_reports_skip(tmp_path: Path, mcp_config_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "proj"
+    root.mkdir()
+    install_bookstore(root, mcp_path=mcp_config_path)
+    assert all(bookstore_status(root, mcp_path=mcp_config_path).values())
+
+    monkeypatch.delenv("PARROT_LIBRARY_DIR")
+    actions = install_bookstore(root, mcp_path=mcp_config_path)
+    assert actions[0] == BOOKSTORE_SKIPPED
+    assert any("bookstore MCP removed" in a for a in actions[1:])
+    assert "bookstore" not in json.loads(mcp_config_path.read_text(encoding="utf-8"))["mcpServers"]
+    assert (root / SKILL_PATH).exists()
+
+    fresh = tmp_path / "fresh"
+    fresh.mkdir()
+    assert install_bookstore(fresh, mcp_path=mcp_config_path) == [BOOKSTORE_SKIPPED]
+    assert not (fresh / SKILL_PATH).exists()

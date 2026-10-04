@@ -4,6 +4,7 @@ See ``sdd/specs/execution-plan-tool.spec.md`` (FEAT-419) for the full
 design. This package wraps the frozen ``parrot.bots.flows.plan`` module
 (FEAT-419 TASK-2179) with the agent-facing toolkit.
 """
+
 from .catalog import (
     ArgSummary,
     ToolCatalogEntry,
@@ -13,7 +14,15 @@ from .catalog import (
 )
 from .models import (
     PlanArtifactsArgs,
+    PlanDelta,
     PlanExecuteArgs,
+    PlanRecoveryConfig,
+    PlanRepairArgs,
+    PlanResumeArgs,
+    PlanRunError,
+    PlanRunManifest,
+    PlanRunMetadata,
+    PlanRunSummary,
     PlanStatusArgs,
     PlanValidateArgs,
     RunningSummary,
@@ -27,11 +36,19 @@ __all__ = (
     "ArgSummary",
     "ExecutionPlanToolkit",
     "PlanArtifactsArgs",
+    "PlanDelta",
     "PlanAuthoringError",
     "PlanExecuteArgs",
     "PlanFileStore",
     "PlanLoadError",
     "PlanPlanner",
+    "PlanRecoveryConfig",
+    "PlanRepairArgs",
+    "PlanResumeArgs",
+    "PlanRunError",
+    "PlanRunManifest",
+    "PlanRunMetadata",
+    "PlanRunSummary",
     "PlanStatusArgs",
     "PlanValidateArgs",
     "RunRecord",

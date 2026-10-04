@@ -37,6 +37,8 @@ from typing import (
 import json
 import re
 from enum import Enum
+
+from parrot.models.outputs import SeriesAxis
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -208,6 +210,20 @@ class ColumnDef(BaseModel):
     width: Optional[str] = Field(None, description="CSS width (e.g., '200px', '30%')")
     align: Optional[Literal["left", "center", "right"]] = Field(None, description="Text alignment for this column")
     color: Optional[str] = Field(None, description="Accent color for the column header")
+    type: Optional[str] = Field(
+        None,
+        description=(
+            "Storage type of the column (TableColumn.type vocabulary): "
+            "string|integer|number|boolean|date|datetime|time|duration|any"
+        ),
+    )
+    format: Optional[str] = Field(
+        None,
+        description=(
+            "Display hint (TableColumn.format vocabulary): currency|percent|... "
+            "percent means a RATIO: send 0.683 with format='percent', never '68.3%'"
+        ),
+    )
 
     @field_validator("color", mode="before")
     @classmethod
@@ -332,9 +348,21 @@ class HeroCardBlock(BaseModel):
         "",
         description="Metric label (e.g., 'Total Revenue')",
     )
-    value: str = Field(
+    value: Union[str, int, float] = Field(
         "",
-        description="Formatted metric value (e.g., '$1.2M', '98%')",
+        description=(
+            "Metric value. A formatted string (e.g., '$1.2M', '98%') renders verbatim; "
+            "a number is formatted per `format` (send a ratio as 0.683 with format='percent', "
+            "never as '68.3%')"
+        ),
+    )
+    format: Optional[Literal["percent", "currency", "number"]] = Field(
+        None,
+        description="Only applies to a numeric value; percent means a RATIO (0.683 -> 68.3%)",
+    )
+    unit: Optional[str] = Field(
+        None,
+        description="Appended after a space unless format='percent' (e.g., 'visits')",
     )
     icon: Optional[str] = Field(None, description="Icon identifier (e.g., 'money', 'users', 'chart', 'time', 'target')")
     trend: Optional[TrendDirection] = Field(None, description="Trend direction")
@@ -500,6 +528,10 @@ class ChartDataSeries(BaseModel):
     name: str = Field(..., description="Series name/label")
     values: List[Union[int, float, None]] = Field(..., description="Data values corresponding to labels")
     color: Optional[str] = Field(None, description="Series color")
+    axis: Optional[SeriesAxis] = Field(
+        None,
+        description="'right' puts this series on a second value axis; default is left",
+    )
 
     @field_validator("color", mode="before")
     @classmethod
@@ -519,6 +551,10 @@ class ChartBlock(BaseModel):
     series: List[ChartDataSeries] = Field(..., description="One or more data series")
     x_axis_label: Optional[str] = Field(None, description="X-axis label")
     y_axis_label: Optional[str] = Field(None, description="Y-axis label")
+    y_axis_labels: Optional[List[Optional[str]]] = Field(
+        None,
+        description="[left, right] value-axis names; use when any series is on the right axis",
+    )
     stacked: Optional[bool] = Field(False, description="Whether series are stacked")
     show_legend: Optional[bool] = Field(True, description="Whether to show the legend")
     layout: Optional[Literal["full", "half"]] = Field(

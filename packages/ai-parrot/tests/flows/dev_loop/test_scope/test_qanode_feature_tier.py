@@ -93,5 +93,63 @@ async def test_qanode_records_green_escalations(tmp_path, monkeypatch):
     await node._record_green_escalations(shared, _research(tmp_path), report)
 
     record_mock.assert_called_once_with(
-        Path(str(tmp_path)), ["ai-parrot"], ["packages/ai-parrot/src/parrot/clients/base.py"]
+        Path(str(tmp_path)), ["ai-parrot"], ["packages/ai-parrot/src/parrot/clients/base.py"], [], {}
+    )
+
+
+@pytest.mark.asyncio
+async def test_qa_records_cap_escalation_from_plan(tmp_path, monkeypatch):
+    """A green escalated criterion writes the cap record from the feature-tier plan."""
+    import parrot.flows.dev_loop.nodes.qa as qa_mod
+    from parrot.flows.dev_loop.test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
+
+    plan = ScopePlan(
+        tier="feature",
+        invocations=(
+            PytestInvocation(
+                distribution="ai-parrot",
+                argv=("pytest", "packages/ai-parrot/tests"),
+                targets=(
+                    TestTarget(
+                        path="packages/ai-parrot/tests",
+                        distribution="ai-parrot",
+                        reason="escalated",
+                    ),
+                ),
+            ),
+        ),
+        escalated=("ai-parrot",),
+        core_hits=(),
+        skipped_escalations=(),
+        notes=(),
+        cap_hits={"ai-parrot": ("packages/ai-parrot/src/parrot/clients/base.py",)},
+        cap_impacted={"ai-parrot": "cap-impact-hash"},
+    )
+    monkeypatch.setattr(qa_mod, "plan_tests", lambda **_: plan)
+    monkeypatch.setattr(QANode, "_get_changed_files", AsyncMock(return_value=[]))
+    record_mock = MagicMock()
+    monkeypatch.setattr(qa_mod, "record_green_escalation", record_mock)
+
+    shared = {
+        "development_output": DevelopmentOutput(
+            files_changed=["packages/ai-parrot/src/parrot/clients/base.py"], commit_shas=["a"], summary="s"
+        )
+    }
+    node = QANode(dispatcher=MagicMock())
+    criteria = await node._default_criteria(shared, _research(tmp_path))
+    report = QAReport(
+        passed=True,
+        criterion_results=[CriterionResult(name=criteria[0].name, passed=True)],
+        lint_passed=True,
+    )
+
+    await node._record_green_escalations(shared, _research(tmp_path), report)
+
+    assert criteria[0].name == "pytest[ai-parrot] (core escalation)"
+    record_mock.assert_called_once_with(
+        Path(str(tmp_path)),
+        ["ai-parrot"],
+        [],
+        ["packages/ai-parrot/src/parrot/clients/base.py"],
+        {"ai-parrot": "cap-impact-hash"},
     )

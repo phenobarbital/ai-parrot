@@ -317,9 +317,10 @@ def step3_blocks(monthly: pd.DataFrame, plans: pd.DataFrame) -> List[Dict[str, A
             "labels": list(monthly["month"]),
             "series": [
                 {"name": "MRR", "values": [float(v) for v in monthly["mrr"]]},
-                {"name": "New MRR", "values": [float(v) for v in monthly["new_mrr"]]},
+                # New MRR is an order of magnitude smaller: its own (right) value axis.
+                {"name": "New MRR", "values": [float(v) for v in monthly["new_mrr"]], "axis": "right"},
             ],
-            "y_axis_label": "USD",
+            "y_axis_labels": ["MRR (USD)", "New MRR (USD)"],
             "show_legend": True,
         },
         # 3 — chart: the composition
@@ -335,12 +336,20 @@ def step3_blocks(monthly: pd.DataFrame, plans: pd.DataFrame) -> List[Dict[str, A
         {
             "type": "table",
             "title": "Monthly detail",
-            "columns": ["Month", "MRR", "Churn %", "Accounts", "NPS"],
+            # Raw numbers + display hints: the renderers format them (same strings in the
+            # HTML lane and the A2UI lane). ``percent`` means a RATIO, so churn is /100.
+            "columns": [
+                {"header": "Month", "type": "string"},
+                {"header": "MRR", "type": "number", "format": "currency"},
+                {"header": "Churn %", "type": "number", "format": "percent"},
+                {"header": "Accounts", "type": "integer"},
+                {"header": "NPS", "type": "integer"},
+            ],
             "rows": [
                 [
                     row["month"],
-                    as_money(float(row["mrr"])),
-                    f"{row['churn_rate']:.2f}",
+                    float(row["mrr"]),
+                    float(row["churn_rate"]) / 100.0,
                     int(row["active_accounts"]),
                     int(row["nps"]),
                 ]
@@ -375,8 +384,11 @@ async def step4_render(
     skeleton, persists it, and — because ``emit_a2ui`` defaults to ``True``
     (FEAT-527) — additionally maps the same ``InfographicResponse`` through
     ``parrot.outputs.a2ui.adapters.infographic_response_to_envelope``. Both
-    outputs therefore describe identical content by construction; the envelope
-    is never a second, drifting source of truth.
+    outputs are built from the same ``InfographicResponse``, so they carry the same
+    display hints (column ``type``/``format``, series ``axis``, hero ``format``/``unit``,
+    progress titles and targets); the envelope is never a second, drifting source of
+    truth. They are not byte-for-byte equal: ``ColumnDef.align``/``width``/``color``
+    are HTML-lane only and the A2UI lane drops them (see README, "What each lane renders").
 
     Args:
         toolkit: The A2UI-emitting toolkit, already bound to the agent.
@@ -438,6 +450,47 @@ async def step4_render(
 # ═══════════════════════════════════════════════════════════════════════════
 
 
+def _assert_display_hints(root: Dict[str, Any]) -> None:
+    """Check the envelope carries the display hints the blocks declared (FEAT-623)."""
+    sections = root["sections"]
+    components = [c for section in sections for c in section.get("components", [])]
+    by_kind: Dict[str, List[Dict[str, Any]]] = {}
+    for comp in components:
+        by_kind.setdefault(comp["component"], []).append(comp["properties"])
+
+    # 1 — the progress block is ONE Column{Text(title), Row{KPICard…}} inside an
+    #     existing section: it must not have opened a section of its own.
+    groups = [
+        c["properties"]
+        for c in components
+        if c["component"] == "Column" and c["properties"]["children"][0]["component"] == "Text"
+    ]
+    assert len(groups) == 1, f"expected one progress group, found {len(groups)}"
+    heading, row = groups[0]["children"]
+    assert heading["properties"]["text"] == "Goal completion", heading
+    assert row["component"] == "Row", row
+    assert not any(s.get("heading") == "Goal completion" for s in sections), "progress opened a section"
+    print(f"  progress group           : Column[Text('Goal completion'), Row[{len(row['properties']['children'])} KPICard]]")
+
+    # 2 — its KPI cards carry ratios + format 'percent'.
+    cards = [c["properties"] for c in row["properties"]["children"]]
+    assert cards and all(c.get("format") == "percent" and 0 <= c["value"] <= 1 for c in cards), cards
+
+    # 3 — the MRR chart declares a second value axis.
+    trend = next(c for c in by_kind["Chart"] if c.get("seriesAxes"))
+    assert trend["seriesAxes"] == ["left", "right"], trend["seriesAxes"]
+    assert trend["yAxisLabels"] == ["MRR (USD)", "New MRR (USD)"], trend["yAxisLabels"]
+    print(f"  chart axes               : seriesAxes={trend['seriesAxes']} yAxisLabels={trend['yAxisLabels']}")
+
+    # 4 — the table columns carry type / format hints.
+    columns = by_kind["DataTable"][0]["columns"]
+    hints = {c["name"]: (c.get("type"), c.get("format")) for c in columns}
+    assert hints["MRR"] == ("number", "currency"), hints
+    assert hints["Churn %"] == ("number", "percent"), hints
+    assert hints["Accounts"] == ("integer", None), hints
+    print(f"  table column hints       : {hints}")
+
+
 def step5_wire(wire: Dict[str, Any]) -> CreateSurface:
     """Show the A2UI v1.0 envelope-by-key that the toolkit emits.
 
@@ -488,6 +541,8 @@ def step5_wire(wire: Dict[str, Any]) -> CreateSurface:
     )
     print(f"  root top-level props     : {sorted(k for k in root if k not in ('id', 'component'))}")
     print(f"  dataModel keys           : {sorted(inner.get('dataModel', {}))}")
+
+    _assert_display_hints(root)
 
     # Show the bindings the adapter created for the chart/table rows.
     print(f"  data bindings            : {_find_bindings(root)}")

@@ -1,106 +1,102 @@
-"""Tests for AbstractPlanogramType._vision_kwargs and the three core call sites (TASK-3429)."""
+"""Adapter-mediated illumination and backend/model forwarding through PlanogramCompliance.run() (FEAT-612)."""
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
 
-from PIL import Image
+import pytest
 
 import parrot_pipelines
+from parrot.models.detections import DetectionBox
+from parrot_pipelines.models import PlanogramConfig
+from parrot_pipelines.planogram import plan as plan_module
 from parrot_pipelines.planogram.backend import ResolvedBackend
-from parrot_pipelines.planogram.types.abstract import AbstractPlanogramType
+from parrot_pipelines.planogram.contracts import FixtureMembership, PerceptionResult, Shape, ShapeKind
+from parrot_pipelines.planogram.plan import PlanogramCompliance
 
 _PLANOGRAM = Path(parrot_pipelines.__file__).parent / "planogram"
+_CORE_FILES = ("types/abstract.py", "plan.py", "identification/evidence.py", "stages/identify.py")
 
 
-class _LegacyType(AbstractPlanogramType):
-    """Minimal concrete type for helper tests."""
+class _InlineExecutor:
+    """CpuExecutor substitute for deterministic offline cycle tests."""
 
-    async def compute_roi(self, img):
-        return None, None, None, None, []
+    def __init__(self, max_workers: int = 2) -> None:
+        self.max_workers = max_workers
 
-    async def detect_objects_roi(self, img, roi):
-        return []
+    async def run(self, fn, *args):
+        """Run a CPU helper in-process."""
+        return fn(*args)
 
-    async def detect_objects(self, img, roi, macro_objects):
-        return [], []
-
-    def check_planogram_compliance(self, identified_products, planogram_description):
-        return []
-
-
-class _ClientContext:
-    """Async context manager yielding ``client`` (the idiom ``async with pipeline.llm as client``)."""
-
-    def __init__(self, client) -> None:
-        self.client = client
-
-    async def __aenter__(self):
-        return self.client
-
-    async def __aexit__(self, *exc) -> None:
+    async def aclose(self) -> None:
+        """Provide the run-template cleanup interface."""
         return None
 
 
-def _make_type(model):
-    pipeline = MagicMock()
-    pipeline.logger = logging.getLogger("test.vision_kwargs")
-    pipeline.resolved_backend = ResolvedBackend(provider="anthropic", model=model, origin="config")
-    client = SimpleNamespace(ask_to_image=AsyncMock(return_value=MagicMock(output="LIGHT_OFF")))
-    pipeline.llm = _ClientContext(client)
-    pipeline.client = client
-    roi_client = SimpleNamespace(ask_to_image=AsyncMock(side_effect=AssertionError("roi_client must not be used")))
-    pipeline.roi_client = _ClientContext(roi_client)
-    pipeline._downscale_image = MagicMock(side_effect=lambda img, **kw: img)
-    return _LegacyType(pipeline=pipeline, config=MagicMock()), pipeline
+def _definition() -> dict:
+    """Return a synthetic zone-only panel definition."""
+    return {
+        "shelves": [{"shelf_id": "header", "shelf_number": 0, "facings": []}],
+        "zones": [{"zone_id": "Zone-A", "kind": "backlit", "shelf_id": "header", "required": True}],
+    }
 
 
-def test_vision_kwargs_without_model():
-    handler, _ = _make_type(model=None)
-    assert handler._vision_kwargs() == {"no_memory": True}
+@pytest.mark.parametrize("model", ["claude-sonnet-5", None])
+async def test_illumination_evidence_uses_pipeline_backend(
+    model, monkeypatch, fake_vision_client, synthetic_shelf_image
+):
+    """Illumination uses the run-local adapter, forwarding a pinned model only when configured."""
+    config = PlanogramConfig(
+        planogram_type="graphic_panel_display",
+        planogram_config={
+            "rule_bindings": [
+                {
+                    "rule_id": "illumination",
+                    "kind": "illumination",
+                    "target_id": "Zone-A",
+                    "params": {"required": "on"},
+                },
+                {"rule_id": "zone_present", "kind": "zone_present", "target_id": "Zone-A"},
+            ]
+        },
+        slots_definition=_definition(),
+    )
+    fake_vision_client.client_name = "claude"
+    pipe = PlanogramCompliance(planogram_config=config, llm=fake_vision_client, enabled_ocr=False)
+    pipe.resolved_backend = ResolvedBackend(provider="anthropic", model=model, origin="config")
+    monkeypatch.setattr(plan_module, "CpuExecutor", _InlineExecutor)
+    zone = Shape(
+        shape_id="img0:zone0",
+        image_id="img0",
+        kind=ShapeKind.ZONE,
+        box=DetectionBox(x1=0, y1=0, x2=800, y2=200, confidence=1.0),
+        membership=FixtureMembership.ON_FIXTURE,
+    )
 
+    async def perceive(image, image_id, ctx):
+        return PerceptionResult(image_id=image_id, image_size=image.size, zones=[zone])
 
-def test_vision_kwargs_with_model_and_extra():
-    handler, _ = _make_type(model="claude-sonnet-5")
-    assert handler._vision_kwargs(max_tokens=16) == {"no_memory": True, "max_tokens": 16, "model": "claude-sonnet-5"}
-
-
-def test_vision_kwargs_ignores_non_string_or_empty_model():
-    handler, pipeline = _make_type(model=None)
-    pipeline.resolved_backend = MagicMock()  # .model is a MagicMock
-    assert "model" not in handler._vision_kwargs()
-    pipeline.resolved_backend = SimpleNamespace(model="")
-    assert handler._vision_kwargs() == {"no_memory": True}
-
-
-def test_vision_kwargs_without_resolved_backend_attribute():
-    handler, pipeline = _make_type(model=None)
-    del pipeline.resolved_backend
-    assert handler._vision_kwargs() == {"no_memory": True}
-
-
-async def test_check_illumination_uses_pipeline_llm():
-    """ask_to_image is awaited on pipeline.llm's client with model from the backend, never on roi_client."""
-    handler, pipeline = _make_type(model="claude-sonnet-5")
-    img = Image.new("RGB", (64, 64), "white")
-    roi = SimpleNamespace(bbox=SimpleNamespace(x1=0.0, y1=0.0, x2=1.0, y2=1.0))
-    assert await handler._check_illumination(img, roi=roi) == "illumination_status: OFF"
-    kwargs = pipeline.client.ask_to_image.await_args.kwargs
-    assert kwargs["no_memory"] is True
-    assert kwargs["max_tokens"] == 128
-    assert kwargs["model"] == "claude-sonnet-5"
-
-    handler_no_model, pipeline_no_model = _make_type(model=None)
-    await handler_no_model._check_illumination(img)
-    assert "model" not in pipeline_no_model.client.ask_to_image.await_args.kwargs
+    monkeypatch.setattr(pipe._type_handler, "perceive", perceive)
+    fake_vision_client.queue(
+        "ask_to_image",
+        {"existing_identifications": [{"shape_id": "img0:zone0", "occupancy": "occupied"}]},
+        {"illumination": "on"},
+    )
+    result = await pipe.run(synthetic_shelf_image)
+    calls = fake_vision_client.calls_to("ask_to_image")
+    assert calls
+    for call in calls:
+        kwargs = call["kwargs"]
+        assert kwargs["no_memory"] is True and kwargs.get("structured_output") is not None
+        assert (kwargs.get("model") == model) if model else ("model" not in kwargs)
+    assert any(
+        outcome.rule_id == "illumination" and outcome.assessed for outcome in result["shelf_scores"][0].rule_results
+    )
 
 
 def test_core_files_have_no_literals():
-    """The three core files no longer reference roi_client or a hard-coded Gemini model."""
-    for relative in ("types/abstract.py", "plan.py", "legacy.py"):
-        text = (_PLANOGRAM / relative).read_text()
+    """Surviving core files never reference roi_client or a hard-coded Gemini model."""
+    for relative in _CORE_FILES:
+        text = (_PLANOGRAM / relative).read_text(encoding="utf-8")
         assert "roi_client" not in text, relative
         assert 'model="gemini' not in text, relative

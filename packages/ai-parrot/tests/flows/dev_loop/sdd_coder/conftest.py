@@ -23,6 +23,29 @@ from parrot.flows.dev_loop.sdd_coder.models import RosterConfig, RosterSeat
 from parrot.flows.dev_loop.sdd_coder.roster import RosterProbe
 from parrot.knowledge.wiki.ledger.coder_suspensions import CoderSuspensionStore
 
+
+@pytest.fixture(autouse=True)
+def _hermetic_durable_root(monkeypatch, tmp_path_factory) -> Path:
+    """Keep every engine's durable evidence root inside pytest's temp tree.
+
+    `SddCoderEngine` now ALWAYS binds its `ExecutionEvidenceStore` (not gated on
+    the telemetry opt-in), deriving the root from the main checkout via git when
+    nothing is configured. Left alone, a default-constructed engine in a test
+    would write real `executions/` dirs and usage rows under the developer's
+    `<main checkout>/artifacts/logs/sdd-coder-usage`. Point the configured root
+    at a per-test sibling of `tmp_path` instead (a sibling, never a child, so a
+    test passing `worktree_base_path=str(tmp_path)` cannot trip the R7 guard),
+    and pin the usage-row sink off so the suite ignores the operator's env.
+    Tests that need a specific root still pass `telemetry_dir=` explicitly.
+    """
+    from parrot import conf
+
+    root = tmp_path_factory.mktemp("sdd-coder-durable-root")
+    monkeypatch.setattr(conf, "SDD_CODER_TELEMETRY_DIR", str(root))
+    monkeypatch.setattr(conf, "DEV_LOOP_CODER_TELEMETRY", False)
+    return root
+
+
 FEATURE_BRANCH = "feat-FEAT-549-demo"
 FEATURE_ID = "FEAT-549"
 FEATURE_SLUG = "demo"

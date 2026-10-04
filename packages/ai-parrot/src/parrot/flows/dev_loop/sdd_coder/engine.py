@@ -13,6 +13,7 @@ and filled in by TASK-3121 — the signatures below are final.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -23,7 +24,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Dict, List, Literal, Optional, Set, Tuple
 
 from pydantic import ValidationError as PydanticValidationError
 
@@ -39,6 +40,7 @@ from parrot.knowledge.wiki.ledger.coder_reviews import (
     CoderReviewStore,
 )
 from parrot.knowledge.wiki.store import estimate_tokens
+from parrot.flows.dev_loop.procs import git_env, run_bounded
 from parrot.flows.dev_loop.agent_builder import build_dispatcher  # verified: agent_builder.py:135
 from parrot.flows.dev_loop.models import (  # verified: models/base.py:412, :763, :497, :340, :458
     DevAgentSpec,
@@ -53,7 +55,12 @@ from parrot.flows.dev_loop.worktree_manager import (  # verified: worktree_manag
     SubWorktreeManager,
     SubWorktreeMergeError,
 )
-from parrot.flows.dev_loop.sdd_coder.fidelity import check_banned_imports, check_fidelity, parse_task_files
+from parrot.flows.dev_loop.sdd_coder.fidelity import (
+    check_banned_imports,
+    check_fidelity,
+    is_protected_sdd_path,
+    parse_task_files,
+)
 from parrot.flows.dev_loop.test_scope.context import write_attempt_context
 from parrot.flows.dev_loop.test_scope.datatypes import AttemptContext
 from parrot.flows.dev_loop.sdd_coder.jobs import JobTable
@@ -104,12 +111,13 @@ from parrot.flows.dev_loop.sdd_coder.complexity import (
     evaluate_complexity,
 )
 from parrot.flows.dev_loop.sdd_coder.roster import ChunkAssigner, RosterProbe, available_seats, eligible_seats
-from parrot.flows.dev_loop.sdd_coder.pool import ExecutionPool, roster_fingerprint
+from parrot.flows.dev_loop.sdd_coder.pool import effective_key, ExecutionPool, roster_fingerprint, SeatBusyError
 from parrot.flows.dev_loop.models.telemetry import AttemptTelemetry
 from parrot.flows.dev_loop.sdd_coder.telemetry import (
     CoderTelemetrySink,
     OutcomeRow,
     build_attempt_row,
+    resolve_durable_root,
 )
 from parrot.knowledge.wiki.ledger.coder_suspensions import (
     CoderSuspensionStore,
@@ -120,6 +128,19 @@ from parrot.knowledge.wiki.ledger.coder_suspensions import (
 )
 
 _ORPHANS_INDEX_NAME = "_orphans.json"
+
+#: Wall-clock cap for one engine-owned ``git`` child (worktree add/remove, merge, commit).
+GIT_TIMEOUT_S: float = 300.0
+#: How long `_consolidate` waits for `_merge_lock` before failing with ``merge_busy``
+#: instead of pinning the request handler behind another consolidation.
+MERGE_LOCK_TIMEOUT_S: float = 120.0
+#: Bounds for one `bg_wait` blocking budget, mirroring `wait()`'s own <=300s cap:
+#: a background handle is waited on in bounded slices, never indefinitely.
+BG_WAIT_MIN_TIMEOUT_S: int = 1
+BG_WAIT_MAX_TIMEOUT_S: int = 300
+#: Poll cadence `bg_wait` falls back to for a handle this engine does not
+#: supervise in-process (no settlement task to await).
+BG_WAIT_POLL_INTERVAL_S: float = 1.0
 _CONFLICT_LINE = re.compile(r"^CONFLICT \([^)]*\):.* in (.+)$", re.M)
 
 
@@ -132,12 +153,15 @@ class CoderFailure(Exception):
 
 
 async def _git(*args: str, cwd: str) -> Tuple[int, str, str]:
-    """Run git in `cwd`; returns (rc, stdout, stderr). Shape copied from worktree_manager.py:113."""
-    proc = await asyncio.create_subprocess_exec(
-        "git", *args, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    out, err = await proc.communicate()
-    return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")
+    """Run git in `cwd`; returns (rc, stdout, stderr). Shape copied from worktree_manager.py:113.
+
+    Bounded (`run_bounded`, `GIT_TIMEOUT_S`) and headless (`git_env`): a git child
+    that hangs — on a prompt, an editor, a hook — used to pin the MCP request
+    handler forever and, with the stdio server processing one request at a time,
+    every later call with it. On expiry the child tree is killed and rc 124 is
+    returned, which every caller already treats as a failed git command.
+    """
+    return await run_bounded(["git", *args], cwd=cwd, timeout_s=GIT_TIMEOUT_S, env=git_env())
 
 
 async def _consolidate_diff_base(feature_branch: str, branch: str, *, cwd: str) -> str:
@@ -408,6 +432,11 @@ class SddCoderEngine:
         # `prepare_native` call for the same task in the same execution reuses the
         # existing reservation instead of admitting (and worktree-creating) twice.
         self._native_reservations: Dict[Tuple[str, str], str] = {}
+        # (execution_id, task_id) -> lock serialising `_reserve_native_attempt`: with the
+        # stdio server dispatching requests concurrently, a duplicate `prepare_native`
+        # could otherwise see the reservation before its sub-worktree exists and race
+        # the first call's `git worktree add` (codex review, 2026-09-24).
+        self._native_prep_locks: Dict[Tuple[str, str], asyncio.Lock] = {}
         # Attribution for feedback is checked against attempts this engine issued.
         self._feedback_sources: Dict[str, Tuple[str, str, str, str]] = {}
         self._feedback_contexts: Dict[str, str] = {}
@@ -454,19 +483,65 @@ class SddCoderEngine:
         # "pending/running/unknown de validaciones admitidas bloquean checkpoint
         # y cleanup de su worktree").
         self._validation_handles: Dict[str, Set[str]] = {}
-        if telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY:
-            from parrot.flows.dev_loop.sdd_coder.telemetry import CoderTelemetrySink, resolve_durable_root
-
-            effective_dir = telemetry_dir if telemetry_dir is not None else (conf.SDD_CODER_TELEMETRY_DIR or None)
-            telemetry_root = resolve_durable_root(effective_dir, worktree_base_path=self._base_path)
-            self._sink = CoderTelemetrySink(telemetry_root)
-            self._evidence_store = ExecutionEvidenceStore(telemetry_root)
+        # The durable evidence store is ALWAYS bound when a durable root resolves:
+        # the FEAT-584 worker protocol unconditionally requests `compact` views,
+        # records native observations and persists review checkpoints, and spec R3
+        # makes those persistence failures block the transition that depends on
+        # them. Gating the store on the observational telemetry opt-in shipped a
+        # default install where every one of those paths failed with
+        # `evidence_persistence_failed` (FEAT-588 incident). Only the
+        # `CoderTelemetrySink` (usage rows, an analysis dataset) remains opt-in.
+        effective_dir = telemetry_dir if telemetry_dir is not None else (conf.SDD_CODER_TELEMETRY_DIR or None)
+        durable_root = self._resolve_durable_root(
+            effective_dir, strict=effective_dir is not None or bool(conf.DEV_LOOP_CODER_TELEMETRY)
+        )
+        if durable_root is not None:
+            self._evidence_store = ExecutionEvidenceStore(durable_root)
             self._background_registry = BackgroundRegistry(
                 store=self._evidence_store, owner_instance_id=self._instance_id
             )
             self._validation_supervisor = ValidationSupervisor(
                 registry=self._background_registry, store=self._evidence_store
             )
+            if telemetry_dir is not None or conf.DEV_LOOP_CODER_TELEMETRY:
+                self._sink = CoderTelemetrySink(durable_root)
+
+    def _resolve_durable_root(self, configured: Optional[str], *, strict: bool) -> Optional[Path]:
+        """Resolve the out-of-worktree durable root, or `None` with a warning.
+
+        Explicit operator intent -- a configured root (`telemetry_dir` kwarg or
+        `SDD_CODER_TELEMETRY_DIR`) or the `DEV_LOOP_CODER_TELEMETRY` opt-in -- is
+        `strict`: an unresolvable or invalid root (relative path, root under the
+        worktree base, no git common dir) still raises `ValueError` at
+        construction exactly as before (FEAT-554 R7 guard), never silently
+        degrades. Only the implicit default (nothing configured, telemetry off,
+        main checkout located via git) degrades to "no durable store" -- every
+        consumer then reports `evidence_persistence_failed` explicitly instead of
+        the engine refusing to construct.
+
+        Args:
+            configured: Explicit absolute root, or `None` to derive it from the
+                main checkout via git.
+            strict: Re-raise instead of degrading when the root cannot be resolved.
+
+        Returns:
+            The validated root, or `None` when no root could be derived and
+            `strict` is false.
+
+        Raises:
+            ValueError: the root is invalid or unresolvable and `strict` is true.
+        """
+        try:
+            return resolve_durable_root(configured, worktree_base_path=self._base_path)
+        except ValueError as exc:
+            if strict:
+                raise
+            self.logger.warning(
+                "No durable evidence store for this engine (compact views, native observations and "
+                "review checkpoints will fail with evidence_persistence_failed): %s",
+                exc,
+            )
+            return None
 
     async def open(self) -> None:
         """Probe once; cache seats/assigner. Idempotent. Raises roster_empty when nothing is available.
@@ -604,6 +679,18 @@ class SddCoderEngine:
                 self.probe_results = await self._probe.probe(self.roster, excluded=excluded_set)
                 self.seats = available_seats(self.roster, self.probe_results)
 
+                # FEAT-599 (AC-12): attribution for the restored exclusions is
+                # display-only -- the snapshot stays the exclusion authority, so
+                # an unreadable history degrades to "no attribution", never to
+                # a failed restore.
+                inherited_records: List[SuspensionRecord] = []
+                try:
+                    inherited_records = await self._suspension_store.recent(self._roster_model_keys(), now)
+                except Exception as exc:  # noqa: BLE001 -- see comment above
+                    self.logger.warning(
+                        "suspension attribution unavailable while restoring execution %s: %s", execution_id, exc
+                    )
+
                 pool = ExecutionPool(
                     execution_id=execution_id,
                     feature_id=ctx.feature_id,
@@ -612,10 +699,11 @@ class SddCoderEngine:
                     seats=self.seats,
                     suspension_store=self._suspension_store,
                     initial_exclusions=combined_inherited,
+                    inherited_records=inherited_records,
                 )
 
                 # Restore local exclusions (from this execution's own suspensions)
-                pool._local_exclusions = set(durable_snapshot.local_exclusions)
+                pool.restore_local_exclusions(durable_snapshot.local_exclusions)
 
                 # Check for unresolved running/prepared attempts that require reconciliation
                 if (
@@ -624,13 +712,12 @@ class SddCoderEngine:
                     or durable_snapshot.outstanding_job_ids
                 ):
                     # Uncertain work requires reconciliation before dispatch
-                    pool._status = "recovery_required"
+                    await pool.mark_recovery_required()
 
                 # Check if pool has any available seats
                 view = pool.view()
                 if not any(seat.available and not seat.suspended for seat in view.seats):
-                    pool._fallback_required = True
-                    pool._fallback_reason = "all_seats_exhausted"
+                    pool.require_fallback("all_seats_exhausted")
 
                 self._executions[execution_id] = pool
                 self._execution_owners[canonical_worktree] = execution_id
@@ -653,22 +740,7 @@ class SddCoderEngine:
                     CoderSuspensionStore.from_root, Path(canonical_worktree)
                 )
             now = datetime.now(timezone.utc)
-            # Get all model keys from roster to query history
-            model_keys = []
-            for seat in self.roster.seats:
-                if seat.kind == "native":
-                    model_keys.append(ModelKey(backend="native", model=seat.model or "haiku"))
-                    continue
-                if seat.model:
-                    model_keys.append(ModelKey(backend=seat.backend or "", model=seat.model))
-                # A previously-suspended FALLBACK-only identity must also be
-                # excluded before the initial probe -- omitting it left a
-                # recently-failed fallback model eligible for a fresh smoke
-                # probe/dispatch even though its own incident is still within
-                # cooldown (AC-4: "excludes all unexpired matching records
-                # BEFORE any primary/fallback smoke probe or dispatcher call").
-                if seat.fallback_model:
-                    model_keys.append(ModelKey(backend=seat.backend or "", model=seat.fallback_model))
+            model_keys = self._roster_model_keys()
             # Query recent suspensions. `CoderSuspensionStore.recent` is itself an
             # `async def` that already offloads its file I/O via `asyncio.to_thread`
             # internally -- wrapping it in ANOTHER `asyncio.to_thread` here would call
@@ -701,12 +773,11 @@ class SddCoderEngine:
                 suspension_store=self._suspension_store,
                 initial_exclusions=[],
             )
-            pool._fallback_required = True
-            pool._fallback_reason = "suspension_history_unavailable"
+            pool.require_fallback("suspension_history_unavailable")
             # Spec §2 "Persistence failure behavior": unreadable/invalid
             # suspension history at begin "yields an EXHAUSTED pool" --
             # not just fallback_required with status left at "active".
-            pool._status = "exhausted"
+            await pool.mark_exhausted()
             self._executions[execution_id] = pool
             self._execution_owners[canonical_worktree] = execution_id
             return pool.view()
@@ -725,17 +796,96 @@ class SddCoderEngine:
             seats=self.seats,
             suspension_store=self._suspension_store,
             initial_exclusions=initial_exclusions,
+            inherited_records=recent,
         )
 
         # Check if pool has any available seats
         view = pool.view()
         if not any(seat.available and not seat.suspended for seat in view.seats):
-            pool._fallback_required = True
-            pool._fallback_reason = "all_seats_exhausted"
+            pool.require_fallback("all_seats_exhausted")
 
         self._executions[execution_id] = pool
         self._execution_owners[canonical_worktree] = execution_id
         return pool.view()
+
+    def _roster_model_keys(self) -> List[ModelKey]:
+        """Every model identity in the roster, for durable suspension-history lookups.
+
+        Native seats map to ``native/<model or haiku>``; MCP seats contribute
+        their primary model AND their ``fallback_model``: a previously-suspended
+        fallback-only identity must also be excluded before the initial probe --
+        omitting it left a recently-failed fallback model eligible for a fresh
+        smoke probe/dispatch even though its own incident is still within
+        cooldown (FEAT-559 AC-4: "excludes all unexpired matching records
+        BEFORE any primary/fallback smoke probe or dispatcher call").
+
+        Returns:
+            Keys in roster order; duplicates are harmless to
+            `CoderSuspensionStore.recent`.
+        """
+        model_keys: List[ModelKey] = []
+        for seat in self.roster.seats:
+            if seat.kind == "native":
+                model_keys.append(ModelKey(backend="native", model=seat.model or "haiku"))
+                continue
+            if seat.model:
+                model_keys.append(ModelKey(backend=seat.backend or "", model=seat.model))
+            if seat.fallback_model:
+                model_keys.append(ModelKey(backend=seat.backend or "", model=seat.fallback_model))
+        return model_keys
+
+    def _latest_attempt_number(self, task_id: str) -> int:
+        """Return the attempt number of *task_id*'s latest recorded attempt, or ``1``.
+
+        Native dispatch never records into ``_latest_attempt`` (that
+        bookkeeping lives in ``_run_task``), so a missing entry means "first
+        attempt" -- never a reason to build a placeholder ``AttemptRecord``
+        (issue:c1e28856ab0c: ``dict.get``'s default is evaluated eagerly and
+        ``AttemptRecord`` requires ``seat_label``/``started_at``, so the old
+        ``self._latest_attempt.get(task_id, AttemptRecord(...))`` raised
+        ``ValidationError`` on every call).
+
+        Args:
+            task_id: The task whose manager key is being derived.
+
+        Returns:
+            The recorded attempt number, or ``1`` when none exists.
+        """
+        record = self._latest_attempt.get(task_id)
+        return record.attempt if record is not None else 1
+
+    def _outstanding_job_ids(self, execution_id: str, worktree: str) -> List[str]:
+        """Return the job ids of *execution_id* whose JobTable state is still ``running``.
+
+        A job belongs to the execution when its ``execution_id`` matches; a
+        legacy job with an empty ``execution_id`` belongs to it when its
+        ``_job_worktrees`` entry is the execution's canonical *worktree*.
+        ``_job_worktrees`` is never pruned (``wait()`` re-journals from it),
+        so a job's presence there is NOT evidence it is outstanding -- only
+        its live state is (issue:93abecaf1152).
+
+        Args:
+            execution_id: The execution being closed or persisted.
+            worktree: The execution's canonical worktree path.
+
+        Returns:
+            Job ids in dispatch order; empty when every job has settled.
+        """
+        outstanding: List[str] = []
+        for job_id, job_wt in list(self._job_worktrees.items()):
+            try:
+                job = self._jobs.get(job_id)
+            except KeyError:
+                continue
+            if job.state != "running":
+                continue
+            if job.execution_id:
+                if job.execution_id != execution_id:
+                    continue
+            elif job_wt != worktree:
+                continue
+            outstanding.append(job_id)
+        return outstanding
 
     async def end_execution(self, execution_id: str) -> "ExecutionPoolView":
         """End an execution, releasing worktree ownership.
@@ -788,15 +938,16 @@ class SddCoderEngine:
                     "execution_busy",
                     f"execution {execution_id} has {len(snapshot.native_reservations)} native reservations still in flight",
                 )
-            # Check outstanding jobs
-            if snapshot.outstanding_job_ids:
+            # Check outstanding jobs -- from the JobTable, since the pool never tracks MCP jobs
+            running_jobs = self._outstanding_job_ids(execution_id, pool.worktree_path)
+            if running_jobs:
                 raise CoderFailure(
                     "execution_busy",
-                    f"execution {execution_id} has {len(snapshot.outstanding_job_ids)} outstanding jobs",
+                    f"execution {execution_id} has {len(running_jobs)} outstanding jobs",
                 )
 
         # Mark as closed and write durable snapshot before releasing ownership
-        pool._status = "closed"
+        await pool.close()
         canonical_worktree = pool.worktree_path
 
         # Enrich snapshot with native reservations and outstanding job IDs from engine bookkeeping
@@ -805,19 +956,19 @@ class SddCoderEngine:
         # Collect native reservations belonging to this execution
         for (exec_id, task_id), _attempt_uid in list(self._native_reservations.items()):
             if exec_id == execution_id:
-                manager_key = f"{task_id}.a{self._latest_attempt.get(task_id, AttemptRecord(attempt=1)).attempt}"
+                manager_key = f"{task_id}.a{self._latest_attempt_number(task_id)}"
                 if manager_key in self._manager_execution and self._manager_execution[manager_key] == execution_id:
                     snapshot.native_reservations[task_id] = manager_key
 
-        # Collect outstanding job IDs belonging to this execution (track via _job_worktrees)
-        for job_id, job_wt in list(self._job_worktrees.items()):
-            if job_wt == canonical_worktree:
+        # Outstanding = still-running jobs only (empty once the busy gate above passed)
+        for job_id in self._outstanding_job_ids(execution_id, canonical_worktree):
+            if job_id not in snapshot.outstanding_job_ids:
                 snapshot.outstanding_job_ids.append(job_id)
 
         # Write durable snapshot atomically
         persisted = await self._write_execution_snapshot(canonical_worktree, execution_id, snapshot)
         if not persisted:
-            pool._persistence_degraded = True
+            pool.set_persistence_degraded(True)
             self.logger.warning("failed to durably close execution %s; persistence status is degraded", execution_id)
 
         # FEAT-584 M8/R8: publish a durable settlement artifact OUTSIDE the
@@ -831,7 +982,7 @@ class SddCoderEngine:
             try:
                 await self._evidence_store.put_artifact(execution_id, snapshot)
             except (OSError, ValueError) as exc:
-                pool._persistence_degraded = True
+                pool.set_persistence_degraded(True)
                 self.logger.warning(
                     "failed to publish durable settlement artifact for execution %s: %s", execution_id, exc
                 )
@@ -933,6 +1084,68 @@ class SddCoderEngine:
             )
         return status
 
+    async def bg_wait(
+        self,
+        execution_id: str,
+        handle: str,
+        timeout_seconds: int = 120,
+        since_revision: Optional[int] = None,
+        tail_bytes: int = 2048,
+    ) -> BackgroundStatus:
+        """Block up to *timeout_seconds* for a background handle to leave `pending`/`running`.
+
+        `bg_status` is deliberately non-blocking, and `wait()` only accepts a
+        chunk `job_id` -- so a caller holding a `coder_run_validation` handle had
+        no sanctioned way to wait at all: a background validation is a process
+        this server owns, it raises no host-level task notification, and the
+        orchestrator prompt forbids shell `sleep`/`ps` loops. That left ending
+        the turn as the only option, which stalls an unattended run until a
+        human pokes it. This method is that missing primitive, mirroring
+        `wait()`'s own bounded-blocking contract.
+
+        Ownership, scope and existence are checked BEFORE any waiting (a
+        foreign or unknown handle fails immediately, it never blocks), and the
+        returned snapshot is always `bg_status`'s own authoritative one:
+        `state="finished"` still reports a receipt, not success -- inspect
+        `outcome`/`exit_code`. Expiring the budget returns the last known
+        non-terminal snapshot; it never cancels the run, never kills the child
+        and never resurrects a state from an absent process or an empty log.
+
+        Args:
+            execution_id: The execution that must own this handle.
+            handle: The opaque handle emitted at registration time.
+            timeout_seconds: Blocking budget, 1..300.
+            since_revision: Forwarded to `bg_status` for the returned snapshot.
+            tail_bytes: Forwarded to `bg_status`, 0..4096.
+
+        Raises:
+            CoderFailure: every code `bg_status` itself raises, plus
+                invalid_arguments when `timeout_seconds` is out of range.
+        """
+        if not (BG_WAIT_MIN_TIMEOUT_S <= timeout_seconds <= BG_WAIT_MAX_TIMEOUT_S):
+            raise CoderFailure(
+                "invalid_arguments",
+                f"timeout_seconds must be within {BG_WAIT_MIN_TIMEOUT_S}..{BG_WAIT_MAX_TIMEOUT_S},"
+                f" got {timeout_seconds!r}",
+            )
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout_seconds
+        status = await self.bg_status(execution_id, handle, since_revision=since_revision, tail_bytes=tail_bytes)
+        while status.state in ("pending", "running"):
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                break
+            awaited = False
+            if self._validation_supervisor is not None:
+                awaited = await self._validation_supervisor.wait(execution_id, handle, remaining)
+            if not awaited:
+                # A handle this engine did not supervise in-process (a chunk or
+                # native launch, or a record recovered from the durable store):
+                # poll its authoritative record instead of inventing a receipt.
+                await asyncio.sleep(min(BG_WAIT_POLL_INTERVAL_S, max(remaining, 0.0)))
+            status = await self.bg_status(execution_id, handle, since_revision=since_revision, tail_bytes=tail_bytes)
+        return status
+
     async def run_validation(
         self,
         feature: str,
@@ -990,6 +1203,19 @@ class SddCoderEngine:
                 "tier='feature' requires the full applicable task set from the per-spec index",
             )
 
+        # A merge-tier check is scoped to what THIS chunk's merges introduced;
+        # the feature tier keeps the cumulative base on purpose -- it is the
+        # whole-feature gate, not a per-merge one.
+        base_ref: Optional[str] = None
+        if tier == "merge":
+            base_ref = await self._merge_scope_base(ctx, task_ids, execution_id)
+            if base_ref is None:
+                self.logger.warning(
+                    "run_validation: no merged attempt branch resolved for %s; falling back to the cumulative"
+                    " diff base for this merge-tier selection",
+                    ",".join(task_ids),
+                )
+
         try:
             registration = await self._validation_supervisor.start(
                 feature=feature,
@@ -999,6 +1225,7 @@ class SddCoderEngine:
                 tier=tier,
                 timeout_seconds=timeout_seconds,
                 request_id=request_id,
+                base_ref=base_ref,
             )
         except BackgroundConflictError as exc:
             raise CoderFailure("validation_request_conflict", str(exc)) from exc
@@ -1355,6 +1582,7 @@ class SddCoderEngine:
         """
         # If execution_id provided, use the execution pool's assigner
         pool_generation = 0
+        suspension_summary = ""
         if execution_id is not None:
             if execution_id not in self._executions:
                 raise CoderFailure(
@@ -1363,9 +1591,10 @@ class SddCoderEngine:
                 )
             pool = self._executions[execution_id]
             pool_generation = pool.generation
+            suspension_summary = pool.view().suspension_summary
             # Use the pool's own eligibility-filtered assigner -- `pool.assigner()`
             # excludes suspended/busy/probe-failed seats (its own documented
-            # contract); constructing a bare `ChunkAssigner(pool._seats)` here
+            # contract); constructing a bare `ChunkAssigner(pool.seats)` here
             # bypassed that filtering entirely, so a replan right after a
             # mid-execution suspension could still assign a task to the
             # just-suspended seat (caught later by `pool.admit()`, but wasting
@@ -1389,8 +1618,9 @@ class SddCoderEngine:
                     orphan_branches=[],
                     execution_id=execution_id,
                     pool_generation=pool_generation,
+                    suspension_summary=suspension_summary,
                 )
-            seats = pool._seats
+            seats = pool.seats
             probe_results = [
                 SeatProbeResult(
                     label=s.label,
@@ -1460,13 +1690,11 @@ class SddCoderEngine:
                     )
 
             except CoderFailure as exc:
-                if exc.code == "complexity_plan_stale":
-                    # Stale assessment - need to replan
-                    raise
-                # Any other complexity-routing failure blocks only this task;
-                # `exc.code` is already the specific code `_assessment_for`
-                # raised (`complexity_contract_invalid` or
-                # `complexity_audit_failed`) -- never relabel it.
+                # A complexity-routing failure blocks only this task; `exc.code`
+                # is already the specific code `_compute_assessment` raised
+                # (`complexity_contract_invalid` or `complexity_audit_failed`
+                # -- it never raises `complexity_plan_stale`, which only
+                # `_assessment_for` does) -- never relabel it.
                 blocked_task_ids.add(task_ref.id)
                 routing_blocks.append(
                     ComplexityBlock(
@@ -1504,6 +1732,7 @@ class SddCoderEngine:
             routing_blocks=routing_blocks,
             execution_id=execution_id or "",
             pool_generation=pool_generation,
+            suspension_summary=suspension_summary,
         )
         # Cache the computed plan, keyed by feature_id (and execution_id when present).
         # For execution pools, also store against execution_id for private cache.
@@ -1712,6 +1941,83 @@ class SddCoderEngine:
             Path(self._base_path) / f"{ctx.feature_branch}--pool" / SubWorktreeManager._branch_suffix(worker_id)
         )  # noqa: SLF001
 
+    async def _merged_attempt_branch(
+        self, ctx: _FeatureCtx, task_id: str, execution_id: Optional[str]
+    ) -> Optional[str]:
+        """The newest attempt branch of *task_id* that is already contained in `ctx.feature_branch`.
+
+        Discovered from git refs by the `_branch_for` naming convention rather
+        than from `self._managers`, so it still resolves after `cleanup()` has
+        reclaimed the sub-worktrees (the orchestrator validates a merge only
+        once the merge itself is done) and across an engine restart.
+        `execution_id` narrows the candidates to THIS execution's own branches,
+        never a previous execution's leftovers for the same task+attempt.
+
+        Returns None when no such merged branch exists -- the caller must then
+        fall back to the cumulative base, never to a narrower guess.
+        """
+        prefix = f"{ctx.feature_branch}--{task_id}-a"
+        rc, out, _err = await _git("branch", "--list", f"{prefix}*", "--format=%(refname:short)", cwd=ctx.worktree)
+        if rc != 0:
+            return None
+        exec_hex = execution_id.replace("-", "") if execution_id else ""
+        candidates: List[Tuple[int, str]] = []
+        for line in out.splitlines():
+            name = line.strip()
+            if not name.startswith(prefix):
+                continue
+            attempt_part = name[len(prefix) :].split("-", 1)[0]
+            if not attempt_part.isdigit():
+                continue
+            if exec_hex and not name.endswith(exec_hex):
+                continue
+            candidates.append((int(attempt_part), name))
+        for _attempt, name in sorted(candidates, reverse=True):
+            rc, _out, _err = await _git("merge-base", "--is-ancestor", name, ctx.feature_branch, cwd=ctx.worktree)
+            if rc == 0:
+                return name
+        return None
+
+    async def _merge_scope_base(
+        self, ctx: _FeatureCtx, task_ids: List[str], execution_id: Optional[str]
+    ) -> Optional[str]:
+        """Diff base covering exactly what merging *task_ids* introduced on the feature branch.
+
+        A merge-tier validation used to be planned from `origin/dev...HEAD`,
+        i.e. the feature branch's WHOLE cumulative diff, so every merge
+        re-validated every task merged before it; past a few dozen changed
+        files the impact cap and the core-path list escalate whole package
+        suites and the "changed scope" check degenerates into a serial
+        monorepo-wide sweep.
+
+        The base returned here is the common fork point of these tasks' own
+        attempt branches (`_consolidate_diff_base` resolves each one, including
+        the already-merged and manually-resolved cases). Diffing from there to
+        HEAD therefore also covers whatever the orchestrator itself committed
+        on the feature branch alongside those merges -- review fixes, a manual
+        conflict resolution -- which a per-branch union would miss.
+
+        Returns None when any task's merged branch cannot be resolved, so the
+        caller keeps the cumulative base: slower, never less covered.
+        """
+        bases: List[str] = []
+        for task_id in task_ids:
+            branch = await self._merged_attempt_branch(ctx, task_id, execution_id)
+            if branch is None:
+                return None
+            base = await _consolidate_diff_base(ctx.feature_branch, branch, cwd=ctx.worktree)
+            if not base:
+                return None
+            bases.append(base)
+        if not bases:
+            return None
+        if len(bases) == 1:
+            return bases[0]
+        rc, out, _err = await _git("merge-base", *bases, cwd=ctx.worktree)
+        if rc != 0 or not out.strip():
+            return None
+        return out.strip()
+
     async def _write_attempt_scope(self, worktree_path: str, task_id: str, task_file: str, base_ref: str) -> None:
         """Write the task-tier test-scope context into an attempt sub-worktree (FEAT-563).
 
@@ -1789,69 +2095,124 @@ class SddCoderEngine:
         else:
             model = seat.model or "haiku"
 
-        if pool is not None:
-            reservation_key = (execution_id, task_id)
-            existing_uid = self._native_reservations.get(reservation_key)
-            if existing_uid is not None:
-                attempt_uid = existing_uid
-            else:
-                attempt_uid = await pool.admit(task_id, ModelKey(backend="native", model=model))
-                self._native_reservations[reservation_key] = attempt_uid
-        else:
-            attempt_uid = uuid.uuid4().hex
-
-        worker_id = self._worker_id(task_id, 1, execution_id)
-        manager = self._manager_for(ctx, task_id, 1, execution_id)
-        path = await manager.create(worker_id)
-        await self._write_attempt_scope(path, task_id, planned.task_file, ctx.feature_branch)
-        self._native_inflight.add(worker_id)
-        branch = self._branch_for(ctx, task_id, 1, execution_id)
-        self._feedback_sources[attempt_uid] = (ctx.worktree, task_id, "native", model)
-        feedback_context = await self._feedback_for(ctx, planned, "native", model)
-        self._feedback_contexts[attempt_uid] = feedback_context
-
-        # FEAT-584 M8/R8: register a `pending` handle for this native reservation --
-        # `native_observation` (below) is the ONLY authority that later links it to
-        # an agent_id/transitions its state (host_observation authority: "no son
-        # prueba independiente de proceso vivo ni código POSIX"). Idempotent by
-        # construction: a duplicate `prepare_native` call reuses the SAME
-        # `attempt_uid` above, so `BackgroundRegistry.register` just replays.
-        bg_handle: Optional[str] = None
-        if self._background_registry is not None and execution_id is not None:
-            try:
-                registration = BackgroundRegistration(
-                    handle=attempt_uid,
-                    execution_id=execution_id,
-                    task_id=task_id,
-                    attempt_uid=attempt_uid,
-                    launch_id=attempt_uid,
-                    owner_instance_id=self._instance_id,
-                    kind="native_agent",
-                    authority="host_observation",
-                    worktree=ctx.worktree,
-                    backend="native-agent",
-                    started_at=datetime.now(timezone.utc),
-                )
-                await self._background_registry.register(registration)
-            except Exception:  # noqa: BLE001 -- background registration must never break prepare_native
-                self.logger.exception("failed to register background handle for native attempt %s", attempt_uid)
-            else:
-                self._handle_execution[attempt_uid] = execution_id
-                bg_handle = attempt_uid
-
-        return NativePrep(
-            task_id=task_id,
-            task_file=planned.task_file,
-            branch=branch,
-            worktree_path=path,
-            seat_label=planned.seat_label,
+        return await self._reserve_native_attempt(
+            ctx,
+            planned,
+            seat,
             model=model,
-            attempt_uid=attempt_uid,
-            coder_feedback=feedback_context,
             assessment_id=assessment_id,
-            execution_id=execution_id or "",
-            bg_handle=bg_handle,
+            execution_id=execution_id,
+            pool=pool,
+            attempt=1,
         )
+
+    async def _reserve_native_attempt(
+        self,
+        ctx: _FeatureCtx,
+        task: PlannedTask,
+        seat: RosterSeat,
+        *,
+        model: str,
+        assessment_id: str,
+        execution_id: Optional[str],
+        pool: Optional[ExecutionPool],
+        attempt: int,
+    ) -> NativePrep:
+        """Admit and allocate one native attempt, reusing its execution reservation."""
+        lock = self._native_prep_locks.setdefault((execution_id or "", task.task_id), asyncio.Lock())
+        async with lock:
+            reused_reservation = False
+            if pool is not None:
+                assert execution_id is not None
+                reservation_key = (execution_id, task.task_id)
+                existing_uid = self._native_reservations.get(reservation_key)
+                if existing_uid is not None:
+                    attempt_uid = existing_uid
+                    reused_reservation = True
+                else:
+                    # `wait=False`: a native reservation is released only by a LATER
+                    # `coder_merge` for the task holding it. Waiting here would park
+                    # this request on a request the orchestrator has not issued yet
+                    # (2026-09-24 FEAT-581 wedge) -- report `seat_busy` so it can merge
+                    # the holder first and retry.
+                    try:
+                        attempt_uid = await pool.admit(
+                            task.task_id, ModelKey(backend="native", model=model), wait=False
+                        )
+                    except SeatBusyError as exc:
+                        raise CoderFailure(
+                            "seat_busy",
+                            f"native model {model!r} is still reserved by {exc.held_by_task_id}; call coder_merge for "
+                            f"{exc.held_by_task_id} (or wait for its attempt to settle) before preparing {task.task_id}",
+                            task_id=task.task_id,
+                            model=model,
+                            seat_label=seat.label,
+                            held_by_task_id=exc.held_by_task_id,
+                            execution_id=execution_id,
+                        ) from exc
+                    self._native_reservations[reservation_key] = attempt_uid
+            else:
+                attempt_uid = uuid.uuid4().hex
+
+            worker_id = self._worker_id(task.task_id, attempt, execution_id)
+            manager = self._manager_for(ctx, task.task_id, attempt, execution_id)
+            path = self._path_for(ctx, task.task_id, attempt, execution_id)
+            if reused_reservation and await asyncio.to_thread(os.path.isdir, path):
+                # Duplicate `prepare_native` for a task that already holds its reservation:
+                # the sub-worktree (and its branch) exist from the first call, so a second
+                # `git worktree add -b` would fail on the existing branch. Reuse them.
+                self.logger.info("prepare_native: reusing existing sub-worktree %s for %s", path, task.task_id)
+            else:
+                path = await manager.create(worker_id)
+            await self._write_attempt_scope(path, task.task_id, task.task_file, ctx.feature_branch)
+            self._native_inflight.add(worker_id)
+            branch = self._branch_for(ctx, task.task_id, attempt, execution_id)
+            self._feedback_sources[attempt_uid] = (ctx.worktree, task.task_id, "native", model)
+            feedback_context = await self._feedback_for(ctx, task, "native", model)
+            self._feedback_contexts[attempt_uid] = feedback_context
+
+            # FEAT-584 M8/R8: register a `pending` handle for this native reservation --
+            # `native_observation` (below) is the ONLY authority that later links it to
+            # an agent_id/transitions its state (host_observation authority: "no son
+            # prueba independiente de proceso vivo ni código POSIX"). Idempotent by
+            # construction: a duplicate `prepare_native` call reuses the SAME
+            # `attempt_uid` above, so `BackgroundRegistry.register` just replays.
+            bg_handle: Optional[str] = None
+            if self._background_registry is not None and execution_id is not None:
+                try:
+                    registration = BackgroundRegistration(
+                        handle=attempt_uid,
+                        execution_id=execution_id,
+                        task_id=task.task_id,
+                        attempt_uid=attempt_uid,
+                        launch_id=attempt_uid,
+                        owner_instance_id=self._instance_id,
+                        kind="native_agent",
+                        authority="host_observation",
+                        worktree=ctx.worktree,
+                        backend="native-agent",
+                        started_at=datetime.now(timezone.utc),
+                    )
+                    await self._background_registry.register(registration)
+                except Exception:  # noqa: BLE001 -- background registration must never break prepare_native
+                    self.logger.exception("failed to register background handle for native attempt %s", attempt_uid)
+                else:
+                    self._handle_execution[attempt_uid] = execution_id
+                    bg_handle = attempt_uid
+
+            return NativePrep(
+                task_id=task.task_id,
+                task_file=task.task_file,
+                branch=branch,
+                worktree_path=path,
+                seat_label=seat.label,
+                model=model,
+                attempt_uid=attempt_uid,
+                coder_feedback=feedback_context,
+                assessment_id=assessment_id,
+                execution_id=execution_id or "",
+                bg_handle=bg_handle,
+            )
 
     async def suspend_model(
         self,
@@ -1890,7 +2251,7 @@ class SddCoderEngine:
             raise CoderFailure("execution_not_found", f"no execution found with id {execution_id}")
         pool = self._executions[execution_id]
 
-        entry = pool._admitted.get(attempt_uid)  # noqa: SLF001 — engine already reaches into pool internals elsewhere
+        entry = pool.resolve_admission(attempt_uid)
         if entry is None:
             raise CoderFailure(
                 "attempt_not_found", f"attempt {attempt_uid} is not an admitted reservation in execution {execution_id}"
@@ -2066,6 +2427,80 @@ class SddCoderEngine:
                 i += 1
         return paths
 
+    async def _delivered_paths(self, ctx: _FeatureCtx, task: PlannedTask, *, branch: str, path: str) -> List[str]:
+        """Every path one attempt delivered, or ``[]`` when the seat produced nothing.
+
+        Union of: files committed on ``branch`` past its fork from ``ctx.feature_branch``
+        (``git merge-base``), paths dirty in the sub-worktree ``path`` (same status call
+        as ``_commit_declared_changes``), and declared files hidden by ``.gitignore``.
+        An empty result is an empty delivery (FEAT-597 AC2): nothing to extract, nothing
+        that could pass fidelity except vacuously -- FEAT-581's TASK-3534 was reported
+        ``merged`` with zero commits and zero changed files exactly this way.
+
+        Args:
+            ctx: Resolved feature context (feature branch + worktree).
+            task: The planned task; its markdown supplies the declared files.
+            branch: The attempt branch.
+            path: The attempt sub-worktree.
+
+        Returns:
+            Repo-relative paths in first-seen order, de-duplicated.
+        """
+        _rc, fork, _err = await _git("merge-base", ctx.feature_branch, branch, cwd=ctx.worktree)
+        _rc, diff, _err = await _git("diff", "--name-only", f"{fork.strip()}..{branch}", cwd=ctx.worktree)
+        committed = [p for p in diff.splitlines() if p.strip()]
+        _rc, status, _err = await _git("status", "--porcelain", "-z", "--untracked-files=all", cwd=path)
+        dirty = self._dirty_paths(status)
+        task_md = await asyncio.to_thread(Path(ctx.worktree, task.task_file).read_text, "utf-8")
+        declared = sorted(p for p in parse_task_files(task_md) if not is_protected_sdd_path(p))
+        ignored: List[str] = []
+        if declared:
+            _rc, out, _err = await _git(
+                "ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", *declared, cwd=path
+            )
+            ignored = [p for p in out.split("\0") if p]
+        return list(dict.fromkeys(committed + dirty + ignored))
+
+    async def _merged_by_hand(self, ctx: _FeatureCtx, branch: str) -> bool:
+        """True when `branch`'s tip was already brought into `ctx.feature_branch` by a merge commit.
+
+        A zero-commit attempt branch still points at the feature tip it forked from, so
+        `git merge-base --is-ancestor` cannot separate "nothing delivered" from "merged
+        manually after a conflict" (the FEAT-553 re-merge case) -- both are ancestors. A
+        manual merge, however, records the branch tip as a NON-first parent of a merge
+        commit on the feature branch; an empty attempt branch never is (it is, at most, a
+        first parent of a sibling's merge). A fast-forward manual merge leaves no such
+        commit and is reported as an empty delivery -- a conflicted merge (the only
+        documented manual path) can never fast-forward.
+        """
+        _rc, tip, _err = await _git("rev-parse", branch, cwd=ctx.worktree)
+        tip = tip.strip()
+        _rc, merges, _err = await _git("log", "--merges", "--format=%P", ctx.feature_branch, cwd=ctx.worktree)
+        return any(tip in line.split()[1:] for line in merges.splitlines())
+
+    async def _check_delivery(
+        self, ctx: _FeatureCtx, task: PlannedTask, seat: RosterSeat, rec: AttemptRecord, *, branch: str, path: str
+    ) -> Tuple[AttemptRecord, str]:
+        """Turn a successful-looking attempt that changed nothing into a failed one (FEAT-597 AC2).
+
+        Called by `_run_task` after every `_run_attempt` that returned no error. A seat
+        that produced no commit, no dirty file and no declared-but-ignored file has not
+        delivered; marking the attempt failed here lets the existing retry ladder try
+        another eligible seat instead of `_consolidate` merging an empty branch.
+
+        Returns:
+            `(rec, "")` when something was delivered, otherwise the record updated with
+            `error`/`terminal`/`error_class` and that same `error` string.
+        """
+        if await self._delivered_paths(ctx, task, branch=branch, path=path):
+            return rec, ""
+        err = (
+            f"empty_delivery: seat {seat.label} ({seat.backend}/{rec.resolved_model or rec.model or seat.model}) "
+            f"delivered no file change for {task.task_id}"
+        )
+        self.logger.warning("%s: %s", task.task_id, err)
+        return rec.model_copy(update={"error": err, "terminal": "failed", "error_class": "EmptyDelivery"}), err
+
     async def _commit_declared_changes(
         self, task: PlannedTask, expected: List[str], *, branch: str, path: str, feature: str
     ) -> Optional[TaskResult]:
@@ -2084,8 +2519,21 @@ class SddCoderEngine:
         Only `expected` — the task markdown's declared files, the same list
         `check_fidelity` gates on — is ever staged, never the coder-reported
         `DevelopmentOutput.files_changed`: a seat must not be able to widen its own
-        scope by naming extra files in its output. `sdd/` paths are never staged at
-        all, so a coder cannot reach SDD state through this path either.
+        scope by naming extra files in its output. Paths under `sdd/tasks/` and
+        `sdd/ledger/` (`fidelity.PROTECTED_SDD_PREFIXES`) are never staged even when
+        declared, so a coder cannot reach orchestrator-owned SDD state through this
+        path; any other declared `sdd/` path (`sdd/WORKFLOW.md`, `sdd/templates/*.md`)
+        is an ordinary deliverable (FEAT-597).
+
+        Declared files that live under a git-ignored path (`artifacts/` in this repo,
+        `.gitignore:279`) never show up in `git status`, so they are asked for by name
+        with `git ls-files --others --ignored` and staged with `--force`. Without this,
+        a sandboxed seat's CREATE under `artifacts/` was invisible here, the attempt
+        diff came back empty, fidelity passed vacuously and the delivery was reported
+        `merged` while nothing had landed (FEAT-589: four codex deliveries, each
+        misattributed to the model as a "forgot `git add -f`" defect). Ignored files
+        the task does NOT declare (runtime state, caches) are neither staged nor
+        reported as leftovers — they are not part of the delivery.
 
         Args:
             task: The task being consolidated.
@@ -2100,15 +2548,36 @@ class SddCoderEngine:
             violation, never a silently-dropped file.
         """
         _rc, status, _err = await _git("status", "--porcelain", "-z", "--untracked-files=all", cwd=path)
-        if not self._dirty_paths(status):
+        dirty = self._dirty_paths(status)
+        declared = {p for p in expected if not is_protected_sdd_path(p)}
+        # Declared-but-ignored deliverables: a pathspec-limited `ls-files` names exactly
+        # the declared paths git would otherwise hide. Missing or tracked declared paths
+        # simply produce no entry (verified: rc 0, no stderr).
+        ignored_declared: List[str] = []
+        if declared:
+            _rc, ignored, _err = await _git(
+                "ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", *sorted(declared), cwd=path
+            )
+            ignored_declared = [p for p in ignored.split("\0") if p]
+        if not dirty and not ignored_declared:
             return None
 
-        declared = {p for p in expected if not p.startswith("sdd/")}
         # dict.fromkeys: preserve git's order while dropping the duplicate a rename
         # produces when both of its ends are declared.
-        to_stage = list(dict.fromkeys(p for p in self._dirty_paths(status) if p in declared))
+        to_stage = list(dict.fromkeys([p for p in dirty if p in declared] + ignored_declared))
         if to_stage:
-            await _git("add", "--", *to_stage, cwd=path)
+            # `--force` is what lets an ignored declared path in; it is safe because
+            # `to_stage` is already restricted to the task's own declared files.
+            rc, _out, err = await _git("add", "--force", "--", *to_stage, cwd=path)
+            if rc != 0:
+                await _git("reset", "--quiet", "--", *to_stage, cwd=path)
+                return TaskResult(
+                    task_id=task.task_id,
+                    outcome="failed",
+                    branch=branch,
+                    worktree_path=path,
+                    diagnostics=f"extract_stage_failed: {err.strip()}",
+                )
             rc, _out, err = await _git(
                 "commit",
                 "--no-verify",
@@ -2145,12 +2614,48 @@ class SddCoderEngine:
             )
         return None
 
+    @contextlib.asynccontextmanager
+    async def _acquire_merge_lock(self, timeout_s: Optional[float] = None) -> AsyncIterator[None]:
+        """Hold `_merge_lock` for one consolidation; with *timeout_s*, fail fast with ``merge_busy``.
+
+        A background `_run_task` consolidation that stalls inside git while holding
+        the lock used to make a foreground `coder_merge` wait forever — and, with the
+        stdio server processing one request at a time, every later call with it.
+        The foreground path (`merge()`) now waits at most `MERGE_LOCK_TIMEOUT_S`;
+        background job consolidations keep waiting (they pin no request handler,
+        and a `merge_busy` there would be misreported as a plain `failed` outcome).
+        The lock is always released on the way out, including on cancellation.
+        """
+        if timeout_s is None:
+            await self._merge_lock.acquire()
+        else:
+            try:
+                await asyncio.wait_for(self._merge_lock.acquire(), timeout=timeout_s)
+            except asyncio.TimeoutError as exc:
+                raise CoderFailure(
+                    "merge_busy",
+                    f"another consolidation has held the feature-worktree merge lock for more than "
+                    f"{timeout_s:g}s; retry coder_merge once it settles",
+                ) from exc
+        try:
+            yield
+        finally:
+            self._merge_lock.release()
+
     async def _consolidate(
-        self, ctx: _FeatureCtx, manager: SubWorktreeManager, task: PlannedTask, *, branch: str, path: str
+        self,
+        ctx: _FeatureCtx,
+        manager: SubWorktreeManager,
+        task: PlannedTask,
+        *,
+        branch: str,
+        path: str,
+        lock_timeout_s: Optional[float] = None,
     ) -> TaskResult:
         """extract+commit declared work -> fidelity (committed diff only) -> locked merge.
 
-        Never raises for domain outcomes.
+        Never raises for domain outcomes — except ``merge_busy`` when *lock_timeout_s*
+        is given (the foreground `merge()` path) and the merge lock stays held past it.
         """
         # The task markdown is resolved and read FIRST (it used to be read after the
         # clean-tree check below): its declared-file list now drives BOTH the
@@ -2190,6 +2695,22 @@ class SddCoderEngine:
         diff_base = await _consolidate_diff_base(ctx.feature_branch, branch, cwd=ctx.worktree)
         _rc, diff, _err = await _git("diff", "--name-only", f"{diff_base}..{branch}", cwd=ctx.worktree)
         changed = [p for p in diff.splitlines() if p.strip()]
+        if not changed and not await self._merged_by_hand(ctx, branch):
+            # `[] ⊆ expected` would pass fidelity vacuously and the no-op merge would be
+            # reported `merged` with zero commits (FEAT-597 AC1). The one legitimate empty
+            # diff is a branch the orchestrator already merged by hand after a conflict
+            # (`_consolidate_diff_base`'s fallback) -- `_merged_by_hand` tells them apart.
+            shown = ", ".join(expected[:8]) + (" …" if len(expected) > 8 else "")
+            return TaskResult(
+                task_id=task.task_id,
+                outcome="failed",
+                branch=branch,
+                worktree_path=path,
+                diagnostics=(
+                    f"empty_delivery: {branch} changes no file relative to {diff_base[:12]} "
+                    f"(declared {len(expected)} file(s): {shown}); nothing was merged"
+                ),
+            )
         report = check_fidelity(expected, changed)
         if not report.ok:
             return TaskResult(
@@ -2197,7 +2718,7 @@ class SddCoderEngine:
                 outcome="fidelity_violation",
                 branch=branch,
                 worktree_path=path,
-                unexpected_files=report.unexpected + report.sdd_touched,
+                unexpected_files=list(dict.fromkeys(report.unexpected + report.sdd_touched)),
             )
         # Engine-owned lint pass: ruff --fix + formatter on the task's own files, committed on the
         # attempt branch so the merge carries it. Runs for every entry point (MCP seats, native
@@ -2222,7 +2743,7 @@ class SddCoderEngine:
                 diagnostics="BannedImport: " + "; ".join(violations),
                 lint=lint_report,
             )
-        async with self._merge_lock:
+        async with self._acquire_merge_lock(lock_timeout_s):
             try:
                 await manager.merge_sequential(resolver=None)
             except SubWorktreeMergeError as exc:
@@ -2311,7 +2832,9 @@ class SddCoderEngine:
         planned = PlannedTask(
             task_id=task_id, task_file=task_ref.file, title=task_ref.title, seat_label="", native=True
         )
-        result = await self._consolidate(ctx, manager, planned, branch=branch, path=path)
+        result = await self._consolidate(
+            ctx, manager, planned, branch=branch, path=path, lock_timeout_s=MERGE_LOCK_TIMEOUT_S
+        )
         # The orchestrator calls `merge()` only after the native `Agent` returned, so
         # whatever the outcome the sub-worktree is no longer in use and `cleanup()` may
         # reclaim it (conflicts are still protected by `keep_conflicted`).
@@ -2519,28 +3042,26 @@ class SddCoderEngine:
 
         # Flush any pending execution snapshots (retry persistence if degraded)
         for execution_id, pool in list(self._executions.items()):
-            if pool._persistence_degraded:
+            if pool.persistence_degraded:
                 # Try to persist current state atomically
                 snapshot = pool.snapshot()
                 # Enrich with engine bookkeeping (native_reservations and outstanding_job_ids)
                 for (exec_id, task_id), _attempt_uid in list(self._native_reservations.items()):
                     if exec_id == execution_id:
-                        manager_key = (
-                            f"{task_id}.a{self._latest_attempt.get(task_id, AttemptRecord(attempt=1)).attempt}"
-                        )
+                        manager_key = f"{task_id}.a{self._latest_attempt_number(task_id)}"
                         if (
                             manager_key in self._manager_execution
                             and self._manager_execution[manager_key] == execution_id
                         ):
                             snapshot.native_reservations[task_id] = manager_key
 
-                for job_id_iter, job_wt in list(self._job_worktrees.items()):
-                    if job_wt == pool.worktree_path and job_id_iter not in snapshot.outstanding_job_ids:
+                for job_id_iter in self._outstanding_job_ids(execution_id, pool.worktree_path):
+                    if job_id_iter not in snapshot.outstanding_job_ids:
                         snapshot.outstanding_job_ids.append(job_id_iter)
 
                 persisted = await self._write_execution_snapshot(pool.worktree_path, execution_id, snapshot)
                 if persisted:
-                    pool._persistence_degraded = False
+                    pool.set_persistence_degraded(False)
                     self.logger.info("recovered persistence for execution %s", execution_id)
 
         return job
@@ -2604,9 +3125,7 @@ class SddCoderEngine:
 
         # FEAT-559: Admission gating - check pool admission before dispatch
         if pool is not None and execution_id is not None:
-            from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
-
-            key = _effective_key(seat)
+            key = effective_key(seat)
             if key is None:
                 # No model identity - cannot admit
                 return (
@@ -2900,13 +3419,12 @@ class SddCoderEngine:
         Returns:
             Suspension reason string or None if not suspendable.
         """
+        if error.startswith("empty_delivery:"):
+            return None  # FEAT-597 AC3: an empty delivery never suspends a model
+
         # Check for fidelity violation from consolidation
         if outcome == "fidelity_violation":
             return "fidelity_violation"
-
-        # Check for dirty delivery
-        if error_class == "dirty_task_worktree" or (error and error.startswith("dirty_task_worktree:")):
-            return "dirty_delivery"
 
         # Check for dispatch timeout - traverse cause chain for wrapped TimeoutError.
         # The real production wrap (`dispatchers/llm.py`'s `except TimeoutError as
@@ -2982,11 +3500,6 @@ class SddCoderEngine:
         - Poll timeout
         - Git conflicts
         """
-        from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
-        from parrot.knowledge.wiki.ledger.coder_suspensions import (
-            SuspensionRecord,
-        )
-
         reason = self._classify_failure_reason(error, attempt_rec.error_class)
         if reason is None:
             self.logger.info(
@@ -2997,7 +3510,7 @@ class SddCoderEngine:
             )
             return
 
-        key = _effective_key(seat)
+        key = effective_key(seat)
         if key is None:
             self.logger.warning("Cannot suspend seat %s - no model identity", seat.label)
             return
@@ -3056,6 +3569,36 @@ class SddCoderEngine:
                 "failed to persist execution snapshot for %s after suspending %s", execution_id, seat.model
             )
 
+    async def _select_native_retry_seat(
+        self,
+        pool: Optional["ExecutionPool"],
+        tried_seats: set[str],
+        *,
+        eligible_labels: Optional[Set[str]] = None,
+    ) -> Optional[RosterSeat]:
+        """Return an untried, healthy eligible native seat, or ``None`` (FEAT-588).
+
+        Unlike `_select_retry_seat`, this never waits on a busy seat: a native
+        seat is released only by the orchestrator's `merge()` of its
+        reservation, which may itself be sequenced after this job's
+        `coder_wait`, so waiting here could park the job until the wait
+        timeout. A busy native seat is treated as unavailable and the caller
+        emits the explicit `complex_model_unavailable` block instead.
+
+        Args:
+            pool: The execution pool; None (legacy path) always yields None.
+            tried_seats: Seat labels already attempted for this task.
+            eligible_labels: Optional restriction to the task's eligible label set.
+
+        Returns:
+            A free, healthy native RosterSeat, or None when none qualifies.
+        """
+        if pool is None:
+            return None
+        return await pool.select_free_seat(
+            kind="native", tried_seats=tried_seats, eligible_labels=eligible_labels, wait=False
+        )
+
     async def _select_retry_seat(
         self,
         pool: Optional["ExecutionPool"],
@@ -3090,67 +3633,15 @@ class SddCoderEngine:
                 return None
             return self._assigner.retry_seat(failed_label, tried_seats, eligible_labels=eligible_labels)
 
-        # Pool-based selection: find healthy, not-yet-tried seats
-        async with pool._condition:
-            while True:
-                # Check pool status
-                if pool._status in ("closed", "recovery_required"):
-                    return None
-
-                # Find eligible seats
-                for seat in pool._seats:
-                    from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
-
-                    # A native seat has no dispatcher: `_run_attempt` asserts
-                    # `seat.backend is not None` and `_run_task` never routes a
-                    # retry through `coder_prepare_native`, so selecting one here
-                    # would crash the attempt instead of retrying it (mirrors
-                    # `ChunkAssigner.retry_seat`'s own `kind == "native"` guard,
-                    # issue:e01c03baf493).
-                    if seat.kind == "native":
-                        continue
-                    key = _effective_key(seat)
-                    if key is None:
-                        continue
-                    if seat.label in tried_seats:
-                        continue
-                    if eligible_labels is not None and seat.label not in eligible_labels:
-                        continue
-                    if key in pool._busy_seats:
-                        continue
-                    if key in pool._initial_exclusions or key in pool._local_exclusions:
-                        continue
-                    view = pool._seat_views.get(key)
-                    if view is None or not view.available or view.suspended or view.probe_unavailable:
-                        continue
-                    # Found a healthy, free seat
-                    return seat
-
-                # No healthy free seat available - check if we should wait
-                # Check if any healthy seat is busy (worth waiting for)
-                has_busy_healthy = False
-                for seat in pool._seats:
-                    from parrot.flows.dev_loop.sdd_coder.pool import _effective_key
-
-                    if seat.kind == "native":
-                        continue
-                    key = _effective_key(seat)
-                    if key is None or seat.label in tried_seats:
-                        continue
-                    if eligible_labels is not None and seat.label not in eligible_labels:
-                        continue
-                    if key in pool._busy_seats:
-                        view = pool._seat_views.get(key)
-                        if view and view.available and not view.suspended and not view.probe_unavailable:
-                            has_busy_healthy = True
-                            break
-
-                if not has_busy_healthy:
-                    # Pool exhausted - no point waiting
-                    return None
-
-                # Wait for a seat to be released or suspended
-                await pool._condition.wait()
+        # Pool-based selection (FEAT-599: behind `ExecutionPool`'s own condition):
+        # a healthy, free, not-yet-tried MCP seat; waits while a busy-but-healthy
+        # candidate could still free up, returns None once the pool is exhausted
+        # for this request. Native seats are never retry targets here: `_run_attempt`
+        # asserts `seat.backend is not None` and `_run_task` never routes a retry
+        # through `coder_prepare_native` (issue:e01c03baf493).
+        return await pool.select_free_seat(
+            kind="mcp", tried_seats=tried_seats, eligible_labels=eligible_labels, wait=True
+        )
 
     async def _run_task(
         self,
@@ -3162,13 +3653,14 @@ class SddCoderEngine:
         execution_id: Optional[str] = None,
         pool: Optional["ExecutionPool"] = None,
     ) -> TaskResult:
-        """Run up to two attempts, retrying dispatch and dirty-worktree failures on another MCP seat.
+        """Run up to two attempts, retrying DISPATCH failures on another MCP seat.
 
-        A clean dispatcher response is not sufficient for success: an agent can
-        return ``DevelopmentOutput`` after exhausting its turn budget while
-        leaving its changes uncommitted. Treat that first-attempt
-        ``dirty_task_worktree`` outcome as retryable, but preserve fidelity
-        violations and merge conflicts for the orchestrator to handle.
+        A seat that delivers its declared files without committing them is not a
+        failure: ``.git`` is read-only to a sandboxed seat by design, and
+        ``_consolidate`` extracts and commits the deliverable itself via
+        ``_commit_declared_changes`` (ed267c217 / FEAT-587). Only dispatch errors
+        are retried on a fresh seat; fidelity violations and merge conflicts are
+        preserved for the orchestrator to handle.
 
         FEAT-559: When execution_id/pool are provided, uses pool-based admission
         gating, failure classification, and healthy-model retry selection.
@@ -3182,23 +3674,29 @@ class SddCoderEngine:
         attempts.append(rec)
 
         if not err:
-            result = await self._consolidate(ctx, manager, task, branch=branch, path=path)
-            if not (result.outcome == "failed" and result.diagnostics.startswith("dirty_task_worktree:")):
-                final_result = result.model_copy(update={"attempts": attempts, "development_output": out})
-                self._latest_attempt[task.task_id] = rec
-                await self._emit_outcome(
-                    ctx,
-                    attempt_rec=rec,
-                    task_id=task.task_id,
-                    outcome=result.outcome,
-                    conflict_file_count=len(result.conflict_files),
-                    unexpected_file_count=len(result.unexpected_files),
-                )
-                return final_result
-
-            err = result.diagnostics
-            rec = rec.model_copy(update={"error": err, "error_class": "dirty_task_worktree"})
+            # FEAT-597 AC2: a seat that changed nothing has not delivered -- fail the attempt
+            # here so the ladder below retries on another eligible seat.
+            rec, err = await self._check_delivery(ctx, task, seat, rec, branch=branch, path=path)
             attempts[-1] = rec
+
+        if not err:
+            # A consolidation result is always terminal (merged, fidelity_violation,
+            # merge_conflict or failed) and belongs to the orchestrator -- never a
+            # reason to burn the second attempt on another seat. FEAT-587 retired the
+            # `dirty_task_worktree` branch that used to sit here: `_consolidate` now
+            # extracts and commits an uncommitted-but-declared delivery itself.
+            result = await self._consolidate(ctx, manager, task, branch=branch, path=path)
+            final_result = result.model_copy(update={"attempts": attempts, "development_output": out})
+            self._latest_attempt[task.task_id] = rec
+            await self._emit_outcome(
+                ctx,
+                attempt_rec=rec,
+                task_id=task.task_id,
+                outcome=result.outcome,
+                conflict_file_count=len(result.conflict_files),
+                unexpected_file_count=len(result.unexpected_files),
+            )
+            return final_result
 
         if err:
             # FEAT-559: Classify failure and suspend model if qualifying
@@ -3224,13 +3722,51 @@ class SddCoderEngine:
             # additionally restricted to `eligible_labels` when given.
             retry = await self._select_retry_seat(pool, seat.label, tried_seats, eligible_labels=eligible_labels)
             if retry is None and eligible_labels is not None:
+                native_retry_seat = await self._select_native_retry_seat(
+                    pool, tried_seats, eligible_labels=eligible_labels
+                )
+                if native_retry_seat is not None:
+                    assessment = await self._assessment_for(ctx, task, task.task_file, execution_id=execution_id)
+                    model = native_retry_seat.model or "haiku"
+                    native_retry = await self._reserve_native_attempt(
+                        ctx,
+                        task,
+                        native_retry_seat,
+                        model=model,
+                        assessment_id=assessment.assessment_id,
+                        execution_id=execution_id,
+                        pool=pool,
+                        attempt=2,
+                    )
+                    await self._emit_outcome(ctx, attempt_rec=rec, task_id=task.task_id, outcome="failed")
+                    self._latest_attempt[task.task_id] = rec
+                    return TaskResult(
+                        task_id=task.task_id,
+                        outcome="retry_native",
+                        branch=native_retry.branch,
+                        worktree_path=native_retry.worktree_path,
+                        attempts=attempts,
+                        native_retry=native_retry,
+                        diagnostics=rec.error,
+                    )
                 # Restricted task, no eligible retry seat left: make the block
                 # explicit rather than silently falling through with attempt
                 # 1's unrelated dispatch error as the only diagnostic (spec:
                 # "if none exists return a visible blocked/failed result with
                 # complex_model_unavailable diagnostic, preserving previous
                 # attempts").
-                no_retry_error = f"complex_model_unavailable: no eligible retry seat for {task.task_id}"
+                remaining = eligible_labels - tried_seats
+                # Materialized first: `all()` over an empty candidate set is
+                # vacuously True and would mislabel the diagnostic as MCP-only.
+                remaining_seats = (
+                    [candidate for candidate in pool.seats if candidate.label in remaining] if pool is not None else []
+                )
+                if remaining_seats and all(candidate.kind == "native" for candidate in remaining_seats):
+                    no_retry_error = (
+                        f"complex_model_unavailable: MCP-only retry ladder has no eligible seat for {task.task_id}"
+                    )
+                else:
+                    no_retry_error = f"complex_model_unavailable: no eligible retry seat for {task.task_id}"
                 rec = rec.model_copy(
                     update={"error": f"{rec.error}\n{no_retry_error}" if rec.error else no_retry_error}
                 )
@@ -3252,6 +3788,9 @@ class SddCoderEngine:
                     ctx, task, retry, attempt=2, job_id=job_id, execution_id=execution_id, pool=pool
                 )
                 attempts.append(rec)
+                if not err:
+                    rec, err = await self._check_delivery(ctx, task, retry, rec, branch=branch, path=path)
+                    attempts[-1] = rec
 
         if err:
             # FEAT-559: Classify failure for attempt 2 if it also failed. `retry`
@@ -3259,7 +3798,7 @@ class SddCoderEngine:
             # only runs when `len(attempts) > 1`, which only happens after the
             # `if retry is not None:` branch above appended attempt 2 -- passing
             # `attempts[-1].seat_label` (a str, not a RosterSeat) here raised
-            # AttributeError inside `_classify_and_suspend`/`_effective_key` on
+            # AttributeError inside `_classify_and_suspend`/`effective_key` on
             # every second-attempt failure, silently swallowed by run_chunk's
             # `return_exceptions=True` gather into an opaque "failed" outcome.
             if pool is not None and execution_id is not None and len(attempts) > 1:
@@ -3374,7 +3913,7 @@ class SddCoderEngine:
 
         # FEAT-559: Use execution pool's seats when available
         if pool is not None:
-            seats = {s.label: s for s in pool._seats}
+            seats = {s.label: s for s in pool.seats}
         else:
             seats = {s.label: s for s in self.seats}
 

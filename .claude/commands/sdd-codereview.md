@@ -5,8 +5,9 @@ Reads the task file from `sdd/tasks/completed/`, loads every referenced file, ap
 producing a structured review report.
 
 **Mandatory Deferred Findings Table**: Every CONFIRMED 🔴/🟡 finding not fixed in-review MUST be
-attempted with `wikitoolkit ledger open` and listed in the report's Deferred findings table. The
-ledger intentionally resolves to the main checkout. If a sandbox makes it read-only, do not request
+attempted with `wikitoolkit ledger open` (or the `mcp__wikitoolkit__ledger_open` tool, same fields,
+when it is available) and listed in the report's Deferred findings table. The ledger intentionally
+resolves to the main checkout's `.parrot/ledger/`. If a sandbox makes it read-only, do not request
 broader filesystem access or create a worktree-local ledger; list the full finding with
 `(NOT filed: shared ledger is read-only)`. Reviews with unfiled confirmed findings and an empty
 Deferred table are invalid.

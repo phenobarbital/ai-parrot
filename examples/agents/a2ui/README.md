@@ -38,6 +38,24 @@ Output lands in `artifacts/a2ui_dashboard/`:
 | `05_surface_interactive.html` | `interactive-html` — real Chart.js charts, sortable table. |
 | `06_live_envelope.json` | `--live` only: the envelope the LLM's own render produced. |
 
+### What each lane renders
+
+`01_infographic_template.html` (the HTML lane) and `02_envelope_v1.json` (the A2UI lane)
+are built from the same `InfographicResponse`, but they are **not** identical:
+
+- **Display hints are shared.** Table `ColumnDef.type`/`format`, chart `series[].axis` +
+  `y_axis_labels`, and hero `format`/`unit` reach both lanes, and both format numbers with the
+  same rules (`format_cell` in Python, `formatA2UIValue` in the admin UI; pinned by a shared
+  fixture test). The table sends raw numbers (MRR as a float, churn as a ratio), not
+  pre-formatted strings.
+- **Progress** is a titled group (`Column{Text, Row{KPICard…}}`) inside the current section in
+  the envelope, with each item as a ratio + `format: "percent"`. The HTML lane draws progress
+  bars instead.
+- **HTML only:** `ColumnDef.align`/`width`/`color` have no slot in the A2UI `DataTable` and are
+  dropped in the envelope (extending `TableColumn` is a tracked follow-up).
+- **Hand-written headline:** the hero card keeps its `as_money(...)` string and renders verbatim
+  in both lanes; send a number plus `format` instead to let the renderer format it.
+
 ## The eight steps
 
 1. **The agent** — `PandasAgent` + `InfographicToolkit` (dual-emit by default, FEAT-527).

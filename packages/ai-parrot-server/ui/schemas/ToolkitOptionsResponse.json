@@ -1,0 +1,17 @@
+{
+  "description": "``GET \u2026/toolkits/{slug}/options/{param}``.",
+  "properties": {
+    "options": {
+      "items": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "title": "Options",
+      "type": "array"
+    }
+  },
+  "title": "ToolkitOptionsResponse",
+  "type": "object"
+}

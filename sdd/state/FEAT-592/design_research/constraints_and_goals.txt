@@ -1,0 +1,27 @@
+- **No production client changes in this feature.** Teaching
+  `BedrockConverseBase` to carry Converse image blocks is a deliberate
+  follow-up (see Open Questions); this feature ships an example only.
+- Must not duplicate logic that already exists and is tested in
+  `parrot_pipelines.planogram.identification` — reuse the marking, chunking and
+  response-reconciliation helpers, write only the Nova transport.
+- Async-first: no blocking I/O. `aioboto3>=13.2.0` is already a declared
+  dependency of `ai-parrot-client-amazon`
+  (`packages/ai-parrot-client-amazon/pyproject.toml:17`) — **no new package**.
+- Boxes come from the real Stage-1 perception (`propose_shapes` → `group_rows` →
+  `build_slots`), with a `--boxes <PerceptionResult.json>` override so a run is
+  reproducible without re-running OpenCV.
+- Nova 2 Lite has **no in-region model access in any region**: a geo inference
+  profile is mandatory. Default model id `us.amazon.nova-2-lite-v1:0`.
+- Credentials resolve the same way the rest of the repo does: `parrot.conf`
+  `AWS_CREDENTIALS` keyed by `aws_id`, with an environment fallback — never
+  hard-coded, never committed.
+- Coordinates: perception speaks **source-image pixels** (`Shape.box`,
+  `Slot.box` are `DetectionBox`); Nova speaks **0–1000 normalised
+  `[ymin, xmin, ymax, xmax]`**. A two-way conversion is mandatory in both
+  directions.
+- Output: flat `{bbox, brand, product, occupancy, ...}` JSON plus an annotated
+  JPEG, written under `--output <dir>`.
+- `examples/planogram/*` is git-ignored (`.gitignore:418`) — every new file in
+  this feature needs `git add -f`.
+
+---

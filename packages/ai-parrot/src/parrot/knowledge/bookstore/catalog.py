@@ -383,6 +383,17 @@ class CatalogStore:
             row = conn.execute("SELECT * FROM books WHERE source_sha256 = ?", (sha256,)).fetchone()
         return self._row_to_card(row) if row else None
 
+    def find_by_path(self, source_path: str) -> Optional[BookCard]:
+        """Find the card whose stored ``source_path`` equals ``source_path``.
+
+        The value is the resolved path string ``Bookstore.add_book`` stores, so
+        this is an exact string match — callers pass ``str(path)`` of a
+        resolved ``Path``.
+        """
+        with self._connection() as conn:
+            row = conn.execute("SELECT * FROM books WHERE source_path = ?", (source_path,)).fetchone()
+        return self._row_to_card(row) if row else None
+
     def list_cards(self) -> list[BookCard]:
         """All cards, ordered by title."""
         with self._connection() as conn:

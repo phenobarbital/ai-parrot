@@ -12,6 +12,7 @@ Added by FEAT-213 (Telegram Voice Reply TTS Output).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -93,15 +94,29 @@ class VoiceSynthesizer:
                     total_step=self.config.total_step,
                     speed=self.config.speed,
                 )
+            elif backend_name == "polly":
+                from .polly_backend import AmazonPollyTTSBackend
+
+                self.logger.info(
+                    "VoiceSynthesizer: creating AmazonPollyTTSBackend (voice=%s, engine=%s, region=%s)",
+                    self.config.voice,
+                    self.config.polly_engine,
+                    self.config.polly_region,
+                )
+                self._backend = AmazonPollyTTSBackend(
+                    voice=self.config.voice,
+                    engine=self.config.polly_engine,
+                    region=self.config.polly_region,
+                )
             elif backend_name in ("elevenlabs", "openai"):
                 raise ValueError(
                     f"TTS backend not implemented: '{backend_name}'. "
-                    "Available backends: 'google', 'supertonic' (FEAT-231)."
+                    "Available backends: 'google', 'supertonic', 'polly' (FEAT-591)."
                 )
             else:
                 raise ValueError(
                     f"Unknown TTS backend: '{backend_name}'. "
-                    "Supported values: 'google', 'supertonic', "
+                    "Supported values: 'google', 'supertonic', 'polly', "
                     "'elevenlabs', 'openai'."
                 )
         return self._backend
@@ -162,3 +177,54 @@ class VoiceSynthesizer:
             self.logger.debug("VoiceSynthesizer: closing backend")
             await self._backend.close()
             self._backend = None
+
+
+_SHARED: dict[str, VoiceSynthesizer] = {}
+_SHARED_LOCK: Optional[asyncio.Lock] = None
+
+
+async def get_shared_synthesizer(config: TTSConfig) -> VoiceSynthesizer:
+    """Return the process-wide synthesizer for a configuration.
+
+    Args:
+        config: Full text-to-speech configuration used to key the cache.
+
+    Returns:
+        The shared ``VoiceSynthesizer`` for ``config``.
+
+    Note:
+        Callers must not close the returned synthesizer. Use
+        ``close_shared_synthesizers`` during process shutdown instead.
+    """
+    global _SHARED_LOCK
+
+    if _SHARED_LOCK is None:
+        _SHARED_LOCK = asyncio.Lock()
+
+    key = config.model_dump_json()
+    async with _SHARED_LOCK:
+        synthesizer = _SHARED.get(key)
+        if synthesizer is None:
+            synthesizer = VoiceSynthesizer(config)
+            _SHARED[key] = synthesizer
+        return synthesizer
+
+
+async def close_shared_synthesizers() -> None:
+    """Close and drop every shared synthesizer without propagating errors."""
+    global _SHARED_LOCK
+
+    if _SHARED_LOCK is None:
+        synthesizers = list(_SHARED.values())
+        _SHARED.clear()
+    else:
+        async with _SHARED_LOCK:
+            synthesizers = list(_SHARED.values())
+            _SHARED.clear()
+
+    logger = logging.getLogger(__name__)
+    for synthesizer in synthesizers:
+        try:
+            await synthesizer.close()
+        except Exception:
+            logger.exception("Failed to close shared voice synthesizer")

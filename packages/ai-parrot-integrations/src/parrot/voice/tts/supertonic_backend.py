@@ -20,12 +20,14 @@ text-only is the *handler's* responsibility (FEAT-231, AgentVoiceTalk).
 
 Added by FEAT-231 (AgentTalk Voice Support).
 """
+
 from __future__ import annotations
 
 import asyncio
 import io
 import logging
 import os
+import threading
 import wave
 from typing import Optional
 
@@ -109,6 +111,7 @@ class SupertonicTTSBackend(AbstractTTSBackend):
         self.logger = logging.getLogger(__name__)
         # Lazily-created ONNX inference session (see ``_ensure_session``).
         self._session = None
+        self._session_lock = threading.Lock()
 
     def _resolve_model_path(self) -> str:
         """
@@ -155,9 +158,7 @@ class SupertonicTTSBackend(AbstractTTSBackend):
             ) from exc
 
         model_path = self._resolve_model_path()
-        self.logger.info(
-            "SupertonicTTSBackend: loading ONNX model from %s", model_path
-        )
+        self.logger.info("SupertonicTTSBackend: loading ONNX model from %s", model_path)
         self._session = onnxruntime.InferenceSession(model_path)
         self.logger.info("SupertonicTTSBackend: ONNX model loaded")
 
@@ -202,9 +203,7 @@ class SupertonicTTSBackend(AbstractTTSBackend):
         effective_voice = voice or self.voice
         # The Supertonic container is always WAV; keep the label truthful even
         # if the caller requested a different MIME type.
-        target_format = (
-            mime_format if mime_format == _DEFAULT_MIME_FORMAT else _DEFAULT_MIME_FORMAT
-        )
+        target_format = mime_format if mime_format == _DEFAULT_MIME_FORMAT else _DEFAULT_MIME_FORMAT
 
         self.logger.debug(
             "SupertonicTTSBackend: synthesizing %d chars (voice=%s, lang=%s)",
@@ -213,9 +212,7 @@ class SupertonicTTSBackend(AbstractTTSBackend):
             language,
         )
 
-        pcm_bytes = await asyncio.to_thread(
-            self._synthesize_sync, text, effective_voice, language
-        )
+        pcm_bytes = await asyncio.to_thread(self._synthesize_sync, text, effective_voice, language)
         if not pcm_bytes:
             raise RuntimeError("Supertonic synthesis returned no audio data")
 
@@ -254,7 +251,8 @@ class SupertonicTTSBackend(AbstractTTSBackend):
             ValueError: If the Supertonic weights are not configured/found.
             RuntimeError: If no inference function is wired (see ``inference_fn``).
         """
-        self._ensure_session()
+        with self._session_lock:
+            self._ensure_session()
         # The concrete Supertonic ONNX graph I/O (tokenisation, speaker
         # embedding, output tensor names) is build-specific and intentionally
         # not hardcoded — it is provided by the deployment via ``inference_fn``

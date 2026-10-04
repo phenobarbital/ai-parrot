@@ -1,0 +1,55 @@
+- **Cookie-session auth, undeclared.** The spec has no `securitySchemes` and no
+  global `security`; the only documented entry is `POST /auth/login
+  {username, password}` → `User`, and the captured request carries `sid`,
+  `origin`, `x-hooba-language`, `ngsw-bypass` headers none of which the spec
+  declares. *Implication*: `OpenAPIToolkit` cannot authenticate unmodified; it
+  needs a cookie auth mode with a login hook, cookie jar and re-login on 401.
+  *Evidence*: F015, F009
+
+- **httpx is banned (TID251).** `openapitoolkit.py` and `interfaces/http.py`
+  are per-file exemptions. *Implication*: the new client goes through
+  `HTTPService`/aiohttp; no new exemptions. *Evidence*: F009
+
+- **Create = draft; issue/confirm are separate.** `InvoiceState =
+  canceled|draft|issued|replaced|scheduled`, `PurchaseInvoiceState =
+  confirmed|draft|replaced`; `:issue` and `:confirm` are their own POSTs.
+  *Implication*: "borrador" maps 1:1 to the create calls (DRAFT-kind, unattended
+  per Decision D2); `:issue`, `:confirm`, `:cancel`, `delete` are SUBMIT-kind and
+  stay out of v1 (U5). *Evidence*: F015
+
+- **970 operations.** Generated tool names follow `{service}_{method}_{path}`.
+  *Implication*: full generation (U2) must be tag-allowlisted and SUBMIT-kind
+  paths blocklisted, or the LLM tool budget floods. *Evidence*: F001, F015
+
+- **Decision D2 gate vocabulary.** READ/DRAFT never touch `ConfirmationGuard`;
+  SUBMIT always does, before the browser opens. *Implication*: classify every
+  API tool with `OperationKind` so a future submit path inherits the gate.
+  *Evidence*: F006, F016
+
+- **Public engine / private plans.** FEAT-453 §8 resolved that site plans stay
+  out of the repo; the auto-finance brainstorm later sanctioned an in-repo
+  `parrot_tools/hooba/` package with `plans_dir` private. *Implication*: the
+  package is public, the Playwright catalog stays private and is located via
+  `HOOBA_CATALOG_DIR` (U1). *Evidence*: F008, F013, F016
+
+- **The existing web operativa is navigation-only and untracked.** Login + 5
+  navigations, no `draft_invoice`/`register_expense` script exists.
+  *Implication*: "web for what is available via web" routes to session
+  recovery, PDF download and API gaps in v1 — not to data entry. *Evidence*:
+  F007, F008
+
+- **No BBVA parser, no AEAT rules.** `ingest.py` maps only `client`+`amount`
+  columns to a browser operation; Spec A's `parse_bank_excel`, `AeatRule` and
+  `DeductibilityVerdict` were never implemented (no FEAT-478 task index).
+  *Implication*: a real BBVA layout parser and a v1 rule table are net-new
+  work (U4). *Evidence*: F004, F005, F012
+
+- **Credentials through the broker.** `CredentialBroker` +
+  `_credential_resolver_from_broker` is the sanctioned path; the local example
+  bypasses it with navconfig. *Implication*: `HOOBA_USERNAME`/`HOOBA_PASSWORD`
+  feed a static broker provider `hooba` used by both halves; never literal
+  secrets in catalog JSON. *Evidence*: F003, F007
+
+- **Packaging conventions.** New `parrot_tools` subpackages register in
+  `TOOL_REGISTRY`, declare an optional extra, and test under
+  `packages/ai-parrot-tools/tests/<pkg>/`. *Evidence*: F011

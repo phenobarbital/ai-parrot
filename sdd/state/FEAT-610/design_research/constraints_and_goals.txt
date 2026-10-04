@@ -1,0 +1,16 @@
+### 2.2 Constraints Discovered
+
+- **Only tools may emit descriptors.** Any surface carrying `parrot_data_sources` must come from TOOL output. An LLM-authored one fails with `DATA_SOURCES_NOT_ALLOWED_FOR_LLM` (`catalog/base.py:89`). *Implication*: the agent must call a tool that composes the dashboard; it cannot write the JSON itself. *Evidence*: F001
+- **Components hold no query.** Widgets bind only `{"path": "/<key>/rows"}`, and the query lives in the source descriptor. *Implication*: a per-widget refresh button has to map component → bound source key → descriptor. *Evidence*: F002, F003
+- **Row caps.** Snapshots hold at most 500 rows and a client fetch at most 5000. *Implication*: the ~17.5k-row grid must page on the server (`_limit`/`_offset` plus a `count(*)` call); grid.js `server` mode fits this. *Evidence*: F005, F012, F037
+- **Payload semantics.** `fields` goes into the SQL verbatim, so aggregates and aliases work, but only if the slug's SQL is `SELECT *` or uses `{fields}`. `filter`, `group_by`, `ordering`, `_limit` and `_offset` are all supported. `paged`/`page` are parsed but ignored. *Evidence*: F012
+- **JSONB `@>` needs querysource ≥5.1.0.** The shared venv has 5.0.0, and core `ai-parrot[db]` pins `>=4.1.11` while `ai-parrot-tools[db]` pins `>=5.1.1`. *Evidence*: F013
+- **Multi-graduates KPI.** It can be expressed in `fields` as `count(*) FILTER (WHERE jsonb_array_length(graduation_details) > 1) AS multi_graduates`. *Evidence*: F014
+- **Course pie.** It cannot be computed against the base slug: set-returning functions are not allowed in GROUP BY, and the payload cannot change FROM. It needs a second slug (with LATERAL `jsonb_array_elements`) or a multi-query `tExplode` pipeline. *Evidence*: F014
+- **Slugs live in the database.** They are rows in `<schema>.queries`; there is no file-based loading. *Implication*: the second slug is seed data written to a shared DB, and the example needs an idempotent seed step. *Evidence*: F016
+- **Infrastructure.** Importing QuerySource requires `DBUSER`. Slug execution opens Redis. AuthHandler sessions need Redis. BasicAuth needs the authdb Postgres. *Implication*: "no external dependencies" means no code outside the workspace; Postgres and Redis from `env/.env` are required. *Evidence*: F017, F021, F027
+- **PBAC.** `QS_PBAC_ENABLED=true` in `env/.env`, so a request with no session or no matching policy gets a 404. *Implication*: the demo user needs `slug:execute` on both slugs, or the example documents the policy it needs. *Evidence*: F015
+- **Gitignore.** `examples/**/*.py` (`.gitignore:20`) and `examples/**/*.html` (`.gitignore:37`) both match `examples/a2ui/`. *Implication*: a whitelist entry is needed, otherwise the files are silently never committed. *Evidence*: F026
+- **Wire-doc drift.** The wire doc §3 says the route is only `/api/v1/{tenant}/...` with `querylimit: 500`. The code uses `/api/v3/...` when no tenant is set, capped at 5000. *Evidence*: F007
+- **Degrade, don't throw.** Renderers draw Parrot components natively, break anything else down into Basic primitives, and show a visible notice for an unknown component instead of throwing (`degrade.py:46`). ECharts options never travel on the wire. *Evidence*: F039
+

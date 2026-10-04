@@ -280,21 +280,6 @@ async def test_mixed_delivery_checkpoint_fresh_review(
     assert waited.data["state"] == "done"
     assert waited.data["tasks"][0]["outcome"] == "merged"
 
-    # CONFIRMED DEFECT (found while writing this M7 test, TASK-3575, not fixed
-    # here -- out of this task's file scope): `SddCoderEngine._job_worktrees`
-    # is populated by `run_chunk` (engine.py ~3301) and never cleared anywhere
-    # in engine.py. `end_execution`'s own snapshot enrichment (engine.py
-    # ~811-816) unconditionally re-adds EVERY job id ever dispatched for this
-    # worktree into the durably published `ExecutionSnapshot.
-    # outstanding_job_ids`, with no check against the job's actual terminal
-    # state. `prepare_review_checkpoint` (checkpoint.py ~484) treats ANY
-    # non-empty `outstanding_job_ids` as still-busy, so a real MCP delivery via
-    # `run_chunk` can NEVER reach a valid checkpoint -- even long after the job
-    # is fully `done`/`merged` -- unless something reaps this bookkeeping by
-    # hand; there is no public API to do so. Reported here as-is: this line is
-    # a test-side workaround, not evidence the behavior is correct.
-    engine._job_worktrees.pop(job_id, None)  # noqa: SLF001 -- see defect note above
-
     # The merge above advanced HEAD, which invalidates every assessment the
     # FIRST `coder_plan()` cached (spec: "revalidate task/index/policy/target
     # hashes and HEAD ... before run_chunk and prepare_native side effects") --
@@ -623,14 +608,6 @@ async def test_stale_fix_and_full_compatibility(
     waited = await toolkit.coder_wait(job_id, 30)
     assert waited.status == "ok", waited.error
     assert waited.data["state"] == "done"
-
-    # CONFIRMED DEFECT (see `test_mixed_delivery_checkpoint_fresh_review` for
-    # the full note): `end_execution` durably persists every job id ever
-    # dispatched via `run_chunk` for this worktree into `outstanding_job_ids`,
-    # regardless of completion, which would otherwise block ANY subsequent
-    # `prepare_review_checkpoint` call below with a permanent `checkpoint_busy`.
-    # Reaped here by hand; not evidence the underlying behavior is correct.
-    engine._job_worktrees.pop(job_id, None)  # noqa: SLF001 -- see defect note above
 
     # AC5: response_mode omitted ('full') is the unmodified legacy shape; only an
     # explicit 'compact' request adds the new bounded-projection fields.

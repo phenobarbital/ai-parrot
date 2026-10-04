@@ -1,0 +1,51 @@
+Decisions taken in discovery (Rounds 0–2):
+
+- **Flow**: `type: feature`, `base_branch: dev`.
+- **Persistence model — BOTH layers**: agent-level defaults set by the
+  operator (persisted with the agent definition) **plus** per-user overrides.
+- **Override policy**: the operator marks each param as `user_overridable` in
+  Studio. Overrides are applied by building the toolkit for the *session*
+  `ToolManager` (defaults + user overrides) — the shared bot instance is never
+  mutated by a user override.
+- **Secrets**: never stored in the agent's JSON/YAML. The schema marks params
+  `secret`; values go to the encrypted vault (`parrot.security.vault_utils`,
+  same AES-GCM keyring BYOK and MCP use) and the config keeps only a
+  reference. `GET` returns masked values.
+- **Registry (YAML) agents are editable when the YAML lives under
+  `AGENTS_DIR`** (factory/Studio-written definitions): rewrite the `toolkits:`
+  block via `AgentRegistry.create_agent_definition` and reload. Code (`.py`)
+  agents stay read-only, as in FEAT-475.
+- **UI target**: extend the existing `/admin/agents/:name` form with a new
+  **Tools** tab that replaces the checkbox list (catalog of active tools +
+  per-toolkit form rendered from the schema), plus **Datasets** and **MCP**
+  sub-panels. The chat keeps a lighter "My settings" surface for per-user
+  datasets, per-user MCP servers and per-user param overrides, on the
+  per-user endpoints that already exist.
+- **Agent-level datasets/MCP semantics**: Studio edits `mcp_servers` (already
+  in `BotConfig`; **absent** from `BotModel`) and a new list of pre-registered
+  datasources for the agent's `DatasetManager`. Per-user paths stay as today.
+- **Declarative schema for complex toolkits**: constructor introspection is
+  not enough for toolkits whose configuration is a *choice* (DatasetManager:
+  a `query_slug`, **or** `table`+`schema`+`driver`(+`dsn`), **or** a CSV/Excel/
+  Parquet path, **or** an Airtable base, **or** a Smartsheet sheet…). Such
+  toolkits publish a JSON Schema (Draft 2020-12, generated from a Pydantic
+  config model — precedent: `WikiConfig.model_json_schema()` already embedded
+  by `_wiki_schema()` in `studio/toolkits.py:265`) with `oneOf` discriminated
+  unions; the UI renders forms from the schema alone, never from
+  toolkit-specific frontend code. Introspection stays as the fallback for
+  simple toolkits.
+- **Dynamic options**: toolkits may implement an optional
+  `config_options(param, current_params)` hook; the schema advertises an
+  `options_endpoint` and the UI renders a multi-select. `QuerysourceToolkit`
+  (programs/tenants) and `JiraToolkit` (projects for a `server_url`)
+  implement it; everything else stays free-form.
+- Apply semantics follow FEAT-467: saving agent defaults returns
+  `reload_required: true` with a **Reload** button (`POST /agents/{name}/reload`);
+  no implicit reload.
+- Hard cuts are acceptable (no external consumers): the checkbox list can be
+  replaced, `BotWritePayload.tools: list[str]` may gain a sibling field
+  rather than a shim.
+- Non-negotiables: aiohttp handlers under `handlers/studio/`, Pydantic v2
+  models, Svelte 5 runes, `pnpm generate` for TS types, secrets only in the
+  vault, PBAC fail-open convention (`_pbac_gate`), ownership via
+  `_require_owner`.

@@ -1,0 +1,35 @@
+{
+  "site": "odoo-helpdesk",
+  "name": "login",
+  "title": "Iniciar sesión",
+  "description": "Log in to the Odoo web client with the helpdesk web user.",
+  "kind": "operation",
+  "params": {},
+  "steps": [
+    {
+      "action": "navigate",
+      "url": "https://pokemon.helpdesk.staging.trocdigital.io/web/login"
+    },
+    {
+      "action": "authenticate",
+      "method": "form",
+      "credential_provider": "odoo-helpdesk",
+      "username_selector": "#login",
+      "password_selector": "#password",
+      "submit_selector": "button[type=\"submit\"]"
+    },
+    {
+      "action": "wait",
+      "condition": "/odoo",
+      "condition_type": "url_contains",
+      "timeout": 30
+    }
+  ],
+  "compose": [],
+  "requires": [],
+  "tags": [],
+  "version": "1.0",
+  "source": "llm",
+  "created_at": "2026-09-30T18:45:10.911215Z",
+  "updated_at": null
+}

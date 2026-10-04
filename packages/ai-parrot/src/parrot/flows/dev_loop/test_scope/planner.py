@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from .datatypes import CoreHit, PytestInvocation, ScopePlan, TestTarget
@@ -52,6 +52,8 @@ def build_plan(
     escalated: Sequence[str] = (),
     core_hits: Sequence[CoreHit] = (),
     skipped_escalations: Sequence[str] = (),
+    cap_hits: Mapping[str, tuple[str, ...]] | None = None,
+    cap_impacted: Mapping[str, str] | None = None,
     notes: Sequence[str] = (),
 ) -> ScopePlan:
     """Group by distribution, prune nested, add flags/markers/xdist → one PytestInvocation per group.
@@ -72,4 +74,6 @@ def build_plan(
         core_hits=tuple(core_hits),
         skipped_escalations=tuple(sorted(set(skipped_escalations))),
         notes=tuple(notes),
+        cap_hits=dict(cap_hits or {}),
+        cap_impacted=dict(cap_impacted or {}),
     )

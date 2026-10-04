@@ -52,9 +52,21 @@ class FakeComplexityDispatcher:
         if self.behavior == "fail":
             raise RuntimeError("dispatch failed")
 
-        # Return a successful development output
+        # Deliver the task's declared file for real (FEAT-597: an output that claims a file
+        # but changes nothing is an empty delivery and no longer merges), mirroring
+        # test_engine_dispatch.FakeDispatcher.
+        task_id = brief.task_id
+        n = task_id.rsplit("-", 1)[-1].lstrip("0") or "0"
+        filename = f"pkg/t{int(n)}.py"
+        (Path(cwd) / "pkg").mkdir(parents=True, exist_ok=True)
+        (Path(cwd) / filename).write_text(f"# {task_id}\n")
+        for args in (("add", filename), ("commit", "-m", f"impl {task_id}")):
+            proc = await asyncio.create_subprocess_exec(
+                "git", *args, cwd=cwd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            await proc.communicate()
         return DevelopmentOutput(
-            files_changed=["test.py"], commit_shas=["abcdef1234567890"], summary="fake implementation"
+            files_changed=[filename], commit_shas=["abcdef1234567890"], summary="fake implementation"
         )
 
 

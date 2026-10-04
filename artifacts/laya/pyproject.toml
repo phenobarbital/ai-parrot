@@ -1,0 +1,17 @@
+# Standalone environment for the Laya CPU worker (FEAT-589). NOT a uv workspace member.
+# Create with:  uv venv artifacts/laya/.venv --python 3.12 && uv pip install --python artifacts/laya/.venv/bin/python -e artifacts/laya
+[project]
+name = "laya-cpu-evaluation-worker"
+version = "0.1.0"
+description = "Isolated CPU inference worker for the FEAT-589 Laya evaluation (not published)"
+requires-python = ">=3.10"
+dependencies = [
+    "laya==0.3.5",  # confirmed on PyPI 2026-09-22: distribution name is "laya" (author Convai Innovations)
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["worker"]

@@ -1,0 +1,7 @@
+{
+  "description": "left join prefixes colliding non-key right columns with the sibling key",
+  "input": [{"store": "A", "visits": 3}, {"store": "B", "visits": 5}, {"store": "C", "visits": 1}],
+  "frames": {"targets": [{"store": "A", "visits": 10}, {"store": "B", "visits": 4}]},
+  "ops": [{"op": "join", "with": "targets", "how": "left", "on": [{"left": "store", "right": "store"}]}],
+  "expected": [{"store": "A", "visits": 3, "targets_visits": 10}, {"store": "B", "visits": 5, "targets_visits": 4}, {"store": "C", "visits": 1, "targets_visits": null}]
+}

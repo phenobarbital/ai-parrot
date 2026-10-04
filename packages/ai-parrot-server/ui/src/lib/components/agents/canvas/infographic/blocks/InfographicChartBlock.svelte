@@ -12,7 +12,8 @@
 		labels,
 		series,
 		x_axis_label: _x_axis_label,
-		y_axis_label: _y_axis_label,
+		y_axis_label,
+		y_axis_labels,
 		stacked,
 		show_legend,
 		color_by_sign,
@@ -105,7 +106,13 @@
 			y: yKeys.length > 0 ? yKeys : ['_value'],
 			stacked: stacked ?? false,
 			showLegend: show_legend ?? true,
-			...(palette ? { palette } : {})
+			...(palette ? { palette } : {}),
+			// FEAT-623: forward axis info only when it exists — no right series ⇒ no seriesAxes key.
+			...(series.some((s) => s.axis === 'right')
+				? { seriesAxes: series.map((s) => s.axis ?? null) }
+				: {}),
+			...(y_axis_label ? { yAxisLabel: y_axis_label } : {}),
+			...(y_axis_labels ? { yAxisLabels: y_axis_labels } : {})
 		};
 	});
 </script>

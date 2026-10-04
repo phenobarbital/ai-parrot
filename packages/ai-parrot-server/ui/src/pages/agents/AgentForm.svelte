@@ -48,6 +48,7 @@
   import TabsCapabilities from "./form/TabsCapabilities.svelte";
   import TabsDataMemory from "./form/TabsDataMemory.svelte";
   import TabsGeneral from "./form/TabsGeneral.svelte";
+  import TabsTools from "./form/TabsTools.svelte";
 
   let {
     mode,
@@ -86,12 +87,14 @@
   });
 
   const canSave = $derived(!formState.saving && Object.keys(formState.errors).length === 0);
+  const agentName = $derived(mode === "edit" ? agent?.name : undefined);
 
   const TABS: { id: TabId; label: string }[] = [
     { id: "general", label: "General" },
     { id: "behavior", label: "Behavior" },
     { id: "ai", label: "AI" },
     { id: "capabilities", label: "Capabilities" },
+    { id: "tools", label: "Tools" },
     { id: "data_memory", label: "Data & Memory" },
     { id: "advanced", label: "Advanced" },
   ];
@@ -196,7 +199,10 @@
     <TabsContent value="behavior"><TabsBehavior state={formState} /></TabsContent>
     <TabsContent value="ai"><TabsAI state={formState} {catalog} /></TabsContent>
     <TabsContent value="capabilities">
-      <TabsCapabilities state={formState} {catalog} {tools} />
+      <TabsCapabilities state={formState} {catalog} />
+    </TabsContent>
+    <TabsContent value="tools">
+      <TabsTools {formState} {tools} {agentName} />
     </TabsContent>
     <TabsContent value="data_memory"><TabsDataMemory state={formState} {catalog} /></TabsContent>
     <TabsContent value="advanced"><TabsAdvanced state={formState} /></TabsContent>

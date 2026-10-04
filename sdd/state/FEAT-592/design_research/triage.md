@@ -1,0 +1,21 @@
+# Design Research Triage — nova-image-planogram
+
+Model: gpt-5.6-luna (codex-cli 0.155.1, reasoning_effort=high) · 11 suggestions · all 18 `affected_paths` passed containment + `test -e`.
+
+| # | Suggestion (kind) | Disposition | Reason | Landed in |
+|---|---|---|---|---|
+| S1 | Resolve the closed-set prompt injection contradiction (architecture) | CONFIRM | Verified: `_run_call` (identify.py:331) calls `build_identify_prompt` by module-level name — there is no builder hook. Independently found before the review. The example owns its per-strip loop; it does NOT call `identify_strips` and does NOT monkeypatch the pipeline. | §2 Overview, §3 M4, §7 Risks |
+| S2 | Specify how the shim consumes `structured_output` (api) | CONFIRM | Verified: `VisionAdapter._call` (vision.py:257-261) passes the Pydantic class; Bedrock `converse` has no such parameter. The shim must render the schema into the prompt and return text for `_extract`. | §3 M2, §7 Risks |
+| S3 | Reuse `NovaClient` for credentials and async client lifetime (architecture) | CONFIRM | Verified: `get_client()` (bedrock.py:338), `close()` (bedrock.py:673), credential chain (bedrock.py:300-313) and `translate_bedrock_model` (bedrock.py:434) already exist. Composing `NovaClient` removes an entire duplicated-credentials module. | §3 M2, §6 Integration Points |
+| S4 | Match the complete InkWall perception tail (architecture) | CONFIRM | Verified: `ink_wall.py:181-214` also does `candidate_shape_id`, `assign_membership` and `AnchorRule.TAG_BELOW_PRODUCT` with `fill_gaps=True, untagged_bottom_row=True`. Three bare calls would not produce an equivalent `PerceptionResult`. | §3 M5 |
+| S5 | Keep OpenCV and file I/O off the event loop (risk) | CONFIRM | Verified: `ink_wall.py:181,235` routes `propose_shapes` and `read_crop` through `ctx.executor.run`. The async-first constraint applies to the example too. | §3 M4/M5, §7 Patterns |
+| S6 | Define the flattening join and bbox convention explicitly (api) | CONFIRM | Verified: `Identification` (contracts.py:101) carries no box and `IdentificationResult` (contracts.py:137) carries no boxes either. The join back to `PerceptionResult.slots`/`.shapes`/`added` must be specified or the flat output cannot be produced. | §2 Data Models, §3 M4 |
+| S7 | Validate `--boxes` against the decoded image (testing) | CONFIRM | Verified: `from_strip_norm` (slots.py:263) trusts `PerceptionResult.image_size`. Adopted as runtime fail-fast validation; the automated-test half is folded into S9's escalation rather than decided here. | §3 M5, §5 AC |
+| S8 | Make the real retry and cost envelope visible (risk) | CONFIRM | Verified: two independent repair paths — `VisionAdapter.repair_retries` (vision.py:143) and the missing-id retry (identify.py:344-359) — so one strip can cost three calls. Material to the stated cost objective. | §3 M4, §5 AC, §7 Risks |
+| S9 | Test the exact Converse payload without AWS (testing) | CONFIRM (variant) | Escalated to the user as spec §8 Q1, then resolved 2026-09-23: the *failure mode* is adopted, the *test form* is declined. `NovaVisionClient._assert_has_image` refuses to send a Converse request carrying no image block, and `RunStats.image_bytes_sent` makes the transmitted payload auditable per run. Closes the silently-text-only hole without a test file for explicitly throwaway code, and the guard survives the lift into `BedrockConverseBase` — which a test under `examples/` would not. | §3 M2, §5 AC15, §7, §8 Q1 |
+| S10 | Canonicalize the resolved Nova model before caching (api) | CONFIRM | Verified: `models.py:150` maps `nova-2-lite` → `amazon.nova-2-lite-v1:0` while `region_prefix="us"` (nova/client.py:93) adds the profile. `cache_key` (vision.py:63) keys on the backend string, so two spellings of one route could share or split entries. | §3 M2, §7 Risks |
+| S11 | Make ignored example files reliably trackable (risk) | CONFIRM | Verified: `.gitignore:418` ignores `examples/planogram/*`; the repo's own convention (`.gitignore:438-441` for `pipelines/`) is negation rules, not `git add -f`. Corrects the brainstorm's stated approach. | §3 M1 |
+
+Summary: **11** confirmed (one as a variant) · **0** rejected · **0** escalated.
+
+Escalation closed 2026-09-23 by the spec author; see spec §8 Q1 for the decision and its rationale.

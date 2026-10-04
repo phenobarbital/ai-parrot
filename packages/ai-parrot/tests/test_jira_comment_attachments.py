@@ -28,10 +28,23 @@ async def test_add_comment_without_attachments(toolkit):
 
     result = await toolkit.jira_add_comment(issue="NAV-1", body="hello")
 
-    toolkit.jira.add_comment.assert_called_once_with("NAV-1", "hello")
+    toolkit.jira.add_comment.assert_called_once_with("NAV-1", "hello", is_internal=False)
     toolkit.jira.add_attachment.assert_not_called()
     assert result == {"id": "10001", "body": "hello"}
     assert "attachments" not in result
+
+
+@pytest.mark.asyncio
+async def test_add_comment_internal_is_forwarded(toolkit):
+    """is_internal=True reaches the JIRA client (Service Desk internal comment)."""
+    mock_comment = MagicMock()
+    mock_comment.raw = {"id": "10002", "body": "agent note"}
+    toolkit.jira.add_comment.return_value = mock_comment
+
+    result = await toolkit.jira_add_comment(issue="SD-1", body="agent note", is_internal=True)
+
+    toolkit.jira.add_comment.assert_called_once_with("SD-1", "agent note", is_internal=True)
+    assert result == {"id": "10002", "body": "agent note"}
 
 
 @pytest.mark.asyncio

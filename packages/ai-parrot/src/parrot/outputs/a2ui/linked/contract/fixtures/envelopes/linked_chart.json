@@ -1,0 +1,94 @@
+{
+  "catalogId": "https://parrot.dev/catalogs/v1",
+  "components": [
+    {
+      "component": "Chart",
+      "data": {
+        "path": "/activity/rows"
+      },
+      "id": "root",
+      "type": "bar",
+      "x": "day",
+      "y": [
+        "visits"
+      ]
+    }
+  ],
+  "dataModel": {
+    "activity": {
+      "rows": [
+        {
+          "day": "2026-09-01T00:00:00.000",
+          "program": "epson",
+          "visits": 10
+        },
+        {
+          "day": "2026-09-02T00:00:00.000",
+          "program": "pokemon",
+          "visits": 20
+        },
+        {
+          "day": "2026-09-03T00:00:00.000",
+          "program": "epson",
+          "visits": 30
+        }
+      ]
+    }
+  },
+  "metadata": {
+    "extensions": {
+      "parrot_data_sources": {
+        "activity": {
+          "conditions": {
+            "firstdate": "YESTERDAY",
+            "lastdate": "TODAY"
+          },
+          "is_multiquery": false,
+          "kind": "query_slug",
+          "locked": [],
+          "multi_output": null,
+          "params": {
+            "firstdate": {
+              "accepts_keywords": true,
+              "default": null,
+              "editable": true,
+              "required": false,
+              "type": "date"
+            },
+            "lastdate": {
+              "accepts_keywords": true,
+              "default": null,
+              "editable": true,
+              "required": false,
+              "type": "date"
+            }
+          },
+          "refresh": {
+            "interval_seconds": null,
+            "policy": "on_mount"
+          },
+          "request": {
+            "fields": [],
+            "filter": {},
+            "grouping": [],
+            "limit": null,
+            "offset": null,
+            "ordering": [],
+            "placeholders": {
+              "firstdate": "YESTERDAY",
+              "lastdate": "TODAY"
+            }
+          },
+          "slug": "epson_field_activity",
+          "snapshot_at": "2026-09-25T12:00:00Z",
+          "snapshot_truncated": false,
+          "target": "/activity/rows",
+          "tenant": null,
+          "transform": null
+        }
+      }
+    }
+  },
+  "sendDataModel": false,
+  "surfaceId": "linked-chart"
+}

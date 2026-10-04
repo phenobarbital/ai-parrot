@@ -18,6 +18,7 @@ plugins/*
 /outputs/**/*.png
 /outputs/dev_loop_runs/
 examples/**/*.py
+examples/**/*.html
 !examples/autonomous_analyst/**/*.py
 !examples/data/whatif_scenario_e2e.py
 # AWS Bedrock sample agents are documentation — they ship with the repo, so
@@ -29,12 +30,17 @@ examples/**/*.py
 # The A2UI dashboard walkthrough is documentation as well — it runs offline on
 # seeded data and doubles as a smoke test for the v1.0 wire (FEAT-470).
 !examples/agents/a2ui/**/*.py
+# FEAT-610 A2UI linked-surfaces E2E example (server + static renderer) ships with the repo.
+!examples/a2ui/**/*.py
+!examples/a2ui/**/*.html
+# The finance twin of that example (definition-only surface, DatasetManager-backed check) ships too.
+!examples/a2ui_finance/**/*.py
+!examples/a2ui_finance/**/*.html
 examples/**/*.csv
 examples/**/*.mp4
 examples/**/*.mkv
 examples/**/*.webm
 examples/**/*.wav
-examples/**/*.html
 examples/**/*.jp*
 examples/**/*.png
 examples/zoom/*
@@ -405,6 +411,9 @@ packages/ai-parrot-server/ui/node_modules/
 .parrot/
 # FEAT-545: id-independent staging for /sdd-spec §3b; committed copies live under sdd/state/<FEAT-ID>/design_research/
 sdd/state/.design_research/
+# FEAT-581: target-agnostic E2E supervisor bookkeeping (parrot.e2e.state); never
+# feature-scoped, so it is not covered by sdd/state/<FEAT-ID>/e2e/ evidence dirs.
+sdd/state/e2e/
 # FEAT-577: id-less /sdd-spec intake staging; promoted to sdd/state/<FEAT-ID>/intake/ on commit, pruned after 10 days by a daily git hook (scripts/sdd/install_hooks.py)
 sdd/state/.intake/
 
@@ -433,3 +442,28 @@ examples/planogram/perception_spike/*
 # FEAT-574: example scripts added by later tasks of the same feature
 !examples/planogram/descriptor_assistant.py
 !examples/planogram/backend_benchmark.py
+# FEAT-574: ink-wall pipeline example (code only — generated definitions,
+# renders, reports and the vision cache are retailer-derived and stay ignored)
+!examples/planogram/pipelines/
+examples/planogram/pipelines/*
+!examples/planogram/pipelines/*.py
+!examples/planogram/pipelines/README.md
+# FEAT-592: Nova 2 Lite planogram identification example (code only — photos,
+# results and the vision cache are retailer-derived and stay ignored)
+!examples/planogram/aws/
+examples/planogram/aws/*
+!examples/planogram/aws/*.py
+!examples/planogram/aws/README.md
+# FEAT-612: live planogram E2E harness — code + README only.
+!examples/planogram/e2e/
+examples/planogram/e2e/*
+!examples/planogram/e2e/conftest.py
+!examples/planogram/e2e/models.py
+!examples/planogram/e2e/runner.py
+!examples/planogram/e2e/test_compliance.py
+!examples/planogram/e2e/README.md
+
+# Local/untracked work
+examples/clients/bestbuy_catalog/
+examples/planogram/pipelines/
+sdd/state/FEAT-585/

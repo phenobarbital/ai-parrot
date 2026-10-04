@@ -1,0 +1,819 @@
+[
+ {
+  "wizard": "sh.helpdesk.reassign.wizard",
+  "buttons": [
+   {
+    "name": "action_confirm",
+    "string": "Reassign"
+   }
+  ]
+ },
+ {
+  "wizard": "sh.helpdesk.ticket.mass.update.wizard",
+  "buttons": [
+   {
+    "name": "update_record",
+    "string": "Done"
+   }
+  ]
+ },
+ {
+  "wizard": "sh.helpdesk.ticket.merge.ticket.wizard",
+  "buttons": [
+   {
+    "name": "action_merge_tickets",
+    "string": "Merge"
+   }
+  ]
+ },
+ {
+  "base_create_key_failed": "vals=list",
+  "error": "Odoo JSON-2 error [500] calling helpdesk.tags.create: HelpdeskTags.create() got an unexpected keyword argument 'vals'"
+ },
+ {
+  "base_create_key_failed": "vals=dict",
+  "error": "Odoo JSON-2 error [500] calling helpdesk.tags.create: HelpdeskTags.create() got an unexpected keyword argument 'vals'"
+ },
+ {
+  "ticket_create_key_failed": "vals=list",
+  "error": "Odoo JSON-2 error [422] calling sh.helpdesk.ticket.create: missing a required argument: 'values'"
+ },
+ {
+  "ticket_create_key_failed": "vals=dict",
+  "error": "Odoo JSON-2 error [422] calling sh.helpdesk.ticket.create: missing a required argument: 'values'"
+ },
+ {
+  "created_via": "web_save",
+  "result": [
+   {
+    "id": 70,
+    "name": "TICKET#9813547"
+   }
+  ]
+ },
+ {
+  "created": 70
+ },
+ {
+  "step": "after create",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    4,
+    "New"
+   ],
+   "state": "customer_replied",
+   "user_id": false,
+   "sh_user_ids": [],
+   "open_boolean": false,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": false,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": false,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": false,
+   "close_by": false,
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:41",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 0,
+   "_messages": 1
+  }
+ },
+ {
+  "call": "action_take_ticket",
+  "args": null,
+  "kwargs": null,
+  "result": true
+ },
+ {
+  "step": "after action_take_ticket",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    4,
+    "New"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": false,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": false,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": false,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": false,
+   "close_by": false,
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:42",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 0,
+   "_messages": 4
+  }
+ },
+ {
+  "call": "action_done",
+  "args": null,
+  "kwargs": null,
+  "result": null
+ },
+ {
+  "step": "after action_done (from New)",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    4,
+    "New"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": false,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": false,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": false,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": false,
+   "close_by": false,
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:42",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 0,
+   "_messages": 4
+  }
+ },
+ {
+  "call": "action_closed",
+  "args": null,
+  "kwargs": null,
+  "result": null
+ },
+ {
+  "step": "after action_closed (from New)",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    21,
+    "Closed"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": true,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": true,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": false,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:43",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:43",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 1,
+   "_messages": 6
+  }
+ },
+ {
+  "call": "write",
+  "args": [
+   [
+    70
+   ],
+   {
+    "stage_id": 22
+   }
+  ],
+  "kwargs": null,
+  "result": true
+ },
+ {
+  "step": "after write stage_id=Open",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    22,
+    "Open"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": false,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": false,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": true,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:43",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:44",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 2,
+   "_messages": 8
+  }
+ },
+ {
+  "call": "action_done",
+  "args": null,
+  "kwargs": null,
+  "result": null
+ },
+ {
+  "step": "after action_done (from Open)",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    22,
+    "Open"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": false,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": false,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": true,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:43",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:44",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 2,
+   "_messages": 8
+  }
+ },
+ {
+  "call": "write",
+  "args": [
+   [
+    70
+   ],
+   {
+    "stage_id": 23
+   }
+  ],
+  "kwargs": null,
+  "result": true
+ },
+ {
+  "step": "after write stage_id=Pending close",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    23,
+    "Pending close"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": false,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": false,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": false,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:43",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:45",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 3,
+   "_messages": 10
+  }
+ },
+ {
+  "call": "action_closed",
+  "args": null,
+  "kwargs": null,
+  "result": null
+ },
+ {
+  "step": "after action_closed (from Pending close)",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    21,
+    "Closed"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": true,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": true,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": false,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:46",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:46",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 4,
+   "_messages": 12
+  }
+ },
+ {
+  "call": "action_open",
+  "args": null,
+  "kwargs": null,
+  "result": null
+ },
+ {
+  "step": "after action_open (reopen)",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    21,
+    "Closed"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": true,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": true,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": false,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:46",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:46",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 4,
+   "_messages": 12
+  }
+ },
+ {
+  "call": "action_cancel",
+  "args": null,
+  "kwargs": null,
+  "result": null
+ },
+ {
+  "step": "after action_cancel",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    21,
+    "Closed"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": true,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": true,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": false,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:46",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:46",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 4,
+   "_messages": 12
+  }
+ },
+ {
+  "call": "action_approve",
+  "args": null,
+  "kwargs": null,
+  "result": null
+ },
+ {
+  "step": "after action_approve",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    21,
+    "Closed"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": true,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": true,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": false,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:46",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:46",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 4,
+   "_messages": 12
+  }
+ },
+ {
+  "call": "message_post",
+  "args": [
+   [
+    70
+   ]
+  ],
+  "kwargs": {
+   "body": "[SDD FEAT-616 throwaway] comment via message_post",
+   "message_type": "comment",
+   "subtype_xmlid": "mail.mt_comment"
+  },
+  "result": [
+   2268
+  ]
+ },
+ {
+  "step": "after message_post",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    22,
+    "Open"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": false,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": false,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": true,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:46",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:48",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 5,
+   "_messages": 15
+  }
+ },
+ {
+  "call": "action_ticket_start",
+  "args": null,
+  "kwargs": null,
+  "error": "Odoo JSON-2 error [422] calling sh.helpdesk.ticket.action_ticket_start: Please Set Default Project from configuration!"
+ },
+ {
+  "step": "after action_ticket_start",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    22,
+    "Open"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": false,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": false,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": true,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:46",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:48",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 5,
+   "_messages": 15
+  }
+ },
+ {
+  "call": "action_ticket_end",
+  "args": null,
+  "kwargs": null,
+  "result": {
+   "name": "End Ticket",
+   "type": "ir.actions.act_window",
+   "view_type": "form",
+   "view_mode": "form",
+   "res_model": "ticket.time.account.line",
+   "target": "new"
+  }
+ },
+ {
+  "step": "after action_ticket_end",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    22,
+    "Open"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": false,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": false,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": true,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:46",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:48",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 5,
+   "_messages": 15
+  }
+ },
+ {
+  "call": "action_confirm",
+  "args": [
+   [
+    [
+     2
+    ]
+   ]
+  ],
+  "kwargs": null,
+  "error": "JSON-2 transport cannot map positional args for method 'action_confirm'. Add an explicit JSON-2 argument mapping or use the legacy jsonrpc protocol."
+ },
+ {
+  "step": "after reassign wizard action_confirm",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    22,
+    "Open"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": false,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": false,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": true,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:46",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:48",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 5,
+   "_messages": 15
+  }
+ },
+ {
+  "call": "write",
+  "args": [
+   [
+    70
+   ],
+   {
+    "stage_id": 21
+   }
+  ],
+  "kwargs": null,
+  "result": true
+ },
+ {
+  "step": "after write stage_id=Closed",
+  "ticket": {
+   "id": 70,
+   "name": "TICKET#9813547",
+   "stage_id": [
+    21,
+    "Closed"
+   ],
+   "state": "customer_replied",
+   "user_id": [
+    2241,
+    "<name redacted>"
+   ],
+   "sh_user_ids": [],
+   "open_boolean": true,
+   "done_stage_boolean": false,
+   "closed_stage_boolean": true,
+   "cancel_stage_boolean": false,
+   "reopen_stage_boolean": false,
+   "done_button_boolean": false,
+   "cancel_button_boolean": false,
+   "close_date": "2026-09-30 22:37:46",
+   "close_by": [
+    2241,
+    "<name redacted>"
+   ],
+   "cancel_date": false,
+   "cancel_by": false,
+   "cancel_reason": false,
+   "replied_date": "2026-09-30 22:37:51",
+   "ticket_running": false,
+   "ticket_run": false,
+   "sh_due_date": "2026-09-30 22:37:41",
+   "sh_sla_deadline": false,
+   "sh_status": false,
+   "_history_lines": 6,
+   "_messages": 17
+  }
+ }
+]
