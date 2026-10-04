@@ -16,7 +16,7 @@
       "feature_id": "FEAT-631",
       "feature": "scheduler-multiworker-correctness",
       "spec": "sdd/specs/scheduler-multiworker-correctness.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "no dependencies; creates parrot/scheduler/jobs.py (+ its own test file) — runs concurrently with TASK-4062",
       "assigned_to": null,
       "started_at": "2026-10-04T23:42:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4061-scheduler-job-trampolines.md"
+      "completed_at": "2026-10-04T23:48:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4061-scheduler-job-trampolines.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4062",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-631",
       "feature": "scheduler-multiworker-correctness",
       "spec": "sdd/specs/scheduler-multiworker-correctness.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "no dependencies; creates parrot/scheduler/coordination.py (+ its own test file) — runs concurrently with TASK-4061",
       "assigned_to": null,
       "started_at": "2026-10-04T23:42:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4062-scheduler-fire-coordination.md"
+      "completed_at": "2026-10-04T23:48:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4062-scheduler-fire-coordination.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4063",
