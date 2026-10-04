@@ -1370,9 +1370,7 @@ class AgentSchedulerManager:
             "fingerprint": schedule_fingerprint(schedule),
         }
 
-    async def _run_db_schedule(
-        self, schedule_id: str, fingerprint: Optional[str], *, run_now: bool = False
-    ) -> Any:
+    async def _run_db_schedule(self, schedule_id: str, fingerprint: Optional[str], *, run_now: bool = False) -> Any:
         """Re-read a DB row at fire time before executing its current fields."""
         schedule_id = str(schedule_id)
         try:
@@ -1401,7 +1399,9 @@ class AgentSchedulerManager:
             local_job = next((job for job in self.scheduler.get_jobs() if job.id == schedule_id), None)
             if local_job is not None and local_job._jobstore_alias == jobstore:
                 self.scheduler.reschedule_job(schedule_id, jobstore=jobstore, trigger=trigger)
-                self.scheduler.modify_job(schedule_id, jobstore=jobstore, kwargs=self._job_kwargs_from_schedule(schedule))
+                self.scheduler.modify_job(
+                    schedule_id, jobstore=jobstore, kwargs=self._job_kwargs_from_schedule(schedule)
+                )
             else:
                 if local_job is not None:
                     with contextlib.suppress(JobLookupError):
