@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from collections import deque
 from datetime import datetime, timezone
@@ -28,7 +27,7 @@ from parrot.knowledge.wiki.schema.models import (
 )
 from parrot.knowledge.wiki.schema.producers.live import introspect
 from parrot.knowledge.wiki.schema.render import content_hash, render_page, render_schema_page, render_source_page
-from parrot.knowledge.wiki.schema.store import SchemaStore
+from parrot.knowledge.wiki.schema.store import SchemaStore, _page_content, _page_source
 from parrot.knowledge.wiki.store import BaseWikiStore
 
 logger = logging.getLogger(__name__)
@@ -175,18 +174,8 @@ class SchemaPlaneService:
         for record in records:
             table_id = table_concept_id(origin, record.metadata.schema, record.metadata.tablename)
             page, columns, edges = render_page(record)
-            existing = await self._store.get_page(table_id, include_body=True)
-            if existing is not None and _page_source(existing) != "ddl":
-                await self._store.add_edges([(src, dst, rel) for src, dst, rel, _ in edges if rel == "defined_in"])
-                report.unchanged.append(table_id)
-                continue
-            if changed_only and existing is not None and existing.get("content_hash") == record.content_hash:
-                report.unchanged.append(table_id)
-                continue
-            await self._store.upsert_pages([page])
-            await self._store.upsert_columns(columns)
-            await self._store.add_edges([(src, dst, rel) for src, dst, rel, _ in edges])
-            (report.updated if existing else report.created).append(table_id)
+            outcome = await self._store.fold_ddl_table(page, columns, edges, changed_only=changed_only)
+            getattr(report, outcome).append(table_id)
         return report
 
     async def diff(self, origin: str, *, live: Optional[list[TableRecord]] = None) -> list[dict[str, Any]]:
@@ -411,29 +400,6 @@ class SchemaPlaneService:
             for page in pages
             if (parts := parse_table_id(page["concept_id"]))[0] == origin and (schema is None or parts[1] == schema)
         )
-
-
-def _page_content(body: str) -> tuple[dict[str, Any], str]:
-    """Extract the JSON frontmatter and DDL section from a rendered page."""
-    frontmatter_text, _, remainder = body.partition("\n\n## DDL\n\n")
-    ddl, _, _ = remainder.partition("\n\n## Columns\n")
-    return json.loads(frontmatter_text), ddl
-
-
-def _page_source(page: dict[str, Any]) -> str:
-    """Read the ``source`` frontmatter key from a stored table page.
-
-    Args:
-        page: Stored table-page mapping including its rendered body.
-
-    Returns:
-        The source marker, or ``"unknown"`` if it is absent or malformed.
-    """
-    try:
-        frontmatter, _ = _page_content(str(page.get("body", "")))
-    except (json.JSONDecodeError, TypeError):
-        return "unknown"
-    return str(frontmatter.get("source", "unknown"))
 
 
 def _metadata_shape(metadata: Optional[TableMetadata]) -> Optional[dict[str, Any]]:
