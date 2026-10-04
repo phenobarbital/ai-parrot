@@ -825,3 +825,9 @@ Run in the activated repository environment; in a feature worktree set `PYTHONPA
 ## Completion Note
 
 Pending. Populated by the finalizer from implementation and validation evidence.
+
+
+### Completion Note (orchestrator)
+Seat: gpt-5.6-terra (codex). Review fix bd2c5b82b: test relied on creation order for an (mtime,name) sort; feedback_id coder-feedback:0436462ec60c4d9dabd2d038. Merge-tier green (80 passed). Residual lint (deferred to /sdd-done): 2x ASYNC240 blocking Path.resolve in async processor.py (_archive and repoint area).
+
+Feature-level code review fix 2b3c02dbd (feedback_id coder-feedback:8842685cadde1d59c9ff7628): retry after post-ingest failure was heuristic-discarded (now resumes via _is_resumable); discover() made recursive (AC1); bookkeeper lines renamed/added TRIAGE, CLASSIFY, DOC_PAGE, ARCHIVE_ORIGINAL (AC12); blocking Path.resolve offloaded, ruff clean (AC15). Deferred to ledger: issue:513459fffc25, issue:3f5e7feef2fe, issue:93b811f2446b.
