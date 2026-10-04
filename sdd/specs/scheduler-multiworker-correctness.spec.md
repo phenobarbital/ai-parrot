@@ -10,7 +10,7 @@ tags: [scheduler, apscheduler, multi-worker, redis-lock, listeners, gunicorn]
 **Feature ID**: FEAT-631
 **Date**: 2026-10-05
 **Author**: Jesus Lara (spec drafted by Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-server 0.28.0
 **Source**: GitHub issue [phenobarbital/ai-parrot#1573](https://github.com/phenobarbital/ai-parrot/issues/1573) · proposal `sdd/proposals/gh-1573-scheduler-multiworker-correctness.proposal.md` (research audit `sdd/state/GH-1573/`)
 
@@ -609,3 +609,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-05 | Jesus Lara / Claude | Initial draft from proposal GH-1573 (issue #1573) |
+| 0.2 | 2026-10-05 | Jesus Lara | Approved for decomposition |
