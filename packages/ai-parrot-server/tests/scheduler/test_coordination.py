@@ -34,7 +34,11 @@ class FakeRedis:
 
 def test_executor_hook_signature_guard():
     params = list(inspect.signature(AsyncIOExecutor._do_submit_job).parameters)
-    assert params == ["self", "job", "run_times"], "apscheduler executor internals changed — revisit FEAT-631 coordination"
+    assert params == [
+        "self",
+        "job",
+        "run_times",
+    ], "apscheduler executor internals changed — revisit FEAT-631 coordination"
 
 
 @pytest.mark.asyncio
