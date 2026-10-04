@@ -131,13 +131,10 @@ class TestAiohttpDelegation:
             await manager.on_startup(fake_app, fake_conn)
 
         assert manager._pool is fake_conn
-        mock_start.assert_awaited_once_with(use_redis=True, register_listeners=False)
+        mock_start.assert_awaited_once_with(use_redis=True, register_listeners=True)
 
-    async def test_on_startup_never_wires_listeners_end_to_end(self, manager):
-        """Not mocking `start_headless()` this time: the real aiohttp path,
-        end to end, must never call `define_listeners()` -- FEAT-422
-        regression coverage (code review) for a behaviour-change risk
-        found in `start_headless()`'s new `register_listeners` param."""
+    async def test_on_startup_wires_listeners_end_to_end(self, manager):
+        """FEAT-631 wires listeners on the real aiohttp startup path."""
         fake_conn = MagicMock(name="agentdb-pool")
         fake_app = {"bot_manager": None}
 
@@ -148,7 +145,7 @@ class TestAiohttpDelegation:
         ):
             await manager.on_startup(fake_app, fake_conn)
 
-        mock_define.assert_not_called()
+        mock_define.assert_called_once()
 
     async def test_on_shutdown_preserves_injected_pool(self, manager):
         """A pool injected via on_startup()/conn is NOT owned -- on_shutdown
