@@ -14,14 +14,15 @@
       "feature_id": "FEAT-630",
       "feature": "lsp-test-pyright-integration-fixes",
       "spec": "sdd/specs/lsp-test-pyright-integration-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "single task",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-4060-pyright-nested-analysis-settings.md"
+      "file": "sdd/tasks/active/TASK-4060-pyright-nested-analysis-settings.md",
+      "started_at": "2026-10-05T01:42:00+00:00"
     }
   ]
 }
