@@ -22,6 +22,7 @@ BASE_TOOLS = {
     "wiki_note",
     "wiki_status",
     "wiki_lint",
+    "wiki_standup",
 }
 
 

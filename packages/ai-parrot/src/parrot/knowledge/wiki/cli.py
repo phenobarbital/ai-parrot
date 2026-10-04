@@ -65,6 +65,7 @@ from parrot.knowledge.wiki.federation import (
     open_namespace_store,
     resolve_namespaces,
 )
+from parrot.knowledge.wiki.identity import authoring_identity as _authoring_identity
 from parrot.knowledge.wiki.languages import all_scanners, astgrep
 from parrot.knowledge.wiki.languages.fingerprint import (
     changed_languages,
@@ -2344,6 +2345,10 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         f"{stats.get('symbols', 0)} symbols, "
         f"~{stats.get('total_tokens', 0)} tokens"
     )
+    if getattr(read_store, "supports_attrs", False):
+        click.echo(f"Attrs     : {stats.get('attrs_pages', 0)} pages indexed")
+    else:
+        click.echo("Attrs     : unsupported")
     click.echo(f"Categories: {stats.get('categories', {})}")
     click.echo(f"Languages : {payload['languages']}")
     click.echo(f"Structural: {payload['structural']}")
@@ -2440,12 +2445,28 @@ def _echo_structural_result(result: Any, as_json: bool) -> None:
 # pulls in) is only imported once an `adr` subcommand is actually resolved,
 # so the `claude-hook` fast path — and every other `wikitoolkit` invocation
 # that never touches ADRs — no longer pays that import cost.
-from parrot.knowledge.wiki.lazy_commands import LazyAdrGroup  # noqa: E402  (bottom import breaks a cycle)
+from parrot.knowledge.wiki.lazy_commands import LazyAdrGroup, LazyGroup  # noqa: E402  (bottom import breaks a cycle)
 
 wiki.add_command(
     LazyAdrGroup(
         name="adr",
         help="Architectural decisions: ingest ADRs, look them up, and review candidates.",
+    )
+)
+wiki.add_command(
+    LazyGroup(
+        name="standup",
+        import_path="parrot.knowledge.wiki.standup.cli",
+        attr="standup",
+        help="Render a daily or period brief.",
+    )
+)
+wiki.add_command(
+    LazyGroup(
+        name="entity",
+        import_path="parrot.knowledge.wiki.entity_cli",
+        attr="entity",
+        help="Manage typed wiki entities.",
     )
 )
 
@@ -3608,28 +3629,6 @@ def export(path_: str | None, output: str) -> None:
 # --------------------------------------------------------------------------
 
 
-def _authoring_identity(by: str | None) -> str:
-    """Resolve who is asserting a write.
-
-    Precedence: explicit ``--by`` > ``CLAUDE_AGENT_ID`` /
-    ``PARROT_AGENT_ID`` env (prefixed ``agent:``) > the local user
-    (prefixed ``human:``).
-    """
-    import getpass
-    import os
-
-    if by:
-        return by
-    for env_name in ("CLAUDE_AGENT_ID", "PARROT_AGENT_ID"):
-        value = os.environ.get(env_name)
-        if value:
-            return f"agent:{value}"
-    try:
-        return f"human:{getpass.getuser()}"
-    except Exception:  # noqa: BLE001 — no user db in some containers
-        return "human:unknown"
-
-
 def _authoring_run_id() -> str | None:
     """Session/run identifier from the ambient environment, if any."""
     import os
@@ -3901,6 +3900,12 @@ def _extract_into_graph(
     " remember when unavailable).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@click.option("--type", "type_", default=None, help="Entity type (project, meeting, ticket, ...).")
+@click.option("--project", default=None, help="Owning project (entity attribute).")
+@click.option("--status", default=None, help="Entity status valid for --type.")
+@click.option("--date", "date_", default=None, help="ISO date (entity attribute).")
+@click.option("--due", default=None, help="ISO due date (entity attribute).")
+@click.option("--owner", default=None, help="Owner identity (entity attribute).")
 def remember(
     text: str,
     path_: str | None,
@@ -3915,6 +3920,12 @@ def remember(
     by: str | None,
     extract_: bool,
     as_json: bool,
+    type_: str | None = None,
+    project: str | None = None,
+    status: str | None = None,
+    date_: str | None = None,
+    due: str | None = None,
+    owner: str | None = None,
 ) -> None:
     """Save a fact, decision, or lesson into the wiki (persistent memory).
 
@@ -3947,6 +3958,27 @@ def remember(
         raise SystemExit(2)
 
     body = text if not source_uri else f"{text}\n\n> Source: {source_uri}"
+    entity_values = {
+        "type": type_,
+        "project": project,
+        "status": status,
+        "date": date_,
+        "due": due,
+        "owner": owner,
+    }
+    attrs_rows: dict[str, str] = {}
+    if any(value is not None for value in entity_values.values()):
+        from parrot.knowledge.wiki.entities import EntityValidationError, normalize_frontmatter
+
+        try:
+            attrs_rows = normalize_frontmatter(
+                {key: value for key, value in entity_values.items() if value is not None},
+                source="memory",
+                strict=True,
+            ).to_rows()
+        except EntityValidationError as exc:
+            click.echo(f"{exc.code}: {exc}", err=True)
+            raise SystemExit(2) from exc
     _run(
         store.upsert_pages(
             [
@@ -3960,6 +3992,7 @@ def remember(
                     token_count=estimate_tokens(body),
                     origin="memory",
                     asserted_by=asserted_by,
+                    attrs=attrs_rows,
                 )
             ]
         )
