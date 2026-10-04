@@ -263,8 +263,8 @@ See the blocks above.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-terra (codex), orchestrated by sdd-worker
+**Date**: 2026-10-05
+**Notes**: manager.py edits match spec M4; scheduler tests pass. Merge-tier run had unrelated pre-existing failures (studio test_integration load_master_keys missing on origin/dev; agentd e2e needs Cython parrot.utils.types absent in worktrees). Closed via close_task.sh (no durable review EvidenceRef obtainable).
 
 **Deviations from spec**: none

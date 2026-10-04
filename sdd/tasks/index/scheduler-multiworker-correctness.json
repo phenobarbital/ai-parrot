@@ -54,7 +54,7 @@
       "feature_id": "FEAT-631",
       "feature": "scheduler-multiworker-correctness",
       "spec": "sdd/specs/scheduler-multiworker-correctness.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -64,8 +64,9 @@
       "parallelism_notes": "needs jobs.SKIPPED from TASK-4061 (scheduler/jobs.py) for the job_success short-circuit; first of three tasks modifying scheduler/manager.py",
       "assigned_to": null,
       "started_at": "2026-10-04T23:42:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4063-scheduler-listeners-on-aiohttp.md"
+      "completed_at": "2026-10-04T23:53:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4063-scheduler-listeners-on-aiohttp.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4064",
