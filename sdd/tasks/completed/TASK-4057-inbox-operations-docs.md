@@ -157,3 +157,7 @@ wikitoolkit ledger open --kind tech_debt --severity low \
 ## Completion Note
 
 Pending. Populated by the finalizer from implementation and validation evidence.
+
+
+### Completion Note (orchestrator)
+Seat: gemini-3.5-flash (google-compat). Docs-only; the merge-tier selector rejects docs paths, so the declared command (test_cli.py) was run: 16 passed, 3 failed = the pre-existing TestIngestModelResolutionDetectionFallback failures (issue:66599d4e8c84). Review fix 24e6ab1cb: the delivered guide section invented exit codes/config keys/archive layout/--force semantics; rewritten from cli.py/project.py/archive.py. feedback_id coder-feedback:801e3aaf3944131b44654c58. AC13: deferred wiki_inbox MCP ledger issue:f7477bd7bba4.

@@ -281,6 +281,64 @@ class WikiNamespaceConfig(BaseModel):
         return str(getattr(self, self.kind))
 
 
+class InboxConfig(BaseModel):
+    """Repository-contained inbox, archive and projection settings (FEAT-626)."""
+
+    dir: str = Field(default="inbox", description="Inbox directory, absolute or relative to the project root.")
+    archive_dir: str = Field(
+        default=f"{PARROT_DIR}/archive", description="Archive directory, absolute or relative to the project root."
+    )
+    rejected_subdir: str = Field(default="rejected", description="Single-segment rejected folder under the archive.")
+    markdown_dir: str | None = Field(
+        default=None, description="Markdown projection directory; defaults to <storage_dir>/inbox."
+    )
+    date_format: str = Field(default="%Y-%m-%d", description="strftime format for dated archive folders.")
+    stage_git: bool = Field(default=True, description="Stage archived and projected files in git.")
+    max_candidates: int = Field(default=20, ge=1, le=100, description="Maximum candidates per run.")
+    lock_timeout: float = Field(default=30.0, ge=0.0, description="Seconds to wait for the inbox lock.")
+
+    @model_validator(mode="after")
+    def _validate_layout(self) -> "InboxConfig":
+        """Reject empty paths and unsafe rejected subdirectory names."""
+        if not self.dir.strip():
+            raise ValueError("inbox.dir must not be empty")
+        if not self.archive_dir.strip():
+            raise ValueError("inbox.archive_dir must not be empty")
+        rejected = self.rejected_subdir
+        if not rejected.strip() or "/" in rejected or "\\" in rejected or ".." in rejected:
+            raise ValueError("inbox.rejected_subdir must be a single path segment without separators or '..'")
+        return self
+
+
+def validate_inbox_paths(root: Path, inbox: Path, archive: Path, markdown: Path) -> None:
+    """Validate that inbox, archive and markdown paths are safe and disjoint.
+
+    Pure path arithmetic (symlinks are resolved, nothing is created).
+
+    Args:
+        root: Repository root.
+        inbox: Resolved inbox directory.
+        archive: Resolved archive directory.
+        markdown: Resolved markdown projection directory.
+
+    Raises:
+        WikiConfigError: When a path escapes ``root`` or two paths are equal or nested.
+    """
+    resolved_root = root.resolve()
+    named = {"inbox": inbox.resolve(), "archive": archive.resolve(), "markdown": markdown.resolve()}
+    for name, path in named.items():
+        if path != resolved_root and not path.is_relative_to(resolved_root):
+            raise WikiConfigError(f"inbox config: {name} path {path} escapes the repository root {resolved_root}")
+        if path == resolved_root:
+            raise WikiConfigError(f"inbox config: {name} path must not be the repository root")
+    names = list(named)
+    for i, first in enumerate(names):
+        for second in names[i + 1 :]:
+            a, b = named[first], named[second]
+            if a == b or a.is_relative_to(b) or b.is_relative_to(a):
+                raise WikiConfigError(f"inbox config: {first} ({a}) and {second} ({b}) must not be equal or nested")
+
+
 class ObsidianSyncConfig(BaseModel):
     """Settings for ``wikitoolkit sync obsidian`` (wiki plane -> vault mirror).
 
@@ -612,6 +670,10 @@ class WikiProjectConfig(BaseModel):
             "are always applied and are not gated by this flag."
         ),
     )
+    inbox: InboxConfig = Field(
+        default_factory=InboxConfig,
+        description="Inbox autonomous-ingestion settings (FEAT-626).",
+    )
 
     @field_validator("namespaces")
     @classmethod
@@ -656,6 +718,23 @@ class WikiProjectConfig(BaseModel):
     def db_path(self, root: Path) -> Path:
         """Path of the SQLite retrieval plane (sqlite backend)."""
         return self.storage_path(root) / "wiki.db"
+
+    def inbox_path(self, root: Path) -> Path:
+        """Resolve inbox.dir against the repository root."""
+        path = Path(self.inbox.dir)
+        return path if path.is_absolute() else root / path
+
+    def archive_path(self, root: Path) -> Path:
+        """Resolve inbox.archive_dir against the repository root."""
+        path = Path(self.inbox.archive_dir)
+        return path if path.is_absolute() else root / path
+
+    def inbox_markdown_path(self, root: Path) -> Path:
+        """Resolve the explicit projection path, or ``storage_path(root)/inbox`` when unset."""
+        if self.inbox.markdown_dir is None:
+            return self.storage_path(root) / "inbox"
+        path = Path(self.inbox.markdown_dir)
+        return path if path.is_absolute() else root / path
 
     def is_built(self, root: Path) -> bool:
         """Whether the retrieval plane exists for this repo.
@@ -960,6 +1039,7 @@ class WikiEnvOverlay(BaseModel):
     exclude_dirs: list[str] | None = None
     claude: ClaudeIntegrationConfig | None = None
     standup: StandupConfig | None = None
+    inbox: InboxConfig | None = None
 
     @field_validator("namespaces")
     @classmethod

@@ -648,3 +648,7 @@ Run in the activated repository environment; in a feature worktree set `PYTHONPA
 ## Completion Note
 
 Pending. Populated by the finalizer from implementation and validation evidence.
+
+
+### Completion Note (orchestrator)
+Seat: gpt-5.6-terra (codex). Review fix 166ea6001: InboxRuntime isinstance-validated adapters and broke 16 existing ingest tests (AC2); adapters now SkipValidation. feedback_id coder-feedback:dfb214068922a1c31b52dd47. Merge-tier sweep: 22 remaining failures in tests/knowledge/wiki (mcp_server, hook_startup, installer_mcp, bookstore graph, ...) are IDENTICAL on the merge-base ff34424bd (verified with compiled .so present), i.e. pre-existing; see ledger issue.
