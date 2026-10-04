@@ -14,14 +14,15 @@
       "feature_id": "FEAT-629",
       "feature": "integrations-manager-fixes",
       "spec": "sdd/specs/integrations-manager-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "single task",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-4059-msteams-shutdown-close-sessions.md"
+      "file": "sdd/tasks/active/TASK-4059-msteams-shutdown-close-sessions.md",
+      "started_at": "2026-10-05T01:35:00+00:00"
     }
   ]
 }
