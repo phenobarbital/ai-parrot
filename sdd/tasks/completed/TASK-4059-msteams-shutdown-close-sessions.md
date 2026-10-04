@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-629 — IntegrationBotManager shutdown closes MSTeams wrapper sessions
 **Spec**: `sdd/specs/integrations-manager-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -64,4 +64,13 @@ ruff check packages/ai-parrot-integrations/src/parrot/integrations/manager.py pa
 ```
 
 ## Completion Note
-_(filled on close)_
+
+**Completed**: 2026-10-05 — agent:sdd-fix — code commit `1cff1d641`.
+
+`IntegrationBotManager.shutdown()` now iterates `msteams_bots` after the MSAgent loop and awaits
+`close_formdesigner_client()` then `close_voice_transcriber()` per wrapper, each in its own
+`try/except` that logs via `self.logger.error`. New tests
+(`tests/integrations/msteams/test_msteams_manager_shutdown.py`) cover AC1/AC2; both fail against the
+unpatched `manager.py` and pass with the fix. Validation: 7 passed (new module + slack dev-loop
+manager shutdown test). `ruff check` on `manager.py` reports the same 4 pre-existing findings as
+`origin/dev` (lines 149/300/301/1031, untouched); new test file clean. Resolves `issue:a9514c9232ad`.

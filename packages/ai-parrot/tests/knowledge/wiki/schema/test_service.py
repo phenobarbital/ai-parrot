@@ -5,8 +5,11 @@ from pathlib import Path
 import pytest
 
 from parrot.bots.database.models import Completeness, TableMetadata
+from parrot.knowledge.wiki.mcp_server import create_wiki_mcp_server
+from parrot.knowledge.wiki.project import WikiProjectConfig, save_project_config
 from parrot.knowledge.wiki.schema.models import SchemaPlaneConfig, SchemaSourceConfig
 from parrot.knowledge.wiki.schema.service import SchemaPlaneService
+from parrot.knowledge.wiki.store import create_wiki_store
 
 
 class FakeToolkit:
@@ -78,3 +81,95 @@ async def test_read_only_service_refuses_put(tmp_path: Path, sales_metadata: Tab
     readonly = SchemaPlaneService.from_dir(tmp_path / "schema")
     with pytest.raises(PermissionError):
         await readonly.put_table("bigquery", "bigquery", sales_metadata)
+
+
+SALES_ID = "table:bigquery/epson.sales"
+
+
+def _source_config(table: str) -> SchemaPlaneConfig:
+    """Return a one-table bigquery source configuration."""
+    return SchemaPlaneConfig(
+        sources={
+            "bigquery": SchemaSourceConfig(
+                alias="bigquery",
+                dialect="bigquery",
+                dsn_env="TEST_DSN",
+                allowed_schemas=["epson"],
+                tables=[table],
+            )
+        }
+    )
+
+
+def _mounted_project(root: Path) -> WikiProjectConfig:
+    """Create a git-backed wiki project whose MCP server will mount the schema plane."""
+    (root / ".git").mkdir()
+    config = WikiProjectConfig(wiki_name="ac7")
+    save_project_config(root, config)
+    config.storage_path(root).mkdir(parents=True, exist_ok=True)
+    create_wiki_store(config.storage_path(root), wiki_name=config.wiki_name, backend=config.backend)
+    return config
+
+
+async def _remember_about_sales(root: Path) -> tuple[object, str]:
+    """Attach a note to epson.sales through the MCP wiki_remember tool; return the server and memory id."""
+    server = create_wiki_mcp_server(root)
+    remembered = await server.tools["wiki_remember"].tool._execute(
+        fact="sales.store_id is the T-ROC store id", link_page_id=SALES_ID, rel="about"
+    )
+    assert remembered.success, remembered.error
+    related = await server.tools["wiki_related"].tool._execute(page_id=SALES_ID)
+    memory_id = next(row["concept_id"] for row in related.result["neighbors"] if row["rel"] == "about")
+    return server, memory_id
+
+
+async def test_sync_preserves_memory_annotations(tmp_path: Path, sales_metadata: TableMetadata) -> None:
+    """FEAT-600 AC7: a wiki_remember note about a table appears in lookup and survives a schema sync."""
+    config = _mounted_project(tmp_path)
+    writable = SchemaPlaneService.from_dir(
+        config.schema_path(tmp_path), config=_source_config("epson.sales"), read_only=False
+    )
+    await writable.sync("bigquery", dsn_resolver=lambda _: "dsn", toolkit=FakeToolkit(sales_metadata))
+    server, memory_id = await _remember_about_sales(tmp_path)
+    lookup = server.tools["wiki_schema_lookup"].tool
+
+    before = await lookup._execute(ref=SALES_ID)
+    assert [item["concept_id"] for item in before.result["annotations"]] == [memory_id]
+
+    sales_metadata.columns.append({"name": "region", "type": "STRING", "nullable": True})
+    report = await writable.sync("bigquery", dsn_resolver=lambda _: "dsn", toolkit=FakeToolkit(sales_metadata))
+    assert report.updated == [SALES_ID]
+
+    after = await lookup._execute(ref=SALES_ID)
+    assert [item["concept_id"] for item in after.result["annotations"]] == [memory_id]
+    assert "region" in {column["name"] for column in after.result["columns"]}
+
+
+async def test_dropped_table_leaves_memory_note(tmp_path: Path, sales_metadata: TableMetadata) -> None:
+    """Dropping the annotated table leaves a dangling edge, never a deleted note."""
+    config = _mounted_project(tmp_path)
+    plane = config.schema_path(tmp_path)
+    await SchemaPlaneService.from_dir(plane, config=_source_config("epson.sales"), read_only=False).sync(
+        "bigquery", dsn_resolver=lambda _: "dsn", toolkit=FakeToolkit(sales_metadata)
+    )
+    server, memory_id = await _remember_about_sales(tmp_path)
+
+    stores = TableMetadata(
+        schema="epson",
+        tablename="stores",
+        table_type="BASE TABLE",
+        full_name="epson.stores",
+        columns=[{"name": "id", "type": "INT", "nullable": False}],
+        primary_keys=["id"],
+        completeness=Completeness.FULL,
+        source="information_schema",
+    )
+    report = await SchemaPlaneService.from_dir(plane, config=_source_config("epson.stores"), read_only=False).sync(
+        "bigquery", dsn_resolver=lambda _: "dsn", toolkit=FakeToolkit(stores)
+    )
+    assert report.removed == [SALES_ID]
+
+    gone = await server.tools["wiki_schema_lookup"].tool._execute(ref=SALES_ID)
+    assert gone.success is False
+    note = await server.tools["wiki_page"].tool._execute(page_id=memory_id)
+    assert note.success, note.error

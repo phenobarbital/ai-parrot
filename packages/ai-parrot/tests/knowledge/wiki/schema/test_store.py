@@ -73,3 +73,21 @@ async def test_read_only_refuses(plane_dir):
     read_only = SchemaStore(plane_dir / "schema.db", read_only=True)
     with pytest.raises(PermissionError):
         await read_only.upsert_columns([ColumnRecord(table_id="table:o/s.t", ordinal=0, name="x", data_type="int")])
+
+
+async def test_replace_slice_preserves_external_about_edge(store):
+    """An about-edge from outside the slice survives a re-sync of its table and is dropped with it."""
+    source_id = "schema:o"
+    table = WikiPageRecord(concept_id="table:o/public.users", category="table", source_id=source_id)
+    await store.replace_schema_slice("o", [table], [], [])
+    await store.upsert_pages([WikiPageRecord(concept_id="mem-users", category="note", title="users note")])
+    await store.add_edges([("mem-users", table.concept_id, "about")])
+
+    await store.replace_schema_slice("o", [table], [], [])
+    assert [row["concept_id"] for row in await store.neighbors(table.concept_id) if row["rel"] == "about"] == [
+        "mem-users"
+    ]
+
+    await store.replace_schema_slice("o", [], [], [])
+    assert await store.get_page("mem-users") is not None
+    assert await store.neighbors("mem-users") == []

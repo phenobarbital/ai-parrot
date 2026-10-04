@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
 
 from parrot.bots.database.models import Completeness, TableMetadata
+from parrot.knowledge.wiki.context import split_namespaced_id
 from parrot.knowledge.wiki.project import find_shared_root, load_effective_config, sqlite_policy_from_config
 from parrot.knowledge.wiki.schema.ids import (
     normalize_ref,
@@ -28,6 +29,7 @@ from parrot.knowledge.wiki.schema.models import (
 from parrot.knowledge.wiki.schema.producers.live import introspect
 from parrot.knowledge.wiki.schema.render import content_hash, render_page, render_schema_page, render_source_page
 from parrot.knowledge.wiki.schema.store import SchemaStore
+from parrot.knowledge.wiki.store import BaseWikiStore
 
 logger = logging.getLogger(__name__)
 
@@ -253,8 +255,19 @@ class SchemaPlaneService:
             differences.extend(_metadata_differences(table_id, live_metadata, ddl_metadata))
         return differences
 
-    async def lookup(self, ref: str) -> LookupResult | list[str]:
-        """Look up a table using only stored schema-plane records."""
+    async def lookup(self, ref: str, *, annotation_store: Optional[BaseWikiStore] = None) -> LookupResult | list[str]:
+        """Look up a table using only stored schema-plane records.
+
+        Args:
+            ref: Table reference in any form accepted by ``normalize_ref``.
+            annotation_store: Optional (usually federated) wiki store whose ``about`` edges
+                to the table are merged into ``annotations``. ``wiki_remember`` writes its
+                note and edge to the local wiki plane, never to ``schema.db``, so without
+                this the lookup cannot see them.
+
+        Returns:
+            The lookup payload, or the candidate ids when ``ref`` is ambiguous.
+        """
         table_id = normalize_ref(ref, sources=self.config.sources)
         if not isinstance(table_id, str):
             return table_id
@@ -265,6 +278,14 @@ class SchemaPlaneService:
         relations = await self._store.neighbors(table_id)
         annotations = [item for item in relations if item["rel"] == "about"]
         relation_items = [item for item in relations if item["rel"] != "about"]
+        if annotation_store is not None:
+            # A federated store also returns this plane's own rows, qualified as ``schema::…``.
+            seen = {split_namespaced_id(item["concept_id"])[1] for item in annotations}
+            for item in await annotation_store.neighbors(table_id):
+                local_id = split_namespaced_id(item["concept_id"])[1]
+                if item["rel"] == "about" and local_id not in seen:
+                    seen.add(local_id)
+                    annotations.append(item)
         introspected_at = datetime.fromisoformat(str(frontmatter["introspected_at"]).replace("Z", "+00:00"))
         age_days = max(0.0, (datetime.now(timezone.utc) - introspected_at).total_seconds() / 86400)
         completeness = int(frontmatter["completeness"])
