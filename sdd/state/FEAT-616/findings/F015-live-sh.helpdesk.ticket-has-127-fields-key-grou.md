@@ -2,7 +2,7 @@
 id: F015
 query_id: L003
 type: rpc
-intent: live: sh.helpdesk.ticket fields
+intent: "live: sh.helpdesk.ticket fields"
 executed_at: 2026-09-30T23:58:00Z
 duration_ms: 0
 parent_id: None

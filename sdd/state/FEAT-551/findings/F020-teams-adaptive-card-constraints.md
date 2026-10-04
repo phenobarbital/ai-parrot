@@ -2,7 +2,7 @@
 id: F020
 query_id: Q022
 type: web
-intent: External check: Teams Adaptive Card file/image upload support
+intent: "External check: Teams Adaptive Card file/image upload support"
 executed_at: 2026-09-10T22:27:13Z
 duration_ms: 0
 parent_id: null

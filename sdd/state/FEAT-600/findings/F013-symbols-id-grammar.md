@@ -2,7 +2,7 @@
 id: F013
 query_id: Q013
 type: wiki_query
-intent: symbols.py holds the sym: id grammar (SymbolRecord, sym_concept_id, parse_sym_id) — pattern for table ids
+intent: "symbols.py holds the sym: id grammar (SymbolRecord, sym_concept_id, parse_sym_id) — pattern for table ids"
 executed_at: 2026-09-24T20:41:46+00:00
 duration_ms: 0
 parent_id: null
