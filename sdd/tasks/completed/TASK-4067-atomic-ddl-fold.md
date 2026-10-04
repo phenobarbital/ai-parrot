@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-632 — Schema Service Fixes
 **Spec**: `sdd/specs/schema-service-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -57,4 +57,19 @@ ruff check packages/ai-parrot/src/parrot/knowledge/wiki/schema/store.py packages
 
 ## Completion Note
 
-*(filled on close)*
+**Completed**: 2026-10-05 — commit `9b7ca7d5a` (agent:sdd-fix)
+
+- `SchemaStore.fold_ddl_table()` does the live-page check, the `changed_only`
+  hash check and the page/columns/edges write in one `_write("fold_ddl_table")`
+  (`BEGIN IMMEDIATE`) transaction, mirroring `compare_and_swap_page`.
+- `_page_content` / `_page_source` moved from `service.py` to `store.py`
+  (the store cannot import the service); `service.py` imports them.
+- `ingest_ddl` calls `fold_ddl_table` once per record; `SyncReport` semantics unchanged.
+- Small behaviour change: a DDL rewrite now replaces the table's column rows even
+  when the new DDL has zero columns (the old `upsert_columns([])` left stale rows).
+- Tests: `test_ingest_ddl_check_and_write_share_one_transaction` (injects a live
+  write right before the fold transaction; fails on the old code, passes now) and
+  `test_ingest_ddl_created_updated_unchanged`. `tests/knowledge/wiki/schema/`: 55 passed.
+- Resolves ledger `issue:c8423fbace97`. The other two issues in the fix group
+  (`f3bcdfdc1373`, `97acacf5af78`) were already fixed on dev by `f0c1cc7c8` and
+  `bc08b74c3`.
