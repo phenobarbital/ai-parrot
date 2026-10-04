@@ -14,14 +14,15 @@
       "feature_id": "FEAT-628",
       "feature": "producers-ddl-fixes",
       "spec": "sdd/specs/producers-ddl-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "single task",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-4058-schema-plane-fk-dedupe-and-annotations.md"
+      "file": "sdd/tasks/active/TASK-4058-schema-plane-fk-dedupe-and-annotations.md",
+      "started_at": "2026-10-04T23:14:42+00:00"
     }
   ]
 }
