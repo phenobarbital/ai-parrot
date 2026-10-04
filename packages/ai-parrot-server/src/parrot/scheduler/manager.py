@@ -53,6 +53,7 @@ from .sanitize import (
 from ..notifications import NotificationMixin
 from ..conf import ENVIRONMENT
 from .functions import build_scheduler_callback
+from . import jobs
 
 # Suppress APScheduler logging noise.
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
@@ -454,7 +455,6 @@ class AgentSchedulerManager:
         self.scheduler.add_listener(self.job_added, EVENT_JOB_ADDED)
 
     def scheduler_status(self, event):
-        print(event)
         self.logger.debug("[%s - NAV Scheduler] :: Started.", ENVIRONMENT)
         self.logger.notice(f"[{ENVIRONMENT} - NAV Scheduler] START time is: {datetime.now()}")
 
@@ -481,7 +481,8 @@ class AgentSchedulerManager:
         job_id = event.job_id
         self._job_context.pop(str(job_id), None)
         job = self.scheduler.get_job(job_id)
-        job_name = job.name
+        # FEAT-631: one-shot / already-removed jobs are gone by the time this listener runs.
+        job_name = job.name if job is not None else str(job_id)
         scheduled = event.scheduled_run_time
         stack = event.traceback
         if event.code == EVENT_JOB_MISSED:
@@ -583,6 +584,11 @@ class AgentSchedulerManager:
         callbacks = context.get("callbacks", job_kwargs.get("callbacks"))
         persist = context.get("persist", job_kwargs.get("persist", True))
         result = getattr(event, "retval", None)
+
+        if result is jobs.SKIPPED:
+            # FEAT-631: an intentionally skipped fire (row gone/disabled/rescheduled) is not a success.
+            self._job_context.pop(schedule_id, None)
+            return True
 
         if not schedule_id:
             self.logger.debug(
@@ -896,6 +902,10 @@ class AgentSchedulerManager:
 
                 schedule.last_run = datetime.now()
                 schedule.run_count += 1
+                with contextlib.suppress(Exception):
+                    local_job = self.scheduler.get_job(str(schedule_id))
+                    if local_job is not None and local_job.next_run_time:
+                        schedule.next_run = local_job.next_run_time
 
                 if not schedule.metadata:
                     schedule.metadata = {}
@@ -1268,7 +1278,7 @@ class AgentSchedulerManager:
                         schedule_data = AgentSchedule(**record)
                         trigger = self._create_trigger(schedule_data.schedule_type, schedule_data.schedule_config)
 
-                        self.scheduler.add_job(
+                        job = self.scheduler.add_job(
                             self._execute_agent_job,
                             trigger=trigger,
                             id=str(schedule_data.schedule_id),
@@ -1286,6 +1296,17 @@ class AgentSchedulerManager:
                             jobstore=self._safe_jobstore(schedule_data.scheduler_type),
                             replace_existing=True,
                         )
+
+                        if job.next_run_time:
+                            try:
+                                schedule_data.next_run = job.next_run_time
+                                await schedule_data.update()
+                            except Exception as error:
+                                self.logger.warning(
+                                    "Failed to stamp next run for schedule %s: %s",
+                                    schedule_data.schedule_id,
+                                    error,
+                                )
 
                         loaded += 1
 
@@ -1837,20 +1858,10 @@ class AgentSchedulerManager:
             self.logger.error(f"Failed to get database connection pool: {e}")
             self._pool = app["agentdb"]
 
-        # Delegate the transport-free bootstrap steps (jobstore(s),
-        # scheduler start, schedule loading) to start_headless(). `self.
-        # _pool` is already assigned above (owned by aiohttp's PostgresPool
-        # via `conn`) so start_headless()'s own dsn-based pool creation is
-        # skipped, while schedules are still loaded from it. `use_redis=
-        # True` preserves the previous behaviour of always having a Redis
-        # jobstore available under aiohttp. `register_listeners=False`
-        # keeps this strictly behaviour-preserving: `define_listeners()`
-        # was never called anywhere on this path before FEAT-422 (dead
-        # code), so wiring it now would be a silent, undocumented change
-        # to production aiohttp deployments (job_success/job_status
-        # callbacks, notifications, DB updates firing for the first time)
-        # — out of scope for this feature.
-        await self.start_headless(use_redis=True, register_listeners=False)
+        # Delegate the transport-free bootstrap (jobstores, scheduler start, schedule loading) to
+        # start_headless(). FEAT-631: listeners are wired here too, so success stamping, send_result
+        # and callbacks run on the aiohttp path exactly as on the headless/agentd path (issue #1573).
+        await self.start_headless(use_redis=True, register_listeners=True)
 
         self.logger.notice("Agent Scheduler started successfully")
 
