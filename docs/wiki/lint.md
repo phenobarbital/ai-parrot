@@ -1,5 +1,7 @@
 # wikitoolkit lint
 
+*FEAT-625. Spec: `sdd/specs/wikitoolkit-lint.spec.md`.*
+
 `wikitoolkit lint` checks the wiki knowledge graph (any backend), its markdown export,
 agent memories and ADRs. It reports by default; `--fix` applies only safe, idempotent
 fixes and never deletes pages or edges.
@@ -48,7 +50,7 @@ rule set. Its rules are exposed as engine findings with these ids: `okf-orphan` 
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--path` | str | auto-detect | Repo root |
-| `--ns` | str | all | Namespace to lint |
+| `--ns` | str | all | Namespace to read: a name, comma-separated names, `all` (the default when namespaces are configured) or `local` |
 | `--rules` | str | all | Comma-separated rule ids or pack names (plane, export, adr, memory, llm) |
 | `--skip` | str (repeatable) | none | Rule id to skip; repeat the option for several |
 | `--fix` | flag | false | Apply safe, idempotent fixes |
@@ -87,6 +89,28 @@ A default run (no `--fix`, no `--notes`) never modifies pages or edges. It may w
 then coding-agent auto-detection (`PARROT_NO_AUTO_LLM=1` disables). When no model can be resolved or the client cannot be built, an `llm-skipped` info finding says why. At most
 `--llm-max-pairs` (default 50) pairs are judged. A per-call timeout or provider
 failure records an `llm-skipped` info finding. It never fails the deterministic run.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| `0` | No finding is at or above `--fail-on`, or `--fail-on none` was given. |
+| `1` | At least one finding is at or above `--fail-on`. The default threshold is `error`. |
+
+## MCP tool: `wiki_lint`
+
+The MCP server exposes the same engine. The tool runs against the server's
+store, and writes its reports to `<storage>/lint/`.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `rules` | all deterministic | Rule ids or packs to run |
+| `skip` | `[]` | Rule ids to skip |
+| `fix` | `false` | Apply safe, idempotent fixes |
+| `llm` | `false` | Run the LLM contradiction pass |
+
+It returns `counts`, the number of findings `fixed`, the `top` 20 findings and
+`report_dir`.
 
 ## CI
 
