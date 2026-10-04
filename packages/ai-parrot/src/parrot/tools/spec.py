@@ -76,6 +76,29 @@ def agent_tooling_ref(bot: Any) -> str:
     return getattr(bot, "_tooling_ref", None) or bot.name
 
 
+def _canonicalize_spec_slug(spec: ToolkitSpec) -> ToolkitSpec:
+    """Rewrite a class-name alias slug (``"JiraToolkit"``) to its canonical slug (``"jira"``).
+
+    Vault names (``toolkit_{slug}_{agent_ref}``) and tenant tooling policies key off
+    ``spec.slug``, so the alias is normalized where specs are created — resolution,
+    secret hydration and policy prechecks then all see one canonical slug. Unknown
+    slugs pass through untouched; they are reported at registration time.
+    """
+    # Local import: ``resolver`` imports ``discovery``/``toolkit`` which import this module.
+    from parrot.tools.resolver import get_toolkit_resolver  # pylint: disable=import-outside-toplevel
+
+    try:
+        canonical = get_toolkit_resolver().canonical_slug(spec.slug)
+    except Exception:  # resolver build problems must never break config normalization
+        logger.debug("Toolkit resolver unavailable while normalizing slug %r", spec.slug, exc_info=True)
+        return spec
+    if canonical is None or canonical == spec.slug:
+        return spec
+    if canonical.lower() != spec.slug.lower():
+        logger.warning("Toolkit slug %r normalized to canonical slug %r (class-name alias)", spec.slug, canonical)
+    return spec.model_copy(update={"slug": canonical})
+
+
 def normalize_tooling(
     tools: Sequence[Any] | None,
     toolkits: Sequence[Any] | None = None,
@@ -103,6 +126,7 @@ def normalize_tooling(
             logger.warning("Dropping invalid toolkit specification")
             return
 
+        spec = _canonicalize_spec_slug(spec)
         key = spec.slug.lower()
         if key in specs:
             logger.warning("Duplicate toolkit specification for slug %s; using the last entry", spec.slug)
