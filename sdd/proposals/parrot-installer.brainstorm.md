@@ -10,7 +10,7 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 
 **Date**: 2026-10-05
 **Author**: Jesus Lara (proposal) + Claude (codebase re-verification on `dev`)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: B′ (Option B of the proposal, revised against the verified codebase and the owner's Round 1/2 decisions)
 **Related**:
 - `sdd/proposals/parrot-installer.proposal.md` — the source proposal this brainstorm re-grounds (verified against `main @ fb9dd935`; this document re-verifies on `dev`, 2026-10-05).
