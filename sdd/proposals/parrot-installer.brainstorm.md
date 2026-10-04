@@ -39,7 +39,7 @@ Who is affected: anyone adopting the SDD flow or the wikitoolkit outside the mon
 
 Owner-confirmed (Rounds 0–2, 2026-10-05):
 
-- **v1 scope is the full stack**: bootstrap + launcher + `parrot self`, SDD install (absorbing FEAT-583), toolkit install metadata, and the CI wheel matrix.
+- **v1 scope is the full stack**: bootstrap + launcher + `parrot self`, SDD asset install (`parrot sdd install`), toolkit install metadata, and the CI wheel matrix.
 - **Extend `scripts/install/install-parrot.{sh,ps1}`** with the uv/managed-global mode — do not create new root-level `install.sh`/`install.ps1`. FEAT-586's CI wiring (`ci.yml` bash -n / pwsh parse / `--dry-run`) and tests (`tests/docs/test_install_*.py`) must keep passing and grow with the new mode.
 - **All three console scripts** (`parrot`, `wikitoolkit`, `bookstore`) enter through the launcher; re-exec happens **only** when running from the managed venv.
 - **Host config default stays baked absolute paths; `--portable` is opt-in** (emits the bare launcher command). Deviation from the proposal's auto-detection.
@@ -80,7 +80,7 @@ Extend `install-parrot.sh/ps1` with `--global` (uv + `~/.parrot/venv`), and give
 
 ---
 
-### Option B′: Extended bootstrap + managed venv + run-time launcher + absorbed `ai-parrot-sdd` — *recommended*
+### Option B′: Extended bootstrap + managed venv + run-time launcher + SDD asset installer — *recommended*
 
 Four pieces.
 
@@ -364,7 +364,7 @@ def mcp_block(root, toolkit_block="") -> str      # L95-118, marker-delimited [m
 #     (sdd-autopilot shipped but not loadable)
 #   flows/dev_flow/_subagent_data/: sdd-ideation.md
 #   flows/_rules_data/codebase-conventions.md (read by flows/conventions.py:50-51)
-# SDD assets in-repo (to be packaged by the absorbed FEAT-583): 14 .claude/commands/sdd-*.md,
+# SDD assets in-repo (to be packaged as parrot/sdd/_assets/ package data): 14 .claude/commands/sdd-*.md,
 #   9 .claude/agents/sdd-*.md, 3 .claude/hooks/*, 2 .claude/rules/*, 13 sdd/templates/*,
 #   sdd/WORKFLOW.md, ~29 scripts/sdd/*, .codex/agents/sdd-worker.toml, .agents/skills/ (17)
 ```
@@ -403,17 +403,17 @@ def mcp_block(root, toolkit_block="") -> str      # L95-118, marker-delimited [m
 2. **Windows stdio re-exec**: prototype `launcher.reexec`; `wikitoolkit mcp` through it from Claude Code and Codex on Windows — handshake, no stray stdout bytes, child dies with the pipe, exit code propagates. Fail ⇒ Option D for the launcher only.
 3. **Host cwd/env probe**: dummy stdio server logging cwd / `CLAUDE_PROJECT_DIR` / `VIRTUAL_ENV` to stderr from Claude Code, Codex **and Gemini** (project- and user-scoped config; repo root and linked worktree). Decides whether rule 2 can trust cwd or adapters must set `PARROT_PROJECT`. Include the Gemini **user-global** config case explicitly.
 4. **Launcher overhead**: `wikitoolkit claude-hook` with/without launcher in a non-managed venv (must be noise) and through managed→project re-exec (budget: tens of ms).
-5. **SDD portability** (now scoped by FEAT-583): `parrot self add sdd` + `sdd claude install` prototype into an empty non-Python repo using only the managed venv; run `/sdd-brainstorm` → `/sdd-spec`; list every hard-coded assumption (`.venv`, `uv run`, monorepo paths) in commands/agents — feeds the FEAT-583 "scripts hard cut" module.
+5. **SDD portability**: `parrot sdd install` prototype into an empty non-Python repo using only the managed venv; run `/sdd-brainstorm` → `/sdd-spec`; list every hard-coded assumption in the command/agent markdown (`.venv`, `uv run`, monorepo paths, and especially every `scripts/sdd/*.py` / `close_task.sh` invocation) — this decides whether v1 also ships the helper scripts and how commands locate them.
 6. **Auto-migration safety** (new, owner chose auto-migrate): prototype backup + single-writer-locked migration on a copy of a real `.parrot/wiki` store; then open it concurrently from an older runtime and record the failure mode. Decides the Open Question on concurrent-session protection.
 
 ---
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: yes, after spikes 1–3. Lane 0 (Windows `Scripts` branch in the three `assets.py` + bookstore pins — needed under every option) can start immediately. Lane 1 (`launcher.py` + script targets + stdlib worktree extraction) is the contract. Lane 2 (bootstrap `--global` + `self` group + `parrot_home()` consolidation) and Lane 3 (template metadata + toolkits integration) need only the home layout. Lane 4 (`ai-parrot-sdd`, FEAT-583 modules 1–6) is the largest and nearly independent. Lane 5 (wheel matrix) is CI-only, starts immediately.
-- **Cross-feature independence**: touches the three `assets.py`, `claude_code/installer.py`, `pyproject.toml [project.scripts]`, `release.yml` — shared with any in-flight wiki-installer or release work; land the script-target change once. Absorbing FEAT-583 removes the one real cross-feature collision.
-- **Recommended isolation**: `mixed` — Lane 1 worktree first (contract), then per-lane worktrees; Lane 4 very likely its own feature-sized worktree.
-- **Rationale**: the launcher is one small module whose interface (`resolve_venv`, home paths) Lanes 2/3 consume; Lane 4 only consumes "the satellite is installable into the managed venv".
+- **Internal parallelism**: yes, after spikes 1–3. Lane 0 (Windows `Scripts` branch in the three `assets.py` + bookstore pins — needed under every option) can start immediately. Lane 1 (`launcher.py` + script targets + stdlib worktree extraction) is the contract. Lane 2 (bootstrap `--global` + `self` group + `parrot_home()` consolidation) and Lane 3 (template metadata + toolkits integration) need only the home layout. Lane 4 (SDD asset packaging + `parrot sdd install`) is independent of the others. Lane 5 (wheel matrix) is CI-only, starts immediately.
+- **Cross-feature independence**: touches the three `assets.py`, `claude_code/installer.py`, `pyproject.toml [project.scripts]`, `release.yml` — shared with any in-flight wiki-installer or release work; land the script-target change once. FEAT-583 being superseded removes the one real cross-feature collision.
+- **Recommended isolation**: `mixed` — Lane 1 worktree first (contract), then per-lane worktrees.
+- **Rationale**: the launcher is one small module whose interface (`resolve_venv`, home paths) Lanes 2/3 consume; Lane 4 only consumes the package-data precedent and the marker-block installers.
 
 ---
 
@@ -424,7 +424,7 @@ def mcp_block(root, toolkit_block="") -> str      # L95-118, marker-delimited [m
 - [x] Launcher scope — *Owner: Jesus*: all three console scripts; re-exec only from the managed venv (Round 1).
 - [x] Committable host config — *Owner: Jesus*: default stays baked absolute paths; `--portable` opt-in (Round 1 — deviates from the proposal's auto-detection).
 - [x] Bootstrap vehicle — *Owner: Jesus*: extend `scripts/install/install-parrot.{sh,ps1}` (FEAT-586) with the uv/global mode; no new root scripts (Round 2).
-- [x] SDD component — *Owner: Jesus*: absorb FEAT-583 into this feature; its draft spec is superseded/merged at `/sdd-spec` time (Round 2).
+- [x] SDD component — *Owner: Jesus*: markdown asset install only — `parrot sdd install` deploying packaged commands/agents/hooks/rules/templates. FEAT-583's satellite-package/`sdd`-binary design is REJECTED (revised 2026-10-05, overriding the earlier Round 2 "absorb" answer); its spec gets stamped superseded.
 - [x] Host parity — *Owner: Jesus*: Claude + Codex + Google/Gemini, full (Windows, `--portable`, bookstore pins) (Round 2).
 - [x] Version-skew policy — *Owner: Jesus*: auto-migrate (Round 2 — supersedes the proposal's "never migrate silently"; backup + lock mandatory).
 - [ ] Auto-migration vs concurrent older-runtime sessions: lock-and-wait, fail the older side with a message, or store-side min-runtime gate? (spike 6 informs) — *Owner: Jesus*
@@ -432,5 +432,6 @@ def mcp_block(root, toolkit_block="") -> str      # L95-118, marker-delimited [m
 - [ ] Worktree fallback: keep "worktree `.venv` → main checkout `.venv`", or always prefer the main checkout for wiki-server version stability? (recommendation: keep, `self env` makes it visible) — *Owner: Jesus*
 - [ ] Managed Python: pin 3.12 or newest-with-full-wheel-set? (recommendation: 3.12 — only version with Windows wheels today) — *Owner: Jesus*
 - [ ] `--global` flag naming and PATH strategy on Windows (user PATH registry edit vs shim dir instructions)? — *Owner: Jesus*
-- [ ] FEAT-583 spec disposition mechanics: rewrite `portable-sdd-flow.spec.md` as this feature's SDD module, or stamp it superseded and carry its Codebase Contract into the new spec? — *Owner: Jesus*
+- [ ] `scripts/sdd/*.py` helpers: do they ship as package data too (the commands invoke `python -m scripts.sdd.ensure_worktree`, `reserve_ids`, `close_task.sh`, …), and how do installed commands locate them outside the monorepo? (spike 5 enumerates; recommendation: decide at spec time from the spike inventory) — *Owner: Jesus*
+- [ ] SDD asset source of truth in the monorepo: package data authoritative with `.claude/` synced at build time, or `.claude/` authoritative copied into the package (FEAT-553 `_rules_data` precedent)? — *Owner: Jesus*
 - [ ] Clean-machine distribution of the extended script: raw GitHub URL, `landing/` site, or release asset + checksum? (recommendation: raw GitHub + checksum) — *Owner: Jesus*
