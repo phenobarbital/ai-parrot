@@ -2,7 +2,7 @@
 id: F012
 query_id: L001
 type: rpc
-intent: live: server version, transport, database resolution
+intent: "live: server version, transport, database resolution"
 executed_at: 2026-09-30T23:58:00Z
 duration_ms: 0
 parent_id: None

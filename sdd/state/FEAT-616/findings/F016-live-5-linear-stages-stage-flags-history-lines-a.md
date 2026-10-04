@@ -2,7 +2,7 @@
 id: F016
 query_id: L005
 type: rpc
-intent: live: stages semantics, stage history, server actions, crons
+intent: "live: stages semantics, stage history, server actions, crons"
 executed_at: 2026-09-30T23:58:00Z
 duration_ms: 0
 parent_id: None

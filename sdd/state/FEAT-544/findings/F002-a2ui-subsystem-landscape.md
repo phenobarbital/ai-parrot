@@ -2,7 +2,7 @@
 id: F002
 query_id: Q002
 type: wiki_query
-intent: Orient: A2UI catalog, models, builders, parrot extensions
+intent: "Orient: A2UI catalog, models, builders, parrot extensions"
 executed_at: 2026-09-10T00:39:55Z
 duration_ms: null
 parent_id: null

@@ -2,7 +2,7 @@
 id: F002
 query_id: Q004
 type: read
-intent: Current /sdd-task command: guardrails on code, per-task Codebase Contract
+intent: "Current /sdd-task command: guardrails on code, per-task Codebase Contract"
 executed_at: 2026-09-10T01:00:00Z
 duration_ms: 700
 parent_id: null

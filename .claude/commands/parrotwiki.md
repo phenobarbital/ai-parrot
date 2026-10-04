@@ -1,6 +1,6 @@
 ---
 description: Query or maintain the repository LLM-wiki knowledge graph (wikitoolkit)
-argument-hint: [query <question> | page <id> | related <id> | remember <fact> | note <id> <text> | link <a> <b> | memories | audit | standup | entity | status | build | --wiki [dir]]
+argument-hint: "[query <question> | page <id> | related <id> | remember <fact> | note <id> <text> | link <a> <b> | memories | audit | standup | entity | status | build | --wiki [dir]]"
 allowed-tools: Bash(wikitoolkit:*)
 ---
 

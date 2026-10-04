@@ -2,7 +2,7 @@
 id: F012
 query_id: Q014
 type: read
-intent: sdd-planner: the unattended dev-loop caller of /sdd-spec
+intent: "sdd-planner: the unattended dev-loop caller of /sdd-spec"
 executed_at: 2026-09-10T01:00:00Z
 duration_ms: 500
 parent_id: null
