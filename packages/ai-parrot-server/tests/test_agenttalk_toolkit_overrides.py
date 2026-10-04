@@ -133,3 +133,22 @@ async def test_no_overrides_returns_existing_manager_unchanged(agent, talk, monk
 
     assert tool_manager is existing
     service.revision.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_secret_refs_do_not_rebind_the_tooling_ref(agent, talk, monkeypatch):
+    """The session ToolManager key stays ``<tooling ref>_tool_manager`` when an override carries secret refs."""
+    override = UserToolkitOverride(
+        user_id="7", agent_id="a1", slug="kit", params={}, secret_refs={"prefix": "vault-name"}
+    )
+    monkeypatch.setattr(agent_module, "ToolkitConfigService", lambda: _service([override]))
+    monkeypatch.setattr(
+        agent_module, "retrieve_vault_credential", AsyncMock(return_value={"prefix": "secret"})
+    )
+    session = _Session()
+
+    tool_manager = await talk._apply_user_toolkit_overrides(agent, session, None)
+
+    assert session["a1_tool_manager"] is tool_manager
+    assert "vault-name_tool_manager" not in session
+    assert _kit_owner(tool_manager).prefix == "secret"

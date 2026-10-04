@@ -1576,6 +1576,56 @@ class ToolManager(MCPToolManagerMixin):
         """The installed invocation observer, or ``None``."""
         return self._invocation_observer
 
+    async def _confirm_call(
+        self,
+        tool: Any,
+        tool_name: str,
+        tool_kind: str,
+        parameters: Dict[str, Any],
+        permission_context: Any,
+    ) -> tuple[Optional[ToolResult], Dict[str, Any], bool]:
+        """Run the optional ConfirmationGuard (FEAT-235) for one ``AbstractTool`` dispatch.
+
+        Honors the ``@tool(requires_confirmation=True)`` API (FEAT-474 G2). Purely additive: without a
+        configured guard nothing changes and the call is not approved.
+
+        Returns:
+            ``(refusal, parameters, approved)`` — ``refusal`` is a ``ToolResult`` when the human declined
+            (the dispatch must stop), ``parameters`` may have been edited by the human, and ``approved`` is
+            True only when a guard decided ``confirmed`` (FEAT-622 M8: that binds the approval token).
+        """
+        if self._confirmation_guard is None:
+            return None, parameters, False
+        decision = await self._confirmation_guard.confirm(
+            tool=tool, parameters=parameters, permission_context=permission_context
+        )
+        if not decision.allowed:
+            self._log_enforcement(tool_name, tool_kind, "confirmation", "deny", permission_context, decision.reason)
+            refusal = ToolResult(
+                success=False,
+                status=decision.status,  # "cancelled" | "timeout"
+                error=f"Confirmation {decision.status}: {decision.reason}",
+                result=None,
+            )
+            return refusal, parameters, False
+        self._log_enforcement(tool_name, tool_kind, "confirmation", "allow", permission_context, decision.reason)
+        if decision.parameters is not None:
+            # Use the (possibly edited and re-validated) parameters
+            parameters = decision.parameters
+        return None, parameters, decision.status == "confirmed"
+
+    @staticmethod
+    async def _call_tool_execute(
+        tool: Any, exec_kwargs: Dict[str, Any], parameters: Dict[str, Any], approved: bool
+    ) -> Any:
+        """``tool.execute(**exec_kwargs)``, under the approval token only when a guard confirmed the call."""
+        if not approved:
+            return await tool.execute(**exec_kwargs)
+        from ..auth.confirmation import _approved_call  # pylint: disable=import-outside-toplevel
+
+        with _approved_call(tool, parameters):
+            return await tool.execute(**exec_kwargs)
+
     async def _observed(
         self,
         observation: Optional["_Observation"],
@@ -2004,43 +2054,12 @@ class ToolManager(MCPToolManagerMixin):
                         )
                 # === End grant guard ===
 
-                # === Confirmation guard check (FEAT-235) ===
-                # If a ConfirmationGuard is configured and the tool requires
-                # confirmation, ask the human before dispatching to tool.execute().
-                # Dispatch order is locked: grant → confirm.
-                # This is purely additive: without a guard the path is unchanged.
-                if self._confirmation_guard is not None:
-                    confirm_decision = await self._confirmation_guard.confirm(
-                        tool=tool,
-                        parameters=parameters,
-                        permission_context=permission_context,
-                    )
-                    if not confirm_decision.allowed:
-                        self._log_enforcement(
-                            tool_name,
-                            tool_kind,
-                            "confirmation",
-                            "deny",
-                            permission_context,
-                            confirm_decision.reason,
-                        )
-                        return ToolResult(
-                            success=False,
-                            status=confirm_decision.status,  # "cancelled" | "timeout"
-                            error=f"Confirmation {confirm_decision.status}: {confirm_decision.reason}",
-                            result=None,
-                        )
-                    self._log_enforcement(
-                        tool_name,
-                        tool_kind,
-                        "confirmation",
-                        "allow",
-                        permission_context,
-                        confirm_decision.reason,
-                    )
-                    if confirm_decision.parameters is not None:
-                        # Use the (possibly edited and re-validated) parameters
-                        parameters = confirm_decision.parameters
+                # === Confirmation guard check (FEAT-235) — see _confirm_call ===
+                refusal, parameters, approved = await self._confirm_call(
+                    tool, tool_name, tool_kind, parameters, permission_context
+                )
+                if refusal is not None:
+                    return refusal
                 # === End confirmation guard ===
 
                 # Propagate permission context and resolver to tool.execute()
@@ -2058,7 +2077,9 @@ class ToolManager(MCPToolManagerMixin):
                         exec_kwargs.setdefault("_cred_channel", getattr(permission_context, "channel", "unknown"))
                         exec_kwargs.setdefault("_cred_user_id", getattr(permission_context, "user_id", None))
 
-                result = await self._observed(observation, tool_name, lambda: tool.execute(**exec_kwargs))
+                result = await self._observed(
+                    observation, tool_name, lambda: self._call_tool_execute(tool, exec_kwargs, parameters, approved)
+                )
 
                 if return_tool_result:
                     # Opt-in complete-result mode (TASK-2937): use the same

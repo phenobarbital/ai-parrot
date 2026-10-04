@@ -169,9 +169,9 @@ def _named_secret_paths(value: Any, prefix: str = "") -> list[str]:
 
 def _toolkit_secret_paths(spec: ToolkitSpec) -> list[str]:
     """Inspect the same toolkit classes and x-secret schemas used by the Tools tab, without constructing them."""
-    from ..tooling_store import _EXPLICIT, _resolve_toolkit_class
+    from ..toolkits import _resolve_toolkit_class
 
-    cls = _EXPLICIT.get(spec.slug) or _resolve_toolkit_class(spec.slug)
+    cls = _resolve_toolkit_class(spec.slug)  # the shared ToolkitResolver (built-ins included)
     if cls is None:
         return []  # Optional/unavailable toolkits still get recursive name checks.
     schema = build_schema_envelope(spec.slug, cls).schema_
@@ -231,6 +231,27 @@ class StudioWriteGuard:
 
     authorized_version: int | None = None
     expected_version: int | None = None
+    # Identity of the authorized row (agent_id / draft_id): a delete + re-create lands on a fresh id even when
+    # its version equals the authorized one (a re-created row starts at version 1), which versions alone miss.
+    authorized_id: Any = None
+
+    @classmethod
+    def for_record(cls, record: Any, *, expected_version: int | None = None) -> "StudioWriteGuard":
+        """The guard authorizing exactly ``record`` (an agent or draft record); no guard fields when ``None``."""
+        if record is None:
+            return cls(expected_version=expected_version)
+        ident = getattr(record, "agent_id", None) or getattr(record, "draft_id", None)
+        return cls(authorized_version=record.version, expected_version=expected_version, authorized_id=ident)
+
+    def check(self, head: "StudioAgentHead", name: str) -> "StudioAgentHead":
+        """Under the row lock: VersionConflict, then StaleAuthorization (version, then identity). Returns ``head``."""
+        if self.expected_version is not None and self.expected_version != head.version:
+            raise StudioVersionConflict(f"{name}: expected {self.expected_version}, found {head.version}")
+        if self.authorized_version is not None and self.authorized_version != head.version:
+            raise StudioStaleAuthorization(f"{name}: authorized {self.authorized_version}, found {head.version}")
+        if self.authorized_id is not None and self.authorized_id != head.agent_id:
+            raise StudioStaleAuthorization(f"{name}: the authorized record was replaced")
+        return head
 
 
 @dataclass(frozen=True, slots=True)

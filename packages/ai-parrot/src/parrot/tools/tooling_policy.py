@@ -124,7 +124,7 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         entry = get_toolkit_resolver().entry(slug)
         if entry is None:
             raise TenantToolingRefused("toolkit_unavailable", item=slug)
-        if entry.source == "host":
+        if entry.is_host:
             if not self.host_toolkits:
                 raise TenantToolingRefused("toolkit_unavailable", item=slug)
             return

@@ -92,6 +92,8 @@ parrot-studio-migrate = "parrot.handlers.studio.storage.migrate:main"
 # (navigator-vault CLI). See navigator_session/vault/registry.py.
 [project.entry-points."navigator_session.vault_targets"]
 parrot_users_bots = "parrot.handlers.models.vault_target:factory"
+parrot_studio_user_credentials = "parrot.handlers.studio.storage.vault_targets:user_credentials_factory"
+parrot_studio_user_llm_keys = "parrot.handlers.studio.storage.vault_targets:user_llm_keys_factory"
 
 [project.urls]
 Homepage = "https://github.com/phenobarbital/ai-parrot"

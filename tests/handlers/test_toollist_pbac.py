@@ -3,6 +3,18 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
+def _fake_resolver(mapping, host=None):
+    """Fake ToolkitResolver exposing ``mapping`` (slug -> dotted path) plus optional host (walk/host) entries."""
+    from parrot.tools.resolver import ToolkitEntry
+
+    resolver = MagicMock()
+    entries = [ToolkitEntry(slug=k, dotted_path=v, source="parrot_tools") for k, v in mapping.items()]
+    entries += [ToolkitEntry(slug=k, dotted_path=v, source=src) for k, (v, src) in (host or {}).items()]
+    resolver.entries.return_value = entries
+    resolver.resolve.return_value = None
+    return resolver
+
+
 class TestToolListPBAC:
     """Tests for ToolList.get() PBAC filtering."""
 
@@ -52,7 +64,7 @@ class TestToolListPBAC:
         mock_tools = {"tool_a": "path.a", "tool_b": "path.b"}
 
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', False), \
-             patch('parrot.handlers.bots.discover_all', return_value=mock_tools):
+             patch('parrot.handlers.bots.get_toolkit_resolver', return_value=_fake_resolver(mock_tools)):
             await handler.get()
 
         handler.json_response.assert_called_once()
@@ -70,7 +82,7 @@ class TestToolListPBAC:
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
              patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(TOOL='TOOL')), \
-             patch('parrot.handlers.bots.discover_all', return_value=mock_tools):
+             patch('parrot.handlers.bots.get_toolkit_resolver', return_value=_fake_resolver(mock_tools)):
             await handler.get()
 
         handler.json_response.assert_called_once()
@@ -85,7 +97,7 @@ class TestToolListPBAC:
         handler = self._make_handler(has_pdp=True)
 
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
-             patch('parrot.handlers.bots.discover_all', return_value={}):
+             patch('parrot.handlers.bots.get_toolkit_resolver', return_value=_fake_resolver({})):
             await handler.get()
 
         handler.json_response.assert_called_once()
@@ -105,7 +117,7 @@ class TestToolListPBAC:
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
              patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(TOOL='TOOL')), \
-             patch('parrot.handlers.bots.discover_all', return_value=mock_tools):
+             patch('parrot.handlers.bots.get_toolkit_resolver', return_value=_fake_resolver(mock_tools)):
             # Should NOT raise — fail-open on evaluator errors
             await handler.get()
 
@@ -128,9 +140,49 @@ class TestToolListPBAC:
         with patch('parrot.handlers.bots._PBAC_AVAILABLE', True), \
              patch('parrot.handlers.bots._core_build_eval_context', AsyncMock(return_value=MagicMock())), \
              patch('parrot.handlers.bots._ResourceType', MagicMock(TOOL='TOOL')), \
-             patch('parrot.handlers.bots.discover_all', return_value=mock_tools):
+             patch('parrot.handlers.bots.get_toolkit_resolver', return_value=_fake_resolver(mock_tools)):
             await handler.get()
 
         handler.json_response.assert_called_once()
         result = handler.json_response.call_args[0][0]
         assert result["tools"] == {}, "deny-all must return empty dict, not all tools"
+
+
+class TestToolListHostEntries:
+    """Pins ``ToolList.get`` behaviour on dev (F7): host/walk entries are never listed, built-ins are."""
+
+    @pytest.mark.asyncio
+    async def test_host_and_walk_entries_are_not_listed(self):
+        handler = TestToolListPBAC()._make_handler(has_pdp=False)
+        resolver = _fake_resolver(
+            {"tool_a": "path.a"},
+            host={"acme_declared": ("plugins.tools.a.A", "host"), "acme_walked": (None, "walk")},
+        )
+        with patch('parrot.handlers.bots._PBAC_AVAILABLE', False), \
+             patch('parrot.handlers.bots.get_toolkit_resolver', return_value=resolver):
+            await handler.get()
+
+        tools = handler.json_response.call_args[0][0]["tools"]
+        assert set(tools) == {"tool_a"}
+        assert tools["tool_a"] == {"tool_name": "tool_a", "module_path": "path.a"}
+
+    @pytest.mark.asyncio
+    async def test_builtin_entries_are_listed_from_their_class(self):
+        from parrot.tools.resolver import ToolkitEntry
+
+        class Fake:
+            name = "wiki_tool"
+            __doc__ = "A wiki."
+
+        handler = TestToolListPBAC()._make_handler(has_pdp=False)
+        resolver = MagicMock()
+        resolver.entries.return_value = [ToolkitEntry(slug="wiki", dotted_path=None, source="builtin")]
+        resolver.resolve.return_value = Fake
+        with patch('parrot.handlers.bots._PBAC_AVAILABLE', False), \
+             patch('parrot.handlers.bots.get_toolkit_resolver', return_value=resolver):
+            await handler.get()
+
+        tools = handler.json_response.call_args[0][0]["tools"]
+        assert tools["wiki"]["tool_name"] == "wiki_tool"
+        assert tools["wiki"]["module_path"].endswith("Fake")
+        assert tools["wiki"]["description"] == "A wiki."

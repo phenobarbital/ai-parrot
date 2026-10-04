@@ -29,6 +29,11 @@ class ToolkitEntry(BaseModel, frozen=True):
     dotted_path: str | None  # None for built-in explicit entries (and walked classes)
     source: Literal["builtin", "parrot_tools", "host", "walk"]
 
+    @property
+    def is_host(self) -> bool:
+        """Host code: a declared ``plugins.tools`` entry or one found by the deprecated walk fallback."""
+        return self.source in ("host", "walk")
+
 
 def _builtin_classes() -> dict[str, type]:
     """Lazily import the built-in explicit toolkit classes."""
@@ -43,8 +48,10 @@ class ToolkitResolver:
     """Process-wide, lazily built, read-only resolver (spec §2 "Resolution rules")."""
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        # Re-entrant: building imports host modules, which may instantiate tools that ask this resolver again.
+        self._lock = threading.RLock()
         self._entries: dict[str, ToolkitEntry] | None = None  # key: slug.lower()
+        self._building: dict[str, ToolkitEntry] | None = None  # entries gathered so far by the building thread
         self._classes: dict[str, type] = {}  # key: slug.lower(); walked / explicit classes
 
     def entries(self) -> list[ToolkitEntry]:
@@ -52,11 +59,18 @@ class ToolkitResolver:
         return sorted(self._ensure().values(), key=lambda item: item.slug)
 
     def entry(self, slug: str) -> ToolkitEntry | None:
-        """Case-insensitive entry lookup; returns rule-5-unavailable entries too."""
+        """Case-insensitive entry lookup; returns entries whose class cannot be imported too."""
         return self._ensure().get(slug.lower())
 
+    def is_host_class(self, cls: type) -> bool:
+        """True iff ``cls`` is the class of a host entry (declared ``host`` or walked), never stamped on the class."""
+        for entry in self.entries():
+            if entry.is_host and self.resolve(entry.slug) is cls:
+                return True
+        return False
+
     def resolve(self, slug: str) -> type | None:
-        """Case-insensitive slug → class; ``None`` when unknown, unimportable or unavailable (rule 5)."""
+        """Case-insensitive slug → class; ``None`` when unknown or unimportable."""
         found = self.entry(slug)
         if found is None:
             return None
@@ -67,26 +81,45 @@ class ToolkitResolver:
             cls = resolve_class(found.dotted_path)
         except (ImportError, AttributeError, ValueError):
             return None
-        if found.source == "host" and getattr(cls, "tenant_bound", False):
-            return None  # rule 5: lifted by FEAT-622 M3b
         return cls
+
+    def registry_paths(self) -> dict[str, str]:
+        """Slug → dotted path of every non-host entry (built-ins from their class) (host paths are never listed)."""
+        paths: dict[str, str] = {}
+        for entry in self.entries():
+            if entry.is_host:
+                continue
+            cls = self._classes.get(entry.slug.lower())
+            dotted = entry.dotted_path or (f"{cls.__module__}.{cls.__qualname__}" if cls else None)
+            if dotted:
+                paths[entry.slug] = dotted
+        return paths
 
     def reload(self) -> None:
         """Drop the cache (tests / hot reload only)."""
         with self._lock:
             self._entries = None
+            self._building = None
             self._classes = {}
 
     def _ensure(self) -> dict[str, ToolkitEntry]:
         if self._entries is None:
             with self._lock:
                 if self._entries is None:
-                    self._entries = self._build()
+                    if self._building is not None:
+                        # Re-entrant call from a host module being imported by _build (same thread): answer from
+                        # what is known so far instead of deadlocking; execution re-checks against the full set.
+                        return self._building
+                    try:
+                        self._entries = self._build()
+                    finally:
+                        self._building = None
         return self._entries
 
     def _build(self) -> dict[str, ToolkitEntry]:
         """Apply rules 1–4 once."""
         entries: dict[str, ToolkitEntry] = {}
+        self._building = entries
         for slug, cls in _builtin_classes().items():
             entries[slug.lower()] = ToolkitEntry(slug=slug, dotted_path=None, source="builtin")
             self._classes[slug.lower()] = cls

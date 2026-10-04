@@ -19,7 +19,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "latest"
 
@@ -122,7 +122,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "latest"
 
@@ -177,7 +177,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "latest"
 
@@ -224,7 +224,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "latest"
 
@@ -272,6 +272,11 @@ jobs:
 
       - name: Run wiki tests with both extras installed
         run: uv run pytest tests/knowledge/wiki/ -q --tb=short --continue-on-collection-errors
+
+      - name: Lint a fixture wiki plane (FEAT-625)
+        run: |
+          uv run wikitoolkit build --path tests/knowledge/lint/fixtures/repo --no-git --quiet
+          uv run wikitoolkit lint --path tests/knowledge/lint/fixtures/repo --fail-on error --no-ledger --no-notes
 
       # FEAT-532: the broad sweep above uses `--continue-on-collection-errors`
       # and pytest's default summary doesn't fail the job on skips — so
@@ -331,7 +336,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "latest"
 
@@ -378,7 +383,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "latest"
 
@@ -426,7 +431,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "latest"
 
@@ -467,7 +472,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "latest"
 
@@ -515,7 +520,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "latest"
 

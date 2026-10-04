@@ -6,6 +6,8 @@ from navigator_session.data import SessionData
 from parrot.handlers.scope import RequestScope
 from parrot.handlers.studio import setup_studio_routes
 
+from .test_agents_db_mode import _offline, pool  # noqa: F401  (fixtures: the tenant partition needs a database)
+
 PREFIX = "/api/v1/{tenant}/astudio"
 BASE = "/api/v1/acme/astudio"
 
@@ -62,16 +64,20 @@ async def test_execute_plain_host_unchanged(aiohttp_client):
     assert resp.status == 404 and (await resp.json())["code"] == "not_found"
 
 
-async def test_resync_may_administer_alone_403(aiohttp_client):
-    client = await aiohttp_client(_app(_scope(may_administer=True, is_superuser=False)))
+async def test_resync_may_administer_alone_403(aiohttp_client, pool):
+    app = _app(_scope(may_administer=True, is_superuser=False))
+    app["database"] = pool
+    client = await aiohttp_client(app)
     resp = await client.post(f"{BASE}/skills/resync")
     assert resp.status == 403
     assert (await resp.json())["code"] == "admin_required"
 
 
-async def test_resync_scope_superuser_allowed(aiohttp_client):
-    client = await aiohttp_client(_app(_scope(is_superuser=True)))
+async def test_resync_scope_superuser_allowed(aiohttp_client, pool):
+    app = _app(_scope(is_superuser=True))
+    app["database"] = pool
+    client = await aiohttp_client(app)
     resp = await client.post(f"{BASE}/skills/resync")
-    # No database on the app: the 503 branch proves the superuser gate passed.
-    assert resp.status == 503
-    assert (await resp.json())["code"] == "unavailable"
+    # Database mode (a tenant partition needs it): an empty catalogue resyncs nothing, so the gate passed.
+    assert resp.status == 200
+    assert await resp.json() == {"resynced": 0, "failed": 0, "total": 0}

@@ -46,6 +46,7 @@ wikitoolkit status                   # estadísticas, namespaces, staleness
 wikitoolkit status --json
 
 wikitoolkit upsert path/a/archivo.py path/b/otro.py   # re-ingesta puntual
+wikitoolkit inbox                                  # ingesta inbox/, verifica y archiva originales
 wikitoolkit upsert --changed --quiet                    # lo que tocó el último commit (git hook)
 ```
 
@@ -483,6 +484,24 @@ wikitoolkit adr review <decision_id> --action accept --expected-revision 1 --act
 wikitoolkit adr review <decision_id> --action link --documented-id <adr_id> --expected-revision 2 --actor human:jlara
 wikitoolkit adr export <decision_id>
 ```
+
+---
+
+## 11.1. Standup briefs y entidades
+
+```bash
+wikitoolkit standup                              # daily brief en inglés
+wikitoolkit standup --period week --language es  # weekly brief en español
+wikitoolkit standup --no-llm                     # sin resumen LLM
+wikitoolkit standup --out ./standups             # escribir a archivo
+wikitoolkit standup --team                       # incluir todo el equipo
+wikitoolkit standup --no-store --no-file --json  # solo salida JSON (read-only MCP)
+wikitoolkit entity add <type> <title>            # crear entidad tipada
+wikitoolkit entity list                          # listar entidades
+wikitoolkit entity reindex --store <path>        # reindexar plano foráneo
+```
+
+Consulta el [runbook de standup](../runbooks/wiki-standup.md) para ejemplos de cron y back-fill.
 
 ---
 

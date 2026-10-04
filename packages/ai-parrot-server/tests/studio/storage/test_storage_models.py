@@ -127,7 +127,7 @@ def test_bundle_rejects_nested_secret_names() -> None:
 
 
 def test_bundle_uses_toolkit_secret_schema(monkeypatch: pytest.MonkeyPatch) -> None:
-    from parrot.handlers.studio import tooling_store
+    from parrot.handlers.studio import toolkits
 
     class Connection(BaseModel):
         value: str = Field(json_schema_extra={"x-secret": True})
@@ -142,7 +142,11 @@ def test_bundle_uses_toolkit_secret_schema(monkeypatch: pytest.MonkeyPatch) -> N
         def __init__(self) -> None:
             raise AssertionError("Bundle validation must not instantiate toolkits")
 
-    monkeypatch.setitem(tooling_store._EXPLICIT, "review_schema", Toolkit)
+    class _Resolver:
+        def resolve(self, slug: str):
+            return Toolkit if slug == "review_schema" else None
+
+    monkeypatch.setattr(toolkits, "get_toolkit_resolver", lambda: _Resolver())
     with pytest.raises(ValidationError, match="connections.0.value"):
         _bundle(toolkits=[ToolkitSpec(slug="review_schema", params={"connections": [{"value": "canary"}]})])
     assert _bundle(toolkits=[ToolkitSpec(slug="review_schema", params={"label": "public"})]).toolkits

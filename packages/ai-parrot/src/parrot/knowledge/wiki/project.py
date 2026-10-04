@@ -22,6 +22,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -280,6 +281,64 @@ class WikiNamespaceConfig(BaseModel):
         return str(getattr(self, self.kind))
 
 
+class InboxConfig(BaseModel):
+    """Repository-contained inbox, archive and projection settings (FEAT-626)."""
+
+    dir: str = Field(default="inbox", description="Inbox directory, absolute or relative to the project root.")
+    archive_dir: str = Field(
+        default=f"{PARROT_DIR}/archive", description="Archive directory, absolute or relative to the project root."
+    )
+    rejected_subdir: str = Field(default="rejected", description="Single-segment rejected folder under the archive.")
+    markdown_dir: str | None = Field(
+        default=None, description="Markdown projection directory; defaults to <storage_dir>/inbox."
+    )
+    date_format: str = Field(default="%Y-%m-%d", description="strftime format for dated archive folders.")
+    stage_git: bool = Field(default=True, description="Stage archived and projected files in git.")
+    max_candidates: int = Field(default=20, ge=1, le=100, description="Maximum candidates per run.")
+    lock_timeout: float = Field(default=30.0, ge=0.0, description="Seconds to wait for the inbox lock.")
+
+    @model_validator(mode="after")
+    def _validate_layout(self) -> "InboxConfig":
+        """Reject empty paths and unsafe rejected subdirectory names."""
+        if not self.dir.strip():
+            raise ValueError("inbox.dir must not be empty")
+        if not self.archive_dir.strip():
+            raise ValueError("inbox.archive_dir must not be empty")
+        rejected = self.rejected_subdir
+        if not rejected.strip() or "/" in rejected or "\\" in rejected or ".." in rejected:
+            raise ValueError("inbox.rejected_subdir must be a single path segment without separators or '..'")
+        return self
+
+
+def validate_inbox_paths(root: Path, inbox: Path, archive: Path, markdown: Path) -> None:
+    """Validate that inbox, archive and markdown paths are safe and disjoint.
+
+    Pure path arithmetic (symlinks are resolved, nothing is created).
+
+    Args:
+        root: Repository root.
+        inbox: Resolved inbox directory.
+        archive: Resolved archive directory.
+        markdown: Resolved markdown projection directory.
+
+    Raises:
+        WikiConfigError: When a path escapes ``root`` or two paths are equal or nested.
+    """
+    resolved_root = root.resolve()
+    named = {"inbox": inbox.resolve(), "archive": archive.resolve(), "markdown": markdown.resolve()}
+    for name, path in named.items():
+        if path != resolved_root and not path.is_relative_to(resolved_root):
+            raise WikiConfigError(f"inbox config: {name} path {path} escapes the repository root {resolved_root}")
+        if path == resolved_root:
+            raise WikiConfigError(f"inbox config: {name} path must not be the repository root")
+    names = list(named)
+    for i, first in enumerate(names):
+        for second in names[i + 1 :]:
+            a, b = named[first], named[second]
+            if a == b or a.is_relative_to(b) or b.is_relative_to(a):
+                raise WikiConfigError(f"inbox config: {first} ({a}) and {second} ({b}) must not be equal or nested")
+
+
 class ObsidianSyncConfig(BaseModel):
     """Settings for ``wikitoolkit sync obsidian`` (wiki plane -> vault mirror).
 
@@ -379,6 +438,96 @@ class GlobalWikiRegistry(BaseModel):
         return value
 
 
+DEFAULT_TICKET_STATUS_MAP: dict[str, str] = {
+    "To Do": "open",
+    "Open": "open",
+    "Backlog": "open",
+    "In Progress": "in-progress",
+    "Blocked": "blocked",
+    "In Review": "in-review",
+    "Code Review": "in-review",
+    "Done": "closed",
+    "Closed": "closed",
+    "Resolved": "closed",
+}
+
+# Canonical ticket statuses (mirror of ``entities.STATUS_BY_TYPE["ticket"]``). Duplicated here on purpose so this
+# module never imports the entities/standup packages on the startup/hook fast path.
+_CANONICAL_TICKET_STATUSES: frozenset[str] = frozenset({"open", "in-progress", "blocked", "in-review", "closed"})
+
+
+class StandupIdentityConfig(BaseModel):
+    """Explicit non-secret wiki/Jira identity and task-assignment aliases.
+
+    Attributes:
+        wiki: Wiki identity (``human:<user>``); resolved automatically when omitted.
+        jira_account_id: Jira account id used for personal ticket filtering.
+        jira_display_name: Jira display name, used as a fallback match only.
+        aliases: Extra ``assigned_to`` values treated as "me" in the task index.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    wiki: str | None = None
+    jira_account_id: str | None = None
+    jira_display_name: str | None = None
+    aliases: list[str] = Field(default_factory=list)
+
+
+class StandupConfig(BaseModel):
+    """Daily and period brief settings, safe to import on the hook fast path.
+
+    Attributes:
+        default_language: Brief language (``en`` or ``es``).
+        horizon_days: Look-ahead/look-back window in days (1-90).
+        timezone: IANA timezone name; ``None`` means system local.
+        week_start: First day of the week for period briefs.
+        out_dir: Output directory for brief files; ``None`` uses the default.
+        me: Personal identity used to filter briefs.
+        ticket_status_map: Raw Jira status name to canonical ticket status.
+        project_map: Jira key / SDD slug to project page id or label.
+        stale_ticket_days: Days after which an untouched ticket is stale.
+        stale_decision_days: Days after which a proposed decision is stale.
+        llm_env: Environment variable naming the lightweight summarisation model.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    default_language: Literal["en", "es"] = "en"
+    horizon_days: int = Field(default=7, ge=1, le=90)
+    timezone: str | None = None
+    week_start: Literal["monday", "sunday"] = "monday"
+    out_dir: str | None = None
+    me: StandupIdentityConfig = Field(default_factory=StandupIdentityConfig)
+    ticket_status_map: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_TICKET_STATUS_MAP))
+    project_map: dict[str, str] = Field(default_factory=dict)
+    stale_ticket_days: int = 10
+    stale_decision_days: int = 14
+    llm_env: str = "WIKI_LIGHTWEIGHT_MODEL"
+
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str | None) -> str | None:
+        """Reject names that are not valid IANA timezones."""
+        if value is not None:
+            try:
+                ZoneInfo(value)
+            except (ZoneInfoNotFoundError, ValueError, OSError) as exc:
+                raise ValueError(f"Invalid IANA timezone {value!r}") from exc
+        return value
+
+    @field_validator("ticket_status_map")
+    @classmethod
+    def _validate_ticket_status_map(cls, value: dict[str, str]) -> dict[str, str]:
+        """Require every mapped value to be a canonical ticket status."""
+        bad = sorted({v for v in value.values() if v not in _CANONICAL_TICKET_STATUSES})
+        if bad:
+            raise ValueError(
+                f"Non-canonical ticket status value(s) {bad}; allowed: {sorted(_CANONICAL_TICKET_STATUSES)}"
+            )
+        return value
+
+
 class WikiProjectConfig(BaseModel):
     """Repository-level wiki configuration (``.parrot/wiki.json``).
 
@@ -415,6 +564,7 @@ class WikiProjectConfig(BaseModel):
             budget. Generation is disabled by default.
         schema_plane: SQL schema plane settings (FEAT-600); read from and
             written to the ``"schema"`` key of ``wiki.json``.
+        standup: Daily/period brief settings (FEAT-627).
     """
 
     model_config = ConfigDict(validate_by_name=True, validate_by_alias=True, serialize_by_alias=True)
@@ -495,6 +645,10 @@ class WikiProjectConfig(BaseModel):
         alias="schema",
         description="SQL schema plane settings (FEAT-600): declared sources (env NAMES only), staleness policy.",
     )
+    standup: StandupConfig = Field(
+        default_factory=StandupConfig,
+        description="Daily/period standup brief settings (FEAT-627).",
+    )
     sqlite_busy_timeout: float = Field(
         default=15.0,
         ge=1.0,
@@ -515,6 +669,10 @@ class WikiProjectConfig(BaseModel):
             "(busy_timeout, synchronous=NORMAL, 64 MiB journal_size_limit) "
             "are always applied and are not gated by this flag."
         ),
+    )
+    inbox: InboxConfig = Field(
+        default_factory=InboxConfig,
+        description="Inbox autonomous-ingestion settings (FEAT-626).",
     )
 
     @field_validator("namespaces")
@@ -560,6 +718,23 @@ class WikiProjectConfig(BaseModel):
     def db_path(self, root: Path) -> Path:
         """Path of the SQLite retrieval plane (sqlite backend)."""
         return self.storage_path(root) / "wiki.db"
+
+    def inbox_path(self, root: Path) -> Path:
+        """Resolve inbox.dir against the repository root."""
+        path = Path(self.inbox.dir)
+        return path if path.is_absolute() else root / path
+
+    def archive_path(self, root: Path) -> Path:
+        """Resolve inbox.archive_dir against the repository root."""
+        path = Path(self.inbox.archive_dir)
+        return path if path.is_absolute() else root / path
+
+    def inbox_markdown_path(self, root: Path) -> Path:
+        """Resolve the explicit projection path, or ``storage_path(root)/inbox`` when unset."""
+        if self.inbox.markdown_dir is None:
+            return self.storage_path(root) / "inbox"
+        path = Path(self.inbox.markdown_dir)
+        return path if path.is_absolute() else root / path
 
     def is_built(self, root: Path) -> bool:
         """Whether the retrieval plane exists for this repo.
@@ -844,6 +1019,7 @@ class WikiEnvOverlay(BaseModel):
         include_suffixes: Scanned file suffixes override.
         exclude_dirs: Extra pruned directory names override.
         claude: Claude Code integration settings override.
+        standup: Standup settings override (replaced wholesale).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -862,6 +1038,8 @@ class WikiEnvOverlay(BaseModel):
     include_suffixes: list[str] | None = None
     exclude_dirs: list[str] | None = None
     claude: ClaudeIntegrationConfig | None = None
+    standup: StandupConfig | None = None
+    inbox: InboxConfig | None = None
 
     @field_validator("namespaces")
     @classmethod

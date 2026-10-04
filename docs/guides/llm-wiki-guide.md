@@ -47,6 +47,7 @@
 - [Obsidian Vaults as Wiki Sources](#obsidian-vaults-as-wiki-sources)
 - [Document Ingestion](#document-ingestion)
   - [Supervised Ingestion (wikitoolkit ingest)](#supervised-ingestion-wikitoolkit-ingest)
+  - [Inbox ingestion (wikitoolkit inbox)](#inbox-ingestion-wikitoolkit-inbox)
   - [Jira Ticket Extraction (wikitoolkit ingest-jira)](#jira-ticket-extraction-wikitoolkit-ingest-jira)
 - [Storage Backends](#storage-backends)
   - [SQLite (default)](#sqlite-default)
@@ -918,6 +919,56 @@ build — never a dangling reference.
 
 ---
 
+## Standup Briefs and Typed Entities
+
+The standup subsystem (`wikitoolkit standup`) generates deterministic day/week/month
+briefs from Jira issues, decisions and entity changes. Key concepts:
+
+### Attributes Ingest and Back-fill
+
+Entity attributes (type, status, project, date, due, owner) are extracted during
+ingest and stored as page frontmatter. The `wikitoolkit entity reindex --store <path>`
+command back-fills attributes into an existing wiki plane from its stored pages,
+useful for migrating legacy data or syncing foreign planes.
+
+### Personal and Team Filtering
+
+- `--team` includes all team members' activity; default shows only your identity.
+- Identity is resolved from `~/.parrot/identity.json` (or `WIKI_IDENTITY` env var)
+  as `human:<username>`, without requiring email access.
+- Use `--me <identity>` to override the default identity for a single run.
+
+### Period Roll-ups and Delta Meaning
+
+- `day` — activity since yesterday 00:00 UTC
+- `week` — activity since Monday of the current week
+- `month` — activity since the 1st of the current month
+
+The brief includes a "delta" section showing net changes: new, updated and closed
+items. Delta is computed per-period and does not accumulate across periods.
+
+### Model Fallback and Read-Only MCP Defaults
+
+- By default, standup requests an LLM summary (`--no-llm` disables it).
+- If the model fails, the brief still renders with raw data; no partial summary
+  is stored.
+- MCP tool calls default to read-only (`--no-store --no-file`) when invoked via
+  MCP. Use explicit `--store` or `--out` to persist output.
+
+### Cron Scheduling
+
+Run at 07:00 UTC after the 06:17 Jira sweep. Example cron entry (deployment-specific
+paths marked):
+
+```cron
+0 7 * * 1-5 cd /path/to/project && /path/to/venv/bin/wikitoolkit standup --period day --language en --out /var/log/standups/$(date +\%Y-\%m-\%d).md >> /var/log/standup.log 2>&1
+```
+
+Consult the [wiki standup runbook](../runbooks/wiki-standup.md) for identity configuration,
+failure recovery and back-fill recipes.
+
+---
+
 ## Obsidian Vaults as Wiki Sources
 
 Obsidian vaults are first-class wiki sources. The vault scanner
@@ -1011,6 +1062,90 @@ wikitoolkit ingest SOURCE [OPTIONS]
 
 Exactly one mode required: `--dry-run`, `--review`, `--interactive`, or
 `--auto`.
+
+### Inbox ingestion (wikitoolkit inbox)
+
+Drop documents into the repository's inbox directory (default `inbox/`), then run
+`wikitoolkit inbox`. Each file is acquired, triaged, classified against the charter taxonomy,
+linked to existing pages, ingested, projected to markdown, verified and — only then — archived.
+Use `wikitoolkit inbox --dry-run --json` to see the planned outcome of a run first.
+
+#### Command options
+
+| Option | Meaning |
+|---|---|
+| `--path DIR` | Project directory whose `.parrot/wiki.json` and inbox are used (default: the current repository). |
+| `--dry-run` | Acquire, triage, classify and plan links only. Nothing is ingested, written, projected, repointed or archived. |
+| `--limit N` | Process at most `N` documents, oldest first (ordered by modification time, then name). Negative values are rejected. |
+| `--charter PATH` | Charter YAML to use (default `.parrot/charter.yaml`). |
+| `--lightweight-model` / `--model` | Override the triage/classification model and the heavier ingestion model. |
+| `--archive` / `--no-archive` | Archive originals after verification (default), or keep them in place. `--no-archive` still persists and verifies normally. |
+| `--force` | Skip only the duplicate check in triage (same-URI and other-URI duplicates). Size/suffix checks, sensitivity screening, novelty scoring and the model stages still run. |
+| `--json` | Print the run report as a single JSON object on stdout; diagnostics go to stderr. |
+
+Dotfiles are ignored; symlinks and paths that escape the inbox or the repository are skipped and reported as `skipped` rows.
+
+#### Configuration
+
+Inbox behaviour lives under the `inbox` key of `.parrot/wiki.json`; every field is optional:
+
+```json
+{
+  "inbox": {
+    "dir": "inbox",
+    "archive_dir": ".parrot/archive",
+    "rejected_subdir": "rejected",
+    "markdown_dir": null,
+    "date_format": "%Y-%m-%d",
+    "stage_git": true,
+    "max_candidates": 20,
+    "lock_timeout": 30.0
+  }
+}
+```
+
+- `dir`, `archive_dir` and `markdown_dir` may be absolute or relative to the project root. They must be distinct and not nested inside one another; an invalid layout exits with code 2.
+- `markdown_dir` defaults to `<storage_dir>/inbox`. If you point it somewhere else, **exclude that directory from build scanning**, otherwise `wikitoolkit build` indexes the projected pages again.
+- `max_candidates` (1–100) caps how many link candidates are offered per document; `lock_timeout` is the number of seconds `run` waits for the writer lock.
+
+#### Taxonomy and tags
+
+The closed document taxonomy is the `taxonomy` section of the charter. When absent, the built-in
+kinds are `meeting`, `briefing`, `decision`, `report`, `memo` and `note` (default), each mapped to a wiki
+category. A custom taxonomy declares `default_kind`, `max_tags` and a list of `kinds`
+(`id`, `description`, `category`, optional `tag_hints`). A model answer outside the taxonomy falls back to the
+default kind. Tags are normalized to kebab-case, capped at `max_tags`, and each becomes a `tag:<name>` page
+connected to the document page with a `tagged` edge.
+
+Documents classified as `decision` can additionally emit a candidate ADR in the decision plane
+(when `decisions.enabled`); review it with the normal ADR workflow.
+
+#### Archive layout
+
+After verification, the original is moved to
+`<archive_dir>/<stem>.<date><ext>`, for example `.parrot/archive/design-notes.2026-10-03.md`.
+If that name exists, a counter is inserted before the extension (`design-notes.2026-10-03-1.md`); an existing
+file is never overwritten. Rejected documents go to `<archive_dir>/<rejected_subdir>/` using the same naming.
+If the original was tracked by git and `stage_git` is true, its removal is staged with `git rm --cached`.
+The processor **never commits**; review `git status` and commit yourself.
+
+#### Exit codes and concurrency
+
+| Code | Meaning |
+|---|---|
+| `0` | Success, or an empty inbox. |
+| `1` | At least one document failed. |
+| `2` | Usage/configuration error: missing inbox directory, invalid layout, negative `--limit`. |
+| `3` | The writer lock is busy (another inbox run or writer holds it). |
+
+- **Whole-run lock**: `InboxProcessor.run()` takes the project writer lock once, without blocking the event
+  loop (it polls until `lock_timeout`), and holds it for the whole run. The CLI never acquires it separately.
+- **Per-document failures**: one failing document produces a `failed` row and the run continues; an unreadable
+  source is reported as `skipped`.
+- **Verification before archive**: the page, claimed child pages and the markdown projection are checked
+  before the original is moved. Dry-run and rejected documents report `verified=false`.
+- **Persistence**: with the SQLite backend each ingest/page write is transactional. Memory and ArangoDB
+  writes are best effort; re-running the command reuses the existing document identity instead of creating duplicates.
 
 ### Jira Ticket Extraction (wikitoolkit ingest-jira)
 

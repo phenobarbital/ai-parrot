@@ -14,6 +14,10 @@ compound statements, other interpreters — produces **no decision**, and the
 host behaves normally. A pipe never makes a large read safe: the reading
 segment decides.
 
+SDD command instructions under ``.claude/commands/sdd-*.md`` are exempt:
+hosts must be able to load the complete workflow in one read. This exception
+does not change the bounded MCP reader's limits.
+
 Two invariants:
 
 * **This module never breaks a host session.** Any exception, malformed
@@ -214,6 +218,14 @@ def _decide_for_path(candidate: str, cwd: Path, policy: GuardPolicy, coverage: s
     """
     target = _resolve(candidate, cwd)
     try:
+        resolved = target.resolve()
+        if (
+            resolved.parent.name == "commands"
+            and resolved.parent.parent.name == ".claude"
+            and resolved.name.startswith("sdd-")
+            and resolved.suffix == ".md"
+        ):
+            return GuardDecision(coverage=coverage, path=str(target))
         large, lines, size = is_large(target, policy)
     except (OSError, ValueError):
         return GuardDecision(coverage="not_applicable")

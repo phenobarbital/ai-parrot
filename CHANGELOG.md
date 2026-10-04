@@ -7,8 +7,81 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+Everything below comes after `1.1.0`; the FEAT-605 early subset (request-scope seam, `RequestScope`,
+`setup_studio_routes(prefix=…, view_wrapper=…)`, `BotManager.setup_registry_only`, `GET /me`, scope-only route gates,
+draft-activation `name_taken`, D1/D3) already shipped in `1.1.0`.
+
+### Breaking / upgrade notes
+
+- **Host tools without a declared `access` now require a human confirmation on every path.** A tool or toolkit
+  method that belongs to the host (`plugins.tools`, declared in `TOOL_REGISTRY` or found by the deprecated walk
+  fallback) and does not declare `access = "read"` (standalone tools) or list the method in `read_tools`
+  (toolkits) is treated as a write tool: it is `confirmation_required` for registry/YAML agents, `AgentTalk`,
+  crews, A2A, voice and the scheduler too — not only for Studio-built agents. Before upgrading, annotate every
+  read-only host tool with `access = "read"` / `read_tools`; unannotated ones stop executing until confirmed.
+- **The `database` storage backend now requires schema level 8.** Run the Studio migrations (`0006`–`0008`;
+  `parrot-studio-migrate`, verify with `parrot-studio-migrate --verify`) BEFORE deploying this release. A host
+  still at level 5 (`1.1.0`) resolves the backend to `unavailable` and every database-mode Studio route answers
+  `503 studio_storage_unavailable`, whatever the `*_STORE` switches say.
+
 ### Added
 
+- **Agent Studio — owner-controlled visibility (FEAT-605 W2+).** Per-record `visibility`
+  (`private | tenant | groups`) with `allowed_groups`, and three new routes —
+  `PATCH /astudio/agents/{name}/visibility`, `/drafts/{name}/visibility`, `/skills/{id}/visibility`. Every route
+  follows one access rule (404 for an invisible record, identical to an absent one; 403 `not_manageable` for a
+  visible record the caller cannot manage), the assistant is partitioned by (tenant, user), and tool calls from
+  `test/ask`, chat and execute carry a `studio_scope`. Contract: `docs/agent_studio_api.md`; host guides
+  `docs/agentstudio/db-storage.md` and `docs/toolkits/host-toolkits.md`.
+- **Agent Studio database storage, waves 2–4 and phase 2 (FEAT-621).** Visibility columns and services over the
+  partitioned repositories, per-user LLM keys, credentials and toolkit overrides (migrations `0006`–`0008`).
+- **Agent Studio host toolkits, waves 2–4 (FEAT-622).** Tenant-bound tools and the scope gate, server-managed
+  parameters, strictly confirmed host write tools (walk-discovered host entries included) and the tenant tooling
+  policy on tooling writes.
+- New Studio error codes: `declarative_only`, `tenant_required`, `groups_required`, `groups_not_allowed` (422),
+  `studio_disabled` (404), `tenant_mismatch`, `authoring_denied`, `not_manageable` (403),
+  `reserved_config_key` (400); `name_taken` (409) now also covers agents, draft saves and skills.
+- `PUT`/`DELETE /astudio/agents/{name}/toolkits/{slug}` and `PUT …/mcp-servers` return the agent's `version` after the
+  write when the agent is a database-backed Studio agent (additive).
+
+### Changed
+
+- **Agent Studio, plain hosts too (FEAT-605):** duplicate names on agents, draft saves and skills answer
+  `409 name_taken` (no owner, source or tenant in the body) — previously `duplicate` / `name_collision` /
+  `not_owner`. Every agent/draft/skill item gains additive `tenant`, `owner`, `visibility`, `allowed_groups`,
+  `access` (`"global"` without a resolver) and, on single-record reads, `can_manage`. Non-private visibility
+  without a tenant is `422 tenant_required`. Reload, files GET and tool execute keep their old, ungated behaviour
+  without a resolver.
+- **Agent Studio (FEAT-605):** the 403 for "visible but not manageable" on a database-backed Studio record is now
+  `not_manageable` (it was `forbidden`).
+- **Agent Studio storage:** with the `database` backend the required migration level is 8 (phase 2 is part of
+  the release); `parrot-studio-migrate --verify` checks versions 1-8.
+
+---
+
+## [1.1.0] — 2026-10-02 — Agent Studio multi-tenant storage, linked-dashboard derived sources, planogram fact tags
+
+Eleven core-line distributions move to `1.1.0` (`ai-parrot-pipelines` to `1.2.0`).
+The seventeen satellites move to `0.3.0` and are re-pinned to `ai-parrot>=1.1.0`.
+
+### Added
+
+- **FEAT-621: Agent Studio database storage.** Studio agents, drafts, assets,
+  tooling and the skill catalog can live in a database instead of the
+  filesystem: partitioned repositories (`StudioAgentRepository`,
+  `StudioDraftRepository`, `StudioAssetRepository`, `StudioToolingRepository`,
+  `StudioSkillCatalogRepository`) behind a `StudioRepositories` container,
+  `studio_transaction` primitives, migrations `0001`–`0005` with a checksummed
+  manifest and the `parrot-studio-migrate` CLI, backend selection through
+  `ensure_studio_storage`, and an `InMemoryStudioRepositories` fake for
+  DB-free tests.
+- **FEAT-605: Agent Studio tenant visibility.** A request-scope seam, host
+  mount hooks, a Studio base scope, scope-only route gates and a capabilities
+  endpoint `GET /me`; the API contract is documented first.
+- **FEAT-622: Agent Studio host toolkits.** `ToolkitResolver`, a tool-scope
+  contract and a tenant tooling policy enforced by a build hook that runs the
+  policy and secret checks before hydration (`precheck_toolkit` /
+  `precheck_mcp`); unknown tool shapes are refused.
 - **Linked dashboards: dashboard-owned data sources and derived views.**
   `parrot_data_sources` gains a second source kind, `derived`
   (`{"kind": "derived", "from": "<sibling>", "transform": {"ops": […]}}`): a
@@ -23,12 +96,32 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   shape) or `data` (inline rows). The Polestar example loads with 4
   QuerySource calls instead of 8. Contract: regenerated `LinkedSources`
   schema/TS types, `envelopes/linked_dashboard_derived.json` and
-  `parity/derived_dashboard.json`.
+  `parity/derived_dashboard.json`. Definition-only linked surfaces render
+  from a one-row probe; a finance linked-dashboard example ships alongside.
+- **FEAT-623: infographic / A2UI display hints.** Model display hints lowered
+  losslessly by the adapter, typed table columns from dtypes, `format_cell`
+  parity with `formatA2UIValue`, and admin-UI chart axis mapping with a dual
+  value axis.
+- **FEAT-624: planogram fact-tag rule.** Fact and price tags become a
+  first-class compliance rule.
+- **Planogram detection and registration.** Fixture ROI before LLM detection
+  with native `box_2d` boxes; ROI components as observed zones
+  (`roi_zone_labels`) and ROI unit boxes that split stacked detections and
+  recover misses; free-order and tiered shelves; shape-is-slot fixtures keep
+  one row per shelf and fill empty columns; identity resolved by contained
+  name and matched reference; zone-crop phrases count as text evidence.
+- **Teams notifications:** a card can play a podcast it does not host.
 
 ### Changed
 
 - **Agent Studio drafts (FEAT-605, plain hosts too):** `POST /astudio/drafts/{name}/activate` now answers
   `409 name_taken` instead of `409 name_collision` / `409 not_owner`; the body never discloses the owner.
+- **A2UI:** single query slugs and linked surfaces fetch from
+  `/api/v2/services/queries` instead of MultiQS.
+- **FEAT-620: test-scope impact.** `source_fanin` counts direct importers
+  (threshold 30) and `CORE_PATHS` is re-derived from them (724 → 29 entries),
+  so merge-tier selection stops escalating whole package suites.
+- Dependencies: `onnxruntime>=1.30.0`; `coverage` 7.16.2 (dev).
 
 ### Fixed
 
@@ -36,6 +129,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `409 name_taken` before anything is written (superusers and the owner are unaffected).
 - **Agent Studio D3:** draft activation with `replace=true` over an agent without an owner, or owned by someone
   else, is refused (`409 name_taken`) unless the caller is a superuser.
+- **Agent Studio storage:** draft-ownership lookup errors fail closed; tooling
+  references key their sessions consistently; orphan deletes, atomic purge,
+  commit rollback and a `503` when storage is unavailable.
+- **Tooling policy** honours the global opt-in and requires host-toolkit
+  prefixes; a malformed dotted path resolves as unavailable.
+- **A2UI linked lane:** deadlock, stale derived joins, ignored params and
+  cycle-check findings fixed.
+- **Planogram:** surplus identities, foreign strays and mangled reference
+  labels; references never rename a product read as something else; oversized
+  fixture ROIs cut back; no synthesized bottom row once every shelf is
+  anchored; `reference_id` dropped without references; truncated responses
+  retried; converter no longer loses rules.
+- **Teams notifications:** no more `Action.OpenUrl` with a placeholder URL.
 
 ---
 

@@ -131,6 +131,52 @@ class TestUserLLMKeyResolver:
         assert await resolver.get_auth_url("anthropic", "user-1") == ""
 
 
+class _RecordingStore:
+    """Registered store double: returns canned keys, records lookups."""
+
+    def __init__(self, keys):
+        self.keys = keys
+        self.calls = []
+
+    async def get(self, user_id, provider):
+        self.calls.append((user_id, provider))
+        return self.keys.get((user_id, provider))
+
+
+class TestPostgresStoreSelection:
+    """``BYOK_STORE=postgres`` reads the registered store and never touches DocumentDB."""
+
+    @pytest.fixture(autouse=True)
+    def _postgres(self, monkeypatch, fake_db):
+        import parrot.auth.broker as broker_module
+
+        monkeypatch.setenv("BYOK_STORE", "postgres")
+        _seed_stored_key("user-1", "anthropic", "sk-from-documentdb")
+        yield
+        broker_module.set_user_llm_key_store(None)
+
+    @pytest.mark.asyncio
+    async def test_reads_registered_store(self):
+        import parrot.auth.broker as broker_module
+
+        store = _RecordingStore({("user-1", "anthropic"): "sk-from-postgres"})
+        broker_module.set_user_llm_key_store(store)
+        assert await _UserLLMKeyResolver().resolve("ANTHROPIC", "user-1") == "sk-from-postgres"
+        assert store.calls == [("user-1", "anthropic")]
+
+    @pytest.mark.asyncio
+    async def test_no_registered_store_fails_closed_not_documentdb(self):
+        assert await _UserLLMKeyResolver().resolve("anthropic", "user-1") is None
+
+    @pytest.mark.asyncio
+    async def test_default_setting_ignores_registered_store(self, monkeypatch):
+        import parrot.auth.broker as broker_module
+
+        monkeypatch.delenv("BYOK_STORE", raising=False)
+        broker_module.set_user_llm_key_store(_RecordingStore({("user-1", "anthropic"): "sk-from-postgres"}))
+        assert await _UserLLMKeyResolver().resolve("anthropic", "user-1") == "sk-from-documentdb"
+
+
 class TestCredentialResolverFactoryBuildsUserLLMKeyResolver:
     def test_build_user_llm_key_resolver_returns_resolver_instance(self):
         factory = CredentialResolverFactory()

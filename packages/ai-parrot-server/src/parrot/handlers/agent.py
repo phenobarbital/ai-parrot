@@ -1114,9 +1114,9 @@ class AgentTalk(BaseView):
                 allowed = set(default_spec.user_overridable)
                 params = await hydrate_params(default_spec)
                 params.update({key: value for key, value in override.params.items() if key in allowed})
-                for key, ref in override.secret_refs.items():
+                for key, vault_ref in override.secret_refs.items():
                     if key in allowed:
-                        params[key] = (await retrieve_vault_credential(str(user_id), ref))[key]
+                        params[key] = (await retrieve_vault_credential(str(user_id), vault_ref))[key]
                 cls = agent._resolve_spec_class(override.slug)
                 for tool_name in base.list_tools():
                     if isinstance(get_toolkit_owner(base.get_tool(tool_name)), cls):

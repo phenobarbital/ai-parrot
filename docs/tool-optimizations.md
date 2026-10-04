@@ -248,6 +248,12 @@ An opt-in `PreToolUse` hook that denies unbounded reads of large files and
 replies with the exact bounded-reader call to make instead. It uses the
 same thresholds as the reader, read from `.parrot/tool-guards.json`.
 
+SDD workflow instructions in `.claude/commands/sdd-*.md` are exempt from
+the host guard's size limits so they can be loaded in full with `Read` or
+`cat`. The exception matches the resolved path; a command-named symlink to
+an ordinary source file remains subject to the limits. The MCP bounded
+reader's own limits are unchanged.
+
 **The guard is a convenience, not an enforcement boundary.** The reader's
 own limits hold whether or not the hook is installed, and the hook makes no
 decision at all for anything outside the documented subset.
