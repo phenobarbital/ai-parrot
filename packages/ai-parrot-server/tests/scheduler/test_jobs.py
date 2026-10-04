@@ -1,4 +1,5 @@
 """Tests for parrot.scheduler.jobs (FEAT-631 TASK-4061)."""
+
 import pickle
 from types import SimpleNamespace
 from unittest.mock import AsyncMock

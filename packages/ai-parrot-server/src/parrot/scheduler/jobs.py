@@ -6,6 +6,7 @@ manager, which holds the scheduler), so every job points at one of the module-le
 coroutines below. They carry only ``str`` kwargs and resolve the live manager from a
 process-local registry at fire time.
 """
+
 from __future__ import annotations
 
 import logging
