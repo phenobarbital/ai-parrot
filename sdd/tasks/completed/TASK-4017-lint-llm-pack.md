@@ -230,3 +230,7 @@ def test_resolve_spec_order(monkeypatch):
 **Notes**:
 
 **Deviations from spec**: none
+
+## Completion Note
+
+Implemented by glm (nova), 1 attempt. Review fix 1664b9a09: client failures now surface as one llm-skipped finding; tests repaired (feedback coder-feedback:694240012e0c525f85013ebe). Closed via close_task.sh. Verified: lint package + store tests 44 passed (scoped), ruff clean.

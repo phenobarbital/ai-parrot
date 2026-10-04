@@ -226,3 +226,7 @@ async def test_fix_idempotent(tmp_path): ...
 **Notes**:
 
 **Deviations from spec**: none
+
+## Completion Note
+
+Implemented by sonnet (native), 1 attempt. Merged via coder_merge. Verified: lint test package passes in worktree (scoped). Closed via close_task.sh.

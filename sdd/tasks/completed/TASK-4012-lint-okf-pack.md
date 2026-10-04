@@ -209,3 +209,7 @@ def test_okf_parity():
 **Notes**:
 
 **Deviations from spec**: none
+
+## Completion Note
+
+Implemented by sonnet (native), 1 attempt; broken_link findings use subjects=[source,target,rel] for per-edge fingerprints (data.concept_id remains source). Merged via coder_merge. Verified: lint + store + OKF-related tests, 98 passed (worktree, scoped). Closed via close_task.sh.

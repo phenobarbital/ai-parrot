@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-625 — wikitoolkit lint
 **Spec**: `sdd/specs/wikitoolkit-lint.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M
 **Depends-on**: TASK-4019
@@ -258,10 +258,8 @@ def test_wiki_lint_tool_registered(tmp_path): ...
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (codex seat delivery + orchestrator integration fixes)
+**Date**: 2026-10-03
+**Notes**: CLI lint + wiki_lint tool delivered; orchestrator aligned WikiLintReport alias, audit storage_dir, and legacy toolkit.lint tests with the LintReport hard cut. lint tests 50 pass; wiki models/toolkit/integration 80 pass.
 
 **Deviations from spec**: none

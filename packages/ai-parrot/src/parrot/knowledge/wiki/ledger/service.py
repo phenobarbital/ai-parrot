@@ -214,6 +214,14 @@ class LedgerService:
         rows.sort(key=lambda row: (SEVERITY_ORDER.get(row["severity"], len(SEVERITY_ORDER)), row["issue_id"]))
         return rows
 
+    async def active_issues(self) -> list[dict[str, Any]]:
+        """Return every ``open`` or ``claimed`` issue (used for dedupe by lint routing)."""
+        await self._sync_best_effort()
+        issues = await self._all_issues()
+        return [
+            _issue_dict(issue_id, state) for issue_id, state in issues if state.get("status") in ("open", "claimed")
+        ]
+
     async def claim(self, issue_id: str, actor: str) -> bool:
         """Delegate to :meth:`LedgerIndex.claim_issue`."""
         return await self.index.claim_issue(issue_id, actor)
