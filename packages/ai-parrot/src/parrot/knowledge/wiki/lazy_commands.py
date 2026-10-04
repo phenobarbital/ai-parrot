@@ -1,43 +1,69 @@
-"""Lazy ADR registration preserving the real Click command contract.
-
-``cli.py`` used to register the ``adr`` command group by importing
-``parrot.knowledge.wiki.decisions.cli`` at module load time — pulling in
-``decisions.models``/``render``/``repository``/``review``/``service`` (and,
-transitively, ``structural.service``) on *every* ``wikitoolkit`` invocation,
-including the Claude Code ``claude-hook`` fast path that never touches ADRs
-(FEAT-584 / TASK-3569).
-
-``LazyAdrGroup`` is a :class:`click.Group` that defers that import to the
-moment Click actually needs to resolve an ``adr`` subcommand — help text and
-top-level listing for ``wiki --help`` are served from the static ``help``
-string passed at registration, never from the real module.
-"""
+"""Lazy Click command registration that preserves the real command contract."""
 
 from __future__ import annotations
+
+import importlib
 
 import click
 
 
-class LazyAdrGroup(click.Group):
-    """Load ``decisions.cli`` only when the ADR command tree is actually used."""
+class LazyGroup(click.Group):
+    """Load a real Click command only when its own command tree is used."""
 
-    def __init__(self, *args: object, **kwargs: object) -> None:
-        """Initialize the lazy group with an empty real-group cache."""
+    def __init__(self, *args: object, import_path: str, attr: str, **kwargs: object) -> None:
+        """Initialize the import target and an empty command cache."""
         super().__init__(*args, **kwargs)
-        self._real_group: click.Group | None = None
+        self._import_path = import_path
+        self._attr = attr
+        self._real_group: click.Command | None = None
 
-    def _load_real_group(self) -> click.Group:
-        """Import and cache the real ``adr`` group on first use."""
+    def _load_real_group(self) -> click.Command:
+        """Import and cache the selected command object."""
         if self._real_group is None:
-            from parrot.knowledge.wiki.decisions.cli import adr as _real_adr_group
-
-            self._real_group = _real_adr_group
+            module = importlib.import_module(self._import_path)
+            command = getattr(module, self._attr, None)
+            if not isinstance(command, click.Command):
+                raise TypeError(f"{self._import_path}:{self._attr} is not a Click command")
+            self._real_group = command
         return self._real_group
 
+    def make_context(
+        self,
+        info_name: str | None,
+        args: list[str],
+        parent: click.Context | None = None,
+        **extra: object,
+    ) -> click.Context:
+        """Parse actual options, including standalone command options."""
+        return self._load_real_group().make_context(info_name, args, parent=parent, **extra)
+
+    def invoke(self, ctx: click.Context) -> object:
+        """Invoke the real command after lazy context construction."""
+        return self._load_real_group().invoke(ctx)
+
     def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
-        """Delegate ADR subcommand resolution to the lazily imported group."""
-        return self._load_real_group().get_command(ctx, cmd_name)
+        """Delegate child resolution when the selected command is a group."""
+        command = self._load_real_group()
+        if isinstance(command, click.Group):
+            return command.get_command(ctx, cmd_name)
+        return None
 
     def list_commands(self, ctx: click.Context) -> list[str]:
-        """List real ADR commands for ADR help/completion, never hook startup."""
-        return self._load_real_group().list_commands(ctx)
+        """List child commands only when the selected command is a group."""
+        command = self._load_real_group()
+        if isinstance(command, click.Group):
+            return command.list_commands(ctx)
+        return []
+
+
+class LazyAdrGroup(LazyGroup):
+    """Backward-compatible ADR proxy with the existing constructor surface."""
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        """Bind the compatibility proxy to the ADR command group."""
+        super().__init__(
+            *args,
+            import_path="parrot.knowledge.wiki.decisions.cli",
+            attr="adr",
+            **kwargs,
+        )

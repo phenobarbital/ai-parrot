@@ -24,6 +24,7 @@ Unresolved wikilinks are dropped from the edge list (same discipline as
 ``build_import_edges``) but counted in the scan's ``skipped`` telemetry
 via the returned :class:`VaultScanStats`.
 """
+
 from __future__ import annotations
 
 import logging
@@ -54,9 +55,7 @@ logger = logging.getLogger(__name__)
 #: plane from its own output. ``repo_scan.DEFAULT_EXCLUDE_DIRS`` already
 #: prunes it by bare name for code repos; this mirrors that (FEAT-450,
 #: D4.2).
-VAULT_EXCLUDE_DIRS: frozenset[str] = frozenset(
-    {".obsidian", ".trash", ".git", ".hg", ".svn", ".parrot"}
-)
+VAULT_EXCLUDE_DIRS: frozenset[str] = frozenset({".obsidian", ".trash", ".git", ".hg", ".svn", ".parrot"})
 
 
 def is_obsidian_vault(root: Path) -> bool:
@@ -132,6 +131,8 @@ def scan_vault(
         ``scan_repository``'s result (so the build pipeline consumes it
         unchanged) plus vault-specific :class:`VaultScanStats`.
     """
+    from parrot.knowledge.wiki.entities import normalize_frontmatter
+
     root = Path(root).resolve()
     parser = ObsidianNoteParser()
     scan = RepoScan(root=root)
@@ -168,6 +169,7 @@ def scan_vault(
             body=body,
             token_count=estimate_tokens(body),
         )
+        record.attrs = normalize_frontmatter(note.frontmatter, source="vault").to_rows()
         scan.files.append(FileSlice(rel_path=rel, record=record))
         stats.notes += 1
 
@@ -200,9 +202,7 @@ def scan_vault(
     for tag, count in index.tags().items():
         note_paths = index.notes_by_tag(tag)
         lines = [f"- [file:{p}.md]" for p in note_paths]
-        body = (
-            f"# Tag #{tag}\n\n{count} tagged note(s):\n\n" + "\n".join(lines)
-        )
+        body = f"# Tag #{tag}\n\n{count} tagged note(s):\n\n" + "\n".join(lines)
         scan.dir_records.append(
             WikiPageRecord(
                 concept_id=tag_concept_id(tag),
@@ -214,16 +214,18 @@ def scan_vault(
             )
         )
         for note_path in note_paths:
-            scan.dir_edges.append(
-                (file_concept_id(f"{note_path}.md"), tag_concept_id(tag), "tagged")
-            )
+            scan.dir_edges.append((file_concept_id(f"{note_path}.md"), tag_concept_id(tag), "tagged"))
         stats.tags += 1
 
     logger.info(
-        "Scanned vault %s: %d notes, %d tags, %d wikilink edges, "
-        "%d embed edges, %d unresolved links, %d skipped",
-        root, stats.notes, stats.tags, stats.wikilink_edges,
-        stats.embed_edges, len(stats.unresolved_links), len(scan.skipped),
+        "Scanned vault %s: %d notes, %d tags, %d wikilink edges, " "%d embed edges, %d unresolved links, %d skipped",
+        root,
+        stats.notes,
+        stats.tags,
+        stats.wikilink_edges,
+        stats.embed_edges,
+        len(stats.unresolved_links),
+        len(scan.skipped),
     )
     return scan, stats
 

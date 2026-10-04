@@ -9,9 +9,9 @@ via a Bash-invoked CLI.
 
 import asyncio
 import hashlib
-from datetime import UTC, datetime
+from datetime import UTC, date as _date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, Literal, Union
 
 from pydantic import BaseModel, Field
 
@@ -586,6 +586,79 @@ class WikiLintTool(AbstractTool):
         )
 
 
+class WikiStandupInput(BaseModel):
+    """Explicit brief options; persistence and model calls are opt-in over MCP."""
+
+    period: Literal["day", "week", "month"] = Field(default="day", description="Brief period.")
+    date: str | None = Field(default=None, description="Anchor date (YYYY-MM-DD); default today.")
+    team: bool = Field(default=False, description="Include team items, not only yours.")
+    horizon_days: int | None = Field(default=None, description="Meeting horizon in days (1-90).")
+    language: Literal["en", "es"] | None = Field(default=None, description="Brief language.")
+    store: bool = Field(default=False, description="Persist the brief as a wiki page on the local plane.")
+    write_file: bool = Field(default=False, description="Also write the brief Markdown file.")
+    use_llm: bool = Field(default=False, description="Allow a model call to summarise the plate.")
+
+
+class WikiStandupTool(AbstractTool):
+    """Render a wiki brief; write only when explicitly requested, to local storage."""
+
+    name = "wiki_standup"
+    description = "Render a daily, weekly or monthly wiki brief. Read-only unless writes are explicitly enabled."
+    args_schema = WikiStandupInput
+
+    def __init__(self, store: BaseWikiStore, root: Path, config: WikiProjectConfig) -> None:
+        super().__init__(name=self.name, description=self.description)
+        self._store = store
+        self._root = root
+        self._config = config
+
+    async def _execute(self, **kwargs: Any) -> ToolResult:
+        """Run the shared pipeline and return Markdown with write receipts."""
+        from parrot.knowledge.wiki.standup.pipeline import StandupOptions, StandupStoreError, run
+        from parrot.knowledge.wiki.project import WikiEffectiveConfig, resolve_wiki_env
+        from parrot.knowledge.wiki.standup.render import render_markdown
+
+        try:
+            params = WikiStandupInput(**kwargs)
+            anchor = _date.fromisoformat(params.date) if params.date else None
+            horizon = params.horizon_days
+            if horizon is not None and not 1 <= horizon <= 90:
+                raise ValueError("horizon_days must be between 1 and 90")
+        except ValueError as exc:  # pydantic ValidationError is a ValueError
+            return ToolResult(success=False, status="error", result=None, error=f"Invalid wiki_standup input: {exc}")
+
+        writing = params.store or params.write_file
+        options = StandupOptions(
+            period=params.period,
+            anchor=anchor,
+            horizon_days=horizon,
+            team=params.team,
+            language=params.language,
+            use_llm=params.use_llm,
+            write_page=params.store,
+            write_file=params.write_file,
+        )
+        # Writes must land on the true local plane resolved from root/config, never on a
+        # (possibly federated / namespace-scoped) facade; a read-only run reads through the given store.
+        try:
+            effective = WikiEffectiveConfig(config=self._config, env=resolve_wiki_env())
+            doc = await run(self._root, options, store=None if writing else self._store, effective=effective)
+        except StandupStoreError as exc:
+            return ToolResult(success=False, status="error", result=None, error=str(exc))
+        except Exception as exc:  # noqa: BLE001 -- surfaced as a structured tool error
+            self.logger.warning("wiki_standup failed: %s", exc)
+            return ToolResult(success=False, status="error", result=None, error=str(exc))
+        return ToolResult(
+            result={
+                "markdown": render_markdown(doc, doc.language),
+                "brief_id": doc.window.brief_id,
+                "written_page": doc.written_page,
+                "written_file": doc.written_file,
+                "diagnostics": list(doc.diagnostics),
+            }
+        )
+
+
 class VaultIngestTool(AbstractTool):
     """(Re)build the wiki retrieval plane from an Obsidian vault."""
 
@@ -895,6 +968,11 @@ def create_wiki_tools(
         WikiStatusTool(store),
         WikiLintTool(store, storage_dir=storage_dir),
     ]
+
+    # wiki_standup needs the project root + config to resolve the true local plane for opt-in writes;
+    # context-free callers (no root/config) deliberately get no standup tool.
+    if root is not None and config is not None:
+        tools.append(WikiStandupTool(store, root, config))
 
     # Add ledger tools when ledger_service is provided
     if ledger_service is not None:
