@@ -10,7 +10,7 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 **Feature ID**: FEAT-633
 **Date**: 2026-10-05
 **Author**: Jesus Lara (brainstorm + decisions); spec drafted with Claude
-**Status**: draft
+**Status**: approved
 **Target version**: Next release (assigned by release tooling)
 
 > Source brainstorm: `sdd/proposals/parrot-installer.brainstorm.md` (accepted, Option B′,
