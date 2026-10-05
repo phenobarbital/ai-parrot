@@ -203,4 +203,4 @@ Standard. `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src` insid
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by native sonnet, 1 attempt, merged clean. test_file_shim 20 passed/1 skipped; test_filemanager_batch_ops 11 passed (each alone). Running both in one session fails the two no-leak tests identically on baseline (test-order pollution, pre-existing); the leak subprocess test baselines after importing navigator.utils.file since navigator imports aiogoogle in this env.
