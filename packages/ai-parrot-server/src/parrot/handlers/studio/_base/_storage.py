@@ -173,7 +173,10 @@ class _StudioStorageMixin:
         for kinds, status, code in table:
             if isinstance(exc, kinds):
                 message = "The name is not available." if code == "name_taken" else (str(exc) or code)   # non-enumerating
-                return self.json_response(self._json_error(message, code), status=status)
+                details = None
+                if isinstance(exc, m.StudioToolingRefused) and hasattr(exc, "reason") and hasattr(exc, "item"):
+                    details = {"reason": exc.reason, "item": exc.item}
+                return self.json_response(self._json_error(message, code, details), status=status)
         self.logger.error("Studio: unexpected storage error: %r", exc, exc_info=exc)
         return self.json_response(self._json_error("Internal server error.", "internal_error"), status=500)
 

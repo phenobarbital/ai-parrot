@@ -108,10 +108,10 @@ class StudioBaseView(_StudioPbacMixin, _StudioStorageMixin, BaseView):
         return scope
 
     @staticmethod
-    def _json_error(message: str, code: str) -> dict:
+    def _json_error(message: str, code: str, details: dict | None = None) -> dict:
         from ..models import StudioError  # lazy: models imports the manager
 
-        return StudioError(message=message, code=code).model_dump()
+        return StudioError(message=message, code=code, details=details).model_dump()
 
     async def _studio_gate(self) -> None:
         """403 ``tenant_mismatch``, then 404 ``studio_disabled`` (unless exempt)."""
