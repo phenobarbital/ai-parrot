@@ -92,7 +92,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -104,8 +104,9 @@
       "parallelism_notes": "tests import make_manager/FakeDriveClient from TASK-3806 (_gdrive_fakes.py); calls GoogleClient.get_drive_client/DriveClient from TASK-3807 (google.py); imports DriveEntry/GuardedFileServingExtension from TASK-3808 (entries.py)",
       "assigned_to": null,
       "started_at": "2026-10-05T21:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3810-gdrive-core.md"
+      "completed_at": "2026-10-05T22:07:13+00:00",
+      "file": "sdd/tasks/completed/TASK-3810-gdrive-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3811",
