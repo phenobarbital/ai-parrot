@@ -146,6 +146,48 @@ class TestStudioCatalogs:
         assert broken_row["lazy"] is True
 
     @pytest.mark.asyncio
+    async def test_llm_clients_rows_carry_models(self):
+        app = web.Application()
+        handler = _make_handler(app, kind="llm-clients")
+
+        response = await _unwrap(StudioCatalogHandler.get)(handler)
+
+        assert response.status == 200
+        body = await _decode(response)
+        from parrot.clients.factory import LLMFactory
+
+        for row in body:
+            if not row["available"]:
+                continue
+            expected = LLMFactory.list_models(row["provider"])
+            assert row["models"] == expected["active"]
+            assert row["deprecated_models"] == expected["deprecated"]
+
+    @pytest.mark.asyncio
+    async def test_base_classes_rows_carry_allowed_and_host_extras(self):
+        app = web.Application()
+        app["studio_class_allowlist"] = {"HostBot"}
+        handler = _make_handler(app, kind="base-classes")
+
+        response = await _unwrap(StudioCatalogHandler.get)(handler)
+
+        assert response.status == 200
+        body = await _decode(response)
+        assert all(isinstance(row["allowed"], bool) for row in body)
+        host_row = next(row for row in body if row["name"] == "HostBot")
+        assert host_row == {
+            "name": "HostBot",
+            "available": True,
+            "allowed": True,
+            "host": True,
+            "module": None,
+            "docstring": None,
+            "params": {},
+            "lazy": False,
+        }
+        assert "allowed" not in catalog_module._BASE_CLASSES_CACHE[0]
+
+    @pytest.mark.asyncio
     async def test_tools_catalog_shape(self):
         app = web.Application()
         handler = _make_handler(app, kind="tools")
