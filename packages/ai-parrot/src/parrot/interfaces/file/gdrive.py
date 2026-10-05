@@ -1,4 +1,5 @@
 """FileManagerInterface over Google Drive v3 (My Drive folders and shared drives) — FEAT-608."""
+
 from __future__ import annotations
 
 import asyncio
@@ -13,14 +14,22 @@ from urllib.parse import urlsplit
 
 from navigator.utils.file import FileManagerInterface, FileMetadata
 
-from .batch import BatchErrorCode, BatchItemResult, BatchState, BatchSummary
-from .entries import DriveEntry, GuardedFileServingExtension
+from .batch import BatchItemResult, BatchSummary
+from .entries import DriveEntry
 
 if TYPE_CHECKING:
     from parrot.interfaces.google import DriveClient, GoogleClient
 
-__all__ = ("BatchItemResult", "BatchSummary", "ConflictBehavior", "DriveEntry", "GoogleDriveFileManager",
-           "GoogleDriveFileManagerError", "ShareRole", "ShareScope")
+__all__ = (
+    "BatchItemResult",
+    "BatchSummary",
+    "ConflictBehavior",
+    "DriveEntry",
+    "GoogleDriveFileManager",
+    "GoogleDriveFileManagerError",
+    "ShareRole",
+    "ShareScope",
+)
 
 GoogleAuthModeLiteral = Literal["service_account", "user", "cached"]
 ConflictBehavior = Literal["replace", "fail", "rename"]
@@ -29,7 +38,9 @@ ShareRole = Literal["reader", "commenter", "writer"]
 FOLDER_MIME = "application/vnd.google-apps.folder"
 WORKSPACE_MIME_PREFIX = "application/vnd.google-apps."
 _RATE_LIMIT_REASONS = frozenset({"userRateLimitExceeded", "rateLimitExceeded"})
-_RETRY_COUNTER: contextvars.ContextVar[Optional[List[int]]] = contextvars.ContextVar("_gdrive_retry_counter", default=None)
+_RETRY_COUNTER: contextvars.ContextVar[Optional[List[int]]] = contextvars.ContextVar(
+    "_gdrive_retry_counter", default=None
+)
 
 
 class GoogleDriveFileManagerError(RuntimeError):
@@ -67,15 +78,27 @@ class GoogleDriveFileManager(FileManagerInterface):
     FIELDS = "id,name,mimeType,size,modifiedTime,webViewLink,webContentLink,parents,trashed"
     LIST_FIELDS = "nextPageToken,files(" + FIELDS + ")"
 
-    def __init__(self, *, root_id: Optional[str] = None, root_path: str = "", shared_drive_id: Optional[str] = None,
-                 prefix: str = "", credentials: Optional[Union[str, Dict[str, Any], Path]] = None,
-                 auth_mode: GoogleAuthModeLiteral = "service_account", scopes: Optional[Union[str, List[str]]] = None,
-                 user_creds_cache_file: Optional[Union[str, Path]] = None,
-                 interactive_login_kwargs: Optional[Dict[str, Any]] = None,
-                 conflict_behavior: ConflictBehavior = "replace", permanent_delete: bool = False,
-                 max_concurrency: Optional[int] = None, max_retries: Optional[int] = None,
-                 chunk_size: Optional[int] = None, small_file_threshold: Optional[int] = None,
-                 serving_max_bytes: Optional[int] = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        root_id: Optional[str] = None,
+        root_path: str = "",
+        shared_drive_id: Optional[str] = None,
+        prefix: str = "",
+        credentials: Optional[Union[str, Dict[str, Any], Path]] = None,
+        auth_mode: GoogleAuthModeLiteral = "service_account",
+        scopes: Optional[Union[str, List[str]]] = None,
+        user_creds_cache_file: Optional[Union[str, Path]] = None,
+        interactive_login_kwargs: Optional[Dict[str, Any]] = None,
+        conflict_behavior: ConflictBehavior = "replace",
+        permanent_delete: bool = False,
+        max_concurrency: Optional[int] = None,
+        max_retries: Optional[int] = None,
+        chunk_size: Optional[int] = None,
+        small_file_threshold: Optional[int] = None,
+        serving_max_bytes: Optional[int] = None,
+        **kwargs: Any,
+    ) -> None:
         """Store configuration without constructing a client or performing I/O."""
         if root_id and root_path:
             raise ValueError("root_id and root_path are mutually exclusive")
@@ -109,6 +132,7 @@ class GoogleDriveFileManager(FileManagerInterface):
 
     def _build_client(self) -> "GoogleClient":
         from parrot.interfaces.google import GoogleClient
+
         kwargs: Dict[str, Any] = {}
         if self.user_creds_cache_file is not None:
             kwargs["user_creds_cache_file"] = self.user_creds_cache_file
@@ -221,7 +245,7 @@ class GoogleDriveFileManager(FileManagerInterface):
         return (self.prefix + value).strip("/")
 
     def _unprefixed(self, key: str) -> str:
-        return key[len(self.prefix):] if self.prefix and key.startswith(self.prefix) else key
+        return key[len(self.prefix) :] if self.prefix and key.startswith(self.prefix) else key
 
     @staticmethod
     def _escape_q(value: str) -> str:
@@ -249,12 +273,20 @@ class GoogleDriveFileManager(FileManagerInterface):
                 parent = cached[0]
                 continue
             query = f"'{parent}' in parents and name = '{self._escape_q(segment)}' and trashed = false"
-            response, _ = await self._retrying(lambda: self.drive.files_list(q=query, fields=self.LIST_FIELDS,
-                page_size=2, order_by="modifiedTime desc", **self._list_params()), label="resolve")
+            response, _ = await self._retrying(
+                lambda: self.drive.files_list(
+                    q=query, fields=self.LIST_FIELDS, page_size=2, order_by="modifiedTime desc", **self._list_params()
+                ),
+                label="resolve",
+            )
             items = response.get("files", [])
             if not items:
                 raise FileNotFoundError(full_path)
-            item = min(items, key=lambda candidate: candidate["id"]) if len(items) > 1 and items[0].get("modifiedTime") == items[1].get("modifiedTime") else items[0]
+            item = (
+                min(items, key=lambda candidate: candidate["id"])
+                if len(items) > 1 and items[0].get("modifiedTime") == items[1].get("modifiedTime")
+                else items[0]
+            )
             cached = (item["id"], self._is_folder(item))
             self._path_cache[current] = cached
             parent = cached[0]
@@ -282,7 +314,14 @@ class GoogleDriveFileManager(FileManagerInterface):
             try:
                 parent = (await self._resolve(current, want_folder=True))[0]
             except FileNotFoundError:
-                item, _ = await self._retrying(lambda: self.drive.files_create({"name": segment, "mimeType": FOLDER_MIME, "parents": [parent]}, fields=self.FIELDS, **self._list_params()), label="create-folder")
+                item, _ = await self._retrying(
+                    lambda: self.drive.files_create(
+                        {"name": segment, "mimeType": FOLDER_MIME, "parents": [parent]},
+                        fields=self.FIELDS,
+                        **self._list_params(),
+                    ),
+                    label="create-folder",
+                )
                 parent = item["id"]
                 self._path_cache[current] = (parent, True)
         return parent
@@ -297,17 +336,34 @@ class GoogleDriveFileManager(FileManagerInterface):
 
     @staticmethod
     def _is_workspace_native(item: Dict[str, Any]) -> bool:
-        return item.get("mimeType", "").startswith(WORKSPACE_MIME_PREFIX) and not GoogleDriveFileManager._is_folder(item)
+        return item.get("mimeType", "").startswith(WORKSPACE_MIME_PREFIX) and not GoogleDriveFileManager._is_folder(
+            item
+        )
 
     def _make_metadata(self, item: Dict[str, Any], *, full_path: str) -> FileMetadata:
         modified = item.get("modifiedTime")
         parsed = datetime.fromisoformat(modified.replace("Z", "+00:00")) if modified else None
-        return FileMetadata(item["name"], self._unprefixed(full_path), int(item.get("size") or 0), item.get("mimeType"), parsed, item.get("webViewLink"))
+        return FileMetadata(
+            item["name"],
+            self._unprefixed(full_path),
+            int(item.get("size") or 0),
+            item.get("mimeType"),
+            parsed,
+            item.get("webViewLink"),
+        )
 
     def _make_entry(self, item: Dict[str, Any], *, full_path: str) -> DriveEntry:
         metadata = self._make_metadata(item, full_path=full_path)
-        return DriveEntry(id=item["id"], name=metadata.name, path=metadata.path, is_folder=self._is_folder(item), size=metadata.size,
-                          modified_at=metadata.modified_at, web_url=metadata.url, content_type=metadata.content_type)
+        return DriveEntry(
+            id=item["id"],
+            name=metadata.name,
+            path=metadata.path,
+            is_folder=self._is_folder(item),
+            size=metadata.size,
+            modified_at=metadata.modified_at,
+            web_url=metadata.url,
+            content_type=metadata.content_type,
+        )
 
     @staticmethod
     def _status_code_of(error: BaseException) -> Optional[int]:
@@ -361,7 +417,9 @@ class GoogleDriveFileManager(FileManagerInterface):
             return FileExistsError(path)
         return GoogleDriveFileManagerError(str(exc), status_code=status)
 
-    async def _retrying(self, op: Callable[[], Awaitable[Any]], *, label: str, idempotent: bool = True) -> Tuple[Any, int]:
+    async def _retrying(
+        self, op: Callable[[], Awaitable[Any]], *, label: str, idempotent: bool = True
+    ) -> Tuple[Any, int]:
         attempts = 1
         while True:
             try:

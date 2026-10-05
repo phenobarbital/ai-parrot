@@ -1,4 +1,5 @@
 """FEAT-608 GoogleDriveFileManager unit tests (TASK-3810 core)."""
+
 import datetime as dt
 import sys
 
@@ -105,7 +106,9 @@ def test_rejects_parent_segments():
 def test_map_error_and_status_from_httperror():
     result = GoogleDriveFileManager()
     assert isinstance(result._map_error(FakeHTTPError(404), path="x"), FileNotFoundError)
-    assert isinstance(result._map_error(FakeHTTPError(403, reason="rateLimitExceeded"), path="x"), GoogleDriveFileManagerError)
+    assert isinstance(
+        result._map_error(FakeHTTPError(403, reason="rateLimitExceeded"), path="x"), GoogleDriveFileManagerError
+    )
 
 
 @pytest.mark.asyncio
