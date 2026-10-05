@@ -847,7 +847,7 @@ class ArangoDBWikiStore(BaseWikiStore):
                 {"old_keys": old_keys, "@collection": PAGES_COLLECTION},
             )
 
-        await self._query(
+        await self._execute(
             "FOR s IN @@collection FILTER s.source_id == @sid REMOVE s IN @@collection",
             {"@collection": SYMBOLS_COLLECTION, "sid": source_id},
         )
