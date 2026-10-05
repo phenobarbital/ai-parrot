@@ -159,7 +159,10 @@ class TestStudioCatalogs:
         for row in body:
             if not row["available"]:
                 continue
-            expected = LLMFactory.list_models(row["provider"])
+            try:
+                expected = LLMFactory.list_models(row["provider"])
+            except Exception:  # provider without a model registry degrades to empty lists
+                expected = {"active": [], "deprecated": []}
             assert row["models"] == expected["active"]
             assert row["deprecated_models"] == expected["deprecated"]
 
