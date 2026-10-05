@@ -242,8 +242,8 @@ See the `test_jobs.py` block above. All tests are async-capable via `pytest-asyn
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-terra (codex), orchestrated by sdd-worker
+**Date**: 2026-10-05
+**Notes**: jobs.py trampolines match spec M1; merge-tier validation 181 passed. Closed via close_task.sh, not finalize_task: no durable review EvidenceRef is obtainable (coder_record_review returns only a feedback_id; durable root is in the read-only primary checkout). Review recorded as coder-review ids; zero fix commits.
 
 **Deviations from spec**: none

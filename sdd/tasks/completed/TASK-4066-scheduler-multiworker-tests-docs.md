@@ -187,8 +187,8 @@ See the `test_multiworker.py` block above.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-terra (codex), orchestrated by sdd-worker
+**Date**: 2026-10-05
+**Notes**: 4 multiworker tests + docs delivered; merge validation green. Closed via close_task.sh.
 
 **Deviations from spec**: none
