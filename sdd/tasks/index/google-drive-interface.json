@@ -285,7 +285,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -295,8 +295,9 @@
       "parallelism_notes": "documents GoogleDriveToolkit from TASK-3816 (parrot_tools/google/drive.py) and the finished manager API",
       "assigned_to": null,
       "started_at": "2026-10-05T21:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3819-gdrive-docs.md"
+      "completed_at": "2026-10-05T22:52:52+00:00",
+      "file": "sdd/tasks/completed/TASK-3819-gdrive-docs.md",
+      "verification": "verified"
     }
   ]
 }
