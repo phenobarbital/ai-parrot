@@ -90,9 +90,7 @@ async def test_scope_granted_viewer_uses_own_pctx_even_with_share_token():
     record = _make_record(user_id="owner-1", tenant="epson", visibility=SurfaceVisibility.tenant)
     service = _service()
     scope = SurfaceScope(user_id="viewer-9", tenant="epson", groups=frozenset(), is_superuser=False)
-    response = await _post(
-        _request(record, service, user_id="viewer-9", query={"share": "tok"}, body={}, scope=scope)
-    )
+    response = await _post(_request(record, service, user_id="viewer-9", query={"share": "tok"}, body={}, scope=scope))
 
     assert response.status == 200
     assert service.fetch_source.call_args.kwargs["pctx"].user_id == "viewer-9"
