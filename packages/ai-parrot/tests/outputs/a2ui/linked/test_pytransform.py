@@ -45,6 +45,7 @@ async def test_apply_unregistered(registered) -> None:
 
 async def test_apply_failure(registered) -> None:
     """Transformer exceptions are wrapped as transform-stage failures."""
+
     def broken(inputs: dict[str, pd.DataFrame], params: dict[str, object]) -> dict[str, pd.DataFrame]:
         raise RuntimeError("broken")
 
