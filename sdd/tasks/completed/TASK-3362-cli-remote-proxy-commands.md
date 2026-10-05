@@ -329,3 +329,10 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: gpt-5.6-luna (codex), 1 attempt. CLI remote proxy commands (remote_cli.py).
+
+Validation: task tests pass; wiki suites: tests/knowledge/wiki 2026 passed; packages/ai-parrot wiki tests show only the 15 failures that also fail on plain dev.

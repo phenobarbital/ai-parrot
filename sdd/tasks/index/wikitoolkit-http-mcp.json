@@ -153,7 +153,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -165,8 +165,9 @@
       "parallelism_notes": "calls create_structural_tools(read_repair=) from TASK-3353 (structural/tools.py); LedgerService.from_dir from TASK-3354 (ledger/service.py); create_bulk_tools from TASK-3357 (tools.py)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3358-wiki-tool-bundle-builder.md"
+      "completed_at": "2026-10-05T22:55:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3358-wiki-tool-bundle-builder.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3359",
@@ -239,7 +240,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -250,8 +251,9 @@
       "parallelism_notes": "imports resolve_remote/WikiRemoteConfig from TASK-3351 (project.py) and RemoteWikiClient/RemoteWikiError from TASK-3359 (remote.py); first writer of cli.py in this feature",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3362-cli-remote-proxy-commands.md"
+      "completed_at": "2026-10-05T22:55:20+00:00",
+      "file": "sdd/tasks/completed/TASK-3362-cli-remote-proxy-commands.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3363",
@@ -302,7 +304,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -312,8 +314,9 @@
       "parallelism_notes": "imports WikiRemoteConfig from TASK-3351 (project.py); edits claude_code/{assets,installer,cli}.py only",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3365-claude-installer-remote.md"
+      "completed_at": "2026-10-05T22:55:23+00:00",
+      "file": "sdd/tasks/completed/TASK-3365-claude-installer-remote.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3366",

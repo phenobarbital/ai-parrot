@@ -271,3 +271,10 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: sonnet (native), 1 attempt. Claude installer --remote; signature drift adapted (no toolkits param); foreign wikitoolkit entry left untouched with a stderr warning.
+
+Validation: task tests pass; wiki suites: tests/knowledge/wiki 2026 passed; packages/ai-parrot wiki tests show only the 15 failures that also fail on plain dev.
