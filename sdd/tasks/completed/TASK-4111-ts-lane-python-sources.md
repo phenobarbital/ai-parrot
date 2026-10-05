@@ -239,10 +239,8 @@ Svelte 5 runes only (`$props`) — codebase conventions.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: native sonnet, attempt 1
+**Date**: 2026-10-06
+**Notes**: Diff reviewed by the orchestrator against the task. Evidence: per the coder's own report: vitest run on src/lib/components/agents/canvas/a2ui with the main checkout's node_modules temporarily symlinked, 193/195 passed; the 2 failures are in A2UINode.test.ts (a locale '57.9%' assertion, not touched by this task). The pytest vitest wrappers skip in the worktree. I did not rerun vitest myself and did not check that those 2 failures predate the change.
 
 **Deviations from spec**: none

@@ -161,7 +161,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -172,8 +172,9 @@
       "parallelism_notes": "Imports the PythonTransform TS type re-exported by TASK-4110 (linked/types.ts); consumes the /sources/{key}/data route and response shape created by TASK-4108 (handlers/ui_surfaces.py).",
       "assigned_to": null,
       "started_at": "2026-10-05T23:07:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4111-ts-lane-python-sources.md"
+      "completed_at": "2026-10-05T23:48:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4111-ts-lane-python-sources.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4112",
