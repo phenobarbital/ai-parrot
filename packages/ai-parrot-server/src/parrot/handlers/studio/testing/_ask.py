@@ -20,6 +20,7 @@ class _StudioTestingAskMixin:
         ``ctx`` is bound into the request context of the ask (``studio_scope``, FEAT-605 C16).
         """
         byok_applied = False
+        default_llm = getattr(bot, "llm", None)
         if ask_request.use_byok:
             byok_applied = await self._maybe_apply_byok(bot)
 
@@ -30,6 +31,9 @@ class _StudioTestingAskMixin:
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.exception("Studio test/ask failed for '%s'", agent_name)
             return self._error(f"Agent query failed: {exc}", status=502, code="query_failed")
+        finally:
+            if byok_applied:
+                bot.llm = default_llm  # the session bot is shared: a personal key must never outlive its ask
 
         content = str(response.content) if hasattr(response, "content") else str(response)
         metadata = getattr(response, "metadata", None) or {}

@@ -254,15 +254,23 @@ async def test_ask_byok_false_without_key_true_after_key(aiohttp_client, pool, a
     async with pool.acquire() as conn:
         await conn.execute("TRUNCATE navigator.ai_user_llm_keys")
     try:
-        await _byok_round_trip(aiohttp_client, pool)
+        await _byok_round_trip(aiohttp_client, pool, monkeypatch)
     finally:
         register_byok_store(None)
         async with pool.acquire() as conn:
             await conn.execute("TRUNCATE navigator.ai_user_llm_keys")
 
 
-async def _byok_round_trip(aiohttp_client, pool):
+async def _byok_round_trip(aiohttp_client, pool, monkeypatch):
     client = await _client(aiohttp_client, pool)
+    served: list = []                                                    # the client object that served each ask
+    plain_ask = BasicBot.ask
+
+    async def _recording_ask(self, *args, **kwargs):
+        served.append(self.llm)
+        return await plain_ask(self, *args, **kwargs)
+
+    monkeypatch.setattr(BasicBot, "ask", _recording_ask)
     resp = await client.post(f"{BASE}/agents", json={"name": "alpha", "bot_class": "BasicBot", "llm": "openai:gpt-4o"})
     assert resp.status == 201, await resp.text()
     resp = await _ask(client)
@@ -272,12 +280,10 @@ async def _byok_round_trip(aiohttp_client, pool):
     if resp.status == 503:
         pytest.skip(f"vault keyring unavailable (as in test_byok.py): {await resp.text()}")
     assert resp.status in (200, 201), await resp.text()
-    resp = await client.post(
-        f"{BASE}/agents/alpha/test/ask", json={"query": "hi", "use_byok": True}, headers={"X-User": "u1"}
-    )
-    body = await resp.json()
-    assert resp.status == 200 and body["byok"] is True, body
-    resp = await client.post(
-        f"{BASE}/agents/alpha/test/ask", json={"query": "hi", "use_byok": False}, headers={"X-User": "u1"}
-    )
-    assert (await resp.json())["byok"] is False
+    default_client = served[0]
+    for use_byok in (True, False, True, False):                          # one session bot throughout
+        resp = await client.post(f"{BASE}/agents/alpha/test/ask", json={"query": "hi", "use_byok": use_byok},
+                                 headers={"X-User": "u1"})
+        body = await resp.json()
+        assert resp.status == 200 and body["byok"] is use_byok, body
+        assert (served[-1] is default_client) is not use_byok, f"use_byok={use_byok} served by the wrong client"
