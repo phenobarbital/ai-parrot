@@ -35,7 +35,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "Imports PythonTransform created by TASK-4104 (linked/models.py).",
       "assigned_to": null,
       "started_at": "2026-10-05T23:07:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4105-pytransform-core.md"
+      "completed_at": "2026-10-05T23:28:34+00:00",
+      "file": "sdd/tasks/completed/TASK-4105-pytransform-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4106",
