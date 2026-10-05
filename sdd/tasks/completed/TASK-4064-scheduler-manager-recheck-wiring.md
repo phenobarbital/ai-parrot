@@ -341,8 +341,8 @@ See the `test_fire_recheck.py` block above.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-terra (codex), orchestrated by sdd-worker
+**Date**: 2026-10-05
+**Notes**: manager.py wiring matches task scope; scheduler tests 194 passed. Merge-tier run has the same unrelated pre-existing failures as TASK-4063. Closed via close_task.sh.
 
 **Deviations from spec**: none
