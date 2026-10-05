@@ -14,9 +14,7 @@ class _StudioAgentVisibilityMixin:
 
     async def _visibility_unavailable(self):
         """Visibility has no filesystem implementation (503 ``studio_storage_unavailable``)."""
-        return self._studio_error(
-            StudioStorageUnavailable("PATCH /agents/{name}/visibility needs the database backend")
-        )
+        return self._studio_error(StudioStorageUnavailable("PATCH /agents/{name}/visibility needs the database backend"))
 
     async def _visibility_request(self):
         """The parsed :class:`VisibilityUpdateRequest`, or a 400 ``invalid_json`` / ``invalid_request`` response."""
@@ -49,9 +47,7 @@ class _StudioAgentVisibilityMixin:
             lambda guard: svc.update_visibility(
                 part, name, visibility=update.visibility, allowed_groups=update.allowed_groups, guard=guard
             ),
-            record=rec,
-            reread=lambda: svc.get(part, name),
-            reauthorize=self._reauthorize("agent", name),
+            record=rec, reread=lambda: svc.get(part, name), reauthorize=self._reauthorize("agent", name),
             expected_version=None,
         )
         if isinstance(updated, web.Response):

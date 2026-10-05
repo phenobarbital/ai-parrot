@@ -34,12 +34,8 @@ class _StudioSkillsImportDbMixin:
         if agent is None and part.tenant is None:
             return await self._legacy_post()  # not a Studio agent: the registry/filesystem path
         denied = await self._check_record_access(
-            await self._access(),
-            _store_record("agent", agent.agent_id, agent) if agent else None,
-            "agent",
-            agent_name,
-            manage=True,
-        )
+            await self._access(), _store_record("agent", agent.agent_id, agent) if agent else None, "agent",
+            agent_name, manage=True)
         if denied is not None:
             return denied
         skill, denied = await self._db_skill(storage, part, skill_id, manage=False)
@@ -47,12 +43,8 @@ class _StudioSkillsImportDbMixin:
             return denied
         existing = await storage.services.assets.get(part, agent_name, "skills", f"{skill.name}.md")
         if existing is not None and not bool(payload.get("overwrite", False)):
-            return self._error(
-                f"Skill file '{skill.name}.md' already exists for agent '{agent_name}'; "
-                "pass overwrite=true to replace.",
-                status=409,
-                code="collision",
-            )
+            return self._error(f"Skill file '{skill.name}.md' already exists for agent '{agent_name}'; "
+                               "pass overwrite=true to replace.", status=409, code="collision")
         user = await self._get_user()
         result = await self._studio_write(
             lambda guard: storage.services.skills.import_to_agent(

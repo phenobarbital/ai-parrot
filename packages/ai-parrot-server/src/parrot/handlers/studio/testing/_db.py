@@ -48,7 +48,7 @@ class _StudioTestingDbMixin:
                 return await self._ask_response(bot, agent_name, ask_request, **ctx)
         except StudioNotFound:
             return self._not_found("agent", agent_name)
-        except PermissionError as exc:  # AgentAccessDenied (PBAC deny, raised before any build)
+        except PermissionError as exc:   # AgentAccessDenied (PBAC deny, raised before any build)
             return self._error(str(exc), status=403, code="access_denied")
 
     async def _maybe_apply_byok(self, bot) -> bool:
@@ -100,4 +100,6 @@ class _StudioTestingDbMixin:
             return self.json_response({"message": f"No active test session for '{agent_name}'"}, status=200)
         if (runtime := getattr(self._manager(), "studio", None)) is not None:
             runtime.evict_session(key, sid)
-        return self.json_response({"message": f"Test session for '{agent_name}' stopped", "agent_name": agent_name})
+        return self.json_response(
+            {"message": f"Test session for '{agent_name}' stopped", "agent_name": agent_name}
+        )

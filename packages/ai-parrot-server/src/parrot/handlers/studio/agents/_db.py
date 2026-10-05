@@ -81,7 +81,9 @@ class _StudioAgentsDbMixin:
         if manager is None:
             return self._error("BotManager unavailable.", status=503, code="unavailable")
         if manager.get_bot_class(create_request.bot_class) is None:
-            return self._error(f"Unknown bot_class '{create_request.bot_class}'.", status=400, code="invalid_bot_class")
+            return self._error(
+                f"Unknown bot_class '{create_request.bot_class}'.", status=400, code="invalid_bot_class"
+            )
         return None
 
     async def _db_post(self, storage, part):
@@ -89,9 +91,8 @@ class _StudioAgentsDbMixin:
         if (denied := await self._require_author()) is not None:
             return denied
         if self.request.match_info.get("name"):
-            return self._error(
-                "Use POST /astudio/agents (no name in the URL) to create.", status=400, code="invalid_route"
-            )
+            return self._error("Use POST /astudio/agents (no name in the URL) to create.", status=400,
+                               code="invalid_route")
         parsed = await self._create_request()
         if isinstance(parsed, web.Response):
             return parsed
@@ -105,12 +106,8 @@ class _StudioAgentsDbMixin:
         stamp = access.stamp(visibility=create_request.visibility, allowed_groups=create_request.allowed_groups)
         try:
             rec = await storage.services.agents.create(
-                part,
-                name=slug,
-                owner=stamp["owner"],
-                definition=definition,
-                visibility=stamp["visibility"],
-                allowed_groups=stamp["allowed_groups"],
+                part, name=slug, owner=stamp["owner"], definition=definition,
+                visibility=stamp["visibility"], allowed_groups=stamp["allowed_groups"],
             )
         except StudioNameConflict:
             return self._name_taken(slug)
@@ -128,24 +125,14 @@ class _StudioAgentsDbMixin:
             return StudioAgentDefinition.from_create_request(create_request)
         except ValidationError as exc:
             reserved = RESERVED_CONFIG_KEY_MESSAGE in str(exc)
-            return self._error(
-                f"Invalid request: {exc}",
-                status=400 if reserved else 422,
-                code="reserved_config_key" if reserved else "unsupported_config_key",
-            )
+            return self._error(f"Invalid request: {exc}", status=400 if reserved else 422,
+                               code="reserved_config_key" if reserved else "unsupported_config_key")
 
     @staticmethod
     def _created_body(rec, create_request: CreateAgentRequest) -> dict:
         """The 201 body (``persist: false`` only adds a warning: database storage always persists)."""
-        body = {
-            "name": rec.name,
-            "persisted": True,
-            "source": "studio",
-            "file_path": None,
-            "agent_id": str(rec.agent_id),
-            "version": rec.version,
-            "tenant": rec.tenant,
-        }
+        body = {"name": rec.name, "persisted": True, "source": "studio", "file_path": None,
+                "agent_id": str(rec.agent_id), "version": rec.version, "tenant": rec.tenant}
         if "persist" in create_request.model_fields_set and not create_request.persist:
             body["warnings"] = ["persist ignored: database storage always persists"]
         return body
@@ -166,9 +153,7 @@ class _StudioAgentsDbMixin:
         svc = storage.services.agents
         deleted = await self._studio_write(
             lambda guard: svc.delete(part, name, guard=guard),
-            record=rec,
-            reread=lambda: svc.get(part, name),
-            reauthorize=self._reauthorize("agent", name),
+            record=rec, reread=lambda: svc.get(part, name), reauthorize=self._reauthorize("agent", name),
             expected_version=self._expected_version(self.request.query),
         )
         if isinstance(deleted, web.Response):
@@ -220,9 +205,7 @@ class _StudioAgentsDbMixin:
         svc = storage.services.agents
         updated = await self._studio_write(
             lambda guard: svc.patch(part, name, patch, guard=guard, actor=user.user_id),
-            record=rec,
-            reread=lambda: svc.get(part, name),
-            reauthorize=self._reauthorize("agent", name),
+            record=rec, reread=lambda: svc.get(part, name), reauthorize=self._reauthorize("agent", name),
             expected_version=patch.expected_version,
         )
         if isinstance(updated, web.Response):

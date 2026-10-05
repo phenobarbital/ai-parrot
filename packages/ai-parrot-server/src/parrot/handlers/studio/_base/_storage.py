@@ -113,7 +113,7 @@ class _StudioStorageMixin:
         from ..storage.models import StudioStorageUnavailable
 
         storage = self.request.app.get("studio_storage")
-        if storage is None:  # the startup hook did not run → 503 studio_storage_unavailable
+        if storage is None:   # the startup hook did not run → 503 studio_storage_unavailable
             raise StudioStorageUnavailable("studio storage was not resolved at startup")
         return storage
 
@@ -193,9 +193,8 @@ class _StudioStorageMixin:
         try:
             return int(raw)
         except (TypeError, ValueError) as exc:
-            raise StudioValidationError(
-                "expected_version must be an integer", code="invalid_expected_version", status=400
-            ) from exc
+            raise StudioValidationError("expected_version must be an integer", code="invalid_expected_version",
+                                        status=400) from exc
 
     def _refuse_expected_version(self, source: Any) -> web.Response | None:
         """400 ``expected_version_unsupported`` when an unsupported route was sent one; ``None`` otherwise."""
