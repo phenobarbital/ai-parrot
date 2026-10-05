@@ -88,3 +88,35 @@ def test_changelog_lists_the_plain_host_behaviour_changes():
     for needle in ("name_taken", "not_manageable", "PATCH /astudio/agents/{name}/visibility", "`version`",
                    "required migration level is 8"):
         assert needle in unreleased, needle
+
+
+# ---- FEAT-634 — UI backend gaps: the doc pins the new fields, the refusal shape and the corrected statements ------
+NEW_FIELDS = ["definition", "deprecated_models", "tenant_toolkits", "toolkit_unavailable", "entries", "byok",
+              "last-write-wins", "`allowed`", "`models`", "`version`", "Host toolkit allow-list", "Known limits"]
+
+
+@pytest.mark.parametrize("needle", NEW_FIELDS)
+def test_feat634_new_surface_documented(needle):
+    assert needle in _text(), needle
+
+
+def test_feat634_refusal_shape_documented():
+    text = _text()
+    assert '{"reason": "toolkit_unavailable", "item": "<slug>"}' in text
+    assert "422 | `tooling_not_permitted`" in text and "403 | `tooling_not_permitted`" in text
+    assert "expected_version" in text and "not** support" in text      # visibility: no expected_version
+
+
+@pytest.mark.parametrize("stale", ["409 delegated", "DocumentDB", "BYOK is out of scope"])
+def test_feat634_stale_statements_removed(stale):
+    assert stale not in _text(), stale
+
+
+def test_feat634_missing_rows_added_and_limits_named():
+    text = _text()
+    for row in ("| `PATCH` | `/agents/{name}` |", "| `PATCH` | `/agents/{name}/visibility` |",
+                "| `PATCH` | `/drafts/{name}/visibility` |", "| `PATCH` | `/skills/{id}/visibility` |",
+                "| `GET` | `/me` |"):
+        assert row in text, row
+    assert "POST /agents/{name}/tools" in text.split("### Known limits")[1]      # B3
+    assert "does not list what it wrote" in text                                  # B10
