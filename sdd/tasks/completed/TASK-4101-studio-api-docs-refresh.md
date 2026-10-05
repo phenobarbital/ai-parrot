@@ -156,4 +156,4 @@ Text-parity test, no app needed.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Docs refreshed: overview rows (PATCH agent, 3 visibility PATCH, /me, catalog row), agent lifecycle (database-mode shapes, definition, PATCH, DELETE), bundle drafts, files entries, skills import version, BYOK store (no DocumentDB), test/ask byok, catalogues (models/deprecated_models/allowed/host rows/tenant-filtered tools), error-code details, visibility last-write-wins, new 'Host toolkit allow-list' subsection with refusal table, 'Known limits' (B3, B10). SPEC DISCREPANCY: the spec/task asked to add a 'GET /sharing/groups' row, but no such route exists anywhere in this repo (grep over py/md/json), so it was NOT documented as a route; Known limits states it does not exist in this package. Parity tests added to test_feat605_contract_doc.py (53 pass). Seat: native.
