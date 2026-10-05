@@ -9,6 +9,7 @@ via a Bash-invoked CLI.
 
 import asyncio
 import hashlib
+import json
 from datetime import UTC, date as _date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Union
@@ -22,8 +23,9 @@ from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results
 from parrot.knowledge.wiki.decisions.models import ADR_CATEGORY, ADR_MANAGED_PAGE
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
-from parrot.knowledge.wiki.project import WikiProjectConfig
-from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, estimate_tokens
+from parrot.knowledge.wiki.project import WikiProjectConfig, wiki_write_lock
+from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, WikiStoreBusy, estimate_tokens
+from parrot.knowledge.wiki.symbols import SymbolRecord
 from parrot.tools.abstract import AbstractTool, ToolResult
 
 
@@ -939,6 +941,128 @@ class LedgerContextTool(AbstractTool):
             return ToolResult(result={"context": context})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
+
+
+INGEST_MAX_SLICES = 200
+INGEST_MAX_BYTES = 1_048_576
+HASHES_MAX_IDS = 2000
+
+
+class SourceSlicePayload(BaseModel):
+    """One `replace_source_slice` unit crossing the wire (FEAT-569)."""
+
+    source_id: str
+    pages: list[WikiPageRecord] = Field(default_factory=list)
+    edges: list[tuple[str, str, str]] = Field(default_factory=list)
+    symbols: list[SymbolRecord] = Field(default_factory=list)
+
+
+class IngestBatchInput(BaseModel):
+    """Arguments of `wiki_ingest_batch`."""
+
+    slices: list[SourceSlicePayload] = Field(default_factory=list)
+    deleted_source_ids: list[str] = Field(default_factory=list)
+    batch_id: str | None = None
+
+
+class PageHashesInput(BaseModel):
+    """Arguments of `wiki_page_hashes`."""
+
+    concept_ids: list[str] = Field(default_factory=list)
+
+
+class IngestBatchReport(BaseModel):
+    """Outcome of one `wiki_ingest_batch` call."""
+
+    slices_applied: int = 0
+    slices_deleted: int = 0
+    pages_written: int = 0
+    edges_written: int = 0
+    symbols_written: int = 0
+    symbols_dropped: int = 0
+    rejected: list[str] = Field(default_factory=list)
+
+
+class WikiPageHashesTool(AbstractTool):
+    """Return stored content hashes for up to 2000 page ids.
+
+    Delta oracle for the `wikitoolkit` CLI build push; not meant for agents.
+    """
+
+    name = "wiki_page_hashes"
+    args_schema = PageHashesInput
+
+    def __init__(self, store: BaseWikiStore):
+        super().__init__()
+        self._store = store
+
+    async def _execute(self, concept_ids: list[str]) -> ToolResult:
+        if len(concept_ids) > HASHES_MAX_IDS:
+            return ToolResult(
+                success=False, status="error", result=None, error=f"at most {HASHES_MAX_IDS} ids per call"
+            )
+        return ToolResult(result={"hashes": await self._store.page_hashes(concept_ids)})
+
+
+class WikiIngestBatchTool(AbstractTool):
+    """Apply source slices pushed by `wikitoolkit build/upsert/ingest` in remote mode.
+
+    At most 200 slices and 1 MiB per call. For the CLI build push, not for agents.
+    """
+
+    name = "wiki_ingest_batch"
+    args_schema = IngestBatchInput
+
+    def __init__(self, store: BaseWikiStore, root: Path, config: WikiProjectConfig):
+        super().__init__()
+        self._store, self._root, self._config = store, root, config
+
+    @staticmethod
+    def _error(message: str) -> ToolResult:
+        return ToolResult(success=False, status="error", result=None, error=message)
+
+    async def _execute(
+        self,
+        slices: list[SourceSlicePayload] | None = None,
+        deleted_source_ids: list[str] | None = None,
+        batch_id: str | None = None,
+    ) -> ToolResult:
+        slices = [s if isinstance(s, SourceSlicePayload) else SourceSlicePayload.model_validate(s) for s in slices or []]
+        deleted_source_ids = deleted_source_ids or []
+        # Validate everything BEFORE taking the lock or writing anything.
+        if len(slices) > INGEST_MAX_SLICES or len(deleted_source_ids) > INGEST_MAX_SLICES:
+            return self._error(f"at most {INGEST_MAX_SLICES} slices per call")
+        if len(json.dumps([s.model_dump(mode="json") for s in slices]).encode()) > INGEST_MAX_BYTES:
+            return self._error("payload too large (max 1 MiB)")
+        report = IngestBatchReport()
+        try:
+            with wiki_write_lock(
+                self._config.storage_path(self._root), timeout=self._config.sqlite_busy_timeout
+            ) as acquired:
+                if not acquired:
+                    return self._error("busy: wiki writer lock is held by another process")
+                for s in slices:
+                    result = await self._store.replace_source_slice(s.source_id, s.pages, s.edges)
+                    report.pages_written += int(result.get("pages_written", 0))
+                    report.edges_written += int(result.get("edges_written", 0))
+                    count = await self._store.upsert_symbols(s.symbols, source_id=s.source_id)
+                    report.symbols_written += count
+                    if s.symbols and count == 0:
+                        report.symbols_dropped += len(s.symbols)
+                    report.slices_applied += 1
+                    self.logger.info("ingest_batch %s applied %s", batch_id, s.source_id)
+                for sid in deleted_source_ids:
+                    await self._store.replace_source_slice(sid, [], [])
+                    report.slices_deleted += 1
+                    self.logger.info("ingest_batch %s deleted %s", batch_id, sid)
+        except WikiStoreBusy as exc:
+            return self._error(f"busy: {exc}")
+        return ToolResult(result=report.model_dump())
+
+
+def create_bulk_tools(store: BaseWikiStore, root: Path, config: WikiProjectConfig) -> list[AbstractTool]:
+    """Server-only tools that move data for the CLI (build push delta oracle + slice writer)."""
+    return [WikiPageHashesTool(store), WikiIngestBatchTool(store, root, config)]
 
 
 def create_wiki_tools(
