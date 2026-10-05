@@ -163,10 +163,11 @@ it('TransformSpec carries the generated python member (FEAT-636)', () => {
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: native sonnet retry (attempt 2) after codex gpt-5.6-terra attempt 1 returned empty_delivery
+**Date**: 2026-10-06
+**Notes**: LinkedSources.d.ts regenerated via the main checkout's json2ts (worktree has no node_modules); types.ts
+re-exports PythonTransform; type test appended. Vitest suites were SKIPPED (vitest not installed in the worktree),
+so the new TS test is not executed. test_ts_codegen schema-sync failure on ToolkitPersistResponse.json reproduces
+without this task's changes (unrelated). Marked partial because vitest never ran.
 
 **Deviations from spec**: none
