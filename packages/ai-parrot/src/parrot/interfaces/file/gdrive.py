@@ -9,7 +9,7 @@ import fnmatch
 import io
 import logging
 import mimetypes
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import (
@@ -871,3 +871,186 @@ class GoogleDriveFileManager(FileManagerInterface):
         """Upload raw bytes and return the item's ``webViewLink`` (S3 parity)."""
         item, metadata = await self._upload_any(io.BytesIO(file_obj), destination_key, content_type)
         return item.get("webViewLink") or metadata.url or ""
+
+    # ---- mutations & sharing (TASK-3813) ---------------------------------
+    async def copy_file(self, source: str, destination: str) -> FileMetadata:
+        """Copy a Drive file synchronously without retrying the non-idempotent operation."""
+        await self._ready()
+        source_full, destination_full = self._prefixed(source), self._prefixed(destination)
+        try:
+            source_id, _ = await self._resolve(source_full)
+            parent_id = await self._resolve_parent(destination_full, create=True)
+            name = destination_full.rsplit("/", 1)[-1]
+            name, existing_id = await self._apply_conflict(parent_id, name, destination)
+            if existing_id is not None:
+                await self._retrying(
+                    lambda: self.drive.files_update(existing_id, {"trashed": True}, fields="id", **self._list_params()),
+                    label="replace-copy-conflict",
+                )
+            item, _ = await self._retrying(
+                lambda: self.drive.files_copy(
+                    source_id,
+                    {"name": name, "parents": [parent_id]},
+                    fields=self.FIELDS,
+                    **self._list_params(),
+                ),
+                label="copy",
+                idempotent=False,
+            )
+            final_path = f"{destination_full.rpartition('/')[0]}/{name}".strip("/")
+            self._invalidate(final_path)
+            return self._make_metadata(item, full_path=final_path)
+        except (FileExistsError, GoogleDriveFileManagerError):
+            raise
+        except Exception as exc:
+            raise self._map_error(exc, path=source) from exc
+
+    async def delete_file(self, path: str) -> bool:
+        """Trash a file by default, permanently deleting it when configured."""
+        await self._ready()
+        full_path = self._prefixed(path)
+        try:
+            file_id, _ = await self._resolve(full_path)
+        except FileNotFoundError:
+            return False
+        try:
+            if self.permanent_delete:
+                await self._retrying(
+                    lambda: self.drive.files_delete(file_id, **self._list_params()), label="delete"
+                )
+            else:
+                await self._retrying(
+                    lambda: self.drive.files_update(file_id, {"trashed": True}, fields="id", **self._list_params()),
+                    label="trash",
+                )
+            self._invalidate(full_path)
+            return True
+        except Exception as exc:
+            raise self._map_error(exc, path=path) from exc
+
+    async def create_folder(self, folder_name: str) -> None:
+        """Create a folder and every missing parent under the configured root."""
+        await self._ready()
+        full_path = self._prefixed(folder_name)
+        try:
+            await self._resolve_parent(f"{full_path}/x", create=True)
+        except Exception as exc:
+            raise self._map_error(exc, path=folder_name) from exc
+
+    async def remove_folder(self, folder_name: str) -> None:
+        """Trash or permanently delete a folder and its contents."""
+        await self._ready()
+        full_path = self._prefixed(folder_name)
+        try:
+            folder_id, _ = await self._resolve(full_path, want_folder=True)
+            if self.permanent_delete:
+                await self._retrying(
+                    lambda: self.drive.files_delete(folder_id, **self._list_params()), label="delete-folder"
+                )
+            else:
+                await self._retrying(
+                    lambda: self.drive.files_update(folder_id, {"trashed": True}, fields="id", **self._list_params()),
+                    label="trash-folder",
+                )
+            self._invalidate(full_path)
+        except Exception as exc:
+            raise self._map_error(exc, path=folder_name) from exc
+
+    async def _move_or_rename(self, old: str, new: str) -> None:
+        """Rename or move an item, rejecting replacement of a different target item."""
+        await self._ready()
+        old_full, new_full = self._prefixed(old), self._prefixed(new)
+        try:
+            file_id, _ = await self._resolve(old_full)
+            old_parent_id = await self._resolve_parent(old_full, create=False)
+            new_parent_id = await self._resolve_parent(new_full, create=True)
+            name = new_full.rsplit("/", 1)[-1]
+            name, existing_id = await self._apply_conflict(new_parent_id, name, new)
+            if existing_id is not None and existing_id != file_id:
+                raise FileExistsError(new)
+            params: Dict[str, Any] = {}
+            if old_parent_id != new_parent_id:
+                params.update(add_parents=new_parent_id, remove_parents=old_parent_id)
+            await self._retrying(
+                lambda: self.drive.files_update(file_id, {"name": name}, fields=self.FIELDS, **params, **self._list_params()),
+                label="move-or-rename",
+            )
+            self._invalidate(old_full)
+            self._invalidate(new_full)
+        except FileExistsError:
+            raise
+        except Exception as exc:
+            raise self._map_error(exc, path=old) from exc
+
+    async def rename_file(self, old_file_name: str, new_file_name: str) -> None:
+        """Rename and/or move a file within the configured Drive root."""
+        await self._move_or_rename(old_file_name, new_file_name)
+
+    async def rename_folder(self, old_folder_name: str, new_folder_name: str) -> None:
+        """Rename and/or move a folder within the configured Drive root."""
+        await self._move_or_rename(old_folder_name, new_folder_name)
+
+    async def create_sharing_link(
+        self,
+        path: str,
+        *,
+        scope: ShareScope = "user",
+        role: ShareRole = "reader",
+        email_address: Optional[str] = None,
+        domain: Optional[str] = None,
+        expiry: int = 0,
+    ) -> str:
+        """Create a Drive permission and return the item's ``webViewLink`` without retrying."""
+        if scope in {"user", "group"} and not email_address:
+            raise ValueError(f"email_address is required for {scope} sharing")
+        if scope == "domain" and not domain:
+            raise ValueError("domain is required for domain sharing")
+        await self._ready()
+        full_path = self._prefixed(path)
+        body: Dict[str, Any] = {"type": scope, "role": role}
+        if scope in {"user", "group"}:
+            body["emailAddress"] = email_address
+        elif scope == "domain":
+            body["domain"] = domain
+        if expiry > 0 and scope in {"user", "group"}:
+            body["expirationTime"] = (datetime.now(timezone.utc) + timedelta(seconds=expiry)).isoformat().replace(
+                "+00:00", "Z"
+            )
+        try:
+            file_id, _ = await self._resolve(full_path)
+            await self._retrying(
+                lambda: self.drive.permissions_create(
+                    file_id,
+                    body,
+                    send_notification_email=False,
+                    **self._list_params(),
+                ),
+                label="create-sharing-link",
+                idempotent=False,
+            )
+            item, _ = await self._retrying(
+                lambda: self.drive.files_get(file_id, fields="webViewLink", **self._list_params()),
+                label="get-sharing-link",
+            )
+            return item["webViewLink"]
+        except PermissionError:
+            raise
+        except Exception as exc:
+            if self._status_code_of(exc) == 403:
+                raise PermissionError("Google Drive sharing scope was denied") from exc
+            raise self._map_error(exc, path=path) from exc
+
+    async def get_file_url(self, path: str, expiry: int = 3600) -> str:
+        """Return ``webViewLink`` without changing permissions; ``expiry`` is ignored."""
+        await self._ready()
+        self.logger.debug("get_file_url: expiry=%s ignored for Google Drive (no permission change)", expiry)
+        full_path = self._prefixed(path)
+        try:
+            file_id, _ = await self._resolve(full_path)
+            item, _ = await self._retrying(
+                lambda: self.drive.files_get(file_id, fields="webViewLink", **self._list_params()),
+                label="get-file-url",
+            )
+            return item["webViewLink"]
+        except Exception as exc:
+            raise self._map_error(exc, path=path) from exc

@@ -395,3 +395,105 @@ async def test_create_file_and_upload_file_from_bytes_returns_webviewlink(manage
     url = await result.upload_file_from_bytes(b"<b/>", "page.html", "text/html")
     assert url.startswith("https://drive.google.com/file/d/")
     assert _children(drive, "page.html")[0].mimeType == "text/html"
+
+
+# ---- mutations & sharing (TASK-3813) -------------------------------------
+@pytest.mark.asyncio
+async def test_copy_is_synchronous_and_never_retried(manager):
+    result, drive = manager
+    drive.drive.put_file("reports/2026/copy-source.txt", b"copy")
+    drive.fail_next(503, method="files.copy")
+
+    with pytest.raises(GoogleDriveFileManagerError) as excinfo:
+        await result.copy_file("copy-source.txt", "copies/copied.txt")
+    assert excinfo.value.status_code == 503
+
+    assert len([call for call in drive.drive.calls if call[1] == "copy"]) == 0
+    copied = await result.copy_file("copy-source.txt", "copies/copied.txt")
+    assert copied.path == "copies/copied.txt"
+    assert _children(drive, "copied.txt")[0].content == b"copy"
+    assert len([call for call in drive.drive.calls if call[1] == "copy"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_delete_trashes_by_default_permanent_optional_missing_false():
+    fake_drive = FakeDrive()
+    client = FakeDriveClient(fake_drive)
+    result = make_manager(client)
+    item = fake_drive.put_file("delete.txt", b"x")
+
+    assert await result.delete_file("delete.txt") is True
+    assert fake_drive.by_id[item.id].trashed is True
+    assert await result.delete_file("missing.txt") is False
+
+    permanent = fake_drive.put_file("permanent.txt", b"x")
+    result.permanent_delete = True
+    assert await result.delete_file("permanent.txt") is True
+    assert permanent.id not in fake_drive.by_id
+
+
+@pytest.mark.asyncio
+async def test_folders_create_remove_rename_and_move_across_parents(manager):
+    result, drive = manager
+
+    await result.create_folder("created/nested")
+    await result.create_folder("created/nested")
+    await result.rename_folder("created/nested", "moved/renamed")
+    await result.rename_file("q3.xlsx", "moved/quarter.xlsx")
+
+    folder_id, is_folder = await result._resolve("2026/moved/renamed", want_folder=True)
+    assert is_folder is True
+    assert (await result._resolve("2026/moved/quarter.xlsx", want_folder=False))[1] is False
+    await result.remove_folder("moved/renamed")
+    assert drive.drive.by_id[folder_id].trashed is True
+
+
+@pytest.mark.asyncio
+async def test_get_file_url_returns_webviewlink_without_permissions(manager, caplog):
+    result, drive = manager
+
+    with caplog.at_level("DEBUG"):
+        url = await result.get_file_url("q3.xlsx", expiry=12)
+
+    assert url.startswith("https://drive.google.com/file/d/")
+    assert "expiry=12 ignored" in caplog.text
+    assert not [call for call in drive.drive.calls if call[0] == "permissions"]
+
+
+@pytest.mark.asyncio
+async def test_create_sharing_link_bodies_per_scope_and_expiry_rules(manager):
+    result, drive = manager
+
+    url = await result.create_sharing_link("q3.xlsx", email_address="reader@example.test", expiry=120)
+    assert url.startswith("https://drive.google.com/file/d/")
+    user_body = [call[2]["body"] for call in drive.drive.calls if call[0] == "permissions"][-1]
+    assert user_body["type"] == "user"
+    assert user_body["emailAddress"] == "reader@example.test"
+    assert user_body["expirationTime"].endswith("Z")
+
+    await result.create_sharing_link("q3.xlsx", scope="domain", domain="example.test", expiry=120)
+    domain_body = [call[2]["body"] for call in drive.drive.calls if call[0] == "permissions"][-1]
+    assert domain_body == {"type": "domain", "role": "reader", "domain": "example.test"}
+
+    await result.create_sharing_link("q3.xlsx", scope="anyone", role="commenter", expiry=120)
+    anyone_body = [call[2]["body"] for call in drive.drive.calls if call[0] == "permissions"][-1]
+    assert anyone_body == {"type": "anyone", "role": "commenter"}
+
+
+@pytest.mark.asyncio
+async def test_create_sharing_link_missing_field_value_error(manager):
+    result, _ = manager
+
+    with pytest.raises(ValueError, match="email_address"):
+        await result.create_sharing_link("q3.xlsx")
+    with pytest.raises(ValueError, match="domain"):
+        await result.create_sharing_link("q3.xlsx", scope="domain")
+
+
+@pytest.mark.asyncio
+async def test_create_sharing_link_forbidden_scope_permission_error(manager):
+    result, drive = manager
+    drive.fail_next(403, method="permissions.create")
+
+    with pytest.raises(PermissionError, match="sharing scope"):
+        await result.create_sharing_link("q3.xlsx", scope="anyone")
