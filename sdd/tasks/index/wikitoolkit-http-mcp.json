@@ -262,7 +262,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -273,8 +273,9 @@
       "parallelism_notes": "extends remote_cli.py (remote_client/RemoteCliError) and cli.py written by TASK-3362 (same files); imports SourceSlicePayload/IngestBatchReport and tool names wiki_sync_push/pull from TASK-3357 (tools.py)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3363-cli-remote-build-push-and-sync.md"
+      "completed_at": "2026-10-05T23:03:17+00:00",
+      "file": "sdd/tasks/completed/TASK-3363-cli-remote-build-push-and-sync.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3364",
@@ -283,7 +284,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -294,8 +295,9 @@
       "parallelism_notes": "edits mcp_server.py after TASK-3358's builder extraction (same file; reuses create_wiki_mcp_server wrapper); imports RemoteWikiClient from TASK-3359 (remote.py)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3364-proxy-stdio-mcp-server.md"
+      "completed_at": "2026-10-05T23:03:19+00:00",
+      "file": "sdd/tasks/completed/TASK-3364-proxy-stdio-mcp-server.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3365",
@@ -325,7 +327,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -335,8 +337,9 @@
       "parallelism_notes": "imports WikiRemoteConfig from TASK-3351 (project.py); edits codex/{assets,installer,cli}.py only",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3366-codex-installer-remote.md"
+      "completed_at": "2026-10-05T23:03:22+00:00",
+      "file": "sdd/tasks/completed/TASK-3366-codex-installer-remote.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3367",

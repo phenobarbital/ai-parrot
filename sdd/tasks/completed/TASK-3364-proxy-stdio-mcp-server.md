@@ -258,3 +258,8 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: gpt-5.6-luna (codex), attempt 2 after empty delivery on gpt-5.6-terra. Proxy stdio MCP server; test_proxy_stdio.py passes.

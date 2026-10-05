@@ -236,3 +236,8 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seats gpt-5.6-luna and gpt-5.6-terra returned empty deliveries; implemented by the orchestrator (attempt 3, commit 454c6f4ab). Codex installer --remote; the signature had no toolkits param, adapted.
