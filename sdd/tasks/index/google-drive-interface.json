@@ -157,7 +157,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -167,8 +167,9 @@
       "parallelism_notes": "modifies gdrive.py after TASK-3812 (same file); uses _apply_conflict from TASK-3812 for rename/copy",
       "assigned_to": null,
       "started_at": "2026-10-05T21:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3813-gdrive-mutations-sharing.md"
+      "completed_at": "2026-10-05T22:23:42+00:00",
+      "file": "sdd/tasks/completed/TASK-3813-gdrive-mutations-sharing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3814",
