@@ -1,12 +1,13 @@
 """Host-owned tenant tooling policy (FEAT-622 M7, review R1). Pure and synchronous: no I/O."""
 from __future__ import annotations
 
-from collections.abc import Mapping, MutableMapping
+import logging
+from collections.abc import Callable, Collection, Mapping, MutableMapping
 from typing import Any, ClassVar, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from parrot.tools.resolver import get_toolkit_resolver
 from parrot.tools.spec import (
@@ -16,6 +17,8 @@ from parrot.tools.spec import (
     mcp_vault_name,
     toolkit_vault_name,
 )
+
+logger = logging.getLogger(__name__)
 
 TenantMCPTransport = Literal["http", "sse", "streamable-http"]
 ToolingRefusal = Literal[
@@ -102,12 +105,15 @@ def detect_transport(config: Mapping[str, Any]) -> str | None:
 class TenantToolingPolicy(BaseModel, frozen=True):
     """Frozen host policy; the default is :meth:`deny_all`."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     mcp_servers: Mapping[str, HostMCPServer] = {}
     mcp_endpoints: tuple[str, ...] = ()
     mcp_transports: frozenset[TenantMCPTransport] = frozenset({"http", "sse", "streamable-http"})
     builtin_tools: frozenset[str] = frozenset()
     host_toolkits: bool = True
     apply_to_global: bool = False
+    tenant_toolkits: Callable[[str], Collection[str] | None] | None = None
 
     @field_validator("mcp_endpoints")
     @classmethod
@@ -127,9 +133,22 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         if entry.is_host:
             if not self.host_toolkits:
                 raise TenantToolingRefused("toolkit_unavailable", item=slug)
+            self._check_tenant_toolkits(slug, subject)
             return
         if slug.lower() not in {name.lower() for name in self.builtin_tools}:
             raise TenantToolingRefused("builtin_not_permitted", item=slug)
+
+    def _check_tenant_toolkits(self, slug: str, subject: ToolingSubject) -> None:
+        """Apply the host's per-tenant toolkit allow-list (``None`` = unrestricted; failures close)."""
+        if self.tenant_toolkits is None or not subject.tenant or subject.phase == "build":
+            return
+        try:
+            enabled = self.tenant_toolkits(subject.tenant)
+        except Exception:  # noqa: BLE001 - a broken host projection must never widen access
+            logger.exception("tenant_toolkits callback failed for tenant %r; failing closed", subject.tenant)
+            enabled = ()
+        if enabled is not None and slug not in enabled:
+            raise TenantToolingRefused("toolkit_unavailable", item=slug)
 
     def resolve_mcp(self, config: Mapping[str, Any], *, subject: ToolingSubject) -> dict[str, Any]:
         """Spec §2 checks 1–4 on the FINAL kwargs; returns MCPServerConfig kwargs."""
