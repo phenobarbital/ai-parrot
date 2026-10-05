@@ -191,6 +191,23 @@ class _StudioAgentsMixin:
             "tags": [],
             "priority": 0,
             "at_startup": False,
+            "llm": rec.definition.llm,
+            "description": rec.definition.description,
+            "category": rec.definition.category,
+        }
+
+    @staticmethod
+    def _studio_definition(rec: Any) -> dict:
+        """The readable definition of a Studio agent (managers only); excludes ``config`` and ``schema_version``."""
+        d = rec.definition
+        return {
+            "bot_class": d.bot_class,
+            "llm": d.llm,
+            "description": d.description,
+            "category": d.category,
+            "model_params": d.model_params.model_dump(),
+            "system_prompt": d.system_prompt,
+            "tools": list(d.tools),
         }
 
     async def _studio_authorize(self, rec: Any, name: str, *, manage: bool):
@@ -260,10 +277,15 @@ class _StudioAgentsMixin:
             items += [self._registry_agent_to_dict(m) for m in registry.list_agents() if m.name not in taken]
         return [self._legacy_view(access, i) for i in items]
 
-    def _studio_item_for(self, access: Any, rec: Any) -> dict:
-        """The Studio item with the visibility fields the caller's access decision yields (C14)."""
+    def _studio_item_for(self, access: Any, rec: Any, *, detail: bool = False) -> dict:
+        """The Studio item with the visibility fields the caller's access decision yields (C14).
+
+        With ``detail=True`` and ``can_manage``, the item also carries ``definition`` (B1).
+        """
         item = self._studio_item(rec)
         item.update(access.visibility_fields(_store_record("agent", rec.agent_id, rec)))
+        if detail and item.get("can_manage"):
+            item["definition"] = self._studio_definition(rec)
         return item
 
     async def _studio_name_lookup(self, storage: Any, part: Any):

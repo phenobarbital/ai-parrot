@@ -52,4 +52,4 @@ class _StudioAgentVisibilityMixin:
         )
         if isinstance(updated, web.Response):
             return updated
-        return self.json_response(self._studio_item_for(access, updated))
+        return self.json_response(self._studio_item_for(access, updated, detail=True))
