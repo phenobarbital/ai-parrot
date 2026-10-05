@@ -6,10 +6,14 @@ on a client that only has core installed.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import logging
+import os
 import re
+import signal
+import ssl
 import time
 from pathlib import Path
 from typing import Any
@@ -20,7 +24,7 @@ from aiohttp import web
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from parrot.knowledge.wiki.actor import actor_scope
-from parrot.knowledge.wiki.project import validate_namespace_name
+from parrot.knowledge.wiki.project import load_effective_config, validate_namespace_name
 
 logger = logging.getLogger(__name__)
 ACTOR_RE = re.compile(r"^(human|agent|service):[\w.@-]{1,64}$")
@@ -118,3 +122,108 @@ def build_key_store(token: str) -> Any:
             return None
 
     return StaticBearerKeyStore()
+
+
+async def build_server_app(config: WikiServerConfig) -> web.Application:
+    """Validate config and mount one Streamable HTTP MCP server per wiki."""
+    StreamableHttpMCPServer, MCPServerConfig, AuthMethod, _, _ = _import_server_stack()
+    token = os.environ.get(config.token_env, "").strip()
+    if not token:
+        raise click.ClickException(f"{config.token_env} is not set — refusing to start without a bearer token")
+
+    entries: dict[str, tuple[WikiServerEntry, Any]] = {}
+    for name, entry in config.wikis.items():
+        effective_config = load_effective_config(entry.root, env=entry.env).config
+        if effective_config.backend != "arangodb" and not config.allow_sqlite_for_tests:
+            raise click.ClickException(f"wiki {name!r}: backend must be arangodb (got {effective_config.backend})")
+        entries[name] = (entry, effective_config)
+
+    app = web.Application(middlewares=[actor_middleware])
+    app["wiki_default_actor"] = config.default_actor
+    app["wiki_servers"] = {}
+    base_path = config.base_path.rstrip("/")
+
+    for name, (entry, effective_config) in entries.items():
+
+        async def _start(
+            app: web.Application,
+            name: str = name,
+            entry: WikiServerEntry = entry,
+            effective_config: Any = effective_config,
+        ) -> None:
+            from parrot.knowledge.wiki.mcp_server import abuild_wiki_tools
+
+            ledger_dir = entry.ledger_dir or effective_config.ledger_path(entry.root)
+            bundle = await abuild_wiki_tools(
+                entry.root,
+                effective_config,
+                ledger_dir=ledger_dir,
+                read_repair=False,
+                include_bulk_tools=True,
+            )
+            server = StreamableHttpMCPServer(
+                MCPServerConfig(
+                    name=f"wikitoolkit-{name}",
+                    version="1.0.0",
+                    description=bundle.description,
+                    transport="streamable-http",
+                    auth_method=AuthMethod.API_KEY,
+                    api_key_header="Authorization",
+                    api_key_store=build_key_store(token),
+                    base_path=f"{base_path}/{name}",
+                    allowed_origins=config.allowed_origins,
+                    session_ttl=config.session_ttl,
+                ),
+                parent_app=app,
+            )
+            original_info = server._handle_info
+
+            async def _authenticated_info(request: web.Request) -> web.Response:
+                auth_response = await server._authenticate_request(request)
+                if auth_response is not None:
+                    return auth_response
+                return await original_info(request)
+
+            server._handle_info = _authenticated_info
+            server.register_tools(bundle.tools + bundle.vault_tools)
+            await server.start()
+            app["wiki_servers"][name] = (server, bundle)
+            logger.info("mounted wiki %s at %s/%s (%d tools)", name, base_path, name, len(server.tools))
+
+        async def _stop(app: web.Application, name: str = name) -> None:
+            from parrot.knowledge.wiki.mcp_server import close_bundle
+
+            server, bundle = app["wiki_servers"].pop(name, (None, None))
+            if server is not None:
+                await server.stop()
+            if bundle is not None:
+                await close_bundle(bundle)
+
+        app.on_startup.append(_start)
+        app.on_cleanup.append(_stop)
+    return app
+
+
+async def run_server(config: WikiServerConfig, *, host: str | None = None, port: int | None = None) -> None:
+    """Serve one process until SIGTERM or SIGINT, then clean up gracefully."""
+    app = await build_server_app(config)
+    ssl_context = None
+    if config.ssl_cert_path and config.ssl_key_path:
+        ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ssl_context.load_cert_chain(certfile=str(config.ssl_cert_path), keyfile=str(config.ssl_key_path))
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host or config.host, port or config.port, ssl_context=ssl_context)
+    stop = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except NotImplementedError:
+            pass
+    try:
+        await site.start()
+        await stop.wait()
+    finally:
+        await runner.cleanup()

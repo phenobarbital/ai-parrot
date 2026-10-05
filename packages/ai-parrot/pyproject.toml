@@ -367,6 +367,7 @@ manuals = ["ai-parrot[graphindex,bookstore]"]
 scheduler = ["apscheduler==3.11.2"]
 
 # Server layer — all server infrastructure via satellite (FEAT-203)
+wikitoolkit-server = ["ai-parrot-server"]
 server = [
     "ai-parrot-server[all]",
 ]

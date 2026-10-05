@@ -1467,6 +1467,38 @@ def wiki(ctx: click.Context, verbose: bool) -> None:
 
 
 @wiki.command()
+@click.option(
+    "--config",
+    "config_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="server.yaml",
+)
+@click.option("--host", default=None, help="Bind address (default: server.yaml host).")
+@click.option("--port", default=None, type=int, help="Bind port (default: server.yaml port).")
+@click.option(
+    "--ssl-cert",
+    "ssl_cert",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="TLS certificate (or terminate TLS at a reverse proxy).",
+)
+@click.option("--ssl-key", "ssl_key", default=None, type=click.Path(path_type=Path), help="TLS private key.")
+def serve(config_path: Path, host: str | None, port: int | None, ssl_cert: Path | None, ssl_key: Path | None) -> None:
+    """Serve one or more wikis as MCP Streamable HTTP at <base_path>/<wiki> (FEAT-569).
+
+    Runs ONE process; sessions are in-memory. Put a reverse proxy in front for
+    TLS and high availability. Requires `pip install 'ai-parrot[wikitoolkit-server]'`.
+    """
+    from parrot.knowledge.wiki.serve import WikiServerConfig, run_server
+
+    config = WikiServerConfig.from_yaml(config_path)
+    if ssl_cert or ssl_key:
+        config = config.model_copy(update={"ssl_cert_path": ssl_cert, "ssl_key_path": ssl_key})
+    _run(run_server(config, host=host, port=port))
+
+
+@wiki.command()
 def mcp() -> None:
     """Start wikitoolkit as a local MCP stdio server (FEAT-403).
 
