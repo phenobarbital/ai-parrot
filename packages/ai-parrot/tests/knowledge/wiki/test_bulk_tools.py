@@ -1,4 +1,5 @@
 """Unit tests for the bulk ingest tools (FEAT-569 TASK-3356)."""
+
 import pytest
 
 from parrot.knowledge.wiki.project import WikiProjectConfig
@@ -22,8 +23,16 @@ def plane(tmp_path):
 def _slice(path="pkg/a.py", body="x"):
     page = WikiPageRecord(concept_id=f"file:{path}", title=path, body=body, source_id=f"file:{path}", content_hash="h1")
     sym = SymbolRecord(
-        rel_path=path, language="python", kind=SymbolKind.FUNCTION, name="f", qualname="f",
-        start_line=1, end_line=1, start_byte=0, end_byte=1, content_hash="s1",
+        rel_path=path,
+        language="python",
+        kind=SymbolKind.FUNCTION,
+        name="f",
+        qualname="f",
+        start_line=1,
+        end_line=1,
+        start_byte=0,
+        end_byte=1,
+        content_hash="s1",
     )
     return SourceSlicePayload(source_id=f"file:{path}", pages=[page], symbols=[sym])
 

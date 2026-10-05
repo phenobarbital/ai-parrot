@@ -1027,7 +1027,9 @@ class WikiIngestBatchTool(AbstractTool):
         deleted_source_ids: list[str] | None = None,
         batch_id: str | None = None,
     ) -> ToolResult:
-        slices = [s if isinstance(s, SourceSlicePayload) else SourceSlicePayload.model_validate(s) for s in slices or []]
+        slices = [
+            s if isinstance(s, SourceSlicePayload) else SourceSlicePayload.model_validate(s) for s in slices or []
+        ]
         deleted_source_ids = deleted_source_ids or []
         # Validate everything BEFORE taking the lock or writing anything.
         if len(slices) > INGEST_MAX_SLICES or len(deleted_source_ids) > INGEST_MAX_SLICES:
