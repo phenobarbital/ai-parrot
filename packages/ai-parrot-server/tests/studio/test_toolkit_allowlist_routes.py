@@ -55,6 +55,23 @@ async def test_catalog_tools_filtered_for_t1(aiohttp_client, pool, host_plugins)
     assert {ENABLED, DISABLED} <= other  # a tenant whose callback returns None is unrestricted
 
 
+async def _async_callback(tenant):
+    return {ENABLED}
+
+
+@pytest.mark.parametrize("callback", [_async_callback, lambda t: 5, lambda t: True], ids=["async", "int", "bool"])
+async def test_malformed_callback_fails_closed_never_500(aiohttp_client, pool, host_plugins, callback):  # noqa: F811
+    """A callback result that is not a collection refuses (422 / filtered catalogue) instead of a 500."""
+    client = await aiohttp_client(_app(pool, TenantToolingPolicy(tenant_toolkits=callback)))
+    assert (await create(client, "mine", who("u1")))[0].status == 201
+    resp = await client.put(f"{BASE}/agents/mine/toolkits/{ENABLED}", json={"params": {}}, headers=who("u1"))
+    body = await resp.json()
+    assert resp.status == 422 and body["details"] == {"reason": "toolkit_unavailable", "item": ENABLED}, body
+    resp = await client.get(f"{BASE}/catalog/tools", headers=who("u1", "acme"))
+    assert resp.status == 200                                   # the catalogue filters the host toolkits out
+    assert not {row["slug"] for row in await resp.json()} & {ENABLED, DISABLED}
+
+
 async def test_put_toolkit_disabled_is_422_with_details(aiohttp_client, pool, host_plugins):  # noqa: F811
     client = await aiohttp_client(_app(pool))
     assert (await create(client, "mine", who("u1")))[0].status == 201

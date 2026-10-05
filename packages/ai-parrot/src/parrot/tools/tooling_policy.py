@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
-from collections.abc import Callable, Collection, Mapping, MutableMapping
+from collections.abc import Callable, Collection, Iterable, Mapping, MutableMapping
 from typing import Any, ClassVar, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -161,16 +162,34 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         # no tenant (global partition) is unrestricted by design; ``build`` is never refused (see above)
         if self.tenant_toolkits is None or not subject.tenant or subject.phase == "build":
             return
+        enabled = self.enabled_toolkits(subject.tenant)
+        if enabled is not None and slug.lower() not in enabled:
+            raise TenantToolingRefused("toolkit_unavailable", item=slug)
+
+    def enabled_toolkits(self, tenant: str) -> frozenset[str] | None:
+        """Lower-cased enabled host-toolkit slugs for ``tenant``; ``None`` = unrestricted.
+
+        Anything the callback returns that is not ``None``, a ``str`` (one slug, never a substring pool) or an
+        iterable of names — a coroutine, a bool, an int — and any exception it raises, fails CLOSED (empty set).
+        """
+        callback = self.tenant_toolkits
+        if callback is None:
+            return None
         try:
-            enabled = self.tenant_toolkits(subject.tenant)
+            result = callback(tenant)
+            if result is None:
+                return None
+            if isinstance(result, str):
+                return frozenset({result.lower()})
+            if inspect.isawaitable(result):
+                getattr(result, "close", lambda: None)()  # an async callback is never awaited: no "never awaited" noise
+                raise TypeError("tenant_toolkits must be synchronous")
+            if not isinstance(result, Iterable):
+                raise TypeError(f"tenant_toolkits returned {type(result).__name__}, expected a collection of slugs")
+            return frozenset(str(name).lower() for name in result)
         except Exception:  # pylint: disable=broad-except
-            logger.exception("tenant_toolkits callback failed for tenant %r; refusing (fail closed)", subject.tenant)
-            enabled = ()
-        if enabled is not None:
-            # a lone ``str`` is one slug, never a substring pool; slugs compare case-insensitively like built-ins
-            names = {enabled} if isinstance(enabled, str) else set(enabled)
-            if slug.lower() not in {str(name).lower() for name in names}:
-                raise TenantToolingRefused("toolkit_unavailable", item=slug)
+            logger.exception("tenant_toolkits callback failed for tenant %r; refusing (fail closed)", tenant)
+            return frozenset()
 
     def resolve_mcp(self, config: Mapping[str, Any], *, subject: ToolingSubject) -> dict[str, Any]:
         """Spec §2 checks 1–4 on the FINAL kwargs; returns MCPServerConfig kwargs."""
