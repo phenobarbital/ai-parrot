@@ -16,7 +16,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "no dependencies: fakes mirror DriveClient coroutine names without importing TASK-3807's DriveClient",
       "assigned_to": null,
       "started_at": "2026-10-05T21:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3806-gdrive-test-harness.md"
+      "completed_at": "2026-10-05T21:57:55+00:00",
+      "file": "sdd/tasks/completed/TASK-3806-gdrive-test-harness.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3807",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "no dependencies: additive edit to parrot/interfaces/google.py only",
       "assigned_to": null,
       "started_at": "2026-10-05T21:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3807-drive-client.md"
+      "completed_at": "2026-10-05T21:57:58+00:00",
+      "file": "sdd/tasks/completed/TASK-3807-drive-client.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3808",
