@@ -2,7 +2,7 @@
 id: F013
 query_id: Q014
 type: grep
-intent: Auto-finance brainstorm: the deferred Spec B / hooba-service-toolkit decisions.
+intent: "Auto-finance brainstorm: the deferred Spec B / hooba-service-toolkit decisions."
 executed_at: 2026-09-25T11:30:00Z
 duration_ms: 0
 parent_id: null

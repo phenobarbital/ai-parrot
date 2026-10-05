@@ -2,7 +2,7 @@
 id: F017
 query_id: L004
 type: rpc
-intent: live: ticket form/kanban/list views -> transition buttons
+intent: "live: ticket form/kanban/list views -> transition buttons"
 executed_at: 2026-09-30T23:58:00Z
 duration_ms: 0
 parent_id: None

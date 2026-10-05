@@ -90,3 +90,21 @@ async def test_meta_agent_list_available_tools_fails_closed_without_scope(host_p
     finally:
         _current_ctx.reset(token)
     assert await call()  # no resolver installed + no context: legacy unfiltered behaviour
+
+
+def test_walk_discovered_host_paths_are_redacted_like_declared_ones():
+    """PR #1564 F5 / codex P2: ``source == "walk"`` is host code too; its dotted path is never exposed."""
+    catalog = [
+        {"slug": "acme_declared", "dotted_path": "plugins.tools.a.A", "source": "host"},
+        {"slug": "acme_walked", "dotted_path": "plugins.tools.b.B", "source": "walk"},
+        {"slug": "wiki", "dotted_path": "parrot.knowledge.wiki.LLMWikiToolkit", "source": "builtin"},
+        {"slug": "jira", "dotted_path": "parrot_tools.jira.Jira", "source": "parrot_tools"},
+    ]
+    shown = {e["slug"]: e["dotted_path"] for e in tools_catalog.filter_catalog_for({}, None, catalog)}
+    assert shown == {
+        "acme_declared": None,
+        "acme_walked": None,
+        "wiki": "parrot.knowledge.wiki.LLMWikiToolkit",
+        "jira": "parrot_tools.jira.Jira",
+    }
+    assert catalog[1]["dotted_path"] == "plugins.tools.b.B"  # redaction is a copy, never a mutation

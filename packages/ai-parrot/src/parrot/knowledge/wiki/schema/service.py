@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from collections import deque
 from datetime import datetime, timezone
@@ -10,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
 
 from parrot.bots.database.models import Completeness, TableMetadata
+from parrot.knowledge.wiki.context import split_namespaced_id
 from parrot.knowledge.wiki.project import find_shared_root, load_effective_config, sqlite_policy_from_config
 from parrot.knowledge.wiki.schema.ids import (
     normalize_ref,
@@ -27,7 +27,8 @@ from parrot.knowledge.wiki.schema.models import (
 )
 from parrot.knowledge.wiki.schema.producers.live import introspect
 from parrot.knowledge.wiki.schema.render import content_hash, render_page, render_schema_page, render_source_page
-from parrot.knowledge.wiki.schema.store import SchemaStore
+from parrot.knowledge.wiki.schema.store import SchemaStore, _page_content, _page_source
+from parrot.knowledge.wiki.store import BaseWikiStore
 
 logger = logging.getLogger(__name__)
 
@@ -173,18 +174,8 @@ class SchemaPlaneService:
         for record in records:
             table_id = table_concept_id(origin, record.metadata.schema, record.metadata.tablename)
             page, columns, edges = render_page(record)
-            existing = await self._store.get_page(table_id, include_body=True)
-            if existing is not None and _page_source(existing) != "ddl":
-                await self._store.add_edges([(src, dst, rel) for src, dst, rel, _ in edges if rel == "defined_in"])
-                report.unchanged.append(table_id)
-                continue
-            if changed_only and existing is not None and existing.get("content_hash") == record.content_hash:
-                report.unchanged.append(table_id)
-                continue
-            await self._store.upsert_pages([page])
-            await self._store.upsert_columns(columns)
-            await self._store.add_edges([(src, dst, rel) for src, dst, rel, _ in edges])
-            (report.updated if existing else report.created).append(table_id)
+            outcome = await self._store.fold_ddl_table(page, columns, edges, changed_only=changed_only)
+            getattr(report, outcome).append(table_id)
         return report
 
     async def diff(self, origin: str, *, live: Optional[list[TableRecord]] = None) -> list[dict[str, Any]]:
@@ -253,8 +244,19 @@ class SchemaPlaneService:
             differences.extend(_metadata_differences(table_id, live_metadata, ddl_metadata))
         return differences
 
-    async def lookup(self, ref: str) -> LookupResult | list[str]:
-        """Look up a table using only stored schema-plane records."""
+    async def lookup(self, ref: str, *, annotation_store: Optional[BaseWikiStore] = None) -> LookupResult | list[str]:
+        """Look up a table using only stored schema-plane records.
+
+        Args:
+            ref: Table reference in any form accepted by ``normalize_ref``.
+            annotation_store: Optional (usually federated) wiki store whose ``about`` edges
+                to the table are merged into ``annotations``. ``wiki_remember`` writes its
+                note and edge to the local wiki plane, never to ``schema.db``, so without
+                this the lookup cannot see them.
+
+        Returns:
+            The lookup payload, or the candidate ids when ``ref`` is ambiguous.
+        """
         table_id = normalize_ref(ref, sources=self.config.sources)
         if not isinstance(table_id, str):
             return table_id
@@ -265,6 +267,14 @@ class SchemaPlaneService:
         relations = await self._store.neighbors(table_id)
         annotations = [item for item in relations if item["rel"] == "about"]
         relation_items = [item for item in relations if item["rel"] != "about"]
+        if annotation_store is not None:
+            # A federated store also returns this plane's own rows, qualified as ``schema::…``.
+            seen = {split_namespaced_id(item["concept_id"])[1] for item in annotations}
+            for item in await annotation_store.neighbors(table_id):
+                local_id = split_namespaced_id(item["concept_id"])[1]
+                if item["rel"] == "about" and local_id not in seen:
+                    seen.add(local_id)
+                    annotations.append(item)
         introspected_at = datetime.fromisoformat(str(frontmatter["introspected_at"]).replace("Z", "+00:00"))
         age_days = max(0.0, (datetime.now(timezone.utc) - introspected_at).total_seconds() / 86400)
         completeness = int(frontmatter["completeness"])
@@ -390,29 +400,6 @@ class SchemaPlaneService:
             for page in pages
             if (parts := parse_table_id(page["concept_id"]))[0] == origin and (schema is None or parts[1] == schema)
         )
-
-
-def _page_content(body: str) -> tuple[dict[str, Any], str]:
-    """Extract the JSON frontmatter and DDL section from a rendered page."""
-    frontmatter_text, _, remainder = body.partition("\n\n## DDL\n\n")
-    ddl, _, _ = remainder.partition("\n\n## Columns\n")
-    return json.loads(frontmatter_text), ddl
-
-
-def _page_source(page: dict[str, Any]) -> str:
-    """Read the ``source`` frontmatter key from a stored table page.
-
-    Args:
-        page: Stored table-page mapping including its rendered body.
-
-    Returns:
-        The source marker, or ``"unknown"`` if it is absent or malformed.
-    """
-    try:
-        frontmatter, _ = _page_content(str(page.get("body", "")))
-    except (json.JSONDecodeError, TypeError):
-        return "unknown"
-    return str(frontmatter.get("source", "unknown"))
 
 
 def _metadata_shape(metadata: Optional[TableMetadata]) -> Optional[dict[str, Any]]:

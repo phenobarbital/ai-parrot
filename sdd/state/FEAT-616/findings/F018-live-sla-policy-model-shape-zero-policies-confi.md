@@ -2,7 +2,7 @@
 id: F018
 query_id: L006
 type: rpc
-intent: live: SLA models, alarms
+intent: "live: SLA models, alarms"
 executed_at: 2026-09-30T23:58:00Z
 duration_ms: 0
 parent_id: None

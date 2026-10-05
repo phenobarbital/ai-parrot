@@ -151,8 +151,7 @@ class NoveltyScorer:
     async def _score_via_search_proxy(self, text: str) -> tuple[float, str]:
         """Top-k similarity proxy when the GraphIndex plane is absent."""
         self.logger.warning(
-            "GraphIndex plane absent; falling back to WikiCombinedSearch "
-            "similarity proxy for novelty scoring"
+            "GraphIndex plane absent; falling back to WikiCombinedSearch " "similarity proxy for novelty scoring"
         )
         if self.search is None or not text.strip():
             return _NO_SIGNAL_NOVELTY, "search-proxy"
@@ -169,12 +168,8 @@ class NoveltyScorer:
 
 def _format_scope_rules(charter: Charter) -> str:
     """Render the charter's include/exclude scope rules as prompt text."""
-    included = "\n".join(
-        f"  - {rule.id}: {rule.description.strip()}" for rule in charter.scope.include
-    ) or "  (none)"
-    excluded = "\n".join(
-        f"  - {rule.id}: {rule.description.strip()}" for rule in charter.scope.exclude
-    ) or "  (none)"
+    included = "\n".join(f"  - {rule.id}: {rule.description.strip()}" for rule in charter.scope.include) or "  (none)"
+    excluded = "\n".join(f"  - {rule.id}: {rule.description.strip()}" for rule in charter.scope.exclude) or "  (none)"
     return f"INCLUDE (admissible content):\n{included}\n\nEXCLUDE (never admit):\n{excluded}"
 
 
@@ -214,9 +209,7 @@ def _build_stage1_prompt(charter: Charter, content: str) -> str:
     )
 
 
-def _build_stage2_prompt(
-    charter: Charter, content: str, stage1_output: TriageOutput
-) -> str:
+def _build_stage2_prompt(charter: Charter, content: str, stage1_output: TriageOutput) -> str:
     """Build the Stage-2 (heavy tier, gray-zone-only) escalation prompt.
 
     Includes the charter's few-shot examples as anchors, per spec §2/§7.
@@ -233,16 +226,14 @@ def _build_stage2_prompt(
     """
     if charter.examples:
         examples_text = "\n".join(
-            f"  - [{example.destination or 'n/a'}] {example.summary} "
-            f"— {example.why}"
+            f"  - [{example.destination or 'n/a'}] {example.summary} " f"— {example.why}"
             for example in charter.examples
         )
     else:
         examples_text = "  (no examples on file yet)"
 
     return (
-        _build_stage1_prompt(charter, content)
-        + "\n\nThis document was borderline on the first pass "
+        _build_stage1_prompt(charter, content) + "\n\nThis document was borderline on the first pass "
         f"(briefing: {stage1_output.briefing!r}). Re-score it carefully, "
         "anchoring your judgment against these past editorial decisions:\n"
         f"{examples_text}"
@@ -301,12 +292,15 @@ class IngestTriageRouter:
         self.allowed_suffixes = allowed_suffixes
         self.logger = logging.getLogger(f"{__name__}.IngestTriageRouter")
 
-    async def triage(self, path: Path, content: str) -> ManifestDocEntry:
+    async def triage(self, path: Path, content: str, *, skip_duplicate_check: bool = False) -> ManifestDocEntry:
         """Triage one document through the full cascade.
 
         Args:
             path: Path (or path-like identifier) of the document.
             content: The already-loaded document content.
+            skip_duplicate_check: When True, bypass only the two duplicate
+                checks; size, suffix, sensitivity, novelty and both model
+                stages still run.
 
         Returns:
             A :class:`ManifestDocEntry` with ``decision=None`` (the
@@ -315,20 +309,16 @@ class IngestTriageRouter:
         """
         file_hash = self._hash_content(content)
 
-        heuristic_entry = self._heuristic_reject(path, content, file_hash)
+        heuristic_entry = self._heuristic_reject(path, content, file_hash, skip_duplicate_check=skip_duplicate_check)
         if heuristic_entry is not None:
             return heuristic_entry
 
-        stage1_output = await self.adapter.ask_structured(
-            _build_stage1_prompt(self.charter, content), TriageOutput
-        )
+        stage1_output = await self.adapter.ask_structured(_build_stage1_prompt(self.charter, content), TriageOutput)
         stage1_output = await self._apply_novelty(stage1_output, content)
         composite = self._composite(stage1_output.scores)
 
         if stage1_output.sensitive:
-            return self._build_entry(
-                path, file_hash, stage1_output, composite, "discard", "model"
-            )
+            return self._build_entry(path, file_hash, stage1_output, composite, "discard", "model")
 
         band = self.charter.thresholds.route(composite)
         final_output, final_composite = stage1_output, composite
@@ -342,17 +332,13 @@ class IngestTriageRouter:
             stage2_composite = self._composite(stage2_output.scores)
 
             if stage2_output.sensitive:
-                return self._build_entry(
-                    path, file_hash, stage2_output, stage2_composite, "discard", "model"
-                )
+                return self._build_entry(path, file_hash, stage2_output, stage2_composite, "discard", "model")
 
             final_output, final_composite = stage2_output, stage2_composite
             band = self.charter.thresholds.route(final_composite)
 
         proposed_action = self._band_to_action(band)
-        return self._build_entry(
-            path, file_hash, final_output, final_composite, proposed_action, "model"
-        )
+        return self._build_entry(path, file_hash, final_output, final_composite, proposed_action, "model")
 
     # ------------------------------------------------------------------
     # Stage 0 — free heuristics
@@ -365,7 +351,12 @@ class IngestTriageRouter:
         return hashlib.sha1(content.encode("utf-8")).hexdigest()
 
     def _heuristic_reject(
-        self, path: Path, content: str, file_hash: str
+        self,
+        path: Path,
+        content: str,
+        file_hash: str,
+        *,
+        skip_duplicate_check: bool = False,
     ) -> ManifestDocEntry | None:
         """Return a heuristic-reject entry, or ``None`` to proceed to Stage 1.
 
@@ -383,29 +374,24 @@ class IngestTriageRouter:
             )
 
         if self.allowed_suffixes is not None and path.suffix.lower() not in self.allowed_suffixes:
-            return self._heuristic_entry(
-                path, file_hash, f"suffix {path.suffix!r} is not in the allowed set"
-            )
+            return self._heuristic_entry(path, file_hash, f"suffix {path.suffix!r} is not in the allowed set")
+
+        if skip_duplicate_check:
+            return None
 
         existing_id = self.sources.find_by_uri(str(path))
         if existing_id is not None:
             existing_entry = self.sources.get_source(existing_id)
             if existing_entry is not None and existing_entry.file_hash == file_hash:
-                return self._heuristic_entry(
-                    path, file_hash, "duplicate: unchanged since last ingest"
-                )
+                return self._heuristic_entry(path, file_hash, "duplicate: unchanged since last ingest")
 
         for entry in self.sources.list_sources():
             if entry.file_hash == file_hash:
-                return self._heuristic_entry(
-                    path, file_hash, f"duplicate content of {entry.source_uri}"
-                )
+                return self._heuristic_entry(path, file_hash, f"duplicate content of {entry.source_uri}")
 
         return None
 
-    def _heuristic_entry(
-        self, path: Path, file_hash: str, reason: str
-    ) -> ManifestDocEntry:
+    def _heuristic_entry(self, path: Path, file_hash: str, reason: str) -> ManifestDocEntry:
         """Build a zero-score, discard entry for a Stage-0 rejection."""
         self.logger.debug("Stage-0 heuristic reject for %s: %s", path, reason)
         zero_scores = DimensionScores(density=0.0, novelty=0.0, durability=0.0)
@@ -425,9 +411,7 @@ class IngestTriageRouter:
     # Stage 1 / Stage 2 helpers
     # ------------------------------------------------------------------
 
-    async def _apply_novelty(
-        self, output: TriageOutput, content: str
-    ) -> TriageOutput:
+    async def _apply_novelty(self, output: TriageOutput, content: str) -> TriageOutput:
         """Overwrite the LLM's self-assessed novelty with the scorer's.
 
         The grounding-backed (or search-proxy) novelty estimate is more
@@ -451,9 +435,7 @@ class IngestTriageRouter:
         )
         return round(composite, 4)
 
-    def _band_to_action(
-        self, band: Literal["admit", "gray", "reject"]
-    ) -> Literal["admit", "archive", "discard"]:
+    def _band_to_action(self, band: Literal["admit", "gray", "reject"]) -> Literal["admit", "archive", "discard"]:
         """Map a threshold band to a manifest proposed_action.
 
         Per the spec's Component Diagram (§2 Overview):

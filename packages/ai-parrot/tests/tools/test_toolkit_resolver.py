@@ -107,3 +107,70 @@ def test_malformed_dotted_path_is_unavailable(host_plugins):
     resolver._entries["tp_bad"] = ToolkitEntry(slug="tp_bad", dotted_path="nodots", source="host")
     assert resolver.entry("tp_bad") is not None
     assert resolver.resolve("tp_bad") is None
+
+
+def test_resolver_does_not_deadlock_when_host_module_instantiates_a_tool_at_import(host_plugins):
+    """A host module building a tool at import time re-enters the resolver; it must not hang (PR #1564 F1)."""
+    import threading
+
+    (host_plugins / "ping.py").write_text(
+        "from parrot.tools.abstract import AbstractTool\n"
+        "\n"
+        "\n"
+        "class PingTool(AbstractTool):\n"
+        '    """Host tool with no declared access, instantiated at import time."""\n'
+        '    name = "acme_ping"\n'
+        '    description = "ping"\n'
+        "    args_schema = None\n"
+        "\n"
+        "    async def _execute(self, **kwargs):\n"
+        "        return {}\n"
+        "\n"
+        "\n"
+        "SINGLETON = PingTool()\n"
+    )
+    (host_plugins / "__init__.py").write_text(
+        'HOST_TOOL_PREFIX = "acme_"\nTOOL_REGISTRY = {"acme_ping": "plugins.tools.ping.PingTool"}\n'
+    )
+    resolver = get_toolkit_resolver()
+    resolver.reload()
+    outcome: dict = {}
+
+    def build() -> None:
+        outcome["slugs"] = {e.slug for e in resolver.entries()}
+
+    worker = threading.Thread(target=build, daemon=True)
+    worker.start()
+    worker.join(timeout=15)
+    assert not worker.is_alive(), "resolver deadlocked: host module instantiated a tool at import time"
+    assert "acme_ping" in outcome["slugs"]
+    assert resolver.entry("acme_ping").source == "host"
+
+
+def test_resolver_class_name_alias_resolves_to_canonical_entry():
+    """Legacy YAML names toolkits by class ("JiraToolkit"); entry()/canonical_slug() accept the alias."""
+    resolver = get_toolkit_resolver()
+    resolver.reload()
+    found = resolver.entry("JiraToolkit")
+    assert found is not None and found.slug == "jira"
+    assert resolver.canonical_slug("JiraToolkit") == "jira"
+    assert resolver.canonical_slug("jirATOOLkit") == "jira"
+    assert resolver.canonical_slug("jira") == "jira"
+    assert resolver.canonical_slug("totally-unknown") is None
+
+
+def test_resolver_class_name_alias_resolves_builtin_class():
+    """An aliased builtin (class entry, no dotted path) resolves to the same class as its slug."""
+    resolver = get_toolkit_resolver()
+    resolver.reload()
+    cls = resolver.resolve("DatasetManager")
+    assert cls is not None and cls is resolver.resolve("dataset_manager")
+
+
+def test_resolver_no_class_name_alias_for_host_entries(host_plugins):
+    """Host entries stay behind HOST_TOOL_PREFIX: their class names never become aliases."""
+    resolver = get_toolkit_resolver()
+    resolver.reload()
+    assert resolver.entry("tp_probe") is not None
+    assert resolver.entry("ProbeToolkit") is None
+    assert resolver.canonical_slug("ProbeToolkit") is None

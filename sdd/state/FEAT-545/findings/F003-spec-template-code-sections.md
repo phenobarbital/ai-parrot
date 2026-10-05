@@ -2,7 +2,7 @@
 id: F003
 query_id: Q005
 type: read
-intent: Spec template: which sections already carry code
+intent: "Spec template: which sections already carry code"
 executed_at: 2026-09-10T01:00:00Z
 duration_ms: 400
 parent_id: null

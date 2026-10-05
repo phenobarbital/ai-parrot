@@ -2,7 +2,7 @@
 id: F005
 query_id: Q005
 type: wiki_query
-intent: Orient: AutoFinanceToolkit spec (Spec A) and the deferred Spec B.
+intent: "Orient: AutoFinanceToolkit spec (Spec A) and the deferred Spec B."
 executed_at: 2026-09-25T11:30:00Z
 duration_ms: 0
 parent_id: null

@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -211,6 +211,46 @@ class LedgerService:
             for issue_id, state in issues
             if state.get("status") == "open" and (kind is None or state.get("kind") == kind)
         ]
+        rows.sort(key=lambda row: (SEVERITY_ORDER.get(row["severity"], len(SEVERITY_ORDER)), row["issue_id"]))
+        return rows
+
+    async def active_issues(self) -> list[dict[str, Any]]:
+        """Return every ``open`` or ``claimed`` issue (used for dedupe by lint routing)."""
+        await self._sync_best_effort()
+        issues = await self._all_issues()
+        return [
+            _issue_dict(issue_id, state) for issue_id, state in issues if state.get("status") in ("open", "claimed")
+        ]
+
+    async def list_issues(
+        self,
+        statuses: Sequence[str] = ("open", "claimed"),
+        *,
+        kind: IssueKind | None = None,
+        about_prefix: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List issues by status, optional kind and about-path prefix, severity first.
+
+        Args:
+            statuses: Issue statuses to include (default open and claimed).
+            kind: Restrict to one issue kind when given.
+            about_prefix: Keep issues having any ``about`` entry starting with this prefix.
+
+        Returns:
+            Public issue dicts (including ``claimed_by``) sorted by ``(SEVERITY_ORDER, issue_id)``.
+        """
+        await self._sync_best_effort()
+        wanted = set(statuses)
+        rows = []
+        for issue_id, state in await self._all_issues():
+            if state.get("status") not in wanted:
+                continue
+            if kind is not None and state.get("kind") != kind:
+                continue
+            row = _issue_dict(issue_id, state)
+            if about_prefix is not None and not any(str(a).startswith(about_prefix) for a in row["about"]):
+                continue
+            rows.append(row)
         rows.sort(key=lambda row: (SEVERITY_ORDER.get(row["severity"], len(SEVERITY_ORDER)), row["issue_id"]))
         return rows
 

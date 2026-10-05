@@ -2,7 +2,7 @@
 id: F001
 query_id: Q001
 type: wiki_query
-intent: Orient: locate OpenAPIToolkit and its registration path.
+intent: "Orient: locate OpenAPIToolkit and its registration path."
 executed_at: 2026-09-25T11:30:00Z
 duration_ms: 0
 parent_id: null

@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-03T00:22:08.031495+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-03T02:01:05+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent M1 deliverable; owns packages/ai-parrot/src/parrot/knowledge/wiki/charter.py. No prerequisite-created symbol is consumed.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4045-inbox-charter-taxonomy.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T00:37:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4045-inbox-charter-taxonomy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4046",
@@ -34,16 +35,17 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent M2 deliverable; owns packages/ai-parrot/src/parrot/knowledge/wiki/project.py. No prerequisite-created symbol is consumed.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4046-inbox-config-paths.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T00:37:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4046-inbox-config-paths.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4047",
@@ -52,16 +54,17 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent M3 models deliverable; owns packages/ai-parrot/src/parrot/knowledge/wiki/inbox/models.py. No prerequisite-created symbol is consumed.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4047-inbox-data-models.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T00:44:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4047-inbox-data-models.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4048",
@@ -70,16 +73,17 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent M10 deliverable; owns packages/ai-parrot/src/parrot/knowledge/wiki/triage.py, packages/ai-parrot/src/parrot/knowledge/wiki/export.py. No prerequisite-created symbol is consumed.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4048-inbox-compatibility-seams.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T00:44:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4048-inbox-compatibility-seams.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4049",
@@ -88,7 +92,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -98,9 +102,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes Taxonomy/default_taxonomy from TASK-4045 and structured result models from TASK-4047.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4049-inbox-classifier.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T00:53:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4049-inbox-classifier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4050",
@@ -109,7 +114,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -118,9 +123,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes LinkCandidate, LinkSelection, VerifiedLink and ResolvedClassification from TASK-4047.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4050-inbox-link-proposer.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T00:53:55+00:00",
+      "file": "sdd/tasks/completed/TASK-4050-inbox-link-proposer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4051",
@@ -129,7 +135,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -138,9 +144,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes ResolvedClassification and VerifiedLink from TASK-4047.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4051-inbox-document-pages.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T01:04:10+00:00",
+      "file": "sdd/tasks/completed/TASK-4051-inbox-document-pages.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4052",
@@ -149,7 +156,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -158,9 +165,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes the page_frontmatter(tags=...) extension from TASK-4048.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4052-inbox-markdown-projection.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T01:04:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4052-inbox-markdown-projection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4053",
@@ -169,7 +177,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -178,9 +186,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes ArchiveResult from TASK-4047.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4053-inbox-original-archive.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T01:06:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4053-inbox-original-archive.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4054",
@@ -189,7 +198,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -203,9 +212,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes config/path helpers from TASK-4046, InboxClassifier/slugify_doc_id from TASK-4049, LinkProposer from TASK-4050, DocPageWriter from TASK-4051, projection writers from TASK-4052, and archive helpers from TASK-4053. Compatibility seams and data models are transitive prerequisites.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4054-inbox-processor.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T01:16:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4054-inbox-processor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4055",
@@ -214,7 +224,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -223,9 +233,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes InboxProcessor, InboxRuntime and InboxLockBusy from TASK-4054; no CLI-side lock acquisition.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4055-inbox-cli-runtime.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T01:51:49+00:00",
+      "file": "sdd/tasks/completed/TASK-4055-inbox-cli-runtime.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4056",
@@ -234,7 +245,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -243,9 +254,10 @@
       "parallel": false,
       "parallelism_notes": "Exercises the inbox command and runtime wiring from TASK-4055. Exclusive: creates inbox/conftest.py, which pytest loads for all inbox tests.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4056-inbox-lifecycle-integration.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T01:56:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4056-inbox-lifecycle-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4057",
@@ -254,7 +266,7 @@
       "feature_id": "FEAT-626",
       "feature": "wikitoolkit-new-ingestion",
       "spec": "sdd/specs/wikitoolkit-new-ingestion.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -263,9 +275,10 @@
       "parallel": false,
       "parallelism_notes": "Documents final inbox options and exit behavior from TASK-4055. Exclusive: opens/reuses an item in the shared SDD work ledger outside declared documentation files.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4057-inbox-operations-docs.md"
+      "started_at": "2026-10-03T00:28:32+00:00",
+      "completed_at": "2026-10-03T02:01:05+00:00",
+      "file": "sdd/tasks/completed/TASK-4057-inbox-operations-docs.md",
+      "verification": "verified"
     }
   ]
 }

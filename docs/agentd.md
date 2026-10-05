@@ -227,6 +227,8 @@ automatically — no extra configuration needed. Subscribed clients
 (`events.subscribe`) receive `event.job_executed`/`event.job_error`
 notifications as jobs run.
 
+Multi-worker coordination, fail-closed behaviour and the 0.28.0 listener change: see [scheduler/multi-worker.md](scheduler/multi-worker.md).
+
 ---
 
 ## Attaching a console / one-shot / MCP client
