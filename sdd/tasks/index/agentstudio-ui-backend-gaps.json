@@ -16,7 +16,7 @@
       "feature_id": "FEAT-634",
       "feature": "agentstudio-ui-backend-gaps",
       "spec": "sdd/specs/agentstudio-ui-backend-gaps.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "independent: edits only agents/_mixin.py, agents/_db.py, agents/_visibility.py and its own new test file; no other task touches them.",
       "assigned_to": null,
       "started_at": "2026-10-05T21:49:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4096-studio-agent-definition-readable.md"
+      "completed_at": "2026-10-05T21:50:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4096-studio-agent-definition-readable.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4097",

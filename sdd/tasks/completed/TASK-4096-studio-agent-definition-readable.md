@@ -255,4 +255,4 @@ Tests use a REAL aiohttp app (`aiohttp_client`) with the real Studio routes and 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per blueprint: flat llm/description/category in _studio_item; _studio_definition; detail kwarg gated on can_manage; detail=True at GET/PATCH/visibility PATCH. 5 real-app tests (Postgres) pass. Seat: native (sdd-worker fallback, no coder MCP).
