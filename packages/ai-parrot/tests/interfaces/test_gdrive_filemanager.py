@@ -237,9 +237,7 @@ async def test_search_paginates_then_applies_extension(manager):
     files = await result.find_files(keywords="match", extension="csv")
 
     assert [file.name for file in files] == ["match-final.csv"]
-    search_calls = [
-        call for call in drive.drive.calls if "name contains 'match'" in call[2].get("q", "")
-    ]
+    search_calls = [call for call in drive.drive.calls if "name contains 'match'" in call[2].get("q", "")]
     assert len(search_calls) >= 3
 
 

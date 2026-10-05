@@ -576,9 +576,7 @@ class GoogleDriveFileManager(FileManagerInterface):
                         child_path = f"{folder_path}/{child['name']}".strip("/")
                         queue.append((child["id"], child_path))
 
-                query = (
-                    f"'{folder_id}' in parents and mimeType != '{FOLDER_MIME}' and trashed = false"
-                )
+                query = f"'{folder_id}' in parents and mimeType != '{FOLDER_MIME}' and trashed = false"
                 if first_keyword:
                     query += f" and name contains '{self._escape_q(first_keyword)}'"
                 async for item in self._iter_query(query):
@@ -627,9 +625,7 @@ class GoogleDriveFileManager(FileManagerInterface):
             if isinstance(destination, Path):
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 await self._retrying(
-                    lambda: self.drive.files_download(
-                        file_id, download_file=str(destination), **self._list_params()
-                    ),
+                    lambda: self.drive.files_download(file_id, download_file=str(destination), **self._list_params()),
                     label="download",
                 )
                 return destination
