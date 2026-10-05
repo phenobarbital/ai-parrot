@@ -98,7 +98,7 @@
       "feature_id": "FEAT-631",
       "feature": "scheduler-multiworker-correctness",
       "spec": "sdd/specs/scheduler-multiworker-correctness.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -108,8 +108,9 @@
       "parallelism_notes": "modifies scheduler/manager.py after TASK-4064 (shared file) and uses its _execution_fields/_fire_coordinator wiring; also uses jobs.run_db_schedule_now (TASK-4061) and FireCoordinationError (TASK-4062) transitively",
       "assigned_to": null,
       "started_at": "2026-10-04T23:42:15+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4065-scheduler-run-now-cross-worker.md"
+      "completed_at": "2026-10-05T00:06:24+00:00",
+      "file": "sdd/tasks/completed/TASK-4065-scheduler-run-now-cross-worker.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4066",

@@ -253,8 +253,8 @@ See the blocks above.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-terra (codex), orchestrated by sdd-worker
+**Date**: 2026-10-05
+**Notes**: run-now guard moved to coordinator; scheduler tests 200 passed. Merge-tier run has the same unrelated pre-existing failures as TASK-4063. Closed via close_task.sh.
 
 **Deviations from spec**: none
