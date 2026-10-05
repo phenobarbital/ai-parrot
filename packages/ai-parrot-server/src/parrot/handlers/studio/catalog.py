@@ -133,6 +133,15 @@ def _build_base_classes_catalog() -> list[dict]:
     return rows
 
 
+def _provider_models(provider: str) -> tuple[list[str], list[str]]:
+    """``(active, deprecated)`` model ids of ``provider`` via ``LLMFactory.list_models``; ``([], [])`` on any failure."""
+    try:
+        listing = LLMFactory.list_models(provider)
+        return [str(m) for m in listing.get("active") or []], [str(m) for m in listing.get("deprecated") or []]
+    except Exception:  # pylint: disable=broad-except
+        return [], []
+
+
 def _build_llm_clients_catalog() -> list[dict]:
     """Resolve ``SUPPORTED_CLIENTS`` into a catalog of LLM client rows.
 
@@ -163,6 +172,7 @@ def _build_llm_clients_catalog() -> list[dict]:
                 }
             )
             continue
+        models, deprecated_models = _provider_models(provider)
         rows.append(
             {
                 "provider": provider,
@@ -170,6 +180,8 @@ def _build_llm_clients_catalog() -> list[dict]:
                 "lazy": is_lazy,
                 "available": True,
                 "default_model": getattr(cls, "_default_model", None),
+                "models": models,
+                "deprecated_models": deprecated_models,
             }
         )
     return rows
@@ -203,7 +215,12 @@ class StudioCatalogHandler(StudioBaseView):
     async def get(self):
         kind = self.request.match_info.get("kind")
         if kind == "base-classes":
-            return self.json_response(await self._get_base_classes())
+            from .access import StudioTenantRequired
+
+            try:
+                return self.json_response(await self._base_classes_for_caller())
+            except StudioTenantRequired:
+                return self._tenant_required()
         if kind == "llm-clients":
             return self.json_response(await self._get_llm_clients())
         if kind == "tools":
@@ -218,6 +235,34 @@ class StudioCatalogHandler(StudioBaseView):
         if _BASE_CLASSES_CACHE is None:
             _BASE_CLASSES_CACHE = await asyncio.to_thread(_build_base_classes_catalog)
         return _BASE_CLASSES_CACHE
+
+    async def _base_classes_for_caller(self) -> list[dict]:
+        """Cached rows copied with ``allowed`` for the caller's partition, plus host-extra rows (B13).
+
+        Raises:
+            StudioTenantRequired: when the caller has no resolvable partition.
+        """
+        from .storage.services._common import StudioClassAllowlist
+
+        part = await self._studio_partition()
+        allow = StudioClassAllowlist.from_app(self.request.app)
+        cached = await self._get_base_classes()
+        rows = [{**row, "allowed": allow.allows(part, row["name"])} for row in cached]
+        exported = set(bots_module.__all__)
+        for name in sorted(allow.names() - exported):
+            rows.append(
+                {
+                    "name": name,
+                    "available": True,
+                    "allowed": True,
+                    "host": True,
+                    "module": None,
+                    "docstring": None,
+                    "params": {},
+                    "lazy": False,
+                }
+            )
+        return rows
 
     @staticmethod
     async def _get_llm_clients() -> list[dict]:

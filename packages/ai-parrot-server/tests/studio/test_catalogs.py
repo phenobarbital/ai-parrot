@@ -199,3 +199,47 @@ def _real_openai():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---- FEAT-634 B2 / B13 — real app, real routes --------------------------------------------------------------------
+from parrot.clients.factory import LLMFactory  # noqa: E402
+
+from .test_agents_db_mode import BASE, _offline, pool  # noqa: E402,F401  (fixtures)
+from .test_agents_visibility import tenant_app, who  # noqa: E402
+
+
+async def test_llm_clients_rows_carry_models(aiohttp_client, pool):  # noqa: F811
+    client = await aiohttp_client(tenant_app(pool))
+    resp = await client.get(f"{BASE}/catalog/llm-clients", headers=who("u1"))
+    assert resp.status == 200
+    rows = await resp.json()
+    available = [r for r in rows if r["available"]]
+    assert available
+    seen_models = False
+    for row in available:
+        assert isinstance(row["models"], list) and isinstance(row["deprecated_models"], list)
+        assert all(isinstance(m, str) for m in row["models"] + row["deprecated_models"])
+        try:
+            expected = LLMFactory.list_models(row["provider"])["active"]
+        except Exception:  # noqa: BLE001 — a provider without a models enum yields []
+            expected = []
+        assert row["models"] == [str(m) for m in expected]
+        seen_models = seen_models or bool(row["models"])
+    assert seen_models
+    assert catalog_module._provider_models("no-such-provider-xyz") == ([], [])
+
+
+async def test_base_classes_rows_carry_allowed_and_host_extras(aiohttp_client, pool):  # noqa: F811
+    app = tenant_app(pool)
+    app["studio_class_allowlist"] = {"HostBot"}
+    client = await aiohttp_client(app)
+    resp = await client.get(f"{BASE}/catalog/base-classes", headers=who("u1"))
+    assert resp.status == 200
+    rows = await resp.json()
+    assert all("allowed" in r for r in rows)
+    assert all(r["allowed"] for r in rows if r.get("available"))
+    host = [r for r in rows if r["name"] == "HostBot"]
+    assert len(host) == 1 and host[0]["host"] is True and host[0]["allowed"] is True
+    assert host[0]["available"] is True and host[0]["params"] == {}
+    # the shared cache is never mutated
+    assert all("allowed" not in r and r["name"] != "HostBot" for r in catalog_module._BASE_CLASSES_CACHE)
