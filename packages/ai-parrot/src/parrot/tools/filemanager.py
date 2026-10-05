@@ -24,8 +24,8 @@ from navigator.utils.file import FileManagerFactory as _UpstreamFileManagerFacto
 
 #: Storage backends accepted by :class:`FileManagerFactory` / ``FileManagerTool`` /
 #: ``FileManagerToolkit`` — upstream navigator-native (``"fs"``, ``"temp"``, ``"s3"``, ``"gcs"``) plus
-#: parrot-native Microsoft Graph managers (``"sharepoint"``, ``"onedrive"``) (FEAT-603).
-ManagerType = Literal["fs", "temp", "s3", "gcs", "sharepoint", "onedrive"]
+#: parrot-native managers: Microsoft Graph (``"sharepoint"``, ``"onedrive"``, FEAT-603) and Google Drive (``"gdrive"``, FEAT-608).
+ManagerType = Literal["fs", "temp", "s3", "gcs", "sharepoint", "onedrive", "gdrive"]
 
 
 class FileManagerFactory:
@@ -34,7 +34,7 @@ class FileManagerFactory:
     Thin delegate over ``navigator.utils.file.FileManagerFactory``.
     Maps the historical parrot-side key ``"fs"`` to the upstream
     ``"local"`` key; forwards all other keys verbatim. Parrot-native
-    managers (``"sharepoint"``, ``"onedrive"``) are resolved locally and
+    managers (``"sharepoint"``, ``"onedrive"``, ``"gdrive"``) are resolved locally and
     never forwarded upstream, which does not know them (FEAT-603).
     """
 
@@ -49,6 +49,7 @@ class FileManagerFactory:
     _PARROT_NATIVE = {
         "sharepoint": ("parrot.interfaces.file.sharepoint", "SharePointFileManager"),
         "onedrive": ("parrot.interfaces.file.onedrive", "OneDriveFileManager"),
+        "gdrive": ("parrot.interfaces.file.gdrive", "GoogleDriveFileManager"),  # FEAT-608
     }
 
     @staticmethod
@@ -57,7 +58,7 @@ class FileManagerFactory:
 
         Args:
             manager_type: ``"fs"``, ``"temp"``, ``"s3"``, ``"gcs"`` (upstream navigator managers) or ``"sharepoint"``,
-                ``"onedrive"`` (parrot-native Microsoft Graph managers, lazily imported).
+                ``"onedrive"``, ``"gdrive"`` (parrot-native Graph / Google Drive managers, lazily imported).
             **kwargs: Forwarded to the manager constructor.
 
         Returns:
@@ -180,7 +181,7 @@ class FileManagerTool(AbstractTool):
     """
 
     name: str = "file_manager"
-    description: str = "Manage files across different storage backends (local, S3, GCS, SharePoint, OneDrive, temp)"
+    description: str = "Manage files across different storage backends (local, S3, GCS, SharePoint, OneDrive, Google Drive, temp)"
     args_schema: type[AbstractToolArgsSchema] = FileManagerToolArgs
 
     def __init__(
@@ -195,7 +196,7 @@ class FileManagerTool(AbstractTool):
         """Initialize file manager tool.
 
         Args:
-            manager_type: Type of file manager ("fs", "temp", "s3", "gcs", "sharepoint", "onedrive").
+            manager_type: Type of file manager ("fs", "temp", "s3", "gcs", "sharepoint", "onedrive", "gdrive").
             default_output_dir: Default directory for file operations.
             allowed_operations: Set of allowed operations (None = all allowed).
             max_file_size: Maximum file size in bytes.
@@ -253,10 +254,10 @@ class FileManagerTool(AbstractTool):
                 cleanup_on_exit=kwargs.get("cleanup_on_exit", True),
                 **{k: v for k, v in kwargs.items() if k != "cleanup_on_exit"},
             )
-        else:  # s3, gcs, sharepoint, or onedrive
+        else:  # s3, gcs, sharepoint, onedrive, or gdrive
             return FileManagerFactory.create(manager_type, **kwargs)
 
-    _DRIVE_RELATIVE_BACKENDS = frozenset({"sharepoint", "onedrive"})
+    _DRIVE_RELATIVE_BACKENDS = frozenset({"sharepoint", "onedrive", "gdrive"})
 
     def _storage_path(self, path: Optional[str]) -> str:
         """Resolve a storage-side path for the configured backend.
@@ -746,6 +747,7 @@ class FileManagerToolkit(AbstractToolkit):
       - ``"gcs"``  — Google Cloud Storage (requires google-cloud-storage)
       - ``"sharepoint"`` — SharePoint document library (requires ai-parrot[msgraph])
       - ``"onedrive"`` — a user's OneDrive (requires ai-parrot[msgraph])
+      - ``"gdrive"`` — Google Drive folder or shared drive (requires ai-parrot[gdrive])
 
     Example::
 
@@ -770,7 +772,7 @@ class FileManagerToolkit(AbstractToolkit):
 
         Args:
             manager_type: Storage backend — one of ``"fs"``, ``"temp"``,
-                ``"s3"``, ``"gcs"``, ``"sharepoint"``, ``"onedrive"``.
+                ``"s3"``, ``"gcs"``, ``"sharepoint"``, ``"onedrive"``, ``"gdrive"``.
             default_output_dir: Default directory for resolving relative paths.
                 Defaults to ``parrot.conf.OUTPUT_DIR``.
             allowed_operations: Restrict which operations are exposed as tools.
@@ -844,7 +846,7 @@ class FileManagerToolkit(AbstractToolkit):
                 cleanup_on_exit=kwargs.get("cleanup_on_exit", True),
                 **{k: v for k, v in kwargs.items() if k != "cleanup_on_exit"},
             )
-        else:  # s3, gcs, sharepoint, or onedrive
+        else:  # s3, gcs, sharepoint, onedrive, or gdrive
             return FileManagerFactory.create(manager_type, **kwargs)
 
     def _check_file_size(self, size: int) -> None:
@@ -859,9 +861,9 @@ class FileManagerToolkit(AbstractToolkit):
         if size > self.max_file_size:
             raise ValueError(f"File size ({size} bytes) exceeds maximum allowed size " f"({self.max_file_size} bytes)")
 
-    #: Backends whose paths are drive-relative (Microsoft Graph document libraries) — never
+    #: Backends whose paths are drive-relative (Microsoft Graph document libraries and Google Drive) — never
     #: joined onto the local ``default_output_dir`` (FEAT-603).
-    _DRIVE_RELATIVE_BACKENDS = frozenset({"sharepoint", "onedrive"})
+    _DRIVE_RELATIVE_BACKENDS = frozenset({"sharepoint", "onedrive", "gdrive"})
 
     def _storage_path(self, path: Optional[str]) -> str:
         """Resolve a *storage-side* path for the configured backend.

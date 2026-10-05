@@ -3,6 +3,8 @@ navigator.utils.file (FEAT-123 — fileinterface-migration).
 """
 
 import importlib
+import os
+import subprocess
 import sys
 from io import BytesIO
 from pathlib import Path
@@ -47,6 +49,31 @@ def test_no_msgraph_leak_on_import():
     importlib.reload(shim)
     assert "msgraph" not in sys.modules
     assert "parrot.interfaces.file.graph" not in sys.modules
+
+
+def test_no_gdrive_leak_on_import():
+    """Importing parrot.interfaces.file does not load aiogoogle/selenium/redis or the gdrive module (FEAT-608 AC13)."""
+    watched = ("aiogoogle", "selenium", "redis", "parrot.interfaces.file.gdrive")
+    if any(m in sys.modules for m in watched):
+        pytest.skip("a watched module was already loaded by a prior test")
+    importlib.reload(shim)
+    for m in watched:
+        assert m not in sys.modules
+
+
+def test_no_gdrive_leak_in_fresh_subprocess():
+    """Same check in a clean interpreter so it never skips in a full run."""
+    # navigator itself may import aiogoogle/redis; compare against that baseline so only OUR imports count.
+    code = (
+        "import sys, navigator.utils.file\n"
+        "watched = ('aiogoogle', 'selenium', 'redis', 'parrot.interfaces.file.gdrive')\n"
+        "before = {m for m in watched if m in sys.modules}\n"
+        "import parrot.interfaces.file, parrot_tools.file\n"
+        "added = [m for m in watched if m in sys.modules and m not in before]\n"
+        "assert not added, added\n"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env=os.environ.copy())
+    assert proc.returncode == 0, proc.stderr
 
 
 def test_lazy_identity():
@@ -179,11 +206,11 @@ def test_factory_sharepoint_and_onedrive_native(monkeypatch):
 
 
 def test_factory_unknown_lists_all_keys():
-    """The ValueError for an unrecognised manager_type lists all six valid keys."""
+    """The ValueError for an unrecognised manager_type lists all seven valid keys."""
     with pytest.raises(ValueError) as ei:
         FileManagerFactory.create("xyz")  # type: ignore[arg-type]
     msg = str(ei.value)
-    for key in ("fs", "temp", "s3", "gcs", "sharepoint", "onedrive"):
+    for key in ("fs", "temp", "s3", "gcs", "sharepoint", "onedrive", "gdrive"):
         assert key in msg
 
 
@@ -199,3 +226,40 @@ def test_toolkit_literal_accepts_new_types(monkeypatch):
     toolkit = FileManagerToolkit(manager_type="sharepoint", site="TeamSite")
     tools = toolkit.get_tools()
     assert len(tools) == 12
+
+
+# ── FEAT-608 — Google Drive lazy export and native factory ────
+
+
+def test_shim_exports_gdrive_lazily():
+    """GoogleDriveFileManager is the class from the gdrive submodule and is in __all__."""
+    from parrot.interfaces.file.gdrive import GoogleDriveFileManager as _GD_Direct
+
+    assert shim.GoogleDriveFileManager is _GD_Direct
+    assert "GoogleDriveFileManager" in shim.__all__
+
+
+def test_parrot_tools_file_shim_gdrive_parity():
+    """parrot_tools.file re-exports the same GoogleDriveFileManager as the core shim."""
+    import parrot_tools.file as tools_shim
+
+    assert tools_shim.GoogleDriveFileManager is shim.GoogleDriveFileManager
+    assert "GoogleDriveFileManager" in tools_shim.__all__
+
+
+def test_factory_gdrive_native(monkeypatch):
+    """FileManagerFactory.create resolves "gdrive" locally without I/O at construction time."""
+    from parrot.interfaces.file.gdrive import GoogleDriveFileManager
+
+    monkeypatch.setattr(GoogleDriveFileManager, "__abstractmethods__", frozenset())
+    gd = FileManagerFactory.create("gdrive", root_path="x")
+    assert isinstance(gd, GoogleDriveFileManager)
+
+
+def test_toolkit_literal_accepts_gdrive(monkeypatch):
+    """FileManagerToolkit accepts manager_type="gdrive" and builds its tools."""
+    from parrot.interfaces.file.gdrive import GoogleDriveFileManager
+
+    monkeypatch.setattr(GoogleDriveFileManager, "__abstractmethods__", frozenset())
+    toolkit = FileManagerToolkit(manager_type="gdrive", root_path="x")
+    assert toolkit.get_tools()
