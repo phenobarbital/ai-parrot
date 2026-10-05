@@ -15,6 +15,7 @@ import logging
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -88,26 +89,39 @@ def _run_sync(coro: Any) -> Any:
         return pool.submit(asyncio.run, coro).result()
 
 
-def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
-    """Build a `StdioMCPServer` with the six wiki tools registered.
+@dataclass
+class WikiToolBundle:
+    """Everything a transport needs to register for one wiki (FEAT-569)."""
+
+    tools: list[Any]
+    vault_tools: list[Any]
+    description: str
+    store: Any
+    read_store: Any
+    ledger_service: Any | None
+    namespace_handles: list[Any] = field(default_factory=list)
+
+
+async def abuild_wiki_tools(
+    root: Path,
+    config: Any,
+    *,
+    ledger_dir: Path | None = None,
+    read_repair: bool = True,
+    include_bulk_tools: bool = False,
+) -> WikiToolBundle:
+    """Assemble the wiki tool surface on the current event loop.
 
     Args:
-        root: Wiki project root (directory containing `.parrot/wiki.json`,
-            or the nearest `.git` root — see `find_project_root()`).
+        root: Wiki project root (repo root, or the server-side wiki directory).
+        config: Effective ``WikiProjectConfig``.
+        ledger_dir: Explicit ledger directory, or ``None`` for stdio root discovery.
+        read_repair: Whether structural tools may repair from local source files.
+        include_bulk_tools: Whether to include server-only bulk and sync tools.
 
     Returns:
-        A core `StdioMCPServer` with all six wiki tools registered.
+        The assembled bundle; callers own :func:`close_bundle`.
     """
-    # Some parrot.mcp.* dependencies print raw diagnostic lines directly to
-    # stdout during import (not via logging — pre-existing navconfig
-    # settings-init side effect, not introduced here). Redirect stdout to
-    # stderr for the duration of the import only, so nothing can leak into
-    # the JSON-RPC channel this import is deferred specifically to protect.
-    with contextlib.redirect_stdout(sys.stderr):
-        from parrot.mcp.local_server import StdioMCPServer
-        from parrot.mcp.server_base import LocalServerConfig
-
-    config = load_effective_config(root).config
     # NOTE: storage_dir is config.storage_path(root) (".parrot/wiki" by
     # default, or wherever wiki.json points it), NOT a bare "root/.parrot"
     # — matching how `wikitoolkit build`/`query`/etc. resolve the plane
@@ -126,6 +140,9 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
             database=config.arango_database or "",
             text_analyzer=config.arango_text_analyzer,
         )
+        initialize_result = store.initialize()
+        if asyncio.iscoroutine(initialize_result):
+            await initialize_result
     else:
         storage.mkdir(parents=True, exist_ok=True)
         store = create_wiki_store(
@@ -134,41 +151,43 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
             backend=config.backend,
             sqlite_policy=sqlite_policy_from_config(config),
         )
+
     # Federated namespaces (FEAT-450): the read tools inherit them
     # through the store they already hold. Resolution runs under the same
     # stdout-redirect discipline as every other import here — opening a
     # namespace can pull in navconfig/asyncdb, which print to stdout.
     read_store = store
     with contextlib.redirect_stdout(sys.stderr):
-        from parrot.knowledge.wiki.federation import (
-            FederatedWikiStore,
-            resolve_namespaces,
-        )
+        from parrot.knowledge.wiki.federation import FederatedWikiStore, resolve_namespaces
 
         try:
-            handles, skipped = _run_sync(resolve_namespaces(root, config))
+            handles, skipped = await resolve_namespaces(root, config)
         except Exception as exc:  # noqa: BLE001 — namespaces are optional
             logging.getLogger(__name__).warning("Could not resolve wiki namespaces: %s", exc)
             handles, skipped = [], []
 
-    # FEAT-566: Initialize ledger service for ledger tools — only when `root`
-    # resolves to a real, git-backed shared root. `LedgerService.from_root`
-    # tolerates the absence of one by falling back to `root`/CWD (so the
-    # service itself never raises), which would otherwise make every
-    # `create_wiki_mcp_server` call on a bare directory (most unit-test
-    # fixtures included) silently grow a `.parrot/ledger/` and mount an
-    # extra namespace — changing tool counts with no wiki project involved.
+    # FEAT-566: Initialize ledger service for ledger tools. An explicit
+    # ledger directory is for a server without a checkout, so it bypasses
+    # shared-root discovery entirely.
     ledger_service = None
     with contextlib.redirect_stdout(sys.stderr):
-        from parrot.knowledge.wiki.project import find_shared_root
+        if ledger_dir is not None:
+            from parrot.knowledge.wiki.ledger.service import LedgerService
 
-        if find_shared_root(root) is not None:
-            try:
-                from parrot.knowledge.wiki.ledger.service import LedgerService
+            ledger_service = LedgerService.from_dir(
+                ledger_dir,
+                sqlite_policy=sqlite_policy_from_config(config),
+            )
+        else:
+            from parrot.knowledge.wiki.project import find_shared_root
 
-                ledger_service = LedgerService.from_root(root)
-            except Exception as exc:  # noqa: BLE001 — ledger is optional
-                logging.getLogger(__name__).warning("Could not initialize ledger service: %s", exc)
+            if find_shared_root(root) is not None:
+                try:
+                    from parrot.knowledge.wiki.ledger.service import LedgerService
+
+                    ledger_service = LedgerService.from_root(root)
+                except Exception as exc:  # noqa: BLE001 — ledger is optional
+                    logging.getLogger(__name__).warning("Could not initialize ledger service: %s", exc)
 
     # FEAT-566: Mount ledger as a read-only overlay namespace. The config's
     # `store` field is set only to satisfy WikiNamespaceConfig's "exactly
@@ -177,12 +196,12 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
     # directly.
     if ledger_service is not None:
         with contextlib.redirect_stdout(sys.stderr):
-            from parrot.knowledge.wiki.project import WikiNamespaceConfig
             from parrot.knowledge.wiki.federation import NamespaceHandle
+            from parrot.knowledge.wiki.project import WikiNamespaceConfig
 
-            ledger_dir = ledger_service.shared_root / ".parrot" / "ledger"
+            ledger_dir_eff = ledger_dir or ledger_service.shared_root / ".parrot" / "ledger"
             ledger_config = WikiNamespaceConfig(
-                store=str(ledger_dir),
+                store=str(ledger_dir_eff),
                 description="SDD work ledger (issues, tasks, specs, insights)",
                 weight=0.5,
                 overlay_prefixes=["issue", "task", "spec", "insight"],
@@ -192,7 +211,7 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
                     name="ledger",
                     store=ledger_service.store,
                     config=ledger_config,
-                    storage_dir=ledger_dir,
+                    storage_dir=ledger_dir_eff,
                     read_only=True,
                 )
             )
@@ -200,15 +219,18 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
     # FEAT-600: mount the SQL schema plane as a read-only overlay (same shape as the ledger block above).
     # Mount only when a plane already exists — never grow `.parrot/schema/` from a bare directory (tool counts, AC11).
     schema_service = None
-    with contextlib.redirect_stdout(sys.stderr):
-        shared_root = find_shared_root(root)
-        if shared_root is not None and config.schema_plane.enabled and config.schema_path(shared_root).exists():
-            try:
-                from parrot.knowledge.wiki.schema.service import SchemaPlaneService
+    if ledger_dir is None:
+        with contextlib.redirect_stdout(sys.stderr):
+            from parrot.knowledge.wiki.project import find_shared_root
 
-                schema_service = SchemaPlaneService.from_root(root)
-            except Exception as exc:  # noqa: BLE001 — the plane is optional
-                logging.getLogger(__name__).warning("Could not initialize schema plane: %s", exc)
+            shared_root = find_shared_root(root)
+            if shared_root is not None and config.schema_plane.enabled and config.schema_path(shared_root).exists():
+                try:
+                    from parrot.knowledge.wiki.schema.service import SchemaPlaneService
+
+                    schema_service = SchemaPlaneService.from_root(root)
+                except Exception as exc:  # noqa: BLE001 — the plane is optional
+                    logging.getLogger(__name__).warning("Could not initialize schema plane: %s", exc)
     if schema_service is not None:
         with contextlib.redirect_stdout(sys.stderr):
             from parrot.knowledge.wiki.federation import NamespaceHandle
@@ -235,24 +257,19 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
         read_store = FederatedWikiStore(store, config.wiki_name, handles, skipped)
     tools = create_wiki_tools(read_store, root=root, config=config, ledger_service=ledger_service)
 
-    # FEAT-498: symbol-plane tools (wiki_symbol_lookup, wiki_code_outline,
-    # wiki_blast_radius) share the same read_store, so they honour the
-    # same federated namespaces as the six tools above.
+    # FEAT-498: symbol-plane tools share the same federated read store.
     with contextlib.redirect_stdout(sys.stderr):
         from parrot.knowledge.wiki.structural import create_structural_tools
 
-        structural_tools = create_structural_tools(read_store, root, config)
+        structural_tools = create_structural_tools(read_store, root, config, read_repair=read_repair)
     tools = tools + structural_tools
 
-    # FEAT-578: decision-plane tools (wiki_decisions_for_symbol,
-    # wiki_decision_why) share the same read_store, so they honour the same
-    # federated namespaces. wiki_decision_generate is added by the factory
-    # only when generation is enabled AND a local project is available; there
-    # is no review tool — acceptance is a maintainer CLI action (AC11).
-    # decisions.service transitively reaches structural.service (which
-    # itself imports wiki.cli for a couple of helpers), and that chain can
-    # still trigger the same navconfig settings-init stdout leak the
-    # imports above are guarded against — protect this one the same way.
+    if include_bulk_tools:
+        from parrot.knowledge.wiki.tools import create_bulk_tools
+
+        tools = tools + create_bulk_tools(store, root, config)
+
+    # FEAT-578: decision-plane tools share the same read store.
     with contextlib.redirect_stdout(sys.stderr):
         from parrot.knowledge.wiki.decisions import create_decision_tools
 
@@ -269,12 +286,7 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
     # Obsidian vault exposure: when the project has a vault (explicit
     # `vault_dir` in wiki.json, or the root itself is a vault), register
     # the full ObsidianToolkit plus the wiki-side vault_ingest tool.
-    # Everything — including resolution, whose vault_scan import pulls in
-    # parrot.interfaces (another stdout-printing navconfig chain) — runs
-    # under the same stdout-redirect discipline as the parrot.mcp.* import
-    # above. Destructive obsidian_* tools carry
-    # routing_meta["requires_confirmation"], which MCPToolAdapter turns
-    # into a required `confirm` argument (soft HITL guard over stdio).
+    vault_tools = []
     description = (
         "Codebase knowledge graph — query, explore, remember, and look up "
         "symbols (functions/classes/methods), outlines, and blast radius"
@@ -282,7 +294,6 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
     if handles:
         names = ", ".join(sorted(h.name for h in handles))
         description += f" — federating {len(handles)} namespace(s): {names}"
-    vault_tools = []
     with contextlib.redirect_stdout(sys.stderr):
         from parrot.knowledge.wiki.project import resolve_vault_dir
 
@@ -295,18 +306,102 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
             vault_tools = list(toolkit.get_tools_sync())
             vault_tools.append(VaultIngestTool(store, root=root, config=config))
             description += f" — plus Obsidian vault management for {vault.name!r}"
-    _ensure_stderr_logging()
 
+    return WikiToolBundle(
+        tools=tools,
+        vault_tools=vault_tools,
+        description=description,
+        store=store,
+        read_store=read_store,
+        ledger_service=ledger_service,
+        namespace_handles=list(handles),
+    )
+
+
+def build_wiki_tools(
+    root: Path,
+    config: Any,
+    *,
+    ledger_dir: Path | None = None,
+    read_repair: bool = True,
+    include_bulk_tools: bool = False,
+) -> WikiToolBundle:
+    """Synchronously assemble wiki tools for the stdio transport.
+
+    Args:
+        root: Wiki project root.
+        config: Effective project configuration.
+        ledger_dir: Optional explicit ledger directory.
+        read_repair: Whether structural tools may repair local source data.
+        include_bulk_tools: Whether to include server-only bulk and sync tools.
+
+    Returns:
+        The assembled wiki tool bundle.
+    """
+    return _run_sync(
+        abuild_wiki_tools(
+            root,
+            config,
+            ledger_dir=ledger_dir,
+            read_repair=read_repair,
+            include_bulk_tools=include_bulk_tools,
+        )
+    )
+
+
+async def close_bundle(bundle: WikiToolBundle) -> None:
+    """Close every store the bundle owns, logging failures without raising.
+
+    Args:
+        bundle: Bundle whose stores should be closed.
+    """
+    targets = [bundle.store, *(handle.store for handle in bundle.namespace_handles)]
+    if bundle.ledger_service is not None:
+        targets.append(bundle.ledger_service.store)
+    for target in targets:
+        close = getattr(target, "close", None)
+        if close is None:
+            continue
+        try:
+            result = close()
+            if asyncio.iscoroutine(result):
+                await result
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning("close_bundle: %s", exc)
+
+
+def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
+    """Build a `StdioMCPServer` with the six wiki tools registered.
+
+    Args:
+        root: Wiki project root (directory containing `.parrot/wiki.json`,
+            or the nearest `.git` root — see `find_project_root()`).
+
+    Returns:
+        A core `StdioMCPServer` with all six wiki tools registered.
+    """
+    # Some parrot.mcp.* dependencies print raw diagnostic lines directly to
+    # stdout during import (not via logging — pre-existing navconfig
+    # settings-init side effect, not introduced here). Redirect stdout to
+    # stderr for the duration of the import only, so nothing can leak into
+    # the JSON-RPC channel this import is deferred specifically to protect.
+    with contextlib.redirect_stdout(sys.stderr):
+        from parrot.mcp.local_server import StdioMCPServer
+        from parrot.mcp.server_base import LocalServerConfig
+
+    config = load_effective_config(root).config
+    bundle = build_wiki_tools(root, config)
+    _ensure_stderr_logging()
     server = StdioMCPServer(
         LocalServerConfig(
             name="wikitoolkit",
             version="1.0.0",
-            description=description,
+            description=bundle.description,
         )
     )
-    server.register_tools(tools)
-    if vault_tools:
-        server.register_tools(vault_tools)
+    server.register_tools(bundle.tools)
+    if bundle.vault_tools:
+        server.register_tools(bundle.vault_tools)
     return server
 
 
