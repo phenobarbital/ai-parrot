@@ -60,6 +60,9 @@ export type Op9 = "union";
  * @minItems 1
  */
 export type Sources = [string, ...string[]];
+export type InputAlias = string;
+export type Output = string | null;
+export type Transformer = string;
 export type Integrity = string;
 export type Name1 = string;
 export type From = string;
@@ -138,10 +141,11 @@ export interface Placeholders {
   [k: string]: unknown;
 }
 /**
- * Exactly one of inline DSL operations or a catalogued renderer module.
+ * Exactly one of inline DSL operations, a catalogued renderer module, or a server-side Python transformer.
  */
 export interface TransformSpec {
   ops?: Ops;
+  python?: PythonTransform | null;
   ref?: TransformRef | null;
 }
 export interface Select {
@@ -214,6 +218,21 @@ export interface JoinKey {
 export interface Union_ {
   op?: Op9;
   sources: Sources;
+}
+/**
+ * Server-side registered transformer applied to a fetched frame (G1: referenced by name, never code).
+ *
+ * Runs ONLY in the Python lanes (bake, persist, server refresh, the per-source data endpoint) — the mirror
+ * image of ``transform.ref``, which runs only in the renderer.
+ */
+export interface PythonTransform {
+  input_alias?: InputAlias;
+  output?: Output;
+  params?: Params1;
+  transformer: Transformer;
+}
+export interface Params1 {
+  [k: string]: unknown;
 }
 /**
  * Catalogued renderer-side transform: opaque ``name@semver`` id plus SRI pin.
