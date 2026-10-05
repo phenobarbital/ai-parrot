@@ -119,10 +119,7 @@ async def test_replace_source_slice_removes_symbols(monkeypatch: pytest.MonkeyPa
 
     await instance.replace_source_slice("file:x.py", [])
 
-    assert any(
-        SYMBOLS_COLLECTION in aql and "s.source_id == @sid" in aql and "REMOVE" in aql
-        for aql, _ in calls
-    )
+    assert any(SYMBOLS_COLLECTION in aql and "s.source_id == @sid" in aql and "REMOVE" in aql for aql, _ in calls)
 
 
 async def _completed(value: int) -> int:
