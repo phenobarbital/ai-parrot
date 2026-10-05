@@ -518,13 +518,13 @@ class AgentSchedulerManager:
             message = f"🛑 :: [{ENVIRONMENT} - NAV Scheduler] Job **{job_name}** \
              scheduled at {scheduled!s} failed with Error {event.exception!s}"
             if stack:
-                self.logger.exception(f"[{ENVIRONMENT} - NAV Scheduler] Job {job_name} id: {job_id!s} \
+                self.logger.error(f"[{ENVIRONMENT} - NAV Scheduler] Job {job_name} id: {job_id!s} \
                     StackTrace: {stack!s}")
                 message = f"🛑 :: [{ENVIRONMENT} - NAV Scheduler] Job \
                 **{job_name}**:**{job_id!s}** failed with Exception {event.exception!s}"
             # send a Notification error from Scheduler
         elif event.code == EVENT_JOB_MAX_INSTANCES:
-            self.logger.exception(f"[{ENVIRONMENT} - Scheduler] Job {job_name} could not be submitted \
+            self.logger.error(f"[{ENVIRONMENT} - Scheduler] Job {job_name} could not be submitted \
                 Maximum number of running instances was reached.")
             message = f"⚠️ :: [{ENVIRONMENT} - NAV Scheduler] Job **{job_name}** was \
             missed for scheduled run at {scheduled}"
@@ -785,7 +785,7 @@ class AgentSchedulerManager:
             f"Job {agent_name} ({schedule_id}) completed successfully.",
         )
 
-        if include_result := send_result.get("include_result", True):
+        if send_result.get("include_result", True):
             if formatted_result := self._format_result(result):
                 message = f"{message}\n\nResult:\n{formatted_result}"
 
