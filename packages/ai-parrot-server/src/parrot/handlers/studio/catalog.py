@@ -249,10 +249,7 @@ class StudioCatalogHandler(StudioBaseView):
         """Return base classes with caller-specific allowance and host additions."""
         part = await self._studio_partition()
         allowlist = StudioClassAllowlist.from_app(self.request.app)
-        rows = [
-            {**row, "allowed": allowlist.allows(part, row["name"])}
-            for row in await self._get_base_classes()
-        ]
+        rows = [{**row, "allowed": allowlist.allows(part, row["name"])} for row in await self._get_base_classes()]
         exported_names = set(bots_module.__all__)
         for name in sorted(allowlist.names() - exported_names):
             rows.append(
