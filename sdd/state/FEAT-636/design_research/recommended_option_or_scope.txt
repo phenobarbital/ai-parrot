@@ -1,0 +1,74 @@
+*(mode = enrichment)*
+
+### What's New
+
+- **A Python-transformer transform member** *(shape decided — see §5 OQ-A/B/C)* —
+  `TransformSpec.python: {transformer: <registered name>, params: {...},
+  input_alias: <str, default "source">, output: <str | null>}` joining the
+  existing `ops`/`ref` XOR (exactly-one-of-three). The server calls
+  `registered({input_alias: frame}, params)` and reduces the returned dict to
+  the source's frame with the existing multi-frame selection rule (`output`
+  override → `result` key → sole key → error), mirroring
+  `selectFrame`/`_select_multi_frame`.
+- **Per-source server data endpoint** *(path decided — see §5 OQ-A)* —
+  `POST /api/v1/ui/surfaces/{surface_id}/sources/{key}/data` on
+  `UISurfacesHandler`: resolves the persisted descriptor, executes the slug
+  via the linked executor machinery under the data-plane guard, applies the
+  named transformer, returns rows (bounded by the existing caps).
+- **TS fetch branch** — `fetchSource` (or a sibling) routes
+  python-transformed sources to the server endpoint instead of QuerySource.
+
+### What Changes
+
+- **`linked/models.py`::`TransformSpec`** — third member + XOR validator
+  update; `DerivedDataSource` validator extended to also reject `python`.
+  *Evidence*: F002
+- **`linked/executor.py`::`_run_source`** — after fetch, when
+  `transform.python` is set, call the registered transformer (frame →
+  `(inputs, params) -> dict` adaptation) instead of / before `apply_transform`
+  per the terminal-in-v1 rule. *Evidence*: F005
+- **`handlers/ui_surfaces.py`** — new dispatch for the per-source route;
+  reuse `resolve_surface_access` (share tokens included) + guard + error
+  mapping (404-as-unavailable). *Evidence*: F003
+- **`manager/manager.py`** — one route registration. *Evidence*: F003
+- **`ui/.../a2ui/linked/fetch.ts` (+ `types.ts`, `index.ts`)** — descriptor
+  type gains the new member; fetch branches to the server URL; scheduler/
+  dependency logic treats the source as terminal. *Evidence*: F005
+- **`qs_build_linked_surface` toolkit lane** — the builder tool must accept
+  and validate the transformer reference (via `TransformerManifest` /
+  `validate_inputs`-style gate) at build time. *Evidence*: F001, F004
+
+### What's Untouched (Non-Goals)
+
+- Recipe surfaces (`recipe_name` lane) and `RecipeRunner` behavior.
+- The DSL v1 operation set and `transform.ref` module lane.
+- QuerySource itself and its PBAC; snapshot persistence semantics (AC16).
+- v1 excludes: recipe references (`name@owner`) in descriptors (phase 2,
+  per U2), DSL chaining after the transformer, and derived siblings
+  referencing a python-transformed source (per U3).
+
+### Patterns to Follow
+
+- Lane-asymmetry handling à la `transform.ref`: explicit validator rejections
+  and a documented "runs only in X lane" rule, never silent divergence.
+  *Evidence*: F002, F005
+- Transformer validation gate reuse: `TransformerManifest.requires_columns` +
+  `validate_inputs`-style fail-fast before execution. *Evidence*: F004
+- Error mapping discipline: denials surface as 404 "unavailable" (never
+  "denied"); data-stage vs transform-stage errors map to 502 vs 422 as in
+  `_refresh`. *Evidence*: F001, F003
+
+### Integration Risks
+
+- **Transformer availability in the server process.** Registration is an
+  import side effect (`load_transformer_module` at boot/agent discovery); a
+  descriptor naming an unregistered transformer must fail gracefully
+  (persist-time gate + run-time 422), and operators need a documented wiring
+  story. *Evidence*: F004
+- **Identity duality.** Viewer-JWT execution (authenticated) vs owner-pctx
+  execution (share tokens) in one endpoint doubles the auth paths to test;
+  the share path must never leak beyond what the existing share refresh
+  already allows. *Evidence*: F003
+- **Dependency ordering.** `dependencies_of`/scheduler treat transforms as
+  DSL op lists; the new member must not be misread as dependency-bearing
+  (terminal in v1 keeps this contained). *Evidence*: F005
