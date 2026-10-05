@@ -58,6 +58,41 @@ class BaseSchedulerCallback(NotificationMixin):
             "result": result,
         }
 
+    def _delivery_result(
+        self,
+        response: Optional[Dict[str, Any]],
+        *,
+        provider: str,
+        attachments: Optional[List[Path]] = None,
+    ) -> Dict[str, Any]:
+        """Turn a ``send_*`` response into a callback result.
+
+        ``NotificationMixin.send_*`` never raises: a provider failure comes back
+        as ``{"status": "error", ...}``. This reports ``"sent"`` only when
+        :meth:`notification_succeeded` confirms the send, and ``"failed"``
+        (with ``error``) otherwise. It never raises.
+
+        Args:
+            response: The dict returned by a ``send_*`` method, or ``None``.
+            provider: Provider label for the result.
+            attachments: Files that were attached, reported as strings.
+
+        Returns:
+            A dict containing delivery status, provider, attachments, response,
+            and error.
+        """
+        sent = self.notification_succeeded(response)
+        error = None
+        if not sent:
+            error = response.get("error") if response and response.get("error") else f"{provider} delivery failed"
+        return {
+            "status": "sent" if sent else "failed",
+            "provider": provider,
+            "attachments": [str(path) for path in attachments or []],
+            "response": response,
+            "error": error,
+        }
+
     async def run(self, result: Any, *, schedule_id: str, agent_name: str, **kwargs) -> Dict[str, Any]:
         raise NotImplementedError
 
@@ -89,7 +124,7 @@ class SendEmailReportCallback(BaseSchedulerCallback):
             attachments=attachments,
             with_attachments=True,
         )
-        return {"status": "sent", "provider": "email", "attachments": [str(p) for p in attachments], "response": response}
+        return self._delivery_result(response, provider="email", attachments=attachments)
 
     def _write_temp_file(self, content: str, *, suffix: str, prefix: str) -> Path:
         fd, filename = tempfile.mkstemp(suffix=suffix, prefix=prefix)
@@ -151,6 +186,14 @@ class SaveDataCallback(BaseSchedulerCallback):
                 with_attachments=True,
             )
             response["email"] = email_response
+            if self.notification_succeeded(email_response):
+                response["email_status"] = "sent"
+            else:
+                response["email_status"] = "failed"
+                response["status"] = "partial"
+                response["error"] = (
+                    email_response.get("error") if email_response.get("error") else "email delivery failed"
+                )
         return response
 
     def _to_dataframe(self, data: Any) -> Optional[pd.DataFrame]:
@@ -189,7 +232,7 @@ class SendNotifyReportCallback(BaseSchedulerCallback):
             with_attachments=True,
             attachments=attachments,
         )
-        return {"status": "sent", "provider": provider, "attachments": [str(p) for p in attachments], "response": response}
+        return self._delivery_result(response, provider=provider, attachments=attachments)
 
 
 CALLBACK_REGISTRY: Dict[str, Type[BaseSchedulerCallback]] = {
