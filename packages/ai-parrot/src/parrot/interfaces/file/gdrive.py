@@ -813,7 +813,9 @@ class GoogleDriveFileManager(FileManagerInterface):
                 if not (hasattr(source, "seekable") and source.seekable()):
                     head = await asyncio.to_thread(source.read, self.small_file_threshold + 1)
                     if len(head) > self.small_file_threshold:
-                        raise ValueError("unseekable stream exceeds the small-file threshold; provide a seekable source")
+                        raise ValueError(
+                            "unseekable stream exceeds the small-file threshold; provide a seekable source"
+                        )
                     stream = io.BytesIO(head)
                 start = stream.tell()
                 size = stream.seek(0, 2) - start
