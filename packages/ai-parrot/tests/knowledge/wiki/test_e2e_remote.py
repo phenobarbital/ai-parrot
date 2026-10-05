@@ -101,10 +101,14 @@ async def test_build_push_then_remote_outline(served, tmp_path, monkeypatch):
 def test_cli_proxy_configuration_requires_no_local_plane(tmp_path, monkeypatch):
     """A configured CLI proxy resolves before a local database is opened."""
     (tmp_path / ".parrot").mkdir()
-    save_project_config(tmp_path, WikiProjectConfig(wiki_name="client", remote=WikiRemoteConfig(url="http://fake/mcp/a")))
+    save_project_config(
+        tmp_path, WikiProjectConfig(wiki_name="client", remote=WikiRemoteConfig(url="http://fake/mcp/a"))
+    )
     monkeypatch.setenv("WIKITOOLKIT_TOKEN", "t0k3n")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("parrot.knowledge.wiki.cli.remote_cli.call_remote_text", lambda *_args, **_kwargs: "remote page")
+    monkeypatch.setattr(
+        "parrot.knowledge.wiki.cli.remote_cli.call_remote_text", lambda *_args, **_kwargs: "remote page"
+    )
 
     result = CliRunner().invoke(wiki, ["query", "page"])
     assert result.exit_code == 0, result.output
