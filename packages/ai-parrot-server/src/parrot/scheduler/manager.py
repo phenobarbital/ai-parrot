@@ -55,7 +55,13 @@ from ..notifications import NotificationMixin
 from ..conf import ENVIRONMENT
 from .functions import build_scheduler_callback
 from . import jobs
-from .coordination import CoordinatedAsyncIOExecutor, FireCoordinator, NullFireCoordinator, build_fire_coordinator
+from .coordination import (
+    CoordinatedAsyncIOExecutor,
+    FireCoordinationError,
+    FireCoordinator,
+    NullFireCoordinator,
+    build_fire_coordinator,
+)
 
 # Suppress APScheduler logging noise.
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
@@ -365,11 +371,6 @@ class AgentSchedulerManager:
         self._owns_pool: bool = False
         self._job_context: Dict[str, Dict[str, Any]] = {}
         self._pending_success_tasks: Set[asyncio.Task] = set()
-        # In-memory concurrency guard for run-now (FEAT-467 TASK-2520):
-        # schedule_ids with an active run-now execution in flight. A
-        # second run-now for the same schedule_id while present here is
-        # refused (409) rather than queued/stacked.
-        self._run_now_active: Set[str] = set()
         self.registered_name = kwargs.get("registered_name", self.registered_name)
         self._fire_coordinator: FireCoordinator = NullFireCoordinator()
         self._local_callbacks: Dict[str, Callable] = {}
@@ -384,7 +385,7 @@ class AgentSchedulerManager:
         # happens at start time via `_build_jobstores()`/`start_headless()`;
         # `self.scheduler` still exists after `__init__` with the always-on
         # 'default' MemoryJobStore, per existing code that touches it.
-        executors = {"default": CoordinatedAsyncIOExecutor()}
+        executors = {"default": CoordinatedAsyncIOExecutor(on_unavailable=self._on_coordination_unavailable)}
         job_defaults = {
             "coalesce": True,  # Combine multiple missed runs into one
             "max_instances": 2,  # Maximum concurrent instances of each job
@@ -947,6 +948,32 @@ class AgentSchedulerManager:
 
         except Exception as e:
             self.logger.error("Failed to update schedule run: %s", e)
+
+    async def _on_coordination_unavailable(self, job_id: str, exc: BaseException) -> None:
+        """Record a fire skipped because the coordination backend was down (fail closed, FEAT-631 G5).
+
+        Stamps ``metadata.last_status='lock_unavailable'`` and ``last_error`` on DB-backed rows;
+        does NOT touch ``run_count``/``last_run`` (the job did not run). Never raises.
+        """
+        job_id = str(job_id)
+        if job_id.startswith("auto_"):
+            return
+        schedule_id = job_id[len(_RUN_NOW_JOB_PREFIX) :] if job_id.startswith(_RUN_NOW_JOB_PREFIX) else job_id
+        if self._pool is None:
+            self.logger.warning("Cannot stamp lock_unavailable for %s: database pool is unavailable", schedule_id)
+            return
+        try:
+            async with await self._pool.acquire() as conn:  # pylint: disable=no-member # noqa
+                AgentSchedule.Meta.connection = conn
+                schedule = await AgentSchedule.get(schedule_id=schedule_id)
+                if not schedule.metadata:
+                    schedule.metadata = {}
+                schedule.metadata["last_status"] = "lock_unavailable"
+                schedule.metadata["last_error"] = f"coordination unavailable: {exc}"
+                schedule.metadata["last_error_time"] = datetime.now().isoformat()
+                await schedule.update()
+        except Exception as stamp_error:  # pragma: no cover - safety net
+            self.logger.error("Failed to stamp lock_unavailable for %s: %s", schedule_id, stamp_error)
 
     def _create_trigger(self, schedule_type: str, config: Dict[str, Any]):
         """
@@ -1628,8 +1655,8 @@ class AgentSchedulerManager:
 
         Schedules a one-shot APScheduler job (a ``DateTrigger`` firing
         "now", the same trigger type the ``"once"`` schedule_type already
-        uses) that calls :meth:`_run_now_wrapper`, which in turn calls
-        the exact same :meth:`_execute_agent_job` coroutine — and
+        uses) that calls :func:`jobs.run_db_schedule_now`, which in turn
+        calls the exact same :meth:`_run_db_schedule` coroutine — and
         therefore the exact same ``job_success``/``job_status`` event
         handling, callbacks, ``send_result`` emails, and
         ``last_run``/``run_count``/``last_result`` stamping — as a
@@ -1655,55 +1682,36 @@ class AgentSchedulerManager:
                 ``delete_schedule``.
         """
         schedule_id = str(schedule_id)
-        if schedule_id in self._run_now_active:
+        try:
+            acquired = await self._fire_coordinator.try_acquire_running(schedule_id)
+        except FireCoordinationError as exc:
+            # A missing coordination decision must never permit an unguarded run.
+            raise RuntimeError("Scheduler coordination unavailable") from exc
+        if not acquired:
             raise SchedulerRunNowConflictError(f"A run-now execution is already active for schedule {schedule_id}.")
 
-        schedule = await self.get_schedule(schedule_id)
-        self._run_now_active.add(schedule_id)
-
-        job_kwargs = self._execution_fields(schedule)
         # Deterministic (not uuid-suffixed): the concurrency guard above
-        # already rules out two simultaneous run-nows for the same
+        # already rules out concurrent run-nows for the same schedule across workers,
         # schedule_id, and job_success() needs to derive schedule_id
         # back out of this id when the one-shot job has already
         # self-removed by the time the listener runs (see that method).
         job_id = f"{_RUN_NOW_JOB_PREFIX}{schedule_id}"
         try:
+            schedule = await self.get_schedule(schedule_id)
             self.scheduler.add_job(
-                self._run_now_wrapper,
+                jobs.run_db_schedule_now,
                 trigger=DateTrigger(run_date=datetime.now()),
                 id=job_id,
                 name=f"{schedule.agent_name}_run_now",
-                kwargs=job_kwargs,
+                kwargs={"manager_name": self.registered_name, "schedule_id": schedule_id},
                 jobstore=self._safe_jobstore(schedule.scheduler_type),
                 replace_existing=False,
             )
         except Exception:
-            self._run_now_active.discard(schedule_id)
+            await self._fire_coordinator.release_running(schedule_id)
             raise
 
         return schedule
-
-    async def _run_now_wrapper(self, schedule_id: str, **kwargs) -> Any:
-        """Release the run-now concurrency guard once execution finishes.
-
-        A thin pass-through around :meth:`_execute_agent_job` — returns
-        the same value / propagates the same exception, so
-        ``job_success``/``job_status`` (which key off the job's return
-        value / raised exception, not which coroutine APScheduler called)
-        behave identically to a normal scheduled run. The ``finally``
-        releases :attr:`_run_now_active` on BOTH success and failure.
-
-        Args:
-            schedule_id: The schedule this run-now execution belongs to.
-            **kwargs: Forwarded verbatim to :meth:`_execute_agent_job`
-                (``agent_name``, ``prompt``, ``method_name``,
-                ``metadata``, ``is_crew``, ``send_result``, ``callbacks``).
-        """
-        try:
-            return await self._execute_agent_job(schedule_id, **kwargs)
-        finally:
-            self._run_now_active.discard(str(schedule_id))
 
     async def get_last_result(self, schedule_id: str) -> Dict[str, Any]:
         """Return last-execution metadata for ``schedule_id`` (FEAT-467 TASK-2520).
