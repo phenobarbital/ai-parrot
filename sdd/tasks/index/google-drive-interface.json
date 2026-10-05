@@ -220,7 +220,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -230,8 +230,9 @@
       "parallelism_notes": "delegates to the full GoogleDriveFileManager surface completed by TASK-3814 (gdrive.py: find_files, upload_file, create_sharing_link, get_file_url)",
       "assigned_to": null,
       "started_at": "2026-10-05T21:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3816-gdrive-toolkit.md"
+      "completed_at": "2026-10-05T22:46:56+00:00",
+      "file": "sdd/tasks/completed/TASK-3816-gdrive-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3817",
