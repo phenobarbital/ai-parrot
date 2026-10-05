@@ -2,6 +2,7 @@
 
 Moved verbatim from ``graph.py``; imports neither msgraph nor aiogoogle.
 """
+
 from __future__ import annotations
 
 from datetime import datetime

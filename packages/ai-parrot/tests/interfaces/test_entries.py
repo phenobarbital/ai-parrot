@@ -1,4 +1,5 @@
 """FEAT-608 TASK-3808 — entries.py relocation invariants (AC16)."""
+
 import subprocess
 import sys
 
