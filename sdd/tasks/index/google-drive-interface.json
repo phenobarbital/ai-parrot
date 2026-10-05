@@ -136,7 +136,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -146,8 +146,9 @@
       "parallelism_notes": "modifies gdrive.py after TASK-3811 (same file); uses _iter_query from TASK-3811 for conflict checks",
       "assigned_to": null,
       "started_at": "2026-10-05T21:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3812-gdrive-uploads.md"
+      "completed_at": "2026-10-05T22:16:57+00:00",
+      "file": "sdd/tasks/completed/TASK-3812-gdrive-uploads.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3813",
