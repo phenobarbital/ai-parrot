@@ -25,7 +25,9 @@ async def test_fetch_source_passes_params_and_pctx(owner, linked_source, monkeyp
     async def _fake(sources, **kwargs):
         seen.update(kwargs, keys=list(sources))
         return ExecutionOutcome(
-            outcomes={"activity": SourceOutcome(key="activity", rows=[{"a": 1}], snapshot_at=datetime.now(timezone.utc))}
+            outcomes={
+                "activity": SourceOutcome(key="activity", rows=[{"a": 1}], snapshot_at=datetime.now(timezone.utc))
+            }
         )
 
     monkeypatch.setattr(executor_mod, "execute_sources", _fake)
@@ -44,7 +46,9 @@ async def test_fetch_source_passes_params_and_pctx(owner, linked_source, monkeyp
 async def test_fetch_source_requires_guard(owner, linked_source) -> None:
     """A data-plane fetch fails closed without a configured guard."""
     with pytest.raises(LinkedGuardRequired):
-        await LinkedSurfaceService(guard=None).fetch_source(_dict_envelope(linked_source), "activity", params={}, pctx=owner)
+        await LinkedSurfaceService(guard=None).fetch_source(
+            _dict_envelope(linked_source), "activity", params={}, pctx=owner
+        )
 
 
 async def test_fetch_source_unknown_or_derived_key(owner, linked_source) -> None:
@@ -66,6 +70,7 @@ async def test_fetch_source_unknown_or_derived_key(owner, linked_source) -> None
 
 async def test_fetch_source_transform_error(owner, linked_source, monkeypatch) -> None:
     """Transform-stage errors retain executor's stable 422 mapping."""
+
     async def _fake(sources, **kwargs):
         return ExecutionOutcome(outcomes={"activity": SourceOutcome(key="activity", error="transform_failed")})
 
@@ -80,6 +85,7 @@ async def test_fetch_source_transform_error(owner, linked_source, monkeypatch) -
 
 async def test_fetch_source_ignored_params_warning(owner, linked_source, monkeypatch) -> None:
     """Locked and undeclared overrides surface as a one-source ignored-parameter warning."""
+
     async def _fake(sources, **kwargs):
         return ExecutionOutcome(
             outcomes={"activity": SourceOutcome(key="activity", rows=[], ignored_params=["locked", "unknown"])}
@@ -96,9 +102,7 @@ async def test_fetch_source_ignored_params_warning(owner, linked_source, monkeyp
 async def test_persist_gate_rejects_unregistered_and_allows_registered(owner, linked_source, monkeypatch) -> None:
     """Persist-time validation rejects unknown transformers but accepts a registry-backed reference."""
     monkeypatch.setattr(transformer_registry, "_transformers", {})
-    invalid = linked_source.model_copy(
-        update={"transform": TransformSpec(python=PythonTransform(transformer="nope"))}
-    )
+    invalid = linked_source.model_copy(update={"transform": TransformSpec(python=PythonTransform(transformer="nope"))})
     service = LinkedSurfaceService(guard=_FakeGuard())
 
     with pytest.raises(CatalogValidationError) as info:
