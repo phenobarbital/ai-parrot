@@ -22,6 +22,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -528,6 +529,35 @@ class StandupConfig(BaseModel):
         return value
 
 
+class WikiRemoteConfig(BaseModel):
+    """Remote wikitoolkit MCP server this repository proxies to (FEAT-569).
+
+    Attributes:
+        url: Absolute ``http(s)`` URL of ONE wiki mount, e.g.
+            ``https://wiki.example.com/mcp/parrot`` (trailing slash stripped).
+        token_env: Environment variable holding the bearer token.
+        timeout: Per-call timeout in seconds.
+        actor: Explicit ``X-Wiki-Actor`` value; ``None`` derives it from the
+            local identity at call time.
+        verify_tls: Whether the client verifies the server certificate.
+    """
+
+    url: str
+    token_env: str = Field(default="WIKITOOLKIT_TOKEN", min_length=1)
+    timeout: float = Field(default=30.0, ge=1.0, le=600.0)
+    actor: str | None = None
+    verify_tls: bool = True
+
+    @field_validator("url")
+    @classmethod
+    def _absolute_http_url(cls, value: str) -> str:
+        """Require an absolute ``http://`` / ``https://`` URL."""
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(f"remote.url must be an absolute http(s) URL, got {value!r}")
+        return value.rstrip("/")
+
+
 class WikiProjectConfig(BaseModel):
     """Repository-level wiki configuration (``.parrot/wiki.json``).
 
@@ -545,6 +575,7 @@ class WikiProjectConfig(BaseModel):
         sync_graph: When ``True``, authoring commands (``remember`` /
             ``link``) also mirror their writes into the project's
             GraphIndex plane (``.parrot/graph/``) as audited commits.
+        remote: Remote wikitoolkit MCP server configuration.
         arango_database: ArangoDB database name for the ``arangodb``
             backend; defaults to ``wiki_{wiki_name}`` when omitted.
         arango_credentials_env: Env var prefix used to resolve ArangoDB
@@ -578,6 +609,10 @@ class WikiProjectConfig(BaseModel):
     max_file_kb: int = Field(default=512, ge=1)
     claude: ClaudeIntegrationConfig = Field(default_factory=ClaudeIntegrationConfig)
     sync_graph: bool = Field(default=False)
+    remote: WikiRemoteConfig | None = Field(
+        default=None,
+        description="Proxy every tool-backed command to this remote wikitoolkit MCP server (FEAT-569).",
+    )
     arango_database: str | None = Field(
         default=None,
         description="ArangoDB database name; defaults to wiki_{wiki_name}",
@@ -1019,6 +1054,7 @@ class WikiEnvOverlay(BaseModel):
         include_suffixes: Scanned file suffixes override.
         exclude_dirs: Extra pruned directory names override.
         claude: Claude Code integration settings override.
+        remote: Remote wikitoolkit MCP server configuration override.
         standup: Standup settings override (replaced wholesale).
     """
 
@@ -1038,6 +1074,7 @@ class WikiEnvOverlay(BaseModel):
     include_suffixes: list[str] | None = None
     exclude_dirs: list[str] | None = None
     claude: ClaudeIntegrationConfig | None = None
+    remote: WikiRemoteConfig | None = None
     standup: StandupConfig | None = None
     inbox: InboxConfig | None = None
 
@@ -1106,6 +1143,28 @@ def resolve_wiki_env(env: str | None = None) -> str:
 def overlay_path(root: Path, env: str) -> Path:
     """Return the per-environment overlay config path for a repo root."""
     return root / PARROT_DIR / f"wiki.{env}.json"
+
+
+REMOTE_URL_ENV = "WIKITOOLKIT_REMOTE_URL"
+
+
+def resolve_remote(config: WikiProjectConfig) -> WikiRemoteConfig | None:
+    """Return the effective remote for this repository, or ``None`` for local mode.
+
+    Precedence: ``WIKITOOLKIT_REMOTE_URL`` (overrides only the URL; the other
+    fields come from ``config.remote`` when set, else defaults) > ``config.remote`` > ``None``.
+
+    Args:
+        config: The already-merged effective project config.
+
+    Returns:
+        The remote to proxy to, or ``None`` when the CLI/MCP must stay local.
+    """
+    override = os.environ.get(REMOTE_URL_ENV, "").strip()
+    if override:
+        base = config.remote.model_dump() if config.remote is not None else {}
+        return WikiRemoteConfig(**{**base, "url": override})
+    return config.remote
 
 
 def load_effective_config(root: Path, env: str | None = None) -> WikiEffectiveConfig:
