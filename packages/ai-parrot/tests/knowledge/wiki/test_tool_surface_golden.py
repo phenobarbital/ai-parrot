@@ -21,6 +21,10 @@ LOCAL_NO_LEDGER = sorted(
         "wiki_symbol_lookup",
         "wiki_code_outline",
         "wiki_blast_radius",
+        "wiki_decision_why",
+        "wiki_decisions_for_symbol",
+        "wiki_lint",
+        "wiki_standup",
     ]
 )
 LEDGER = sorted(["ledger_open", "ledger_ready", "ledger_claim", "ledger_close", "ledger_context"])

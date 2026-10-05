@@ -119,8 +119,12 @@ def test_cli_proxy_configuration_requires_no_local_plane(tmp_path, monkeypatch):
 async def test_official_sdk_interop(served):
     """The official SDK can initialize and list the server tool surface when installed."""
     pytest.importorskip("mcp", reason="requires the mcp extra")
-    from mcp import ClientSession
-    from mcp.client.streamable_http import streamablehttp_client
+    try:
+        from mcp import ClientSession
+        from mcp.client.streamable_http import streamablehttp_client
+    except ImportError:
+        # ``packages/ai-parrot/tests/mcp`` can shadow the SDK when that tests dir is on sys.path.
+        pytest.skip("official `mcp` SDK is not importable (shadowed by tests/mcp or too old)")
 
     base_url, _ = served
     async with (
