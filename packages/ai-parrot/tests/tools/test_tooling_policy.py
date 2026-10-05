@@ -158,3 +158,51 @@ def test_policy_refuses_unknown_tool_entry_shape():
         with pytest.raises(TenantToolingRefused) as err:
             TenantToolingPolicy.deny_all().check_tooling(NormalizedTooling(tools=[bad]), subject=SUBJECT)
         assert err.value.reason == "toolkit_unavailable"
+
+
+class TestTenantToolkits:
+    """FEAT-634 B4 — host-supplied per-tenant toolkit allow-list."""
+
+    @staticmethod
+    def _subject(phase="write", tenant="acme"):
+        return ToolingSubject(tenant=tenant, agent_id=AGENT_ID, actor="u1", phase=phase)
+
+    def test_enabled_slug_passes_disabled_host_slug_refused(self, host_plugins):
+        pol = TenantToolingPolicy(tenant_toolkits=lambda t: {"tp_probe"} if t == "acme" else None)
+        for phase in ("write", "activate", "attach", "execute"):
+            pol.check_tool("tp_probe", subject=self._subject(phase))
+            with pytest.raises(TenantToolingRefused) as err:
+                pol.check_tool("tp_probe_tool", subject=self._subject(phase))
+            assert err.value.reason == "toolkit_unavailable" and err.value.item == "tp_probe_tool"
+            assert err.value.code == "tooling_not_permitted"
+
+    def test_none_means_unrestricted(self, host_plugins):
+        pol = TenantToolingPolicy(tenant_toolkits=lambda t: None)
+        pol.check_tool("tp_probe", subject=self._subject())
+        pol.check_tool("tp_probe_tool", subject=self._subject())
+        TenantToolingPolicy().check_tool("tp_probe_tool", subject=self._subject())
+
+    def test_build_phase_never_refused(self, host_plugins):
+        pol = TenantToolingPolicy(tenant_toolkits=lambda t: set())
+        pol.check_tool("tp_probe", subject=self._subject("build"))
+        with pytest.raises(TenantToolingRefused):
+            pol.check_tool("tp_probe", subject=self._subject("attach"))
+
+    def test_non_host_slugs_ignored(self, host_plugins):
+        pol = TenantToolingPolicy(builtin_tools=frozenset({"wiki"}), tenant_toolkits=lambda t: set())
+        pol.check_tool("wiki", subject=self._subject())
+
+    def test_raising_callback_fails_closed(self, host_plugins, caplog):
+        def boom(tenant):
+            raise RuntimeError("projection unavailable")
+
+        pol = TenantToolingPolicy(tenant_toolkits=boom)
+        with caplog.at_level("ERROR"), pytest.raises(TenantToolingRefused) as err:
+            pol.check_tool("tp_probe", subject=self._subject())
+        assert err.value.reason == "toolkit_unavailable"
+        assert "fail closed" in caplog.text
+        pol.check_tool("tp_probe", subject=self._subject("build"))
+
+    def test_tenant_none_unaffected(self, host_plugins):
+        pol = TenantToolingPolicy(tenant_toolkits=lambda t: set())
+        pol.check_tool("tp_probe", subject=self._subject(tenant=None))
