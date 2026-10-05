@@ -176,8 +176,18 @@ def test_storage_path_is_drive_relative_for_graph_and_unchanged_otherwise():
     tk_graph.manager_type = "sharepoint"
     assert tk_graph._storage_path("a/b.txt") == "a/b.txt"
 
+    tk_gdrive = FileManagerToolkit.__new__(FileManagerToolkit)
+    tk_gdrive.manager_type = "gdrive"
+    assert tk_gdrive._storage_path("a/b.txt") == "a/b.txt"
+
     tk_local = FileManagerToolkit(manager_type="temp")
     assert tk_local._storage_path("a/b.txt") == tk_local._resolve_output_path("a/b.txt")
+
+
+def test_storage_path_is_drive_relative_for_gdrive():
+    tool = FileManagerTool.__new__(FileManagerTool)
+    tool.manager_type = "gdrive"
+    assert tool._storage_path("a/b.txt") == "a/b.txt"
 
 
 async def test_tool_find_batch_ops_dispatch(tmp_path):
