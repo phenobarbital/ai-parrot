@@ -85,9 +85,7 @@ def fs_plugins(tmp_path, monkeypatch):
         'TOOL_REGISTRY = {"fs_events": "plugins.tools.probe.EventsToolkit", '
         '"fs_stores": "plugins.tools.probe.StoresToolkit"}\n'
     )
-    (package / "probe.py").write_text(
-        textwrap.dedent(
-            '''
+    (package / "probe.py").write_text(textwrap.dedent('''
             from parrot.tools.toolkit import AbstractToolkit
 
 
@@ -109,9 +107,7 @@ def fs_plugins(tmp_path, monkeypatch):
                 async def stores(self) -> str:
                     """Return a deterministic store marker."""
                     return "stores"
-            '''
-        )
-    )
+            '''))
     monkeypatch.syspath_prepend(str(tmp_path))
     for name in [module for module in sys.modules if module == "plugins" or module.startswith("plugins.")]:
         monkeypatch.delitem(sys.modules, name)
@@ -175,9 +171,7 @@ class TestToolkitAllowlistRoutes:
         """AC6: only enabled host toolkits appear for a restricted tenant."""
         client = await _client(aiohttp_client, pool, {"fs_events"})
         restricted = {item["slug"] for item in await (await client.get(f"{BASE}/catalog/tools")).json()}
-        unrestricted = {
-            item["slug"] for item in await (await client.get("/unrestricted/catalog/tools")).json()
-        }
+        unrestricted = {item["slug"] for item in await (await client.get("/unrestricted/catalog/tools")).json()}
         assert "fs_events" in restricted and "fs_stores" not in restricted
         assert {"fs_events", "fs_stores"} <= unrestricted
 
