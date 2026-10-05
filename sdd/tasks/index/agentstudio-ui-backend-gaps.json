@@ -73,7 +73,7 @@
       "feature_id": "FEAT-634",
       "feature": "agentstudio-ui-backend-gaps",
       "spec": "sdd/specs/agentstudio-ui-backend-gaps.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +83,9 @@
       "parallelism_notes": "needs `TenantToolingPolicy(tenant_toolkits=...)` from TASK-4098 (packages/ai-parrot/src/parrot/tools/tooling_policy.py); touches _base/__init__.py and _base/_storage.py that no other task edits.",
       "assigned_to": null,
       "started_at": "2026-10-05T21:49:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4099-studio-toolkit-allowlist-routes-details.md"
+      "completed_at": "2026-10-05T21:54:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4099-studio-toolkit-allowlist-routes-details.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4100",

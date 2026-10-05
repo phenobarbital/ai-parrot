@@ -197,4 +197,4 @@ Tests use a REAL aiohttp app (`aiohttp_client`) with the real Studio routes and 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+_json_error gained optional details; _studio_error adds details {reason,item} for StudioToolingRefused only (bodies otherwise unchanged: StudioError already dumped details=None). Route tests use the real app + real TenantToolingPolicy with the tp_* probe host toolkits. DEVIATION noted: POST /agents and PATCH carry no tooling in this codebase (CreateAgentRequest has no toolkits), so the create path is covered via draft save/bundle and toolkit PUT; AC8 'still builds' is proven at the real StudioToolingGate (phase build passes, write refused) rather than a full bot build. Seat: native.
