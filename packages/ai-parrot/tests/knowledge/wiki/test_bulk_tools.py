@@ -59,7 +59,9 @@ async def test_limits(plane):
     assert big.success is False and "payload too large" in big.error
     assert await store.get_page("file:p/big.py") is None
     assert (await WikiPageHashesTool(store)._execute(["i"] * 2001)).success is False
-    assert [t.name for t in create_bulk_tools(store, root, cfg)] == ["wiki_page_hashes", "wiki_ingest_batch"]
+    names = [t.name for t in create_bulk_tools(store, root, cfg)]
+    assert names[:2] == ["wiki_page_hashes", "wiki_ingest_batch"]
+    assert set(names[2:]) == {"wiki_sync_push", "wiki_sync_pull"}
 
 
 async def test_symbols_dropped(plane):

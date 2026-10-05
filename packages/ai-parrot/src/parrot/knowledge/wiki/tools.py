@@ -1093,26 +1093,41 @@ class WikiSyncPushTool(AbstractTool):
         **_unused: Any,
     ) -> ToolResult:
         """Merge a client memory slice into the server wiki plane."""
-        import tempfile
-
-        from parrot.knowledge.wiki.file_store import InMemoryWikiStore
-        from parrot.knowledge.wiki.sync import _sync_edges, _sync_records
+        from parrot.knowledge.wiki.sync import SyncReport, _merge_body, _record_from
 
         pages = [page if isinstance(page, WikiPageRecord) else WikiPageRecord.model_validate(page) for page in pages]
-        with tempfile.TemporaryDirectory() as bundle:
-            mem = InMemoryWikiStore(bundle, wiki_name=self._wiki_name)
-            await mem.upsert_pages(pages)
-            if edges:
-                await mem.add_edges(edges)
-            report, concept_ids = await _sync_records(
-                source=mem,
-                destination=self._store,
-                direction="push",
-                env=self._wiki_name,
-                dry_run=False,
-                skip_asserted_by=None,
-            )
-            await _sync_edges(mem, self._store, concept_ids)
+        # Apply last-writer-wins directly against the server store. A staging
+        # store is not used: it would re-stamp ``updated_at`` with "now" and
+        # defeat the comparison against the caller's own timestamps.
+        report = SyncReport(direction="push", env=self._wiki_name, dry_run=False)
+        concept_ids: set[str] = set()
+        for record in pages:
+            if record.origin != "memory":
+                continue
+            page = record.model_dump()
+            concept_id = record.concept_id
+            concept_ids.add(concept_id)
+            existing = await self._store.get_page(concept_id, include_body=True)
+            if existing is None:
+                report.created += 1
+                report.details.append(f"created: {concept_id}")
+                await self._store.upsert_pages([_record_from(page, record.body)])
+                continue
+            if (record.updated_at or "") <= (existing.get("updated_at") or ""):
+                report.skipped_older += 1
+                report.details.append(f"skipped_older: {concept_id}")
+                continue
+            report.updated += 1
+            report.details.append(f"updated: {concept_id}")
+            merged_body = _merge_body(record.body, existing.get("body", ""))
+            await self._store.upsert_pages([_record_from(page, merged_body)])
+        to_write = [
+            (edge[0], edge[1], edge[2], "asserted")
+            for edge in (edges or [])
+            if edge[0] in concept_ids or edge[1] in concept_ids
+        ]
+        if to_write:
+            await self._store.add_edges(to_write)
         return ToolResult(result=report.model_dump())
 
 
