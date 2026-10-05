@@ -915,9 +915,7 @@ class GoogleDriveFileManager(FileManagerInterface):
             return False
         try:
             if self.permanent_delete:
-                await self._retrying(
-                    lambda: self.drive.files_delete(file_id, **self._list_params()), label="delete"
-                )
+                await self._retrying(lambda: self.drive.files_delete(file_id, **self._list_params()), label="delete")
             else:
                 await self._retrying(
                     lambda: self.drive.files_update(file_id, {"trashed": True}, fields="id", **self._list_params()),
@@ -972,7 +970,9 @@ class GoogleDriveFileManager(FileManagerInterface):
             if old_parent_id != new_parent_id:
                 params.update(add_parents=new_parent_id, remove_parents=old_parent_id)
             await self._retrying(
-                lambda: self.drive.files_update(file_id, {"name": name}, fields=self.FIELDS, **params, **self._list_params()),
+                lambda: self.drive.files_update(
+                    file_id, {"name": name}, fields=self.FIELDS, **params, **self._list_params()
+                ),
                 label="move-or-rename",
             )
             self._invalidate(old_full)
@@ -1013,8 +1013,8 @@ class GoogleDriveFileManager(FileManagerInterface):
         elif scope == "domain":
             body["domain"] = domain
         if expiry > 0 and scope in {"user", "group"}:
-            body["expirationTime"] = (datetime.now(timezone.utc) + timedelta(seconds=expiry)).isoformat().replace(
-                "+00:00", "Z"
+            body["expirationTime"] = (
+                (datetime.now(timezone.utc) + timedelta(seconds=expiry)).isoformat().replace("+00:00", "Z")
             )
         try:
             file_id, _ = await self._resolve(full_path)
