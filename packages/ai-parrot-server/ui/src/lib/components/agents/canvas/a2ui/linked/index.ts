@@ -16,7 +16,7 @@
  */
 import { deriveConditions } from './conditions';
 import { applyTransform, TransformError } from './dsl';
-import { fetchSource, SourceUnavailable } from './fetch';
+import { fetchSource, fetchSourceData, SourceUnavailable } from './fetch';
 import { RefreshScheduler } from './scheduler';
 import { loadRef } from './ref';
 import { isDerived, isQuerySlug } from './types';
@@ -39,7 +39,7 @@ export interface FilterController {
   getFilter(column: string): string[];
 }
 
-export type SourceStatus = 'loading' | 'ready' | 'unavailable' | 'error';
+export type SourceStatus = 'loading' | 'ready' | 'unavailable' | 'error' | 'snapshot';
 
 export interface SourceUpdate {
   key: string;
@@ -53,6 +53,8 @@ export interface LinkedLaneOptions {
   headers: () => HeadersInit;
   transformsBase: string;
   onUpdate: (update: SourceUpdate) => void;
+  /** FEAT-636: where python-transformed sources fetch from. Absent/no surfaceId ⇒ those sources stay snapshot-only. */
+  surface?: { baseUrl: string; surfaceId?: string; shareToken?: string; headers: () => HeadersInit };
 }
 
 export interface LinkedLane {
@@ -258,18 +260,34 @@ export function createLinkedLane(sources: LinkedSources, opts: LinkedLaneOptions
       }
       let rows: Row[];
       if (isQuerySlug(src)) {
-        const placeholders = { ...(src.request.placeholders ?? {}), ...(overrides[key] ?? {}) };
-        const request = { ...src.request, placeholders };
-        const conditions: Record<string, unknown> = deriveConditions(request, lockedValues(src));
-        if (forceRefresh) conditions.refresh = true;
-        const rawRows = await fetchSource(src, conditions, { baseUrl: opts.baseUrl, headers: opts.headers() });
-        rows = rawRows;
-        if (src.transform?.ops) {
-          rows = applyTransform(rawRows, src.transform, frames);
-        } else if (src.transform?.ref) {
-          const transformFn = await loadRef(src.transform.ref, { transformsBase: opts.transformsBase });
-          // AC9: an SRI mismatch / unknown ref never executes — the raw fetched snapshot stands.
-          rows = transformFn ? transformFn(rawRows) : rawRows;
+        if (src.transform?.python) {
+          const surface = opts.surface;
+          if (!surface?.surfaceId) {
+            // S4: no persisted record ⇒ no server lane. Keep the snapshot; never fall back to direct QuerySource.
+            opts.onUpdate({ key, rows: null, status: 'snapshot', snapshotAt: lastSnapshotAt[key] ?? null });
+            return true;
+          }
+          // Rows are final: no applyTransform/loadRef, and `refresh` is not forwarded (no cache flag on the endpoint).
+          rows = await fetchSourceData(src, key, { ...(overrides[key] ?? {}) }, {
+            surfaceBaseUrl: surface.baseUrl,
+            surfaceId: surface.surfaceId,
+            shareToken: surface.shareToken,
+            headers: surface.headers(),
+          });
+        } else {
+          const placeholders = { ...(src.request.placeholders ?? {}), ...(overrides[key] ?? {}) };
+          const request = { ...src.request, placeholders };
+          const conditions: Record<string, unknown> = deriveConditions(request, lockedValues(src));
+          if (forceRefresh) conditions.refresh = true;
+          const rawRows = await fetchSource(src, conditions, { baseUrl: opts.baseUrl, headers: opts.headers() });
+          rows = rawRows;
+          if (src.transform?.ops) {
+            rows = applyTransform(rawRows, src.transform, frames);
+          } else if (src.transform?.ref) {
+            const transformFn = await loadRef(src.transform.ref, { transformsBase: opts.transformsBase });
+            // AC9: an SRI mismatch / unknown ref never executes — the raw fetched snapshot stands.
+            rows = transformFn ? transformFn(rawRows) : rawRows;
+          }
         }
       } else {
         // Derived: the parent's FULL frame (never its ≤500-row snapshot) through the DSL; a parent that failed

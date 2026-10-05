@@ -1,7 +1,7 @@
 // FEAT-598 (TASK-3794): fetchSource URL rule (v2 QS by default, v3 MultiQS only for is_multiquery, v1 tenant),
 // 404 → SourceUnavailable, 204 → [], refresh boolean, querylimit (AC4/AC10/AC17).
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FrameSelectionError, fetchSource, SourceUnavailable } from './fetch';
+import { FrameSelectionError, fetchSource, fetchSourceData, SourceUnavailable } from './fetch';
 import type { LinkedDataSource } from './types';
 
 afterEach(() => vi.restoreAllMocks());
@@ -162,4 +162,45 @@ describe('fetchSource', () => {
   });
 
   it('exports SourceUnavailable', () => expect(new SourceUnavailable('x').name).toBe('SourceUnavailable'));
+});
+
+describe('fetchSourceData', () => {
+  it('POSTs {params} to the surface source endpoint, appends ?share=, returns body.rows', async () => {
+    const spy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ status: 'success', rows: [{ a: 1 }] })));
+    const rows = await fetchSourceData(makeSource(), 'sales', { region: 'e' }, {
+      surfaceBaseUrl: 'http://h',
+      surfaceId: 's1',
+      shareToken: 'tok',
+      headers: { Authorization: 'Bearer x' },
+    });
+    expect(rows).toEqual([{ a: 1 }]);
+    const [url, init] = spy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('http://h/api/v1/ui/surfaces/s1/sources/sales/data?share=tok');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ params: { region: 'e' } });
+    expect((init.headers as Record<string, string>).Authorization).toBe('Bearer x');
+  });
+
+  it('omits ?share= when no token and maps 404 to SourceUnavailable', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nf', { status: 404 }));
+    await expect(
+      fetchSourceData(makeSource(), 'sales', {}, { surfaceBaseUrl: '', surfaceId: 's1', headers: {} }),
+    ).rejects.toBeInstanceOf(SourceUnavailable);
+    expect((spy.mock.calls[0] as [string])[0]).toBe('/api/v1/ui/surfaces/s1/sources/sales/data');
+  });
+
+  it('other failures throw with the body code; missing rows yield []', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ status: 'error', code: 'boom' }), { status: 500 }),
+    );
+    await expect(
+      fetchSourceData(makeSource(), 'sales', {}, { surfaceBaseUrl: '', surfaceId: 's1', headers: {} }),
+    ).rejects.toThrow(/boom/);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({ status: 'success' })));
+    expect(
+      await fetchSourceData(makeSource(), 'sales', {}, { surfaceBaseUrl: '', surfaceId: 's1', headers: {} }),
+    ).toEqual([]);
+  });
 });
