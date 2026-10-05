@@ -16,14 +16,14 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: fakes mirror DriveClient coroutine names without importing TASK-3807's DriveClient",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3806-gdrive-test-harness.md"
     },
@@ -34,14 +34,14 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: additive edit to parrot/interfaces/google.py only",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3807-drive-client.md"
     },
@@ -52,14 +52,14 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies: behaviour-neutral move out of graph.py, gated by FEAT-603 suites",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3808-entries-relocation.md"
     },
@@ -70,14 +70,14 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: edits the dependency manifest packages/ai-parrot/pyproject.toml",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3809-gdrive-extra.md"
     },
@@ -88,7 +88,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -99,7 +99,7 @@
       "parallel": true,
       "parallelism_notes": "tests import make_manager/FakeDriveClient from TASK-3806 (_gdrive_fakes.py); calls GoogleClient.get_drive_client/DriveClient from TASK-3807 (google.py); imports DriveEntry/GuardedFileServingExtension from TASK-3808 (entries.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3810-gdrive-core.md"
     },
@@ -110,7 +110,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -119,7 +119,7 @@
       "parallel": true,
       "parallelism_notes": "extends GoogleDriveFileManager and test_gdrive_filemanager.py created by TASK-3810 (same files)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3811-gdrive-read-ops.md"
     },
@@ -130,7 +130,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -139,7 +139,7 @@
       "parallel": true,
       "parallelism_notes": "modifies gdrive.py after TASK-3811 (same file); uses _iter_query from TASK-3811 for conflict checks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3812-gdrive-uploads.md"
     },
@@ -150,7 +150,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -159,7 +159,7 @@
       "parallel": true,
       "parallelism_notes": "modifies gdrive.py after TASK-3812 (same file); uses _apply_conflict from TASK-3812 for rename/copy",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3813-gdrive-mutations-sharing.md"
     },
@@ -170,7 +170,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -179,7 +179,7 @@
       "parallel": true,
       "parallelism_notes": "modifies gdrive.py after TASK-3813 (same file); run_one calls upload_file/download_file from TASK-3812/3811",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3814-gdrive-batch-serving.md"
     },
@@ -190,7 +190,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -199,7 +199,7 @@
       "parallel": true,
       "parallelism_notes": "lazy shim/factory target parrot.interfaces.file.gdrive.GoogleDriveFileManager is created by TASK-3810",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3815-gdrive-registration.md"
     },
@@ -210,7 +210,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -219,7 +219,7 @@
       "parallel": true,
       "parallelism_notes": "delegates to the full GoogleDriveFileManager surface completed by TASK-3814 (gdrive.py: find_files, upload_file, create_sharing_link, get_file_url)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3816-gdrive-toolkit.md"
     },
@@ -230,7 +230,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -242,7 +242,7 @@
       "parallel": true,
       "parallelism_notes": "snapshots GoogleClient from TASK-3807; asserts entries re-exports from TASK-3808; checks shims from TASK-3815; AST-scans parrot_tools/google/drive.py from TASK-3816",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3817-gdrive-guards.md"
     },
@@ -253,7 +253,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -262,7 +262,7 @@
       "parallel": false,
       "parallelism_notes": "exclusive: writes to one shared real Google Drive; exercises the complete manager from TASK-3814 (gdrive.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3818-gdrive-live-suite.md"
     },
@@ -273,7 +273,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -282,7 +282,7 @@
       "parallel": true,
       "parallelism_notes": "documents GoogleDriveToolkit from TASK-3816 (parrot_tools/google/drive.py) and the finished manager API",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-05T21:45:20+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-3819-gdrive-docs.md"
     }
