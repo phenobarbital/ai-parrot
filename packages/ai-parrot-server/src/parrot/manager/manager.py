@@ -2420,6 +2420,7 @@ class BotManager:
         router.add_view("/api/v1/ui/surfaces", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/refresh", UISurfacesHandler)
+        router.add_view("/api/v1/ui/surfaces/{surface_id}/sources/{key}/data", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/share", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/share/{token}", UISurfacesHandler)
         # Agent knowledge index (PageIndex / GraphIndex) management.
