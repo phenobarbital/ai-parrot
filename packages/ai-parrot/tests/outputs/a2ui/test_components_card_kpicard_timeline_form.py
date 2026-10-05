@@ -130,6 +130,67 @@ class TestKPICardComponent:
         _validates(kpicard.KPICardComponent().lower(_kpicard(), {}))
 
 
+class TestKPICardPeriods:
+    """FEAT-667: `periods`, `series`, `defaultPeriod`, `seriesNote` -- an
+    interactive card for the Svelte front; the lowered tree never sees them."""
+
+    PERIODS = {
+        "report": {"value": 9, "previous": 0, "delta": "from 0", "deltaAbs": 9,
+                   "trend": "up", "label": "9 days", "from": "2026-09-01", "to": "2026-09-09"},
+        "1w": {"value": 6, "previous": 5, "delta": "+20.0%", "deltaAbs": 1,
+               "trend": "up", "label": "week", "from": "2026-09-03", "to": "2026-09-09"},
+    }
+    SERIES = [{"date": "2026-09-01", "value": 2}, {"date": "2026-09-02", "value": 0}]
+
+    @staticmethod
+    def _validate(**props) -> None:
+        import jsonschema
+
+        jsonschema.validate({"label": "Events", "value": 9, **props}, kpicard.KPICARD_SCHEMA)
+
+    def test_kpicard_schema_accepts_periods_series(self):
+        self._validate(
+            periods=self.PERIODS, series=self.SERIES, defaultPeriod="report",
+            seriesNote="Shifts count on their clock-in day.",
+        )
+        # As bindings, which is how a recipe sends them.
+        self._validate(periods={"path": "/kpi_periods/events_total/periods"},
+                       series={"path": "/kpi_periods/events_total/series"})
+
+    def test_kpicard_schema_still_valid_without_new_fields(self):
+        self._validate()
+        assert kpicard.KPICARD_SCHEMA["required"] == ["label", "value"]
+
+    def test_kpicard_schema_rejects_an_unknown_default_period(self):
+        import jsonschema
+
+        with pytest.raises(jsonschema.ValidationError):
+            self._validate(defaultPeriod="all")
+
+    def test_kpicard_lower_ignores_the_interactive_fields(self):
+        bare = _dump(kpicard.KPICardComponent().lower(_kpicard(), {}))
+        rich = _kpicard()
+        for key, value in {
+            "periods": self.PERIODS, "series": self.SERIES,
+            "defaultPeriod": "1w", "seriesNote": "note",
+        }.items():
+            setattr(rich, key, value)
+        assert set(rich.model_extra) >= {"periods", "series", "defaultPeriod", "seriesNote"}
+        assert _dump(kpicard.KPICardComponent().lower(rich, {})) == bare
+
+    def test_kpicard_with_periods_emits_v1_primitives(self):
+        component = Component(
+            id="blk-001", component="KPICard", label="Events", value=9,
+            periods=self.PERIODS, series=self.SERIES, defaultPeriod="report",
+        )
+        _validates(kpicard.KPICardComponent().lower(component, {}))
+
+    def test_instructions_say_the_producer_computes_every_figure(self):
+        text = kpicard.KPICARD_INSTRUCTIONS
+        assert "`periods`" in text and "`series`" in text
+        assert "renderer only selects" in text
+
+
 class TestTimelineComponent:
     def test_timeline_registered_in_catalog(self):
         assert get_component("Timeline").definition.requires_actions is False
