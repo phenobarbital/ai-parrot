@@ -1,7 +1,7 @@
 {
   "feature_id": "GH-1574",
   "feature_id_note": "provisional; /sdd-spec reserves FEAT-<NNN> via reserve_ids.py",
-  "phase": "proposal_drafted",
+  "phase": "committed",
   "mode": "investigation",
   "started_at": "2026-10-05T23:10:00Z",
   "source": {"kind": "github_issue", "ref": "phenobarbital/ai-parrot#1574"},
