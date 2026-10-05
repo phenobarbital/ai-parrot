@@ -6,7 +6,9 @@ import asyncio
 import contextlib
 import contextvars
 import fnmatch
+import io
 import logging
+import mimetypes
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -21,6 +23,7 @@ from typing import (
     List,
     Literal,
     Optional,
+    Set,
     Tuple,
     Union,
 )
@@ -91,6 +94,7 @@ class GoogleDriveFileManager(FileManagerInterface):
     LIST_PAGE_SIZE = 1000
     FIELDS = "id,name,mimeType,size,modifiedTime,webViewLink,webContentLink,parents,trashed"
     LIST_FIELDS = "nextPageToken,files(" + FIELDS + ")"
+    RESUMABLE_URL: str = "https://www.googleapis.com/upload/drive/v3/files"
 
     def __init__(
         self,
@@ -638,3 +642,232 @@ class GoogleDriveFileManager(FileManagerInterface):
             raise
         except Exception as exc:
             raise self._map_error(exc, path=source) from exc
+
+    # ---- uploads (TASK-3812) ---------------------------------------------
+    async def _find_conflict(self, parent_id: str, name: str) -> Optional[Dict[str, Any]]:
+        """Return the newest active child of ``parent_id`` called ``name``, if any."""
+        q = f"'{parent_id}' in parents and name = '{self._escape_q(name)}' and trashed = false"
+        async for item in self._iter_query(q, order_by="modifiedTime desc"):
+            return item
+        return None
+
+    def _renamed(self, name: str, taken: Set[str]) -> str:
+        """Return the first free ``stem (n).ext`` name not present in ``taken``."""
+        stem, dot, ext = name.rpartition(".") if "." in name.lstrip(".") else (name, "", "")
+        index = 1
+        while f"{stem} ({index}){dot}{ext}" in taken:
+            index += 1
+        return f"{stem} ({index}){dot}{ext}"
+
+    async def _apply_conflict(self, parent_id: str, name: str, destination: str) -> Tuple[str, Optional[str]]:
+        """Return ``(final_name, existing_id)`` per ``conflict_behavior``."""
+        existing = await self._find_conflict(parent_id, name)
+        if existing is None:
+            return name, None
+        if self.conflict_behavior == "fail":
+            raise FileExistsError(destination)
+        if self.conflict_behavior == "rename":
+            taken = {child["name"] async for child in self._iter_children(parent_id)}
+            return self._renamed(name, taken), None
+        return name, existing["id"]
+
+    async def _upload_small(
+        self,
+        *,
+        parent_id: str,
+        name: str,
+        existing_id: Optional[str],
+        source: Union[Path, BinaryIO],
+        content_type: str,
+    ) -> Dict[str, Any]:
+        """Multipart upload through aiogoogle for payloads below the resumable threshold."""
+        start = 0 if isinstance(source, Path) else source.tell()
+        chunk_size = self.chunk_size
+
+        async def _pipe() -> AsyncIterator[bytes]:
+            assert not isinstance(source, Path)
+            source.seek(start)
+            while True:
+                chunk = await asyncio.to_thread(source.read, chunk_size)
+                if not chunk:
+                    break
+                yield chunk
+
+        async def _op() -> Dict[str, Any]:
+            payload: Dict[str, Any] = (
+                {"upload_file": str(source)} if isinstance(source, Path) else {"pipe_from": _pipe()}
+            )
+            if existing_id:
+                return await self.drive.files_update(
+                    existing_id,
+                    {"name": name},
+                    fields=self.FIELDS,
+                    content_type=content_type,
+                    **payload,
+                    **self._list_params(),
+                )
+            return await self.drive.files_create(
+                {"name": name, "parents": [parent_id]},
+                fields=self.FIELDS,
+                content_type=content_type,
+                **payload,
+                **self._list_params(),
+            )
+
+        item, _ = await self._retrying(_op, label="upload")
+        return item
+
+    @staticmethod
+    def _header(headers: Any, key: str) -> Optional[str]:
+        """Case-insensitive header lookup over a mapping-like object."""
+        getter = getattr(headers, "get", None)
+        if not callable(getter):
+            return None
+        return getter(key) or getter(key.lower())
+
+    async def _upload_resumable(
+        self,
+        *,
+        parent_id: str,
+        name: str,
+        existing_id: Optional[str],
+        read: Callable[[int], Awaitable[bytes]],
+        size: int,
+        content_type: str,
+    ) -> Dict[str, Any]:
+        """Drive the Drive resumable-upload protocol (session, chunked PUTs, 308 resume)."""
+        from aiogoogle.models import Request  # lazy: no module-level aiogoogle import in gdrive.py
+
+        metadata: Dict[str, Any] = {"name": name}
+        if existing_id:
+            method, url = "PATCH", f"{self.RESUMABLE_URL}/{existing_id}"
+        else:
+            method, url = "POST", self.RESUMABLE_URL
+            metadata["parents"] = [parent_id]
+        session_request = Request(
+            method=method,
+            url=f"{url}?uploadType=resumable&supportsAllDrives=true",
+            headers={
+                "X-Upload-Content-Type": content_type,
+                "X-Upload-Content-Length": str(size),
+                "Content-Type": "application/json; charset=UTF-8",
+            },
+            json=metadata,
+        )
+        response, _ = await self._retrying(
+            lambda: self.drive.send_raw(session_request, full_res=True), label="upload-session", idempotent=False
+        )
+        location = self._header(getattr(response, "headers", None), "Location")
+        if not location:
+            raise GoogleDriveFileManagerError("resumable upload session returned no Location header")
+        session_url = self._validate_upload_url(location)
+
+        position = 0
+        pending = b""
+        while True:
+            if not pending:
+                pending = await read(min(self.chunk_size, size - position))
+            if not pending:
+                raise GoogleDriveFileManagerError("upload source ended before the declared size")
+            start, end = position, position + len(pending) - 1
+            chunk_request = Request(
+                method="PUT",
+                url=session_url,
+                headers={"Content-Range": f"bytes {start}-{end}/{size}", "Content-Length": str(len(pending))},
+                data=pending,
+            )
+
+            async def _put(_request: Any = chunk_request) -> Any:
+                res = await self.drive.send_raw(_request, full_res=True, raise_for_status=False)
+                code = getattr(res, "status_code", None)
+                if code not in (200, 201, 308):
+                    raise GoogleDriveFileManagerError(f"resumable upload chunk failed ({code})", status_code=code)
+                return res
+
+            res, _ = await self._retrying(_put, label="upload-chunk", idempotent=True)
+            if res.status_code in (200, 201):
+                return res.json
+            range_header = self._header(getattr(res, "headers", None), "Range")
+            acknowledged = int(range_header.split("-")[1]) + 1 if range_header else 0
+            if acknowledged < start or acknowledged > end + 1:
+                raise GoogleDriveFileManagerError("resumable upload acknowledged an unexpected offset")
+            pending = pending[acknowledged - start :]
+            position = acknowledged
+
+    async def _upload_any(
+        self, source: Union[BinaryIO, Path], destination: str, content_type: Optional[str]
+    ) -> Tuple[Dict[str, Any], FileMetadata]:
+        """Shared upload pipeline: conflicts, routing, error mapping and cache invalidation."""
+        await self._ready()
+        full = self._prefixed(destination)
+        try:
+            parent_id = await self._resolve_parent(full, create=True)
+            name = full.rsplit("/", 1)[-1]
+            final_name, existing_id = await self._apply_conflict(parent_id, name, destination)
+            guessed = content_type or mimetypes.guess_type(final_name)[0] or "application/octet-stream"
+            stream: Optional[BinaryIO] = None
+            if isinstance(source, Path):
+                size = (await asyncio.to_thread(source.stat)).st_size
+            else:
+                stream = source
+                if not (hasattr(source, "seekable") and source.seekable()):
+                    head = await asyncio.to_thread(source.read, self.small_file_threshold + 1)
+                    if len(head) > self.small_file_threshold:
+                        raise ValueError(
+                            "unseekable stream exceeds the small-file threshold; provide a seekable source"
+                        )
+                    stream = io.BytesIO(head)
+                start = stream.tell()
+                size = stream.seek(0, 2) - start
+                stream.seek(start)
+            if size < self.small_file_threshold:
+                item = await self._upload_small(
+                    parent_id=parent_id,
+                    name=final_name,
+                    existing_id=existing_id,
+                    source=source if isinstance(source, Path) else stream,
+                    content_type=guessed,
+                )
+            else:
+                with contextlib.ExitStack() as stack:
+                    if isinstance(source, Path):
+                        handle = stack.enter_context(open(source, "rb"))  # noqa: SIM115
+                    else:
+                        handle = stream
+
+                    async def _read(count: int) -> bytes:
+                        return await asyncio.to_thread(handle.read, count)
+
+                    item = await self._upload_resumable(
+                        parent_id=parent_id,
+                        name=final_name,
+                        existing_id=existing_id,
+                        read=_read,
+                        size=size,
+                        content_type=guessed,
+                    )
+            parent_path = full.rpartition("/")[0]
+            final_path = f"{parent_path}/{final_name}".strip("/")
+            self._invalidate(final_path)
+            return item, self._make_metadata(item, full_path=final_path)
+        except (FileNotFoundError, FileExistsError, ValueError, GoogleDriveFileManagerError):
+            raise
+        except Exception as exc:
+            raise self._map_error(exc, path=destination) from exc
+
+    async def upload_file(self, source: Union[BinaryIO, Path], destination: str) -> FileMetadata:
+        """Upload ``source`` to ``destination``, routing by size and applying ``conflict_behavior``."""
+        _, metadata = await self._upload_any(source, destination, None)
+        return metadata
+
+    async def create_file(self, path: str, content: bytes) -> bool:
+        """Create (or replace per ``conflict_behavior``) a file with ``content``."""
+        await self.upload_file(io.BytesIO(content), path)
+        return True
+
+    async def upload_file_from_bytes(
+        self, file_obj: bytes, destination_key: str, content_type: str = "application/octet-stream"
+    ) -> str:
+        """Upload raw bytes and return the item's ``webViewLink`` (S3 parity)."""
+        item, metadata = await self._upload_any(io.BytesIO(file_obj), destination_key, content_type)
+        return item.get("webViewLink") or metadata.url or ""
