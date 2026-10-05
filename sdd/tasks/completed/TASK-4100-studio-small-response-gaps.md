@@ -231,4 +231,4 @@ Tests use a REAL aiohttp app (`aiohttp_client`) with the real Studio routes and 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+B6 version on skill import 201 (from _studio_write's (record, version) result), B8 entries[{name,size,sha256}] from the asset record, B9 _maybe_apply_byok -> bool + byok in ask body. Tests: shapes (version, entries), testing (byok false/true over the real Postgres BYOK store + real KeyRing, BYOK_STORE=postgres). Additive keys required updating exact-equality assertions in test_files_db_mode.py, test_skills_catalog_db_mode.py and the ADDED sets of test_shapes_db_mode.py (also covering TASK-4096 keys) — files outside the task list, necessary so existing suites keep passing. Seat: native.
