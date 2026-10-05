@@ -78,7 +78,10 @@ KPICARD_SCHEMA: dict[str, Any] = {
         "defaultPeriod": {
             "type": "string",
             "enum": ["report", "1w", "1m", "3m", "ty", "1y"],
-            "description": "Optional preset the card opens on. Defaults to 'report'.",
+            "description": (
+                "Optional preset the card opens on, as a literal (not a "
+                "binding, like `trend`). Defaults to 'report'."
+            ),
         },
         "seriesNote": {
             "type": "string",

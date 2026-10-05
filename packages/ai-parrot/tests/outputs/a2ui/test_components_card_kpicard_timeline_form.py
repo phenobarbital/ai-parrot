@@ -148,6 +148,13 @@ class TestKPICardPeriods:
 
         jsonschema.validate({"label": "Events", "value": 9, **props}, kpicard.KPICARD_SCHEMA)
 
+    def test_kpicard_schema_declares_the_interactive_fields(self):
+        # The schema has no `additionalProperties: false`, so validation alone
+        # would pass without them; agents learn the fields from the catalog.
+        props = kpicard.KPICARD_SCHEMA["properties"]
+        assert {"periods", "series", "defaultPeriod", "seriesNote"} <= set(props)
+        assert props["defaultPeriod"]["enum"] == ["report", "1w", "1m", "3m", "ty", "1y"]
+
     def test_kpicard_schema_accepts_periods_series(self):
         self._validate(
             periods=self.PERIODS, series=self.SERIES, defaultPeriod="report",
