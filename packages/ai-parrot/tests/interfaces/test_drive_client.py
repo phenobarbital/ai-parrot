@@ -1,4 +1,5 @@
 """FEAT-608 TASK-3807 — DriveClient + get_drive_client promotion."""
+
 import pytest
 
 import parrot.interfaces.google as google_mod
@@ -106,10 +107,20 @@ async def test_files_list_maps_params_and_supports_all_drives():
     async with DriveClient(_client()) as d:
         await d.files_list(q="q", fields="f", page_size=5, page_token="t", order_by="name", drive_id="D", pageExtra=1)
     req = _FakeAiogoogle.instances[0].sent[0][1]
-    assert req == ("files", "list", {
-        "q": "q", "fields": "f", "pageSize": 5, "pageToken": "t", "orderBy": "name",
-        "driveId": "D", "pageExtra": 1, "supportsAllDrives": True,
-    })
+    assert req == (
+        "files",
+        "list",
+        {
+            "q": "q",
+            "fields": "f",
+            "pageSize": 5,
+            "pageToken": "t",
+            "orderBy": "name",
+            "driveId": "D",
+            "pageExtra": 1,
+            "supportsAllDrives": True,
+        },
+    )
     async with DriveClient(_client(), supports_all_drives=False) as d:
         await d.files_update("i", {"name": "n"}, fields="id", add_parents="a", remove_parents="b")
     req = _FakeAiogoogle.instances[1].sent[0][1]

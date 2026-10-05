@@ -21,10 +21,6 @@ from urllib.parse import urlparse
 import webbrowser
 from aiohttp import web
 from redis import asyncio as aioredis
-from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.chrome.options import Options as ChromeOptions
-from webdriver_manager.core.driver_cache import DriverCacheManager
-from webdriver_manager.chrome import ChromeDriverManager
 from playwright.async_api import async_playwright
 from aiogoogle import Aiogoogle
 from aiogoogle.auth.creds import ServiceAccountCreds, UserCreds
@@ -293,14 +289,21 @@ class DriveClient:
     ) -> Dict[str, Any]:
         """``files.list`` with snake_case kwargs mapped to Drive params."""
         kw = {
-            "q": q, "fields": fields, "pageSize": page_size, "pageToken": page_token,
-            "orderBy": order_by, "driveId": drive_id, **params,
+            "q": q,
+            "fields": fields,
+            "pageSize": page_size,
+            "pageToken": page_token,
+            "orderBy": order_by,
+            "driveId": drive_id,
+            **params,
         }
         return await self.execute(self.api.files.list(**self._drive_params(kw)))
 
     async def files_get(self, file_id: str, *, fields: str, **params: Any) -> Dict[str, Any]:
         """``files.get`` metadata."""
-        return await self.execute(self.api.files.get(**self._drive_params({"fileId": file_id, "fields": fields, **params})))
+        return await self.execute(
+            self.api.files.get(**self._drive_params({"fileId": file_id, "fields": fields, **params}))
+        )
 
     async def files_create(
         self,
@@ -313,10 +316,16 @@ class DriveClient:
         **params: Any,
     ) -> Dict[str, Any]:
         """``files.create`` (metadata only, or multipart upload via ``upload_file`` / ``pipe_from``)."""
-        kw = self._drive_params({
-            "fields": fields, "json": metadata, "upload_file": upload_file, "pipe_from": pipe_from,
-            "upload_file_content_type": content_type, **params,
-        })
+        kw = self._drive_params(
+            {
+                "fields": fields,
+                "json": metadata,
+                "upload_file": upload_file,
+                "pipe_from": pipe_from,
+                "upload_file_content_type": content_type,
+                **params,
+            }
+        )
         return await self.execute(self.api.files.create(**kw))
 
     async def files_update(
@@ -333,11 +342,19 @@ class DriveClient:
         **params: Any,
     ) -> Dict[str, Any]:
         """``files.update``: metadata patch, parent move and/or content replacement."""
-        kw = self._drive_params({
-            "fileId": file_id, "fields": fields, "json": metadata, "addParents": add_parents,
-            "removeParents": remove_parents, "upload_file": upload_file, "pipe_from": pipe_from,
-            "upload_file_content_type": content_type, **params,
-        })
+        kw = self._drive_params(
+            {
+                "fileId": file_id,
+                "fields": fields,
+                "json": metadata,
+                "addParents": add_parents,
+                "removeParents": remove_parents,
+                "upload_file": upload_file,
+                "pipe_from": pipe_from,
+                "upload_file_content_type": content_type,
+                **params,
+            }
+        )
         return await self.execute(self.api.files.update(**kw))
 
     async def files_copy(self, file_id: str, metadata: Dict[str, Any], *, fields: str, **params: Any) -> Dict[str, Any]:
@@ -353,18 +370,29 @@ class DriveClient:
         self, file_id: str, *, download_file: Optional[str] = None, pipe_to: Any = None, **params: Any
     ) -> None:
         """``files.get(alt="media")`` streamed to ``download_file`` or ``pipe_to``."""
-        kw = self._drive_params({
-            "fileId": file_id, "alt": "media", "download_file": download_file, "pipe_to": pipe_to, **params,
-        })
+        kw = self._drive_params(
+            {
+                "fileId": file_id,
+                "alt": "media",
+                "download_file": download_file,
+                "pipe_to": pipe_to,
+                **params,
+            }
+        )
         await self.execute(self.api.files.get(**kw))
 
     async def permissions_create(
         self, file_id: str, body: Dict[str, Any], *, send_notification_email: bool = False, **params: Any
     ) -> Dict[str, Any]:
         """``permissions.create``."""
-        kw = self._drive_params({
-            "fileId": file_id, "json": body, "sendNotificationEmail": send_notification_email, **params,
-        })
+        kw = self._drive_params(
+            {
+                "fileId": file_id,
+                "json": body,
+                "sendNotificationEmail": send_notification_email,
+                **params,
+            }
+        )
         return await self.execute(self.api.permissions.create(**kw))
 
 
