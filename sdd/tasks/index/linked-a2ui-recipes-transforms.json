@@ -56,7 +56,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -66,8 +66,9 @@
       "parallelism_notes": "Imports apply_python_transform and TransformStageError created by TASK-4105 (linked/pytransform.py).",
       "assigned_to": null,
       "started_at": "2026-10-05T23:07:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4106-executor-python-branch.md"
+      "completed_at": "2026-10-05T23:34:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4106-executor-python-branch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4107",

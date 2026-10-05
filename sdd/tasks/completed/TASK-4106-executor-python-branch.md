@@ -228,10 +228,8 @@ def test_map_query_error_transform_stage() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: codex gpt-5.6-terra, attempt 1
+**Date**: 2026-10-06
+**Notes**: Diff reviewed by the orchestrator against the task. Evidence: linked suite 232 passed (incl. test_executor_python.py)
 
 **Deviations from spec**: none
