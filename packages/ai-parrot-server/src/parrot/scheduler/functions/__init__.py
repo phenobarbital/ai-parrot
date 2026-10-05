@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import tempfile
@@ -154,7 +155,7 @@ class CreateFileCallback(BaseSchedulerCallback):
     async def run(self, result: Any, *, schedule_id: str, agent_name: str, **kwargs) -> Dict[str, Any]:
         payload = self.process_output(result)
         output_dir = Path(self.config.get("output_dir", tempfile.gettempdir()))
-        output_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
         filename = self.config.get("filename", f"{agent_name}_{schedule_id}.md")
         destination = output_dir / filename
         destination.write_text(payload["markdown"], encoding="utf-8")
@@ -171,7 +172,7 @@ class SaveDataCallback(BaseSchedulerCallback):
         if dataframe is None:
             raise ValueError("saving_data requires result.data or structured tabular output")
         output_dir = Path(self.config.get("output_dir", tempfile.gettempdir()))
-        output_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
         filename = self.config.get("filename", f"{agent_name}_{schedule_id}.csv")
         destination = output_dir / filename
         dataframe.to_csv(destination, index=False)
