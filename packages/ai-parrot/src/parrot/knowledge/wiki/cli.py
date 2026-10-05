@@ -2560,7 +2560,9 @@ def symbols_lookup(
             "namespace": ns_opt,
         }
         if as_json:
-            click.echo(json.dumps(remote_cli.call_remote(remote, "wiki_symbol_lookup", arguments), indent=2, default=str))
+            click.echo(
+                json.dumps(remote_cli.call_remote(remote, "wiki_symbol_lookup", arguments), indent=2, default=str)
+            )
         else:
             click.echo(remote_cli.call_remote_text(remote, "wiki_symbol_lookup", arguments))
         return
@@ -2591,7 +2593,9 @@ def symbols_outline(
     if remote is not None:
         arguments = {"target": target, "depth": depth, "include_source": include_source, "namespace": ns_opt}
         if as_json:
-            click.echo(json.dumps(remote_cli.call_remote(remote, "wiki_code_outline", arguments), indent=2, default=str))
+            click.echo(
+                json.dumps(remote_cli.call_remote(remote, "wiki_code_outline", arguments), indent=2, default=str)
+            )
         else:
             click.echo(remote_cli.call_remote_text(remote, "wiki_code_outline", arguments))
         return
@@ -2647,7 +2651,9 @@ def symbols_blast(
             "namespace": ns_opt,
         }
         if as_json:
-            click.echo(json.dumps(remote_cli.call_remote(remote, "wiki_blast_radius", arguments), indent=2, default=str))
+            click.echo(
+                json.dumps(remote_cli.call_remote(remote, "wiki_blast_radius", arguments), indent=2, default=str)
+            )
         else:
             click.echo(remote_cli.call_remote_text(remote, "wiki_blast_radius", arguments))
         return
@@ -3146,7 +3152,9 @@ def ledger_claim(issue_id: str, actor: str) -> None:
     """Claim an issue for work."""
     remote = click.get_current_context().obj.get("remote")
     if remote is not None:
-        click.echo(remote_cli.call_remote_text(remote, "ledger_claim", {"issue_id": issue_id, "actor": actor}, by=actor))
+        click.echo(
+            remote_cli.call_remote_text(remote, "ledger_claim", {"issue_id": issue_id, "actor": actor}, by=actor)
+        )
         return
     service = LedgerService.from_root()
     try:
@@ -4094,7 +4102,9 @@ def remember(
             "rel": rel,
         }
         if as_json:
-            click.echo(json.dumps(remote_cli.call_remote(remote, "wiki_remember", arguments, by=by), indent=2, default=str))
+            click.echo(
+                json.dumps(remote_cli.call_remote(remote, "wiki_remember", arguments, by=by), indent=2, default=str)
+            )
         else:
             click.echo(remote_cli.call_remote_text(remote, "wiki_remember", arguments, by=by))
         return
