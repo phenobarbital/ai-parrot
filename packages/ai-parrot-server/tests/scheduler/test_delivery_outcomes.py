@@ -40,9 +40,10 @@ def _cb(response=None, exc=None):
 
 async def test_handle_job_success_isolates_callbacks(manager):
     builds = [_cb(exc=RuntimeError("boom")), _cb(response={"status": "sent"})]
-    with patch("parrot.scheduler.manager.build_scheduler_callback", side_effect=builds), patch.object(
-        manager, "_send_result_email", new=AsyncMock(return_value={"status": "success"})
-    ) as send_result:
+    with (
+        patch("parrot.scheduler.manager.build_scheduler_callback", side_effect=builds),
+        patch.object(manager, "_send_result_email", new=AsyncMock(return_value={"status": "success"})) as send_result,
+    ):
         outcomes = await manager._handle_job_success(
             "s1",
             "agent",
@@ -86,9 +87,11 @@ async def test_process_job_success_stamps_delivery(manager):
     manager._pool = _FakePool()
     schedule = SimpleNamespace(metadata={"last_status": "success"}, update=AsyncMock())
     outcomes = [{"callback": "c", "status": "failed", "error": "x"}]
-    with patch("parrot.scheduler.manager.AgentSchedule.get", new=AsyncMock(return_value=schedule)), patch.object(
-        manager, "_update_schedule_run", new=AsyncMock()
-    ), patch.object(manager, "_handle_job_success", new=AsyncMock(return_value=outcomes)):
+    with (
+        patch("parrot.scheduler.manager.AgentSchedule.get", new=AsyncMock(return_value=schedule)),
+        patch.object(manager, "_update_schedule_run", new=AsyncMock()),
+        patch.object(manager, "_handle_job_success", new=AsyncMock(return_value=outcomes)),
+    ):
         await manager._process_job_success("s1", "agent", "res", None, None, [], persist=True)
     assert schedule.metadata["last_callbacks"] == outcomes
     assert schedule.metadata["last_delivery_status"] == "failed"
@@ -100,8 +103,9 @@ async def test_process_job_success_stamps_delivery(manager):
 async def test_process_job_success_persist_false_skips_stamp(manager):
     stamp = AsyncMock()
     outcomes = [{"callback": "c", "status": "sent", "error": None}]
-    with patch.object(manager, "_handle_job_success", new=AsyncMock(return_value=outcomes)), patch.object(
-        manager, "_stamp_delivery_outcome", new=stamp
+    with (
+        patch.object(manager, "_handle_job_success", new=AsyncMock(return_value=outcomes)),
+        patch.object(manager, "_stamp_delivery_outcome", new=stamp),
     ):
         await manager._process_job_success("s1", "agent", "res", None, None, [], persist=False)
     stamp.assert_not_awaited()
