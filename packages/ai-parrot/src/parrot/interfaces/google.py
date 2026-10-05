@@ -28,6 +28,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from playwright.async_api import async_playwright
 from aiogoogle import Aiogoogle
 from aiogoogle.auth.creds import ServiceAccountCreds, UserCreds
+from aiogoogle.models import Request
 from aiogoogle.auth.utils import create_secret
 from navconfig import BASE_DIR, config
 from ..exceptions import ConfigError
@@ -216,6 +217,155 @@ class CalendarClient:
             eventId=event_id,
             body=body,
         )
+
+
+class DriveClient:
+    """A live Google Drive v3 client over one ``Aiogoogle`` session (FEAT-608).
+
+    Unlike :class:`CalendarClient` it keeps the session and the discovered API open between
+    calls: ``open()`` once, then every method is one authorised request; ``close()`` releases it.
+    """
+
+    def __init__(self, google_client: "GoogleClient", version: str = "v3", *, supports_all_drives: bool = True) -> None:
+        self._client = google_client
+        self.version = version
+        self.supports_all_drives = supports_all_drives
+        self._aiogoogle: Optional[Aiogoogle] = None
+        self._api: Any = None
+        self.logger = logging.getLogger(__name__)
+
+    async def open(self) -> "DriveClient":
+        """Create the ``Aiogoogle`` session and discover the Drive API; idempotent."""
+        if self._api is not None:
+            return self
+        self._aiogoogle = Aiogoogle(**self._client.aiogoogle_credentials())
+        await self._aiogoogle.__aenter__()
+        self._api = await self._aiogoogle.discover("drive", self.version)
+        return self
+
+    async def close(self) -> None:
+        """Release the session if open; idempotent."""
+        session, self._aiogoogle, self._api = self._aiogoogle, None, None
+        if session is not None:
+            await session.__aexit__(None, None, None)
+
+    async def __aenter__(self) -> "DriveClient":
+        return await self.open()
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        await self.close()
+
+    @property
+    def api(self) -> Any:
+        """The discovered GoogleAPI (raises RuntimeError before ``open()``)."""
+        if self._api is None:
+            raise RuntimeError("DriveClient is not open; call open() first")
+        return self._api
+
+    async def execute(self, request: Any, *, full_res: bool = False, raise_for_status: bool = True) -> Any:
+        """``as_service_account`` when ``google_client.using_service_account()`` else ``as_user``."""
+        if self._aiogoogle is None:
+            raise RuntimeError("DriveClient is not open; call open() first")
+        send = self._aiogoogle.as_service_account if self._client.using_service_account() else self._aiogoogle.as_user
+        return await send(request, full_res=full_res, raise_for_status=raise_for_status)
+
+    async def send_raw(self, request: Request, *, full_res: bool = True, raise_for_status: bool = True) -> Any:
+        """Authorise and send a hand-built ``aiogoogle.models.Request`` (resumable session + chunk PUTs)."""
+        return await self.execute(request, full_res=full_res, raise_for_status=raise_for_status)
+
+    def _drive_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Add ``supportsAllDrives`` when enabled and drop ``None`` values."""
+        out = {k: v for k, v in params.items() if v is not None}
+        if self.supports_all_drives:
+            out["supportsAllDrives"] = True
+        return out
+
+    async def files_list(
+        self,
+        *,
+        q: str,
+        fields: str,
+        page_size: int = 1000,
+        page_token: Optional[str] = None,
+        order_by: Optional[str] = None,
+        drive_id: Optional[str] = None,
+        **params: Any,
+    ) -> Dict[str, Any]:
+        """``files.list`` with snake_case kwargs mapped to Drive params."""
+        kw = {
+            "q": q, "fields": fields, "pageSize": page_size, "pageToken": page_token,
+            "orderBy": order_by, "driveId": drive_id, **params,
+        }
+        return await self.execute(self.api.files.list(**self._drive_params(kw)))
+
+    async def files_get(self, file_id: str, *, fields: str, **params: Any) -> Dict[str, Any]:
+        """``files.get`` metadata."""
+        return await self.execute(self.api.files.get(**self._drive_params({"fileId": file_id, "fields": fields, **params})))
+
+    async def files_create(
+        self,
+        metadata: Dict[str, Any],
+        *,
+        fields: str,
+        upload_file: Optional[str] = None,
+        pipe_from: Any = None,
+        content_type: Optional[str] = None,
+        **params: Any,
+    ) -> Dict[str, Any]:
+        """``files.create`` (metadata only, or multipart upload via ``upload_file`` / ``pipe_from``)."""
+        kw = self._drive_params({
+            "fields": fields, "json": metadata, "upload_file": upload_file, "pipe_from": pipe_from,
+            "upload_file_content_type": content_type, **params,
+        })
+        return await self.execute(self.api.files.create(**kw))
+
+    async def files_update(
+        self,
+        file_id: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        *,
+        fields: str,
+        add_parents: Optional[str] = None,
+        remove_parents: Optional[str] = None,
+        upload_file: Optional[str] = None,
+        pipe_from: Any = None,
+        content_type: Optional[str] = None,
+        **params: Any,
+    ) -> Dict[str, Any]:
+        """``files.update``: metadata patch, parent move and/or content replacement."""
+        kw = self._drive_params({
+            "fileId": file_id, "fields": fields, "json": metadata, "addParents": add_parents,
+            "removeParents": remove_parents, "upload_file": upload_file, "pipe_from": pipe_from,
+            "upload_file_content_type": content_type, **params,
+        })
+        return await self.execute(self.api.files.update(**kw))
+
+    async def files_copy(self, file_id: str, metadata: Dict[str, Any], *, fields: str, **params: Any) -> Dict[str, Any]:
+        """``files.copy``."""
+        kw = self._drive_params({"fileId": file_id, "json": metadata, "fields": fields, **params})
+        return await self.execute(self.api.files.copy(**kw))
+
+    async def files_delete(self, file_id: str, **params: Any) -> None:
+        """``files.delete`` (permanent)."""
+        await self.execute(self.api.files.delete(**self._drive_params({"fileId": file_id, **params})))
+
+    async def files_download(
+        self, file_id: str, *, download_file: Optional[str] = None, pipe_to: Any = None, **params: Any
+    ) -> None:
+        """``files.get(alt="media")`` streamed to ``download_file`` or ``pipe_to``."""
+        kw = self._drive_params({
+            "fileId": file_id, "alt": "media", "download_file": download_file, "pipe_to": pipe_to, **params,
+        })
+        await self.execute(self.api.files.get(**kw))
+
+    async def permissions_create(
+        self, file_id: str, body: Dict[str, Any], *, send_notification_email: bool = False, **params: Any
+    ) -> Dict[str, Any]:
+        """``permissions.create``."""
+        kw = self._drive_params({
+            "fileId": file_id, "json": body, "sendNotificationEmail": send_notification_email, **params,
+        })
+        return await self.execute(self.api.permissions.create(**kw))
 
 
 # ============================================================================
@@ -644,6 +794,16 @@ class GoogleClient(CredentialsInterface, ABC):
         """Expose authentication status for callers."""
         return self._authenticated
 
+    def aiogoogle_credentials(self) -> Dict[str, Any]:
+        """Return ``{"service_account_creds": ..., "user_creds": ...}`` for ``Aiogoogle(...)`` (FEAT-608).
+
+        Raises:
+            RuntimeError: when the client has not been initialised.
+        """
+        if not self._authenticated:
+            raise RuntimeError("GoogleClient is not initialised; call initialize() first")
+        return {"service_account_creds": self._service_account_creds, "user_creds": self._user_creds}
+
     def using_service_account(self) -> bool:
         """Return True if the client is configured for service-account credentials."""
         return self.auth_type == "service_account" and self._service_account_creds is not None
@@ -773,9 +933,13 @@ class GoogleClient(CredentialsInterface, ABC):
 
             return result
 
-    async def get_drive_client(self, version: str = "v3") -> Dict[str, Any]:
-        """Get Google Drive client config."""
-        return {"service": "drive", "version": version}
+    async def get_drive_client(self, version: str = "v3") -> "DriveClient":
+        """Return a not-yet-opened :class:`DriveClient` bound to this client (FEAT-608; was a config dict).
+
+        Args:
+            version: Drive API version (default ``'v3'``).
+        """
+        return DriveClient(self, version=version)
 
     async def get_sheets_client(self, version: str = "v4") -> Dict[str, Any]:
         """Get Google Sheets client config."""
