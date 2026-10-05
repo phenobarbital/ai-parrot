@@ -188,3 +188,8 @@ Pure unit tests on a real `TenantToolingPolicy`.
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+
+## Completion Note
+
+Implemented and merged by the orchestrator (chunk 0). Own tests pass (studio: test_agent_definition_readable + test_catalogs; tooling policy: 23 passed per coder). Merge-tier sweep red only on pre-existing environmental failures (Cython parrot.utils.types absent in worktree; studio test_byok stale vs byok.py; test_tools_catalog_shape plugins dotted_path) — none touch this feature. TASK-4097 review fix: test_llm_clients_rows_carry_models now tolerates providers whose list_models raises (commit d37ce5e27).
