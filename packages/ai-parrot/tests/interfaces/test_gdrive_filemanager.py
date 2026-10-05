@@ -1,11 +1,15 @@
 """FEAT-608 GoogleDriveFileManager unit tests (TASK-3810 core)."""
 
+import asyncio
 import datetime as dt
 import io
 import sys
 from pathlib import Path
 
 import pytest
+from aiohttp import web
+from aiohttp.test_utils import make_mocked_request
+from navigator.utils.file import FileMetadata
 
 sys.modules.pop("parrot.interfaces.file", None)
 from parrot.interfaces.file.gdrive import GoogleDriveFileManager, GoogleDriveFileManagerError  # noqa: E402
@@ -15,11 +19,6 @@ from ._gdrive_fakes import FakeDrive, FakeDriveClient, FakeHTTPError, make_googl
 
 async def _no_sleep(seconds: float) -> None:
     """Avoid retry waits in deterministic tests."""
-
-
-@pytest.fixture(autouse=True)
-def _concrete(monkeypatch):
-    monkeypatch.setattr(GoogleDriveFileManager, "__abstractmethods__", frozenset())
 
 
 @pytest.fixture
@@ -497,3 +496,138 @@ async def test_create_sharing_link_forbidden_scope_permission_error(manager):
 
     with pytest.raises(PermissionError, match="sharing scope"):
         await result.create_sharing_link("q3.xlsx", scope="anyone")
+
+
+# ---- batch & serving (TASK-3814) -----------------------------------------
+def test_class_is_concrete():
+    assert not GoogleDriveFileManager.__abstractmethods__
+
+
+@pytest.mark.asyncio
+async def test_upload_files_per_item_results_order_and_no_raise(manager, monkeypatch):
+    result, _ = manager
+
+    async def upload_file(source, destination):
+        if destination == "fail.txt":
+            raise OSError("write failed")
+        return FileMetadata(destination, destination, 1, None, None, None)
+
+    monkeypatch.setattr(result, "upload_file", upload_file)
+    results = await result.upload_files([(b"a", "one.txt"), (b"b", "fail.txt"), (b"c", "three.txt")])
+
+    assert [item.state for item in results] == ["succeeded", "failed", "succeeded"]
+    assert [item.index for item in results] == [0, 1, 2]
+    assert results[1].error_code == "io"
+
+
+@pytest.mark.asyncio
+async def test_batch_retries_429_with_retry_after_then_succeeds(manager):
+    result, drive = manager
+    sleeps = []
+
+    async def sleep(seconds):
+        sleeps.append(seconds)
+
+    result._sleep = sleep
+    drive.fail_next(429, retry_after=1, method="files.create")
+    results = await result.upload_files([(io.BytesIO(b"retry"), "retry.txt")])
+
+    assert results[0].state == "succeeded"
+    assert results[0].attempts == 2
+    assert sleeps == [1]
+
+
+@pytest.mark.asyncio
+async def test_batch_auth_failure_skips_remaining(manager, monkeypatch):
+    result, _ = manager
+    result.max_concurrency = 1
+
+    async def upload_file(source, destination):
+        if destination == "first.txt":
+            raise PermissionError("denied")
+        return FileMetadata(destination, destination, 1, None, None, None)
+
+    monkeypatch.setattr(result, "upload_file", upload_file)
+    results = await result.upload_files(
+        [(io.BytesIO(b"a"), "first.txt"), (io.BytesIO(b"b"), "second.txt"), (io.BytesIO(b"c"), "third.txt")]
+    )
+
+    assert [item.state for item in results] == ["failed", "skipped", "skipped"]
+    assert [item.attempts for item in results] == [1, 0, 0]
+    assert results[0].error_code == "auth"
+
+
+@pytest.mark.asyncio
+async def test_batch_concurrency_bounded(manager, monkeypatch):
+    result, _ = manager
+    result.max_concurrency = 2
+    in_flight = []
+    max_in_flight = 0
+
+    async def upload_file(source, destination):
+        nonlocal max_in_flight
+        in_flight.append(True)
+        max_in_flight = max(max_in_flight, len(in_flight))
+        await asyncio.sleep(0.01)
+        in_flight.pop()
+        return FileMetadata(destination, destination, 1, None, None, None)
+
+    monkeypatch.setattr(result, "upload_file", upload_file)
+    results = await result.upload_files([(b"a", "a.txt"), (b"b", "b.txt"), (b"c", "c.txt")])
+
+    assert all(item.state == "succeeded" for item in results)
+    assert max_in_flight <= 2
+
+
+@pytest.mark.asyncio
+async def test_batch_rejects_shared_binaryio(manager):
+    result, _ = manager
+    stream = io.BytesIO(b"shared")
+
+    with pytest.raises(ValueError, match="stream object appears more than once"):
+        await result.upload_files([(stream, "a.txt"), (stream, "b.txt")])
+
+
+@pytest.mark.asyncio
+async def test_batch_cancellation_propagates(manager, monkeypatch):
+    result, _ = manager
+
+    async def slow_upload(source, destination):
+        await asyncio.sleep(10)
+        return FileMetadata(destination, destination, 1, None, None, None)
+
+    monkeypatch.setattr(result, "upload_file", slow_upload)
+    task = asyncio.create_task(result.upload_files([(io.BytesIO(b"a"), "a.txt")]))
+    await asyncio.sleep(0.01)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_download_files_results(manager):
+    result, _ = manager
+    target = io.BytesIO()
+
+    results = await result.download_files([("q3.xlsx", target)])
+
+    assert results[0].state == "succeeded"
+    assert results[0].metadata.path == "q3.xlsx"
+    assert target.getvalue() == b"x" * 10
+
+
+@pytest.mark.asyncio
+async def test_setup_mounts_guarded_extension_and_413_over_limit(manager):
+    result, drive = manager
+    result.serving_max_bytes = 5
+    drive.drive.put_file("reports/2026/large.txt", b"x" * 6)
+    app = web.Application()
+    ext = result.setup(app, route="/gdrive")
+    request = make_mocked_request("GET", "/gdrive/large.txt", match_info={"filepath": "large.txt"})
+    response = await result.handle_file(request)
+
+    assert ext.manager is result
+    assert response.status == 413
+    assert str(result.serving_max_bytes) in response.text
+    assert not [call for call in drive.drive.calls if call[1] == "download"]
