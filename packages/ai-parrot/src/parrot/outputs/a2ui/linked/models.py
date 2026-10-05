@@ -315,9 +315,7 @@ class LinkedSources(RootModel[dict[str, LinkedSource]]):
     def _python_terminal(self) -> LinkedSources:
         """A python-transformed source is terminal in v1 (FEAT-636 U3): no sibling may consume its frame."""
         python_keys = {
-            key
-            for key, src in self.root.items()
-            if src.transform is not None and src.transform.python is not None
+            key for key, src in self.root.items() if src.transform is not None and src.transform.python is not None
         }
         if not python_keys:
             return self
