@@ -1,4 +1,5 @@
 """Tests for ``parrot claude install --remote`` (FEAT-569, TASK-3365)."""
+
 import json
 
 from click.testing import CliRunner

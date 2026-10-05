@@ -115,7 +115,9 @@ def claude() -> None:
     is_flag=True,
     help="Register wikitoolkit as a native HTTP MCP pointing at the configured remote (FEAT-569).",
 )
-@click.option("--remote-url", default=None, help="Remote wiki mount URL (default: `remote.url` from .parrot/wiki.json).")
+@click.option(
+    "--remote-url", default=None, help="Remote wiki mount URL (default: `remote.url` from .parrot/wiki.json)."
+)
 @click.option(
     "--token-env",
     default=None,
@@ -156,7 +158,9 @@ def install(
             if remote_url:
                 remote = WikiRemoteConfig(url=remote_url, token_env=token_env or "WIKITOOLKIT_TOKEN")
             elif config.remote is not None:
-                remote = config.remote if token_env is None else config.remote.model_copy(update={"token_env": token_env})
+                remote = (
+                    config.remote if token_env is None else config.remote.model_copy(update={"token_env": token_env})
+                )
             else:
                 raise click.ClickException("--remote needs --remote-url or a `remote` block in .parrot/wiki.json")
         actions = install_claude_integration(
