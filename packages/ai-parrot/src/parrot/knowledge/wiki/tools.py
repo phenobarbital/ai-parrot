@@ -1151,8 +1151,7 @@ class WikiSyncPullTool(AbstractTool):
             pages = [
                 page
                 for page in pages
-                if (page.get("updated_at") or "", page["concept_id"])
-                > (cursor_updated_at, cursor_concept_id)
+                if (page.get("updated_at") or "", page["concept_id"]) > (cursor_updated_at, cursor_concept_id)
             ]
 
         selected = pages[:limit]
