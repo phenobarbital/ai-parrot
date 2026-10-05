@@ -135,10 +135,15 @@ the surfaces code is active but stable. *Evidence*: F001
 
 ### What's New
 
-- **A Python-transformer transform member** — e.g. `TransformSpec.python:
-  {transformer: <registered name>, params: {...}}` joining the existing
-  `ops`/`ref` XOR (exactly-one-of-three).
-- **Per-source server data endpoint** — e.g.
+- **A Python-transformer transform member** *(shape decided — see §5 OQ-A/B/C)* —
+  `TransformSpec.python: {transformer: <registered name>, params: {...},
+  input_alias: <str, default "source">, output: <str | null>}` joining the
+  existing `ops`/`ref` XOR (exactly-one-of-three). The server calls
+  `registered({input_alias: frame}, params)` and reduces the returned dict to
+  the source's frame with the existing multi-frame selection rule (`output`
+  override → `result` key → sole key → error), mirroring
+  `selectFrame`/`_select_multi_frame`.
+- **Per-source server data endpoint** *(path decided — see §5 OQ-A)* —
   `POST /api/v1/ui/surfaces/{surface_id}/sources/{key}/data` on
   `UISurfacesHandler`: resolves the persisted descriptor, executes the slug
   via the linked executor machinery under the data-plane guard, applies the
@@ -242,15 +247,35 @@ Distribution: **5** high, **1** medium, **1** low.
   the server executes slug + transformer on their behalf under the owner's
   pctx, consistent with the existing share refresh. *Resolves*: scope
 
+- [x] **OQ-A — Exact wire shape and endpoint path** — *Resolved 2026-10-06*:
+  **third `TransformSpec` member + per-source route** — `transform.python`
+  joins the `ops`/`ref` XOR (exactly-one-of-three; `DerivedDataSource` also
+  rejects it), and the renderer fetches python-transformed sources from
+  `POST /api/v1/ui/surfaces/{surface_id}/sources/{key}/data`. A new source
+  `kind` (field duplication, kind-dispatch churn) and a refresh-route
+  query-param overload (mixes surface- and source-grain semantics) were
+  both rejected. *Resolves*: hypothesis-1 shape
+- [x] **OQ-B — Input adaptation** — *Resolved 2026-10-06*: **optional
+  `python.input_alias`, default `"source"`** — the server calls
+  `registered({input_alias: frame}, params)`. New transformers use the
+  default; existing recipe transformers (whose `requires_columns` manifests
+  name their own aliases, e.g. `"activity"`) are reusable by declaring the
+  alias, and the `validate_inputs` gate works for both. v1 admits only
+  single-input transformers (the source is terminal, no sibling frames).
+  *Evidence*: F004; `runner.py:521-541` (inputs = `{alias: frame}`)
+- [x] **OQ-C — Output adaptation** — *Resolved 2026-10-06*: **the existing
+  multi-frame selection rule** — the transformer's returned dict is treated
+  like a multi-frame payload: optional `python.output` override (analogous
+  to `multi_output`) → `result` key → sole key → error if ambiguous. Same
+  rule already proven in both lanes (`fetch.ts::selectFrame`,
+  `QuerySlugSource._select_multi_frame`); the selected frame then behaves
+  exactly like a fetched one (snapshot ≤500, querylimit caps, bindings).
+  Verbatim-JSON output at `target` (non-tabular KPI payloads) was rejected
+  for v1: it would need new snapshot/cap semantics. *Evidence*: F001, F005
+
 ### Unresolved (defer to spec / implementation)
 
-- [ ] **Exact wire shape and endpoint path** (`transform.python` vs a new
-  source `kind`; `/sources/{key}/data` vs query-param) — *Owner*: `/sdd-spec`
-  *Plausible answers*: a) third `TransformSpec` member + per-source route
-  (hypothesis 1) · b) new `kind` on the source union
-- [ ] **Frame→transformer adaptation**: how a single slug frame maps onto the
-  `(inputs: dict, params) -> dict` multi-input contract (single alias
-  convention?) and which output key becomes the frame — *Owner*: `/sdd-spec`
+- None. All open questions are resolved; `/sdd-spec` consumes §3 + §5 as-is.
 
 ---
 
@@ -259,8 +284,9 @@ Distribution: **5** high, **1** medium, **1** low.
 **`/sdd-spec FEAT-628`** — *Rationale*: localization is high-confidence (C1–C5),
 every primitive exists and converges on known seams (`TransformSpec`,
 `execute_sources`, `UISurfacesHandler`, `transformer_registry`, `fetch.ts`),
-and the material design decisions were resolved in Q&A. The two remaining
-unknowns are spec-level shape choices, not architectural forks.
+and **all design decisions are resolved** (U1–U4 and OQ-A/B/C in §5): identity
+model, reference grain, terminality, share-viewer scope, wire shape, endpoint
+path, and the input/output adaptation conventions. No open fork remains.
 Reserve the definitive FEAT id via `reserve_ids.py` at spec time
 (`provisional_id: true` in this document's frontmatter).
 
