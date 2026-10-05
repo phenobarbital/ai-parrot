@@ -9,6 +9,7 @@ Run the pre-existing filesystem-mode suite with::
 
     PARROT_STUDIO_STORAGE=filesystem pytest packages/ai-parrot-server/tests/studio -q
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -65,8 +66,9 @@ def _fs_app(pool) -> web.Application:
     """A filesystem-mode app: the pool is present (legacy draft state lives there) but the setting pins ``filesystem``."""
     app = web.Application(middlewares=[_session])
     app["database"] = pool
-    manager = BotManager(enable_database_bots=False, enable_crews=False, enable_registry_bots=True,
-                         enable_swagger_api=False)
+    manager = BotManager(
+        enable_database_bots=False, enable_crews=False, enable_registry_bots=True, enable_swagger_api=False
+    )
     manager.setup_registry_only(app)
     setup_studio_routes(app)
     return app
@@ -84,16 +86,18 @@ async def _call(client, method: str, path: str, **kw) -> tuple[int, Any]:
 async def _exercise(client) -> dict[str, tuple[int, Any]]:
     """Run every scenario once; returns ``label -> (status, json body)``."""
     out: dict[str, tuple[int, Any]] = {}
-    out["POST /agents"] = await _call(client, "post", "/agents", json={"name": "alpha", "bot_class": "BasicBot",
-                                                                     "persist": True})
+    out["POST /agents"] = await _call(
+        client, "post", "/agents", json={"name": "alpha", "bot_class": "BasicBot", "persist": True}
+    )
     out["GET /agents"] = await _call(client, "get", "/agents")
     out["GET /agents/{name}"] = await _call(client, "get", "/agents/alpha")
     base = "/agents/alpha/files/kb"
     out["PUT files"] = await _call(client, "put", f"{base}/notes.md", json={"content": "hello"})
     out["GET files"] = await _call(client, "get", f"{base}/notes.md")
     out["GET files list"] = await _call(client, "get", base)
-    out["POST /drafts (source)"] = await _call(client, "post", "/drafts", json={"name": "shapedraft",
-                                                                              "source": PY_SOURCE})
+    out["POST /drafts (source)"] = await _call(
+        client, "post", "/drafts", json={"name": "shapedraft", "source": PY_SOURCE}
+    )
     out["GET /drafts/{name}"] = await _call(client, "get", "/drafts/shapedraft")
     out["POST /drafts/{name}/activate"] = await _call(client, "post", "/drafts/shapedraft/activate", json={})
     out["GET toolkit-config"] = await _call(client, "get", "/agents/alpha/toolkit-config")
@@ -172,11 +176,13 @@ async def test_handlers_shapes_database_mode(snapshots):
     assert db["POST /agents"][1]["file_path"] is None
     assert db["PUT files"][1]["reload_required"] is False
     assert db["GET files list"][1]["files"] == ["notes.md"]
-    assert db["GET files list"][1]["entries"] == [{
-        "name": "notes.md",
-        "size": len("hello"),
-        "sha256": hashlib.sha256(b"hello").hexdigest(),
-    }]
+    assert db["GET files list"][1]["entries"] == [
+        {
+            "name": "notes.md",
+            "size": len("hello"),
+            "sha256": hashlib.sha256(b"hello").hexdigest(),
+        }
+    ]
 
 
 async def test_handlers_shapes_database_mode_bundle_drafts(aiohttp_client, pool, snapshots):  # noqa: F811
