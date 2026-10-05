@@ -1,0 +1,194 @@
+{
+  "feature": "linked-a2ui-recipes-transforms",
+  "feature_id": "FEAT-636",
+  "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-05T23:04:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4104",
+      "slug": "python-transform-wire-model",
+      "title": "PythonTransform wire model, three-way TransformSpec XOR, terminal rule + schema regeneration",
+      "feature_id": "FEAT-636",
+      "feature": "linked-a2ui-recipes-transforms",
+      "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Exclusive: runs scripts/generate_ts_types.py, which rewrites every committed file under packages/ai-parrot-server/ui/schemas/ (shared generated code other features read); no dependencies — root of the graph.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4104-python-transform-wire-model.md"
+    },
+    {
+      "id": "TASK-4105",
+      "slug": "pytransform-core",
+      "title": "linked/pytransform.py — validation gate, output selection, capped execution, TransformStageError",
+      "feature_id": "FEAT-636",
+      "feature": "linked-a2ui-recipes-transforms",
+      "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4104"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports PythonTransform created by TASK-4104 (linked/models.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4105-pytransform-core.md"
+    },
+    {
+      "id": "TASK-4106",
+      "slug": "executor-python-branch",
+      "title": "Executor — python-transform branch in _run_source + 422 transform-stage codes",
+      "feature_id": "FEAT-636",
+      "feature": "linked-a2ui-recipes-transforms",
+      "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4105"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports apply_python_transform and TransformStageError created by TASK-4105 (linked/pytransform.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4106-executor-python-branch.md"
+    },
+    {
+      "id": "TASK-4107",
+      "slug": "service-gate-fetch-source",
+      "title": "LinkedSurfaceService — persist-time python gate + fetch_source() one-source lane",
+      "feature_id": "FEAT-636",
+      "feature": "linked-a2ui-recipes-transforms",
+      "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4106"
+      ],
+      "parallel": true,
+      "parallelism_notes": "fetch_source maps the 422 transform-stage codes TASK-4106 adds to executor.ERROR_STATUS; gate imports validate_python_transform from TASK-4105 (transitive via TASK-4106).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4107-service-gate-fetch-source.md"
+    },
+    {
+      "id": "TASK-4108",
+      "slug": "source-data-endpoint",
+      "title": "HTTP endpoint POST /api/v1/ui/surfaces/{surface_id}/sources/{key}/data",
+      "feature_id": "FEAT-636",
+      "feature": "linked-a2ui-recipes-transforms",
+      "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4107"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Calls LinkedSurfaceService.fetch_source and tests against SourceFetchOutcome, both created by TASK-4107 (linked/service.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4108-source-data-endpoint.md"
+    },
+    {
+      "id": "TASK-4109",
+      "slug": "toolkit-python-gate",
+      "title": "QuerysourceToolkit — build-time python-transform gate in _build_linked_source",
+      "feature_id": "FEAT-636",
+      "feature": "linked-a2ui-recipes-transforms",
+      "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4105"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports validate_python_transform created by TASK-4105 (linked/pytransform.py); runs concurrently with the executor/service/endpoint chain.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4109-toolkit-python-gate.md"
+    },
+    {
+      "id": "TASK-4110",
+      "slug": "ui-types-regen",
+      "title": "Regenerate UI TypeScript types (pnpm generate) and re-export PythonTransform",
+      "feature_id": "FEAT-636",
+      "feature": "linked-a2ui-recipes-transforms",
+      "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4104"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Exclusive: pnpm generate rewrites every file under ui/src/lib/types/generated/ (shared generated code). Consumes ui/schemas/LinkedSources.json regenerated by TASK-4104.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4110-ui-types-regen.md"
+    },
+    {
+      "id": "TASK-4111",
+      "slug": "ts-lane-python-sources",
+      "title": "TS renderer lane — python sources fetch via the server endpoint; snapshot-only when not persisted",
+      "feature_id": "FEAT-636",
+      "feature": "linked-a2ui-recipes-transforms",
+      "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4110",
+        "TASK-4108"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports the PythonTransform TS type re-exported by TASK-4110 (linked/types.ts); consumes the /sources/{key}/data route and response shape created by TASK-4108 (handlers/ui_surfaces.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4111-ts-lane-python-sources.md"
+    },
+    {
+      "id": "TASK-4112",
+      "slug": "docs-python-transforms",
+      "title": "Docs — python transformers in the linked-surfaces wire doc and the QuerySource toolkit doc",
+      "feature_id": "FEAT-636",
+      "feature": "linked-a2ui-recipes-transforms",
+      "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4108",
+        "TASK-4109",
+        "TASK-4111"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documents shipped behavior: endpoint route/codes from TASK-4108, toolkit gate from TASK-4109, renderer 'snapshot' state from TASK-4111.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4112-docs-python-transforms.md"
+    }
+  ]
+}
