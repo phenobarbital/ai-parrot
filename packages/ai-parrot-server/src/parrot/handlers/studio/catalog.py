@@ -247,7 +247,13 @@ class StudioCatalogHandler(StudioBaseView):
 
     async def _base_classes_for_caller(self) -> list[dict]:
         """Return base classes with caller-specific allowance and host additions."""
-        part = await self._studio_partition()
+        from .access import StudioTenantRequired
+        from .storage.models import StudioPartition
+
+        try:
+            part = await self._studio_partition()
+        except StudioTenantRequired:
+            part = StudioPartition.GLOBAL  # tenantless caller: the catalogue stays readable (additive change)
         allowlist = StudioClassAllowlist.from_app(self.request.app)
         rows = [{**row, "allowed": allowlist.allows(part, row["name"])} for row in await self._get_base_classes()]
         exported_names = set(bots_module.__all__)
