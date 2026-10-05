@@ -263,7 +263,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -273,8 +273,9 @@
       "parallelism_notes": "exclusive: writes to one shared real Google Drive; exercises the complete manager from TASK-3814 (gdrive.py)",
       "assigned_to": null,
       "started_at": "2026-10-05T21:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3818-gdrive-live-suite.md"
+      "completed_at": "2026-10-05T22:41:54+00:00",
+      "file": "sdd/tasks/completed/TASK-3818-gdrive-live-suite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3819",
