@@ -405,6 +405,63 @@ def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
     return server
 
 
+def create_proxy_mcp_server(remote: Any) -> StdioMCPServer:
+    """Build a stdio server that forwards MCP requests to a remote wiki."""
+    with contextlib.redirect_stdout(sys.stderr):
+        from parrot.mcp.local_server import StdioMCPServer
+        from parrot.mcp.server_base import LocalServerConfig
+    from parrot.knowledge.wiki.cli import _authoring_identity
+    from parrot.knowledge.wiki.remote import RemoteWikiClient, RemoteWikiError
+
+    class ProxyStdioMCPServer(StdioMCPServer):
+        """Forwarding stdio server; remote failures remain request-scoped."""
+
+        def __init__(self, config: Any, remote_cfg: Any, actor: str) -> None:
+            super().__init__(config)
+            self._remote_cfg = remote_cfg
+            self._actor = actor
+            self._client: Any | None = None
+            self._tools_cache: list[dict[str, Any]] | None = None
+
+        async def _client_ready(self) -> Any:
+            if self._client is None:
+                client = RemoteWikiClient(self._remote_cfg, actor=self._actor)
+                await client.initialize()
+                self._client = client
+            return self._client
+
+        async def handle_tools_list(self, params: dict[str, Any]) -> dict[str, Any]:
+            """Return the remote tool definitions, cached after a successful request."""
+            try:
+                if self._tools_cache is None:
+                    self._tools_cache = await (await self._client_ready()).list_tools()
+            except RemoteWikiError:
+                self._client = None
+                raise
+            return {"tools": self._tools_cache}
+
+        async def handle_tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
+            """Forward one tool call and convert remote failures to local errors."""
+            try:
+                return await (await self._client_ready()).call_tool(
+                    params.get("name", ""), params.get("arguments", {}) or {}
+                )
+            except RemoteWikiError as exc:
+                self._client = None
+                raise RuntimeError(str(exc)) from exc
+
+    actor = remote.actor if remote.actor is not None else _authoring_identity(None)
+    return ProxyStdioMCPServer(
+        LocalServerConfig(
+            name="wikitoolkit",
+            version="1.0.0",
+            description=f"remote proxy → {remote.url}",
+        ),
+        remote,
+        actor,
+    )
+
+
 def main() -> None:
     """CLI/module entry point for `wikitoolkit mcp` — logs to stderr only.
 
@@ -427,14 +484,19 @@ def main() -> None:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    if not config.is_built(root):
-        print(
-            f"Error: wiki not built yet for {root}. " "Run `wikitoolkit build` first.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    from parrot.knowledge.wiki.project import resolve_remote
 
-    server = create_wiki_mcp_server(root)
+    remote = resolve_remote(config)
+    if remote is not None:
+        server = create_proxy_mcp_server(remote)
+    else:
+        if not config.is_built(root):
+            print(
+                f"Error: wiki not built yet for {root}. " "Run `wikitoolkit build` first.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        server = create_wiki_mcp_server(root)
     # The lazy parrot.mcp.* import inside create_wiki_mcp_server() may have
     # re-attached a stdout handler (see _ensure_stderr_logging docstring) —
     # strip it again right before the stdin/stdout JSON-RPC loop starts.
