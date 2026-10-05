@@ -1,4 +1,5 @@
 """FEAT-608 TASK-3819 — the Drive docs exist with the required sections (AC19)."""
+
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
