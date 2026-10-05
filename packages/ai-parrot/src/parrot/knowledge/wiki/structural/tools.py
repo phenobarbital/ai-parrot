@@ -227,6 +227,8 @@ def create_structural_tools(
     store: BaseWikiStore,
     root: Path,
     config: WikiProjectConfig,
+    *,
+    read_repair: bool = True,
 ) -> list[AbstractTool]:
     """Create the three structural tools, sharing one local ``StructuralService``.
 
@@ -236,6 +238,8 @@ def create_structural_tools(
         root: Repository root the local plane describes — read-repair
             only ever reads/writes under this root.
         config: Effective project configuration for the local plane.
+        read_repair: ``False`` runs every service rootless (no disk hashing,
+            read-repair or source excerpts); foreign namespaces are always rootless.
 
     Returns:
         ``[WikiSymbolLookupTool, WikiCodeOutlineTool, WikiBlastRadiusTool]``,
@@ -244,7 +248,7 @@ def create_structural_tools(
     # A store scoped to ONE foreign namespace (``--ns <name>``) serves that plane as
     # its "local" one; it must never be read-repaired from this checkout.
     scoped_foreign = isinstance(store, FederatedWikiStore) and getattr(store, "_qualify_local", False)
-    local_service = StructuralService(store, root, config, read_repair=not scoped_foreign)
+    local_service = StructuralService(store, root, config, read_repair=read_repair and not scoped_foreign)
 
     def service_factory(namespace: str | None) -> StructuralService:
         try:
