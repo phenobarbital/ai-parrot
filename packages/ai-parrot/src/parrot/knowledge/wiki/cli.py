@@ -1518,6 +1518,13 @@ def mcp() -> None:
         ".obsidian/ directory."
     ),
 )
+@click.option(
+    "--no-push",
+    "no_push",
+    is_flag=True,
+    help="Remote mode: scan locally but do not push to the remote server.",
+)
+@remote_cli.remote_aware(proxied=True)
 def build(
     path_: str | None,
     name: str | None,
@@ -1529,6 +1536,7 @@ def build(
     no_graph: bool,
     graph_kinds: str,
     vault_mode: bool | None,
+    no_push: bool,
 ) -> None:
     """Generate (or refresh) the KB graph from the current repository.
 
@@ -1546,6 +1554,7 @@ def build(
     # config (never the environment-merged one) — an environment/overlay
     # value must never leak into the committed .parrot/wiki.json.
     base_config = load_project_config(root)
+    push_files: list[str] | None = None
     with wiki_write_lock(config.storage_path(root)) as _acquired:
         if not _acquired:
             click.echo(
@@ -1749,6 +1758,54 @@ def build(
         # FEAT-578: refresh the ADR decision plane LAST — after ordinary
         # ingestion, export/graph generation and deletion handling above.
         _run(_refresh_adr_plane(_open_store(root, config), root, config))
+        push_files = [f.rel_path for f in getattr(scan, "files", [])]
+
+    _push_after_local(root, config, push_files, (), no_push)
+
+
+def _push_after_local(
+    root: Path,
+    config: WikiProjectConfig,
+    rel_paths: list[str] | None,
+    deleted: list[str] | tuple[str, ...],
+    no_push: bool,
+    *,
+    quiet: bool = False,
+) -> None:
+    """Remote mode only: push what the local run wrote (additive, scan semantics untouched)."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is None or no_push or rel_paths is None:
+        return
+    client = remote_cli.remote_client(remote)
+    report = remote_cli._run_push(client, _open_store(root, config), rel_paths, deleted)
+    if not quiet:
+        remote_cli.echo_push_report(report, remote.url)
+
+
+def _push_ingested_sources(
+    root: Path,
+    config: WikiProjectConfig,
+    sources: SourceCollectionManager,
+    uris: list[str],
+    no_push: bool,
+) -> None:
+    """Remote mode only: push the document slices an `ingest` run produced."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is None or no_push:
+        return
+    local_sources: dict[str, str] = {}
+    for uri in uris:
+        resolved = str(Path(uri).resolve())
+        source_id = sources.find_by_uri(resolved) or sources.find_by_uri(uri)
+        if source_id:
+            try:
+                label = Path(resolved).relative_to(root).as_posix()
+            except ValueError:
+                label = resolved
+            local_sources[f"doc:{label}"] = source_id
+    client = remote_cli.remote_client(remote)
+    report = remote_cli._run_push(client, _open_store(root, config), [], (), local_sources=local_sources)
+    remote_cli.echo_push_report(report, remote.url)
 
 
 def _changed_files_from_git(root: Path) -> list[str]:
@@ -1805,11 +1862,19 @@ def _changed_files_from_git(root: Path) -> list[str]:
     help="Upsert the files touched by the last git commit.",
 )
 @click.option("--quiet", "-q", is_flag=True, help="Suppress output (for git hooks).")
+@click.option(
+    "--no-push",
+    "no_push",
+    is_flag=True,
+    help="Remote mode: scan locally but do not push to the remote server.",
+)
+@remote_cli.remote_aware(proxied=True)
 def upsert(
     paths: tuple[str, ...],
     path_: str | None,
     changed: bool,
     quiet: bool,
+    no_push: bool,
 ) -> None:
     """Incrementally re-ingest specific files (or last-commit changes).
 
@@ -1819,6 +1884,7 @@ def upsert(
     next full `wikitoolkit build`.
     """
     root, config = _resolve_project(path_)
+    push_plan: tuple[list[str], list[str]] | None = None
     # Wait out a peer upsert (sub-second) rather than dropping the
     # commit's files; give up quickly if a multi-minute build holds it.
     with wiki_write_lock(config.storage_path(root), timeout=UPSERT_LOCK_WAIT_SECONDS) as _acquired:
@@ -1934,6 +2000,10 @@ def upsert(
         # FEAT-578: refresh the ADR decision plane LAST — after ordinary
         # ingestion and deletion handling above.
         _run(_refresh_adr_plane(_open_store(root, config), root, config))
+        push_plan = (existing, deleted)
+
+    if push_plan is not None:
+        _push_after_local(root, config, push_plan[0], push_plan[1], no_push, quiet=quiet)
 
 
 @wiki.command()
@@ -4576,12 +4646,31 @@ def sync() -> None:
     help="Target environment whose effective config names the shared plane.",
 )
 @click.option("--dry-run", is_flag=True, help="Compute and print the report; apply nothing.")
+@remote_cli.remote_aware(proxied=True)
 def sync_push_cmd(path_: str | None, target_env: str, dry_run: bool) -> None:
     """Push local memories/notes/asserted edges to the ENV plane.
 
     Every local memory page moves — push never filters by authorship.
+    In remote mode the pages travel through ``wiki_sync_push`` and ``--env`` is ignored.
     """
     from parrot.knowledge.wiki.sync import SyncError, default_local_identity, sync_push
+
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        root, config = _resolve_project(path_)
+        local = _require_built(root, config)
+        client = remote_cli.remote_client(remote)
+        if dry_run:
+            click.echo("DRY RUN — nothing applied (remote mode sends nothing)")
+            return
+        if target_env != "dev":
+            click.echo("Note: --env is ignored in remote mode.")
+        result = _run(remote_cli.sync_push_remote(client, local))
+        click.echo(
+            f"pushed: created={result.get('created', 0)} updated={result.get('updated', 0)} "
+            f"skipped-older={result.get('skipped_older', 0)}"
+        )
+        return
 
     root, _config = _resolve_project(path_)
     try:
@@ -4619,13 +4708,33 @@ def sync_push_cmd(path_: str | None, target_env: str, dry_run: bool) -> None:
         "— default excludes them so your own memories stay authoritative."
     ),
 )
+@remote_cli.remote_aware(proxied=True)
 def sync_pull_cmd(path_: str | None, target_env: str, dry_run: bool, include_own: bool) -> None:
     """Pull memories/notes/asserted edges from the ENV plane.
 
     By default, records authored by the local identity (``human:<user>``)
     are excluded (``--all`` switches to pure last-write-wins).
+    In remote mode the pages come through ``wiki_sync_pull`` and ``--env`` is ignored.
     """
     from parrot.knowledge.wiki.sync import SyncError, default_local_identity, sync_pull
+
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        root, config = _resolve_project(path_)
+        local = _require_built(root, config)
+        client = remote_cli.remote_client(remote)
+        report = _run(
+            remote_cli.sync_pull_remote(
+                client, local, wiki_name=config.wiki_name, include_own=include_own, dry_run=dry_run
+            )
+        )
+        if report.dry_run:
+            click.echo("DRY RUN — nothing applied")
+        click.echo(
+            f"pulled: created={report.created} updated={report.updated} "
+            f"skipped-older={report.skipped_older} skipped-own={report.skipped_own}"
+        )
+        return
 
     root, _config = _resolve_project(path_)
     try:
@@ -5138,6 +5247,13 @@ def _dispatch_roblox_api_ingest(
         "generation. Ignored for every other SOURCE."
     ),
 )
+@click.option(
+    "--no-push",
+    "no_push",
+    is_flag=True,
+    help="Remote mode: scan locally but do not push to the remote server.",
+)
+@remote_cli.remote_aware(proxied=True)
 def ingest(
     source: str,
     path_: str | None,
@@ -5154,6 +5270,7 @@ def ingest(
     recursive: bool,
     fetch_timeout: float,
     refresh_flag: bool,
+    no_push: bool,
 ) -> None:
     """Supervised (charter-driven) ingestion of a document corpus.
 
@@ -5352,6 +5469,7 @@ def ingest(
         )
         _run(_apply_all(applied, wiki_config, header.charter_version))
         _checkpoint_if_sqlite(store, "ingest")
+        _push_ingested_sources(root, config, sources, [e.source_uri for e in applied], no_push)
         click.echo(f"Applied {len(applied)} decision(s) from {review_opt}.")
         return
 
@@ -5449,6 +5567,7 @@ def ingest(
         ManifestWriter(manifest_path).write(header, entries)
         _run(_apply_all(entries, wiki_config, charter.version, acquired_by_uri))
         _checkpoint_if_sqlite(store, "ingest")
+        _push_ingested_sources(root, config, sources, [e.source_uri for e in entries], no_push)
         click.echo(
             f"Applied {len(entries)} interactive decision(s)," f" skipped {len(skipped)}. Manifest: {manifest_path}"
         )
@@ -5479,6 +5598,7 @@ def ingest(
     ManifestWriter(manifest_path).write(header, entries)
     _run(_apply_all(entries, wiki_config, charter.version, acquired_by_uri))
     _checkpoint_if_sqlite(store, "ingest")
+    _push_ingested_sources(root, config, sources, [e.source_uri for e in entries], no_push)
     audited = [e for e in entries if e.audit_sample]
     click.echo(
         f"Applied {len(entries)} auto decision(s), skipped {len(skipped)}."
