@@ -175,17 +175,32 @@ TransformOp = Annotated[
 ]
 
 
+class PythonTransform(BaseModel):
+    """Server-side registered transformer applied to a fetched frame (G1: referenced by name, never code).
+
+    Runs ONLY in the Python lanes (bake, persist, server refresh, the per-source data endpoint) — the mirror
+    image of ``transform.ref``, which runs only in the renderer.
+    """
+
+    model_config = _CFG
+    transformer: str = Field(min_length=1)
+    params: dict[str, Any] = Field(default_factory=dict)
+    input_alias: str = Field(default="source", min_length=1)
+    output: str | None = None
+
+
 class TransformSpec(BaseModel):
-    """Exactly one of inline DSL operations or a catalogued renderer module."""
+    """Exactly one of inline DSL operations, a catalogued renderer module, or a server-side Python transformer."""
 
     model_config = _CFG
     ops: list[TransformOp] | None = None
     ref: TransformRef | None = None
+    python: PythonTransform | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def _xor(self) -> TransformSpec:
-        if (self.ops is None) == (self.ref is None):
-            raise ValueError("TransformSpec requires exactly one of 'ops' or 'ref'")
+        if sum(member is not None for member in (self.ops, self.ref, self.python)) != 1:
+            raise ValueError("TransformSpec requires exactly one of 'ops', 'ref' or 'python'")
         return self
 
 
@@ -256,8 +271,10 @@ class DerivedDataSource(BaseModel):
 
     @model_validator(mode="after")
     def _ops_only(self) -> DerivedDataSource:
-        if self.transform.ref is not None or not self.transform.ops:
-            raise ValueError("a derived source requires inline transform.ops (transform.ref is not allowed)")
+        if self.transform.ref is not None or self.transform.python is not None or not self.transform.ops:
+            raise ValueError(
+                "a derived source requires inline transform.ops (transform.ref and transform.python are not allowed)"
+            )
         return self
 
 
@@ -292,4 +309,28 @@ class LinkedSources(RootModel[dict[str, LinkedSource]]):
             target_key = source.target.split("/")[1].replace("~1", "/").replace("~0", "~")
             if not key.isidentifier() or target_key != key:
                 raise ValueError(f"source key {key!r} must match target root token {target_key!r}")
+        return self
+
+    @model_validator(mode="after")
+    def _python_terminal(self) -> LinkedSources:
+        """A python-transformed source is terminal in v1 (FEAT-636 U3): no sibling may consume its frame."""
+        python_keys = {
+            key
+            for key, src in self.root.items()
+            if src.transform is not None and src.transform.python is not None
+        }
+        if not python_keys:
+            return self
+        for key, src in self.root.items():
+            consumed = {src.from_} if isinstance(src, DerivedDataSource) else set()
+            if src.transform is not None and src.transform.ops is not None:
+                for operation in src.transform.ops:
+                    if isinstance(operation, Join):
+                        consumed.add(operation.with_)
+                    elif isinstance(operation, Union_):
+                        consumed.update(operation.sources)
+            for name in consumed & python_keys:
+                raise ValueError(
+                    f"source {key!r} consumes python-transformed source {name!r}; python transforms are terminal"
+                )
         return self
