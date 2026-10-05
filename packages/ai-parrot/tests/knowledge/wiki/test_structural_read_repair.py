@@ -1,4 +1,5 @@
 """Rootless (``read_repair=False``) mode of ``StructuralService`` (FEAT-569)."""
+
 from pathlib import Path
 
 import pytest
@@ -15,8 +16,16 @@ async def seeded(tmp_path):
     (tmp_path / ".parrot" / "wiki").mkdir(parents=True)
     store = create_wiki_store(tmp_path / ".parrot" / "wiki", wiki_name="t", backend="sqlite")
     rec = SymbolRecord(
-        rel_path="pkg/mod.py", language="python", kind=SymbolKind.FUNCTION, name="f", qualname="f",
-        start_line=1, end_line=2, start_byte=0, end_byte=10, content_hash="h",
+        rel_path="pkg/mod.py",
+        language="python",
+        kind=SymbolKind.FUNCTION,
+        name="f",
+        qualname="f",
+        start_line=1,
+        end_line=2,
+        start_byte=0,
+        end_byte=10,
+        content_hash="h",
     )
     await store.upsert_symbols([rec], source_id="file:pkg/mod.py")
     return store

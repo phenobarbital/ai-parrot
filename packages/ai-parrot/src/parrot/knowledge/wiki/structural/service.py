@@ -397,7 +397,9 @@ class StructuralService:
             return out.model_copy(
                 update={
                     "root": _qualified_hit(out.root, ns) if out.root else None,
-                    "impacted": [imp.model_copy(update={"symbol": _qualified_hit(imp.symbol, ns)}) for imp in out.impacted],
+                    "impacted": [
+                        imp.model_copy(update={"symbol": _qualified_hit(imp.symbol, ns)}) for imp in out.impacted
+                    ],
                 }
             )
         out = await self._blast_local(
