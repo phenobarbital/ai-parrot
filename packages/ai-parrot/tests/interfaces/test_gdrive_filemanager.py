@@ -1,6 +1,7 @@
 """FEAT-608 GoogleDriveFileManager unit tests (TASK-3810 core)."""
 
 import datetime as dt
+import io
 import sys
 
 import pytest
@@ -154,3 +155,114 @@ def test_validate_upload_url_rejects_http_and_foreign_hosts(caplog):
         result._validate_upload_url("http://www.googleapis.com/token")
     with pytest.raises(GoogleDriveFileManagerError):
         result._validate_upload_url("https://example.test/token")
+
+
+@pytest.mark.asyncio
+async def test_list_files_excludes_folders_and_follows_page_tokens(manager):
+    result, drive = manager
+    for index in range(5):
+        drive.drive.put_file(f"reports/2026/file-{index}.txt", b"x")
+    drive.drive.put_folder("reports/2026/folder")
+
+    files = await result.list_files("", pattern="*.txt")
+
+    assert [file.name for file in files] == [f"file-{index}.txt" for index in range(5)]
+    assert [file.path for file in files] == [f"file-{index}.txt" for index in range(5)]
+    calls = [call for call in drive.drive.calls if call[1] == "list" and "in parents" in call[2]["q"]]
+    assert len(calls) >= 3
+
+
+@pytest.mark.asyncio
+async def test_list_entries_includes_folders_all_pages(manager):
+    result, drive = manager
+    for index in range(4):
+        drive.drive.put_file(f"reports/2026/file-{index}.txt", b"x")
+    drive.drive.put_folder("reports/2026/child")
+
+    entries = await result.list_entries()
+
+    assert {entry.name for entry in entries} == {"q3.xlsx", "child", *(f"file-{index}.txt" for index in range(4))}
+    assert next(entry for entry in entries if entry.name == "child").is_folder
+
+
+@pytest.mark.asyncio
+async def test_list_params_shared_drive_flags():
+    drive = FakeDrive(drive_id="shared")
+    drive.put_file("report.txt", b"x")
+    result = make_manager(FakeDriveClient(drive), shared_drive_id="shared")
+
+    await result.list_files()
+
+    params = result.drive.drive.calls[-1][2]
+    assert params["supportsAllDrives"] is True
+    assert params["includeItemsFromAllDrives"] is True
+    assert params["corpora"] == "drive"
+    assert params["driveId"] == "shared"
+    assert GoogleDriveFileManager()._list_params() == {"supportsAllDrives": True}
+
+
+@pytest.mark.asyncio
+async def test_exists_and_metadata(manager):
+    result, _ = manager
+
+    assert await result.exists("q3.xlsx")
+    assert await result.exists("")
+    assert not await result.exists("missing.txt")
+    metadata = await result.get_file_metadata("q3.xlsx")
+    assert metadata.name == "q3.xlsx"
+    assert metadata.path == "q3.xlsx"
+
+
+@pytest.mark.asyncio
+async def test_find_files_server_side_contains_then_client_filters(manager):
+    result, drive = manager
+    drive.drive.put_file("reports/2026/nested/budget-q3.xlsx", b"x")
+    drive.drive.put_file("reports/2026/nested/budget-q4.csv", b"x")
+    drive.drive.put_file("reports/2026/budget-q3.txt", b"x")
+
+    files = await result.find_files(keywords=["budget", "q3"], extension="xlsx", prefix="")
+
+    assert [file.path for file in files] == ["nested/budget-q3.xlsx"]
+    queries = [call[2]["q"] for call in drive.drive.calls if call[1] == "list"]
+    assert any("name contains 'budget'" in query for query in queries)
+
+
+@pytest.mark.asyncio
+async def test_search_paginates_then_applies_extension(manager):
+    result, drive = manager
+    for index in range(5):
+        drive.drive.put_file(f"reports/2026/match-{index}.txt", b"x")
+    drive.drive.put_file("reports/2026/match-final.csv", b"x")
+
+    files = await result.find_files(keywords="match", extension="csv")
+
+    assert [file.name for file in files] == ["match-final.csv"]
+    search_calls = [
+        call for call in drive.drive.calls if "name contains 'match'" in call[2].get("q", "")
+    ]
+    assert len(search_calls) >= 3
+
+
+@pytest.mark.asyncio
+async def test_download_to_path_and_binaryio_streams(manager, tmp_path):
+    result, _ = manager
+    target = tmp_path / "nested" / "q3.xlsx"
+
+    assert await result.download_file("q3.xlsx", target) == target
+    assert target.read_bytes() == b"x" * 10
+    buffer = io.BytesIO()
+    assert await result.download_file("q3.xlsx", buffer) == Path("q3.xlsx")
+    assert buffer.getvalue() == b"x" * 10
+
+
+@pytest.mark.asyncio
+async def test_download_workspace_native_raises(manager):
+    result, drive = manager
+    drive.drive.put_file(
+        "reports/2026/sheet",
+        b"",
+        mime="application/vnd.google-apps.spreadsheet",
+    )
+
+    with pytest.raises(GoogleDriveFileManagerError, match="export is not supported"):
+        await result.download_file("sheet", Path("unused"))

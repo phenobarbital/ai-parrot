@@ -5,11 +5,25 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import fnmatch
 import logging
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Awaitable, BinaryIO, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    Awaitable,
+    BinaryIO,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    Union,
+)
 from urllib.parse import urlsplit
 
 from navigator.utils.file import FileManagerInterface, FileMetadata
@@ -444,3 +458,187 @@ class GoogleDriveFileManager(FileManagerInterface):
         if parts.scheme != "https" or parts.hostname not in self.ALLOWED_HOSTS:
             raise GoogleDriveFileManagerError("resumable session URL rejected by the host allow-list")
         return url
+
+    # ---- read operations (TASK-3811) -------------------------------------
+    async def _iter_query(self, q: str, *, order_by: Optional[str] = None) -> AsyncIterator[Dict[str, Any]]:
+        """Yield every file matching ``q`` across all pages (AC12)."""
+        page_token: Optional[str] = None
+        while True:
+            try:
+                page, _ = await self._retrying(
+                    lambda _page_token=page_token: self.drive.files_list(
+                        q=q,
+                        fields=self.LIST_FIELDS,
+                        page_size=self.LIST_PAGE_SIZE,
+                        page_token=_page_token,
+                        order_by=order_by,
+                        **self._list_params(),
+                    ),
+                    label="list",
+                )
+            except Exception as exc:
+                raise self._map_error(exc, path=q) from exc
+            for item in page.get("files", []):
+                yield item
+            page_token = page.get("nextPageToken")
+            if not page_token:
+                break
+
+    async def _iter_children(self, folder_id: str) -> AsyncIterator[Dict[str, Any]]:
+        """Yield all direct children of a folder across Drive result pages."""
+        async for item in self._iter_query(f"'{folder_id}' in parents and trashed = false"):
+            yield item
+
+    async def list_files(self, path: str = "", pattern: str = "*") -> List[FileMetadata]:
+        """List matching non-folder children of ``path`` across all pages."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            folder_id, _ = await self._resolve(full, want_folder=True)
+            out: List[FileMetadata] = []
+            async for item in self._iter_children(folder_id):
+                if self._is_folder(item) or not fnmatch.fnmatch(item["name"], pattern):
+                    continue
+                child_path = f"{full}/{item['name']}".strip("/")
+                out.append(self._make_metadata(item, full_path=child_path))
+            return out
+        except Exception as exc:
+            if isinstance(exc, (FileNotFoundError, GoogleDriveFileManagerError)):
+                raise
+            raise self._map_error(exc, path=path) from exc
+
+    async def list_entries(self, path: str = "") -> List[DriveEntry]:
+        """List all direct children of ``path``, including folders, across all pages."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            folder_id, _ = await self._resolve(full, want_folder=True)
+            out: List[DriveEntry] = []
+            async for item in self._iter_children(folder_id):
+                child_path = f"{full}/{item['name']}".strip("/")
+                out.append(self._make_entry(item, full_path=child_path))
+            return out
+        except Exception as exc:
+            if isinstance(exc, (FileNotFoundError, GoogleDriveFileManagerError)):
+                raise
+            raise self._map_error(exc, path=path) from exc
+
+    async def exists(self, path: str) -> bool:
+        """Return whether a file or folder resolves beneath the manager root."""
+        await self._ready()
+        try:
+            await self._resolve(self._prefixed(path))
+            return True
+        except Exception as exc:
+            mapped = exc if isinstance(exc, FileNotFoundError) else self._map_error(exc, path=path)
+            if isinstance(mapped, FileNotFoundError):
+                return False
+            raise mapped from exc
+
+    async def get_file_metadata(self, path: str) -> FileMetadata:
+        """Return metadata for the file or folder at ``path``."""
+        await self._ready()
+        full = self._prefixed(path)
+        try:
+            file_id, _ = await self._resolve(full)
+            item, _ = await self._retrying(
+                lambda: self.drive.files_get(file_id, fields=self.FIELDS, **self._list_params()),
+                label="get-metadata",
+            )
+            return self._make_metadata(item, full_path=full)
+        except Exception as exc:
+            if isinstance(exc, (FileNotFoundError, GoogleDriveFileManagerError)):
+                raise
+            raise self._map_error(exc, path=path) from exc
+
+    async def find_entries(
+        self,
+        keywords: Optional[Union[str, List[str]]] = None,
+        extension: Optional[str] = None,
+        prefix: Optional[str] = None,
+    ) -> List[DriveEntry]:
+        """Recursively find files beneath ``prefix`` using Drive and client-side filters."""
+        await self._ready()
+        full_prefix = self._prefixed(prefix if prefix is not None else "")
+        keyword_list = [keywords] if isinstance(keywords, str) else list(keywords or [])
+        active_keywords = [keyword for keyword in keyword_list if keyword]
+        first_keyword = active_keywords[0] if active_keywords else None
+        remaining_keywords = [keyword.lower() for keyword in active_keywords[1:]]
+        normalized_extension = f".{extension.lstrip('.')}".lower() if extension else None
+        try:
+            root_id, _ = await self._resolve(full_prefix, want_folder=True)
+            queue: List[Tuple[str, str]] = [(root_id, full_prefix)]
+            out: List[DriveEntry] = []
+            while queue:
+                folder_id, folder_path = queue.pop(0)
+                async for child in self._iter_children(folder_id):
+                    if self._is_folder(child):
+                        child_path = f"{folder_path}/{child['name']}".strip("/")
+                        queue.append((child["id"], child_path))
+
+                query = (
+                    f"'{folder_id}' in parents and mimeType != '{FOLDER_MIME}' and trashed = false"
+                )
+                if first_keyword:
+                    query += f" and name contains '{self._escape_q(first_keyword)}'"
+                async for item in self._iter_query(query):
+                    name_lower = item["name"].lower()
+                    if not all(keyword in name_lower for keyword in remaining_keywords):
+                        continue
+                    if normalized_extension and not name_lower.endswith(normalized_extension):
+                        continue
+                    item_path = f"{folder_path}/{item['name']}".strip("/")
+                    out.append(self._make_entry(item, full_path=item_path))
+            return out
+        except Exception as exc:
+            if isinstance(exc, (FileNotFoundError, GoogleDriveFileManagerError)):
+                raise
+            raise self._map_error(exc, path=prefix or "") from exc
+
+    async def find_files(self, keywords=None, extension=None, prefix=None) -> List[FileMetadata]:
+        """Return metadata for every matching non-folder entry."""
+        entries = await self.find_entries(keywords=keywords, extension=extension, prefix=prefix)
+        return [
+            FileMetadata(
+                name=entry.name,
+                path=entry.path,
+                size=entry.size,
+                content_type=entry.content_type,
+                modified_at=entry.modified_at,
+                url=entry.web_url,
+            )
+            for entry in entries
+        ]
+
+    async def download_file(self, source: str, destination: Union[Path, BinaryIO]) -> Path:
+        """Download a non-workspace file to a local path or writable binary stream."""
+        await self._ready()
+        full = self._prefixed(source)
+        try:
+            file_id, _ = await self._resolve(full, want_folder=False)
+            item, _ = await self._retrying(
+                lambda: self.drive.files_get(file_id, fields=self.FIELDS, **self._list_params()),
+                label="get-metadata",
+            )
+            if self._is_workspace_native(item):
+                raise GoogleDriveFileManagerError(
+                    "Google Workspace files cannot be downloaded; export is not supported in v1"
+                )
+            if isinstance(destination, Path):
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                await self._retrying(
+                    lambda: self.drive.files_download(
+                        file_id, download_file=str(destination), **self._list_params()
+                    ),
+                    label="download",
+                )
+                return destination
+            await self._retrying(
+                lambda: self.drive.files_download(file_id, pipe_to=_AsyncSink(destination), **self._list_params()),
+                label="download",
+            )
+            return Path(source)
+        except (FileNotFoundError, GoogleDriveFileManagerError):
+            raise
+        except Exception as exc:
+            raise self._map_error(exc, path=source) from exc
