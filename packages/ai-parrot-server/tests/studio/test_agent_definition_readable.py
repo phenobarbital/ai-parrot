@@ -1,4 +1,5 @@
 """B1 — readable Studio agent definition (FEAT-634 AC1-AC4). Real aiohttp app, no mocks."""
+
 from __future__ import annotations
 
 from .test_agents_db_mode import BASE, _offline, pool  # noqa: F401
@@ -151,6 +152,21 @@ class TestDefinitionReadable:
         assert {"config", "schema_version"}.isdisjoint(body)
         assert {"config", "schema_version"}.isdisjoint(body["definition"])
         assert {
-            "name", "source", "origin", "owner", "enabled", "agent_id", "tenant", "version", "updated_at",
-            "visibility", "allowed_groups", "class_name", "module", "file_path", "tags", "priority", "at_startup",
+            "name",
+            "source",
+            "origin",
+            "owner",
+            "enabled",
+            "agent_id",
+            "tenant",
+            "version",
+            "updated_at",
+            "visibility",
+            "allowed_groups",
+            "class_name",
+            "module",
+            "file_path",
+            "tags",
+            "priority",
+            "at_startup",
         } <= body.keys()
