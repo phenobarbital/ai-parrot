@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from parrot.auth.exceptions import AuthorizationRequired
 from parrot.outputs.a2ui.linked import has_data_sources
-from parrot.outputs.a2ui.linked.models import DerivedDataSource, LinkedSource, LinkedSources
+from parrot.outputs.a2ui.linked.models import DerivedDataSource, LinkedDataSource, LinkedSource, LinkedSources
 from parrot.outputs.a2ui.models import CreateSurface
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -48,6 +48,18 @@ class RefreshOutcome(BaseModel):
     snapshot_at: datetime | None = None
     warnings: list[str] = Field(default_factory=list)
     error_status: int | None = None  # set only when EVERY source failed
+    error_code: str | None = None
+
+
+class SourceFetchOutcome(BaseModel):
+    """Result of LinkedSurfaceService.fetch_source — one source, never persisted (FEAT-636 S1)."""
+
+    key: str
+    rows: list[dict[str, Any]] = Field(default_factory=list)
+    truncated: bool = False
+    snapshot_at: datetime | None = None
+    warnings: list[str] = Field(default_factory=list)
+    error_status: int | None = None
     error_code: str | None = None
 
 
@@ -116,11 +128,28 @@ class LinkedSurfaceService:
         """No-op for baked envelopes (AC11); for linked ones: TOOL-origin validation + guard + owner check (AC14)."""
         # function-local: linked/ must never import catalog/ at module import time (spec §7 one-way rule)
         from parrot.outputs.a2ui.catalog import ProducerOrigin, validate_envelope
+        from parrot.outputs.a2ui.catalog.base import CatalogValidationError
+        from parrot.outputs.a2ui.linked.pytransform import validate_python_transform
 
         if not has_data_sources(envelope):
             return
         validate_envelope(envelope, origin=ProducerOrigin.TOOL)  # raises CatalogValidationError (→ 422 at caller)
         await self._assert_sources_allowed(_sources(envelope), owner_pctx)
+
+        issues: list[dict[str, Any]] = []
+        for key, src in _sources(envelope).items():
+            if src.transform is None or src.transform.python is None:
+                continue
+            for problem in validate_python_transform(src.transform.python):
+                issues.append(
+                    {
+                        "code": "python_transform_invalid",
+                        "message": problem,
+                        "path": f"/metadata/extensions/parrot_data_sources/{key}/transform/python",
+                    }
+                )
+        if issues:
+            raise CatalogValidationError("invalid python transform", issues=issues)
 
     async def ensure_snapshot(self, envelope: dict[str, Any], *, owner_pctx: "PermissionContext") -> dict[str, Any]:
         """Execute once (owner ctx) when any target lacks rows/snapshot_at; raise SnapshotError on any failure."""
@@ -216,6 +245,53 @@ class LinkedSurfaceService:
             warnings=warnings,
             error_status=error_status,
             error_code=error_code,
+        )
+
+    async def fetch_source(
+        self, envelope: dict[str, Any], key: str, *, params: Mapping[str, Any], pctx: "PermissionContext"
+    ) -> SourceFetchOutcome:
+        """Fetch one guarded source with optional Python transformation without persisting it.
+
+        ``params`` are placeholder overrides only. Conditions are rebuilt from the persisted descriptor by
+        ``execute_sources``; locked and undeclared names are ignored and reported as warnings.
+
+        Raises:
+            LinkedGuardRequired: No data-plane guard is configured.
+            AuthorizationRequired: ``pctx`` cannot read the requested source.
+        """
+        from parrot.outputs.a2ui.linked.executor import ERROR_STATUS, execute_sources
+
+        sources = _sources(envelope)
+        src = sources.get(key)
+        if not isinstance(src, LinkedDataSource):
+            return SourceFetchOutcome(key=key, error_status=404, error_code="source_not_found")
+
+        single = {key: src}
+        await self._assert_sources_allowed(single, pctx)
+        outcome = await execute_sources(
+            single,
+            param_overrides={key: dict(params)},
+            pctx=pctx,
+            guard=self.guard,
+            max_snapshot_rows=None,
+            max_fetch_rows=self.max_fetch_rows,
+        )
+        result = outcome.outcomes[key]
+        if result.error is not None:
+            return SourceFetchOutcome(
+                key=key,
+                error_status=ERROR_STATUS.get(result.error, 502),
+                error_code=result.error,
+            )
+
+        rows = result.rows or []
+        warnings = [f"ignored params {sorted(result.ignored_params)}"] if result.ignored_params else []
+        return SourceFetchOutcome(
+            key=key,
+            rows=rows,
+            truncated=len(rows) >= self.max_fetch_rows,
+            snapshot_at=result.snapshot_at,
+            warnings=warnings,
         )
 
 
