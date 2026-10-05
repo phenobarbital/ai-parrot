@@ -11,6 +11,7 @@ Run the pre-existing filesystem-mode suite with::
 """
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 import pytest
@@ -34,6 +35,15 @@ PY_SOURCE = (
     "@register_agent(name='shapedraft', replace=True)\n"
     "class ShapeDraft(BasicBot):\n    pass\n"
 )
+
+
+class _NoopSkillRegistry:
+    """Avoid loading an embedding-backed registry for the response-shape test."""
+
+    async def upload_skill(self, **_kwargs):
+        """Accept a published skill without indexing it."""
+
+
 # route label -> keys database mode adds on top of the filesystem-mode response (spec §2.9)
 ADDED: dict[str, set[str]] = {
     "POST /agents": {"agent_id", "version", "tenant"},
@@ -42,7 +52,7 @@ ADDED: dict[str, set[str]] = {
     "DELETE /agents/{name}": set(),
     "PUT files": {"version", "sha256"},
     "GET files": {"version", "sha256"},
-    "GET files list": set(),
+    "GET files list": {"entries"},
     "POST /drafts (source)": set(),
     "GET /drafts/{name}": {"kind", "tenant", "visibility", "allowed_groups", "version"},
     "POST /drafts/{name}/activate": set(),
@@ -161,6 +171,12 @@ async def test_handlers_shapes_database_mode(snapshots):
     assert db["POST /agents"][1]["source"] == "studio" and db["POST /agents"][1]["persisted"] is True
     assert db["POST /agents"][1]["file_path"] is None
     assert db["PUT files"][1]["reload_required"] is False
+    assert db["GET files list"][1]["files"] == ["notes.md"]
+    assert db["GET files list"][1]["entries"] == [{
+        "name": "notes.md",
+        "size": len("hello"),
+        "sha256": hashlib.sha256(b"hello").hexdigest(),
+    }]
 
 
 async def test_handlers_shapes_database_mode_bundle_drafts(aiohttp_client, pool, snapshots):  # noqa: F811
@@ -178,3 +194,20 @@ async def test_handlers_shapes_database_mode_bundle_drafts(aiohttp_client, pool,
     assert _keys(fs["POST /drafts/{name}/activate"][1]) <= _keys(done)
     assert _keys(done) - _keys(fs["POST /drafts/{name}/activate"][1]) == {"agent_id", "version"}
     assert done["file_path"] is None and done["activated"] is True
+
+
+async def test_skill_import_201_has_version(aiohttp_client, pool, monkeypatch):
+    """Skill import exposes the post-write agent version in database mode."""
+    monkeypatch.setattr(skills_module, "_get_shared_skill_registry", lambda *_args, **_kwargs: _NoopSkillRegistry())
+    client = await aiohttp_client(_app(pool))
+    status, agent = await _call(client, "post", "/agents", json={"name": "importer", "bot_class": "BasicBot"})
+    assert status == 201 and agent["version"] == 1
+    status, skill = await _call(
+        client,
+        "post",
+        "/skills",
+        json={"name": "shape-skill", "description": "shape", "category": "general", "body": "Body."},
+    )
+    assert status == 201
+    status, imported = await _call(client, "post", f"/agents/importer/skills/import/{skill['skill_id']}")
+    assert status == 201 and imported["version"] == 2

@@ -22,7 +22,9 @@ from parrot.bots.base import BaseBot
 from parrot.bots.basic import BasicBot
 from parrot.handlers.scope import RequestScope
 from parrot.handlers.studio import agents as agents_module
+from parrot.handlers.studio import byok as byok_module
 from parrot.handlers.studio import setup_studio_routes
+from parrot.handlers.studio.storage import byok_store as byok_store_module
 from parrot.handlers.studio.storage.migrate import apply_studio_migrations
 from parrot.handlers.studio.storage.models import StudioAgentKey, StudioPartition
 from parrot.handlers.studio.testing import StudioTestingHandler
@@ -122,12 +124,43 @@ async def test_studio_test_chat_uses_runtime_cache(aiohttp_client, pool, asks):
     resp = await _ask(client)
     body = await resp.json()
     assert resp.status == 200 and body["response"] == "echo:hi" and body["agent_name"] == "alpha"
+    assert body["byok"] is False
     assert (await _ask(client, query="again")).status == 200
     assert len(asks) == 2 and asks[0][0] is asks[1][0]                  # the session instance is reused
     sid = client.app["_sessions"]["u1"]["studio_test:" + KEY.qualified]
     entry = runtime._cache.session(KEY.qualified, sid)
     assert entry is not None and entry.bot is asks[0][0]
     assert not manager._bots and runtime._cache.current(KEY.qualified) is None   # nothing leaked to _bots/base
+
+
+async def test_ask_byok_false_without_key_true_after_key(aiohttp_client, pool, asks, monkeypatch):
+    """The ask response reports whether BYOK was applied during that request."""
+    try:
+        from navigator_session.vault import KeyRing
+    except ImportError:
+        pytest.skip("navigator_session.vault not installed")
+
+    keyring = KeyRing({1: b"1" * 32}, 1)
+    monkeypatch.setenv("BYOK_STORE", "postgres")
+    monkeypatch.setattr(byok_module, "get_vault_keyring", lambda: keyring)
+    monkeypatch.setattr(byok_store_module, "get_vault_keyring", lambda: keyring)
+    client = await _client(aiohttp_client, pool)
+    created = await client.post(
+        f"{BASE}/agents",
+        json={"name": "byok-agent", "bot_class": "BasicBot", "llm": "anthropic:claude-3-haiku"},
+    )
+    assert created.status == 201
+
+    without_key = await client.post(
+        f"{BASE}/agents/byok-agent/test/ask", json={"query": "hi", "use_byok": True}
+    )
+    assert without_key.status == 200 and (await without_key.json())["byok"] is False
+
+    stored = await client.post(f"{BASE}/keys", json={"provider": "anthropic", "api_key": "sk-ant-test-1234"})
+    assert stored.status == 201
+    with_key = await client.post(f"{BASE}/agents/byok-agent/test/ask", json={"query": "hi", "use_byok": True})
+    assert with_key.status == 200 and (await with_key.json())["byok"] is True
+    await client.delete(f"{BASE}/keys/anthropic")
 
 
 async def test_stale_version_fresh_build(aiohttp_client, pool, asks):

@@ -406,7 +406,12 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         svc = storage.services.assets
         if not filename:
             rows = await svc.list(part, name, kind)
-            return self.json_response({"kind": kind, "files": sorted(r.name for r in rows)})
+            ordered_rows = sorted(rows, key=lambda r: r.name)
+            return self.json_response({
+                "kind": kind,
+                "files": [r.name for r in ordered_rows],
+                "entries": [{"name": r.name, "size": r.size, "sha256": r.sha256} for r in ordered_rows],
+            })
         asset = await svc.get(part, name, kind, filename)
         if asset is None:
             return self._error(f"File '{filename}' not found.", status=404, code="not_found")
