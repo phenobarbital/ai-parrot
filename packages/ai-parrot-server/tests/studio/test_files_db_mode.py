@@ -48,13 +48,16 @@ async def test_files_put_get_delete_shapes(aiohttp_client, pool):
 async def test_files_list_shape_unchanged(aiohttp_client, pool):
     client = await aiohttp_client(_app(pool))
     await _create(client)
-    assert await (await client.get(_url("kb"))).json() == {"kind": "kb", "files": []}
+    assert await (await client.get(_url("kb"))).json() == {"kind": "kb", "files": [], "entries": []}
     await client.put(_url("kb", "b.md"), json={"content": "b"})
     await client.put(_url("kb", "a.txt"), json={"content": "a"})
     resp = await client.put(_url("skills", "demo/SKILL.md"), json={"content": SKILL})
     assert resp.status == 200, await resp.text()
-    assert await (await client.get(_url("kb"))).json() == {"kind": "kb", "files": ["a.txt", "b.md"]}
-    assert await (await client.get(_url("skills"))).json() == {"kind": "skills", "files": ["demo/SKILL.md"]}
+    kb = await (await client.get(_url("kb"))).json()
+    assert kb["kind"] == "kb" and kb["files"] == ["a.txt", "b.md"]                      # ``files`` is unchanged
+    assert [e["name"] for e in kb["entries"]] == ["a.txt", "b.md"]                      # B8: ``entries`` is additive
+    skills = await (await client.get(_url("skills"))).json()
+    assert skills["kind"] == "skills" and skills["files"] == ["demo/SKILL.md"]
 
 
 async def test_files_413_415_codes(aiohttp_client, pool):

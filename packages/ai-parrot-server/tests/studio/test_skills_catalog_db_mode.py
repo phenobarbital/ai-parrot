@@ -129,7 +129,9 @@ async def test_import_writes_asset_row(aiohttp_client, pool, registry, tmp_path)
     url = f"{BASE}/agents/alpha/skills/import/{body['skill_id']}"
     resp = await client.post(url)
     assert resp.status == 201
-    assert await resp.json() == {"agent": "alpha", "skill": "demo", "file_path": None, "reload_required": False}
+    imported = await resp.json()
+    assert imported == {"agent": "alpha", "skill": "demo", "file_path": None, "reload_required": False,
+                        "version": imported["version"]} and isinstance(imported["version"], int)
     assets = client.app["studio_storage"].services.assets
     row = await assets.get(StudioPartition.GLOBAL, "alpha", "skills", "demo.md")
     assert row is not None and "Body text." in row.content and "name: demo" in row.content

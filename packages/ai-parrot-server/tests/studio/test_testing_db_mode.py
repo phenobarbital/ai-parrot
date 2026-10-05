@@ -230,3 +230,49 @@ async def test_invisible_agent_is_404_before_any_validation(aiohttp_client, pool
     resp = await client.post(f"{BASE}/agents/alpha/test/ask", json={})    # the owner does see the validation error
     assert resp.status == 400 and (await resp.json())["code"] == "invalid_request"
     assert asks == [] and app["bot_manager"].studio._cache.all_entries() == []
+
+
+async def test_ask_byok_false_without_key_true_after_key(aiohttp_client, pool, asks, monkeypatch):
+    """B9 / AC14 — ``byok`` is true only when a stored personal key was applied in that ask (real vault store)."""
+    from navigator_session.vault import KeyRing
+
+    import parrot.security.vault_utils as vault_utils
+    from parrot.handlers.studio import byok as byok_module
+    from parrot.handlers.studio.storage import byok_store as store_module
+    from parrot.handlers.studio.storage.byok_store import register_byok_store
+
+    # the real Postgres BYOK store (BYOK_STORE=postgres) and a real KeyRing: encryption round-trips for real
+    keyring = KeyRing({1: b"1" * 32}, 1)
+    monkeypatch.setattr(store_module, "get_vault_keyring", lambda: keyring)
+    monkeypatch.setattr(byok_module, "get_vault_keyring", lambda: keyring)
+    monkeypatch.setattr(vault_utils, "get_vault_keyring", lambda: keyring)
+    monkeypatch.setenv("BYOK_STORE", "postgres")
+    async with pool.acquire() as conn:
+        await conn.execute("TRUNCATE navigator.ai_user_llm_keys")
+    try:
+        await _byok_round_trip(aiohttp_client, pool)
+    finally:
+        register_byok_store(None)
+        async with pool.acquire() as conn:
+            await conn.execute("TRUNCATE navigator.ai_user_llm_keys")
+
+
+async def _byok_round_trip(aiohttp_client, pool):
+    client = await _client(aiohttp_client, pool)
+    resp = await client.post(f"{BASE}/agents", json={"name": "alpha", "bot_class": "BasicBot",
+                                                     "llm": "openai:gpt-4o"})
+    assert resp.status == 201, await resp.text()
+    resp = await _ask(client)
+    body = await resp.json()
+    assert resp.status == 200 and body["byok"] is False
+    resp = await client.post(f"{BASE}/keys", json={"provider": "openai", "api_key": "sk-test-0123456789abcdef"})
+    if resp.status == 503:
+        pytest.skip(f"vault keyring unavailable (as in test_byok.py): {await resp.text()}")
+    assert resp.status in (200, 201), await resp.text()
+    resp = await client.post(f"{BASE}/agents/alpha/test/ask", json={"query": "hi", "use_byok": True},
+                             headers={"X-User": "u1"})
+    body = await resp.json()
+    assert resp.status == 200 and body["byok"] is True, body
+    resp = await client.post(f"{BASE}/agents/alpha/test/ask", json={"query": "hi", "use_byok": False},
+                             headers={"X-User": "u1"})
+    assert (await resp.json())["byok"] is False

@@ -46,15 +46,16 @@ class _StudioSkillsImportDbMixin:
             return self._error(f"Skill file '{skill.name}.md' already exists for agent '{agent_name}'; "
                                "pass overwrite=true to replace.", status=409, code="collision")
         user = await self._get_user()
-        refused = await self._studio_write(
+        written = await self._studio_write(
             lambda guard: storage.services.skills.import_to_agent(
                 part, skill.skill_id, agent_name, actor=user.user_id, guard=guard),
             record=agent, reread=lambda: agents.get(part, agent_name),
             reauthorize=self._reauthorize("agent", agent_name), expected_version=None)
-        if isinstance(refused, web.Response):
-            return refused
+        if isinstance(written, web.Response):
+            return written
+        _record, version = written     # ``import_to_agent`` returns (asset record, the agent's new version)
         return self.json_response({"agent": agent_name, "skill": skill.name, "file_path": None,
-                                   "reload_required": False}, status=201)
+                                   "reload_required": False, "version": version}, status=201)
 
 
 class _StudioSkillsImportLegacyMixin:
