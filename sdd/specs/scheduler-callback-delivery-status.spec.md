@@ -10,7 +10,7 @@ tags: [scheduler, notifications, callbacks, send-email-report, delivery-status]
 **Feature ID**: FEAT-635
 **Date**: 2026-10-05
 **Author**: Jesus Lara (spec drafted by Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-server 0.28.x
 **Source**: GitHub issue [phenobarbital/ai-parrot#1574](https://github.com/phenobarbital/ai-parrot/issues/1574) · proposal `sdd/proposals/gh-1574-scheduler-callback-delivery-status.proposal.md` (research audit `sdd/state/GH-1574/`)
 
@@ -361,7 +361,7 @@ None.
 - [x] How a callback fails — *Resolved in proposal (U1)*: return `status: "failed"` (no raise), matching the NotificationMixin never-raise convention.
 - [x] Persistence — *Resolved in proposal (U2)*: separate keys `metadata.last_delivery_status` (`ok|partial|failed`) plus `metadata.last_callbacks[]`. `last_status` stays the agent-run status.
 - [x] Isolation — *Resolved in proposal (U3)*: continue; each callback is isolated, and failures are recorded but not fatal to siblings.
-- [x] `SaveDataCallback` top-level status when the email fails — *Decided at spec time (spec author; override at review if wanted)*: `"partial"` + `email_status: "failed"`, so the manager's `status`-only classification sees the failure without special-casing `email_status`.
+- [x] `SaveDataCallback` top-level status when the email fails — *Decided at spec time, confirmed by user at review (2026-10-05)*: `"partial"` + `email_status: "failed"`, so the manager's `status`-only classification sees the failure without special-casing `email_status`.
 
 ---
 
@@ -391,3 +391,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-05 | Jesus Lara / Claude | Initial draft from proposal GH-1574 |
+| 0.2 | 2026-10-05 | Jesus Lara | Review: confirmed U1–U3 and the `saving_data` "partial" decision; status → approved |
