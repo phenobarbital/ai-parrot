@@ -297,10 +297,8 @@ async def test_owner_gets_rows_with_own_pctx():
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra, attempt 1
+**Date**: 2026-10-06
+**Notes**: Diff reviewed by the orchestrator against the task. Evidence: handler tests 67 passed (source_data, linked_handler, ui_surfaces_handler); test_agent_a2ui_stream 2 failures reproduce on the pre-feature base commit
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: `SourceDataRequest` lives in `handlers/ui_surfaces.py` (beside `RefreshSurfaceRequest`), not `handlers/models/ui_surfaces.py`.
+**Deviations from spec**: none

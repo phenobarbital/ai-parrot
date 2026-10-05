@@ -98,7 +98,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -108,8 +108,9 @@
       "parallelism_notes": "Calls LinkedSurfaceService.fetch_source and tests against SourceFetchOutcome, both created by TASK-4107 (linked/service.py).",
       "assigned_to": null,
       "started_at": "2026-10-05T23:07:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4108-source-data-endpoint.md"
+      "completed_at": "2026-10-05T23:45:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4108-source-data-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4109",
