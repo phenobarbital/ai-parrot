@@ -374,7 +374,10 @@ class QuerysourceToolkit(AbstractToolkit):
         when viewers cannot fetch for themselves (share links, offline export):
         it runs the full query and embeds up to 500 current rows.
         ``refresh`` accepts ``policy`` (on_mount, manual, interval) and
-        ``interval_seconds``; ``transform`` accepts the linked transform DSL.
+        ``interval_seconds``; ``transform`` accepts the linked transform DSL. A source may instead declare
+        ``{"python": {"transformer": "<registered name>", "params": {...}, "input_alias": "source", "output": null}}``,
+        a server-side registered transformer; it is terminal (no derived views/joins may consume that source) and
+        the renderer fetches it through the server.
         """
         from parrot.outputs.a2ui.builders import build_linked_surface as _build
         from parrot.outputs.a2ui.linked.executor import execute_sources
@@ -421,7 +424,8 @@ class QuerysourceToolkit(AbstractToolkit):
     ) -> dict[str, Any]:
         """Emit ONE linked A2UI dashboard surface whose data sources are owned by the dashboard.
 
-        ``sources`` maps a source key to ``{slug, request?, tenant?, refresh?, transform?}``: each is fetched ONCE
+        ``sources`` maps a source key to ``{slug, request?, tenant?, refresh?, transform?}`` (a source ``transform`` may be the DSL or a server-side
+        ``{"python": {"transformer": "<registered name>", ...}}``, which is terminal): each is fetched ONCE
         when the dashboard loads and shared by every widget that reads it — e.g. one query computing six KPIs
         feeds six KPICards. Each widget ``{key, component, section?}`` declares exactly one data origin:
         ``source`` (a key of ``sources``; add ``transform`` DSL ops to derive a view such as a category
@@ -626,7 +630,7 @@ class QuerysourceToolkit(AbstractToolkit):
         reject_variable_values({**req.placeholders, "filter": req.filter, **forced})
         params, locked = self._linked_params(detail, forced)
         transform = spec.transform if isinstance(spec, DashboardSource) else None
-        return LinkedDataSource(
+        source = LinkedDataSource(
             slug=spec.slug,
             tenant=spec.tenant,
             is_multiquery=detail.is_multiquery,
@@ -638,6 +642,13 @@ class QuerysourceToolkit(AbstractToolkit):
             target=f"/{key}/rows",
             refresh=RefreshPolicy.model_validate(spec.refresh or {}),
         )
+        if source.transform is not None and source.transform.python is not None:
+            from parrot.outputs.a2ui.linked.pytransform import validate_python_transform
+
+            problems = validate_python_transform(source.transform.python)
+            if problems:
+                raise InvalidConditionsError(f"source '{key}': invalid python transform — {'; '.join(problems)}")
+        return source
 
     def _linked_params(self, detail: SlugDetail, forced: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         """Build linked parameter metadata and map forced values to locked parameters."""
