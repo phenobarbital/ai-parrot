@@ -337,3 +337,8 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: gpt-5.6-luna (codex), 1 attempt. Remote wiki client; test_remote_client.py passes.

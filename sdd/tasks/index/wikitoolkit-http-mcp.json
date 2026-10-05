@@ -132,7 +132,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -142,8 +142,9 @@
       "parallelism_notes": "extends `create_bulk_tools()` created by TASK-3356 (tools.py) and imports SourceSlicePayload/IngestBatchReport from it; same file",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3357-sync-push-pull-tools.md"
+      "completed_at": "2026-10-05T22:39:43+00:00",
+      "file": "sdd/tasks/completed/TASK-3357-sync-push-pull-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3358",
@@ -174,7 +175,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -184,8 +185,9 @@
       "parallelism_notes": "imports WikiRemoteConfig from TASK-3351 (project.py)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3359-remote-wiki-client.md"
+      "completed_at": "2026-10-05T22:39:46+00:00",
+      "file": "sdd/tasks/completed/TASK-3359-remote-wiki-client.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3360",
@@ -194,7 +196,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -204,8 +206,9 @@
       "parallelism_notes": "imports actor_scope from TASK-3352 (actor.py); creates serve.py",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3360-serve-config-auth-actor.md"
+      "completed_at": "2026-10-05T22:39:49+00:00",
+      "file": "sdd/tasks/completed/TASK-3360-serve-config-auth-actor.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3361",
