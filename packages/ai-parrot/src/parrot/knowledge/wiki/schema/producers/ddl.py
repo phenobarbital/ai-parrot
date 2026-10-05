@@ -150,6 +150,17 @@ def _add_column(meta: TableMetadata, col: exp.ColumnDef, default_schema: str = "
     meta.columns.append(entry)
 
 
+def _append_fk(meta: TableMetadata, entry: dict[str, str]) -> None:
+    """Record a per-column foreign key once, however many times the DDL restates it.
+
+    The same relationship may be declared inline (``REFERENCES``), as a table-level
+    ``FOREIGN KEY`` and again by ``ALTER TABLE ... ADD CONSTRAINT``; each form must not
+    add another ``references`` edge.
+    """
+    if entry not in meta.foreign_keys:
+        meta.foreign_keys.append(entry)
+
+
 def _add_inline_fk(meta: TableMetadata, column: str, reference: exp.Reference, default_schema: str) -> None:
     """Add an inline REFERENCES constraint to metadata."""
     target = reference.this
@@ -157,8 +168,8 @@ def _add_inline_fk(meta: TableMetadata, column: str, reference: exp.Reference, d
         return
     schema, table = _table_key(target.this, default_schema)
     if target.expressions:
-        meta.foreign_keys.append(
-            {"column": column, "ref_schema": schema, "ref_table": table, "ref_column": target.expressions[0].name}
+        _append_fk(
+            meta, {"column": column, "ref_schema": schema, "ref_table": table, "ref_column": target.expressions[0].name}
         )
 
 
@@ -170,8 +181,8 @@ def _add_fk(meta: TableMetadata, fk: exp.ForeignKey, default_schema: str) -> Non
         return
     schema, table = _table_key(target.this, default_schema)
     for column, ref_column in zip(fk.expressions, target.expressions, strict=False):
-        meta.foreign_keys.append(
-            {"column": column.name, "ref_schema": schema, "ref_table": table, "ref_column": ref_column.name}
+        _append_fk(
+            meta, {"column": column.name, "ref_schema": schema, "ref_table": table, "ref_column": ref_column.name}
         )
 
 

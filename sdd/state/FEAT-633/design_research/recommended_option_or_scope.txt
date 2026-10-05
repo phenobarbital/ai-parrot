@@ -1,0 +1,42 @@
+**Option B′.** The core argument of the proposal survives verification: "use the venv that is already there" is a resolution rule, and a resolution rule must run at launch time — A freezes it, C/D would embed it anyway. What changed after verification and the owner's decisions: the bootstrap is an *extension of FEAT-586's scripts* (their CI and tests already exist); the launcher must be built on a stdlib extraction of `worktree_environment.py` logic, **not** `project.py` (heavier than documented); parity is three hosts plus the bookstore `sys.executable` pins; `PARROT_HOME` is an existing convention to consolidate, not invent; and the SDD component is deliberately minimal — packaged markdown assets plus `parrot sdd install`, rejecting FEAT-583's satellite-package/`sdd`-binary design. D stays as the Windows fallback for the launcher only; C as a later packaging layer; A is absorbed (its Windows fix is lane 0 of B′).
+
+---
+
+### Option B′: Extended bootstrap + managed venv + run-time launcher + SDD asset installer — *recommended*
+
+Four pieces.
+
+**1. Bootstrap — extend FEAT-586's scripts.** `install-parrot.sh/ps1 --global` (naming TBD at spec time): download pinned `uv` into `~/.parrot/bin/`, `uv venv ~/.parrot/venv --python 3.12` (uv-managed CPython), `uv pip install --python ~/.parrot/venv ai-parrot[...]`, expose `parrot`/`wikitoolkit`/`bookstore` shims from `~/.parrot/bin`, add to PATH. The existing project-venv mode stays as-is. `~/.parrot` is already the established home — **`parrot_home()` and `$PARROT_HOME` already exist** (`knowledge/wiki/project.py:1223`, `knowledge/bookstore/config.py:67`, `cli/modes.py:69`) and `~/.parrot` already holds `services/`, `wikis.json`, `library/`, `parrot.db`, `artifacts/`, `skills/`, `brains/`, `cli/` — the installer adds `bin/` and `venv/` to an existing convention, and must consolidate the three duplicate `parrot_home()` implementations rather than add a fourth.
+
+**2. Launcher** (`parrot/launcher.py`, stdlib-only). Console scripts enter through it; it re-executes into another venv **only when `sys.prefix` is under `PARROT_HOME/venv`**. Any other invocation is a `sys.prefix` comparison and a direct call — existing setups stay byte-for-byte identical. From the managed venv the order is: `PARROT_VENV` → project venv (root from `--project`/`PARROT_PROJECT` → `CLAUDE_PROJECT_DIR` → cwd walk; `<root>/.venv`; linked worktree without one → main checkout's `.venv`) → `VIRTUAL_ENV` → stay managed. A candidate is valid only if it contains the requested console script. `os.execv` on POSIX; forwarded-stdio child process on Windows (spike 2). The worktree logic needs a **stdlib-only extraction** — `project.py` is disqualified at module level (it imports pydantic and, via `schema/models.py:9` → `parrot.bots.database.models`, the whole `parrot.bots` package; its "stdlib + pydantic" docstring is stale). Precedent to extract from: `flows/dev_loop/worktree_environment.py:54–90` (`repository_paths`, `shared_environments` — already parses `gitdir:`/`commondir` with stdlib and checks `pyvenv.cfg`).
+
+**3. Lifecycle group `parrot self`** (`self add | update | doctor | env | uninstall`): name is free — `_lazy_commands` has 24 entries and no `self`/`sdd`/`env`/`doctor`; note `parrot status` **is taken** (agentd), so diagnostics live under `self`. `self add <component>` installs the component's pip requirement into the managed venv with the bundled uv and runs its post-install; `--here` targets the project venv explicitly. Toolkit templates gain `# parrot:requires_pip`, `# parrot:post_install`, `# parrot:requires_env` (parser at `toolkit_seed.py:84–98` skips unknown keys silently today, so old runtimes tolerate new headers). `parrot toolkits install` offers `self add` when `dist_available` is false.
+
+**4. SDD component = markdown asset installer.** Package the repo's `.claude/commands/sdd-*.md`, `.claude/agents/sdd-*.md`, the SDD hooks/rules and `sdd/templates/` as package data (e.g. `parrot/sdd/_assets/`, following the `_subagent_data`/`_toolkit_templates` precedent), and add `parrot sdd install [--host claude|codex|google]` (lazy command) that deploys them with the marker-block/merge discipline the wiki installers already use, plus `uninstall`/`status` twins. Since the assets ship inside ai-parrot core, the managed venv has them with no extra install step. Decided (2026-10-05): the invocable `scripts/sdd/*.py` helpers **move into `parrot.sdd.scripts`** (`python -m parrot.sdd.scripts.ensure_worktree`, `reserve_ids`, …; `close_task.sh` logic ported or wrapped) and the installed markdown references those module paths — the monorepo's `scripts/sdd/` becomes thin wrappers for compatibility. Source of truth: **`.claude/` stays authoritative**, with a build/commit sync into `parrot/sdd/_assets/` and a CI byte-equality check (FEAT-553 `_rules_data` precedent). Spike 5's assumption inventory drives the markdown rewrite list.
+
+**Host wiring** stays with the existing per-host installers (there is no shared adapter for the wikitoolkit entry — `mcp/hosts.py` adapters only reconcile *toolkit* entries). All three `assets.py` get the Windows `Scripts\`/`.exe` branch; `--portable` makes `mcp_json_entry`/`mcp_block`/`wikitoolkit_mcp_entry` emit the bare command, and replaces the bookstore `sys.executable -m …` pin with `bookstore mcp` through the launcher. Known catch to fix: `claude_code/installer.py::_install_mcp_json` (L724–729) force-replaces any differing `wikitoolkit` entry — it must respect a portable entry instead of reverting it to an absolute path.
+
+✅ **Pros:**
+- Owner's constraint holds by construction: project venv first, managed venv only as fallback, re-exec only from the managed venv.
+- Late-binding: a `.venv` created tomorrow is picked up with no re-install; fixes the Gemini global-config cross-repo collision (bare command is repo-independent).
+- Reuses what shipped: FEAT-586 scripts + their CI/tests, marker-block installers, `ToolkitTemplate` forward-compatible headers, `worktree_environment.py` parsing, the `_subagent_data`/`_toolkit_templates` package-data precedent.
+- First real Windows path; portable config becomes *possible* without changing anyone's default.
+
+❌ **Cons:**
+- Re-exec hop in the launch path of globally-invoked commands; Windows stdio forwarding must be proven (spike 2).
+- Auto-migration on version skew makes the managed runtime a *writer* of project stores — backup + locking become mandatory, and a concurrent older-runtime session can meet a migrated store (open question).
+- Depends on compiler-free install of the navigator/Cython chain on macOS and Windows (spike 1; wheel-matrix lane is the hedge).
+- SDD commands may assume monorepo paths (`scripts/sdd/`, `.venv`, `uv run`); markdown-only install does not fix those references by itself (spike 5 is the gate).
+
+📊 **Effort:** Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `uv` (binary) | Python download, venv, installs | pinned, fetched by the bootstrap into `~/.parrot/bin` |
+| stdlib only | launcher | hard requirement (hook latency) |
+| `cibuildwheel` | wheel matrix | already in `release.yml`; matrix must grow (macOS; aarch64) |
+
+🔗 **Existing Code to Reuse:** see §Code Context (all entries re-verified on `dev`).
+
+---

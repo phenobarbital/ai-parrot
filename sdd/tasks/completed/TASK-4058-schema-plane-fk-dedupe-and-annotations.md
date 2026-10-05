@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-628 — Schema-plane producer & annotation fixes
 **Spec**: `sdd/specs/producers-ddl-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -74,4 +74,16 @@ ruff check packages/ai-parrot/src/parrot/knowledge/wiki/schema/ packages/ai-parr
 ```
 
 ## Completion Note
-_(filled on close)_
+Completed 2026-10-05 by agent:sdd-fix (code commit `593126b71`).
+
+- **issue:5ebd43788504**: the reported 4-vs-3 symptom was already reconciled by `bc08b74c3`
+  (composite FK decomposed per column, intended). The named root cause was real anyway: one FK
+  restated inline + table-level + ALTER produced 3 identical entries. `_append_fk` dedupes;
+  the corpus test still yields 4.
+- **issue:7aee524c981c**: writing the AC7 test proved AC7 *broken*, not just untested —
+  `wiki_schema_lookup` read annotations only from `schema.db`, while `wiki_remember` writes to
+  the local wiki plane. Fixed by merging `about` edges from the federated read store
+  (`lookup(annotation_store=)`). The CLI `schema lookup` path is unchanged (spec non-goal).
+- Validation: `pytest packages/ai-parrot/tests/knowledge/wiki/schema/` → 53 passed; ruff + black
+  clean. Wider `tests/knowledge/wiki/` run: the only failures are Postgres live-DB tests and 14
+  MCP-server/hook/installer tests that fail identically on the unmodified base (pre-existing).

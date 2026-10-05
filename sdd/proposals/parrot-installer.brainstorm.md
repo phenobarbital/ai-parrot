@@ -10,7 +10,7 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 
 **Date**: 2026-10-05
 **Author**: Jesus Lara (proposal) + Claude (codebase re-verification on `dev`)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: B′ (Option B of the proposal, revised against the verified codebase and the owner's Round 1/2 decisions)
 **Related**:
 - `sdd/proposals/parrot-installer.proposal.md` — the source proposal this brainstorm re-grounds (verified against `main @ fb9dd935`; this document re-verifies on `dev`, 2026-10-05).
@@ -39,12 +39,12 @@ Who is affected: anyone adopting the SDD flow or the wikitoolkit outside the mon
 
 Owner-confirmed (Rounds 0–2, 2026-10-05):
 
-- **v1 scope is the full stack**: bootstrap + launcher + `parrot self`, SDD install (absorbing FEAT-583), toolkit install metadata, and the CI wheel matrix.
+- **v1 scope is the full stack**: bootstrap + launcher + `parrot self`, SDD asset install (`parrot sdd install`), toolkit install metadata, and the CI wheel matrix.
 - **Extend `scripts/install/install-parrot.{sh,ps1}`** with the uv/managed-global mode — do not create new root-level `install.sh`/`install.ps1`. FEAT-586's CI wiring (`ci.yml` bash -n / pwsh parse / `--dry-run`) and tests (`tests/docs/test_install_*.py`) must keep passing and grow with the new mode.
 - **All three console scripts** (`parrot`, `wikitoolkit`, `bookstore`) enter through the launcher; re-exec happens **only** when running from the managed venv.
 - **Host config default stays baked absolute paths; `--portable` is opt-in** (emits the bare launcher command). Deviation from the proposal's auto-detection.
 - **Three-host parity in v1**: Claude Code, Codex and Google/Gemini all get Windows paths, launcher-aware `--portable` emission, and the bookstore `sys.executable` pin replaced.
-- **Version skew: auto-migrate.** On store schema mismatch the runtime migrates the project store automatically (supersedes the proposal's "never migrate silently"). Safety rails required: pre-migration backup copy and single-writer locking; concurrent sessions on older runtimes are the known risk (see Edge Cases + Open Questions).
+- **Version skew: auto-migrate.** On store schema mismatch the runtime migrates the project store automatically (supersedes the proposal's "never migrate silently"). Safety rails (decided): pre-migration backup copy, single-writer locking, and a **min-runtime gate** stamped in the migrated store so an older runtime fails fast instead of corrupting it.
 - **SDD component is an asset installer, nothing more** (owner decision, revised 2026-10-05, overriding the earlier "absorb FEAT-583" answer): the flow is markdown files — package the `/sdd-*` commands, `sdd-*` agents, hooks, rules and `sdd/templates/` as package data and deploy them with `parrot sdd install [--host …]`. **No `ai-parrot-sdd` satellite, no `sdd` binary, no manifest/symlink machinery.** FEAT-583 (`portable-sdd-flow`, draft, not the owner's spec) is rejected and stamped superseded.
 - **Use the venv that is already there.** A project `.venv` with ai-parrot keeps working untouched; the managed venv is fallback only.
 - **One managed venv**, not per-component isolation (`uvx`-per-server out of scope).
@@ -80,7 +80,7 @@ Extend `install-parrot.sh/ps1` with `--global` (uv + `~/.parrot/venv`), and give
 
 ---
 
-### Option B′: Extended bootstrap + managed venv + run-time launcher + absorbed `ai-parrot-sdd` — *recommended*
+### Option B′: Extended bootstrap + managed venv + run-time launcher + SDD asset installer — *recommended*
 
 Four pieces.
 
@@ -90,7 +90,7 @@ Four pieces.
 
 **3. Lifecycle group `parrot self`** (`self add | update | doctor | env | uninstall`): name is free — `_lazy_commands` has 24 entries and no `self`/`sdd`/`env`/`doctor`; note `parrot status` **is taken** (agentd), so diagnostics live under `self`. `self add <component>` installs the component's pip requirement into the managed venv with the bundled uv and runs its post-install; `--here` targets the project venv explicitly. Toolkit templates gain `# parrot:requires_pip`, `# parrot:post_install`, `# parrot:requires_env` (parser at `toolkit_seed.py:84–98` skips unknown keys silently today, so old runtimes tolerate new headers). `parrot toolkits install` offers `self add` when `dist_available` is false.
 
-**4. SDD component = markdown asset installer.** Package the repo's `.claude/commands/sdd-*.md`, `.claude/agents/sdd-*.md`, the SDD hooks/rules and `sdd/templates/` as package data (e.g. `parrot/sdd/_assets/`, following the `_subagent_data`/`_toolkit_templates` precedent), and add `parrot sdd install [--host claude|codex|google]` (lazy command) that deploys them with the marker-block/merge discipline the wiki installers already use, plus `uninstall`/`status` twins. Since the assets ship inside ai-parrot core, the managed venv has them with no extra install step. Open points: whether the `scripts/sdd/*.py` helpers the commands invoke (`ensure_worktree`, `reserve_ids`, `close_task.sh`, …) ship too and how commands locate them outside the monorepo (spike 5 enumerates every such assumption), and which copy is the source of truth in the monorepo (package data vs `.claude/` + build-time sync, the same pattern FEAT-553 uses for `codebase-conventions.md`).
+**4. SDD component = markdown asset installer.** Package the repo's `.claude/commands/sdd-*.md`, `.claude/agents/sdd-*.md`, the SDD hooks/rules and `sdd/templates/` as package data (e.g. `parrot/sdd/_assets/`, following the `_subagent_data`/`_toolkit_templates` precedent), and add `parrot sdd install [--host claude|codex|google]` (lazy command) that deploys them with the marker-block/merge discipline the wiki installers already use, plus `uninstall`/`status` twins. Since the assets ship inside ai-parrot core, the managed venv has them with no extra install step. Decided (2026-10-05): the invocable `scripts/sdd/*.py` helpers **move into `parrot.sdd.scripts`** (`python -m parrot.sdd.scripts.ensure_worktree`, `reserve_ids`, …; `close_task.sh` logic ported or wrapped) and the installed markdown references those module paths — the monorepo's `scripts/sdd/` becomes thin wrappers for compatibility. Source of truth: **`.claude/` stays authoritative**, with a build/commit sync into `parrot/sdd/_assets/` and a CI byte-equality check (FEAT-553 `_rules_data` precedent). Spike 5's assumption inventory drives the markdown rewrite list.
 
 **Host wiring** stays with the existing per-host installers (there is no shared adapter for the wikitoolkit entry — `mcp/hosts.py` adapters only reconcile *toolkit* entries). All three `assets.py` get the Windows `Scripts\`/`.exe` branch; `--portable` makes `mcp_json_entry`/`mcp_block`/`wikitoolkit_mcp_entry` emit the bare command, and replaces the bookstore `sys.executable -m …` pin with `bookstore mcp` through the launcher. Known catch to fix: `claude_code/installer.py::_install_mcp_json` (L724–729) force-replaces any differing `wikitoolkit` entry — it must respect a portable entry instead of reverting it to an absolute path.
 
@@ -143,7 +143,7 @@ Unchanged from the proposal. Premature unless spike 2 fails on Windows; then it 
 
 ### User-Facing Behavior
 
-- **Install (clean machine):** run `scripts/install/install-parrot.sh --global` (POSIX) / `install-parrot.ps1 -Global` (Windows) — flag naming decided at spec time. Result: `~/.parrot/{bin,venv}`, pinned uv, `parrot`/`wikitoolkit`/`bookstore` on PATH. Existing flags (`--provider`, `--extras`, `--with-wiki`, …) keep working; the project-venv mode is untouched.
+- **Install (clean machine):** fetch via raw GitHub URL + published checksum (`curl -LsSf https://raw.githubusercontent.com/…/scripts/install/install-parrot.sh | sh -s -- --global`; `irm …/install-parrot.ps1` on Windows). Flag: `--global` / `-Global` (decided). Result: `~/.parrot/{bin,venv}` with pinned uv and **Python 3.12** (uv-managed), `parrot`/`wikitoolkit`/`bookstore` on PATH — on Windows the `.ps1` auto-edits the *user* PATH (registry, uv/rustup style) and asks to reopen the terminal. Existing flags (`--provider`, `--extras`, `--with-wiki`, …) keep working; the project-venv mode is untouched.
 - **Wire a repo:** `parrot claude|codex|google install`, `parrot toolkits install scraping --host …` — the existing verbs, now working with no project venv. Default emission: baked absolute paths (today's behavior). `--portable` emits the bare launcher commands (committable, multi-OS, requires the global install on each machine).
 - **Add a component:** `parrot self add scraping` installs the template's `requires_pip` into the managed venv and runs `post_install` (e.g. browser binaries). `--here` targets the project venv. The SDD flow needs no `self add`: its assets ship inside ai-parrot — `parrot sdd install [--host …]` deploys them into the current repo.
 - **Inspect:** `parrot self env` (resolved venv + rule that picked it + versions); `parrot self doctor` (uv, Python, PATH, host configs pointing at missing binaries, `requires_env` gaps).
@@ -159,15 +159,15 @@ Unchanged from the proposal. Premature unless spike 2 fails on Windows; then it 
 4. `ToolkitTemplate` + templates: `requires_pip`, `post_install`, `requires_env` headers; `toolkit_install.py` surfaces "run `parrot self add`" when `dist_available` is false.
 5. Three `assets.py` (claude_code, codex, google) + three bookstore emitters: Windows branch; `--portable` flag threaded through the install CLIs; `_install_mcp_json` reconcile respects portable entries.
 6. `parrot/sdd/` (new in core): packaged markdown assets + `install_sdd_integration(root, hosts)` / `uninstall` / `status` using the marker-block installers as template; `sdd` registered as a lazy `parrot` subcommand. Package-data entry added to `pyproject.toml`.
-7. Store schema: version stamp + auto-migration path with pre-backup and single-writer lock (wiki plane; schema plane already has staleness metadata).
+7. Store schema: version stamp + auto-migration path with pre-backup, single-writer lock and min-runtime gate (wiki plane; schema plane already has staleness metadata).
 8. `release.yml`: core wheel matrix grows macOS (arm64 at minimum — the only runner family left) and linux aarch64; redundancy of the current 4-leg linux build cleaned up opportunistically.
 
 ### Edge Cases & Error Handling
 
-- **Version skew (auto-migrate)**: backup `.parrot/<store>.db` → migrate → single-writer lock during migration; on failure restore backup and fail with both versions named. **Risk**: a concurrent session on an older runtime opening a migrated store — mitigation options in Open Questions.
+- **Version skew (auto-migrate)**: backup `.parrot/<store>.db` → migrate under a single-writer lock → stamp a **minimum runtime version** in the store; on failure restore the backup and fail with both versions named. An older runtime opening a migrated store hits the min-runtime gate and fails fast with a message naming both versions and the fix (`parrot self update` / `self add --here`). Spike 6 validates.
 - **Linked worktree with own `.venv`**: used as found; without one, main checkout's venv (matches `.mcp.json.example` semantics). `self env` makes it visible.
 - **Gemini user-global config**: `--portable` is what makes one `~/.gemini/config/mcp_config.json` valid across repos; with baked paths (default) the current per-repo collision remains and `self doctor` flags it.
-- **Broken project `.venv`** (no interpreter / no script): stderr warning, fall through to next rule.
+- **Broken project `.venv`** (no interpreter / no script): stderr warning, fall through to next rule. A project `.venv` that simply lacks ai-parrot triggers a **once-per-session stderr warning** before falling back to the managed venv (owner decision) — never anything on stdout.
 - **Host starts server from unexpected cwd**: launcher honours `PARROT_PROJECT`; adapters set it where cwd is unreliable (FEAT-556 precedent).
 - **No network on first run**: bootstrap fails before touching PATH; partial `~/.parrot/{bin,venv}` additions rolled back (never deleting pre-existing `~/.parrot` data — it is a live data directory, see Code Context).
 - **User already has uv**: untouched; the pinned copy lives in `~/.parrot/bin`.
@@ -364,7 +364,7 @@ def mcp_block(root, toolkit_block="") -> str      # L95-118, marker-delimited [m
 #     (sdd-autopilot shipped but not loadable)
 #   flows/dev_flow/_subagent_data/: sdd-ideation.md
 #   flows/_rules_data/codebase-conventions.md (read by flows/conventions.py:50-51)
-# SDD assets in-repo (to be packaged by the absorbed FEAT-583): 14 .claude/commands/sdd-*.md,
+# SDD assets in-repo (to be packaged as parrot/sdd/_assets/ package data): 14 .claude/commands/sdd-*.md,
 #   9 .claude/agents/sdd-*.md, 3 .claude/hooks/*, 2 .claude/rules/*, 13 sdd/templates/*,
 #   sdd/WORKFLOW.md, ~29 scripts/sdd/*, .codex/agents/sdd-worker.toml, .agents/skills/ (17)
 ```
@@ -403,17 +403,17 @@ def mcp_block(root, toolkit_block="") -> str      # L95-118, marker-delimited [m
 2. **Windows stdio re-exec**: prototype `launcher.reexec`; `wikitoolkit mcp` through it from Claude Code and Codex on Windows — handshake, no stray stdout bytes, child dies with the pipe, exit code propagates. Fail ⇒ Option D for the launcher only.
 3. **Host cwd/env probe**: dummy stdio server logging cwd / `CLAUDE_PROJECT_DIR` / `VIRTUAL_ENV` to stderr from Claude Code, Codex **and Gemini** (project- and user-scoped config; repo root and linked worktree). Decides whether rule 2 can trust cwd or adapters must set `PARROT_PROJECT`. Include the Gemini **user-global** config case explicitly.
 4. **Launcher overhead**: `wikitoolkit claude-hook` with/without launcher in a non-managed venv (must be noise) and through managed→project re-exec (budget: tens of ms).
-5. **SDD portability** (now scoped by FEAT-583): `parrot self add sdd` + `sdd claude install` prototype into an empty non-Python repo using only the managed venv; run `/sdd-brainstorm` → `/sdd-spec`; list every hard-coded assumption (`.venv`, `uv run`, monorepo paths) in commands/agents — feeds the FEAT-583 "scripts hard cut" module.
-6. **Auto-migration safety** (new, owner chose auto-migrate): prototype backup + single-writer-locked migration on a copy of a real `.parrot/wiki` store; then open it concurrently from an older runtime and record the failure mode. Decides the Open Question on concurrent-session protection.
+5. **SDD portability**: `parrot sdd install` prototype into an empty non-Python repo using only the managed venv; run `/sdd-brainstorm` → `/sdd-spec`; list every hard-coded assumption in the command/agent markdown (`.venv`, `uv run`, monorepo paths, and especially every `scripts/sdd/*.py` / `close_task.sh` invocation) — the inventory drives the `parrot.sdd.scripts` migration and the markdown rewrite list (the shipping decision itself is already made).
+6. **Auto-migration safety** (owner chose auto-migrate + min-runtime gate): prototype backup + single-writer-locked migration + gate stamp on a copy of a real `.parrot/wiki` store; then open it concurrently from an older runtime and confirm it fails fast at the gate (not with store corruption or a raw SQL error).
 
 ---
 
 ## Parallelism Assessment
 
-- **Internal parallelism**: yes, after spikes 1–3. Lane 0 (Windows `Scripts` branch in the three `assets.py` + bookstore pins — needed under every option) can start immediately. Lane 1 (`launcher.py` + script targets + stdlib worktree extraction) is the contract. Lane 2 (bootstrap `--global` + `self` group + `parrot_home()` consolidation) and Lane 3 (template metadata + toolkits integration) need only the home layout. Lane 4 (`ai-parrot-sdd`, FEAT-583 modules 1–6) is the largest and nearly independent. Lane 5 (wheel matrix) is CI-only, starts immediately.
-- **Cross-feature independence**: touches the three `assets.py`, `claude_code/installer.py`, `pyproject.toml [project.scripts]`, `release.yml` — shared with any in-flight wiki-installer or release work; land the script-target change once. Absorbing FEAT-583 removes the one real cross-feature collision.
-- **Recommended isolation**: `mixed` — Lane 1 worktree first (contract), then per-lane worktrees; Lane 4 very likely its own feature-sized worktree.
-- **Rationale**: the launcher is one small module whose interface (`resolve_venv`, home paths) Lanes 2/3 consume; Lane 4 only consumes "the satellite is installable into the managed venv".
+- **Internal parallelism**: yes, after spikes 1–3. Lane 0 (Windows `Scripts` branch in the three `assets.py` + bookstore pins — needed under every option) can start immediately. Lane 1 (`launcher.py` + script targets + stdlib worktree extraction) is the contract. Lane 2 (bootstrap `--global` + `self` group + `parrot_home()` consolidation) and Lane 3 (template metadata + toolkits integration) need only the home layout. Lane 4 (SDD asset packaging + `parrot sdd install`) is independent of the others. Lane 5 (wheel matrix) is CI-only, starts immediately.
+- **Cross-feature independence**: touches the three `assets.py`, `claude_code/installer.py`, `pyproject.toml [project.scripts]`, `release.yml` — shared with any in-flight wiki-installer or release work; land the script-target change once. FEAT-583 being superseded removes the one real cross-feature collision.
+- **Recommended isolation**: `mixed` — Lane 1 worktree first (contract), then per-lane worktrees.
+- **Rationale**: the launcher is one small module whose interface (`resolve_venv`, home paths) Lanes 2/3 consume; Lane 4 only consumes the package-data precedent and the marker-block installers.
 
 ---
 
@@ -424,13 +424,14 @@ def mcp_block(root, toolkit_block="") -> str      # L95-118, marker-delimited [m
 - [x] Launcher scope — *Owner: Jesus*: all three console scripts; re-exec only from the managed venv (Round 1).
 - [x] Committable host config — *Owner: Jesus*: default stays baked absolute paths; `--portable` opt-in (Round 1 — deviates from the proposal's auto-detection).
 - [x] Bootstrap vehicle — *Owner: Jesus*: extend `scripts/install/install-parrot.{sh,ps1}` (FEAT-586) with the uv/global mode; no new root scripts (Round 2).
-- [x] SDD component — *Owner: Jesus*: absorb FEAT-583 into this feature; its draft spec is superseded/merged at `/sdd-spec` time (Round 2).
+- [x] SDD component — *Owner: Jesus*: markdown asset install only — `parrot sdd install` deploying packaged commands/agents/hooks/rules/templates. FEAT-583's satellite-package/`sdd`-binary design is REJECTED (revised 2026-10-05, overriding the earlier Round 2 "absorb" answer); its spec gets stamped superseded.
 - [x] Host parity — *Owner: Jesus*: Claude + Codex + Google/Gemini, full (Windows, `--portable`, bookstore pins) (Round 2).
 - [x] Version-skew policy — *Owner: Jesus*: auto-migrate (Round 2 — supersedes the proposal's "never migrate silently"; backup + lock mandatory).
-- [ ] Auto-migration vs concurrent older-runtime sessions: lock-and-wait, fail the older side with a message, or store-side min-runtime gate? (spike 6 informs) — *Owner: Jesus*
-- [ ] Project venv without ai-parrot: silent fallback to managed, or warn once per session on stderr? (recommendation: warn once) — *Owner: Jesus*
-- [ ] Worktree fallback: keep "worktree `.venv` → main checkout `.venv`", or always prefer the main checkout for wiki-server version stability? (recommendation: keep, `self env` makes it visible) — *Owner: Jesus*
-- [ ] Managed Python: pin 3.12 or newest-with-full-wheel-set? (recommendation: 3.12 — only version with Windows wheels today) — *Owner: Jesus*
-- [ ] `--global` flag naming and PATH strategy on Windows (user PATH registry edit vs shim dir instructions)? — *Owner: Jesus*
-- [ ] FEAT-583 spec disposition mechanics: rewrite `portable-sdd-flow.spec.md` as this feature's SDD module, or stamp it superseded and carry its Codebase Contract into the new spec? — *Owner: Jesus*
-- [ ] Clean-machine distribution of the extended script: raw GitHub URL, `landing/` site, or release asset + checksum? (recommendation: raw GitHub + checksum) — *Owner: Jesus*
+- [x] Auto-migration vs concurrent older-runtime sessions — *Owner: Jesus*: store-side **min-runtime gate** — migration stamps a minimum runtime version in the store; an older runtime opening it fails fast naming both versions and the fix. Spike 6 validates the mechanism (2026-10-05).
+- [x] Project venv without ai-parrot — *Owner: Jesus*: **warn once per session on stderr** ("project .venv lacks <script>; using managed venv"), never on stdout (2026-10-05).
+- [x] Worktree fallback — *Owner: Jesus*: **worktree `.venv` first**, then main checkout's — keeps `.mcp.json.example` semantics; `self env` makes the pick visible (2026-10-05).
+- [x] Managed Python — *Owner: Jesus*: **pin 3.12** (only version with Windows core wheels today); revisited via `parrot self update` when the wheel matrix grows (2026-10-05).
+- [x] Flag naming / Windows PATH — *Owner: Jesus*: flag is `--global` / `-Global`; the `.ps1` **auto-edits the user PATH** (registry, uv/rustup style, never system PATH) and tells the user to reopen the terminal (2026-10-05).
+- [x] `scripts/sdd/*.py` helpers — *Owner: Jesus*: **move the invocable helpers into `parrot.sdd.scripts`** (`python -m parrot.sdd.scripts.ensure_worktree`, …); installed markdown references the module paths; the monorepo's `scripts/sdd/` becomes thin wrappers. Spike 5's inventory drives the rewrite list (2026-10-05).
+- [x] SDD asset source of truth — *Owner: Jesus*: **`.claude/` stays authoritative**; a build/commit step syncs copies into `parrot/sdd/_assets/` with a CI byte-equality check (FEAT-553 `_rules_data` precedent) (2026-10-05).
+- [x] Clean-machine distribution — *Owner: Jesus*: **raw GitHub URL + published checksum** (`curl -LsSf https://raw.githubusercontent.com/…/scripts/install/install-parrot.sh | sh`); no new hosting (2026-10-05).
