@@ -53,8 +53,12 @@ another installed service on this deployment already occupies
 | `GET` | `/agents` | List agents (registry + DB, merged) |
 | `GET` | `/agents/{name}` | Get one agent |
 | `POST` | `/agents` | Create a simple agent |
+| `PATCH` | `/agents/{name}` | Update a Studio agent (database mode) |
+| `PATCH` | `/agents/{name}/visibility`, `/drafts/{name}/visibility`, `/skills/{id}/visibility` | Change visibility (`private`\|`tenant`\|`groups`) |
+| `GET` | `/me` | Resolved scope of the caller |
+| `GET` | `/sharing/groups` | Groups the caller may share with (host-provided; not served by `setup_studio_routes`) |
 | `POST` | `/agents/{name}/reload` | Hot-reload an agent from its current definition |
-| `DELETE` | `/agents/{name}` | Delete a factory-origin agent |
+| `DELETE` | `/agents/{name}` | Delete an agent (database row in database mode; factory-origin file otherwise) |
 | `GET` | `/drafts` | List drafts |
 | `GET` | `/drafts/{name}` | Get one draft (+ source + validation report) |
 | `POST` | `/drafts` | Save + statically validate a draft |
@@ -90,7 +94,7 @@ another installed service on this deployment already occupies
 | `GET` | `/agents/{name}/toolkits/{slug}/me` | Get user's override for a toolkit |
 | `PUT` | `/agents/{name}/toolkits/{slug}/me` | Persist user's override for a toolkit |
 | `DELETE` | `/agents/{name}/toolkits/{slug}/me` | Remove user's override for a toolkit |
-| `GET` | `/catalog/{kind}` | Reference catalog (`base-classes`\|`llm-clients`\|`tools`\|`vector-stores`) |
+| `GET` | `/catalog/{kind}` | Reference catalog (`base-classes`\|`llm-clients`\|`tools`\|`vector-stores`); `llm-clients` rows carry `models`/`deprecated_models`, `base-classes` rows carry `allowed`, `tools` is filtered per tenant |
 | `POST` | `/assistant` | Converse with the AgentStudio meta-agent |
 | `DELETE` | `/assistant` | End the assistant's session instance |
 
@@ -165,6 +169,23 @@ merged, DB-origin taking precedence on name collision).
 
 Single-agent form of the above. `404 not_found` if absent.
 
+**Studio item keys (database mode).** Besides the keys above, every Studio
+item carries the flat, non-sensitive keys `llm`, `description` and `category`
+(also on list cards, for every viewer). The detail responses (`GET /agents/{name}`,
+`PATCH /agents/{name}` and the visibility `PATCH`) additionally carry
+`definition` **only for a caller who can manage the agent**:
+
+```json
+{ "definition": { "bot_class": "BasicBot", "llm": "anthropic:claude-sonnet-4-5", "description": "...",
+                  "category": "general",
+                  "model_params": { "temperature": 0.2, "max_tokens": null, "top_k": null, "top_p": null },
+                  "system_prompt": "...", "tools": ["..."] } }
+```
+
+A viewer of a shared agent can test it but never reads `system_prompt`,
+`model_params` or `tools`; the list never carries `definition`. `config` and
+`schema_version` are never returned. Legacy (global) items are unchanged.
+
 ### `POST /agents`
 
 Create a simple, non-code-generated agent (`CreateAgentRequest`):
@@ -205,10 +226,11 @@ definition (YAML or `.py` origin) — delegates to
 
 Deletes a **factory-origin** agent whose on-disk YAML lives under
 `AGENTS_DIR` (safety check — refuses to unlink anything else, e.g. a
-bot class's own framework source file). DB-origin agents are delegated
-(`409 delegated` — use `/api/v1/bots` instead). Requires ownership.
+bot class's own framework source file). In database mode the call deletes the
+Studio row (guarded, with the optional `expected_version`) and closes the live
+instance. Requires ownership.
 
-**Errors:** `403` (not owner), `409 delegated`/`no_definition`/`delete_refused`.
+**Errors:** `403` (not owner), `404 not_found`, `409 no_definition`/`delete_refused`.
 
 ---
 
@@ -220,6 +242,10 @@ imported/executed) under `AGENTS_DIR/_drafts/`; it becomes live code
 only via an explicit, separate `activate` call.
 
 ### `POST /drafts`
+
+In database mode a draft is a declarative **bundle** (`{"bundle": {"name": "...", "definition": {...}}}`;
+`name` must equal `bundle.name`), validated and stored without executing anything. The legacy Python form
+(`source`) remains available only where the host gate allows it (otherwise `422 declarative_only`).
 
 ```json
 { "name": "my-generated-agent", "source": "<full python source>" }
@@ -268,7 +294,9 @@ triggers a reload itself.
 
 ### `GET /agents/{name}/files/{kind}`
 
-Lists files under that kind's directory (`{"kind": "...", "files": [...]}`).
+Lists files under that kind's directory
+(`{"kind": "...", "files": [...], "entries": [{"name": "...", "size": 123, "sha256": "..."}]}`);
+`files` stays the sorted list of names and `entries` adds size and digest.
 `kind` ∈ `identity`, `kb`, `skills`.
 
 ### `GET /agents/{name}/files/{kind}/{filename}`
@@ -341,7 +369,7 @@ as the publish payload.
 Imports a shared skill onto a specific agent's own `skills/` directory
 (composes the entry's stored `body` into a valid skill markdown file —
 `source: authored` in frontmatter, never an invalid `shared_catalog`
-value).
+value). The `201` body carries `agent`, `skill`, `file_path`, `reload_required` and `version` (the agent's new version).
 
 ### `POST /skills/resync`
 
@@ -353,7 +381,7 @@ the registry dual-write for every `search_index_stale: true` row.
 ## BYOK — Per-User LLM API Keys
 
 Per-user LLM API keys, AES-GCM encrypted (navigator-session vault — NOT
-Fernet), stored as a session-vault hot copy + a DocumentDB durable copy.
+Fernet), stored as a session-vault hot copy + a durable copy in the configured BYOK store (`BYOK_STORE`: the Postgres store registered at startup, or the legacy document store).
 **Plaintext is never returned** — `GET` only ever shows a masked preview
 (`sk-…1234`, first 3 + last 4 chars).
 
@@ -374,7 +402,7 @@ normalized lowercase. **Response `201`:** `{ "provider": "anthropic", "masked": 
 
 ### `DELETE /keys/{provider}`
 
-Removes both the session-vault and DocumentDB copies.
+Removes both the session-vault and the durable-store copies.
 
 **Consumers**: the [Testing Surface](#testing-surface)'s `test/ask` and
 the [Meta-Agent](#agentstudio-meta-agent-assistant)'s `/assistant`
@@ -400,7 +428,8 @@ When `use_byok` and a stored key exists for the agent's LLM provider
 (derived from its `"provider:model"` configuration string), the test
 client is rebuilt with that key for this call.
 
-**Response `200`:** `{ "agent_name": "...", "query": "...", "response": "...", "metadata": {} }`
+**Response `200`:** `{ "agent_name": "...", "query": "...", "response": "...", "metadata": {}, "byok": false }`
+— `byok` is `true` only when a stored personal key was applied in that ask.
 
 **Errors:** `404 not_found`, `502 query_failed`, `503 unavailable`.
 
@@ -685,14 +714,21 @@ four reuse existing sources of truth — no new registries.
   (`VoiceBot`/`InfoAgent`) that fail to import (missing optional deps)
   degrade to `{"available": false, "lazy": true, "error": "..."}`
   instead of raising. Configurable params kept only when they carry a
-  default or a type annotation.
+  default or a type annotation. Each row carries `allowed` (whether the
+  caller's tenant may instantiate it); host-added classes not exported by
+  `parrot.bots` appear as `{"name", "available": true, "allowed": true, "host": true, "module": null,
+  "docstring": null, "params": {}, "lazy": false}`.
 - **`llm-clients`** — resolves `SUPPORTED_CLIENTS`; lazy-loader entries
   (Bedrock/Nova/Mantle) are called to resolve the real class, with the
   same graceful `available: false` degradation on a missing extra.
-  `default_model` read from `_default_model` when present.
+  `default_model` read from `_default_model` when present. Each available
+  row also carries `models` (active model ids) and `deprecated_models`; a
+  provider without a model enum yields `[]` (free-text fallback in the UI) and
+  never fails the request.
 - **`tools`** — delegates to (and shares the SAME process-wide cache
   as) the existing `GET /api/v1/tools/catalog` endpoint — identical
-  shape, never built twice.
+  shape, never built twice. For a tenant caller the rows are filtered by
+  `TenantToolingPolicy` (see [Host toolkit allow-list](#host-toolkit-allow-list)).
 - **`vector-stores`** — wraps `parrot.stores.supported_stores`
   (`{slug, class_name}` rows).
 
@@ -897,7 +933,7 @@ behaviour without a resolver.
 | `POST /tools/{slug}/execute` | — | — | — | opted-in: `may_author` else 403 `authoring_denied`, then existing PBAC (C13), then the TOOLKITS mandatory scope check for standalone tools (refusal before any side effect, `tool_scope_unavailable`) (C36). A host write tool is refused here with zero writes, because this endpoint has no confirmation channel (fail closed, C36) |
 | `GET /toolkits/{slug}/schema` | — | — | — | no record; `studio_enabled` only |
 | `GET /catalog/{kind}` | — | — | — | global catalogues unchanged; tenant-safe toolkit listing is `agentstudio-host-toolkits` |
-| `GET/POST/DELETE /keys[/{provider}]` | — | — | — | per-user, unchanged; BYOK is out of scope (host may skip via `view_wrapper`) |
+| `GET/POST/DELETE /keys[/{provider}]` | — | — | — | per-user, unchanged (host may skip via `view_wrapper`) |
 | `POST /assistant`, `DELETE /assistant` | — | — | — | not gated by `may_author` (questions allowed); its writing tools are (M10), and they pass `TenantToolingPolicy` when they write tooling. Session, instance and conversational identity partitioned by (tenant, user); DELETE resets only the current partition (C30) |
 
 ### Error codes
@@ -914,7 +950,7 @@ behaviour without a resolver.
 | `groups_required` | 422 | FEAT-605 |
 | `groups_not_allowed` | 422 | FEAT-605 (`allowed_groups` outside the caller's own groups; a tenant admin is not bound to its groups) |
 | `not_manageable` | 403 | FEAT-605 (the record is visible to the caller but the caller may not manage it; same code on every Studio route) |
-| `tooling_not_permitted` | 422 write / 403 execute | TOOLKITS (pass-through) |
+| `tooling_not_permitted` | 422 write / 403 execute | TOOLKITS (pass-through); body carries `details: {"reason", "item"}` |
 | `confirmation_required` | 403 | TOOLKITS (pass-through) |
 | `server_managed` | 422 | TOOLKITS (pass-through) |
 | `tool_scope_unavailable` | 403 | TOOLKITS (pass-through) |
@@ -941,7 +977,7 @@ needs no record and no storage. Without a resolver it returns the default scope 
 `groups` with an empty `allowed_groups` ⇒ 422 `groups_required`; `allowed_groups` outside the caller's own
 groups (unless a tenant admin) ⇒ 422 `groups_not_allowed`; non-private without a tenant ⇒ 422
 `tenant_required`; a visible non-manager ⇒ 403 `not_manageable`; an invisible record ⇒ 404. The three PATCH
-routes are mounted by `setup_studio_routes` (under the same prefix, wrapper and gates as every other route). Single-record GETs return `tenant`, `owner`, `visibility`, `allowed_groups`, `access`
+routes are last-write-wins: `expected_version` is **not** supported on them. The routes are mounted by `setup_studio_routes` (under the same prefix, wrapper and gates as every other route). Single-record GETs return `tenant`, `owner`, `visibility`, `allowed_groups`, `access`
 (`owner | admin | tenant | groups | global`) and `can_manage`.
 
 ### Mounting Studio in a host
@@ -985,3 +1021,27 @@ No release is tenant-ready while only the early subset, toolkit discovery or rou
 tenant-ready release requires: every FEAT-605 task through the docs wave (including the registry-only
 lifecycle and the assistant partition), the storage work (FEAT-621, W0–W4) and the toolkits work (FEAT-622,
 Waves 1–4). Until then keep `studio_enabled=False` for tenants.
+
+---
+
+## Host toolkit allow-list
+
+`TenantToolingPolicy(tenant_toolkits=<callable>)` lets a host restrict which **host** toolkits a tenant may use.
+The callable is **synchronous, with no I/O** (read an in-memory projection of the host settings), receives the
+tenant id and returns either `None` (no restriction beyond the existing rules) or a collection of the enabled
+host-toolkit slugs. It applies to phases `write`, `activate`, `attach` and `execute` — **never `build`**, so a
+stored agent whose toolkit was later disabled still builds. A callable that raises is **fail closed**: nothing is
+enabled for that tenant and the error is logged. `GET /catalog/tools` is filtered by the same check.
+
+| Where | HTTP | `code` | `details` |
+|---|---|---|---|
+| tooling write / attach / draft activation / toolkit PUT / create | 422 | `tooling_not_permitted` | `{"reason": "toolkit_unavailable", "item": "<slug>"}` |
+| `POST /tools/{slug}/execute` | 403 | `tooling_not_permitted` | same |
+| host call-time refusal inside a running agent | tool result `metadata.error_code` | `tooling_not_permitted` / host-defined | host-owned |
+
+## Known limits
+
+- **B3** — standalone tools are not editable on a tenant agent: `StudioAgentPatch` has no `tools` field and
+  `POST /agents/{name}/tools` is not available for a tenant (use the toolkit routes).
+- **B10** — the assistant's response does not list what it wrote (drafts, skills, assets); clients re-read those
+  collections after each turn.

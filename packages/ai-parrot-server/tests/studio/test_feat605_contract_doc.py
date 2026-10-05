@@ -88,3 +88,15 @@ def test_changelog_lists_the_plain_host_behaviour_changes():
     for needle in ("name_taken", "not_manageable", "PATCH /astudio/agents/{name}/visibility", "`version`",
                    "required migration level is 8"):
         assert needle in unreleased, needle
+
+
+@pytest.mark.parametrize("fragment", ["definition", "deprecated_models", "tenant_toolkits", "toolkit_unavailable",
+                                      "entries", "byok", "last-write-wins", "/sharing/groups",
+                                      "Known limits", "B3", "B10"])
+def test_doc_mentions_new_fields(fragment):
+    assert fragment in _text(), fragment
+
+
+@pytest.mark.parametrize("stale", ["DocumentDB", "409 delegated", "BYOK is out of scope"])
+def test_doc_drops_stale_statements(stale):
+    assert stale not in _text(), stale
