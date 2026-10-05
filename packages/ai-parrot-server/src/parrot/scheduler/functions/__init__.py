@@ -138,8 +138,7 @@ class SendEmailReportCallback(BaseSchedulerCallback):
             from weasyprint import HTML
         except ImportError as exc:
             raise ImportError(
-                "PDF generation requires weasyprint. "
-                "Install with: uv pip install 'ai-parrot[pdf]'"
+                "PDF generation requires weasyprint. " "Install with: uv pip install 'ai-parrot[pdf]'"
             ) from exc
         html_body = f"<html><body><pre>{markdown}</pre></body></html>"
         fd, filename = tempfile.mkstemp(suffix=".pdf", prefix=f"{schedule_id}_")
