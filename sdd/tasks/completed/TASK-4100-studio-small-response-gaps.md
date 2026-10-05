@@ -232,3 +232,8 @@ Tests use a REAL aiohttp app (`aiohttp_client`) with the real Studio routes and 
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+
+## Completion Note
+
+Implemented by seat codex and merged by the orchestrator (chunk 1). Task tests pass (test_toolkit_allowlist_routes, test_shapes_db_mode, test_testing_db_mode: exit 0).
