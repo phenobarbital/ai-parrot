@@ -3,6 +3,7 @@
 The host toolkits are the ``tp_*`` probe entries of ``_host_probe`` (``tp_probe`` is enabled for tenant ``acme``,
 ``tp_tenant`` is not). Postgres via ``TEST_STUDIO_PG_DSN``.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -51,7 +52,7 @@ async def test_catalog_tools_filtered_for_t1(aiohttp_client, pool, host_plugins)
     assert not any(s.startswith("tp_") and s != ENABLED for s in acme)
     resp = await client.get(f"{BASE}/catalog/tools", headers=who("u9", "globex"))
     other = slugs(await resp.json())
-    assert {ENABLED, DISABLED} <= other            # a tenant whose callback returns None is unrestricted
+    assert {ENABLED, DISABLED} <= other  # a tenant whose callback returns None is unrestricted
 
 
 async def test_put_toolkit_disabled_is_422_with_details(aiohttp_client, pool, host_plugins):  # noqa: F811
@@ -84,8 +85,8 @@ async def test_draft_save_and_activation_422_with_details(aiohttp_client, pool, 
     app = _app(pool, _policy({ENABLED, DISABLED}))
     client = await aiohttp_client(app)
     extra = {"toolkits": [{"slug": DISABLED}]}
-    assert (await save(client, "ok", who("u1"), bundle_extra=extra))[0].status == 201      # enabled at save time
-    app[tooling_policy._POLICY_KEY] = _policy()          # the programme disabled it since the save (re-register)
+    assert (await save(client, "ok", who("u1"), bundle_extra=extra))[0].status == 201  # enabled at save time
+    app[tooling_policy._POLICY_KEY] = _policy()  # the programme disabled it since the save (re-register)
     resp, body = await activate(client, "ok", who("u1"))
     assert resp.status == 422 and body["code"] == "tooling_not_permitted", body
     assert body["details"] == EXPECTED
@@ -97,8 +98,7 @@ async def test_draft_save_and_activation_422_with_details(aiohttp_client, pool, 
 
 async def test_execute_disabled_toolkit_is_403_same_shape(aiohttp_client, pool, host_plugins):  # noqa: F811
     client = await aiohttp_client(_app(pool))
-    resp = await client.post(f"{BASE}/tools/tp_tenant_tool/execute", json={"args": {"value": "x"}},
-                             headers=who("u1"))
+    resp = await client.post(f"{BASE}/tools/tp_tenant_tool/execute", json={"args": {"value": "x"}}, headers=who("u1"))
     body = await resp.json()
     assert resp.status == 403 and body["code"] == "tooling_not_permitted", body
     assert body["details"] == {"reason": "toolkit_unavailable", "item": "tp_tenant_tool"}

@@ -1,4 +1,5 @@
 """Host-owned tenant tooling policy (FEAT-622 M7, review R1). Pure and synchronous: no I/O."""
+
 from __future__ import annotations
 
 import logging
@@ -22,14 +23,30 @@ logger = logging.getLogger(__name__)
 
 TenantMCPTransport = Literal["http", "sse", "streamable-http"]
 ToolingRefusal = Literal[
-    "local_execution", "transport_not_permitted", "endpoint_not_allowed", "mcp_server_unknown",
-    "field_not_permitted", "secret_ref_not_permitted", "builtin_not_permitted", "toolkit_unavailable",
+    "local_execution",
+    "transport_not_permitted",
+    "endpoint_not_allowed",
+    "mcp_server_unknown",
+    "field_not_permitted",
+    "secret_ref_not_permitted",
+    "builtin_not_permitted",
+    "toolkit_unavailable",
 ]
 _POLICY_KEY = "parrot.tenant_tooling_policy"
-_TENANT_MCP_FIELDS = frozenset({
-    "name", "url", "transport", "description", "allowed_tools", "blocked_tools",
-    "auth_type", "headers", "auth_config", "timeout",
-})
+_TENANT_MCP_FIELDS = frozenset(
+    {
+        "name",
+        "url",
+        "transport",
+        "description",
+        "allowed_tools",
+        "blocked_tools",
+        "auth_type",
+        "headers",
+        "auth_config",
+        "timeout",
+    }
+)
 _LOCAL_FIELDS = ("command", "args", "env", "socket_path")
 _SECRET_BLOCKED_PHASES = frozenset({"write", "activate", "attach"})
 
@@ -165,9 +182,7 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         self._check_endpoint(config)
         return dict(config)
 
-    def check_tooling(
-        self, tooling: NormalizedTooling, *, subject: ToolingSubject, owner: str | None = None
-    ) -> None:
+    def check_tooling(self, tooling: NormalizedTooling, *, subject: ToolingSubject, owner: str | None = None) -> None:
         """Check every tool, toolkit and MCP spec of ``tooling`` (and secret references by phase)."""
         for tool in tooling.tools:
             slug = tool if isinstance(tool, str) else getattr(tool, "name", None)

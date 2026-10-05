@@ -34,8 +34,12 @@ class _StudioSkillsImportDbMixin:
         if agent is None and part.tenant is None:
             return await self._legacy_post()  # not a Studio agent: the registry/filesystem path
         denied = await self._check_record_access(
-            await self._access(), _store_record("agent", agent.agent_id, agent) if agent else None, "agent",
-            agent_name, manage=True)
+            await self._access(),
+            _store_record("agent", agent.agent_id, agent) if agent else None,
+            "agent",
+            agent_name,
+            manage=True,
+        )
         if denied is not None:
             return denied
         skill, denied = await self._db_skill(storage, part, skill_id, manage=False)
@@ -43,19 +47,29 @@ class _StudioSkillsImportDbMixin:
             return denied
         existing = await storage.services.assets.get(part, agent_name, "skills", f"{skill.name}.md")
         if existing is not None and not bool(payload.get("overwrite", False)):
-            return self._error(f"Skill file '{skill.name}.md' already exists for agent '{agent_name}'; "
-                               "pass overwrite=true to replace.", status=409, code="collision")
+            return self._error(
+                f"Skill file '{skill.name}.md' already exists for agent '{agent_name}'; "
+                "pass overwrite=true to replace.",
+                status=409,
+                code="collision",
+            )
         user = await self._get_user()
         written = await self._studio_write(
             lambda guard: storage.services.skills.import_to_agent(
-                part, skill.skill_id, agent_name, actor=user.user_id, guard=guard),
-            record=agent, reread=lambda: agents.get(part, agent_name),
-            reauthorize=self._reauthorize("agent", agent_name), expected_version=None)
+                part, skill.skill_id, agent_name, actor=user.user_id, guard=guard
+            ),
+            record=agent,
+            reread=lambda: agents.get(part, agent_name),
+            reauthorize=self._reauthorize("agent", agent_name),
+            expected_version=None,
+        )
         if isinstance(written, web.Response):
             return written
-        _record, version = written     # ``import_to_agent`` returns (asset record, the agent's new version)
-        return self.json_response({"agent": agent_name, "skill": skill.name, "file_path": None,
-                                   "reload_required": False, "version": version}, status=201)
+        _record, version = written  # ``import_to_agent`` returns (asset record, the agent's new version)
+        return self.json_response(
+            {"agent": agent_name, "skill": skill.name, "file_path": None, "reload_required": False, "version": version},
+            status=201,
+        )
 
 
 class _StudioSkillsImportLegacyMixin:

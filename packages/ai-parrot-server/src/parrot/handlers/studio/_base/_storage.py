@@ -113,7 +113,7 @@ class _StudioStorageMixin:
         from ..storage.models import StudioStorageUnavailable
 
         storage = self.request.app.get("studio_storage")
-        if storage is None:   # the startup hook did not run → 503 studio_storage_unavailable
+        if storage is None:  # the startup hook did not run → 503 studio_storage_unavailable
             raise StudioStorageUnavailable("studio storage was not resolved at startup")
         return storage
 
@@ -172,7 +172,9 @@ class _StudioStorageMixin:
             return self.json_response(self._json_error(f"Invalid request: {exc}", "validation_error"), status=422)
         for kinds, status, code in table:
             if isinstance(exc, kinds):
-                message = "The name is not available." if code == "name_taken" else (str(exc) or code)   # non-enumerating
+                message = (
+                    "The name is not available." if code == "name_taken" else (str(exc) or code)
+                )  # non-enumerating
                 details = None
                 if isinstance(exc, m.StudioToolingRefused):
                     reason, item = getattr(exc, "reason", None), getattr(exc, "item", None)
@@ -193,8 +195,9 @@ class _StudioStorageMixin:
         try:
             return int(raw)
         except (TypeError, ValueError) as exc:
-            raise StudioValidationError("expected_version must be an integer", code="invalid_expected_version",
-                                        status=400) from exc
+            raise StudioValidationError(
+                "expected_version must be an integer", code="invalid_expected_version", status=400
+            ) from exc
 
     def _refuse_expected_version(self, source: Any) -> web.Response | None:
         """400 ``expected_version_unsupported`` when an unsupported route was sent one; ``None`` otherwise."""

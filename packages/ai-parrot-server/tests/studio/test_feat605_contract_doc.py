@@ -1,4 +1,5 @@
 """FEAT-605 — the API contract doc carries every code, route and mount hook (AC21)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,13 +8,35 @@ import pytest
 
 DOC = Path(__file__).resolve().parents[4] / "docs" / "agent_studio_api.md"
 
-CODES = ["name_taken", "declarative_only", "studio_disabled", "tenant_mismatch", "authoring_denied",
-         "reserved_config_key", "tenant_required", "groups_required", "groups_not_allowed", "not_manageable",
-         "tooling_not_permitted", "confirmation_required", "server_managed", "tool_scope_unavailable"]
+CODES = [
+    "name_taken",
+    "declarative_only",
+    "studio_disabled",
+    "tenant_mismatch",
+    "authoring_denied",
+    "reserved_config_key",
+    "tenant_required",
+    "groups_required",
+    "groups_not_allowed",
+    "not_manageable",
+    "tooling_not_permitted",
+    "confirmation_required",
+    "server_managed",
+    "tool_scope_unavailable",
+]
 
-ROUTES = ["GET /me", "/agents/{name}/visibility", "/drafts/{name}/visibility", "/skills/{id}/visibility",
-          "POST /skills/resync", "POST /tools/{slug}/execute", "POST /drafts/{name}/activate",
-          "PATCH /agents/{name}", "/agents/{name}/reload", "/agents/{name}/files/{kind}"]
+ROUTES = [
+    "GET /me",
+    "/agents/{name}/visibility",
+    "/drafts/{name}/visibility",
+    "/skills/{id}/visibility",
+    "POST /skills/resync",
+    "POST /tools/{slug}/execute",
+    "POST /drafts/{name}/activate",
+    "PATCH /agents/{name}",
+    "/agents/{name}/reload",
+    "/agents/{name}/files/{kind}",
+]
 
 
 def _text() -> str:
@@ -32,8 +55,16 @@ def test_route_rows_documented(route):
 
 def test_mount_hooks_and_me_documented():
     text = _text()
-    for needle in ("setup_studio_routes", "view_wrapper", "studio_routes", "setup_registry_only",
-                   "GET {prefix}/me", "may_administer", "studio_scope", "VisibilityUpdateRequest"):
+    for needle in (
+        "setup_studio_routes",
+        "view_wrapper",
+        "studio_routes",
+        "setup_registry_only",
+        "GET {prefix}/me",
+        "may_administer",
+        "studio_scope",
+        "VisibilityUpdateRequest",
+    ):
         assert needle in text, needle
 
 
@@ -50,7 +81,7 @@ def _contract(spec: str) -> str:
     text = (ROOT / "sdd" / "specs" / f"{spec}.spec.md").read_text(encoding="utf-8")
     start = text.index(HEADING)
     end = text.find("\n## ", start + len(HEADING))
-    return text[start:end if end != -1 else len(text)]
+    return text[start : end if end != -1 else len(text)]
 
 
 def test_cross_spec_contract_identical_in_the_three_specs():
@@ -77,22 +108,45 @@ def test_storage_spec_states_required_eight():
 def test_doc_error_table_has_no_open_question_and_documents_behaviour_changes():
     text = _text()
     assert "open question" not in text.lower()
-    for needle in ("`not_manageable` | 403", "`groups_not_allowed` | 422", "`name_taken` (409) on agents",
-                   "(+ `version` for a Studio agent)", "docs/agentstudio/db-storage.md", "host-toolkits.md"):
+    for needle in (
+        "`not_manageable` | 403",
+        "`groups_not_allowed` | 422",
+        "`name_taken` (409) on agents",
+        "(+ `version` for a Studio agent)",
+        "docs/agentstudio/db-storage.md",
+        "host-toolkits.md",
+    ):
         assert needle in text.replace("`name_taken` (409)\non agents", "`name_taken` (409) on agents"), needle
 
 
 def test_changelog_lists_the_plain_host_behaviour_changes():
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    unreleased = text[text.index("## [Unreleased]"):text.index("\n## [", text.index("## [Unreleased]") + 5)]
-    for needle in ("name_taken", "not_manageable", "PATCH /astudio/agents/{name}/visibility", "`version`",
-                   "required migration level is 8"):
+    unreleased = text[text.index("## [Unreleased]") : text.index("\n## [", text.index("## [Unreleased]") + 5)]
+    for needle in (
+        "name_taken",
+        "not_manageable",
+        "PATCH /astudio/agents/{name}/visibility",
+        "`version`",
+        "required migration level is 8",
+    ):
         assert needle in unreleased, needle
 
 
 # ---- FEAT-634 — UI backend gaps: the doc pins the new fields, the refusal shape and the corrected statements ------
-NEW_FIELDS = ["definition", "deprecated_models", "tenant_toolkits", "toolkit_unavailable", "entries", "byok",
-              "last-write-wins", "`allowed`", "`models`", "`version`", "Host toolkit allow-list", "Known limits"]
+NEW_FIELDS = [
+    "definition",
+    "deprecated_models",
+    "tenant_toolkits",
+    "toolkit_unavailable",
+    "entries",
+    "byok",
+    "last-write-wins",
+    "`allowed`",
+    "`models`",
+    "`version`",
+    "Host toolkit allow-list",
+    "Known limits",
+]
 
 
 @pytest.mark.parametrize("needle", NEW_FIELDS)
@@ -104,7 +158,7 @@ def test_feat634_refusal_shape_documented():
     text = _text()
     assert '{"reason": "toolkit_unavailable", "item": "<slug>"}' in text
     assert "422 | `tooling_not_permitted`" in text and "403 | `tooling_not_permitted`" in text
-    assert "expected_version" in text and "not** support" in text      # visibility: no expected_version
+    assert "expected_version" in text and "not** support" in text  # visibility: no expected_version
 
 
 @pytest.mark.parametrize("stale", ["409 delegated", "DocumentDB", "BYOK is out of scope"])
@@ -114,9 +168,13 @@ def test_feat634_stale_statements_removed(stale):
 
 def test_feat634_missing_rows_added_and_limits_named():
     text = _text()
-    for row in ("| `PATCH` | `/agents/{name}` |", "| `PATCH` | `/agents/{name}/visibility` |",
-                "| `PATCH` | `/drafts/{name}/visibility` |", "| `PATCH` | `/skills/{id}/visibility` |",
-                "| `GET` | `/me` |"):
+    for row in (
+        "| `PATCH` | `/agents/{name}` |",
+        "| `PATCH` | `/agents/{name}/visibility` |",
+        "| `PATCH` | `/drafts/{name}/visibility` |",
+        "| `PATCH` | `/skills/{id}/visibility` |",
+        "| `GET` | `/me` |",
+    ):
         assert row in text, row
-    assert "POST /agents/{name}/tools" in text.split("### Known limits")[1]      # B3
-    assert "does not list what it wrote" in text                                  # B10
+    assert "POST /agents/{name}/tools" in text.split("### Known limits")[1]  # B3
+    assert "does not list what it wrote" in text  # B10

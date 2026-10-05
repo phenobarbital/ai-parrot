@@ -1,4 +1,5 @@
 """M7 unit tests for the tenant tooling policy core (FEAT-622)."""
+
 from uuid import uuid4
 
 import pytest
@@ -126,7 +127,9 @@ def test_policy_refuses_client_secret_refs():
     with pytest.raises(TenantToolingRefused):  # wrong owner
         pol.check_tooling(good, subject=build, owner="other")
     mcp_good = NormalizedTooling(
-        mcp_servers=[_mcp(url="https://mcp.host/api/x", secret_refs={"headers": f"mcp_agent_srv_{ref}"}, vault_owner="u")]
+        mcp_servers=[
+            _mcp(url="https://mcp.host/api/x", secret_refs={"headers": f"mcp_agent_srv_{ref}"}, vault_owner="u")
+        ]
     )
     POLICY.check_tooling(mcp_good, subject=build, owner="u")
     with pytest.raises(TenantToolingRefused):
@@ -211,4 +214,4 @@ class TestTenantToolkits:
         pol = TenantToolingPolicy(tenant_toolkits=lambda t: "TP_PROBE")
         pol.check_tool("tp_probe", subject=self._subject())
         with pytest.raises(TenantToolingRefused):
-            pol.check_tool("tp", subject=self._subject())          # never a substring match
+            pol.check_tool("tp", subject=self._subject())  # never a substring match

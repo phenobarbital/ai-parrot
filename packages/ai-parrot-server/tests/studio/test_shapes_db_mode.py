@@ -9,6 +9,7 @@ Run the pre-existing filesystem-mode suite with::
 
     PARROT_STUDIO_STORAGE=filesystem pytest packages/ai-parrot-server/tests/studio -q
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -39,14 +40,33 @@ PY_SOURCE = (
 ADDED: dict[str, set[str]] = {
     "POST /agents": {"agent_id", "version", "tenant"},
     # FEAT-634 B1: the flat llm/description/category keys (and, on detail for managers, ``definition``)
-    "GET /agents item": {"agent_id", "tenant", "version", "updated_at", "visibility", "allowed_groups",
-                         "llm", "description", "category"},
-    "GET /agents/{name}": {"agent_id", "tenant", "version", "updated_at", "visibility", "allowed_groups",
-                           "llm", "description", "category", "definition"},
+    "GET /agents item": {
+        "agent_id",
+        "tenant",
+        "version",
+        "updated_at",
+        "visibility",
+        "allowed_groups",
+        "llm",
+        "description",
+        "category",
+    },
+    "GET /agents/{name}": {
+        "agent_id",
+        "tenant",
+        "version",
+        "updated_at",
+        "visibility",
+        "allowed_groups",
+        "llm",
+        "description",
+        "category",
+        "definition",
+    },
     "DELETE /agents/{name}": set(),
     "PUT files": {"version", "sha256"},
     "GET files": {"version", "sha256"},
-    "GET files list": {"entries"},          # FEAT-634 B8
+    "GET files list": {"entries"},  # FEAT-634 B8
     "POST /drafts (source)": set(),
     "GET /drafts/{name}": {"kind", "tenant", "visibility", "allowed_groups", "version"},
     "POST /drafts/{name}/activate": set(),
@@ -59,8 +79,9 @@ def _fs_app(pool) -> web.Application:
     """A filesystem-mode app: the pool is present (legacy draft state lives there) but the setting pins ``filesystem``."""
     app = web.Application(middlewares=[_session])
     app["database"] = pool
-    manager = BotManager(enable_database_bots=False, enable_crews=False, enable_registry_bots=True,
-                         enable_swagger_api=False)
+    manager = BotManager(
+        enable_database_bots=False, enable_crews=False, enable_registry_bots=True, enable_swagger_api=False
+    )
     manager.setup_registry_only(app)
     setup_studio_routes(app)
     return app
@@ -78,16 +99,18 @@ async def _call(client, method: str, path: str, **kw) -> tuple[int, Any]:
 async def _exercise(client) -> dict[str, tuple[int, Any]]:
     """Run every scenario once; returns ``label -> (status, json body)``."""
     out: dict[str, tuple[int, Any]] = {}
-    out["POST /agents"] = await _call(client, "post", "/agents", json={"name": "alpha", "bot_class": "BasicBot",
-                                                                     "persist": True})
+    out["POST /agents"] = await _call(
+        client, "post", "/agents", json={"name": "alpha", "bot_class": "BasicBot", "persist": True}
+    )
     out["GET /agents"] = await _call(client, "get", "/agents")
     out["GET /agents/{name}"] = await _call(client, "get", "/agents/alpha")
     base = "/agents/alpha/files/kb"
     out["PUT files"] = await _call(client, "put", f"{base}/notes.md", json={"content": "hello"})
     out["GET files"] = await _call(client, "get", f"{base}/notes.md")
     out["GET files list"] = await _call(client, "get", base)
-    out["POST /drafts (source)"] = await _call(client, "post", "/drafts", json={"name": "shapedraft",
-                                                                              "source": PY_SOURCE})
+    out["POST /drafts (source)"] = await _call(
+        client, "post", "/drafts", json={"name": "shapedraft", "source": PY_SOURCE}
+    )
     out["GET /drafts/{name}"] = await _call(client, "get", "/drafts/shapedraft")
     out["POST /drafts/{name}/activate"] = await _call(client, "post", "/drafts/shapedraft/activate", json={})
     out["GET toolkit-config"] = await _call(client, "get", "/agents/alpha/toolkit-config")

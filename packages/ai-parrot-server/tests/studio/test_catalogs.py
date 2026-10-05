@@ -248,7 +248,7 @@ async def test_base_classes_rows_carry_allowed_and_host_extras(aiohttp_client, p
 async def test_base_classes_host_rows_not_shown_to_global_partition(aiohttp_client, pool):  # noqa: F811
     from .test_agents_db_mode import _app
 
-    app = _app(pool)                                   # no scope resolver: the global partition
+    app = _app(pool)  # no scope resolver: the global partition
     app["studio_class_allowlist"] = {"HostBot"}
     client = await aiohttp_client(app)
     resp = await client.get(f"{BASE}/catalog/base-classes")

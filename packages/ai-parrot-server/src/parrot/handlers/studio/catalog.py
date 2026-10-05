@@ -237,16 +237,14 @@ class StudioCatalogHandler(StudioBaseView):
         return _BASE_CLASSES_CACHE
 
     async def _base_classes_for_caller(self) -> list[dict]:
-        """Cached rows copied with ``allowed`` for the caller's partition, plus host-extra rows (B13).
-
-        """
+        """Cached rows copied with ``allowed`` for the caller's partition, plus host-extra rows (B13)."""
         from .access import StudioTenantRequired
         from .storage.services._common import StudioClassAllowlist
 
         try:
             part = await self._studio_partition()
         except StudioTenantRequired:
-            part = StudioPartition.GLOBAL   # additive: a caller with no tenant keeps getting the catalogue (as before)
+            part = StudioPartition.GLOBAL  # additive: a caller with no tenant keeps getting the catalogue (as before)
         allow = StudioClassAllowlist.from_app(self.request.app)
         cached = await self._get_base_classes()
         rows = [{**row, "allowed": allow.allows(part, row["name"])} for row in cached]
