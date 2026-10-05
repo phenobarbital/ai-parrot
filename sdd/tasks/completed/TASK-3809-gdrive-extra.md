@@ -152,4 +152,4 @@ Standard. Do not run `uv sync` / `uv lock` in the worktree.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by seat glm (nova zai.glm-4.7-flash), 1 attempt, merged clean. Task tests (test_gdrive_extra, test_msgraph_extra) 4 passed. Merge-tier sweep red only from 15 pre-existing, unrelated collection errors (local venv, see memory local-venv-blocks-parrot-imports); not caused by this change.

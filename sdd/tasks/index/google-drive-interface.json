@@ -70,7 +70,7 @@
       "feature_id": "FEAT-608",
       "feature": "google-drive-interface",
       "spec": "sdd/specs/google-drive-interface.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -78,8 +78,9 @@
       "parallelism_notes": "exclusive: edits the dependency manifest packages/ai-parrot/pyproject.toml",
       "assigned_to": null,
       "started_at": "2026-10-05T21:45:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3809-gdrive-extra.md"
+      "completed_at": "2026-10-05T21:50:03+00:00",
+      "file": "sdd/tasks/completed/TASK-3809-gdrive-extra.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3810",
