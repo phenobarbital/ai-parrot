@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from parrot.knowledge.lint import LintOptions, LintRunner
 from parrot.knowledge.lint.routing import FindingRouter
+from parrot.knowledge.wiki.actor import current_actor
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results
 from parrot.knowledge.wiki.decisions.models import ADR_CATEGORY, ADR_MANAGED_PAGE
@@ -393,7 +394,7 @@ class WikiRememberTool(AbstractTool):
                     body=fact,
                     token_count=estimate_tokens(fact),
                     origin="memory",
-                    asserted_by="agent:mcp",
+                    asserted_by=current_actor(),
                 )
             ]
         )
@@ -493,7 +494,7 @@ class WikiNoteTool(AbstractTool):
                     source_id=page.get("source_id"),
                     token_count=estimate_tokens(body),
                     origin=page.get("origin") or "ingest",
-                    asserted_by="agent:mcp",
+                    asserted_by=current_actor(),
                 )
             ]
         )
@@ -802,13 +803,17 @@ class LedgerReadyInput(BaseModel):
 
 class LedgerClaimInput(BaseModel):
     issue_id: str = Field(..., description="Issue ID to claim")
-    actor: str = Field(default="agent:mcp", description="Actor claiming the issue, e.g. agent:sdd-fix")
+    actor: str | None = Field(
+        default=None, description="Actor claiming the issue, e.g. agent:sdd-fix (default: the request actor)"
+    )
 
 
 class LedgerCloseInput(BaseModel):
     issue_id: str = Field(..., description="Issue ID to close")
     reason: str = Field(..., description="Reason for closing")
-    actor: str = Field(default="agent:mcp", description="Actor closing the issue, e.g. agent:sdd-fix")
+    actor: str | None = Field(
+        default=None, description="Actor closing the issue, e.g. agent:sdd-fix (default: the request actor)"
+    )
     resolved_by: str | None = Field(
         default=None, description="Evidence that resolved the issue, e.g. commit:<sha> or task:TASK-<NNN> (FEAT-572 S4)"
     )
@@ -847,7 +852,7 @@ class LedgerOpenTool(AbstractTool):
                 severity=severity,
                 discovered_from=discovered_from,
                 about=about,
-                actor="agent:mcp",
+                actor=current_actor(),
             )
             return ToolResult(result={"issue_id": issue_id})
         except Exception as exc:
@@ -886,9 +891,9 @@ class LedgerClaimTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._ledger_service = ledger_service
 
-    async def _execute(self, issue_id: str, actor: str = "agent:mcp") -> ToolResult:
+    async def _execute(self, issue_id: str, actor: str | None = None) -> ToolResult:
         try:
-            success = await self._ledger_service.claim(issue_id, actor)
+            success = await self._ledger_service.claim(issue_id, actor or current_actor())
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
@@ -906,12 +911,12 @@ class LedgerCloseTool(AbstractTool):
         self._ledger_service = ledger_service
 
     async def _execute(
-        self, issue_id: str, reason: str, resolved_by: str | None = None, actor: str = "agent:mcp"
+        self, issue_id: str, reason: str, resolved_by: str | None = None, actor: str | None = None
     ) -> ToolResult:
         """Close a ledger issue, carrying the evidence reference and actor through."""
         try:
             kwargs = {"resolved_by": resolved_by} if resolved_by is not None else {}
-            success = await self._ledger_service.close_issue(issue_id, reason, actor, **kwargs)
+            success = await self._ledger_service.close_issue(issue_id, reason, actor or current_actor(), **kwargs)
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
