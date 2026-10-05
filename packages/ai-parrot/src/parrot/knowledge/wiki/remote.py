@@ -222,11 +222,7 @@ class RemoteWikiClient:
     async def call_tool_text(self, name: str, arguments: dict[str, Any]) -> str:
         """Call a tool and join the text values in its MCP content envelope."""
         result = await self.call_tool(name, arguments)
-        return "\n".join(
-            content.get("text", "")
-            for content in result.get("content", [])
-            if isinstance(content, dict)
-        )
+        return "\n".join(content.get("text", "") for content in result.get("content", []) if isinstance(content, dict))
 
     async def close(self) -> None:
         """Close the client-owned HTTP session."""

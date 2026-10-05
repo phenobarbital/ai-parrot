@@ -143,9 +143,7 @@ async def test_timeout_and_unreachable(server, monkeypatch):
     assert error.value.code == "timeout"
 
     with pytest.raises(RemoteWikiError) as error:
-        async with RemoteWikiClient(
-            WikiRemoteConfig(url="http://127.0.0.1:1/mcp/w", timeout=1), actor="a"
-        ):
+        async with RemoteWikiClient(WikiRemoteConfig(url="http://127.0.0.1:1/mcp/w", timeout=1), actor="a"):
             pass
     assert error.value.code == "unreachable"
 
