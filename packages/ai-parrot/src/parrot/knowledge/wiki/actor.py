@@ -28,6 +28,11 @@ def current_actor(default: str = DEFAULT_ACTOR) -> str:
     return _ACTOR.get() or default
 
 
+def scoped_actor() -> str | None:
+    """Return the request actor set by :func:`actor_scope`, or ``None`` when no scope is active."""
+    return _ACTOR.get()
+
+
 @contextmanager
 def actor_scope(actor: str | None) -> Iterator[None]:
     """Set the actor for the enclosed block; ``None`` leaves the context untouched.

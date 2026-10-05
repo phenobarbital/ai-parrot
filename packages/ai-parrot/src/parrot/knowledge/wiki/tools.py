@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from parrot.knowledge.lint import LintOptions, LintRunner
 from parrot.knowledge.lint.routing import FindingRouter
-from parrot.knowledge.wiki.actor import current_actor
+from parrot.knowledge.wiki.actor import current_actor, scoped_actor
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results
 from parrot.knowledge.wiki.decisions.models import ADR_CATEGORY, ADR_MANAGED_PAGE
@@ -430,7 +430,7 @@ class WikiRememberTool(AbstractTool):
                 WikiBookkeeper().log_operation(
                     self._storage_dir,
                     "REMEMBER",
-                    f"page_id: {page_id}, title: {resolved_title!r}, " f"category: {category}, by: agent:mcp",
+                    f"page_id: {page_id}, title: {resolved_title!r}, " f"category: {category}, by: {current_actor()}",
                 )
             except OSError as exc:
                 self.logger.warning("Failed to log REMEMBER to wiki audit trail: %s", exc)
@@ -482,7 +482,7 @@ class WikiNoteTool(AbstractTool):
 
         stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d")
         body = str(page.get("body") or "")
-        body += f"\n\n> **Note ({stamp}, agent:mcp):** {text}"
+        body += f"\n\n> **Note ({stamp}, {current_actor()}):** {text}"
 
         await self._store.upsert_pages(
             [
@@ -508,7 +508,7 @@ class WikiNoteTool(AbstractTool):
                 WikiBookkeeper().log_operation(
                     self._storage_dir,
                     "NOTE",
-                    f"page_id: {page['concept_id']}, by: agent:mcp",
+                    f"page_id: {page['concept_id']}, by: {current_actor()}",
                 )
             except OSError as exc:
                 self.logger.warning("Failed to log NOTE to wiki audit trail: %s", exc)
@@ -748,7 +748,7 @@ class VaultIngestTool(AbstractTool):
                 "VAULT_INGEST",
                 f"vault: {vault}, notes: {stats.notes}, tags: {stats.tags}, "
                 f"ingested: {counts.get('written', 0)}, removed: {removed}, "
-                f"by: agent:mcp",
+                f"by: {current_actor()}",
             )
         except OSError as exc:
             self.logger.warning("Failed to log VAULT_INGEST to wiki audit trail: %s", exc)
@@ -895,7 +895,7 @@ class LedgerClaimTool(AbstractTool):
 
     async def _execute(self, issue_id: str, actor: str | None = None) -> ToolResult:
         try:
-            success = await self._ledger_service.claim(issue_id, actor or current_actor())
+            success = await self._ledger_service.claim(issue_id, scoped_actor() or actor or current_actor())
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
@@ -918,7 +918,9 @@ class LedgerCloseTool(AbstractTool):
         """Close a ledger issue, carrying the evidence reference and actor through."""
         try:
             kwargs = {"resolved_by": resolved_by} if resolved_by is not None else {}
-            success = await self._ledger_service.close_issue(issue_id, reason, actor or current_actor(), **kwargs)
+            success = await self._ledger_service.close_issue(
+                issue_id, reason, scoped_actor() or actor or current_actor(), **kwargs
+            )
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
@@ -945,6 +947,7 @@ class LedgerContextTool(AbstractTool):
 
 INGEST_MAX_SLICES = 200
 INGEST_MAX_BYTES = 1_048_576
+_INGEST_LOCK = asyncio.Lock()
 HASHES_MAX_IDS = 2000
 
 
@@ -1052,28 +1055,44 @@ class WikiIngestBatchTool(AbstractTool):
             return self._error("payload too large (max 1 MiB)")
         report = IngestBatchReport()
         try:
-            with wiki_write_lock(
-                self._config.storage_path(self._root), timeout=self._config.sqlite_busy_timeout
-            ) as acquired:
-                if not acquired:
-                    return self._error("busy: wiki writer lock is held by another process")
-                for s in slices:
-                    result = await self._store.replace_source_slice(s.source_id, s.pages, s.edges)
-                    report.pages_written += int(result.get("pages_written", 0))
-                    report.edges_written += int(result.get("edges_written", 0))
-                    count = await self._store.upsert_symbols(s.symbols, source_id=s.source_id)
-                    report.symbols_written += count
-                    if s.symbols and count == 0:
-                        report.symbols_dropped += len(s.symbols)
-                    report.slices_applied += 1
-                    self.logger.info("ingest_batch %s applied %s", batch_id, s.source_id)
-                for sid in deleted_source_ids:
-                    await self._store.replace_source_slice(sid, [], [])
-                    report.slices_deleted += 1
-                    self.logger.info("ingest_batch %s deleted %s", batch_id, sid)
+            # In-process callers queue on an asyncio lock; the cross-process flock
+            # (which polls with time.sleep) is entered/left in a worker thread so
+            # it can never stall the serving event loop.
+            async with _INGEST_LOCK:
+                cm = wiki_write_lock(self._config.storage_path(self._root), timeout=self._config.sqlite_busy_timeout)
+                acquired = await asyncio.to_thread(cm.__enter__)
+                try:
+                    if not acquired:
+                        return self._error("busy: wiki writer lock is held by another process")
+                    await self._apply(slices, deleted_source_ids, batch_id, report)
+                finally:
+                    await asyncio.to_thread(cm.__exit__, None, None, None)
         except WikiStoreBusy as exc:
             return self._error(f"busy: {exc}")
         return ToolResult(result=report.model_dump())
+
+    async def _apply(
+        self,
+        slices: list[SourceSlicePayload],
+        deleted_source_ids: list[str],
+        batch_id: str | None,
+        report: IngestBatchReport,
+    ) -> None:
+        """Write the validated slices and deletions; the caller holds the writer lock."""
+        for s in slices:
+            result = await self._store.replace_source_slice(s.source_id, s.pages, s.edges)
+            report.pages_written += int(result.get("pages_written", 0))
+            report.edges_written += int(result.get("edges_written", 0))
+            count = await self._store.upsert_symbols(s.symbols, source_id=s.source_id)
+            report.symbols_written += count
+            if s.symbols and count == 0:
+                report.symbols_dropped += len(s.symbols)
+            report.slices_applied += 1
+            self.logger.info("ingest_batch %s applied %s", batch_id, s.source_id)
+        for sid in deleted_source_ids:
+            await self._store.replace_source_slice(sid, [], [])
+            report.slices_deleted += 1
+            self.logger.info("ingest_batch %s deleted %s", batch_id, sid)
 
 
 class WikiSyncPushTool(AbstractTool):

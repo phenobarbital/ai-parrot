@@ -189,3 +189,31 @@ def test_sync_push_and_pull_never_open_arango(repo_with_remote, monkeypatch):
     assert result.exit_code == 0, result.output
     push = next(c for c in fake.tool_calls if c["name"] == "wiki_sync_push")["arguments"]
     assert len(push["pages"]) == 3
+
+
+def test_tool_json_error_envelope_raises_typed_error():
+    """An isError envelope surfaces as a RemoteWikiError, not a TypeError."""
+    from parrot.knowledge.wiki.remote import RemoteWikiError
+    from parrot.knowledge.wiki.remote_cli import _tool_json
+
+    with pytest.raises(RemoteWikiError) as info:
+        _tool_json({"isError": True, "content": [{"type": "text", "text": "boom"}]})
+    assert info.value.code == "tool_error" and info.value.exit_code == 2
+
+
+async def test_call_tool_text_raises_on_tool_error(monkeypatch):
+    """Tool-level failures must not look like successful CLI output."""
+    from parrot.knowledge.wiki.project import WikiRemoteConfig
+    from parrot.knowledge.wiki.remote import RemoteWikiClient, RemoteWikiError
+
+    monkeypatch.setenv("WT_TEST_TOKEN", "t")
+    client = RemoteWikiClient(WikiRemoteConfig(url="https://h/mcp/w", token_env="WT_TEST_TOKEN"), actor="human:a")
+
+    async def fake_call(name, arguments):
+        return {"isError": True, "content": [{"type": "text", "text": "Page not found"}]}
+
+    monkeypatch.setattr(client, "call_tool", fake_call)
+    with pytest.raises(RemoteWikiError) as info:
+        await client.call_tool_text("wiki_page", {"page_id": "x"})
+    assert info.value.code == "tool_error" and "Page not found" in info.value.message
+    await client.close()

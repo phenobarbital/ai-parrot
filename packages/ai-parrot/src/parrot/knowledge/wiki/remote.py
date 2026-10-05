@@ -36,7 +36,7 @@ class RemoteWikiError(Exception):
 
     exit_code = 2
 
-    def __init__(self, code: str, message: str, *, url: str, status: int | None = None) -> None:
+    def __init__(self, code: str, message: str, *, url: str = "", status: int | None = None) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
@@ -222,7 +222,10 @@ class RemoteWikiClient:
     async def call_tool_text(self, name: str, arguments: dict[str, Any]) -> str:
         """Call a tool and join the text values in its MCP content envelope."""
         result = await self.call_tool(name, arguments)
-        return "\n".join(content.get("text", "") for content in result.get("content", []) if isinstance(content, dict))
+        text = "\n".join(content.get("text", "") for content in result.get("content", []) if isinstance(content, dict))
+        if result.get("isError"):
+            raise RemoteWikiError("tool_error", text or f"remote tool {name} failed", url=self._remote.url)
+        return text
 
     async def close(self) -> None:
         """Close the client-owned HTTP session."""

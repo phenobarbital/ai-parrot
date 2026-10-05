@@ -27,6 +27,8 @@ from parrot.knowledge.wiki.actor import actor_scope
 from parrot.knowledge.wiki.project import load_effective_config, validate_namespace_name
 
 logger = logging.getLogger(__name__)
+# aiohttp rejects bigger bodies with 413; sized above the 1 MiB ingest payload plus envelope.
+_MAX_REQUEST_BYTES = 4 * 1024 * 1024
 ACTOR_RE = re.compile(r"^(human|agent|service):[\w.@-]{1,64}$")
 INSTALL_HINT = "wikitoolkit serve needs the ai-parrot-server package: pip install 'ai-parrot[wikitoolkit-server]'"
 
@@ -58,7 +60,7 @@ class WikiServerConfig(BaseModel):
     @field_validator("default_actor")
     @classmethod
     def _actor_shape(cls, value: str) -> str:
-        if not ACTOR_RE.match(value):
+        if not ACTOR_RE.fullmatch(value):
             raise ValueError(f"default_actor must match {ACTOR_RE.pattern}")
         return value
 
@@ -86,7 +88,7 @@ async def actor_middleware(request: web.Request, handler: Any) -> web.StreamResp
     """Bind `X-Wiki-Actor` (or the configured default) to the request context; malformed -> 400."""
     raw = request.headers.get("X-Wiki-Actor")
     actor = raw if raw else request.app["wiki_default_actor"]
-    if not ACTOR_RE.match(actor):
+    if not ACTOR_RE.fullmatch(actor):
         return web.json_response({"error": "invalid X-Wiki-Actor"}, status=400)
     request["wiki_actor"] = actor
     with actor_scope(actor):
@@ -138,7 +140,7 @@ async def build_server_app(config: WikiServerConfig) -> web.Application:
             raise click.ClickException(f"wiki {name!r}: backend must be arangodb (got {effective_config.backend})")
         entries[name] = (entry, effective_config)
 
-    app = web.Application(middlewares=[actor_middleware])
+    app = web.Application(middlewares=[actor_middleware], client_max_size=_MAX_REQUEST_BYTES)
     app["wiki_default_actor"] = config.default_actor
     app["wiki_servers"] = {}
     base_path = config.base_path.rstrip("/")

@@ -55,3 +55,26 @@ class TestAttribution:
         assert svc.open_issue.call_args.kwargs["actor"] == "human:bob"
         assert svc.claim.call_args.args == ("issue:1", "human:bob")
         assert svc.close_issue.call_args.args == ("issue:1", "done", "human:bob")
+
+
+class TestRequestActorPrecedence:
+    @pytest.mark.asyncio
+    async def test_request_actor_overrides_client_supplied_actor(self):
+        svc = AsyncMock()
+        with actor_scope("human:bob"):
+            await LedgerClaimTool(svc)._execute(issue_id="issue:1", actor="human:spoofed")
+            await LedgerCloseTool(svc)._execute(issue_id="issue:1", reason="r", actor="human:spoofed")
+        assert svc.claim.call_args.args == ("issue:1", "human:bob")
+        assert svc.close_issue.call_args.args[2] == "human:bob"
+
+    @pytest.mark.asyncio
+    async def test_explicit_actor_honoured_without_request_scope(self):
+        svc = AsyncMock()
+        await LedgerClaimTool(svc)._execute(issue_id="issue:1", actor="agent:sdd-fix")
+        assert svc.claim.call_args.args == ("issue:1", "agent:sdd-fix")
+
+    def test_tools_module_has_no_hardcoded_default_actor(self):
+        import parrot.knowledge.wiki.tools as tools_module
+
+        assert '"agent:mcp"' not in open(tools_module.__file__, encoding="utf-8").read()
+        assert "agent:mcp)" not in open(tools_module.__file__, encoding="utf-8").read()

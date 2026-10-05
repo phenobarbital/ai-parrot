@@ -216,6 +216,8 @@ async def push_sources(
         IngestBatchReport,
     )
 
+    # Leave headroom for the JSON-RPC envelope and deleted ids: the server limit applies to the whole request.
+    chunk_budget = INGEST_MAX_BYTES - 8192
     slices = await _collect_slices(store, local_sources)
     hashed_ids = [p.concept_id for s in slices for p in s.pages if p.content_hash]
     remote_hashes: dict[str, str | None] = {}
@@ -239,10 +241,10 @@ async def push_sources(
         if _unchanged(s):
             continue
         size = _slice_size(s)
-        if size > INGEST_MAX_BYTES:
+        if size > chunk_budget:
             report.rejected.append(s.source_id)
             continue
-        if current and (len(current) >= INGEST_MAX_SLICES or current_bytes + size > INGEST_MAX_BYTES):
+        if current and (len(current) >= INGEST_MAX_SLICES or current_bytes + size > chunk_budget):
             chunks.append(current)
             current, current_bytes = [], 0
         current.append(s)
