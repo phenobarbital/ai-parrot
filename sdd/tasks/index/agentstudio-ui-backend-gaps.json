@@ -54,7 +54,7 @@
       "feature_id": "FEAT-634",
       "feature": "agentstudio-ui-backend-gaps",
       "spec": "sdd/specs/agentstudio-ui-backend-gaps.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -62,8 +62,9 @@
       "parallelism_notes": "independent: edits only parrot/tools/tooling_policy.py and its unit test; ai-parrot core package, no other task touches either.",
       "assigned_to": null,
       "started_at": "2026-10-05T21:49:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4098-tooling-policy-tenant-toolkits-seam.md"
+      "completed_at": "2026-10-05T21:52:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4098-tooling-policy-tenant-toolkits-seam.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4099",
