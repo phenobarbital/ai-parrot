@@ -19,8 +19,9 @@ class _StudioTestingAskMixin:
 
         ``ctx`` is bound into the request context of the ask (``studio_scope``, FEAT-605 C16).
         """
+        byok_applied = False
         if ask_request.use_byok:
-            await self._maybe_apply_byok(bot)
+            byok_applied = await self._maybe_apply_byok(bot)
 
         try:
             self.request.session = await self._resolve_session()
@@ -39,6 +40,7 @@ class _StudioTestingAskMixin:
                 "query": ask_request.query,
                 "response": content,
                 "metadata": metadata,
+                "byok": byok_applied,
             }
         )
 

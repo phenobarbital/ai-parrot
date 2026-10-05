@@ -342,7 +342,6 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
 
         return self.json_response({"path": filename, "kind": kind, "deleted": True, "reload_required": True})
 
-
     # -- database mode (StudioAssetService) --------------------------------
 
     async def get(self):
@@ -378,7 +377,10 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         if rec is None and part.tenant is None:
             return None, None
         denied = await self._check_record_access(
-            await self._access(), _store_record("agent", rec.agent_id, rec) if rec else None, "agent", name,
+            await self._access(),
+            _store_record("agent", rec.agent_id, rec) if rec else None,
+            "agent",
+            name,
             manage=manage,
         )
         return (None, denied) if denied is not None else (rec, None)
@@ -406,12 +408,27 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         svc = storage.services.assets
         if not filename:
             rows = await svc.list(part, name, kind)
-            return self.json_response({"kind": kind, "files": sorted(r.name for r in rows)})
+            ordered_rows = sorted(rows, key=lambda r: r.name)
+            return self.json_response(
+                {
+                    "kind": kind,
+                    "files": [r.name for r in ordered_rows],
+                    "entries": [{"name": r.name, "size": r.size, "sha256": r.sha256} for r in ordered_rows],
+                }
+            )
         asset = await svc.get(part, name, kind, filename)
         if asset is None:
             return self._error(f"File '{filename}' not found.", status=404, code="not_found")
-        return self.json_response({"path": filename, "kind": kind, "size": asset.size, "content": asset.content,
-                                   "sha256": asset.sha256, "version": rec.version})
+        return self.json_response(
+            {
+                "path": filename,
+                "kind": kind,
+                "size": asset.size,
+                "content": asset.content,
+                "sha256": asset.sha256,
+                "version": rec.version,
+            }
+        )
 
     async def _put_body(self):
         """The JSON body (a dict with ``content``), or an error response."""
@@ -433,20 +450,31 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         body = await self._put_body()
         if isinstance(body, web.Response):
             return body
-        asset = StudioAssetInput(kind=kind, name=filename, content=body["content"],
-                                 content_type=body.get("content_type") or "text/markdown")
+        asset = StudioAssetInput(
+            kind=kind, name=filename, content=body["content"], content_type=body.get("content_type") or "text/markdown"
+        )
         user = await self._get_user()
         agents, assets = storage.services.agents, storage.services.assets
         written = await self._studio_write(
             lambda guard: assets.put(part, name, asset, actor=user.user_id, guard=guard),
-            record=rec, reread=lambda: agents.get(part, name), reauthorize=self._reauthorize("agent", name),
+            record=rec,
+            reread=lambda: agents.get(part, name),
+            reauthorize=self._reauthorize("agent", name),
             expected_version=self._expected_version(body),
         )
         if isinstance(written, web.Response):
             return written
         record, version = written
-        return self.json_response({"path": filename, "kind": kind, "size": record.size, "reload_required": False,
-                                   "version": version, "sha256": record.sha256})
+        return self.json_response(
+            {
+                "path": filename,
+                "kind": kind,
+                "size": record.size,
+                "reload_required": False,
+                "version": version,
+                "sha256": record.sha256,
+            }
+        )
 
     async def _db_delete(self, storage, part):
         """Delete one asset through ``StudioAssetService.delete`` under the version guard."""
@@ -458,7 +486,9 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         agents, assets = storage.services.agents, storage.services.assets
         deleted = await self._studio_write(
             lambda guard: assets.delete(part, name, kind, filename, actor=user.user_id, guard=guard),
-            record=rec, reread=lambda: agents.get(part, name), reauthorize=self._reauthorize("agent", name),
+            record=rec,
+            reread=lambda: agents.get(part, name),
+            reauthorize=self._reauthorize("agent", name),
             expected_version=self._expected_version(self.request.query),
         )
         if isinstance(deleted, web.Response):
@@ -466,5 +496,6 @@ class StudioFilesHandler(_StudioFilesMixin, StudioBaseView):
         existed, version = deleted
         if not existed:
             return self._error(f"File '{filename}' not found.", status=404, code="not_found")
-        return self.json_response({"path": filename, "kind": kind, "deleted": True, "reload_required": False,
-                                   "version": version})
+        return self.json_response(
+            {"path": filename, "kind": kind, "deleted": True, "reload_required": False, "version": version}
+        )
