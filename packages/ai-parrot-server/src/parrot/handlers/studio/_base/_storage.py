@@ -113,7 +113,7 @@ class _StudioStorageMixin:
         from ..storage.models import StudioStorageUnavailable
 
         storage = self.request.app.get("studio_storage")
-        if storage is None:   # the startup hook did not run → 503 studio_storage_unavailable
+        if storage is None:  # the startup hook did not run → 503 studio_storage_unavailable
             raise StudioStorageUnavailable("studio storage was not resolved at startup")
         return storage
 
@@ -172,8 +172,13 @@ class _StudioStorageMixin:
             return self.json_response(self._json_error(f"Invalid request: {exc}", "validation_error"), status=422)
         for kinds, status, code in table:
             if isinstance(exc, kinds):
-                message = "The name is not available." if code == "name_taken" else (str(exc) or code)   # non-enumerating
-                return self.json_response(self._json_error(message, code), status=status)
+                message = (
+                    "The name is not available." if code == "name_taken" else (str(exc) or code)
+                )  # non-enumerating
+                details = None
+                if isinstance(exc, m.StudioToolingRefused) and hasattr(exc, "reason") and hasattr(exc, "item"):
+                    details = {"reason": exc.reason, "item": exc.item}
+                return self.json_response(self._json_error(message, code, details), status=status)
         self.logger.error("Studio: unexpected storage error: %r", exc, exc_info=exc)
         return self.json_response(self._json_error("Internal server error.", "internal_error"), status=500)
 
@@ -188,8 +193,9 @@ class _StudioStorageMixin:
         try:
             return int(raw)
         except (TypeError, ValueError) as exc:
-            raise StudioValidationError("expected_version must be an integer", code="invalid_expected_version",
-                                        status=400) from exc
+            raise StudioValidationError(
+                "expected_version must be an integer", code="invalid_expected_version", status=400
+            ) from exc
 
     def _refuse_expected_version(self, source: Any) -> web.Response | None:
         """400 ``expected_version_unsupported`` when an unsupported route was sent one; ``None`` otherwise."""
