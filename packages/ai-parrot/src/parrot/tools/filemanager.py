@@ -181,7 +181,9 @@ class FileManagerTool(AbstractTool):
     """
 
     name: str = "file_manager"
-    description: str = "Manage files across different storage backends (local, S3, GCS, SharePoint, OneDrive, Google Drive, temp)"
+    description: str = (
+        "Manage files across different storage backends (local, S3, GCS, SharePoint, OneDrive, Google Drive, temp)"
+    )
     args_schema: type[AbstractToolArgsSchema] = FileManagerToolArgs
 
     def __init__(
