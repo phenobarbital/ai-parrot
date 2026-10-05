@@ -218,7 +218,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -230,8 +230,9 @@
       "parallelism_notes": "imports abuild_wiki_tools/close_bundle from TASK-3358 (mcp_server.py); build_key_store/actor_middleware from TASK-3360 (serve.py, same file); edits cli.py after TASK-3363 (file overlap). EXCLUSIVE: edits packages/ai-parrot/pyproject.toml (dependency manifest)",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3361-serve-app-and-cli.md"
+      "completed_at": "2026-10-05T23:09:21+00:00",
+      "file": "sdd/tasks/completed/TASK-3361-serve-app-and-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3362",

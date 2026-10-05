@@ -329,3 +329,8 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: gpt-5.6-terra (codex), 1 attempt. serve app + `wikitoolkit serve` CLI + wikitoolkit-server extra; test_serve_app.py 3 passed.
