@@ -23,6 +23,12 @@ tags: [agentstudio, ui, catalogue, tooling-policy, multi-tenant, api-docs]
 `agentstudio-host-toolkits` (FEAT-622) — all merged. This spec is additive on top of them.
 **Dependency**: PR #1567 (`fix/agentstudio-pr1564-review`) is **MERGED** into `dev` (`mergedAt 2026-10-04`) —
 this spec bases on `origin/dev` as is; there is no unmerged dependency.
+**Consumers (other repos, same one-release rollout)** — Aligned 2026-10-05 (cross-repo pass): FieldSync FEAT-673
+(`fieldsync-agentstudio-host`, registers `tenant_toolkits`), FEAT-671 (`fieldsync-agentstudio-scope-settings`, owns the
+in-memory toolkit snapshot the callback reads), FEAT-674 (`fieldsync-agent-toolkits`, call-time refusal);
+navigator-svelte FEAT-675 (4a foundation: error table, `AgentItem`), FEAT-676 (4b agents: B1, B2, B4, B5, B8, B9, B13),
+FEAT-677 (4c assistant: B5 on activation; B10 excluded), FEAT-678 (4d skills/sharing: B6), FEAT-679 (4e keys), FEAT-680
+(4f settings, no parrot dependency). Full table in "Cross-repo alignment" below.
 
 ---
 
@@ -480,7 +486,7 @@ None.
 - [x] B4 hide vs mark — *Resolved by decision 4*: filter (hide); refusal shape fixed in §2.
 - [x] B7 — *Resolved by decision 5/OQ7*: last-write-wins accepted; documented only.
 - [ ] Should viewers (non-managers) of a tenant-shared agent be allowed to read its `system_prompt`? — *Owner: Juan / product.* Recommendation: no (current spec). Non-blocking: flipping it is a one-line change in `_studio_item_for`.
-- [ ] Does FieldSync's settings projection allow a synchronous in-memory read of the programme toolkit list for `tenant_toolkits`? — *Owner: FieldSync HOST spec.* Recommendation: yes, via the already-projected `ProgrammeSettings`; if not, the host precomputes a snapshot refreshed on settings write. Non-blocking for parrot (the seam is a callback).
+- [x] Does FieldSync's settings projection allow a synchronous in-memory read of the programme toolkit list for `tenant_toolkits`? — *Resolved 2026-10-05 (cross-repo pass)*: yes, but not from `ProgrammeSettings` itself (it is read per request through an async DB call). FieldSync FEAT-671 (module 7, `StudioToolkitSnapshot`) keeps a process-local in-memory map `programme → frozenset[str]`, refreshed (a) by the scope resolver on every Studio-plane request — which always runs before any `check_tool` in that request — and (b) by the settings `PUT` in the same process. FEAT-673 registers `tenant_toolkits=snapshot.enabled_for` in `build_tooling_policy()`. A programme never seen by the process returns an empty collection (fail closed), never `None`. The parrot seam is unchanged: sync, no I/O, `None` = unrestricted.
 
 ---
 
@@ -516,8 +522,30 @@ Shared file: `tests/studio/test_catalogs.py` (M2 only), `test_shapes_db_mode.py`
 
 ---
 
+## Cross-repo alignment (2026-10-05)
+
+Aligned 2026-10-05 (cross-repo pass): this section records what was checked against FieldSync FEAT-671..674 and
+navigator-svelte FEAT-675..680. Parrot stays the source of truth for every response shape below; the other specs were
+edited to match. No parrot scope or decision changed.
+
+| Item | Contract (normative) | Consumers |
+|---|---|---|
+| B1 item | flat `llm` (`"provider:model"` or null), `description` (str or null), `category` (str) on every Studio item (list, detail, PATCH, visibility); `definition = {bot_class, llm, description, category, model_params{temperature,max_tokens,top_k,top_p: number or null}, system_prompt, tools: list[str]}` on detail/PATCH/visibility PATCH **only when `can_manage`**; `config`/`schema_version` never exposed. `tools` are slugs; the attached-toolkit params are read through `GET /agents/{name}/toolkit-config` (unchanged). | svelte 4a `AgentItem`, 4b General tab / list cards |
+| B2 llm-clients row | `models: list[str]` (bare model ids, i.e. `LLMFactory.list_models(p)["active"]`) and `deprecated_models: list[str]` are ALWAYS present on available rows; `[]` means "free-text model input" (the UI never treats a missing key as the signal). The saved `llm` is `provider:model`. | svelte 4b model picker |
+| B4 refusal | write/attach/activate → `422 tooling_not_permitted`, `details = {"reason": "toolkit_unavailable", "item": "<slug>"}`; `/tools/{slug}/execute` → `403` same code/details; hook name `tenant_toolkits` (verbatim in FieldSync FEAT-673/674) | FieldSync 673/674, svelte 4a/4b/4c |
+| B5 | `details.reason`/`details.item` on every `_studio_error` path (create, draft save, activation, toolkit PUT) | svelte 4a table, 4b, 4c |
+| B6 | skill import 201 adds `version` | svelte 4d |
+| B8 | files list adds `entries[{name,size,sha256}]` next to `files` | svelte 4b Assets tab |
+| B9 | `byok: bool` on `POST /agents/{name}/test/ask` only (not on the assistant) | svelte 4b (indicator); 4c shows no indicator |
+| B13 | `base-classes` rows add `allowed: bool` (per request) and host rows `{host: true, allowed: true, module: null}`; the UI offers rows with `available && allowed` — a backend-driven flag, not UI narrowing | svelte 4b base-class picker |
+| B10 | EXCLUDED — svelte 4c diffs by re-reading | svelte 4c |
+| B3 / B7 / B11 | EXCLUDED / docs-only / FieldSync-owned | — |
+
+---
+
 ## Revision History
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-05 | Juan Ruffato (with Claude) | Initial draft — B1, B2, B4 + B5, B6, B8, B9, B12, B13; B3, B7, B10, B11 excluded |
+| 0.2 | 2026-10-05 | Juan Ruffato (with Claude) | Aligned 2026-10-05 (cross-repo pass): consumers table, OQ2 resolved (FieldSync `StudioToolkitSnapshot`), B1/B2/B13 contract tables fixed against svelte 4b |
