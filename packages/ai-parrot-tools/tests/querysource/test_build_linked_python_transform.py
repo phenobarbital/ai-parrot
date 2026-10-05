@@ -35,7 +35,9 @@ async def test_registered_transformer_accepted(fake_core_qs, py_registry):
 
 
 async def test_alias_mismatch_rejected(fake_core_qs, py_registry):
-    transformer_registry.register("t636_df", lambda inputs, params: {"result": inputs["df"]}, requires_columns={"df": ["day"]})
+    transformer_registry.register(
+        "t636_df", lambda inputs, params: {"result": inputs["df"]}, requires_columns={"df": ["day"]}
+    )
     toolkit = QuerysourceToolkit(dsn="postgres://fake")
     with pytest.raises(InvalidConditionsError, match="input alias"):
         await toolkit.build_linked_surface(SLUG, COMPONENT, transform={"python": {"transformer": "t636_df"}})
