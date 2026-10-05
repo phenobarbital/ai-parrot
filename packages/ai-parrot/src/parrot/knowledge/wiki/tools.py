@@ -983,6 +983,20 @@ class IngestBatchReport(BaseModel):
     rejected: list[str] = Field(default_factory=list)
 
 
+SYNC_PULL_MAX = 2000
+
+
+class SyncPagesInput(BaseModel):
+    """Authored knowledge crossing the wire (push payload / pull result)."""
+
+    pages: list[WikiPageRecord] = Field(default_factory=list)
+    edges: list[tuple[str, str, str, str]] = Field(default_factory=list)
+    since: str | None = None
+    skip_asserted_by: str | None = None
+    limit: int = Field(default=500, ge=1, le=SYNC_PULL_MAX)
+    cursor: str | None = None
+
+
 class WikiPageHashesTool(AbstractTool):
     """Return stored content hashes for up to 2000 page ids.
 
@@ -1062,9 +1076,113 @@ class WikiIngestBatchTool(AbstractTool):
         return ToolResult(result=report.model_dump())
 
 
+class WikiSyncPushTool(AbstractTool):
+    """Merge remote sync data used by `wikitoolkit sync` in remote mode; not for agents."""
+
+    name = "wiki_sync_push"
+    args_schema = SyncPagesInput
+
+    def __init__(self, store: BaseWikiStore, wiki_name: str):
+        super().__init__()
+        self._store, self._wiki_name = store, wiki_name
+
+    async def _execute(
+        self,
+        pages: list[WikiPageRecord],
+        edges: list[tuple[str, str, str, str]] | None = None,
+        **_unused: Any,
+    ) -> ToolResult:
+        """Merge a client memory slice into the server wiki plane."""
+        import tempfile
+
+        from parrot.knowledge.wiki.file_store import InMemoryWikiStore
+        from parrot.knowledge.wiki.sync import _sync_edges, _sync_records
+
+        pages = [page if isinstance(page, WikiPageRecord) else WikiPageRecord.model_validate(page) for page in pages]
+        with tempfile.TemporaryDirectory() as bundle:
+            mem = InMemoryWikiStore(bundle, wiki_name=self._wiki_name)
+            await mem.upsert_pages(pages)
+            if edges:
+                await mem.add_edges(edges)
+            report, concept_ids = await _sync_records(
+                source=mem,
+                destination=self._store,
+                direction="push",
+                env=self._wiki_name,
+                dry_run=False,
+                skip_asserted_by=None,
+            )
+            await _sync_edges(mem, self._store, concept_ids)
+        return ToolResult(result=report.model_dump())
+
+
+class WikiSyncPullTool(AbstractTool):
+    """Return remote sync data used by `wikitoolkit sync` in remote mode; not for agents."""
+
+    name = "wiki_sync_pull"
+    args_schema = SyncPagesInput
+
+    def __init__(self, store: BaseWikiStore):
+        super().__init__()
+        self._store = store
+
+    async def _execute(
+        self,
+        since: str | None = None,
+        skip_asserted_by: str | None = None,
+        limit: int = 500,
+        cursor: str | None = None,
+        **_unused: Any,
+    ) -> ToolResult:
+        """Return a deterministic page of server-authored memory records."""
+        from parrot.knowledge.wiki.sync import _synced_memory_pages
+
+        limit = max(1, min(limit, SYNC_PULL_MAX))
+        pages = await _synced_memory_pages(self._store)
+        pages = [
+            page
+            for page in pages
+            if (since is None or (page.get("updated_at") or "") > since)
+            and (skip_asserted_by is None or page.get("asserted_by") != skip_asserted_by)
+        ]
+        pages.sort(key=lambda page: (page.get("updated_at") or "", page["concept_id"]))
+        if cursor is not None:
+            cursor_updated_at, _, cursor_concept_id = cursor.partition("|")
+            pages = [
+                page
+                for page in pages
+                if (page.get("updated_at") or "", page["concept_id"])
+                > (cursor_updated_at, cursor_concept_id)
+            ]
+
+        selected = pages[:limit]
+        concept_ids = {page["concept_id"] for page in selected}
+        edges = [
+            (edge["src"], edge["dst"], edge["rel"], "asserted")
+            for edge in await self._store.dump_edges()
+            if edge["src"] in concept_ids or edge["dst"] in concept_ids
+        ]
+        next_cursor = None
+        if len(pages) > limit:
+            last = selected[-1]
+            next_cursor = f"{last.get('updated_at') or ''}|{last['concept_id']}"
+        return ToolResult(
+            result={
+                "pages": [WikiPageRecord.model_validate(page).model_dump(mode="json") for page in selected],
+                "edges": edges,
+                "next_cursor": next_cursor,
+            }
+        )
+
+
 def create_bulk_tools(store: BaseWikiStore, root: Path, config: WikiProjectConfig) -> list[AbstractTool]:
-    """Server-only tools that move data for the CLI (build push delta oracle + slice writer)."""
-    return [WikiPageHashesTool(store), WikiIngestBatchTool(store, root, config)]
+    """Server-only page hash, ingest, and remote sync tools for the CLI."""
+    return [
+        WikiPageHashesTool(store),
+        WikiIngestBatchTool(store, root, config),
+        WikiSyncPushTool(store, config.wiki_name),
+        WikiSyncPullTool(store),
+    ]
 
 
 def create_wiki_tools(
