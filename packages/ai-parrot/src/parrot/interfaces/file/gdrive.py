@@ -427,6 +427,8 @@ class GoogleDriveFileManager(FileManagerInterface):
             return False
 
     def _map_error(self, exc: BaseException, *, path: str) -> BaseException:
+        if isinstance(exc, (FileNotFoundError, FileExistsError, PermissionError, ValueError)):
+            return exc
         status = self._status_code_of(exc)
         if status == 404:
             return FileNotFoundError(path)
@@ -434,6 +436,8 @@ class GoogleDriveFileManager(FileManagerInterface):
             return PermissionError("Google Drive access was denied")
         if status == 409:
             return FileExistsError(path)
+        if isinstance(exc, GoogleDriveFileManagerError):
+            return exc
         return GoogleDriveFileManagerError(str(exc), status_code=status)
 
     async def _retrying(
@@ -1163,6 +1167,10 @@ class GoogleDriveFileManager(FileManagerInterface):
             return "timeout", status
         if isinstance(exc, ValueError) and "path" in str(exc).lower():
             return "invalid_path", status
+        if isinstance(exc, GoogleDriveFileManagerError) and status in {401, 403} and not self._is_rate_limited_403(exc):
+            return "auth", status
+        if isinstance(exc, GoogleDriveFileManagerError) and status == 404:
+            return "not_found", status
         if isinstance(exc, GoogleDriveFileManagerError) and (
             status in {429, 500, 502, 503, 504} or self._is_rate_limited_403(exc)
         ):

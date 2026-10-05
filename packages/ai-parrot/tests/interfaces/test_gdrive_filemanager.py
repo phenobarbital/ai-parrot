@@ -631,3 +631,16 @@ async def test_setup_mounts_guarded_extension_and_413_over_limit(manager):
     assert response.status == 413
     assert str(result.serving_max_bytes) in response.text
     assert not [call for call in drive.drive.calls if call[1] == "download"]
+
+
+@pytest.mark.asyncio
+async def test_missing_path_raises_file_not_found_for_mutations(manager):
+    """Review fix: mutating ops on a missing path surface FileNotFoundError, not a generic error."""
+    result, _drive = manager
+    for call in (
+        lambda: result.rename_file("nope.txt", "other.txt"),
+        lambda: result.get_file_url("nope.txt"),
+        lambda: result.remove_folder("nope"),
+    ):
+        with pytest.raises(FileNotFoundError):
+            await call()

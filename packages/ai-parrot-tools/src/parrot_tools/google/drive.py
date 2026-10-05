@@ -162,7 +162,7 @@ class GoogleDriveToolkit(AbstractToolkit):
             A mapping describing the downloaded local file.
         """
         await self._ensure_open()
-        local_path = self.download_dir / (destination_name or Path(path).name)
+        local_path = self.download_dir / Path(destination_name or path).name
         downloaded = await self._manager.download_file(path, local_path)
         metadata = await self._manager.get_file_metadata(path)
         return {
