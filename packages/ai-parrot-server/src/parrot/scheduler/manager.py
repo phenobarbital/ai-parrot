@@ -729,6 +729,35 @@ class AgentSchedulerManager:
             await self._update_schedule_run(schedule_id, success=False, error=str(e))
             raise
 
+    @staticmethod
+    def _callback_outcome(
+        name: str, response: Any = None, error: Optional[BaseException | str] = None
+    ) -> Dict[str, Any]:
+        """Build one normalized callback delivery outcome."""
+        if error is not None:
+            return {"callback": name, "status": "failed", "error": str(error)}
+
+        status = response.get("status") if isinstance(response, dict) else None
+        status = {"success": "sent", "error": "failed"}.get(status, status)
+        if status not in {"sent", "saved", "partial", "failed"}:
+            status = "failed"
+        response_error = (
+            response.get("error") if isinstance(response, dict) and status in {"failed", "partial"} else None
+        )
+        return {"callback": name, "status": status, "error": response_error}
+
+    @staticmethod
+    def _aggregate_delivery_status(outcomes: List[Dict[str, Any]]) -> Optional[str]:
+        """Reduce delivery outcomes to ``ok``, ``partial``, or ``failed``."""
+        if not outcomes:
+            return None
+        statuses = {outcome.get("status") for outcome in outcomes}
+        if statuses <= {"sent", "saved"}:
+            return "ok"
+        if statuses == {"failed"}:
+            return "failed"
+        return "partial"
+
     async def _handle_job_success(
         self,
         schedule_id: str,
@@ -737,8 +766,9 @@ class AgentSchedulerManager:
         success_callback: Optional[Callable],
         send_result: Optional[Dict[str, Any]],
         callbacks: Optional[List[Dict[str, Any]]] = None,
-    ) -> None:
-        """Execute success callback or fallback notification."""
+    ) -> List[Dict[str, Any]]:
+        """Run success callback, deliveries, and return their outcomes."""
+        outcomes: List[Dict[str, Any]] = []
         if success_callback:
             callback_result = success_callback(result)
             if inspect.isawaitable(callback_result):
@@ -746,11 +776,29 @@ class AgentSchedulerManager:
 
         callback_definitions = list(callbacks or [])
         for definition in callback_definitions:
-            callback = build_scheduler_callback(definition, logger=self.logger)
-            await callback(result, schedule_id=schedule_id, agent_name=agent_name)
+            name = str(definition.get("type") or definition.get("name") or "unknown")
+            try:
+                callback = build_scheduler_callback(definition, logger=self.logger)
+                response = await callback(result, schedule_id=schedule_id, agent_name=agent_name)
+                outcomes.append(self._callback_outcome(name, response))
+            except Exception as exc:  # noqa: BLE001 - isolate each delivery
+                outcomes.append(self._callback_outcome(name, error=exc))
 
         if send_result:
-            await self._send_result_email(schedule_id, agent_name, result, send_result)
+            try:
+                response = await self._send_result_email(schedule_id, agent_name, result, send_result)
+                if response is None:
+                    outcomes.append(
+                        self._callback_outcome(
+                            "send_result", error="send_result not sent (invalid config or no recipients)"
+                        )
+                    )
+                else:
+                    outcomes.append(self._callback_outcome("send_result", response))
+            except Exception as exc:  # noqa: BLE001 - isolate the notification
+                outcomes.append(self._callback_outcome("send_result", error=exc))
+
+        return outcomes
 
     async def _send_result_email(
         self,
@@ -758,11 +806,11 @@ class AgentSchedulerManager:
         agent_name: str,
         result: Any,
         send_result: Dict[str, Any],
-    ) -> None:
+    ) -> Optional[Dict[str, Any]]:
         """Send job result via email using the notification system."""
         if not isinstance(send_result, dict):
             self.logger.warning("send_result configuration for schedule %s is not a dictionary", schedule_id)
-            return
+            return None
 
         recipients = (
             send_result.get("recipients")
@@ -773,7 +821,7 @@ class AgentSchedulerManager:
 
         if not recipients:
             self.logger.warning("send_result for schedule %s is missing recipients", schedule_id)
-            return
+            return None
 
         subject = send_result.get(
             "subject",
@@ -807,7 +855,7 @@ class AgentSchedulerManager:
         extra_kwargs = {key: value for key, value in send_result.items() if key not in reserved_keys}
 
         notifier = _SchedulerNotification(self.logger)
-        await notifier.send_email(
+        return await notifier.send_email(
             message=message,
             recipients=recipients,
             subject=subject,
@@ -846,7 +894,7 @@ class AgentSchedulerManager:
                 )
 
         try:
-            await self._handle_job_success(
+            outcomes = await self._handle_job_success(
                 schedule_id,
                 agent_name,
                 result,
@@ -854,6 +902,17 @@ class AgentSchedulerManager:
                 send_result,
                 callbacks,
             )
+            for outcome in outcomes:
+                if outcome["status"] in ("failed", "partial"):
+                    self.logger.warning(
+                        "Delivery %s for schedule %s: %s (%s)",
+                        outcome["callback"],
+                        schedule_id,
+                        outcome["status"],
+                        outcome.get("error"),
+                    )
+            if persist and outcomes:
+                await self._stamp_delivery_outcome(schedule_id, outcomes)
         except Exception as callback_error:  # pragma: no cover - safety net
             self.logger.error(
                 "Error executing success callback for job %s: %s",
@@ -887,6 +946,33 @@ class AgentSchedulerManager:
     #: (FEAT-467 TASK-2520) — the JSONB column should never grow
     #: unbounded from a single verbose agent response.
     _LAST_RESULT_MAX_CHARS: int = 10_000
+
+    async def _stamp_delivery_outcome(self, schedule_id: str, outcomes: List[Dict[str, Any]]) -> None:
+        """Persist delivery outcomes in schedule metadata without changing run status."""
+        if self._pool is None:
+            self.logger.warning("Cannot stamp delivery outcome for %s: database pool is unavailable", schedule_id)
+            return
+        try:
+            async with await self._pool.acquire() as conn:  # pylint: disable=no-member # noqa
+                AgentSchedule.Meta.connection = conn
+                schedule = await AgentSchedule.get(schedule_id=schedule_id)
+                if not schedule.metadata:
+                    schedule.metadata = {}
+                stored = []
+                for outcome in outcomes:
+                    stored_outcome = dict(outcome)
+                    if stored_outcome.get("error") is not None:
+                        error = str(stored_outcome["error"])
+                        if len(error) > self._LAST_RESULT_MAX_CHARS:
+                            error = error[: self._LAST_RESULT_MAX_CHARS] + "…(truncated)"
+                        stored_outcome["error"] = error
+                    stored.append(stored_outcome)
+                schedule.metadata["last_callbacks"] = stored
+                schedule.metadata["last_delivery_status"] = self._aggregate_delivery_status(outcomes)
+                schedule.metadata["last_delivery_time"] = datetime.now().isoformat()
+                await schedule.update()
+        except Exception as stamp_error:  # pragma: no cover - safety net
+            self.logger.error("Failed to stamp delivery outcome for %s: %s", schedule_id, stamp_error)
 
     async def _update_schedule_run(
         self,
