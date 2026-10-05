@@ -73,7 +73,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -81,8 +81,9 @@
       "parallelism_notes": "graph root: edits ledger/service.py only",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3354-ledger-service-from-dir.md"
+      "completed_at": "2026-10-05T22:29:28+00:00",
+      "file": "sdd/tasks/completed/TASK-3354-ledger-service-from-dir.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3355",
@@ -91,7 +92,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [],
@@ -99,8 +100,9 @@
       "parallelism_notes": "graph root: edits arango_store.py only; unit-tested with a fake AQL layer",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3355-arango-symbol-plane.md"
+      "completed_at": "2026-10-05T22:29:31+00:00",
+      "file": "sdd/tasks/completed/TASK-3355-arango-symbol-plane.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3356",
@@ -109,7 +111,7 @@
       "feature_id": "FEAT-569",
       "feature": "wikitoolkit-http-mcp",
       "spec": "sdd/specs/wikitoolkit-http-mcp.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -119,8 +121,9 @@
       "parallelism_notes": "same file as TASK-3352 (tools.py) — serialized; also relies on the `current_actor` import TASK-3352 adds to tools.py",
       "assigned_to": null,
       "started_at": "2026-09-17T23:14:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-3356-bulk-ingest-tools.md"
+      "completed_at": "2026-10-05T22:29:34+00:00",
+      "file": "sdd/tasks/completed/TASK-3356-bulk-ingest-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-3357",

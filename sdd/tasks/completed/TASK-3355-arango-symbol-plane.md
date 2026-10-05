@@ -335,3 +335,10 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: gpt-5.6-luna (codex), 1 attempt. Review fixes by orchestrator (commits 19a768b80, da6f481db): symbols test asserted collection name in AQL text rather than bind vars; removal now uses _execute; four pre-existing arango tests updated for the new symbols collection/view.
+
+Validation: task tests pass; wider wiki suites show only failures that also fail on plain dev (15 in packages/ai-parrot/tests/knowledge/wiki: hooks/installer/mcp-server subprocess tests).
