@@ -392,7 +392,7 @@ See the `test_delivery_outcomes.py` block in the Implementation Blueprint. It co
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by codex seat via coder_run_chunk; merged by engine, reviewed by orchestrator against spec (diff matches §2). Scheduler tests pass (237 passed). Merge-tier run reported 6 pre-existing errors in packages/ai-parrot-server/tests/studio/test_integration.py (byok.load_master_keys missing), a file not touched by this feature. Delivery metrics/feedback: no corrections needed.
 
 **Completed by**:
 **Date**:

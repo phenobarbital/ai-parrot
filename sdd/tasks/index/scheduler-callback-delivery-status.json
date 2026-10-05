@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-05T23:55:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-05T21:31:48+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-635",
       "feature": "scheduler-callback-delivery-status",
       "spec": "sdd/specs/scheduler-callback-delivery-status.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Touches only scheduler/functions/__init__.py + new test_callback_delivery.py; no symbol shared with TASK-4103.",
       "assigned_to": null,
       "started_at": "2026-10-05T21:23:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4102-callback-delivery-results.md"
+      "completed_at": "2026-10-05T21:31:45+00:00",
+      "file": "sdd/tasks/completed/TASK-4102-callback-delivery-results.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4103",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-635",
       "feature": "scheduler-callback-delivery-status",
       "spec": "sdd/specs/scheduler-callback-delivery-status.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "Touches only scheduler/manager.py + new test_delivery_outcomes.py; consumes the callback 'status' key by convention, imports no TASK-4102 symbol.",
       "assigned_to": null,
       "started_at": "2026-10-05T21:23:52+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4103-manager-delivery-outcomes.md"
+      "completed_at": "2026-10-05T21:31:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4103-manager-delivery-outcomes.md",
+      "verification": "verified"
     }
   ]
 }
