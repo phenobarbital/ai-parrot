@@ -145,9 +145,7 @@ def _tool_json(envelope: dict[str, Any]) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-async def _collect_slices(
-    store: BaseWikiStore, local_sources: dict[str, str]
-) -> list[SourceSlicePayload]:
+async def _collect_slices(store: BaseWikiStore, local_sources: dict[str, str]) -> list[SourceSlicePayload]:
     """Build one payload per ``{stable_source_id: local_source_id}`` entry.
 
     Pages are the local pages stamped with the local source id (the unit
@@ -392,7 +390,9 @@ class _PullStaging:
         self.pages: dict[str, dict[str, Any]] = {}
         self.edges: list[dict[str, str]] = []
 
-    async def list_pages(self, category: str | None = None, limit: int = 100, origin: list[str] | None = None) -> list[dict[str, Any]]:
+    async def list_pages(
+        self, category: str | None = None, limit: int = 100, origin: list[str] | None = None
+    ) -> list[dict[str, Any]]:
         return [p for p in self.pages.values() if origin is None or p.get("origin") in origin][:limit]
 
     async def get_page(self, concept_id: str, include_body: bool = True) -> dict[str, Any] | None:
