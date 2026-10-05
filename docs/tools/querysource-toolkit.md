@@ -68,6 +68,12 @@ Generated tool names use the `qs` prefix (`tool_prefix="qs"`). Nine tools are al
   (`rows: []`, `snapshot_at: null`) that the renderer fills on mount. Pass `snapshot=True` only when viewers
   cannot fetch for themselves (share links, offline export): it then runs the full query and embeds ≤ 500 rows.
   Returns `{a2ui_envelope, artifacts}`. See [A2UI linked surfaces](../outputs/a2ui-linked-surfaces.md).
+
+  The `transform` field supports three forms: inline DSL (`ops`), catalogued renderer modules (`ref`), and
+  server-side python transformers (`python`). When using `transform.python`, specify the registered transformer
+  name, optionally set `input_alias` (defaults to `"source"`), and optionally specify `output` to select which
+  DataFrame from the result. Python transforms are terminal — no further transforms can be chained after them.
+  At build time, if the transformer name is not registered with the server, the tool raises `InvalidConditionsError`.
 - **`qs_build_linked_dashboard`** — (FEAT-610, linked dashboards) Emits ONE linked A2UI dashboard whose data
   sources are **owned by the dashboard**. `sources` maps a key to `{slug, request?, tenant?, refresh?,
   transform?}`; each is fetched once on load and shared by every widget that reads it. Each widget
