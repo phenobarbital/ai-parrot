@@ -1,6 +1,6 @@
 ---
 description: Query or maintain the repository LLM-wiki knowledge graph (wikitoolkit)
-argument-hint: [query <question> | page <id> | related <id> | remember <fact> | note <id> <text> | link <a> <b> | memories | audit | status | build | --wiki [dir]]
+argument-hint: "[query <question> | page <id> | related <id> | remember <fact> | note <id> <text> | link <a> <b> | memories | audit | standup | entity | status | build | --wiki [dir]]"
 allowed-tools: Bash(wikitoolkit:*)
 ---
 
@@ -32,11 +32,17 @@ matching `wikitoolkit` command with Bash:
 - `memories` — run `wikitoolkit memories` and summarise what has
   been saved.
 - `audit` — run `wikitoolkit audit` and summarise recent writes.
+- `standup` — run `wikitoolkit standup`; use --period day|week|month and --language en|es.
+- `entity` — run `wikitoolkit entity add|list|reindex`; reindex foreign planes with --store.
 - `--wiki [dir]` — build a human-readable markdown wiki from the
   graph: run `wikitoolkit export -o <dir>` (default `docs/wiki`) and
   list what was written.
 - no arguments — run `wikitoolkit status` and briefly explain the
   available actions above.
+
+MCP writes (standup, entity) are opt-in and mirror the checked-in command
+text. Run `wikitoolkit standup --no-store --no-file --json` for read-only
+output, or use explicit --store/--path to target a specific wiki plane.
 
 If `wikitoolkit` reports the wiki is not built yet, run
 `wikitoolkit build` first, then retry the requested action.

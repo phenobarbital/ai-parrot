@@ -34,6 +34,7 @@ import asyncio
 import logging
 import re
 import sqlite3
+from collections.abc import Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from itertools import zip_longest
@@ -52,6 +53,7 @@ from parrot.knowledge.wiki.project import (
     resolve_entry_base,
 )
 from parrot.knowledge.wiki.store import (
+    AttrsUnsupportedError,
     BaseWikiStore,
     SQLitePragmaPolicy,
     SQLiteWikiStore,
@@ -972,6 +974,122 @@ class FederatedWikiStore(BaseWikiStore):
         if row is None:
             return None
         return _qualify_row(row, namespace)
+
+    # -- FEAT-627: entity attrs -------------------------------------------
+
+    @property
+    def supports_attrs(self) -> bool:  # type: ignore[override]
+        """Whether any composed plane persists attrs.
+
+        This is only a coarse hint: :meth:`list_by_attrs` still inspects
+        every handle individually, so one unsupported backend cannot hide
+        behind a supporting one.
+        """
+        stores = [self._local, *(handle.store for handle in self.namespaces.values())]
+        return any(getattr(store, "supports_attrs", False) is True for store in stores)
+
+    async def get_attrs(self, concept_id: str) -> dict[str, str]:
+        """Return the attrs of one page, routing a qualified id to its plane.
+
+        Args:
+            concept_id: Page id, qualified (``ns::id``) or local.
+
+        Returns:
+            The attrs mapping; empty for an unknown namespace, an
+            unsupported plane or a plane that failed.
+        """
+        handle, local_id, known = self._route(concept_id)
+        if not known:
+            return {}
+        store = handle.store if handle else self._local
+        try:
+            return dict(await store.get_attrs(local_id))
+        except Exception as exc:  # noqa: BLE001 - a broken namespace is a note
+            self.logger.warning("Namespace %s failed on get_attrs: %s", handle.name if handle else "local", exc)
+            return {}
+
+    async def list_by_attrs(
+        self,
+        filters: Mapping[str, str | Sequence[str]],
+        *,
+        date_key: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """List attr-matching page stubs across every plane that supports attrs.
+
+        Planes without attrs support, or that fail, are skipped and
+        recorded in :attr:`last_skipped`. Foreign rows are qualified
+        (``ns::id``); local rows follow the existing local convention.
+
+        Args:
+            filters: ``{key: value | [values]}`` (ANDed across keys).
+            date_key: Attr key the date bounds apply to.
+            since: Inclusive lower ISO-date bound.
+            until: Inclusive upper ISO-date bound.
+            limit: Maximum merged rows (newest ``updated_at`` first).
+
+        Returns:
+            The merged stubs.
+
+        Raises:
+            ValueError: A date bound was given without ``date_key``.
+        """
+        if (since is not None or until is not None) and not date_key:
+            raise ValueError("since/until require date_key")
+        skips: list[NamespaceSkip] = []
+        _CALL_SKIPS.set(skips)
+        targets: list[tuple[str | None, str, BaseWikiStore]] = []
+        if not isinstance(self._local, _EmptyStore):
+            targets.append((self._local_prefix, self.local_name, self._local))
+        targets += [(handle.name, handle.name, handle.store) for handle in self.namespaces.values()]
+
+        active: list[tuple[str | None, str, BaseWikiStore]] = []
+        for prefix, name, store in targets:
+            if getattr(store, "supports_attrs", False) is True:
+                active.append((prefix, name, store))
+            else:
+                skips.append(NamespaceSkip(name=name, reason="invalid", detail="page attrs not supported"))
+        outcomes = await asyncio.gather(
+            *(
+                store.list_by_attrs(filters, date_key=date_key, since=since, until=until, limit=limit)
+                for _, _, store in active
+            ),
+            return_exceptions=True,
+        )
+        merged: dict[str, dict[str, Any]] = {}
+        for (prefix, name, _store), outcome in zip(active, outcomes):
+            if isinstance(outcome, BaseException):
+                self.logger.warning("Namespace %s failed on list_by_attrs: %s", name, outcome)
+                skips.append(NamespaceSkip(name=name, reason="unreachable", detail=str(outcome)))
+                continue
+            for row in outcome:
+                qualified = _qualify_row(row, prefix)
+                merged.setdefault(_row_id(qualified), qualified)
+        rows = sorted(merged.values(), key=lambda r: _row_id(r))
+        rows.sort(key=lambda r: str(r.get("updated_at") or ""), reverse=True)
+        return rows[: int(limit)]
+
+    async def upsert_attrs(self, concept_id: str, attrs: Mapping[str, str], *, replace: bool = True) -> int:
+        """Write attrs to an existing page of the true local plane only.
+
+        Args:
+            concept_id: Local page id.
+            attrs: Attribute mapping.
+            replace: Replace (``True``) or merge into existing attrs.
+
+        Returns:
+            Rows written.
+
+        Raises:
+            ValueError: ``concept_id`` names a foreign namespace.
+            AttrsUnsupportedError: This store is a namespace-scoped facade
+                (never a valid writer) or the local plane lacks attrs.
+        """
+        if self._qualify_local:
+            raise AttrsUnsupportedError("attrs writes are not allowed through a namespace-scoped store")
+        return await self._local.upsert_attrs(self._assert_local(concept_id), attrs, replace=replace)
 
     async def neighbors(
         self,

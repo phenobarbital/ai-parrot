@@ -214,30 +214,17 @@ class TestWikiSearchResult:
 
 
 class TestWikiLintReport:
-    """Tests for WikiLintReport model."""
+    """WikiLintReport is an alias of the FEAT-625 LintReport (hard cut)."""
+
+    def test_is_lint_report_alias(self):
+        """WikiLintReport resolves to parrot.knowledge.lint.models.LintReport."""
+        from parrot.knowledge.lint.models import LintReport
+
+        assert WikiLintReport is LintReport
 
     def test_defaults(self):
-        """All list fields default to empty; total_issues is 0."""
+        """A fresh report has no findings and no fixes."""
         report = WikiLintReport()
-        assert report.orphan_sources == []
-        assert report.stale_sources == []
-        assert report.uncovered_sources == []
-        assert report.cross_ref_issues == []
-        assert report.total_issues == 0
-
-    def test_total_issues_computed(self):
-        """total_issues is computed from the four issue lists."""
-        report = WikiLintReport(
-            orphan_sources=["s1", "s2"],
-            stale_sources=["s3"],
-            uncovered_sources=["s4"],
-            cross_ref_issues=[{"from": "p1", "to": "p2"}],
-        )
-        assert report.total_issues == 5
-
-    def test_okf_report_accepted(self):
-        """okf_report accepts arbitrary nested dicts."""
-        report = WikiLintReport(
-            okf_report={"orphan_nodes": 3, "missing_types": ["X"]},
-        )
-        assert report.okf_report["orphan_nodes"] == 3
+        assert report.findings == []
+        assert report.fixed == []
+        assert report.counts == {}

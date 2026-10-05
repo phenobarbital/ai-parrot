@@ -2,7 +2,7 @@
 id: F020
 query_id: L008
 type: rpc
-intent: live: ACL of the API user
+intent: "live: ACL of the API user"
 executed_at: 2026-09-30T23:58:00Z
 duration_ms: 0
 parent_id: None

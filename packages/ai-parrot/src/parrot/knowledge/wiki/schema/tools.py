@@ -72,9 +72,13 @@ class WikiSchemaLookupTool(_SchemaTool):
     description = __doc__
     args_schema = SchemaLookupInput
 
+    def __init__(self, service: SchemaPlaneService, annotation_store: Optional[BaseWikiStore] = None) -> None:
+        super().__init__(service)
+        self._annotation_store = annotation_store
+
     async def _execute(self, ref: str) -> ToolResult:
         """Look up one table reference without database introspection."""
-        result = await self._guard(self._service.lookup(ref))
+        result = await self._guard(self._service.lookup(ref, annotation_store=self._annotation_store))
         if isinstance(result.result, list):
             result.status = "ambiguous"
             result.result = {"candidates": result.result}
@@ -131,7 +135,7 @@ def create_schema_tools(
     if service is None or not config.schema_plane.enabled:
         return []
     return [
-        WikiSchemaLookupTool(service),
+        WikiSchemaLookupTool(service, annotation_store=store),
         WikiSchemaSearchTool(service),
         WikiSchemaNeighborsTool(service),
         WikiSchemaSourcesTool(service),

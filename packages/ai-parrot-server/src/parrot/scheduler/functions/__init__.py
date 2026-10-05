@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import tempfile
@@ -58,6 +59,41 @@ class BaseSchedulerCallback(NotificationMixin):
             "result": result,
         }
 
+    def _delivery_result(
+        self,
+        response: Optional[Dict[str, Any]],
+        *,
+        provider: str,
+        attachments: Optional[List[Path]] = None,
+    ) -> Dict[str, Any]:
+        """Turn a ``send_*`` response into a callback result.
+
+        ``NotificationMixin.send_*`` never raises: a provider failure comes back
+        as ``{"status": "error", ...}``. This reports ``"sent"`` only when
+        :meth:`notification_succeeded` confirms the send, and ``"failed"``
+        (with ``error``) otherwise. It never raises.
+
+        Args:
+            response: The dict returned by a ``send_*`` method, or ``None``.
+            provider: Provider label for the result.
+            attachments: Files that were attached, reported as strings.
+
+        Returns:
+            A dict containing delivery status, provider, attachments, response,
+            and error.
+        """
+        sent = self.notification_succeeded(response)
+        error = None
+        if not sent:
+            error = response.get("error") if response and response.get("error") else f"{provider} delivery failed"
+        return {
+            "status": "sent" if sent else "failed",
+            "provider": provider,
+            "attachments": [str(path) for path in attachments or []],
+            "response": response,
+            "error": error,
+        }
+
     async def run(self, result: Any, *, schedule_id: str, agent_name: str, **kwargs) -> Dict[str, Any]:
         raise NotImplementedError
 
@@ -89,7 +125,7 @@ class SendEmailReportCallback(BaseSchedulerCallback):
             attachments=attachments,
             with_attachments=True,
         )
-        return {"status": "sent", "provider": "email", "attachments": [str(p) for p in attachments], "response": response}
+        return self._delivery_result(response, provider="email", attachments=attachments)
 
     def _write_temp_file(self, content: str, *, suffix: str, prefix: str) -> Path:
         fd, filename = tempfile.mkstemp(suffix=suffix, prefix=prefix)
@@ -103,8 +139,7 @@ class SendEmailReportCallback(BaseSchedulerCallback):
             from weasyprint import HTML
         except ImportError as exc:
             raise ImportError(
-                "PDF generation requires weasyprint. "
-                "Install with: uv pip install 'ai-parrot[pdf]'"
+                "PDF generation requires weasyprint. " "Install with: uv pip install 'ai-parrot[pdf]'"
             ) from exc
         html_body = f"<html><body><pre>{markdown}</pre></body></html>"
         fd, filename = tempfile.mkstemp(suffix=".pdf", prefix=f"{schedule_id}_")
@@ -120,7 +155,7 @@ class CreateFileCallback(BaseSchedulerCallback):
     async def run(self, result: Any, *, schedule_id: str, agent_name: str, **kwargs) -> Dict[str, Any]:
         payload = self.process_output(result)
         output_dir = Path(self.config.get("output_dir", tempfile.gettempdir()))
-        output_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
         filename = self.config.get("filename", f"{agent_name}_{schedule_id}.md")
         destination = output_dir / filename
         destination.write_text(payload["markdown"], encoding="utf-8")
@@ -137,7 +172,7 @@ class SaveDataCallback(BaseSchedulerCallback):
         if dataframe is None:
             raise ValueError("saving_data requires result.data or structured tabular output")
         output_dir = Path(self.config.get("output_dir", tempfile.gettempdir()))
-        output_dir.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
         filename = self.config.get("filename", f"{agent_name}_{schedule_id}.csv")
         destination = output_dir / filename
         dataframe.to_csv(destination, index=False)
@@ -151,6 +186,14 @@ class SaveDataCallback(BaseSchedulerCallback):
                 with_attachments=True,
             )
             response["email"] = email_response
+            if self.notification_succeeded(email_response):
+                response["email_status"] = "sent"
+            else:
+                response["email_status"] = "failed"
+                response["status"] = "partial"
+                response["error"] = (
+                    email_response.get("error") if email_response.get("error") else "email delivery failed"
+                )
         return response
 
     def _to_dataframe(self, data: Any) -> Optional[pd.DataFrame]:
@@ -189,7 +232,7 @@ class SendNotifyReportCallback(BaseSchedulerCallback):
             with_attachments=True,
             attachments=attachments,
         )
-        return {"status": "sent", "provider": provider, "attachments": [str(p) for p in attachments], "response": response}
+        return self._delivery_result(response, provider=provider, attachments=attachments)
 
 
 CALLBACK_REGISTRY: Dict[str, Type[BaseSchedulerCallback]] = {

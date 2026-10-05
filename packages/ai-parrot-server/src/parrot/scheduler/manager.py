@@ -8,6 +8,7 @@ allowing agents to execute operations at specified intervals.
 from __future__ import annotations
 import asyncio
 import contextlib
+import hashlib
 import inspect
 import json
 from typing import Any, Dict, Optional, Callable, List, Tuple, Set
@@ -25,7 +26,6 @@ from apscheduler.events import (
     EVENT_SCHEDULER_STARTED,
     JobExecutionEvent,
 )
-from apscheduler.executors.asyncio import AsyncIOExecutor
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.redis import RedisJobStore
@@ -37,6 +37,7 @@ from aiohttp import web
 from aiohttp_cors import CorsViewMixin
 from navconfig.logging import logging
 from asyncdb import AsyncDB
+from asyncdb.exceptions import NoDataFound
 from navigator.connections import PostgresPool
 from parrot.conf import default_dsn, CACHE_HOST, CACHE_PORT
 from .models import AgentSchedule
@@ -53,6 +54,14 @@ from .sanitize import (
 from ..notifications import NotificationMixin
 from ..conf import ENVIRONMENT
 from .functions import build_scheduler_callback
+from . import jobs
+from .coordination import (
+    CoordinatedAsyncIOExecutor,
+    FireCoordinationError,
+    FireCoordinator,
+    NullFireCoordinator,
+    build_fire_coordinator,
+)
 
 # Suppress APScheduler logging noise.
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
@@ -315,6 +324,21 @@ def _resolve_report_schedule(agent_id: str, report_type: str) -> Dict[str, Any]:
     return _parse_weekly_schedule(raw)
 
 
+def schedule_fingerprint(schedule: AgentSchedule) -> str:
+    """Stable hash of fields that determine a schedule's trigger placement."""
+    schedule_type = normalize_schedule_type(schedule.schedule_type)
+    payload = json.dumps(
+        {
+            "schedule_type": schedule_type,
+            "schedule_config": sanitize_schedule_config(schedule_type, schedule.schedule_config),
+            "scheduler_type": normalize_jobstore_alias(schedule.scheduler_type),
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 class _SchedulerNotification(NotificationMixin):
     """Helper to reuse notification mixin capabilities."""
 
@@ -347,12 +371,11 @@ class AgentSchedulerManager:
         self._owns_pool: bool = False
         self._job_context: Dict[str, Dict[str, Any]] = {}
         self._pending_success_tasks: Set[asyncio.Task] = set()
-        # In-memory concurrency guard for run-now (FEAT-467 TASK-2520):
-        # schedule_ids with an active run-now execution in flight. A
-        # second run-now for the same schedule_id while present here is
-        # refused (409) rather than queued/stacked.
-        self._run_now_active: Set[str] = set()
         self.registered_name = kwargs.get("registered_name", self.registered_name)
+        self._fire_coordinator: FireCoordinator = NullFireCoordinator()
+        self._local_callbacks: Dict[str, Callable] = {}
+        self._auto_tasks: Dict[str, Dict[str, Any]] = {}
+        jobs.register_manager(self)
         self.scheduler: Optional[AsyncIOScheduler] = None
 
         # Configure APScheduler with AsyncIO.
@@ -362,7 +385,7 @@ class AgentSchedulerManager:
         # happens at start time via `_build_jobstores()`/`start_headless()`;
         # `self.scheduler` still exists after `__init__` with the always-on
         # 'default' MemoryJobStore, per existing code that touches it.
-        executors = {"default": AsyncIOExecutor()}
+        executors = {"default": CoordinatedAsyncIOExecutor(on_unavailable=self._on_coordination_unavailable)}
         job_defaults = {
             "coalesce": True,  # Combine multiple missed runs into one
             "max_instances": 2,  # Maximum concurrent instances of each job
@@ -454,7 +477,6 @@ class AgentSchedulerManager:
         self.scheduler.add_listener(self.job_added, EVENT_JOB_ADDED)
 
     def scheduler_status(self, event):
-        print(event)
         self.logger.debug("[%s - NAV Scheduler] :: Started.", ENVIRONMENT)
         self.logger.notice(f"[{ENVIRONMENT} - NAV Scheduler] START time is: {datetime.now()}")
 
@@ -481,7 +503,8 @@ class AgentSchedulerManager:
         job_id = event.job_id
         self._job_context.pop(str(job_id), None)
         job = self.scheduler.get_job(job_id)
-        job_name = job.name
+        # FEAT-631: one-shot / already-removed jobs are gone by the time this listener runs.
+        job_name = job.name if job is not None else str(job_id)
         scheduled = event.scheduled_run_time
         stack = event.traceback
         if event.code == EVENT_JOB_MISSED:
@@ -495,13 +518,13 @@ class AgentSchedulerManager:
             message = f"🛑 :: [{ENVIRONMENT} - NAV Scheduler] Job **{job_name}** \
              scheduled at {scheduled!s} failed with Error {event.exception!s}"
             if stack:
-                self.logger.exception(f"[{ENVIRONMENT} - NAV Scheduler] Job {job_name} id: {job_id!s} \
+                self.logger.error(f"[{ENVIRONMENT} - NAV Scheduler] Job {job_name} id: {job_id!s} \
                     StackTrace: {stack!s}")
                 message = f"🛑 :: [{ENVIRONMENT} - NAV Scheduler] Job \
                 **{job_name}**:**{job_id!s}** failed with Exception {event.exception!s}"
             # send a Notification error from Scheduler
         elif event.code == EVENT_JOB_MAX_INSTANCES:
-            self.logger.exception(f"[{ENVIRONMENT} - Scheduler] Job {job_name} could not be submitted \
+            self.logger.error(f"[{ENVIRONMENT} - Scheduler] Job {job_name} could not be submitted \
                 Maximum number of running instances was reached.")
             message = f"⚠️ :: [{ENVIRONMENT} - NAV Scheduler] Job **{job_name}** was \
             missed for scheduled run at {scheduled}"
@@ -583,6 +606,11 @@ class AgentSchedulerManager:
         callbacks = context.get("callbacks", job_kwargs.get("callbacks"))
         persist = context.get("persist", job_kwargs.get("persist", True))
         result = getattr(event, "retval", None)
+
+        if result is jobs.SKIPPED:
+            # FEAT-631: an intentionally skipped fire (row gone/disabled/rescheduled) is not a success.
+            self._job_context.pop(schedule_id, None)
+            return True
 
         if not schedule_id:
             self.logger.debug(
@@ -701,6 +729,35 @@ class AgentSchedulerManager:
             await self._update_schedule_run(schedule_id, success=False, error=str(e))
             raise
 
+    @staticmethod
+    def _callback_outcome(
+        name: str, response: Any = None, error: Optional[BaseException | str] = None
+    ) -> Dict[str, Any]:
+        """Build one normalized callback delivery outcome."""
+        if error is not None:
+            return {"callback": name, "status": "failed", "error": str(error)}
+
+        status = response.get("status") if isinstance(response, dict) else None
+        status = {"success": "sent", "error": "failed"}.get(status, status)
+        if status not in {"sent", "saved", "partial", "failed"}:
+            status = "failed"
+        response_error = (
+            response.get("error") if isinstance(response, dict) and status in {"failed", "partial"} else None
+        )
+        return {"callback": name, "status": status, "error": response_error}
+
+    @staticmethod
+    def _aggregate_delivery_status(outcomes: List[Dict[str, Any]]) -> Optional[str]:
+        """Reduce delivery outcomes to ``ok``, ``partial``, or ``failed``."""
+        if not outcomes:
+            return None
+        statuses = {outcome.get("status") for outcome in outcomes}
+        if statuses <= {"sent", "saved"}:
+            return "ok"
+        if statuses == {"failed"}:
+            return "failed"
+        return "partial"
+
     async def _handle_job_success(
         self,
         schedule_id: str,
@@ -709,8 +766,9 @@ class AgentSchedulerManager:
         success_callback: Optional[Callable],
         send_result: Optional[Dict[str, Any]],
         callbacks: Optional[List[Dict[str, Any]]] = None,
-    ) -> None:
-        """Execute success callback or fallback notification."""
+    ) -> List[Dict[str, Any]]:
+        """Run success callback, deliveries, and return their outcomes."""
+        outcomes: List[Dict[str, Any]] = []
         if success_callback:
             callback_result = success_callback(result)
             if inspect.isawaitable(callback_result):
@@ -718,11 +776,29 @@ class AgentSchedulerManager:
 
         callback_definitions = list(callbacks or [])
         for definition in callback_definitions:
-            callback = build_scheduler_callback(definition, logger=self.logger)
-            await callback(result, schedule_id=schedule_id, agent_name=agent_name)
+            name = str(definition.get("type") or definition.get("name") or "unknown")
+            try:
+                callback = build_scheduler_callback(definition, logger=self.logger)
+                response = await callback(result, schedule_id=schedule_id, agent_name=agent_name)
+                outcomes.append(self._callback_outcome(name, response))
+            except Exception as exc:  # noqa: BLE001 - isolate each delivery
+                outcomes.append(self._callback_outcome(name, error=exc))
 
         if send_result:
-            await self._send_result_email(schedule_id, agent_name, result, send_result)
+            try:
+                response = await self._send_result_email(schedule_id, agent_name, result, send_result)
+                if response is None:
+                    outcomes.append(
+                        self._callback_outcome(
+                            "send_result", error="send_result not sent (invalid config or no recipients)"
+                        )
+                    )
+                else:
+                    outcomes.append(self._callback_outcome("send_result", response))
+            except Exception as exc:  # noqa: BLE001 - isolate the notification
+                outcomes.append(self._callback_outcome("send_result", error=exc))
+
+        return outcomes
 
     async def _send_result_email(
         self,
@@ -730,11 +806,11 @@ class AgentSchedulerManager:
         agent_name: str,
         result: Any,
         send_result: Dict[str, Any],
-    ) -> None:
+    ) -> Optional[Dict[str, Any]]:
         """Send job result via email using the notification system."""
         if not isinstance(send_result, dict):
             self.logger.warning("send_result configuration for schedule %s is not a dictionary", schedule_id)
-            return
+            return None
 
         recipients = (
             send_result.get("recipients")
@@ -745,7 +821,7 @@ class AgentSchedulerManager:
 
         if not recipients:
             self.logger.warning("send_result for schedule %s is missing recipients", schedule_id)
-            return
+            return None
 
         subject = send_result.get(
             "subject",
@@ -757,7 +833,7 @@ class AgentSchedulerManager:
             f"Job {agent_name} ({schedule_id}) completed successfully.",
         )
 
-        if include_result := send_result.get("include_result", True):
+        if send_result.get("include_result", True):
             if formatted_result := self._format_result(result):
                 message = f"{message}\n\nResult:\n{formatted_result}"
 
@@ -779,7 +855,7 @@ class AgentSchedulerManager:
         extra_kwargs = {key: value for key, value in send_result.items() if key not in reserved_keys}
 
         notifier = _SchedulerNotification(self.logger)
-        await notifier.send_email(
+        return await notifier.send_email(
             message=message,
             recipients=recipients,
             subject=subject,
@@ -818,7 +894,7 @@ class AgentSchedulerManager:
                 )
 
         try:
-            await self._handle_job_success(
+            outcomes = await self._handle_job_success(
                 schedule_id,
                 agent_name,
                 result,
@@ -826,6 +902,17 @@ class AgentSchedulerManager:
                 send_result,
                 callbacks,
             )
+            for outcome in outcomes:
+                if outcome["status"] in ("failed", "partial"):
+                    self.logger.warning(
+                        "Delivery %s for schedule %s: %s (%s)",
+                        outcome["callback"],
+                        schedule_id,
+                        outcome["status"],
+                        outcome.get("error"),
+                    )
+            if persist and outcomes:
+                await self._stamp_delivery_outcome(schedule_id, outcomes)
         except Exception as callback_error:  # pragma: no cover - safety net
             self.logger.error(
                 "Error executing success callback for job %s: %s",
@@ -859,6 +946,33 @@ class AgentSchedulerManager:
     #: (FEAT-467 TASK-2520) — the JSONB column should never grow
     #: unbounded from a single verbose agent response.
     _LAST_RESULT_MAX_CHARS: int = 10_000
+
+    async def _stamp_delivery_outcome(self, schedule_id: str, outcomes: List[Dict[str, Any]]) -> None:
+        """Persist delivery outcomes in schedule metadata without changing run status."""
+        if self._pool is None:
+            self.logger.warning("Cannot stamp delivery outcome for %s: database pool is unavailable", schedule_id)
+            return
+        try:
+            async with await self._pool.acquire() as conn:  # pylint: disable=no-member # noqa
+                AgentSchedule.Meta.connection = conn
+                schedule = await AgentSchedule.get(schedule_id=schedule_id)
+                if not schedule.metadata:
+                    schedule.metadata = {}
+                stored = []
+                for outcome in outcomes:
+                    stored_outcome = dict(outcome)
+                    if stored_outcome.get("error") is not None:
+                        error = str(stored_outcome["error"])
+                        if len(error) > self._LAST_RESULT_MAX_CHARS:
+                            error = error[: self._LAST_RESULT_MAX_CHARS] + "…(truncated)"
+                        stored_outcome["error"] = error
+                    stored.append(stored_outcome)
+                schedule.metadata["last_callbacks"] = stored
+                schedule.metadata["last_delivery_status"] = self._aggregate_delivery_status(outcomes)
+                schedule.metadata["last_delivery_time"] = datetime.now().isoformat()
+                await schedule.update()
+        except Exception as stamp_error:  # pragma: no cover - safety net
+            self.logger.error("Failed to stamp delivery outcome for %s: %s", schedule_id, stamp_error)
 
     async def _update_schedule_run(
         self,
@@ -896,6 +1010,10 @@ class AgentSchedulerManager:
 
                 schedule.last_run = datetime.now()
                 schedule.run_count += 1
+                with contextlib.suppress(Exception):
+                    local_job = self.scheduler.get_job(str(schedule_id))
+                    if local_job is not None and local_job.next_run_time:
+                        schedule.next_run = local_job.next_run_time
 
                 if not schedule.metadata:
                     schedule.metadata = {}
@@ -916,6 +1034,32 @@ class AgentSchedulerManager:
 
         except Exception as e:
             self.logger.error("Failed to update schedule run: %s", e)
+
+    async def _on_coordination_unavailable(self, job_id: str, exc: BaseException) -> None:
+        """Record a fire skipped because the coordination backend was down (fail closed, FEAT-631 G5).
+
+        Stamps ``metadata.last_status='lock_unavailable'`` and ``last_error`` on DB-backed rows;
+        does NOT touch ``run_count``/``last_run`` (the job did not run). Never raises.
+        """
+        job_id = str(job_id)
+        if job_id.startswith("auto_"):
+            return
+        schedule_id = job_id[len(_RUN_NOW_JOB_PREFIX) :] if job_id.startswith(_RUN_NOW_JOB_PREFIX) else job_id
+        if self._pool is None:
+            self.logger.warning("Cannot stamp lock_unavailable for %s: database pool is unavailable", schedule_id)
+            return
+        try:
+            async with await self._pool.acquire() as conn:  # pylint: disable=no-member # noqa
+                AgentSchedule.Meta.connection = conn
+                schedule = await AgentSchedule.get(schedule_id=schedule_id)
+                if not schedule.metadata:
+                    schedule.metadata = {}
+                schedule.metadata["last_status"] = "lock_unavailable"
+                schedule.metadata["last_error"] = f"coordination unavailable: {exc}"
+                schedule.metadata["last_error_time"] = datetime.now().isoformat()
+                await schedule.update()
+        except Exception as stamp_error:  # pragma: no cover - safety net
+            self.logger.error("Failed to stamp lock_unavailable for %s: %s", schedule_id, stamp_error)
 
     def _create_trigger(self, schedule_type: str, config: Dict[str, Any]):
         """
@@ -1068,15 +1212,15 @@ class AgentSchedulerManager:
         try:
             trigger = self._create_trigger(schedule_type, schedule_config)
 
+            if success_callback is not None:
+                self._local_callbacks[str(schedule.schedule_id)] = success_callback
+
             job = self.scheduler.add_job(
-                self._execute_agent_job,
+                jobs.run_db_schedule,
                 trigger=trigger,
                 id=str(schedule.schedule_id),
                 name=f"{agent_name}_{schedule_type}",
-                kwargs={
-                    **self._job_kwargs_from_schedule(schedule),
-                    "success_callback": success_callback,
-                },
+                kwargs=self._job_kwargs_from_schedule(schedule),
                 jobstore=scheduler_type,
                 replace_existing=True,
             )
@@ -1189,22 +1333,19 @@ class AgentSchedulerManager:
                 job_id = f"auto_{bot_name}_{method_name}"
                 job_name = f"{bot_name}.{method_name}"
 
-                # Route through _execute_agent_task so success_callback /
-                # send_result / callbacks are honored without requiring a
-                # DB-backed AgentSchedule row.
+                self._auto_tasks[job_id] = {
+                    "agent_name": bot_name,
+                    "method": method,
+                    "success_callback": success_callback,
+                    "send_result": send_result,
+                    "callbacks": callbacks,
+                }
                 self.scheduler.add_job(
-                    self._execute_agent_task,
+                    jobs.run_auto_schedule,
                     trigger=trigger,
                     id=job_id,
                     name=job_name,
-                    kwargs={
-                        "job_id": job_id,
-                        "agent_name": bot_name,
-                        "method": method,
-                        "success_callback": success_callback,
-                        "send_result": send_result,
-                        "callbacks": callbacks,
-                    },
+                    kwargs={"manager_name": self.registered_name, "job_id": job_id},
                     replace_existing=True,
                 )
 
@@ -1268,24 +1409,26 @@ class AgentSchedulerManager:
                         schedule_data = AgentSchedule(**record)
                         trigger = self._create_trigger(schedule_data.schedule_type, schedule_data.schedule_config)
 
-                        self.scheduler.add_job(
-                            self._execute_agent_job,
+                        job = self.scheduler.add_job(
+                            jobs.run_db_schedule,
                             trigger=trigger,
                             id=str(schedule_data.schedule_id),
                             name=f"{schedule_data.agent_name}_{schedule_data.schedule_type}",
-                            kwargs={
-                                "schedule_id": str(schedule_data.schedule_id),
-                                "agent_name": schedule_data.agent_name,
-                                "prompt": schedule_data.prompt,
-                                "method_name": schedule_data.method_name,
-                                "metadata": dict(schedule_data.metadata or {}),
-                                "is_crew": schedule_data.is_crew,
-                                "send_result": dict(schedule_data.send_result or {}),
-                                "callbacks": list(schedule_data.callbacks or []),
-                            },
+                            kwargs=self._job_kwargs_from_schedule(schedule_data),
                             jobstore=self._safe_jobstore(schedule_data.scheduler_type),
                             replace_existing=True,
                         )
+
+                        if job.next_run_time:
+                            try:
+                                schedule_data.next_run = job.next_run_time
+                                await schedule_data.update()
+                            except Exception as error:
+                                self.logger.warning(
+                                    "Failed to stamp next run for schedule %s: %s",
+                                    schedule_data.schedule_id,
+                                    error,
+                                )
 
                         loaded += 1
 
@@ -1319,7 +1462,8 @@ class AgentSchedulerManager:
             self.logger.error("Error restarting scheduler: %s", e)
             raise
 
-    def _job_kwargs_from_schedule(self, schedule: AgentSchedule) -> Dict[str, Any]:
+    def _execution_fields(self, schedule: AgentSchedule) -> Dict[str, Any]:
+        """Return execution arguments read from a schedule row."""
         return {
             "schedule_id": str(schedule.schedule_id),
             "agent_name": schedule.agent_name,
@@ -1330,6 +1474,80 @@ class AgentSchedulerManager:
             "send_result": dict(schedule.send_result or {}),
             "callbacks": list(schedule.callbacks or []),
         }
+
+    def _job_kwargs_from_schedule(self, schedule: AgentSchedule) -> Dict[str, Any]:
+        """Return picklable, string-only kwargs for a DB schedule trampoline."""
+        return {
+            "manager_name": self.registered_name,
+            "schedule_id": str(schedule.schedule_id),
+            "fingerprint": schedule_fingerprint(schedule),
+        }
+
+    async def _run_db_schedule(self, schedule_id: str, fingerprint: Optional[str], *, run_now: bool = False) -> Any:
+        """Re-read a DB row at fire time before executing its current fields."""
+        schedule_id = str(schedule_id)
+        try:
+            schedule = await self.get_schedule(schedule_id)
+        except NoDataFound:
+            self.logger.info("Skipping missing schedule %s", schedule_id)
+            if not run_now:
+                local_job = next((job for job in self.scheduler.get_jobs() if job.id == schedule_id), None)
+                if local_job is not None:
+                    with contextlib.suppress(JobLookupError):
+                        self.scheduler.remove_job(schedule_id, jobstore=local_job._jobstore_alias)
+            return jobs.SKIPPED
+
+        if not run_now and not schedule.enabled:
+            self.logger.info("Skipping disabled schedule %s", schedule_id)
+            local_job = next((job for job in self.scheduler.get_jobs() if job.id == schedule_id), None)
+            if local_job is not None:
+                with contextlib.suppress(JobLookupError):
+                    self.scheduler.remove_job(schedule_id, jobstore=local_job._jobstore_alias)
+            return jobs.SKIPPED
+
+        if not run_now and fingerprint and schedule_fingerprint(schedule) != fingerprint:
+            self.logger.info("Rescheduling changed schedule %s", schedule_id)
+            jobstore = self._safe_jobstore(schedule.scheduler_type)
+            trigger = self._create_trigger(schedule.schedule_type, schedule.schedule_config)
+            local_job = next((job for job in self.scheduler.get_jobs() if job.id == schedule_id), None)
+            if local_job is not None and local_job._jobstore_alias == jobstore:
+                self.scheduler.reschedule_job(schedule_id, jobstore=jobstore, trigger=trigger)
+                self.scheduler.modify_job(
+                    schedule_id, jobstore=jobstore, kwargs=self._job_kwargs_from_schedule(schedule)
+                )
+            else:
+                if local_job is not None:
+                    with contextlib.suppress(JobLookupError):
+                        self.scheduler.remove_job(schedule_id, jobstore=local_job._jobstore_alias)
+                self.scheduler.add_job(
+                    jobs.run_db_schedule,
+                    trigger=trigger,
+                    id=schedule_id,
+                    name=f"{schedule.agent_name}_{schedule.schedule_type}",
+                    kwargs=self._job_kwargs_from_schedule(schedule),
+                    jobstore=jobstore,
+                    replace_existing=True,
+                )
+            return jobs.SKIPPED
+
+        return await self._execute_agent_job(
+            **self._execution_fields(schedule),
+            success_callback=self._local_callbacks.get(schedule_id),
+        )
+
+    async def _run_auto_task(self, job_id: str) -> Any:
+        """Run a decorator-registered task from its process-local registration."""
+        task = self._auto_tasks.get(job_id)
+        if task is None:
+            raise LookupError(f"Unknown auto-schedule {job_id!r} in this process")
+        return await self._execute_agent_task(
+            job_id,
+            task["agent_name"],
+            task["method"],
+            success_callback=task["success_callback"],
+            send_result=task["send_result"],
+            callbacks=task["callbacks"],
+        )
 
     async def _get_connection_pool(self):
         if self._pool is not None:
@@ -1491,7 +1709,7 @@ class AgentSchedulerManager:
             self.scheduler.remove_job(job_id, jobstore=self._safe_jobstore(old_scheduler_type))
         if schedule.enabled:
             job = self.scheduler.add_job(
-                self._execute_agent_job,
+                jobs.run_db_schedule,
                 trigger=trigger,
                 id=job_id,
                 name=f"{schedule.agent_name}_{schedule.schedule_type}",
@@ -1523,8 +1741,8 @@ class AgentSchedulerManager:
 
         Schedules a one-shot APScheduler job (a ``DateTrigger`` firing
         "now", the same trigger type the ``"once"`` schedule_type already
-        uses) that calls :meth:`_run_now_wrapper`, which in turn calls
-        the exact same :meth:`_execute_agent_job` coroutine — and
+        uses) that calls :func:`jobs.run_db_schedule_now`, which in turn
+        calls the exact same :meth:`_run_db_schedule` coroutine — and
         therefore the exact same ``job_success``/``job_status`` event
         handling, callbacks, ``send_result`` emails, and
         ``last_run``/``run_count``/``last_result`` stamping — as a
@@ -1550,55 +1768,36 @@ class AgentSchedulerManager:
                 ``delete_schedule``.
         """
         schedule_id = str(schedule_id)
-        if schedule_id in self._run_now_active:
+        try:
+            acquired = await self._fire_coordinator.try_acquire_running(schedule_id)
+        except FireCoordinationError as exc:
+            # A missing coordination decision must never permit an unguarded run.
+            raise RuntimeError("Scheduler coordination unavailable") from exc
+        if not acquired:
             raise SchedulerRunNowConflictError(f"A run-now execution is already active for schedule {schedule_id}.")
 
-        schedule = await self.get_schedule(schedule_id)
-        self._run_now_active.add(schedule_id)
-
-        job_kwargs = self._job_kwargs_from_schedule(schedule)
         # Deterministic (not uuid-suffixed): the concurrency guard above
-        # already rules out two simultaneous run-nows for the same
+        # already rules out concurrent run-nows for the same schedule across workers,
         # schedule_id, and job_success() needs to derive schedule_id
         # back out of this id when the one-shot job has already
         # self-removed by the time the listener runs (see that method).
         job_id = f"{_RUN_NOW_JOB_PREFIX}{schedule_id}"
         try:
+            schedule = await self.get_schedule(schedule_id)
             self.scheduler.add_job(
-                self._run_now_wrapper,
+                jobs.run_db_schedule_now,
                 trigger=DateTrigger(run_date=datetime.now()),
                 id=job_id,
                 name=f"{schedule.agent_name}_run_now",
-                kwargs=job_kwargs,
+                kwargs={"manager_name": self.registered_name, "schedule_id": schedule_id},
                 jobstore=self._safe_jobstore(schedule.scheduler_type),
                 replace_existing=False,
             )
         except Exception:
-            self._run_now_active.discard(schedule_id)
+            await self._fire_coordinator.release_running(schedule_id)
             raise
 
         return schedule
-
-    async def _run_now_wrapper(self, schedule_id: str, **kwargs) -> Any:
-        """Release the run-now concurrency guard once execution finishes.
-
-        A thin pass-through around :meth:`_execute_agent_job` — returns
-        the same value / propagates the same exception, so
-        ``job_success``/``job_status`` (which key off the job's return
-        value / raised exception, not which coroutine APScheduler called)
-        behave identically to a normal scheduled run. The ``finally``
-        releases :attr:`_run_now_active` on BOTH success and failure.
-
-        Args:
-            schedule_id: The schedule this run-now execution belongs to.
-            **kwargs: Forwarded verbatim to :meth:`_execute_agent_job`
-                (``agent_name``, ``prompt``, ``method_name``,
-                ``metadata``, ``is_crew``, ``send_result``, ``callbacks``).
-        """
-        try:
-            return await self._execute_agent_job(schedule_id, **kwargs)
-        finally:
-            self._run_now_active.discard(str(schedule_id))
 
     async def get_last_result(self, schedule_id: str) -> Dict[str, Any]:
         """Return last-execution metadata for ``schedule_id`` (FEAT-467 TASK-2520).
@@ -1723,6 +1922,7 @@ class AgentSchedulerManager:
         dsn: Optional[str] = None,
         use_redis: bool = False,
         register_listeners: bool = True,
+        coordination: Optional[str] = None,
     ) -> None:
         """Boot the scheduler without an aiohttp application.
 
@@ -1747,6 +1947,8 @@ class AgentSchedulerManager:
                 only caller that needs `job_success`/`job_status`/etc.
                 actually firing — can still opt in without changing
                 aiohttp's existing runtime behaviour).
+            coordination: Fire coordination mode (``"redis"`` or ``"none"``).
+                When None, uses the configured mode or ``use_redis`` fallback.
         """
         if use_redis:
             self._ensure_redis_jobstore()
@@ -1758,6 +1960,11 @@ class AgentSchedulerManager:
 
         if register_listeners:
             self.define_listeners()
+
+        self._fire_coordinator = build_fire_coordinator(coordination, use_redis=use_redis)
+        executor = self.scheduler._lookup_executor("default")
+        if isinstance(executor, CoordinatedAsyncIOExecutor):
+            executor.set_coordinator(self._fire_coordinator)
 
         if not self.scheduler.running:
             self.scheduler.start()
@@ -1788,6 +1995,10 @@ class AgentSchedulerManager:
                 await self._pool.close()
             self._pool = None
             self._owns_pool = False
+
+        with contextlib.suppress(Exception):
+            await self._fire_coordinator.close()
+        jobs.unregister_manager(self.registered_name)
 
         self.logger.notice("Agent Scheduler stopped (headless)")
 
@@ -1837,20 +2048,10 @@ class AgentSchedulerManager:
             self.logger.error(f"Failed to get database connection pool: {e}")
             self._pool = app["agentdb"]
 
-        # Delegate the transport-free bootstrap steps (jobstore(s),
-        # scheduler start, schedule loading) to start_headless(). `self.
-        # _pool` is already assigned above (owned by aiohttp's PostgresPool
-        # via `conn`) so start_headless()'s own dsn-based pool creation is
-        # skipped, while schedules are still loaded from it. `use_redis=
-        # True` preserves the previous behaviour of always having a Redis
-        # jobstore available under aiohttp. `register_listeners=False`
-        # keeps this strictly behaviour-preserving: `define_listeners()`
-        # was never called anywhere on this path before FEAT-422 (dead
-        # code), so wiring it now would be a silent, undocumented change
-        # to production aiohttp deployments (job_success/job_status
-        # callbacks, notifications, DB updates firing for the first time)
-        # — out of scope for this feature.
-        await self.start_headless(use_redis=True, register_listeners=False)
+        # Delegate the transport-free bootstrap (jobstores, scheduler start, schedule loading) to
+        # start_headless(). FEAT-631: listeners are wired here too, so success stamping, send_result
+        # and callbacks run on the aiohttp path exactly as on the headless/agentd path (issue #1573).
+        await self.start_headless(use_redis=True, register_listeners=True)
 
         self.logger.notice("Agent Scheduler started successfully")
 
@@ -2003,19 +2204,12 @@ class SchedulerHandler(CorsViewMixin, web.View):
                     # Re-add to scheduler
                     trigger = scheduler_manager._create_trigger(schedule.schedule_type, schedule.schedule_config)
                     scheduler_manager.scheduler.add_job(
-                        scheduler_manager._execute_agent_job,
+                        jobs.run_db_schedule,
                         trigger=trigger,
                         id=schedule_id,
                         name=f"{schedule.agent_name}_{schedule.schedule_type}",
-                        kwargs={
-                            "schedule_id": schedule_id,
-                            "agent_name": schedule.agent_name,
-                            "prompt": schedule.prompt,
-                            "method_name": schedule.method_name,
-                            "metadata": dict(schedule.metadata or {}),
-                            "is_crew": schedule.is_crew,
-                            "send_result": dict(schedule.send_result or {}),
-                        },
+                        kwargs=scheduler_manager._job_kwargs_from_schedule(schedule),
+                        jobstore=scheduler_manager._safe_jobstore(schedule.scheduler_type),
                         replace_existing=True,
                     )
 

@@ -61,9 +61,7 @@ class TestFactory:
 
     def test_config_rejects_unknown_backend(self, tmp_path: Path):
         with pytest.raises(Exception):
-            WikiConfig(
-                wiki_name="w", storage_dir=tmp_path, storage_backend="nope"
-            )
+            WikiConfig(wiki_name="w", storage_dir=tmp_path, storage_backend="nope")
 
 
 class TestBundleOnDisk:
@@ -72,10 +70,7 @@ class TestBundleOnDisk:
     @pytest.mark.asyncio
     async def test_page_file_layout_and_frontmatter(self, bundle_dir: Path):
         store = InMemoryWikiStore(bundle_dir, wiki_name="w")
-        await store.upsert_pages(
-            [_page("neural-networks", category="summary", node_id="0001",
-                   source_id="src-1")]
-        )
+        await store.upsert_pages([_page("neural-networks", category="summary", node_id="0001", source_id="src-1")])
         path = bundle_dir / "summaries" / "neural-networks.md"
         assert path.exists()
         front, body = _read_front(path)
@@ -140,8 +135,7 @@ class TestPersistenceAcrossInstances:
         first = InMemoryWikiStore(bundle_dir, wiki_name="w")
         await first.upsert_pages(
             [
-                _page("nn", title="Neural Networks",
-                      body="A neural network is a computational model."),
+                _page("nn", title="Neural Networks", body="A neural network is a computational model."),
                 _page("dl", title="Deep Learning", category="entity"),
             ]
         )
@@ -184,9 +178,7 @@ class TestPersistenceAcrossInstances:
         store = InMemoryWikiStore(bundle_dir, wiki_name="w")
         await store.upsert_pages([_page("a")])
         await store.upsert_embedding("a", [0.5, 0.5], model="mini")
-        raw = json.loads(
-            (bundle_dir / ".embeddings.json").read_text(encoding="utf-8")
-        )
+        raw = json.loads((bundle_dir / ".embeddings.json").read_text(encoding="utf-8"))
         assert raw["a"]["model"] == "mini"
 
 
@@ -210,7 +202,8 @@ class TestToolkitMemoryBackend:
         await mem_toolkit.create_wiki("test-wiki")
 
         created = await mem_toolkit.create_page(
-            "test-wiki", "Neural Networks",
+            "test-wiki",
+            "Neural Networks",
             "A neural network is a computational model.",
             category="summary",
         )
@@ -223,15 +216,13 @@ class TestToolkitMemoryBackend:
         assert "computational model" in page["content"]
 
         lint = await mem_toolkit.lint("test-wiki")
-        assert "orphan_sources" in lint
+        assert "findings" in lint
 
         out = tmp_path / "okf-out"
         export = await mem_toolkit.export_okf("test-wiki", str(out))
         assert export["files_written"] == 1
 
-        deleted = await mem_toolkit.delete_page(
-            "test-wiki", created["page_id"]
-        )
+        deleted = await mem_toolkit.delete_page("test-wiki", created["page_id"])
         assert deleted["status"] == "deleted"
 
         # The whole cycle ran without creating any SQLite database.
@@ -240,16 +231,10 @@ class TestToolkitMemoryBackend:
         assert mem_toolkit._sources.backend == "json"  # noqa: SLF001
 
     @pytest.mark.asyncio
-    async def test_ingest_source_memory_backend(
-        self, mem_toolkit, tmp_path, sample_source
-    ):
-        report = await mem_toolkit.ingest_source(
-            "test-wiki", str(sample_source)
-        )
+    async def test_ingest_source_memory_backend(self, mem_toolkit, tmp_path, sample_source):
+        report = await mem_toolkit.ingest_source("test-wiki", str(sample_source))
         assert report["status"] == "ok"
         assert report["pages_created"] == 3
         # manifest file exists, wiki.db does not
-        assert (
-            tmp_path / "wiki-storage" / "sources" / ".manifest.json"
-        ).exists()
+        assert (tmp_path / "wiki-storage" / "sources" / ".manifest.json").exists()
         assert not (tmp_path / "wiki-storage" / "wiki.db").exists()

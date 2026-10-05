@@ -47,6 +47,7 @@
 - [Obsidian Vaults as Wiki Sources](#obsidian-vaults-as-wiki-sources)
 - [Document Ingestion](#document-ingestion)
   - [Supervised Ingestion (wikitoolkit ingest)](#supervised-ingestion-wikitoolkit-ingest)
+  - [Inbox ingestion (wikitoolkit inbox)](#inbox-ingestion-wikitoolkit-inbox)
   - [Jira Ticket Extraction (wikitoolkit ingest-jira)](#jira-ticket-extraction-wikitoolkit-ingest-jira)
 - [Storage Backends](#storage-backends)
   - [SQLite (default)](#sqlite-default)
@@ -918,6 +919,56 @@ build — never a dangling reference.
 
 ---
 
+## Standup Briefs and Typed Entities
+
+The standup subsystem (`wikitoolkit standup`) generates deterministic day/week/month
+briefs from Jira issues, decisions and entity changes. Key concepts:
+
+### Attributes Ingest and Back-fill
+
+Entity attributes (type, status, project, date, due, owner) are extracted during
+ingest and stored as page frontmatter. The `wikitoolkit entity reindex --store <path>`
+command back-fills attributes into an existing wiki plane from its stored pages,
+useful for migrating legacy data or syncing foreign planes.
+
+### Personal and Team Filtering
+
+- `--team` includes all team members' activity; default shows only your identity.
+- Identity is resolved from `~/.parrot/identity.json` (or `WIKI_IDENTITY` env var)
+  as `human:<username>`, without requiring email access.
+- Use `--me <identity>` to override the default identity for a single run.
+
+### Period Roll-ups and Delta Meaning
+
+- `day` — activity since yesterday 00:00 UTC
+- `week` — activity since Monday of the current week
+- `month` — activity since the 1st of the current month
+
+The brief includes a "delta" section showing net changes: new, updated and closed
+items. Delta is computed per-period and does not accumulate across periods.
+
+### Model Fallback and Read-Only MCP Defaults
+
+- By default, standup requests an LLM summary (`--no-llm` disables it).
+- If the model fails, the brief still renders with raw data; no partial summary
+  is stored.
+- MCP tool calls default to read-only (`--no-store --no-file`) when invoked via
+  MCP. Use explicit `--store` or `--out` to persist output.
+
+### Cron Scheduling
+
+Run at 07:00 UTC after the 06:17 Jira sweep. Example cron entry (deployment-specific
+paths marked):
+
+```cron
+0 7 * * 1-5 cd /path/to/project && /path/to/venv/bin/wikitoolkit standup --period day --language en --out /var/log/standups/$(date +\%Y-\%m-\%d).md >> /var/log/standup.log 2>&1
+```
+
+Consult the [wiki standup runbook](../runbooks/wiki-standup.md) for identity configuration,
+failure recovery and back-fill recipes.
+
+---
+
 ## Obsidian Vaults as Wiki Sources
 
 Obsidian vaults are first-class wiki sources. The vault scanner
@@ -1011,6 +1062,35 @@ wikitoolkit ingest SOURCE [OPTIONS]
 
 Exactly one mode required: `--dry-run`, `--review`, `--interactive`, or
 `--auto`.
+
+### Inbox ingestion (wikitoolkit inbox)
+
+Drop documents into the repository's inbox directory (default `inbox/`), then
+run `wikitoolkit inbox`. For each document, the command:
+
+1. acquires and triages it;
+2. ingests it with the heavy model;
+3. classifies it against the charter taxonomy with the lightweight model;
+4. links it to existing pages;
+5. writes the document page, its tags and the Markdown projection;
+6. verifies what was written;
+7. only then archives the original.
+
+```bash
+wikitoolkit inbox --dry-run --json   # preview: triage, classify, plan links (models are still called)
+wikitoolkit inbox                    # process the inbox, oldest first
+wikitoolkit inbox --no-archive       # persist and verify, but keep the originals in place
+```
+
+The processor never commits. Review `git status` afterwards. Exit codes:
+
+- `1`: a document failed;
+- `2`: usage or path-layout error;
+- `3`: the wiki write lock is busy.
+
+The full reference covers pipeline stages, triage outcomes, the `inbox`
+config block, the taxonomy, the pages and edges written, archive naming and
+the JSON report: [docs/wiki/inbox.md](../wiki/inbox.md).
 
 ### Jira Ticket Extraction (wikitoolkit ingest-jira)
 

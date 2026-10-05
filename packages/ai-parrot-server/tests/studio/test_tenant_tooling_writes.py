@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -12,45 +13,21 @@ from parrot.handlers.studio import tooling_store
 from parrot.handlers.studio import toolkit_config as tc
 from parrot.handlers.studio._base import StudioUser
 from parrot.handlers.studio.storage.models import StudioPartition
+from parrot.handlers.studio.storage.repositories import studio_transaction
+from parrot.handlers.studio.storage.services import tooling as tooling_service
+from parrot.handlers.studio.storage.services.tooling import mcp_row, toolkit_row
 from parrot.handlers.studio.tooling_store import AgentToolingStore
+from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec
 from parrot.tools.tooling_policy import HostMCPServer, TenantToolingPolicy, set_tenant_tooling_policy
 
 from ._host_probe import host_plugins, no_subprocess  # noqa: F401
+from ._tenant_agent import StudioAgentWorld
 
 
 def _unwrap(method):
     while hasattr(method, "__wrapped__"):
         method = method.__wrapped__
     return method
-
-
-class _Row:
-    """Legacy DB row: records every persisted ``update``."""
-
-    def __init__(self):
-        self.created_by = "42"
-        self.mcp_servers: list = []
-        self.toolkit_config: dict = {}
-        self.updates = 0
-
-    def set(self, key, value):
-        setattr(self, key, value)
-
-    async def update(self):
-        self.updates += 1
-
-
-class _Conn:
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *exc):
-        return False
-
-
-class _DB:
-    async def acquire(self):
-        return _Conn()
 
 
 @pytest.fixture
@@ -70,18 +47,18 @@ def vault(monkeypatch):
     return calls
 
 
-def _handler(policy: TenantToolingPolicy | None, row: _Row, *, tenant: str | None = "acme"):
+async def _setup(policy: TenantToolingPolicy | None, *, tenant: str | None = "acme", cls=tc.StudioAgentMcpServersHandler):
+    """A handler on a request of ``tenant``, wired to a REAL Studio agent of that partition (never a legacy row)."""
     app = web.Application()
-    app["database"] = _DB()
     if policy is not None:
         set_tenant_tooling_policy(app, policy)
+    world = StudioAgentWorld(app)
+    await world.add_agent(tenant)
     request = make_mocked_request("PUT", "/x", match_info={"name": "agent"}, app=app)
-    handler = tc.StudioAgentMcpServersHandler(request)
+    handler = cls(request)
     handler._get_user = AsyncMock(return_value=StudioUser(user_id="42"))
     handler._pbac_gate = AsyncMock(return_value=None)
-    handler._get_db_agent = AsyncMock(return_value=row)
-    handler._studio_partition = AsyncMock(return_value=StudioPartition(tenant))
-    return handler
+    return world.wire(handler, tenant), world
 
 
 async def _put_servers(handler, servers):
@@ -98,21 +75,25 @@ _STDIO = [
 
 @pytest.mark.parametrize("servers", [[_STDIO[0]], [_STDIO[1]]], ids=["top_level", "inside_params"])
 async def test_tenant_stdio_refused_before_any_process(host_plugins, no_subprocess, vault, servers):  # noqa: F811
-    row = _Row()
-    response, body = await _put_servers(_handler(TenantToolingPolicy.deny_all(), row), servers)
+    handler, world = await _setup(TenantToolingPolicy.deny_all())
+    before = await world.version("acme")
+    response, body = await _put_servers(handler, servers)
     assert response.status == 422 and body["code"] == "tooling_not_permitted"
-    assert body["details"]["reason"] == "local_execution"
-    assert row.updates == 0 and vault == []  # nothing persisted, nothing vaulted
+    with pytest.raises(Exception) as caught:  # a Studio row's HTTP body carries no reason: the refusal itself does
+        await AgentToolingStore(handler).put_mcp_servers("agent", servers)
+    assert getattr(caught.value, "reason", None) == "local_execution"
+    assert await world.version("acme") == before and vault == []  # nothing persisted, nothing vaulted
+    assert (await world.tooling("acme")).mcp_servers == []
     # (no_subprocess asserts at teardown that no process was ever spawned)
 
 
 async def test_tenant_toolkit_not_permitted_refused_before_persist(host_plugins, vault):  # noqa: F811
-    row = _Row()
-    store = AgentToolingStore(_handler(TenantToolingPolicy.deny_all(), row))
+    handler, world = await _setup(TenantToolingPolicy.deny_all())
+    before = await world.version("acme")
     with pytest.raises(Exception) as caught:
-        await store.put_toolkit("agent", "wiki", {}, [])  # a built-in is not on the tenant allow-list
+        await AgentToolingStore(handler).put_toolkit("agent", "wiki", {}, [])  # a built-in is not on the allow-list
     assert getattr(caught.value, "reason", None) == "builtin_not_permitted"
-    assert row.updates == 0 and vault == []
+    assert await world.version("acme") == before and vault == []
 
 
 async def test_approved_host_config_still_works(host_plugins, no_subprocess, vault):  # noqa: F811
@@ -120,20 +101,22 @@ async def test_approved_host_config_still_works(host_plugins, no_subprocess, vau
         mcp_servers={"hostmcp": HostMCPServer(name="hostmcp", config={"name": "hostmcp", "url": "https://h.example/mcp"})},
         mcp_endpoints=("https://mcp.example.com/",),
     )
-    row = _Row()
-    handler = _handler(policy, row)
+    handler, world = await _setup(policy)
+    start = await world.version("acme")
     servers = [{"name": "hostmcp"}, {"name": "remote", "url": "https://mcp.example.com/mcp", "transport": "http"}]
     response, _ = await _put_servers(handler, servers)
-    assert response.status == 200 and row.updates == 1
+    assert response.status == 200 and await world.version("acme") > start
+    assert {s.name for s in (await world.tooling("acme")).mcp_servers} == {"hostmcp", "remote"}
+    after_servers = await world.version("acme")
     spec = await AgentToolingStore(handler).put_toolkit("agent", "tp_probe", {}, [])
-    assert spec.slug == "tp_probe" and row.updates == 2
+    assert spec.slug == "tp_probe" and await world.version("acme") > after_servers
 
 
 async def test_global_partition_is_not_policed_by_default(host_plugins, vault):  # noqa: F811
-    row = _Row()
-    handler = _handler(TenantToolingPolicy.deny_all(), row, tenant=None)
+    handler, world = await _setup(TenantToolingPolicy.deny_all(), tenant=None)
+    start = await world.version(None)
     response, _ = await _put_servers(handler, [_STDIO[0]])
-    assert response.status == 200 and row.updates == 1
+    assert response.status == 200 and await world.version(None) > start
 
 
 async def test_delete_toolkit_is_allowed_when_another_stored_item_became_disallowed(
@@ -145,12 +128,19 @@ async def test_delete_toolkit_is_allowed_when_another_stored_item_became_disallo
         deleted.append(name)
 
     monkeypatch.setattr(tooling_store, "delete_vault_credential", _delete)
-    row = _Row()
-    row.mcp_servers = [{"name": "planted", "transport": "stdio", "command": "npx"}]  # planted before the policy
-    row.toolkit_config = {"tp_probe": {}}
-    store = AgentToolingStore(_handler(TenantToolingPolicy.deny_all(), row))
+    monkeypatch.setattr(tooling_service, "delete_vault_credential", _delete)
+    handler, world = await _setup(TenantToolingPolicy.deny_all())
+    record = await world.service._repos.agents.get(StudioPartition("acme"), "agent")
+    async with studio_transaction(world.repos.pool) as conn:   # planted BEFORE the policy, behind the service
+        await world.repos.tooling.replace(
+            conn, record.agent_id,
+            toolkits=[toolkit_row(ToolkitSpec(slug="tp_probe"))],
+            mcp_servers=[mcp_row(AgentMCPServerSpec(name="planted", transport="stdio", command="npx"))],
+        )
+    store = AgentToolingStore(handler)
     await store.delete_toolkit("agent", "tp_probe")  # removal adds nothing forbidden: never blocked
-    assert row.updates == 1 and deleted and row.toolkit_config == {}
+    tooling = await world.tooling("acme")
+    assert deleted and tooling.toolkits == [] and [s.name for s in tooling.mcp_servers] == ["planted"]
     # ... but a write that ADDS to that same tooling is still refused by the policy
     with pytest.raises(Exception) as caught:
         await store.put_toolkit("agent", "wiki", {}, [])
@@ -158,23 +148,13 @@ async def test_delete_toolkit_is_allowed_when_another_stored_item_became_disallo
 
 
 async def _assign(handler_slug: str, policy: TenantToolingPolicy | None, tenant: str | None):
-    from types import SimpleNamespace
-
     from parrot.handlers.studio.toolkits import StudioToolkitsHandler
     from parrot.tools.manager import ToolManager
 
+    handler, _ = await _setup(policy, tenant=tenant, cls=StudioToolkitsHandler)
     bot = SimpleNamespace(tool_manager=ToolManager())
-    app = web.Application()
-    app["bot_manager"] = SimpleNamespace(get_bot=AsyncMock(return_value=bot))
-    if policy is not None:
-        set_tenant_tooling_policy(app, policy)
-    request = make_mocked_request("POST", "/x", match_info={"name": "agent"}, app=app)
-    request.json = AsyncMock(return_value={"slug": handler_slug, "params": {}})
-    handler = StudioToolkitsHandler(request)
-    handler._get_user = AsyncMock(return_value=StudioUser(user_id="42"))
-    handler._pbac_gate = AsyncMock(return_value=None)
-    handler._assign_owner = AsyncMock(return_value="42")
-    handler._studio_partition = AsyncMock(return_value=StudioPartition(tenant))
+    handler.request.app["bot_manager"] = SimpleNamespace(get_bot=AsyncMock(return_value=bot))
+    handler.request.json = AsyncMock(return_value={"slug": handler_slug, "params": {}})
     response = await _unwrap(StudioToolkitsHandler.post)(handler)
     return response, bot
 

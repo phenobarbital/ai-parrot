@@ -110,3 +110,13 @@ def test_non_git_worktree_degrades_with_note(tmp_path):
 def test_changed_files_includes_untracked(repo):
     (repo / "packages/a/src/pa/new.py").write_text("")
     assert "packages/a/src/pa/new.py" in changed_files(repo, "HEAD")
+
+
+def test_merge_tier_tolerates_non_package_changed_files(repo):
+    """sdd/ state files in the diff own no distribution and must not raise."""
+    plan = plan_tests(
+        worktree=repo,
+        changed_files=["packages/a/src/pa/leaf.py", "sdd/tasks/index/x.json"],
+        tier="merge",
+    )
+    assert any(t.path.startswith("packages/a/tests") for inv in plan.invocations for t in inv.targets)

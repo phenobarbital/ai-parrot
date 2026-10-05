@@ -2,7 +2,7 @@
 id: F014
 query_id: Q014
 type: wiki_page
-intent: StructuralService._ensure_fresh is the read-repair shape: page_hashes vs disk hash, non-blocking lock, stale flag
+intent: "StructuralService._ensure_fresh is the read-repair shape: page_hashes vs disk hash, non-blocking lock, stale flag"
 executed_at: 2026-09-24T20:41:46+00:00
 duration_ms: 0
 parent_id: null

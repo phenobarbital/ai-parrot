@@ -2,7 +2,7 @@
 id: F019
 query_id: Q028
 type: grep
-intent: No schema plane exists: no knowledge/wiki/schema, no wiki_schema_* tools, no table:/schema:/source: page kinds
+intent: "No schema plane exists: no knowledge/wiki/schema, no wiki_schema_* tools, no table:/schema:/source: page kinds"
 executed_at: 2026-09-24T20:41:46+00:00
 duration_ms: 0
 parent_id: null

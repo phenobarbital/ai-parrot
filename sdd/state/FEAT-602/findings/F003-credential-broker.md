@@ -2,7 +2,7 @@
 id: F003
 query_id: Q003
 type: wiki_query
-intent: Orient: where Hooba credentials should be resolved from (CredentialBroker).
+intent: "Orient: where Hooba credentials should be resolved from (CredentialBroker)."
 executed_at: 2026-09-25T11:30:00Z
 duration_ms: 0
 parent_id: null

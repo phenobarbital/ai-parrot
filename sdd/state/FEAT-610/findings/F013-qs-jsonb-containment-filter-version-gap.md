@@ -2,7 +2,7 @@
 id: F013
 query_id: Q013
 type: read
-intent: Is `filter: {graduation_details: {"@>": [...]}}` supported, and in which querysource version
+intent: "Is `filter: {graduation_details: {\"@>\": [...]}}` supported, and in which querysource version"
 executed_at: 2026-09-28T20:30:00Z
 parent_id: null
 depth: 0

@@ -32,11 +32,13 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from collections import Counter
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+import sys
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 import click
@@ -46,6 +48,8 @@ from parrot.bots.database.toolkits.sql import _SQLGLOT_DIALECT_MAP
 
 if TYPE_CHECKING:
     from parrot.knowledge.wiki.schema.service import SchemaPlaneService
+    from parrot.knowledge.wiki.charter import Charter
+    from parrot.knowledge.wiki.inbox.processor import InboxRuntime
 from parrot.knowledge.wiki.context import (
     DEFAULT_BUDGET_TOKENS,
     pack_results,
@@ -64,6 +68,7 @@ from parrot.knowledge.wiki.federation import (
     open_namespace_store,
     resolve_namespaces,
 )
+from parrot.knowledge.wiki.identity import authoring_identity as _authoring_identity
 from parrot.knowledge.wiki.languages import all_scanners, astgrep
 from parrot.knowledge.wiki.languages.fingerprint import (
     changed_languages,
@@ -2141,6 +2146,103 @@ def _probe_backend_reachable(root: Path, config: WikiProjectConfig) -> bool | No
     return _run(_probe())
 
 
+@wiki.command("lint")
+@path_option
+@ns_option
+@click.option("--rules", default=None, help="Comma-separated rule ids or packs (plane,export,adr,memory,llm).")
+@click.option("--skip", multiple=True, help="Rule id to skip (repeatable).")
+@click.option("--fix", is_flag=True, help="Apply safe, idempotent fixes (never deletes).")
+@click.option("--llm", is_flag=True, help="Run the opt-in LLM contradiction pass.")
+@click.option("--llm-model", default=None, help="LLM spec; else WIKI_LINT_LLM / WIKI_EXTRACT_LLM.")
+@click.option("--llm-max-pairs", default=50, show_default=True, type=int)
+@click.option("--report", "report_fmt", type=click.Choice(["json", "md"]), default="md", show_default=True)
+@click.option("--output", default=None, help="Report directory (default: <storage>/lint).")
+@click.option("--export-dir", default=None, help="OKF export directory to lint (default: none; export rules skip).")
+@click.option("--ledger/--no-ledger", default=True, show_default=True)
+@click.option(
+    "--notes/--no-notes", default=False, show_default=True, help="Append notes to subject pages (writes to the store)."
+)
+@click.option("--fail-on", type=click.Choice(["error", "warning", "none"]), default="error", show_default=True)
+@click.option("--json", "as_json", is_flag=True, help="Emit the report as JSON.")
+def lint(
+    path_: str | None,
+    ns_opt: str | None,
+    rules: str | None,
+    skip: tuple[str, ...],
+    fix: bool,
+    llm: bool,
+    llm_model: str | None,
+    llm_max_pairs: int,
+    report_fmt: str,
+    output: str | None,
+    export_dir: str | None,
+    ledger: bool,
+    notes: bool,
+    fail_on: str,
+    as_json: bool,
+) -> None:
+    """Lint the wiki graph, export, memories and ADRs; --fix applies safe fixes."""
+    from parrot.knowledge.lint import LintOptions, LintRunner
+    from parrot.knowledge.lint.routing import FindingRouter
+
+    root, effective = _resolve_project_effective(path_)
+    config = effective.config
+    if not config.is_built(root):
+        raise click.ClickException(f"Wiki not built for {root} — run `wikitoolkit build`.")
+    store = _open_store(root, config)
+    if config.backend == "arangodb":
+        try:
+            _run(store.initialize())
+        except Exception as exc:
+            raise click.ClickException(
+                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: " f"{exc}"
+            ) from exc
+    sources = _open_sources(root, config, store=store)
+    read_store = _federate(root, config, store, ns_opt)
+    report_dir = Path(output) if output is not None else config.storage_path(root) / "lint"
+    if not report_dir.is_absolute():
+        report_dir = root / report_dir
+    options = LintOptions(
+        rules=[r.strip() for r in rules.split(",") if r.strip()] if rules else None,
+        skip=[s.strip() for s in skip if s.strip()],
+        fix=fix,
+        llm=llm,
+        llm_model=llm_model,
+        llm_max_pairs=llm_max_pairs,
+        ledger=ledger,
+        notes=notes,
+        fail_on=None if fail_on == "none" else fail_on,
+        export_dir=(root / export_dir) if export_dir else None,
+        report_dir=report_dir,
+    )
+    router = FindingRouter(read_store, report_dir=report_dir, ledger=LedgerService.from_root(root) if ledger else None)
+    report = _run(
+        LintRunner(
+            read_store,
+            root=root,
+            config=config,
+            router=router,
+            extras={"sources": sources},
+        ).run(options)
+    )
+    if as_json:
+        click.echo(report.model_dump_json())
+    elif report_fmt == "json":
+        click.echo(report.model_dump_json(indent=2))
+    else:
+        click.echo(
+            f"Lint: {len(report.findings)} findings, {len(report.fixed)} fixed "
+            f"(errors: {report.counts.get('error', 0)}, warnings: {report.counts.get('warning', 0)})."
+        )
+        for finding in report.findings[:20]:
+            click.echo(
+                f"  [{finding.severity}] {finding.rule_id}: {', '.join(finding.subjects) or '-'} — {finding.message}"
+            )
+        if len(report.findings) > 20:
+            click.echo(f"  … {len(report.findings) - 20} more (see report files or --json).")
+    click.get_current_context().exit(LintRunner.exit_code(report, None if fail_on == "none" else fail_on))
+
+
 @wiki.command()
 @path_option
 @ns_option
@@ -2246,6 +2348,10 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         f"{stats.get('symbols', 0)} symbols, "
         f"~{stats.get('total_tokens', 0)} tokens"
     )
+    if getattr(read_store, "supports_attrs", False):
+        click.echo(f"Attrs     : {stats.get('attrs_pages', 0)} pages indexed")
+    else:
+        click.echo("Attrs     : unsupported")
     click.echo(f"Categories: {stats.get('categories', {})}")
     click.echo(f"Languages : {payload['languages']}")
     click.echo(f"Structural: {payload['structural']}")
@@ -2342,12 +2448,28 @@ def _echo_structural_result(result: Any, as_json: bool) -> None:
 # pulls in) is only imported once an `adr` subcommand is actually resolved,
 # so the `claude-hook` fast path — and every other `wikitoolkit` invocation
 # that never touches ADRs — no longer pays that import cost.
-from parrot.knowledge.wiki.lazy_commands import LazyAdrGroup  # noqa: E402  (bottom import breaks a cycle)
+from parrot.knowledge.wiki.lazy_commands import LazyAdrGroup, LazyGroup  # noqa: E402  (bottom import breaks a cycle)
 
 wiki.add_command(
     LazyAdrGroup(
         name="adr",
         help="Architectural decisions: ingest ADRs, look them up, and review candidates.",
+    )
+)
+wiki.add_command(
+    LazyGroup(
+        name="standup",
+        import_path="parrot.knowledge.wiki.standup.cli",
+        attr="standup",
+        help="Render a daily or period brief.",
+    )
+)
+wiki.add_command(
+    LazyGroup(
+        name="entity",
+        import_path="parrot.knowledge.wiki.entity_cli",
+        attr="entity",
+        help="Manage typed wiki entities.",
     )
 )
 
@@ -3510,28 +3632,6 @@ def export(path_: str | None, output: str) -> None:
 # --------------------------------------------------------------------------
 
 
-def _authoring_identity(by: str | None) -> str:
-    """Resolve who is asserting a write.
-
-    Precedence: explicit ``--by`` > ``CLAUDE_AGENT_ID`` /
-    ``PARROT_AGENT_ID`` env (prefixed ``agent:``) > the local user
-    (prefixed ``human:``).
-    """
-    import getpass
-    import os
-
-    if by:
-        return by
-    for env_name in ("CLAUDE_AGENT_ID", "PARROT_AGENT_ID"):
-        value = os.environ.get(env_name)
-        if value:
-            return f"agent:{value}"
-    try:
-        return f"human:{getpass.getuser()}"
-    except Exception:  # noqa: BLE001 — no user db in some containers
-        return "human:unknown"
-
-
 def _authoring_run_id() -> str | None:
     """Session/run identifier from the ambient environment, if any."""
     import os
@@ -3803,6 +3903,12 @@ def _extract_into_graph(
     " remember when unavailable).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@click.option("--type", "type_", default=None, help="Entity type (project, meeting, ticket, ...).")
+@click.option("--project", default=None, help="Owning project (entity attribute).")
+@click.option("--status", default=None, help="Entity status valid for --type.")
+@click.option("--date", "date_", default=None, help="ISO date (entity attribute).")
+@click.option("--due", default=None, help="ISO due date (entity attribute).")
+@click.option("--owner", default=None, help="Owner identity (entity attribute).")
 def remember(
     text: str,
     path_: str | None,
@@ -3817,6 +3923,12 @@ def remember(
     by: str | None,
     extract_: bool,
     as_json: bool,
+    type_: str | None = None,
+    project: str | None = None,
+    status: str | None = None,
+    date_: str | None = None,
+    due: str | None = None,
+    owner: str | None = None,
 ) -> None:
     """Save a fact, decision, or lesson into the wiki (persistent memory).
 
@@ -3849,6 +3961,27 @@ def remember(
         raise SystemExit(2)
 
     body = text if not source_uri else f"{text}\n\n> Source: {source_uri}"
+    entity_values = {
+        "type": type_,
+        "project": project,
+        "status": status,
+        "date": date_,
+        "due": due,
+        "owner": owner,
+    }
+    attrs_rows: dict[str, str] = {}
+    if any(value is not None for value in entity_values.values()):
+        from parrot.knowledge.wiki.entities import EntityValidationError, normalize_frontmatter
+
+        try:
+            attrs_rows = normalize_frontmatter(
+                {key: value for key, value in entity_values.items() if value is not None},
+                source="memory",
+                strict=True,
+            ).to_rows()
+        except EntityValidationError as exc:
+            click.echo(f"{exc.code}: {exc}", err=True)
+            raise SystemExit(2) from exc
     _run(
         store.upsert_pages(
             [
@@ -3862,6 +3995,7 @@ def remember(
                     token_count=estimate_tokens(body),
                     origin="memory",
                     asserted_by=asserted_by,
+                    attrs=attrs_rows,
                 )
             ]
         )
@@ -4508,6 +4642,32 @@ def _build_triage_adapters(lightweight_model: str, model: str) -> tuple[Any, Any
     return light_adapter, heavy_adapter, light_model_id, same_provider
 
 
+def _resolve_ingest_model_ids(lightweight_model_opt: str | None, model_opt: str | None) -> tuple[str, str]:
+    """Resolve the supervised-ingest model pair with legacy auto-detection."""
+    lightweight_model_value = lightweight_model_opt or _env_setting("WIKI_LIGHTWEIGHT_MODEL")
+    model_value = model_opt or _env_setting("WIKI_MODEL")
+    if not lightweight_model_value and not model_value and not _env_setting("PARROT_NO_AUTO_LLM"):
+        try:
+            from parrot.clients.detection import detect_coding_agent_llm
+
+            detected = detect_coding_agent_llm()
+        except Exception as exc:  # noqa: BLE001 — detection is best-effort
+            click.echo(f"[coding-agent CLI auto-detection failed: {exc}]")
+            detected = None
+        if detected:
+            click.echo(
+                f"[auto-selected {detected} for WIKI_MODEL/WIKI_LIGHTWEIGHT_MODEL — a "
+                "coding-agent CLI session was detected. Set WIKI_MODEL / WIKI_LIGHTWEIGHT_MODEL "
+                "to override, or PARROT_NO_AUTO_LLM=1 to disable auto-detection.]"
+            )
+            lightweight_model_value = detected
+            model_value = detected
+    return (
+        _resolve_model_id(lightweight_model_value, "WIKI_LIGHTWEIGHT_MODEL"),
+        _resolve_model_id(model_value, "WIKI_MODEL"),
+    )
+
+
 def _build_novelty_scorer(root: Path, config: WikiProjectConfig, store: BaseWikiStore) -> Any:
     """Construct a NoveltyScorer: grounding-backed when the graph DB
     exists (mirrors the ``ground`` command's wiring above), else a
@@ -4564,6 +4724,104 @@ def _build_novelty_scorer(root: Path, config: WikiProjectConfig, store: BaseWiki
 
     evaluator = _run(_build_evaluator())
     return NoveltyScorer(grounding_evaluator=evaluator)
+
+
+def _build_ingest_runtime(
+    root: Path,
+    config: WikiProjectConfig,
+    store: BaseWikiStore,
+    sources: SourceCollectionManager,
+    charter: "Charter",
+    charter_path: Path,
+    *,
+    lightweight_model_opt: str | None,
+    model_opt: str | None,
+    fetch_timeout: float = 30.0,
+) -> "InboxRuntime":
+    """Build the shared supervised-ingestion services for one inbox run.
+
+    Args:
+        root: Repository root.
+        config: Resolved project configuration.
+        store: Open retrieval-plane store.
+        sources: Source manifest manager matching ``store``.
+        charter: Parsed editorial charter.
+        charter_path: Source path for ``charter``.
+        lightweight_model_opt: Optional stage-one model override.
+        model_opt: Optional stage-two model override.
+        fetch_timeout: URL acquisition timeout in seconds.
+
+    Returns:
+        Service bindings consumed by :class:`InboxProcessor`.
+
+    Raises:
+        click.ClickException: If neither model can be resolved or an LLM
+            client cannot be constructed.
+    """
+    from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
+    from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
+    from parrot.knowledge.wiki.documents import DocumentAcquirer
+    from parrot.knowledge.wiki.inbox.processor import InboxRuntime
+    from parrot.knowledge.wiki.ingest import WikiIngestOrchestrator
+    from parrot.knowledge.wiki.models import WikiConfig
+    from parrot.knowledge.wiki.search import WikiCombinedSearch
+    from parrot.knowledge.wiki.triage import IngestTriageRouter
+
+    lightweight_model, model = _resolve_ingest_model_ids(lightweight_model_opt, model_opt)
+    try:
+        light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
+    except Exception as exc:
+        raise click.ClickException(f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}") from exc
+
+    wiki_dir = config.storage_path(root)
+    pageindex_dir = wiki_dir / "pageindex"
+    pi_toolkit = PageIndexToolkit(
+        heavy_adapter,
+        storage_dir=pageindex_dir,
+        lightweight_model=light_model_id if same_provider else None,
+    )
+    if not same_provider:
+        _cli_logger.info(
+            "Stage-1/Stage-2 triage models use different providers "
+            "(%s / %s); PageIndexToolkit will use the Stage-2 (heavy) "
+            "model for its own internal page-generation steps too.",
+            lightweight_model,
+            model,
+        )
+    bookkeeper = WikiBookkeeper()
+    orchestrator = WikiIngestOrchestrator(
+        pi_toolkit,
+        None,
+        sources,
+        bookkeeper,
+        store=store,
+        sync_graph=config.sync_graph,
+    )
+    novelty_scorer = _build_novelty_scorer(root, config, store)
+    router = IngestTriageRouter(charter, light_adapter, sources, novelty_scorer, heavy_adapter=heavy_adapter)
+    wiki_config = WikiConfig(
+        wiki_name=config.wiki_name,
+        storage_dir=wiki_dir,
+        charter_path=charter_path,
+        sync_graph=config.sync_graph,
+        storage_backend=config.backend,
+    )
+    return InboxRuntime(
+        root=root,
+        config=config,
+        wiki_config=wiki_config,
+        charter=charter,
+        store=store,
+        sources=sources,
+        bookkeeper=bookkeeper,
+        acquirer=DocumentAcquirer(fetch_timeout=fetch_timeout),
+        router=router,
+        orchestrator=orchestrator,
+        light_adapter=light_adapter,
+        heavy_adapter=heavy_adapter,
+        search=WikiCombinedSearch(None, None, store=store),
+        models={"lightweight": lightweight_model, "heavy": model},
+    )
 
 
 def _print_triage_summary(entries: list[Any], skipped: list[str] | None = None) -> None:
@@ -4870,7 +5128,6 @@ def ingest(
         ManifestWriter,
         stratified_sample,
     )
-    from parrot.knowledge.wiki.triage import IngestTriageRouter
 
     modes_selected = sum([dry_run, review_opt is not None, interactive_flag, auto_flag])
     if modes_selected == 0:
@@ -4905,63 +5162,27 @@ def ingest(
             for uri in skipped:
                 click.echo(f"  skipped: {uri}")
 
-    lightweight_model_value = lightweight_model_opt or _env_setting("WIKI_LIGHTWEIGHT_MODEL")
-    model_value = model_opt or _env_setting("WIKI_MODEL")
-    if not lightweight_model_value and not model_value and not _env_setting("PARROT_NO_AUTO_LLM"):
+    if mode == "review":
+        lightweight_model, model = _resolve_ingest_model_ids(lightweight_model_opt, model_opt)
         try:
-            from parrot.clients.detection import detect_coding_agent_llm
-
-            detected = detect_coding_agent_llm()
-        except Exception as exc:  # noqa: BLE001 — detection is best-effort
-            click.echo(f"[coding-agent CLI auto-detection failed: {exc}]")
-            detected = None
-        if detected:
-            click.echo(
-                f"[auto-selected {detected} for WIKI_MODEL/WIKI_LIGHTWEIGHT_MODEL — a "
-                "coding-agent CLI session was detected. Set WIKI_MODEL / WIKI_LIGHTWEIGHT_MODEL "
-                "to override, or PARROT_NO_AUTO_LLM=1 to disable auto-detection.]"
-            )
-            lightweight_model_value = detected
-            model_value = detected
-    lightweight_model = _resolve_model_id(lightweight_model_value, "WIKI_LIGHTWEIGHT_MODEL")
-    model = _resolve_model_id(model_value, "WIKI_MODEL")
-    try:
-        light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
-    except Exception as exc:
-        raise click.ClickException(f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}") from exc
-    pageindex_dir = wiki_dir / "pageindex"
-    pageindex_dir.mkdir(parents=True, exist_ok=True)
-    # PageIndexToolkit builds its OWN internal lightweight adapter as
-    # PageIndexLLMAdapter(client=heavy_adapter.client, model=lightweight_model)
-    # (packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py) — i.e.
-    # it always reuses the HEAVY adapter's client. When --lightweight-model
-    # and --model point at different providers, passing light_model_id
-    # there would send a foreign model id to the heavy provider's client.
-    # Only pass it through when both tiers share a provider; otherwise
-    # PageIndexToolkit falls back to using the heavy adapter for both of
-    # its own internal steps (safe, just not dual-tier for page generation
-    # — the triage router's own light/heavy split above is unaffected).
-    pi_toolkit = PageIndexToolkit(
-        heavy_adapter,
-        storage_dir=pageindex_dir,
-        lightweight_model=light_model_id if same_provider else None,
-    )
-    if not same_provider:
-        _cli_logger.info(
-            "Stage-1/Stage-2 triage models use different providers "
-            "(%s / %s); PageIndexToolkit will use the Stage-2 (heavy) "
-            "model for its own internal page-generation steps too.",
-            lightweight_model,
-            model,
+            _, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
+        except Exception as exc:
+            raise click.ClickException(
+                f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}"
+            ) from exc
+        pi_toolkit = PageIndexToolkit(
+            heavy_adapter,
+            storage_dir=wiki_dir / "pageindex",
+            lightweight_model=light_model_id if same_provider else None,
         )
-    orch = WikiIngestOrchestrator(
-        pi_toolkit,
-        None,
-        sources,
-        bookkeeper,
-        store=store,
-        sync_graph=config.sync_graph,
-    )
+        orch = WikiIngestOrchestrator(
+            pi_toolkit,
+            None,
+            sources,
+            bookkeeper,
+            store=store,
+            sync_graph=config.sync_graph,
+        )
 
     async def _triage_all(
         refs: list[Any], router: Any, acquirer: DocumentAcquirer
@@ -5046,19 +5267,36 @@ def ingest(
         return
 
     # ---- --dry-run / --interactive / --auto: triage first --------------
-    charter_path = _resolve_charter_path(root, charter_opt)
-    charter = load_charter(charter_path)
-    novelty_scorer = _build_novelty_scorer(root, config, store)
-    router = IngestTriageRouter(charter, light_adapter, sources, novelty_scorer, heavy_adapter=heavy_adapter)
-    wiki_config = WikiConfig(
-        wiki_name=config.wiki_name,
-        storage_dir=wiki_dir,
-        charter_path=charter_path,
-        sync_graph=config.sync_graph,
-        storage_backend=config.backend,
+    try:
+        charter_path = _resolve_charter_path(root, charter_opt)
+        charter = load_charter(charter_path)
+    except click.ClickException:
+        lightweight_model, model = _resolve_ingest_model_ids(lightweight_model_opt, model_opt)
+        try:
+            _build_triage_adapters(lightweight_model, model)
+        except Exception as exc:
+            raise click.ClickException(
+                f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}"
+            ) from exc
+        raise
+    runtime = _build_ingest_runtime(
+        root,
+        config,
+        store,
+        sources,
+        charter,
+        charter_path,
+        lightweight_model_opt=lightweight_model_opt,
+        model_opt=model_opt,
+        fetch_timeout=fetch_timeout,
     )
+    bookkeeper = runtime.bookkeeper
+    orch = runtime.orchestrator
+    router = runtime.router
+    wiki_config = runtime.wiki_config
+    novelty_scorer = router.novelty_scorer
     refs = resolve_sources(source, recursive=recursive)
-    acquirer = DocumentAcquirer(fetch_timeout=fetch_timeout)
+    acquirer = runtime.acquirer
     entries, acquired_by_uri, skipped = _run(_triage_all(refs, router, acquirer))
 
     if mode == "dry-run":
@@ -5163,6 +5401,89 @@ def ingest(
         f"fields are filled in via a follow-up `--review` pass over {manifest_path}."
     )
     _report_skipped(skipped)
+
+
+@wiki.command()
+@click.option("--path", "path_", type=click.Path(file_okay=False, path_type=str), default=None)
+@click.option("--dry-run", is_flag=True)
+@click.option("--limit", type=click.IntRange(min=0), default=None)
+@click.option("--charter", "charter_opt", default=None)
+@click.option("--lightweight-model", "lightweight_model_opt", default=None)
+@click.option("--model", "model_opt", default=None)
+@click.option("--archive/--no-archive", default=True)
+@click.option("--force", is_flag=True)
+@click.option("--json", "as_json", is_flag=True)
+def inbox(
+    path_: str | None,
+    dry_run: bool,
+    limit: int | None,
+    charter_opt: str | None,
+    lightweight_model_opt: str | None,
+    model_opt: str | None,
+    archive: bool,
+    force: bool,
+    as_json: bool,
+) -> None:
+    """Ingest every safe document from the configured inbox directory.
+
+    The processor, rather than the CLI, owns the whole-run write lock.
+    """
+    from parrot.knowledge.wiki.charter import load_charter
+    from parrot.knowledge.wiki.inbox.processor import InboxLockBusy, InboxProcessor
+    from parrot.knowledge.wiki.project import validate_inbox_paths
+
+    try:
+        root, config = _resolve_project(path_)
+        inbox_dir = config.inbox_path(root)
+        if not inbox_dir.is_dir():
+            raise click.UsageError(f"Inbox directory does not exist: {inbox_dir}")
+        validate_inbox_paths(root, inbox_dir, config.archive_path(root), config.inbox_markdown_path(root))
+        charter_path = _resolve_charter_path(root, charter_opt)
+        charter = load_charter(charter_path)
+    except WikiConfigError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+    store = _open_store(root, config)
+    sources = _open_sources(root, config, store=store)
+    if as_json:
+        with redirect_stdout(sys.stderr):
+            runtime = _build_ingest_runtime(
+                root,
+                config,
+                store,
+                sources,
+                charter,
+                charter_path,
+                lightweight_model_opt=lightweight_model_opt,
+                model_opt=model_opt,
+            )
+    else:
+        runtime = _build_ingest_runtime(
+            root,
+            config,
+            store,
+            sources,
+            charter,
+            charter_path,
+            lightweight_model_opt=lightweight_model_opt,
+            model_opt=model_opt,
+        )
+    try:
+        report = _run(InboxProcessor(runtime).run(dry_run=dry_run, limit=limit, force=force, archive=archive))
+    except WikiConfigError as exc:
+        raise click.UsageError(str(exc)) from exc
+    except InboxLockBusy as exc:
+        if not as_json:
+            click.echo(str(exc), err=True)
+        raise click.exceptions.Exit(3) from exc
+
+    if as_json:
+        click.echo(report.model_dump_json())
+    else:
+        counts = ", ".join(f"{status}={count}" for status, count in sorted(report.counts.items())) or "empty=0"
+        click.echo(f"Inbox: {counts}")
+    if report.failed:
+        raise click.exceptions.Exit(1)
 
 
 @wiki.command(name="ingest-jira")
@@ -5447,7 +5768,6 @@ def claude_hook() -> None:
     emits a non-blocking nudge toward `wikitoolkit query` before
     search-style tool calls. Always exits 0.
     """
-    import sys
 
     from parrot.knowledge.wiki.claude_code.hook import run_pre_tool_use_hook
 
