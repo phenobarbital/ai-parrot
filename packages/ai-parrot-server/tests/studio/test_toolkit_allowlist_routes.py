@@ -101,7 +101,7 @@ async def test_execute_disabled_toolkit_is_403_same_shape(aiohttp_client, pool, 
                              headers=who("u1"))
     body = await resp.json()
     assert resp.status == 403 and body["code"] == "tooling_not_permitted", body
-    assert body["details"]["reason"] == "toolkit_unavailable"
+    assert body["details"] == {"reason": "toolkit_unavailable", "item": "tp_tenant_tool"}
 
 
 async def test_existing_agent_with_disabled_toolkit_still_builds(aiohttp_client, pool, host_plugins):  # noqa: F811

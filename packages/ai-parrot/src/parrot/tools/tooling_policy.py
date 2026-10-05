@@ -141,6 +141,7 @@ class TenantToolingPolicy(BaseModel, frozen=True):
 
     def _check_tenant_toolkit(self, slug: str, subject: ToolingSubject) -> None:
         """Per-tenant host-toolkit allow-list; never applied to phase ``build`` (a stored agent must still build)."""
+        # no tenant (global partition) is unrestricted by design; ``build`` is never refused (see above)
         if self.tenant_toolkits is None or not subject.tenant or subject.phase == "build":
             return
         try:
@@ -148,8 +149,11 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         except Exception:  # pylint: disable=broad-except
             logger.exception("tenant_toolkits callback failed for tenant %r; refusing (fail closed)", subject.tenant)
             enabled = ()
-        if enabled is not None and slug not in enabled:
-            raise TenantToolingRefused("toolkit_unavailable", item=slug)
+        if enabled is not None:
+            # a lone ``str`` is one slug, never a substring pool; slugs compare case-insensitively like built-ins
+            names = {enabled} if isinstance(enabled, str) else set(enabled)
+            if slug.lower() not in {str(name).lower() for name in names}:
+                raise TenantToolingRefused("toolkit_unavailable", item=slug)
 
     def resolve_mcp(self, config: Mapping[str, Any], *, subject: ToolingSubject) -> dict[str, Any]:
         """Spec §2 checks 1–4 on the FINAL kwargs; returns MCPServerConfig kwargs."""

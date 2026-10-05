@@ -243,3 +243,15 @@ async def test_base_classes_rows_carry_allowed_and_host_extras(aiohttp_client, p
     assert host[0]["available"] is True and host[0]["params"] == {}
     # the shared cache is never mutated
     assert all("allowed" not in r and r["name"] != "HostBot" for r in catalog_module._BASE_CLASSES_CACHE)
+
+
+async def test_base_classes_host_rows_not_shown_to_global_partition(aiohttp_client, pool):  # noqa: F811
+    from .test_agents_db_mode import _app
+
+    app = _app(pool)                                   # no scope resolver: the global partition
+    app["studio_class_allowlist"] = {"HostBot"}
+    client = await aiohttp_client(app)
+    resp = await client.get(f"{BASE}/catalog/base-classes")
+    rows = await resp.json()
+    assert resp.status == 200 and all("allowed" in r for r in rows)
+    assert not [r for r in rows if r["name"] == "HostBot"]

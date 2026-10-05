@@ -206,3 +206,9 @@ class TestTenantToolkits:
     def test_tenant_none_unaffected(self, host_plugins):
         pol = TenantToolingPolicy(tenant_toolkits=lambda t: set())
         pol.check_tool("tp_probe", subject=self._subject(tenant=None))
+
+    def test_str_result_is_one_slug_and_case_insensitive(self, host_plugins):
+        pol = TenantToolingPolicy(tenant_toolkits=lambda t: "TP_PROBE")
+        pol.check_tool("tp_probe", subject=self._subject())
+        with pytest.raises(TenantToolingRefused):
+            pol.check_tool("tp", subject=self._subject())          # never a substring match

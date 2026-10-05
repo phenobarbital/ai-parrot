@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from typing import Any
 
 import parrot.bots as bots_module
@@ -29,7 +30,10 @@ import parrot.handlers.tools_catalog as tools_catalog_module
 from parrot.handlers.tools_catalog import _build_catalog, filter_catalog_for
 
 from ._base import StudioBaseView
+from .storage.models import StudioPartition
 from .models import StudioError
+
+logger = logging.getLogger(__name__)
 
 _BASE_CLASSES_CACHE: list[dict] | None = None
 _LLM_CLIENTS_CACHE: list[dict] | None = None
@@ -139,6 +143,7 @@ def _provider_models(provider: str) -> tuple[list[str], list[str]]:
         listing = LLMFactory.list_models(provider)
         return [str(m) for m in listing.get("active") or []], [str(m) for m in listing.get("deprecated") or []]
     except Exception:  # pylint: disable=broad-except
+        logger.debug("model listing unavailable for provider %r", provider, exc_info=True)
         return [], []
 
 
@@ -215,12 +220,7 @@ class StudioCatalogHandler(StudioBaseView):
     async def get(self):
         kind = self.request.match_info.get("kind")
         if kind == "base-classes":
-            from .access import StudioTenantRequired
-
-            try:
-                return self.json_response(await self._base_classes_for_caller())
-            except StudioTenantRequired:
-                return self._tenant_required()
+            return self.json_response(await self._base_classes_for_caller())
         if kind == "llm-clients":
             return self.json_response(await self._get_llm_clients())
         if kind == "tools":
@@ -239,17 +239,20 @@ class StudioCatalogHandler(StudioBaseView):
     async def _base_classes_for_caller(self) -> list[dict]:
         """Cached rows copied with ``allowed`` for the caller's partition, plus host-extra rows (B13).
 
-        Raises:
-            StudioTenantRequired: when the caller has no resolvable partition.
         """
+        from .access import StudioTenantRequired
         from .storage.services._common import StudioClassAllowlist
 
-        part = await self._studio_partition()
+        try:
+            part = await self._studio_partition()
+        except StudioTenantRequired:
+            part = StudioPartition.GLOBAL   # additive: a caller with no tenant keeps getting the catalogue (as before)
         allow = StudioClassAllowlist.from_app(self.request.app)
         cached = await self._get_base_classes()
         rows = [{**row, "allowed": allow.allows(part, row["name"])} for row in cached]
         exported = set(bots_module.__all__)
-        for name in sorted(allow.names() - exported):
+        # host additions are a tenant-partition concept: the global partition never sees them
+        for name in sorted(allow.names() - exported if part.tenant is not None else ()):
             rows.append(
                 {
                     "name": name,
