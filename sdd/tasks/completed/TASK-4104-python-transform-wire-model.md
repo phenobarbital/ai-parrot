@@ -302,10 +302,14 @@ def test_existing_descriptor_unchanged() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker orchestrator; implemented by seat gpt-5.6-terra (codex), attempt 1, 421s, 0 retries
+**Date**: 2026-10-06
+**Notes**: PythonTransform + three-way TransformSpec XOR + terminal rule + both schema artifacts regenerated
+(commit c2debed67). Diff reviewed by hand against the spec; `tests/outputs/a2ui/linked` 220 passed.
+Merge-tier validation exit 1, but the failures are outside the task's files and pass in isolation on both the
+pre-task base and this branch: test_structured_envelope.py (4 passed), test_publish_surface_mixin.py (10 passed).
+The `ai-parrot-server/tests` collection errors are an environment issue. I did not rerun the full batch on the
+baseline, so batch-level pollution is inferred, not proven; the feature-level run should confirm.
+`finalize_task` was not used because it requires a green validation ref.
 
 **Deviations from spec**: none

@@ -16,7 +16,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Exclusive: runs scripts/generate_ts_types.py, which rewrites every committed file under packages/ai-parrot-server/ui/schemas/ (shared generated code other features read); no dependencies — root of the graph.",
       "assigned_to": null,
       "started_at": "2026-10-05T23:07:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4104-python-transform-wire-model.md"
+      "completed_at": "2026-10-05T23:19:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4104-python-transform-wire-model.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4105",
