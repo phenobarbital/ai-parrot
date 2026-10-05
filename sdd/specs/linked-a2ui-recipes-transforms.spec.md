@@ -10,7 +10,7 @@ tags: [a2ui, linked-surfaces, querysource, recipes, transformers, ui-surfaces]
 **Feature ID**: FEAT-636
 **Date**: 2026-10-06
 **Author**: Jesus Lara (+ Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Exploration**: `sdd/proposals/linked-a2ui-recipes-transforms.proposal.md` (accepted; all open questions resolved)
 
