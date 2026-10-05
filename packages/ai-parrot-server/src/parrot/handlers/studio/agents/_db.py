@@ -32,7 +32,7 @@ class _StudioAgentsDbMixin:
                 return await self._legacy_get() if part.tenant is None else self._not_found("agent", name)
             if (denied := await self._studio_authorize(rec, name, manage=False)) is not None:
                 return denied
-            return self.json_response(self._studio_item_for(await self._access(), rec))
+            return self.json_response(self._studio_item_for(await self._access(), rec, detail=True))
         access = await self._access()
         recs = await storage.services.agents.list(part)
         visible = [r for r in recs if access.can_see(_store_record("agent", r.agent_id, r))]
@@ -210,4 +210,4 @@ class _StudioAgentsDbMixin:
         )
         if isinstance(updated, web.Response):
             return updated
-        return self.json_response(self._studio_item_for(await self._access(), updated))
+        return self.json_response(self._studio_item_for(await self._access(), updated, detail=True))
