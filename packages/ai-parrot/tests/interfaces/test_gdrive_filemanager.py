@@ -265,3 +265,133 @@ async def test_download_workspace_native_raises(manager):
 
     with pytest.raises(GoogleDriveFileManagerError, match="export is not supported"):
         await result.download_file("sheet", Path("unused"))
+
+
+# ---- uploads (TASK-3812) -------------------------------------------------
+def _children(drive, name):
+    return [item for item in drive.drive.by_id.values() if item.name == name and not item.trashed]
+
+
+@pytest.mark.asyncio
+async def test_upload_small_multipart_create_and_replace(manager, tmp_path):
+    result, drive = manager
+    source = tmp_path / "new.txt"
+    source.write_bytes(b"hello")
+
+    metadata = await result.upload_file(source, "sub/new.txt")
+    assert metadata.path == "sub/new.txt"
+    assert _children(drive, "new.txt")[0].content == b"hello"
+
+    again = await result.upload_file(io.BytesIO(b"bye"), "sub/new.txt")
+    assert again.size == 3
+    assert len(_children(drive, "new.txt")) == 1
+    assert _children(drive, "new.txt")[0].content == b"bye"
+    assert any(call[1] == "update" for call in drive.drive.calls)
+
+
+@pytest.mark.asyncio
+async def test_upload_resumable_session_chunks_308_and_range_resume(manager, monkeypatch):
+    result, drive = manager
+    result.chunk_size = result.small_file_threshold = 262144
+    payload = bytes(range(256)) * 2400  # 600 KiB
+    size = len(payload)
+
+    metadata = await result.upload_file(io.BytesIO(payload), "big.bin")
+
+    assert metadata.size == size
+    assert _children(drive, "big.bin")[0].content == payload
+    puts = [req for req in drive.requests if req.method == "PUT"]
+    assert [req.headers["Content-Range"] for req in puts] == [
+        f"bytes 0-262143/{size}",
+        f"bytes 262144-524287/{size}",
+        f"bytes 524288-{size - 1}/{size}",
+    ]
+    assert all("Authorization" not in req.headers for req in puts)
+    assert len([req for req in drive.requests if req.method == "POST"]) == 1
+
+    drive.fail_next(503, method="PUT")
+    await result.upload_file(io.BytesIO(payload), "retry.bin")
+    assert _children(drive, "retry.bin")[0].content == payload
+
+    drive.fail_next(503, method="POST")
+    with pytest.raises(GoogleDriveFileManagerError) as excinfo:
+        await result.upload_file(io.BytesIO(payload), "nope.bin")
+    assert excinfo.value.status_code == 503
+    assert not _children(drive, "nope.bin")
+
+
+@pytest.mark.asyncio
+async def test_upload_session_url_validated_and_not_logged(manager, caplog):
+    result, drive = manager
+    result.chunk_size = result.small_file_threshold = 262144
+    original = drive.send_raw
+    secret = "https://evil.example/upload?upload_id=SECRET-TOKEN"
+
+    async def hostile(request, **kwargs):
+        response = await original(request, **kwargs)
+        if request.method == "POST":
+            response.headers["Location"] = secret
+        return response
+
+    drive.send_raw = hostile
+    with caplog.at_level("DEBUG"):
+        with pytest.raises(GoogleDriveFileManagerError):
+            await result.upload_file(io.BytesIO(b"x" * 300000), "big.bin")
+    assert "SECRET-TOKEN" not in caplog.text
+    assert not [req for req in drive.requests if req.method == "PUT"]
+
+
+@pytest.mark.asyncio
+async def test_upload_conflict_replace_fail_rename(manager):
+    result, drive = manager
+
+    await result.upload_file(io.BytesIO(b"new"), "q3.xlsx")
+    assert len(_children(drive, "q3.xlsx")) == 1
+    assert _children(drive, "q3.xlsx")[0].content == b"new"
+
+    result.conflict_behavior = "fail"
+    with pytest.raises(FileExistsError):
+        await result.upload_file(io.BytesIO(b"z"), "q3.xlsx")
+
+    result.conflict_behavior = "rename"
+    first = await result.upload_file(io.BytesIO(b"a"), "q3.xlsx")
+    second = await result.upload_file(io.BytesIO(b"b"), "q3.xlsx")
+    assert first.name == "q3 (1).xlsx"
+    assert second.name == "q3 (2).xlsx"
+    assert result._renamed("README", {"README (1)"}) == "README (2)"
+
+
+@pytest.mark.asyncio
+async def test_upload_unseekable_stream_above_threshold_refused(manager):
+    result, drive = manager
+    result.small_file_threshold = 8
+
+    class Unseekable(io.RawIOBase):
+        def __init__(self, data):
+            self._buffer = io.BytesIO(data)
+
+        def readable(self):
+            return True
+
+        def seekable(self):
+            return False
+
+        def read(self, size=-1):
+            return self._buffer.read(size)
+
+    with pytest.raises(ValueError, match="unseekable"):
+        await result.upload_file(Unseekable(b"x" * 100), "stream.bin")
+    assert not _children(drive, "stream.bin")
+    await result.upload_file(Unseekable(b"tiny"), "stream-ok.bin")
+    assert _children(drive, "stream-ok.bin")[0].content == b"tiny"
+
+
+@pytest.mark.asyncio
+async def test_create_file_and_upload_file_from_bytes_returns_webviewlink(manager):
+    result, drive = manager
+
+    assert await result.create_file("made.txt", b"abc") is True
+    assert _children(drive, "made.txt")[0].content == b"abc"
+    url = await result.upload_file_from_bytes(b"<b/>", "page.html", "text/html")
+    assert url.startswith("https://drive.google.com/file/d/")
+    assert _children(drive, "page.html")[0].mimeType == "text/html"
