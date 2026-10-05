@@ -1,12 +1,14 @@
 """Host-owned tenant tooling policy (FEAT-622 M7, review R1). Pure and synchronous: no I/O."""
+
 from __future__ import annotations
 
-from collections.abc import Mapping, MutableMapping
+import logging
+from collections.abc import Callable, Collection, Mapping, MutableMapping
 from typing import Any, ClassVar, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from parrot.tools.resolver import get_toolkit_resolver
 from parrot.tools.spec import (
@@ -17,16 +19,34 @@ from parrot.tools.spec import (
     toolkit_vault_name,
 )
 
+logger = logging.getLogger(__name__)
+
 TenantMCPTransport = Literal["http", "sse", "streamable-http"]
 ToolingRefusal = Literal[
-    "local_execution", "transport_not_permitted", "endpoint_not_allowed", "mcp_server_unknown",
-    "field_not_permitted", "secret_ref_not_permitted", "builtin_not_permitted", "toolkit_unavailable",
+    "local_execution",
+    "transport_not_permitted",
+    "endpoint_not_allowed",
+    "mcp_server_unknown",
+    "field_not_permitted",
+    "secret_ref_not_permitted",
+    "builtin_not_permitted",
+    "toolkit_unavailable",
 ]
 _POLICY_KEY = "parrot.tenant_tooling_policy"
-_TENANT_MCP_FIELDS = frozenset({
-    "name", "url", "transport", "description", "allowed_tools", "blocked_tools",
-    "auth_type", "headers", "auth_config", "timeout",
-})
+_TENANT_MCP_FIELDS = frozenset(
+    {
+        "name",
+        "url",
+        "transport",
+        "description",
+        "allowed_tools",
+        "blocked_tools",
+        "auth_type",
+        "headers",
+        "auth_config",
+        "timeout",
+    }
+)
 _LOCAL_FIELDS = ("command", "args", "env", "socket_path")
 _SECRET_BLOCKED_PHASES = frozenset({"write", "activate", "attach"})
 
@@ -102,12 +122,15 @@ def detect_transport(config: Mapping[str, Any]) -> str | None:
 class TenantToolingPolicy(BaseModel, frozen=True):
     """Frozen host policy; the default is :meth:`deny_all`."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     mcp_servers: Mapping[str, HostMCPServer] = {}
     mcp_endpoints: tuple[str, ...] = ()
     mcp_transports: frozenset[TenantMCPTransport] = frozenset({"http", "sse", "streamable-http"})
     builtin_tools: frozenset[str] = frozenset()
     host_toolkits: bool = True
     apply_to_global: bool = False
+    tenant_toolkits: Callable[[str], Collection[str] | None] | None = None
 
     @field_validator("mcp_endpoints")
     @classmethod
@@ -127,9 +150,22 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         if entry.is_host:
             if not self.host_toolkits:
                 raise TenantToolingRefused("toolkit_unavailable", item=slug)
+            self._check_tenant_toolkits(slug, subject)
             return
         if slug.lower() not in {name.lower() for name in self.builtin_tools}:
             raise TenantToolingRefused("builtin_not_permitted", item=slug)
+
+    def _check_tenant_toolkits(self, slug: str, subject: ToolingSubject) -> None:
+        """Apply the host's per-tenant toolkit allow-list (``None`` = unrestricted; failures close)."""
+        if self.tenant_toolkits is None or not subject.tenant or subject.phase == "build":
+            return
+        try:
+            enabled = self.tenant_toolkits(subject.tenant)
+        except Exception:  # noqa: BLE001 - a broken host projection must never widen access
+            logger.exception("tenant_toolkits callback failed for tenant %r; failing closed", subject.tenant)
+            enabled = ()
+        if enabled is not None and slug not in enabled:
+            raise TenantToolingRefused("toolkit_unavailable", item=slug)
 
     def resolve_mcp(self, config: Mapping[str, Any], *, subject: ToolingSubject) -> dict[str, Any]:
         """Spec §2 checks 1–4 on the FINAL kwargs; returns MCPServerConfig kwargs."""
@@ -141,9 +177,7 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         self._check_endpoint(config)
         return dict(config)
 
-    def check_tooling(
-        self, tooling: NormalizedTooling, *, subject: ToolingSubject, owner: str | None = None
-    ) -> None:
+    def check_tooling(self, tooling: NormalizedTooling, *, subject: ToolingSubject, owner: str | None = None) -> None:
         """Check every tool, toolkit and MCP spec of ``tooling`` (and secret references by phase)."""
         for tool in tooling.tools:
             slug = tool if isinstance(tool, str) else getattr(tool, "name", None)
