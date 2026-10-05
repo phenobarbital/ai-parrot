@@ -3,6 +3,9 @@
 type: feature
 base_branch: dev
 feature_id: FEAT-634
+status: approved
+approved_at: 2026-10-05
+approver: Juan
 projects: [ai-parrot, ai-parrot-server, docs]
 tags: [agentstudio, ui, catalogue, tooling-policy, multi-tenant, api-docs]
 ---
@@ -14,7 +17,7 @@ tags: [agentstudio, ui, catalogue, tooling-policy, multi-tenant, api-docs]
 **Feature ID**: FEAT-634
 **Date**: 2026-10-05
 **Author**: Juan Ruffato (with Claude), for review by Jesus Lara
-**Status**: draft
+**Status**: approved (2026-10-05, Juan)
 **Target version**: next release after merge (release numbering is owned by the repo owner)
 **Inputs**: FieldSync `artifacts/agentstudio/specs-common-decisions.md` (decision 4);
 `artifacts/agentstudio/svelte-ui-reconciliation-2026-10-05.md` §3 (gaps B1–B13);
@@ -485,7 +488,7 @@ None.
 - [x] B1 exposure for non-managers — *Resolved (recommendation adopted)*: flat `llm`/`description`/`category` for everyone, `definition` (prompt, params, tools) managers only.
 - [x] B4 hide vs mark — *Resolved by decision 4*: filter (hide); refusal shape fixed in §2.
 - [x] B7 — *Resolved by decision 5/OQ7*: last-write-wins accepted; documented only.
-- [ ] Should viewers (non-managers) of a tenant-shared agent be allowed to read its `system_prompt`? — *Owner: Juan / product.* Recommendation: no (current spec). Non-blocking: flipping it is a one-line change in `_studio_item_for`.
+- [x] Should viewers (non-managers) of a tenant-shared agent be allowed to read its `system_prompt`? — *Resolved 2026-10-05 (Juan)*: no; non-manager viewers do NOT read `system_prompt` (current spec stands).
 - [x] Does FieldSync's settings projection allow a synchronous in-memory read of the programme toolkit list for `tenant_toolkits`? — *Resolved 2026-10-05 (cross-repo pass)*: yes, but not from `ProgrammeSettings` itself (it is read per request through an async DB call). FieldSync FEAT-671 (module 7, `StudioToolkitSnapshot`) keeps a process-local in-memory map `programme → frozenset[str]`, refreshed (a) by the scope resolver on every Studio-plane request — which always runs before any `check_tool` in that request — and (b) by the settings `PUT` in the same process. FEAT-673 registers `tenant_toolkits=snapshot.enabled_for` in `build_tooling_policy()`. A programme never seen by the process returns an empty collection (fail closed), never `None`. The parrot seam is unchanged: sync, no I/O, `None` = unrestricted.
 
 ---
