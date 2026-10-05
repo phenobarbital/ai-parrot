@@ -776,6 +776,9 @@ four reuse existing sources of truth — no new registries.
   caller's partition may create an agent of that class (a tenant partition is
   limited to `parrot.bots.__all__` plus the host additions in
   `app["studio_class_allowlist"]`; the global partition allows every class).
+  For the stock catalogue `allowed` is therefore `true` on every row (the rows
+  come from `parrot.bots.__all__`); `false` only appears for a class outside
+  the caller's allow-list.
   Host additions the bot module does not export are appended as
   `{"name", "available": true, "allowed": true, "host": true, "module": null, "docstring": null, "params": {}, "lazy": false}`.
 - **`llm-clients`** — resolves `SUPPORTED_CLIENTS`; lazy-loader entries
