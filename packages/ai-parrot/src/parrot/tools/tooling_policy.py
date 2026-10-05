@@ -78,6 +78,8 @@ class ToolingSubject(BaseModel, frozen=True):
     agent_id: UUID | None
     actor: str | None
     phase: Literal["write", "activate", "build", "attach", "execute"]
+    held: frozenset[str] = frozenset()
+    """Lower-cased slugs the write leaves untouched: exempt from the per-tenant toolkit allow-list only (delta check)."""
 
 
 def _split_https(url: str) -> tuple[str, int, str] | None:
@@ -161,6 +163,8 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         """Per-tenant host-toolkit allow-list; never applied to phase ``build`` (a stored agent must still build)."""
         # no tenant (global partition) is unrestricted by design; ``build`` is never refused (see above)
         if self.tenant_toolkits is None or not subject.tenant or subject.phase == "build":
+            return
+        if slug.lower() in subject.held:  # stored, unchanged tooling: a disabled toolkit is refused at call time instead
             return
         enabled = self.enabled_toolkits(subject.tenant)
         if enabled is not None and slug.lower() not in enabled:
@@ -285,6 +289,20 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         candidate = f"https://{host}:{port}{path if path.endswith('/') else path + '/'}"
         if not any(candidate.startswith(prefix) for prefix in self.mcp_endpoints):
             raise TenantToolingRefused("endpoint_not_allowed", item=name)
+
+
+def unchanged_slugs(before: NormalizedTooling, after: NormalizedTooling) -> frozenset[str]:
+    """Lower-cased slugs of ``after`` that a write leaves exactly as in ``before`` (tools and toolkit specs)."""
+
+    def _slug(tool: Any) -> str | None:
+        slug = tool if isinstance(tool, str) else getattr(tool, "name", None)
+        return slug.lower() if isinstance(slug, str) else None
+
+    kept = {_slug(t) for t in after.tools if any(t == old for old in before.tools)}
+    kept |= {item.slug.lower() for item in after.toolkits if any(item == old for old in before.toolkits)}
+    changed = {_slug(t) for t in after.tools if not any(t == old for old in before.tools)}
+    changed |= {item.slug.lower() for item in after.toolkits if not any(item == old for old in before.toolkits)}
+    return frozenset(slug for slug in kept - changed if slug)
 
 
 def effective_mcp_config(spec: AgentMCPServerSpec) -> dict[str, Any]:

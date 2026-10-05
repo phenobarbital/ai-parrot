@@ -15,6 +15,7 @@ from parrot.tools.tooling_policy import (
     enforce_tenant_tooling,
     get_tenant_tooling_policy,
     set_tenant_tooling_policy,
+    unchanged_slugs,
 )
 
 from ._host_probe import host_plugins  # noqa: F401
@@ -226,6 +227,24 @@ class TestTenantToolkits:
         TenantToolingPolicy(tenant_toolkits=lambda t: None).check_tool("tp_probe_tool", subject=self._subject())
         with pytest.raises(TenantToolingRefused):
             TenantToolingPolicy(tenant_toolkits=lambda t: ()).check_tool("tp_probe", subject=self._subject())
+
+    def test_held_slugs_skip_only_the_allow_list(self, host_plugins):
+        pol = TenantToolingPolicy(tenant_toolkits=lambda t: set())
+        held = ToolingSubject(tenant="acme", agent_id=AGENT_ID, actor="u1", phase="write", held=frozenset({"tp_probe"}))
+        pol.check_tool("tp_probe", subject=held)                     # stored and unchanged: not re-validated
+        with pytest.raises(TenantToolingRefused):
+            pol.check_tool("tp_probe_tool", subject=held)            # anything else still is
+        with pytest.raises(TenantToolingRefused):
+            TenantToolingPolicy(host_toolkits=False).check_tool("tp_probe", subject=held)
+
+    def test_unchanged_slugs_delta(self):
+        same, other = ToolkitSpec(slug="A", params={"x": 1}), ToolkitSpec(slug="b")
+        before = NormalizedTooling(tools=["t1", "t2"], toolkits=[same, other])
+        after = NormalizedTooling(
+            tools=["t1", "t3"], toolkits=[ToolkitSpec(slug="A", params={"x": 1}), ToolkitSpec(slug="b", params={"y": 2})]
+        )
+        assert unchanged_slugs(before, after) == {"t1", "a"}         # t3 added, b re-configured, t2 removed
+        assert unchanged_slugs(NormalizedTooling(), after) == frozenset()
 
     def test_tenant_none_unaffected(self, host_plugins):
         pol = TenantToolingPolicy(tenant_toolkits=lambda t: set())

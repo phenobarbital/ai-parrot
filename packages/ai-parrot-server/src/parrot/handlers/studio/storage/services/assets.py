@@ -29,13 +29,14 @@ class StudioAssetService:
     async def _locked_agent(
         self, conn: Any, part: StudioPartition, agent_name: str, guard: StudioWriteGuard, actor: str | None
     ):
-        """Lock the agent (guard checked) and re-check the policy on its CURRENT tooling; returns its head."""
+        """Lock the agent (guard checked) and re-check the policy on its CURRENT tooling (delta only); returns its head."""
         head = await self._repos.agents.lock(conn, part, agent_name, guard)
         record = await self._repos.agents.get(part, agent_name, conn=conn)
         rows = await self._repos.tooling.list_locked(conn, head.agent_id)
+        current = normalized_tooling_for(record.definition, rows)
+        # an asset write never changes tooling: nothing is re-validated against the tenant toolkit allow-list
         self._gate.enforce(
-            part, normalized_tooling_for(record.definition, rows), agent_id=head.agent_id,
-            actor=actor or record.owner, phase="write",
+            part, current, agent_id=head.agent_id, actor=actor or record.owner, phase="write", before=current
         )
         return head
 

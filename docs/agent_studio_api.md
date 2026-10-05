@@ -1066,8 +1066,16 @@ set_tenant_tooling_policy(app, TenantToolingPolicy(
   `activate`, `attach` and `execute` — **never `build`**: a stored agent whose
   programme later disabled a toolkit must still build; the host refuses use at
   call time.
-- A callback that raises is **fail closed** (nothing is enabled for that tenant)
-  and is logged.
+- A callback that raises, is `async`, or returns anything that is neither `None`,
+  a `str` nor an iterable (an `int`, a `bool`, ...) is **fail closed** (nothing is
+  enabled for that tenant: `toolkit_unavailable`, never a 500) and is logged.
+- **Disabling a toolkit does not block unrelated edits; its calls are refused.**
+  Only toolkits being **added or re-configured** are checked at write / attach /
+  activate. Writes that leave the stored tooling unchanged (`PATCH` of metadata,
+  asset `PUT`/`DELETE`, skill import) and removing a toolkit never re-validate
+  what the agent already holds. A held-but-disabled toolkit is refused at
+  call time (`POST /tools/{slug}/execute`, attach) and filtered out of the
+  catalogue.
 - `GET /catalog/tools` is filtered by it, and every tenant write or attach path
   refuses a disabled toolkit with one shape:
 

@@ -84,18 +84,40 @@ async def test_put_toolkit_disabled_is_422_with_details(aiohttp_client, pool, ho
     assert resp.status == 200, await resp.text()
 
 
-async def test_create_and_patch_with_disabled_toolkit_422(aiohttp_client, pool, host_plugins):  # noqa: F811
-    """Neither ``POST /agents`` nor ``PATCH`` carries tooling; every route that does is refused identically.
-
-    The bundle route (draft save) and the toolkit PUT are the write paths; an agent created plainly stays writable
-    for the enabled toolkit and refused for the disabled one, and its PATCH (General fields) is unaffected.
-    """
+async def test_create_with_disabled_tool_422(aiohttp_client, pool, host_plugins):  # noqa: F811
+    """``POST /agents`` with ``config.tools`` naming a disabled host toolkit is refused; the enabled one is not."""
     client = await aiohttp_client(_app(pool))
-    assert (await create(client, "mine", who("u1")))[0].status == 201
-    resp = await client.patch(f"{BASE}/agents/mine", json={"description": "x"}, headers=who("u1"))
-    assert resp.status == 200
-    resp = await client.put(f"{BASE}/agents/mine/toolkits/{DISABLED}", json={"params": {}}, headers=who("u1"))
-    assert resp.status == 422 and (await resp.json())["details"] == EXPECTED
+    resp, body = await create(client, "bad", who("u1"), config={"tools": [DISABLED]})
+    assert resp.status == 422 and body["code"] == "tooling_not_permitted", body
+    assert body["details"] == EXPECTED
+    assert (await create(client, "good", who("u1"), config={"tools": [ENABLED]}))[0].status == 201
+
+
+async def test_unrelated_edits_not_blocked_by_held_disabled_toolkit(aiohttp_client, pool, host_plugins):  # noqa: F811
+    """Delta check (Resolved 2026-10-05): an agent already holding a now-disabled toolkit stays editable.
+
+    PATCH of metadata, asset PUT/DELETE and adding ANOTHER enabled toolkit pass; re-configuring or adding the
+    disabled toolkit is refused; removing it is always allowed.
+    """
+    app = _app(pool, _policy({ENABLED, DISABLED}))
+    client = await aiohttp_client(app)
+    owner = who("u1")
+    assert (await create(client, "mine", owner))[0].status == 201
+    url = f"{BASE}/agents/mine/toolkits"
+    assert (await client.put(f"{url}/{DISABLED}", json={"params": {}}, headers=owner)).status == 200
+    app[tooling_policy._POLICY_KEY] = _policy()          # the programme disabled it since
+    resp = await client.patch(f"{BASE}/agents/mine", json={"description": "still editable"}, headers=owner)
+    assert resp.status == 200, await resp.text()
+    resp = await client.put(f"{BASE}/agents/mine/files/kb/n.md", json={"content": "x"}, headers=owner)
+    assert resp.status == 200, await resp.text()
+    resp = await client.delete(f"{BASE}/agents/mine/files/kb/n.md", headers=owner)
+    assert resp.status == 200, await resp.text()
+    resp = await client.put(f"{url}/{ENABLED}", json={"params": {}}, headers=owner)
+    assert resp.status == 200, await resp.text()          # adding another toolkit does not re-validate the held one
+    resp = await client.put(f"{url}/{DISABLED}", json={"params": {}}, headers=owner)
+    body = await resp.json()
+    assert resp.status == 422 and body["details"] == EXPECTED, body       # re-configured -> checked
+    assert (await client.delete(f"{url}/{DISABLED}", headers=owner)).status == 200
 
 
 async def test_draft_save_and_activation_422_with_details(aiohttp_client, pool, host_plugins):  # noqa: F811
