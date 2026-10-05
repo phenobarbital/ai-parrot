@@ -1,5 +1,5 @@
 {
-  "feat_id": "FEAT-628",
+  "feat_id": "FEAT-636",
   "mode": "enrichment",
   "summary": "Extend FEAT-598 linked surfaces so a data-source descriptor can route its fetch through a parrot-server endpoint that executes the query slug and applies a registered Python recipe transformer, giving linked surfaces the same Python aggregation power static/recipe surfaces already have via RecipeRunner.",
   "localization": [

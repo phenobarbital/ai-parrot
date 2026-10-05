@@ -1,11 +1,11 @@
 ---
-id: FEAT-628
+id: FEAT-636
 title: Linked A2UI surfaces gain server-executed Python recipe transformers (optional server fetch lane)
 slug: linked-a2ui-recipes-transforms
 type: feature
 mode: enrichment
-status: review
-provisional_id: true  # 628 taken from the ledger counter; reserve via reserve_ids.py at /sdd-spec time
+status: accepted
+# id definitively reserved via reserve_ids.py (was provisional FEAT-628)
 source:
   kind: inline
   jira_key: null
@@ -16,24 +16,24 @@ overall_confidence: medium
 base_branch: dev
 projects: [ai-parrot, ai-parrot-server, admin-ui]
 tags: [a2ui, linked-surfaces, querysource, recipes, transformers, ui-surfaces]
-research_state: sdd/state/FEAT-628/
+research_state: sdd/state/FEAT-636/
 created: 2026-10-06
 updated: 2026-10-06
 ---
 
-# FEAT-628 — Linked A2UI surfaces gain server-executed Python recipe transformers
+# FEAT-636 — Linked A2UI surfaces gain server-executed Python recipe transformers
 
 > **Mode**: enrichment
 > **Confidence**: medium
 > **Source**: `inline`
-> **Audit**: [`sdd/state/FEAT-628/`](../state/FEAT-628/)
+> **Audit**: [`sdd/state/FEAT-636/`](../state/FEAT-636/)
 
 ---
 
 ## 0. Origin
 
 The original request, preserved verbatim (Spanish). The full source is at
-`sdd/state/FEAT-628/source.md`.
+`sdd/state/FEAT-636/source.md`.
 
 > las surfaces a2ui estáticas pueden hacer agregación con transformadores en
 > python, pero las linked surfaces no (dependen de la invocación del query
@@ -72,7 +72,7 @@ high-confidence and the design decisions were resolved in Q&A (§5).
 
 ## 2. Codebase Findings
 
-> All entries are grounded in the digests at `sdd/state/FEAT-628/findings/`.
+> All entries are grounded in the digests at `sdd/state/FEAT-636/findings/`.
 
 ### 2.1 Localization
 
@@ -281,7 +281,7 @@ Distribution: **5** high, **1** medium, **1** low.
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-628`** — *Rationale*: localization is high-confidence (C1–C5),
+**`/sdd-spec FEAT-636`** — *Rationale*: localization is high-confidence (C1–C5),
 every primitive exists and converges on known seams (`TransformSpec`,
 `execute_sources`, `UISurfacesHandler`, `transformer_registry`, `fetch.ts`),
 and **all design decisions are resolved** (U1–U4 and OQ-A/B/C in §5): identity
@@ -292,7 +292,7 @@ Reserve the definitive FEAT id via `reserve_ids.py` at spec time
 
 ### Alternatives
 
-- **`/sdd-brainstorm FEAT-628`** — only if the recipe-reference variant
+- **`/sdd-brainstorm FEAT-636`** — only if the recipe-reference variant
   (hypothesis 2) should be compared in depth before committing to the
   transformer-name shape.
 - **Manual review** — not indicated; research completed within budget.
@@ -303,11 +303,11 @@ Reserve the definitive FEAT id via `reserve_ids.py` at spec time
 
 | Artifact | Path |
 |----------|------|
-| State checkpoints | `sdd/state/FEAT-628/state.json` |
-| Source (raw) | `sdd/state/FEAT-628/source.md` |
-| Research plan | `sdd/state/FEAT-628/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-628/findings/F001-*.md` … `F005-*.md` |
-| Synthesis (JSON) | `sdd/state/FEAT-628/synthesis.json` |
+| State checkpoints | `sdd/state/FEAT-636/state.json` |
+| Source (raw) | `sdd/state/FEAT-636/source.md` |
+| Research plan | `sdd/state/FEAT-636/research_plan.json` |
+| Findings (digests) | `sdd/state/FEAT-636/findings/F001-*.md` … `F005-*.md` |
+| Synthesis (JSON) | `sdd/state/FEAT-636/synthesis.json` |
 
 **Budget consumed**:
 - Files read: 6 / 40

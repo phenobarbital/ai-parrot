@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "feat_id": "FEAT-628",
+  "feat_id": "FEAT-636",
   "feature_slug": "linked-a2ui-recipes-transforms",
   "started_at": "2026-10-06T00:00:00+00:00",
   "updated_at": "2026-10-06T00:50:00+00:00",
@@ -9,7 +9,7 @@
     "jira_key": null,
     "jira_url": null,
     "file_path": null,
-    "raw_path": "sdd/state/FEAT-628/source.md",
+    "raw_path": "sdd/state/FEAT-636/source.md",
     "fetched_at": "2026-10-06T00:00:00+00:00",
     "summary_oneline": "Linked A2UI surfaces should optionally route through a server endpoint that executes the query slug and applies recipe transformers"
   },
@@ -31,7 +31,7 @@
       "queries_total": 11,
       "approved_by_user": true,
       "edited_by_user": false,
-      "plan_path": "sdd/state/FEAT-628/research_plan.json"
+      "plan_path": "sdd/state/FEAT-636/research_plan.json"
     },
     "research": {
       "status": "completed",
@@ -52,7 +52,7 @@
       "started_at": "2026-10-06T00:25:00+00:00",
       "completed_at": "2026-10-06T00:30:00+00:00",
       "duration_seconds": 300,
-      "synthesis_path": "sdd/state/FEAT-628/synthesis.json",
+      "synthesis_path": "sdd/state/FEAT-636/synthesis.json",
       "thinking_path": null,
       "overall_confidence": "medium",
       "claims_total": 7,
@@ -99,6 +99,6 @@
   "errors": [],
   "resume_hint": {
     "next_phase": "done",
-    "next_action": "Run /sdd-spec FEAT-628 (reserve the definitive id via reserve_ids.py)"
+    "next_action": "Run /sdd-spec FEAT-636 (reserve the definitive id via reserve_ids.py)"
   }
 }
