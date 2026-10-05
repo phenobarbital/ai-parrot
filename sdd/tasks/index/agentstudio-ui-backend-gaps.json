@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-05T21:18:44Z",
-  "completed_at": null,
+  "completed_at": "2026-10-05T22:25:35+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -113,7 +113,7 @@
       "feature_id": "FEAT-634",
       "feature": "agentstudio-ui-backend-gaps",
       "spec": "sdd/specs/agentstudio-ui-backend-gaps.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -127,8 +127,9 @@
       "parallelism_notes": "documents final field names from TASK-4096 (definition), TASK-4097 (models/allowed), TASK-4098 (tenant_toolkits), TASK-4099 (details), TASK-4100 (version/entries/byok); edits docs/agent_studio_api.md and test_feat605_contract_doc.py only.",
       "assigned_to": null,
       "started_at": "2026-10-05T21:51:07+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4101-studio-api-docs-refresh.md"
+      "completed_at": "2026-10-05T22:25:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4101-studio-api-docs-refresh.md",
+      "verification": "verified"
     }
   ]
 }

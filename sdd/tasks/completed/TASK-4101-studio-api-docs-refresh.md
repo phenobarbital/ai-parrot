@@ -157,3 +157,8 @@ Text-parity test, no app needed.
 ## Completion Note
 
 *(Agent fills this in when done)*
+
+
+## Completion Note
+
+Two MCP attempts failed (qwen: request timeout; glm: max_turns) — attempt 3 done by the orchestrator. Doc refreshed; doc-parity test passes. `/sharing/groups` is documented as host-provided (no such route in parrot Studio).
