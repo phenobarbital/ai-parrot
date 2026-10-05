@@ -224,7 +224,7 @@ class StudioAssistantHandler(StudioBaseView):
         """
         user = await self._get_user()
         conversation = (self._partition_entry(session, partition) or {}).get("session_id") or uuid.uuid4().hex
-        default_llm = agent.llm
+        default_llm = agent.llm if api_key else None
         try:
             if api_key:
                 agent.llm = type(default_llm)(
