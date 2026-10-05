@@ -293,8 +293,8 @@ class GoogleDriveFileManager(FileManagerInterface):
                 continue
             query = f"'{parent}' in parents and name = '{self._escape_q(segment)}' and trashed = false"
             response, _ = await self._retrying(
-                lambda: self.drive.files_list(
-                    q=query, fields=self.LIST_FIELDS, page_size=2, order_by="modifiedTime desc", **self._list_params()
+                lambda q=query: self.drive.files_list(
+                    q=q, fields=self.LIST_FIELDS, page_size=2, order_by="modifiedTime desc", **self._list_params()
                 ),
                 label="resolve",
             )
@@ -334,8 +334,8 @@ class GoogleDriveFileManager(FileManagerInterface):
                 parent = (await self._resolve(current, want_folder=True))[0]
             except FileNotFoundError:
                 item, _ = await self._retrying(
-                    lambda: self.drive.files_create(
-                        {"name": segment, "mimeType": FOLDER_MIME, "parents": [parent]},
+                    lambda _s=segment, _p=parent: self.drive.files_create(
+                        {"name": _s, "mimeType": FOLDER_MIME, "parents": [_p]},
                         fields=self.FIELDS,
                         **self._list_params(),
                     ),
@@ -686,12 +686,12 @@ class GoogleDriveFileManager(FileManagerInterface):
         content_type: str,
     ) -> Dict[str, Any]:
         """Multipart upload through aiogoogle for payloads below the resumable threshold."""
-        start = 0 if isinstance(source, Path) else source.tell()
+        start = 0 if isinstance(source, Path) else source.tell()  # noqa: ASYNC240
         chunk_size = self.chunk_size
 
         async def _pipe() -> AsyncIterator[bytes]:
             assert not isinstance(source, Path)
-            source.seek(start)
+            source.seek(start)  # noqa: ASYNC240
             while True:
                 chunk = await asyncio.to_thread(source.read, chunk_size)
                 if not chunk:
@@ -815,7 +815,7 @@ class GoogleDriveFileManager(FileManagerInterface):
                 size = (await asyncio.to_thread(source.stat)).st_size
             else:
                 stream = source
-                if not (hasattr(source, "seekable") and source.seekable()):
+                if not (hasattr(source, "seekable") and source.seekable()):  # noqa: ASYNC240
                     head = await asyncio.to_thread(source.read, self.small_file_threshold + 1)
                     if len(head) > self.small_file_threshold:
                         raise ValueError(
@@ -836,7 +836,7 @@ class GoogleDriveFileManager(FileManagerInterface):
             else:
                 with contextlib.ExitStack() as stack:
                     if isinstance(source, Path):
-                        handle = stack.enter_context(open(source, "rb"))  # noqa: SIM115
+                        handle = stack.enter_context(open(source, "rb"))  # noqa: SIM115, ASYNC230
                     else:
                         handle = stream
 

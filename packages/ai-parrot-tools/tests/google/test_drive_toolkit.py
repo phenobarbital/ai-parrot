@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 sys.modules.pop("parrot.interfaces.file", None)
-from parrot.interfaces.file.gdrive import GoogleDriveFileManager
-from parrot_tools.google.drive import GoogleDriveToolkit
+from parrot.interfaces.file.gdrive import GoogleDriveFileManager  # noqa: E402
+from parrot_tools.google.drive import GoogleDriveToolkit  # noqa: E402
 
 FAKES_DIR = Path(__file__).parents[3] / "ai-parrot" / "tests" / "interfaces"
 sys.path.insert(0, str(FAKES_DIR))
