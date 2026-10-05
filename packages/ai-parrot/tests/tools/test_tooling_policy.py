@@ -246,6 +246,17 @@ class TestTenantToolkits:
         assert unchanged_slugs(before, after) == {"t1", "a"}         # t3 added, b re-configured, t2 removed
         assert unchanged_slugs(NormalizedTooling(), after) == frozenset()
 
+    def test_callback_resolved_once_per_check_tooling(self, host_plugins):
+        calls = []
+
+        def enabled(tenant):
+            calls.append(tenant)
+            return {"tp_probe", "tp_probe_tool"}
+
+        pol = TenantToolingPolicy(tenant_toolkits=enabled)
+        pol.check_tooling(NormalizedTooling(tools=["tp_probe", "tp_probe_tool"]), subject=self._subject())
+        assert calls == ["acme"]                                     # one resolution, however many slugs
+
     def test_tenant_none_unaffected(self, host_plugins):
         pol = TenantToolingPolicy(tenant_toolkits=lambda t: set())
         pol.check_tool("tp_probe", subject=self._subject(tenant=None))

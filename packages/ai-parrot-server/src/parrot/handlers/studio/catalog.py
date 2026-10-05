@@ -143,7 +143,8 @@ def _provider_models(provider: str) -> tuple[list[str], list[str]]:
         listing = LLMFactory.list_models(provider)
         return [str(m) for m in listing.get("active") or []], [str(m) for m in listing.get("deprecated") or []]
     except Exception:  # pylint: disable=broad-except
-        logger.debug("model listing unavailable for provider %r", provider, exc_info=True)
+        # the llm-clients catalogue is cached per process: this runs once per provider, so a warning cannot flood
+        logger.warning("model listing unavailable for provider %r; reporting no models", provider, exc_info=True)
         return [], []
 
 

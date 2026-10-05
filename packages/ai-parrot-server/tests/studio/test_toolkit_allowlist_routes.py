@@ -59,6 +59,20 @@ async def _async_callback(tenant):
     return {ENABLED}
 
 
+async def test_failing_callback_logged_once_per_catalogue_build(aiohttp_client, pool, host_plugins, caplog):  # noqa: F811
+    calls = []
+
+    def boom(tenant):
+        calls.append(tenant)
+        raise RuntimeError("projection unavailable")
+
+    client = await aiohttp_client(_app(pool, TenantToolingPolicy(tenant_toolkits=boom)))
+    with caplog.at_level("ERROR"):
+        resp = await client.get(f"{BASE}/catalog/tools", headers=who("u1", "acme"))
+    assert resp.status == 200
+    assert calls == ["acme"] and caplog.text.count("fail closed") == 1      # not once per catalogue entry
+
+
 @pytest.mark.parametrize("callback", [_async_callback, lambda t: 5, lambda t: True], ids=["async", "int", "bool"])
 async def test_malformed_callback_fails_closed_never_500(aiohttp_client, pool, host_plugins, callback):  # noqa: F811
     """A callback result that is not a collection refuses (422 / filtered catalogue) instead of a 500."""

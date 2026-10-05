@@ -170,6 +170,14 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         if enabled is not None and slug.lower() not in enabled:
             raise TenantToolingRefused("toolkit_unavailable", item=slug)
 
+    def pinned_for(self, subject: ToolingSubject) -> "TenantToolingPolicy":
+        """This policy with the tenant's allow-list resolved ONCE: the callback runs (and logs a failure) once per
+        request, however many slugs are then checked. Returns ``self`` when the allow-list does not apply."""
+        if self.tenant_toolkits is None or not subject.tenant or subject.phase == "build":
+            return self
+        enabled = self.enabled_toolkits(subject.tenant)
+        return self.model_copy(update={"tenant_toolkits": lambda _tenant: enabled})
+
     def enabled_toolkits(self, tenant: str) -> frozenset[str] | None:
         """Lower-cased enabled host-toolkit slugs for ``tenant``; ``None`` = unrestricted.
 
@@ -207,15 +215,16 @@ class TenantToolingPolicy(BaseModel, frozen=True):
 
     def check_tooling(self, tooling: NormalizedTooling, *, subject: ToolingSubject, owner: str | None = None) -> None:
         """Check every tool, toolkit and MCP spec of ``tooling`` (and secret references by phase)."""
+        policy = self.pinned_for(subject)  # one allow-list resolution for the whole tooling
         for tool in tooling.tools:
             slug = tool if isinstance(tool, str) else getattr(tool, "name", None)
             if not isinstance(slug, str):
                 raise TenantToolingRefused("toolkit_unavailable", item=repr(tool)[:80])
-            self.check_tool(slug, subject=subject)
+            policy.check_tool(slug, subject=subject)
         for toolkit in tooling.toolkits:
-            self.precheck_toolkit(toolkit, subject=subject, owner=owner)
+            policy.precheck_toolkit(toolkit, subject=subject, owner=owner)
         for server in tooling.mcp_servers:
-            self.precheck_mcp(server, subject=subject, owner=owner)
+            policy.precheck_mcp(server, subject=subject, owner=owner)
 
     def precheck_toolkit(self, spec: Any, *, subject: ToolingSubject, owner: str | None = None) -> None:
         """Slug check plus phase-dependent secret-reference check of one toolkit spec (no vault access)."""

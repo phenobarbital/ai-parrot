@@ -229,6 +229,16 @@ async def test_llm_clients_rows_carry_models(aiohttp_client, pool):  # noqa: F81
     assert catalog_module._provider_models("no-such-provider-xyz") == ([], [])
 
 
+def test_provider_models_failure_logged_at_warning(monkeypatch, caplog):
+    def _broken(provider):
+        raise RuntimeError("enum broke")
+
+    monkeypatch.setattr(catalog_module.LLMFactory, "list_models", staticmethod(_broken))
+    with caplog.at_level("WARNING"):
+        assert catalog_module._provider_models("openai") == ([], [])
+    assert [r.levelname for r in caplog.records if "openai" in r.getMessage()] == ["WARNING"]
+
+
 async def test_base_classes_allowed_true_for_stock_rows_and_host_extras(aiohttp_client, pool):  # noqa: F811
     app = tenant_app(pool)
     app["studio_class_allowlist"] = {"HostBot"}

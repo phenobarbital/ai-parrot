@@ -136,6 +136,7 @@ def _permitted(app: Any, subject: ToolingSubject | None, catalog: List[Dict[str,
     policy = get_tenant_tooling_policy(app)
     if subject.tenant is None and not policy.apply_to_global:
         return catalog
+    policy = policy.pinned_for(subject)  # the host callback runs once per catalogue build, not per entry
     permitted: List[Dict[str, Any]] = []
     for entry in catalog:
         try:
