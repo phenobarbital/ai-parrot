@@ -77,7 +77,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -87,8 +87,9 @@
       "parallelism_notes": "fetch_source maps the 422 transform-stage codes TASK-4106 adds to executor.ERROR_STATUS; gate imports validate_python_transform from TASK-4105 (transitive via TASK-4106).",
       "assigned_to": null,
       "started_at": "2026-10-05T23:07:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4107-service-gate-fetch-source.md"
+      "completed_at": "2026-10-05T23:38:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4107-service-gate-fetch-source.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4108",
