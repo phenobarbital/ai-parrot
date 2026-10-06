@@ -1,0 +1,33 @@
+- **G1 invariant (never stored code).** Recipes reference transformations by
+  **registered name only**; no dynamic import of user-supplied dotted paths.
+  *Implication*: the linked descriptor carries `{transformer: <name>, params}`,
+  resolved server-side against the in-process `transformer_registry`.
+  *Evidence*: F004
+
+- **Parity asymmetry precedent.** `transform.ref` is renderer-only — the
+  Python executor skips it with a warning — and `DerivedDataSource` forbids
+  `ref` outright "which would break Python ↔ renderer parity".
+  *Implication*: the mirror rule holds here: a Python transformer is
+  server-only, so a source declaring one must fetch through the server; the
+  TS lane never attempts to run it.
+  *Evidence*: F002, F005
+
+- **Fail-closed trust model.** `LinkedSurfaceService` requires a data-plane
+  guard (`LinkedGuardRequired` → 403); owner-check resource is `source:read`
+  on `query_slug:<tenant|public>:<slug>`.
+  *Implication*: the new endpoint sits behind the same guard; no new
+  authorization surface is invented.
+  *Evidence*: F001, F003
+
+- **Identity semantics differ by lane.** Today's renderer fetch runs under
+  the **viewer's JWT** (QuerySource PBAC); the surface-level server refresh
+  runs under the **owner's** `PermissionContext` — "Share-bearer refresh runs
+  with the OWNER's PermissionContext — never the bearer's identity".
+  *Implication*: the per-source endpoint must define its identity model
+  explicitly (resolved in §5, U1/U4).
+  *Evidence*: F003
+
+- **Row-bound invariants.** `querylimit` cap 5000 (`DEFAULT_MAX_FETCH_ROWS`),
+  ≤500-row snapshots mandatory once persisted, `GET` never executes queries.
+  *Implication*: unchanged; transformed sources must keep honoring them.
+  *Evidence*: F001, F005
