@@ -45,14 +45,13 @@ from msgraph.generated.models.drive_item_uploadable_properties import DriveItemU
 from msgraph.generated.models.folder import Folder
 from msgraph.generated.models.item_reference import ItemReference
 
-from aiohttp import web
 from navigator.utils.file import FileManagerInterface, FileMetadata
 from navigator.utils.file.web import FileServingExtension
-from pydantic import BaseModel, ConfigDict
 
 from parrot.interfaces.o365 import O365Client
 
 from .batch import BatchErrorCode, BatchItemResult, BatchState, BatchSummary
+from .entries import DriveEntry, GuardedFileServingExtension
 
 # Incremented by GraphDriveFileManager._retrying on every retry; set per batch item (TASK-3754).
 _RETRY_COUNTER: contextvars.ContextVar[Optional[List[int]]] = contextvars.ContextVar(
@@ -70,50 +69,13 @@ __all__ = (
 )
 
 
-class _GuardedFileServingExtension(FileServingExtension):
-    """FileServingExtension that refuses (413) files larger than ``max_bytes`` before buffering them (S7, AC22)."""
-
-    def __init__(self, *args: Any, max_bytes: int, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.max_bytes = max_bytes
-
-    async def handle_file(self, request: web.Request) -> web.StreamResponse:
-        filepath = request.match_info.get("filepath", "")
-        try:
-            meta = await self.manager.get_file_metadata(filepath)
-            if meta.size > self.max_bytes:
-                return web.Response(status=413, text=f"File exceeds the serving limit of {self.max_bytes} bytes")
-        except FileNotFoundError:
-            # Expected: let the base extension's own 404 handling take over.
-            pass
-        except Exception as exc:
-            # Unexpected (auth failure, transient Graph error, ...): the size guard degrades
-            # fail-open by design (never blocks serving on a metadata-lookup error), but a
-            # silent `except Exception: pass` here previously hid genuine problems. Log and
-            # still fall through to the base extension.
-            self.logger.warning("Size-guard metadata lookup failed for %r, serving unguarded: %s", filepath, exc)
-        return await super().handle_file(request)
+_GuardedFileServingExtension = GuardedFileServingExtension
 
 
 ConflictBehavior = Literal["replace", "fail", "rename"]
 LinkType = Literal["view", "edit"]
 LinkScope = Literal["organization", "anonymous", "users"]
 AuthMode = Literal["direct", "on_behalf_of", "delegated", "cached"]
-
-
-class DriveEntry(BaseModel):
-    """One child of a folder, including folders returned by ``list_entries``."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id: str
-    name: str
-    path: str
-    is_folder: bool
-    size: int = 0
-    modified_at: Optional[datetime] = None
-    web_url: Optional[str] = None
-    content_type: Optional[str] = None
 
 
 class _RawHTTPError(Exception):

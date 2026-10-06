@@ -205,4 +205,4 @@ Standard. `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src` insid
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, merged clean. Validation: 94 passed, 1 failed — test_entries.py::test_entries_module_is_graph_free fails ONLY because third-party navigator_auth.backends.google imports aiogoogle at 'import parrot' time (verified via import trace); entries.py itself imports nothing graph/google. Environmental, not a code defect; test's 'aiogoogle' prefix check is fragile (follow-up for review).

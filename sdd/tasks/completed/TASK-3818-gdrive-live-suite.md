@@ -144,4 +144,4 @@ Standard. Never mark AC21 as passed from a skipped run.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Attempt 1 qwen timed out (APITimeoutError); attempt 2 on glm (nova zai.glm-4.7-flash) merged clean. Live suite is opt-in (skipped without credentials); collection/skip verified locally. Live run NOT executed (no Drive credentials).
