@@ -273,10 +273,8 @@ async def test_fetch_source_requires_guard(owner, linked_source) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: codex gpt-5.6-terra, attempt 1
+**Date**: 2026-10-06
+**Notes**: Diff reviewed by the orchestrator against the task. Evidence: linked suite 238 passed (incl. test_service_python.py)
 
 **Deviations from spec**: none

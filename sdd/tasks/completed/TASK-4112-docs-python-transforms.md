@@ -172,10 +172,8 @@ def test_toolkit_doc_mentions_python_member() -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: nova minimax-m2.5, attempt 2 (attempt 1 on glm hit max_turns=60)
+**Date**: 2026-10-06
+**Notes**: Diff reviewed by the orchestrator against the task. Evidence: docs tests 2 passed + 1 passed; doc claims on error codes/endpoint skimmed, not cross-checked line by line against the handler
 
 **Deviations from spec**: none

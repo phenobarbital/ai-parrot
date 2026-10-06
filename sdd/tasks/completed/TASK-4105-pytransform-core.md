@@ -310,10 +310,8 @@ async def test_apply_unregistered(registered) -> None:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: codex gpt-5.6-terra, attempt 1
+**Date**: 2026-10-06
+**Notes**: Diff reviewed by the orchestrator against the task. Evidence: tests/outputs/a2ui/linked 225 passed (incl. test_pytransform.py)
 
 **Deviations from spec**: none

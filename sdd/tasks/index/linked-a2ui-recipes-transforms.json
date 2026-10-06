@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-05T23:04:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-05T23:54:14+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Exclusive: runs scripts/generate_ts_types.py, which rewrites every committed file under packages/ai-parrot-server/ui/schemas/ (shared generated code other features read); no dependencies — root of the graph.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4104-python-transform-wire-model.md"
+      "started_at": "2026-10-05T23:07:09+00:00",
+      "completed_at": "2026-10-05T23:19:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4104-python-transform-wire-model.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4105",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,9 +44,10 @@
       "parallel": true,
       "parallelism_notes": "Imports PythonTransform created by TASK-4104 (linked/models.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4105-pytransform-core.md"
+      "started_at": "2026-10-05T23:07:09+00:00",
+      "completed_at": "2026-10-05T23:28:34+00:00",
+      "file": "sdd/tasks/completed/TASK-4105-pytransform-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4106",
@@ -54,7 +56,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -63,9 +65,10 @@
       "parallel": true,
       "parallelism_notes": "Imports apply_python_transform and TransformStageError created by TASK-4105 (linked/pytransform.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4106-executor-python-branch.md"
+      "started_at": "2026-10-05T23:07:09+00:00",
+      "completed_at": "2026-10-05T23:34:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4106-executor-python-branch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4107",
@@ -74,7 +77,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,9 +86,10 @@
       "parallel": true,
       "parallelism_notes": "fetch_source maps the 422 transform-stage codes TASK-4106 adds to executor.ERROR_STATUS; gate imports validate_python_transform from TASK-4105 (transitive via TASK-4106).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4107-service-gate-fetch-source.md"
+      "started_at": "2026-10-05T23:07:09+00:00",
+      "completed_at": "2026-10-05T23:38:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4107-service-gate-fetch-source.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4108",
@@ -94,7 +98,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,9 +107,10 @@
       "parallel": true,
       "parallelism_notes": "Calls LinkedSurfaceService.fetch_source and tests against SourceFetchOutcome, both created by TASK-4107 (linked/service.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4108-source-data-endpoint.md"
+      "started_at": "2026-10-05T23:07:09+00:00",
+      "completed_at": "2026-10-05T23:45:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4108-source-data-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4109",
@@ -114,7 +119,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -123,9 +128,10 @@
       "parallel": true,
       "parallelism_notes": "Imports validate_python_transform created by TASK-4105 (linked/pytransform.py); runs concurrently with the executor/service/endpoint chain.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4109-toolkit-python-gate.md"
+      "started_at": "2026-10-05T23:07:09+00:00",
+      "completed_at": "2026-10-05T23:34:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4109-toolkit-python-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4110",
@@ -134,7 +140,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -143,9 +149,10 @@
       "parallel": false,
       "parallelism_notes": "Exclusive: pnpm generate rewrites every file under ui/src/lib/types/generated/ (shared generated code). Consumes ui/schemas/LinkedSources.json regenerated by TASK-4104.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4110-ui-types-regen.md"
+      "started_at": "2026-10-05T23:07:09+00:00",
+      "completed_at": "2026-10-05T23:23:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4110-ui-types-regen.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4111",
@@ -154,7 +161,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -164,9 +171,10 @@
       "parallel": true,
       "parallelism_notes": "Imports the PythonTransform TS type re-exported by TASK-4110 (linked/types.ts); consumes the /sources/{key}/data route and response shape created by TASK-4108 (handlers/ui_surfaces.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4111-ts-lane-python-sources.md"
+      "started_at": "2026-10-05T23:07:09+00:00",
+      "completed_at": "2026-10-05T23:48:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4111-ts-lane-python-sources.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4112",
@@ -175,7 +183,7 @@
       "feature_id": "FEAT-636",
       "feature": "linked-a2ui-recipes-transforms",
       "spec": "sdd/specs/linked-a2ui-recipes-transforms.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -186,9 +194,10 @@
       "parallel": true,
       "parallelism_notes": "Documents shipped behavior: endpoint route/codes from TASK-4108, toolkit gate from TASK-4109, renderer 'snapshot' state from TASK-4111.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4112-docs-python-transforms.md"
+      "started_at": "2026-10-05T23:07:09+00:00",
+      "completed_at": "2026-10-05T23:54:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4112-docs-python-transforms.md",
+      "verification": "verified"
     }
   ]
 }
