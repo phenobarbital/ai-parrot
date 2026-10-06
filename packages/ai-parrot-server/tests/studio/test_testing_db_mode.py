@@ -4,6 +4,7 @@ Real aiohttp app, real Studio routes, a session middleware that keeps ONE real `
 requests (the test-session id lives in it) and a real Postgres pool. ``AbstractBot.configure`` and ``BasicBot.ask``
 are replaced so no LLM is ever reached.
 """
+
 from __future__ import annotations
 
 import os
@@ -91,8 +92,9 @@ def _app(pool) -> web.Application:
 
     app = web.Application(middlewares=[_session])
     app["database"] = pool
-    manager = BotManager(enable_database_bots=False, enable_crews=False, enable_registry_bots=True,
-                         enable_swagger_api=False)
+    manager = BotManager(
+        enable_database_bots=False, enable_crews=False, enable_registry_bots=True, enable_swagger_api=False
+    )
     manager.setup_registry_only(app)
     setup_studio_routes(app)
     app["_sessions"] = sessions
@@ -123,11 +125,11 @@ async def test_studio_test_chat_uses_runtime_cache(aiohttp_client, pool, asks):
     body = await resp.json()
     assert resp.status == 200 and body["response"] == "echo:hi" and body["agent_name"] == "alpha"
     assert (await _ask(client, query="again")).status == 200
-    assert len(asks) == 2 and asks[0][0] is asks[1][0]                  # the session instance is reused
+    assert len(asks) == 2 and asks[0][0] is asks[1][0]  # the session instance is reused
     sid = client.app["_sessions"]["u1"]["studio_test:" + KEY.qualified]
     entry = runtime._cache.session(KEY.qualified, sid)
     assert entry is not None and entry.bot is asks[0][0]
-    assert not manager._bots and runtime._cache.current(KEY.qualified) is None   # nothing leaked to _bots/base
+    assert not manager._bots and runtime._cache.current(KEY.qualified) is None  # nothing leaked to _bots/base
 
 
 async def test_stale_version_fresh_build(aiohttp_client, pool, asks):
@@ -137,7 +139,7 @@ async def test_stale_version_fresh_build(aiohttp_client, pool, asks):
     resp = await client.patch(f"{BASE}/agents/alpha", json={"description": "v2"})
     assert resp.status == 200 and (await resp.json())["version"] == 2
     assert (await _ask(client)).status == 200
-    assert asks[0][0] is not asks[1][0]                                  # rebuilt for the new version
+    assert asks[0][0] is not asks[1][0]  # rebuilt for the new version
     sid = client.app["_sessions"]["u1"]["studio_test:" + KEY.qualified]
     entry = client.app["bot_manager"].studio._cache.session(KEY.qualified, sid)
     assert entry.version == 2 and entry.bot is asks[1][0]
@@ -147,10 +149,10 @@ async def test_lease_held_during_ask(aiohttp_client, pool, asks):
     client = await _client(aiohttp_client, pool)
     await _create(client)
     assert (await _ask(client)).status == 200
-    assert asks[0][1] == [1]                                             # leased while the ask ran
+    assert asks[0][1] == [1]  # leased while the ask ran
     sid = client.app["_sessions"]["u1"]["studio_test:" + KEY.qualified]
     entry = client.app["bot_manager"].studio._cache.session(KEY.qualified, sid)
-    assert entry.leases == 0                                             # released afterwards
+    assert entry.leases == 0  # released afterwards
 
 
 async def test_end_session_evicts(aiohttp_client, pool, asks):
@@ -166,8 +168,8 @@ async def test_end_session_evicts(aiohttp_client, pool, asks):
     resp = await client.delete(f"{BASE}/agents/alpha/test")
     assert resp.status == 200 and "No active test session" in (await resp.json())["message"]
     await _ask(client)
-    assert asks[0][0] is not asks[1][0]                                  # a fresh session instance
-    assert await runtime.sweep(now=time.monotonic() + 10_000) >= 1       # the retired entry is cleaned
+    assert asks[0][0] is not asks[1][0]  # a fresh session instance
+    assert await runtime.sweep(now=time.monotonic() + 10_000) >= 1  # the retired entry is cleaned
 
 
 class _AcmeTesting(StudioTestingHandler):
@@ -182,7 +184,7 @@ async def test_tenant_partition_never_serves_global_rows(aiohttp_client, pool, a
     app.router.add_view("/tenant/agents/{name}/test/ask", _AcmeTesting)
     client = await aiohttp_client(app)
     _RUNTIME[:] = [app["bot_manager"].studio]
-    await _create(client)                                                # a GLOBAL row
+    await _create(client)  # a GLOBAL row
     resp = await client.post("/tenant/agents/alpha/test/ask", json={"query": "hi"})
     assert resp.status == 404 and (await resp.json())["code"] == "not_found"
     assert asks == [] and app["bot_manager"].studio._cache.all_entries() == []
@@ -198,13 +200,15 @@ class _LegacyBot(BaseBot):
 async def test_legacy_agent_test_chat_unchanged(aiohttp_client, pool, asks):
     client = await _client(aiohttp_client, pool)
     client.app["bot_manager"].registry.register("legacy-one", _LegacyBot)
-    client.app["bot_manager"]._botdef["legacy-one"] = _LegacyBot        # get_bot(new=True) builds this class, never the BasicAgent default
+    client.app["bot_manager"]._botdef[
+        "legacy-one"
+    ] = _LegacyBot  # get_bot(new=True) builds this class, never the BasicAgent default
     resp = await _ask(client, name="legacy-one")
     body = await resp.json()
     assert resp.status == 200 and body["response"] == "echo:hi"
     manager = client.app["bot_manager"]
-    assert manager.studio._cache.all_entries() == []                     # the Studio cache was not involved
-    assert any(name for name in manager._bots)                           # legacy keeps get_bot(new=True) -> _bots
+    assert manager.studio._cache.all_entries() == []  # the Studio cache was not involved
+    assert any(name for name in manager._bots)  # legacy keeps get_bot(new=True) -> _bots
     assert (await client.delete(f"{BASE}/agents/legacy-one/test")).status == 200
     assert not manager._bots
 
@@ -222,11 +226,64 @@ async def test_invisible_agent_is_404_before_any_validation(aiohttp_client, pool
     client = await aiohttp_client(app)
     _RUNTIME[:] = [app["bot_manager"].studio]
     assert (await client.post(f"{BASE}/agents", json={"name": "alpha", "bot_class": "BasicBot"})).status == 201
-    for payload in ({}, {"query": 7}):                                    # invalid bodies: a 400 for a visible caller
+    for payload in ({}, {"query": 7}):  # invalid bodies: a 400 for a visible caller
         resp = await client.post(f"{BASE}/agents/alpha/test/ask", json=payload, headers={"X-User": "u2"})
         assert resp.status == 404 and (await resp.json())["code"] == "not_found"
     resp = await client.post(f"{BASE}/agents/alpha/test/ask", data="not json", headers={"X-User": "u2"})
     assert resp.status == 404
-    resp = await client.post(f"{BASE}/agents/alpha/test/ask", json={})    # the owner does see the validation error
+    resp = await client.post(f"{BASE}/agents/alpha/test/ask", json={})  # the owner does see the validation error
     assert resp.status == 400 and (await resp.json())["code"] == "invalid_request"
     assert asks == [] and app["bot_manager"].studio._cache.all_entries() == []
+
+
+async def test_ask_byok_false_without_key_true_after_key(aiohttp_client, pool, asks, monkeypatch):
+    """B9 / AC14 — ``byok`` is true only when a stored personal key was applied in that ask (real vault store)."""
+    from navigator_session.vault import KeyRing
+
+    import parrot.security.vault_utils as vault_utils
+    from parrot.handlers.studio import byok as byok_module
+    from parrot.handlers.studio.storage import byok_store as store_module
+    from parrot.handlers.studio.storage.byok_store import register_byok_store
+
+    # the real Postgres BYOK store (BYOK_STORE=postgres) and a real KeyRing: encryption round-trips for real
+    keyring = KeyRing({1: b"1" * 32}, 1)
+    monkeypatch.setattr(store_module, "get_vault_keyring", lambda: keyring)
+    monkeypatch.setattr(byok_module, "get_vault_keyring", lambda: keyring)
+    monkeypatch.setattr(vault_utils, "get_vault_keyring", lambda: keyring)
+    monkeypatch.setenv("BYOK_STORE", "postgres")
+    async with pool.acquire() as conn:
+        await conn.execute("TRUNCATE navigator.ai_user_llm_keys")
+    try:
+        await _byok_round_trip(aiohttp_client, pool, monkeypatch)
+    finally:
+        register_byok_store(None)
+        async with pool.acquire() as conn:
+            await conn.execute("TRUNCATE navigator.ai_user_llm_keys")
+
+
+async def _byok_round_trip(aiohttp_client, pool, monkeypatch):
+    client = await _client(aiohttp_client, pool)
+    served: list = []                                                    # the client object that served each ask
+    plain_ask = BasicBot.ask
+
+    async def _recording_ask(self, *args, **kwargs):
+        served.append(self.llm)
+        return await plain_ask(self, *args, **kwargs)
+
+    monkeypatch.setattr(BasicBot, "ask", _recording_ask)
+    resp = await client.post(f"{BASE}/agents", json={"name": "alpha", "bot_class": "BasicBot", "llm": "openai:gpt-4o"})
+    assert resp.status == 201, await resp.text()
+    resp = await _ask(client)
+    body = await resp.json()
+    assert resp.status == 200 and body["byok"] is False
+    resp = await client.post(f"{BASE}/keys", json={"provider": "openai", "api_key": "sk-test-0123456789abcdef"})
+    if resp.status == 503:
+        pytest.skip(f"vault keyring unavailable (as in test_byok.py): {await resp.text()}")
+    assert resp.status in (200, 201), await resp.text()
+    default_client = served[0]
+    for use_byok in (True, False, True, False):                          # one session bot throughout
+        resp = await client.post(f"{BASE}/agents/alpha/test/ask", json={"query": "hi", "use_byok": use_byok},
+                                 headers={"X-User": "u1"})
+        body = await resp.json()
+        assert resp.status == 200 and body["byok"] is use_byok, body
+        assert (served[-1] is default_client) is not use_byok, f"use_byok={use_byok} served by the wrong client"

@@ -188,4 +188,4 @@ Tests use a REAL aiohttp app (`aiohttp_client`) with the real Studio routes and 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented per blueprint: _provider_models, models/deprecated_models on llm-clients rows, _base_classes_for_caller (per-request copy, allowed + host rows; StudioTenantRequired handled in get). Real-app tests added to test_catalogs.py; cache never mutated. Seat: native.

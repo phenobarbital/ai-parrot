@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from typing import Any
 
 import parrot.bots as bots_module
@@ -29,7 +30,10 @@ import parrot.handlers.tools_catalog as tools_catalog_module
 from parrot.handlers.tools_catalog import _build_catalog, filter_catalog_for
 
 from ._base import StudioBaseView
+from .storage.models import StudioPartition
 from .models import StudioError
+
+logger = logging.getLogger(__name__)
 
 _BASE_CLASSES_CACHE: list[dict] | None = None
 _LLM_CLIENTS_CACHE: list[dict] | None = None
@@ -133,6 +137,17 @@ def _build_base_classes_catalog() -> list[dict]:
     return rows
 
 
+def _provider_models(provider: str) -> tuple[list[str], list[str]]:
+    """``(active, deprecated)`` model ids of ``provider`` via ``LLMFactory.list_models``; ``([], [])`` on any failure."""
+    try:
+        listing = LLMFactory.list_models(provider)
+        return [str(m) for m in listing.get("active") or []], [str(m) for m in listing.get("deprecated") or []]
+    except Exception:  # pylint: disable=broad-except
+        # the llm-clients catalogue is cached per process: this runs once per provider, so a warning cannot flood
+        logger.warning("model listing unavailable for provider %r; reporting no models", provider, exc_info=True)
+        return [], []
+
+
 def _build_llm_clients_catalog() -> list[dict]:
     """Resolve ``SUPPORTED_CLIENTS`` into a catalog of LLM client rows.
 
@@ -163,6 +178,7 @@ def _build_llm_clients_catalog() -> list[dict]:
                 }
             )
             continue
+        models, deprecated_models = _provider_models(provider)
         rows.append(
             {
                 "provider": provider,
@@ -170,6 +186,8 @@ def _build_llm_clients_catalog() -> list[dict]:
                 "lazy": is_lazy,
                 "available": True,
                 "default_model": getattr(cls, "_default_model", None),
+                "models": models,
+                "deprecated_models": deprecated_models,
             }
         )
     return rows
@@ -203,7 +221,7 @@ class StudioCatalogHandler(StudioBaseView):
     async def get(self):
         kind = self.request.match_info.get("kind")
         if kind == "base-classes":
-            return self.json_response(await self._get_base_classes())
+            return self.json_response(await self._base_classes_for_caller())
         if kind == "llm-clients":
             return self.json_response(await self._get_llm_clients())
         if kind == "tools":
@@ -218,6 +236,35 @@ class StudioCatalogHandler(StudioBaseView):
         if _BASE_CLASSES_CACHE is None:
             _BASE_CLASSES_CACHE = await asyncio.to_thread(_build_base_classes_catalog)
         return _BASE_CLASSES_CACHE
+
+    async def _base_classes_for_caller(self) -> list[dict]:
+        """Cached rows copied with ``allowed`` for the caller's partition, plus host-extra rows (B13)."""
+        from .access import StudioTenantRequired
+        from .storage.services._common import StudioClassAllowlist
+
+        try:
+            part = await self._studio_partition()
+        except StudioTenantRequired:
+            part = StudioPartition.GLOBAL  # additive: a caller with no tenant keeps getting the catalogue (as before)
+        allow = StudioClassAllowlist.from_app(self.request.app)
+        cached = await self._get_base_classes()
+        rows = [{**row, "allowed": allow.allows(part, row["name"])} for row in cached]
+        exported = set(bots_module.__all__)
+        # host additions are a tenant-partition concept: the global partition never sees them
+        for name in sorted(allow.names() - exported if part.tenant is not None else ()):
+            rows.append(
+                {
+                    "name": name,
+                    "available": True,
+                    "allowed": True,
+                    "host": True,
+                    "module": None,
+                    "docstring": None,
+                    "params": {},
+                    "lazy": False,
+                }
+            )
+        return rows
 
     @staticmethod
     async def _get_llm_clients() -> list[dict]:

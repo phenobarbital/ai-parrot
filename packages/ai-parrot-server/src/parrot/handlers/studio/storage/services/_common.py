@@ -134,15 +134,25 @@ class StudioToolingGate:
         agent_id: UUID | None,
         actor: str | None,
         phase: Literal["write", "activate", "build"],
+        before: NormalizedTooling | None = None,
     ) -> None:
-        """enforce_tenant_tooling on the FINAL normalised tooling; TenantToolingRefused → StudioToolingRefused."""
-        from parrot.tools.tooling_policy import TenantToolingRefused, ToolingSubject, enforce_tenant_tooling
+        """enforce_tenant_tooling on the FINAL normalised tooling; TenantToolingRefused → StudioToolingRefused.
+
+        ``before`` is the tooling stored ahead of this write: what it leaves unchanged is not re-validated against
+        the tenant toolkit allow-list (only toolkits added or re-configured are); ``None`` checks everything.
+        """
+        from parrot.tools.tooling_policy import (
+            TenantToolingRefused, ToolingSubject, enforce_tenant_tooling, unchanged_slugs,
+        )
 
         try:
             enforce_tenant_tooling(
                 self._app,
                 tooling,
-                subject=ToolingSubject(tenant=part.tenant, agent_id=agent_id, actor=actor, phase=phase),
+                subject=ToolingSubject(
+                    tenant=part.tenant, agent_id=agent_id, actor=actor, phase=phase,
+                    held=unchanged_slugs(before, tooling) if before is not None else frozenset(),
+                ),
             )
         except TenantToolingRefused as exc:
             refused = StudioToolingRefused(str(exc))

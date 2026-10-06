@@ -48,10 +48,10 @@ class _StudioTestingDbMixin:
                 return await self._ask_response(bot, agent_name, ask_request, **ctx)
         except StudioNotFound:
             return self._not_found("agent", agent_name)
-        except PermissionError as exc:   # AgentAccessDenied (PBAC deny, raised before any build)
+        except PermissionError as exc:  # AgentAccessDenied (PBAC deny, raised before any build)
             return self._error(str(exc), status=403, code="access_denied")
 
-    async def _maybe_apply_byok(self, bot) -> None:
+    async def _maybe_apply_byok(self, bot) -> bool:
         """Swap ``bot.llm`` for a BYOK-keyed client, when a key is stored.
 
         No-op when the bot's LLM was not configured from a plain
@@ -62,10 +62,13 @@ class _StudioTestingDbMixin:
 
         Args:
             bot: The (session-scoped) test bot instance.
+
+        Returns:
+            ``True`` when a stored personal key replaced ``bot.llm`` for this ask.
         """
         llm_raw = getattr(bot, "_llm_raw", None)
         if not isinstance(llm_raw, str):
-            return
+            return False
         provider, _model = LLMFactory.parse_llm_string(llm_raw)
         user = await self._get_user()
         # read from the package at call time: tests patch ``studio.testing.resolve_user_api_key``
@@ -73,8 +76,9 @@ class _StudioTestingDbMixin:
 
         api_key = await _testing_pkg.resolve_user_api_key(self.request.app, user.user_id, provider)
         if not api_key:
-            return
+            return False
         bot.llm = LLMFactory.create(llm_raw, tool_manager=bot.tool_manager, api_key=api_key)
+        return True
 
     async def _invisible_agent(self, storage, part, name):
         """The one 404 when the Studio agent is absent or invisible to the caller; ``None`` when it is visible."""
@@ -96,6 +100,4 @@ class _StudioTestingDbMixin:
             return self.json_response({"message": f"No active test session for '{agent_name}'"}, status=200)
         if (runtime := getattr(self._manager(), "studio", None)) is not None:
             runtime.evict_session(key, sid)
-        return self.json_response(
-            {"message": f"Test session for '{agent_name}' stopped", "agent_name": agent_name}
-        )
+        return self.json_response({"message": f"Test session for '{agent_name}' stopped", "agent_name": agent_name})

@@ -187,4 +187,4 @@ Pure unit tests on a real `TenantToolingPolicy`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added tenant_toolkits field + ConfigDict(arbitrary_types_allowed) and _check_tenant_toolkit (host toolkits only, tenant set, phase != build; raising callback logged, fail closed). No code hashes policies (grep). 6 unit tests added; 23 pass in file, existing unmodified. Seat: native.

@@ -9,6 +9,7 @@ Run the pre-existing filesystem-mode suite with::
 
     PARROT_STUDIO_STORAGE=filesystem pytest packages/ai-parrot-server/tests/studio -q
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -26,6 +27,7 @@ from parrot.manager.manager import BotManager
 from parrot.registry import agent_registry
 
 from .test_agents_db_mode import BASE, _app, _offline, _session, pool  # noqa: F401  (fixtures)
+from .test_skills_catalog_db_mode import PAYLOAD as SKILL_PAYLOAD, registry  # noqa: F401  (fixtures)
 from .test_tooling_db_mode import JIRA, vault  # noqa: F401  (fixtures)
 
 PY_SOURCE = (
@@ -37,12 +39,34 @@ PY_SOURCE = (
 # route label -> keys database mode adds on top of the filesystem-mode response (spec §2.9)
 ADDED: dict[str, set[str]] = {
     "POST /agents": {"agent_id", "version", "tenant"},
-    "GET /agents item": {"agent_id", "tenant", "version", "updated_at", "visibility", "allowed_groups"},
-    "GET /agents/{name}": {"agent_id", "tenant", "version", "updated_at", "visibility", "allowed_groups"},
+    # FEAT-634 B1: the flat llm/description/category keys (and, on detail for managers, ``definition``)
+    "GET /agents item": {
+        "agent_id",
+        "tenant",
+        "version",
+        "updated_at",
+        "visibility",
+        "allowed_groups",
+        "llm",
+        "description",
+        "category",
+    },
+    "GET /agents/{name}": {
+        "agent_id",
+        "tenant",
+        "version",
+        "updated_at",
+        "visibility",
+        "allowed_groups",
+        "llm",
+        "description",
+        "category",
+        "definition",
+    },
     "DELETE /agents/{name}": set(),
     "PUT files": {"version", "sha256"},
     "GET files": {"version", "sha256"},
-    "GET files list": set(),
+    "GET files list": {"entries"},  # FEAT-634 B8
     "POST /drafts (source)": set(),
     "GET /drafts/{name}": {"kind", "tenant", "visibility", "allowed_groups", "version"},
     "POST /drafts/{name}/activate": set(),
@@ -55,8 +79,9 @@ def _fs_app(pool) -> web.Application:
     """A filesystem-mode app: the pool is present (legacy draft state lives there) but the setting pins ``filesystem``."""
     app = web.Application(middlewares=[_session])
     app["database"] = pool
-    manager = BotManager(enable_database_bots=False, enable_crews=False, enable_registry_bots=True,
-                         enable_swagger_api=False)
+    manager = BotManager(
+        enable_database_bots=False, enable_crews=False, enable_registry_bots=True, enable_swagger_api=False
+    )
     manager.setup_registry_only(app)
     setup_studio_routes(app)
     return app
@@ -74,16 +99,18 @@ async def _call(client, method: str, path: str, **kw) -> tuple[int, Any]:
 async def _exercise(client) -> dict[str, tuple[int, Any]]:
     """Run every scenario once; returns ``label -> (status, json body)``."""
     out: dict[str, tuple[int, Any]] = {}
-    out["POST /agents"] = await _call(client, "post", "/agents", json={"name": "alpha", "bot_class": "BasicBot",
-                                                                     "persist": True})
+    out["POST /agents"] = await _call(
+        client, "post", "/agents", json={"name": "alpha", "bot_class": "BasicBot", "persist": True}
+    )
     out["GET /agents"] = await _call(client, "get", "/agents")
     out["GET /agents/{name}"] = await _call(client, "get", "/agents/alpha")
     base = "/agents/alpha/files/kb"
     out["PUT files"] = await _call(client, "put", f"{base}/notes.md", json={"content": "hello"})
     out["GET files"] = await _call(client, "get", f"{base}/notes.md")
     out["GET files list"] = await _call(client, "get", base)
-    out["POST /drafts (source)"] = await _call(client, "post", "/drafts", json={"name": "shapedraft",
-                                                                              "source": PY_SOURCE})
+    out["POST /drafts (source)"] = await _call(
+        client, "post", "/drafts", json={"name": "shapedraft", "source": PY_SOURCE}
+    )
     out["GET /drafts/{name}"] = await _call(client, "get", "/drafts/shapedraft")
     out["POST /drafts/{name}/activate"] = await _call(client, "post", "/drafts/shapedraft/activate", json={})
     out["GET toolkit-config"] = await _call(client, "get", "/agents/alpha/toolkit-config")
@@ -178,3 +205,35 @@ async def test_handlers_shapes_database_mode_bundle_drafts(aiohttp_client, pool,
     assert _keys(fs["POST /drafts/{name}/activate"][1]) <= _keys(done)
     assert _keys(done) - _keys(fs["POST /drafts/{name}/activate"][1]) == {"agent_id", "version"}
     assert done["file_path"] is None and done["activated"] is True
+
+
+async def test_skill_import_201_has_version(aiohttp_client, pool, registry):  # noqa: F811
+    """B6 / AC12 — the 201 body carries the agent's NEW version."""
+    client = await aiohttp_client(_app(pool))
+    assert (await client.post(f"{BASE}/agents", json={"name": "alpha", "bot_class": "BasicBot"})).status == 201
+    resp = await client.post(f"{BASE}/skills", json=SKILL_PAYLOAD)
+    assert resp.status == 201, await resp.text()
+    skill_id = (await resp.json())["skill_id"]
+    before = (await (await client.get(f"{BASE}/agents/alpha")).json())["version"]
+    resp = await client.post(f"{BASE}/agents/alpha/skills/import/{skill_id}")
+    body = await resp.json()
+    assert resp.status == 201 and isinstance(body["version"], int)
+    after = (await (await client.get(f"{BASE}/agents/alpha")).json())["version"]
+    assert body["version"] == after and after > before
+
+
+async def test_file_list_has_entries_and_files(aiohttp_client, pool):  # noqa: F811
+    """B8 / AC13 — ``files`` unchanged (sorted names); ``entries`` carries name/size/sha256."""
+    import hashlib
+
+    client = await aiohttp_client(_app(pool))
+    assert (await client.post(f"{BASE}/agents", json={"name": "alpha", "bot_class": "BasicBot"})).status == 201
+    base = f"{BASE}/agents/alpha/files/kb"
+    assert (await client.put(f"{base}/b.md", json={"content": "bb"})).status == 200
+    assert (await client.put(f"{base}/a.txt", json={"content": "a"})).status == 200
+    body = await (await client.get(base)).json()
+    assert body["files"] == ["a.txt", "b.md"]
+    assert body["entries"] == [
+        {"name": "a.txt", "size": 1, "sha256": hashlib.sha256(b"a").hexdigest()},
+        {"name": "b.md", "size": 2, "sha256": hashlib.sha256(b"bb").hexdigest()},
+    ]

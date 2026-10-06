@@ -216,11 +216,20 @@ class StudioAssistantHandler(StudioBaseView):
         """``{"studio_scope": …}`` (agent=None) for an opted-in host; ``{}`` otherwise."""
         return {"studio_scope": build_tool_scope(await self._scope())} if self._opted_in() else {}
 
-    async def _ask(self, agent, partition: Partition, session: Any, question: str):
-        """One ask on a leased ``agent`` (a concurrent DELETE cannot clean it up mid-ask); the JSON response."""
+    async def _ask(self, agent, partition: Partition, session: Any, question: str, api_key: str | None = None):
+        """One ask on a leased ``agent`` (a concurrent DELETE cannot clean it up mid-ask); the JSON response.
+
+        ``api_key`` (the caller's stored personal key) serves THIS ask only: the session instance is shared, so
+        its default client is restored afterwards and a later ``use_byok=false`` ask never spends the key.
+        """
         user = await self._get_user()
         conversation = (self._partition_entry(session, partition) or {}).get("session_id") or uuid.uuid4().hex
+        default_llm = agent.llm if api_key else None
         try:
+            if api_key:
+                agent.llm = type(default_llm)(
+                    api_key=api_key, model=default_llm.model, tool_manager=agent.tool_manager
+                )
             self.request.session = session
             # user_id is REQUIRED by the meta-agent's mutating tools: they stamp/enforce ownership from the context
             ctx = await self._session_context()
@@ -232,6 +241,9 @@ class StudioAssistantHandler(StudioBaseView):
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.exception("Studio assistant query failed")
             return self._error(f"Assistant query failed: {exc}", status=502, code="query_failed")
+        finally:
+            if api_key:
+                agent.llm = default_llm
         content = str(response.content) if hasattr(response, "content") else str(response)
         return self.json_response({"response": content, "metadata": getattr(response, "metadata", None) or {}})
 
@@ -251,11 +263,11 @@ class StudioAssistantHandler(StudioBaseView):
         if ask_request.use_byok:
             api_key = await resolve_user_api_key(self.request.app, user.user_id, "anthropic")
         try:
-            agent = await self._get_or_create_assistant(session, api_key=api_key, identity=partition)
+            agent = await self._get_or_create_assistant(session, api_key=None, identity=partition)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.exception("Studio assistant: failed to build instance")
             return self._error(f"Failed to start the assistant: {exc}", status=500, code="build_failed")
-        return await self._ask(agent, partition, session, ask_request.query)
+        return await self._ask(agent, partition, session, ask_request.query, api_key=api_key)
 
     # -- DELETE: end session ----------------------------------------------
 
