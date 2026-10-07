@@ -73,7 +73,7 @@
       "feature_id": "FEAT-638",
       "feature": "jiraspecialist-agent-multilang",
       "spec": "sdd/specs/jiraspecialist-agent-multilang.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -85,8 +85,9 @@
       "parallelism_notes": "Imports normalize_language/resolve_language_name/FALLBACK_LANGUAGE from TASK-4118 (prompts/language.py); edits abstract.py after TASK-4119 (same file) and reads its self.language; imports OUTPUT_LANGUAGE_LAYER and GROUNDING_SENTINELS from TASK-4120 (domain_layers.py).",
       "assigned_to": null,
       "started_at": "2026-10-07T22:28:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4121-builder-install-and-wiring.md"
+      "completed_at": "2026-10-07T22:47:49+00:00",
+      "file": "sdd/tasks/completed/TASK-4121-builder-install-and-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4122",
