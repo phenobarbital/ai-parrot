@@ -54,7 +54,7 @@
       "feature_id": "FEAT-638",
       "feature": "jiraspecialist-agent-multilang",
       "spec": "sdd/specs/jiraspecialist-agent-multilang.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -62,8 +62,9 @@
       "parallelism_notes": "No dependencies. Data-only additions to domain_layers.py (layer, sentinel table, registry row); TASK-4122 later edits the same file.",
       "assigned_to": null,
       "started_at": "2026-10-07T22:28:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4120-output-language-layer.md"
+      "completed_at": "2026-10-07T22:41:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4120-output-language-layer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4121",
