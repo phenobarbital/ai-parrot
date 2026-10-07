@@ -106,6 +106,25 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4117-jira-templates-docs.md"
+    },
+    {
+      "id": "TASK-4137",
+      "slug": "test-import-hygiene-jira-shadowing",
+      "title": "Stop test_drive_toolkit.py polluting sys.path / sys.modules (PyPI `jira` shadowing)",
+      "feature_id": "FEAT-637",
+      "feature": "jiratoolkit-template-support",
+      "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "exclusive: modifies the repository root conftest.py, which every other task's tests load; also promoted from issue:265b7797ae9b and must not race the jiratoolkit.py tasks' test runs",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "discovered_from": "issue:265b7797ae9b",
+      "file": "sdd/tasks/active/TASK-4137-test-import-hygiene-jira-shadowing.md"
     }
   ]
 }
