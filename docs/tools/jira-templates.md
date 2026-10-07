@@ -52,25 +52,29 @@ Templates are rendered with a context dictionary containing relevant fields.
 
 ### Context Variables by Operation Kind
 
-| Operation Kind | Context Variables | Description |
-|---|---|---|
-| **Create Issue** | `summary`, `description`, `project`, `issuetype`, `fields` | Canonical issue fields. `fields` contains any additional fields passed to the call. |
-| **Update Issue** | `summary`, `description`, `project`, `issuetype`, `fields` | Canonical issue fields. `fields` contains any additional fields passed to the call. |
-| **Add Comment** | `body`, `issue` | `body` is the raw comment text; `issue` is the issue key (e.g., `NAV-123`). |
+Every variable is the value passed to the tool call (``None`` when omitted).
+
+| Operation Kind | Context Variables |
+|---|---|
+| **Create Issue** | `project`, `summary`, `issuetype` (canonical name), `description`, `assignee`, `priority`, `labels`, `components`, `due_date`, `parent`, `original_estimate` |
+| **Update Issue** | `issue`, `project` (derived from the key), `summary`, `description`, `labels`, `due_date`, `priority`, `issuetype` |
+| **Add Comment** | `issue`, `project` (derived from the key), `body`, `is_internal` |
 
 ### Overrides
 
-- **`template_params`**: Explicitly passed parameters in `template_params` override any automatically populated context variables.
-- **`fields`**: The `fields` dictionary itself is never included as a top-level key in the template context to avoid namespace pollution, but its individual keys are available.
+- **`template_params`**: entries override same-named call variables and may add new ones.
+- The call's `fields` dict is **not** exposed to templates.
+- Templates render with `StrictUndefined`: every variable a template uses must be in the context (use `| default(...)` for optional ones, or pass it in `template_params`).
 
 ## Errors and limits
 
 - **Missing Variables**: If a template references variables that are not present in the context, a `JiraTemplateError` is raised listing all missing variables in sorted order. No transport call is made to Jira.
 - **Empty Render**: If the rendered template output is empty or contains only whitespace, a `JiraTemplateError` is raised.
+- **No templates configured**: passing `template=` when neither `templates_dir` nor `templates` is configured raises `JiraTemplateError`.
 - **Unknown Template**: If an explicit template is requested but cannot be found, a `JiraTemplateNotFound` error is raised.
 - **`fields['description']` Conflict**: If a template is used for issue creation or update, and `fields` also contains a `description` key, a `JiraTemplateError` is raised to prevent silent overwrites.
 - **Comment Body Requirement**: A comment requires either a non-empty `body` or a template that renders to a non-empty body; otherwise, a `ValueError` is raised.
-- **Truncation**: Rendered text is capped at 32,767 characters (Jira's limit). If truncated, a warning is logged, and the text is appended with a truncation marker (`... [truncated]`) within the limit.
+- **Truncation**: Rendered text is capped at 32,767 characters (Jira's limit). If truncated, a warning is logged, and the text ends with the marker `... (truncated)`, and the total stays within the limit.
 
 ## Discovering templates
 
@@ -79,29 +83,24 @@ The `jira_list_templates` tool allows agents and operators to discover available
 ### Signature
 
 ```python
-jira_list_templates(project: str = None) -> list[dict]
+await toolkit.jira_list_templates(project: str | None = None) -> dict
 ```
+
+`project` keeps only templates under that (lower-cased) project folder.
 
 ### Return Shape
 
-Returns a list of dictionaries containing template metadata:
+Names are logical (relative to the template root), sorted, and never include file paths or template source:
 
 ```json
-[
-  {
-    "name": "nav/bug.j2",
-    "project": "nav",
-    "kind": "create",
-    "issue_type": "bug"
-  },
-  {
-    "name": "comment.j2",
-    "project": null,
-    "kind": "comment",
-    "issue_type": null
-  }
-]
+{
+  "ok": true,
+  "templates": ["_default.j2", "comment.j2", "nav/_default.j2", "nav/bug.j2"],
+  "templates_dir": "/etc/parrot/jira-templates"
+}
 ```
+
+`templates_dir` is `null` when only inline templates are configured. The tool needs no `jira.write` permission.
 
 ## Example: nav/bug.j2
 
