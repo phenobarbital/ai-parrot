@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 from navconfig import config
 from parrot.bots import Agent
 from parrot.bots._types import AgentDispatcher
+from parrot.bots.jira_messages import render_message
 from parrot.integrations.telegram.callbacks import (
     telegram_callback,
     CallbackContext,
@@ -932,7 +933,7 @@ class JiraSpecialist(Agent):
         except Exception as e:
             self.logger.error(f"Failed to transition {ticket_key}: {e}", exc_info=True)
             return CallbackResult(
-                answer_text=f"⚠️ Error transicionando {ticket_key}",
+                answer_text=render_message("transition_error", self.language, ticket_key=ticket_key),
                 show_alert=True,
             )
 
@@ -940,12 +941,11 @@ class JiraSpecialist(Agent):
         await self._mark_responded(developer_id, callback.user_id, ticket_key)
 
         # 3. Return result — edits original message + shows toast
+        status = self._standup_config.in_progress_transition
         return CallbackResult(
-            answer_text=f"✅ {ticket_key} → In Progress",
-            edit_message=(
-                f"✅ *{callback.display_name}*, tu ticket "
-                f"*{ticket_key}* ha sido marcado como *In Progress*.\n\n"
-                f"¡A trabajar! 💪"
+            answer_text=render_message("transition_ok", self.language, ticket_key=ticket_key, status=status),
+            edit_message=render_message(
+                "transition_edit", self.language, name=callback.display_name, ticket_key=ticket_key, status=status
             ),
             edit_parse_mode="Markdown",
             remove_keyboard=True,
@@ -963,8 +963,8 @@ class JiraSpecialist(Agent):
         await self._mark_responded(developer_id, callback.user_id, "skipped")
 
         return CallbackResult(
-            answer_text="👍 Entendido",
-            edit_message=(f"👍 *{callback.display_name}*, entendido. " f"Ya tienes tu plan para hoy."),
+            answer_text=render_message("skip_ok", self.language),
+            edit_message=render_message("skip_edit", self.language, name=callback.display_name),
             edit_parse_mode="Markdown",
             remove_keyboard=True,
         )
@@ -1073,11 +1073,7 @@ class JiraSpecialist(Agent):
             try:
                 await self._wrapper.send_interactive_message(
                     chat_id=dev.telegram_chat_id,
-                    text=(
-                        f"👋 *{dev.name}*, aún no has seleccionado tu ticket "
-                        f"para hoy.\n\n"
-                        f"¿Necesitas ayuda con la priorización?"
-                    ),
+                    text=render_message("nudge", self.language, name=dev.name),
                     keyboard={"inline_keyboard": []},  # No buttons for nudge
                     parse_mode="Markdown",
                 )
@@ -1091,13 +1087,7 @@ class JiraSpecialist(Agent):
             try:
                 await self._wrapper.bot.send_message(
                     chat_id=mgr_chat_id,
-                    text=(
-                        f"⚠️ *Escalación Daily Standup*\n\n"
-                        f"Los siguientes devs no han seleccionado "
-                        f"ticket tras {hours}h:\n\n"
-                        f"{names}\n\n"
-                        f"Puede que necesiten ayuda con priorización."
-                    ),
+                    text=render_message("escalation", self.language, hours=hours, names=names),
                     parse_mode="Markdown",
                 )
                 result["escalated_to"].append(mgr_chat_id)
