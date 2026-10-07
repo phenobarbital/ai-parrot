@@ -23,7 +23,7 @@ from ..conf import (
     DEFAULT_LLM_MODEL,
 )
 from ..embeddings import get_model_recommendations
-from ..handlers.models import BotModel
+from ..models.bots import BotModel
 from .base import BaseBot
 from ..tools import (
     AbstractTool,

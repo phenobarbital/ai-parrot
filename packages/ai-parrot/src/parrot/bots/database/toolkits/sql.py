@@ -24,6 +24,7 @@ from ..models import (
 )
 from ..retries import QueryRetryConfig, RetryContext, SQLRetryHandler
 from .base import DatabaseToolkit
+from parrot.tools.sql_dialects import _SQLGLOT_DIALECT_MAP  # noqa: F401 — re-exported for legacy importers
 
 # Matches leading SQL/PL-pgSQL comments and whitespace so we can identify the
 # first significant keyword. Used by ``explain_query`` safety guard to decide
@@ -40,23 +41,6 @@ _CTE_DML_RE = re.compile(
     r"\b(insert|update|delete|merge|truncate|drop|alter|create|grant|revoke)\b",
     re.IGNORECASE,
 )
-
-#: Map ``DatabaseToolkit.database_type`` values to sqlglot dialect names.
-_SQLGLOT_DIALECT_MAP: Dict[str, str] = {
-    "postgresql": "postgres",
-    "postgres": "postgres",
-    "bigquery": "bigquery",
-    "mysql": "mysql",
-    "mariadb": "mysql",
-    "sqlite": "sqlite",
-    "mssql": "tsql",
-    "sqlserver": "tsql",
-    "oracle": "oracle",
-    "clickhouse": "clickhouse",
-    "duckdb": "duckdb",
-    "redshift": "redshift",
-    "snowflake": "snowflake",
-}
 
 
 class SQLToolkit(DatabaseToolkit):
