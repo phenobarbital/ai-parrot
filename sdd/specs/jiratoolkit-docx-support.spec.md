@@ -11,7 +11,7 @@ tags: [jira, attachments, file-upload, sandbox, toolkit]
 **Feature ID**: FEAT-639
 **Date**: 2026-10-07
 **Author**: Jesus
-**Status**: draft
+**Status**: approved
 **Target version**: 1.2.0
 
 ---
