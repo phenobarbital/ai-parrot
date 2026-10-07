@@ -16,7 +16,7 @@ tags: [jira, attachments, file-upload, sandbox, toolkit]
 
 **Date**: 2026-10-07
 **Author**: Jesus
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: Option D
 
 ---
@@ -97,7 +97,9 @@ Locked during discovery (Rounds 0–3) — these are decisions, not suggestions:
   attachment rollback.
 - **Pre-flight validation** of existence, emptiness, size and type, returning an
   actionable error instead of an opaque `JIRAError`.
-- **Real Content-Type** sent per file, not `application/octet-stream`.
+- ~~**Real Content-Type** sent per file~~ — **reversed on 2026-10-07 during `/sdd-spec`**:
+  we keep `jira.JIRA.add_attachment` and accept `application/octet-stream`, rather
+  than hand-rolling a multipart POST. See the resolved Open Question below.
 - **Lifecycle**: session files persist; cleanup is manual. No TTL, no
   end-of-session sweep.
 - **Project conventions**: async-first (`asyncio.to_thread` around the
@@ -622,9 +624,9 @@ from .jira_config import JiraToolkitConfig
 - [x] What reference does the Jira tool accept? — *Owner: Jesus*: an opaque session `file_id`, never a path.
 - [x] Lifecycle of session files? — *Owner: Jesus*: persistent, manual cleanup.
 - [ ] Which Jira deployment is the target — Cloud or Server/DC — and under which `auth_type`? The attachment size limit and the XSRF behavior differ, and the acceptance matrix needs a concrete limit to assert against. — *Owner: Jesus*
-- [ ] Is the custom multipart upload (for the real Content-Type) acceptable against that deployment, or do we keep `jira.JIRA.add_attachment` and accept `application/octet-stream`? Needs one live probe before the spec freezes this acceptance criterion. — *Owner: Jesus*
-- [ ] Does any client (admin UI, Teams/Telegram wrappers) parse the current `{"message", "added_files"}` upload response? If so it must be updated in the same feature — the response shape is a hard cut. — *Owner: Jesus*
-- [ ] Is the Telegram crew MIME allowlist (`integrations/telegram/crew/payload.py:36-44`, no docx) in scope, or is Telegram out of the target surfaces for now? — *Owner: Jesus*
-- [ ] Sequencing against FEAT-603 (`sharepoint-filemanager`) and FEAT-608 (`google-drive-interface`), both of which land on `filemanager.py` — does this feature wait, or rebase after them? — *Owner: Jesus*
-- [ ] Sequencing against **FEAT-637** (`jiratoolkit-template-support`, proposal on `dev` 2026-10-07), which also modifies `jira_add_comment`: do the two features share one worktree, or does one land first? Both rewrite the same method's signature-adjacent code. — *Owner: Jesus*
-- [ ] Should the per-session root be scoped by `session_id` alone, or by `(user_id, session_id)`? Multi-tenant deployments make the pair safer, but it changes the handle namespace. — *Owner: Jesus*
+- [x] Is the custom multipart upload (for the real Content-Type) acceptable, or do we keep `jira.JIRA.add_attachment`? — *Owner: Jesus*: keep the `jira` library and accept `application/octet-stream`. No hand-rolled multipart, no new HTTP surface to authenticate and maintain; the cost is a generic icon and no preview in Jira.
+- [x] Does any client parse the current `{"message", "added_files"}` upload response? — *Owner: Jesus*: in scope either way — the endpoint and every in-repo consumer are updated in this feature. Auditing the consumers is itself a task.
+- [x] Is the Telegram crew MIME allowlist in scope? — *Owner: Jesus*: yes. Telegram **and** MS Teams / other wrappers are target surfaces; their ingestion must reach the session store too.
+- [x] Sequencing against FEAT-603 / FEAT-608 on `filemanager.py`? — *Resolved by research 2026-10-07*: no conflict. FEAT-603 is 21/21 `done` (closed 2026-09-25) and FEAT-608 is 14/14 `done` (closed 2026-10-05, merged in PR #1596). `filemanager.py` is free.
+- [x] Sequencing against FEAT-637 (`jiratoolkit-template-support`)? — *Resolved by research 2026-10-07*: FEAT-637 has only a proposal — no spec, no tasks, no worktree. This feature proceeds now and FEAT-637 rebases onto it.
+- [x] Scoping of the per-session root? — *Owner: Jesus*: `session_id` alone. The session is the natural boundary; the residual risk (guessable or reused session ids degrading isolation) is accepted and recorded as a spec risk.
