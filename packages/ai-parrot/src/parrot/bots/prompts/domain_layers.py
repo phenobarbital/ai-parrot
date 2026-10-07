@@ -220,6 +220,8 @@ $extra_rag_rules
 # Phase CONFIGURE: no per-request variables; rules are static.
 # The most load-bearing rules appear in the FIRST paragraph so they
 # survive truncation by Gemini-3-Flash.
+# FEAT-638: sentinel wording comes from GROUNDING_SENTINELS via $sentinel_not_found /
+# $sentinel_error, injected by AbstractBot._configure_prompt_builder(). Rules are unchanged.
 JIRA_GROUNDING_LAYER = PromptLayer(
     name="jira_grounding",
     priority=LayerPriority.BEHAVIOR - 5,
@@ -227,8 +229,8 @@ JIRA_GROUNDING_LAYER = PromptLayer(
     template="""<jira_grounding_policy>
 Use ONLY data returned by Jira tool calls in the current turn.
 Never fabricate ticket fields. On a missing result, reply
-"No results found for <KEY|JQL>." and stop. On a tool error,
-reply "Jira lookup failed: <message>." and stop.
+"$sentinel_not_found <KEY|JQL>." and stop. On a tool error,
+reply "$sentinel_error: <message>." and stop.
 
 ## Anti-Hallucination Rules (Jira)
 
@@ -239,11 +241,11 @@ reply "Jira lookup failed: <message>." and stop.
 
 2. **Empty / not_found results**: if a tool returns
    `status="empty"` or `status="not_found"`, reply literally
-   `No results found for <KEY|JQL>.` and stop. Do NOT retry the same
+   `$sentinel_not_found <KEY|JQL>.` and stop. Do NOT retry the same
    tool with cosmetic input variations.
 
 3. **Errors**: if a tool returns `status="error"` or raises, reply
-   `Jira lookup failed: <message>.` and stop. Do NOT apologise and then
+   `$sentinel_error: <message>.` and stop. Do NOT apologise and then
    emit a fabricated answer.
 
 4. **No cross-ticket bleed**: never reuse fields from a prior tool call's
