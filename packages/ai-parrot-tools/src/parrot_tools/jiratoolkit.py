@@ -27,7 +27,8 @@ Notes:
 """
 
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Sequence, Union, Literal, TypedDict
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence, TypedDict, Union
 import os
 import re
 import logging
@@ -36,6 +37,8 @@ import importlib
 from datetime import datetime
 from pydantic import BaseModel, Field
 import pandas as pd
+from jinja2 import TemplateNotFound  # noqa: F401
+from jinja2 import meta as jinja_meta  # noqa: F401
 
 try:
     # Optional config source; fall back to env vars if missing
@@ -52,9 +55,32 @@ except ImportError as e:  # pragma: no cover - optional
 from parrot.tools.manager import ToolManager
 from parrot.tools.config_schema import ConfigOption
 from parrot.auth.exceptions import AuthorizationRequired
+from parrot.template import JinjaConfig, TemplateEngine
 from .toolkit import AbstractToolkit
 from .decorators import tool_schema, requires_permission
 from .jira_config import JiraToolkitConfig
+
+#: Suffix every Jira text template file carries.
+_TEMPLATE_SUFFIX = ".j2"
+#: Jira Cloud limit for description and comment text fields.
+_MAX_JIRA_TEXT_CHARS = 32_767
+#: Appended (inside the cap) when rendered text is truncated.
+_TRUNCATION_MARKER = "\n\n... (truncated)"
+#: Stdlib-only extensions: the engine default pulls undeclared third-party packages.
+_JIRA_TEMPLATE_EXTENSIONS = ("jinja2.ext.do", "jinja2.ext.loopcontrols")
+
+
+class JiraTemplateError(ValueError):
+    """A Jira text template could not be applied.
+
+    Raised for missing variables, an empty render, a conflicting
+    ``fields['description']``, an invalid name, or a template requested while
+    no templates are configured.
+    """
+
+
+class JiraTemplateNotFound(JiraTemplateError):
+    """An explicitly requested template name does not exist in any loader."""
 
 # ---------------------------------------------------------------------------
 # Envelope type for read-method returns (FEAT-138, Module 5)
@@ -620,7 +646,7 @@ class JiraToolkit(AbstractToolkit):
     Recognized config/env keys:
         JIRA_SERVER_URL, JIRA_AUTH_TYPE, JIRA_USERNAME, JIRA_PASSWORD, JIRA_TOKEN,
         JIRA_OAUTH_CONSUMER_KEY, JIRA_OAUTH_KEY_CERT, JIRA_OAUTH_ACCESS_TOKEN,
-        JIRA_OAUTH_ACCESS_TOKEN_SECRET, JIRA_DEFAULT_PROJECT
+        JIRA_OAUTH_ACCESS_TOKEN_SECRET, JIRA_DEFAULT_PROJECT, JIRA_TEMPLATES_DIR
 
     Custom-workflow keys (used by :meth:`jira_transition_to`):
         JIRA_WORKFLOW_PATH — default ordered status chain for any project,
@@ -710,6 +736,8 @@ class JiraToolkit(AbstractToolkit):
         credential_resolver: Any = None,
         workflow_paths: Optional[Dict[str, Union[str, List[str]]]] = None,
         verify_credentials: bool = True,
+        templates_dir: Optional[Union[str, Path]] = None,
+        templates: Optional[Mapping[str, str]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -770,6 +798,20 @@ class JiraToolkit(AbstractToolkit):
         self.default_components = _parse_csv(_cfg("JIRA_DEFAULT_COMPONENTS", "") or "")
         self.default_due_date_offset = _cfg("JIRA_DEFAULT_DUE_DATE_OFFSET")
         self.default_estimate = _cfg("JIRA_DEFAULT_ESTIMATE")
+
+        # FEAT-637 — Jira text templates. Explicit kwarg > navconfig/env.
+        # A configured path that is not a directory is dropped with a WARNING
+        # so a typo is diagnosable but never breaks toolkit construction.
+        _tpl_dir = templates_dir or _cfg("JIRA_TEMPLATES_DIR")
+        self.templates_dir: Optional[Path] = None
+        if _tpl_dir:
+            _candidate = Path(_tpl_dir).expanduser()
+            if _candidate.is_dir():
+                self.templates_dir = _candidate.resolve()
+            else:
+                self.logger.warning("Jira templates_dir %s is not a directory; ignoring it", _candidate)
+        self._inline_templates: Dict[str, str] = dict(templates or {})
+        self._template_engine: Optional[TemplateEngine] = None
 
         # Declared workflow paths — the ordered status chain for a project's
         # custom Jira workflow. Jira's API only exposes the transitions
@@ -851,6 +893,27 @@ class JiraToolkit(AbstractToolkit):
 
         if verify_credentials:
             self._verify_static_credentials()
+
+    def _get_template_engine(self) -> Optional[TemplateEngine]:
+        """Return the lazily built Jira-safe template engine.
+
+        Returns:
+            ``None`` when neither ``templates_dir`` nor inline ``templates`` are
+            configured; otherwise a cached ``TemplateEngine`` with autoescape
+            disabled (Jira wiki markup is not HTML) and ``StrictUndefined``.
+        """
+        if self._template_engine is not None:
+            return self._template_engine
+        if self.templates_dir is None and not self._inline_templates:
+            return None
+        engine = TemplateEngine(
+            template_dirs=[self.templates_dir] if self.templates_dir else None,
+            config=JinjaConfig(autoescape=False, extensions=list(_JIRA_TEMPLATE_EXTENSIONS)),
+        )
+        if self._inline_templates:
+            engine.add_templates(self._inline_templates)
+        self._template_engine = engine
+        return engine
 
     def _verify_static_credentials(self) -> None:
         """Probe ``/myself`` and fail fast on rejected static credentials.
