@@ -81,11 +81,63 @@ class TestJiraSpecialistCallbacks(unittest.IsolatedAsyncioTestCase):
         result = await self.agent.on_ticket_skipped(ctx)
 
         self.assertIsInstance(result, CallbackResult)
-        self.assertIn("Entendido", result.answer_text)
+        self.assertIn("Got it", result.answer_text)  # FEAT-638: unset language renders English
         self.assertTrue(result.remove_keyboard)
 
         # Verify Redis update
         self.mock_redis_instance.set.assert_called()
+
+    def _ctx(self, prefix, payload):
+        return CallbackContext(
+            prefix=prefix,
+            payload=payload,
+            chat_id=100,
+            user_id=200,
+            message_id=300,
+            first_name="Test User",
+        )
+
+    async def test_on_ticket_skipped_spanish(self):
+        agent = JiraSpecialist(language="es")
+        agent.set_wrapper(self.mock_wrapper)
+
+        result = await agent.on_ticket_skipped(self._ctx("tskp", {"d": "dev1"}))
+
+        self.assertIn("Entendido", result.answer_text)
+
+    async def test_on_ticket_selected_spanish_keeps_status(self):
+        agent = JiraSpecialist(language="es")
+        agent.set_wrapper(self.mock_wrapper)
+        agent.ask = AsyncMock()
+
+        result = await agent.on_ticket_selected(self._ctx("tsel", {"t": "NAV-123", "d": "dev1"}))
+
+        self.assertIn("NAV-123", result.answer_text)
+        self.assertIn("In Progress", result.answer_text)
+        self.assertIn("ha sido marcado como", result.edit_message)
+
+    async def test_escalation_messages_follow_language(self):
+        agent = JiraSpecialist(language="es")
+        agent.set_wrapper(self.mock_wrapper)
+        agent._developers = [
+            Developer(
+                id="d1",
+                name="Ana",
+                username="ana",
+                jira_username="ana@x",
+                telegram_chat_id=1,
+                manager_chat_id=2,
+            )
+        ]
+        self.mock_redis_instance.exists = AsyncMock(side_effect=lambda key: key.startswith("standup:dispatched"))
+
+        await agent.escalate_non_responders()
+
+        self.assertEqual(
+            self.mock_wrapper.send_interactive_message.call_args.kwargs["text"],
+            "👋 *Ana*, aún no has seleccionado tu ticket para hoy.\n\n¿Necesitas ayuda con la priorización?",
+        )
+        self.assertIn("Escalación Daily Standup", self.mock_wrapper.bot.send_message.call_args.kwargs["text"])
 
 if __name__ == "__main__":
     unittest.main()
