@@ -207,10 +207,9 @@ See the CREATE block. Spec §4 rows covered: `test_list_templates_names_only`, `
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (coder seat gpt-5.6-terra, codex, 1 attempt, 111s; reviewed by orchestrator)
+**Date**: 2026-10-08
+**Notes**: Delivery matches the task's Files table and acceptance criteria (spec AC13). Task validation: list_templates/writes/render/config + delegation = 62 passed; test_jiratoolkit_permissions = 27 passed; ruff clean. Review recorded (0 corrections).
+**Merge-tier gate not re-run: known RED, pre-existing** (see TASK-4113 note, PR #1600, issue:265b7797ae9b, issue:1e9c207bd223). Closed as `partial`.
 
 **Deviations from spec**:

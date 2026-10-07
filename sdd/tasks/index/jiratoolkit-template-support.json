@@ -77,7 +77,7 @@
       "feature_id": "FEAT-637",
       "feature": "jiratoolkit-template-support",
       "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -87,8 +87,9 @@
       "parallelism_notes": "serialized after TASK-4115 because both modify jiratoolkit.py (file-overlap); uses _get_template_engine() and _TEMPLATE_SUFFIX from TASK-4113",
       "assigned_to": null,
       "started_at": "2026-10-07T22:03:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4116-jira-list-templates-tool.md"
+      "completed_at": "2026-10-07T22:56:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4116-jira-list-templates-tool.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4117",
