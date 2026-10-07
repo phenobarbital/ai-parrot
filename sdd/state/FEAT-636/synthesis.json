@@ -1,0 +1,258 @@
+{
+  "feat_id": "FEAT-636",
+  "mode": "enrichment",
+  "summary": "Extend FEAT-598 linked surfaces so a data-source descriptor can route its fetch through a parrot-server endpoint that executes the query slug and applies a registered Python recipe transformer, giving linked surfaces the same Python aggregation power static/recipe surfaces already have via RecipeRunner.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/linked/models.py",
+      "symbol": "TransformSpec",
+      "lines": "178-189",
+      "role": "ops XOR ref — the seam where a server-side transformer member is added",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/linked/models.py",
+      "symbol": "LinkedDataSource / LinkedSource",
+      "lines": "192-264",
+      "role": "descriptor union (kind=query_slug|derived); extension seam for fetch routing",
+      "evidence": [
+        "F002"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/linked/executor.py",
+      "symbol": "_run_source / execute_sources",
+      "lines": "231-290",
+      "role": "Python lane: fetch + apply_transform; where the recipe transformer runs at bake/refresh",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py",
+      "symbol": "UISurfacesHandler._refresh / _refresh_linked / _recipe_runner / _linked_service",
+      "lines": "346-734",
+      "role": "server lane that already hosts both RecipeRunner and LinkedSurfaceService; home of the new per-source data endpoint",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-server/src/parrot/manager/manager.py",
+      "symbol": "route registration",
+      "lines": "2420-2423",
+      "role": "where the new /api/v1/ui/surfaces/{id}/sources/{key}/data route registers",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/outputs/a2ui/recipes/transformers.py",
+      "symbol": "transformer_registry / @infographic_transformer / validate_inputs",
+      "lines": "module",
+      "role": "the Python transformer contract to reuse: name-registered pure (inputs, params) -> dict with manifests",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "path": "packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/fetch.ts",
+      "symbol": "fetchSource",
+      "lines": "61-83",
+      "role": "TS lane fetch URL construction — must branch to the server endpoint when the descriptor declares a Python transformer",
+      "evidence": [
+        "F005"
+      ],
+      "confidence": "high"
+    }
+  ],
+  "constraints": [
+    {
+      "claim": "G1 invariant: transformations are referenced by registered name, never stored/executed code — the descriptor must carry a transformer name (+params), resolved against the server's in-process transformer_registry",
+      "evidence": [
+        "F004"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "Python<->TS parity boundary already admits asymmetric transforms: transform.ref is renderer-only (skipped in Python with a warning) and DerivedDataSource forbids ref; the mirror rule applies — a Python transformer is server-only, so the renderer must fetch that source through the server",
+      "evidence": [
+        "F002",
+        "F005"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "Server lanes fail closed: LinkedSurfaceService requires a data-plane guard (403 without), owner-check resource is source:read on query_slug:<tenant|public>:<slug>; the new endpoint inherits this trust model",
+      "evidence": [
+        "F001",
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "Surface-level server refresh runs with the OWNER's PermissionContext, never the bearer's (spec Known Risk) — the identity model for the new per-source endpoint must be decided explicitly",
+      "evidence": [
+        "F003"
+      ],
+      "confidence": "high"
+    },
+    {
+      "claim": "Snapshot semantics (<=500 rows, mandatory once persisted, GET never executes) and querylimit cap (5000) are unchanged by this feature and must keep holding for transformed sources",
+      "evidence": [
+        "F001",
+        "F005"
+      ],
+      "confidence": "medium"
+    }
+  ],
+  "hypotheses": [
+    {
+      "rank": 1,
+      "statement": "Add a third TransformSpec member (e.g. `python: {transformer: <registered name>, params: {...}}`) plus a per-source server data endpoint (e.g. POST /api/v1/ui/surfaces/{surface_id}/sources/{key}/data) on UISurfacesHandler. The endpoint executes the slug via the existing linked executor machinery under the data-plane guard, applies the named transformer from transformer_registry, and returns rows. fetch.ts branches: descriptors with a Python transform fetch from that endpoint instead of QuerySource; the Python executor applies the same transformer at bake/persist/server-refresh time, so Python-lane parity is free (both lanes run the same Python).",
+      "confidence": "medium",
+      "evidence": [
+        "F002",
+        "F003",
+        "F004",
+        "F005"
+      ],
+      "reasoning": "Every needed primitive exists and converges on UISurfacesHandler: TransformSpec XOR seam, execute_sources, transformer_registry with manifests for fail-fast validation, guard + owner-pctx trust model, and a TS fetch function with a single URL-construction point."
+    },
+    {
+      "rank": 2,
+      "statement": "Alternative shape: instead of extending TransformSpec, reuse full recipes — the descriptor references a recipe (name@owner) and the endpoint runs RecipeRunner's transform stage over the slug's frame. Heavier (recipe store dependency, params precedence) but reuses the exact 'recipe definitions' the user names.",
+      "confidence": "low",
+      "evidence": [
+        "F003",
+        "F004"
+      ],
+      "reasoning": "RecipeRunner is surface-grain (produces whole envelopes), not source-grain; carving out only its transform stage is more invasive than referencing a registered transformer directly. Kept as a design option for /sdd-spec."
+    }
+  ],
+  "confidence_map": [
+    {
+      "claim": "FEAT-598 is implemented, documented, and e2e-validated (FEAT-611); this is an enrichment, not greenfield",
+      "confidence": "high",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "claim": "Linked surfaces today support only inline DSL v1 and renderer-side transform.ref; no Python transformer path exists",
+      "confidence": "high",
+      "evidence": [
+        "F001",
+        "F002"
+      ]
+    },
+    {
+      "claim": "The renderer fetches rows directly from QuerySource with the viewer's JWT; no per-source server endpoint exists",
+      "confidence": "high",
+      "evidence": [
+        "F001",
+        "F003",
+        "F005"
+      ]
+    },
+    {
+      "claim": "The recipe transformer contract ((inputs, params) -> dict, name-registered, manifest-validated) is reusable as-is for linked sources",
+      "confidence": "high",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "claim": "The server already executes slugs + DSL transforms in Python (LinkedSurfaceService.refresh -> execute_sources), so the new endpoint composes existing machinery",
+      "confidence": "high",
+      "evidence": [
+        "F003",
+        "F005"
+      ]
+    },
+    {
+      "claim": "Transformer availability in the server process (which modules get load_transformer_module'd at boot) is operationally solved for recipes and extends to this feature",
+      "confidence": "medium",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "claim": "Client-side DSL ops can still chain after a server-side transformer without breaking dependency ordering",
+      "confidence": "low",
+      "evidence": [
+        "F005"
+      ]
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "Identity model for the new per-source data endpoint: run the slug under the VIEWER's JWT/PBAC (like today's direct QuerySource fetch) or under the surface OWNER's PermissionContext (like the surface-level server refresh)?",
+      "resolves": [
+        "constraint 4"
+      ],
+      "options": [
+        "Viewer identity — preserves today's per-viewer data scoping; transformer runs on what the viewer may see",
+        "Owner identity — matches the server-refresh lane; simpler, but shows owner-scoped data to any viewer with surface access",
+        "Viewer identity with owner fallback only for share-token viewers (hybrid)"
+      ],
+      "user_answer": "Viewer identity (JWT): the endpoint executes the slug under the viewer's QuerySource PBAC, preserving today's per-viewer data scoping. For share-token viewers (see U4) there is no JWT, so those requests run under the OWNER's PermissionContext, mirroring the existing share server-refresh semantics (spec Known Risk)."
+    },
+    {
+      "id": "U2",
+      "question": "What does the descriptor reference: a bare registered transformer name (transformer_registry, G1-style) or a recipe (name@owner from the recipe store) whose transform steps run over the slug frame?",
+      "resolves": [
+        "hypothesis 1 vs 2"
+      ],
+      "options": [
+        "Registered transformer name + params (lighter, source-grain)",
+        "Recipe reference (reuses recipe store/versioning, heavier)",
+        "Both, transformer name first, recipe ref as a later increment"
+      ],
+      "user_answer": "Both, phased: v1 references a registered transformer by name (+params) against transformer_registry (G1 intact); a recipe reference (name@owner via the recipe store) is a planned later increment, not in v1 scope."
+    },
+    {
+      "id": "U3",
+      "question": "May a server-transformed source still carry inline DSL ops (applied after the transformer) and be referenced by derived siblings / join-union ops, or is the Python transformer terminal for that source in v1?",
+      "resolves": [
+        "confidence_map 7"
+      ],
+      "options": [
+        "Terminal in v1 — transformer output is the frame, no chaining (simplest)",
+        "Allow DSL ops after the transformer in both lanes",
+        "Allow derived siblings to reference it but no same-source chaining"
+      ],
+      "user_answer": "Terminal in v1: the transformer's output IS the source's frame. No inline DSL ops after it and no derived/join/union sibling may reference a python-transformed source in v1."
+    },
+    {
+      "id": "U4",
+      "question": "Is the new endpoint available to share-token viewers (server executes on their behalf, like the share refresh button), or authenticated sessions only in v1?",
+      "resolves": [
+        "scope"
+      ],
+      "options": [
+        "Authenticated only in v1; share viewers keep snapshot-only",
+        "Share viewers included from day one (matches existing share refresh semantics)"
+      ],
+      "user_answer": "Share-token viewers are included from day one: the server executes slug+transformer on their behalf under the owner's pctx (consistent with the existing share refresh), returning the transformed rows."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence, all primitives exist and converge on known seams; the open questions are design decisions (identity, reference grain, chaining), which the spec's Open Questions / intake can carry after the Q&A below."
+  },
+  "overall_confidence": "medium",
+  "budget_status": {
+    "truncated": false,
+    "truncation_reason": null
+  }
+}

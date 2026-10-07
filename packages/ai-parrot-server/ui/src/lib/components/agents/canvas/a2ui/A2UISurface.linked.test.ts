@@ -164,6 +164,14 @@ describe('A2UISurface linked lane', () => {
     await waitFor(() => expect(screen.getByText(/loading/i)).toBeInTheDocument());
   });
 
+  it('a python source without a persisted surface shows the saved-data notice and never fetches', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch');
+    render(A2UISurface, { envelope: envelopeWithSource({ transform: { python: { name: 'x' } } }) });
+    await waitFor(() => expect(screen.getByTestId('notice-snapshot-sales')).toBeInTheDocument());
+    expect(screen.getByTestId('notice-snapshot-sales').textContent).toMatch(/saved data/);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it('a manual refresh policy never auto-fetches', async () => {
     const spy = vi.spyOn(globalThis, 'fetch');
     render(A2UISurface, { envelope: envelopeWithSource({ refresh: { policy: 'manual' } }) });

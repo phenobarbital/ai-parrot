@@ -49,6 +49,49 @@ KPICARD_SCHEMA: dict[str, Any] = {
                 "renderers never guess a number's meaning from its label."
             ),
         },
+        # FEAT-667: an interactive card -- a period selector over a daily
+        # chart. Front-only: `lower()` ignores all four, so the HTML/PDF lanes
+        # print exactly the card they printed before.
+        "periods": {
+            "type": "object",
+            "description": (
+                "Optional map of period preset -> figures, or a binding to one. "
+                "Keys: 'report', '1w', '1m', '3m', 'ty', '1y'. Each entry: "
+                "{value, previous, delta, deltaAbs, trend, label, from?, to?} -- "
+                "`delta` printed as for this card ('+12.5%', 'from 0'), `deltaAbs` "
+                "the same change in the metric's own unit, `label` the period's "
+                "name for 'Previous {label}' ('week', 'year to date'), `from`/`to` "
+                "ISO dates. Every number is the PRODUCER's: a renderer selects an "
+                "entry and never derives one (not from `series`, not from another "
+                "entry). Omit a preset that has no data; a renderer disables it."
+            ),
+        },
+        "series": {
+            "type": ["array", "object"],
+            "description": (
+                "Optional daily series [{date, value}] (ISO dates, zero-filled, "
+                "sorted), or a binding to one. Drawn as bars under the card, "
+                "sliced to the selected period's from/to. Chart data only: never "
+                "summed into a card value."
+            ),
+        },
+        "defaultPeriod": {
+            "type": "string",
+            "enum": ["report", "1w", "1m", "3m", "ty", "1y"],
+            "description": (
+                "Optional preset the card opens on, as a literal (not a "
+                "binding, like `trend`). Defaults to 'report'."
+            ),
+        },
+        "seriesNote": {
+            "type": "string",
+            "description": (
+                "Optional caveat shown under the chart, for when the bars are "
+                "counted differently from the card value -- e.g. shifts filed "
+                "under their clock-in day, so bars and total can differ at the "
+                "window's edges."
+            ),
+        },
     },
     "required": ["label", "value"],
 }
@@ -61,6 +104,10 @@ KPICARD_INSTRUCTIONS = (
     "all, e.g. hours worked, and must not be judged) "
     "and `format` (percent/currency/number — "
     "send a ratio as 0.683 with format='percent', never as the string '68.3%'). "
+    "For an interactive card, optionally add `periods` (preset -> {value, previous, "
+    "delta, deltaAbs, trend, label, from, to}), `series` ([{date, value}] daily), "
+    "`defaultPeriod` and `seriesNote`: every figure must be computed by you, the "
+    "renderer only selects one. "
     "Display-only."
 )
 

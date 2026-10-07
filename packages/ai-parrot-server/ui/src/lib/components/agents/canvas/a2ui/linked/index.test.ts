@@ -3,13 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLinkedLane } from './index';
 import type { LinkedDataSource, LinkedSources, Row } from './types';
 
-const { fetchSourceMock } = vi.hoisted(() => ({
+const { fetchSourceMock, fetchSourceDataMock } = vi.hoisted(() => ({
   fetchSourceMock: vi.fn(),
+  fetchSourceDataMock: vi.fn(),
 }));
 
 vi.mock('./fetch', async importOriginal => {
   const actual = await importOriginal<typeof import('./fetch')>();
-  return { ...actual, fetchSource: fetchSourceMock };
+  return { ...actual, fetchSource: fetchSourceMock, fetchSourceData: fetchSourceDataMock };
 });
 
 afterEach(() => vi.resetAllMocks());
@@ -364,6 +365,61 @@ describe('LinkedLane dependency graphs', () => {
     );
 
     expect(fetchSourceMock.mock.calls.filter(([src]) => src.slug === 'P')).toHaveLength(1);
+    linkedLane.stop();
+  });
+});
+
+describe('python-transformed sources (FEAT-636)', () => {
+  const PY = { python: { name: 'x' } } as unknown as LinkedDataSource['transform'];
+
+  it('persisted surface: fetches through the endpoint, never QuerySource, rows untouched', async () => {
+    const endpointRows = [{ a: 1 }, { a: 2 }];
+    fetchSourceDataMock.mockResolvedValue(endpointRows);
+    const { opts, updates } = recorder();
+    const linkedLane = createLinkedLane(
+      { py: source('py', { refresh: { policy: 'on_mount' }, transform: PY } as Partial<LinkedDataSource>) } as unknown as LinkedSources,
+      { ...opts, surface: { baseUrl: 'http://h', surfaceId: 's1', shareToken: 'tok', headers: () => ({ A: 'b' }) } },
+    );
+    linkedLane.start();
+    await withTimeout(vi.waitFor(() => expect(updates.some((u) => u.status === 'ready')).toBe(true)));
+    expect(fetchSourceMock).not.toHaveBeenCalled();
+    expect(fetchSourceDataMock).toHaveBeenCalledTimes(1);
+    const [, key, , o] = fetchSourceDataMock.mock.calls[0];
+    expect(key).toBe('py');
+    expect(o).toMatchObject({ surfaceBaseUrl: 'http://h', surfaceId: 's1', shareToken: 'tok' });
+    expect(updates.find((u) => u.status === 'ready')?.rows).toEqual(endpointRows);
+    linkedLane.stop();
+  });
+
+  it('non-persisted surface: no fetch at all, reports snapshot', async () => {
+    const { opts, updates } = recorder();
+    const linkedLane = createLinkedLane(
+      { py: source('py', { refresh: { policy: 'on_mount' }, transform: PY } as Partial<LinkedDataSource>) } as unknown as LinkedSources,
+      opts,
+    );
+    linkedLane.start();
+    await withTimeout(vi.waitFor(() => expect(updates.some((u) => u.status === 'snapshot')).toBe(true)));
+    expect(fetchSourceMock).not.toHaveBeenCalled();
+    expect(fetchSourceDataMock).not.toHaveBeenCalled();
+    linkedLane.stop();
+  });
+
+  it('an ops source in the same lane still uses fetchSource + applyTransform', async () => {
+    fetchSourceMock.mockResolvedValue([{ k: 1 }, { k: 1 }]);
+    const { opts, updates } = recorder();
+    const linkedLane = createLinkedLane(
+      {
+        ops: source('ops', {
+          refresh: { policy: 'on_mount' },
+          transform: { ops: [{ op: 'group_by', by: ['k'], aggregate: { k: 'count' } }] },
+        } as Partial<LinkedDataSource>),
+      } as unknown as LinkedSources,
+      opts,
+    );
+    linkedLane.start();
+    await withTimeout(vi.waitFor(() => expect(updates.some((u) => u.status === 'ready')).toBe(true)));
+    expect(fetchSourceMock).toHaveBeenCalledTimes(1);
+    expect(fetchSourceDataMock).not.toHaveBeenCalled();
     linkedLane.stop();
   });
 });

@@ -53,6 +53,7 @@ __all__ = [
     "MintShareRequest",
     "PublishSurfaceRequest",
     "RefreshSurfaceRequest",
+    "SourceDataRequest",
     "SurfaceNegotiationService",
     "UISurfacesHandler",
     "resolve_surface_access",
@@ -95,6 +96,16 @@ class PublishSurfaceRequest(BaseModel):
 
 class RefreshSurfaceRequest(BaseModel):
     """Body of ``POST /api/v1/ui/surfaces/{id}/refresh``."""
+
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+class SourceDataRequest(BaseModel):
+    """Body of ``POST /api/v1/ui/surfaces/{id}/sources/{key}/data`` — placeholder overrides only (FEAT-636 S2).
+
+    Conditions are NEVER accepted from the client: the server rebuilds them from the persisted descriptor, so
+    ``locked`` filters, tenant routing and ``querylimit`` cannot be tampered with.
+    """
 
     params: dict[str, Any] = Field(default_factory=dict)
 
@@ -400,8 +411,10 @@ class UISurfacesHandler(BaseView):
         return await self._get_list(user_id, scope)
 
     async def post(self) -> web.Response:
-        """Dispatch ``POST`` by path suffix: ``/refresh``, ``/share``, or pin/save."""
+        """Dispatch ``POST`` by path suffix: ``/sources/{key}/data``, ``/refresh``, ``/share``, or pin/save."""
         path = self.request.path
+        if path.endswith("/data"):
+            return await self._source_data()
         if path.endswith("/refresh"):
             return await self._refresh()
         if path.endswith("/share"):
@@ -732,6 +745,60 @@ class UISurfacesHandler(BaseView):
         if outcome.warnings:
             response.headers["X-Parrot-Refresh-Warnings"] = json.dumps(outcome.warnings)
         return response
+
+    async def _source_data(self) -> web.Response:
+        """``POST /api/v1/ui/surfaces/{surface_id}/sources/{key}/data`` — guarded one-source fetch (FEAT-636).
+
+        Returns ``{"status", "key", "rows", "truncated", "snapshot_at", "warnings"}``; never persists.
+        Identity: owner/scope access → the caller's pctx; access granted ONLY by a share token → the owner's pctx.
+        """
+        surface_id = self.request.match_info.get("surface_id")
+        key = self.request.match_info.get("key")
+        if not surface_id or not key:
+            return self._error("surface_id and key are required", status=400)
+        user_id = await self._user_id()
+        scope = await self._scope()
+        token = self.query_parameters(self.request).get("share")
+        record, err = await self._resolve_surface_for_access(surface_id, user_id, token, scope)
+        if err is not None:
+            return err
+        if record.recipe_name is not None or not has_data_sources(record.envelope):
+            return self._error("Surface has no linked data sources", status=404)
+        try:
+            body = await self.request.json()
+        except Exception:  # noqa: BLE001
+            body = {}
+        try:
+            req = SourceDataRequest.model_validate(body if isinstance(body, dict) else {})
+        except ValidationError as exc:
+            return self._error(f"Invalid request: {exc.errors()[0]['msg']}", status=400)
+
+        share_only = bool(token) and record.user_id != user_id and not (scope and scope_grants(record, scope))
+        pctx = build_principal_context(record.user_id if share_only else user_id, channel="ui_surfaces")
+        try:
+            outcome = await self._linked_service().fetch_source(record.envelope, key, params=req.params, pctx=pctx)
+        except LinkedGuardRequired:
+            return self.json_response(
+                {"status": "error", "message": "Linked surfaces require a data-plane guard"}, status=403
+            )
+        except AuthorizationRequired:
+            return self.json_response({"status": "error", "message": "Data source not permitted"}, status=403)
+
+        if outcome.error_status is not None:
+            return self.json_response(
+                {"status": "error", "message": "Data source unavailable", "code": outcome.error_code},
+                status=outcome.error_status,
+            )
+        return self.json_response(
+            {
+                "status": "success",
+                "key": key,
+                "rows": outcome.rows,
+                "truncated": outcome.truncated,
+                "snapshot_at": outcome.snapshot_at.isoformat() if outcome.snapshot_at else None,
+                "warnings": outcome.warnings,
+            }
+        )
 
     # ── PATCH: visibility ────────────────────────────────────────────────
 

@@ -1,12 +1,15 @@
 """Host-owned tenant tooling policy (FEAT-622 M7, review R1). Pure and synchronous: no I/O."""
+
 from __future__ import annotations
 
-from collections.abc import Mapping, MutableMapping
+import inspect
+import logging
+from collections.abc import Callable, Collection, Iterable, Mapping, MutableMapping
 from typing import Any, ClassVar, Literal
 from urllib.parse import urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from parrot.tools.resolver import get_toolkit_resolver
 from parrot.tools.spec import (
@@ -17,16 +20,34 @@ from parrot.tools.spec import (
     toolkit_vault_name,
 )
 
+logger = logging.getLogger(__name__)
+
 TenantMCPTransport = Literal["http", "sse", "streamable-http"]
 ToolingRefusal = Literal[
-    "local_execution", "transport_not_permitted", "endpoint_not_allowed", "mcp_server_unknown",
-    "field_not_permitted", "secret_ref_not_permitted", "builtin_not_permitted", "toolkit_unavailable",
+    "local_execution",
+    "transport_not_permitted",
+    "endpoint_not_allowed",
+    "mcp_server_unknown",
+    "field_not_permitted",
+    "secret_ref_not_permitted",
+    "builtin_not_permitted",
+    "toolkit_unavailable",
 ]
 _POLICY_KEY = "parrot.tenant_tooling_policy"
-_TENANT_MCP_FIELDS = frozenset({
-    "name", "url", "transport", "description", "allowed_tools", "blocked_tools",
-    "auth_type", "headers", "auth_config", "timeout",
-})
+_TENANT_MCP_FIELDS = frozenset(
+    {
+        "name",
+        "url",
+        "transport",
+        "description",
+        "allowed_tools",
+        "blocked_tools",
+        "auth_type",
+        "headers",
+        "auth_config",
+        "timeout",
+    }
+)
 _LOCAL_FIELDS = ("command", "args", "env", "socket_path")
 _SECRET_BLOCKED_PHASES = frozenset({"write", "activate", "attach"})
 
@@ -57,6 +78,8 @@ class ToolingSubject(BaseModel, frozen=True):
     agent_id: UUID | None
     actor: str | None
     phase: Literal["write", "activate", "build", "attach", "execute"]
+    held: frozenset[str] = frozenset()
+    """Lower-cased slugs the write leaves untouched: exempt from the per-tenant toolkit allow-list only (delta check)."""
 
 
 def _split_https(url: str) -> tuple[str, int, str] | None:
@@ -102,12 +125,16 @@ def detect_transport(config: Mapping[str, Any]) -> str | None:
 class TenantToolingPolicy(BaseModel, frozen=True):
     """Frozen host policy; the default is :meth:`deny_all`."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     mcp_servers: Mapping[str, HostMCPServer] = {}
     mcp_endpoints: tuple[str, ...] = ()
     mcp_transports: frozenset[TenantMCPTransport] = frozenset({"http", "sse", "streamable-http"})
     builtin_tools: frozenset[str] = frozenset()
     host_toolkits: bool = True
     apply_to_global: bool = False
+    tenant_toolkits: Callable[[str], Collection[str] | None] | None = None
+    """Host callback: enabled host-toolkit slugs for a tenant, ``None`` = unrestricted. Sync, no I/O."""
 
     @field_validator("mcp_endpoints")
     @classmethod
@@ -127,9 +154,54 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         if entry.is_host:
             if not self.host_toolkits:
                 raise TenantToolingRefused("toolkit_unavailable", item=slug)
+            self._check_tenant_toolkit(slug, subject)
             return
         if slug.lower() not in {name.lower() for name in self.builtin_tools}:
             raise TenantToolingRefused("builtin_not_permitted", item=slug)
+
+    def _check_tenant_toolkit(self, slug: str, subject: ToolingSubject) -> None:
+        """Per-tenant host-toolkit allow-list; never applied to phase ``build`` (a stored agent must still build)."""
+        # no tenant (global partition) is unrestricted by design; ``build`` is never refused (see above)
+        if self.tenant_toolkits is None or not subject.tenant or subject.phase == "build":
+            return
+        if slug.lower() in subject.held:  # stored, unchanged tooling: a disabled toolkit is refused at call time instead
+            return
+        enabled = self.enabled_toolkits(subject.tenant)
+        if enabled is not None and slug.lower() not in enabled:
+            raise TenantToolingRefused("toolkit_unavailable", item=slug)
+
+    def pinned_for(self, subject: ToolingSubject) -> "TenantToolingPolicy":
+        """This policy with the tenant's allow-list resolved ONCE: the callback runs (and logs a failure) once per
+        request, however many slugs are then checked. Returns ``self`` when the allow-list does not apply."""
+        if self.tenant_toolkits is None or not subject.tenant or subject.phase == "build":
+            return self
+        enabled = self.enabled_toolkits(subject.tenant)
+        return self.model_copy(update={"tenant_toolkits": lambda _tenant: enabled})
+
+    def enabled_toolkits(self, tenant: str) -> frozenset[str] | None:
+        """Lower-cased enabled host-toolkit slugs for ``tenant``; ``None`` = unrestricted.
+
+        Anything the callback returns that is not ``None``, a ``str`` (one slug, never a substring pool) or an
+        iterable of names — a coroutine, a bool, an int — and any exception it raises, fails CLOSED (empty set).
+        """
+        callback = self.tenant_toolkits
+        if callback is None:
+            return None
+        try:
+            result = callback(tenant)
+            if result is None:
+                return None
+            if isinstance(result, str):
+                return frozenset({result.lower()})
+            if inspect.isawaitable(result):
+                getattr(result, "close", lambda: None)()  # an async callback is never awaited: no "never awaited" noise
+                raise TypeError("tenant_toolkits must be synchronous")
+            if not isinstance(result, Iterable):
+                raise TypeError(f"tenant_toolkits returned {type(result).__name__}, expected a collection of slugs")
+            return frozenset(str(name).lower() for name in result)
+        except Exception:  # pylint: disable=broad-except
+            logger.exception("tenant_toolkits callback failed for tenant %r; refusing (fail closed)", tenant)
+            return frozenset()
 
     def resolve_mcp(self, config: Mapping[str, Any], *, subject: ToolingSubject) -> dict[str, Any]:
         """Spec §2 checks 1–4 on the FINAL kwargs; returns MCPServerConfig kwargs."""
@@ -141,19 +213,18 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         self._check_endpoint(config)
         return dict(config)
 
-    def check_tooling(
-        self, tooling: NormalizedTooling, *, subject: ToolingSubject, owner: str | None = None
-    ) -> None:
+    def check_tooling(self, tooling: NormalizedTooling, *, subject: ToolingSubject, owner: str | None = None) -> None:
         """Check every tool, toolkit and MCP spec of ``tooling`` (and secret references by phase)."""
+        policy = self.pinned_for(subject)  # one allow-list resolution for the whole tooling
         for tool in tooling.tools:
             slug = tool if isinstance(tool, str) else getattr(tool, "name", None)
             if not isinstance(slug, str):
                 raise TenantToolingRefused("toolkit_unavailable", item=repr(tool)[:80])
-            self.check_tool(slug, subject=subject)
+            policy.check_tool(slug, subject=subject)
         for toolkit in tooling.toolkits:
-            self.precheck_toolkit(toolkit, subject=subject, owner=owner)
+            policy.precheck_toolkit(toolkit, subject=subject, owner=owner)
         for server in tooling.mcp_servers:
-            self.precheck_mcp(server, subject=subject, owner=owner)
+            policy.precheck_mcp(server, subject=subject, owner=owner)
 
     def precheck_toolkit(self, spec: Any, *, subject: ToolingSubject, owner: str | None = None) -> None:
         """Slug check plus phase-dependent secret-reference check of one toolkit spec (no vault access)."""
@@ -227,6 +298,20 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         candidate = f"https://{host}:{port}{path if path.endswith('/') else path + '/'}"
         if not any(candidate.startswith(prefix) for prefix in self.mcp_endpoints):
             raise TenantToolingRefused("endpoint_not_allowed", item=name)
+
+
+def unchanged_slugs(before: NormalizedTooling, after: NormalizedTooling) -> frozenset[str]:
+    """Lower-cased slugs of ``after`` that a write leaves exactly as in ``before`` (tools and toolkit specs)."""
+
+    def _slug(tool: Any) -> str | None:
+        slug = tool if isinstance(tool, str) else getattr(tool, "name", None)
+        return slug.lower() if isinstance(slug, str) else None
+
+    kept = {_slug(t) for t in after.tools if any(t == old for old in before.tools)}
+    kept |= {item.slug.lower() for item in after.toolkits if any(item == old for old in before.toolkits)}
+    changed = {_slug(t) for t in after.tools if not any(t == old for old in before.tools)}
+    changed |= {item.slug.lower() for item in after.toolkits if not any(item == old for old in before.toolkits)}
+    return frozenset(slug for slug in kept - changed if slug)
 
 
 def effective_mcp_config(spec: AgentMCPServerSpec) -> dict[str, Any]:

@@ -1,0 +1,6 @@
+packages/ai-parrot-server/src/parrot/handlers/ui_surfaces.py
+packages/ai-parrot-server/src/parrot/manager/manager.py
+packages/ai-parrot-server/ui/src/lib/components/agents/canvas/a2ui/linked/fetch.ts
+packages/ai-parrot/src/parrot/outputs/a2ui/linked/executor.py
+packages/ai-parrot/src/parrot/outputs/a2ui/linked/models.py
+packages/ai-parrot/src/parrot/outputs/a2ui/recipes/transformers.py

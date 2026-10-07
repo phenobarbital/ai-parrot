@@ -58,18 +58,19 @@ Source: `parrot/bots/prompts/domain_layers.py::JIRA_GROUNDING_LAYER`
 
 ## Sentinel phrases
 
-`JIRA_GROUNDING_LAYER` mandates two verbatim reply strings. These strings
-are **assertion targets** in the regression tests — do not paraphrase or
-translate them:
+`JIRA_GROUNDING_LAYER` mandates two reply prefixes. Since FEAT-638 their wording follows
+the bot's `language`: the template carries `$sentinel_not_found` / `$sentinel_error`,
+which `AbstractBot._configure_prompt_builder()` fills from `GROUNDING_SENTINELS`
+(English when `language` is unset). The anti-hallucination rules are identical in every language.
 
-| Situation | Required reply prefix |
-|---|---|
-| Tool returns `status="not_found"` or `status="empty"` | `No results found for <KEY\|JQL>.` |
-| Tool returns `status="error"` or raises | `Jira lookup failed: <message>.` |
+| Situation | `en` (default) | `es` |
+|---|---|---|
+| Tool returns `status="not_found"` or `status="empty"` | `No results found for <KEY\|JQL>.` | `No se encontraron resultados para <KEY\|JQL>.` |
+| Tool returns `status="error"` or raises | `Jira lookup failed: <message>.` | `La consulta a Jira falló: <message>.` |
 
-The grounding tests in
-`packages/ai-parrot/tests/test_jira_specialist_grounding.py` assert these
-exact phrases and will fail if the wording changes.
+The phrases are **assertion targets**: `test_jira_grounding_layer.py` and
+`test_jira_specialist_grounding.py` read them from `GROUNDING_SENTINELS`, so change them only
+there. To add a language see [`prompts/output-language.md`](prompts/output-language.md).
 
 ---
 
@@ -148,9 +149,9 @@ The following patterns are explicitly **forbidden**:
 - **Do not import `JIRA_SPECIALIST_PROMPT`** — this constant was deleted in
   TASK-947. Any import will raise `ImportError`.
 
-- **Do not localise the sentinel phrases** — `No results found for` and
-  `Jira lookup failed` are matched literally in the regression tests. Any
-  translation or paraphrase will cause those tests to fail.
+- **Do not hardcode the sentinel phrases** — read them from `GROUNDING_SENTINELS`
+  (`parrot/bots/prompts/domain_layers.py`). Localising them is supported since FEAT-638;
+  a literal edited in a test or a layer instead of the table will drift out of sync.
 
 - **Do not add anti-hallucination rules outside `JIRA_GROUNDING_LAYER`** —
   grounding rules scattered across layers are hard to audit and override. Add

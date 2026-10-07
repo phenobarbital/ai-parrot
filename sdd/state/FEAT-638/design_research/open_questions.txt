@@ -1,0 +1,1 @@
+- [ ] Should regional variants (`es-MX`, `pt-BR`) be validated against a known list, or accepted free-form with a warning? Current design says free-form + warning. — *Owner: Jesus*

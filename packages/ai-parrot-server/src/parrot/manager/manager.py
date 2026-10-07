@@ -208,6 +208,7 @@ async def cleanup_bot_instance(bot: "AbstractBot", *, label: str) -> bool:
         return False
     return True
 
+
 class BotManager:
     """BotManager.
 
@@ -923,7 +924,7 @@ class BotManager:
             return None
         from ..handlers.studio.storage.models import StudioAgentKey
 
-        await enforce_agent_access(self.registry.evaluator, name, request)      # BEFORE any build (FEAT-153 order)
+        await enforce_agent_access(self.registry.evaluator, name, request)  # BEFORE any build (FEAT-153 order)
         try:
             return await self.studio.get(StudioAgentKey(None, name))
         except Exception as exc:  # noqa: BLE001 — a refused/failed Studio build is "not served" on the legacy path
@@ -948,7 +949,7 @@ class BotManager:
             raise StudioStorageUnavailable("studio runtime is not installed")
         if new and not session_id:
             raise ValueError("get_studio_bot(new=True) requires a session_id")
-        await enforce_agent_access(self.registry.evaluator, key.qualified, request)     # BEFORE any build
+        await enforce_agent_access(self.registry.evaluator, key.qualified, request)  # BEFORE any build
         if new:
             return await self.studio.get_session(key, session_id)
         return await self.studio.get(key)
@@ -2420,6 +2421,7 @@ class BotManager:
         router.add_view("/api/v1/ui/surfaces", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/refresh", UISurfacesHandler)
+        router.add_view("/api/v1/ui/surfaces/{surface_id}/sources/{key}/data", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/share", UISurfacesHandler)
         router.add_view("/api/v1/ui/surfaces/{surface_id}/share/{token}", UISurfacesHandler)
         # Agent knowledge index (PageIndex / GraphIndex) management.
@@ -2857,9 +2859,7 @@ Available documentation UIs:
         """registry.setup(app) (+ opt-in imports), then start the legacy expiry loop."""
         opts = app[_REGISTRY_ONLY_APP_KEY]
         if (opts["import_modules"] or opts["load_definitions"]) and has_installed_resolver(app):
-            raise RuntimeError(
-                "setup_registry_only: import_modules/load_definitions are refused in a tenant host"
-            )
+            raise RuntimeError("setup_registry_only: import_modules/load_definitions are refused in a tenant host")
         if self.enable_registry_bots:
             self.registry.setup(app)
             if opts["import_modules"]:

@@ -232,15 +232,24 @@ class TestTestAsk:
         create_mock = MagicMock(return_value=byok_client)
         monkeypatch.setattr(testing_module.LLMFactory, "create", create_mock)
 
+        default_client, served = bot.llm, []
+        plain_ask = bot.ask
+
+        async def _recording_ask(question):
+            served.append(bot.llm)
+            return await plain_ask(question)
+
+        bot.ask = _recording_ask
         response = await _unwrap(StudioTestingHandler.post)(handler)
 
         assert response.status == 200
+        assert served == [byok_client]                  # the personal key served this ask ...
         resolve_mock.assert_awaited_once()
         assert resolve_mock.await_args.args[1:] == ("1", "anthropic")
         create_mock.assert_called_once()
         assert create_mock.call_args.args[0] == "anthropic:claude-3-haiku"
         assert create_mock.call_args.kwargs["api_key"] == "sk-ant-byok-key"
-        assert bot.llm is byok_client
+        assert bot.llm is default_client                # ... and did not outlive it
 
     @pytest.mark.asyncio
     async def test_ask_byok_no_stored_key_is_noop(self, monkeypatch):

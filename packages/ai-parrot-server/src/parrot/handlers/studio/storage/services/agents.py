@@ -231,7 +231,8 @@ class StudioAgentService:
                                     allowed_groups=record.allowed_groups)
             rows = await self._repos.tooling.list_locked(conn, head.agent_id)
             self._gate.enforce(part, normalized_tooling_for(definition, rows), agent_id=head.agent_id,
-                               actor=actor or record.owner, phase="write")
+                               actor=actor or record.owner, phase="write",
+                               before=normalized_tooling_for(record.definition, rows))
             return await self._repos.agents.update_definition(conn, part, name, definition)
 
     async def update_visibility(

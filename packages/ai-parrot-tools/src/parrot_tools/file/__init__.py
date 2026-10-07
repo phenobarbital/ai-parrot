@@ -16,12 +16,19 @@ __all__ = (
     "GCSFileManager",
     "SharePointFileManager",
     "OneDriveFileManager",
+    "GoogleDriveFileManager",
 )
 
 
 def __getattr__(name: str):
     """Lazy re-export cloud managers from core."""
-    if name in ("S3FileManager", "GCSFileManager", "SharePointFileManager", "OneDriveFileManager"):
+    if name in (
+        "S3FileManager",
+        "GCSFileManager",
+        "SharePointFileManager",
+        "OneDriveFileManager",
+        "GoogleDriveFileManager",
+    ):
         from parrot.interfaces import file as _file
 
         return getattr(_file, name)

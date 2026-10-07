@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-05T21:18:44Z",
-  "completed_at": null,
+  "completed_at": "2026-10-05T22:00:36+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-634",
       "feature": "agentstudio-ui-backend-gaps",
       "spec": "sdd/specs/agentstudio-ui-backend-gaps.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent: edits only agents/_mixin.py, agents/_db.py, agents/_visibility.py and its own new test file; no other task touches them.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4096-studio-agent-definition-readable.md"
+      "started_at": "2026-10-05T21:49:31+00:00",
+      "completed_at": "2026-10-05T21:50:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4096-studio-agent-definition-readable.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4097",
@@ -34,16 +35,17 @@
       "feature_id": "FEAT-634",
       "feature": "agentstudio-ui-backend-gaps",
       "spec": "sdd/specs/agentstudio-ui-backend-gaps.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent: edits only catalog.py (and test_catalogs.py); no other task touches either.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4097-studio-catalogues-models-allowed.md"
+      "started_at": "2026-10-05T21:49:31+00:00",
+      "completed_at": "2026-10-05T21:51:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4097-studio-catalogues-models-allowed.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4098",
@@ -52,16 +54,17 @@
       "feature_id": "FEAT-634",
       "feature": "agentstudio-ui-backend-gaps",
       "spec": "sdd/specs/agentstudio-ui-backend-gaps.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent: edits only parrot/tools/tooling_policy.py and its unit test; ai-parrot core package, no other task touches either.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4098-tooling-policy-tenant-toolkits-seam.md"
+      "started_at": "2026-10-05T21:49:31+00:00",
+      "completed_at": "2026-10-05T21:52:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4098-tooling-policy-tenant-toolkits-seam.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4099",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-634",
       "feature": "agentstudio-ui-backend-gaps",
       "spec": "sdd/specs/agentstudio-ui-backend-gaps.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -79,9 +82,10 @@
       "parallel": true,
       "parallelism_notes": "needs `TenantToolingPolicy(tenant_toolkits=...)` from TASK-4098 (packages/ai-parrot/src/parrot/tools/tooling_policy.py); touches _base/__init__.py and _base/_storage.py that no other task edits.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4099-studio-toolkit-allowlist-routes-details.md"
+      "started_at": "2026-10-05T21:49:31+00:00",
+      "completed_at": "2026-10-05T21:54:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4099-studio-toolkit-allowlist-routes-details.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4100",
@@ -90,16 +94,17 @@
       "feature_id": "FEAT-634",
       "feature": "agentstudio-ui-backend-gaps",
       "spec": "sdd/specs/agentstudio-ui-backend-gaps.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent: edits skills_catalog/_import.py, files.py, testing/_db.py, testing/_ask.py and the two extended tests; none shared with other tasks.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4100-studio-small-response-gaps.md"
+      "started_at": "2026-10-05T21:49:31+00:00",
+      "completed_at": "2026-10-05T21:59:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4100-studio-small-response-gaps.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4101",
@@ -108,7 +113,7 @@
       "feature_id": "FEAT-634",
       "feature": "agentstudio-ui-backend-gaps",
       "spec": "sdd/specs/agentstudio-ui-backend-gaps.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -121,9 +126,10 @@
       "parallel": true,
       "parallelism_notes": "documents final field names from TASK-4096 (definition), TASK-4097 (models/allowed), TASK-4098 (tenant_toolkits), TASK-4099 (details), TASK-4100 (version/entries/byok); edits docs/agent_studio_api.md and test_feat605_contract_doc.py only.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4101-studio-api-docs-refresh.md"
+      "started_at": "2026-10-05T21:49:31+00:00",
+      "completed_at": "2026-10-05T22:00:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4101-studio-api-docs-refresh.md",
+      "verification": "verified"
     }
   ]
 }

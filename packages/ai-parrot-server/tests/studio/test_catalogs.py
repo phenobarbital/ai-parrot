@@ -199,3 +199,88 @@ def _real_openai():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---- FEAT-634 B2 / B13 — real app, real routes --------------------------------------------------------------------
+from parrot.clients.factory import LLMFactory  # noqa: E402
+
+from .test_agents_db_mode import BASE, _offline, pool  # noqa: E402,F401  (fixtures)
+from .test_agents_visibility import tenant_app, who  # noqa: E402
+
+
+async def test_llm_clients_rows_carry_models(aiohttp_client, pool):  # noqa: F811
+    client = await aiohttp_client(tenant_app(pool))
+    resp = await client.get(f"{BASE}/catalog/llm-clients", headers=who("u1"))
+    assert resp.status == 200
+    rows = await resp.json()
+    available = [r for r in rows if r["available"]]
+    assert available
+    seen_models = False
+    for row in available:
+        assert isinstance(row["models"], list) and isinstance(row["deprecated_models"], list)
+        assert all(isinstance(m, str) for m in row["models"] + row["deprecated_models"])
+        try:
+            expected = LLMFactory.list_models(row["provider"])["active"]
+        except Exception:  # noqa: BLE001 — a provider without a models enum yields []
+            expected = []
+        assert row["models"] == [str(m) for m in expected]
+        seen_models = seen_models or bool(row["models"])
+    assert seen_models
+    assert catalog_module._provider_models("no-such-provider-xyz") == ([], [])
+
+
+def test_provider_models_failure_logged_at_warning(monkeypatch, caplog):
+    def _broken(provider):
+        raise RuntimeError("enum broke")
+
+    monkeypatch.setattr(catalog_module.LLMFactory, "list_models", staticmethod(_broken))
+    with caplog.at_level("WARNING"):
+        assert catalog_module._provider_models("openai") == ([], [])
+    assert [r.levelname for r in caplog.records if "openai" in r.getMessage()] == ["WARNING"]
+
+
+async def test_base_classes_allowed_true_for_stock_rows_and_host_extras(aiohttp_client, pool):  # noqa: F811
+    app = tenant_app(pool)
+    app["studio_class_allowlist"] = {"HostBot"}
+    client = await aiohttp_client(app)
+    resp = await client.get(f"{BASE}/catalog/base-classes", headers=who("u1"))
+    assert resp.status == 200
+    rows = await resp.json()
+    assert all("allowed" in r for r in rows)
+    # every stock row comes from ``parrot.bots.__all__`` and the tenant allow-list is ``__all__`` + host additions,
+    # so ``allowed`` is True for the stock catalogue; ``False`` needs a row outside it (next test)
+    assert all(r["allowed"] for r in rows if r.get("available"))
+    host = [r for r in rows if r["name"] == "HostBot"]
+    assert len(host) == 1 and host[0]["host"] is True and host[0]["allowed"] is True
+    assert host[0]["available"] is True and host[0]["params"] == {}
+    # the shared cache is never mutated
+    assert all("allowed" not in r and r["name"] != "HostBot" for r in catalog_module._BASE_CLASSES_CACHE)
+
+
+async def test_base_classes_row_outside_allowlist_is_not_allowed(aiohttp_client, pool, monkeypatch):  # noqa: F811
+    """A cached row whose class is outside the tenant allow-list is ``allowed: false`` (tenant) / true (global)."""
+    from .test_agents_db_mode import _app
+
+    stock = await catalog_module.StudioCatalogHandler._get_base_classes()
+    outside = {"name": "NotInAllowlistBot", "available": True, "lazy": False, "module": None, "docstring": None,
+               "params": {}}
+    monkeypatch.setattr(catalog_module, "_BASE_CLASSES_CACHE", [*stock, outside])
+    tenant = await aiohttp_client(tenant_app(pool))
+    rows = {r["name"]: r for r in await (await tenant.get(f"{BASE}/catalog/base-classes", headers=who("u1"))).json()}
+    assert rows["NotInAllowlistBot"]["allowed"] is False
+    assert all(r["allowed"] for name, r in rows.items() if name != "NotInAllowlistBot" and r.get("available"))
+    global_client = await aiohttp_client(_app(pool))                 # the non-tenant partition has no class allow-list
+    rows = {r["name"]: r for r in await (await global_client.get(f"{BASE}/catalog/base-classes")).json()}
+    assert rows["NotInAllowlistBot"]["allowed"] is True
+
+
+async def test_base_classes_host_rows_not_shown_to_global_partition(aiohttp_client, pool):  # noqa: F811
+    from .test_agents_db_mode import _app
+
+    app = _app(pool)  # no scope resolver: the global partition
+    app["studio_class_allowlist"] = {"HostBot"}
+    client = await aiohttp_client(app)
+    resp = await client.get(f"{BASE}/catalog/base-classes")
+    rows = await resp.json()
+    assert resp.status == 200 and all("allowed" in r for r in rows)
+    assert not [r for r in rows if r["name"] == "HostBot"]

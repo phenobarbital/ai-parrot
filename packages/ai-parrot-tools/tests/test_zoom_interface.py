@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
-from parrot.integrations.zoom.client import ZoomUsInterface
+from parrot_tools.zoom.client import ZoomUsInterface
 
 @pytest.fixture
 def zoom_interface():

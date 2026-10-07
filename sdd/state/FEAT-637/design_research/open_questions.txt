@@ -1,0 +1,33 @@
+Already resolved by the product owner (treat as fixed):
+- [x] **U1 — Where do templates live / how are they configured?** —
+  *Resolved*: Dir + in-memory mapping — `templates_dir` kwarg /
+  `JIRA_TEMPLATES_DIR` env for files, plus an optional
+  `templates={name: source}` mapping for programmatic use (mirrors
+  infographic_toolkit). Agent Studio exposure not required.
+  *Resolves claims*: C6, C9
+- [x] **U2 — How is a template selected?** — *Resolved*: Explicit wins,
+  convention fallback — `template='bug'` when given; otherwise look up
+  `<PROJECT>/<issuetype>` then `_default` (like workflow_paths); otherwise
+  no template. *Resolves claims*: C10
+- [x] **U3 — Missing placeholder policy?** — *Resolved*: Strict — fail with
+  names: the tool call fails with a clear error listing the missing
+  variables (StrictUndefined). *Resolves claims*: C4
+- [x] **U4 — LLM-facing or operator-only?** — *Resolved*: Both — operator
+  config auto-applies a default; the agent may list templates
+  (`jira_list_templates`) and override by name via a `template` tool
+  parameter. *Resolves claims*: C5
+- [x] **U5 — Include `jira_update_issue`?** — *Resolved*: Create + comment +
+  update — same `template` / `template_params` seam on all three write
+  paths. *Resolves claims*: C1
+
+Still open:
+- [ ] **Exact convention-lookup key shape and file extension** (e.g.
+  `NAV/Bug.j2` vs `NAV/bug.j2`; case-folding of issuetype; `.j2` vs `.md`)
+  — *Owner*: spec. *Blocks claims*: C10.
+- [ ] **Length-guard behaviour** (reject vs truncate-with-marker) — *Owner*:
+  spec. *Blocks claims*: C8.
+- [ ] **Which Jira call fields are exposed to the template context** (and
+  whether resolved values such as `assignee` accountId are included) —
+  *Owner*: spec.
+
+Also fixed since: convention files are `<project>/<issuetype>.j2` lowercase (comments: `<project>/comment.j2`), overflow truncates with a marker, context = call fields merged with template_params (params win).
