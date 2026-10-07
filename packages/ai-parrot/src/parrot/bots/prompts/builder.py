@@ -302,7 +302,7 @@ $rationale
         Returns:
             The assembled system prompt string.
         """
-        sorted_layers = sorted(self._layers.values(), key=lambda l: l.priority)
+        sorted_layers = sorted(self._layers.values(), key=lambda layer: layer.priority)
 
         parts: List[str] = []
         for layer in sorted_layers:

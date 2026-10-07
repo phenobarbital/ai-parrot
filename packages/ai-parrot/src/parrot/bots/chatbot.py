@@ -309,10 +309,10 @@ class Chatbot(BaseBot):
                     except ValidationError as ex:
                         # Handle ValidationError
                         self.logger.error(f"Validation error: {ex}")
-                        raise ConfigError(f"Chatbot {self.name} with errors: {ex.payload()}.")
-                    except NoDataFound:
+                        raise ConfigError(f"Chatbot {self.name} with errors: {ex.payload()}.") from ex
+                    except NoDataFound as ex:
                         # Fallback to File configuration:
-                        raise ConfigError(f"Chatbot {self.name} not found in the database.")
+                        raise ConfigError(f"Chatbot {self.name} not found in the database.") from ex
 
         # Start Bot configuration from Database:
         self.pre_instructions: list = self._from_db(bot, "pre_instructions", default=[])
