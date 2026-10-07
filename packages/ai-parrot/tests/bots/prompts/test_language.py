@@ -1,4 +1,5 @@
 """Tests for parrot.bots.prompts.language (FEAT-638 TASK-4118)."""
+
 import pytest
 
 from parrot.bots.prompts.language import (

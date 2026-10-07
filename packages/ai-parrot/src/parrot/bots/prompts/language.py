@@ -6,6 +6,7 @@ Adding a language means adding an entry to SUPPORTED_LANGUAGES plus its rows in
 GROUNDING_SENTINELS (domain_layers.py) and JIRA_MESSAGES (jira_messages.py) —
 see docs/prompts/output-language.md.
 """
+
 from __future__ import annotations
 
 import logging
