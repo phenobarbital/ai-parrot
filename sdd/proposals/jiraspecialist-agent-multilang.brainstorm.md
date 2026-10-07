@@ -16,7 +16,7 @@ tags: [jira, i18n, localization, prompt-layers, agents]
 
 **Date**: 2026-10-07
 **Author**: Jesus Lara
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: Option A
 
 ---
@@ -718,11 +718,7 @@ this feature:
 - [x] Sentinel production mechanism and v1 languages? — *Owner: Jesus*: An explicit phrase table, English + Spanish in v1, unknown language falls back to English.
 - [x] Are the hardcoded Spanish Python strings in scope? — *Owner: Jesus*: Yes — rewritten to English defaults and routed through the same phrase table.
 - [x] Verification approach? — *Owner: Jesus*: Prompt-render assertions only (deterministic; no live model calls). Accepted limitation: this proves the directive renders, never that the model obeys.
-- [ ] Should `minimal()` also install the layer? Decided scope says "all builders", but `PromptBuilder.minimal()` (`builder.py:80`) is deliberately a 3-layer stack (identity + security + user_session) and was not discussed. — *Owner: Jesus*
-- [ ] Does the `BotModel` DDL default change (`:89`) require a migration for existing rows, or is leaving existing `'en'` rows as-is acceptable (they would start forcing English once the layer ships)? This is the one place where the hard cut has a **data** rather than code consequence. — *Owner: Jesus*
-- [ ] How do this feature and FEAT-637 (jiratoolkit-template-support) interact?
-      Jinja-rendered descriptions/comments are template-authored, so the
-      prompt directive cannot govern them. Options: per-language template
-      directories, a language-agnostic template contract, or declaring
-      templated writes out of scope for the language directive. — *Owner: Jesus*
+- [x] Should `minimal()` also install the layer? — *Owner: Jesus*: No. `minimal()` stays a deliberate 3-layer stack; agents using it opt in by adding the layer themselves. "All builders" therefore means `default`, `agent`, `rag`, `voice`.
+- [x] Does the `BotModel` DDL default change (`:89`) require a migration for existing rows? — *Owner: Jesus*: Yes. Ship a migration setting existing `'en'` values to NULL alongside the DDL default change, so already-deployed agents keep today's mirror-the-user behavior.
+- [x] How do this feature and FEAT-637 (jiratoolkit-template-support) interact? — *Owner: Jesus*: This spec declares the per-language convention FEAT-637 should follow (template lookup falls back `<name>.<lang>.j2` → `<name>.j2`) without implementing it. Direction is set here; the work belongs to FEAT-637.
 - [ ] Should regional variants (`es-MX`, `pt-BR`) be validated against a known list, or accepted free-form with a warning? Current design says free-form + warning. — *Owner: Jesus*
