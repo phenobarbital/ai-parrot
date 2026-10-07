@@ -16,7 +16,7 @@
       "feature_id": "FEAT-637",
       "feature": "jiratoolkit-template-support",
       "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "root task: creates JiraTemplateError/JiraTemplateNotFound, constants, templates_dir/templates kwargs and _get_template_engine in jiratoolkit.py; also owns the INIT_PARAMS_BASELINE edit in test_jiratoolkit_delegation.py",
       "assigned_to": null,
       "started_at": "2026-10-07T22:03:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4113-jira-template-config-engine.md"
+      "completed_at": "2026-10-07T22:42:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4113-jira-template-config-engine.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4114",
