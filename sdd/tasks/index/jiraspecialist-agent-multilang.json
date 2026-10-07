@@ -181,7 +181,7 @@
       "feature_id": "FEAT-638",
       "feature": "jiraspecialist-agent-multilang",
       "spec": "sdd/specs/jiraspecialist-agent-multilang.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -192,8 +192,9 @@
       "parallelism_notes": "Documents the parameterized JIRA_GROUNDING_LAYER from TASK-4122 and its doc-sync test imports GROUNDING_SENTINELS (domain_layers.py); imports JIRA_MESSAGES from TASK-4123 (jira_messages.py).",
       "assigned_to": null,
       "started_at": "2026-10-07T22:28:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4126-docs-and-contribution-guide.md"
+      "completed_at": "2026-10-07T23:01:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4126-docs-and-contribution-guide.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4127",
