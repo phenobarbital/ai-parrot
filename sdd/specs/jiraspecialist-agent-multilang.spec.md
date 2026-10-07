@@ -11,7 +11,7 @@ tags: [jira, i18n, localization, prompt-layers, agents]
 **Feature ID**: FEAT-638
 **Date**: 2026-10-07
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.2.0
 
 ---
@@ -665,7 +665,7 @@ Verified against: `1b258f9b6`
 - [x] Unset semantics for Python-authored strings, given today's literals are Spanish? — *Resolved during spec design research (S1)*: unset renders English; the affected deployment sets `language='es'` explicitly at rollout; `test_jira_callbacks.py:84` is updated.
 - [x] FEAT-621 AC17 pins the `ai_bots` DDL — how do we proceed? — *Resolved during spec design research (S2)*: update the DDL in `bots.py`, `creation.sql` and `users_bots_creation.sql`, and rebaseline the gate as part of this feature.
 - [x] Regional variants — validated or free-form? — *Resolved during spec design research (S3)*: bounded. Normalized to the base subtag and checked against an allowlist; unsupported values resolve to `None` with a warning, never raw passthrough.
-- [ ] Should a future language (e.g. `pt`) be addable purely as a catalog entry, or does it need a contribution guide section? The design makes it a 2-dict edit; whether that is documented is open. — *Owner: Jesus*
+- [x] Should a future language (e.g. `pt`) be addable purely as a catalog entry, or does it need a contribution guide section? The design makes it a 2-dict edit; whether that is documented is open. — *Owner: Jesus*: need a contribution guide section
 
 ---
 
