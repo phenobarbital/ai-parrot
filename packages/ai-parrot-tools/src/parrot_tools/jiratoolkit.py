@@ -430,6 +430,18 @@ class CreateIssueInput(BaseModel):
         description="Additional fields dict for custom or less common fields",
         json_schema_extra={"x-exclude-form": True},
     )
+    template: Optional[str] = Field(
+        default=None,
+        description=(
+            "Template name used to compose the text (e.g. 'nav/bug' or 'nav/bug.j2'); see "
+            "jira_list_templates. Omit to apply the configured convention template, if any."
+        ),
+    )
+    template_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Extra variables available to the template; they override same-named call fields.",
+        json_schema_extra={"x-exclude-form": True},
+    )
 
 
 class UpdateIssueInput(BaseModel):
@@ -462,6 +474,18 @@ class UpdateIssueInput(BaseModel):
 
     # Generic fields for any other updates
     fields: Optional[Dict[str, Any]] = Field(default=None, description="Arbitrary field updates dict")
+    template: Optional[str] = Field(
+        default=None,
+        description=(
+            "Template name used to compose the text (e.g. 'nav/bug' or 'nav/bug.j2'); see "
+            "jira_list_templates. Omit to apply the configured convention template, if any."
+        ),
+    )
+    template_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Extra variables available to the template; they override same-named call fields.",
+        json_schema_extra={"x-exclude-form": True},
+    )
 
 
 class FindIssuesByAssigneeInput(BaseModel):
@@ -483,7 +507,7 @@ class AddCommentInput(BaseModel):
     """Input for adding a comment to an issue."""
 
     issue: str = Field(description="Issue key or id")
-    body: str = Field(description="Comment body text")
+    body: Optional[str] = Field(default=None, description="Comment body text (required unless a template applies)")
     is_internal: bool = Field(default=False, description="If true, mark as internal (Service Desk)")
     attachments: Optional[List[str]] = Field(
         default=None,
@@ -491,6 +515,18 @@ class AddCommentInput(BaseModel):
             "Optional list of file paths (images or other files) to attach to the issue "
             "alongside this comment. Files are attached at the issue level."
         ),
+    )
+    template: Optional[str] = Field(
+        default=None,
+        description=(
+            "Template name used to compose the text (e.g. 'nav/bug' or 'nav/bug.j2'); see "
+            "jira_list_templates. Omit to apply the configured convention template, if any."
+        ),
+    )
+    template_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Extra variables available to the template; they override same-named call fields.",
+        json_schema_extra={"x-exclude-form": True},
     )
 
 
@@ -2042,6 +2078,8 @@ class JiraToolkit(AbstractToolkit):
         parent: Optional[str] = None,
         original_estimate: Optional[str] = None,
         fields: Optional[Dict[str, Any]] = None,
+        template: Optional[str] = None,
+        template_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create a new issue. Requires jira.write permission.
 
@@ -2081,6 +2119,14 @@ class JiraToolkit(AbstractToolkit):
                 issuetype='Sub-task',
                 parent='NAV-123'
             )
+
+            # Create a bug description from a Jira template
+            jira_create_issue(
+                project='NAV',
+                summary='Login button not working',
+                template='nav/bug',
+                template_params={'severity': 'high'}
+            )
         """
         # Apply configured defaults for omitted fields
         project = project or self.default_project or "NAV"
@@ -2104,6 +2150,32 @@ class JiraToolkit(AbstractToolkit):
         # so we return a useful error (with valid names) to the agent instead
         # of opaque "HTTP 400: The issue type selected is invalid.".
         canonical_issuetype = await self._validate_issue_type(project, issuetype)
+
+        # FEAT-637 — compose the description from a template, if one applies.
+        rendered_description = await self._render_jira_text(
+            "create",
+            text=description,
+            template=template,
+            template_params=template_params,
+            call_fields={
+                "project": project,
+                "summary": summary,
+                "issuetype": canonical_issuetype,
+                "description": description,
+                "assignee": assignee,
+                "priority": priority,
+                "labels": labels,
+                "components": components,
+                "due_date": due_date,
+                "parent": parent,
+                "original_estimate": original_estimate,
+            },
+            project=project,
+            issuetype=canonical_issuetype,
+        )
+        if rendered_description is not description and fields and "description" in fields:
+            raise JiraTemplateError("fields['description'] conflicts with the rendered template description")
+        description = rendered_description
 
         # Build fields dict
         issue_fields: Dict[str, Any] = {
@@ -2178,6 +2250,8 @@ class JiraToolkit(AbstractToolkit):
         issuetype: Optional[Dict[str, str]] = None,
         priority: Optional[Dict[str, str]] = None,
         fields: Optional[Dict[str, Any]] = None,
+        template: Optional[str] = None,
+        template_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Update an existing issue. Requires jira.write permission.
 
@@ -2196,7 +2270,37 @@ class JiraToolkit(AbstractToolkit):
 
             # Change issue type
             jira_update_issue(issue='NAV-123', issuetype={'name': 'Bug'})
+
+            # Render the description from a Jira template
+            jira_update_issue(
+                issue='NAV-123',
+                template='nav/bug',
+                template_params={'severity': 'high'}
+            )
         """
+        # FEAT-637 — compose the description from a template, if one applies.
+        project = self._project_of(issue)
+        rendered_description = await self._render_jira_text(
+            "update",
+            text=description,
+            template=template,
+            template_params=template_params,
+            call_fields={
+                "issue": issue,
+                "project": project,
+                "summary": summary,
+                "description": description,
+                "labels": labels,
+                "due_date": due_date,
+                "priority": priority,
+                "issuetype": issuetype,
+            },
+            project=project,
+        )
+        if rendered_description is not description and fields and "description" in fields:
+            raise JiraTemplateError("fields['description'] conflicts with the rendered template description")
+        description = rendered_description
+
         update_kwargs: Dict[str, Any] = {}
         update_fields: Dict[str, Any] = {}
 
@@ -2277,9 +2381,11 @@ class JiraToolkit(AbstractToolkit):
     async def jira_add_comment(
         self,
         issue: str,
-        body: str,
+        body: Optional[str] = None,
         is_internal: bool = False,
         attachments: Optional[List[str]] = None,
+        template: Optional[str] = None,
+        template_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Add a comment to an issue, optionally attaching files. Requires jira.write permission.
 
@@ -2294,7 +2400,25 @@ class JiraToolkit(AbstractToolkit):
                 'See attached screenshot',
                 attachments=['/path/to/screenshot.png']
             )
+
+        Example using a template:
+            jira.jira_add_comment(
+                'JRA-1330',
+                template='comment',
+                template_params={'author': 'bot'}
+            )
         """
+        project = self._project_of(issue)
+        body = await self._render_jira_text(
+            "comment",
+            text=body,
+            template=template,
+            template_params=template_params,
+            call_fields={"issue": issue, "project": project, "body": body, "is_internal": is_internal},
+            project=project,
+        )
+        if body is None or not body.strip():
+            raise ValueError("jira_add_comment: body is required when no template applies")
 
         def _run():
             return self.jira.add_comment(issue, body, is_internal=is_internal)
