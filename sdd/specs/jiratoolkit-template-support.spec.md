@@ -12,7 +12,7 @@ tags: [jira, jiratoolkit, templates, jinja2, tool-configuration]
 **Feature ID**: FEAT-637
 **Date**: 2026-10-07
 **Author**: Jesus Lara (with Claude Code)
-**Status**: review
+**Status**: approved
 **Target version**: 0.30.0
 **Source**: `sdd/proposals/jiratoolkit-template-support.proposal.md` (accepted; research audit in `sdd/state/FEAT-637/`)
 
@@ -737,8 +737,8 @@ Verified against: `77a870889` (anchors re-counted with `grep -c -F -x`).
 - [x] **Overflow behaviour?** — *Resolved at spec time*: truncate with marker (cut to the cap minus a `... (truncated)` marker, log a WARNING). → AC11.
 - [x] **Template context and clash precedence?** — *Resolved at spec time*: call fields + params, params win; no resolved values (accountIds) injected. → §2 Data Models, AC7.
 - [x] **Update-path convention without an issuetype (S3)?** — *Resolved via design research*: no metadata fetch; update uses its own kind (`<project>/update.j2` → `update.j2`) with the project from the issue key. → AC6.
-- [ ] **Q1 — Should a later iteration let update/comment templates see the issue's current `issuetype` / `summary` (one extra read via `JiraInterface`)?** — *Owner: Jesus Lara*; deferred, not needed for v1 (S3 kept fetch-free).
-- [ ] **Q2 — Expose `templates_dir` in `JiraToolkitConfig` for Agent Studio in a follow-up?** — *Owner: Jesus Lara*; declined for v1 (U1).
+- [x] **Q1 — Should a later iteration let update/comment templates see the issue's current `issuetype` / `summary` (one extra read via `JiraInterface`)?** — *Owner: Jesus Lara*; deferred, not needed for v1 (S3 kept fetch-free).: notation in a follow-up
+- [x] **Q2 — Expose `templates_dir` in `JiraToolkitConfig` for Agent Studio in a follow-up?** — *Owner: Jesus Lara*; declined for v1 (U1).: yes
 
 ---
 
