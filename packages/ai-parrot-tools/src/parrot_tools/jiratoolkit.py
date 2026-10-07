@@ -562,6 +562,12 @@ class GetProjectsInput(BaseModel):
     """Input for listing projects."""
 
 
+class ListTemplatesInput(BaseModel):
+    """Input for listing available Jira text templates."""
+
+    project: Optional[str] = Field(default=None, description="Only templates under this project folder, e.g. 'NAV'")
+
+
 class VerifyAuthInput(BaseModel):
     """Input for verifying Jira authentication."""
 
@@ -2640,6 +2646,30 @@ class JiraToolkit(AbstractToolkit):
             if text:
                 result["response_preview"] = text[:400]
         return result
+
+    @tool_schema(ListTemplatesInput)
+    async def jira_list_templates(self, project: Optional[str] = None) -> Dict[str, Any]:
+        """List the Jira text templates usable with jira_create_issue, jira_update_issue and jira_add_comment.
+
+        Pass a returned name as ``template=`` to a write tool. Without ``template=``
+        the write tools apply a convention template automatically when one exists:
+        ``<project>/<issuetype>.j2`` → ``<project>/_default.j2`` → ``_default.j2`` for
+        issues, ``<project>/comment.j2`` → ``comment.j2`` for comments.
+
+        Returns:
+            ``{"ok": True, "templates": [names], "templates_dir": str | None}``.
+        """
+        engine = self._get_template_engine()
+        names: List[str] = []
+        if engine is not None:
+            names = sorted(name for name in engine.env.list_templates() if name.endswith(_TEMPLATE_SUFFIX))
+        if project is not None:
+            names = [name for name in names if name.startswith(f"{project.lower()}/")]
+        return {
+            "ok": True,
+            "templates": names,
+            "templates_dir": str(self.templates_dir) if self.templates_dir else None,
+        }
 
     @tool_schema(GetProjectsInput)
     async def jira_get_projects(self) -> Dict[str, Any]:
