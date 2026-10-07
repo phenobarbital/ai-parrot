@@ -155,7 +155,7 @@
       "feature_id": "FEAT-638",
       "feature": "jiraspecialist-agent-multilang",
       "spec": "sdd/specs/jiraspecialist-agent-multilang.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -163,8 +163,9 @@
       "parallelism_notes": "Exclusive: rebaselines FEAT-621's AC17 release gate (tests/studio/storage/test_storage_gates.py) and edits two executed DDL files (creation.sql, users_bots_creation.sql) - shared state outside this feature's modules. No code dependency on other tasks.",
       "assigned_to": null,
       "started_at": "2026-10-07T22:28:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4125-persistence-ddl-gate.md"
+      "completed_at": "2026-10-07T22:33:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4125-persistence-ddl-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4126",
