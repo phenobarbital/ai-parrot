@@ -77,7 +77,7 @@
       "completed_at": "2026-10-07T23:12:00Z",
       "duration_seconds": 120,
       "proposal_path": "sdd/proposals/jiratoolkit-template-support.proposal.md",
-      "commit_sha": "7d1b29946f03034f583d5b75be7bce5cb800fc21",
+      "commit_sha": "19ade714a82a7843761faf62453c2d27b623f951",
       "next_command_recommended": "sdd-spec",
       "next_command_rationale": "Localization high-confidence; product decisions resolved; only spec-level details remain."
     }
