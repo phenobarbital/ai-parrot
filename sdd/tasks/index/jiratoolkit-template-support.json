@@ -35,7 +35,7 @@
       "feature_id": "FEAT-637",
       "feature": "jiratoolkit-template-support",
       "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "calls _get_template_engine() and raises JiraTemplateError/JiraTemplateNotFound created by TASK-4113; both modify jiratoolkit.py",
       "assigned_to": null,
       "started_at": "2026-10-07T22:03:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4114-jira-template-render-helper.md"
+      "completed_at": "2026-10-07T22:46:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4114-jira-template-render-helper.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4115",
