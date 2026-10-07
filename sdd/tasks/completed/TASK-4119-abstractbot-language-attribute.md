@@ -272,8 +272,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (native sonnet, 1 attempt)
+**Date**: 2026-10-08
+**Notes**: AbstractBot.language + Chatbot defaults None; tests pass. Pre-existing failures in test_abstractbot_integration (MockBot._prompt_caching) unrelated. Residual B904 in chatbot.py left to /sdd-done.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

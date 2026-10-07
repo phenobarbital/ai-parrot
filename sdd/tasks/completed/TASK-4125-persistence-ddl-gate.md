@@ -328,8 +328,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (coder seat gpt-5.6-terra/codex, 1 attempt, 156s)
+**Date**: 2026-10-08
+**Notes**: Language default removed (NULL) in models/SQL + migration FEAT-638-bot-language-nullable.sql; storage-gate allowance added. Task tests pass (8). Merge-tier run had 2 failures (test_agent_a2ui_stream source-string checks on agent.py) + 6 errors (studio test_integration: byok.load_master_keys missing) — in files this task did not touch, pre-existing. Rollout: Spanish deployment must set `language = 'es'` after migration.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

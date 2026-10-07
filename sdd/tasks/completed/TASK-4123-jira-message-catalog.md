@@ -388,8 +388,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (nova qwen, attempt 3 (first two lost to codex-spark unsupported + glm max_turns, then stale branch infra error))
+**Date**: 2026-10-08
+**Notes**: jira_messages.py catalog + tests pass.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

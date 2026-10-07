@@ -429,6 +429,9 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         self.capabilities = kwargs.get("capabilities") or getattr(self, "capabilities", None) or DEFAULT_CAPABILITIES
         self.backstory = kwargs.get("backstory") or getattr(self, "backstory", None) or DEFAULT_BACKHISTORY
         self.rationale = kwargs.get("rationale") or getattr(self, "rationale", None) or DEFAULT_RATIONALE
+        # FEAT-638: bot-level output language (raw ISO 639-1 value; None = mirror the user).
+        # Normalized against an allowlist at prompt-configure time, never here.
+        self.language: Optional[str] = kwargs.get("language") or getattr(self, "language", None) or None
 
         # Initialize MCP Mixin
         if not hasattr(self, "_mcp_initialized"):
@@ -1381,6 +1384,16 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         def _resolve(raw: str) -> str:
             return _Tmpl(raw).safe_substitute(dynamic_context) if raw else raw
 
+        # FEAT-638: resolve the bot-level output language once (CONFIGURE phase).
+        from .prompts.language import FALLBACK_LANGUAGE, normalize_language, resolve_language_name
+        from .prompts.domain_layers import GROUNDING_SENTINELS
+
+        _language_code = normalize_language(getattr(self, "language", None))
+        _sentinels = GROUNDING_SENTINELS.get(
+            _language_code or FALLBACK_LANGUAGE,
+            GROUNDING_SENTINELS[FALLBACK_LANGUAGE],
+        )
+
         configure_context = {
             # Identity (static — with dynamic vars pre-resolved)
             "name": self.name,
@@ -1398,12 +1411,16 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             "extra_rag_rules": _resolve(getattr(self, "extra_rag_rules", "")),
             # Behavior (static)
             "rationale": _resolve(getattr(self, "rationale", "")),
+            # FEAT-638: output-language directive + localized FEAT-138 grounding sentinels.
+            "output_language": resolve_language_name(_language_code) or "",
+            "sentinel_not_found": _sentinels["not_found"],
+            "sentinel_error": _sentinels["error"],
             # Dynamic values (expensive, resolved once)
             **dynamic_context,
         }
 
         # FEAT-181: inject agent context file content when prompt_caching is on
-        if self._prompt_caching:
+        if getattr(self, "_prompt_caching", False):
             from .prompts.agent_context import load_agent_context
 
             agent_ctx = load_agent_context(self.name)
@@ -1413,6 +1430,12 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
                     self.name,
                 )
             configure_context["agent_context_content"] = agent_ctx
+
+        if _language_code is None:
+            # Unset → remove the layer; never condition-gate it (S4): a false-condition
+            # CONFIGURE layer survives partial_render() and _build_prompt() forwards
+            # **kwargs into build(), so a request-time `language=` could reactivate it.
+            self._prompt_builder.remove("output_language")
 
         self._prompt_builder.configure(configure_context)
 
@@ -1463,6 +1486,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             "knowledge_content": "\n".join(knowledge_parts),
             # User session (changes per request)
             "user_context": user_context or "",
+            "chat_history": kwargs.get("conversation_context", ""),
             # Output (can change per request)
             "output_instructions": kwargs.get("output_instructions", ""),
             # Pass through any extra kwargs
@@ -1471,7 +1495,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
 
         # FEAT-181: when prompt_caching is on, return List[CacheableSegment]
         # so the client can apply provider-specific cache_control markers.
-        if self._prompt_caching:
+        if getattr(self, "_prompt_caching", False):
             return self._prompt_builder.build_segments(request_context)
         return self._prompt_builder.build(request_context)
 
