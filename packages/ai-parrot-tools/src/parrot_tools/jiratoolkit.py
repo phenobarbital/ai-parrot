@@ -1751,9 +1751,7 @@ class JiraToolkit(AbstractToolkit):
         """
         if len(text) <= _MAX_JIRA_TEXT_CHARS:
             return text
-        self.logger.warning(
-            "Rendered Jira %s is %d chars > %d; truncating", field, len(text), _MAX_JIRA_TEXT_CHARS
-        )
+        self.logger.warning("Rendered Jira %s is %d chars > %d; truncating", field, len(text), _MAX_JIRA_TEXT_CHARS)
         return text[: _MAX_JIRA_TEXT_CHARS - len(_TRUNCATION_MARKER)] + _TRUNCATION_MARKER
 
     def _resolve_template_name(
