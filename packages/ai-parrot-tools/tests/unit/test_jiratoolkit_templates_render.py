@@ -207,3 +207,132 @@ async def test_length_guard_truncates_with_marker(caplog) -> None:
     assert len(out) == _MAX_JIRA_TEXT_CHARS
     assert out.endswith(_TRUNCATION_MARKER)
     assert "truncating" in caplog.text
+
+
+# ── issue:ff051a03c946 — deep, cached, async-offloaded variable check ──────────
+
+
+@pytest.mark.asyncio
+async def test_missing_variables_in_included_templates_named() -> None:
+    """Variables used by ``include`` targets (recursively) belong to the parent's contract."""
+    tk = _make(
+        templates={
+            "t.j2": "{{ a }} {% include 'p.j2' %}",
+            "p.j2": "{{ b }} {% include 'q.j2' %}",
+            "q.j2": "{{ c }}",
+        }
+    )
+
+    with pytest.raises(JiraTemplateError, match=r"missing variables: b, c"):
+        await tk._render_jira_text(
+            "create", text=None, template="t", template_params=None, call_fields={"a": 1}, project="NAV"
+        )
+
+
+@pytest.mark.asyncio
+async def test_missing_variables_in_extended_template_named() -> None:
+    """Both the child's blocks and the parent layout are checked."""
+    tk = _make(
+        templates={
+            "base.j2": "{% block body %}{% endblock %} {{ footer }}",
+            "t.j2": "{% extends 'base.j2' %}{% block body %}{{ title }}{% endblock %}",
+        }
+    )
+
+    with pytest.raises(JiraTemplateError, match=r"missing variables: footer, title"):
+        await tk._render_jira_text(
+            "create", text=None, template="t", template_params=None, call_fields={}, project="NAV"
+        )
+
+
+@pytest.mark.asyncio
+async def test_import_targets_are_not_followed() -> None:
+    """Imported macros do not receive the context, so their names are not required."""
+    tk = _make(
+        templates={
+            "m.j2": "{% macro hi(x) %}{{ x }}{{ unrelated | default('') }}{% endmacro %}",
+            "t.j2": "{% import 'm.j2' as m %}{{ m.hi(name) }}",
+        }
+    )
+
+    out = await tk._render_jira_text(
+        "create", text=None, template="t", template_params=None, call_fields={"name": "Jess"}, project="NAV"
+    )
+
+    assert out == "Jess"
+
+
+@pytest.mark.asyncio
+async def test_missing_include_target_fails_before_render() -> None:
+    """A statically named include that does not exist is a JiraTemplateError, not a render crash."""
+    tk = _make(templates={"t.j2": "{% include 'nope.j2' %}"})
+
+    with pytest.raises(JiraTemplateError, match=r"references missing template 'nope.j2'"):
+        await tk._render_jira_text(
+            "create", text=None, template="t", template_params=None, call_fields={}, project="NAV"
+        )
+
+
+@pytest.mark.asyncio
+async def test_include_ignore_missing_is_tolerated() -> None:
+    """``ignore missing`` includes are optional for the pre-check as well."""
+    tk = _make(templates={"t.j2": "ok {% include 'nope.j2' ignore missing %}"})
+
+    out = await tk._render_jira_text(
+        "create", text=None, template="t", template_params=None, call_fields={}, project="NAV"
+    )
+
+    assert out == "ok "
+
+
+@pytest.mark.asyncio
+async def test_render_time_undefined_is_wrapped() -> None:
+    """A nested lookup failing under StrictUndefined surfaces as JiraTemplateError."""
+    tk = _make(templates={"t.j2": "{{ issue.nope }}"})
+
+    with pytest.raises(JiraTemplateError, match=r"template 't.j2' failed to render"):
+        await tk._render_jira_text(
+            "create",
+            text=None,
+            template="t",
+            template_params=None,
+            call_fields={"issue": {"key": "NAV-1"}},
+            project="NAV",
+        )
+
+
+@pytest.mark.asyncio
+async def test_variable_analysis_cached_until_source_changes() -> None:
+    """The parse runs once per template and is redone only when the loader reports a change."""
+    tk = _make(templates={"t.j2": "{{ a }}"})
+    engine = tk._get_template_engine()
+    assert engine is not None
+    kwargs = {"text": None, "template": "t", "template_params": None, "call_fields": {"a": 1}, "project": "NAV"}
+
+    with patch.object(JiraToolkit, "_collect_template_variables", wraps=JiraToolkit._collect_template_variables) as spy:
+        await tk._render_jira_text("create", **kwargs)
+        await tk._render_jira_text("create", **kwargs)
+        assert spy.call_count == 1
+
+        engine.add_templates({"t.j2": "{{ a }} {{ b }}"})
+        with pytest.raises(JiraTemplateError, match=r"missing variables: b"):
+            await tk._render_jira_text("create", **kwargs)
+        assert spy.call_count == 2
+
+
+# ── issue:5ba537e4cc1d — convention candidates are name-validated ──────────────
+
+
+@pytest.mark.parametrize(
+    ("project", "issuetype"),
+    [("../etc", "bug"), ("nav", "../x"), ("/abs", None), ("nav", "a\\b")],
+)
+def test_convention_candidates_validated(project: str, issuetype: str | None) -> None:
+    """project/issuetype-derived candidates pass the same traversal check as explicit names."""
+    with pytest.raises(JiraTemplateError, match="invalid Jira template name"):
+        JiraToolkit._template_candidates("create", project, issuetype)
+
+
+def test_convention_candidates_plain_names_unchanged() -> None:
+    """Ordinary keys produce the documented lookup order."""
+    assert JiraToolkit._template_candidates("create", "NAV", "Bug") == ["nav/bug.j2", "nav/_default.j2", "_default.j2"]
