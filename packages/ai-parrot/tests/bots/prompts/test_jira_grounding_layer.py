@@ -1,4 +1,5 @@
 """Tests for JIRA_GROUNDING_LAYER (FEAT-138 TASK-945; localized by FEAT-638 TASK-4122)."""
+
 import pytest
 
 from parrot.bots.prompts.domain_layers import GROUNDING_SENTINELS, JIRA_GROUNDING_LAYER
