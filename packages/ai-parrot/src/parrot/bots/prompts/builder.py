@@ -70,10 +70,11 @@ class PromptBuilder:
             KNOWLEDGE_LAYER, USER_SESSION_LAYER, TOOLS_LAYER,
             OUTPUT_LAYER, BEHAVIOR_LAYER,
         )
+        from .domain_layers import OUTPUT_LANGUAGE_LAYER
         return cls([
             IDENTITY_LAYER, PRE_INSTRUCTIONS_LAYER, SECURITY_LAYER,
             KNOWLEDGE_LAYER, USER_SESSION_LAYER, TOOLS_LAYER,
-            OUTPUT_LAYER, BEHAVIOR_LAYER,
+            OUTPUT_LANGUAGE_LAYER, OUTPUT_LAYER, BEHAVIOR_LAYER,
         ])
 
     @classmethod
@@ -89,6 +90,7 @@ class PromptBuilder:
             IDENTITY_LAYER, PRE_INSTRUCTIONS_LAYER, SECURITY_LAYER,
             KNOWLEDGE_LAYER, USER_SESSION_LAYER, TOOLS_LAYER,
         )
+        from .domain_layers import OUTPUT_LANGUAGE_LAYER
         voice_behavior = PromptLayer(
             name="behavior",
             priority=LayerPriority.BEHAVIOR,
@@ -105,6 +107,7 @@ $rationale
         return cls([
             IDENTITY_LAYER, PRE_INSTRUCTIONS_LAYER, SECURITY_LAYER,
             KNOWLEDGE_LAYER, USER_SESSION_LAYER, TOOLS_LAYER,
+            OUTPUT_LANGUAGE_LAYER,
             voice_behavior,
         ])
 

@@ -52,7 +52,7 @@ class TestPromptBuilderFactories:
 
     def test_default_has_eight_layers(self):
         builder = PromptBuilder.default()
-        assert len(builder.layer_names) == 8
+        assert len(builder.layer_names) == 9  # FEAT-638 adds output_language
 
     def test_minimal_has_three_layers(self):
         builder = PromptBuilder.minimal()
