@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from parrot_tools.jiratoolkit import JiraTemplateError, JiraToolkit
+from parrot_tools.jiratoolkit import JiraTemplateError, JiraTemplateNotFound, JiraToolkit
 
 
 class _FakeJIRA:
@@ -161,3 +161,42 @@ async def test_comment_empty_body_without_templates_is_forwarded() -> None:
     await tk.jira_add_comment("NAV-1", body="")
     tk.jira.add_comment.assert_called_once()
     assert tk.jira.add_comment.call_args.args[1] == ""
+
+
+# ── issue:5ba537e4cc1d — AC8: template errors before ANY Jira request ──────────
+
+
+@pytest.mark.asyncio
+async def test_missing_variables_fail_before_issue_type_validation() -> None:
+    """On create, missing variables are reported before the issue-type validation read."""
+    tk = _make(templates={"t.j2": "{{ missing }}"})
+
+    with pytest.raises(JiraTemplateError, match="missing variables: missing"):
+        await tk.jira_create_issue(project="NAV", summary="S", template="t")
+
+    tk._validate_issue_type.assert_not_awaited()
+    tk.jira.create_issue.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_unknown_template_fails_before_issue_type_validation() -> None:
+    """On create, an unknown explicit template is reported before the issue-type validation read."""
+    tk = _make(templates={"t.j2": "x"})
+
+    with pytest.raises(JiraTemplateNotFound):
+        await tk.jira_create_issue(project="NAV", summary="S", template="nope")
+
+    tk._validate_issue_type.assert_not_awaited()
+    tk.jira.create_issue.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_renders_with_canonical_issuetype() -> None:
+    """The pre-check sees the raw issue type; the rendered text carries the canonical one."""
+    tk = _make(templates={"_default.j2": "type={{ issuetype }}"})
+    tk._validate_issue_type = AsyncMock(return_value="Bug")
+
+    await tk.jira_create_issue(project="NAV", summary="S", issuetype="bug")
+
+    tk._validate_issue_type.assert_awaited_once_with("NAV", "bug")
+    assert tk.jira.create_issue.call_args.kwargs["fields"]["description"] == "type=Bug"

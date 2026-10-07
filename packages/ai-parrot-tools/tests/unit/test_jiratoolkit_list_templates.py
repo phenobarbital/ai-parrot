@@ -49,6 +49,8 @@ async def test_list_templates_names_only(tmp_path: Path) -> None:
 
     assert result["templates"] == ["_default.j2", "nav/bug.j2"]
     assert str(tmp_path) not in result["templates"]
+    assert result["has_templates_dir"] is True
+    assert str(tmp_path) not in str(result)
     assert "inline template" not in result["templates"]
     assert "filesystem template" not in result["templates"]
 
@@ -72,7 +74,8 @@ async def test_list_templates_without_engine() -> None:
     result = await _make().jira_list_templates()
 
     assert result["templates"] == []
-    assert result["templates_dir"] is None
+    assert result["has_templates_dir"] is False
+    assert "templates_dir" not in result
 
 
 def test_list_templates_is_unrestricted_read() -> None:

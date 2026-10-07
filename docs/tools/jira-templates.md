@@ -71,7 +71,9 @@ Every variable is the value passed to the tool call (``None`` when omitted).
 
 ## Errors and limits
 
-- **Missing Variables**: If a template references variables that are not present in the context, a `JiraTemplateError` is raised listing all missing variables in sorted order. No write call is made to Jira (on create, the issue-type validation read happens first, because the canonical issue type is part of the template context).
+- **Missing Variables**: If a template (or any template it `include`s / `extends`) references variables that are not present in the context, a `JiraTemplateError` is raised listing all missing variables in sorted order, before any Jira request. Macros brought in with `import` / `from … import` are not checked (they do not receive the context). The analysis is cached per template and redone only when the template source changes.
+- **Render-time template errors**: anything Jinja only detects while rendering — a nested lookup such as `{{ issue.nope }}` on a value that has no `nope`, or an `{% include var %}` whose dynamic target does not exist — is raised as `JiraTemplateError` as well. A statically named `include` / `extends` target that does not exist is reported before rendering.
+- **`None` values**: every call argument the caller omitted is present in the context as `None` (so `{% if priority %}` works); a bare `{{ priority }}` therefore renders the literal `None` — use `{{ priority or '' }}` or `| default('')`.
 - **Empty Render**: If the rendered template output is empty or contains only whitespace, a `JiraTemplateError` is raised.
 - **No templates configured**: passing `template=` when neither `templates_dir` nor `templates` is configured raises `JiraTemplateError`.
 - **Unknown Template**: If an explicit template is requested but cannot be found, a `JiraTemplateNotFound` error is raised.
@@ -99,11 +101,11 @@ Names are logical (relative to the template root), sorted, and never include fil
 {
   "ok": true,
   "templates": ["_default.j2", "comment.j2", "nav/_default.j2", "nav/bug.j2"],
-  "templates_dir": "/etc/parrot/jira-templates"
+  "has_templates_dir": true
 }
 ```
 
-`templates_dir` is `null` when only inline templates are configured. The tool needs no `jira.write` permission.
+`has_templates_dir` is `false` when only inline templates are configured; the filesystem location itself is never returned to the agent. The tool needs no `jira.write` permission.
 
 ## Example: nav/bug.j2
 
