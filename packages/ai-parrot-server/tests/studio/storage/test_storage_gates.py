@@ -2,6 +2,7 @@
 
 Source-level gates: they read the repository checkout and skip (with a reason) when it is not available.
 """
+
 from __future__ import annotations
 
 import ast
@@ -30,8 +31,14 @@ DDL = re.compile(
 MIGRATION_ENTRYPOINTS = ("apply_studio_migrations", "stamp_migrations")
 # Startup-path callables that must never apply migrations (X8/X10, spec §2.2).
 STARTUP_FUNCTIONS = {
-    "setup", "setup_registry_only", "setup_studio_routes", "ensure_studio_storage", "resolve_studio_storage",
-    "add_studio_runtime_hooks", "install_studio_runtime", "shutdown_studio_runtime",
+    "setup",
+    "setup_registry_only",
+    "setup_studio_routes",
+    "ensure_studio_storage",
+    "resolve_studio_storage",
+    "add_studio_runtime_hooks",
+    "install_studio_runtime",
+    "shutdown_studio_runtime",
 }
 
 
@@ -143,9 +150,9 @@ def test_load_database_bots_untouched():
         old_manager, "BotManager", "_load_database_bots"
     ), "BotManager._load_database_bots changed since the merge-base"
     new_bots = (REPO / BOTS_PY).read_text(encoding="utf-8")
-    assert _ai_bots_ddl(new_bots) == _ai_bots_ddl(_with_sanctioned_deltas(old_bots)), (
-        "navigator.ai_bots DDL changed in handlers/models/bots.py"
-    )
-    assert (REPO / CREATION_SQL).read_text(encoding="utf-8") == _with_sanctioned_deltas(old_sql), (
-        "handlers/creation.sql changed"
-    )
+    assert _ai_bots_ddl(new_bots) == _ai_bots_ddl(
+        _with_sanctioned_deltas(old_bots)
+    ), "navigator.ai_bots DDL changed in handlers/models/bots.py"
+    assert (REPO / CREATION_SQL).read_text(encoding="utf-8") == _with_sanctioned_deltas(
+        old_sql
+    ), "handlers/creation.sql changed"

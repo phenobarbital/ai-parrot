@@ -9,6 +9,7 @@ plaintext via :meth:`get_mcp_config` / :meth:`get_tools_config` and accepts
 plaintext via :meth:`set_mcp_config` / :meth:`set_tools_config`; encryption
 happens transparently at write time.
 """
+
 import uuid
 from datetime import datetime
 from typing import Any, List, Optional
