@@ -82,6 +82,7 @@ class JiraTemplateError(ValueError):
 class JiraTemplateNotFound(JiraTemplateError):
     """An explicitly requested template name does not exist in any loader."""
 
+
 # ---------------------------------------------------------------------------
 # Envelope type for read-method returns (FEAT-138, Module 5)
 # ---------------------------------------------------------------------------
