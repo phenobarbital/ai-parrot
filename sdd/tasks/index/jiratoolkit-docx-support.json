@@ -1,0 +1,189 @@
+{
+  "feature": "jiratoolkit-docx-support",
+  "feature_id": "FEAT-639",
+  "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-07T22:22:14.991759+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4128",
+      "slug": "session-file-store-sandbox-resolve",
+      "title": "SessionFileStore \u2014 manifest model, errors and the sandbox resolver",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: creates parrot/interfaces/file/session.py from scratch; nothing else in the feature exists yet.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4128-session-file-store-sandbox-resolve.md"
+    },
+    {
+      "id": "TASK-4129",
+      "slug": "session-file-store-write-paths",
+      "title": "SessionFileStore \u2014 atomic writes, listing and usage reporting",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4128"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies the same file TASK-4128 creates (packages/ai-parrot/src/parrot/interfaces/file/session.py) and calls its session_root()/SessionFileRecord.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4129-session-file-store-write-paths.md"
+    },
+    {
+      "id": "TASK-4130",
+      "slug": "session-file-toolkit",
+      "title": "SessionFileToolkit \u2014 request-scoped session binding, listing and generated files",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4128"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Imports SessionFileStore and SessionFileError from TASK-4128 (parrot/interfaces/file/session.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4130-session-file-toolkit.md"
+    },
+    {
+      "id": "TASK-4131",
+      "slug": "session-file-toolkit-remote-import",
+      "title": "SessionFileToolkit \u2014 import a remote file into the session store",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4130"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies the same file TASK-4130 creates (packages/ai-parrot/src/parrot/tools/session_files.py) and extends its SessionFileToolkit._require_session().",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4131-session-file-toolkit-remote-import.md"
+    },
+    {
+      "id": "TASK-4132",
+      "slug": "basicagent-handle-files-persist",
+      "title": "BasicAgent.handle_files \u2014 persist every upload, not only tabular ones",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4129"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Calls SessionFileStore.put_bytes() introduced by TASK-4129 (parrot/interfaces/file/session.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4132-basicagent-handle-files-persist.md"
+    },
+    {
+      "id": "TASK-4133",
+      "slug": "upload-endpoint-persist-and-honest-response",
+      "title": "Upload endpoint \u2014 persist before the query branch, and stop reporting false success",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4132"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes the dict contract BasicAgent.handle_files returns after TASK-4132 (packages/ai-parrot/src/parrot/bots/agent.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4133-upload-endpoint-persist-and-honest-response.md"
+    },
+    {
+      "id": "TASK-4134",
+      "slug": "telegram-mime-allowlist",
+      "title": "Telegram crew \u2014 accept office documents in the MIME allowlist",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: only widens a default MIME list literal in telegram/crew/payload.py; touches no FEAT-639 symbol.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4134-telegram-mime-allowlist.md"
+    },
+    {
+      "id": "TASK-4135",
+      "slug": "msteams-document-attachments",
+      "title": "MS Teams \u2014 route non-audio attachments into the session store",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4129"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Calls SessionFileStore.put_bytes() introduced by TASK-4129 (parrot/interfaces/file/session.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4135-msteams-document-attachments.md"
+    },
+    {
+      "id": "TASK-4136",
+      "slug": "session-files-operator-docs",
+      "title": "Operator documentation \u2014 session file store, storage requirements and cleanup",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4129"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Documents the configuration keys and defaults TASK-4129 introduces in parrot/interfaces/file/session.py; must read them as implemented.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4136-session-files-operator-docs.md"
+    }
+  ]
+}
