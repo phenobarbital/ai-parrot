@@ -1,0 +1,11 @@
+packages/ai-parrot/src/parrot/bots/abstract.py
+packages/ai-parrot/src/parrot/bots/chatbot.py
+packages/ai-parrot/src/parrot/bots/jira_specialist.py
+packages/ai-parrot/src/parrot/bots/prompts/layers.py
+packages/ai-parrot/src/parrot/bots/prompts/builder.py
+packages/ai-parrot/src/parrot/bots/prompts/domain_layers.py
+packages/ai-parrot/src/parrot/bots/prompts/__init__.py
+packages/ai-parrot/tests/test_jira_specialist_grounding.py
+packages/ai-parrot/tests/test_jiraspecialist_prompt_builder.py
+packages/ai-parrot-server/src/parrot/handlers/models/bots.py
+docs/jira-specialist-prompt-layers.md
