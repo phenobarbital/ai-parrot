@@ -1674,6 +1674,192 @@ class JiraToolkit(AbstractToolkit):
             return prefix.upper() or None
         return None
 
+    # ── FEAT-637: Jira text templates ─────────────────────────────────────
+    @staticmethod
+    def _validate_template_name(name: str) -> str:
+        """Reject traversal-shaped names; return the name unchanged otherwise.
+
+        Raises:
+            JiraTemplateError: name contains ``..``, starts with ``/`` or contains ``\\``.
+        """
+        if ".." in name or name.startswith("/") or "\\" in name:
+            raise JiraTemplateError(f"invalid Jira template name: {name!r}")
+        return name
+
+    @staticmethod
+    def _template_candidates(
+        kind: Literal["create", "update", "comment"], project: Optional[str], issuetype: Optional[str]
+    ) -> List[str]:
+        """Return ordered, lower-cased convention candidates for ``kind``.
+
+        Args:
+            kind: Jira write operation being rendered.
+            project: Optional Jira project key.
+            issuetype: Optional Jira issue type for create operations.
+
+        Returns:
+            Candidate template names in convention lookup order.
+        """
+        project_name = project.lower() if project else None
+        issue_type_name = issuetype.lower() if issuetype else None
+        if kind == "create":
+            candidates = []
+            if project_name and issue_type_name:
+                candidates.append(f"{project_name}/{issue_type_name}{_TEMPLATE_SUFFIX}")
+            if project_name:
+                candidates.append(f"{project_name}/_default{_TEMPLATE_SUFFIX}")
+            candidates.append(f"_default{_TEMPLATE_SUFFIX}")
+            return candidates
+        if kind == "update":
+            return (
+                [f"{project_name}/update{_TEMPLATE_SUFFIX}", f"update{_TEMPLATE_SUFFIX}"]
+                if project_name
+                else [f"update{_TEMPLATE_SUFFIX}"]
+            )
+        return (
+            [f"{project_name}/comment{_TEMPLATE_SUFFIX}", f"comment{_TEMPLATE_SUFFIX}"]
+            if project_name
+            else [f"comment{_TEMPLATE_SUFFIX}"]
+        )
+
+    @staticmethod
+    def _build_template_context(
+        call_fields: Dict[str, Any], template_params: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Build flat template context with params taking precedence.
+
+        Args:
+            call_fields: Frozen fields supplied by the Jira write path.
+            template_params: Optional caller-provided context overrides.
+
+        Returns:
+            A combined context suitable for template rendering.
+        """
+        context = dict(call_fields)
+        context.update(template_params or {})
+        return context
+
+    def _guard_text_length(self, text: str, *, field: str) -> str:
+        """Truncate ``text`` to the Jira cap with a marker inside the cap.
+
+        Args:
+            text: Rendered Jira text.
+            field: Jira field receiving the text, used in diagnostics.
+
+        Returns:
+            The original or safely truncated Jira text.
+        """
+        if len(text) <= _MAX_JIRA_TEXT_CHARS:
+            return text
+        self.logger.warning("Rendered Jira %s is %d chars > %d; truncating", field, len(text), _MAX_JIRA_TEXT_CHARS)
+        return text[: _MAX_JIRA_TEXT_CHARS - len(_TRUNCATION_MARKER)] + _TRUNCATION_MARKER
+
+    def _resolve_template_name(
+        self,
+        engine: TemplateEngine,
+        kind: str,
+        template: Optional[str],
+        project: Optional[str],
+        issuetype: Optional[str],
+    ) -> Optional[str]:
+        """Resolve an explicit or convention-based template name.
+
+        Args:
+            engine: Configured Jira template engine.
+            kind: Jira write operation being rendered.
+            template: Explicit template name, if supplied.
+            project: Optional Jira project key.
+            issuetype: Optional Jira issue type.
+
+        Returns:
+            The first existing logical template name, or ``None`` when no
+            convention candidate exists.
+
+        Raises:
+            JiraTemplateNotFound: An explicit template resolves to nothing.
+        """
+        if template is not None:
+            name = self._validate_template_name(template)
+            candidates = [name] if name.endswith(_TEMPLATE_SUFFIX) else [name, f"{name}{_TEMPLATE_SUFFIX}"]
+            for candidate in candidates:
+                try:
+                    engine.env.get_template(candidate)
+                except TemplateNotFound:
+                    continue
+                return candidate
+            raise JiraTemplateNotFound(f"Jira template {template!r} was not found")
+
+        for candidate in self._template_candidates(kind, project, issuetype):
+            try:
+                engine.env.get_template(candidate)
+            except TemplateNotFound:
+                continue
+            return candidate
+        return None
+
+    @staticmethod
+    def _assert_template_variables(engine: TemplateEngine, name: str, context: Dict[str, Any]) -> None:
+        """Reject templates whose undeclared variables are absent from context.
+
+        Args:
+            engine: Configured Jira template engine.
+            name: Resolved logical template name.
+            context: Template rendering context.
+
+        Raises:
+            JiraTemplateError: One or more undeclared variables are missing.
+        """
+        source, _, _ = engine.env.loader.get_source(engine.env, name)
+        undeclared = jinja_meta.find_undeclared_variables(engine.env.parse(source))
+        missing = sorted(undeclared - set(context) - set(engine.env.globals))
+        if missing:
+            raise JiraTemplateError(f"template '{name}' is missing variables: {', '.join(missing)}")
+
+    async def _render_jira_text(
+        self,
+        kind: Literal["create", "update", "comment"],
+        *,
+        text: Optional[str],
+        template: Optional[str],
+        template_params: Optional[Dict[str, Any]],
+        call_fields: Dict[str, Any],
+        project: Optional[str],
+        issuetype: Optional[str] = None,
+    ) -> Optional[str]:
+        """Compose Jira text from a template without performing Jira I/O.
+
+        Args:
+            kind: Jira write operation being rendered.
+            text: Original Jira text for passthrough when no template applies.
+            template: Explicit template name, if supplied.
+            template_params: Optional caller-provided context overrides.
+            call_fields: Frozen fields supplied by the Jira write path.
+            project: Optional Jira project key.
+            issuetype: Optional Jira issue type.
+
+        Returns:
+            Rendered Jira text, or the original text when no template applies.
+
+        Raises:
+            JiraTemplateError: No configured engine, missing variables, or empty render.
+            JiraTemplateNotFound: An explicit template name cannot be resolved.
+        """
+        engine = self._get_template_engine()
+        if engine is None:
+            if template:
+                raise JiraTemplateError("a template was requested but no Jira templates are configured")
+            return text
+        name = self._resolve_template_name(engine, kind, template, project, issuetype)
+        if name is None:
+            return text
+        context = self._build_template_context(call_fields, template_params)
+        self._assert_template_variables(engine, name, context)
+        rendered = await engine.render(name, context)
+        if not rendered.strip():
+            raise JiraTemplateError(f"template '{name}' rendered empty Jira text")
+        self.logger.debug("Rendered Jira %s from template %s", kind, name)
+        return self._guard_text_length(rendered, field="body" if kind == "comment" else "description")
+
     def _workflow_path_for(self, issue: str) -> Optional[List[str]]:
         """Return the declared workflow path for *issue*'s project, or the default."""
         project = self._project_of(issue)
