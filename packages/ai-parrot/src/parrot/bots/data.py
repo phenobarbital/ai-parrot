@@ -69,57 +69,11 @@ def _get_infographic_result_class() -> Optional[type]:
         return None
 
 
-Scalar = Union[str, int, float, bool, None]
+# PandasTable/Scalar live in parrot.models.tables (dependency-free) and are
+# re-exported here for backward compatibility.
+from ..models.tables import PandasTable, Scalar  # noqa: F401, E402
 
-try:
-    logger = logging.getLogger(__name__)
-except Exception:
-    logger = logging
-
-
-class PandasTable(BaseModel):
-    """Tabular data structure for PandasAgent responses."""
-
-    columns: List[str] = Field(description="Column names, in order")
-    rows: List[List[Scalar]] = Field(
-        description=(
-            "Rows as lists of scalar values, aligned with `columns`. "
-            "CRITICAL: All numeric values MUST be raw numbers without any formatting. "
-            "Do NOT include currency symbols ($, €, £), percent signs (%), "
-            "thousands separators (commas), or any other formatting characters. "
-            "Correct: [764539.74, 85.3] | Wrong: ['$764,539.74', '85.3%']"
-        )
-    )
-
-    @field_validator("rows")
-    @classmethod
-    def validate_rows_alignment(cls, v, info):
-        """Ensure rows align with columns."""
-        if "columns" in info.data:
-            num_cols = len(info.data["columns"])
-            if num_cols == 0:
-                return v
-            fixed_rows = []
-            mismatch_count = 0
-            for i, row in enumerate(v):
-                # Defensive: ensure row is a list
-                if not isinstance(row, list):
-                    row = [row]
-                if len(row) != num_cols:
-                    mismatch_count += 1
-                    if len(row) < num_cols:
-                        row = row + [None] * (num_cols - len(row))
-                    else:
-                        row = row[:num_cols]
-                fixed_rows.append(row)
-            if mismatch_count:
-                logger.warning(
-                    "PandasTable rows misaligned with columns: %d row(s) adjusted to %d columns.",
-                    mismatch_count,
-                    num_cols,
-                )
-            return fixed_rows
-        return v
+logger = logging.getLogger(__name__)
 
 
 class DatasetResult(BaseModel):
