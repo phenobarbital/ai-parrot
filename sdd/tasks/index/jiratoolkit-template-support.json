@@ -16,14 +16,14 @@
       "feature_id": "FEAT-637",
       "feature": "jiratoolkit-template-support",
       "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates JiraTemplateError/JiraTemplateNotFound, constants, templates_dir/templates kwargs and _get_template_engine in jiratoolkit.py; also owns the INIT_PARAMS_BASELINE edit in test_jiratoolkit_delegation.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-07T22:03:34+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4113-jira-template-config-engine.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-637",
       "feature": "jiratoolkit-template-support",
       "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "calls _get_template_engine() and raises JiraTemplateError/JiraTemplateNotFound created by TASK-4113; both modify jiratoolkit.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-07T22:03:34+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4114-jira-template-render-helper.md"
     },
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-637",
       "feature": "jiratoolkit-template-support",
       "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,7 +63,7 @@
       "parallel": true,
       "parallelism_notes": "calls _render_jira_text() created by TASK-4114 from jira_create_issue/jira_update_issue/jira_add_comment; both modify jiratoolkit.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-07T22:03:34+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4115-jira-template-write-paths.md"
     },
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-637",
       "feature": "jiratoolkit-template-support",
       "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -83,7 +83,7 @@
       "parallel": true,
       "parallelism_notes": "serialized after TASK-4115 because both modify jiratoolkit.py (file-overlap); uses _get_template_engine() and _TEMPLATE_SUFFIX from TASK-4113",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-07T22:03:34+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4116-jira-list-templates-tool.md"
     },
@@ -94,7 +94,7 @@
       "feature_id": "FEAT-637",
       "feature": "jiratoolkit-template-support",
       "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -103,7 +103,7 @@
       "parallel": true,
       "parallelism_notes": "documents jira_list_templates from TASK-4116 and runs the four test modules created by TASK-4113..4116 as the final regression gate",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-07T22:03:34+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4117-jira-templates-docs.md"
     }
