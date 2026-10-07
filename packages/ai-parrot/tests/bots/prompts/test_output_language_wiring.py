@@ -1,4 +1,5 @@
 """Wiring tests for the output-language directive (FEAT-638 TASK-4121)."""
+
 import sys
 from unittest.mock import MagicMock, patch
 
