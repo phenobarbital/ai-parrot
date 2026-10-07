@@ -1,4 +1,5 @@
 """Per-session, sandboxed file store addressed by opaque handles."""
+
 from __future__ import annotations
 
 import asyncio
@@ -72,12 +73,7 @@ class SessionFileStore:
         Raises:
             ValueError: If *session_id* is empty, dot-only, or contains a path separator.
         """
-        if (
-            not session_id
-            or set(session_id) == {"."}
-            or "/" in session_id
-            or "\\" in session_id
-        ):
+        if not session_id or set(session_id) == {"."} or "/" in session_id or "\\" in session_id:
             raise ValueError("session_id must be non-empty and must not contain path separators")
         root = self.root / session_id
         root.mkdir(parents=True, exist_ok=True)
