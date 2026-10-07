@@ -1,4 +1,5 @@
 """Tests for the bot-level `language` attribute (FEAT-638 TASK-4119)."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
