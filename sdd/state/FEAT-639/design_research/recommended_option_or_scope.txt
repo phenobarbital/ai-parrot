@@ -1,0 +1,147 @@
+**Option D** is recommended.
+
+Option A is tempting — it is a fraction of the effort and touches one file — but
+it fixes the layer that is *not* broken for the reporting users. Shipping it
+would close the ticket without changing what those users experience, which is the
+worst outcome available here.
+
+Option B dies on the context budget: pushing document bytes through the model is
+precisely what the compaction machinery exists to prevent, and it would make the
+cost of attaching a file scale with every subsequent turn.
+
+Option C would produce a cleaner attachment-specific abstraction, and that is a
+genuine loss we are accepting: `FileManagerToolkit` was not designed around
+session scoping, so D has to extend it. But C's cost is a second file
+abstraction competing with the first at tool-selection time, for a store that
+only Jira would use on day one. Reuse wins.
+
+What Option D trades away, stated plainly:
+
+- **Breadth over speed** — three distributions instead of one, and a longer task
+  graph, in exchange for fixing the reported bug rather than its neighbour.
+- **An extension to a shared component** — per-session roots and handle
+  resolution land in `FileManagerToolkit`, so a regression there is felt by every
+  file-using agent. Mitigated by keeping session scoping additive and by the
+  existing toolkit test suite.
+- **A bespoke multipart upload** for the real Content-Type, instead of leaning
+  entirely on the `jira` library. Contained to one helper; the fallback is to
+  keep `octet-stream` and drop that acceptance criterion if the custom request
+  proves brittle against the target Jira deployment.
+
+---
+
+Two halves, one feature:
+
+**D1 — stop the drop.** `Agent.handle_files` keeps its DataFrame branch for
+tabular files and gains a second branch: every other upload is **persisted** into
+a per-session root inside the existing `FileManagerToolkit` `fs` backend, and
+registered under a stable opaque `file_id`. The handler's response becomes
+honest — it reports what was stored *and* what was turned into a DataFrame, so
+`added_files: []` with a success message is no longer possible. The agent learns
+about the files through the toolkit's listing tool (and/or a working-memory
+namespace), never through a raw path.
+
+**D2 — one attachment path.** Both `jira_add_attachment` and
+`jira_add_comment(attachments=…)` route through a single internal helper that
+takes **`file_id`s**, resolves them against the session root, pre-validates
+(exists, non-empty, size against the Jira limit, type), uploads with the **real
+Content-Type**, and returns a **per-file report**. Remote URLs are handled by
+`FileManagerToolkit`'s existing download backends (`s3`, `gcs`, `sharepoint`,
+`onedrive`, `gdrive`) — the Jira tool never performs a network fetch.
+
+✅ **Pros:**
+- Fixes the bug users actually reported, and the three latent weaknesses, in one
+  coherent change.
+- Reuses a mature, already-sandboxed component instead of growing a second one;
+  the remote-URL origin comes almost free via existing backends.
+- The opaque handle makes the sandbox hold *by construction*: there is no path
+  for a prompt injection to point anywhere else.
+- Equally serves the "agent generated a report" origin — write it into the
+  session store, attach it by handle.
+
+❌ **Cons:**
+- Touches three distributions (`ai-parrot`, `ai-parrot-tools`, `ai-parrot-server`),
+  so the task graph is wider than Option A's.
+- `FileManagerToolkit` must learn a per-session root and a handle↔path mapping it
+  does not have today — a real, if contained, extension.
+- Manual-only cleanup (an explicit decision) means disk growth needs an operator
+  runbook.
+- Content-Type cannot be passed through `jira.JIRA.add_attachment`, which
+  hard-codes `application/octet-stream` (`jira/client.py:1159-1161`). Honouring it
+  requires posting the multipart request ourselves against
+  `issue/{key}/attachments` with `X-Atlassian-Token: no-check` — a small, well
+  understood piece of extra surface that must be explicitly specced.
+
+📊 **Effort:** Medium-High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `jira` | Jira REST client | `==3.10.5` (`packages/ai-parrot/pyproject.toml:388`) — still used for everything but the custom-MIME upload |
+| `aiohttp` | Multipart upload with the real Content-Type | Mandatory per conventions; `requests`/`httpx` are banned |
+| `mimetypes` (stdlib) | Extension → MIME | Already the house pattern (`clients/base.py:1416`, `integrations/parser.py:142`) |
+| `python-magic` *(optional)* | Content-based sniffing | Only if extension-trust proves insufficient; adds libmagic |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot/src/parrot/tools/filemanager.py:724` — `FileManagerToolkit`, sandboxed `fs`/`temp` backends, `max_file_size`, seven storage backends
+- `packages/ai-parrot/src/parrot/tools/filemanager.py:944` / `:993` / `:1222` / `:1144` — `upload_file`, `download_file`, `find_files`, `get_file_metadata`
+- `packages/ai-parrot/src/parrot/bots/agent.py:365` — `Agent.handle_files`, extended, not replaced
+- `packages/ai-parrot-server/src/parrot/handlers/agent.py:1278` — `_handle_attachments`, honest response
+- `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py:1748` / `:2027` — the two tools to converge
+- `packages/ai-parrot/src/parrot/tools/working_memory/tool.py:47` — `WorkingMemoryToolkit` (`tool_prefix = "wm"`, line 81), optional surfacing of handles
+- `packages/ai-parrot/tests/test_jira_comment_attachments.py` — existing suite to extend with a per-type matrix
+
+### User-Facing Behavior
+
+- A user attaches `report.docx` (or a PDF, PNG, ZIP…) in the chat and says
+  *"attach this to NAV-123"*. The agent attaches it. This is the headline change.
+- The upload response stops lying: it lists what was **stored** and what was
+  **registered as a DataFrame**. An upload that produced neither is an explicit
+  error, not a success with an empty list.
+- When several files are attached and some fail, the agent reports precisely
+  which ones failed and why ("file is empty", "exceeds the 10 MB Jira limit"),
+  so the user can act — instead of a blanket "it did not work".
+- An agent-generated document (an exported report, a converted PDF) is attached
+  through the same route, with no special casing.
+- A document living in SharePoint / Drive / S3 is first brought into the session
+  store by the file tool, then attached by handle. The Jira tool itself never
+  reaches out to the network.
+
+### Internal Behavior
+
+1. **Ingestion.** `Agent.handle_files` keeps its tabular branch. Everything else
+   is written through `FileManagerToolkit` into a per-session root under
+   `OUTPUT_DIR`, and recorded with an opaque `file_id`, the original filename, the
+   resolved MIME type, size and origin.
+2. **Discovery.** The agent enumerates what it holds through the file toolkit's
+   listing tool (optionally mirrored into a working-memory namespace so recent
+   uploads are visible without a tool call). Handles — never paths — are what the
+   model sees.
+3. **Resolution.** The shared Jira attachment helper maps each `file_id` to a
+   concrete path **inside the session root**. A handle that is unknown, or that
+   resolves outside the root after normalization, is rejected before any I/O.
+4. **Pre-flight.** Per file: exists, non-empty, size within the Jira attachment
+   limit, type resolvable. Failures are collected, not raised.
+5. **Upload.** Each surviving file is posted to `issue/{key}/attachments` with its
+   real Content-Type and `X-Atlassian-Token: no-check`, off the event loop.
+6. **Report.** One entry per input handle — `ok`, filename, Jira attachment id,
+   size and MIME on success; a stable, machine-readable reason on failure. Both
+   `jira_add_attachment` and `jira_add_comment` return the same shape (hard cut).
+
+### Edge Cases & Error Handling
+
+| Situation | Behavior |
+|---|---|
+| Unknown `file_id` | Rejected in pre-flight: `unknown_handle`, no I/O, no exception |
+| Handle resolving outside the session root | Rejected: `outside_sandbox`, logged at WARNING as a security event |
+| Zero-byte file | Rejected before upload — avoids the library's post-hoc `"Added empty attachment?!"` (`jira/client.py:1198-1202`) |
+| File larger than the Jira attachment limit | Rejected with the limit in the message, so the model can propose splitting or linking |
+| MIME not resolvable from the extension | Falls back to `application/octet-stream` and uploads anyway — unknown type is not a reason to refuse |
+| Some files fail, others succeed | Best-effort: successes stand, the report names each failure. No rollback (Jira has none) |
+| Jira rejects the upload (403 / XSRF / 413) | Status and body surfaced verbatim in that file's entry, not swallowed |
+| Issue key does not exist or is not writable | Fails for the whole call before any upload is attempted |
+| Same filename uploaded twice in a session | Distinct handles; Jira keeps both attachments, as it does for a human uploader |
+| Tabular file (CSV/XLSX) | Still becomes a DataFrame **and** is stored, so it can be attached too |
+| Disk full while persisting an upload | Upload call fails explicitly; partial file removed |
+
+---

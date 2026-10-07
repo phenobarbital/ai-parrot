@@ -1,0 +1,26 @@
+- **Backwards compatible by default.** An agent that does not configure a
+  language must behave exactly as it does today (mirror the user's language).
+  "Unset" must be distinguishable from "defaulted".
+- **One concept, not two.** The framework must not end up with both
+  `Chatbot.language` and a second, parallel `default_language`/`output_language`
+  attribute meaning almost the same thing.
+- **The conversational reply stays in the user's language.** Only the durable
+  artifacts and agent-authored operational messages switch.
+- **Quoted Jira content is never translated.** When the agent summarizes or
+  quotes an existing ticket, the quoted text keeps its original language.
+- **Identifiers are never translated.** Issue keys, project keys, status and
+  transition names, labels, components, usernames/accountIds, JQL fragments,
+  URLs and code blocks must survive verbatim — a translated status name breaks
+  the transition tool call outright.
+- **The FEAT-138 grounding contract must stay enforceable.** The sentinel
+  phrases are currently asserted verbatim in 8 places in
+  `test_jira_specialist_grounding.py` (`:200-201`, `:270`, `:277`, `:333`,
+  `:340`, `:366`, `:431`) and `docs/jira-specialist-prompt-layers.md` explicitly
+  forbids localising them. Whatever we do must leave the anti-hallucination
+  guarantee mechanically testable.
+- **Resolution is static.** The language is fixed at agent construction
+  (CONFIGURE phase) so the layer stays prompt-cacheable (FEAT-181). No
+  per-request override in v1.
+- **No new runtime dependency** unless it earns its place.
+
+---

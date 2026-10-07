@@ -17,6 +17,10 @@ These eight layers form the **default stack** (`PromptBuilder.default()`).
 They are ordered by `LayerPriority` — lower values appear first in the final
 prompt.
 
+Since FEAT-638, `default()` (and therefore `agent()`, `rag()`, the `identity` preset) and
+`voice()` also install the domain layer `OUTPUT_LANGUAGE_LAYER`; it is removed at configure
+time when the bot has no `language`. `minimal()` does not install it.
+
 ### `IDENTITY_LAYER`
 
 The agent's persona: name, role, goal, and backstory.
@@ -426,6 +430,24 @@ adherence on Flash-class models.
 
 ---
 
+### `OUTPUT_LANGUAGE_LAYER`
+
+Bot-level output language (FEAT-638). Artifacts the agent writes follow the configured
+language; replies follow the user; identifiers and quoted content stay verbatim.
+
+| Field | Value |
+|---|---|
+| **Name** | `output_language` |
+| **Priority** | `59` (OUTPUT − 1) |
+| **Phase** | CONFIGURE |
+| **Cacheable** | `True` |
+| **Condition** | None — when `language` is unset the layer is **removed** at configure time |
+| **Variables** | `$output_language` (display name from `SUPPORTED_LANGUAGES`) |
+
+See [`output-language.md`](output-language.md).
+
+---
+
 ### `JIRA_GROUNDING_LAYER`
 
 Anti-hallucination rules specific to JiraSpecialist.
@@ -437,7 +459,7 @@ Anti-hallucination rules specific to JiraSpecialist.
 | **Phase** | CONFIGURE |
 | **Cacheable** | `True` |
 | **Condition** | None (always rendered) |
-| **Variables** | None |
+| **Variables** | `$sentinel_not_found`, `$sentinel_error` (from `GROUNDING_SENTINELS`, FEAT-638) |
 
 Covers tool-output authority, empty/not-found results, error handling,
 cross-ticket bleed prevention, identifier fabrication, and apology-then-fabricate
@@ -511,6 +533,7 @@ layer = get_domain_layer("agent_behavior")
 | `rag_grounding` | `RAG_GROUNDING_LAYER` | 24 | CONFIGURE | RAG strict grounding |
 | `jira_grounding` | `JIRA_GROUNDING_LAYER` | 65 | CONFIGURE | Jira anti-hallucination |
 | `jira_workflow` | `JIRA_WORKFLOW_LAYER` | 16 | CONFIGURE | Jira standup/workflow |
+| `output_language` | `OUTPUT_LANGUAGE_LAYER` | 59 | CONFIGURE | Bot-level output language (FEAT-638) |
 
 ---
 
@@ -534,6 +557,7 @@ When all layers are present, the final system prompt is assembled in this order
  45  CREW_CONTEXT_LAYER      ← (crew orchestration only)
  50  TOOLS_LAYER             ← tool policy
  55  SQL_DIALECT_LAYER        ← (SQL agents only)
+ 59  OUTPUT_LANGUAGE_LAYER   ← (when the bot sets `language`)
  60  OUTPUT_LAYER            ← output format
  65  AGENT_BEHAVIOR_LAYER    ← (agents) or STRICT_GROUNDING (pandas) or JIRA_GROUNDING
  70  BEHAVIOR_LAYER          ← response style

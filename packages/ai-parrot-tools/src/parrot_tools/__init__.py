@@ -68,6 +68,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "git": "parrot_tools.gittoolkit.GitToolkit",
     "google_base": "parrot_tools.google.base.GoogleBaseTool",
     "google_calendar": "parrot_tools.google.calendar.GoogleCalendarToolkit",
+    "google_drive": "parrot_tools.google.drive.GoogleDriveToolkit",
     "lyria": "parrot_tools.google.lyria.LyriaToolkit",
     "google_business": "parrot_tools.google.places.GoogleBusinessTool",
     "google_places_base": "parrot_tools.google.tools.GooglePlacesBaseTool",

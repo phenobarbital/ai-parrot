@@ -1,0 +1,37 @@
+`JiraSpecialist` mirrors the user's input language when it writes to Jira. A
+Spanish-speaking developer asking *"crea un ticket para el bug del login"* gets a
+Jira issue whose summary, description and comments are written in Spanish —
+even when the team's Jira instance is an English-language artifact store read by
+people who do not speak Spanish.
+
+The agent has no way to express the distinction that every multilingual team
+actually needs:
+
+> *Talk to me in my language. Write the permanent record in the team's language.*
+
+**Who is affected**
+
+- **Operators deploying `JiraSpecialist` subclasses** — they can only control
+  output language by hand-writing a custom prompt layer per deployment, because
+  no language directive exists anywhere on the `Agent` branch of the class tree.
+- **Mixed-language teams** — the Jira project ends up with a mix of Spanish and
+  English tickets depending on who filed them, which breaks search, reporting
+  and downstream automation that greps ticket text.
+- **Every other agent in the framework** — the same gap exists framework-wide.
+  `Chatbot` has a `self.language` attribute (`chatbot.py:244`, `:422`, DB-backed
+  via `BotModel.language`), but it is **inert**: it is written to the DB and
+  echoed in `get_configuration_summary()` and **never reaches the prompt**.
+  `Agent`, and therefore `JiraSpecialist`, does not have it at all.
+
+**Why now**
+
+The current state is not merely "unconfigured", it is *inconsistent*. The
+button-driven standup path already hardcodes Spanish directly in Python
+f-strings (`jira_specialist.py:935`, `:944`, `:946-948`, `:966`, `:969`,
+`:1077-1080`, `:1095-1100`) — `"⚠️ Error transicionando {ticket_key}"`,
+`"¡A trabajar! 💪"`, `"⚠️ *Escalación Daily Standup*"`. So one deployment's
+language choice is currently baked into framework source code, while the
+LLM-authored half of the same flow follows whatever language the user typed.
+Any serious multi-tenant deployment has to fix both halves.
+
+---

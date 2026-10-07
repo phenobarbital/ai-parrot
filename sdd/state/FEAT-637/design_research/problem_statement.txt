@@ -1,0 +1,25 @@
+JiraToolkit should let an operator (and, optionally, the agent) compose the
+`description` of a new or updated issue and the `body` of a comment from a
+Jinja2 template instead of a raw string. Today all three write paths in
+`packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` —
+`jira_create_issue`, `jira_update_issue`, `jira_add_comment` — pass the text
+to the pycontribs client verbatim, so there is one clean insertion point per
+method (C1). The framework already ships an async Jinja2 engine,
+`parrot.template.TemplateEngine`, and `jinja2>=3.1` is a hard dependency of
+both core and ai-parrot-tools, so no new dependency is needed (C2, C3). The
+engine's defaults need two Jira-specific overrides: autoescape **off**
+(Jira wiki markup is not HTML) and `StrictUndefined` kept on so a template
+with missing required placeholders fails loudly (C4, U3). Configuration
+follows the toolkit's own `_cfg()` / `JIRA_DEFAULT_*` / `workflow_paths`
+precedents: a `templates_dir` kwarg (env `JIRA_TEMPLATES_DIR`) plus an
+in-memory `templates` mapping, explicit `template=` per call with a
+`<PROJECT>/<issuetype>` → `_default` convention fallback (U1, U2). The
+recommendation is to proceed straight to `/sdd-spec`.
+
+Original request:
+> sometimes when a new ticket is creatd, user requires following certain rules
+> (templating) on ticket description, explaining requirements, etc, adding
+> template support for description can be usable for follow this ticket design,
+> a template is a file with placeholders (like or potentially jinja2 template)
+> where "description" of Jira ticket is composed before passed to the Jira
+> ticket creation, template composition can be usable also for adding comments.

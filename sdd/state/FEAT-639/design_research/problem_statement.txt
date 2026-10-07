@@ -1,0 +1,49 @@
+Users report that **they cannot attach `.docx` files to a Jira ticket** through an
+agent. The report arrived as "there is a bug" with no stack trace, no HTTP status
+and no per-file-type matrix — so the first job of this brainstorm was to find out
+whether there is a Jira failure at all.
+
+There is not, at least not on the path the users exercise. Codebase research
+found a **silent drop** upstream of Jira:
+
+1. A file uploaded in a chat / web session reaches
+   `AgentHandler._handle_attachments` (`packages/ai-parrot-server/src/parrot/handlers/agent.py:1278`),
+   which calls `bot.handle_files(attachments)`.
+2. `Agent.handle_files` (`packages/ai-parrot/src/parrot/bots/agent.py:365`) only
+   understands `.xlsx`, `.xls` and `.csv`. It reads every other file into a
+   `BytesIO`, finds no DataFrame branch for it, **drops the bytes and never
+   writes anything to disk** (`agent.py:404-418`).
+3. The handler nevertheless answers `{"message": "Files uploaded successfully",
+   "added_files": []}` (`handlers/agent.py:1289-1291`). The user sees *success*.
+4. The agent is then asked to attach the document. The only tool available,
+   `JiraToolkit.jira_add_attachment`
+   (`packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py:1748`), accepts
+   **one filesystem path** (`attachment: str`). No path exists for that upload,
+   so the model either hallucinates one (→ `FileNotFoundError` from
+   `jira.JIRA.add_attachment`) or reports that it cannot do it.
+
+So "docx cannot be uploaded" is really **"non-tabular uploads are discarded
+before any Jira code runs"**. Word and PDF are simply the formats users actually
+hand to a ticketing agent; CSV/Excel work by accident because they take the
+DataFrame branch.
+
+Three further weaknesses compound it and must be addressed in the same feature,
+because any fix that only restores the path would still be fragile:
+
+- **Two divergent attachment paths.** `jira_add_attachment` (`jiratoolkit.py:1748`)
+  lets the exception escape; the upload loop inside `jira_add_comment`
+  (`jiratoolkit.py:2055-2079`) catches every exception and returns
+  `{"file": …, "error": …}` instead. Same operation, opposite failure contracts.
+- **No pre-flight validation.** Size, emptiness and type are never checked.
+  The underlying library raises `JIRAError("Added empty attachment?!")` only
+  *after* the upload round-trip (`jira/client.py:1198-1202`), and Jira's own
+  attachment-size limit surfaces as an opaque HTTP error — neither is actionable
+  for an LLM deciding whether to retry.
+- **Wrong Content-Type.** `jira.JIRA.add_attachment` hard-codes
+  `application/octet-stream` for every file (`jira/client.py:1159-1161`), so even
+  a successful docx/PDF lands in Jira without its real MIME type, losing the
+  icon and preview.
+
+**Who is affected**: end users of any agent with `JiraToolkit` enabled (support
+and ticketing flows), plus every agent that produces a document and wants to
+attach it to a ticket.

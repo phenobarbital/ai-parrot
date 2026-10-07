@@ -89,7 +89,7 @@ class BotModel(Model):
         bot_class VARCHAR,
 
         -- Metadata
-        language VARCHAR(10) DEFAULT 'en',
+        language VARCHAR(10),
         disclaimer TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         created_by INTEGER,
@@ -245,7 +245,7 @@ class BotModel(Model):
     )
 
     # Metadata
-    language: str = Field(default="en", required=False, ui_help="The bot’s language.")
+    language: Optional[str] = Field(default=None, required=False, ui_help="The bot’s language.")
     disclaimer: Optional[str] = Field(
         required=False,
         ui_help="Message shown to users before interacting with the bot. Use it for usage tips, limitations, or important notices.",

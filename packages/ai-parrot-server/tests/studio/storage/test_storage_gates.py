@@ -2,6 +2,7 @@
 
 Source-level gates: they read the repository checkout and skip (with a reason) when it is not available.
 """
+
 from __future__ import annotations
 
 import ast
@@ -32,8 +33,14 @@ DDL = re.compile(
 MIGRATION_ENTRYPOINTS = ("apply_studio_migrations", "stamp_migrations")
 # Startup-path callables that must never apply migrations (X8/X10, spec §2.2).
 STARTUP_FUNCTIONS = {
-    "setup", "setup_registry_only", "setup_studio_routes", "ensure_studio_storage", "resolve_studio_storage",
-    "add_studio_runtime_hooks", "install_studio_runtime", "shutdown_studio_runtime",
+    "setup",
+    "setup_registry_only",
+    "setup_studio_routes",
+    "ensure_studio_storage",
+    "resolve_studio_storage",
+    "add_studio_runtime_hooks",
+    "install_studio_runtime",
+    "shutdown_studio_runtime",
 }
 
 
@@ -125,6 +132,16 @@ def _bots_source_at(rev: str) -> str:
         return _git("show", f"{rev}:{LEGACY_BOTS_PY}")
 
 
+# FEAT-638 sanctioned delta: the `language` column drops its DEFAULT 'en'. Applied to the
+# merge-base copy only, so AC17 still catches any OTHER change to the ai_bots DDL.
+_FEAT638_LANGUAGE_DEFAULT = re.compile(r"(language\s+VARCHAR\(10\))\s+DEFAULT\s+'en',")
+
+
+def _with_sanctioned_deltas(source: str) -> str:
+    """Apply sanctioned DDL deltas to a merge-base copy before AC17 compares it."""
+    return _FEAT638_LANGUAGE_DEFAULT.sub(r"\1,", source)
+
+
 def _ai_bots_ddl(source: str) -> str:
     match = re.search(r"CREATE TABLE IF NOT EXISTS navigator\.ai_bots \(.*?\n\s*\)\s*;", source, re.DOTALL)
     assert match, "navigator.ai_bots DDL block not found in bots.py"
@@ -144,5 +161,9 @@ def test_load_database_bots_untouched():
         old_manager, "BotManager", "_load_database_bots"
     ), "BotManager._load_database_bots changed since the merge-base"
     new_bots = (REPO / BOTS_PY).read_text(encoding="utf-8")
-    assert _ai_bots_ddl(new_bots) == _ai_bots_ddl(old_bots), "navigator.ai_bots DDL changed in parrot/models/bots.py"
-    assert (REPO / CREATION_SQL).read_text(encoding="utf-8") == old_sql, "handlers/creation.sql changed"
+    assert _ai_bots_ddl(new_bots) == _ai_bots_ddl(
+        _with_sanctioned_deltas(old_bots)
+    ), "navigator.ai_bots DDL changed in parrot/models/bots.py"
+    assert (REPO / CREATION_SQL).read_text(encoding="utf-8") == _with_sanctioned_deltas(
+        old_sql
+    ), "handlers/creation.sql changed"

@@ -1,10 +1,10 @@
 """Tests for CommandSanitizer 6-layer validation pipeline (TASK-257)."""
 
+from parrot.security.command_sanitizer import _DANGEROUS_PATTERNS
 from parrot.tools.shell_tool.security import (
     CommandSanitizer,
     CommandVerdict,
     SecurityPolicy,
-    _DANGEROUS_PATTERNS,
 )
 
 

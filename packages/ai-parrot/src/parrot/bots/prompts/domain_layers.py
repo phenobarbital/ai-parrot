@@ -6,12 +6,12 @@ without modifying them.
 
 See spec: sdd/specs/composable-prompt-layer.spec.md (Section 3.5)
 """
+
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Final
 
 from .layers import PromptLayer, LayerPriority, RenderPhase
-
 
 # ── PandasAgent: data analysis context ──────────────────────────
 DATAFRAME_CONTEXT_LAYER = PromptLayer(
@@ -220,6 +220,8 @@ $extra_rag_rules
 # Phase CONFIGURE: no per-request variables; rules are static.
 # The most load-bearing rules appear in the FIRST paragraph so they
 # survive truncation by Gemini-3-Flash.
+# FEAT-638: sentinel wording comes from GROUNDING_SENTINELS via $sentinel_not_found /
+# $sentinel_error, injected by AbstractBot._configure_prompt_builder(). Rules are unchanged.
 JIRA_GROUNDING_LAYER = PromptLayer(
     name="jira_grounding",
     priority=LayerPriority.BEHAVIOR - 5,
@@ -227,8 +229,8 @@ JIRA_GROUNDING_LAYER = PromptLayer(
     template="""<jira_grounding_policy>
 Use ONLY data returned by Jira tool calls in the current turn.
 Never fabricate ticket fields. On a missing result, reply
-"No results found for <KEY|JQL>." and stop. On a tool error,
-reply "Jira lookup failed: <message>." and stop.
+"$sentinel_not_found <KEY|JQL>." and stop. On a tool error,
+reply "$sentinel_error: <message>." and stop.
 
 ## Anti-Hallucination Rules (Jira)
 
@@ -239,11 +241,11 @@ reply "Jira lookup failed: <message>." and stop.
 
 2. **Empty / not_found results**: if a tool returns
    `status="empty"` or `status="not_found"`, reply literally
-   `No results found for <KEY|JQL>.` and stop. Do NOT retry the same
+   `$sentinel_not_found <KEY|JQL>.` and stop. Do NOT retry the same
    tool with cosmetic input variations.
 
 3. **Errors**: if a tool returns `status="error"` or raises, reply
-   `Jira lookup failed: <message>.` and stop. Do NOT apologise and then
+   `$sentinel_error: <message>.` and stop. Do NOT apologise and then
    emit a fabricated answer.
 
 4. **No cross-ticket bleed**: never reuse fields from a prior tool call's
@@ -784,6 +786,46 @@ see empty structured output.
 PANDAS_INSTRUCTIONS_LAYER = DATA_INSTRUCTIONS_LAYER
 
 
+# ── Bot-level output language (FEAT-638) ──────────────────────
+# Priority 59 = OUTPUT (60) - 1 → renders just before the output-format rules.
+# CONFIGURE phase → cacheable (FEAT-181). NO condition=: when the bot's language
+# is unset, AbstractBot._configure_prompt_builder() REMOVES this layer instead,
+# because a false condition can be reactivated by a request-time kwarg (S4).
+OUTPUT_LANGUAGE_LAYER = PromptLayer(
+    name="output_language",
+    priority=LayerPriority.OUTPUT - 1,
+    phase=RenderPhase.CONFIGURE,
+    template="""<output_language_policy>
+Write every artifact you create or modify in $output_language: tickets, issue
+summaries and descriptions, comments, reports, and any status, standup or
+escalation message you author (for example Jira issues and comments). This
+applies even when the user writes to you in another language.
+
+Reply to the user in the language they used. Only the artifacts follow
+$output_language.
+
+Never translate identifiers. Keep these verbatim: issue keys, project keys,
+status and transition names, labels, components, usernames and account IDs,
+query strings such as JQL or SQL, URLs, file paths, and code blocks.
+
+When you quote or summarize existing content (an existing ticket, comment,
+description or document), keep the quoted text in its original language.
+</output_language_policy>""",
+    required_vars=frozenset({"output_language"}),
+)
+
+GROUNDING_SENTINELS: Final[Dict[str, Dict[str, str]]] = {
+    "en": {"not_found": "No results found for", "error": "Jira lookup failed"},
+    "es": {"not_found": "No se encontraron resultados para", "error": "La consulta a Jira falló"},
+}
+"""Localized FEAT-138 sentinel prefixes, keyed by ISO 639-1 code.
+
+Injected into the prompt as ``$sentinel_not_found`` / ``$sentinel_error`` by
+``AbstractBot._configure_prompt_builder()``; consumed by JIRA_GROUNDING_LAYER.
+The ``en`` row must stay byte-identical to the original FEAT-138 phrases.
+"""
+
+
 # ── Domain layer registry ──────────────────────────────────────
 
 _DOMAIN_LAYERS: Dict[str, PromptLayer] = {
@@ -799,6 +841,7 @@ _DOMAIN_LAYERS: Dict[str, PromptLayer] = {
     "jira_workflow": JIRA_WORKFLOW_LAYER,
     "capabilities": CAPABILITIES_LAYER,
     "data_instructions": DATA_INSTRUCTIONS_LAYER,
+    "output_language": OUTPUT_LANGUAGE_LAYER,
 }
 
 
@@ -815,8 +858,5 @@ def get_domain_layer(name: str) -> PromptLayer:
         KeyError: If the name is not registered.
     """
     if name not in _DOMAIN_LAYERS:
-        raise KeyError(
-            f"Unknown domain layer: '{name}'. "
-            f"Available: {list(_DOMAIN_LAYERS.keys())}"
-        )
+        raise KeyError(f"Unknown domain layer: '{name}'. " f"Available: {list(_DOMAIN_LAYERS.keys())}")
     return _DOMAIN_LAYERS[name]
