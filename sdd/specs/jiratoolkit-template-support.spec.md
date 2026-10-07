@@ -213,7 +213,7 @@ part of the context.
 @tool_schema(ListTemplatesInput)
 async def jira_list_templates(self, project: Optional[str] = None) -> Dict[str, Any]:
     """List the Jira text templates available to jira_create_issue / jira_update_issue /
-    jira_add_comment. Returns {"ok": True, "templates": [...names...], "templates_dir": str|None}."""
+    jira_add_comment. Returns {"ok": True, "templates": [...names...], "has_templates_dir": bool}."""
 
 # Constructor (new keyword-only-by-position kwargs appended after verify_credentials)
 JiraToolkit(..., verify_credentials: bool = True,
@@ -380,7 +380,9 @@ JIRA_TEMPLATES_DIR   # navconfig / env, resolved via _cfg(); explicit kwarg wins
   async def jira_list_templates(self, project: Optional[str] = None) -> Dict[str, Any]:
       """Return {"ok": True, "templates": sorted names ending in '.j2' from
       engine.env.list_templates() (filtered to '<project.lower()>/' when given),
-      "templates_dir": str(self.templates_dir) or None}. With no engine: templates=[]."""
+      "has_templates_dir": self.templates_dir is not None}. With no engine: templates=[].
+      (Errata 2026-10-08, issue:5ba537e4cc1d: the absolute `templates_dir` path is never
+      returned to the LLM; a boolean replaced it.)"""
   ```
 
 ### Module 5: Tests, signature baseline, docs
@@ -488,7 +490,7 @@ ruff check packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py packages/ai-
 - [ ] AC10 — Template applied + `fields["description"]` present ⇒ `JiraTemplateError` (create and update) (S6).
 - [ ] AC11 — Rendered text > 32 767 chars is truncated so that text + marker == 32 767 chars, with a WARNING; applies to description and comment (G8, S7).
 - [ ] AC12 — `jira_add_comment` accepts `body=None` when a template resolves; raises `ValueError` without transport when neither body nor template applies (S2).
-- [ ] AC13 — `jira_list_templates` returns sorted logical `.j2` names (optionally filtered by project prefix), never paths or source; it carries no `jira.write` permission (G6, S4).
+- [ ] AC13 — `jira_list_templates` returns sorted logical `.j2` names (optionally filtered by project prefix), never paths or source; it carries no `jira.write` permission (G6, S4). *Errata 2026-10-08 (issue:5ba537e4cc1d): the `templates_dir` path in the return shape was replaced by `has_templates_dir: bool` so the filesystem location is not exposed either.*
 - [ ] AC14 — Template names containing `..`, a leading `/`, or `\` are rejected with `JiraTemplateError`.
 - [ ] AC15 — `jira_update_ticket(**kwargs)` forwards `template` / `template_params`.
 - [ ] AC16 — `INIT_PARAMS_BASELINE` updated deliberately; `test_init_signature_unchanged`, `test_write_methods_still_use_self_jira` and `test_jiratoolkit_permissions.py` pass.

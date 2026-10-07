@@ -258,6 +258,8 @@ __all__ = (
     "validate_payload_shape",
     # Ad-hoc dataset adapter for the validation gate (FEAT-327)
     "AdhocDatasetAdapter",
+    # SQL dialect map shared with wikitoolkit (dependency-free)
+    "SQLGLOT_DIALECT_MAP",
 )
 
 
@@ -282,6 +284,8 @@ _LAZY_CORE_TOOLS = {
     "validate_payload_shape": ".infographic_sections",
     # Ad-hoc dataset adapter for the validation gate (FEAT-327)
     "AdhocDatasetAdapter": ".infographic_sections",
+    # SQL dialect map shared with wikitoolkit (dependency-free)
+    "SQLGLOT_DIALECT_MAP": ".sql_dialects",
 }
 
 

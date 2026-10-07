@@ -11,7 +11,7 @@ import sqlglot
 from sqlglot import exp
 
 from parrot.bots.database.models import TableMetadata
-from parrot.bots.database.toolkits.sql import _SQLGLOT_DIALECT_MAP
+from parrot.tools.sql_dialects import _SQLGLOT_DIALECT_MAP
 from parrot.knowledge.wiki.schema.ids import schema_concept_id, source_concept_id, table_concept_id
 from parrot.knowledge.wiki.schema.models import ColumnRecord, SchemaSourceConfig, TableRecord
 from parrot.knowledge.wiki.store import WikiPageRecord
