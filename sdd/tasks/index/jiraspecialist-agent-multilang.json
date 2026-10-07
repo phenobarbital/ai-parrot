@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-07T22:13:35+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-07T23:01:55+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -203,7 +203,7 @@
       "feature_id": "FEAT-638",
       "feature": "jiraspecialist-agent-multilang",
       "spec": "sdd/specs/jiraspecialist-agent-multilang.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -214,8 +214,9 @@
       "parallelism_notes": "Drives the configure-time wiring TASK-4121 adds to abstract.py (_configure_prompt_builder); asserts the localized sentinels TASK-4122 puts into JIRA_GROUNDING_LAYER (domain_layers.py).",
       "assigned_to": null,
       "started_at": "2026-10-07T22:28:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4127-jiraspecialist-prompt-matrix.md"
+      "completed_at": "2026-10-07T23:01:55+00:00",
+      "file": "sdd/tasks/completed/TASK-4127-jiraspecialist-prompt-matrix.md",
+      "verification": "verified"
     }
   ]
 }

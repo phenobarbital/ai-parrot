@@ -233,8 +233,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (native sonnet, 1 attempt)
+**Date**: 2026-10-08
+**Notes**: Prompt matrix test (6 pass). Note: test_jira_specialist_grounding fails standalone on dev too (parrot.bots.guardrails stub order) — pre-existing.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
