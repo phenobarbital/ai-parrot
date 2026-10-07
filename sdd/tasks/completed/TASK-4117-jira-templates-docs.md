@@ -149,10 +149,9 @@ No new tests: this task is the feature-level regression gate over the four test 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (coder seat gemini / gemini-3.5-flash, google-compat, 1 attempt, 69s; reviewed and corrected by orchestrator)
+**Date**: 2026-10-08
+**Notes**: The delivered guide contradicted the implementation (list_templates return shape, a non-existent `fields` context key and wrong per-kind variables, wrong truncation marker, missing no-templates error). Corrected from the source in fix commit dda2e33f58dce7ef0f3f8b8c31d73e5fdc235745. Model feedback recorded: coder-feedback:13cc8b8aca5dfa201783c901 (pattern docs-describe-unverified-api); review: coder-review:3c0d135a325ae42bde052363. AC17 guard (no edits to engine.py, jira_config.py, interfaces/jira.py, research.py) verified. All 6 validation commands pass (62 + 27).
+**Merge-tier gate not re-run: known RED, pre-existing** (see TASK-4113 note, PR #1600, issue:265b7797ae9b, issue:1e9c207bd223). Closed as `partial`.
 
 **Deviations from spec**:

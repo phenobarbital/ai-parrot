@@ -335,10 +335,9 @@ Deviation from spec §4 (declared): the spec lists one test module; tests are sp
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (coder seat gpt-5.6-terra, codex, 1 attempt, 209s; reviewed by orchestrator)
+**Date**: 2026-10-08
+**Notes**: Delivery matches the task's Files table and acceptance criteria (templates_dir kwarg > JIRA_TEMPLATES_DIR, bad dir warns, inline templates shadow files, autoescape off, INIT_PARAMS_BASELINE updated). Task validation: `test_jiratoolkit_templates_config.py` + `test_jiratoolkit_delegation.py` = 27 passed; ruff clean. Review recorded: coder-review:ddb04277f49345c630273c0f (0 corrections).
+**Merge-tier gate: RED, pre-existing, not caused by this task.** Whole-directory collection of `packages/ai-parrot-tools/tests` fails on clean origin/dev (11 errors; jira shadowing by test_drive_toolkit sys.path insert, shell_tool/alpaca/zoom drift) plus dev_loop failures in the ai-parrot chunk. Collection fix: PR #1600; tracked in issue:265b7797ae9b, issue:69189219cfd6, issue:1e9c207bd223. Closed as `partial` for that reason.
 
 **Deviations from spec**:

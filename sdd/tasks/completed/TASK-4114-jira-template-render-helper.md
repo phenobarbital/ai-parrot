@@ -304,10 +304,9 @@ See the CREATE block. Spec §4 rows covered: explicit/suffix, not-found, no-engi
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (coder seat gpt-5.6-terra, codex, 1 attempt, 169s; reviewed by orchestrator)
+**Date**: 2026-10-08
+**Notes**: Delivery matches the task's Files table and acceptance criteria (spec AC5-AC9, AC11, AC14). Task validation: render + config + delegation tests = 47 passed; ruff clean. Review recorded (0 corrections).
+**Merge-tier gate not re-run: known RED, pre-existing** (whole-directory ai-parrot-tools collection/failures on clean origin/dev; see TASK-4113 note, PR #1600, issue:265b7797ae9b, issue:1e9c207bd223). Closed as `partial`.
 
 **Deviations from spec**:
