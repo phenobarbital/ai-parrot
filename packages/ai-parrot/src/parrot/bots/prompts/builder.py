@@ -9,6 +9,7 @@ string concatenation approach.
 
 See spec: sdd/specs/composable-prompt-layer.spec.md (Section 3.3)
 """
+
 from __future__ import annotations
 
 import re
@@ -19,15 +20,15 @@ from typing import Optional, Dict, Any, List
 from .layers import PromptLayer, LayerPriority, RenderPhase
 from .segments import CacheableSegment
 
-_BLANK_LINE_RUN = re.compile(r'\n{3,}')
-_TRAILING_WS = re.compile(r'[ \t]+$', re.MULTILINE)
+_BLANK_LINE_RUN = re.compile(r"\n{3,}")
+_TRAILING_WS = re.compile(r"[ \t]+$", re.MULTILINE)
 
 
 def _normalize_whitespace(text: str) -> str:
     """Dedent, strip trailing whitespace per line, collapse blank-line runs."""
     text = textwrap.dedent(text)
-    text = _TRAILING_WS.sub('', text)
-    text = _BLANK_LINE_RUN.sub('\n\n', text)
+    text = _TRAILING_WS.sub("", text)
+    text = _BLANK_LINE_RUN.sub("\n\n", text)
     return text.strip()
 
 
@@ -66,29 +67,51 @@ class PromptBuilder:
     def default(cls) -> PromptBuilder:
         """Standard layer stack for most bots."""
         from .layers import (
-            IDENTITY_LAYER, PRE_INSTRUCTIONS_LAYER, SECURITY_LAYER,
-            KNOWLEDGE_LAYER, USER_SESSION_LAYER, TOOLS_LAYER,
-            OUTPUT_LAYER, BEHAVIOR_LAYER,
+            IDENTITY_LAYER,
+            PRE_INSTRUCTIONS_LAYER,
+            SECURITY_LAYER,
+            KNOWLEDGE_LAYER,
+            USER_SESSION_LAYER,
+            TOOLS_LAYER,
+            OUTPUT_LAYER,
+            BEHAVIOR_LAYER,
         )
-        return cls([
-            IDENTITY_LAYER, PRE_INSTRUCTIONS_LAYER, SECURITY_LAYER,
-            KNOWLEDGE_LAYER, USER_SESSION_LAYER, TOOLS_LAYER,
-            OUTPUT_LAYER, BEHAVIOR_LAYER,
-        ])
+        from .domain_layers import OUTPUT_LANGUAGE_LAYER
+
+        return cls(
+            [
+                IDENTITY_LAYER,
+                PRE_INSTRUCTIONS_LAYER,
+                SECURITY_LAYER,
+                KNOWLEDGE_LAYER,
+                USER_SESSION_LAYER,
+                TOOLS_LAYER,
+                OUTPUT_LANGUAGE_LAYER,
+                OUTPUT_LAYER,
+                BEHAVIOR_LAYER,
+            ]
+        )
 
     @classmethod
     def minimal(cls) -> PromptBuilder:
         """Lightweight stack: identity + security + user_session only."""
         from .layers import IDENTITY_LAYER, SECURITY_LAYER, USER_SESSION_LAYER
+
         return cls([IDENTITY_LAYER, SECURITY_LAYER, USER_SESSION_LAYER])
 
     @classmethod
     def voice(cls) -> PromptBuilder:
         """Voice-optimized stack with voice behavior layer."""
         from .layers import (
-            IDENTITY_LAYER, PRE_INSTRUCTIONS_LAYER, SECURITY_LAYER,
-            KNOWLEDGE_LAYER, USER_SESSION_LAYER, TOOLS_LAYER,
+            IDENTITY_LAYER,
+            PRE_INSTRUCTIONS_LAYER,
+            SECURITY_LAYER,
+            KNOWLEDGE_LAYER,
+            USER_SESSION_LAYER,
+            TOOLS_LAYER,
         )
+        from .domain_layers import OUTPUT_LANGUAGE_LAYER
+
         voice_behavior = PromptLayer(
             name="behavior",
             priority=LayerPriority.BEHAVIOR,
@@ -102,16 +125,24 @@ $rationale
 </response_style>""",
             condition=lambda ctx: True,
         )
-        return cls([
-            IDENTITY_LAYER, PRE_INSTRUCTIONS_LAYER, SECURITY_LAYER,
-            KNOWLEDGE_LAYER, USER_SESSION_LAYER, TOOLS_LAYER,
-            voice_behavior,
-        ])
+        return cls(
+            [
+                IDENTITY_LAYER,
+                PRE_INSTRUCTIONS_LAYER,
+                SECURITY_LAYER,
+                KNOWLEDGE_LAYER,
+                USER_SESSION_LAYER,
+                TOOLS_LAYER,
+                OUTPUT_LANGUAGE_LAYER,
+                voice_behavior,
+            ]
+        )
 
     @classmethod
     def agent(cls) -> PromptBuilder:
         """Agent stack with general-purpose grounding behavior."""
         from .domain_layers import AGENT_BEHAVIOR_LAYER
+
         builder = cls.default()
         builder.add(AGENT_BEHAVIOR_LAYER)
         return builder
@@ -126,6 +157,7 @@ $rationale
         knowledge layer).
         """
         from .domain_layers import KNOWLEDGE_SCOPE_LAYER, RAG_GROUNDING_LAYER
+
         builder = cls.default()
         builder.remove("tools")
         builder.add(KNOWLEDGE_SCOPE_LAYER)
@@ -151,13 +183,16 @@ $rationale
             A fresh PromptBuilder with the identity layer overridden.
         """
         from .layers import PromptLayer, LayerPriority, RenderPhase
+
         builder = cls.default()
-        builder.add(PromptLayer(
-            name="identity",
-            priority=LayerPriority.IDENTITY,
-            phase=RenderPhase.CONFIGURE,
-            template=system_prompt,
-        ))
+        builder.add(
+            PromptLayer(
+                name="identity",
+                priority=LayerPriority.IDENTITY,
+                phase=RenderPhase.CONFIGURE,
+                template=system_prompt,
+            )
+        )
         return builder
 
     # ── Mutation API ────────────────────────────────────────────
@@ -200,10 +235,7 @@ $rationale
             KeyError: If the named layer is not in the builder.
         """
         if name not in self._layers:
-            raise KeyError(
-                f"Layer '{name}' not found. Use add() instead. "
-                f"Available: {list(self._layers.keys())}"
-            )
+            raise KeyError(f"Layer '{name}' not found. Use add() instead. " f"Available: {list(self._layers.keys())}")
         self._layers[name] = layer
         return self
 
