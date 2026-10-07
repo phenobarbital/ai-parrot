@@ -1,0 +1,111 @@
+{
+  "feature": "jiratoolkit-template-support",
+  "feature_id": "FEAT-637",
+  "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-07T21:39:36Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4113",
+      "slug": "jira-template-config-engine",
+      "title": "Template configuration, error types and lazy Jira-safe engine",
+      "feature_id": "FEAT-637",
+      "feature": "jiratoolkit-template-support",
+      "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "root task: creates JiraTemplateError/JiraTemplateNotFound, constants, templates_dir/templates kwargs and _get_template_engine in jiratoolkit.py; also owns the INIT_PARAMS_BASELINE edit in test_jiratoolkit_delegation.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4113-jira-template-config-engine.md"
+    },
+    {
+      "id": "TASK-4114",
+      "slug": "jira-template-render-helper",
+      "title": "Template resolution, context, strictness, length guard (_render_jira_text)",
+      "feature_id": "FEAT-637",
+      "feature": "jiratoolkit-template-support",
+      "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4113"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls _get_template_engine() and raises JiraTemplateError/JiraTemplateNotFound created by TASK-4113; both modify jiratoolkit.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4114-jira-template-render-helper.md"
+    },
+    {
+      "id": "TASK-4115",
+      "slug": "jira-template-write-paths",
+      "title": "Wire templates into create / update / comment write paths",
+      "feature_id": "FEAT-637",
+      "feature": "jiratoolkit-template-support",
+      "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4114"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls _render_jira_text() created by TASK-4114 from jira_create_issue/jira_update_issue/jira_add_comment; both modify jiratoolkit.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4115-jira-template-write-paths.md"
+    },
+    {
+      "id": "TASK-4116",
+      "slug": "jira-list-templates-tool",
+      "title": "jira_list_templates read tool",
+      "feature_id": "FEAT-637",
+      "feature": "jiratoolkit-template-support",
+      "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4115"
+      ],
+      "parallel": true,
+      "parallelism_notes": "serialized after TASK-4115 because both modify jiratoolkit.py (file-overlap); uses _get_template_engine() and _TEMPLATE_SUFFIX from TASK-4113",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4116-jira-list-templates-tool.md"
+    },
+    {
+      "id": "TASK-4117",
+      "slug": "jira-templates-docs",
+      "title": "Operator documentation + feature regression gate",
+      "feature_id": "FEAT-637",
+      "feature": "jiratoolkit-template-support",
+      "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4116"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents jira_list_templates from TASK-4116 and runs the four test modules created by TASK-4113..4116 as the final regression gate",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4117-jira-templates-docs.md"
+    }
+  ]
+}
