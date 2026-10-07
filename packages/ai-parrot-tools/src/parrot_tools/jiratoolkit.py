@@ -392,8 +392,15 @@ DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_ATTACHMENT_DETAIL_CHARS = 500
 
 AttachmentErrorCode = Literal[
-    "unknown_handle", "no_session", "outside_sandbox", "missing_file",
-    "empty_file", "too_large", "forbidden", "rejected", "transport_error",
+    "unknown_handle",
+    "no_session",
+    "outside_sandbox",
+    "missing_file",
+    "empty_file",
+    "too_large",
+    "forbidden",
+    "rejected",
+    "transport_error",
 ]
 
 
@@ -1126,7 +1133,8 @@ class JiraToolkit(AbstractToolkit):
         except Exception as exc:  # noqa: BLE001 - discovery never raises
             self.logger.warning(
                 "Attachment limit discovery failed (%s); using default %d bytes",
-                _bounded_detail(exc), DEFAULT_MAX_ATTACHMENT_BYTES,
+                _bounded_detail(exc),
+                DEFAULT_MAX_ATTACHMENT_BYTES,
             )
             return DEFAULT_MAX_ATTACHMENT_BYTES
         cache[key] = (client, limit)

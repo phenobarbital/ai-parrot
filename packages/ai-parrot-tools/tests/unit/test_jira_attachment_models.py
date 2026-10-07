@@ -1,4 +1,5 @@
 """Tests for Jira attachment result models and size-limit discovery (TASK-4138)."""
+
 import logging
 from unittest.mock import MagicMock
 
