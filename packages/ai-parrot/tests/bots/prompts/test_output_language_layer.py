@@ -1,4 +1,5 @@
 """Tests for OUTPUT_LANGUAGE_LAYER and GROUNDING_SENTINELS (FEAT-638 TASK-4120)."""
+
 from parrot.bots.prompts.domain_layers import (
     GROUNDING_SENTINELS,
     OUTPUT_LANGUAGE_LAYER,

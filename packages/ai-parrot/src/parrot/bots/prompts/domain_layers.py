@@ -6,12 +6,12 @@ without modifying them.
 
 See spec: sdd/specs/composable-prompt-layer.spec.md (Section 3.5)
 """
+
 from __future__ import annotations
 
 from typing import Dict, Final
 
 from .layers import PromptLayer, LayerPriority, RenderPhase
-
 
 # ── PandasAgent: data analysis context ──────────────────────────
 DATAFRAME_CONTEXT_LAYER = PromptLayer(
@@ -856,8 +856,5 @@ def get_domain_layer(name: str) -> PromptLayer:
         KeyError: If the name is not registered.
     """
     if name not in _DOMAIN_LAYERS:
-        raise KeyError(
-            f"Unknown domain layer: '{name}'. "
-            f"Available: {list(_DOMAIN_LAYERS.keys())}"
-        )
+        raise KeyError(f"Unknown domain layer: '{name}'. " f"Available: {list(_DOMAIN_LAYERS.keys())}")
     return _DOMAIN_LAYERS[name]
