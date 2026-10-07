@@ -8,7 +8,7 @@ See spec: sdd/specs/composable-prompt-layer.spec.md (Section 3.5)
 """
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Final
 
 from .layers import PromptLayer, LayerPriority, RenderPhase
 
@@ -784,6 +784,46 @@ see empty structured output.
 PANDAS_INSTRUCTIONS_LAYER = DATA_INSTRUCTIONS_LAYER
 
 
+# ── Bot-level output language (FEAT-638) ──────────────────────
+# Priority 59 = OUTPUT (60) - 1 → renders just before the output-format rules.
+# CONFIGURE phase → cacheable (FEAT-181). NO condition=: when the bot's language
+# is unset, AbstractBot._configure_prompt_builder() REMOVES this layer instead,
+# because a false condition can be reactivated by a request-time kwarg (S4).
+OUTPUT_LANGUAGE_LAYER = PromptLayer(
+    name="output_language",
+    priority=LayerPriority.OUTPUT - 1,
+    phase=RenderPhase.CONFIGURE,
+    template="""<output_language_policy>
+Write every artifact you create or modify in $output_language: tickets, issue
+summaries and descriptions, comments, reports, and any status, standup or
+escalation message you author (for example Jira issues and comments). This
+applies even when the user writes to you in another language.
+
+Reply to the user in the language they used. Only the artifacts follow
+$output_language.
+
+Never translate identifiers. Keep these verbatim: issue keys, project keys,
+status and transition names, labels, components, usernames and account IDs,
+query strings such as JQL or SQL, URLs, file paths, and code blocks.
+
+When you quote or summarize existing content (an existing ticket, comment,
+description or document), keep the quoted text in its original language.
+</output_language_policy>""",
+    required_vars=frozenset({"output_language"}),
+)
+
+GROUNDING_SENTINELS: Final[Dict[str, Dict[str, str]]] = {
+    "en": {"not_found": "No results found for", "error": "Jira lookup failed"},
+    "es": {"not_found": "No se encontraron resultados para", "error": "La consulta a Jira falló"},
+}
+"""Localized FEAT-138 sentinel prefixes, keyed by ISO 639-1 code.
+
+Injected into the prompt as ``$sentinel_not_found`` / ``$sentinel_error`` by
+``AbstractBot._configure_prompt_builder()``; consumed by JIRA_GROUNDING_LAYER.
+The ``en`` row must stay byte-identical to the original FEAT-138 phrases.
+"""
+
+
 # ── Domain layer registry ──────────────────────────────────────
 
 _DOMAIN_LAYERS: Dict[str, PromptLayer] = {
@@ -799,6 +839,7 @@ _DOMAIN_LAYERS: Dict[str, PromptLayer] = {
     "jira_workflow": JIRA_WORKFLOW_LAYER,
     "capabilities": CAPABILITIES_LAYER,
     "data_instructions": DATA_INSTRUCTIONS_LAYER,
+    "output_language": OUTPUT_LANGUAGE_LAYER,
 }
 
 
