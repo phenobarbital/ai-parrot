@@ -429,6 +429,9 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         self.capabilities = kwargs.get("capabilities") or getattr(self, "capabilities", None) or DEFAULT_CAPABILITIES
         self.backstory = kwargs.get("backstory") or getattr(self, "backstory", None) or DEFAULT_BACKHISTORY
         self.rationale = kwargs.get("rationale") or getattr(self, "rationale", None) or DEFAULT_RATIONALE
+        # FEAT-638: bot-level output language (raw ISO 639-1 value; None = mirror the user).
+        # Normalized against an allowlist at prompt-configure time, never here.
+        self.language: Optional[str] = kwargs.get("language") or getattr(self, "language", None) or None
 
         # Initialize MCP Mixin
         if not hasattr(self, "_mcp_initialized"):

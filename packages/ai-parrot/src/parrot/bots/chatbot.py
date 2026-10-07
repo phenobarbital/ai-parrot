@@ -241,7 +241,7 @@ class Chatbot(BaseBot):
         self._permissions = getattr(self, "_permissions", {})
 
         # Other settings
-        self.language = getattr(self, "language", "en")
+        self.language = getattr(self, "language", None)
         self.disclaimer = getattr(self, "disclaimer", None)
 
         self.logger.info(
@@ -419,7 +419,7 @@ class Chatbot(BaseBot):
                     self.register_kb(kb_class)
 
         # Other settings
-        self.language = self._from_db(bot, "language", default="en")
+        self.language = self._from_db(bot, "language", default=None)
         self.disclaimer = self._from_db(bot, "disclaimer", default=None)
 
         self.logger.info(
