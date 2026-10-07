@@ -197,8 +197,11 @@ JiraSpecialist = _js_mod.JiraSpecialist  # type: ignore[attr-defined]
 # ---------------------------------------------------------------------------
 # Sentinel phrases guaranteed by JIRA_GROUNDING_LAYER (TASK-945)
 # ---------------------------------------------------------------------------
-SENTINEL_NOT_FOUND = "No results found for"
-SENTINEL_ERROR = "Jira lookup failed"
+# FEAT-638: single source of truth; the REAL domain_layers module was registered in
+# sys.modules by _load_prompts_module() above (the parrot.bots.prompts package is synthetic).
+GROUNDING_SENTINELS = sys.modules["parrot.bots.prompts.domain_layers"].GROUNDING_SENTINELS
+SENTINEL_NOT_FOUND = GROUNDING_SENTINELS["en"]["not_found"]
+SENTINEL_ERROR = GROUNDING_SENTINELS["en"]["error"]
 
 # Values a grounding-compliant agent must never invent when toolkit returns
 # not_found or empty.
