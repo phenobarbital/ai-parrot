@@ -35,7 +35,7 @@
       "feature_id": "FEAT-638",
       "feature": "jiraspecialist-agent-multilang",
       "spec": "sdd/specs/jiraspecialist-agent-multilang.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -43,8 +43,9 @@
       "parallelism_notes": "No dependencies. Edits abstract.py:431 and chatbot.py:244/:422; TASK-4121 later edits abstract.py and reads the self.language this creates.",
       "assigned_to": null,
       "started_at": "2026-10-07T22:28:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4119-abstractbot-language-attribute.md"
+      "completed_at": "2026-10-07T22:37:02+00:00",
+      "file": "sdd/tasks/completed/TASK-4119-abstractbot-language-attribute.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4120",
