@@ -1,0 +1,105 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-637",
+  "feature_slug": "jiratoolkit-template-support",
+  "started_at": "2026-10-07T20:48:17Z",
+  "updated_at": "2026-10-07T23:12:00Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-637/source.md",
+    "fetched_at": "2026-10-07T20:48:17Z",
+    "summary_oneline": "Add template support (file with placeholders / Jinja2) to compose Jira ticket descriptions and comments in JiraToolkit"
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-10-07T20:48:17Z",
+      "completed_at": "2026-10-07T20:48:17Z",
+      "duration_seconds": 1
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-10-07T20:49:33Z",
+      "completed_at": "2026-10-07T20:49:33Z",
+      "duration_seconds": 60,
+      "queries_total": 15,
+      "approved_by_user": true,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-637/research_plan.json"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-10-07T20:49:33Z",
+      "completed_at": "2026-10-07T22:58:00Z",
+      "duration_seconds": 420,
+      "queries_executed": 15,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 14,
+      "grep_calls": 9,
+      "git_calls": 1,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-10-07T22:59:00Z",
+      "completed_at": "2026-10-07T23:02:00Z",
+      "duration_seconds": 180,
+      "synthesis_path": "sdd/state/FEAT-637/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "medium",
+      "claims_total": 10,
+      "claims_high_conf": 6,
+      "claims_medium_conf": 2,
+      "claims_low_conf": 2,
+      "unknowns_count": 5,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-10-07T23:03:00Z",
+      "completed_at": "2026-10-07T23:06:00Z",
+      "duration_seconds": 180,
+      "questions_total": 5,
+      "questions_answered": 5,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-10-07T23:10:00Z",
+      "completed_at": "2026-10-07T23:12:00Z",
+      "duration_seconds": 120,
+      "proposal_path": "sdd/proposals/jiratoolkit-template-support.proposal.md",
+      "commit_sha": "7d1b29946f03034f583d5b75be7bce5cb800fc21",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization high-confidence; product decisions resolved; only spec-level details remain."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 14,
+    "grep_calls": 9,
+    "git_calls": 1,
+    "wall_seconds": 420
+  },
+  "errors": [],
+  "resume_hint": {
+    "next_phase": "done",
+    "next_action": "/sdd-spec FEAT-637"
+  },
+  "detected_mode": "enrichment"
+}
