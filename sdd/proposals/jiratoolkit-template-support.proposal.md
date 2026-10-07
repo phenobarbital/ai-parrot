@@ -4,7 +4,7 @@ title: JiraToolkit template support — Jinja2 composition of issue descriptions
 slug: jiratoolkit-template-support
 type: feature
 mode: enrichment
-status: review
+status: accepted
 # id is PROVISIONAL (max existing + 1); /sdd-spec reserves the definitive one via reserve_ids.py
 source:
   kind: inline
