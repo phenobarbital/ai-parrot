@@ -10,8 +10,13 @@ from parrot.interfaces.file.gdrive import GoogleDriveFileManager  # noqa: E402
 from parrot_tools.google.drive import GoogleDriveToolkit  # noqa: E402
 
 FAKES_DIR = Path(__file__).parents[3] / "ai-parrot" / "tests" / "interfaces"
+# Temporary entry only: FAKES_DIR contains a ``jira/`` test package that would
+# otherwise shadow the PyPI ``jira`` library for every module collected later.
 sys.path.insert(0, str(FAKES_DIR))
-from _gdrive_fakes import FakeDrive, FakeDriveClient, make_google_client  # noqa: E402
+try:
+    from _gdrive_fakes import FakeDrive, FakeDriveClient, make_google_client  # noqa: E402
+finally:
+    sys.path.remove(str(FAKES_DIR))
 
 
 def _manager_with_files() -> tuple[GoogleDriveFileManager, FakeDriveClient]:
