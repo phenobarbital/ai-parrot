@@ -16,7 +16,7 @@
       "feature_id": "FEAT-638",
       "feature": "jiraspecialist-agent-multilang",
       "spec": "sdd/specs/jiraspecialist-agent-multilang.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependencies. Stdlib-only leaf module (prompts/language.py); TASK-4121 and TASK-4123 import normalize_language/FALLBACK_LANGUAGE from it.",
       "assigned_to": null,
       "started_at": "2026-10-07T22:28:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4118-language-resolver.md"
+      "completed_at": "2026-10-07T22:36:55+00:00",
+      "file": "sdd/tasks/completed/TASK-4118-language-resolver.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4119",

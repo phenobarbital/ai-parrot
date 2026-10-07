@@ -281,8 +281,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (codex gpt-5.6-terra, 1 attempt)
+**Date**: 2026-10-08
+**Notes**: bots/prompts/language.py + tests; 26 tests pass with 4119 tests.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
