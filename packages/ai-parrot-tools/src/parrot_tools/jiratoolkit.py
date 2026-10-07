@@ -2423,7 +2423,7 @@ class JiraToolkit(AbstractToolkit):
             call_fields={"issue": issue, "project": project, "body": body, "is_internal": is_internal},
             project=project,
         )
-        if body is None or not body.strip():
+        if body is None:
             raise ValueError("jira_add_comment: body is required when no template applies")
 
         def _run():

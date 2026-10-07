@@ -152,3 +152,12 @@ async def test_missing_variables_no_transport() -> None:
         await tk.jira_create_issue(project="NAV", summary="S", template="t")
 
     tk.jira.create_issue.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_comment_empty_body_without_templates_is_forwarded() -> None:
+    """AC1: with no templates configured an empty body is passed through unchanged."""
+    tk = _make()
+    await tk.jira_add_comment("NAV-1", body="")
+    tk.jira.add_comment.assert_called_once()
+    assert tk.jira.add_comment.call_args.args[1] == ""

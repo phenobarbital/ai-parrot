@@ -44,6 +44,8 @@ When a write operation (create, update, comment) is performed, the template is s
    - **Update Issue**: Looks for `<project>/update.j2`, then `update.j2`.
    - **Add Comment**: Looks for `<project>/comment.j2`, then `comment.j2`.
 
+> **Warning:** once an `update.j2` (or `<project>/update.j2`) exists, *every* `jira_update_issue` call renders it and overwrites the description. It fails if the template's variables are missing (even for a summary-only update) and if `fields['description']` is also passed.
+
 All lookups are case-insensitive; project keys and issue types are lower-cased during resolution (e.g., `NAV` and `Bug` resolve to `nav/bug.j2`).
 
 ## Template context
@@ -64,11 +66,12 @@ Every variable is the value passed to the tool call (``None`` when omitted).
 
 - **`template_params`**: entries override same-named call variables and may add new ones.
 - The call's `fields` dict is **not** exposed to templates.
+- Omitted arguments are present in the context with the value `None`, so `{{ assignee }}` prints `None` and `| default('x')` does not fire; use `| default('x', true)` for optional values.
 - Templates render with `StrictUndefined`: every variable a template uses must be in the context (use `| default(...)` for optional ones, or pass it in `template_params`).
 
 ## Errors and limits
 
-- **Missing Variables**: If a template references variables that are not present in the context, a `JiraTemplateError` is raised listing all missing variables in sorted order. No transport call is made to Jira.
+- **Missing Variables**: If a template references variables that are not present in the context, a `JiraTemplateError` is raised listing all missing variables in sorted order. No write call is made to Jira (on create, the issue-type validation read happens first, because the canonical issue type is part of the template context).
 - **Empty Render**: If the rendered template output is empty or contains only whitespace, a `JiraTemplateError` is raised.
 - **No templates configured**: passing `template=` when neither `templates_dir` nor `templates` is configured raises `JiraTemplateError`.
 - **Unknown Template**: If an explicit template is requested but cannot be found, a `JiraTemplateNotFound` error is raised.
