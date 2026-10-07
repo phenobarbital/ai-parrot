@@ -1,0 +1,55 @@
+- **Verbatim pass-through, no conversion stage.** Description and body reach
+  pycontribs `JIRA.create_issue` / `add_comment` / `update` unchanged; there
+  is no markdown→wiki-markup or ADF step anywhere in the toolkit path (the
+  only ADF usage is `/sdd-tojira`'s curl fallback on REST v3).
+  *Implication*: the rendered template **is** the final Jira markup; it must
+  not be HTML-escaped and nothing downstream reformats it.
+  *Evidence*: F005, F006, F014
+
+- **TemplateEngine defaults are HTML-oriented.** `JinjaConfig.autoescape =
+  select_autoescape(["html","xml","j2","jinja","jinja2"])` — a template file
+  named `bug.j2` would be escaped — and `undefined = StrictUndefined`. The
+  engine's `__init__` raises `ValueError` if a template dir does not exist.
+  *Implication*: build the Jira engine with `JinjaConfig(autoescape=False)`,
+  keep `StrictUndefined` (U3), and construct it lazily / tolerate a missing
+  dir so toolkit construction never fails because templates are absent.
+  *Evidence*: F008
+
+- **No new dependency.** `jinja2>=3.1` is declared in
+  `packages/ai-parrot/pyproject.toml` and `packages/ai-parrot-tools/pyproject.toml`.
+  *Evidence*: F009
+
+- **Two coexisting template conventions.** ai-parrot-tools document tools
+  (msword / powerpoint / pdfprint) take `templates_dir: Optional[Path]`; core
+  `infographic_toolkit` takes `template_dirs` + in-memory `templates` and
+  wraps `TemplateEngine`.
+  *Implication*: expose `templates_dir` + `templates` on JiraToolkit and
+  delegate to `TemplateEngine` internally (U1).
+  *Evidence*: F010
+
+- **Config precedence precedent.** Every setting resolves through `_cfg(key)`
+  (explicit kwarg > navconfig > env). `workflow_paths` already implements a
+  per-project override map keyed by upper-cased project with a `_DEFAULT`
+  sentinel.
+  *Implication*: `JIRA_TEMPLATES_DIR` fits; template auto-selection by
+  `<PROJECT>/<issuetype>` → `_default` can mirror the workflow lookup (U2).
+  *Evidence*: F007
+
+- **Constructor signature is pinned by a test.** `test_init_signature_unchanged`
+  asserts the exact parameter tuple.
+  *Implication*: adding `templates_dir` / `templates` kwargs must update
+  `INIT_PARAMS_BASELINE` in the same task — a deliberate baseline change.
+  *Evidence*: F013
+
+- **All 10 external callers use keyword args.** One `jira_create_issue`
+  caller (dev_loop `ResearchNode`) and nine `jira_add_comment` callers
+  (jira_specialist, dev_loop nodes); none passes template-related names.
+  *Implication*: new optional params are backward compatible; no-template
+  calls keep today's behaviour byte-for-byte.
+  *Evidence*: F011
+
+- **Jira description cap.** `ResearchNode` enforces `_MAX_DESCRIPTION_CHARS
+  = 30_000` (Atlassian limit 32 767) with summarize-then-truncate.
+  *Implication*: a template fed large params can overflow; the renderer
+  should guard the length (truncate with marker, or fail clearly).
+  *Evidence*: F015
