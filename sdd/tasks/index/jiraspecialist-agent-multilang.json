@@ -96,7 +96,7 @@
       "feature_id": "FEAT-638",
       "feature": "jiraspecialist-agent-multilang",
       "spec": "sdd/specs/jiraspecialist-agent-multilang.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -107,8 +107,9 @@
       "parallelism_notes": "Edits domain_layers.py after TASK-4120 (same file) and its tests read GROUNDING_SENTINELS from it; needs the $sentinel_* injection TASK-4121 adds to abstract.py so no real bot renders a literal placeholder.",
       "assigned_to": null,
       "started_at": "2026-10-07T22:28:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4122-localize-grounding-sentinels.md"
+      "completed_at": "2026-10-07T22:51:28+00:00",
+      "file": "sdd/tasks/completed/TASK-4122-localize-grounding-sentinels.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4123",
