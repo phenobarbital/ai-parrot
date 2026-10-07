@@ -56,7 +56,7 @@
       "feature_id": "FEAT-637",
       "feature": "jiratoolkit-template-support",
       "spec": "sdd/specs/jiratoolkit-template-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -66,8 +66,9 @@
       "parallelism_notes": "calls _render_jira_text() created by TASK-4114 from jira_create_issue/jira_update_issue/jira_add_comment; both modify jiratoolkit.py",
       "assigned_to": null,
       "started_at": "2026-10-07T22:03:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4115-jira-template-write-paths.md"
+      "completed_at": "2026-10-07T22:54:00+00:00",
+      "file": "sdd/tasks/completed/TASK-4115-jira-template-write-paths.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4116",

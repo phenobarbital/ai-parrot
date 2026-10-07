@@ -320,10 +320,9 @@ See the CREATE block. Spec §4 rows covered: no-templates payload, fields confli
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (coder seat gpt-5.6-terra, codex, 1 attempt, 263s; reviewed by orchestrator)
+**Date**: 2026-10-08
+**Notes**: Delivery matches the task's Files table and acceptance criteria (spec AC1, AC10, AC12, AC15, AC16). Task validation: templates_writes/render/config + delegation = 57 passed; `packages/ai-parrot/tests/test_jiratoolkit_permissions.py` = 27 passed (needs the compiled `parrot/utils/**/*.so` copied into the worktree); ruff clean. Review recorded (0 corrections). The create/update docstrings mention `jira_list_templates`, delivered by TASK-4116.
+**Merge-tier gate not re-run: known RED, pre-existing** (see TASK-4113 note, PR #1600, issue:265b7797ae9b, issue:1e9c207bd223). Closed as `partial`.
 
 **Deviations from spec**:
