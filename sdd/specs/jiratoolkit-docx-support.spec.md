@@ -99,6 +99,11 @@ restored path alone would stay fragile:
   `sdd/proposals/jiratoolkit-docx-support.brainstorm.md`.
 - **Rewriting `FileManagerToolkit`.** It is reused as the remote *transport*;
   `filemanager.py` is not modified by this feature.
+- **The admin UI's own upload gate.** `DataManagementModal.svelte:112` rejects
+  anything that is not `.xlsx`/`.xls` before a request is even made, and discards
+  the server's response. Fixing it is deferred to a separate feature
+  (`issue:04dcfd611ebc`, §8 Q5), so after this feature the docx path works through
+  the API and the chat channels but **not** through the admin UI's data modal.
 
 ---
 
@@ -348,7 +353,12 @@ class SessionFileToolkit(AbstractToolkit):
           """Every record in the session, newest first."""
 
       async def usage_bytes(self, session_id: str) -> int:
-          """Total bytes stored for the session (for the §7 quota reporting)."""
+          """Total bytes stored for the session.
+
+          Reporting only: ``put_bytes``/``put_path`` log a WARNING once the total
+          crosses ``SESSION_FILES_WARN_BYTES`` and then store the file anyway. No
+          upload is ever rejected for an aggregate quota (§8 Q4).
+          """
   ```
 
 ### Module 2: Session file toolkit
@@ -417,13 +427,24 @@ class SessionFileToolkit(AbstractToolkit):
       # REPLACES `attachments: Optional[List[str]]` (paths) — jiratoolkit.py:461
 
   class JiraToolkit(AbstractToolkit):         # verified: jiratoolkit.py:596
+      async def _max_attachment_bytes(self) -> int:
+          """Resolve this deployment's attachment size limit, cached per client.
+
+          ``JIRA_MAX_ATTACHMENT_BYTES`` wins when set. Otherwise asks the live
+          deployment via ``self.jira.attachment_meta()["uploadLimit"]``
+          (verified: jira/client.py:1110) off the event loop — correct for Cloud
+          and Server/DC alike, so the deployment never has to be known in
+          advance. A failed or malformed probe logs a WARNING and falls back to
+          10 MB. Never raises.
+          """
+
       async def _attach_session_files(self, issue: str,
                                       file_ids: Sequence[str]) -> List[AttachmentResult]:
           """Resolve, pre-flight and upload each handle. Best-effort, never raises.
 
           Per handle, in order: resolve via SessionFileStore (unknown_handle /
           outside_sandbox / missing_file), then size checks (empty_file,
-          too_large against ``self.max_attachment_bytes``), then upload off the
+          too_large against ``await self._max_attachment_bytes()``), then upload off the
           event loop with ``asyncio.to_thread``. Jira failures map to forbidden /
           rejected / transport_error with a bounded, sanitized `detail`.
           Returns exactly one AttachmentResult per input, order preserved.
@@ -598,8 +619,10 @@ def docx_bytes() -> bytes:
 - [ ] AC7 — A handle from another session is not resolvable.
 - [ ] AC8 — Empty and oversize files are rejected **before** the Jira round trip;
       the Jira client is provably not called.
-- [ ] AC9 — The attachment size limit is read from configuration, not hard-coded;
-      the configured boundary is tested at limit and limit+1.
+- [ ] AC9 — The attachment size limit is **discovered** from
+      `JIRA.attachment_meta()["uploadLimit"]` and overridable by
+      `JIRA_MAX_ATTACHMENT_BYTES`; it is never a constant in code. Tested at the
+      boundary and boundary+1, plus the probe-failure fallback path.
 - [ ] AC10 — `detail` on a failed attachment is at most 500 characters and never a
       raw Jira response body; `error_code` is one of the declared literals.
 - [ ] AC11 — A bad handle prevents comment creation; an upload failure *after*
@@ -612,9 +635,12 @@ def docx_bytes() -> bytes:
       produce a handle.
 - [ ] AC15 — No `aiohttp` multipart upload to Jira and no custom Jira attachment
       endpoint exist in the diff (the Non-Goal is observable, per S12).
-- [ ] AC16 — `ruff check` clean on every changed file; no banned import introduced.
-- [ ] AC17 — Every in-repo caller of the changed signatures and of the upload
-      response shape is updated in this feature (hard cut, no shim).
+- [ ] AC16 — Crossing `SESSION_FILES_WARN_BYTES` logs a WARNING and still stores
+      the file; no code path rejects an upload on an aggregate session quota.
+- [ ] AC17 — Every in-repo caller of the changed signatures is updated in this
+      feature (hard cut, no shim). The upload response has **no** in-repo consumer
+      (audited §8 Q3), so nothing reads it; the admin UI is out of scope (§8 Q5).
+- [ ] AC18 — `ruff check` clean on every changed file; no banned import introduced.
 
 ---
 
@@ -739,6 +765,31 @@ def add_attachment(self, issue, attachment: str | BufferedReader,
     url = self._get_url(f"issue/{issue}/attachments")                        # line 1179
     if jira_attachment.size == 0:
         raise JIRAError("Added empty attachment?!: ...")                     # lines 1198-1202
+
+def attachment_meta(self) -> dict[str, int]:                                 # line 1110
+    """GET attachment/meta -> {"enabled": bool, "uploadLimit": int}."""      # line 1116
+self.deploymentType = None                                                   # line 658
+    self.deploymentType = si.get("deploymentType")                           # line 667
+@property
+def _is_cloud(self) -> bool: return self.deploymentType in ("Cloud",)        # lines 702-704
+```
+
+Admin UI (TypeScript/Svelte — **not modified by this feature**, see §8 Q5):
+
+```ts
+// packages/ai-parrot-server/ui/src/lib/api/agent.ts
+const BASE_PATH = "/api/v1/agents/chat";                                     // line 11
+export const uploadAgentData = async (                                       // line 153
+  agentName: string, formData: FormData, client?: AxiosInstance): Promise<any> => {
+  const response = await http.put(`${BASE_PATH}/${agentName}`, formData, {   // line 159
+    headers: { "Content-Type": "multipart/form-data" } });
+  return response.data;                                                      // caller discards it
+};
+
+// packages/ai-parrot-server/ui/src/lib/components/agents/DataManagementModal.svelte
+message: "Only Excel files (.xlsx, .xls) are allowed.",                      // line 112
+await uploadAgentData(agentId, formData);                                    // line 122
+uploadStatus = { type: "success", message: "Uploaded" };                     // line 123 — hardcoded
 ```
 
 ### Integration Points
@@ -776,7 +827,10 @@ def add_attachment(self, issue, attachment: str | BufferedReader,
 - ~~A size, emptiness or type check before upload~~ — `jira_add_comment` checks
   only `os.path.isfile` (`:2057`); `jira_add_attachment` checks nothing
 - ~~A Jira attachment-size constant or config key anywhere in the repo~~ — none;
-  M3 introduces it
+  M3 introduces it (as discovery + override, not a constant)
+- ~~Any consumer of the `added_files` upload response~~ — audited across `.py`,
+  `.ts`, `.svelte` and `.js`: one producer (`handlers/agent.py:1287-1289`), **zero
+  consumers**. The admin UI calls the endpoint but discards the body
 - ~~Any docx/PDF branch in `Agent.handle_files`~~ — only `.xlsx`, `.xls`, `.csv`
   (`agent.py:404-410`)
 - ~~`.docx` in the Telegram crew MIME allowlist~~ — the default list
@@ -846,8 +900,14 @@ def add_attachment(self, issue, attachment: str | BufferedReader,
   newline-collapsed. A raw Jira error body can be a large HTML page and may carry
   operational detail; `error_code` is the stable thing to branch on.
 - **Disk growth.** Files persist until deleted by hand, by decision. `usage_bytes`
-  exists so an operator can measure a session, and the cleanup procedure is
-  documented in `docs/`. Whether a quota should *reject* uploads is §8 Q4.
+  measures a session and crossing `SESSION_FILES_WARN_BYTES` logs a WARNING; the
+  cleanup procedure is documented in `docs/`. Nothing rejects an upload on an
+  aggregate quota (§8 Q4) — so an unattended deployment *can* fill its disk, and
+  the runbook is the only mitigation. Stated here so the trade-off is explicit.
+- **The admin UI stays blocked.** After this feature a docx can be uploaded over
+  the API and the chat channels, but the admin UI's data modal still refuses it in
+  the browser (§8 Q5, `issue:04dcfd611ebc`). Anyone verifying the fix through that
+  modal will conclude it did not work.
 - **Session id trust.** Scoping by `session_id` alone means isolation is only as
   good as session-id entropy and reuse policy. Accepted; recorded here so a later
   multi-tenant review can find it.
@@ -866,8 +926,9 @@ New configuration (no new package):
 
 | Key | Default | Reason |
 |---|---|---|
-| `JIRA_MAX_ATTACHMENT_BYTES` | `10 * 1024 * 1024` | Pre-flight size limit. Cloud and Server/DC differ and the deployment is unresolved (§8 Q2), so this is configuration, never a constant in code |
+| `JIRA_MAX_ATTACHMENT_BYTES` | unset → **discovered from Jira** | Overrides the discovered limit when set. Unset, the limit comes from `JIRA.attachment_meta()["uploadLimit"]` (`jira/client.py:1110`), cached per client; a failed probe falls back to 10 MB and logs at WARNING. This is why the Cloud-vs-DC question is moot (§8 Q2) |
 | `SESSION_FILES_DIR` | `OUTPUT_DIR / "sessions"` | Root of every session sandbox; must be shared, persistent storage |
+| `SESSION_FILES_WARN_BYTES` | `500 * 1024 * 1024` | Per-session total above which a WARNING is logged. **Reporting only — never rejects an upload** (§8 Q4) |
 
 ---
 
@@ -885,10 +946,11 @@ New configuration (no new package):
 - [x] Scoping of the session root? — *Resolved 2026-10-07*: `session_id` alone (residual risk in §7).
 - [x] Where does the store live? — *Resolved 2026-10-07*: hybrid — a thin `SessionFileStore` owns the sandbox and handles; `FileManagerToolkit` is reused as remote transport and is not modified. This refines the brainstorm's "reuse FileManagerToolkit" after S2/S3/S4 showed it cannot be the store on its own.
 - [x] Sequencing against FEAT-603 / FEAT-608 on `filemanager.py`? — *Resolved by research*: no conflict; FEAT-603 is 21/21 done (2026-09-25), FEAT-608 is 14/14 done (2026-10-05, PR #1596). This feature does not modify `filemanager.py` anyway.
-- [ ] **Q1** — FEAT-637 (`jiratoolkit-template-support`) merges **first**; this feature rebases M3 onto its final `jira_add_comment` signature. Confirm the merge before `/sdd-task`, and re-verify every `jiratoolkit.py` anchor in §6 at that point. — *Owner: Jesus*
-- [ ] **Q2** — Which Jira deployment is the target, Cloud or Server/DC, and under which `auth_type`? Needed to set `JIRA_MAX_ATTACHMENT_BYTES` to the real limit; the default of 10 MB is a placeholder. — *Owner: Jesus*
-- [ ] **Q3** — Which in-repo consumers parse the current `{"message", "added_files"}` upload response (admin UI, wrappers)? AC17 requires updating all of them; the audit is the first task of M4. — *Owner: Jesus*
-- [ ] **Q4** — Should an aggregate per-session byte quota **reject** further uploads, or only be reported for an operator to act on? Escalated from design research S11: the enforcing variant conflicts with the locked "persistent, manual cleanup" decision. Default if unanswered: report only. — *Owner: Jesus*
+- [x] **Q1** — Sequencing against FEAT-637 — *Resolved 2026-10-08*: **FEAT-637 merges first and this feature is blocked behind it in full** (not just M3). State at decision time: FEAT-637 has 5 tasks `TASK-4113..4117`, **all `pending`**, no worktree — so this is a wait on an unstarted feature, not on a pending merge. Accepted deliberately to avoid any conflict on `jiratoolkit.py`. `/sdd-task` must not run until FEAT-637 is merged, and every `jiratoolkit.py` anchor in §6 is re-verified at that point.
+- [x] **Q2** — Attachment size limit — *Resolved 2026-10-08*: **discover it from Jira, with a configuration override**. `jira.JIRA.attachment_meta()` (`jira/client.py:1110`) returns `{"enabled", "uploadLimit"}` for the live deployment, so neither Cloud-vs-DC nor the exact limit has to be known in advance. `JIRA_MAX_ATTACHMENT_BYTES` overrides it when set; a conservative fallback applies when the probe fails. The deployment question is therefore moot and is NOT reopened.
+- [x] **Q3** — Consumers of the upload response — *Resolved 2026-10-08 by audit*: **zero**. `added_files` is read by no `.py`, `.ts`, `.svelte` or `.js` file in the repo — it has one producer (`handlers/agent.py:1287-1289`) and no consumer. The admin UI *does* call the endpoint (`uploadAgentData` → PUT `/api/v1/agents/chat/{agent}`, `ui/src/lib/api/agent.ts:153`) but discards the body (`DataManagementModal.svelte:122`), so the hard cut breaks nothing. Scope decision: **backend only in this feature**; the UI's own gate is deferred — see Q5.
+- [x] **Q4** — Aggregate session quota — *Resolved 2026-10-08*: **report only**. `SessionFileStore.usage_bytes()` plus a WARNING once a configured threshold is crossed, and a documented cleanup procedure. No upload is ever rejected for an aggregate quota — that would add a failure mode the end user cannot clear, and it would contradict the locked "persistent, manual cleanup" decision.
+- [ ] **Q5** *(new, deferred — tracked as `issue:04dcfd611ebc`)* — The admin UI blocks `.docx`/`.pdf` **client-side** at the file picker (`DataManagementModal.svelte:112`: *"Only Excel files (.xlsx, .xls) are allowed."*) and shows a hardcoded "Uploaded" instead of the server's answer. Until that is fixed, the admin UI remains a fourth silent gate on this very use case. Out of scope here by decision; a separate feature owns it. — *Owner: Jesus*
 
 ---
 
@@ -938,10 +1000,16 @@ Summary: **11** confirmed · **0** rejected · **1** escalated.
 - **Exclusive resources**: none — no module mutates shared state outside its own
   files (no lockfile, migration or extension rebuild).
 - **Cross-feature dependencies**:
-  - **FEAT-637 `jiratoolkit-template-support` MUST be merged first** (§8 Q1). It
-    redefines `jira_add_comment` in the same file while keeping
+  - **FEAT-637 `jiratoolkit-template-support` MUST be merged before this feature
+    starts at all** (§8 Q1) — the block is on the whole feature, not only on M3.
+    It redefines `jira_add_comment` in the same file while keeping
     `attachments: List[str]`; M3 then replaces that parameter with `file_ids`.
-    Every `jiratoolkit.py` anchor in §6 must be re-verified after that merge.
+    At decision time FEAT-637 had 5 tasks (`TASK-4113..4117`) all `pending` and no
+    worktree, so **`/sdd-task` for FEAT-639 must not run until FEAT-637 is merged**,
+    and every `jiratoolkit.py` anchor in §6 is re-verified at that point.
+    (M1, M2, M4 and M5 touch no file FEAT-637 touches and could technically have
+    proceeded in parallel; serializing them is a deliberate conflict-avoidance
+    choice, recorded so the cost is visible.)
   - FEAT-603 and FEAT-608 are both complete and merged — no constraint.
 
 ---
@@ -951,3 +1019,4 @@ Summary: **11** confirmed · **0** rejected · **1** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-07 | Jesus | Initial draft from the accepted brainstorm, with codex design research folded in (11 confirmed, 1 escalated) |
+| 0.2 | 2026-10-08 | Jesus | §8 Q1–Q4 resolved and routed into the body: FEAT-637 blocks the whole feature; size limit discovered via `attachment_meta()` with config override; upload response has zero consumers (audited) and the admin UI gate is deferred to `issue:04dcfd611ebc` as new Q5; session quota is reporting-only |
