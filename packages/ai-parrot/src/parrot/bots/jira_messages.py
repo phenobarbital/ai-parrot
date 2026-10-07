@@ -9,6 +9,7 @@ issue keys and Jira status names are substituted verbatim and must never be
 translated. Adding a language means adding a row here, in SUPPORTED_LANGUAGES and
 in GROUNDING_SENTINELS (see docs/prompts/output-language.md).
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

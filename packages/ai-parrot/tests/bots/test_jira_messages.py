@@ -1,4 +1,5 @@
 """Tests for parrot.bots.jira_messages (FEAT-638 TASK-4123)."""
+
 from string import Template
 
 import pytest
