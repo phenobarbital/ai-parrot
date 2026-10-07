@@ -184,6 +184,85 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4136-session-files-operator-docs.md"
+    },
+    {
+      "id": "TASK-4138",
+      "slug": "jira-attachment-result-models-and-size-limit",
+      "title": "Jira attachments \u2014 typed result envelope, error codes and discovered size limit",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: adds only new models/helpers to jiratoolkit.py; no existing tool changes behaviour, and it touches no file another pending task owns.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4138-jira-attachment-result-models-and-size-limit.md"
+    },
+    {
+      "id": "TASK-4139",
+      "slug": "jira-attach-session-files-helper",
+      "title": "_attach_session_files \u2014 resolve, pre-flight and upload handles, best-effort",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4138",
+        "TASK-4128"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies the same file as TASK-4138 (packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py) and imports its AttachmentResult/_bounded_detail/_max_attachment_bytes; also calls SessionFileStore.resolve from TASK-4128.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4139-jira-attach-session-files-helper.md"
+    },
+    {
+      "id": "TASK-4140",
+      "slug": "jira-add-attachment-hard-cut",
+      "title": "jira_add_attachment \u2014 hard cut to session handles",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4139"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies the same file as TASK-4139 (jiratoolkit.py) and delegates to its _attach_session_files().",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4140-jira-add-attachment-hard-cut.md"
+    },
+    {
+      "id": "TASK-4141",
+      "slug": "jira-add-comment-hard-cut",
+      "title": "jira_add_comment \u2014 handles, pre-flight before posting, independent statuses",
+      "feature_id": "FEAT-639",
+      "feature": "jiratoolkit-docx-support",
+      "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4140"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Modifies the same file as TASK-4140 (jiratoolkit.py), whose AddCommentInput/AddAttachmentInput edits are adjacent, and delegates to _attach_session_files().",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4141-jira-add-comment-hard-cut.md"
     }
   ]
 }
