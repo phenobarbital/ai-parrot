@@ -139,7 +139,7 @@
       "feature_id": "FEAT-638",
       "feature": "jiraspecialist-agent-multilang",
       "spec": "sdd/specs/jiraspecialist-agent-multilang.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -151,8 +151,9 @@
       "parallelism_notes": "Imports render_message from TASK-4123 (jira_messages.py); reads self.language created by TASK-4119 (abstract.py); edits test_jira_specialist_grounding.py after TASK-4122 (same file).",
       "assigned_to": null,
       "started_at": "2026-10-07T22:28:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4124-jiraspecialist-localized-messages.md"
+      "completed_at": "2026-10-07T23:01:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4124-jiraspecialist-localized-messages.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4125",
