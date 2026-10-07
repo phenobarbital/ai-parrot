@@ -386,6 +386,67 @@ class TransitionToInput(BaseModel):
     )
 
 
+#: Default pre-flight limit used only when discovery fails.
+DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+#: Maximum characters of Jira diagnostic text returned to the model.
+MAX_ATTACHMENT_DETAIL_CHARS = 500
+
+AttachmentErrorCode = Literal[
+    "unknown_handle", "no_session", "outside_sandbox", "missing_file",
+    "empty_file", "too_large", "forbidden", "rejected", "transport_error",
+]
+
+
+def _bounded_detail(text: Any) -> str:
+    """Collapse *text* to one bounded line safe to hand back to the model.
+
+    A Jira error body can be a multi-kilobyte HTML page; ``error_code`` is the stable
+    signal, this is only for a human reading the transcript.
+
+    Args:
+        text: Any diagnostic value; converted with ``str()``.
+
+    Returns:
+        A single-line string of at most ``MAX_ATTACHMENT_DETAIL_CHARS`` characters.
+    """
+    flat = " ".join(str(text).split())
+    if len(flat) > MAX_ATTACHMENT_DETAIL_CHARS:
+        flat = flat[: MAX_ATTACHMENT_DETAIL_CHARS - 1].rstrip() + "\u2026"
+    return flat
+
+
+class AttachmentResult(BaseModel):
+    """Outcome for exactly ONE input handle. One entry per input, order preserved."""
+
+    file_id: str
+    ok: bool
+    filename: Optional[str] = None
+    attachment_id: Optional[str] = None
+    size: Optional[int] = None
+    error_code: Optional[AttachmentErrorCode] = None
+    detail: Optional[str] = None
+
+
+class JiraAttachmentReport(BaseModel):
+    """Shared envelope returned by BOTH attachment-bearing tools."""
+
+    issue: str
+    attachments: List[AttachmentResult]
+    attached: int
+    failed: int
+
+
+class JiraCommentReport(BaseModel):
+    """jira_add_comment result: comment and attachment outcomes are INDEPENDENT."""
+
+    issue: str
+    comment: Dict[str, Any]
+    comment_ok: bool
+    attachments: List[AttachmentResult]
+    attached: int
+    failed: int
+
+
 class AddAttachmentInput(BaseModel):
     """Input for adding an attachment to an issue."""
 
@@ -1015,6 +1076,61 @@ class JiraToolkit(AbstractToolkit):
             "and update JIRA_USERNAME / JIRA_API_TOKEN, or pass "
             "verify_credentials=False to skip this check."
         )
+
+    async def _max_attachment_bytes(self) -> int:
+        """Resolve this deployment's attachment size limit, cached per client.
+
+        ``JIRA_MAX_ATTACHMENT_BYTES`` wins when set. Otherwise asks the live
+        deployment via ``self.jira.attachment_meta()["uploadLimit"]``, which is
+        correct for Cloud and Server/DC alike. A failed or malformed probe logs a
+        WARNING and falls back to ``DEFAULT_MAX_ATTACHMENT_BYTES``. Never raises.
+
+        Returns:
+            The maximum attachment size in bytes.
+        """
+        raw: Optional[str] = None
+        if (nav_config is not None) and hasattr(nav_config, "get"):
+            try:
+                val = nav_config.get("JIRA_MAX_ATTACHMENT_BYTES")
+                raw = str(val) if val is not None else None
+            except Exception:  # noqa: BLE001 - config lookup must never raise
+                raw = None
+        if raw is None:
+            raw = os.getenv("JIRA_MAX_ATTACHMENT_BYTES")
+        if raw:
+            try:
+                override = int(str(raw).strip())
+                if override > 0:
+                    return override
+            except (TypeError, ValueError):
+                self.logger.warning("Ignoring invalid JIRA_MAX_ATTACHMENT_BYTES=%r", raw)
+
+        client = getattr(self, "jira", None)
+        if client is None:
+            self.logger.warning(
+                "No Jira client to probe attachment limit; using default %d bytes",
+                DEFAULT_MAX_ATTACHMENT_BYTES,
+            )
+            return DEFAULT_MAX_ATTACHMENT_BYTES
+
+        cache = self.__dict__.setdefault("_attachment_limit_cache", {})
+        key = id(client)
+        cached = cache.get(key)
+        if cached is not None and cached[0] is client:
+            return cached[1]
+        try:
+            meta = await asyncio.to_thread(client.attachment_meta)
+            limit = int(meta["uploadLimit"])
+            if limit <= 0:
+                raise ValueError(f"non-positive uploadLimit {limit}")
+        except Exception as exc:  # noqa: BLE001 - discovery never raises
+            self.logger.warning(
+                "Attachment limit discovery failed (%s); using default %d bytes",
+                _bounded_detail(exc), DEFAULT_MAX_ATTACHMENT_BYTES,
+            )
+            return DEFAULT_MAX_ATTACHMENT_BYTES
+        cache[key] = (client, limit)
+        return limit
 
     def _set_jira_client(self):
         """Set the internal Jira client instance."""
