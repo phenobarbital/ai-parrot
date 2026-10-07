@@ -1,4 +1,5 @@
 """Keeps the output-language docs and catalogs in sync (FEAT-638 TASK-4126)."""
+
 from pathlib import Path
 
 # Minimal imports to avoid Cython compilation issues
@@ -42,7 +43,10 @@ def test_layers_reference_documents_output_language():
 def test_layers_reference_has_registry_row():
     """Test that the registry includes the output_language row."""
     text = REFERENCE.read_text(encoding="utf-8")
-    assert "| `output_language` | `OUTPUT_LANGUAGE_LAYER` | 59 | CONFIGURE | Bot-level output language (FEAT-638) |" in text, "Missing registry row"
+    assert (
+        "| `output_language` | `OUTPUT_LANGUAGE_LAYER` | 59 | CONFIGURE | Bot-level output language (FEAT-638) |"
+        in text
+    ), "Missing registry row"
 
 
 def test_layers_reference_has_assembled_order():
