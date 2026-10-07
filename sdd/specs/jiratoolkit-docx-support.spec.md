@@ -412,7 +412,8 @@ class SessionFileToolkit(AbstractToolkit):
 - **Path**: `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` *(modify)*
 - **Responsibility**: One validated, handle-based attachment path behind both
   tools, with one typed envelope and independent comment/attachment statuses.
-- **Depends on**: Module 1; **FEAT-637 merged first** (§8 Q1).
+- **Depends on**: Module 1. FEAT-637 is **merged** (all 5 tasks `done`, 2026-10-07) —
+  the gate in §8 Q1 is satisfied.
 - **Interface Skeleton**:
   ```python
   # modifies packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py
@@ -468,6 +469,9 @@ class SessionFileToolkit(AbstractToolkit):
                                  template: Optional[str] = None,
                                  template_params: Optional[Dict[str, Any]] = None
                                  ) -> Dict[str, Any]:
+          # Signature confirmed against FEAT-637 as merged (jiratoolkit.py:2530-2538,
+          # verified 1f74e23c7): `file_ids` REPLACES `attachments: Optional[List[str]]`;
+          # `body`, `template` and `template_params` are FEAT-637's and are kept verbatim.
           """Comment on an issue, optionally attaching session files.
 
           Attachments are RESOLVED AND PRE-FLIGHTED BEFORE the comment is
@@ -640,13 +644,20 @@ def docx_bytes() -> bytes:
 - [ ] AC17 — Every in-repo caller of the changed signatures is updated in this
       feature (hard cut, no shim). The upload response has **no** in-repo consumer
       (audited §8 Q3), so nothing reads it; the admin UI is out of scope (§8 Q5).
+      Measured surface for the Jira cut (2026-10-08, `1f74e23c7`): **no production
+      caller passes `attachments=`** — the only occurrences are the docstring example
+      (`jiratoolkit.py:2550`) and four call sites in
+      `tests/test_jira_comment_attachments.py`; `jira_add_attachment` is referenced
+      only in `tests/test_jiratoolkit_permissions.py:165-167,236`.
 - [ ] AC18 — `ruff check` clean on every changed file; no banned import introduced.
 
 ---
 
 ## 6. Codebase Contract
 
-> Verified against base commit `e4d2a224e` on `dev`, 2026-10-07.
+> Verified against base commit `e4d2a224e` on `dev`, 2026-10-07; the
+> `jiratoolkit.py` rows were re-verified against `1f74e23c7` on 2026-10-08,
+> after FEAT-637 merged (rev 0.3).
 
 ### Verified Imports
 
@@ -840,18 +851,19 @@ uploadStatus = { type: "success", message: "Uploaded" };                     // 
 
 ### Edit Sites (Blueprint Anchors)
 
-> Verified against base commit `e4d2a224e`. **`/sdd-task` MUST re-run each
-> `grep -c`** — `jiratoolkit.py` is being edited concurrently by FEAT-637, whose
-> merge lands before this feature (§8 Q1), so every anchor in that file will shift.
+> **`/sdd-task` MUST re-run each `grep -c`.** The `jiratoolkit.py` rows below were
+> refreshed on 2026-10-08 against `1f74e23c7`, after FEAT-637 merged — all four
+> anchors drifted (361→389, 455→507, 1748→2169, 2027→2530) but remain unique.
+> `dev` keeps moving, so re-verify again at implementation time.
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
 | `packages/ai-parrot/src/parrot/interfaces/file/session.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/tools/session_files.py` | CREATE | — | — | — |
-| `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` | MODIFY (M3 input schema) | `class AddAttachmentInput(BaseModel):` | `jiratoolkit.py:361` | 1 |
-| `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` | MODIFY (M3 comment schema) | `class AddCommentInput(BaseModel):` | `jiratoolkit.py:455` | 1 |
-| `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` | MODIFY (M3 attachment tool) | `    async def jira_add_attachment(self, issue: str, attachment: str) -> Dict[str, Any]:` | `jiratoolkit.py:1748` | 1 |
-| `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` | MODIFY (M3 comment tool) | `    async def jira_add_comment(` | `jiratoolkit.py:2027` | 1 |
+| `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` | MODIFY (M3 input schema) | `class AddAttachmentInput(BaseModel):` | `jiratoolkit.py:389` | 1 |
+| `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` | MODIFY (M3 comment schema) | `class AddCommentInput(BaseModel):` | `jiratoolkit.py:507` | 1 |
+| `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` | MODIFY (M3 attachment tool) | `    async def jira_add_attachment(self, issue: str, attachment: str) -> Dict[str, Any]:` | `jiratoolkit.py:2169` | 1 |
+| `packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py` | MODIFY (M3 comment tool) | `    async def jira_add_comment(` | `jiratoolkit.py:2530` | 1 |
 | `packages/ai-parrot/src/parrot/bots/agent.py` | MODIFY (M4 ingestion) | `    async def handle_files(self, attachments: Dict[str, Any]) -> List[str]:` | `bots/agent.py:365` | 1 |
 | `packages/ai-parrot-server/src/parrot/handlers/agent.py` | MODIFY (M4 response) | `    async def _handle_attachments(` | `handlers/agent.py:1278` | 1 |
 | `packages/ai-parrot-server/src/parrot/handlers/agent.py` | MODIFY (M4 hoist persistence above this branch) | `                if not query:\n                    return await self._handle_attachments(bot, agent, attachments)` | `handlers/agent.py:1820-1821` | 1 |
@@ -946,7 +958,8 @@ New configuration (no new package):
 - [x] Scoping of the session root? — *Resolved 2026-10-07*: `session_id` alone (residual risk in §7).
 - [x] Where does the store live? — *Resolved 2026-10-07*: hybrid — a thin `SessionFileStore` owns the sandbox and handles; `FileManagerToolkit` is reused as remote transport and is not modified. This refines the brainstorm's "reuse FileManagerToolkit" after S2/S3/S4 showed it cannot be the store on its own.
 - [x] Sequencing against FEAT-603 / FEAT-608 on `filemanager.py`? — *Resolved by research*: no conflict; FEAT-603 is 21/21 done (2026-09-25), FEAT-608 is 14/14 done (2026-10-05, PR #1596). This feature does not modify `filemanager.py` anyway.
-- [x] **Q1** — Sequencing against FEAT-637 — *Resolved 2026-10-08*: **FEAT-637 merges first and this feature is blocked behind it in full** (not just M3). State at decision time: FEAT-637 has 5 tasks `TASK-4113..4117`, **all `pending`**, no worktree — so this is a wait on an unstarted feature, not on a pending merge. Accepted deliberately to avoid any conflict on `jiratoolkit.py`. `/sdd-task` must not run until FEAT-637 is merged, and every `jiratoolkit.py` anchor in §6 is re-verified at that point.
+- [x] **Q1** — Sequencing against FEAT-637 — *Resolved 2026-10-08, and now **satisfied***: FEAT-637 merged on 2026-10-07 (TASK-4113..4117 all `done`, `completed_at` 22:59). The §6 `jiratoolkit.py` anchors were re-verified against `1f74e23c7` on 2026-10-08 — all four drifted and were corrected in rev 0.3. M3 is unblocked.
+  *(History: the gate was set while FEAT-637 was still unstarted; M1/M2/M4/M5 were decomposed first as TASK-4128..4136, M3 in a second pass.)*
 - [x] **Q2** — Attachment size limit — *Resolved 2026-10-08*: **discover it from Jira, with a configuration override**. `jira.JIRA.attachment_meta()` (`jira/client.py:1110`) returns `{"enabled", "uploadLimit"}` for the live deployment, so neither Cloud-vs-DC nor the exact limit has to be known in advance. `JIRA_MAX_ATTACHMENT_BYTES` overrides it when set; a conservative fallback applies when the probe fails. The deployment question is therefore moot and is NOT reopened.
 - [x] **Q3** — Consumers of the upload response — *Resolved 2026-10-08 by audit*: **zero**. `added_files` is read by no `.py`, `.ts`, `.svelte` or `.js` file in the repo — it has one producer (`handlers/agent.py:1287-1289`) and no consumer. The admin UI *does* call the endpoint (`uploadAgentData` → PUT `/api/v1/agents/chat/{agent}`, `ui/src/lib/api/agent.ts:153`) but discards the body (`DataManagementModal.svelte:122`), so the hard cut breaks nothing. Scope decision: **backend only in this feature**; the UI's own gate is deferred — see Q5.
 - [x] **Q4** — Aggregate session quota — *Resolved 2026-10-08*: **report only**. `SessionFileStore.usage_bytes()` plus a WARNING once a configured threshold is crossed, and a documented cleanup procedure. No upload is ever rejected for an aggregate quota — that would add a failure mode the end user cannot clear, and it would contradict the locked "persistent, manual cleanup" decision.
@@ -1020,3 +1033,4 @@ Summary: **11** confirmed · **0** rejected · **1** escalated.
 |---|---|---|---|
 | 0.1 | 2026-10-07 | Jesus | Initial draft from the accepted brainstorm, with codex design research folded in (11 confirmed, 1 escalated) |
 | 0.2 | 2026-10-08 | Jesus | §8 Q1–Q4 resolved and routed into the body: FEAT-637 blocks the whole feature; size limit discovered via `attachment_meta()` with config override; upload response has zero consumers (audited) and the admin UI gate is deferred to `issue:04dcfd611ebc` as new Q5; session quota is reporting-only |
+| 0.3 | 2026-10-08 | Jesus | FEAT-637 merged — §8 Q1 satisfied; the four `jiratoolkit.py` Edit Sites anchors re-verified and corrected against `1f74e23c7` (361→389, 455→507, 1748→2169, 2027→2530); M3's skeleton rebased onto FEAT-637's actual `jira_add_comment` signature; AC17's caller surface measured |
