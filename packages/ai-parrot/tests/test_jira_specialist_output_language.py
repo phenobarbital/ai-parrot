@@ -1,4 +1,5 @@
 """FEAT-638: the real JiraSpecialist system prompt across languages (TASK-4127)."""
+
 from unittest.mock import patch
 
 import pytest
@@ -11,10 +12,12 @@ PLACEHOLDERS = ("$output_language", "$sentinel_not_found", "$sentinel_error")
 
 async def _rendered_prompt(language):
     """Build a real JiraSpecialist, run configure-time prompt resolution, return the prompt."""
-    with patch("redis.asyncio.from_url"), \
-         patch("parrot.bots.jira_specialist.JiraToolkit"), \
-         patch("parrot.bots.jira_specialist.config") as mock_config, \
-         patch("parrot.bots.abstract.dynamic_values") as mock_dv:
+    with (
+        patch("redis.asyncio.from_url"),
+        patch("parrot.bots.jira_specialist.JiraToolkit"),
+        patch("parrot.bots.jira_specialist.config") as mock_config,
+        patch("parrot.bots.abstract.dynamic_values") as mock_dv,
+    ):
         mock_config.get.return_value = "dummy"
         mock_dv.get_all_names.return_value = []
         agent = JiraSpecialist(language=language) if language is not None else JiraSpecialist()
@@ -30,7 +33,7 @@ async def _rendered_prompt(language):
         ("en", "English", "en"),
         ("es", "Spanish", "es"),
         ("es-MX", "Spanish", "es"),
-        ("fr", None, "en"),            # unsupported -> treated as unset
+        ("fr", None, "en"),  # unsupported -> treated as unset
     ],
 )
 async def test_jira_specialist_prompt_language_matrix(language, directive, sentinel_lang):
@@ -57,4 +60,4 @@ async def test_jira_specialist_prompt_language_matrix(language, directive, senti
 @pytest.mark.asyncio
 async def test_language_survives_into_clone_kwargs():
     agent, _ = await _rendered_prompt("es")
-    assert agent._init_kwargs.get("language") == "es"   # clone_for_user rebuilds from _init_kwargs
+    assert agent._init_kwargs.get("language") == "es"  # clone_for_user rebuilds from _init_kwargs
