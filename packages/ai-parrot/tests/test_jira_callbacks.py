@@ -6,20 +6,21 @@ from datetime import datetime
 # Adjust import path if needed, assuming running from project root
 from parrot.bots.jira_specialist import JiraSpecialist, Developer, CallbackResult, CallbackContext, DailyStandupConfig
 
+
 class TestJiraSpecialistCallbacks(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         # Patch Redis
-        self.redis_patcher = patch('redis.asyncio.from_url')
+        self.redis_patcher = patch("redis.asyncio.from_url")
         self.mock_redis = self.redis_patcher.start()
         self.mock_redis_instance = AsyncMock()
         self.mock_redis.return_value = self.mock_redis_instance
 
         # Patch JiraToolkit
-        self.jira_patcher = patch('parrot.bots.jira_specialist.JiraToolkit')
+        self.jira_patcher = patch("parrot.bots.jira_specialist.JiraToolkit")
         self.mock_jira = self.jira_patcher.start()
 
         # Patch config to avoid real file loads or missing env vars
-        self.config_patcher = patch('parrot.bots.jira_specialist.config')
+        self.config_patcher = patch("parrot.bots.jira_specialist.config")
         self.mock_config = self.config_patcher.start()
         self.mock_config.get.return_value = "dummy"
 
@@ -27,7 +28,7 @@ class TestJiraSpecialistCallbacks(unittest.IsolatedAsyncioTestCase):
         # Mock wrapper
         self.mock_wrapper = AsyncMock()
         self.agent.set_wrapper(self.mock_wrapper)
-        
+
         # Mock ask method to simulate tool execution
         self.agent.ask = AsyncMock()
 
@@ -44,7 +45,7 @@ class TestJiraSpecialistCallbacks(unittest.IsolatedAsyncioTestCase):
             chat_id=100,
             user_id=200,
             message_id=300,
-            first_name="Test User"
+            first_name="Test User",
         )
 
         # Execute
@@ -59,8 +60,8 @@ class TestJiraSpecialistCallbacks(unittest.IsolatedAsyncioTestCase):
         # Verify Jira transition call (via self.ask)
         self.agent.ask.assert_called()
         call_args = self.agent.ask.call_args[1]
-        self.assertIn("jira_transition_issue", call_args['question'])
-        self.assertIn("NAV-123", call_args['question'])
+        self.assertIn("jira_transition_issue", call_args["question"])
+        self.assertIn("NAV-123", call_args["question"])
 
         # Verify Redis update
         self.mock_redis_instance.set.assert_called()
@@ -70,12 +71,7 @@ class TestJiraSpecialistCallbacks(unittest.IsolatedAsyncioTestCase):
 
     async def test_on_ticket_skipped(self):
         ctx = CallbackContext(
-            prefix="tskp",
-            payload={"d": "dev1"},
-            chat_id=100,
-            user_id=200,
-            message_id=300,
-            first_name="Test User"
+            prefix="tskp", payload={"d": "dev1"}, chat_id=100, user_id=200, message_id=300, first_name="Test User"
         )
 
         result = await self.agent.on_ticket_skipped(ctx)
@@ -138,6 +134,7 @@ class TestJiraSpecialistCallbacks(unittest.IsolatedAsyncioTestCase):
             "👋 *Ana*, aún no has seleccionado tu ticket para hoy.\n\n¿Necesitas ayuda con la priorización?",
         )
         self.assertIn("Escalación Daily Standup", self.mock_wrapper.bot.send_message.call_args.kwargs["text"])
+
 
 if __name__ == "__main__":
     unittest.main()
