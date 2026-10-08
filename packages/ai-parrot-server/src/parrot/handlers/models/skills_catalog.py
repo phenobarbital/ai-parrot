@@ -16,7 +16,7 @@ evaluation string literals the future import would produce; with it,
 constructing ``SkillCatalogEntry(...)`` raises ``TypeError: Expected
 type, got str`` inside ``datamodel.validation`` (confirmed empirically
 — matches the working, future-import-free ``scheduler/models.py::
-AgentSchedule`` pattern; see ``handlers/models/studio_drafts.py`` for
+ServiceSchedule`` pattern; see ``handlers/models/studio_drafts.py`` for
 the same fix applied to TASK-2513's model).
 """
 

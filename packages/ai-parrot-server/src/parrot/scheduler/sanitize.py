@@ -6,8 +6,8 @@ the type system's reach:
 * **navconfig environment variables** — ``CACHE_HOST`` / ``CACHE_PORT``.
   navconfig's ``fallback=`` only applies when a key is *absent*; a key that is
   present-but-empty (``CACHE_PORT=`` in a ``.env`` file) resolves to ``''``.
-* **the ``navigator.agents_scheduler`` table** — ``schedule_type``,
-  ``scheduler_type`` and the free-form ``schedule_config`` JSONB column, all of
+* **the ``navigator.service_scheduler`` table** — ``schedule_type``,
+  ``backend`` and the free-form ``schedule_config`` JSONB column, all of
   which are written by API callers and hand-edited by operators.
 
 Neither source guarantees a trimmed, non-empty, correctly-typed value, and
@@ -47,7 +47,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import date, datetime
-from typing import Any, Dict, FrozenSet, Iterable, Optional, Set, Tuple
+from typing import Any, Dict, FrozenSet, Optional, Set, Tuple
 
 __all__ = (
     "SchedulerConfigError",
@@ -57,7 +57,6 @@ __all__ = (
     "clean_misfire_grace_time",
     "clean_str",
     "normalize_backend",
-    "normalize_jobstore_alias",
     "normalize_schedule_type",
     "sanitize_redis_settings",
     "sanitize_schedule_config",
@@ -287,61 +286,6 @@ def sanitize_redis_settings(
     }
 
 
-def normalize_jobstore_alias(
-    value: Any,
-    *,
-    available: Optional[Iterable[str]] = None,
-    default: str = "default",
-    strict: bool = False,
-) -> str:
-    """Normalize a ``scheduler_type`` column into a usable jobstore alias.
-
-    ``AsyncIOScheduler.add_job(jobstore=...)`` raises ``KeyError`` for an alias
-    that was never registered — which happens whenever a row says ``'redis'``
-    but the scheduler started with ``use_redis=False``.
-
-    The two callers want different behavior for an unregistered alias:
-
-    * **recovering rows from the database** — fall back to the always-present
-      ``'default'`` store, so an old row keeps running in memory instead of
-      being dropped entirely (``strict=False``);
-    * **an explicit API request** — raise, because silently downgrading a
-      caller's stated durability choice to an in-memory store is worse than
-      telling them Redis is not enabled (``strict=True``).
-
-    Args:
-        value: Raw ``scheduler_type`` value.
-        available: Aliases registered on the scheduler. When ``None`` the
-            registration check is skipped.
-        default: Alias used when ``value`` is blank, or unregistered and not
-            ``strict``.
-        strict: Raise instead of falling back when the alias is unregistered.
-
-    Returns:
-        A jobstore alias safe to pass to ``add_job()``.
-
-    Raises:
-        SchedulerConfigError: When ``strict`` and the alias is unregistered.
-    """
-    alias = clean_str(value, default=default, lower=True) or default
-    if available is not None:
-        known: Set[str] = {str(item).lower() for item in available}
-        if alias not in known:
-            if strict:
-                raise SchedulerConfigError(
-                    f"Jobstore {alias!r} is not enabled on this scheduler "
-                    f"(available: {', '.join(sorted(known)) or 'none'})"
-                )
-            logger.warning(
-                "Scheduler config: jobstore %r is not registered (available: %s); " "falling back to %r",
-                alias,
-                sorted(known) or "none",
-                default,
-            )
-            return default
-    return alias
-
-
 BACKENDS: Tuple[str, ...] = ("db", "redis")
 
 
@@ -431,7 +375,7 @@ def _known_schedule_types() -> Set[str]:
     Imported lazily so this module stays importable without pulling in
     ``manager`` (which imports aiohttp, asyncdb and navigator).
     """
-    from .manager import ScheduleType  # local import — avoids a circular import
+    from .base import ScheduleType  # local import — avoids a circular import
 
     return {member.value for member in ScheduleType}
 
