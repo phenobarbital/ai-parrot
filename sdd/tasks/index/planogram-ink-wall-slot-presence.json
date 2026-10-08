@@ -1,0 +1,132 @@
+{
+  "feature": "planogram-ink-wall-slot-presence",
+  "feature_id": "FEAT-645",
+  "spec": "sdd/specs/planogram-ink-wall-slot-presence.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-08T21:04:20.808061+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4166",
+      "slug": "descriptor-sku",
+      "title": "Preserve descriptor SKU in native and page1 definitions",
+      "feature_id": "FEAT-645",
+      "feature": "planogram-ink-wall-slot-presence",
+      "spec": "sdd/specs/planogram-ink-wall-slot-presence.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No task dependencies: modifies definition.py and creates test_descriptor_sku.py; no other root task writes these files.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4166-descriptor-sku.md"
+    },
+    {
+      "id": "TASK-4167",
+      "slug": "reporting-policy",
+      "title": "Validate and resolve reporting policy overrides",
+      "feature_id": "FEAT-645",
+      "feature": "planogram-ink-wall-slot-presence",
+      "spec": "sdd/specs/planogram-ink-wall-slot-presence.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4166"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4166 must land first because both tasks modify comparison/definition.py; preserve its SKU field and validator.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4167-reporting-policy.md"
+    },
+    {
+      "id": "TASK-4168",
+      "slug": "reporting-layout",
+      "title": "Enable reporting defaults only for ink-wall layouts",
+      "feature_id": "FEAT-645",
+      "feature": "planogram-ink-wall-slot-presence",
+      "spec": "sdd/specs/planogram-ink-wall-slot-presence.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4167"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes ReportingPolicy from TASK-4167 (comparison/definition.py); writes layout.py, types/ink_wall.py and its own new test file only.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4168-reporting-layout.md"
+    },
+    {
+      "id": "TASK-4169",
+      "slug": "slot-presence",
+      "title": "Add tri-state slot-presence contracts and aggregation",
+      "feature_id": "FEAT-645",
+      "feature": "planogram-ink-wall-slot-presence",
+      "spec": "sdd/specs/planogram-ink-wall-slot-presence.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4167"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes ReportingPolicy from TASK-4167 and Descriptors.sku from its TASK-4166 ancestor (comparison/definition.py); independent of TASK-4168 layout defaults.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4169-slot-presence.md"
+    },
+    {
+      "id": "TASK-4170",
+      "slug": "reporting-projection",
+      "title": "Project expected model labels without changing compliance scores",
+      "feature_id": "FEAT-645",
+      "feature": "planogram-ink-wall-slot-presence",
+      "spec": "sdd/specs/planogram-ink-wall-slot-presence.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4169"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes facing_presence from TASK-4169 (comparison/presence.py) and ReportingPolicy from its TASK-4167 ancestor; writes projection.py and its own tests.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4170-reporting-projection.md"
+    },
+    {
+      "id": "TASK-4171",
+      "slug": "reporting-wiring",
+      "title": "Expose slot presence through the pipeline and handler",
+      "feature_id": "FEAT-645",
+      "feature": "planogram-ink-wall-slot-presence",
+      "spec": "sdd/specs/planogram-ink-wall-slot-presence.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4168",
+        "TASK-4170"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Consumes ink-wall LayoutProfile.reporting defaults from TASK-4168 and policy-enabled project_compliance from TASK-4170; TASK-4169 presence helpers and ComparisonResult.products_found are transitive inputs.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4171-reporting-wiring.md"
+    }
+  ]
+}
