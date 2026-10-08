@@ -24,7 +24,15 @@ async def _decode(response: web.Response) -> dict:
 
 
 def _definition(*, schedule_id: str | None = None) -> JobDefinition:
-    return JobDefinition(schedule_id=schedule_id or str(uuid.uuid4()), backend="db", target_kind="agent", target_name="test_agent", prompt="do the thing", schedule_type="interval", schedule_config={"minutes": 5})
+    return JobDefinition(
+        schedule_id=schedule_id or str(uuid.uuid4()),
+        backend="db",
+        target_kind="agent",
+        target_name="test_agent",
+        prompt="do the thing",
+        schedule_type="interval",
+        schedule_config={"minutes": 5},
+    )
 
 
 class _FakeBot:
@@ -148,32 +156,62 @@ class TestHandlerDispatch:
 
     @pytest.mark.asyncio
     async def test_patch_run_now_dispatches_to_manager(self, app, fake_manager) -> None:
-        response = await _make_handler(SchedulerJobsHandler, app, method="PATCH", match_info={"schedule_id": "sched-1"}, json_body={"action": "run_now"}).patch()
+        response = await _make_handler(
+            SchedulerJobsHandler,
+            app,
+            method="PATCH",
+            match_info={"schedule_id": "sched-1"},
+            json_body={"action": "run_now"},
+        ).patch()
         assert response.status == 200
         fake_manager.run_schedule_now.assert_awaited_once_with("sched-1")
 
     @pytest.mark.asyncio
     async def test_patch_run_now_conflict_maps_to_409(self, app, fake_manager) -> None:
         fake_manager.run_schedule_now = AsyncMock(side_effect=SchedulerRunNowConflictError("already active"))
-        response = await _make_handler(SchedulerJobsHandler, app, method="PATCH", match_info={"schedule_id": "sched-1"}, json_body={"action": "run_now"}).patch()
+        response = await _make_handler(
+            SchedulerJobsHandler,
+            app,
+            method="PATCH",
+            match_info={"schedule_id": "sched-1"},
+            json_body={"action": "run_now"},
+        ).patch()
         assert response.status == 409
 
     @pytest.mark.asyncio
     async def test_patch_run_now_unavailable_maps_to_503(self, app, fake_manager) -> None:
         fake_manager.run_schedule_now = AsyncMock(side_effect=SchedulerUnavailableError("coordination unavailable"))
-        response = await _make_handler(SchedulerJobsHandler, app, method="PATCH", match_info={"schedule_id": "sched-1"}, json_body={"action": "run_now"}).patch()
+        response = await _make_handler(
+            SchedulerJobsHandler,
+            app,
+            method="PATCH",
+            match_info={"schedule_id": "sched-1"},
+            json_body={"action": "run_now"},
+        ).patch()
         assert response.status == 503
 
     @pytest.mark.asyncio
     async def test_patch_pause_unchanged(self, app, fake_manager) -> None:
-        response = await _make_handler(SchedulerJobsHandler, app, method="PATCH", match_info={"schedule_id": "sched-1"}, json_body={"action": "pause"}).patch()
+        response = await _make_handler(
+            SchedulerJobsHandler,
+            app,
+            method="PATCH",
+            match_info={"schedule_id": "sched-1"},
+            json_body={"action": "pause"},
+        ).patch()
         assert response.status == 200
         fake_manager.pause_schedule.assert_awaited_once_with("sched-1")
 
     @pytest.mark.asyncio
     async def test_patch_update_error_maps_to_400(self, app, fake_manager) -> None:
         fake_manager.update_schedule = AsyncMock(side_effect=SchedulerConfigError("bad config"))
-        response = await _make_handler(SchedulerJobsHandler, app, method="PATCH", match_info={"schedule_id": "sched-1"}, json_body={"prompt": "new"}).patch()
+        response = await _make_handler(
+            SchedulerJobsHandler,
+            app,
+            method="PATCH",
+            match_info={"schedule_id": "sched-1"},
+            json_body={"prompt": "new"},
+        ).patch()
         assert response.status == 400
 
     @pytest.mark.asyncio

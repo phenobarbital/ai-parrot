@@ -39,7 +39,15 @@ def _manager() -> AgentSchedulerManager:
 
 
 def _definition() -> JobDefinition:
-    return JobDefinition(schedule_id=str(uuid.uuid4()), backend="db", target_kind="agent", target_name="agent", prompt="run", schedule_type="interval", schedule_config={"minutes": 5})
+    return JobDefinition(
+        schedule_id=str(uuid.uuid4()),
+        backend="db",
+        target_kind="agent",
+        target_name="agent",
+        prompt="run",
+        schedule_type="interval",
+        schedule_config={"minutes": 5},
+    )
 
 
 @pytest.mark.asyncio

@@ -19,6 +19,7 @@ class DummyPool:
     async def acquire(self):
         return DummyAcquire()
 
+
 from parrot.scheduler import AgentSchedulerManager
 from parrot.scheduler.models import FireContext, JobDefinition, ServiceSchedule
 
@@ -41,7 +42,7 @@ async def test_schedule_creation(monkeypatch):
         target_name="TestAgent",
         schedule_type="daily",
         schedule_config={"hour": 10, "minute": 0},
-        prompt="Test prompt"
+        prompt="Test prompt",
     )
 
     assert schedule.target_name == "TestAgent"
@@ -59,11 +60,13 @@ async def test_execute_crew_job_uses_registered_crew(monkeypatch):
             self.calls = []
 
         async def run_sequential(self, query: str, agent_sequence=None):
-            self.calls.append({
-                'query': query,
-                'agent_sequence': agent_sequence,
-            })
-            return {'status': 'ok'}
+            self.calls.append(
+                {
+                    "query": query,
+                    "agent_sequence": agent_sequence,
+                }
+            )
+            return {"status": "ok"}
 
     class DummyRegistry:
         async def get_instance(self, _name):
@@ -91,16 +94,18 @@ async def test_execute_crew_job_uses_registered_crew(monkeypatch):
         method_name="run_sequential",
         schedule_type="interval",
         schedule_config={"minutes": 5},
-        metadata={'agent_sequence': ['writer', 'editor']},
-        send_result={'recipients': ['user@example.com']},
+        metadata={"agent_sequence": ["writer", "editor"]},
+        send_result={"recipients": ["user@example.com"]},
     )
     result = await scheduler._execute_job(definition, FireContext.for_fire("123", datetime.now().astimezone()))
 
-    assert result == {'status': 'ok'}
-    assert crew.calls == [{
-        'query': 'Write the report',
-        'agent_sequence': ['writer', 'editor'],
-    }]
+    assert result == {"status": "ok"}
+    assert crew.calls == [
+        {
+            "query": "Write the report",
+            "agent_sequence": ["writer", "editor"],
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -122,12 +127,12 @@ async def test_handle_job_success_prefers_callback(monkeypatch):
         target_name="Agent",
         schedule_type="interval",
         schedule_config={"minutes": 5},
-        send_result={'recipients': ['user@example.com']},
+        send_result={"recipients": ["user@example.com"]},
     )
     await scheduler._handle_job_success(definition, {"value": 1}, callback)
 
     assert observed == [{"value": 1}]
-    send_email_mock.assert_awaited_once_with(definition, {"value": 1}, {'recipients': ['user@example.com']})
+    send_email_mock.assert_awaited_once_with(definition, {"value": 1}, {"recipients": ["user@example.com"]})
 
 
 @pytest.mark.asyncio
@@ -144,12 +149,12 @@ async def test_handle_job_success_sends_email_when_configured(monkeypatch):
         target_name="Agent",
         schedule_type="interval",
         schedule_config={"minutes": 5},
-        send_result={'recipients': ['user@example.com']},
+        send_result={"recipients": ["user@example.com"]},
     )
     await scheduler._handle_job_success(definition, {"value": 1}, None)
 
     send_email_mock.assert_awaited_once_with(
         definition,
         {"value": 1},
-        {'recipients': ['user@example.com']},
+        {"recipients": ["user@example.com"]},
     )

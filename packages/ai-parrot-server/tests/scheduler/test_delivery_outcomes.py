@@ -19,7 +19,14 @@ def manager(monkeypatch: pytest.MonkeyPatch) -> AgentSchedulerManager:
 
 
 def _definition() -> JobDefinition:
-    return JobDefinition(schedule_id="s1", backend="db", target_kind="agent", target_name="agent", schedule_type="interval", schedule_config={"minutes": 5})
+    return JobDefinition(
+        schedule_id="s1",
+        backend="db",
+        target_kind="agent",
+        target_name="agent",
+        schedule_type="interval",
+        schedule_config={"minutes": 5},
+    )
 
 
 def _fire() -> FireContext:
@@ -31,20 +38,30 @@ def _cb(response=None, exc=None):
 
 
 async def test_handle_job_success_isolates_callbacks(manager: AgentSchedulerManager) -> None:
-    definition = _definition().model_copy(update={"callbacks": [{"type": "send_email_report"}], "send_result": {"recipients": ["a@x"]}})
-    with (patch("parrot.scheduler.base.build_scheduler_callback", return_value=_cb(exc=RuntimeError("boom"))), patch.object(manager, "_send_result_email", new=AsyncMock(return_value={"status": "success"})) as send_result):
+    definition = _definition().model_copy(
+        update={"callbacks": [{"type": "send_email_report"}], "send_result": {"recipients": ["a@x"]}}
+    )
+    with (
+        patch("parrot.scheduler.base.build_scheduler_callback", return_value=_cb(exc=RuntimeError("boom"))),
+        patch.object(manager, "_send_result_email", new=AsyncMock(return_value={"status": "success"})) as send_result,
+    ):
         outcomes = await manager._handle_job_success(definition, "res", None)
     assert [outcome["status"] for outcome in outcomes] == ["failed", "sent"]
     send_result.assert_awaited_once()
 
 
-@pytest.mark.parametrize("statuses,expected", [(["sent", "saved"], "ok"), (["sent", "failed"], "partial"), (["failed"], "failed"), ([], None)])
+@pytest.mark.parametrize(
+    "statuses,expected",
+    [(["sent", "saved"], "ok"), (["sent", "failed"], "partial"), (["failed"], "failed"), ([], None)],
+)
 def test_aggregate_delivery_status(statuses: list[str], expected: str | None) -> None:
     outcomes = [{"callback": "c", "status": status, "error": None} for status in statuses]
     assert aggregate_delivery_status(outcomes) == expected
 
 
-async def test_process_job_success_stamps_delivery(manager: AgentSchedulerManager, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_process_job_success_stamps_delivery(
+    manager: AgentSchedulerManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     definition = _definition()
     outcomes = [{"callback": "c", "status": "failed", "error": "x"}]
     monkeypatch.setattr(manager, "_handle_job_success", AsyncMock(return_value=outcomes))
@@ -57,7 +74,11 @@ async def test_process_job_success_stamps_delivery(manager: AgentSchedulerManage
     assert state.last_delivery_at is not None
 
 
-async def test_process_job_success_ignores_delivery_store_failure(manager: AgentSchedulerManager, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_process_job_success_ignores_delivery_store_failure(
+    manager: AgentSchedulerManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     manager._memory_state.stamp_delivery = AsyncMock(side_effect=RuntimeError("boom"))
-    monkeypatch.setattr(manager, "_handle_job_success", AsyncMock(return_value=[{"callback": "c", "status": "sent", "error": None}]))
+    monkeypatch.setattr(
+        manager, "_handle_job_success", AsyncMock(return_value=[{"callback": "c", "status": "sent", "error": None}])
+    )
     await manager._process_job_success(_definition(), _fire(), "result", None)
