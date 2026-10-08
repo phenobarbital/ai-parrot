@@ -10,7 +10,7 @@ tags: [scheduler, apscheduler, target-registry, service-scheduler, hard-cut, run
 **Feature ID**: FEAT-644
 **Date**: 2026-10-08
 **Author**: Jesus Lara (spec drafted by Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-server 1.3.0 (breaking; current `parrot.server.version.__version__` is `1.2.0`)
 **Source**: GitHub issue [phenobarbital/ai-parrot#1572](https://github.com/phenobarbital/ai-parrot/issues/1572) · brainstorm `sdd/proposals/scheduler-manager-base.brainstorm.md` (accepted) · design research `sdd/state/FEAT-644/design_research/`
 
