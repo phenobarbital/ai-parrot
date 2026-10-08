@@ -34,6 +34,11 @@ class MessageTemplate:
 
 JIRA_MESSAGES: Final[dict[str, dict[str, MessageTemplate]]] = {
     "en": {
+        "standup_greeting": MessageTemplate(
+            "☀️ Good morning, *${name}*!\n\nYou have *${count}* assigned tickets. Which one will you work on today?\n",
+            frozenset({"name", "count"}),
+        ),
+        "standup_skip_button": MessageTemplate("⏭️ I already have a plan for today", frozenset()),
         "transition_error": MessageTemplate("⚠️ Error transitioning ${ticket_key}", frozenset({"ticket_key"})),
         "transition_ok": MessageTemplate("✅ ${ticket_key} → ${status}", frozenset({"ticket_key", "status"})),
         "transition_edit": MessageTemplate(
@@ -57,6 +62,11 @@ JIRA_MESSAGES: Final[dict[str, dict[str, MessageTemplate]]] = {
         ),
     },
     "es": {
+        "standup_greeting": MessageTemplate(
+            "☀️ Buenos días, *${name}*!\n\nTienes *${count}* tickets asignados. ¿Cuál trabajarás hoy?\n",
+            frozenset({"name", "count"}),
+        ),
+        "standup_skip_button": MessageTemplate("⏭️ Ya tengo plan para hoy", frozenset()),
         "transition_error": MessageTemplate("⚠️ Error transicionando ${ticket_key}", frozenset({"ticket_key"})),
         "transition_ok": MessageTemplate("✅ ${ticket_key} → ${status}", frozenset({"ticket_key", "status"})),
         "transition_edit": MessageTemplate(
