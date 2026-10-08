@@ -1,10 +1,11 @@
 """Target-agnostic scheduler base (FEAT-644): resolver contract and registry."""
+
 from __future__ import annotations
 
 import inspect
 import logging
 from enum import Enum
-from typing import Any, Optional, Protocol, Sequence, runtime_checkable
+from typing import Any, Protocol, Sequence, runtime_checkable
 
 from .models import FireContext, JobDefinition, utcnow
 
@@ -66,7 +67,9 @@ class TargetResolver(Protocol):
 
     def derive_target_id(self, target: Any) -> str | None: ...
 
-    def build_call(self, target: Any, definition: JobDefinition, fire: FireContext) -> tuple[list[Any], dict[str, Any]]: ...
+    def build_call(
+        self, target: Any, definition: JobDefinition, fire: FireContext
+    ) -> tuple[list[Any], dict[str, Any]]: ...
 
 
 class TargetRegistry:

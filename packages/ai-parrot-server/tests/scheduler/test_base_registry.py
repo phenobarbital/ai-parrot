@@ -1,4 +1,5 @@
 """Tests for the scheduler target registry and service resolver."""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -84,6 +85,7 @@ def test_build_call_requires_method_name() -> None:
 
 def test_build_call_enforces_allowlist() -> None:
     """A service call is constrained to its registered methods."""
+
     class Service:
         def run(self) -> None:
             """Run the service."""
@@ -106,6 +108,7 @@ def test_private_method_rejected() -> None:
 
 def test_fire_context_injected_by_signature() -> None:
     """Fire fields follow declared signatures, kwargs, and wrapped functions."""
+
     def declared(prompt: str, *, fire_id: str | None = None) -> None:
         """Accept a declared fire ID."""
 
@@ -129,6 +132,7 @@ def test_fire_context_injected_by_signature() -> None:
 
 def test_apply_prompt_signature_matches_legacy() -> None:
     """Prompt injection preserves the legacy positional, args, and kwargs rules."""
+
     def positional(prompt: str) -> None:
         """Accept one positional prompt."""
 
