@@ -54,6 +54,8 @@ except ImportError as e:  # pragma: no cover - optional
     raise ImportError("Please install the 'jira' package: pip install jira") from e
 
 from parrot.tools.manager import ToolManager
+from parrot.interfaces.file.session import SessionFileError, SessionFileStore
+from parrot.utils.helpers import current_context
 from parrot.tools.config_schema import ConfigOption
 from parrot.auth.exceptions import AuthorizationRequired
 from parrot.template import JinjaConfig, TemplateEngine
@@ -2287,6 +2289,109 @@ class JiraToolkit(AbstractToolkit):
                     f"error: {exc}"
                 ) from exc
         return result
+
+    def _session_store(self) -> SessionFileStore:
+        """Lazily build the session store shared by this toolkit instance.
+
+        The store is stateless per session, so one cached instance is safe.
+        """
+        store = getattr(self, "_session_file_store", None)
+        if store is None:
+            store = SessionFileStore()
+            self._session_file_store = store
+        return store
+
+    async def _attach_session_files(
+        self, issue: str, file_ids: Sequence[str]
+    ) -> List[AttachmentResult]:
+        """Resolve, pre-flight and upload each handle. Best-effort, never raises.
+
+        Per handle, in order: resolve via SessionFileStore (unknown_handle /
+        outside_sandbox / missing_file), then size checks (empty_file, too_large
+        against await self._max_attachment_bytes()), then upload off the event loop.
+        Jira failures map to forbidden / rejected / transport_error with a bounded,
+        sanitized detail. Returns exactly one AttachmentResult per input, order preserved.
+
+        Args:
+            issue: Issue key to attach to.
+            file_ids: Session file handles.
+
+        Returns:
+            One AttachmentResult per input handle, in input order.
+        """
+        ctx = current_context()
+        session_id = getattr(ctx, "session_id", None) if ctx else None
+        if not session_id:
+            return [
+                AttachmentResult(
+                    file_id=fid, ok=False, error_code="no_session",
+                    detail="No session is bound to this request.",
+                )
+                for fid in file_ids
+            ]
+        limit = await self._max_attachment_bytes()
+        store = self._session_store()
+        results: List[AttachmentResult] = []
+        for fid in file_ids:
+            try:
+                record, path = await store.resolve(session_id, fid)
+            except SessionFileError as exc:
+                results.append(AttachmentResult(
+                    file_id=fid, ok=False, error_code=exc.code, detail=_bounded_detail(exc),
+                ))
+                continue
+            except Exception as exc:  # noqa: BLE001 - best-effort contract
+                self.logger.warning("Session file resolve failed: %s", type(exc).__name__)
+                results.append(AttachmentResult(
+                    file_id=fid, ok=False, error_code="unknown_handle", detail=_bounded_detail(exc),
+                ))
+                continue
+            if record.size == 0:
+                results.append(AttachmentResult(
+                    file_id=fid, ok=False, filename=record.filename, size=0,
+                    error_code="empty_file", detail="The file is empty; Jira rejects empty attachments.",
+                ))
+                continue
+            if record.size > limit:
+                results.append(AttachmentResult(
+                    file_id=fid, ok=False, filename=record.filename, size=record.size,
+                    error_code="too_large",
+                    detail=f"File is {record.size} bytes; the attachment limit is {limit} bytes.",
+                ))
+                continue
+            try:
+                uploaded = await asyncio.to_thread(
+                    self.jira.add_attachment, issue=issue, attachment=str(path)
+                )
+            except JIRAError as exc:
+                status = getattr(exc, "status_code", None)
+                if status in (401, 403):
+                    code = "forbidden"
+                elif isinstance(status, int) and 400 <= status < 500:
+                    code = "rejected"
+                else:
+                    code = "transport_error"
+                results.append(AttachmentResult(
+                    file_id=fid, ok=False, filename=record.filename, size=record.size,
+                    error_code=code,
+                    detail=_bounded_detail(f"HTTP {status}: {getattr(exc, 'text', '') or exc}"),
+                ))
+                continue
+            except Exception as exc:  # noqa: BLE001 - best-effort contract
+                results.append(AttachmentResult(
+                    file_id=fid, ok=False, filename=record.filename, size=record.size,
+                    error_code="transport_error", detail=_bounded_detail(exc),
+                ))
+                continue
+            att_id = getattr(uploaded, "id", None)
+            size = getattr(uploaded, "size", None)
+            results.append(AttachmentResult(
+                file_id=fid, ok=True,
+                filename=getattr(uploaded, "filename", None) or record.filename,
+                attachment_id=str(att_id) if att_id is not None else None,
+                size=size if isinstance(size, int) else record.size,
+            ))
+        return results
 
     @requires_permission("jira.write")
     @tool_schema(AddAttachmentInput)
