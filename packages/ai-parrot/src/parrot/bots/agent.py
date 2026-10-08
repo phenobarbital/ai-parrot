@@ -415,9 +415,7 @@ class BasicAgent(Chatbot, NotificationMixin):
 
                 # Persist first: the bytes must survive even if parsing fails.
                 if session_id:
-                    record = await self._session_store().put_bytes(
-                        str(session_id), filename, content, origin="upload"
-                    )
+                    record = await self._session_store().put_bytes(str(session_id), filename, content, origin="upload")
                     result["files"].append(record.model_dump(mode="json"))
                 else:
                     result["errors"].append({"filename": filename, "error": "no bound session"})

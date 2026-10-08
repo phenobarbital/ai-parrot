@@ -1,4 +1,5 @@
 """BasicAgent.handle_files persists every upload (FEAT-639, TASK-4132)."""
+
 from unittest.mock import MagicMock
 
 import pytest
