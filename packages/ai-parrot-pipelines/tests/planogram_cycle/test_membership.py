@@ -155,7 +155,9 @@ def test_hole_inside_the_block_is_not_a_row_gap():
 
 def _bay_row(row: int, indices, prefix: str = "b"):
     return [
-        _shape(f"{prefix}{row}_{i}", 100 + i * 150, 400 + row * 300, w=100, h=40, kind=ShapeKind.PRICE_TAG, row_index=row)
+        _shape(
+            f"{prefix}{row}_{i}", 100 + i * 150, 400 + row * 300, w=100, h=40, kind=ShapeKind.PRICE_TAG, row_index=row
+        )
         for i in indices
     ]
 
