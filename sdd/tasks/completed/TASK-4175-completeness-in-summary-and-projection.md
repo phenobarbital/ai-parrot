@@ -311,3 +311,6 @@ See the test stubs in the Implementation Blueprint (spec §4 M2 rows).
 **Notes**:
 
 **Deviations from spec**: none
+
+
+**Completion Note (sdd-worker)**: merged via coder_merge; touched-module tests pass (100 passed, 2 skipped).

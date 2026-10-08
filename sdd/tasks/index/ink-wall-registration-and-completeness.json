@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-08T22:58:05Z",
-  "completed_at": null,
+  "completed_at": "2026-10-08T23:10:41+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -35,7 +35,7 @@
       "feature_id": "FEAT-646",
       "feature": "ink-wall-registration-and-completeness",
       "spec": "sdd/specs/ink-wall-registration-and-completeness.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "depends on TASK-4174: imports CompletenessPolicy (comparison/definition.py) and reads LayoutProfile.completeness via ctx.layout in stages/compare.py.",
       "assigned_to": null,
       "started_at": "2026-10-08T22:59:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4175-completeness-in-summary-and-projection.md"
+      "completed_at": "2026-10-08T23:10:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4175-completeness-in-summary-and-projection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4176",
@@ -93,7 +94,7 @@
       "feature_id": "FEAT-646",
       "feature": "ink-wall-registration-and-completeness",
       "spec": "sdd/specs/ink-wall-registration-and-completeness.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,8 +106,9 @@
       "parallelism_notes": "depends on TASK-4174 (reads LayoutProfile.definition_gap_fill, layout.py), TASK-4176 (calls build_slots(expected_facings=), perception/slots.py) and TASK-4177 (BBY560 edge-tag test asserts _block_span behaviour, perception/membership.py).",
       "assigned_to": null,
       "started_at": "2026-10-08T22:59:40+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4178-perceive-expected-facings-and-bby560.md"
+      "completed_at": "2026-10-08T23:10:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4178-perceive-expected-facings-and-bby560.md",
+      "verification": "verified"
     }
   ]
 }
