@@ -11,7 +11,7 @@ from PIL import Image
 
 from parrot.models.detections import AisleConfig, PlanogramDescription
 
-from ..comparison.definition import ReportingPolicy, SlotsDefinition
+from ..comparison.definition import CompletenessPolicy, ReportingPolicy, SlotsDefinition
 from ..comparison.identity import resolve_identity  # noqa: F401 - historical import path (spec §2 Stage 3)
 from ..contracts import (
     ComparisonResult,
@@ -75,6 +75,8 @@ class InkWall(AbstractPlanogramType):
             descriptor_fields=list(_INK_DESCRIPTORS),
             required_descriptor_fields=list(_INK_REQUIRED),
             reporting=ReportingPolicy(product_label="product", slot_presence=True),
+            definition_gap_fill=True,
+            completeness=CompletenessPolicy(min_coverage=0.9, min_shelf_coverage=0.8),
         )
 
     def _ensure_layout(self, ctx: CycleContext) -> LayoutProfile:

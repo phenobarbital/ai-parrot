@@ -221,3 +221,6 @@ See the test stubs in the Implementation Blueprint (spec §4 M3 rows).
 **Notes**:
 
 **Deviations from spec**: none
+
+
+**Completion Note (sdd-worker)**: merged via coder_merge; tests for touched modules pass (87 passed, PYTHONPATH-scoped). Merge-tier sweep showed pre-existing env failures (parrot.utils.types Cython .so, ocr_reader pyproject pillow) in files this feature does not touch.
