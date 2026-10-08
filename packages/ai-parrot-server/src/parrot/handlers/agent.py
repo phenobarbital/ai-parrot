@@ -2293,7 +2293,7 @@ class AgentTalk(BaseView):
                 if manager is not None:
                     try:
                         ref = agent_tooling_ref(await manager.get_bot(agent_name))
-                    except Exception:   # unknown agent: legacy name-based key
+                    except Exception:  # unknown agent: legacy name-based key
                         ref = agent_name
                 session_key = f"{ref}_tool_manager"
                 tool_manager = request_session.get(session_key)
