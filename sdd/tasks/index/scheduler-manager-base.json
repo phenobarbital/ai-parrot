@@ -389,6 +389,27 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4165-scheduler-integration-tests-ledger.md"
+    },
+    {
+      "id": "TASK-4172",
+      "slug": "namespace-imports-stale-host-assertions",
+      "title": "Fix the two stale host-layout assertions in test_namespace_imports.py",
+      "feature_id": "FEAT-644",
+      "feature": "scheduler-manager-base",
+      "spec": "sdd/specs/scheduler-manager-base.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4163"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Ledger promotion of issue:e523973539f5. Depends on TASK-4163, which also modifies packages/ai-parrot-server/tests/test_namespace_imports.py (adds the scheduler/base.py row + black reformat); this task edits that file after it.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4172-namespace-imports-stale-host-assertions.md",
+      "discovered_from": "issue:e523973539f5"
     }
   ]
 }
