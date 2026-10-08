@@ -1,4 +1,5 @@
 """Run-state persistence for scheduled jobs (FEAT-644 spec §3 Module 2)."""
+
 from __future__ import annotations
 
 import logging

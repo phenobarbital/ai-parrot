@@ -1,4 +1,5 @@
 """Tests for scheduler run-state stores."""
+
 import uuid
 from typing import Any
 
@@ -82,7 +83,9 @@ async def test_memory_threshold_crossed_once(fire: FireContext) -> None:
     """Only the failure that reaches the threshold reports the crossing."""
     store = MemoryRunState()
 
-    results = [await store.stamp_failure("job-1", status="error", error="bad", fire=fire, threshold=3) for _ in range(3)]
+    results = [
+        await store.stamp_failure("job-1", status="error", error="bad", fire=fire, threshold=3) for _ in range(3)
+    ]
 
     assert [crossed for _, crossed in results] == [False, False, True]
     assert results[-1][0].consecutive_failures == 3
