@@ -220,7 +220,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -231,8 +231,9 @@
       "parallelism_notes": "Modifies base.py after TASK-4156 (uses _locate, CodeJobRecord registry, add/serialize helpers). Calls delivery callbacks with target_name= (keyword renamed by TASK-4153 in scheduler/functions/__init__.py). CURRENT_RUN_TIME comes from TASK-4151 (via TASK-4155).",
       "assigned_to": null,
       "started_at": "2026-10-08T18:01:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4157-scheduler-base-fire-path.md"
+      "completed_at": "2026-10-08T21:06:53+00:00",
+      "file": "sdd/tasks/completed/TASK-4157-scheduler-base-fire-path.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4158",
