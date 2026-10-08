@@ -20,8 +20,8 @@ class DummyPool:
         return DummyAcquire()
 
 
-from parrot.scheduler import AgentSchedulerManager
-from parrot.scheduler.models import FireContext, JobDefinition, ServiceSchedule
+from parrot.scheduler import AgentSchedulerManager  # noqa: E402
+from parrot.scheduler.models import FireContext, JobDefinition, ServiceSchedule  # noqa: E402
 
 
 @pytest.mark.asyncio
