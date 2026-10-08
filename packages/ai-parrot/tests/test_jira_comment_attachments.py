@@ -27,6 +27,9 @@ def toolkit(store):
     tk.auth_type = "basic_auth"
     tk._tool_manager = None
     tk._session_file_store = store
+    tk._template_engine = None
+    tk.templates_dir = None
+    tk._inline_templates = {}
 
     async def _limit():
         return 100
