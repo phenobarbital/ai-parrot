@@ -11,7 +11,7 @@ tags: [planogram, ink-wall, compliance, perception, registration]
 **Feature ID**: FEAT-646
 **Date**: 2026-10-09
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-pipelines (next minor, released in lockstep with the ai-parrot family)
 
 > Origin: field run of flowtask `PlanogramCompliance` (config `epson_inkwall_config`, planogram_id 11)
@@ -27,7 +27,7 @@ tags: [planogram, ink-wall, compliance, perception, registration]
 
 On the BBY560 ink wall (6 shelves, 102 expected facings) the pipeline reports
 `assessment_status = inconclusive`, so `overall_compliant` can never be `True`, even though
-95.2 % of the facings were resolved. Two independent defects combine:
+95.2 % of the facings were resolved. Three independent defects combine:
 
 1. **Bottom shelf loses facings at perception time.** Shelf 6 expects 15 facings but perception
    builds only 11 slots for row 5 (10 after membership). The gaps between price tags are never
@@ -48,6 +48,16 @@ On the BBY560 ink wall (6 shelves, 102 expected facings) the pipeline reports
    out of 102 makes the whole photo inconclusive. For ink walls, which are a presence/coverage
    audit over ~100 small facings photographed in one shot, a verdict should be possible when
    nearly all facings are resolved, with the unresolved ones still earning no credit.
+3. **An empty on-fixture slot is classified off the fixture.** The leftmost bottom-row tag
+   (x≈205–313, y≈2416) sits on the fixture above an empty facing (confirmed in the field: on the
+   fixture, no product). `assign_membership` labels it `OFF_FIXTURE` with evidence `row_gap`, so
+   `InkWall._registrable_slots` drops the slot and the empty facing is never reported.
+   Root cause in `_row_block_votes()` (`perception/membership.py:77`): the fixture span is the union
+   of each block row's *main run* only (`membership.py:127-128`). This ink wall has two bays split
+   by a gap wider than `_MAX_GAP_PITCHES` (1.75) pitches, so rows whose largest cluster is the right
+   bay (rows 2 and 4, which start at x=219 / 248) contribute only their right half, and the
+   fixture's left edge is computed at x≈469. The lone tag's centre (259) lands outside, so it votes
+   `row_gap`.
 
 Note on the metric names, since they caused confusion in the field: `coverage` is the share of
 facings that got a decision (present, empty, mismatch…), **not** product presence. In the BBY560
@@ -68,15 +78,19 @@ conclusive; it does not change how presence is credited.
 - G4: Unresolved facings keep earning 0 credit under a tolerant completeness policy: tolerance
   changes only `assessment_status` (and hence whether `overall_compliant` can be `True`), never the
   scores.
+- G5: A cluster of a block row that lies within the fixture's real extent (including a lone tag over
+  an empty facing at a fixture edge) is `ON_FIXTURE`, also on multi-bay fixtures whose rows have
+  their main run in different bays. Adjacent fixtures keep voting `row_gap`.
 
 ### Non-Goals (explicitly out of scope)
 - Changing the credit policy (`CreditPolicy.default()`), the per-shelf compliance threshold, or how
   `strict_compliance_score` is computed. Whether ink-wall *consumers* (flowtask markdown) should hide
-  or de-emphasize the strict score is a presentation decision outside this package (§8 Q2).
+  or de-emphasize the strict score is a presentation decision outside this package (§8 Q2, resolved:
+  out of scope).
 - A new `FacingStatus` for "unassigned facing inside a visible row". Unassigned facings stay
   `not_visible`; G1 removes the cause in the observed case.
-- Fixing the leftmost bottom-row tag classified `OFF_FIXTURE` by `assign_membership`
-  (`perception/membership.py:192`); its root cause is not established (§8 Q1).
+- Changing the anchor-column, containment or LLM-hint votes of `assign_membership`; only the row-block
+  span changes (Part C).
 - Re-tuning `GAP_TOLERANCE` or the pitch-based fill for other types. The pitch fill stays as is and
   runs first; the definition-aware fill only adds the remaining deficit.
 
@@ -97,7 +111,7 @@ are distributed greedily: each one goes to the inter-column gap whose current su
 (gap width / (inserted + 1)) is largest, and every gap is then split evenly. Virtual columns become
 inferred slots exactly like today's gap-filled ones (`anchor_shape_id=None`, `inferred=True`), so
 the identification stage reads them like any other slot. Insertion is interior only: row ends are
-never extended (§8 Q3).
+never extended in this spec (§8 Q3 stays open: possibly needed, pending field evidence).
 
 `perceive_image()` computes the per-shelf facing counts with a new `_expected_facings(ctx)` helper,
 the sibling of `_expected_rows(ctx)` (`stages/perceive.py:53`), and passes them only when the layout
@@ -130,8 +144,24 @@ With the 1.0 default, both conditions reduce exactly to today's checks ("every p
 `COMPLIANT`. `compare_observations()` passes `getattr(ctx.layout, "completeness", None)` to both
 calls.
 
+**Part C — row-block span over multi-bay fixtures (membership).**
+In `_row_block_votes()` the block span stops being the union of main runs only. It becomes the
+union of the main runs **plus every cluster of a block row whose x-extent overlaps (strictly
+positive intersection) the main run of a different block row**. The existing "inside" rule then
+applies unchanged: a cluster whose centre lies within the span votes `row_block` (on), otherwise
+`row_gap` (off). A row's left-bay cluster overlaps another row's left-bay main run, so both bays
+count. A neighbouring fixture's tags overlap no main run of the block, so they keep voting
+`row_gap`. The rule applies to every type that uses row-block votes; it is not gated by layout.
+
+Verified on the recorded BBY560 shapes (all 109): exactly one vote changes, the tag
+`price_tag:205-2416-313-2469` from `(False, "row_gap")` to `(True, "row_block")`. Every other
+shape, including the nine `UNCERTAIN` tags without `row_index` outside the fixture, is unchanged.
+Combined with Part A, row 5 then keeps 15 registrable slots for 15 facings.
+
 ### Component Diagram
 ```
+assign_membership ──→ _row_block_votes (block span: main runs + overlapping clusters)
+      ▼
 perceive_image ──(expected_facings if layout.definition_gap_fill)──→ build_slots
       │                                                                 └─ _columns → _fill_deficit (new)
       ▼
@@ -153,6 +183,7 @@ compare_observations ──→ register / merge / score_shelves (unchanged)
 | `summarize()` `comparison/scoring.py:430` | modifies | kw `completeness` |
 | `project_compliance()` `comparison/projection.py:56` | modifies | kw `completeness` |
 | `compare_observations()` `stages/compare.py:188` | modifies | forwards `ctx.layout.completeness` |
+| `_row_block_votes()` `perception/membership.py:77` | modifies | block span includes clusters overlapping another block row's main run (`:127-128`) |
 | flowtask `PlanogramCompliance` | consumer, unchanged | already surfaces `assessment_status` / `coverage` |
 
 ### Data Models
@@ -182,6 +213,7 @@ keyword arguments listed above. Nothing else.
 |---|---|---|---|
 | M1: definition-aware gap fill | yes | greedy split rule, full-height guard, interior-only, opt-in flag; signatures below | — |
 | M2: completeness policy | yes | model, defaults, exact COMPLETE conditions, keyword plumbing; signatures below | — |
+| M3: multi-bay row-block span | yes | exact span rule (main runs + clusters overlapping another block row's main run); private helper only | — |
 
 ### Module 1: Definition-aware gap fill
 - **Path**: `packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/perception/slots.py`,
@@ -272,6 +304,28 @@ keyword arguments listed above. Nothing else.
   #   project_compliance(..., policy=policy, completeness=getattr(ctx.layout, "completeness", None))
   ```
 
+### Module 3: Multi-bay row-block span
+- **Path**: `packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/perception/membership.py`
+- **Responsibility**: keep a fixture-edge cluster (e.g. a lone tag over an empty facing) on the fixture
+  when the block rows have their main runs in different bays.
+- **Depends on**: — (independent of M1/M2)
+- **Interface Skeleton**:
+  ```python
+  # perception/membership.py  (new private helper; replaces the span lines at membership.py:127-128)
+  def _block_span(
+      block_rows: Sequence[int],
+      main_runs: Dict[int, List[Shape]],
+      row_clusters: Dict[int, List[List[Shape]]],
+  ) -> Tuple[int, int]:
+      """Horizontal span of the fixture block: the union of every block row's main run plus every cluster
+      of a block row whose x-extent overlaps (strictly positive intersection) the main run of a different
+      block row. Pure and deterministic."""
+
+  # _row_block_votes  (verified: membership.py:77) — unchanged signature and vote reasons:
+  #   block_lo, block_hi = _block_span(block_rows, main_runs, row_clusters)
+  #   inside = block_lo <= (lo + hi) / 2 <= block_hi     # unchanged rule, membership.py:134
+  ```
+
 ---
 
 ## 4. Test Specification
@@ -292,6 +346,9 @@ keyword arguments listed above. Nothing else.
 | `test_summarize_tolerant_rules_still_required` | M2 | coverage ≥ threshold but an unassessed mandatory rule ⇒ `INCONCLUSIVE` |
 | `test_project_shelf_completeness` | M2 | 14/15 resolved, `min_shelf_coverage=0.8` ⇒ shelf `assessment_status == "complete"`; at 11/15 ⇒ `"inconclusive"` |
 | `test_overall_compliant_requires_complete_and_all_compliant` | M2 | tolerant COMPLETE + one NON_COMPLIANT shelf ⇒ `overall_compliant False` |
+| `test_row_block_multi_bay_edge_cluster_on` | M3 | two-bay rows (gap > 1.75 pitches), some rows' main run in the right bay, a lone left-edge tag within the left bay's extent ⇒ `ON_FIXTURE` (`row_block`) |
+| `test_row_block_adjacent_fixture_still_off` | M3 | a cluster beyond every block row's extent (neighbour fixture) ⇒ still `OFF_FIXTURE` (`row_gap`) |
+| `test_row_block_single_bay_unchanged` | M3 | single-bay rows ⇒ votes identical to the current implementation |
 
 Existing suites that must keep passing unchanged: `tests/planogram_cycle/test_rows_slots.py`,
 `test_registration.py`, `test_scoring_projection.py`, `test_reporting_projection.py`,
@@ -301,12 +358,16 @@ Existing suites that must keep passing unchanged: `tests/planogram_cycle/test_ro
 | Test | Description |
 |---|---|
 | `test_ink_wall_bby560_full_height_slots` | CV-only perception (no LLM) of the BBY560 example image ⇒ row 5 has ≥ 15 slots before membership; rows 0–4 unchanged vs `definition_gap_fill=False` |
+| `test_ink_wall_bby560_membership_edge_tag` | CV-only perception of the BBY560 image ⇒ `price_tag:205-2416-313-2469` is `ON_FIXTURE`; every other shape keeps its current membership; row 5 keeps 15 registrable slots |
 
 ### Test Data / Fixtures
 Recorded price-tag centres (x, px) of the BBY560 image, `perception_mode="cv"`:
 ```python
 ROW0 = [670, 851.5, 1040.5, 1229.5, 1420.5, 1589, 1752.5, 1928, 2177.5, 2395, 2596, 2812, 3390, 3609.5, 3808.5]
-ROW5 = [259, 697, 814, 1117, 1594, 1784, 1947, 2168, 2478, 3268, 3564]  # 259 is OFF_FIXTURE (see §8 Q1)
+ROW5 = [259, 697, 814, 1117, 1594, 1784, 1947, 2168, 2478, 3268, 3564]  # 259: on fixture, empty facing (§8 Q1)
+# Row extents (x1 of first tag, x2 of last tag) and the bay gap (> 1.75 pitches) for M3 fixtures:
+ROW_EXTENTS = {0: (616, 3886), 1: (469, 3790), 2: (219, 3841), 3: (516, 3495), 4: (248, 3640), 5: (205, 3621)}
+# rows 2 and 4 split at x≈1819→2101 / 1762→2077: their main run is the RIGHT bay
 EXPECTED_FACINGS = [17, 18, 18, 18, 18, 15]
 ```
 The full per-row candidate boxes can be regenerated from the example image with the CV perception
@@ -332,7 +393,10 @@ path, which is deterministic.
   `planogram_config.layout_profile.completeness` and validated (`extra="forbid"`, range [0, 1]).
 - [ ] AC7: On the BBY560 example (live LLM, manual check), the run is `assessment_status = complete`;
   `overall_compliant` is decided by the per-shelf thresholds (expected `False`: genuinely empty facings).
-- [ ] AC8: All tests in §4 pass; `ruff` clean on touched files.
+- [ ] AC8: A block-row cluster that overlaps another block row's main run widens the block span; the lone
+  BBY560 edge tag becomes `ON_FIXTURE` (`row_block`) and no other shape of that image changes membership;
+  single-bay fixtures vote exactly as today.
+- [ ] AC9: All tests in §4 pass; `ruff` clean on touched files.
 
 ---
 
@@ -349,6 +413,7 @@ from parrot_pipelines.planogram.layout import LayoutProfile, resolve_layout_prof
 from parrot_pipelines.planogram.comparison.scoring import summarize, score_shelves, merge_positions  # scoring.py:430
 from parrot_pipelines.planogram.comparison.projection import project_compliance, finalize_comparison  # projection.py:56, :169
 from parrot_pipelines.planogram.contracts import AssessmentStatus, FacingStatus, CycleContext, Slot
+from parrot_pipelines.planogram.perception.membership import assign_membership  # membership.py:192
 ```
 
 ### Existing Class Signatures
@@ -405,6 +470,17 @@ class InkWall(AbstractPlanogramType):  # :55
 
 # contracts.py
 class CycleContext:  layout: Any = None  # :387 (validated LayoutProfile, typed Any)
+
+# perception/membership.py
+_MAX_GAP_PITCHES = 1.75                                          # :15
+def _clusters(row: List[Shape], pitch: float) -> List[List[Shape]]  # :61
+def _extent(group: Sequence[Shape]) -> Tuple[int, int]           # :72
+def _row_block_votes(shapes, image_size) -> Dict[str, _Vote]     # :77
+#   main_runs = {index: max(groups, key=lambda g: (len(g), -_extent(g)[0])) ...}
+#   block_lo = min(_extent(main_runs[i])[0] for i in block_rows)   # :127
+#   block_hi = max(_extent(main_runs[i])[1] for i in block_rows)   # :128
+#   inside = block_lo <= (lo + hi) / 2 <= block_hi                  # :134
+def assign_membership(shapes, zones, image_size, *, llm_hints=None) -> List[Shape]  # :192
 ```
 
 ### Integration Points
@@ -414,10 +490,11 @@ class CycleContext:  layout: Any = None  # :387 (validated LayoutProfile, typed 
 | `_expected_facings` | `perceive_image` | `build_slots(expected_facings=...)` | `perceive.py:246-254` |
 | `CompletenessPolicy` | `LayoutProfile.completeness` | field | `layout.py:97` |
 | `completeness` kw | `summarize` / `project_compliance` | `compare_observations` | `compare.py:219`, `:228` |
+| `_block_span` | `_row_block_votes` | replaces the span lines | `membership.py:127-128` |
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`CompletenessPolicy`~~, ~~`LayoutProfile.completeness`~~, ~~`LayoutProfile.definition_gap_fill`~~ — created by this spec
-- ~~`build_slots(expected_facings=...)`~~, ~~`_fill_deficit`~~, ~~`_expected_facings`~~ — created by this spec
+- ~~`build_slots(expected_facings=...)`~~, ~~`_fill_deficit`~~, ~~`_expected_facings`~~, ~~`_block_span`~~ — created by this spec
 - ~~`ShelfConfig.completeness_threshold`~~ — not real; the per-shelf *compliance* threshold is `ShelfConfig.compliance_threshold` (read by `_threshold`, `projection.py:48`) and is unrelated
 - ~~`FacingStatus.UNOBSERVED`~~ — not real and not added (Non-Goal)
 - ~~`ReportingPolicy.min_coverage`~~ — completeness does not live on `ReportingPolicy`
@@ -442,9 +519,11 @@ Verified against: `d78d6268b`
 | `.../planogram/comparison/projection.py` | MODIFY | `        complete = not unresolved_ids and rules_complete` | `projection.py:110` | 1 |
 | `.../planogram/stages/compare.py` | MODIFY | `    comparison = summarize(shelves, positions, definition, ctx.evidence_weights)` | `compare.py:219` | 1 |
 | `.../planogram/stages/compare.py` | MODIFY | `        comparison, project_compliance(shelves, positions, definition, description, policy=policy)` | `compare.py:228` | 1 |
+| `.../planogram/perception/membership.py` | MODIFY | `    block_lo = min(_extent(main_runs[i])[0] for i in block_rows)` | `membership.py:127` | 1 |
 | `packages/ai-parrot-pipelines/tests/planogram_cycle/test_rows_slots.py` | MODIFY | (append tests) | — | — |
 | `packages/ai-parrot-pipelines/tests/planogram_cycle/test_scoring_projection.py` | MODIFY | (append tests) | — | — |
 | `packages/ai-parrot-pipelines/tests/planogram_cycle/test_ink_wall.py` | MODIFY | (append tests) | — | — |
+| `packages/ai-parrot-pipelines/tests/planogram_cycle/test_membership.py` | MODIFY | (append tests) | — | — |
 
 ---
 
@@ -465,9 +544,9 @@ Verified against: `d78d6268b`
   read as `empty`, which is the correct verdict for an expected facing. If a wide box spans an inserted
   slot, identification may read the same product twice; registration's `misplaced`/`mismatch` logic
   handles duplicates already, but watch `misplaced` counts on the bottom shelf.
-- **Membership drops the leftmost bottom tag** (x≈259, `OFF_FIXTURE`), so after `_registrable_slots` row 5
-  has 14 slots for 15 facings; shelf 6 then sits at ≥ 14/15 resolvable, above the 0.8 shelf threshold.
-  §8 Q1 tracks the root cause.
+- **Wider block span (M3) is shared by every type using row-block votes.** The overlap condition only adds
+  clusters that share x-range with another block row's main run, so a neighbouring fixture (no overlap)
+  stays `row_gap`; `test_row_block_single_bay_unchanged` and the existing `test_membership.py` guard it.
 - **Tolerance must not inflate scores**: unresolved facings keep 0 lenient and 0 strict credit (AC5).
 - `ctx.layout` is typed `Any` and may be `None` for non-cycle paths; use `getattr(..., "completeness", None)`.
 
@@ -478,14 +557,15 @@ None.
 
 ## 8. Open Questions
 
-- [ ] Q1: Why is the leftmost bottom-row tag (x≈205–313, y≈2416) classified `OFF_FIXTURE` by
-  `assign_membership` while the fixture visibly extends to x≈190? A follow-up spec if it recurs. — *Owner: Jesus Lara*
-- [ ] Q2: Should ink-wall consumers (flowtask markdown) hide or de-emphasize `strict_compliance_score`,
-  given ink walls are a presence audit and strict credit requires exact SKU identity? Out of this package. — *Owner: Jesus Lara*
+- [x] Q1: Is the leftmost bottom-row tag (x≈205–313, y≈2416) really off the fixture? — *Owner: Jesus Lara*:
+  No. It is on the fixture and there is no product there (an empty facing). Root cause found (multi-bay
+  block span, §1 defect 3) and fixed in scope by Part C / Module 3.
+- [x] Q2: Should ink-wall consumers (flowtask markdown) hide or de-emphasize `strict_compliance_score`? —
+  *Owner: Jesus Lara*: Out of scope for this spec (left out, as proposed).
 - [ ] Q3: Should the deficit fill also extend row ends (facings beyond the first/last tag) when the row's
-  extent is short of the fixture edges? Interior-only for now. — *Owner: Jesus Lara*
-- [ ] Q4: Confirm the ink-wall defaults `min_coverage=0.90` / `min_shelf_coverage=0.80` against more field
-  photos (BBY107 example available). — *Owner: Jesus Lara*
+  extent is short of the fixture edges? — *Owner: Jesus Lara*: "possibly". Interior-only in this spec;
+  revisit with field photos where an end facing is missing.
+- [x] Q4: Ink-wall defaults `min_coverage=0.90` / `min_shelf_coverage=0.80`? — *Owner: Jesus Lara*: Confirmed.
 
 ---
 
@@ -493,7 +573,8 @@ None.
 
 - Default isolation unit: **per-spec**. M1 and M2 both touch `layout.py` and `types/ink_wall.py`, so the
   tasks run sequentially in one worktree (M2 first: it defines `CompletenessPolicy`, which the ink-wall
-  defaults in M1 reference).
+  defaults in M1 reference). M3 touches only `membership.py` + `test_membership.py` and is independent;
+  it can run in parallel with M2/M1.
 - Cross-feature dependencies: none (FEAT-645 is merged).
 
 ---
@@ -514,3 +595,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-09 | Jesus Lara | Initial draft from the BBY560 field diagnosis |
+| 0.2 | 2026-10-09 | Jesus Lara | Q1 answered (on fixture, empty facing): root cause found, Part C / M3 added; Q2 and Q4 resolved, Q3 kept open |
