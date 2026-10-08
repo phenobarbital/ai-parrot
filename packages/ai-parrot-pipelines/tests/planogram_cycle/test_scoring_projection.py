@@ -8,7 +8,11 @@ import pytest
 
 from parrot.models.compliance import ComplianceStatus
 from parrot_pipelines.models import PlanogramConfig
-from parrot_pipelines.planogram.comparison.definition import CompletenessPolicy, load_slots_definition, validate_bindings
+from parrot_pipelines.planogram.comparison.definition import (
+    CompletenessPolicy,
+    load_slots_definition,
+    validate_bindings,
+)
 from parrot_pipelines.planogram.comparison.projection import finalize_comparison, project_compliance
 from parrot_pipelines.planogram.comparison.registration import ImageRegistration
 from parrot_pipelines.planogram.comparison.scoring import merge_positions, score_shelves, summarize
