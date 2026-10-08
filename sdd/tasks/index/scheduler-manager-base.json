@@ -326,7 +326,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -336,8 +336,9 @@
       "parallelism_notes": "Uses AgentSchedulerManager() without bot_manager + register_target(kind='agent') resolved by AgentResolver (TASK-4158, manager.py). Touches only agentd files and a new agentd test.",
       "assigned_to": null,
       "started_at": "2026-10-08T18:01:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4162-agentd-scheduler-register-target.md"
+      "completed_at": "2026-10-08T21:21:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4162-agentd-scheduler-register-target.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4163",
