@@ -159,6 +159,7 @@ TOOL_REGISTRY: dict[str, str] = {
     "file_manager": "parrot.tools.filemanager.FileManagerTool",
     "file_manager_toolkit": "parrot.tools.filemanager.FileManagerToolkit",
     "obsidian": "parrot.tools.obsidian.ObsidianToolkit",
+    "session_files": "parrot.tools.session_files.SessionFileToolkit",
     "sitesearch": "parrot_tools.sitesearch.toolkit.SiteSearchToolkit",
     "cloudsploit": "parrot_tools.cloudsploit.toolkit.CloudSploitToolkit",
     "secrets_iac": "parrot_tools.security.secrets_iac_toolkit.SecretsIaCToolkit",

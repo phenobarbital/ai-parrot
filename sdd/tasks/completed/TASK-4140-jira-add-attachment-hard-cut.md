@@ -235,3 +235,7 @@ class TestJiraAddAttachment:
 **Date**: YYYY-MM-DD
 **Notes**:
 **Deviations from spec**: none | describe if any
+
+## Completion Note
+
+Merged by engine (codex); jira unit tests run with --noconftest.

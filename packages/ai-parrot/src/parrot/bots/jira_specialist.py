@@ -845,11 +845,7 @@ class JiraSpecialist(Agent):
         cfg = self._standup_config
 
         # Message text
-        text = (
-            f"☀️ Buenos días, *{dev.name}*!\n\n"
-            f"Tienes *{len(tickets)}* tickets asignados. "
-            f"¿Cuál trabajarás hoy?\n"
-        )
+        text = render_message("standup_greeting", self.language, name=dev.name, count=len(tickets))
 
         # Build buttons — one per ticket
         buttons = []
@@ -889,7 +885,7 @@ class JiraSpecialist(Agent):
         buttons.append(
             [
                 {
-                    "text": "⏭️ Ya tengo plan para hoy",
+                    "text": render_message("standup_skip_button", self.language),
                     "prefix": cfg.prefix_skip,
                     "payload": {"d": dev.id},
                 }

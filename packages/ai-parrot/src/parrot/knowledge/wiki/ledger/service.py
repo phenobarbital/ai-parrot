@@ -288,43 +288,12 @@ class LedgerService:
         return _decode_issue_body(row[0]) if row else None
 
     async def close_issue(self, issue_id: str, reason: str, actor: str, resolved_by: str | None = None) -> bool:
-        """Close an issue, recording the resolver and the evidence reference (FEAT-572 S4/S5).
-
-        ``resolved_by`` is e.g. ``commit:<sha>`` (fast lane) or ``task:TASK-<NNN>`` (SDD lane)
-        and is carried into ``IssueClosedPayload.resolved_by``. Returns ``False`` WITHOUT
-        appending when the issue does not exist or its status is not ``open``/``claimed`` —
-        a double close is detectable instead of silent.
-        """
-        await self._sync_best_effort()
-        state = await self._issue_state(issue_id)
-        if state is None or state.get("status") not in ("open", "claimed"):
-            logger.warning(
-                "Refusing issue.closed for %s: missing or status=%r", issue_id, state and state.get("status")
-            )
-            return False
-        payload: dict[str, Any] = {"reason": reason, "closed_by": actor}
-        if resolved_by is not None:
-            payload["resolved_by"] = resolved_by
-        event = LedgerEvent(kind="issue.closed", subject=issue_id, actor=actor, payload=payload)
-        await asyncio.to_thread(self.log.append, event)
-        await self._sync_best_effort()
-        return True
+        """Delegate to :meth:`LedgerIndex.close_issue` (atomic transaction)."""
+        return await self.index.close_issue(issue_id, actor, reason, resolved_by)
 
     async def unclaim(self, issue_id: str, reason: str, actor: str) -> bool:
-        """Append ``issue.unclaimed``, returning a claimed issue to the ready pool (FEAT-572 M3).
-
-        Returns ``False`` without appending unless the issue exists with status ``claimed``.
-        """
-        await self._sync_best_effort()
-        state = await self._issue_state(issue_id)
-        if state is None or state.get("status") != "claimed":
-            return False
-        event = LedgerEvent(
-            kind="issue.unclaimed", subject=issue_id, actor=actor, payload={"unclaimed_by": actor, "reason": reason}
-        )
-        await asyncio.to_thread(self.log.append, event)
-        await self._sync_best_effort()
-        return True
+        """Delegate to :meth:`LedgerIndex.unclaim_issue` (atomic transaction)."""
+        return await self.index.unclaim_issue(issue_id, actor, reason)
 
     async def get_context(self, file_paths: list[str], max_tokens: int = 3000) -> str:
         """Return a token-budgeted rendering of open issues touching ``file_paths``.

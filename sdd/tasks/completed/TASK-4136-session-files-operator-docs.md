@@ -239,3 +239,7 @@ class TestSessionStoreDocs:
 **Date**: YYYY-MM-DD
 **Notes**:
 **Deviations from spec**: none | describe if any
+
+## Completion Note
+
+Merged by engine; doc drift-guard tests pass. Spec drift: SESSION_FILES_DIR does not exist; doc states real config (OUTPUT_DIR/sessions, SESSION_FILES_WARN_BYTES constant).

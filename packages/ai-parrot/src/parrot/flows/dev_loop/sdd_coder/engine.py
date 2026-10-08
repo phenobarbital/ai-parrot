@@ -3917,6 +3917,12 @@ class SddCoderEngine:
         else:
             seats = {s.label: s for s in self.seats}
 
+        # The job table schedules `runner` as soon as `create()` returns, BEFORE the
+        # background handle below is registered. Settlement waits on this event so a
+        # fast runner can neither skip settling (handle not yet in `_handle_execution`)
+        # nor be overwritten by a late `running` transition.
+        handle_registered = asyncio.Event()
+
         async def runner() -> List[TaskResult]:
             raw_results = await asyncio.gather(
                 *(
@@ -3943,6 +3949,7 @@ class SddCoderEngine:
             # FEAT-584 M8/R8: settle the SAME registered handle with the real
             # logical outcome from this dispatch -- never a fabricated POSIX
             # exit_code (background.py itself rejects one for kind='mcp_job').
+            await handle_registered.wait()
             if job.job_id in self._handle_execution:
                 outcome = "failed" if any(isinstance(raw, BaseException) for raw in raw_results) else "completed"
                 try:
@@ -3954,6 +3961,19 @@ class SddCoderEngine:
             return results
 
         job = self._jobs.create(ctx.feature_id, list(task_ids), runner, execution_id=execution_id or "")
+        try:
+            job = await self._register_job_handle(ctx, job, execution_id)
+        finally:
+            handle_registered.set()
+        await self._journal(ctx.worktree, job)
+        return job
+
+    async def _register_job_handle(self, ctx: _FeatureCtx, job: CoderJob, execution_id: Optional[str]) -> CoderJob:
+        """Register the background handle for a freshly created job; never raises on registry errors.
+
+        Returns:
+            The job snapshot, carrying ``bg_handle`` when registration succeeded.
+        """
         self._job_worktrees[job.job_id] = ctx.worktree
         # FEAT-584 M8/R8: register a real background handle for this dispatch --
         # `bg_handle` is `job_id` itself (never a second invented id), added
@@ -3982,7 +4002,6 @@ class SddCoderEngine:
             else:
                 self._handle_execution[job.job_id] = execution_id
                 job = job.model_copy(update={"bg_handle": job.job_id})
-        await self._journal(ctx.worktree, job)
         return job
 
     async def wait(self, job_id: str, timeout_seconds: int) -> CoderJob:

@@ -1,0 +1,29 @@
+{
+  "feature": "manager-test-bot-cleanup-lifecycle-fixes-2",
+  "feature_id": "FEAT-641",
+  "spec": "sdd/specs/manager-test-bot-cleanup-lifecycle-fixes-2.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-08T01:08:31Z",
+  "completed_at": "2026-10-08T01:08:43+00:00",
+  "tasks": [
+    {
+      "id": "TASK-4142",
+      "slug": "botmanager-test-collection-hang-fix",
+      "title": "BotManager test collection + hang fix",
+      "feature_id": "FEAT-641",
+      "feature": "manager-test-bot-cleanup-lifecycle-fixes-2",
+      "spec": "sdd/specs/manager-test-bot-cleanup-lifecycle-fixes-2.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-08T01:08:31Z",
+      "completed_at": "2026-10-08T01:08:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4142-botmanager-test-collection-hang-fix.md",
+      "verification": "verified"
+    }
+  ]
+}

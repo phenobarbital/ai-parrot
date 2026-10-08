@@ -172,6 +172,8 @@ annotation, not a runtime constant.
 - [ ] The imported record has `origin == "remote"`
 - [ ] The temporary directory is removed on both success and failure
 - [ ] No URL/HTTP fetch path exists in the diff (spec §1 Non-Goals, SSRF boundary)
+- [ ] `remote_path` is validated against path-traversal (`..`, absolute paths outside the backend root) before being forwarded to `FileManagerToolkit.download_file` — issue:b2c54218dcef
+- [ ] A `remote_path` containing `..` or an absolute path raises `ValueError`
 - [ ] `ruff check packages/ai-parrot/src/parrot/tools/session_files.py` clean
 
 ---
@@ -209,6 +211,14 @@ class TestRemoteImport:
     async def test_temp_dir_removed_on_failure(self, toolkit, bind, monkeypatch):
         """A download that raises still cleans up."""
         # FILL IN
+
+    @pytest.mark.parametrize("bad_path", [
+        "../../../etc/passwd", "/etc/passwd", "foo/../../bar",
+    ])
+    async def test_rejects_path_traversal(self, toolkit, bind, bad_path):
+        """remote_path with traversal or absolute paths is rejected (issue:b2c54218dcef)."""
+        with pytest.raises(ValueError):
+            await toolkit.import_remote_file("s3", bad_path)
 ```
 
 ---
@@ -235,3 +245,7 @@ class TestRemoteImport:
 **Date**: YYYY-MM-DD
 **Notes**:
 **Deviations from spec**: none | describe if any
+
+## Completion Note
+
+Merged by sdd-coder engine; targeted tests pass. Pre-existing failures in test_agent_module.py fixture (TestBasicAgent) untouched. Orchestrator fixed sys.modules KeyError in remote-import tests.

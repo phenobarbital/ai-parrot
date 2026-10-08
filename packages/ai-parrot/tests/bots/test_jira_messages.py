@@ -7,7 +7,7 @@ import pytest
 from parrot.bots.jira_messages import JIRA_MESSAGES, MessageTemplate, render_message
 from parrot.bots.prompts.language import FALLBACK_LANGUAGE, SUPPORTED_LANGUAGES
 
-SAMPLE = {"ticket_key": "NAV-123", "status": "In Progress", "name": "Ana Pérez", "names": "• Ana\n• Luis", "hours": 2}
+SAMPLE = {"ticket_key": "NAV-123", "status": "In Progress", "name": "Ana Pérez", "names": "• Ana\n• Luis", "hours": 2, "count": 3}
 
 
 def _params(message: MessageTemplate) -> dict:
@@ -70,3 +70,18 @@ def test_unknown_key_raises():
 def test_missing_param_raises():
     with pytest.raises(KeyError):
         render_message("transition_ok", "en", ticket_key="NAV-1")
+
+
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [("en", "Good morning"), ("es", "Buenos días"), (None, "Good morning")],
+)
+def test_standup_greeting_follows_language(language, expected):
+    text = render_message("standup_greeting", language, name="Ana", count=3)
+    assert expected in text
+    assert "*Ana*" in text and "*3*" in text
+
+
+def test_standup_skip_button_follows_language():
+    assert "plan for today" in render_message("standup_skip_button", "en")
+    assert "Ya tengo plan" in render_message("standup_skip_button", "es")

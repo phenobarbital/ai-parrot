@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=1.1.0",
+    "ai-parrot>=1.2.0",
     # Imported unconditionally by outputs/formats/infographic_html.py (markdown
     # rendering, HTML escaping) and infographic.py (JSON serialization).
     "markdown-it-py>=3.0",
@@ -57,7 +57,7 @@ a2ui = [
 ]
 a2ui-pdf = [
     "ai-parrot-visualizations[a2ui]",
-    "weasyprint>=68.0",
+    "weasyprint>=70.0",
 ]
 all = [
     "ai-parrot-visualizations[charts,map,infographic,jinja2,streamlit,panel,messaging,a2ui]",
