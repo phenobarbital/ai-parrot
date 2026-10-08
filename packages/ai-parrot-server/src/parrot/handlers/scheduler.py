@@ -53,7 +53,7 @@ class _SchedulerErrorMixin:
         elif isinstance(exc, (SchedulerConfigError, ValueError)):
             status = 400
         else:
-            self.logger.error("Scheduler request failed: %s", exc, exc_info=True)
+            self.logger.error("Scheduler request failed: %s", exc, exc_info=exc)
             status = 500
         return self._error_response(str(exc), status=status)
 
