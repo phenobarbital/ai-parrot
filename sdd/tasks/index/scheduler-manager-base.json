@@ -305,7 +305,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -315,8 +315,9 @@
       "parallelism_notes": "Calls SchedulerManager.add_schedule/get_schedule/_serialize_job and the typed errors from TASK-4154-4157 (base.py), and imports SchedulerRunNowConflictError/ScheduleType re-exported by TASK-4158 (manager.py). Touches handlers + saved-execution tests only.",
       "assigned_to": null,
       "started_at": "2026-10-08T18:01:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4161-scheduler-http-handlers-hard-cut.md"
+      "completed_at": "2026-10-08T21:21:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4161-scheduler-http-handlers-hard-cut.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4162",
