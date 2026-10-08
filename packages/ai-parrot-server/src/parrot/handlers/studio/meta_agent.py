@@ -33,6 +33,7 @@ from pydantic import BaseModel
 from ._base import StudioBaseView
 from .access import StudioTenantRequired, build_tool_scope
 from .byok import resolve_user_api_key
+from .conversation import studio_conversation_kwargs
 from .models import StudioError
 
 SESSION_KEY = "_studio_assistant"
@@ -188,6 +189,7 @@ class StudioAssistantHandler(StudioBaseView):
         agent = AgentStudioAgent(
             name=f"agent_studio_{uuid.uuid4().hex[:8]}", api_key=api_key,
             declarative_only=await self._declarative_only(), chatbot_id=partition.chatbot_id,
+            **studio_conversation_kwargs(),
         )
         await agent.configure(self.request.app)
         agent._assistant_partition = partition

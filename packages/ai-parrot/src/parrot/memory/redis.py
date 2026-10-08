@@ -42,6 +42,8 @@ async def _merge_backoff(attempt: int) -> None:
 class RedisConversation(ConversationMemory):
     """Redis-based conversation memory with proper encoding handling."""
 
+    history_ttl: Optional[int] = None  # class default: instances built without __init__ (test doubles) stay TTL-less
+
     def __init__(
         self,
         redis_url: str = None,
@@ -52,6 +54,7 @@ class RedisConversation(ConversationMemory):
         omission_store: Optional[OmissionStore] = None,
         normalize: bool = True,
         omission_ttl: Optional[int] = None,
+        history_ttl: Optional[int] = None,
     ) -> None:
         """Initialize the store.
 
@@ -71,7 +74,11 @@ class RedisConversation(ConversationMemory):
             omission_ttl: Expiry (seconds) for the default omission store;
                 ``None`` (default) means no expiry, independent of the
                 (TTL-less) history keys.
+            history_ttl: Expiry (seconds) refreshed on every write to a
+                history key, so an idle conversation expires. ``None``
+                (default) keeps history keys TTL-less.
         """
+        self.history_ttl = history_ttl if history_ttl and history_ttl > 0 else None
         self.redis_url = redis_url or REDIS_HISTORY_URL
         self.key_prefix = key_prefix
         self.use_hash_storage = use_hash_storage
@@ -185,6 +192,7 @@ class RedisConversation(ConversationMemory):
 
         # Add to user sessions set
         await self.redis.sadd(self._get_user_sessions_key(user_id, chatbot_id), session_id)
+        await self._refresh_ttl(user_id, session_id, chatbot_id)
         return history
 
     async def get_history(
@@ -302,6 +310,7 @@ class RedisConversation(ConversationMemory):
             # Method 2: Update simple key-value
             serialized_data = self._serialize_data(history.to_dict())
             await self.redis.set(key, serialized_data)
+        await self._refresh_ttl(history.user_id, history.session_id, history.chatbot_id)
 
     async def read_metadata(
         self, user_id: str, session_id: str, chatbot_id: Optional[str] = None
@@ -463,7 +472,25 @@ class RedisConversation(ConversationMemory):
                 await expire(key, ttl)
         return merged
 
+    async def _refresh_ttl(self, user_id: str, session_id: str, chatbot_id: Optional[str]) -> None:
+        """Re-arm ``history_ttl`` on a history key (no-op when no TTL is configured)."""
+        if self.history_ttl:
+            await self.redis.expire(self._get_key(user_id, session_id, chatbot_id), self.history_ttl)
+
     async def _store_turn(
+        self,
+        user_id: str,
+        session_id: str,
+        turn: ConversationTurn,
+        chatbot_id: Optional[str] = None,
+        *,
+        compaction_state: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Append ``turn`` (see :meth:`_append_turn`) and refresh the history TTL."""
+        await self._append_turn(user_id, session_id, turn, chatbot_id, compaction_state=compaction_state)
+        await self._refresh_ttl(user_id, session_id, chatbot_id)
+
+    async def _append_turn(
         self,
         user_id: str,
         session_id: str,
