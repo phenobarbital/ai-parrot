@@ -43,8 +43,10 @@ Selected Contract §6) — not a guess:
    ``navconfig``'s ``Kardex._mapping_`` (populated from the checked-in
    ``env/.env``) silently wins over ``os.environ`` unless ``SITE_ROOT`` is
    also isolated (session.md §2.2-§2.3).
-2. ``SessionHandler(storage="redis", use_cookies=True, secure=False)`` —
-   ``use_cookies`` defaults to ``False`` and must be passed explicitly.
+2. ``SessionHandler(storage="redis", name="csrf_secure", use_cookies=True,
+   secure=False)`` — ``use_cookies`` defaults to ``False`` and must be passed
+   explicitly; ``name`` is pinned because the library default cookie name
+   changed in navigator-session 1.1.0.
 3. The frozen synthetic user payload: ``{"user_id": "e2e-test-user-3518",
    "email": "e2e-3518@test.local"}``, identity key value
    ``"e2e-test-user-3518"``.
@@ -105,6 +107,10 @@ _MINIMAL_SUPPORTED_OPTIONS = frozenset({"port"})
 _READY_HTTP_TIMEOUT_S = 2.0
 _REDIS_READY_TIMEOUT_S = 10.0
 _SESSION_DB = "0"
+# Pinned session cookie name. navigator-session >= 1.1.0 derives its default
+# from ``APP_TITLE`` (``<APP_TITLE>_SESSION``; 1.0.x used ``csrf_secure``), so
+# the fixture fixes it explicitly to keep the scenario's wire contract stable.
+_SESSION_COOKIE_NAME = "csrf_secure"
 
 # Frozen synthetic user payload (session.md §6 item 8) -- reused verbatim,
 # never invented ad hoc.
@@ -519,7 +525,7 @@ def _build_app() -> web.Application:
     app.router.add_post("/e2e/bootstrap-login", _bootstrap_login)
     app.router.add_get("/e2e/protected/bot", _protected_bot)
 
-    SessionHandler(storage="redis", use_cookies=True, secure=False).setup(app)
+    SessionHandler(storage="redis", name=_SESSION_COOKIE_NAME, use_cookies=True, secure=False).setup(app)
 
     bot_manager = BotManager(
         enable_database_bots=False,
