@@ -140,7 +140,7 @@ class TestBasicAgent:
         assert basic_agent._llm == agent_deps["client_instance"]
 
     @pytest.mark.asyncio
-    async def test_handle_files_csv(self, basic_agent):
+    async def test_handle_files_csv(self, agent_deps, tmp_path):
         """Test handling of CSV file attachments."""
         # Need to patch pandas inside the module usually, or use real pandas if module uses 'import pandas as pd'
         # Since we didn't mock pandas in sys.modules, it uses real pandas.
@@ -148,10 +148,25 @@ class TestBasicAgent:
         csv_content = b"col1,col2\n1,2"
         attachments = {"data.csv": csv_content}
         
-        # Act
-        added = await basic_agent.handle_files(attachments)
-        
-        assert "data" in added
+        from parrot.bots.agent import BasicAgent
+        from parrot.interfaces.file.session import SessionFileStore
+        from parrot.utils.helpers import RequestContext, _current_ctx
+
+        # The shared basic_agent fixture is stale (Chatbot.__init__ patch loses
+        # `self`), so build a minimal shell agent here.
+        basic_agent = BasicAgent.__new__(BasicAgent)
+        basic_agent.logger = MagicMock()
+        basic_agent.dataframes = {}
+        basic_agent.add_dataframe = lambda df, name: basic_agent.dataframes.__setitem__(name, df)
+        basic_agent._session_file_store = SessionFileStore(tmp_path)
+        token = _current_ctx.set(RequestContext(session_id="s1"))
+        try:
+            result = await basic_agent.handle_files(attachments)
+        finally:
+            _current_ctx.reset(token)
+
+        assert "data" in result["dataframes"]
+        assert result["files"], "a CSV must ALSO be persisted as a session file"
         assert "data" in basic_agent.dataframes
         assert isinstance(basic_agent.dataframes["data"], pd.DataFrame)
         assert len(basic_agent.dataframes["data"]) == 1
