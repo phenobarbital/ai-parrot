@@ -1,5 +1,6 @@
 """Tests for scheduler run-state stores."""
 
+import asyncio
 import uuid
 from typing import Any
 
@@ -13,6 +14,7 @@ from parrot.scheduler.runstate import (
     STATUS_LOCK_UNAVAILABLE,
     MemoryRunState,
     PostgresRunState,
+    RedisRunState,
     aggregate_delivery_status,
     truncate,
 )
@@ -54,6 +56,12 @@ class FakeAcquire:
 def fire() -> FireContext:
     """Provide an aware scheduler fire context."""
     return FireContext.for_fire("job-1", utcnow())
+
+
+@pytest.fixture
+def redis_store(scheduler_redis, scheduler_namespace: str) -> RedisRunState:
+    """Provide an isolated Redis-backed scheduler state store."""
+    return RedisRunState(scheduler_redis, prefix=f"parrot:scheduler:{scheduler_namespace}:runstate:")
 
 
 def _row(schedule_id: str, **overrides: Any) -> dict[str, Any]:
@@ -168,6 +176,55 @@ async def test_pg_lock_unavailable_uses_lock_sql(fire: FireContext) -> None:
     assert state.run_count == 5
     assert len(conn.calls) == 1
     assert "run_count" not in conn.calls[0][0]
+
+
+@pytest.mark.asyncio
+async def test_redis_roundtrip_matches_memory(redis_store: RedisRunState, fire: FireContext) -> None:
+    """Redis preserves the same state fields as the in-memory implementation."""
+    memory = MemoryRunState(backend="redis")
+    outcomes = [{"status": "sent"}, {"status": "failed", "error": "callback failed"}]
+
+    for store in (memory, redis_store):
+        await store.stamp_failure("job-1", status="error", error="bad", fire=fire, threshold=3)
+        await store.stamp_success("job-1", result_text="done", fire=fire, next_run=None)
+        await store.stamp_delivery("job-1", outcomes)
+
+    expected = await memory.read("job-1")
+    actual = await redis_store.read("job-1")
+    assert actual is not None
+    assert expected is not None
+    assert actual.model_dump(exclude={"last_run", "last_result_at", "last_delivery_at"}) == expected.model_dump(
+        exclude={"last_run", "last_result_at", "last_delivery_at"}
+    )
+    assert actual.last_run is not None and actual.last_run.tzinfo is not None
+
+
+@pytest.mark.asyncio
+async def test_redis_stamp_failure_watch_multi_race(redis_store: RedisRunState, fire: FireContext) -> None:
+    """Two simultaneous failures produce exactly one threshold crossing."""
+    results = await asyncio.gather(
+        redis_store.stamp_failure("job-1", status="error", error="bad", fire=fire, threshold=2),
+        redis_store.stamp_failure("job-1", status="error", error="bad", fire=fire, threshold=2),
+    )
+
+    assert sum(crossed for _, crossed in results) == 1
+    state = await redis_store.read("job-1")
+    assert state is not None
+    assert state.consecutive_failures == 2
+    assert state.enabled is False
+
+
+@pytest.mark.asyncio
+async def test_lock_unavailable_does_not_count_redis(redis_store: RedisRunState, fire: FireContext) -> None:
+    """Redis records lock unavailability without counting an execution attempt."""
+    await redis_store.stamp_failure("job-1", status="error", error="bad", fire=fire, threshold=3)
+    state, crossed = await redis_store.stamp_failure(
+        "job-1", status=STATUS_LOCK_UNAVAILABLE, error="lock", fire=fire, threshold=3
+    )
+
+    assert crossed is False
+    assert state.consecutive_failures == 1
+    assert state.run_count == 1
 
 
 def test_truncate_caps_long_results() -> None:
