@@ -54,7 +54,7 @@ async def test_coordinator_forced_redis_with_jobstore(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A Redis jobstore forces a namespaced Redis fire coordinator."""
-    monkeypatch.setattr("navconfig.config.get", lambda key: 15 if key == "SCHEDULER_REDIS_DB" else "none")
+    monkeypatch.setattr("navconfig.config.get", lambda key: 15 if key == "SCHEDULER_REDIS_DB" else None)
     await manager.start_headless(use_redis=True, register_listeners=False, coordination="none")
 
     assert isinstance(manager._fire_coordinator, RedisFireCoordinator)
@@ -76,6 +76,7 @@ async def test_run_state_for_backends(
     assert isinstance(manager._run_state_for("db"), PostgresRunState)
     assert isinstance(manager._run_state_for("code"), MemoryRunState)
 
+    manager._pool = None  # headless start must not attempt a DB reload for this check
     monkeypatch.setattr("navconfig.config.get", lambda key: 15 if key == "SCHEDULER_REDIS_DB" else None)
     await manager.start_headless(use_redis=True, register_listeners=False)
     assert isinstance(manager._run_state_for("redis"), RedisRunState)
