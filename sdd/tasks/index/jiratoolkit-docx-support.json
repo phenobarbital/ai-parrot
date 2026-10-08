@@ -220,7 +220,7 @@
       "feature_id": "FEAT-639",
       "feature": "jiratoolkit-docx-support",
       "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -231,8 +231,9 @@
       "parallelism_notes": "Modifies the same file as TASK-4138 (packages/ai-parrot-tools/src/parrot_tools/jiratoolkit.py) and imports its AttachmentResult/_bounded_detail/_max_attachment_bytes; also calls SessionFileStore.resolve from TASK-4128.",
       "assigned_to": null,
       "started_at": "2026-10-07T23:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4139-jira-attach-session-files-helper.md"
+      "completed_at": "2026-10-08T00:28:00+00:00",
+      "file": "sdd/tasks/completed/TASK-4139-jira-attach-session-files-helper.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4140",

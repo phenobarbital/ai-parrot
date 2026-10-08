@@ -287,3 +287,7 @@ class TestAttachSessionFiles:
 **Date**: YYYY-MM-DD
 **Notes**:
 **Deviations from spec**: none | describe if any
+
+## Completion Note
+
+Attempt 1 (codex) failed at worktree creation; attempt 2 native sonnet delivered. Tests need --noconftest -o asyncio_mode=auto.
