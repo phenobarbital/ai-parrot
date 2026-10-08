@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
+import json
 import logging
 import uuid
 from enum import Enum
@@ -12,6 +13,16 @@ from typing import Any, Callable, Dict, Optional, Protocol, Sequence, Set, runti
 
 import redis.asyncio as aioredis
 from aiohttp import web
+from apscheduler.events import (
+    EVENT_JOB_ADDED,
+    EVENT_JOB_ERROR,
+    EVENT_JOB_EXECUTED,
+    EVENT_JOB_MAX_INSTANCES,
+    EVENT_JOB_MISSED,
+    EVENT_SCHEDULER_SHUTDOWN,
+    EVENT_SCHEDULER_STARTED,
+    JobExecutionEvent,
+)
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.redis import RedisJobStore
@@ -24,19 +35,24 @@ from asyncdb.exceptions import NoDataFound
 from navigator.connections import PostgresPool
 from navconfig import config as nav_config
 from parrot.conf import CACHE_HOST, CACHE_PORT, default_dsn
+from parrot.conf import ENVIRONMENT
+from parrot.notifications import NotificationMixin
 
 from . import jobs
 from .coordination import (
+    CURRENT_RUN_TIME,
     CoordinatedAsyncIOExecutor,
+    FireCoordinationError,
     FireCoordinator,
     NullFireCoordinator,
     build_fire_coordinator,
     manager_prefix,
     redis_db,
 )
+from .functions import build_scheduler_callback
 from .models import CodeJobRecord, JOB_DEFINITION_VERSION, ServiceSchedule, schedule_fingerprint
-from .models import FireContext, JobDefinition, utcnow
-from .runstate import MemoryRunState, PostgresRunState, RedisRunState, RunStateStore
+from .models import FireContext, JobDefinition, RunState, utcnow
+from .runstate import MemoryRunState, PostgresRunState, RedisRunState, RunStateStore, truncate
 from .sanitize import (
     SchedulerConfigError,
     clean_int,
@@ -187,6 +203,13 @@ def inject_fire_context(method: Any, call_kwargs: dict[str, Any], fire: FireCont
     return call_kwargs
 
 
+class _SchedulerNotification(NotificationMixin):
+    """Provide notification helpers for scheduler-owned messages."""
+
+    def __init__(self, logger: logging.Logger) -> None:
+        self.logger = logger
+
+
 class RegistryResolver:
     """``service`` kind: objects registered via ``register_target``."""
 
@@ -271,8 +294,24 @@ class SchedulerManager:
         )
 
     async def _on_coordination_unavailable(self, job_id: str, exc: BaseException) -> None:
-        """Provide the lifecycle hook implemented by the fire-path slice."""
-        self.logger.warning("Scheduler coordination unavailable for %s: %s", job_id, exc)
+        """Stamp a database fire as unavailable without allowing the hook to raise."""
+        job_id = str(job_id)
+        schedule_id = job_id[len(_RUN_NOW_JOB_PREFIX) :] if job_id.startswith(_RUN_NOW_JOB_PREFIX) else job_id
+        try:
+            uuid.UUID(schedule_id)
+        except (TypeError, ValueError, AttributeError):
+            return
+        try:
+            fire = FireContext.for_fire(schedule_id, CURRENT_RUN_TIME.get() or utcnow())
+            await self._run_state_for("db").stamp_failure(
+                schedule_id,
+                status="lock_unavailable",
+                error=f"coordination unavailable: {exc}",
+                fire=fire,
+                threshold=self._max_failures,
+            )
+        except Exception as stamp_error:  # noqa: BLE001 - lifecycle hooks never raise
+            self.logger.warning("Failed to stamp lock_unavailable for %s: %s", schedule_id, stamp_error)
 
     def register_resolver(self, resolver: TargetResolver) -> None:
         """Install or replace the resolver for ``resolver.kind``."""
@@ -763,6 +802,470 @@ class SchedulerManager:
             except Exception as exc:  # noqa: BLE001
                 self.logger.error("Failed to register auto-schedule for %s.%s: %s", name, configured_name, exc)
         return registered
+
+    def define_listeners(self) -> None:
+        """Register scheduler lifecycle, status, and success listeners."""
+        self.scheduler.add_listener(self.scheduler_status, EVENT_SCHEDULER_STARTED)
+        self.scheduler.add_listener(self.scheduler_shutdown, EVENT_SCHEDULER_SHUTDOWN)
+        self.scheduler.add_listener(self.job_success, EVENT_JOB_EXECUTED)
+        self.scheduler.add_listener(self.job_status, EVENT_JOB_ERROR | EVENT_JOB_MISSED | EVENT_JOB_MAX_INSTANCES)
+        self.scheduler.add_listener(self.job_added, EVENT_JOB_ADDED)
+
+    def scheduler_status(self, event: Any) -> None:
+        """Log scheduler startup."""
+        del event
+        self.logger.debug("[%s - NAV Scheduler] started at %s", ENVIRONMENT, utcnow())
+
+    def scheduler_shutdown(self, event: Any) -> None:
+        """Log scheduler shutdown."""
+        del event
+        self.logger.info("[%s] Scheduler stopped at %s", ENVIRONMENT, utcnow())
+
+    def job_added(self, event: JobExecutionEvent, *args: Any, **kwargs: Any) -> None:
+        """Log a newly registered APScheduler job."""
+        del args, kwargs
+        with contextlib.suppress(Exception):
+            job = self.scheduler.get_job(event.job_id)
+            self.logger.info("Job Added: %s", job.name if job is not None else event.job_id)
+
+    def job_status(self, event: JobExecutionEvent) -> None:
+        """Log failed, missed, or capacity-limited executions."""
+        job_id = str(event.job_id)
+        self._job_context.pop(job_id, None)
+        if job_id.startswith(_RUN_NOW_JOB_PREFIX):
+            self._job_context.pop(job_id[len(_RUN_NOW_JOB_PREFIX) :], None)
+        job = self.scheduler.get_job(job_id)
+        job_name = job.name if job is not None else job_id
+        if event.code == EVENT_JOB_MISSED:
+            self.logger.warning(
+                "[%s - NAV Scheduler] Job %s missed at %s", ENVIRONMENT, job_name, event.scheduled_run_time
+            )
+        elif event.code == EVENT_JOB_MAX_INSTANCES:
+            self.logger.error("[%s - Scheduler] Job %s exceeded max instances", ENVIRONMENT, job_name)
+        else:
+            self.logger.error(
+                "[%s - NAV Scheduler] Job %s failed at %s: %s",
+                ENVIRONMENT,
+                job_name,
+                event.scheduled_run_time,
+                event.exception,
+                exc_info=bool(event.traceback),
+            )
+
+    def job_success(self, event: JobExecutionEvent) -> bool:
+        """Schedule successful fire finalization and ignore intentional skips."""
+        job_id = str(event.job_id)
+        job = self.scheduler.get_job(job_id)
+        context = self._job_context.pop(job_id, None)
+        if context is None and job_id.startswith(_RUN_NOW_JOB_PREFIX):
+            schedule_id = job_id[len(_RUN_NOW_JOB_PREFIX) :]
+            context = self._job_context.pop(schedule_id, None)
+        if context is None and job is not None:
+            kwargs = getattr(job, "kwargs", {}) or {}
+            schedule_id = str(kwargs.get("schedule_id", job_id))
+            context = self._job_context.pop(schedule_id, None)
+        if context is None:
+            self.logger.warning("job_success: no execution context for %s", job_id)
+            return False
+        result = getattr(event, "retval", None)
+        if result is jobs.SKIPPED:
+            return True
+        definition = context["definition"]
+        fire = context["fire"]
+        task = asyncio.create_task(self._process_job_success(definition, fire, result, context.get("success_callback")))
+        self._pending_success_tasks.add(task)
+        task.add_done_callback(self._pending_success_tasks.discard)
+        return True
+
+    async def _execute_job(
+        self,
+        definition: JobDefinition,
+        fire: FireContext,
+        *,
+        success_callback: Callable[..., Any] | None = None,
+    ) -> Any:
+        """Resolve a target, build its call, inject fire context, and await it."""
+        if definition.backend == "code":
+            record = self._code_jobs.get(definition.schedule_id)
+            if record is None:
+                raise TargetMissingError(f"Code job {definition.schedule_id!r} is unavailable")
+            method = record.method
+            call_args: list[Any] = []
+            call_kwargs = dict(definition.metadata)
+            if definition.prompt is not None:
+                call_args, call_kwargs = apply_prompt_signature(method, call_args, call_kwargs, definition.prompt)
+            call_kwargs = inject_fire_context(method, call_kwargs, fire)
+        else:
+            resolver = self._resolvers.get(definition.target_kind)
+            if resolver is None:
+                self.logger.warning(
+                    "Target resolver is unavailable for %s/%s", definition.target_kind, definition.target_name
+                )
+                raise TargetMissingError(f"Unknown target kind: {definition.target_kind!r}")
+            try:
+                target = await resolver.resolve(definition.target_name, target_id=definition.target_id)
+            except Exception as exc:  # noqa: BLE001 - resolver outages are target misses
+                self.logger.warning("Could not resolve target %s: %s", definition.target_name, exc)
+                raise TargetMissingError(f"Could not resolve target {definition.target_name!r}") from exc
+            if target is None:
+                self.logger.warning("Target %s/%s is missing", definition.target_kind, definition.target_name)
+                raise TargetMissingError(f"Target {definition.target_name!r} is unavailable")
+            call_args, call_kwargs = resolver.build_call(target, definition, fire)
+            method_name = definition.method_name
+            if method_name is None:
+                raise ValueError("method_name is required for this schedule")
+            method = getattr(target, method_name, None)
+            if not callable(method):
+                raise ValueError(f"method {method_name!r} is not callable")
+            call_kwargs = inject_fire_context(method, call_kwargs, fire)
+        result = await method(*call_args, **call_kwargs)
+        self._job_context[definition.schedule_id] = {
+            "definition": definition,
+            "fire": fire,
+            "success_callback": success_callback,
+            "backend": definition.backend,
+        }
+        return result
+
+    async def _execute_with_failure(
+        self, definition: JobDefinition, fire: FireContext, *, success_callback: Callable[..., Any] | None = None
+    ) -> Any:
+        """Execute one definition and stamp failures before propagating them."""
+        failure: BaseException | None = None
+        try:
+            return await self._execute_job(definition, fire, success_callback=success_callback)
+        except TargetMissingError as exc:
+            status = "target_missing"
+            failure = exc
+            self.logger.warning("Target missing for schedule %s: %s", definition.schedule_id, exc)
+        except Exception as exc:  # noqa: BLE001 - APScheduler owns the traceback
+            status = "error"
+            failure = exc
+            self.logger.error("Error executing schedule %s: %s", definition.schedule_id, exc, exc_info=True)
+        state, crossed = await self._run_state_for(definition.backend).stamp_failure(
+            definition.schedule_id,
+            status=status,
+            error=str(failure),
+            fire=fire,
+            threshold=self._max_failures,
+        )
+        if crossed:
+            await self._disable_after_threshold(definition, state)
+        assert failure is not None
+        raise failure
+
+    async def _run_db_schedule(self, schedule_id: str, fingerprint: str | None, *, run_now: bool = False) -> Any:
+        """Re-read and execute a database-backed schedule at fire time."""
+        schedule_id = str(schedule_id)
+        try:
+            definition = await self.get_schedule(schedule_id)
+        except NoDataFound:
+            if not run_now:
+                job = self.scheduler.get_job(schedule_id)
+                if job is not None:
+                    with contextlib.suppress(JobLookupError):
+                        self.scheduler.remove_job(schedule_id, jobstore=getattr(job, "_jobstore_alias", "default"))
+            return jobs.SKIPPED
+        if (
+            not run_now
+            and not (
+                await self._run_state_for("db").read(schedule_id)
+                or RunState(schedule_id=schedule_id, backend="db", enabled=True)
+            ).enabled
+        ):
+            with contextlib.suppress(JobLookupError):
+                self.scheduler.remove_job(schedule_id, jobstore="default")
+            return jobs.SKIPPED
+        if not run_now and fingerprint and schedule_fingerprint(definition) != fingerprint:
+            job = self.scheduler.get_job(schedule_id)
+            if job is not None:
+                self.scheduler.reschedule_job(
+                    schedule_id,
+                    jobstore=getattr(job, "_jobstore_alias", "default"),
+                    trigger=self._create_trigger(definition.schedule_type, definition.schedule_config),
+                )
+            return jobs.SKIPPED
+        fire = FireContext.for_fire(schedule_id, CURRENT_RUN_TIME.get() or utcnow(), run_now=run_now)
+        return await self._execute_with_failure(
+            definition,
+            fire,
+            success_callback=self._local_callbacks.get(schedule_id),
+        )
+
+    async def _run_redis_job(
+        self,
+        schedule_id: str,
+        *,
+        run_now: bool = False,
+        definition_version: int | None = None,
+        definition: dict[str, Any] | None = None,
+    ) -> Any:
+        """Execute a versioned Redis definition or fail closed on incompatible data."""
+        job = self.scheduler.get_job(schedule_id, jobstore="redis") if self.redis_available else None
+        payload = definition or (getattr(job, "kwargs", {}) or {}).get("definition")
+        version = definition_version
+        if version is None:
+            version = (getattr(job, "kwargs", {}) or {}).get("definition_version")
+        if not isinstance(payload, dict):
+            raise TargetMissingError(f"Redis definition {schedule_id!r} is unavailable")
+        job_definition = JobDefinition(**payload)
+        fire = FireContext.for_fire(schedule_id, CURRENT_RUN_TIME.get() or utcnow(), run_now=run_now)
+        if version != JOB_DEFINITION_VERSION:
+            self.logger.warning("Skipping Redis job %s with incompatible definition version %s", schedule_id, version)
+            await self._run_state_for("redis").stamp_failure(
+                schedule_id,
+                status="incompatible",
+                error=f"definition_version={version}",
+                fire=fire,
+                threshold=self._max_failures,
+            )
+            with contextlib.suppress(JobLookupError):
+                self.scheduler.pause_job(schedule_id, jobstore="redis")
+            return jobs.SKIPPED
+        state = await self._run_state_for("redis").read(schedule_id)
+        if not run_now and state is not None and not state.enabled:
+            return jobs.SKIPPED
+        return await self._execute_with_failure(job_definition, fire)
+
+    async def _run_auto_task(self, job_id: str, *, run_now: bool = False) -> Any:
+        """Execute a process-local decorator-registered code job."""
+        record = self._code_jobs.get(job_id)
+        if record is None:
+            raise TargetMissingError(f"Unknown auto-schedule {job_id!r} in this process")
+        definition = record.to_definition()
+        fire = FireContext.for_fire(job_id, CURRENT_RUN_TIME.get() or utcnow(), run_now=run_now)
+        return await self._execute_with_failure(definition, fire, success_callback=record.success_callback)
+
+    async def _disable_after_threshold(self, definition: JobDefinition, state: RunState) -> None:
+        """Disable the backend job after its failure threshold is crossed."""
+        if definition.backend == "db":
+            with contextlib.suppress(JobLookupError):
+                self.scheduler.remove_job(definition.schedule_id, jobstore="default")
+        elif definition.backend == "redis":
+            with contextlib.suppress(JobLookupError):
+                self.scheduler.pause_job(definition.schedule_id, jobstore="redis")
+        else:
+            record = self._code_jobs.get(definition.schedule_id)
+            if record is not None:
+                record.enabled = False
+            with contextlib.suppress(JobLookupError):
+                self.scheduler.pause_job(definition.schedule_id, jobstore="default")
+        await self._alert_disabled(definition, state)
+
+    async def _alert_disabled(self, definition: JobDefinition, state: RunState) -> None:
+        """Notify that a job was auto-disabled; notification failures never escape."""
+        try:
+            send_result = definition.send_result if isinstance(definition.send_result, dict) else {}
+            recipients = (
+                send_result.get("recipients")
+                or send_result.get("emails")
+                or send_result.get("email")
+                or send_result.get("to")
+                or self._alert_recipients
+            )
+            message = (
+                f"Scheduled job {definition.target_name} ({definition.schedule_id}) was disabled after "
+                f"{state.consecutive_failures} consecutive failures. Last status: {state.last_status}."
+            )
+            if not recipients:
+                self.logger.warning(message)
+                return
+            await _SchedulerNotification(self.logger).send_notification(
+                message=message,
+                recipients=recipients,
+                provider="email",
+                subject=f"Scheduler disabled: {definition.target_name}",
+            )
+        except Exception as exc:  # noqa: BLE001 - alerts are best effort
+            self.logger.warning("Unable to alert for disabled schedule %s: %s", definition.schedule_id, exc)
+
+    async def _process_job_success(
+        self,
+        definition: JobDefinition,
+        fire: FireContext,
+        result: Any,
+        success_callback: Callable[..., Any] | None,
+    ) -> None:
+        """Stamp success, process deliveries, and persist delivery outcomes."""
+        store = self._run_state_for(definition.backend)
+        try:
+            job = self.scheduler.get_job(
+                definition.schedule_id, jobstore="redis" if definition.backend == "redis" else "default"
+            )
+            next_run = getattr(job, "next_run_time", None) if job is not None else None
+            await store.stamp_success(
+                definition.schedule_id,
+                result_text=truncate(self._format_result(result)),
+                fire=fire,
+                next_run=next_run,
+            )
+            outcomes = await self._handle_job_success(definition, result, success_callback)
+            if outcomes:
+                await store.stamp_delivery(definition.schedule_id, outcomes)
+        except Exception as exc:  # noqa: BLE001 - listener finalization never raises
+            self.logger.error("Error finalizing successful job %s: %s", definition.schedule_id, exc, exc_info=True)
+
+    async def _handle_job_success(
+        self,
+        definition: JobDefinition,
+        result: Any,
+        success_callback: Callable[..., Any] | None,
+    ) -> list[dict[str, Any]]:
+        """Run isolated user and registry deliveries, preserving later deliveries after failures."""
+        outcomes: list[dict[str, Any]] = []
+        if success_callback is not None:
+            try:
+                response = success_callback(
+                    result, schedule_id=definition.schedule_id, target_name=definition.target_name
+                )
+                if inspect.isawaitable(response):
+                    response = await response
+                outcomes.append(self._callback_outcome("success_callback", response))
+            except Exception as exc:  # noqa: BLE001 - isolate user callback
+                outcomes.append(self._callback_outcome("success_callback", error=exc))
+        for callback_definition in definition.callbacks:
+            name = str(callback_definition.get("type") or callback_definition.get("name") or "unknown")
+            try:
+                callback = build_scheduler_callback(callback_definition, logger=self.logger)
+                response = await callback(
+                    result, schedule_id=definition.schedule_id, target_name=definition.target_name
+                )
+                outcomes.append(self._callback_outcome(name, response))
+            except Exception as exc:  # noqa: BLE001 - isolate each delivery
+                outcomes.append(self._callback_outcome(name, error=exc))
+        if definition.send_result:
+            try:
+                response = await self._send_result_email(definition, result, definition.send_result)
+                outcomes.append(
+                    self._callback_outcome("send_result", response, error=None if response is not None else "not sent")
+                )
+            except Exception as exc:  # noqa: BLE001 - isolate notification
+                outcomes.append(self._callback_outcome("send_result", error=exc))
+        return outcomes
+
+    @staticmethod
+    def _callback_outcome(name: str, response: Any = None, error: Any = None) -> dict[str, Any]:
+        """Normalize one delivery response."""
+        if error is not None:
+            return {"callback": name, "status": "failed", "error": str(error)}
+        status = response.get("status") if isinstance(response, dict) else None
+        status = {"success": "sent", "error": "failed"}.get(status, status)
+        if status not in {"sent", "saved", "partial", "failed"}:
+            status = "failed"
+        response_error = (
+            response.get("error") if isinstance(response, dict) and status in {"failed", "partial"} else None
+        )
+        return {"callback": name, "status": status, "error": response_error}
+
+    async def _send_result_email(
+        self, definition: JobDefinition, result: Any, send_result: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Send a configured result email."""
+        if not isinstance(send_result, dict):
+            self.logger.warning("send_result for schedule %s is not a dictionary", definition.schedule_id)
+            return None
+        recipients = (
+            send_result.get("recipients")
+            or send_result.get("emails")
+            or send_result.get("email")
+            or send_result.get("to")
+        )
+        if not recipients:
+            self.logger.warning("send_result for schedule %s is missing recipients", definition.schedule_id)
+            return None
+        message = send_result.get(
+            "message", f"Job {definition.target_name} ({definition.schedule_id}) completed successfully."
+        )
+        if send_result.get("include_result", True):
+            formatted = self._format_result(result)
+            if formatted:
+                message = f"{message}\n\nResult:\n{formatted}"
+        reserved = {"recipients", "emails", "email", "to", "subject", "message", "include_result", "template", "report"}
+        extras = {key: value for key, value in send_result.items() if key not in reserved}
+        return await _SchedulerNotification(self.logger).send_email(
+            message=message,
+            recipients=recipients,
+            subject=send_result.get("subject", f"Scheduled job {definition.target_name} completed"),
+            report=send_result.get("report"),
+            template=send_result.get("template"),
+            **extras,
+        )
+
+    def _format_result(self, result: Any) -> str:
+        """Format a result for persisted state and notifications."""
+        if result is None:
+            return ""
+        if isinstance(result, (str, int, float, bool)):
+            return str(result)
+        if hasattr(result, "model_dump"):
+            with contextlib.suppress(Exception):
+                return json.dumps(result.model_dump(), indent=2, default=str)
+        if hasattr(result, "dict"):
+            with contextlib.suppress(Exception):
+                return json.dumps(result.dict(), indent=2, default=str)
+        try:
+            return json.dumps(result, indent=2, default=str)
+        except TypeError:
+            return str(result)
+
+    async def run_schedule_now(self, schedule_id: str) -> JobDefinition:
+        """Schedule one immediate fire for a database, Redis, or code job."""
+        try:
+            acquired = await self._fire_coordinator.try_acquire_running(str(schedule_id))
+        except FireCoordinationError as exc:
+            raise SchedulerUnavailableError("Scheduler coordination unavailable") from exc
+        if not acquired:
+            raise SchedulerRunNowConflictError(f"A run-now execution is already active for schedule {schedule_id}.")
+        try:
+            source, definition, stored = await self._locate(str(schedule_id))
+            if source == "external" or definition is None:
+                raise NotEditableError("external schedules cannot be run now")
+            trigger = DateTrigger(run_date=utcnow())
+            if source == "db":
+                self.scheduler.add_job(
+                    jobs.run_db_schedule_now,
+                    trigger=trigger,
+                    id=f"{_RUN_NOW_JOB_PREFIX}{schedule_id}",
+                    kwargs={"manager_name": self.registered_name, "schedule_id": str(schedule_id)},
+                    jobstore=getattr(stored, "_jobstore_alias", "default") if stored is not None else "default",
+                    replace_existing=False,
+                )
+            elif source == "redis":
+                self.scheduler.add_job(
+                    jobs.run_redis_job_now,
+                    trigger=trigger,
+                    id=f"{_RUN_NOW_JOB_PREFIX}{schedule_id}",
+                    kwargs={"manager_name": self.registered_name, "schedule_id": str(schedule_id)},
+                    jobstore="redis",
+                    replace_existing=False,
+                )
+            else:
+                self.scheduler.add_job(
+                    jobs.run_auto_schedule,
+                    trigger=trigger,
+                    id=f"{_RUN_NOW_JOB_PREFIX}{schedule_id}",
+                    kwargs={"manager_name": self.registered_name, "job_id": str(schedule_id), "run_now": True},
+                    jobstore="default",
+                    replace_existing=False,
+                )
+            return definition
+        except Exception:
+            await self._fire_coordinator.release_running(str(schedule_id))
+            raise
+
+    async def get_last_result(self, schedule_id: str) -> RunState:
+        """Return backend-neutral run state for an owned schedule."""
+        source, definition, stored = await self._locate(str(schedule_id))
+        if source == "external" or definition is None:
+            raise NoDataFound(f"Schedule {schedule_id!r} has no run state")
+        state = await self._run_state_for(source).read(str(schedule_id))
+        if state is not None:
+            return state
+        return RunState(
+            schedule_id=str(schedule_id),
+            backend=source,
+            enabled=bool(getattr(stored, "enabled", True)),
+        )
 
     async def start_headless(
         self,
