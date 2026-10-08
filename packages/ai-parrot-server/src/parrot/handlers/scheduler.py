@@ -2,16 +2,60 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from aiohttp import web
+from asyncdb.exceptions import NoDataFound
 from navconfig.logging import logging
 from navigator.views import BaseHandler, BaseView
 
 from ..scheduler import ScheduleType
 from ..scheduler.functions import list_supported_callbacks
-from ..scheduler.manager import SchedulerRunNowConflictError
+from ..scheduler.base import (
+    NotEditableError,
+    SchedulerRunNowConflictError,
+    SchedulerUnavailableError,
+    TargetMissingError,
+)
 from ..scheduler.sanitize import SchedulerConfigError
+
+_POST_REQUIRED = frozenset({"target_kind", "target_name", "schedule_type", "schedule_config"})
+_POST_OPTIONAL = (
+    "backend",
+    "target_id",
+    "tenant",
+    "prompt",
+    "method_name",
+    "created_by",
+    "created_email",
+    "metadata",
+    "send_result",
+    "callbacks",
+    "misfire_grace_time",
+)
+_POST_FIELDS = _POST_REQUIRED | frozenset(_POST_OPTIONAL)
+
+
+class _SchedulerErrorMixin:
+    """Translate scheduler exceptions into the REST API error contract."""
+
+    def _error_response(self, message: str, status: int = 400) -> web.Response:
+        return self.json_response({"status": "error", "message": message}, status=status)
+
+    def _map_error(self, exc: Exception) -> web.Response:
+        """Return the HTTP response for a typed scheduler failure."""
+        if isinstance(exc, (NoDataFound, TargetMissingError)):
+            status = 404
+        elif isinstance(exc, (NotEditableError, SchedulerRunNowConflictError)):
+            status = 409
+        elif isinstance(exc, SchedulerUnavailableError):
+            status = 503
+        elif isinstance(exc, (SchedulerConfigError, ValueError)):
+            status = 400
+        else:
+            self.logger.error("Scheduler request failed: %s", exc, exc_info=True)
+            status = 500
+        return self._error_response(str(exc), status=status)
 
 
 class SchedulerCatalogHelper(BaseHandler):
@@ -22,11 +66,15 @@ class SchedulerCatalogHelper(BaseHandler):
         return [member.value for member in ScheduleType]
 
     @staticmethod
-    def list_scheduler_types(app: web.Application) -> list[str]:
+    def list_backends(app: web.Application) -> list[str]:
         manager = app.get("scheduler_manager")
-        if manager is None:
-            return ["default"]
-        return sorted(manager.scheduler._jobstores.keys())  # pylint: disable=protected-access
+        backends = ["db"]
+        scheduler = getattr(manager, "scheduler", None) if manager is not None else None
+        if scheduler is not None and "redis" in getattr(
+            scheduler, "_jobstores", {}
+        ):  # pylint: disable=protected-access
+            backends.append("redis")
+        return backends
 
     @staticmethod
     def list_callbacks() -> list[dict[str, Any]]:
@@ -47,12 +95,12 @@ class SchedulerCallbacksHandler(BaseView):
             {
                 "callbacks": self.helper.list_callbacks(),
                 "schedule_types": self.helper.list_schedule_types(),
-                "scheduler_types": self.helper.list_scheduler_types(self.request.app),
+                "backends": self.helper.list_backends(self.request.app),
             }
         )
 
 
-class SchedulerJobsHandler(BaseView):
+class SchedulerJobsHandler(_SchedulerErrorMixin, BaseView):
     """CRUD handler for scheduler jobs persisted in APScheduler and Postgres."""
 
     _logger_name = "Parrot.SchedulerJobsHandler"
@@ -67,28 +115,18 @@ class SchedulerJobsHandler(BaseView):
             raise RuntimeError("scheduler_manager is not configured in app")
         return manager
 
-    def _error_response(self, message: str, status: int = 400) -> web.Response:
-        return self.json_response({"status": "error", "message": message}, status=status)
-
     async def get(self) -> web.Response:
         schedule_id = self.request.match_info.get("schedule_id")
         try:
             if schedule_id:
-                job = self.manager.scheduler.get_job(schedule_id)
-                if job is None:
-                    return self._error_response("Schedule not found", status=404)
-                try:
-                    schedule = await self.manager.get_schedule(schedule_id)
-                    entry = self.manager._serialize_job(schedule)  # pylint: disable=protected-access
-                except Exception:  # pylint: disable=broad-except
-                    entry = self.manager._serialize_auto_job(job)  # pylint: disable=protected-access
+                source, definition, job = await self.manager._locate(schedule_id)  # pylint: disable=protected-access
+                entry = self.manager._serialize_job(definition, job, source=source)  # pylint: disable=protected-access
                 return self.json_response({"status": "success", "schedule": entry})
 
             payload = await self.manager.list_jobs()
             return self.json_response({"status": "success", "count": len(payload), "schedules": payload})
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.error("Scheduler GET failed: %s", exc, exc_info=True)
-            return self._error_response(str(exc), status=500)
+            return self._map_error(exc)
 
     async def post(self) -> web.Response:
         try:
@@ -97,32 +135,24 @@ class SchedulerJobsHandler(BaseView):
             return self._error_response("Invalid JSON body", status=400)
 
         try:
+            unknown = sorted(set(data) - _POST_FIELDS)
+            if unknown:
+                return self._error_response(f"unknown field: {unknown[0]}", status=400)
             schedule = await self.manager.add_schedule(
-                agent_name=data["agent_name"],
-                schedule_type=data["schedule_type"],
-                schedule_config=data["schedule_config"],
-                prompt=data.get("prompt"),
-                method_name=data.get("method_name"),
-                created_by=data.get("created_by"),
-                created_email=data.get("created_email"),
-                metadata=data.get("metadata", {}),
-                agent_id=data.get("agent_id"),
-                is_crew=bool(data.get("is_crew", False)),
-                send_result=data.get("send_result"),
-                scheduler_type=data.get("scheduler_type", "default"),
-                callbacks=data.get("callbacks", []),
+                data["target_kind"],
+                data["target_name"],
+                data["schedule_type"],
+                data["schedule_config"],
+                **{key: data[key] for key in _POST_OPTIONAL if key in data},
             )
             return self.json_response(
-                {"status": "success", "schedule": self.manager._serialize_job(schedule)}, status=201
+                {"status": "success", "schedule": self.manager._serialize_job(schedule, source=schedule.backend)},
+                status=201,
             )  # pylint: disable=protected-access
         except KeyError as exc:
             return self._error_response(f"Missing required field: {exc.args[0]}", status=400)
-        except SchedulerConfigError as exc:
-            # Unusable schedule_type/schedule_config — a client error, not ours.
-            return self._error_response(str(exc), status=400)
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.error("Scheduler POST failed: %s", exc, exc_info=True)
-            return self._error_response(str(exc), status=500)
+            return self._map_error(exc)
 
     async def patch(self) -> web.Response:
         schedule_id = self.request.match_info.get("schedule_id")
@@ -146,16 +176,10 @@ class SchedulerJobsHandler(BaseView):
             else:
                 schedule = await self.manager.update_schedule(schedule_id, payload)
             return self.json_response(
-                {"status": "success", "schedule": self.manager._serialize_job(schedule)}
+                {"status": "success", "schedule": self.manager._serialize_job(schedule, source=schedule.backend)}
             )  # pylint: disable=protected-access
-        except SchedulerRunNowConflictError as exc:
-            return self._error_response(str(exc), status=409)
-        except SchedulerConfigError as exc:
-            # Unusable schedule_type/schedule_config — a client error, not ours.
-            return self._error_response(str(exc), status=400)
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.error("Scheduler PATCH failed: %s", exc, exc_info=True)
-            return self._error_response(str(exc), status=500)
+            return self._map_error(exc)
 
     async def delete(self) -> web.Response:
         schedule_id = self.request.match_info.get("schedule_id")
@@ -165,11 +189,10 @@ class SchedulerJobsHandler(BaseView):
             await self.manager.delete_schedule(schedule_id)
             return self.json_response({"status": "success", "message": f"Schedule {schedule_id} deleted"})
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.error("Scheduler DELETE failed: %s", exc, exc_info=True)
-            return self._error_response(str(exc), status=500)
+            return self._map_error(exc)
 
 
-class SchedulerLastResultHandler(BaseView):
+class SchedulerLastResultHandler(_SchedulerErrorMixin, BaseView):
     """``GET /api/v1/parrot/scheduler/schedules/{schedule_id}/last-result``.
 
     Read-only view of a schedule's last execution: ``last_run``,
@@ -192,16 +215,12 @@ class SchedulerLastResultHandler(BaseView):
             raise RuntimeError("scheduler_manager is not configured in app")
         return manager
 
-    def _error_response(self, message: str, status: int = 400) -> web.Response:
-        return self.json_response({"status": "error", "message": message}, status=status)
-
     async def get(self) -> web.Response:
         schedule_id = self.request.match_info.get("schedule_id")
         if not schedule_id:
             return self._error_response("schedule_id required", status=400)
         try:
             result = await self.manager.get_last_result(schedule_id)
-            return self.json_response({"status": "success", **result})
+            return self.json_response({"status": "success", **result.model_dump(mode="json")})
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.error("Scheduler last-result GET failed: %s", exc, exc_info=True)
-            return self._error_response(str(exc), status=500)
+            return self._map_error(exc)
