@@ -41,7 +41,7 @@ def mock_bot_manager():
 def mock_scheduler_manager():
     scheduler_manager = AsyncMock()
     schedule = MagicMock()
-    schedule.to_dict.return_value = {"schedule_id": "sched-1", "agent_name": "test"}
+    schedule.model_dump.return_value = {"schedule_id": "sched-1", "target_name": "test"}
     scheduler_manager.add_schedule.return_value = schedule
     return scheduler_manager
 
@@ -176,7 +176,7 @@ class TestSavedExecutionService:
 
     @pytest.mark.asyncio
     async def test_schedule_execution(self, mock_storage, mock_scheduler_manager):
-        """schedule calls AgentSchedulerManager.add_schedule with is_crew=True."""
+        """schedule calls SchedulerManager.add_schedule with crew target keywords."""
         service = SavedExecutionService(
             storage=mock_storage, scheduler_manager=mock_scheduler_manager
         )
@@ -188,11 +188,11 @@ class TestSavedExecutionService:
             tenant="acme", user_id="u1", execution_id="abc", schedule_config=schedule_request
         )
 
-        assert result == {"schedule_id": "sched-1", "agent_name": "test"}
-        _, kwargs = mock_scheduler_manager.add_schedule.await_args
-        assert mock_scheduler_manager.add_schedule.await_args.args[0] == "test"
-        assert mock_scheduler_manager.add_schedule.await_args.args[1] == "DAILY"
-        assert kwargs["is_crew"] is True
+        assert result == {"schedule_id": "sched-1", "target_name": "test"}
+        kwargs = mock_scheduler_manager.add_schedule.await_args.kwargs
+        assert kwargs["target_kind"] == "crew"
+        assert kwargs["target_name"] == "test"
+        assert kwargs["schedule_type"] == "DAILY"
         assert kwargs["prompt"] == "query"
 
     @pytest.mark.asyncio

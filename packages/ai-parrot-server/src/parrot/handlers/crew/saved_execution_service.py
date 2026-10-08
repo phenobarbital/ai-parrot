@@ -260,7 +260,7 @@ class SavedExecutionService:
             schedule_config: Schedule type + config + metadata.
 
         Returns:
-            The created ``AgentSchedule`` serialised via ``.to_dict()``.
+            The created ``JobDefinition`` serialised with ``model_dump(mode="json")``.
 
         Raises:
             ExecutionNotFoundError: If the execution is not found (or not
@@ -283,18 +283,18 @@ class SavedExecutionService:
         method_name = record.get("method") or "run_sequential"
 
         schedule = await self.scheduler_manager.add_schedule(
-            crew_name,
-            schedule_config.schedule_type,
-            schedule_config.schedule_config,
+            target_kind="crew",
+            target_name=crew_name,
+            schedule_type=schedule_config.schedule_type,
+            schedule_config=schedule_config.schedule_config,
             prompt=prompt,
             method_name=method_name,
             created_by=schedule_config.created_by,
             created_email=schedule_config.created_email,
             metadata=schedule_config.metadata,
-            is_crew=True,
             callbacks=schedule_config.callbacks,
         )
-        return schedule.to_dict() if hasattr(schedule, "to_dict") else schedule
+        return schedule.model_dump(mode="json")
 
     async def delete_execution(
         self,

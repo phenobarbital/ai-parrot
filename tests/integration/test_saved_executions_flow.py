@@ -152,7 +152,7 @@ def mock_bot_manager(mock_storage):
 def mock_scheduler_manager():
     scheduler_manager = AsyncMock()
     schedule = MagicMock()
-    schedule.to_dict.return_value = {"schedule_id": "sched-1", "agent_name": "research-crew"}
+    schedule.model_dump.return_value = {"schedule_id": "sched-1", "target_name": "research-crew"}
     scheduler_manager.add_schedule.return_value = schedule
     return scheduler_manager
 
@@ -254,10 +254,11 @@ class TestSavedExecutionsFlow:
             ),
         )
 
-        assert result == {"schedule_id": "sched-1", "agent_name": "research-crew"}
+        assert result == {"schedule_id": "sched-1", "target_name": "research-crew"}
         mock_scheduler_manager.add_schedule.assert_awaited_once()
-        _, kwargs = mock_scheduler_manager.add_schedule.await_args
-        assert kwargs["is_crew"] is True
+        kwargs = mock_scheduler_manager.add_schedule.await_args.kwargs
+        assert kwargs["target_kind"] == "crew"
+        assert kwargs["target_name"] == "research-crew"
         assert kwargs["prompt"] == "Analyze Q3 market trends"
 
     @pytest.mark.asyncio
