@@ -27,7 +27,8 @@ Notes:
 """
 
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Sequence, Union, Literal, TypedDict
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Sequence, TypedDict, Union
 import os
 import re
 import logging
@@ -36,6 +37,9 @@ import importlib
 from datetime import datetime
 from pydantic import BaseModel, Field
 import pandas as pd
+from jinja2 import TemplateNotFound  # noqa: F401
+from jinja2 import meta as jinja_meta  # noqa: F401
+from jinja2 import nodes as jinja_nodes
 
 try:
     # Optional config source; fall back to env vars if missing
@@ -52,9 +56,33 @@ except ImportError as e:  # pragma: no cover - optional
 from parrot.tools.manager import ToolManager
 from parrot.tools.config_schema import ConfigOption
 from parrot.auth.exceptions import AuthorizationRequired
+from parrot.template import JinjaConfig, TemplateEngine
 from .toolkit import AbstractToolkit
 from .decorators import tool_schema, requires_permission
 from .jira_config import JiraToolkitConfig
+
+#: Suffix every Jira text template file carries.
+_TEMPLATE_SUFFIX = ".j2"
+#: Jira Cloud limit for description and comment text fields.
+_MAX_JIRA_TEXT_CHARS = 32_767
+#: Appended (inside the cap) when rendered text is truncated.
+_TRUNCATION_MARKER = "\n\n... (truncated)"
+#: Stdlib-only extensions: the engine default pulls undeclared third-party packages.
+_JIRA_TEMPLATE_EXTENSIONS = ("jinja2.ext.do", "jinja2.ext.loopcontrols")
+
+
+class JiraTemplateError(ValueError):
+    """A Jira text template could not be applied.
+
+    Raised for missing variables, an empty render, a conflicting
+    ``fields['description']``, an invalid name, or a template requested while
+    no templates are configured.
+    """
+
+
+class JiraTemplateNotFound(JiraTemplateError):
+    """An explicitly requested template name does not exist in any loader."""
+
 
 # ---------------------------------------------------------------------------
 # Envelope type for read-method returns (FEAT-138, Module 5)
@@ -403,6 +431,18 @@ class CreateIssueInput(BaseModel):
         description="Additional fields dict for custom or less common fields",
         json_schema_extra={"x-exclude-form": True},
     )
+    template: Optional[str] = Field(
+        default=None,
+        description=(
+            "Template name used to compose the text (e.g. 'nav/bug' or 'nav/bug.j2'); see "
+            "jira_list_templates. Omit to apply the configured convention template, if any."
+        ),
+    )
+    template_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Extra variables available to the template; they override same-named call fields.",
+        json_schema_extra={"x-exclude-form": True},
+    )
 
 
 class UpdateIssueInput(BaseModel):
@@ -435,6 +475,18 @@ class UpdateIssueInput(BaseModel):
 
     # Generic fields for any other updates
     fields: Optional[Dict[str, Any]] = Field(default=None, description="Arbitrary field updates dict")
+    template: Optional[str] = Field(
+        default=None,
+        description=(
+            "Template name used to compose the text (e.g. 'nav/bug' or 'nav/bug.j2'); see "
+            "jira_list_templates. Omit to apply the configured convention template, if any."
+        ),
+    )
+    template_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Extra variables available to the template; they override same-named call fields.",
+        json_schema_extra={"x-exclude-form": True},
+    )
 
 
 class FindIssuesByAssigneeInput(BaseModel):
@@ -456,7 +508,7 @@ class AddCommentInput(BaseModel):
     """Input for adding a comment to an issue."""
 
     issue: str = Field(description="Issue key or id")
-    body: str = Field(description="Comment body text")
+    body: Optional[str] = Field(default=None, description="Comment body text (required unless a template applies)")
     is_internal: bool = Field(default=False, description="If true, mark as internal (Service Desk)")
     attachments: Optional[List[str]] = Field(
         default=None,
@@ -464,6 +516,18 @@ class AddCommentInput(BaseModel):
             "Optional list of file paths (images or other files) to attach to the issue "
             "alongside this comment. Files are attached at the issue level."
         ),
+    )
+    template: Optional[str] = Field(
+        default=None,
+        description=(
+            "Template name used to compose the text (e.g. 'nav/bug' or 'nav/bug.j2'); see "
+            "jira_list_templates. Omit to apply the configured convention template, if any."
+        ),
+    )
+    template_params: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Extra variables available to the template; they override same-named call fields.",
+        json_schema_extra={"x-exclude-form": True},
     )
 
 
@@ -497,6 +561,12 @@ class SearchUsersInput(BaseModel):
 
 class GetProjectsInput(BaseModel):
     """Input for listing projects."""
+
+
+class ListTemplatesInput(BaseModel):
+    """Input for listing available Jira text templates."""
+
+    project: Optional[str] = Field(default=None, description="Only templates under this project folder, e.g. 'NAV'")
 
 
 class VerifyAuthInput(BaseModel):
@@ -620,7 +690,7 @@ class JiraToolkit(AbstractToolkit):
     Recognized config/env keys:
         JIRA_SERVER_URL, JIRA_AUTH_TYPE, JIRA_USERNAME, JIRA_PASSWORD, JIRA_TOKEN,
         JIRA_OAUTH_CONSUMER_KEY, JIRA_OAUTH_KEY_CERT, JIRA_OAUTH_ACCESS_TOKEN,
-        JIRA_OAUTH_ACCESS_TOKEN_SECRET, JIRA_DEFAULT_PROJECT
+        JIRA_OAUTH_ACCESS_TOKEN_SECRET, JIRA_DEFAULT_PROJECT, JIRA_TEMPLATES_DIR
 
     Custom-workflow keys (used by :meth:`jira_transition_to`):
         JIRA_WORKFLOW_PATH — default ordered status chain for any project,
@@ -710,6 +780,8 @@ class JiraToolkit(AbstractToolkit):
         credential_resolver: Any = None,
         workflow_paths: Optional[Dict[str, Union[str, List[str]]]] = None,
         verify_credentials: bool = True,
+        templates_dir: Optional[Union[str, Path]] = None,
+        templates: Optional[Mapping[str, str]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -770,6 +842,24 @@ class JiraToolkit(AbstractToolkit):
         self.default_components = _parse_csv(_cfg("JIRA_DEFAULT_COMPONENTS", "") or "")
         self.default_due_date_offset = _cfg("JIRA_DEFAULT_DUE_DATE_OFFSET")
         self.default_estimate = _cfg("JIRA_DEFAULT_ESTIMATE")
+
+        # FEAT-637 — Jira text templates. Explicit kwarg > navconfig/env.
+        # A configured path that is not a directory is dropped with a WARNING
+        # so a typo is diagnosable but never breaks toolkit construction.
+        _tpl_dir = templates_dir or _cfg("JIRA_TEMPLATES_DIR")
+        self.templates_dir: Optional[Path] = None
+        if _tpl_dir:
+            _candidate = Path(_tpl_dir).expanduser()
+            if _candidate.is_dir():
+                self.templates_dir = _candidate.resolve()
+            else:
+                self.logger.warning("Jira templates_dir %s is not a directory; ignoring it", _candidate)
+        self._inline_templates: Dict[str, str] = dict(templates or {})
+        self._template_engine: Optional[TemplateEngine] = None
+        # Per-template undeclared-variable analysis: the variable names plus the
+        # loader ``uptodate`` probes of every source it was parsed from, so an
+        # edited file or overridden inline template invalidates the entry.
+        self._template_variables_cache: Dict[str, tuple[frozenset[str], tuple[Callable[[], bool], ...]]] = {}
 
         # Declared workflow paths — the ordered status chain for a project's
         # custom Jira workflow. Jira's API only exposes the transitions
@@ -851,6 +941,27 @@ class JiraToolkit(AbstractToolkit):
 
         if verify_credentials:
             self._verify_static_credentials()
+
+    def _get_template_engine(self) -> Optional[TemplateEngine]:
+        """Return the lazily built Jira-safe template engine.
+
+        Returns:
+            ``None`` when neither ``templates_dir`` nor inline ``templates`` are
+            configured; otherwise a cached ``TemplateEngine`` with autoescape
+            disabled (Jira wiki markup is not HTML) and ``StrictUndefined``.
+        """
+        if self._template_engine is not None:
+            return self._template_engine
+        if self.templates_dir is None and not self._inline_templates:
+            return None
+        engine = TemplateEngine(
+            template_dirs=[self.templates_dir] if self.templates_dir else None,
+            config=JinjaConfig(autoescape=False, extensions=list(_JIRA_TEMPLATE_EXTENSIONS)),
+        )
+        if self._inline_templates:
+            engine.add_templates(self._inline_templates)
+        self._template_engine = engine
+        return engine
 
     def _verify_static_credentials(self) -> None:
         """Probe ``/myself`` and fail fast on rejected static credentials.
@@ -1610,6 +1721,316 @@ class JiraToolkit(AbstractToolkit):
             return prefix.upper() or None
         return None
 
+    # ── FEAT-637: Jira text templates ─────────────────────────────────────
+    @staticmethod
+    def _validate_template_name(name: str) -> str:
+        """Reject traversal-shaped names; return the name unchanged otherwise.
+
+        Raises:
+            JiraTemplateError: name contains ``..``, starts with ``/`` or contains ``\\``.
+        """
+        if ".." in name or name.startswith("/") or "\\" in name:
+            raise JiraTemplateError(f"invalid Jira template name: {name!r}")
+        return name
+
+    @classmethod
+    def _template_candidates(
+        cls, kind: Literal["create", "update", "comment"], project: Optional[str], issuetype: Optional[str]
+    ) -> List[str]:
+        """Return ordered, lower-cased convention candidates for ``kind``.
+
+        ``project`` and ``issuetype`` become path segments of the candidate
+        names, so every candidate passes the same traversal check as an
+        explicit ``template=`` (defence in depth on top of Jinja's own
+        ``split_template_path`` rejection of ``..`` segments).
+
+        Args:
+            kind: Jira write operation being rendered.
+            project: Optional Jira project key.
+            issuetype: Optional Jira issue type for create operations.
+
+        Returns:
+            Candidate template names in convention lookup order.
+
+        Raises:
+            JiraTemplateError: ``project`` or ``issuetype`` yields a traversal-shaped name.
+        """
+        project_name = project.lower() if project else None
+        issue_type_name = issuetype.lower() if issuetype else None
+        if kind == "create":
+            candidates = []
+            if project_name and issue_type_name:
+                candidates.append(f"{project_name}/{issue_type_name}{_TEMPLATE_SUFFIX}")
+            if project_name:
+                candidates.append(f"{project_name}/_default{_TEMPLATE_SUFFIX}")
+            candidates.append(f"_default{_TEMPLATE_SUFFIX}")
+        elif kind == "update":
+            candidates = (
+                [f"{project_name}/update{_TEMPLATE_SUFFIX}", f"update{_TEMPLATE_SUFFIX}"]
+                if project_name
+                else [f"update{_TEMPLATE_SUFFIX}"]
+            )
+        else:
+            candidates = (
+                [f"{project_name}/comment{_TEMPLATE_SUFFIX}", f"comment{_TEMPLATE_SUFFIX}"]
+                if project_name
+                else [f"comment{_TEMPLATE_SUFFIX}"]
+            )
+        return [cls._validate_template_name(candidate) for candidate in candidates]
+
+    @staticmethod
+    def _build_template_context(
+        call_fields: Dict[str, Any], template_params: Optional[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Build flat template context with params taking precedence.
+
+        Args:
+            call_fields: Frozen fields supplied by the Jira write path.
+            template_params: Optional caller-provided context overrides.
+
+        Returns:
+            A combined context suitable for template rendering.
+        """
+        context = dict(call_fields)
+        context.update(template_params or {})
+        return context
+
+    def _guard_text_length(self, text: str, *, field: str) -> str:
+        """Truncate ``text`` to the Jira cap with a marker inside the cap.
+
+        Args:
+            text: Rendered Jira text.
+            field: Jira field receiving the text, used in diagnostics.
+
+        Returns:
+            The original or safely truncated Jira text.
+        """
+        if len(text) <= _MAX_JIRA_TEXT_CHARS:
+            return text
+        self.logger.warning("Rendered Jira %s is %d chars > %d; truncating", field, len(text), _MAX_JIRA_TEXT_CHARS)
+        return text[: _MAX_JIRA_TEXT_CHARS - len(_TRUNCATION_MARKER)] + _TRUNCATION_MARKER
+
+    def _resolve_template_name(
+        self,
+        engine: TemplateEngine,
+        kind: str,
+        template: Optional[str],
+        project: Optional[str],
+        issuetype: Optional[str],
+    ) -> Optional[str]:
+        """Resolve an explicit or convention-based template name.
+
+        Args:
+            engine: Configured Jira template engine.
+            kind: Jira write operation being rendered.
+            template: Explicit template name, if supplied.
+            project: Optional Jira project key.
+            issuetype: Optional Jira issue type.
+
+        Returns:
+            The first existing logical template name, or ``None`` when no
+            convention candidate exists.
+
+        Raises:
+            JiraTemplateNotFound: An explicit template resolves to nothing.
+        """
+        if template is not None:
+            name = self._validate_template_name(template)
+            candidates = [name] if name.endswith(_TEMPLATE_SUFFIX) else [name, f"{name}{_TEMPLATE_SUFFIX}"]
+            for candidate in candidates:
+                try:
+                    engine.env.get_template(candidate)
+                except TemplateNotFound:
+                    continue
+                return candidate
+            raise JiraTemplateNotFound(f"Jira template {template!r} was not found")
+
+        for candidate in self._template_candidates(kind, project, issuetype):
+            try:
+                engine.env.get_template(candidate)
+            except TemplateNotFound:
+                continue
+            return candidate
+        return None
+
+    @staticmethod
+    def _collect_template_variables(
+        engine: TemplateEngine, name: str
+    ) -> tuple[frozenset[str], tuple[Callable[[], bool], ...]]:
+        """Parse ``name`` plus every ``include``/``extends`` target and collect undeclared variables.
+
+        Included and extended templates render with the parent's context, so
+        their variables are part of the parent's contract. ``import``/``from``
+        targets are *not* followed: macros do not receive the context unless
+        imported ``with context``, so their names would be false positives.
+        Synchronous (loader file I/O and Jinja parsing) — callers offload it.
+
+        Args:
+            engine: Configured Jira template engine.
+            name: Resolved logical template name.
+
+        Returns:
+            The undeclared variable names, and the loader ``uptodate`` probes
+            of every source that was parsed (for cache invalidation).
+
+        Raises:
+            JiraTemplateError: A statically named ``include``/``extends`` target does not exist.
+            TemplateNotFound: ``name`` itself does not exist.
+        """
+        env = engine.env
+        undeclared: set[str] = set()
+        probes: list[Callable[[], bool]] = []
+        seen: set[str] = set()
+        pending: list[tuple[str, bool]] = [(name, False)]
+        while pending:
+            current, optional = pending.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            try:
+                source, _, uptodate = env.loader.get_source(env, current)
+            except TemplateNotFound:
+                if current == name:
+                    raise
+                if optional:  # ``{% include "x" ignore missing %}``
+                    continue
+                raise JiraTemplateError(f"template '{name}' references missing template '{current}'") from None
+            ast = env.parse(source, name=current)
+            undeclared |= jinja_meta.find_undeclared_variables(ast)
+            if uptodate is not None:
+                probes.append(uptodate)
+            for node in ast.find_all((jinja_nodes.Include, jinja_nodes.Extends)):
+                target = node.template
+                ignore_missing = bool(getattr(node, "ignore_missing", False))
+                if isinstance(target, jinja_nodes.Const) and isinstance(target.value, str):
+                    pending.append((target.value, ignore_missing))
+                elif isinstance(target, (jinja_nodes.List, jinja_nodes.Tuple)):
+                    # ``{% include ["a.j2", "b.j2"] %}`` — the first existing one renders.
+                    pending.extend(
+                        (item.value, True)
+                        for item in target.items
+                        if isinstance(item, jinja_nodes.Const) and isinstance(item.value, str)
+                    )
+                # Dynamic targets (``{% include var %}``) are only resolvable at render time.
+        return frozenset(undeclared), tuple(probes)
+
+    async def _assert_template_variables(self, engine: TemplateEngine, name: str, context: Dict[str, Any]) -> None:
+        """Reject templates whose undeclared variables are absent from context.
+
+        The analysis (including ``include``/``extends`` targets) is cached per
+        template name and re-done off the event loop only when a loader
+        ``uptodate`` probe reports a changed source.
+
+        Args:
+            engine: Configured Jira template engine.
+            name: Resolved logical template name.
+            context: Template rendering context.
+
+        Raises:
+            JiraTemplateError: One or more undeclared variables are missing, or a
+                referenced template does not exist.
+        """
+        cached = self._template_variables_cache.get(name)
+        if cached is None or not all(probe() for probe in cached[1]):
+            cached = await asyncio.to_thread(self._collect_template_variables, engine, name)
+            self._template_variables_cache[name] = cached
+        missing = sorted(cached[0] - set(context) - set(engine.env.globals))
+        if missing:
+            raise JiraTemplateError(f"template '{name}' is missing variables: {', '.join(missing)}")
+
+    async def _prepare_jira_template(
+        self,
+        kind: Literal["create", "update", "comment"],
+        *,
+        template: Optional[str],
+        template_params: Optional[Dict[str, Any]],
+        call_fields: Dict[str, Any],
+        project: Optional[str],
+        issuetype: Optional[str] = None,
+    ) -> Optional[tuple[TemplateEngine, str, Dict[str, Any]]]:
+        """Resolve the template and validate its variables without rendering or Jira I/O.
+
+        Args:
+            kind: Jira write operation being rendered.
+            template: Explicit template name, if supplied.
+            template_params: Optional caller-provided context overrides.
+            call_fields: Frozen fields supplied by the Jira write path.
+            project: Optional Jira project key.
+            issuetype: Optional Jira issue type.
+
+        Returns:
+            ``(engine, name, context)`` ready to render, or ``None`` when no
+            template applies and the caller's text passes through.
+
+        Raises:
+            JiraTemplateError: No configured engine, or missing variables.
+            JiraTemplateNotFound: An explicit template name cannot be resolved.
+        """
+        engine = self._get_template_engine()
+        if engine is None:
+            if template:
+                raise JiraTemplateError("a template was requested but no Jira templates are configured")
+            return None
+        name = self._resolve_template_name(engine, kind, template, project, issuetype)
+        if name is None:
+            return None
+        context = self._build_template_context(call_fields, template_params)
+        await self._assert_template_variables(engine, name, context)
+        return engine, name, context
+
+    async def _render_jira_text(
+        self,
+        kind: Literal["create", "update", "comment"],
+        *,
+        text: Optional[str],
+        template: Optional[str],
+        template_params: Optional[Dict[str, Any]],
+        call_fields: Dict[str, Any],
+        project: Optional[str],
+        issuetype: Optional[str] = None,
+    ) -> Optional[str]:
+        """Compose Jira text from a template without performing Jira I/O.
+
+        Args:
+            kind: Jira write operation being rendered.
+            text: Original Jira text for passthrough when no template applies.
+            template: Explicit template name, if supplied.
+            template_params: Optional caller-provided context overrides.
+            call_fields: Frozen fields supplied by the Jira write path.
+            project: Optional Jira project key.
+            issuetype: Optional Jira issue type.
+
+        Returns:
+            Rendered Jira text, or the original text when no template applies.
+
+        Raises:
+            JiraTemplateError: No configured engine, missing variables, a render-time
+                template error (undefined attribute, missing dynamic include, …), or empty render.
+            JiraTemplateNotFound: An explicit template name cannot be resolved.
+        """
+        prepared = await self._prepare_jira_template(
+            kind,
+            template=template,
+            template_params=template_params,
+            call_fields=call_fields,
+            project=project,
+            issuetype=issuetype,
+        )
+        if prepared is None:
+            return text
+        engine, name, context = prepared
+        try:
+            rendered = await engine.render(name, context)
+        except ValueError as exc:
+            # TemplateEngine.render wraps every jinja2.TemplateError (UndefinedError
+            # on a nested attribute, a dynamic include that does not exist, …) in
+            # ValueError; surface it under the toolkit's own error type.
+            raise JiraTemplateError(f"template '{name}' failed to render: {exc.__cause__ or exc}") from exc
+        if not rendered.strip():
+            raise JiraTemplateError(f"template '{name}' rendered empty Jira text")
+        self.logger.debug("Rendered Jira %s from template %s", kind, name)
+        return self._guard_text_length(rendered, field="body" if kind == "comment" else "description")
+
     def _workflow_path_for(self, issue: str) -> Optional[List[str]]:
         """Return the declared workflow path for *issue*'s project, or the default."""
         project = self._project_of(issue)
@@ -1792,6 +2213,8 @@ class JiraToolkit(AbstractToolkit):
         parent: Optional[str] = None,
         original_estimate: Optional[str] = None,
         fields: Optional[Dict[str, Any]] = None,
+        template: Optional[str] = None,
+        template_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create a new issue. Requires jira.write permission.
 
@@ -1831,6 +2254,14 @@ class JiraToolkit(AbstractToolkit):
                 issuetype='Sub-task',
                 parent='NAV-123'
             )
+
+            # Create a bug description from a Jira template
+            jira_create_issue(
+                project='NAV',
+                summary='Login button not working',
+                template='nav/bug',
+                template_params={'severity': 'high'}
+            )
         """
         # Apply configured defaults for omitted fields
         project = project or self.default_project or "NAV"
@@ -1850,10 +2281,50 @@ class JiraToolkit(AbstractToolkit):
         if original_estimate is None and self.default_estimate:
             original_estimate = self.default_estimate
 
+        # FEAT-637 (AC8) — an unknown template or missing variables must fail
+        # before *any* Jira request, so resolve and validate the template first.
+        # The render itself happens below with the canonical issue type in the
+        # context (only its casing can differ, and the variable set is cached).
+        template_fields = {
+            "project": project,
+            "summary": summary,
+            "issuetype": issuetype,
+            "description": description,
+            "assignee": assignee,
+            "priority": priority,
+            "labels": labels,
+            "components": components,
+            "due_date": due_date,
+            "parent": parent,
+            "original_estimate": original_estimate,
+        }
+        await self._prepare_jira_template(
+            "create",
+            template=template,
+            template_params=template_params,
+            call_fields=template_fields,
+            project=project,
+            issuetype=issuetype,
+        )
+
         # Validate issuetype against the project's actual issue type scheme
         # so we return a useful error (with valid names) to the agent instead
         # of opaque "HTTP 400: The issue type selected is invalid.".
         canonical_issuetype = await self._validate_issue_type(project, issuetype)
+
+        # FEAT-637 — compose the description from a template, if one applies.
+        rendered_description = await self._render_jira_text(
+            "create",
+            text=description,
+            template=template,
+            template_params=template_params,
+            call_fields={**template_fields, "issuetype": canonical_issuetype},
+            project=project,
+            issuetype=canonical_issuetype,
+        )
+        if rendered_description is not description and fields and "description" in fields:
+            raise JiraTemplateError("fields['description'] conflicts with the rendered template description")
+        description = rendered_description
 
         # Build fields dict
         issue_fields: Dict[str, Any] = {
@@ -1928,6 +2399,8 @@ class JiraToolkit(AbstractToolkit):
         issuetype: Optional[Dict[str, str]] = None,
         priority: Optional[Dict[str, str]] = None,
         fields: Optional[Dict[str, Any]] = None,
+        template: Optional[str] = None,
+        template_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Update an existing issue. Requires jira.write permission.
 
@@ -1946,7 +2419,37 @@ class JiraToolkit(AbstractToolkit):
 
             # Change issue type
             jira_update_issue(issue='NAV-123', issuetype={'name': 'Bug'})
+
+            # Render the description from a Jira template
+            jira_update_issue(
+                issue='NAV-123',
+                template='nav/bug',
+                template_params={'severity': 'high'}
+            )
         """
+        # FEAT-637 — compose the description from a template, if one applies.
+        project = self._project_of(issue)
+        rendered_description = await self._render_jira_text(
+            "update",
+            text=description,
+            template=template,
+            template_params=template_params,
+            call_fields={
+                "issue": issue,
+                "project": project,
+                "summary": summary,
+                "description": description,
+                "labels": labels,
+                "due_date": due_date,
+                "priority": priority,
+                "issuetype": issuetype,
+            },
+            project=project,
+        )
+        if rendered_description is not description and fields and "description" in fields:
+            raise JiraTemplateError("fields['description'] conflicts with the rendered template description")
+        description = rendered_description
+
         update_kwargs: Dict[str, Any] = {}
         update_fields: Dict[str, Any] = {}
 
@@ -2027,9 +2530,11 @@ class JiraToolkit(AbstractToolkit):
     async def jira_add_comment(
         self,
         issue: str,
-        body: str,
+        body: Optional[str] = None,
         is_internal: bool = False,
         attachments: Optional[List[str]] = None,
+        template: Optional[str] = None,
+        template_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Add a comment to an issue, optionally attaching files. Requires jira.write permission.
 
@@ -2044,7 +2549,25 @@ class JiraToolkit(AbstractToolkit):
                 'See attached screenshot',
                 attachments=['/path/to/screenshot.png']
             )
+
+        Example using a template:
+            jira.jira_add_comment(
+                'JRA-1330',
+                template='comment',
+                template_params={'author': 'bot'}
+            )
         """
+        project = self._project_of(issue)
+        body = await self._render_jira_text(
+            "comment",
+            text=body,
+            template=template,
+            template_params=template_params,
+            call_fields={"issue": issue, "project": project, "body": body, "is_internal": is_internal},
+            project=project,
+        )
+        if body is None:
+            raise ValueError("jira_add_comment: body is required when no template applies")
 
         def _run():
             return self.jira.add_comment(issue, body, is_internal=is_internal)
@@ -2266,6 +2789,31 @@ class JiraToolkit(AbstractToolkit):
             if text:
                 result["response_preview"] = text[:400]
         return result
+
+    @tool_schema(ListTemplatesInput)
+    async def jira_list_templates(self, project: Optional[str] = None) -> Dict[str, Any]:
+        """List the Jira text templates usable with jira_create_issue, jira_update_issue and jira_add_comment.
+
+        Pass a returned name as ``template=`` to a write tool. Without ``template=``
+        the write tools apply a convention template automatically when one exists:
+        ``<project>/<issuetype>.j2`` → ``<project>/_default.j2`` → ``_default.j2`` for
+        issues, ``<project>/comment.j2`` → ``comment.j2`` for comments.
+
+        Returns:
+            ``{"ok": True, "templates": [names], "has_templates_dir": bool}`` —
+            logical names only; the filesystem location is never exposed.
+        """
+        engine = self._get_template_engine()
+        names: List[str] = []
+        if engine is not None:
+            names = sorted(name for name in engine.env.list_templates() if name.endswith(_TEMPLATE_SUFFIX))
+        if project is not None:
+            names = [name for name in names if name.startswith(f"{project.lower()}/")]
+        return {
+            "ok": True,
+            "templates": names,
+            "has_templates_dir": self.templates_dir is not None,
+        }
 
     @tool_schema(GetProjectsInput)
     async def jira_get_projects(self) -> Dict[str, Any]:

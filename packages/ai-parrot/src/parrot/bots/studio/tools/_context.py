@@ -200,7 +200,7 @@ async def _require_agent_owner(app: Any, agent_name: str, user_id: str) -> None:
         if db is not None:
             from asyncdb.exceptions import NoDataFound
 
-            from parrot.handlers.models import BotModel
+            from parrot.models.bots import BotModel
 
             try:
                 async with await db.acquire() as conn:

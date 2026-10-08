@@ -2,6 +2,7 @@
 
 Source-level gates: they read the repository checkout and skip (with a reason) when it is not available.
 """
+
 from __future__ import annotations
 
 import ast
@@ -17,7 +18,9 @@ SERVER_SRC = REPO / "packages" / "ai-parrot-server" / "src" / "parrot"
 CORE_SRC = REPO / "packages" / "ai-parrot" / "src" / "parrot"
 STORAGE = SERVER_SRC / "handlers" / "studio" / "storage"
 MANAGER_PY = "packages/ai-parrot-server/src/parrot/manager/manager.py"
-BOTS_PY = "packages/ai-parrot-server/src/parrot/handlers/models/bots.py"
+BOTS_PY = "packages/ai-parrot/src/parrot/models/bots.py"
+# Pre-move location of BotModel (re-export shim today); used when the merge-base predates the move.
+LEGACY_BOTS_PY = "packages/ai-parrot-server/src/parrot/handlers/models/bots.py"
 CREATION_SQL = "packages/ai-parrot-server/src/parrot/handlers/creation.sql"
 
 # Phase-2 (BYOK / vault / overrides / copy script) modules hold INSERT/UPSERT SQL only — they must stay in scope.
@@ -30,8 +33,14 @@ DDL = re.compile(
 MIGRATION_ENTRYPOINTS = ("apply_studio_migrations", "stamp_migrations")
 # Startup-path callables that must never apply migrations (X8/X10, spec §2.2).
 STARTUP_FUNCTIONS = {
-    "setup", "setup_registry_only", "setup_studio_routes", "ensure_studio_storage", "resolve_studio_storage",
-    "add_studio_runtime_hooks", "install_studio_runtime", "shutdown_studio_runtime",
+    "setup",
+    "setup_registry_only",
+    "setup_studio_routes",
+    "ensure_studio_storage",
+    "resolve_studio_storage",
+    "add_studio_runtime_hooks",
+    "install_studio_runtime",
+    "shutdown_studio_runtime",
 }
 
 
@@ -115,6 +124,24 @@ def _method_source(source: str, cls: str, method: str) -> str:
     raise AssertionError(f"{cls}.{method} not found")
 
 
+def _bots_source_at(rev: str) -> str:
+    """Return the ``BotModel`` module source at ``rev``, from its current or legacy path."""
+    try:
+        return _git("show", f"{rev}:{BOTS_PY}")
+    except subprocess.CalledProcessError:
+        return _git("show", f"{rev}:{LEGACY_BOTS_PY}")
+
+
+# FEAT-638 sanctioned delta: the `language` column drops its DEFAULT 'en'. Applied to the
+# merge-base copy only, so AC17 still catches any OTHER change to the ai_bots DDL.
+_FEAT638_LANGUAGE_DEFAULT = re.compile(r"(language\s+VARCHAR\(10\))\s+DEFAULT\s+'en',")
+
+
+def _with_sanctioned_deltas(source: str) -> str:
+    """Apply sanctioned DDL deltas to a merge-base copy before AC17 compares it."""
+    return _FEAT638_LANGUAGE_DEFAULT.sub(r"\1,", source)
+
+
 def _ai_bots_ddl(source: str) -> str:
     match = re.search(r"CREATE TABLE IF NOT EXISTS navigator\.ai_bots \(.*?\n\s*\)\s*;", source, re.DOTALL)
     assert match, "navigator.ai_bots DDL block not found in bots.py"
@@ -125,7 +152,8 @@ def test_load_database_bots_untouched():
     """AC17: ``_load_database_bots`` and the ``navigator.ai_bots`` DDL are identical to the ``origin/dev`` merge-base."""
     base = _merge_base()
     try:
-        old_manager, old_bots, old_sql = (_git("show", f"{base}:{p}") for p in (MANAGER_PY, BOTS_PY, CREATION_SQL))
+        old_manager, old_sql = (_git("show", f"{base}:{p}") for p in (MANAGER_PY, CREATION_SQL))
+        old_bots = _bots_source_at(base)
     except subprocess.CalledProcessError as exc:
         pytest.skip(f"files not present at the merge-base {base[:9]}: {exc}")
     new_manager = (REPO / MANAGER_PY).read_text(encoding="utf-8")
@@ -133,5 +161,9 @@ def test_load_database_bots_untouched():
         old_manager, "BotManager", "_load_database_bots"
     ), "BotManager._load_database_bots changed since the merge-base"
     new_bots = (REPO / BOTS_PY).read_text(encoding="utf-8")
-    assert _ai_bots_ddl(new_bots) == _ai_bots_ddl(old_bots), "navigator.ai_bots DDL changed in handlers/models/bots.py"
-    assert (REPO / CREATION_SQL).read_text(encoding="utf-8") == old_sql, "handlers/creation.sql changed"
+    assert _ai_bots_ddl(new_bots) == _ai_bots_ddl(
+        _with_sanctioned_deltas(old_bots)
+    ), "navigator.ai_bots DDL changed in parrot/models/bots.py"
+    assert (REPO / CREATION_SQL).read_text(encoding="utf-8") == _with_sanctioned_deltas(
+        old_sql
+    ), "handlers/creation.sql changed"

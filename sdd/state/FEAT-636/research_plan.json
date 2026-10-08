@@ -1,0 +1,93 @@
+{
+  "feat_id": "FEAT-636",
+  "generated_at": "2026-10-06T00:00:00+00:00",
+  "wiki_available": true,
+  "mode_hypothesis": "enrichment",
+  "queries": [
+    {
+      "id": "Q001",
+      "type": "wiki_query",
+      "params": {"question": "A2UI linked surfaces query slug data binding"},
+      "intent": "Locate the modules that implement linked-surface data binding (FEAT-598) and their data-fetch path",
+      "priority": 1
+    },
+    {
+      "id": "Q002",
+      "type": "wiki_query",
+      "params": {"question": "A2UI static surface recipe transformer aggregation python"},
+      "intent": "Locate where static/recipe surface definitions run Python transformers over data",
+      "priority": 1
+    },
+    {
+      "id": "Q003",
+      "type": "read",
+      "params": {"path": "sdd/specs/a2ui-linked-surfaces.spec.md"},
+      "intent": "FEAT-598 spec: how linked surfaces declare query_slug bindings and which URL the client calls",
+      "priority": 1
+    },
+    {
+      "id": "Q004",
+      "type": "grep",
+      "params": {"pattern": "query_slug", "glob": "packages/**/*.py"},
+      "intent": "Find the resolution/serving code for query_slug bindings (server endpoint vs direct querysource URL)",
+      "priority": 1
+    },
+    {
+      "id": "Q005",
+      "type": "grep",
+      "params": {"pattern": "transformer|recipe", "path": "packages/ai-parrot-visualizations/"},
+      "intent": "Map the transformer/recipe machinery used by static surface definitions",
+      "priority": 1
+    },
+    {
+      "id": "Q006",
+      "type": "grep",
+      "params": {"pattern": "querysource", "glob": "packages/**/*.py"},
+      "intent": "Find how the querysource URL is composed/invoked (QuerysourceToolkit FEAT-558 and surface serving)",
+      "priority": 2
+    },
+    {
+      "id": "Q007",
+      "type": "read",
+      "params": {"path": "<linked-surface data endpoint handler, discovered via Q001/Q004>"},
+      "intent": "Understand the current linked-surface data flow end to end (request -> slug execution -> response)",
+      "priority": 2
+    },
+    {
+      "id": "Q008",
+      "type": "read",
+      "params": {"path": "<recipe/transformer definition module, discovered via Q002/Q005>"},
+      "intent": "Understand the transformer contract (input/output shape, sync/async, registration) to judge reuse for linked surfaces",
+      "priority": 2
+    },
+    {
+      "id": "Q009",
+      "type": "wiki_related",
+      "params": {"id": "<top page from Q001>"},
+      "intent": "Discover integration points around the linked-surface binding module",
+      "priority": 3
+    },
+    {
+      "id": "Q010",
+      "type": "git_log",
+      "params": {"path": "<a2ui surface modules>", "since": "3 months"},
+      "intent": "Recent activity on surface definition/serving code (FEAT-598/FEAT-610 landed vs pending)",
+      "priority": 3
+    },
+    {
+      "id": "Q011",
+      "type": "read",
+      "params": {"path": "sdd/tasks/index/a2ui-linked-surfaces.json"},
+      "intent": "FEAT-598 implementation status: which tasks are done vs pending (TASK-3769..3796 may be unimplemented)",
+      "priority": 2
+    }
+  ],
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  }
+}

@@ -315,10 +315,20 @@ class _FakeSessionCtx:
         return False
 
 
+class _FakeLLM:
+    def __init__(self, api_key=None, model="m", tool_manager=None):
+        self.api_key = api_key
+        self.model = model
+        self.tool_manager = tool_manager
+
+
 class _FakeAssistantAgent:
     def __init__(self, name="agent_studio_test", api_key=None):
         self.name = name
         self.api_key = api_key
+        self.llm = _FakeLLM()
+        self.tool_manager = object()
+        self.served_by: list = []
         self.configure_calls = 0
         self.ask_calls: list[str] = []
 
@@ -330,6 +340,7 @@ class _FakeAssistantAgent:
 
     async def ask(self, question: str, **_kw):
         self.ask_calls.append(question)
+        self.served_by.append(self.llm.api_key)
         return SimpleNamespace(content="assistant reply", metadata={})
 
 
@@ -364,26 +375,24 @@ class TestAssistantSessionInstance:
         assert fake_agent.ask_calls == ["hi", "again"]
 
     @pytest.mark.asyncio
-    async def test_byok_key_used_when_present(self, monkeypatch):
+    async def test_byok_key_serves_only_its_own_ask(self, monkeypatch):
+        """true -> false -> true on ONE cached instance: the personal key never outlives the ask that used it."""
         app = web.Application()
-        captured_kwargs = {}
-
-        def _factory(**kw):
-            captured_kwargs.update(kw)
-            return _FakeAssistantAgent(api_key=kw.get("api_key"))
-
-        monkeypatch.setattr(meta_agent_module, "AgentStudioAgent", _factory)
+        fake_agent = _FakeAssistantAgent()
+        monkeypatch.setattr(meta_agent_module, "AgentStudioAgent", lambda **kw: fake_agent)
         monkeypatch.setattr(
-            meta_agent_module,
-            "resolve_user_api_key",
-            AsyncMock(return_value="sk-ant-stored-key"),
+            meta_agent_module, "resolve_user_api_key", AsyncMock(return_value="sk-ant-stored-key")
         )
+        default_llm = fake_agent.llm
 
-        handler = _make_handler(app, json_body={"query": "hi", "use_byok": True}, session={})
-        response = await _unwrap(StudioAssistantHandler.post)(handler)
-
-        assert response.status == 200
-        assert captured_kwargs["api_key"] == "sk-ant-stored-key"
+        session = {}
+        for use_byok in (True, False, True, False):
+            handler = _make_handler(app, json_body={"query": "hi", "use_byok": use_byok}, session=session)
+            response = await _unwrap(StudioAssistantHandler.post)(handler)
+            assert response.status == 200
+            assert fake_agent.llm is default_llm            # restored after every ask
+        assert fake_agent.served_by == ["sk-ant-stored-key", None, "sk-ant-stored-key", None]
+        assert fake_agent.configure_calls == 1
 
     @pytest.mark.asyncio
     async def test_delete_ends_session(self, monkeypatch):

@@ -272,6 +272,21 @@ def read_existing_registry(init_file: Path, var_name: str) -> Optional[dict[str,
 # ---------------------------------------------------------------------------
 # Update __init__.py preserving structure
 # ---------------------------------------------------------------------------
+def _reexport_owner(dotted: str, manual_entries: dict[str, str]) -> Optional[str]:
+    """Manual key whose path re-exports the class at ``dotted`` from an ancestor package, if any.
+
+    ``pkg.multistoresearch.MultiStoreSearchToolkit`` (manual) re-exports
+    ``pkg.multistoresearch.toolkit.MultiStoreSearchToolkit`` (scanned): same class name,
+    manual module is a package ancestor of the scanned module.
+    """
+    scanned_module, _, class_name = dotted.rpartition(".")
+    for key, val in manual_entries.items():
+        manual_module, _, manual_class = val.rpartition(".")
+        if manual_class == class_name and scanned_module.startswith(manual_module + "."):
+            return key
+    return None
+
+
 def update_init_file(
     init_file: Path,
     var_name: str,
@@ -298,6 +313,17 @@ def update_init_file(
     for key, val in existing.items():
         if key not in merged:
             merged[key] = val  # preserve manual entries
+    # A class already registered under a manual key keeps that key only: the scanned
+    # snake_case key would be a second slug for the same class, and the resolver drops
+    # class-name aliases claimed by several slugs as ambiguous.
+    manual_entries = {key: val for key, val in existing.items() if key not in new_registry}
+    manual_by_path = {val: key for key, val in manual_entries.items()}
+    for key, val in list(new_registry.items()):
+        manual_key = manual_by_path.get(val)
+        if manual_key is None:
+            manual_key = _reexport_owner(val, manual_entries)
+        if manual_key is not None and manual_key != key:
+            merged.pop(key, None)
 
     # Check if anything changed
     if merged == existing:

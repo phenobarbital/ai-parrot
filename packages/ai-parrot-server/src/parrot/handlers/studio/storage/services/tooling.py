@@ -114,8 +114,10 @@ class StudioToolingService:
                 user_overridable=user_overridable, previous=previous,
             )
             spec = _owner_only_with_refs(spec)
+            # the toolkit being put is always re-checked (before excludes it); the others are unchanged
+            before = current.model_copy(update={"toolkits": [t for t in current.toolkits if t.slug.lower() != slug.lower()]})
             current.toolkits = [t for t in current.toolkits if t.slug.lower() != slug.lower()] + [spec]
-            self._gate.enforce(part, current, agent_id=agent_id, actor=actor, phase="write")
+            self._gate.enforce(part, current, agent_id=agent_id, actor=actor, phase="write", before=before)
             await flush_vault_writes(writes)
             return await self._commit_rows(conn, part, name, agent_id, current)
 
@@ -149,8 +151,9 @@ class StudioToolingService:
             specs, writes = split_mcp_secrets(
                 owner=record.owner, ref=record.tooling_ref, servers=list(servers), previous=current.mcp_servers
             )
+            before = current.model_copy()
             current.mcp_servers = [_owner_only_with_refs(spec) for spec in specs]
-            self._gate.enforce(part, current, agent_id=agent_id, actor=actor, phase="write")
+            self._gate.enforce(part, current, agent_id=agent_id, actor=actor, phase="write", before=before)
             await flush_vault_writes(writes)
             return await self._commit_rows(conn, part, name, agent_id, current)
 
@@ -161,5 +164,7 @@ class StudioToolingService:
         """Persist an already-split tooling state (used by ``AgentToolingStore._persist``). Returns the version."""
         async with studio_transaction(self._repos.pool) as conn:
             head = await self._repos.agents.lock(conn, part, name, guard)
-            self._gate.enforce(part, tooling, agent_id=head.agent_id, actor=actor, phase="write")
+            record = await self._repos.agents.get(part, name, conn=conn)
+            stored = normalized_tooling_for(record.definition, await self._repos.tooling.list_locked(conn, head.agent_id))
+            self._gate.enforce(part, tooling, agent_id=head.agent_id, actor=actor, phase="write", before=stored)
             return await self._commit_rows(conn, part, name, head.agent_id, tooling)

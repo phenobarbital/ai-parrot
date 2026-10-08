@@ -19,7 +19,7 @@ from parrot.security.vault_utils import (
 )
 from parrot.tools.config_schema import build_schema_envelope, secret_paths
 from parrot.tools.resolver import get_toolkit_resolver
-from parrot.tools.tooling_policy import ToolingSubject, enforce_tenant_tooling
+from parrot.tools.tooling_policy import ToolingSubject, enforce_tenant_tooling, unchanged_slugs
 from parrot.tools.spec import (
     MCP_SECRET_FIELDS,
     SECRET_MASK,
@@ -476,13 +476,18 @@ class AgentToolingStore:
 
         locate = getattr(self.handler, "_studio_partition", None)
         part = await locate() if locate is not None else None
+
+        def _as_stored(value: NormalizedTooling) -> NormalizedTooling:
+            return NormalizedTooling(
+                tools=list(value.tools),
+                toolkits=[_owner_only_with_refs(item) for item in value.toolkits],
+                mcp_servers=[_owner_only_with_refs(item) for item in value.mcp_servers],
+            )
+
+        resulting = _as_stored(tooling)
         subject = ToolingSubject(
-            tenant=getattr(part, "tenant", None), agent_id=None, actor=actor or state.owner, phase="write"
-        )
-        resulting = NormalizedTooling(
-            tools=list(tooling.tools),
-            toolkits=[_owner_only_with_refs(item) for item in tooling.toolkits],
-            mcp_servers=[_owner_only_with_refs(item) for item in tooling.mcp_servers],
+            tenant=getattr(part, "tenant", None), agent_id=None, actor=actor or state.owner, phase="write",
+            held=unchanged_slugs(_as_stored(state.tooling), resulting),  # only added / re-configured are checked
         )
         enforce_tenant_tooling(self.handler.request.app, resulting, subject=subject)
 

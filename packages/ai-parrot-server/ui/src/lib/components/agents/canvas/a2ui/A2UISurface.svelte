@@ -35,7 +35,8 @@
 		envelope,
 		persistedSurfaceId,
 		transformsBase,
-	}: { envelope: A2UIEnvelope; persistedSurfaceId?: string; transformsBase?: string } = $props();
+		shareToken,
+	}: { envelope: A2UIEnvelope; persistedSurfaceId?: string; transformsBase?: string; shareToken?: string } = $props();
 
 	let root = $derived<WireComponent | undefined>(
 		envelope.createSurface.components.find((c) => c.id === 'root') ??
@@ -143,6 +144,7 @@
 				baseUrl: querySourceBaseUrl,
 				headers: querySourceHeaders,
 				transformsBase: transformsBase ?? `${config.apiBaseUrl}/static/a2ui/transforms`,
+				surface: { baseUrl: config.apiBaseUrl, surfaceId: persistedSurfaceId, shareToken, headers: getAuthHeaders },
 				onUpdate: (u: SourceUpdate) => {
 					if (u.rows !== null) {
 						// S9/AC16: a source's rows always land as `dataModel[key] = {rows: [...]}` — the whole
@@ -231,6 +233,10 @@
 				{:else if status.status === 'error'}
 					<p class="text-xs text-destructive" data-testid="notice-error-{key}">
 						{key}: could not load — data as of {status.snapshotAt ?? 'never'}
+					</p>
+				{:else if status.status === 'snapshot'}
+					<p class="text-xs text-muted-foreground" data-testid="notice-snapshot-{key}">
+						{key}: saved data — as of {status.snapshotAt ?? 'never'} (save the surface to refresh live)
 					</p>
 				{:else if status.snapshotAt === null}
 					<p class="text-xs text-muted-foreground italic" data-testid="notice-loading-{key}">

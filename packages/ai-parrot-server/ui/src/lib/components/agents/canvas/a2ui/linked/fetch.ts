@@ -81,3 +81,36 @@ export async function fetchSource(
   }
   return selectFrame(payload, src);
 }
+
+/**
+ * Fetch one python-transformed source through parrot-server (FEAT-636): the server executes the slug and the
+ * registered transformer; rows come back final. Only `params` are sent — conditions are rebuilt server-side.
+ * A 404 is "unavailable", never "denied" (same rule as fetchSource).
+ */
+export async function fetchSourceData(
+  src: LinkedDataSource,
+  key: string,
+  params: Record<string, unknown>,
+  opts: { surfaceBaseUrl: string; surfaceId: string; shareToken?: string; headers: HeadersInit },
+): Promise<Row[]> {
+  const share = opts.shareToken ? `?share=${encodeURIComponent(opts.shareToken)}` : '';
+  const url = `${opts.surfaceBaseUrl}/api/v1/ui/surfaces/${encodeURIComponent(opts.surfaceId)}/sources/${encodeURIComponent(key)}/data${share}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(opts.headers as Record<string, string>) },
+    body: JSON.stringify({ params }),
+  });
+  if (res.status === 404) throw new SourceUnavailable(src.slug);
+  if (!res.ok) {
+    let code = '';
+    try {
+      const body = (await res.json()) as { code?: unknown };
+      if (typeof body?.code === 'string') code = body.code;
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new Error(`source '${key}' data request failed (${res.status})${code ? `: ${code}` : ''}`);
+  }
+  const body = (await res.json()) as { rows?: unknown };
+  return Array.isArray(body?.rows) ? (body.rows as Row[]) : [];
+}

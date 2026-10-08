@@ -1,0 +1,1 @@
+- [ ] Which Jira deployment is the target — Cloud or Server/DC — and under which `auth_type`? The attachment size limit and the XSRF behavior differ, and the acceptance matrix needs a concrete limit to assert against. — *Owner: Jesus*

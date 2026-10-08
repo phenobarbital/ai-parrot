@@ -4,6 +4,7 @@ Real aiohttp app, the real Studio routes, a session middleware installing a real
 Postgres pool. ``AbstractBot.configure`` is replaced so no LLM starts; the shared ``SkillRegistry`` is a recording
 fake so no embedding model loads (``test_index_not_under_agents_dir`` exercises the real location function).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -14,8 +15,13 @@ from parrot.handlers.studio.storage.models import StudioPartition
 
 from .test_agents_db_mode import BASE, _app, _create, _offline, pool  # noqa: F401  (fixtures)
 
-PAYLOAD = {"name": "demo", "description": "a demo skill", "category": "general", "triggers": ["/demo"],
-           "body": "Body text."}
+PAYLOAD = {
+    "name": "demo",
+    "description": "a demo skill",
+    "category": "general",
+    "triggers": ["/demo"],
+    "body": "Body text.",
+}
 TENANCY = {"tenant", "visibility", "allowed_groups"}
 
 
@@ -129,7 +135,14 @@ async def test_import_writes_asset_row(aiohttp_client, pool, registry, tmp_path)
     url = f"{BASE}/agents/alpha/skills/import/{body['skill_id']}"
     resp = await client.post(url)
     assert resp.status == 201
-    assert await resp.json() == {"agent": "alpha", "skill": "demo", "file_path": None, "reload_required": False}
+    imported = await resp.json()
+    assert imported == {
+        "agent": "alpha",
+        "skill": "demo",
+        "file_path": None,
+        "reload_required": False,
+        "version": imported["version"],
+    } and isinstance(imported["version"], int)
     assets = client.app["studio_storage"].services.assets
     row = await assets.get(StudioPartition.GLOBAL, "alpha", "skills", "demo.md")
     assert row is not None and "Body text." in row.content and "name: demo" in row.content
@@ -138,7 +151,11 @@ async def test_import_writes_asset_row(aiohttp_client, pool, registry, tmp_path)
     assert (await client.post(url, json={"overwrite": True})).status == 201
     assert (await client.post(url, headers={"X-User": "u2"})).status == 403
     assert (await client.post(f"{BASE}/agents/nobody/skills/import/{body['skill_id']}")).status == 404
-    assert (await client.post(f"{BASE}/agents/alpha/skills/import/{body['skill_id'][:-1]}{'1' if body['skill_id'][-1] == '0' else '0'}")).status == 404
+    assert (
+        await client.post(
+            f"{BASE}/agents/alpha/skills/import/{body['skill_id'][:-1]}{'1' if body['skill_id'][-1] == '0' else '0'}"
+        )
+    ).status == 404
     assert not (tmp_path / "agents" / "alpha").exists()
 
 

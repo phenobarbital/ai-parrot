@@ -1,10 +1,15 @@
+"""Bot and Agent implementations.
+
+Only the base hierarchy is imported eagerly — ``AbstractBot``, ``BaseBot``,
+``BasicAgent`` and ``Agent`` — so ``import parrot.bots`` stays cheap and never
+drags optional satellites (ai-parrot-server, ai-parrot-tools, google-genai…)
+into the process. Every concrete bot class is still reachable as
+``from parrot.bots import X`` but is resolved lazily on first access.
+"""
+
 from .abstract import AbstractBot
-from .agent import Agent, BasicAgent
 from .base import BaseBot
-from .basic import BasicBot
-from .chatbot import Chatbot
-from .chrome import WebAgent
-from .search import WebSearchAgent
+from .agent import Agent, BasicAgent
 
 __all__ = (
     "AbstractBot",
@@ -20,10 +25,17 @@ __all__ = (
 )
 
 
-# Lazy imports: heavy optional classes resolved on first access only.
+# Lazy imports: concrete / heavy classes resolved on first access only.
+# - Chatbot is already loaded by ``.agent`` but exported lazily to keep the
+#   eager surface to the base hierarchy.
+# - WebAgent / WebSearchAgent pull browser and search toolkits.
 # - VoiceBot pulls parrot.clients.google.live -> google.genai (optional google-genai)
 # - InfoAgent pulls the heavy a2ui/infographic chain via its mixins
 _LAZY_ATTRS = {
+    "BasicBot": ".basic",
+    "Chatbot": ".chatbot",
+    "WebAgent": ".chrome",
+    "WebSearchAgent": ".search",
     "VoiceBot": ".voice",
     "InfoAgent": ".info",
 }

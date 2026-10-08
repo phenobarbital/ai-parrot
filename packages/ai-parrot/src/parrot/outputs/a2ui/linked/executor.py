@@ -29,6 +29,10 @@ ERROR_STATUS: dict[str, int] = {
     "tenant_not_available": 404,
     "tenant_store_unavailable": 503,
     "data_stage": 502,
+    # FEAT-636: transform-stage failures (S7) are caller/author errors, not data failures.
+    "transformer_not_registered": 422,
+    "transform_failed": 422,
+    "transform_invalid_output": 422,
 }
 
 #: TenantError.error_code -> (http_status, code); anything else -> (502, "data_stage") (spec §3 M5 table).
@@ -73,14 +77,26 @@ class ExecutionOutcome(BaseModel):
 
 def map_query_error(exc: BaseException) -> tuple[int, str]:
     """Map a fetch exception to ``(http_status, code)`` (spec §3 M5 table; walks __cause__/__context__)."""
+    from parrot.outputs.a2ui.linked.pytransform import TransformStageError
+
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    depth = 0
+    while current is not None and depth < _MAX_CAUSE_DEPTH and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, TransformStageError):
+            return ERROR_STATUS[current.code], current.code
+        current = current.__cause__ or current.__context__
+        depth += 1
+
     try:
         from querysource.exceptions import QueryAccessDenied
         from querysource.tenants import TenantError
     except ImportError:  # querysource absent → generic data-stage failure
         return 502, "data_stage"
 
-    seen: set[int] = set()
-    current: BaseException | None = exc
+    seen.clear()
+    current = exc
     depth = 0
     while current is not None and depth < _MAX_CAUSE_DEPTH and id(current) not in seen:
         seen.add(id(current))
@@ -281,7 +297,11 @@ async def _run_source(
     # Deep copy: conditions share nested filter dicts with src.request, and a data source may mutate
     # them (querysource's parsers popitem()'d operator dicts), which emptied the envelope's filter.
     frame = await source.fetch(**copy.deepcopy(conditions))
-    if src.transform is not None and src.transform.ref is not None:
+    if src.transform is not None and src.transform.python is not None:
+        from parrot.outputs.a2ui.linked.pytransform import apply_python_transform
+
+        frame = await apply_python_transform(frame, src.transform.python, max_rows=max_fetch_rows)
+    elif src.transform is not None and src.transform.ref is not None:
         logger.warning("linked source %r: ref transform %s skipped in Python", key, src.transform.ref.name)
     elif src.transform is not None:
         frame = await asyncio.to_thread(apply_transform, frame, src.transform, frames=dict(frames))

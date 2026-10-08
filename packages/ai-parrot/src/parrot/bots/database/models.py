@@ -19,7 +19,7 @@ _SQL_FENCE_RE = re.compile(
     r"```(?:sql|postgres(?:ql)?|plpgsql|sqlite|tsql|mysql)?\s*\n?.*?```",
     re.IGNORECASE | re.DOTALL,
 )
-from parrot.bots.data import PandasTable  # noqa: F401, E402 — used by QueryDataset
+from parrot.models.tables import PandasTable  # noqa: F401, E402 — used by QueryDataset
 
 if TYPE_CHECKING:
     import pandas as pd

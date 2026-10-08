@@ -23,7 +23,7 @@ from ..conf import (
     DEFAULT_LLM_MODEL,
 )
 from ..embeddings import get_model_recommendations
-from ..handlers.models import BotModel
+from ..models.bots import BotModel
 from .base import BaseBot
 from ..tools import (
     AbstractTool,
@@ -241,7 +241,7 @@ class Chatbot(BaseBot):
         self._permissions = getattr(self, "_permissions", {})
 
         # Other settings
-        self.language = getattr(self, "language", "en")
+        self.language = getattr(self, "language", None)
         self.disclaimer = getattr(self, "disclaimer", None)
 
         self.logger.info(
@@ -309,10 +309,10 @@ class Chatbot(BaseBot):
                     except ValidationError as ex:
                         # Handle ValidationError
                         self.logger.error(f"Validation error: {ex}")
-                        raise ConfigError(f"Chatbot {self.name} with errors: {ex.payload()}.")
-                    except NoDataFound:
+                        raise ConfigError(f"Chatbot {self.name} with errors: {ex.payload()}.") from ex
+                    except NoDataFound as ex:
                         # Fallback to File configuration:
-                        raise ConfigError(f"Chatbot {self.name} not found in the database.")
+                        raise ConfigError(f"Chatbot {self.name} not found in the database.") from ex
 
         # Start Bot configuration from Database:
         self.pre_instructions: list = self._from_db(bot, "pre_instructions", default=[])
@@ -419,7 +419,7 @@ class Chatbot(BaseBot):
                     self.register_kb(kb_class)
 
         # Other settings
-        self.language = self._from_db(bot, "language", default="en")
+        self.language = self._from_db(bot, "language", default=None)
         self.disclaimer = self._from_db(bot, "disclaimer", default=None)
 
         self.logger.info(
