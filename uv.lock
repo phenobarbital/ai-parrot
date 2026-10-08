@@ -510,7 +510,6 @@ deploy = [
 dev = [
     { name = "hypothesis" },
     { name = "onnx" },
-    { name = "optimum", extra = ["onnxruntime"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-benchmark" },
@@ -912,7 +911,7 @@ requires-dist = [
     { name = "httpx-sse", marker = "extra == 'agents'", specifier = "==0.4.1" },
     { name = "httpx-sse", marker = "extra == 'agents-lite'", specifier = "==0.4.1" },
     { name = "httpx-sse", marker = "extra == 'mcp'", specifier = "==0.4.1" },
-    { name = "huggingface-hub", marker = "extra == 'security'", specifier = ">=0.24,<1.0" },
+    { name = "huggingface-hub", marker = "extra == 'security'", specifier = ">=1.3.0" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.100" },
     { name = "imagehash", marker = "extra == 'images'", specifier = "==4.3.1" },
     { name = "ipywidgets", marker = "extra == 'images'", specifier = "==8.1.0" },
@@ -966,7 +965,6 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'observability'", specifier = ">=1.25,<2.0" },
     { name = "opentelemetry-sdk", marker = "extra == 'observability'", specifier = ">=1.25,<2.0" },
     { name = "opentelemetry-sdk", marker = "extra == 'otel'", specifier = ">=1.25,<2.0" },
-    { name = "optimum", extras = ["onnxruntime"], marker = "extra == 'dev'", specifier = ">=2.0" },
     { name = "orjson", specifier = ">=3.9" },
     { name = "ormsgpack", specifier = ">=1.5" },
     { name = "pandas", specifier = ">=2.0.0" },
@@ -1052,7 +1050,7 @@ requires-dist = [
     { name = "timm", marker = "extra == 'images'", specifier = "==1.0.15" },
     { name = "torchvision", marker = "extra == 'images'", specifier = ">=0.23.0,<0.24" },
     { name = "tqdm", specifier = ">=4.66.5" },
-    { name = "transformers", marker = "extra == 'images'", specifier = ">=4.48.0,<5.0" },
+    { name = "transformers", marker = "extra == 'images'", specifier = ">=5.3.0" },
     { name = "tree-sitter", marker = "extra == 'graphindex'", specifier = ">=0.23" },
     { name = "tree-sitter", marker = "extra == 'wiki-languages'", specifier = ">=0.23" },
     { name = "tree-sitter-javascript", marker = "extra == 'wiki-languages'", specifier = ">=0.23" },
@@ -1149,7 +1147,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "ai-parrot", editable = "packages/ai-parrot" },
-    { name = "transformers", specifier = ">=4.48.0,<5.0" },
+    { name = "transformers", specifier = ">=5.3.0" },
 ]
 
 [[package]]
@@ -1209,7 +1207,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "ai-parrot", editable = "packages/ai-parrot" },
-    { name = "transformers", specifier = ">=4.48.0,<5.0" },
+    { name = "transformers", specifier = ">=5.3.0" },
 ]
 
 [[package]]
@@ -1775,9 +1773,9 @@ requires-dist = [
     { name = "torchmetrics", marker = "extra == 'audio'", specifier = "==1.8.2" },
     { name = "torchvision", marker = "extra == 'ml'", specifier = ">=0.23.0,<0.24" },
     { name = "trafilatura", marker = "extra == 'scraping'", specifier = ">=1.12" },
-    { name = "transformers", marker = "extra == 'ml-heavy'", specifier = ">=4.48.0,<5.0" },
+    { name = "transformers", marker = "extra == 'ml-heavy'", specifier = ">=5.3.0" },
     { name = "weasyprint", marker = "extra == 'pdf'", specifier = "==70.0" },
-    { name = "whisperx", marker = "extra == 'audio'", specifier = "==3.8.5" },
+    { name = "whisperx", marker = "extra == 'audio'", specifier = "==3.8.7rc1" },
     { name = "youtube-transcript-api", marker = "extra == 'youtube'", specifier = "==1.0.3" },
     { name = "yt-dlp", marker = "extra == 'youtube'", specifier = ">=2026.2.21" },
 ]
@@ -6946,21 +6944,22 @@ wheels = [
 
 [[package]]
 name = "huggingface-hub"
-version = "0.36.2"
+version = "1.33.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "click" },
     { name = "filelock" },
     { name = "fsspec" },
-    { name = "hf-xet", marker = "platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'" },
+    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'" },
+    { name = "httpx" },
     { name = "packaging" },
     { name = "pyyaml" },
-    { name = "requests" },
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7c/b7/8cb61d2eece5fb05a83271da168186721c450eb74e3c31f7ef3169fa475b/huggingface_hub-0.36.2.tar.gz", hash = "sha256:1934304d2fb224f8afa3b87007d58501acfda9215b334eed53072dd5e815ff7a", size = 649782, upload-time = "2026-02-06T09:24:13.098Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/25/2a/484d112c0d8fc5f665d7b65137ac9cdb2953c982391598c3597968a12ee7/huggingface_hub-1.33.0.tar.gz", hash = "sha256:367be21a201db9523eddf8aeac7048f2602c1b308691c97640d5e72ed188007e", size = 1043548, upload-time = "2026-09-24T09:49:29.971Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a8/af/48ac8483240de756d2438c380746e7130d1c6f75802ef22f3c6d49982787/huggingface_hub-0.36.2-py3-none-any.whl", hash = "sha256:48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270", size = 566395, upload-time = "2026-02-06T09:24:11.133Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/16/963096d224b80909432dc16561a615fd33d2d13beef3ce4c63fa25e40867/huggingface_hub-1.33.0-py3-none-any.whl", hash = "sha256:04e434b06e100eddbce9a6e817d72693a7884b10a79bd67ab48080d5c07eb899", size = 846435, upload-time = "2026-09-24T09:49:28.059Z" },
 ]
 
 [[package]]
@@ -10222,46 +10221,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/8c/b9/2ac072041e899a52f20cf9510850ff58295003aa75525e58343591b0cbfb/opt_einsum-3.4.0.tar.gz", hash = "sha256:96ca72f1b886d148241348783498194c577fa30a8faac108586b14f1ba4473ac", size = 63004, upload-time = "2024-09-26T14:33:24.483Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/23/cd/066e86230ae37ed0be70aae89aabf03ca8d9f39c8aea0dec8029455b5540/opt_einsum-3.4.0-py3-none-any.whl", hash = "sha256:69bb92469f86a1565195ece4ac0323943e83477171b91d24c35afe028a90d7cd", size = 71932, upload-time = "2024-09-26T14:33:23.039Z" },
-]
-
-[[package]]
-name = "optimum"
-version = "2.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "huggingface-hub" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "torch" },
-    { name = "transformers" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/f0/69/e1e9fe4d54f6b1b90cc278d6da74dd90eb4d9fd9228882886d7c275712e2/optimum-2.1.0.tar.gz", hash = "sha256:0a2a13f91500e41d34863ffdb08fcb886b3ce68a84a386e59653e3064a45dd4b", size = 125896, upload-time = "2025-12-19T10:47:18.571Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4a/98/c409ed937331839fdadc03cef6ebd19982bf3834711134db8898eeb31585/optimum-2.1.0-py3-none-any.whl", hash = "sha256:bc3af32e1236a9b2c2ca1d27ed9d3ab1b6591e24c6bcd47f9671a8198a30ea88", size = 161231, upload-time = "2025-12-19T10:47:17.054Z" },
-]
-
-[package.optional-dependencies]
-onnxruntime = [
-    { name = "optimum-onnx", extra = ["onnxruntime"] },
-]
-
-[[package]]
-name = "optimum-onnx"
-version = "0.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "onnx" },
-    { name = "optimum" },
-    { name = "transformers" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/08/da/3a0073af8f436d72c1e4d9c655c00628b857bd1d9ccc101d35301d5bb2df/optimum_onnx-0.1.0.tar.gz", hash = "sha256:182c54b25eddaded1618af7b58516da34749393a987ec7111f74677f249676f9", size = 165531, upload-time = "2025-12-23T14:20:18.97Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/41/89/4be9d226bc74fd0eb405d1efea62e86d6f0f31841dae9c5898ee12eb482f/optimum_onnx-0.1.0-py3-none-any.whl", hash = "sha256:0301ec7a6ec5c77a57581e9970d380a6dc104bdb8f15b282e05af40d829c2eda", size = 194155, upload-time = "2025-12-23T14:20:17.741Z" },
-]
-
-[package.optional-dependencies]
-onnxruntime = [
-    { name = "onnxruntime" },
 ]
 
 [[package]]
@@ -15366,23 +15325,22 @@ wheels = [
 
 [[package]]
 name = "transformers"
-version = "4.57.6"
+version = "5.15.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "filelock" },
     { name = "huggingface-hub" },
     { name = "numpy" },
     { name = "packaging" },
     { name = "pyyaml" },
     { name = "regex" },
-    { name = "requests" },
     { name = "safetensors" },
     { name = "tokenizers" },
     { name = "tqdm" },
+    { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c4/35/67252acc1b929dc88b6602e8c4a982e64f31e733b804c14bc24b47da35e6/transformers-4.57.6.tar.gz", hash = "sha256:55e44126ece9dc0a291521b7e5492b572e6ef2766338a610b9ab5afbb70689d3", size = 10134912, upload-time = "2026-01-16T10:38:39.284Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2a/92/c50c61da7046bbb59a4d011291aeadcfb4d7980ab36fdb31e93823a3fb93/transformers-5.15.1.tar.gz", hash = "sha256:27c996bd9075ddc82d40f8590dfdc81ea45f611bfca477e0db5d7fd257a482f7", size = 9378434, upload-time = "2026-08-19T11:28:20.33Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/03/b8/e484ef633af3887baeeb4b6ad12743363af7cce68ae51e938e00aaa0529d/transformers-4.57.6-py3-none-any.whl", hash = "sha256:4c9e9de11333ddfe5114bc872c9f370509198acf0b87a832a0ab9458e2bd0550", size = 11993498, upload-time = "2026-01-16T10:38:31.289Z" },
+    { url = "https://files.pythonhosted.org/packages/41/c4/a12e1d9b387fb0c40a57116db82b457e8c771cb419163cda29204d74a595/transformers-5.15.1-py3-none-any.whl", hash = "sha256:b7cdf238ff583e3a58dbc7fa34da1aaf091ce063141f65a30538160bd5afe93f", size = 11749582, upload-time = "2026-08-19T11:28:16.726Z" },
 ]
 
 [[package]]
@@ -16103,7 +16061,7 @@ wheels = [
 
 [[package]]
 name = "whisperx"
-version = "3.8.5"
+version = "3.8.7rc1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "ctranslate2" },
@@ -16120,9 +16078,9 @@ dependencies = [
     { name = "transformers" },
     { name = "triton", marker = "platform_machine == 'x86_64'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/83/28/4f09ee072e57763fcbb0736105849c44d08db4e3e6e07c9423a29d036364/whisperx-3.8.5.tar.gz", hash = "sha256:ff0d12489c7cd20befad3627d7af323997ae543fac69ffdd2b73962c6b99139b", size = 16490283, upload-time = "2026-04-01T07:04:03.527Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/63/f5/e656b8e35ed5728e6abeda86862c57067056f00f29cd1977ce74eb04d317/whisperx-3.8.7rc1.tar.gz", hash = "sha256:cc9e5b0cf67a5c250691ccca82f9a85e9ccfeb17b376a530a3c6e539ef0428ee", size = 16490915, upload-time = "2026-06-26T11:40:14.52Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ad/9a/c8e04751c3f6fcab91b00f8b1cc5d71308e11e1c0b0c3a1ec023739f23b2/whisperx-3.8.5-py3-none-any.whl", hash = "sha256:842f9ef5c2c2d33ccb6e68f5d5b233ded9d77a7e89bba06a1d55a9704cef50c3", size = 16486914, upload-time = "2026-04-01T07:04:00.663Z" },
+    { url = "https://files.pythonhosted.org/packages/f7/ed/7286dc34ebcda5f4125aa13fd0aaef8c064dd8d1b880586e5cdbc8f9391f/whisperx-3.8.7rc1-py3-none-any.whl", hash = "sha256:7e9b2b405cad4030107cf5f9c7c35033bfb41b0aeff17277652f14de9e52d23d", size = 16486985, upload-time = "2026-06-26T11:40:11.835Z" },
 ]
 
 [[package]]
