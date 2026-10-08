@@ -37,7 +37,7 @@
     "d3-scale": "^4.0.2",
     "dexie": "^4.2.1",
     "dompurify": "^3.4.16",
-    "echarts": "^5.0.0",
+    "echarts": "^6.1.0",
     "exceljs": "^4.4.0",
     "highlight.js": "^11.11.1",
     "layerchart": "2.0.0-next.64",
@@ -58,7 +58,8 @@
       "devalue": "^5.9.3",
       "undici": "^7.29.1",
       "brace-expansion@^1.0.0": "^1.1.21",
-      "brace-expansion@^2.0.0": "^2.1.7"
+      "brace-expansion@^2.0.0": "^2.1.7",
+      "uuid@^8.0.0": "^13.0.0"
     }
   },
   "devDependencies": {
@@ -74,6 +75,6 @@
     "tailwindcss": "^4.3.0",
     "typescript": "^5.9.3",
     "vite": "^6.4.3",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.11"
   }
 }
