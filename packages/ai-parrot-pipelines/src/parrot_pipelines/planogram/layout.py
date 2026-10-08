@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from .comparison.definition import SlotsDefinition
+from .comparison.definition import ReportingPolicy, SlotsDefinition
 from .contracts import IdentifyStrategy, ShapeKind
 from .perception.profiles import ShapeProfile
 from .perception.slots import AnchorRule
@@ -94,6 +94,7 @@ class LayoutProfile(BaseModel):
     required_descriptor_fields: List[str] = Field(default_factory=list)
     ocr_targets: List[Literal["slot", "tag", "zone"]] = Field(default_factory=lambda: ["slot", "tag", "zone"])
     references: ReferencePolicy = Field(default_factory=ReferencePolicy)
+    reporting: ReportingPolicy = Field(default_factory=ReportingPolicy)
     zone_selectors: List[ZoneSelector] = Field(default_factory=list)
 
     @model_validator(mode="after")
