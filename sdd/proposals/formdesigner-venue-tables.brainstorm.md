@@ -16,7 +16,7 @@ tags: [security, tenant-isolation, fieldsync, venue, ddl, formdesigner]
 
 **Date**: 2026-10-08
 **Author**: Jesus Lara + Claude
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: B
 
 ---
@@ -585,8 +585,8 @@ from parrot_formdesigner.services.org_graph import OrgGraphService, OrgNode, Nod
 - [x] Geofence bounds — *Owner: Jesus Lara*: handler returns 400 **and** the DDL adds CHECK constraints.
 - [x] `networkninja.stores_geographies` columns — *Owner: Jesus Lara*: a verification task inside the feature (documented catalog query, `ENV=prod`), not a brainstorm-time check.
 - [ ] Does the DB role behind the **VenueService** pool have `SELECT` on `auth.organization_clients`? (`OrgGraphService` uses `FIELDSYNC_AUTH_RO_DSN`; the venue pool is wired by the FieldSync app, not this repo.) If not, the grant is a deployment prerequisite to document in the spec. — *Owner: Jesus Lara / FieldSync ops*
-- [ ] Should `create_site` also verify that `store_id` belongs to the org via `networkninja.stores_geographies` (`client_id` + `orgid`)? The issue does not ask for it, but once the columns are verified it is the same `EXISTS` pattern. — *Owner: Jesus Lara*
-- [ ] Pairing rule for the geofence trio: is `geofence_radius_m` without coordinates a 400, or allowed and treated as disabled (current `None ⇒ disabled` contract only speaks about the radius)? — *Owner: Jesus Lara*
-- [ ] Should `ProjectService.create_project` get the same client-membership guard in this feature, or go to the ledger as a follow-up? (Same gap, same table, out of #1005's scope.) — *Owner: Jesus Lara*
+- [x] Should `create_site` also verify that `store_id` belongs to the org via `networkninja.stores_geographies` (`client_id` + `orgid`)? — *Owner: Jesus Lara*: yes, same `EXISTS` pattern; 0 rows ⇒ 404 `StoreNotFoundError`; depends on the column-verification task.
+- [x] Pairing rule for the geofence trio: is `geofence_radius_m` without coordinates a 400? — *Owner: Jesus Lara*: reject — radius requires coordinates (handler 400 + CHECK `geofence_radius_m IS NULL OR (latitude IS NOT NULL AND longitude IS NOT NULL)`); lat/lon both-or-neither; coordinates without radius stay allowed (`NULL ⇒ disabled`).
+- [x] Should `ProjectService.create_project` get the same client-membership guard in this feature? — *Owner: Jesus Lara*: no — ledger follow-up only (`wikitoolkit ledger open` against `services/project_service.py`), feature stays scoped to #1005.
 - [ ] Is a manual run of `initialize()` against a disposable Postgres (v1 DDL applied first, then v2) acceptable as the validation evidence for the ALTER block, given there is no Postgres test fixture in this package? — *Owner: Jesus Lara*
 - [ ] Should the upstream `Trocdigital/fieldsync` FEAT-330 spec receive an errata note pointing at this feature, or is the GitHub issue closure enough? — *Owner: Jesus Lara*
