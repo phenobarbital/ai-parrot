@@ -12,7 +12,6 @@ from parrot.interfaces.file.session import SessionFileError, SessionFileStore
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.utils.helpers import current_context
 
-
 SUPPORTED_BACKENDS = frozenset({"fs", "temp", "s3", "gcs", "sharepoint", "onedrive", "gdrive"})
 
 
