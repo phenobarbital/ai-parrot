@@ -1,4 +1,5 @@
 """Drift guard: the operator doc must not describe values the code does not have."""
+
 from pathlib import Path
 
 from parrot.interfaces.file import session
