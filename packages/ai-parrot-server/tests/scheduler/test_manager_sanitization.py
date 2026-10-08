@@ -4,6 +4,7 @@ These exercise the wiring rather than the pure helpers — i.e. that the
 sanitizers are actually reached from `_make_redis_jobstore()`,
 `_create_trigger()` and the jobstore-alias paths.
 """
+
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -85,16 +86,12 @@ class TestCreateTriggerHardening:
             scheduler_manager._create_trigger("interval", {"minutes": "", "hours": None})
 
     def test_unknown_cron_keys_are_dropped(self, scheduler_manager):
-        trigger = scheduler_manager._create_trigger(
-            "cron", {"hour": " 8 ", "minute": "0", "injected": "rm -rf"}
-        )
+        trigger = scheduler_manager._create_trigger("cron", {"hour": " 8 ", "minute": "0", "injected": "rm -rf"})
         assert str(trigger) == "cron[hour='8', minute='0']"
 
     def test_crontab_timezone_key_does_not_collide(self, scheduler_manager):
         """`from_crontab(**config, timezone='UTC')` used to raise TypeError."""
-        trigger = scheduler_manager._create_trigger(
-            "crontab", {"expr": "  0   8 * * *  ", "timezone": "UTC"}
-        )
+        trigger = scheduler_manager._create_trigger("crontab", {"expr": "  0   8 * * *  ", "timezone": "UTC"})
         assert isinstance(trigger, CronTrigger)
 
     def test_blank_crontab_expr_raises_config_error(self, scheduler_manager):
@@ -115,9 +112,7 @@ class TestCreateTriggerHardening:
         assert str(trigger) == "cron[hour='0', minute='0']"
 
     def test_weekly_full_day_name_is_normalized(self, scheduler_manager):
-        trigger = scheduler_manager._create_trigger(
-            "weekly", {"day_of_week": " Friday ", "hour": "17", "minute": ""}
-        )
+        trigger = scheduler_manager._create_trigger("weekly", {"day_of_week": " Friday ", "hour": "17", "minute": ""})
         assert "day_of_week='fri'" in str(trigger)
 
 
@@ -162,16 +157,14 @@ class TestValidateBeforePersist:
     @pytest.mark.parametrize(
         "schedule_type,schedule_config",
         [
-            ("interval", {"minutes": "", "hours": None}),   # zero interval
-            ("crontab", {"expr": "   "}),                   # blank expression
-            ("crontab", {"expr": "0 8"}),                   # wrong field count
-            ("hourly", {}),                                 # unknown type
-            ("", {"hour": 8}),                              # blank type
+            ("interval", {"minutes": "", "hours": None}),  # zero interval
+            ("crontab", {"expr": "   "}),  # blank expression
+            ("crontab", {"expr": "0 8"}),  # wrong field count
+            ("hourly", {}),  # unknown type
+            ("", {"hour": 8}),  # blank type
         ],
     )
-    async def test_add_schedule_rejects_before_touching_db(
-        self, scheduler_manager, schedule_type, schedule_config
-    ):
+    async def test_add_schedule_rejects_before_touching_db(self, scheduler_manager, schedule_type, schedule_config):
         """`_pool` is None, so reaching the DB would raise AttributeError."""
         assert scheduler_manager._pool is None
 
@@ -184,9 +177,7 @@ class TestValidateBeforePersist:
             )
 
     @pytest.mark.asyncio
-    async def test_add_schedule_rejects_unavailable_jobstore_before_db(
-        self, scheduler_manager
-    ):
+    async def test_add_schedule_rejects_unavailable_jobstore_before_db(self, scheduler_manager):
         assert "redis" not in scheduler_manager._registered_jobstores()
 
         with pytest.raises(SchedulerConfigError, match="Redis backend"):
@@ -199,9 +190,7 @@ class TestValidateBeforePersist:
             )
 
     @pytest.mark.asyncio
-    async def test_update_schedule_does_not_persist_rejected_config(
-        self, scheduler_manager, monkeypatch
-    ):
+    async def test_update_schedule_does_not_persist_rejected_config(self, scheduler_manager, monkeypatch):
         """The row must keep its old config when the new one is unusable."""
         schedule = SimpleNamespace(
             schedule_id="s-1",
@@ -220,9 +209,7 @@ class TestValidateBeforePersist:
         )
         monkeypatch.setattr(scheduler_manager, "_locate", AsyncMock(return_value=("db", definition, schedule)))
         pool = MagicMock()
-        monkeypatch.setattr(
-            scheduler_manager, "_get_connection_pool", AsyncMock(return_value=pool)
-        )
+        monkeypatch.setattr(scheduler_manager, "_get_connection_pool", AsyncMock(return_value=pool))
 
         with pytest.raises(SchedulerConfigError):
             await scheduler_manager.update_schedule(
