@@ -53,3 +53,27 @@ def studio_conversation_kwargs() -> dict[str, Any]:
     if ttl > 0:
         memory_config["history_ttl"] = ttl
     return {"memory_type": "redis", "memory_config": memory_config}
+
+
+async def delete_studio_conversation(user_id: str, session_id: str, chatbot_id: str) -> bool:
+    """Drop one conversation from the shared backend (a no-op for the in-process default).
+
+    The in-process history dies with the evicted instance; a redis history outlives it, so ending a test session
+    must delete it explicitly — whichever worker (or no live instance at all) handles the request.
+
+    Returns:
+        ``True`` when a stored conversation was deleted.
+    """
+    kwargs = studio_conversation_kwargs()
+    if not kwargs:
+        return False
+    from parrot.memory.redis import RedisConversation
+
+    memory = RedisConversation(**kwargs["memory_config"])
+    try:
+        return await memory.delete_history(user_id, session_id, chatbot_id=str(chatbot_id))
+    except Exception:  # noqa: BLE001 - ending a session must not fail on an unreachable redis
+        logger.exception("could not delete studio conversation %s/%s", user_id, session_id)
+        return False
+    finally:
+        await memory.close()

@@ -127,3 +127,21 @@ async def test_redis_backend_keeps_users_apart(aiohttp_client, pool, scripted, s
     await _second_worker(client, "u1")
     assert await _ask(client, "two", user="u1") == 2
     assert await _ask(client, "two", user="u2") == 2
+
+
+async def test_stop_clears_the_shared_conversation(aiohttp_client, pool, scripted, shared_redis):
+    client = await _client(aiohttp_client, pool)
+    assert await _ask(client, "one") == 0
+    assert await _ask(client, "two") == 2
+    assert [k async for k in shared_redis.scan_iter(match=f"{KEY_PREFIX}*")]
+    assert (await client.delete(f"{BASE}/agents/alpha/test")).status == 200  # Stop
+    assert not [k async for k in shared_redis.scan_iter(match=f"{KEY_PREFIX}:*")]
+    assert await _ask(client, "three") == 0  # a new test session starts empty
+
+
+async def test_stop_on_another_worker_still_clears(aiohttp_client, pool, scripted, shared_redis):
+    client = await _client(aiohttp_client, pool)
+    assert await _ask(client, "one") == 0
+    await _second_worker(client)  # no live instance on the worker that handles Stop
+    assert (await client.delete(f"{BASE}/agents/alpha/test")).status == 200
+    assert not [k async for k in shared_redis.scan_iter(match=f"{KEY_PREFIX}:*")]
