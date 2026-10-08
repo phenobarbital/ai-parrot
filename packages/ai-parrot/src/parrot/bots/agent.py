@@ -19,6 +19,8 @@ from ..tools.agent import AgentTool, AgentContext
 from ..models.google import ConversationalScriptConfig, FictionalSpeaker
 from ..models.outputs import SpeakerConfig, SpeechGenerationPrompt
 from ..outputs.formats.text import markdown_to_plain
+from ..interfaces.file.session import SessionFileStore
+from ..utils.helpers import current_context
 
 # MCP Integration
 from ..mcp import MCPServerConfig, create_http_mcp_server, create_local_mcp_server, create_api_key_mcp_server
@@ -362,15 +364,27 @@ class BasicAgent(Chatbot, NotificationMixin):
                         getattr(wm, "name", wm),
                     )
 
-    async def handle_files(self, attachments: Dict[str, Any]) -> List[str]:
-        """
-        Handle uploaded files and register them as DataFrames.
+    def _session_store(self) -> SessionFileStore:
+        """Return the lazily-built per-agent session file store."""
+        store = getattr(self, "_session_file_store", None)
+        if store is None:
+            store = SessionFileStore()
+            self._session_file_store = store
+        return store
+
+    async def handle_files(self, attachments: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist every uploaded file and register the tabular ones as DataFrames.
+
+        HARD CUT (FEAT-639): previously returned List[str] of DataFrame names.
 
         Args:
-            attachments: Dictionary of uploaded files (filename: file_obj/content)
+            attachments: Mapping of filename to aiohttp FileField, file-like object,
+                or raw bytes.
 
         Returns:
-            List of names of the added DataFrames
+            {"dataframes": [str, ...],          # slugs registered via add_dataframe
+              "files": [dict, ...],             # SessionFileRecord dicts, attachable by file_id
+              "errors": [{"filename": str, "error": str}, ...]}
         """
         try:
             from slugify import slugify
@@ -379,10 +393,12 @@ class BasicAgent(Chatbot, NotificationMixin):
             def slugify(text):
                 return "".join(c if c.isalnum() else "_" for c in text).lower()
 
+        result: Dict[str, Any] = {"dataframes": [], "files": [], "errors": []}
         if not attachments:
-            return []
+            return result
 
-        added_dataframes = []
+        ctx = current_context()
+        session_id = getattr(ctx, "session_id", None) if ctx is not None else None
 
         for filename, file_data in attachments.items():
             try:
@@ -394,15 +410,20 @@ class BasicAgent(Chatbot, NotificationMixin):
                 else:
                     content = file_data
 
-                # Create BytesIO object
-                import io
+                if not isinstance(content, bytes):
+                    content = content.encode("utf-8")
 
-                if isinstance(content, bytes):
-                    file_obj = io.BytesIO(content)
+                # Persist first: the bytes must survive even if parsing fails.
+                if session_id:
+                    record = await self._session_store().put_bytes(str(session_id), filename, content, origin="upload")
+                    result["files"].append(record.model_dump(mode="json"))
                 else:
-                    file_obj = io.BytesIO(content.encode("utf-8"))
+                    result["errors"].append({"filename": filename, "error": "no bound session"})
 
                 # Determine file type and read into DataFrame
+                import io
+
+                file_obj = io.BytesIO(content)
                 df = None
                 if filename.lower().endswith((".xlsx", ".xls")):
                     df = pd.read_excel(file_obj)
@@ -416,13 +437,14 @@ class BasicAgent(Chatbot, NotificationMixin):
 
                     # Add to this agent
                     self.add_dataframe(df, name=slug)
-                    added_dataframes.append(slug)
+                    result["dataframes"].append(slug)
                     self.logger.info(f"Added DataFrame from file {filename} as '{slug}'")
 
             except Exception as e:
                 self.logger.error(f"Error processing file {filename}: {e}", exc_info=True)
+                result["errors"].append({"filename": filename, "error": str(e)})
 
-        return added_dataframes
+        return result
 
     def _get_default_tools(
         self,

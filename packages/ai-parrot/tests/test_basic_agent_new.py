@@ -150,17 +150,9 @@ async def test_handle_files(mock_agent_deps):
         file_obj.read.return_value = b"col1,col2\n1,2"
         attachments = {"data.csv": file_obj}
 
-        added = await agent.handle_files(attachments)
+        result = await agent.handle_files(attachments)
 
-        if not added:
-            if agent.logger.error.called:
-                print(f"DEBUG: Logger Error: {agent.logger.error.call_args}")
-            else:
-                print("DEBUG: No error logged, but added is empty.")
-                # Check if add_dataframe called?
-                print(f"DEBUG: add_dataframe called: {agent.add_dataframe.called}")
-
-        assert "data" in added
+        assert "data" in result["dataframes"]
         agent.add_dataframe.assert_called_with(mock_df, name="data")
 
 
