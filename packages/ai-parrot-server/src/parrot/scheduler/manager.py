@@ -779,7 +779,7 @@ class AgentSchedulerManager:
             name = str(definition.get("type") or definition.get("name") or "unknown")
             try:
                 callback = build_scheduler_callback(definition, logger=self.logger)
-                response = await callback(result, schedule_id=schedule_id, agent_name=agent_name)
+                response = await callback(result, schedule_id=schedule_id, target_name=agent_name)
                 outcomes.append(self._callback_outcome(name, response))
             except Exception as exc:  # noqa: BLE001 - isolate each delivery
                 outcomes.append(self._callback_outcome(name, error=exc))
