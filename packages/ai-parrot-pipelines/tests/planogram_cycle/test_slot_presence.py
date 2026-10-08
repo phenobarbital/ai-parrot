@@ -1,7 +1,12 @@
 """Tri-state slot presence and representative evidence for FEAT-645."""
 
 import pytest
-from parrot_pipelines.planogram.comparison.definition import FacingDefinition, ReportingPolicy, ShelfDefinition, SlotsDefinition
+from parrot_pipelines.planogram.comparison.definition import (
+    FacingDefinition,
+    ReportingPolicy,
+    ShelfDefinition,
+    SlotsDefinition,
+)
 from parrot_pipelines.planogram.comparison.presence import build_slot_presence, facing_presence
 from parrot_pipelines.planogram.contracts import (
     ComparisonResult,
@@ -13,7 +18,9 @@ from parrot_pipelines.planogram.contracts import (
 )
 
 
-def _position(facing_id: str, status: FacingStatus, confidence: float = 0.95, identity: str | None = None) -> PositionResult:
+def _position(
+    facing_id: str, status: FacingStatus, confidence: float = 0.95, identity: str | None = None
+) -> PositionResult:
     """Build a position with one deciding observation."""
     return PositionResult(
         facing_id=facing_id,
@@ -21,9 +28,7 @@ def _position(facing_id: str, status: FacingStatus, confidence: float = 0.95, id
         status=status,
         identity=identity,
         observations=[
-            ObservationRef(
-                image_id="img0", shape_id=facing_id, source=ObservationSource.CV, raw_confidence=confidence
-            )
+            ObservationRef(image_id="img0", shape_id=facing_id, source=ObservationSource.CV, raw_confidence=confidence)
         ],
     )
 

@@ -5,7 +5,6 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from parrot_pipelines.planogram.comparison.definition import FacingDefinition, ReportingPolicy, SlotsDefinition
 from parrot_pipelines.planogram.contracts import FacingStatus, PositionResult, SlotPresence
 
-
 _NO_DECIDING_VIEW = {
     FacingStatus.NOT_VISIBLE,
     FacingStatus.NOT_ASSESSED,
@@ -57,7 +56,11 @@ def build_slot_presence(
     for facings in groups.values():
         first = facings[0]
         members = [
-            (facing, positions_by_id.get(facing.facing_id), facing_presence(positions_by_id.get(facing.facing_id), policy))
+            (
+                facing,
+                positions_by_id.get(facing.facing_id),
+                facing_presence(positions_by_id.get(facing.facing_id), policy),
+            )
             for facing in facings
         ]
         values = [presence[2][0] for presence in members]
@@ -85,7 +88,9 @@ def build_slot_presence(
                 display_name=first.descriptors.display_name,
                 found=found,
                 misplaced=misplaced,
-                status=representative_position.status if representative_position is not None else FacingStatus.NOT_VISIBLE,
+                status=(
+                    representative_position.status if representative_position is not None else FacingStatus.NOT_VISIBLE
+                ),
                 confidence=confidence,
                 facings=len(facings),
                 facings_found=sum(value is True for value in values),
