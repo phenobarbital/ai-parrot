@@ -45,6 +45,7 @@ from .commands import MSTeamsCommandRouter
 from .commands.jira_commands import register_jira_commands
 from .oauth_callback import MSTeamsOAuthNotifier
 from parrot.forms import FormSchema
+from parrot.interfaces.file.session import SessionFileStore
 from parrot.forms import FormCache
 from parrot.outputs.cards import (
     AutoCollapsePolicy,
@@ -604,6 +605,10 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             await self._handle_voice_attachment(turn_context, audio_attachment)
             return
 
+        # Store non-audio attachments (e.g. .docx) in the session file store
+        for document in self._find_document_attachments(turn_context.activity):
+            await self._handle_document_attachment(turn_context, document)
+
         # Continue existing dialog if any
         results = await dialog_context.continue_dialog()
         if results.status != DialogTurnStatus.Empty:
@@ -818,6 +823,51 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
     # =========================================================================
     # Voice Note Handling
     # =========================================================================
+
+    def _find_document_attachments(self, activity: Activity) -> list[Attachment]:
+        """Return every non-audio attachment that carries a downloadable URL.
+
+        Adaptive cards have no content_url and are skipped.
+        """
+        if not activity.attachments:
+            return []
+        found = []
+        for attachment in activity.attachments:
+            content_type = (attachment.content_type or "").lower()
+            if any(ct in content_type for ct in self.AUDIO_CONTENT_TYPES):
+                continue
+            if not getattr(attachment, "content_url", None):
+                continue
+            found.append(attachment)
+        return found
+
+    async def _handle_document_attachment(self, turn_context: TurnContext, attachment: Attachment) -> Optional[str]:
+        """Download a non-audio Teams attachment into the session store.
+
+        Reuses the existing CDN token path. The session id is the Teams
+        conversation id. Returns the file_id, or None when the download fails;
+        a failure never stops the user's message.
+        """
+        name = attachment.name or "attachment"
+        try:
+            token = await self._get_attachment_token(turn_context)
+            headers = {"Authorization": f"Bearer {token}"} if token else {}
+            async with aiohttp.ClientSession() as http:
+                async with http.get(attachment.content_url, headers=headers) as resp:
+                    if resp.status != 200:
+                        self.logger.warning("Teams attachment download failed (%s) for %s", resp.status, name)
+                        return None
+                    data = await resp.read()
+            store = getattr(self, "_session_file_store", None)
+            if store is None:
+                store = SessionFileStore()
+                self._session_file_store = store
+            session_id = turn_context.activity.conversation.id
+            record = await store.put_bytes(session_id, name, data, origin="upload")
+            return record.file_id
+        except Exception as exc:  # noqa: BLE001 - never block the user's message
+            self.logger.warning("Could not store Teams attachment %s: %s", name, exc)
+            return None
 
     def _find_audio_attachment(self, activity: Activity) -> Optional[Attachment]:
         """Find first audio attachment in activity.

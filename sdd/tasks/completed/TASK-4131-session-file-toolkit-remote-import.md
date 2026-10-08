@@ -245,3 +245,7 @@ class TestRemoteImport:
 **Date**: YYYY-MM-DD
 **Notes**:
 **Deviations from spec**: none | describe if any
+
+## Completion Note
+
+Merged by sdd-coder engine; targeted tests pass. Pre-existing failures in test_agent_module.py fixture (TestBasicAgent) untouched. Orchestrator fixed sys.modules KeyError in remote-import tests.
