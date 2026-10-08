@@ -11,6 +11,7 @@ which flowed unvalidated into ``RedisJobStore(port='')``.  redis-py builds
 connections lazily, so ``int(port)`` only ran on the first real command —
 inside APScheduler's job-processing loop, once per tick, forever.
 """
+
 from datetime import UTC, datetime
 
 import pytest
@@ -18,7 +19,10 @@ from parrot.scheduler.sanitize import (
     SchedulerConfigError,
     clean_bool,
     clean_int,
+    clean_method_name,
+    clean_misfire_grace_time,
     clean_str,
+    normalize_backend,
     normalize_jobstore_alias,
     normalize_schedule_type,
     sanitize_redis_settings,
@@ -195,12 +199,58 @@ class TestNormalizeJobstoreAlias:
             normalize_jobstore_alias("redis", available={"default"}, strict=True)
 
     def test_strict_allows_registered_alias(self):
-        assert normalize_jobstore_alias(
-            "redis", available={"default", "redis"}, strict=True
-        ) == "redis"
+        assert normalize_jobstore_alias("redis", available={"default", "redis"}, strict=True) == "redis"
 
     def test_strict_blank_still_becomes_default(self):
         assert normalize_jobstore_alias("", available={"default"}, strict=True) == "default"
+
+
+# ---------------------------------------------------------------------------
+# Backend and job input sanitization
+# ---------------------------------------------------------------------------
+class TestNormalizeBackend:
+    @pytest.mark.parametrize(
+        "value,expected",
+        [(None, "db"), ("", "db"), (" DB ", "db"), ("redis", "redis")],
+    )
+    def test_normalize_backend_values(self, value, expected):
+        assert normalize_backend(value, redis_available=True) == expected
+
+    def test_strict_redis_requires_jobstore(self):
+        with pytest.raises(SchedulerConfigError, match="Redis backend"):
+            normalize_backend("redis", redis_available=False, strict=True)
+
+    def test_unknown_backend_raises(self):
+        with pytest.raises(SchedulerConfigError, match="memory"):
+            normalize_backend("memory", redis_available=True)
+
+    def test_non_strict_unavailable_redis_falls_back_to_db(self):
+        assert normalize_backend("redis", redis_available=False) == "db"
+
+
+class TestCleanMisfireGraceTime:
+    @pytest.mark.parametrize("value,expected", [(None, None), ("null", None), ("600", 600), (0, 0)])
+    def test_accepts_null_or_non_negative_integer(self, value, expected):
+        assert clean_misfire_grace_time(value) == expected
+
+    @pytest.mark.parametrize("value", [-1, True, 1.5, "1.5", "invalid"])
+    def test_rejects_invalid_values(self, value):
+        with pytest.raises(SchedulerConfigError, match="misfire_grace_time"):
+            clean_misfire_grace_time(value)
+
+
+class TestCleanMethodName:
+    @pytest.mark.parametrize("value", ["run", "  run  ", "run_2"])
+    def test_accepts_public_identifier(self, value):
+        assert clean_method_name(value) == value.strip()
+
+    @pytest.mark.parametrize("value", ["_private", "__init__", "bad-name"])
+    def test_rejects_private_or_invalid_identifier(self, value):
+        with pytest.raises(SchedulerConfigError, match="public identifier"):
+            clean_method_name(value)
+
+    def test_null_is_none(self):
+        assert clean_method_name(None) is None
 
 
 # ---------------------------------------------------------------------------
