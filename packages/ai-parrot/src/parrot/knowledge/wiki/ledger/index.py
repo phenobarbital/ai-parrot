@@ -457,6 +457,74 @@ class LedgerIndex:
             await self._apply_from(conn, offset, last_event_id)
             return True
 
+    async def close_issue(self, issue_id: str, actor: str, reason: str, resolved_by: str | None = None) -> bool:
+        """Atomically close an open or claimed issue.
+
+        Same atomic pattern as :meth:`claim_issue`: sync, check, append,
+        re-apply — all under one ``ledger_transaction``, so a busy sync
+        cannot leave the read stale.
+
+        Args:
+            issue_id: Issue to close, e.g. ``issue:3f8a1c9e``.
+            actor: Actor closing the issue, e.g. ``agent:sdd-fix``.
+            reason: Reason for closing.
+            resolved_by: Evidence ref, e.g. ``commit:<sha>`` or ``task:TASK-<NNN>``.
+
+        Returns:
+            ``True`` if this call closed the issue, ``False`` if it was
+            missing, already closed, or superseded.
+        """
+        async with self.store.ledger_transaction("ledger.close") as conn:
+            _applied, offset, last_event_id = await self._sync_locked(conn)
+
+            state = await self._read_issue(conn, issue_id)
+            if state is None or state.get("status") not in ("open", "claimed"):
+                logger.warning(
+                    "Refusing issue.closed for %s: missing or status=%r",
+                    issue_id,
+                    state and state.get("status"),
+                )
+                return False
+
+            payload: dict[str, Any] = {"reason": reason, "closed_by": actor}
+            if resolved_by is not None:
+                payload["resolved_by"] = resolved_by
+            event = LedgerEvent(kind="issue.closed", subject=issue_id, actor=actor, payload=payload)
+            await asyncio.to_thread(self.log.append, event)
+            await self._apply_from(conn, offset, last_event_id)
+            return True
+
+    async def unclaim_issue(self, issue_id: str, actor: str, reason: str) -> bool:
+        """Atomically unclaim a claimed issue, returning it to the ready pool.
+
+        Same atomic pattern as :meth:`claim_issue`/:meth:`close_issue`.
+
+        Args:
+            issue_id: Issue to unclaim, e.g. ``issue:3f8a1c9e``.
+            actor: Actor releasing the claim.
+            reason: Reason for unclaiming.
+
+        Returns:
+            ``True`` if this call unclaimed the issue, ``False`` if it was
+            not in ``claimed`` status.
+        """
+        async with self.store.ledger_transaction("ledger.unclaim") as conn:
+            _applied, offset, last_event_id = await self._sync_locked(conn)
+
+            state = await self._read_issue(conn, issue_id)
+            if state is None or state.get("status") != "claimed":
+                return False
+
+            event = LedgerEvent(
+                kind="issue.unclaimed",
+                subject=issue_id,
+                actor=actor,
+                payload={"unclaimed_by": actor, "reason": reason},
+            )
+            await asyncio.to_thread(self.log.append, event)
+            await self._apply_from(conn, offset, last_event_id)
+            return True
+
     # ------------------------------------------------------------------
     # Compaction (index-only; never rewrites events.jsonl)
     # ------------------------------------------------------------------
