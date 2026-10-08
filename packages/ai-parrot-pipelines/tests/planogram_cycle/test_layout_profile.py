@@ -59,6 +59,31 @@ def test_nested_references_merge_recursively(defaults: LayoutProfile) -> None:
     assert resolved.references.enabled is True and resolved.references.selection == "all"
 
 
+def test_layout_completeness_override(defaults: LayoutProfile) -> None:
+    """FEAT-646 AC6: completeness overrides resolve and are validated."""
+    resolved = resolve_layout_profile(
+        defaults,
+        {"layout_profile": {"completeness": {"min_coverage": 0.95, "min_shelf_coverage": 0.85}}},
+        config_name="cfg",
+    )
+    assert (resolved.completeness.min_coverage, resolved.completeness.min_shelf_coverage) == (0.95, 0.85)
+    assert defaults.completeness.min_coverage == defaults.completeness.min_shelf_coverage == 1.0
+    assert defaults.definition_gap_fill is False
+
+    with pytest.raises(ValueError, match="completeness.bogus"):
+        resolve_layout_profile(
+            defaults,
+            {"layout_profile": {"completeness": {"bogus": 1}}},
+            config_name="cfg",
+        )
+    with pytest.raises(ValueError, match="completeness.min_coverage"):
+        resolve_layout_profile(
+            defaults,
+            {"layout_profile": {"completeness": {"min_coverage": 1.5}}},
+            config_name="cfg",
+        )
+
+
 def test_no_mutation_of_config_or_defaults(defaults: LayoutProfile) -> None:
     """Resolving retains caller configuration and source defaults exactly."""
     config = {"layout_profile": {"references": {"max_per_call": 2}, "ocr_targets": ["slot"]}}

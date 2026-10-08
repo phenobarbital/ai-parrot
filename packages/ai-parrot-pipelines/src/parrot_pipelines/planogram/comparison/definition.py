@@ -56,6 +56,19 @@ class ReportingPolicy(BaseModel):
     misplaced_min_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
 
 
+class CompletenessPolicy(BaseModel):
+    """Minimum resolved-facing fractions for a COMPLETE assessment (1.0 = every facing resolved).
+
+    ``min_coverage`` gates the global ``assessment_status``; ``min_shelf_coverage`` gates each shelf's
+    ``ComplianceResult.assessment``. Tolerance only changes completeness, never credits or scores.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    min_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
+    min_shelf_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
 class Descriptors(BaseModel):
     """Per-position product description. All optional; ``price`` is never required."""
 
