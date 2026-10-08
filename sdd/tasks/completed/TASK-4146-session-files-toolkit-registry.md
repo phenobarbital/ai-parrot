@@ -237,7 +237,12 @@ real import; neither asserts mere key presence.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Opus 5 (/sdd-fix lane, session 7222f028)
+**Date**: 2026-10-08
+**Notes**: Implemented as blueprinted. Added `test_export_is_lazy_not_eager`
+beyond the listed cases, so a later refactor to a top-level import — which would
+make `parrot.tools` import `session_files` at startup — fails loudly. The
+blueprint's `getattr(module, "SessionFileToolkit")` tripped ruff B009; plain
+attribute access exercises the same module `__getattr__`. 47 tests pass across
+the four session-file modules; `ruff check` clean.
+**Deviations from spec**: none

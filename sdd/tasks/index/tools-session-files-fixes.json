@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-08T09:20:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-08T09:13:47+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -58,7 +58,7 @@
       "feature_id": "FEAT-643",
       "feature": "tools-session-files-fixes",
       "spec": "sdd/specs/tools-session-files-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -67,8 +67,9 @@
       "discovered_from": "issue:b2c54218dcef",
       "assigned_to": null,
       "started_at": "2026-10-08T09:50:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4146-session-files-toolkit-registry.md"
+      "completed_at": "2026-10-08T09:13:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4146-session-files-toolkit-registry.md",
+      "verification": "verified"
     }
   ]
 }
