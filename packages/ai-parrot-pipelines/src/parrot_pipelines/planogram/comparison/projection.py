@@ -8,7 +8,12 @@ from typing import Dict, List, Optional, Sequence
 from parrot.models.compliance import ComplianceResult, ComplianceStatus, ShelfAssessment
 from parrot.models.detections import PlanogramDescription
 
-from parrot_pipelines.planogram.comparison.definition import FacingDefinition, ReportingPolicy, SlotsDefinition
+from parrot_pipelines.planogram.comparison.definition import (
+    CompletenessPolicy,
+    FacingDefinition,
+    ReportingPolicy,
+    SlotsDefinition,
+)
 from parrot_pipelines.planogram.comparison.presence import facing_presence
 from parrot_pipelines.planogram.contracts import (
     AssessmentStatus,
@@ -60,6 +65,7 @@ def project_compliance(
     description: PlanogramDescription,
     *,
     policy: Optional[ReportingPolicy] = None,
+    completeness: Optional[CompletenessPolicy] = None,
 ) -> List[ComplianceResult]:
     """One ComplianceResult per definition shelf, definition order. Sets ``ComplianceResult.assessment``.
 
@@ -80,6 +86,7 @@ def project_compliance(
         definition: The slots definition.
         description: The planogram description (per-shelf thresholds).
         policy: Optional reporting policy. The default preserves legacy display labels.
+        completeness: Minimum resolved fraction of a shelf's facings for a complete shelf (default: all).
 
     Returns:
         One result per definition shelf.
@@ -87,6 +94,7 @@ def project_compliance(
     scores_by_shelf: Dict[str, ShelfScore] = {s.shelf_id: s for s in shelf_scores}
     positions_by_facing: Dict[str, PositionResult] = {p.facing_id: p for p in positions}
     results: List[ComplianceResult] = []
+    shelf_policy = completeness or CompletenessPolicy()
     for shelf in definition.shelves:
         score = scores_by_shelf.get(shelf.shelf_id)
         if score is None:
@@ -107,7 +115,11 @@ def project_compliance(
         ]
         failed_rules = [o for o in score.rule_results if o.assessed and o.passed is False]
         rules_complete = all(o.assessed for o in score.rule_results)
-        complete = not unresolved_ids and rules_complete
+        if shelf.facings:
+            resolved_share = (len(shelf.facings) - len(unresolved_ids)) / len(shelf.facings)
+            complete = resolved_share >= shelf_policy.min_shelf_coverage and rules_complete
+        else:
+            complete = rules_complete
 
         product_labels = policy is not None and policy.product_label == "product"
         if product_labels:

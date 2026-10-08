@@ -8,7 +8,7 @@ import pytest
 
 from parrot.models.compliance import ComplianceStatus
 from parrot_pipelines.models import PlanogramConfig
-from parrot_pipelines.planogram.comparison.definition import load_slots_definition, validate_bindings
+from parrot_pipelines.planogram.comparison.definition import CompletenessPolicy, load_slots_definition, validate_bindings
 from parrot_pipelines.planogram.comparison.projection import finalize_comparison, project_compliance
 from parrot_pipelines.planogram.comparison.registration import ImageRegistration
 from parrot_pipelines.planogram.comparison.scoring import merge_positions, score_shelves, summarize
@@ -36,6 +36,26 @@ def _run(definition, description, registrations, identifications, bindings=(), o
     return finalize_comparison(
         comparison.model_copy(update={"position_results": positions, "shelf_scores": shelves}), results
     )
+
+
+def _scored(definition, description, idents_by_facing, completeness=None, bindings=(), outcomes=None):
+    """Merge, score, summarize, and project observations with a completeness policy."""
+    registration, identifications = _observe("img0", idents_by_facing)
+    credit_policy = CreditPolicy.default()
+    positions = merge_positions(definition, [registration], identifications, credit_policy)
+    shelves = score_shelves(positions, definition, list(bindings), outcomes or {}, description, credit_policy)
+    comparison = summarize(
+        shelves,
+        positions,
+        definition,
+        EvidenceWeights(),
+        completeness=completeness,
+    )
+    results = project_compliance(shelves, positions, definition, description, completeness=completeness)
+    finalized = finalize_comparison(
+        comparison.model_copy(update={"position_results": positions, "shelf_scores": shelves}), results
+    )
+    return finalized, results
 
 
 def _definition(
@@ -475,3 +495,108 @@ def test_zone_only_run_coverage_evidence_and_threshold():
     failed = {"zone": RuleOutcome(rule_id="zone", assessed=True, passed=False, score=0.0)}
     result = _run(definition, description, [], [], bindings, failed)
     assert result.compliance_results[0].compliance_status != ComplianceStatus.COMPLIANT
+
+
+# --------------------------------------------------------------------------- FEAT-646 completeness policy
+
+
+def test_summarize_default_completeness_unchanged():
+    """One unresolved position with the default policy remains inconclusive."""
+    definition = _definition([("top", "top", 2)])
+    result, results = _scored(
+        definition,
+        _description(["top"]),
+        {"top_f1": _obs("img0", "", "TOP-1")},
+    )
+
+    assert result.assessment_status == AssessmentStatus.INCONCLUSIVE
+    assert results[0].assessment.assessment_status == AssessmentStatus.INCONCLUSIVE.value
+
+
+def test_summarize_tolerant_completeness():
+    """97/102 resolved facings meet a 0.9 completeness policy without changing scores."""
+    shelves = [(f"shelf_{index}", f"level_{index}", count) for index, count in enumerate((17, 18, 18, 18, 18, 13))]
+    definition = _definition(shelves)
+    observed = _match_all(definition)
+    for shelf in definition.shelves[:5]:
+        del observed[shelf.facings[0].facing_id]
+    description = _description([level for _, level, _ in shelves])
+
+    default, default_results = _scored(definition, description, observed)
+    tolerant, tolerant_results = _scored(
+        definition,
+        description,
+        observed,
+        CompletenessPolicy(min_coverage=0.9, min_shelf_coverage=0.9),
+    )
+
+    assert default.assessment_status == AssessmentStatus.INCONCLUSIVE
+    assert tolerant.assessment_status == AssessmentStatus.COMPLETE
+    assert tolerant.coverage == default.coverage == pytest.approx(97 / 102)
+    assert tolerant.overall_compliance_score == default.overall_compliance_score
+    assert tolerant.strict_compliance_score == default.strict_compliance_score
+    assert tolerant.shelf_scores == default.shelf_scores
+    assert [result.assessment.assessment_status for result in default_results] == [
+        AssessmentStatus.INCONCLUSIVE.value,
+    ] * 5 + [AssessmentStatus.COMPLETE.value]
+    assert all(result.assessment.assessment_status == AssessmentStatus.COMPLETE.value for result in tolerant_results)
+
+
+def test_summarize_tolerant_rules_still_required():
+    """Coverage above threshold cannot compensate for an unassessed status-relevant rule."""
+    zones = [{"zone_id": "zone_backlit", "kind": "backlit", "shelf_id": "header", "required": True}]
+    definition = _definition([("header", "header", 0), ("top", "top", 10)], zones=zones)
+    bindings = validate_bindings(
+        definition,
+        {"rule_bindings": [{"rule_id": "zone", "kind": "zone_present", "target_id": "zone_backlit"}]},
+    )
+    observed = _match_all(definition)
+    del observed["top_f10"]
+    result, _ = _scored(
+        definition,
+        _description(["header", "top"], endcap=True),
+        observed,
+        CompletenessPolicy(min_coverage=0.8, min_shelf_coverage=0.8),
+        bindings,
+        {"zone": RuleOutcome(rule_id="zone", assessed=False)},
+    )
+
+    assert result.coverage == pytest.approx(0.9)
+    assert result.assessment_status == AssessmentStatus.INCONCLUSIVE
+
+
+def test_project_shelf_completeness():
+    """14/15 resolved is complete at 0.8 coverage, while 11/15 is inconclusive."""
+    definition = _definition([("top", "top", 15)])
+    description = _description(["top"])
+    policy = CompletenessPolicy(min_coverage=0.0, min_shelf_coverage=0.8)
+    all_matches = _match_all(definition)
+
+    fourteen = dict(all_matches)
+    del fourteen["top_f15"]
+    _, complete_results = _scored(definition, description, fourteen, policy)
+
+    eleven = {facing.facing_id: all_matches[facing.facing_id] for facing in definition.all_facings()[:11]}
+    _, incomplete_results = _scored(definition, description, eleven, policy)
+
+    assert complete_results[0].assessment.assessment_status == AssessmentStatus.COMPLETE.value
+    assert incomplete_results[0].assessment.assessment_status == AssessmentStatus.INCONCLUSIVE.value
+
+
+def test_overall_compliant_requires_complete_and_all_compliant():
+    """A complete tolerant run is not overall compliant when a shelf is non-compliant."""
+    definition = _definition([("good", "good", 10), ("bad", "bad", 10)])
+    observed = _match_all(definition)
+    for index in range(1, 10):
+        observed[f"bad_f{index}"] = _obs("img0", "", None, empty=True)
+    del observed["bad_f10"]
+    result, results = _scored(
+        definition,
+        _description(["good", "bad"]),
+        observed,
+        CompletenessPolicy(min_coverage=0.9, min_shelf_coverage=0.9),
+    )
+
+    assert result.assessment_status == AssessmentStatus.COMPLETE
+    assert results[1].compliance_status == ComplianceStatus.NON_COMPLIANT
+    assert result.overall_compliant is False
