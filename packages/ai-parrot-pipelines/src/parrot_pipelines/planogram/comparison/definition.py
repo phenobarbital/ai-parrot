@@ -73,9 +73,11 @@ class Descriptors(BaseModel):
     @field_validator("sku", mode="before")
     @classmethod
     def _sku_to_str(cls, value: Any) -> Optional[str]:
-        """Normalize integer/string SKUs; treat absent or blank values as missing."""
+        """Normalize integer/integral-float/string SKUs; treat absent or blank values as missing."""
         if value is None:
             return None
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
         if isinstance(value, bool) or not isinstance(value, (int, str)):
             raise ValueError("sku must be an integer or string")
         sku = str(value).strip()
@@ -164,7 +166,11 @@ class SlotsDefinition(BaseModel):
 
     @model_validator(mode="after")
     def _check_reporting_meta(self) -> "SlotsDefinition":
-        """Validate a partial reporting object using normal Pydantic error handling."""
+        """Validate a partial reporting object using normal Pydantic error handling.
+
+        Direct construction raises a pydantic ``ValidationError``; the definition loaders are the
+        boundary that converts it to ``SlotsDefinitionError``.
+        """
         if REPORTING_META_KEY in self.meta:
             ReportingPolicy.model_validate(self.meta[REPORTING_META_KEY])
         return self

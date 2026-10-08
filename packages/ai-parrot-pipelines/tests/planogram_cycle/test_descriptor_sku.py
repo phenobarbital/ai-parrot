@@ -100,3 +100,10 @@ def test_descriptor_sku_attribute_collision() -> None:
 
     with pytest.raises(SlotsDefinitionError, match="attributes collide with typed fields: sku"):
         load_slots_definition(source)
+
+
+def test_integral_float_sku_becomes_string() -> None:
+    """Spreadsheet-read float SKUs normalize to their integer string; fractional ones are rejected."""
+    assert Descriptors(sku=12.0).sku == "12"
+    with pytest.raises(ValueError):
+        Descriptors(sku=12.5)
