@@ -142,9 +142,7 @@ class SessionFileToolkit(AbstractToolkit):
             FileTooLarge: If *size* exceeds ``self.max_file_bytes``.
         """
         if size > self.max_file_bytes:
-            raise FileTooLarge(
-                f"{filename!r} is {size} bytes, over the {self.max_file_bytes}-byte per-file limit"
-            )
+            raise FileTooLarge(f"{filename!r} is {size} bytes, over the {self.max_file_bytes}-byte per-file limit")
 
     async def list_session_files(self) -> Dict[str, Any]:
         """List the files available in this session.
