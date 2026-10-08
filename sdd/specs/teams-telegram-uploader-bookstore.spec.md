@@ -10,7 +10,7 @@ tags: [knowledge-upload, bookstore, llm-wiki, ingest-triage, telegram, msteams]
 **Feature ID**: FEAT-647
 **Date**: 2026-10-09
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor of `ai-parrot` / `ai-parrot-integrations`
 
 Source brainstorm: `sdd/proposals/teams-telegram-uploader-bookstore.brainstorm.md`
