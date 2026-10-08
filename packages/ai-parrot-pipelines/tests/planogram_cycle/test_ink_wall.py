@@ -251,6 +251,15 @@ def test_default_layout_profile_is_fresh_and_ink_shaped():
     assert "mutated" not in InkWall.default_layout_profile().descriptor_fields
 
 
+def test_ink_wall_profile_defaults():
+    """FEAT-646: ink walls opt into the definition-aware fill and a tolerant completeness policy."""
+    first, second = InkWall.default_layout_profile(), InkWall.default_layout_profile()
+    assert first.definition_gap_fill is True
+    assert (first.completeness.min_coverage, first.completeness.min_shelf_coverage) == (0.9, 0.8)
+    first.completeness.min_coverage = 0.5
+    assert second.completeness.min_coverage == 0.9
+
+
 def test_registrable_slots_keep_rows_with_occupancy_only():
     """An unreadable occupied row remains assessable even when product and brand are absent."""
     shapes = []
