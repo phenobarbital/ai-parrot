@@ -87,7 +87,7 @@ def mock_dependencies():
     if "parrot.bots.agent" in sys.modules:
         del sys.modules["parrot.bots.agent"]
 
-    for k, v in patch_targets.items():
+    for k in patch_targets:
         if k in original_modules:
             sys.modules[k] = original_modules[k]
         else:
