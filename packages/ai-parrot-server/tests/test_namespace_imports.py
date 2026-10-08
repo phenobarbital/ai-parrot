@@ -62,8 +62,17 @@ class TestHostStubFiles:
         assert "__init__.py" in py_files, "handlers/__init__.py must remain in host"
         assert "vault_utils.py" in py_files, "vault_utils.py redirect stub must remain in host"
         assert "credentials_utils.py" in py_files, "credentials_utils.py redirect stub must remain in host"
-        # No other .py files should remain at the top level
-        unexpected = py_files - {"__init__.py", "vault_utils.py", "credentials_utils.py"}
+        # No other .py files should remain at the top level, except the
+        # dataset/spatial filter handlers, which are core-resident by design
+        # (FEAT-219 / FEAT-225) — core tests import them from parrot.handlers.
+        allowed = {
+            "__init__.py",
+            "vault_utils.py",
+            "credentials_utils.py",
+            "spatial_filter_handler.py",
+            "dataset_filter_handler.py",
+        }
+        unexpected = py_files - allowed
         assert not unexpected, f"Unexpected .py files remain in host handlers/: {unexpected}"
 
     def test_manager_host_only_init(self):
@@ -79,19 +88,29 @@ class TestHostStubFiles:
 class TestHostPyprojectUpdates:
     """Verify host pyproject.toml has been updated correctly."""
 
-    def test_scheduler_extra_removed(self, host_pyproject_text):
-        """scheduler extra should be commented out/removed from host."""
-        # The scheduler extra was removed; only a comment remains
+    def test_scheduler_extra_is_inprocess_only(self, host_pyproject_text):
+        """Host scheduler extra exists only for the in-process scheduler (FEAT-453 D1).
+
+        FEAT-203 moved scheduling to ai-parrot-server[scheduler]; FEAT-453
+        deliberately re-added a core extra so an agent can run
+        InProcessScheduler without the server distribution. It must stay
+        apscheduler-only and pinned to the satellite's exact version.
+        """
         import re
 
-        # Check that there's no active scheduler = [...] array with apscheduler
-        active_scheduler = re.search(
-            r"^scheduler\s*=\s*\[",
-            host_pyproject_text,
-            re.MULTILINE,
-        )
-        assert active_scheduler is None, (
-            "scheduler extra should be removed from host pyproject.toml " "(moved to ai-parrot-server[scheduler])"
+        match = re.search(r"^scheduler\s*=\s*\[(.*?)\]", host_pyproject_text, re.MULTILINE | re.DOTALL)
+        if match is None:
+            return  # extra removed entirely: also consistent with FEAT-203
+        deps = re.findall(r'"([^"]+)"', match.group(1))
+        assert deps and all(
+            dep.startswith("apscheduler") for dep in deps
+        ), f"host scheduler extra must depend only on apscheduler (FEAT-453 D1), found: {deps}"
+        satellite = (pathlib.Path(__file__).parent.parent / "pyproject.toml").read_text(encoding="utf-8")
+        sat_pin = re.search(r'"(apscheduler==[^"]+)"', satellite)
+        assert sat_pin is not None, "ai-parrot-server pyproject.toml must pin apscheduler"
+        assert sat_pin.group(1) in deps, (
+            f"host scheduler extra {deps} must pin the satellite's {sat_pin.group(1)} "
+            "to avoid a split-brain apscheduler (FEAT-453 D1)"
         )
 
     def test_server_extra_exists(self, host_pyproject_text):
