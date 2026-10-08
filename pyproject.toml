@@ -171,14 +171,15 @@ override-dependencies = [
     # Image.open/save/fromarray) is unaffected by the 11→12 changes.
     "pillow>=12.3.0",
     # --- Dependabot security overrides over sibling-package exact pins ---
-    # flowtask 5.12.14 pins asyncssh[...]==2.23.0; 2.23.1/2.24.0 fix 3 high
-    # advisories (Dependabot #128, #129, #133). Patch-level bump, no API change.
+    # flowtask 5.12.14 pins asyncssh[...]==2.23.0; 2.23.1/2.24.0 fix 3
+    # advisories, 1 high + 2 medium (Dependabot #129 high, #128/#133 medium).
+    # Patch-level bump, no API change.
     "asyncssh[bcrypt,fido2,pkcs11,pyopenssl]>=2.24.0",
     # querysource 5.2.0 pins geopy==2.4.1; 2.5.0 fixes a ReDoS in geopy.Point
     # (Dependabot #166). Minor bump, Point/geocoder APIs unchanged.
     "geopy>=2.5.0",
-    # asyncdb 2.16.2 [mongodb] pins pymongo==4.12.0; 4.18.2 fixes 4 high
-    # advisories (Dependabot #175, #176, #177, #178). Same 4.x line; asyncdb's
+    # asyncdb 2.16.2 [mongodb] pins pymongo==4.12.0; 4.18.2 fixes 4 advisories,
+    # 2 high + 2 medium (Dependabot #175-#178). Same 4.x line; asyncdb's
     # usage (AsyncIOMotorClient via motor 3.7) is unaffected.
     "pymongo>=4.18.2",
 ]
