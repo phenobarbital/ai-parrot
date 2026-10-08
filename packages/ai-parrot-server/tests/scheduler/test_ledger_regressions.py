@@ -46,13 +46,17 @@ async def test_fire_id_matches_coordinator_claim_key(scheduler_redis, scheduler_
 async def test_run_now_coordination_outage_is_unavailable_error(scheduler_namespace) -> None:
     """Ledger 7b5d75d2c81d: coordination outages surface as a typed scheduler error."""
     manager = SchedulerManager(registered_name=scheduler_namespace)
-    manager._fire_coordinator = SimpleNamespace(try_acquire_running=AsyncMock(side_effect=FireCoordinationError("down")))
+    manager._fire_coordinator = SimpleNamespace(
+        try_acquire_running=AsyncMock(side_effect=FireCoordinationError("down"))
+    )
     with pytest.raises(SchedulerUnavailableError):
         await manager.run_schedule_now("job")
     await manager.stop_headless(wait=False)
 
 
-async def test_success_callback_raise_does_not_skip_delivery(scheduler_namespace, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_success_callback_raise_does_not_skip_delivery(
+    scheduler_namespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Ledger 37f02d3c2474: a callback failure is recorded without suppressing delivery."""
     manager = SchedulerManager(registered_name=scheduler_namespace)
     manager._memory_state = MemoryRunState()
