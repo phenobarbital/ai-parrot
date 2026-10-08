@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-07T22:22:14.991759+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-08T00:35:25+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -263,7 +263,7 @@
       "feature_id": "FEAT-639",
       "feature": "jiratoolkit-docx-support",
       "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -273,8 +273,9 @@
       "parallelism_notes": "Modifies the same file as TASK-4140 (jiratoolkit.py), whose AddCommentInput/AddAttachmentInput edits are adjacent, and delegates to _attach_session_files().",
       "assigned_to": null,
       "started_at": "2026-10-07T23:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4141-jira-add-comment-hard-cut.md"
+      "completed_at": "2026-10-08T00:35:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4141-jira-add-comment-hard-cut.md",
+      "verification": "verified"
     }
   ]
 }

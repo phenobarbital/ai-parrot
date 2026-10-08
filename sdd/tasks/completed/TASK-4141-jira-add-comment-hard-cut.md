@@ -316,3 +316,7 @@ async def test_comment_ok_with_failed_upload(toolkit, bound_session):
 **Date**: YYYY-MM-DD
 **Notes**:
 **Deviations from spec**: none | describe if any
+
+## Completion Note
+
+Merged by engine (codex); jira unit tests pass with --noconftest.
