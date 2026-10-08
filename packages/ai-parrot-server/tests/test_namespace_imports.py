@@ -36,6 +36,7 @@ class TestSatelliteFilePresence:
         ("mcp/server.py", "MCPServer"),
         ("services/agent_service.py", "AgentService"),
         ("scheduler/manager.py", "AgentSchedulerManager"),
+        ("scheduler/base.py", "SchedulerManager"),
         ("mcp/oauth_server.py", "OAuthAuthorizationServer"),
         ("autonomous/orchestrator.py", "AutonomousOrchestrator"),
     ])
