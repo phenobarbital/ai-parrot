@@ -462,8 +462,7 @@ class AddAttachmentInput(BaseModel):
     issue: str = Field(description="Issue key or id")
     file_ids: List[str] = Field(
         description=(
-            "Session file handles to attach, from sf_list_session_files. "
-            "Filesystem paths and URLs are not accepted."
+            "Session file handles to attach, from sf_list_session_files. " "Filesystem paths and URLs are not accepted."
         )
     )
 

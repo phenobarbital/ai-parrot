@@ -23,9 +23,7 @@ def toolkit(store):
     tk = JiraToolkit.__new__(JiraToolkit)
     tk.logger = logging.getLogger("test_jira_add_attachment")
     tk.jira = MagicMock()
-    tk.jira.add_attachment.side_effect = lambda issue, attachment: SimpleNamespace(
-        id="900", filename="x", size=3
-    )
+    tk.jira.add_attachment.side_effect = lambda issue, attachment: SimpleNamespace(id="900", filename="x", size=3)
     tk._session_file_store = store
 
     async def _limit():
