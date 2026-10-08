@@ -14,7 +14,7 @@ authors = [
 ]
 dependencies = [
     "ai-parrot>=1.2.0",
-    "transformers>=4.48.0,<5.0",
+    "transformers>=5.3.0",
     # NOT declared here: `torch` (imported lazily inside methods, same
     # undeclared/install-separately pattern as gemma4) or
     # `sentence-transformers` (not imported anywhere in parrot/clients/hf/
