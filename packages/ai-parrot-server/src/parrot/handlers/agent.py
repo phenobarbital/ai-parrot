@@ -1275,22 +1275,34 @@ class AgentTalk(BaseView):
                 )
                 # Continue with remaining servers — never fail the PATCH
 
-    async def _handle_attachments(
-        self, bot: AbstractBot, agent: AbstractBot, attachments: Dict[str, Any]
-    ) -> web.Response:
+    async def _persist_attachments(self, bot: AbstractBot, attachments: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist uploads before the request branches on a query.
+
+        This runs inside ``agent.session(...)`` so ``handle_files`` can use the
+        request-bound session. Persistence failures are reported to upload-only
+        callers but must not prevent a chat prompt from running.
         """
-        Manage file uploaded into a internal private method.
-        """
-        if attachments:
-            # Handle file uploads without a query
-            try:
-                added_files = await bot.handle_files(attachments)
-                return self.json_response(
-                    {"message": "Files uploaded successfully", "added_files": added_files, "agent": agent.name}
-                )
-            except Exception as e:
-                self.logger.error("Error handling files: %s", e, exc_info=True)
-                return self.json_response({"error": f"Error handling files: {str(e)}"}, status=500)
+        empty = {"dataframes": [], "files": [], "errors": []}
+        if not attachments:
+            return empty
+        try:
+            return await bot.handle_files(attachments)
+        except Exception as exc:  # noqa: BLE001 -- chat must survive upload persistence failures
+            self.logger.error("Attachment persistence failed: %s", exc, exc_info=True)
+            return {**empty, "errors": [{"filename": "*", "error": str(exc)}]}
+
+    async def _handle_attachments(self, agent: AbstractBot, upload_result: Dict[str, Any]) -> web.Response:
+        """Return the upload-only result without claiming discarded files succeeded."""
+        result = {
+            "files": upload_result.get("files", []),
+            "dataframes": upload_result.get("dataframes", []),
+            "errors": upload_result.get("errors", []),
+            "agent": agent.name,
+        }
+        if result["files"] or result["dataframes"]:
+            return self.json_response(result)
+        if result["errors"]:
+            return self.json_response(result, status=400)
         return self.json_response({"error": "query is required"}, status=400)
 
     async def _handle_hitl_resume(
@@ -1817,8 +1829,9 @@ class AgentTalk(BaseView):
                         attachments=attachments,
                         use_background=use_background,
                     )
+                upload_result = await self._persist_attachments(bot, attachments)
                 if not query:
-                    return await self._handle_attachments(bot, agent, attachments)
+                    return await self._handle_attachments(agent, upload_result)
                 if use_stream:
                     return await self._handle_stream_response(
                         bot=bot,
