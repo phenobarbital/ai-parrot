@@ -76,25 +76,32 @@ async def test_redis_job_survives_restart(scheduler_namespace, scheduler_redis, 
 
 
 async def test_redis_job_catchup_once_after_outage(scheduler_namespace, scheduler_redis, redis_db_15) -> None:
-    """A no-grace job catches up once, while a stale grace-limited job is not fired."""
+    """Three missed run times coalesce into one catch-up; a grace-limited stale job is not fired."""
     first = await _manager(scheduler_namespace, Service())
     catchup = await first.add_schedule(
-        "service", "service", "interval", {"seconds": 1}, backend="redis", method_name="run", misfire_grace_time=None
+        "service", "service", "interval", {"seconds": 3600}, backend="redis", method_name="run", misfire_grace_time=None
     )
     skipped = await first.add_schedule(
-        "service", "service", "interval", {"seconds": 1}, backend="redis", method_name="run", misfire_grace_time=600
+        "service", "service", "interval", {"seconds": 3600}, backend="redis", method_name="run", misfire_grace_time=600
     )
-    first.scheduler.modify_job(catchup.schedule_id, jobstore="redis", next_run_time=utcnow() - timedelta(seconds=2))
-    first.scheduler.modify_job(skipped.schedule_id, jobstore="redis", next_run_time=utcnow() - timedelta(hours=2))
+    # Pause so the outage is real: a running scheduler would consume the overdue runs immediately. The gaps are not
+    # multiples of the interval, so the last due run times are 30 minutes ago (catch-up) and 30 minutes ago (> grace).
+    first.scheduler.pause()
+    first.scheduler.modify_job(catchup.schedule_id, jobstore="redis", next_run_time=utcnow() - timedelta(hours=3.5))
+    first.scheduler.modify_job(skipped.schedule_id, jobstore="redis", next_run_time=utcnow() - timedelta(minutes=90))
     await first.stop_headless(wait=False)
 
     target = Service()
     second = await _manager(scheduler_namespace, target)
     try:
-        await asyncio.sleep(0.2)
+        for _ in range(30):
+            if target.calls:
+                break
+            await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)  # a second (spurious) run would show up here
         assert len(target.calls) == 1
-        state = await second.get_last_result(catchup.schedule_id)
-        assert state.run_count == 1
+        assert timedelta(minutes=25) < utcnow() - target.calls[0] < timedelta(minutes=35)
+        assert (await second.get_last_result(catchup.schedule_id)).run_count == 1
         assert (await second.get_last_result(skipped.schedule_id)).run_count == 0
     finally:
         await second.stop_headless(wait=False)
