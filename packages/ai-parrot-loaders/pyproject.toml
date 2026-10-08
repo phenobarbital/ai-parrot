@@ -65,7 +65,7 @@ pdf = [
     "fpdf==1.7.2",
     "markdownify>=1.2.2",
     "markitdown[docx,pdf,pptx,xlsx]>=0.1.2",
-    "python-docx==1.1.2",
+    "python-docx>=1.2.0",
     "paddleocr==3.2.0",
     "easyocr==1.7.2"
 ]
@@ -82,7 +82,7 @@ ebook = [
 # Document ingestion used by wiki and other knowledge pipelines, without OCR.
 documents = [
     "ai-parrot-loaders[ebook]",
-    "python-docx==1.1.2",
+    "python-docx>=1.2.0",
     "pymupdf>=1.27",
     "pymupdf4llm>=0.0.27",
 ]

@@ -238,7 +238,7 @@ pdf = [
     "weasyprint==70.0",
     "fpdf==1.7.2",
     "markdownify>=1.2.2",
-    "python-docx==1.1.2",
+    "python-docx>=1.2.0",
 ]
 
 # OCR (requires tesseract system package)
@@ -450,7 +450,7 @@ agents = [
     "opensearch-py==3.1.0",
     "python-pptx==1.0.2",
     "markdownify>=1.2.2",
-    "python-docx==1.1.2",
+    "python-docx>=1.2.0",
     "pymupdf==1.27.1",
     "pymupdf4llm==0.0.27",
     "pdf4llm==0.0.27",
