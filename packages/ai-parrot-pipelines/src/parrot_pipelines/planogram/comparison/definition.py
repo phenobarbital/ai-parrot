@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ _DESCRIPTOR_KEYS: Tuple[str, ...] = (
     "aliases",
     "price",
     "attributes",
+    "sku",
 )
 
 
@@ -46,6 +47,7 @@ class Descriptors(BaseModel):
     """Per-position product description. All optional; ``price`` is never required."""
 
     display_name: Optional[str] = None
+    sku: Optional[str] = None
     family: Optional[str] = None
     xl: Optional[bool] = None
     colors: List[str] = Field(default_factory=list)
@@ -54,6 +56,17 @@ class Descriptors(BaseModel):
     aliases: List[str] = Field(default_factory=list)
     price: Optional[float] = None
     attributes: Dict[str, AttributeValue] = Field(default_factory=dict)
+
+    @field_validator("sku", mode="before")
+    @classmethod
+    def _sku_to_str(cls, value: Any) -> Optional[str]:
+        """Normalize integer/string SKUs; treat absent or blank values as missing."""
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, str)):
+            raise ValueError("sku must be an integer or string")
+        sku = str(value).strip()
+        return sku or None
 
     @model_validator(mode="after")
     def _no_typed_collision(self) -> "Descriptors":
