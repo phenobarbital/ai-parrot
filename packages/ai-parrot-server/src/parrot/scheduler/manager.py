@@ -403,6 +403,18 @@ class AgentSchedulerManager(SchedulerManager):
         self.register_resolver(AgentResolver(self.targets, lambda: self.bot_manager))
         self.register_resolver(CrewResolver(self.targets, lambda: self.bot_manager))
 
+    async def _execute_job(
+        self,
+        definition: JobDefinition,
+        fire: FireContext,
+        *,
+        success_callback: Callable[..., Any] | None = None,
+    ) -> Any:
+        """Default prompt-only agent schedules to ``chat`` before delegating to the base executor."""
+        if definition.target_kind == "agent" and definition.method_name is None and definition.backend != "code":
+            definition = definition.model_copy(update={"method_name": AgentResolver.default_method})
+        return await super()._execute_job(definition, fire, success_callback=success_callback)
+
     def register_bot_schedules(self, bot: Any) -> int:
         """Resolve report-decorator env timing, then ``register_object_schedules(bot, bot.name)``.
 
