@@ -837,7 +837,9 @@ class SchedulerManager:
         job = self.scheduler.get_job(job_id)
         job_name = job.name if job is not None else job_id
         if event.code == EVENT_JOB_MISSED:
-            self.logger.warning("[%s - NAV Scheduler] Job %s missed at %s", ENVIRONMENT, job_name, event.scheduled_run_time)
+            self.logger.warning(
+                "[%s - NAV Scheduler] Job %s missed at %s", ENVIRONMENT, job_name, event.scheduled_run_time
+            )
         elif event.code == EVENT_JOB_MAX_INSTANCES:
             self.logger.error("[%s - Scheduler] Job %s exceeded max instances", ENVIRONMENT, job_name)
         else:
@@ -870,9 +872,7 @@ class SchedulerManager:
             return True
         definition = context["definition"]
         fire = context["fire"]
-        task = asyncio.create_task(
-            self._process_job_success(definition, fire, result, context.get("success_callback"))
-        )
+        task = asyncio.create_task(self._process_job_success(definition, fire, result, context.get("success_callback")))
         self._pending_success_tasks.add(task)
         task.add_done_callback(self._pending_success_tasks.discard)
         return True
@@ -966,9 +966,13 @@ class SchedulerManager:
                     with contextlib.suppress(JobLookupError):
                         self.scheduler.remove_job(schedule_id, jobstore=getattr(job, "_jobstore_alias", "default"))
             return jobs.SKIPPED
-        if not run_now and not (await self._run_state_for("db").read(schedule_id) or RunState(
-            schedule_id=schedule_id, backend="db", enabled=True
-        )).enabled:
+        if (
+            not run_now
+            and not (
+                await self._run_state_for("db").read(schedule_id)
+                or RunState(schedule_id=schedule_id, backend="db", enabled=True)
+            ).enabled
+        ):
             with contextlib.suppress(JobLookupError):
                 self.scheduler.remove_job(schedule_id, jobstore="default")
             return jobs.SKIPPED
@@ -1085,7 +1089,9 @@ class SchedulerManager:
         """Stamp success, process deliveries, and persist delivery outcomes."""
         store = self._run_state_for(definition.backend)
         try:
-            job = self.scheduler.get_job(definition.schedule_id, jobstore="redis" if definition.backend == "redis" else "default")
+            job = self.scheduler.get_job(
+                definition.schedule_id, jobstore="redis" if definition.backend == "redis" else "default"
+            )
             next_run = getattr(job, "next_run_time", None) if job is not None else None
             await store.stamp_success(
                 definition.schedule_id,
@@ -1109,7 +1115,9 @@ class SchedulerManager:
         outcomes: list[dict[str, Any]] = []
         if success_callback is not None:
             try:
-                response = success_callback(result, schedule_id=definition.schedule_id, target_name=definition.target_name)
+                response = success_callback(
+                    result, schedule_id=definition.schedule_id, target_name=definition.target_name
+                )
                 if inspect.isawaitable(response):
                     response = await response
                 outcomes.append(self._callback_outcome("success_callback", response))
@@ -1119,7 +1127,9 @@ class SchedulerManager:
             name = str(callback_definition.get("type") or callback_definition.get("name") or "unknown")
             try:
                 callback = build_scheduler_callback(callback_definition, logger=self.logger)
-                response = await callback(result, schedule_id=definition.schedule_id, target_name=definition.target_name)
+                response = await callback(
+                    result, schedule_id=definition.schedule_id, target_name=definition.target_name
+                )
                 outcomes.append(self._callback_outcome(name, response))
             except Exception as exc:  # noqa: BLE001 - isolate each delivery
                 outcomes.append(self._callback_outcome(name, error=exc))
@@ -1142,7 +1152,9 @@ class SchedulerManager:
         status = {"success": "sent", "error": "failed"}.get(status, status)
         if status not in {"sent", "saved", "partial", "failed"}:
             status = "failed"
-        response_error = response.get("error") if isinstance(response, dict) and status in {"failed", "partial"} else None
+        response_error = (
+            response.get("error") if isinstance(response, dict) and status in {"failed", "partial"} else None
+        )
         return {"callback": name, "status": status, "error": response_error}
 
     async def _send_result_email(
@@ -1152,11 +1164,18 @@ class SchedulerManager:
         if not isinstance(send_result, dict):
             self.logger.warning("send_result for schedule %s is not a dictionary", definition.schedule_id)
             return None
-        recipients = send_result.get("recipients") or send_result.get("emails") or send_result.get("email") or send_result.get("to")
+        recipients = (
+            send_result.get("recipients")
+            or send_result.get("emails")
+            or send_result.get("email")
+            or send_result.get("to")
+        )
         if not recipients:
             self.logger.warning("send_result for schedule %s is missing recipients", definition.schedule_id)
             return None
-        message = send_result.get("message", f"Job {definition.target_name} ({definition.schedule_id}) completed successfully.")
+        message = send_result.get(
+            "message", f"Job {definition.target_name} ({definition.schedule_id}) completed successfully."
+        )
         if send_result.get("include_result", True):
             formatted = self._format_result(result)
             if formatted:

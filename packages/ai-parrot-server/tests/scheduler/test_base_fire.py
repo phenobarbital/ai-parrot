@@ -71,13 +71,16 @@ async def test_target_missing_raises_not_skipped(manager: SchedulerManager) -> N
 @pytest.mark.asyncio
 async def test_resolver_exception_is_target_missing(manager: SchedulerManager) -> None:
     """Resolver exceptions are translated to target-missing errors."""
+
     class BrokenResolver:
         kind = "broken"
 
         async def resolve(self, name: str, *, target_id: str | None = None) -> object:
             raise RuntimeError("registry down")
 
-        def build_call(self, target: object, definition: JobDefinition, fire: FireContext) -> tuple[list[object], dict[str, object]]:
+        def build_call(
+            self, target: object, definition: JobDefinition, fire: FireContext
+        ) -> tuple[list[object], dict[str, object]]:
             raise AssertionError("unreachable")
 
         def derive_target_id(self, target: object) -> str | None:
@@ -90,7 +93,9 @@ async def test_resolver_exception_is_target_missing(manager: SchedulerManager) -
 
 
 @pytest.mark.asyncio
-async def test_auto_disable_after_threshold_and_single_alert(manager: SchedulerManager, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_auto_disable_after_threshold_and_single_alert(
+    manager: SchedulerManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The threshold crossing disables once and sends one alert."""
     manager._max_failures = 3
     target = Target()
@@ -126,7 +131,9 @@ async def test_alert_failure_never_raises(manager: SchedulerManager, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_success_callback_raise_does_not_skip_delivery(manager: SchedulerManager, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_success_callback_raise_does_not_skip_delivery(
+    manager: SchedulerManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A user callback failure is recorded while result delivery continues."""
     sent = AsyncMock(return_value={"status": "sent"})
     monkeypatch.setattr(manager, "_send_result_email", sent)
@@ -167,7 +174,12 @@ async def test_redis_job_incompatible_version_pauses(manager: SchedulerManager) 
         minutes=5,
         id=job_id,
         jobstore="redis",
-        kwargs={"manager_name": manager.registered_name, "schedule_id": job_id, "definition_version": 1, "definition": {}},
+        kwargs={
+            "manager_name": manager.registered_name,
+            "schedule_id": job_id,
+            "definition_version": 1,
+            "definition": {},
+        },
     )
     result = await manager._run_redis_job(
         job_id,
@@ -183,6 +195,7 @@ async def test_redis_job_incompatible_version_pauses(manager: SchedulerManager) 
 @pytest.mark.asyncio
 async def test_fire_context_injected_into_target(manager: SchedulerManager) -> None:
     """Declared fire parameters receive the coordinator timestamp."""
+
     class ContextTarget:
         async def run(self, fire_id: str, scheduled_at: object) -> tuple[str, object]:
             return fire_id, scheduled_at
@@ -208,6 +221,7 @@ async def test_metadata_never_contains_run_state(manager: SchedulerManager) -> N
 @pytest.mark.asyncio
 async def test_get_last_result_per_backend(manager: SchedulerManager) -> None:
     """Code jobs expose the common RunState shape before their first fire."""
+
     async def automatic() -> str:
         return "ok"
 
