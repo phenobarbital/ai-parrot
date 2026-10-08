@@ -63,7 +63,23 @@ async def test_schedules_add_rejects_agent_name(scheduler_daemon):
 
 
 async def test_schedules_add_target_kind_agent(scheduler_daemon):
-    _, socket_path = scheduler_daemon
+    """The registered agent resolves, and the JobDefinition is serialized as JSON."""
+    daemon, socket_path = scheduler_daemon
+    manager = daemon._scheduler_manager
+    resolver = manager._resolvers["agent"]
+    assert await resolver.resolve("sched-echo") is daemon.agent
+
+    class _Definition:
+        def model_dump(self, mode: str = "python") -> dict:
+            return {"schedule_id": "abc", "target_kind": "agent", "target_name": "sched-echo", "mode": mode}
+
+    seen: dict = {}
+
+    async def _fake_add(**params):
+        seen.update(params)
+        return _Definition()
+
+    manager.add_schedule = _fake_add  # persistence backends are exercised in the manager's own tests
     reader, writer = await asyncio.open_unix_connection(path=str(socket_path))
     try:
         response = await _call(
@@ -75,13 +91,13 @@ async def test_schedules_add_target_kind_agent(scheduler_daemon):
             schedule_type="interval",
             schedule_config={"seconds": 3600},
             prompt="hello",
-            method_name="ask",
         )
     finally:
         writer.close()
     assert response.get("error") is None, response
     assert response["result"]["target_name"] == "sched-echo"
-    assert response["result"]["target_kind"] == "agent"
+    assert response["result"]["mode"] == "json"
+    assert seen["target_kind"] == "agent"
 
 
 def test_daemon_class_exported():
