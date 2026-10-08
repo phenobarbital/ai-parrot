@@ -24,9 +24,7 @@ def toolkit(store, monkeypatch):
     tk = JiraToolkit.__new__(JiraToolkit)
     tk.logger = logging.getLogger("test_attach")
     tk.jira = MagicMock()
-    tk.jira.add_attachment.side_effect = lambda issue, attachment: SimpleNamespace(
-        id="900", filename="x", size=3
-    )
+    tk.jira.add_attachment.side_effect = lambda issue, attachment: SimpleNamespace(id="900", filename="x", size=3)
     tk._session_file_store = store
 
     async def _limit():
@@ -78,9 +76,7 @@ async def test_no_session_marks_every_input(toolkit, monkeypatch):
 
 async def test_jira_403_maps_to_forbidden_with_bounded_detail(toolkit, store, bound_session):
     f = await store.put_bytes("s1", "a.docx", b"aaa")
-    toolkit.jira.add_attachment.side_effect = JIRAError(
-        status_code=403, text="<html>" + "x" * 50000
-    )
+    toolkit.jira.add_attachment.side_effect = JIRAError(status_code=403, text="<html>" + "x" * 50000)
     res = await toolkit._attach_session_files("A-1", [f.file_id])
     assert res[0].error_code == "forbidden"
     assert len(res[0].detail) <= 500
