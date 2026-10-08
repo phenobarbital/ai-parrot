@@ -115,7 +115,9 @@ def project_compliance(
             found = [
                 f.product
                 for f, position in pairs
-                if position is not None and f.expected_occupancy != "empty" and facing_presence(position, policy)[0] is True
+                if position is not None
+                and f.expected_occupancy != "empty"
+                and facing_presence(position, policy)[0] is True
             ]
             expected = [f.product for f, _ in occupied_expected]
         else:

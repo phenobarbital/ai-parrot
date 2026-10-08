@@ -106,9 +106,7 @@ def _fixture() -> tuple[SlotsDefinition, list[ShelfScore], list[PositionResult],
     """Build a complete shelf covering every reporting presence outcome."""
     definition = _definition()
     low_deciding = _position("f4", FacingStatus.MISPLACED, "Observed after low view", confidence=0.5)
-    low_deciding.observations.append(
-        ObservationRef(image_id="img1", shape_id="f4", source="cv", raw_confidence=0.99)
-    )
+    low_deciding.observations.append(ObservationRef(image_id="img1", shape_id="f4", source="cv", raw_confidence=0.99))
     positions = [
         _position("f1", FacingStatus.MATCH, "Observed brand only"),
         _position("f2", FacingStatus.INFERRED_PRESENT, "Observed inferred brand"),
@@ -191,7 +189,9 @@ def test_scores_identical_across_policies() -> None:
     """Only label lists differ; projection and finalization decisions remain equal."""
     definition, scores, positions, description = _fixture()
     legacy = project_compliance(scores, positions, definition, description)
-    product = project_compliance(scores, positions, definition, description, policy=ReportingPolicy(product_label="product"))
+    product = project_compliance(
+        scores, positions, definition, description, policy=ReportingPolicy(product_label="product")
+    )
 
     assert _without_labels(legacy[0].model_dump(mode="json")) == _without_labels(product[0].model_dump(mode="json"))
     assert legacy[0].compliance_score == pytest.approx(product[0].compliance_score)
@@ -223,7 +223,9 @@ def test_illumination_and_unexpected_labels_unchanged() -> None:
     ]
 
     legacy = project_compliance(scores, positions, definition, description)[0]
-    product = project_compliance(scores, positions, definition, description, policy=ReportingPolicy(product_label="product"))[0]
+    product = project_compliance(
+        scores, positions, definition, description, policy=ReportingPolicy(product_label="product")
+    )[0]
 
     assert legacy.unexpected_products == product.unexpected_products == ["Unexpected observed model"]
     assert legacy.missing_products[-1] == product.missing_products[-1] == "Backlight is off"
