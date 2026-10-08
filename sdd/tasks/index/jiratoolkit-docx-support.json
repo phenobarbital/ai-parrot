@@ -180,7 +180,7 @@
       "feature_id": "FEAT-639",
       "feature": "jiratoolkit-docx-support",
       "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -190,8 +190,9 @@
       "parallelism_notes": "Documents the configuration keys and defaults TASK-4129 introduces in parrot/interfaces/file/session.py; must read them as implemented.",
       "assigned_to": null,
       "started_at": "2026-10-07T23:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4136-session-files-operator-docs.md"
+      "completed_at": "2026-10-08T00:25:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4136-session-files-operator-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4138",
