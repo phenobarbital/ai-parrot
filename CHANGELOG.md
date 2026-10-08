@@ -7,6 +7,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+---
+
+## [1.2.0] — 2026-10-08 — Agent Studio visibility and storage phase 2, scheduler delivery correctness, wikitoolkit lint/standup/inbox
+
+All twelve core-line distributions move one minor step (`ai-parrot-pipelines` to `1.3.0`, the rest to `1.2.0`).
+The seventeen satellites move to `0.4.0` and are re-pinned to `ai-parrot>=1.2.0`.
+
 Everything below comes after `1.1.0`; the FEAT-605 early subset (request-scope seam, `RequestScope`,
 `setup_studio_routes(prefix=…, view_wrapper=…)`, `BotManager.setup_registry_only`, `GET /me`, scope-only route gates,
 draft-activation `name_taken`, D1/D3) already shipped in `1.1.0`.
@@ -56,6 +63,50 @@ draft-activation `name_taken`, D1/D3) already shipped in `1.1.0`.
   `not_manageable` (it was `forbidden`).
 - **Agent Studio storage:** with the `database` backend the required migration level is 8 (phase 2 is part of
   the release); `parrot-studio-migrate --verify` checks versions 1-8.
+- **Agent Studio UI backend gaps (FEAT-634).** Agent reads return the full definition (`llm`, `description`,
+  `system_prompt`, `model_params`, `category`), the LLM-client catalog lists models, BYOK personal-key clients are
+  scoped to one ask, and the toolkit allow-list check is a delta (an unrelated edit is no longer blocked by a
+  held disabled toolkit).
+- **Tool registry:** 43 duplicate `TOOL_REGISTRY` slugs removed (no more resolver warning on every startup),
+  class-name aliases normalise to the canonical slug, and the resolver is re-entrant, so a host module that
+  instantiates tools at import time can no longer deadlock it.
+
+### Added (other)
+
+- **Google Drive file manager (FEAT-608).** A `FileManagerInterface` backend for Google Drive (service account
+  or OAuth user), with uploads, downloads limited to the target directory, error mapping, a `gdrive` extra and an
+  opt-in live test suite. Guides: `gdrive-filemanager.md`, `google-oauth2.md`.
+- **JiraToolkit templates (FEAT-637).** Descriptions and comment bodies can be rendered from a house template
+  (fixed sections, mandatory blocks) rather than passed verbatim. Jira attachments now support DOCX as well.
+- **JiraSpecialist language split (FEAT-638).** The agent answers in the user's language but writes summaries,
+  descriptions and comments in the team's configured Jira language. Operational messages come from a catalog
+  with protected placeholders.
+- **Linked A2UI Python transforms (FEAT-636).** A linked data source can declare `transform.python`, a
+  registered `@infographic_transformer` that the server applies after the query slug runs. A new per-source data
+  endpoint returns the transformed rows to the renderer.
+- **wikitoolkit `lint` (FEAT-625).** A lint engine that works on any backend, with rule packs for the SQLite
+  plane, ArangoDB, the markdown/OKF export and the memories/ADR plane. It is available as `wikitoolkit lint` and
+  the `wiki_lint` MCP tool and returns a `LintReport`. OKF lint is now one of the rule packs.
+- **wikitoolkit `standup` (FEAT-627).** A one-page summary of open tickets, meetings, proposed decisions and
+  in-progress work, available as `wikitoolkit standup` and the `wiki_standup` MCP tool. It is built on a new,
+  additive `page_attrs` entity-attribute table.
+- **wikitoolkit `inbox` (FEAT-626).** One command ingests every document in the git-tracked `inbox/` folder,
+  with no mode flag and no human checkpoint. It reuses the FEAT-402/451 ingestion pipeline.
+
+### Fixed
+
+- **Scheduler under multiple gunicorn workers (FEAT-631).** Job listeners now run on the aiohttp path, so
+  successful DB schedules stamp `last_run`/`run_count`/`last_result`/`next_run`, send `send_result` and run
+  `CALLBACK_REGISTRY` callbacks again. `_job_context` no longer leaks, and the multi-worker issues an external
+  integrator reported are fixed.
+- **Scheduler delivery status (FEAT-635).** Delivery callbacks report `"sent"` only when
+  `notification_succeeded()` confirms the send, and `"failed"` with the provider error otherwise. Callbacks are
+  isolated from each other, and delivery results are saved on the schedule row instead of being dropped.
+- **Agent Studio:** a build whose version is no longer the head is never installed. An agent edited during every
+  rebuild is still served. Tenant callers never fall through to the tooling of global legacy agents.
+  `POST /agents/{name}/tools` fills server-managed parameters the same way `/toolkits` does.
+- `IntegrationBotManager.shutdown()` closes the MS Teams wrapper sessions.
+- Seasonal-detection tool output paths are sanitised (code scanning #218, #219).
 
 ---
 
