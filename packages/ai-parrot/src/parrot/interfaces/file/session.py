@@ -5,7 +5,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime
+import mimetypes
+import os
+import secrets
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -18,6 +22,39 @@ logger = logging.getLogger(__name__)
 #: Suffixes used inside a session root.
 BLOB_SUFFIX = ".bin"
 MANIFEST_SUFFIX = ".json"
+
+#: Per-session total above which a WARNING is logged. Reporting only — never rejects.
+SESSION_FILES_WARN_BYTES = 500 * 1024 * 1024
+
+
+def _new_handle() -> str:
+    """Return an opaque, URL-safe handle with >= 128 bits of entropy."""
+    return secrets.token_urlsafe(24)
+
+
+def _sanitize_filename(name: str) -> str:
+    """Reduce *name* to a safe basename for display and for Jira."""
+    basename = Path(name.replace("\\", "/")).name
+    without_controls = "".join(character for character in basename if ord(character) >= 32 and ord(character) != 127)
+    sanitized = " ".join(without_controls.split())[:255]
+    return sanitized or "file"
+
+
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Write *data* to *path* through a sibling temporary file."""
+    temporary_path: Path | None = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+        temporary_path = Path(temporary_name)
+        with os.fdopen(descriptor, "wb") as temporary_file:
+            temporary_file.write(data)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        os.replace(temporary_path, path)
+    except BaseException:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
 
 
 class SessionFileError(Exception):
@@ -107,6 +144,76 @@ class SessionFileStore:
         if not await asyncio.to_thread(blob_path.exists):
             raise MissingBlob(f"No blob exists for handle {file_id!r}")
         return record, resolved_blob
+
+    async def put_bytes(
+        self, session_id: str, filename: str, data: bytes, *, origin: str = "upload"
+    ) -> SessionFileRecord:
+        """Store *data* under a fresh handle; return its manifest record.
+
+        Writes the blob and manifest through temporary files so a partial write
+        never yields a resolvable handle.
+        """
+        root = await asyncio.to_thread(self.session_root, session_id)
+        file_id = _new_handle()
+        sanitized_filename = _sanitize_filename(filename)
+        mime_type = mimetypes.guess_type(sanitized_filename)[0] or "application/octet-stream"
+        record = SessionFileRecord(
+            file_id=file_id,
+            session_id=session_id,
+            filename=sanitized_filename,
+            mime_type=mime_type,
+            size=len(data),
+            origin=origin,
+            created_at=datetime.now(timezone.utc),
+        )
+        blob_path = root / f"{file_id}{BLOB_SUFFIX}"
+        manifest_path = root / f"{file_id}{MANIFEST_SUFFIX}"
+        blob_written = False
+        try:
+            await asyncio.to_thread(_write_atomic, blob_path, data)
+            blob_written = True
+            await asyncio.to_thread(_write_atomic, manifest_path, record.model_dump_json().encode("utf-8"))
+        except BaseException:
+            if blob_written:
+                await asyncio.to_thread(blob_path.unlink, missing_ok=True)
+            raise
+
+        await self._warn_if_over_threshold(session_id, record.size)
+        return record
+
+    async def put_path(
+        self, session_id: str, source: Path, *, filename: Optional[str] = None, origin: str = "generated"
+    ) -> SessionFileRecord:
+        """Copy *source* into the session root under a fresh handle."""
+        data = await asyncio.to_thread(source.read_bytes)
+        return await self.put_bytes(session_id, filename or source.name, data, origin=origin)
+
+    async def list_files(self, session_id: str) -> list[SessionFileRecord]:
+        """Return every record in the session, newest first."""
+        root = await asyncio.to_thread(self.session_root, session_id)
+
+        def read_records() -> list[SessionFileRecord]:
+            records: list[SessionFileRecord] = []
+            for manifest_path in root.glob(f"*{MANIFEST_SUFFIX}"):
+                try:
+                    records.append(SessionFileRecord.model_validate_json(manifest_path.read_text(encoding="utf-8")))
+                except (OSError, ValueError):
+                    logger.warning("Skipping unparseable session manifest %s", manifest_path.name)
+            return sorted(records, key=lambda record: record.created_at, reverse=True)
+
+        return await asyncio.to_thread(read_records)
+
+    async def usage_bytes(self, session_id: str) -> int:
+        """Return the manifest-recorded total bytes stored for the session."""
+        return sum(record.size for record in await self.list_files(session_id))
+
+    async def _warn_if_over_threshold(self, session_id: str, stored_size: int) -> None:
+        """Log the reporting-only warning when a store operation crosses the threshold."""
+        usage = await self.usage_bytes(session_id)
+        if usage - stored_size < SESSION_FILES_WARN_BYTES <= usage:
+            logger.warning(
+                "Session file usage crossed warning threshold for session_id=%s: %s bytes", session_id, usage
+            )
 
     @staticmethod
     def _raise_outside_sandbox(session_id: str, file_id: str) -> None:
