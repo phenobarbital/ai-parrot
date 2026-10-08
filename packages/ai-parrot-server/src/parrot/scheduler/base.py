@@ -911,7 +911,7 @@ class SchedulerManager:
                 self.logger.warning("Target %s/%s is missing", definition.target_kind, definition.target_name)
                 raise TargetMissingError(f"Target {definition.target_name!r} is unavailable")
             call_args, call_kwargs = resolver.build_call(target, definition, fire)
-            method_name = definition.method_name
+            method_name = definition.method_name or getattr(resolver, "default_method", None)
             if method_name is None:
                 raise ValueError("method_name is required for this schedule")
             method = getattr(target, method_name, None)
