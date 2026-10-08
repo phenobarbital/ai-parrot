@@ -584,11 +584,12 @@ class AddCommentInput(BaseModel):
     issue: str = Field(description="Issue key or id")
     body: Optional[str] = Field(default=None, description="Comment body text (required unless a template applies)")
     is_internal: bool = Field(default=False, description="If true, mark as internal (Service Desk)")
-    attachments: Optional[List[str]] = Field(
+    file_ids: Optional[List[str]] = Field(
         default=None,
         description=(
-            "Optional list of file paths (images or other files) to attach to the issue "
-            "alongside this comment. Files are attached at the issue level."
+            "Optional session file handles to attach to the issue alongside this "
+            "comment, from sf_list_session_files. Files are attached at the issue "
+            "level. Filesystem paths and URLs are not accepted."
         ),
     )
     template: Optional[str] = Field(
@@ -2803,7 +2804,7 @@ class JiraToolkit(AbstractToolkit):
         issue: str,
         body: Optional[str] = None,
         is_internal: bool = False,
-        attachments: Optional[List[str]] = None,
+        file_ids: Optional[List[str]] = None,
         template: Optional[str] = None,
         template_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
@@ -2818,7 +2819,7 @@ class JiraToolkit(AbstractToolkit):
             jira.jira_add_comment(
                 'JRA-1330',
                 'See attached screenshot',
-                attachments=['/path/to/screenshot.png']
+                file_ids=['Ab3xYz...']
             )
 
         Example using a template:
@@ -2828,6 +2829,91 @@ class JiraToolkit(AbstractToolkit):
                 template_params={'author': 'bot'}
             )
         """
+        # Pre-flight the handles BEFORE anything is rendered or posted: a bad handle
+        # must never leave a published comment promising a file (AC11).
+        preflight: List[AttachmentResult] = []
+        if file_ids:
+            ctx = current_context()
+            session_id = getattr(ctx, "session_id", None) if ctx else None
+            if not session_id:
+                preflight = [
+                    AttachmentResult(
+                        file_id=file_id,
+                        ok=False,
+                        error_code="no_session",
+                        detail="No session is bound to this request.",
+                    )
+                    for file_id in file_ids
+                ]
+            else:
+                store = self._session_store()
+                limit = await self._max_attachment_bytes()
+                for file_id in file_ids:
+                    try:
+                        record, _ = await store.resolve(session_id, file_id)
+                    except SessionFileError as exc:
+                        preflight.append(
+                            AttachmentResult(
+                                file_id=file_id,
+                                ok=False,
+                                error_code=exc.code,
+                                detail=_bounded_detail(exc),
+                            )
+                        )
+                        continue
+                    except Exception as exc:  # noqa: BLE001 - best-effort contract
+                        self.logger.warning("Session file resolve failed: %s", type(exc).__name__)
+                        preflight.append(
+                            AttachmentResult(
+                                file_id=file_id,
+                                ok=False,
+                                error_code="unknown_handle",
+                                detail=_bounded_detail(exc),
+                            )
+                        )
+                        continue
+                    if record.size == 0:
+                        preflight.append(
+                            AttachmentResult(
+                                file_id=file_id,
+                                ok=False,
+                                filename=record.filename,
+                                size=0,
+                                error_code="empty_file",
+                                detail="The file is empty; Jira rejects empty attachments.",
+                            )
+                        )
+                        continue
+                    if record.size > limit:
+                        preflight.append(
+                            AttachmentResult(
+                                file_id=file_id,
+                                ok=False,
+                                filename=record.filename,
+                                size=record.size,
+                                error_code="too_large",
+                                detail=f"File is {record.size} bytes; the attachment limit is {limit} bytes.",
+                            )
+                        )
+                        continue
+                    preflight.append(
+                        AttachmentResult(
+                            file_id=file_id,
+                            ok=True,
+                            filename=record.filename,
+                            size=record.size,
+                        )
+                    )
+            if any(not attachment.ok for attachment in preflight):
+                return JiraCommentReport(
+                    issue=issue,
+                    comment={},
+                    comment_ok=False,
+                    attachments=preflight,
+                    attached=0,
+                    failed=sum(not attachment.ok for attachment in preflight),
+                ).model_dump()
+
         project = self._project_of(issue)
         body = await self._render_jira_text(
             "comment",
@@ -2846,33 +2932,17 @@ class JiraToolkit(AbstractToolkit):
         comment = await asyncio.to_thread(_run)
         result = self._issue_to_dict(comment)
 
-        # Upload attachments if provided
-        if attachments:
-            uploaded: List[Dict[str, Any]] = []
-            for file_path in attachments:
-                if not await asyncio.to_thread(os.path.isfile, file_path):
-                    uploaded.append({"file": file_path, "error": "File not found"})
-                    self.logger.warning(f"Attachment file not found: {file_path}")
-                    continue
-
-                def _upload(fp: str = file_path) -> Any:
-                    return self.jira.add_attachment(issue=issue, attachment=fp)
-
-                try:
-                    att = await asyncio.to_thread(_upload)
-                    att_info: Dict[str, Any] = {
-                        "filename": getattr(att, "filename", os.path.basename(file_path)),
-                        "id": getattr(att, "id", None),
-                        "size": getattr(att, "size", None),
-                        "mimeType": getattr(att, "mimeType", None),
-                    }
-                    uploaded.append(att_info)
-                except Exception as exc:
-                    uploaded.append({"file": file_path, "error": str(exc)})
-                    self.logger.error(f"Failed to attach {file_path}: {exc}")
-            result["attachments"] = uploaded
-
-        return result
+        attachments_out: List[AttachmentResult] = []
+        if file_ids:
+            attachments_out = await self._attach_session_files(issue, file_ids)
+        return JiraCommentReport(
+            issue=issue,
+            comment=result,
+            comment_ok=True,
+            attachments=attachments_out,
+            attached=sum(attachment.ok for attachment in attachments_out),
+            failed=sum(not attachment.ok for attachment in attachments_out),
+        ).model_dump()
 
     @requires_permission("jira.write")
     @tool_schema(AddWorklogInput)
