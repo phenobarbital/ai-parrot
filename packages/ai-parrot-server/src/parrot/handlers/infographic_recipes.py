@@ -346,7 +346,7 @@ class RunInfographicRecipeCallback(BaseSchedulerCallback):
     )
 
     async def run(
-        self, result: Any, *, schedule_id: str, agent_name: str, **kwargs
+        self, result: Any, *, schedule_id: str, target_name: str, **kwargs
     ) -> Dict[str, Any]:
         recipe_name = self.config.get("recipe_name")
         if not recipe_name:

@@ -275,7 +275,7 @@ class TestSchedulerCallback:
         fake_runner.run.return_value = artifact
 
         callback = RunInfographicRecipeCallback(config={"recipe_name": "test-recipe"})
-        result = await callback.run(None, schedule_id="sched-1", agent_name="agent-1")
+        result = await callback.run(None, schedule_id="sched-1", target_name="agent-1")
 
         assert result["status"] == "ok"
         assert fake_runner.run.await_count == 1
@@ -301,7 +301,7 @@ class TestSchedulerCallback:
         fake_runner.run.return_value = artifact
 
         callback = RunInfographicRecipeCallback(config={"recipe_name": "test-recipe"})
-        await callback.run(None, schedule_id="sched-1", agent_name="agent-1")
+        await callback.run(None, schedule_id="sched-1", target_name="agent-1")
 
         pctx = fake_runner.run.call_args.kwargs["pctx"]
         assert pctx.tenant_id == "acme-corp"
@@ -314,19 +314,19 @@ class TestSchedulerCallback:
 
         callback = RunInfographicRecipeCallback(config={"recipe_name": "test-recipe"})
         with pytest.raises(RuntimeError, match="schedule.principal"):
-            await callback.run(None, schedule_id="sched-1", agent_name="agent-1")
+            await callback.run(None, schedule_id="sched-1", target_name="agent-1")
         fake_runner.run.assert_not_awaited()
 
     async def test_missing_runner_raises(self):
         configure_recipe_runner(None)
         callback = RunInfographicRecipeCallback(config={"recipe_name": "test-recipe"})
         with pytest.raises(RuntimeError, match="no RecipeRunner configured"):
-            await callback.run(None, schedule_id="sched-1", agent_name="agent-1")
+            await callback.run(None, schedule_id="sched-1", target_name="agent-1")
 
     async def test_missing_recipe_name_raises(self):
         callback = RunInfographicRecipeCallback(config={})
         with pytest.raises(ValueError, match="recipe_name"):
-            await callback.run(None, schedule_id="sched-1", agent_name="agent-1")
+            await callback.run(None, schedule_id="sched-1", target_name="agent-1")
 
     async def test_callback_appears_in_registry(self):
         from parrot.scheduler.functions import CALLBACK_REGISTRY, list_supported_callbacks
