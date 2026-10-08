@@ -552,7 +552,14 @@ class SchedulerManager:
                 "job": job_payload,
             }
         payload = definition.model_dump(mode="json")
-        payload.update({"source": source, "backend": definition.backend, "enabled": next_run_time is not None if job else True, "job": job_payload})
+        payload.update(
+            {
+                "source": source,
+                "backend": definition.backend,
+                "enabled": next_run_time is not None if job else True,
+                "job": job_payload,
+            }
+        )
         return payload
 
     async def list_jobs(self) -> list[dict[str, Any]]:
@@ -590,8 +597,20 @@ class SchedulerManager:
             return stored.to_definition()
 
         editable = {
-            "target_kind", "target_name", "target_id", "prompt", "method_name", "schedule_type", "schedule_config",
-            "metadata", "send_result", "callbacks", "misfire_grace_time", "tenant", "created_by", "created_email",
+            "target_kind",
+            "target_name",
+            "target_id",
+            "prompt",
+            "method_name",
+            "schedule_type",
+            "schedule_config",
+            "metadata",
+            "send_result",
+            "callbacks",
+            "misfire_grace_time",
+            "tenant",
+            "created_by",
+            "created_email",
         }
         values = current.model_dump()
         values.update({key: value for key, value in updates.items() if key in editable})
@@ -607,7 +626,9 @@ class SchedulerManager:
         if source == "redis":
             kwargs = dict(stored.kwargs)
             kwargs["definition"] = updated.model_dump(mode="json")
-            self.scheduler.modify_job(schedule_id, jobstore="redis", kwargs=kwargs, misfire_grace_time=updated.misfire_grace_time)
+            self.scheduler.modify_job(
+                schedule_id, jobstore="redis", kwargs=kwargs, misfire_grace_time=updated.misfire_grace_time
+            )
             self.scheduler.reschedule_job(schedule_id, jobstore="redis", trigger=trigger)
             if "enabled" in updates:
                 if enabled:
@@ -630,8 +651,13 @@ class SchedulerManager:
             self.scheduler.remove_job(schedule_id, jobstore="default")
         if enabled:
             job = self.scheduler.add_job(
-                jobs.run_db_schedule, trigger=trigger, id=schedule_id, name=f"{updated.target_name}_{updated.schedule_type}",
-                kwargs=self._db_job_kwargs(updated), jobstore="default", replace_existing=True,
+                jobs.run_db_schedule,
+                trigger=trigger,
+                id=schedule_id,
+                name=f"{updated.target_name}_{updated.schedule_type}",
+                kwargs=self._db_job_kwargs(updated),
+                jobstore="default",
+                replace_existing=True,
                 misfire_grace_time=updated.misfire_grace_time,
             )
             stored.next_run = job.next_run_time
@@ -681,9 +707,13 @@ class SchedulerManager:
                 row = ServiceSchedule(**record)
                 definition = row.to_definition()
                 job = self.scheduler.add_job(
-                    jobs.run_db_schedule, trigger=self._create_trigger(definition.schedule_type, definition.schedule_config),
-                    id=definition.schedule_id, name=f"{definition.target_name}_{definition.schedule_type}",
-                    kwargs=self._db_job_kwargs(definition), jobstore="default", replace_existing=True,
+                    jobs.run_db_schedule,
+                    trigger=self._create_trigger(definition.schedule_type, definition.schedule_config),
+                    id=definition.schedule_id,
+                    name=f"{definition.target_name}_{definition.schedule_type}",
+                    kwargs=self._db_job_kwargs(definition),
+                    jobstore="default",
+                    replace_existing=True,
                     misfire_grace_time=300,
                 )
                 if job.next_run_time:
@@ -709,15 +739,25 @@ class SchedulerManager:
                 trigger = self._create_trigger(schedule_type, schedule_config)
                 job_id = f"auto_{name}_{configured_name}"
                 record = CodeJobRecord(
-                    job_id=job_id, target_name=name, method_name=configured_name, method=method,
-                    schedule_type=schedule_type, schedule_config=schedule_config,
-                    success_callback=config.get("success_callback"), send_result=config.get("send_result"),
+                    job_id=job_id,
+                    target_name=name,
+                    method_name=configured_name,
+                    method=method,
+                    schedule_type=schedule_type,
+                    schedule_config=schedule_config,
+                    success_callback=config.get("success_callback"),
+                    send_result=config.get("send_result"),
                     callbacks=list(config.get("callbacks") or []),
                 )
                 self._code_jobs[job_id] = record
                 self.scheduler.add_job(
-                    jobs.run_auto_schedule, trigger=trigger, id=job_id, name=f"{name}.{configured_name}",
-                    kwargs={"manager_name": self.registered_name, "job_id": job_id}, jobstore="default", replace_existing=True,
+                    jobs.run_auto_schedule,
+                    trigger=trigger,
+                    id=job_id,
+                    name=f"{name}.{configured_name}",
+                    kwargs={"manager_name": self.registered_name, "job_id": job_id},
+                    jobstore="default",
+                    replace_existing=True,
                 )
                 registered += 1
             except Exception as exc:  # noqa: BLE001
