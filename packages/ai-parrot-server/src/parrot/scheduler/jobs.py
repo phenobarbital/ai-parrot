@@ -1,4 +1,4 @@
-"""Picklable APScheduler entrypoints for the agent scheduler (FEAT-631).
+"""Picklable APScheduler entrypoints for the scheduler (FEAT-631).
 
 APScheduler persists a job's callable as a textual ``module:function`` reference.
 A bound method of :class:`AgentSchedulerManager` cannot be persisted (it pickles the
@@ -13,7 +13,7 @@ import logging
 from typing import TYPE_CHECKING, Any, Dict, Final
 
 if TYPE_CHECKING:
-    from .manager import AgentSchedulerManager
+    from .base import SchedulerManager
 
 logger = logging.getLogger("Parrot.Scheduler.jobs")
 
@@ -29,14 +29,14 @@ SKIPPED: Final[object] = _Skipped()
 """Returned by a trampoline when a fire was intentionally skipped (row gone, disabled or
 rescheduled). ``AgentSchedulerManager.job_success`` treats it as a no-op."""
 
-_MANAGERS: Dict[str, "AgentSchedulerManager"] = {}
+_MANAGERS: Dict[str, "SchedulerManager"] = {}
 
 
-def register_manager(manager: "AgentSchedulerManager") -> None:
+def register_manager(manager: "SchedulerManager") -> None:
     """Register ``manager`` under ``manager.registered_name``; the last registration wins."""
     previous = _MANAGERS.get(manager.registered_name)
     if previous is not None and previous is not manager:
-        logger.debug("Replacing registered AgentSchedulerManager named %r", manager.registered_name)
+        logger.debug("Replacing registered SchedulerManager named %r", manager.registered_name)
     _MANAGERS[manager.registered_name] = manager
 
 
@@ -45,7 +45,7 @@ def unregister_manager(name: str) -> None:
     _MANAGERS.pop(name, None)
 
 
-def get_manager(name: str) -> "AgentSchedulerManager":
+def get_manager(name: str) -> "SchedulerManager":
     """Return the manager registered under ``name``.
 
     Raises:
@@ -54,7 +54,7 @@ def get_manager(name: str) -> "AgentSchedulerManager":
     try:
         return _MANAGERS[name]
     except KeyError as error:
-        raise LookupError(f"No AgentSchedulerManager registered as {name!r} in this process") from error
+        raise LookupError(f"No SchedulerManager registered as {name!r} in this process") from error
 
 
 async def run_db_schedule(manager_name: str, schedule_id: str, fingerprint: str) -> Any:
@@ -71,6 +71,30 @@ async def run_db_schedule_now(manager_name: str, schedule_id: str) -> Any:
         await manager._fire_coordinator.release_running(str(schedule_id))
 
 
-async def run_auto_schedule(manager_name: str, job_id: str) -> Any:
+async def run_redis_job(
+    manager_name: str, schedule_id: str, definition_version: int, definition: Dict[str, Any]
+) -> Any:
+    """Entrypoint for ``backend='redis'`` jobs (data-only, versioned kwargs — FEAT-644 S8)."""
+    return await get_manager(manager_name)._run_redis_job(
+        schedule_id, definition_version=definition_version, definition=definition
+    )
+
+
+async def run_redis_job_now(manager_name: str, schedule_id: str) -> Any:
+    """Run-now one-shot for a redis job; always releases the run-now guard."""
+    manager = get_manager(manager_name)
+    try:
+        return await manager._run_redis_job(schedule_id, run_now=True)
+    finally:
+        await manager._fire_coordinator.release_running(str(schedule_id))
+
+
+async def run_auto_schedule(manager_name: str, job_id: str, run_now: bool = False) -> Any:
     """Entrypoint for decorator-registered ``auto_*`` jobs (delegates to ``_run_auto_task``)."""
-    return await get_manager(manager_name)._run_auto_task(job_id)
+    manager = get_manager(manager_name)
+    if not run_now:
+        return await manager._run_auto_task(job_id)
+    try:
+        return await manager._run_auto_task(job_id, run_now=True)
+    finally:
+        await manager._fire_coordinator.release_running(str(job_id))
