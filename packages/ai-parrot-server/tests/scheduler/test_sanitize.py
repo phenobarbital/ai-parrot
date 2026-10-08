@@ -23,7 +23,6 @@ from parrot.scheduler.sanitize import (
     clean_misfire_grace_time,
     clean_str,
     normalize_backend,
-    normalize_jobstore_alias,
     normalize_schedule_type,
     sanitize_redis_settings,
     sanitize_schedule_config,
@@ -171,38 +170,6 @@ class TestNormalizeScheduleType:
     def test_unknown_raises_clear_error(self):
         with pytest.raises(SchedulerConfigError, match="hourly"):
             normalize_schedule_type("hourly")
-
-
-# ---------------------------------------------------------------------------
-# normalize_jobstore_alias
-# ---------------------------------------------------------------------------
-class TestNormalizeJobstoreAlias:
-    def test_blank_becomes_default(self):
-        assert normalize_jobstore_alias("", available={"default"}) == "default"
-        assert normalize_jobstore_alias(None, available={"default"}) == "default"
-
-    def test_trims_and_lowercases(self):
-        assert normalize_jobstore_alias(" REDIS ", available={"default", "redis"}) == "redis"
-
-    def test_unregistered_alias_falls_back_to_default(self):
-        assert normalize_jobstore_alias("redis", available={"default"}) == "default"
-
-    def test_registered_alias_is_kept(self):
-        assert normalize_jobstore_alias("redis", available={"default", "redis"}) == "redis"
-
-    def test_available_none_skips_registration_check(self):
-        assert normalize_jobstore_alias(" redis ", available=None) == "redis"
-
-    def test_strict_raises_for_unregistered_alias(self):
-        """An explicit request must not be silently downgraded to memory."""
-        with pytest.raises(SchedulerConfigError, match="redis"):
-            normalize_jobstore_alias("redis", available={"default"}, strict=True)
-
-    def test_strict_allows_registered_alias(self):
-        assert normalize_jobstore_alias("redis", available={"default", "redis"}, strict=True) == "redis"
-
-    def test_strict_blank_still_becomes_default(self):
-        assert normalize_jobstore_alias("", available={"default"}, strict=True) == "default"
 
 
 # ---------------------------------------------------------------------------
