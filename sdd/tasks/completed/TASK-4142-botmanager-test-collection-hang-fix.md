@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-641 manager-test-bot-cleanup-lifecycle-fixes-2
 **Spec**: sdd/specs/manager-test-bot-cleanup-lifecycle-fixes-2.spec.md
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S
 **Depends-on**: none
@@ -37,4 +37,11 @@ PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src timeout -s KILL 
 ```
 
 ## Completion Note
-_pending_
+Done (verified). Code commit 9e5e18e33.
+- Stub block removed; real `BotManager` import works.
+- `IntegrationBotManager` patched at `parrot.integrations`; `build_conversation_backend`,
+  `build_overflow_store`, `setup_web_hitl` stubbed in both `on_startup` tests (root cause of the hang:
+  unclosed aiosqlite worker thread from the real ArtifactStore SQLite backend).
+- Validation: 27 passed, process exits; `ruff check` clean; full `--collect-only packages/ai-parrot/tests`
+  → 23863 collected, 2 errors, neither in this task's files (both collect alone → order-dependent
+  pollution elsewhere; filed as a new ledger issue).
