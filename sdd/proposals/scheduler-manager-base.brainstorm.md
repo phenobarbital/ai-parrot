@@ -16,7 +16,7 @@ tags: [scheduler, apscheduler, target-registry, service-scheduler, hard-cut, run
 
 **Date**: 2026-10-08
 **Author**: Jesus Lara (brainstorm drafted by Claude)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A
 **Source**: GitHub issue [phenobarbital/ai-parrot#1572](https://github.com/phenobarbital/ai-parrot/issues/1572) — "scheduler: first-class non-agent job targets, and keep run state out of job metadata"
 **Target version**: ai-parrot-server 1.3.0 (breaking — current `parrot.server.version.__version__` is `1.2.0`)
