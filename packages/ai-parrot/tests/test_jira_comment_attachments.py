@@ -1,4 +1,5 @@
 """Tests for jira_add_comment with attachment support."""
+
 import logging
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -96,9 +97,7 @@ async def test_add_comment_with_valid_handles(toolkit, store, bound_session):
     mock_att.mimeType = "image/png"
     toolkit.jira.add_attachment.return_value = mock_att
 
-    result = await toolkit.jira_add_comment(
-        issue="NAV-1", body="see attached", file_ids=[record.file_id]
-    )
+    result = await toolkit.jira_add_comment(issue="NAV-1", body="see attached", file_ids=[record.file_id])
 
     toolkit.jira.add_comment.assert_called_once()
     toolkit.jira.add_attachment.assert_called_once()
@@ -165,9 +164,7 @@ async def test_comment_ok_with_failed_upload(toolkit, store, bound_session):
     toolkit.jira.add_comment.return_value = mock_comment
     toolkit.jira.add_attachment.side_effect = Exception("Network error")
 
-    result = await toolkit.jira_add_comment(
-        issue="NAV-1", body="err", file_ids=[record.file_id]
-    )
+    result = await toolkit.jira_add_comment(issue="NAV-1", body="err", file_ids=[record.file_id])
 
     toolkit.jira.add_comment.assert_called_once()
     assert result["comment_ok"] is True
