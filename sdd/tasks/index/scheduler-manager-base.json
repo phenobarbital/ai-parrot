@@ -16,7 +16,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Root task: creates ServiceSchedule/JobDefinition/RunState/FireContext/CodeJobRecord/utcnow/schedule_fingerprint in scheduler/models.py that TASK-4148, TASK-4154 and every later base task import. Touches only models.py + a new test file.",
       "assigned_to": null,
       "started_at": "2026-10-08T18:01:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4147-scheduler-models-definitions.md"
+      "completed_at": "2026-10-08T20:34:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4147-scheduler-models-definitions.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4148",
