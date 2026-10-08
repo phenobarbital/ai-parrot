@@ -52,7 +52,10 @@ __all__ = (
     "SchedulerConfigError",
     "clean_bool",
     "clean_int",
+    "clean_method_name",
+    "clean_misfire_grace_time",
     "clean_str",
+    "normalize_backend",
     "normalize_jobstore_alias",
     "normalize_schedule_type",
     "sanitize_redis_settings",
@@ -324,6 +327,88 @@ def normalize_jobstore_alias(
             )
             return default
     return alias
+
+
+BACKENDS: Tuple[str, ...] = ("db", "redis")
+
+
+def normalize_backend(value: Any, *, redis_available: bool, strict: bool = False) -> str:
+    """Normalize a caller-supplied ``backend`` to ``'db'`` or ``'redis'``.
+
+    Args:
+        value: Raw backend value supplied by an API caller or database row.
+        redis_available: Whether a Redis jobstore is attached to the scheduler.
+        strict: Raise instead of falling back to ``'db'`` for unavailable Redis.
+
+    Returns:
+        The normalized backend name.
+
+    Raises:
+        SchedulerConfigError: If the backend is unknown, or Redis is requested
+            strictly when no Redis jobstore is attached.
+    """
+    backend = clean_str(value, default="db", lower=True) or "db"
+    if backend not in BACKENDS:
+        raise SchedulerConfigError(
+            f"Unsupported backend: {backend!r} (expected one of {', '.join(BACKENDS)})"
+        )
+    if backend == "redis" and not redis_available:
+        if strict:
+            raise SchedulerConfigError("Redis backend is not available")
+        logger.warning("Scheduler config: Redis backend is not available; falling back to 'db'")
+        return "db"
+    return backend
+
+
+def clean_misfire_grace_time(value: Any) -> Optional[int]:
+    """Return ``None`` or a non-negative number of seconds.
+
+    Args:
+        value: Raw API value. Null-ish values mean that the job always catches
+            up after a missed fire.
+
+    Returns:
+        A non-negative integer number of seconds, or ``None``.
+
+    Raises:
+        SchedulerConfigError: If the value is not a non-negative integer.
+    """
+    text = clean_str(value)
+    if text is None:
+        return None
+
+    if isinstance(value, bool):
+        raise SchedulerConfigError("misfire_grace_time must be a non-negative integer")
+    try:
+        number = float(text)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise SchedulerConfigError("misfire_grace_time must be a non-negative integer") from exc
+    if not number.is_integer() or number < 0:
+        raise SchedulerConfigError("misfire_grace_time must be a non-negative integer")
+    cleaned = clean_int(value, default=None, minimum=0)
+    if cleaned is None:
+        raise SchedulerConfigError("misfire_grace_time must be a non-negative integer")
+    return cleaned
+
+
+def clean_method_name(value: Any) -> Optional[str]:
+    """Return a public Python identifier or ``None``.
+
+    Args:
+        value: Raw method name supplied by an API caller.
+
+    Returns:
+        A trimmed method name, or ``None`` for a null-ish value.
+
+    Raises:
+        SchedulerConfigError: If the value is not a public Python identifier.
+    """
+    method_name = clean_str(value)
+    if method_name is None:
+        return None
+    if not method_name.isidentifier() or method_name.startswith("_"):
+        raise SchedulerConfigError("method_name must be a public identifier")
+    return method_name
 
 
 # ---------------------------------------------------------------------------
