@@ -1,4 +1,5 @@
 """Tests for SessionFileToolkit binding, isolation and prefix naming."""
+
 from datetime import datetime, timezone
 from itertools import count
 
@@ -19,8 +20,12 @@ class _FakeStore(SessionFileStore):
 
     async def put_bytes(self, session_id, filename, data, *, origin="upload"):
         rec = SessionFileRecord(
-            file_id=f"f{next(self._ids)}", session_id=session_id, filename=filename,
-            mime_type="text/plain", size=len(data), origin=origin,
+            file_id=f"f{next(self._ids)}",
+            session_id=session_id,
+            filename=filename,
+            mime_type="text/plain",
+            size=len(data),
+            origin=origin,
             created_at=datetime.now(timezone.utc),
         )
         self._records.setdefault(session_id, []).append(rec)
