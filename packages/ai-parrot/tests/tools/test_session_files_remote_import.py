@@ -1,6 +1,7 @@
 """Tests for importing remote files into the session file store."""
 
 from pathlib import Path
+import importlib
 import sys
 
 import pytest
@@ -38,7 +39,7 @@ class TestRemoteImport:
             raise AssertionError("FileManagerToolkit must not be constructed")
 
         monkeypatch.setattr(
-            sys.modules["parrot.tools.filemanager"],
+            importlib.import_module("parrot.tools.filemanager"),
             "FileManagerToolkit",
             fail_if_constructed,
             raising=False,
@@ -64,7 +65,7 @@ class TestRemoteImport:
                 destination_path.write_bytes(b"remote document")
                 return {"downloaded": True, "destination": str(destination_path), "size": 15}
 
-        monkeypatch.setattr(sys.modules["parrot.tools.filemanager"], "FileManagerToolkit", MockFileManagerToolkit)
+        monkeypatch.setattr(importlib.import_module("parrot.tools.filemanager"), "FileManagerToolkit", MockFileManagerToolkit)
 
         result = await toolkit.import_remote_file("temp", "reports/brief.docx")
         record, resolved = await toolkit.store.resolve("s1", result["file_id"])
@@ -89,7 +90,7 @@ class TestRemoteImport:
                 temp_dirs.append(Path(destination).parent)
                 raise RuntimeError("download failed")
 
-        monkeypatch.setattr(sys.modules["parrot.tools.filemanager"], "FileManagerToolkit", FailingFileManagerToolkit)
+        monkeypatch.setattr(importlib.import_module("parrot.tools.filemanager"), "FileManagerToolkit", FailingFileManagerToolkit)
 
         with pytest.raises(RuntimeError, match="download failed"):
             await toolkit.import_remote_file("temp", "reports/brief.docx")
