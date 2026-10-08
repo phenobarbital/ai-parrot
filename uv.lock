@@ -342,6 +342,7 @@ all = [
     { name = "ai-parrot-integrations", extra = ["all"] },
     { name = "ai-parrot-server", extra = ["all"] },
     { name = "ai-parrot-visualizations", extra = ["all", "charts", "infographic"] },
+    { name = "aiofiles" },
     { name = "aiogoogle" },
     { name = "aioimaplib" },
     { name = "albumentations" },
@@ -536,6 +537,10 @@ finance = [
 ]
 flowtask = [
     { name = "flowtask" },
+]
+gdrive = [
+    { name = "aiofiles" },
+    { name = "aiogoogle" },
 ]
 gemma4 = [
     { name = "ai-parrot-client-gemma4" },
@@ -776,7 +781,7 @@ zai = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ai-parrot", extras = ["agents", "audio", "bigquery", "charts", "db", "docling", "finance", "flowtask", "images", "integrations", "llms", "mcp", "msgraph", "ocr", "pdf", "reddit", "rust", "visualizations"], marker = "extra == 'all'", editable = "packages/ai-parrot" },
+    { name = "ai-parrot", extras = ["agents", "audio", "bigquery", "charts", "db", "docling", "finance", "flowtask", "gdrive", "images", "integrations", "llms", "mcp", "msgraph", "ocr", "pdf", "reddit", "rust", "visualizations"], marker = "extra == 'all'", editable = "packages/ai-parrot" },
     { name = "ai-parrot", extras = ["agents-lite", "integrations", "llms"], marker = "extra == 'all-fast'", editable = "packages/ai-parrot" },
     { name = "ai-parrot", extras = ["bookstore", "graphindex"], marker = "extra == 'manuals'", editable = "packages/ai-parrot" },
     { name = "ai-parrot", extras = ["graphindex", "leiden", "wiki-languages", "wiki-structural"], marker = "extra == 'wiki'", editable = "packages/ai-parrot" },
@@ -829,8 +834,10 @@ requires-dist = [
     { name = "aiodocker", marker = "extra == 'remote-tools'", specifier = ">=0.24.0" },
     { name = "aiofiles", marker = "extra == 'filesystem-transport'", specifier = ">=23.0" },
     { name = "aiofiles", marker = "extra == 'filesystem-transport-full'", specifier = ">=23.0" },
+    { name = "aiofiles", marker = "extra == 'gdrive'", specifier = ">=23.0" },
     { name = "aiogoogle", marker = "extra == 'agents'", specifier = "==5.17.0" },
     { name = "aiogoogle", marker = "extra == 'agents-lite'", specifier = "==5.17.0" },
+    { name = "aiogoogle", marker = "extra == 'gdrive'", specifier = ">=5.17,<6" },
     { name = "aiogoogle", marker = "extra == 'mcp'", specifier = "==5.17.0" },
     { name = "aiohttp-cors", specifier = ">=0.8.1" },
     { name = "aiohttp-sse-client", specifier = "==0.2.1" },
@@ -1059,7 +1066,7 @@ requires-dist = [
     { name = "undetected-chromedriver", marker = "extra == 'agents'", specifier = "==3.5.5" },
     { name = "urllib3", specifier = "==2.8.0" },
     { name = "watchdog", marker = "extra == 'filesystem-transport-full'", specifier = ">=4.0" },
-    { name = "weasyprint", marker = "extra == 'pdf'", specifier = "==69.0" },
+    { name = "weasyprint", marker = "extra == 'pdf'", specifier = "==70.0" },
     { name = "webdriver-manager", marker = "extra == 'agents'", specifier = "==4.0.2" },
     { name = "wikipedia", marker = "extra == 'agents'", specifier = "==1.4.0" },
     { name = "wikipedia", marker = "extra == 'agents-lite'", specifier = "==1.4.0" },
@@ -1076,7 +1083,7 @@ requires-dist = [
     { name = "zeep", extras = ["async"], marker = "extra == 'agents-lite'", specifier = "==4.3.3" },
     { name = "zeep", extras = ["async"], marker = "extra == 'mcp'", specifier = "==4.3.3" },
 ]
-provides-extras = ["notify-all", "db", "bigquery", "pdf", "ocr", "audio", "finance", "flowtask", "graphindex", "graphindex-postgres", "wiki-languages", "wiki-structural", "leiden", "wiki", "bookstore", "manuals", "scheduler", "server", "reddit", "jira", "retrieval", "tokenizer", "msgraph", "agents", "charts", "agents-lite", "mcp", "images", "anthropic", "bedrock", "bedrock-native", "claude-agent", "codex-agent", "openai", "google", "groq", "zai", "grok", "gemma4", "hf", "nvidia", "moonshot", "openrouter", "local", "vllm", "meta", "jev", "llms", "integrations", "grpc", "eda", "security", "needle", "xai", "deploy", "docling", "filesystem-transport", "filesystem-transport-full", "messaging", "otel", "observability", "observability-openlit", "observability-traceloop", "observability-prometheus", "dev", "remote-tools", "visualizations", "rust", "all", "all-fast"]
+provides-extras = ["notify-all", "db", "bigquery", "pdf", "ocr", "audio", "finance", "flowtask", "graphindex", "graphindex-postgres", "wiki-languages", "wiki-structural", "leiden", "wiki", "bookstore", "manuals", "scheduler", "server", "reddit", "jira", "retrieval", "tokenizer", "msgraph", "gdrive", "agents", "charts", "agents-lite", "mcp", "images", "anthropic", "bedrock", "bedrock-native", "claude-agent", "codex-agent", "openai", "google", "groq", "zai", "grok", "gemma4", "hf", "nvidia", "moonshot", "openrouter", "local", "vllm", "meta", "jev", "llms", "integrations", "grpc", "eda", "security", "needle", "xai", "deploy", "docling", "filesystem-transport", "filesystem-transport-full", "messaging", "otel", "observability", "observability-openlit", "observability-traceloop", "observability-prometheus", "dev", "remote-tools", "visualizations", "rust", "all", "all-fast"]
 
 [[package]]
 name = "ai-parrot-advisors"
@@ -1100,7 +1107,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-amazon"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-amazon" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1115,7 +1122,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-anthropic"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-anthropic" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1132,7 +1139,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-gemma4"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-gemma4" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1147,7 +1154,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-google"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-google" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1162,7 +1169,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-grok"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-grok" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1177,7 +1184,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-groq"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-groq" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1192,7 +1199,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-hf"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-hf" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1207,7 +1214,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-jev"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-jev" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1218,7 +1225,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-local"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-local" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1229,7 +1236,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-meta"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-meta" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1240,7 +1247,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-moonshot"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-moonshot" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1251,7 +1258,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-nvidia"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-nvidia" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1262,7 +1269,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-openai"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-openai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1288,7 +1295,7 @@ provides-extras = ["bridge"]
 
 [[package]]
 name = "ai-parrot-client-openrouter"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-openrouter" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1299,7 +1306,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-vllm"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-vllm" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1314,7 +1321,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-zai"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-client-zai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1769,7 +1776,7 @@ requires-dist = [
     { name = "torchvision", marker = "extra == 'ml'", specifier = ">=0.23.0,<0.24" },
     { name = "trafilatura", marker = "extra == 'scraping'", specifier = ">=1.12" },
     { name = "transformers", marker = "extra == 'ml-heavy'", specifier = ">=4.48.0,<5.0" },
-    { name = "weasyprint", marker = "extra == 'pdf'", specifier = "==69.0" },
+    { name = "weasyprint", marker = "extra == 'pdf'", specifier = "==70.0" },
     { name = "whisperx", marker = "extra == 'audio'", specifier = "==3.8.5" },
     { name = "youtube-transcript-api", marker = "extra == 'youtube'", specifier = "==1.0.3" },
     { name = "yt-dlp", marker = "extra == 'youtube'", specifier = ">=2026.2.21" },
@@ -1778,7 +1785,7 @@ provides-extras = ["youtube", "audio", "pdf", "images", "web", "ebook", "documen
 
 [[package]]
 name = "ai-parrot-openlit-bridge"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "packages/ai-parrot-openlit-bridge" }
 dependencies = [
     { name = "aiohttp" },
@@ -2153,7 +2160,7 @@ requires-dist = [
     { name = "undetected-chromedriver", marker = "extra == 'scraping'", specifier = ">=3.5" },
     { name = "vl-convert-python", marker = "extra == 'charts'", specifier = ">=1.0" },
     { name = "wbgapi", marker = "extra == 'research'", specifier = ">=1.0" },
-    { name = "weasyprint", marker = "extra == 'pdf'", specifier = "==69.0" },
+    { name = "weasyprint", marker = "extra == 'pdf'", specifier = "==70.0" },
     { name = "webdriver-manager", marker = "extra == 'scraping'", specifier = ">=4.0" },
     { name = "wikipedia", marker = "extra == 'wikipedia'", specifier = ">=1.4" },
     { name = "yfinance", marker = "extra == 'finance'", specifier = ">=0.2.54" },
@@ -2257,7 +2264,7 @@ requires-dist = [
     { name = "seaborn", marker = "extra == 'seaborn'", specifier = ">=0.13" },
     { name = "streamlit", marker = "extra == 'streamlit'", specifier = ">=1.30" },
     { name = "svglib", marker = "extra == 'infographic'" },
-    { name = "weasyprint", marker = "extra == 'a2ui-pdf'", specifier = ">=68.0" },
+    { name = "weasyprint", marker = "extra == 'a2ui-pdf'", specifier = ">=70.0" },
 ]
 provides-extras = ["matplotlib", "seaborn", "plotly", "altair", "echarts", "map", "infographic", "jinja2", "streamlit", "panel", "messaging", "charts", "a2ui", "a2ui-pdf", "all"]
 
@@ -9476,7 +9483,7 @@ wheels = [
 
 [[package]]
 name = "navrules"
-version = "1.1.0"
+version = "1.2.0"
 source = { editable = "packages/navrules" }
 
 [package.optional-dependencies]
@@ -15980,7 +15987,7 @@ wheels = [
 
 [[package]]
 name = "weasyprint"
-version = "69.0"
+version = "70.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cffi" },
@@ -15992,9 +15999,9 @@ dependencies = [
     { name = "tinycss2" },
     { name = "tinyhtml5" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/59/53/dcc3885c2f7a47faa45f6b8b801412f5f9e055173a52801ef01c09943c5a/weasyprint-69.0.tar.gz", hash = "sha256:a7a32f39ca16bd82ef11de99c92ea4b5f14951c9033af035e451ce4f4ee0a88c", size = 1549834, upload-time = "2026-06-02T14:42:17.765Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8d/0e/461aeb736762862b511034933d5b98d68f812431b7393b026d9ace5f6b42/weasyprint-70.0.tar.gz", hash = "sha256:c263abf0e86c747b12af678b67f85f4abbfb97d18a20503031e7ba94e4b8cf8c", size = 1565482, upload-time = "2026-09-08T12:25:41.484Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/93/cb/208525c6bd5033d7b2589b55e07bec23d9c61bb00703cbaf20ef52c3811f/weasyprint-69.0-py3-none-any.whl", hash = "sha256:475951cfd917014de6d4d005caff48c6aa867e7e42b80cd5b16a0484a1609ee6", size = 322872, upload-time = "2026-06-02T14:42:15.871Z" },
+    { url = "https://files.pythonhosted.org/packages/22/8b/0c53c869f29d3273536b896dd17f092549e34e35ffba4c7a60a6de1cb1c2/weasyprint-70.0-py3-none-any.whl", hash = "sha256:5043e55e38d2a2af2b2b871e869697b1f65dad5f8b4a3677961d04ceacf9c5fe", size = 328889, upload-time = "2026-09-08T12:25:39.796Z" },
 ]
 
 [[package]]
