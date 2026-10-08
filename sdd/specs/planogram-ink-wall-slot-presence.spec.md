@@ -11,7 +11,7 @@ tags: [planogram, ink-wall, compliance]
 **Feature ID**: FEAT-645
 **Date**: 2026-10-08
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-pipelines 1.4.0 (released in lockstep with the ai-parrot family)
 
 > Exploration: `flowtask/sdd/proposals/planogram-ink-wall-changes.brainstorm.md` (Option A).
