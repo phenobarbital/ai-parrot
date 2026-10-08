@@ -189,10 +189,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (coder seat: gpt-5.6-terra)
+**Date**: 2026-10-08
+**Notes**: Implemented and merged. 340 of 343 related tests pass. Known failures: test_redis_backend.py::test_redis_job_catchup_once_after_outage fails deterministically (issue:b4f961e5f90d, catch-up semantics need a decision); two pre-existing test_namespace_imports.py failures unrelated to this feature (issue:e523973539f5).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
