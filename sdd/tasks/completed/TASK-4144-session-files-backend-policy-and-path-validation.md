@@ -452,7 +452,15 @@ is mocked at the `FileManagerToolkit` boundary exactly as FEAT-639's tests do.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Opus 5 (/sdd-fix lane, session 7222f028)
+**Date**: 2026-10-08
+**Notes**: Implemented as blueprinted. `_validate_remote_path` also rejects a
+path that normalizes to nothing (`"./"`), which the blueprint's "reject an empty
+result" clause implied but the AC table did not list. The transport now receives
+the *normalized* path, so `test_transport_receives_the_normalized_path` was added
+beyond the listed cases. The two FEAT-639 tests that used `backend="temp"` moved
+to `"s3"`; both still mock the transport, so neither needs credentials.
+38 tests pass (`test_session_files_security.py` +
+`test_session_files_remote_import.py` + `test_session_files_toolkit.py`);
+`ruff check` clean.
+**Deviations from spec**: none

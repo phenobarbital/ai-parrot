@@ -319,7 +319,13 @@ it the cap could be enforced after the read and every other test would still pas
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: Claude Opus 5 (/sdd-fix lane, session 7222f028)
+**Date**: 2026-10-08
+**Notes**: Implemented as blueprinted. The load-bearing ordering test
+(`test_import_over_cap_not_read_into_memory`) was mutation-checked: moving
+`_check_size` to after `read_bytes` makes it fail, so it really constrains the
+ordering rather than only the outcome. Added
+`test_generated_cap_measures_encoded_bytes` beyond the listed cases, since the
+character-vs-byte distinction is the easy way to get `store_generated_file`
+wrong. 44 tests pass across the three session-file modules; `ruff check` clean.
+**Deviations from spec**: none
