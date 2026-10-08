@@ -75,7 +75,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -83,8 +83,9 @@
       "parallelism_notes": "Root task: only sanitize.py and test_sanitize.py. TASK-4155 imports normalize_backend; TASK-4156 imports clean_misfire_grace_time/clean_method_name; TASK-4164 later deletes normalize_jobstore_alias from the same file.",
       "assigned_to": null,
       "started_at": "2026-10-08T18:01:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4150-scheduler-sanitize-backend.md"
+      "completed_at": "2026-10-08T20:34:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4150-scheduler-sanitize-backend.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4151",
