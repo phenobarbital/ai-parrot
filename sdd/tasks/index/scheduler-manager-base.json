@@ -94,7 +94,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -102,8 +102,9 @@
       "parallelism_notes": "Root task: only coordination.py and test_coordination.py. TASK-4155 calls the new manager_prefix()/redis_db()/build_fire_coordinator(prefix=); TASK-4157 reads CURRENT_RUN_TIME.",
       "assigned_to": null,
       "started_at": "2026-10-08T18:01:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4151-scheduler-coordination-namespace.md"
+      "completed_at": "2026-10-08T20:35:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4151-scheduler-coordination-namespace.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4152",
