@@ -5,7 +5,9 @@ is part of the server layer (ai-parrot-server satellite).
 
 Use: pip install ai-parrot-server[scheduler]
 """
+
 from pkgutil import extend_path
+
 __path__ = extend_path(__path__, __name__)
 
 # Server-side exports (move to satellite in TASK-1374 — lazy via __getattr__)
@@ -15,6 +17,10 @@ _SERVER_CLASSES = {
     "schedule_daily_report": ("parrot.scheduler.manager", "schedule_daily_report"),
     "schedule_weekly_report": ("parrot.scheduler.manager", "schedule_weekly_report"),
     "AgentSchedulerManager": ("parrot.scheduler.manager", "AgentSchedulerManager"),
+    "SchedulerManager": ("parrot.scheduler.base", "SchedulerManager"),
+    "TargetRegistry": ("parrot.scheduler.base", "TargetRegistry"),
+    "ServiceSchedule": ("parrot.scheduler.models", "ServiceSchedule"),
+    "JobDefinition": ("parrot.scheduler.models", "JobDefinition"),
     # Private env-var parsers — re-exported so the report-decorator test suite
     # can reach them through the namespace shim.
     "_parse_daily_schedule": ("parrot.scheduler.manager", "_parse_daily_schedule"),
@@ -28,9 +34,7 @@ def __getattr__(name: str):
         from parrot._imports import load_satellite_attr
 
         module_path, cls_name = _SERVER_CLASSES[name]
-        return load_satellite_attr(
-            name, module_path, install="ai-parrot-server[scheduler]", attr=cls_name
-        )
+        return load_satellite_attr(name, module_path, install="ai-parrot-server[scheduler]", attr=cls_name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -40,4 +44,8 @@ __all__ = [
     "schedule_daily_report",
     "schedule_weekly_report",
     "AgentSchedulerManager",
+    "SchedulerManager",
+    "TargetRegistry",
+    "ServiceSchedule",
+    "JobDefinition",
 ]
