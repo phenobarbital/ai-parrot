@@ -242,7 +242,7 @@
       "feature_id": "FEAT-639",
       "feature": "jiratoolkit-docx-support",
       "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -252,8 +252,9 @@
       "parallelism_notes": "Modifies the same file as TASK-4139 (jiratoolkit.py) and delegates to its _attach_session_files().",
       "assigned_to": null,
       "started_at": "2026-10-07T23:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4140-jira-add-attachment-hard-cut.md"
+      "completed_at": "2026-10-08T00:31:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4140-jira-add-attachment-hard-cut.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4141",
