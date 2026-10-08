@@ -1,0 +1,28 @@
+{
+  "feature": "graph-test-models-fixes",
+  "feature_id": "FEAT-642",
+  "spec": "sdd/specs/graph-test-models-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-08T09:04:35Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4143",
+      "slug": "test-collection-collisions",
+      "title": "Fix order-dependent test collection collisions",
+      "feature_id": "FEAT-642",
+      "feature": "graph-test-models-fixes",
+      "spec": "sdd/specs/graph-test-models-fixes.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-08T09:04:35Z",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4143-test-collection-collisions.md"
+    }
+  ]
+}
