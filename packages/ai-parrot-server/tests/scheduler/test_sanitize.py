@@ -11,6 +11,7 @@ which flowed unvalidated into ``RedisJobStore(port='')``.  redis-py builds
 connections lazily, so ``int(port)`` only ran on the first real command —
 inside APScheduler's job-processing loop, once per tick, forever.
 """
+
 from datetime import UTC, datetime
 
 import pytest
@@ -198,9 +199,7 @@ class TestNormalizeJobstoreAlias:
             normalize_jobstore_alias("redis", available={"default"}, strict=True)
 
     def test_strict_allows_registered_alias(self):
-        assert normalize_jobstore_alias(
-            "redis", available={"default", "redis"}, strict=True
-        ) == "redis"
+        assert normalize_jobstore_alias("redis", available={"default", "redis"}, strict=True) == "redis"
 
     def test_strict_blank_still_becomes_default(self):
         assert normalize_jobstore_alias("", available={"default"}, strict=True) == "default"
