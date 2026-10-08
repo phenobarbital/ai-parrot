@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from .comparison.definition import SlotsDefinition
+from .comparison.definition import CompletenessPolicy, ReportingPolicy, SlotsDefinition
 from .contracts import IdentifyStrategy, ShapeKind
 from .perception.profiles import ShapeProfile
 from .perception.slots import AnchorRule
@@ -72,6 +72,8 @@ class LayoutProfile(BaseModel):
     anchor_rule: AnchorRule = AnchorRule.SHAPE_IS_SLOT
     fill_gaps: bool = False
     untagged_bottom_row: bool = False
+    #: Fill each full-height row up to the facings its definition shelf expects (TAG_BELOW_PRODUCT only).
+    definition_gap_fill: bool = False
     #: A shelf holds tiers of different products: shapes stacked in one column are slots of their own
     #: (default: a stack in one column is one slot, e.g. cartons piled two high).
     tiered_shelves: bool = False
@@ -94,6 +96,8 @@ class LayoutProfile(BaseModel):
     required_descriptor_fields: List[str] = Field(default_factory=list)
     ocr_targets: List[Literal["slot", "tag", "zone"]] = Field(default_factory=lambda: ["slot", "tag", "zone"])
     references: ReferencePolicy = Field(default_factory=ReferencePolicy)
+    reporting: ReportingPolicy = Field(default_factory=ReportingPolicy)
+    completeness: CompletenessPolicy = Field(default_factory=CompletenessPolicy)
     zone_selectors: List[ZoneSelector] = Field(default_factory=list)
 
     @model_validator(mode="after")

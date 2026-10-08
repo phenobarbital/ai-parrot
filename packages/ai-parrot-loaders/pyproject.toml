@@ -40,7 +40,7 @@ youtube = [
     "yt-dlp>=2026.02.21"
 ]
 audio = [
-    "whisperx==3.8.5",
+    "whisperx==3.8.7rc1",
     "av==16.1.0",
     "resemblyzer==0.1.4",
     "torch-audiomentations==0.12.0",
@@ -95,7 +95,7 @@ scraping = [
 ]
 
 # Core ML dependencies required by audio/whisperx
-# NOTE: torch/torchaudio/torchvision are capped to match whisperx 3.8.5 pins
+# NOTE: torch/torchaudio/torchvision are capped to match whisperx 3.8.7rc1 pins
 # (torch~=2.8.0, torchaudio~=2.8.0, torchvision~=0.23.0). Bumping requires
 # a newer whisperx release.
 ml = [
@@ -110,8 +110,10 @@ ml = [
 ]
 
 # Heavy ML dependencies (slow install, GPU/ML workloads)
-# NOTE: transformers is capped at <5.0 because whisperx 3.8.5 pins
-# huggingface-hub<1.0 and transformers>=5.0 requires huggingface_hub>=1.0.
+# NOTE: transformers>=5.3.0 fixes CVE-2026-4372 (GHSA-29pf-2h5f-8g72, RCE via a
+# crafted config.json). transformers 5 needs huggingface-hub>=1.0, which is why
+# whisperx is on 3.8.7rc1: 3.8.5/3.8.6 pin huggingface-hub<1.0. Move whisperx to
+# 3.8.7 final once it ships.
 ml-heavy = [
     "torch>=2.8.0,<2.9",
     "torchaudio>=2.8.0,<2.9",
@@ -119,7 +121,7 @@ ml-heavy = [
     "accelerate>=1.1.0",
     "bitsandbytes==0.49.2",
     "datasets>=3.0.2",
-    "transformers>=4.48.0,<5.0",
+    "transformers>=5.3.0",
     "tensorflow>=2.20.0",
     "tf-keras>=2.20.0",
     "opencv-python==4.10.0.84",

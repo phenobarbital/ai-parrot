@@ -6,6 +6,7 @@ import inspect
 import json
 import re
 from importlib import import_module
+from typing import Any
 
 import cv2
 import numpy as np
@@ -250,6 +251,15 @@ def test_default_layout_profile_is_fresh_and_ink_shaped():
     assert "mutated" not in InkWall.default_layout_profile().descriptor_fields
 
 
+def test_ink_wall_profile_defaults():
+    """FEAT-646: ink walls opt into the definition-aware fill and a tolerant completeness policy."""
+    first, second = InkWall.default_layout_profile(), InkWall.default_layout_profile()
+    assert first.definition_gap_fill is True
+    assert (first.completeness.min_coverage, first.completeness.min_shelf_coverage) == (0.9, 0.8)
+    first.completeness.min_coverage = 0.5
+    assert second.completeness.min_coverage == 0.9
+
+
 def test_registrable_slots_keep_rows_with_occupancy_only():
     """An unreadable occupied row remains assessable even when product and brand are absent."""
     shapes = []
@@ -482,3 +492,119 @@ async def test_ink_wall_fallback_perception_still_compares(fake_vision_client, s
     )
     matched = [p for p in out.position_results if p.status == FacingStatus.MATCH]
     assert {p.facing_id for p in matched} == {f"s1_f{i}" for i in range(1, 8)}  # s1_f8 is undescribed
+
+
+@pytest.mark.asyncio
+async def test_ink_wall_products_found_end_to_end(
+    synthetic_ink_wall: Any, synthetic_slots_definition: dict[str, Any], fake_vision_client: Any, offline: Any
+) -> None:
+    """Real compare and assembly expose model-labelled slot presence for ink-wall layouts."""
+    for shelf in synthetic_slots_definition["shelves"]:
+        for facing in shelf["facings"]:
+            facing["descriptors"]["sku"] = f"SKU-{facing['product']}"
+    fake_vision_client.queue("ask_to_image", *([_answer_strip] * 4))
+    config = PlanogramConfig(
+        planogram_type="ink_wall", planogram_config={"brand": "Acme"}, slots_definition=synthetic_slots_definition
+    )
+
+    result = await PlanogramCompliance(planogram_config=config, llm=fake_vision_client).run(synthetic_ink_wall)
+
+    assert len(result["products_found"]) == 24
+    first = result["products_found"][0]
+    assert (first.model, first.sku, first.display_name, first.found, first.status) == (
+        "ACME-1-1",
+        "SKU-ACME-1-1",
+        "Acme ink 1-1",
+        True,
+        FacingStatus.MATCH,
+    )
+    assert result["compliance_results"][0].expected_products == [f"ACME-1-{slot}" for slot in range(1, 9)]
+    assert result["compliance_results"][0].found_products == [f"ACME-1-{slot}" for slot in range(1, 9)]
+    assert result["overall_compliance_score"] == pytest.approx(1.0)
+    assert result["overall_compliant"] is True
+
+
+@pytest.mark.asyncio
+async def test_non_ink_wall_result_unchanged(
+    synthetic_slots_definition: dict[str, Any], fake_vision_client: Any
+) -> None:
+    """A non-ink-wall comparison retains display-name labels and has no presence output."""
+    definition = load_slots_definition(synthetic_slots_definition)
+    config = PlanogramConfig(
+        planogram_type="product_on_shelves",
+        planogram_config={"brand": "Acme"},
+        slots_definition=synthetic_slots_definition,
+    )
+    pipe = PlanogramCompliance(planogram_config=config, llm=fake_vision_client)
+    box = DetectionBox(x1=10, y1=10, x2=80, y2=80, confidence=0.9)
+    shapes = [
+        Shape(
+            shape_id=f"img0:product:{slot}",
+            image_id="img0",
+            kind=ShapeKind.PRODUCT,
+            box=box,
+            row_index=0,
+            slot_index=slot,
+            membership=FixtureMembership.ON_FIXTURE,
+        )
+        for slot in (1, 2)
+    ]
+    slots = [
+        Slot(
+            slot_id=f"img0:r0:s{slot}",
+            image_id="img0",
+            row_index=0,
+            slot_index=slot,
+            box=box,
+            anchor_shape_id=f"img0:product:{slot}",
+        )
+        for slot in (1, 2)
+    ]
+    identifications = IdentificationResult(
+        image_id="img0",
+        identifications=[
+            Identification(
+                shape_id=slot.slot_id,
+                image_id="img0",
+                product=f"ACME-1-{slot.slot_index}",
+                brand="Acme",
+                occupancy="occupied",
+                evidence=["read"],
+            )
+            for slot in slots
+        ],
+    )
+    context = _ctx(definition)
+    comparison = await pipe._type_handler.compare(
+        [PerceptionResult(image_id="img0", image_size=(100, 100), shapes=shapes, slots=slots, row_count=1)],
+        [identifications],
+        context,
+    )
+    assembled = pipe._assemble([], [], comparison, [], context)
+
+    assert comparison.products_found == []
+    assert assembled["products_found"] == []
+    assert comparison.compliance_results[0].expected_products == [
+        f"ACME-1-{slot}" if (1, slot) in UNDESCRIBED else f"Acme ink 1-{slot}" for slot in range(1, 9)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reporting_meta_override_reaches_pipeline(
+    synthetic_ink_wall: Any, synthetic_slots_definition: dict[str, Any], fake_vision_client: Any, offline: Any
+) -> None:
+    """Definition metadata overrides ink-wall defaults without changing successful scoring."""
+    synthetic_slots_definition["meta"] = {"reporting": {"product_label": "display_name", "slot_presence": False}}
+    fake_vision_client.queue("ask_to_image", *([_answer_strip] * 4))
+    config = PlanogramConfig(
+        planogram_type="ink_wall", planogram_config={"brand": "Acme"}, slots_definition=synthetic_slots_definition
+    )
+
+    result = await PlanogramCompliance(planogram_config=config, llm=fake_vision_client).run(synthetic_ink_wall)
+
+    assert result["products_found"] == []
+    assert result["compliance_results"][0].expected_products == [
+        f"ACME-1-{slot}" if (1, slot) in UNDESCRIBED else f"Acme ink 1-{slot}" for slot in range(1, 9)
+    ]
+    assert result["overall_compliance_score"] == pytest.approx(1.0)
+    assert result["overall_compliant"] is True

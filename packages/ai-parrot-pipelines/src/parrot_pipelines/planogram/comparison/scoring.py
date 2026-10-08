@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 from parrot.models.detections import PlanogramDescription, ShelfConfig
 
 from parrot_pipelines.planogram.comparison.definition import (
+    CompletenessPolicy,
     FacingDefinition,
     RuleBinding,
     ShelfDefinition,
@@ -432,6 +433,8 @@ def summarize(
     positions: Sequence[PositionResult],
     definition: SlotsDefinition,
     weights: EvidenceWeights,
+    *,
+    completeness: Optional[CompletenessPolicy] = None,
 ) -> ComparisonResult:
     """Global measures. ``compliance_results`` is left empty and ``overall_compliant`` False —
     the projection helper ``finalize_comparison`` sets both.
@@ -441,6 +444,8 @@ def summarize(
         positions: Merged positions.
         definition: The slots definition.
         weights: Evidence weights (evidence quality only — never credits).
+        completeness: Minimum resolved fraction for ``COMPLETE`` (default: every position resolved). Never
+            changes scores or credits.
 
     Returns:
         The comparison result (without projected compliance results).
@@ -464,9 +469,10 @@ def summarize(
         ]
         evidence_quality = sum(rule_weights) / len(rule_weights) if rule_weights else 0.0
     rules_complete = all(o.assessed for o in rule_results)
+    policy = completeness or CompletenessPolicy()
     complete = (
         bool(shelf_scores)
-        and len(resolved) == len(positions)
+        and coverage >= policy.min_coverage
         and rules_complete
         and (bool(positions) or bool(rule_results))
     )

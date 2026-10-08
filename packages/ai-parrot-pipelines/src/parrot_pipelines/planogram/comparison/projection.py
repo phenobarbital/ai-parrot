@@ -8,7 +8,13 @@ from typing import Dict, List, Optional, Sequence
 from parrot.models.compliance import ComplianceResult, ComplianceStatus, ShelfAssessment
 from parrot.models.detections import PlanogramDescription
 
-from parrot_pipelines.planogram.comparison.definition import FacingDefinition, SlotsDefinition
+from parrot_pipelines.planogram.comparison.definition import (
+    CompletenessPolicy,
+    FacingDefinition,
+    ReportingPolicy,
+    SlotsDefinition,
+)
+from parrot_pipelines.planogram.comparison.presence import facing_presence
 from parrot_pipelines.planogram.contracts import (
     AssessmentStatus,
     ComparisonResult,
@@ -57,6 +63,9 @@ def project_compliance(
     positions: Sequence[PositionResult],
     definition: SlotsDefinition,
     description: PlanogramDescription,
+    *,
+    policy: Optional[ReportingPolicy] = None,
+    completeness: Optional[CompletenessPolicy] = None,
 ) -> List[ComplianceResult]:
     """One ComplianceResult per definition shelf, definition order. Sets ``ComplianceResult.assessment``.
 
@@ -76,6 +85,8 @@ def project_compliance(
         positions: Merged positions.
         definition: The slots definition.
         description: The planogram description (per-shelf thresholds).
+        policy: Optional reporting policy. The default preserves legacy display labels.
+        completeness: Minimum resolved fraction of a shelf's facings for a complete shelf (default: all).
 
     Returns:
         One result per definition shelf.
@@ -83,6 +94,7 @@ def project_compliance(
     scores_by_shelf: Dict[str, ShelfScore] = {s.shelf_id: s for s in shelf_scores}
     positions_by_facing: Dict[str, PositionResult] = {p.facing_id: p for p in positions}
     results: List[ComplianceResult] = []
+    shelf_policy = completeness or CompletenessPolicy()
     for shelf in definition.shelves:
         score = scores_by_shelf.get(shelf.shelf_id)
         if score is None:
@@ -103,11 +115,28 @@ def project_compliance(
         ]
         failed_rules = [o for o in score.rule_results if o.assessed and o.passed is False]
         rules_complete = all(o.assessed for o in score.rule_results)
-        complete = not unresolved_ids and rules_complete
+        if shelf.facings:
+            resolved_share = (len(shelf.facings) - len(unresolved_ids)) / len(shelf.facings)
+            complete = resolved_share >= shelf_policy.min_shelf_coverage and rules_complete
+        else:
+            complete = rules_complete
 
-        missing = [_label(f) for f, status in occupied_expected if status == FacingStatus.EMPTY]
+        product_labels = policy is not None and policy.product_label == "product"
+        if product_labels:
+            missing = [f.product or _label(f) for f, status in occupied_expected if status == FacingStatus.EMPTY]
+            found = [
+                f.product or _label(f)
+                for f, position in pairs
+                if position is not None
+                and f.expected_occupancy != "empty"
+                and facing_presence(position, policy)[0] is True
+            ]
+            expected = [f.product or _label(f) for f, _ in occupied_expected]
+        else:
+            missing = [_label(f) for f, status in occupied_expected if status == FacingStatus.EMPTY]
+            found = [(p.identity or _label(f)) for f, p in pairs if p is not None and p.status in _FOUND]
+            expected = [_label(f) for f, _ in occupied_expected]
         missing += [o.detail for o in failed_rules if o.penalty > 0 and o.detail]
-        found = [(p.identity or _label(f)) for f, p in pairs if p is not None and p.status in _FOUND]
         threshold = _threshold(description, shelf.level)
         if score.expected_facings:
             meets_threshold = score.facing_lenient >= threshold
@@ -137,7 +166,7 @@ def project_compliance(
         results.append(
             ComplianceResult(
                 shelf_level=score.shelf_level,
-                expected_products=[_label(f) for f, _ in occupied_expected],
+                expected_products=expected,
                 found_products=found,
                 missing_products=missing,
                 unexpected_products=unexpected,

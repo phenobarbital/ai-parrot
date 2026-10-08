@@ -74,6 +74,33 @@ def _extent(group: Sequence[Shape]) -> Tuple[int, int]:
     return min(s.box.x1 for s in group), max(s.box.x2 for s in group)
 
 
+def _block_span(
+    block_rows: Sequence[int],
+    main_runs: Dict[int, List[Shape]],
+    row_clusters: Dict[int, List[List[Shape]]],
+) -> Tuple[int, int]:
+    """Horizontal span of the fixture block.
+
+    The union of every block row's main run plus every cluster of a block row whose x-extent overlaps
+    (strictly positive intersection) the main run of a different block row. This keeps both bays of a
+    multi-bay fixture when rows have their main runs in different bays. Pure and deterministic.
+    """
+    extents = [_extent(main_runs[i]) for i in block_rows]
+    for index in block_rows:
+        for group in row_clusters[index]:
+            if group is main_runs[index]:
+                continue
+            lo, hi = _extent(group)
+            for other in block_rows:
+                if other == index:
+                    continue
+                other_lo, other_hi = _extent(main_runs[other])
+                if min(hi, other_hi) - max(lo, other_lo) > 0:
+                    extents.append((lo, hi))
+                    break
+    return min(lo for lo, _ in extents), max(hi for _, hi in extents)
+
+
 def _row_block_votes(shapes: Sequence[Shape], image_size: Tuple[int, int]) -> Dict[str, _Vote]:
     """Votes from a coherent block of rows (shapes with row_index). {} when no coherent block exists.
 
@@ -81,7 +108,8 @@ def _row_block_votes(shapes: Sequence[Shape], image_size: Tuple[int, int]) -> Di
     pitch over all rows); the largest cluster of a row is its main run. The block is the set of main
     runs overlapping the largest main run by ≥ 50 %; it is coherent with ≥ 2 rows, or with one row
     spanning ≥ 50 % of the image width. A cluster whose centre lies inside the block's x-span (the
-    union of its main runs) is a hole inside the fixture and still votes ``row_block``.
+    union of its main runs plus any cluster overlapping another block row's main run, i.e. a second bay)
+    is a hole inside the fixture and still votes ``row_block``.
 
     Args:
         shapes: Observations (only those with ``row_index`` take part).
@@ -122,10 +150,10 @@ def _row_block_votes(shapes: Sequence[Shape], image_size: Tuple[int, int]) -> Di
     if not coherent:
         return {}
 
-    # The block spans the union of its rows' main runs. A gap-separated cluster whose centre lies inside that
-    # span is a hole inside the fixture (e.g. one missing tag), not an adjacent fixture.
-    block_lo = min(_extent(main_runs[i])[0] for i in block_rows)
-    block_hi = max(_extent(main_runs[i])[1] for i in block_rows)
+    # The block spans its rows' main runs plus any cluster that overlaps another block row's main run (a second bay
+    # of a multi-bay fixture). A gap-separated cluster whose centre lies inside that span is a hole inside the
+    # fixture (e.g. one missing tag, or a lone tag over an empty facing), not an adjacent fixture.
+    block_lo, block_hi = _block_span(block_rows, main_runs, row_clusters)
     votes: Dict[str, _Vote] = {}
     for index in block_rows:
         main_ids = {s.shape_id for s in main_runs[index]}

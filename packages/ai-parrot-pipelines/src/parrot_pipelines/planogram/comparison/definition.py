@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ _DESCRIPTOR_KEYS: Tuple[str, ...] = (
     "aliases",
     "price",
     "attributes",
+    "sku",
 )
 
 
@@ -42,10 +43,37 @@ class SlotsDefinitionError(ValueError):
     """Invalid slots definition or rule bindings (fail fast at construction time)."""
 
 
+REPORTING_META_KEY = "reporting"
+
+
+class ReportingPolicy(BaseModel):
+    """Control product labels and optional slot-presence reporting."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    product_label: Literal["display_name", "product"] = "display_name"
+    slot_presence: bool = False
+    misplaced_min_confidence: float = Field(default=0.9, ge=0.0, le=1.0)
+
+
+class CompletenessPolicy(BaseModel):
+    """Minimum resolved-facing fractions for a COMPLETE assessment (1.0 = every facing resolved).
+
+    ``min_coverage`` gates the global ``assessment_status``; ``min_shelf_coverage`` gates each shelf's
+    ``ComplianceResult.assessment``. Tolerance only changes completeness, never credits or scores.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    min_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
+    min_shelf_coverage: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
 class Descriptors(BaseModel):
     """Per-position product description. All optional; ``price`` is never required."""
 
     display_name: Optional[str] = None
+    sku: Optional[str] = None
     family: Optional[str] = None
     xl: Optional[bool] = None
     colors: List[str] = Field(default_factory=list)
@@ -54,6 +82,19 @@ class Descriptors(BaseModel):
     aliases: List[str] = Field(default_factory=list)
     price: Optional[float] = None
     attributes: Dict[str, AttributeValue] = Field(default_factory=dict)
+
+    @field_validator("sku", mode="before")
+    @classmethod
+    def _sku_to_str(cls, value: Any) -> Optional[str]:
+        """Normalize integer/integral-float/string SKUs; treat absent or blank values as missing."""
+        if value is None:
+            return None
+        if isinstance(value, float) and value.is_integer():
+            value = int(value)
+        if isinstance(value, bool) or not isinstance(value, (int, str)):
+            raise ValueError("sku must be an integer or string")
+        sku = str(value).strip()
+        return sku or None
 
     @model_validator(mode="after")
     def _no_typed_collision(self) -> "Descriptors":
@@ -136,9 +177,50 @@ class SlotsDefinition(BaseModel):
     shelves: List[ShelfDefinition] = Field(default_factory=list)
     zones: List[ZoneDefinition] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def _check_reporting_meta(self) -> "SlotsDefinition":
+        """Validate a partial reporting object using normal Pydantic error handling.
+
+        Direct construction raises a pydantic ``ValidationError``; the definition loaders are the
+        boundary that converts it to ``SlotsDefinitionError``.
+        """
+        if REPORTING_META_KEY in self.meta:
+            ReportingPolicy.model_validate(self.meta[REPORTING_META_KEY])
+        return self
+
     def all_facings(self) -> List[FacingDefinition]:
         """Facings in shelf order, then (slot, facing_index)."""
         return [f for shelf in self.shelves for f in shelf.facings]
+
+
+def effective_reporting(layout: Optional[Any], definition: Optional[SlotsDefinition]) -> ReportingPolicy:
+    """Merge default/layout reporting with explicitly provided definition overrides.
+
+    Args:
+        layout: Optional layout-like object exposing a validated ``reporting`` policy.
+        definition: Optional slots definition whose metadata may provide partial overrides.
+
+    Returns:
+        The resolved reporting policy without mutating either input.
+    """
+    policy = ReportingPolicy()
+    layout_policy = getattr(layout, "reporting", None) if layout is not None else None
+    if layout_policy is not None:
+        policy = ReportingPolicy.model_validate(layout_policy)
+
+    reporting = None
+    if definition is not None and REPORTING_META_KEY in definition.meta:
+        reporting = definition.meta[REPORTING_META_KEY]
+        resolved = policy.model_dump()
+        resolved.update(reporting)
+        policy = ReportingPolicy.model_validate(resolved)
+
+    logger.debug(
+        "reporting policy resolved: layout=%s definition_override=%s",
+        layout_policy is not None,
+        reporting is not None,
+    )
+    return policy
 
 
 def _normalise_page1(data: Dict[str, Any]) -> Dict[str, Any]:
