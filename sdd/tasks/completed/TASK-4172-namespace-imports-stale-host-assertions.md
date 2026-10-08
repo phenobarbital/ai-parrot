@@ -226,8 +226,12 @@ The task *is* the test change; see the blueprint.
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: agent:sdd-fix (Claude Code, Opus 5.5)
+**Date**: 2026-10-09
+**Notes**: Promoted from ledger issue:e523973539f5 by /sdd-fix. `test_handlers_host_only_stubs` now allows the
+core-resident spatial/dataset filter handlers (FEAT-219/225); `test_scheduler_extra_removed` replaced by
+`test_scheduler_extra_is_inprocess_only`, which asserts the FEAT-453 D1 core extra is apscheduler-only and pins the
+satellite's exact version. Code commit 2544bd456. `pytest packages/ai-parrot-server/tests/test_namespace_imports.py -q`
+→ 32 passed (with PYTHONPATH=packages/ai-parrot-server/src:packages/ai-parrot/src); ruff clean; black applied.
 
-**Deviations from spec**: none
+**Deviations from spec**: none. Implemented on the FEAT-644 branch version of the file (already black-reformatted by TASK-4163).
