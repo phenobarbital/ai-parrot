@@ -3,7 +3,7 @@
 type: feature
 base_branch: dev
 projects: [ai-parrot-integrations, ai-parrot]
-tags: [knowledge-upload, bookstore, llm-wiki, telegram, msteams, slack]
+tags: [knowledge-upload, bookstore, llm-wiki, ingest-triage, telegram, msteams]
 ---
 
 # Brainstorm: Chat-driven document upload into Bookstore / LLM Wiki
@@ -41,9 +41,12 @@ transient: it is deleted after ingestion; only the derived knowledge persists.
 - **Authorization against the navigator-auth identity**: allow-list of
   usernames and groups compared against the session of the user invoking the
   agent. Groups come from `auth.vw_users` (`UserInfoService.get_profile`).
-  - Telegram: the bots running this feature use forced login
-    (`force_authentication: true`), so `TelegramUserSession.nav_user_id` is
-    always present.
+  - Rule: allowed if the username **or** any of the user's groups is in the
+    allow-list (OR, never AND).
+  - Telegram: **all four** Odoo bots switch to forced login
+    (`force_authentication: true`) for security, regardless of which one is
+    used as the "curator"; so `TelegramUserSession.nav_user_id` is always
+    present.
   - Teams / Slack: no navigator-auth login exists; map the platform user to a
     navigator user **by email** (Teams member email/UPN, Slack `users.info`
     email) and look it up in `auth.vw_users`. Unknown → deny.
@@ -53,9 +56,15 @@ transient: it is deleted after ingestion; only the derived knowledge persists.
   must NOT go through `SessionFileStore` (Teams default path) nor the leaking
   Telegram temp path (`handle_document` never deletes).
 - **Ingest parity with the CLI**: Bookstore = `Bookstore.add_book` (same as
-  `bookstore add`); wiki = full `LLMWikiToolkit.ingest_source` (same pipeline
-  as `wikitoolkit ingest --auto`: LLM split into linked pages). Requires LLM +
-  PageIndexToolkit wiring for the wiki ingest path.
+  `bookstore add`); wiki = the FEAT-402 supervised path — the document first
+  goes through the charter-driven `IngestTriageRouter` (the triage filter),
+  then the full ingest pipeline (LLM split into linked pages). Requires LLM +
+  PageIndexToolkit + a charter for the target wiki.
+- **Size limits on all three platforms**: a configurable `max_size_mb` per
+  platform, checked before download whenever the platform exposes the size
+  (Telegram is additionally capped at 20 MB by the Bot API).
+- **Audit = logs only**: a structured log record per upload attempt; no DB
+  table.
 - **Long-running**: PDF ingest makes many LLM calls (minutes). Teams turns
   time out (~15 s). The command acknowledges immediately and runs ingestion as
   an in-process asyncio task, notifying the user on completion/failure
@@ -290,20 +299,31 @@ same `IngestTarget` interface without touching the chat side.
      then rewrite the card's `source_path` to a logical
      `upload://<platform>/<username>/<filename>` (the temp path would be a
      dangling reference) and invalidate the cached PageIndex tree.
-   - Wiki: `LLMWikiToolkit.ingest_source(wiki_name, tmp_path, source_type)`
-     on a dedicated ingest toolkit wired with PageIndex + LLM, same logical
-     source naming so a re-upload replaces the same source slice; checkpoint
-     WAL.
-7. `finally`: delete the temp dir; emit an audit record (who, platform,
-   target, filename, sha256, outcome, duration) to the logger.
+   - Wiki: FEAT-402 triage first — `IngestTriageRouter.triage(path, content)`
+     with the wiki's charter returns a `ManifestDocEntry` whose
+     `proposed_action` is `admit` / `archive` / `discard`. `admit` → run
+     `WikiIngestOrchestrator.ingest(..., triage=entry, charter_version=…)`
+     (decision recorded with `decision_source="auto"`, as `--auto` does);
+     `discard` → nothing is ingested and the user gets the triage briefing as
+     the reason; gray-zone / `archive` → see Open Questions. Dedicated ingest
+     toolkit wired with PageIndex + LLM, same logical source naming so a
+     re-upload replaces the same source slice; checkpoint WAL.
+7. `finally`: delete the temp dir; emit a structured audit log record (who,
+   platform, target, filename, sha256, size, triage action, outcome,
+   duration). Logs only — no DB table.
 8. Notify the user (proactive message on Teams/Slack, reply on Telegram).
 
 ### Edge Cases & Error Handling
 
 - Command without attachment → usage help. Attachment of wrong type or too
   large → rejected before download where the platform gives metadata.
-- Telegram Bot API download cap is 20 MB (`max_document_size_mb` default 20)
-  — larger books cannot come through Telegram; message says so.
+- Size: each platform has its own `max_size_mb`; oversize files are rejected
+  before download when the platform reports the size (Telegram
+  `document.file_size`, Teams attachment metadata when present, Slack
+  `files.info` `size`), and the download is aborted past the limit otherwise.
+  Telegram Bot API cannot download >20 MB regardless of config.
+- No charter for the target wiki → the wiki command is disabled at startup
+  with a logged reason (triage cannot run without one).
 - Email lookup ambiguity / missing email (guest users, Slack without
   `users:read.email`) → deny with "identity could not be verified".
 - No LLM configured: Bookstore PDF ingest raises `BookstoreError`; wiki ingest
@@ -347,7 +367,9 @@ same `IngestTarget` interface without touching the chat side.
 | `ai-parrot/.../knowledge/bookstore/library.py` | modifies | source_path override (overlaps FEAT-539, see Parallelism) |
 | `ai-parrot/.../knowledge/pageindex/toolkit.py` | modifies | tree cache invalidation |
 | `ai-parrot/.../auth/userinfo.py` | extends | lookup by email / username |
-| navigator-agent-server `env/integrations_bots.yaml` | config | `knowledge_upload` block, `force_authentication: true` on uploading bots |
+| navigator-agent-server `env/integrations_bots.yaml` | config | `knowledge_upload` block; `force_authentication: true` + login enabled on **all four** Odoo bots |
+| navigator-agent-server `agents/odoo_wiki/.parrot/charter.yaml` | new config | editorial charter for `odoo-sop` (does not exist yet); required by the triage filter |
+| `ai-parrot/.../knowledge/wiki/triage.py`, `ingest.py` | depends on | FEAT-402 triage router + orchestrator `triage=` path, reused as-is |
 | Slack app manifest | deployment | `users:read.email`, `files:read` scopes |
 
 No breaking changes: the feature is opt-in (`knowledge_upload.enabled: false`
@@ -395,6 +417,37 @@ class LLMWikiToolkit(AbstractToolkit):
                             source_type: Optional[str] = None) -> dict[str, Any]: ...  # :243
 # ingest requires pageindex_toolkit + LLM (ingest.py:797-820); re-ingest replaces via
 # store.replace_source_slice (ingest.py:433); sources manifest records path/sha1/mtime only (sources.py:231)
+
+# packages/ai-parrot/src/parrot/knowledge/wiki/ingest.py:198 (WikiIngestOrchestrator)
+async def ingest(self, source_path: str, wiki_config: WikiConfig, *,
+                 triage: Optional[ManifestDocEntry] = None,
+                 charter_version: Optional[str] = None,
+                 acquired: AcquiredDocument | None = None) -> IngestReport: ...
+# triage=None is the legacy path; FEAT-402 passes the triage entry
+
+# packages/ai-parrot/src/parrot/knowledge/wiki/triage.py:243
+class IngestTriageRouter:
+    def __init__(self, charter: Charter, adapter: PageIndexLLMAdapter,
+                 sources: SourceCollectionManager, novelty_scorer: NoveltyScorer, *,
+                 heavy_adapter: PageIndexLLMAdapter | None = None,
+                 max_size_bytes: int = DEFAULT_MAX_SIZE_BYTES,
+                 allowed_suffixes: frozenset[str] | None = None) -> None: ...   # :262
+    async def triage(self, path: Path, content: str, *,
+                     skip_duplicate_check: bool = False) -> ManifestDocEntry: ...  # :295
+# triage.py:67 class NoveltyScorer
+
+# packages/ai-parrot/src/parrot/knowledge/wiki/review.py:135
+class ManifestDocEntry(BaseModel):
+    proposed_action: Literal["admit", "archive", "discard"]   # :164
+    decision: ...          # None until review / auto
+    decision_source: ...   # "heuristic" | "model" | "human" | "auto"
+
+# packages/ai-parrot/src/parrot/knowledge/wiki/charter.py
+class Charter(BaseModel): ...                     # :311
+def load_charter(path: Path) -> Charter: ...       # :404
+# Thresholds.route(composite) -> Literal["admit", "gray", "reject"]   # :110
+# cli.py:4564 _resolve_charter_path: --charter, else <root>/.parrot/charter.yaml
+# cli.py:5087-5090 `wikitoolkit ingest --auto`: "Thresholds decide; flags a stratified audit sample."
 
 # packages/ai-parrot/src/parrot/knowledge/pageindex/toolkit.py
 self._trees: dict[str, dict[str, Any]] = {}          # :162 in-memory tree cache
@@ -462,6 +515,7 @@ from parrot.integrations.slack.files import download_slack_file, extract_files_f
 - ~~TTL/cleanup on `SessionFileStore`~~; ~~cleanup of Telegram document temp files~~
 - ~~Slack file download in the wrapper~~ (`download_slack_file` unused); ~~use of `SlackAgentConfig.commands` / `enable_attachments`~~
 - ~~Teams config for the Odoo agents~~
+- ~~An editorial charter for the `odoo-sop` wiki~~ (`agents/odoo_wiki/.parrot/` has none)
 - ~~Background ingestion jobs~~
 
 ---
@@ -492,8 +546,13 @@ from parrot.integrations.slack.files import download_slack_file, extract_files_f
 - [x] Platforms in v1 — *Owner: Jesus Lara*: Telegram, Teams and Slack
 - [x] Code location — *Owner: Jesus Lara*: generic in ai-parrot; navigator-agent-server only config
 - [x] Duplicates — *Owner: Jesus Lara*: skip same sha256, `--force` to re-ingest, new version replaces
-- [ ] Username/group rule: OR (either matches) as proposed, or AND? Per-target lists or one global list? — *Owner: Jesus Lara*
-- [ ] Forced login applies to the whole bot (`force_authentication: true`) — acceptable for all four Odoo bots, or only for a dedicated "curator" bot? — *Owner: Jesus Lara*
-- [ ] Wiki target: ingest into the shared `odoo-sop` wiki plane directly, and which LLM (`$WIKI_MODEL` vs bookstore's gemini flash-lite)? Should the agents' charter (FEAT-402 triage) apply or bypass it as `--auto`? — *Owner: Jesus Lara*
-- [ ] Audit trail: logger only, or persist an audit row (who/what/sha256) in a DB table? — *Owner: Jesus Lara*
-- [ ] Max size limits per platform beyond Telegram's 20 MB (Teams/Slack) — *Owner: Jesus Lara*
+- [x] Username/group rule — *Owner: Jesus Lara*: OR — a matching username or a matching group is enough
+- [x] Forced login scope — *Owner: Jesus Lara*: forced login on all four Odoo bots for security, even if only one acts as "curator"
+- [x] Wiki filtering — *Owner: Jesus Lara*: apply the FEAT-402 charter-driven triage filter before ingesting
+- [x] Audit trail — *Owner: Jesus Lara*: logs only
+- [x] Size limits — *Owner: Jesus Lara*: configurable size limit on all three platforms
+- [ ] Triage gray zone / `archive` in chat: ask the uploader to confirm (keep the temp file only until a short timeout, then delete) or treat as rejected? Proposed default: reject with the briefing, user may re-upload with `--force` if they are in an allowed "curator" group — *Owner: Jesus Lara*
+- [ ] Who writes the `odoo-sop` charter (`agents/odoo_wiki/.parrot/charter.yaml`) and is it part of this feature's deliverables (navigator-agent-server config) — *Owner: Jesus Lara*
+- [ ] Per-target allow-lists (bookstore vs wiki) or one global list per bot? Proposed: global with optional per-target override — *Owner: Jesus Lara*
+- [ ] Wiki/triage LLM: `$WIKI_MODEL` / `$WIKI_LIGHTWEIGHT_MODEL` or reuse the bookstore's `google:gemini-3.1-flash-lite`? — *Owner: Jesus Lara*
+- [ ] Default `max_size_mb` values for Teams and Slack (Telegram: 20) — *Owner: Jesus Lara*
