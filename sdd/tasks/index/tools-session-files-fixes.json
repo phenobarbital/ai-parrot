@@ -16,7 +16,7 @@
       "feature_id": "FEAT-643",
       "feature": "tools-session-files-fixes",
       "spec": "sdd/specs/tools-session-files-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,7 +24,7 @@
       "parallelism_notes": "Owns session_files.py first; file-disjoint from TASK-4146 (registry modules only).",
       "discovered_from": "issue:b2c54218dcef",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T09:25:00+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4144-session-files-backend-policy-and-path-validation.md"
     },
@@ -38,7 +38,9 @@
       "status": "pending",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-4144"],
+      "depends_on": [
+        "TASK-4144"
+      ],
       "parallel": true,
       "parallelism_notes": "Modifies the same two files as TASK-4144 (session_files.py, test_session_files_security.py) and its blueprint anchors are the ones TASK-4144 leaves behind.",
       "discovered_from": "issue:b2c54218dcef",
