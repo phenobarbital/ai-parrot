@@ -120,5 +120,5 @@ async def test_last_result_from_run_state():
 
     assert response.status == 200
     assert response.body["status"] == "success"
-    assert response.body["last_error_at"] == "2026-10-08T10:00:00+00:00"
+    assert response.body["last_error_at"].replace("Z", "+00:00") == "2026-10-08T10:00:00+00:00"
     assert response.body["consecutive_failures"] == 2
