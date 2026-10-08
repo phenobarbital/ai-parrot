@@ -116,7 +116,9 @@ class SchedulerConfig(BaseModel):
     """Headless scheduler bootstrap options for the daemon.
 
     Attributes:
-        enabled: Whether to boot `AgentSchedulerManager` at all.
+        enabled: Whether to boot `AgentSchedulerManager` at all. The daemon's
+            single agent is registered as a scheduler target of kind ``agent``
+            under the service name.
         dsn: Postgres DSN for schedule persistence. `None` means no
             Postgres pool is created (decorator-registered schedules only).
         redis: Whether to attach a Redis-backed jobstore.

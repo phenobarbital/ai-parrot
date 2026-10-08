@@ -1,4 +1,4 @@
-"""AgentDaemon — lifecycle, RPC handlers, SingleAgentManager, sd_notify.
+"""AgentDaemon — lifecycle, RPC handlers, sd_notify.
 
 Implements Module 5 of ``sdd/specs/agent-cli-daemon.spec.md``: the daemon
 itself. Binds one agent (``resolve_agent()``, TASK-2210) + an optional
@@ -27,6 +27,7 @@ from parrot.human import HumanChannel
 
 from .config import AgentServiceConfig, default_socket_path, resolve_agent
 from .protocol import (
+    INVALID_PARAMS,
     INTERNAL_ERROR,
     METHOD_AGENT_INFO,
     METHOD_AGENT_INVOKE,
@@ -55,7 +56,6 @@ from .server import Handler, JsonRpcUnixServer, RpcHandlerError, Session
 
 __all__ = [
     "AgentDaemon",
-    "SingleAgentManager",
     "sd_notify",
 ]
 
@@ -235,42 +235,6 @@ def _agent_response_to_rpc(response: Any) -> dict[str, Any]:
         output = str(output)
 
     return {"output": output, "metadata": metadata}
-
-
-class SingleAgentManager:
-    """Minimal `bot_manager` contract for `AgentSchedulerManager`.
-
-    Exposes exactly the surface `AgentSchedulerManager._execute_agent_job`
-    touches: `_bots` (dict), `registry.get_instance(name)`, and
-    `get_crew(name)` (always `None` -- agentd v1 is single-agent, no crew
-    support; multi-agent/crew orchestration is covered by the aiohttp
-    server, per spec §1 Non-Goals).
-    """
-
-    class _Registry:
-        """Minimal stand-in for `BotManager.registry`."""
-
-        def __init__(self, bots: dict[str, Any]) -> None:
-            self._bots = bots
-
-        async def get_instance(self, name: str) -> Any:
-            """Return the single registered agent by name.
-
-            Raises:
-                ValueError: If `name` does not match the registered agent.
-            """
-            agent = self._bots.get(name)
-            if agent is None:
-                raise ValueError(f"Agent {name!r} not found")
-            return agent
-
-    def __init__(self, agent: Any, name: str) -> None:
-        self._bots: dict[str, Any] = {name: agent}
-        self.registry = SingleAgentManager._Registry(self._bots)
-
-    def get_crew(self, name: str) -> None:
-        """Always return `None` -- no crew support in agentd v1."""
-        return
 
 
 class AgentDaemon:
@@ -521,8 +485,8 @@ class AgentDaemon:
             )
             return
 
-        single_agent_manager = SingleAgentManager(self.agent, self.config.name)
-        manager = AgentSchedulerManager(bot_manager=single_agent_manager)
+        manager = AgentSchedulerManager()
+        manager.register_target(self.config.name, self.agent, kind="agent")
         await manager.start_headless(
             dsn=self.config.scheduler.dsn, use_redis=self.config.scheduler.redis
         )
@@ -787,8 +751,14 @@ class AgentDaemon:
     async def _handle_schedules_add(self, session: Session, params: dict[str, Any]) -> Any:
         """Handle `schedules.add`."""
         manager = await self._require_scheduler()
-        schedule = await manager.add_schedule(**params)
-        return _serialize_for_rpc(schedule)
+        try:
+            schedule = await manager.add_schedule(**params)
+        except (TypeError, ValueError) as exc:
+            # TypeError: unknown/missing kwargs (e.g. the removed ``agent_name``).
+            # ValueError covers pydantic.ValidationError, SchedulerConfigError
+            # and unknown target kind/name.
+            raise RpcHandlerError(INVALID_PARAMS, str(exc)) from exc
+        return _serialize_for_rpc(schedule.model_dump(mode="json"))
 
     async def _handle_schedules_pause(self, session: Session, params: dict[str, Any]) -> Any:
         """Handle `schedules.pause`."""
