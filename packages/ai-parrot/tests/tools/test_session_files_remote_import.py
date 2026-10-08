@@ -67,7 +67,7 @@ class TestRemoteImport:
 
         monkeypatch.setattr(importlib.import_module("parrot.tools.filemanager"), "FileManagerToolkit", MockFileManagerToolkit)
 
-        result = await toolkit.import_remote_file("temp", "reports/brief.docx")
+        result = await toolkit.import_remote_file("s3", "reports/brief.docx")
         record, resolved = await toolkit.store.resolve("s1", result["file_id"])
 
         assert resolved.read_bytes() == b"remote document"
@@ -93,6 +93,6 @@ class TestRemoteImport:
         monkeypatch.setattr(importlib.import_module("parrot.tools.filemanager"), "FileManagerToolkit", FailingFileManagerToolkit)
 
         with pytest.raises(RuntimeError, match="download failed"):
-            await toolkit.import_remote_file("temp", "reports/brief.docx")
+            await toolkit.import_remote_file("s3", "reports/brief.docx")
 
         assert temp_dirs and not temp_dirs[0].exists()

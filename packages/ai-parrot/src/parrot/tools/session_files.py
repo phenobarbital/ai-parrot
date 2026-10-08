@@ -12,7 +12,17 @@ from parrot.interfaces.file.session import SessionFileError, SessionFileStore
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.utils.helpers import current_context
 
-SUPPORTED_BACKENDS = frozenset({"fs", "temp", "s3", "gcs", "sharepoint", "onedrive", "gdrive"})
+#: Backends whose namespace is remote — always selectable by the model.
+REMOTE_BACKENDS = frozenset({"s3", "gcs", "sharepoint", "onedrive", "gdrive"})
+
+#: Local-filesystem backends — selectable ONLY when the operator configured a root.
+#: ``"temp"`` is deliberately absent: ``import_remote_file`` builds a fresh
+#: ``FileManagerToolkit`` per call, so a ``TempFileManager``'s private directory is
+#: always empty and the backend can never serve a real import (FEAT-643 §3 M1).
+LOCAL_BACKENDS = frozenset({"fs"})
+
+#: Every backend this toolkit can ever address.
+SUPPORTED_BACKENDS = REMOTE_BACKENDS | LOCAL_BACKENDS
 
 
 class NoBoundSession(SessionFileError):
@@ -21,19 +31,73 @@ class NoBoundSession(SessionFileError):
     code = "no_session"
 
 
+def _validate_remote_path(remote_path: str) -> str:
+    """Return *remote_path* normalized, or raise for an unsafe storage-side path.
+
+    Applies to EVERY backend: a ``..`` segment is meaningless in an S3 key or a
+    Graph drive-relative path, and a containment bypass in a local one.
+
+    Args:
+        remote_path: Storage-side path supplied by the model.
+
+    Returns:
+        The path with ``\\`` normalized to ``/``, a leading ``./`` dropped and
+        empty segments collapsed.
+
+    Raises:
+        ValueError: If the path is empty, absolute, drive-qualified, UNC,
+            contains a NUL byte, or contains a ``..`` segment.
+    """
+    if not remote_path or not remote_path.strip():
+        raise ValueError("remote_path is required and must not be blank")
+    if "\x00" in remote_path:
+        raise ValueError("remote_path must not contain a NUL byte")
+
+    # Normalize separators BEFORE any check, so a Windows-style traversal cannot
+    # slip past a POSIX-only test.
+    normalized = remote_path.replace("\\", "/").strip()
+    if normalized.startswith("/"):
+        raise ValueError(f"remote_path must be relative, not absolute: {remote_path!r}")
+    if len(normalized) >= 2 and normalized[1] == ":" and normalized[0].isalpha():
+        raise ValueError(f"remote_path must not be drive-qualified: {remote_path!r}")
+
+    segments = [segment for segment in normalized.split("/") if segment not in ("", ".")]
+    if any(segment == ".." for segment in segments):
+        raise ValueError(f"remote_path must not contain a '..' segment: {remote_path!r}")
+    if not segments:
+        raise ValueError(f"remote_path resolves to nothing: {remote_path!r}")
+    return "/".join(segments)
+
+
 class SessionFileToolkit(AbstractToolkit):
     """Lists and stages the files of the CURRENT session, addressed by handle."""
 
     tool_prefix: str = "sf"  # -> sf_list_session_files, sf_store_generated_file
 
-    def __init__(self, store: Optional[SessionFileStore] = None) -> None:
+    def __init__(
+        self,
+        store: Optional[SessionFileStore] = None,
+        local_import_root: Optional[Path | str] = None,
+    ) -> None:
         """Initialize the toolkit.
 
         Args:
             store: Session file store; defaults to the ``OUTPUT_DIR``-rooted store.
+            local_import_root: Directory the ``"fs"`` backend is confined to. When
+                ``None`` (the default) ``"fs"`` is refused outright, so no agent can
+                read the server's working directory.
+
+        Raises:
+            ValueError: If *local_import_root* is set but is not an existing directory.
         """
         super().__init__()
         self.store = store or SessionFileStore()
+        self.local_import_root: Optional[Path] = None
+        if local_import_root is not None:
+            resolved_root = Path(local_import_root).resolve()
+            if not resolved_root.is_dir():
+                raise ValueError(f"local_import_root must be an existing directory: {local_import_root!r}")
+            self.local_import_root = resolved_root
 
     def _require_session(self) -> str:
         """Return the bound session id, or raise NoBoundSession.
@@ -90,24 +154,35 @@ class SessionFileToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Import a file from remote storage into this session, returning its handle.
 
-        backend is one of "s3", "gcs", "sharepoint", "onedrive", "gdrive", "fs", "temp".
+        backend is one of "s3", "gcs", "sharepoint", "onedrive", "gdrive".
+        remote_path is a relative path inside that backend — absolute paths and
+        ".." segments are refused.
         Returns {"file_id", "filename", "size"}. Use the file_id to attach the file.
         """
         session_id = self._require_session()
-        if backend not in SUPPORTED_BACKENDS:
-            raise ValueError(f"Unsupported backend {backend!r}; expected one of {sorted(SUPPORTED_BACKENDS)}")
+        allowed = REMOTE_BACKENDS if self.local_import_root is None else SUPPORTED_BACKENDS
+        if backend not in allowed:
+            raise ValueError(f"Unsupported backend {backend!r}; expected one of {sorted(allowed)}")
+        safe_path = _validate_remote_path(remote_path)
 
         from parrot.tools.filemanager import FileManagerToolkit
 
         temp_dir = Path(await asyncio.to_thread(tempfile.mkdtemp))
-        destination = temp_dir / Path(remote_path).name
+        destination = temp_dir / Path(safe_path).name
         try:
-            manager = FileManagerToolkit(manager_type=backend)
-            await manager.download_file(remote_path, str(destination))
+            if backend in LOCAL_BACKENDS:
+                manager = FileManagerToolkit(
+                    manager_type=backend,
+                    base_path=str(self.local_import_root),
+                    sandboxed=True,
+                )
+            else:
+                manager = FileManagerToolkit(manager_type=backend)
+            await manager.download_file(safe_path, str(destination))
             data = await asyncio.to_thread(destination.read_bytes)
             record = await self.store.put_bytes(
                 session_id,
-                filename or Path(remote_path).name,
+                filename or Path(safe_path).name,
                 data,
                 origin="remote",
             )
