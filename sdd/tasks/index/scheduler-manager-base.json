@@ -174,7 +174,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -188,8 +188,9 @@
       "parallelism_notes": "Modifies base.py created by TASK-4154. Builds RunStateStore instances: PostgresRunState/MemoryRunState (TASK-4148) and RedisRunState (TASK-4149, runstate.py) — and reuses TASK-4149's conftest Redis fixtures. Uses normalize_backend (TASK-4150, sanitize.py), manager_prefix/redis_db/build_fire_coordinator(prefix=) (TASK-4151, coordination.py) and jobs.register_manager typed to SchedulerManager (TASK-4152).",
       "assigned_to": null,
       "started_at": "2026-10-08T18:01:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4155-scheduler-base-lifecycle.md"
+      "completed_at": "2026-10-08T20:54:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4155-scheduler-base-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4156",
