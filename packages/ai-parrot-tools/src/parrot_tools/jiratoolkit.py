@@ -395,6 +395,7 @@ MAX_ATTACHMENT_DETAIL_CHARS = 500
 
 AttachmentErrorCode = Literal[
     "unknown_handle",
+    "internal_error",
     "no_session",
     "outside_sandbox",
     "missing_file",
@@ -2306,21 +2307,20 @@ class JiraToolkit(AbstractToolkit):
             self._session_file_store = store
         return store
 
-    async def _attach_session_files(self, issue: str, file_ids: Sequence[str]) -> List[AttachmentResult]:
-        """Resolve, pre-flight and upload each handle. Best-effort, never raises.
+    async def _preflight_session_files(
+        self,
+        file_ids: Sequence[str],
+    ) -> List[AttachmentResult]:
+        """Resolve and validate each handle WITHOUT uploading.
 
-        Per handle, in order: resolve via SessionFileStore (unknown_handle /
-        outside_sandbox / missing_file), then size checks (empty_file, too_large
-        against await self._max_attachment_bytes()), then upload off the event loop.
-        Jira failures map to forbidden / rejected / transport_error with a bounded,
-        sanitized detail. Returns exactly one AttachmentResult per input, order preserved.
+        Shared preflight for both ``_attach_session_files`` (which continues
+        with the upload) and ``jira_add_comment`` (which bails early on any
+        failure so a comment is never published promising a file the upload
+        would reject).
 
-        Args:
-            issue: Issue key to attach to.
-            file_ids: Session file handles.
-
-        Returns:
-            One AttachmentResult per input handle, in input order.
+        Returns one ``AttachmentResult`` per handle, order-preserved. Successful
+        entries have ``ok=True``; callers that need the resolved ``Path`` should
+        call ``store.resolve()`` again — it is a cheap cache hit.
         """
         ctx = current_context()
         session_id = getattr(ctx, "session_id", None) if ctx else None
@@ -2339,7 +2339,7 @@ class JiraToolkit(AbstractToolkit):
         results: List[AttachmentResult] = []
         for fid in file_ids:
             try:
-                record, path = await store.resolve(session_id, fid)
+                record, _ = await store.resolve(session_id, fid)
             except SessionFileError as exc:
                 results.append(
                     AttachmentResult(
@@ -2356,7 +2356,7 @@ class JiraToolkit(AbstractToolkit):
                     AttachmentResult(
                         file_id=fid,
                         ok=False,
-                        error_code="unknown_handle",
+                        error_code="internal_error",
                         detail=_bounded_detail(exc),
                     )
                 )
@@ -2382,6 +2382,58 @@ class JiraToolkit(AbstractToolkit):
                         size=record.size,
                         error_code="too_large",
                         detail=f"File is {record.size} bytes; the attachment limit is {limit} bytes.",
+                    )
+                )
+                continue
+            results.append(
+                AttachmentResult(
+                    file_id=fid,
+                    ok=True,
+                    filename=record.filename,
+                    size=record.size,
+                )
+            )
+        return results
+
+    async def _attach_session_files(self, issue: str, file_ids: Sequence[str]) -> List[AttachmentResult]:
+        """Resolve, pre-flight and upload each handle. Best-effort, never raises.
+
+        Pre-flights via ``_preflight_session_files``, then uploads the valid
+        handles. Jira failures map to forbidden / rejected / transport_error
+        with a bounded, sanitized detail. Returns exactly one AttachmentResult
+        per input, order preserved.
+
+        Args:
+            issue: Issue key to attach to.
+            file_ids: Session file handles.
+
+        Returns:
+            One AttachmentResult per input handle, in input order.
+        """
+        preflight = await self._preflight_session_files(file_ids)
+        if all(not r.ok for r in preflight):
+            return preflight
+
+        ctx = current_context()
+        session_id = getattr(ctx, "session_id", None) if ctx else None
+        store = self._session_store()
+        results: List[AttachmentResult] = []
+        for pf in preflight:
+            if not pf.ok:
+                results.append(pf)
+                continue
+            fid = pf.file_id
+            try:
+                record, path = await store.resolve(session_id, fid)
+            except Exception as exc:  # noqa: BLE001 - best-effort contract
+                results.append(
+                    AttachmentResult(
+                        file_id=fid,
+                        ok=False,
+                        filename=pf.filename,
+                        size=pf.size,
+                        error_code="internal_error",
+                        detail=_bounded_detail(exc),
                     )
                 )
                 continue
@@ -2829,89 +2881,17 @@ class JiraToolkit(AbstractToolkit):
                 template_params={'author': 'bot'}
             )
         """
-        # Pre-flight the handles BEFORE anything is rendered or posted: a bad handle
-        # must never leave a published comment promising a file (AC11).
         preflight: List[AttachmentResult] = []
         if file_ids:
-            ctx = current_context()
-            session_id = getattr(ctx, "session_id", None) if ctx else None
-            if not session_id:
-                preflight = [
-                    AttachmentResult(
-                        file_id=file_id,
-                        ok=False,
-                        error_code="no_session",
-                        detail="No session is bound to this request.",
-                    )
-                    for file_id in file_ids
-                ]
-            else:
-                store = self._session_store()
-                limit = await self._max_attachment_bytes()
-                for file_id in file_ids:
-                    try:
-                        record, _ = await store.resolve(session_id, file_id)
-                    except SessionFileError as exc:
-                        preflight.append(
-                            AttachmentResult(
-                                file_id=file_id,
-                                ok=False,
-                                error_code=exc.code,
-                                detail=_bounded_detail(exc),
-                            )
-                        )
-                        continue
-                    except Exception as exc:  # noqa: BLE001 - best-effort contract
-                        self.logger.warning("Session file resolve failed: %s", type(exc).__name__)
-                        preflight.append(
-                            AttachmentResult(
-                                file_id=file_id,
-                                ok=False,
-                                error_code="unknown_handle",
-                                detail=_bounded_detail(exc),
-                            )
-                        )
-                        continue
-                    if record.size == 0:
-                        preflight.append(
-                            AttachmentResult(
-                                file_id=file_id,
-                                ok=False,
-                                filename=record.filename,
-                                size=0,
-                                error_code="empty_file",
-                                detail="The file is empty; Jira rejects empty attachments.",
-                            )
-                        )
-                        continue
-                    if record.size > limit:
-                        preflight.append(
-                            AttachmentResult(
-                                file_id=file_id,
-                                ok=False,
-                                filename=record.filename,
-                                size=record.size,
-                                error_code="too_large",
-                                detail=f"File is {record.size} bytes; the attachment limit is {limit} bytes.",
-                            )
-                        )
-                        continue
-                    preflight.append(
-                        AttachmentResult(
-                            file_id=file_id,
-                            ok=True,
-                            filename=record.filename,
-                            size=record.size,
-                        )
-                    )
-            if any(not attachment.ok for attachment in preflight):
+            preflight = await self._preflight_session_files(file_ids)
+            if any(not r.ok for r in preflight):
                 return JiraCommentReport(
                     issue=issue,
                     comment={},
                     comment_ok=False,
                     attachments=preflight,
                     attached=0,
-                    failed=sum(not attachment.ok for attachment in preflight),
+                    failed=sum(not r.ok for r in preflight),
                 ).model_dump()
 
         project = self._project_of(issue)

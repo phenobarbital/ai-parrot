@@ -1819,6 +1819,7 @@ class AgentTalk(BaseView):
                     agent.name,
                 )
 
+        upload_errors = None
         try:
             async with agent.session(request=self.request, app=app, user_id=user_id, session_id=user_session) as bot:
                 if method_name:
@@ -1832,6 +1833,12 @@ class AgentTalk(BaseView):
                 upload_result = await self._persist_attachments(bot, attachments)
                 if not query:
                     return await self._handle_attachments(agent, upload_result)
+                upload_errors = upload_result.get("errors") if isinstance(upload_result, dict) else None
+                if upload_errors:
+                    self.logger.warning(
+                        "Upload errors will be surfaced in response metadata: %s",
+                        upload_errors,
+                    )
                 if use_stream:
                     return await self._handle_stream_response(
                         bot=bot,
@@ -2047,6 +2054,13 @@ class AgentTalk(BaseView):
         # or fails the text reply.
         if response is not None:
             await self._speak_text_to_avatar(session_id, getattr(response, "response", None) or "")
+
+        if upload_errors and response is not None:
+            meta = getattr(response, "metadata", None)
+            if isinstance(meta, dict):
+                meta["upload_errors"] = upload_errors
+            elif meta is None and hasattr(response, "metadata"):
+                response.metadata = {"upload_errors": upload_errors}
 
         # Return formatted response
         return self._format_response(
