@@ -1,5 +1,6 @@
 """Listener behaviour on the aiohttp path (FEAT-631 TASK-4063)."""
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -8,6 +9,8 @@ from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_EXECUTED
 
 from parrot.scheduler import jobs
 from parrot.scheduler.manager import AgentSchedulerManager
+from parrot.scheduler.models import FireContext, JobDefinition
+from parrot.scheduler.runstate import MemoryRunState
 
 
 @pytest.fixture
@@ -33,7 +36,18 @@ def test_job_status_tolerates_missing_job(manager):
 def test_job_success_ignores_skipped(manager):
     """An intentionally skipped execution does not schedule success processing."""
     manager.scheduler.get_job = MagicMock(return_value=SimpleNamespace(name="n", kwargs={"schedule_id": "s1"}))
-    manager._job_context["s1"] = {"agent_name": "agent"}
+    manager._job_context["s1"] = {
+        "definition": JobDefinition(
+            schedule_id="s1",
+            backend="db",
+            target_kind="agent",
+            target_name="agent",
+            method_name="chat",
+            schedule_type="interval",
+            schedule_config={"seconds": 60},
+        ),
+        "fire": FireContext.for_fire("s1", datetime.now(UTC)),
+    }
     event = SimpleNamespace(
         job_id="job-1",
         code=EVENT_JOB_EXECUTED,
@@ -48,47 +62,32 @@ def test_job_success_ignores_skipped(manager):
     assert "s1" not in manager._job_context
 
 
-class _FakePoolAcquireContext:
-    """Minimal async acquire context compatible with AsyncDB pools."""
-
-    def __init__(self, connection):
-        self.connection = connection
-
-    async def __aenter__(self):
-        return self.connection
-
-    async def __aexit__(self, *_args):
-        return False
-
-
-class _FakePool:
-    """Minimal pool accepted by ``_update_schedule_run``."""
-
-    def __init__(self):
-        self.connection = MagicMock()
-
-    async def acquire(self):
-        return _FakePoolAcquireContext(self.connection)
-
-
 async def test_success_stamps_next_run(manager):
-    """A completed execution persists the local scheduler's next run time."""
+    """A completed execution stamps the dedicated run-state store."""
     next_run = object()
-    schedule = SimpleNamespace(
-        last_run=None,
-        run_count=0,
-        next_run=None,
-        metadata={},
-        update=AsyncMock(),
+    definition = JobDefinition(
+        schedule_id="schedule-1",
+        backend="db",
+        target_kind="agent",
+        target_name="agent",
+        method_name="chat",
+        schedule_type="interval",
+        schedule_config={"seconds": 60},
     )
-    manager._pool = _FakePool()
+    store = MemoryRunState(backend="db")
+    manager._run_state_for = lambda _backend: store  # type: ignore[method-assign]
     manager.scheduler.get_job = MagicMock(return_value=SimpleNamespace(next_run_time=next_run))
 
-    with patch("parrot.scheduler.manager.AgentSchedule.get", new=AsyncMock(return_value=schedule)):
-        await manager._update_schedule_run("schedule-1", success=True)
+    await manager._process_job_success(
+        definition,
+        FireContext.for_fire("schedule-1", datetime.now(UTC)),
+        "done",
+        None,
+    )
 
-    assert schedule.next_run is next_run
-    schedule.update.assert_awaited_once()
+    state = await store.read("schedule-1")
+    assert state is not None
+    assert state.next_run is next_run
 
 
 def test_scheduler_status_does_not_print(manager, capsys):

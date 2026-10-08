@@ -1,7 +1,6 @@
 """Fire-time re-check and trampoline wiring tests (FEAT-631 TASK-4064)."""
 
 import pickle
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -9,35 +8,39 @@ from asyncdb.exceptions import NoDataFound
 from parrot.scheduler import jobs
 from parrot.scheduler.coordination import NullFireCoordinator
 from parrot.scheduler.manager import AgentSchedulerManager, ScheduleType, schedule, schedule_fingerprint
+from parrot.scheduler.models import FireContext, JobDefinition
+from parrot.scheduler.runstate import MemoryRunState
 from parrot.scheduler.sanitize import SchedulerConfigError
 
 pytestmark = pytest.mark.requires_apscheduler
 
 
 def _schedule(**overrides):
-    """Build a schedule-shaped row without a database dependency."""
+    """Build a database-backed job definition without a database dependency."""
     values = {
         "schedule_id": "schedule-1",
-        "agent_name": "agent",
+        "backend": "db",
+        "target_kind": "agent",
+        "target_name": "agent",
         "prompt": "old",
         "method_name": None,
         "metadata": {},
-        "is_crew": False,
         "send_result": {},
         "callbacks": [],
-        "scheduler_type": "default",
         "schedule_type": "interval",
         "schedule_config": {"seconds": 60},
-        "enabled": True,
+        "misfire_grace_time": 300,
     }
     values.update(overrides)
-    return SimpleNamespace(**values)
+    return JobDefinition(**values)
 
 
 @pytest.fixture
 async def manager():
     """Return a started in-memory manager with an explicit stable registry name."""
     value = AgentSchedulerManager(registered_name="recheck_mgr")
+    value._memory_state = MemoryRunState(backend="db")
+    value._run_state_for = lambda _backend: value._memory_state  # type: ignore[method-assign]
     await value.start_headless(coordination="none")
     yield value
     await value.stop_headless(wait=False)
@@ -56,7 +59,7 @@ def test_trampoline_job_is_picklable(manager):
         "interval",
         seconds=60,
         id=row.schedule_id,
-        kwargs=manager._job_kwargs_from_schedule(row),
+        kwargs=manager._db_job_kwargs(row),
     )
 
     assert job.func_ref == "parrot.scheduler.jobs:run_db_schedule"
@@ -71,11 +74,11 @@ async def test_fire_skips_deleted_row(manager, monkeypatch):
         "interval",
         seconds=60,
         id=row.schedule_id,
-        kwargs=manager._job_kwargs_from_schedule(row),
+        kwargs=manager._db_job_kwargs(row),
     )
     monkeypatch.setattr(manager, "get_schedule", AsyncMock(side_effect=NoDataFound()))
     execute = AsyncMock()
-    monkeypatch.setattr(manager, "_execute_agent_job", execute)
+    monkeypatch.setattr(manager, "_execute_job", execute)
 
     assert await manager._run_db_schedule(row.schedule_id, "fingerprint") is jobs.SKIPPED
     assert manager.scheduler.get_job(row.schedule_id) is None
@@ -83,16 +86,17 @@ async def test_fire_skips_deleted_row(manager, monkeypatch):
 
 
 async def test_fire_skips_disabled_row(manager, monkeypatch):
-    """A disabled row removes its local job without executing it."""
-    row = _schedule(enabled=False)
+    """Disabled run state removes its local job without executing it."""
+    row = _schedule()
     manager.scheduler.add_job(
         jobs.run_db_schedule,
         "interval",
         seconds=60,
         id=row.schedule_id,
-        kwargs=manager._job_kwargs_from_schedule(row),
+        kwargs=manager._db_job_kwargs(row),
     )
     monkeypatch.setattr(manager, "get_schedule", AsyncMock(return_value=row))
+    await manager._memory_state.set_enabled(row.schedule_id, False)
 
     assert await manager._run_db_schedule(row.schedule_id, "fingerprint") is jobs.SKIPPED
     assert manager.scheduler.get_job(row.schedule_id) is None
@@ -106,7 +110,7 @@ async def test_fire_reschedules_on_fingerprint_change(manager, monkeypatch):
         "interval",
         seconds=60,
         id=row.schedule_id,
-        kwargs=manager._job_kwargs_from_schedule(row),
+        kwargs=manager._db_job_kwargs(row),
     )
     reschedule = MagicMock()
     monkeypatch.setattr(manager.scheduler, "reschedule_job", reschedule)
@@ -123,10 +127,14 @@ async def test_fire_uses_row_fields_and_local_callback(manager, monkeypatch):
     manager._local_callbacks[row.schedule_id] = callback
     monkeypatch.setattr(manager, "get_schedule", AsyncMock(return_value=row))
     execute = AsyncMock(return_value="done")
-    monkeypatch.setattr(manager, "_execute_agent_job", execute)
+    monkeypatch.setattr(manager, "_execute_job", execute)
 
     assert await manager._run_db_schedule(row.schedule_id, schedule_fingerprint(row)) == "done"
-    execute.assert_awaited_once_with(**manager._execution_fields(row), success_callback=callback)
+    execute.assert_awaited_once()
+    definition, fire = execute.await_args.args
+    assert definition == row
+    assert isinstance(fire, FireContext)
+    assert execute.await_args.kwargs == {"success_callback": callback}
 
 
 async def test_auto_task_routes_through_trampoline(manager):
@@ -152,7 +160,7 @@ async def test_no_bound_method_jobs(manager):
         "interval",
         seconds=60,
         id=row.schedule_id,
-        kwargs=manager._job_kwargs_from_schedule(row),
+        kwargs=manager._db_job_kwargs(row),
     )
 
     class Bot:
