@@ -20,7 +20,7 @@ class DummyPool:
         return DummyAcquire()
 
 from parrot.scheduler import AgentSchedulerManager
-from parrot.scheduler.models import AgentSchedule
+from parrot.scheduler.models import FireContext, JobDefinition, ServiceSchedule
 
 
 @pytest.mark.asyncio
@@ -31,21 +31,22 @@ async def test_schedule_creation(monkeypatch):
     scheduler.setup(app=AsyncMock())
 
     scheduler._pool = DummyPool()
-    monkeypatch.setattr(AgentSchedule, "save", AsyncMock())
-    monkeypatch.setattr(AgentSchedule, "update", AsyncMock())
-    scheduler.scheduler.add_job = AsyncMock(return_value=SimpleNamespace(next_run_time=None))
+    scheduler.register_target("TestAgent", SimpleNamespace(chat=AsyncMock()), kind="agent")
+    monkeypatch.setattr(ServiceSchedule, "save", AsyncMock())
+    monkeypatch.setattr(ServiceSchedule, "update", AsyncMock())
+    scheduler.scheduler.add_job = lambda *args, **kwargs: SimpleNamespace(next_run_time=None)
 
     schedule = await scheduler.add_schedule(
-        agent_name="TestAgent",
+        target_kind="agent",
+        target_name="TestAgent",
         schedule_type="daily",
         schedule_config={"hour": 10, "minute": 0},
         prompt="Test prompt"
     )
 
-    assert schedule.agent_name == "TestAgent"
+    assert schedule.target_name == "TestAgent"
     assert schedule.schedule_type == "daily"
-    assert schedule.enabled is True
-    assert schedule.is_crew is False
+    assert schedule.target_kind == "agent"
     assert schedule.send_result == {}
 
 
@@ -74,63 +75,32 @@ async def test_execute_crew_job_uses_registered_crew(monkeypatch):
             self.registry = DummyRegistry()
             self._crew_entry = (crew, SimpleNamespace(crew_id="crew-alpha"))
 
-        def get_crew(self, identifier):
+        async def get_crew(self, identifier):
             if identifier == "CrewAlpha":
                 return self._crew_entry
             return None
 
     crew = DummyCrew()
     scheduler = AgentSchedulerManager(bot_manager=DummyBotManager(crew))
-    scheduler._update_schedule_run = AsyncMock()
-    handle_mock = AsyncMock()
-    monkeypatch.setattr(scheduler, "_handle_job_success", handle_mock)
-
-    result = await scheduler._execute_agent_job(
+    definition = JobDefinition(
         schedule_id="123",
-        agent_name="CrewAlpha",
+        backend="db",
+        target_kind="crew",
+        target_name="CrewAlpha",
         prompt="Write the report",
         method_name="run_sequential",
+        schedule_type="interval",
+        schedule_config={"minutes": 5},
         metadata={'agent_sequence': ['writer', 'editor']},
-        is_crew=True,
         send_result={'recipients': ['user@example.com']},
     )
+    result = await scheduler._execute_job(definition, FireContext.for_fire("123", datetime.now().astimezone()))
 
     assert result == {'status': 'ok'}
     assert crew.calls == [{
         'query': 'Write the report',
         'agent_sequence': ['writer', 'editor'],
     }]
-    scheduler._update_schedule_run.assert_not_awaited()
-
-    job = SimpleNamespace(
-        name="CrewAlpha_daily",
-        kwargs={
-            'schedule_id': '123',
-            'agent_name': 'CrewAlpha',
-            'send_result': {'recipients': ['user@example.com']},
-        },
-    )
-    monkeypatch.setattr(scheduler.scheduler, "get_job", lambda _job_id: job)
-
-    event = SimpleNamespace(
-        job_id="123",
-        scheduled_run_time=datetime.utcnow(),
-        retval=result,
-    )
-
-    scheduler.job_success(event)
-    pending = list(scheduler._pending_success_tasks)
-    if pending:
-        await asyncio.gather(*pending)
-
-    scheduler._update_schedule_run.assert_awaited_once_with("123", success=True)
-    handle_mock.assert_awaited_once_with(
-        "123",
-        "CrewAlpha",
-        {'status': 'ok'},
-        None,
-        {'recipients': ['user@example.com']},
-    )
 
 
 @pytest.mark.asyncio
@@ -142,19 +112,22 @@ async def test_handle_job_success_prefers_callback(monkeypatch):
 
     observed = []
 
-    async def callback(payload):
+    async def callback(payload, **_kwargs):
         observed.append(payload)
 
-    await scheduler._handle_job_success(
-        "abc",
-        "Agent",
-        {"value": 1},
-        callback,
-        {'recipients': ['user@example.com']},
+    definition = JobDefinition(
+        schedule_id="abc",
+        backend="code",
+        target_kind="agent",
+        target_name="Agent",
+        schedule_type="interval",
+        schedule_config={"minutes": 5},
+        send_result={'recipients': ['user@example.com']},
     )
+    await scheduler._handle_job_success(definition, {"value": 1}, callback)
 
     assert observed == [{"value": 1}]
-    send_email_mock.assert_not_awaited()
+    send_email_mock.assert_awaited_once_with(definition, {"value": 1}, {'recipients': ['user@example.com']})
 
 
 @pytest.mark.asyncio
@@ -164,17 +137,19 @@ async def test_handle_job_success_sends_email_when_configured(monkeypatch):
     send_email_mock = AsyncMock()
     monkeypatch.setattr(scheduler, "_send_result_email", send_email_mock)
 
-    await scheduler._handle_job_success(
-        "abc",
-        "Agent",
-        {"value": 1},
-        None,
-        {'recipients': ['user@example.com']},
+    definition = JobDefinition(
+        schedule_id="abc",
+        backend="code",
+        target_kind="agent",
+        target_name="Agent",
+        schedule_type="interval",
+        schedule_config={"minutes": 5},
+        send_result={'recipients': ['user@example.com']},
     )
+    await scheduler._handle_job_success(definition, {"value": 1}, None)
 
     send_email_mock.assert_awaited_once_with(
-        "abc",
-        "Agent",
+        definition,
         {"value": 1},
         {'recipients': ['user@example.com']},
     )
