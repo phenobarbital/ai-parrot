@@ -575,7 +575,9 @@ async def test_non_ink_wall_result_unchanged(
 
     assert comparison.products_found == []
     assert assembled["products_found"] == []
-    assert comparison.compliance_results[0].expected_products == [f"Acme ink 1-{slot}" for slot in range(1, 9)]
+    assert comparison.compliance_results[0].expected_products == [
+        f"ACME-1-{slot}" if (1, slot) in UNDESCRIBED else f"Acme ink 1-{slot}" for slot in range(1, 9)
+    ]
 
 
 @pytest.mark.asyncio
@@ -592,6 +594,8 @@ async def test_reporting_meta_override_reaches_pipeline(
     result = await PlanogramCompliance(planogram_config=config, llm=fake_vision_client).run(synthetic_ink_wall)
 
     assert result["products_found"] == []
-    assert result["compliance_results"][0].expected_products == [f"Acme ink 1-{slot}" for slot in range(1, 9)]
+    assert result["compliance_results"][0].expected_products == [
+        f"ACME-1-{slot}" if (1, slot) in UNDESCRIBED else f"Acme ink 1-{slot}" for slot in range(1, 9)
+    ]
     assert result["overall_compliance_score"] == pytest.approx(1.0)
     assert result["overall_compliant"] is True
