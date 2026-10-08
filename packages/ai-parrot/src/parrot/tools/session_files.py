@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
+import shutil
+import tempfile
 from typing import Any, Dict, Optional
 
 from parrot.interfaces.file.session import SessionFileError, SessionFileStore
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.utils.helpers import current_context
+
+SUPPORTED_BACKENDS = frozenset({"fs", "temp", "s3", "gcs", "sharepoint", "onedrive", "gdrive"})
 
 
 class NoBoundSession(SessionFileError):
@@ -78,3 +84,33 @@ class SessionFileToolkit(AbstractToolkit):
         session_id = self._require_session()
         record = await self.store.put_bytes(session_id, filename, content.encode("utf-8"), origin="generated")
         return {"file_id": record.file_id, "filename": record.filename, "size": record.size}
+
+    async def import_remote_file(
+        self, backend: str, remote_path: str, filename: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Import a file from remote storage into this session, returning its handle.
+
+        backend is one of "s3", "gcs", "sharepoint", "onedrive", "gdrive", "fs", "temp".
+        Returns {"file_id", "filename", "size"}. Use the file_id to attach the file.
+        """
+        session_id = self._require_session()
+        if backend not in SUPPORTED_BACKENDS:
+            raise ValueError(f"Unsupported backend {backend!r}; expected one of {sorted(SUPPORTED_BACKENDS)}")
+
+        from parrot.tools.filemanager import FileManagerToolkit
+
+        temp_dir = Path(await asyncio.to_thread(tempfile.mkdtemp))
+        destination = temp_dir / Path(remote_path).name
+        try:
+            manager = FileManagerToolkit(manager_type=backend)
+            await manager.download_file(remote_path, str(destination))
+            data = await asyncio.to_thread(destination.read_bytes)
+            record = await self.store.put_bytes(
+                session_id,
+                filename or Path(remote_path).name,
+                data,
+                origin="remote",
+            )
+            return {"file_id": record.file_id, "filename": record.filename, "size": record.size}
+        finally:
+            await asyncio.to_thread(shutil.rmtree, temp_dir, ignore_errors=True)
