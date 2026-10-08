@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, List
+from typing import Any, Optional
 from datetime import datetime
 import uuid
 from asyncdb.models import Model, Field
@@ -9,7 +9,6 @@ from datetime import timezone
 from typing import Awaitable, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
-
 
 JOB_DEFINITION_VERSION: int = 1
 
@@ -50,6 +49,7 @@ class AgentSchedule(Model):
     CREATE INDEX idx_agents_scheduler_enabled ON navigator.agents_scheduler(enabled);
     CREATE INDEX idx_agents_scheduler_agent ON navigator.agents_scheduler(agent_name);
     """
+
     schedule_id: uuid.UUID = Field(primary_key=True, default_factory=uuid.uuid4)
     agent_id: str = Field(required=True)
     agent_name: str = Field(required=True)
@@ -68,11 +68,11 @@ class AgentSchedule(Model):
     metadata: dict = Field(required=False, default_factory=dict)
     is_crew: bool = Field(required=False, default=False)
     send_result: dict = Field(required=False, default_factory=dict)
-    scheduler_type: str = Field(required=False, default='default')
+    scheduler_type: str = Field(required=False, default="default")
     callbacks: list = Field(required=False, default_factory=list)
 
     class Meta:
-        driver = 'pg'
+        driver = "pg"
         name = "agents_scheduler"
         schema = "navigator"
         strict = True
