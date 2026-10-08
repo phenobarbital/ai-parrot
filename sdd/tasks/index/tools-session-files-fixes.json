@@ -58,7 +58,7 @@
       "feature_id": "FEAT-643",
       "feature": "tools-session-files-fixes",
       "spec": "sdd/specs/tools-session-files-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -66,7 +66,7 @@
       "parallelism_notes": "Touches only parrot/tools/__init__.py, parrot_tools/__init__.py and its own new test module — no file overlap with TASK-4144/4145.",
       "discovered_from": "issue:b2c54218dcef",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T09:50:00+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4146-session-files-toolkit-registry.md"
     }
