@@ -1,0 +1,109 @@
+# Fireflies → Obsidian LLM-Wiki Knowledge Base — agentd config
+#
+# Runs the FirefliesWikiKBAgent (FEAT-481) as a long-lived CLI daemon.
+# On a schedule it ingests Fireflies.ai meetings into a contract-structured
+# Obsidian vault: fetch → semantic compile (tiered LLMs) → validate, with
+# raw-bundle capture, a rolling active window, and Module-17 failure
+# quarantine + auto-retry. See docs/guides/cli-agent-daemon.md for the full
+# agentd guide.
+#
+# ── Configuration model (IMPORTANT — differs from fireflies_daemon.yaml) ──
+# This agent does NOT take its settings as YAML `kwargs`. All of its config
+# is resolved at import time from `WIKI_KB_*` variables via navconfig
+# (i.e. your `env/.env` or the process environment). The only kwarg here is
+# the agent's display `name`; the vault path, model tiers, cron, and limits
+# all come from the environment (see the list below).
+#
+# ── Prerequisites ─────────────────────────────────────────────────────────
+#   Install the daemon + integrations extra:
+#     uv pip install "ai-parrot-integrations[agentd]"
+#
+# ── Environment (set in env/.env before starting) ─────────────────────────
+#   WIKI_KB_VAULT_PATH          — absolute path to your Obsidian vault (REQUIRED; no default)
+#   WIKI_KB_LLM_STRONG          — strong tier "provider:model" (default: google:gemini-2.5-pro)
+#   WIKI_KB_LLM_CHEAP           — cheap tier "provider:model" (default: google:gemini-2.5-flash)
+#   WIKI_KB_INGEST_CRON         — 5-field cron for scheduled ingest (default: "0 * * * *" = hourly)
+#   WIKI_KB_INGEST_LIMIT        — per-run cap on the LISTING examined (steady-state throughput; default: unset)
+#   WIKI_KB_MAX_NEW_PER_RUN     — per-run cap on NEW meetings fetched+compiled (backfill chunk size;
+#                                 bounds Fireflies calls ~2×N and LLM cost). Default: unset = no cap.
+#                                 Fireflies MCP shares the account's API rate limits — see the backfill note below.
+#   WIKI_KB_MAX_CATCHUP_DAYS    — bound for a manual wide-window ingest(since=…/lookback_days=…) (default: 90)
+#                                 raise this (e.g. 280) for a one-time 2026 backfill (Jan 1 → today)
+#   WIKI_KB_INGEST_PROFILE      — cost/fidelity profile: "full" (default) or "backfill".
+#                                 "backfill" cuts LLM cost for the one-time historical import
+#                                 (summary-only classify, primary-project reconcile only, no
+#                                 contradiction detection, no per-run overview). Also per-call:
+#                                 ingest(profile="backfill"). Keep steady-state on "full".
+#   WIKI_KB_MAX_REPROCESS_ATTEMPTS — Module-17 quarantine auto-retry cap (default: 3)
+#   WIKI_KB_ACTIVE_WINDOW_DAYS  — rolling active window for archive/indexes (default: 14)
+#   WIKI_KB_PARTICIPANTS        — comma-separated participant-email allowlist (default: unset = all)
+#   FIREFLIES_API_KEY           — Fireflies.ai token (the agent reaches Fireflies via its MCP tools)
+#   GOOGLE_API_KEY / provider key — credentials for whichever LLM providers the two tiers use
+#
+# ── Serve ─────────────────────────────────────────────────────────────────
+#   parrot serve examples/agents/fireflies_wiki_daemon.yaml
+#
+# ── Interact (from another terminal) ──────────────────────────────────────
+#   parrot status fireflies-wiki-kb                     # daemon health + scheduler jobs
+#   parrot attach fireflies-wiki-kb                     # interactive Rich console
+#   parrot ask fireflies-wiki-kb "what did we decide about X?"   # one-shot query intent
+#
+#   Inside `parrot attach`, trigger intents directly with /invoke (JSON args):
+#     /invoke ingest {}                                 # steady-state: process new meetings
+#     /invoke ingest {"since": "2026-01-01", "max_new": 100, "profile": "backfill"}   # backfill CHUNK (cheap)
+#     /invoke ingest {"since": "2026-01-01", "profile": "backfill"}   # one-shot backfill (Business/Ent.)
+#     /invoke health {}                                 # fast operational check
+#     /invoke lint {"fix": false}                       # integrity lint (fix:true auto-repairs)
+#     /invoke archive {}                                # roll the active window
+#     /invoke build_graph_report {"target": "<scope>"}
+#     /schedules list                                   # confirm the hourly ingest job registered
+#
+# ── Backfill & Fireflies rate limits ──────────────────────────────────────
+#   Fireflies MCP shares the account's API limits (Free 50/day · Pro 500/day ·
+#   Business/Ent. 60/min). Each NEW meeting costs ~2 calls (transcript+summary);
+#   a full 2026 backfill (~1000 meetings) is ~2000 calls.
+#   • Run the backfill OFF this schedule (the hourly job is for steady-state new
+#     meetings only). Set WIKI_KB_MAX_CATCHUP_DAYS=280 first for the 2026 window.
+#   Use profile:"backfill" for the historical import to cut LLM cost (the LLM
+#   spend dwarfs the Fireflies cost on ~1000 meetings).
+#   • Business/Enterprise: one-shot `/invoke ingest {"since":"2026-01-01","profile":"backfill"}`
+#     (~30-60 min of Fireflies + hours of LLM); resumable — re-run if it stops.
+#   • To bound cost/watch it build: chunk with max_new — repeat
+#     `/invoke ingest {"since":"2026-01-01","max_new":100,"profile":"backfill"}` until 0 processed.
+#     Each chunk walks further back (oldest-first) and bounds calls to ~2×max_new.
+#
+# ── Expose to Claude Code over MCP ────────────────────────────────────────
+#   claude mcp add fireflies-wiki-kb -- parrot mcp-serve fireflies-wiki-kb
+#
+# ── Run as a service ──────────────────────────────────────────────────────
+#   parrot install-service examples/agents/fireflies_wiki_daemon.yaml   # writes a systemd --user unit
+#
+# ── Stop ──────────────────────────────────────────────────────────────────
+#   Ctrl+C (foreground) · systemctl --user stop parrot-fireflies-wiki-kb · kill <pid>
+
+name: fireflies-wiki-kb
+
+agent:
+  target: "parrot.flows.wiki_ingest.agent:FirefliesWikiKBAgent"
+  kwargs:
+    name: "FirefliesWikiKB"
+    # No other kwargs: every setting comes from WIKI_KB_* env (see header).
+
+# Allowlist the intents callable via `parrot attach` /invoke and the MCP
+# invoke_method tool. Remove a method to block external access to it.
+exposed_methods:
+  - ingest
+  - query
+  - health
+  - lint
+  - archive
+  - build_graph_report
+
+scheduler:
+  enabled: true          # activates the @schedule(CRON) on ingest() — runs on WIKI_KB_INGEST_CRON (hourly)
+  # The decorator schedule is in-memory and always re-registers on start, so
+  # no DSN is needed for it. Set a dsn only if you also add *dynamic*
+  # (/schedules add) jobs that must survive daemon restarts:
+  # dsn: "postgresql://user:pass@localhost:5432/parrot"
+
+log_level: INFO
