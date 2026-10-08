@@ -484,6 +484,7 @@ class PlanogramCompliance(AbstractPipeline):
             "detections": [p.model_dump() for p in perceptions],
             "identifications": [i.model_dump() for i in identifications],
             "position_results": comparison.position_results,
+            "products_found": comparison.products_found,
             "shelf_scores": comparison.shelf_scores,
             "coverage": comparison.coverage,
             "detected_products": comparison.detected_products,
