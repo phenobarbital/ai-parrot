@@ -197,8 +197,11 @@ class TestRecipeHandlerRun:
     async def test_run_returns_artifact_metadata(self, fake_runner):
         app = {"recipe_runner": fake_runner}
         artifact = SimpleNamespace(
-            artifact_id="a1", filename="f.html", mime_type="text/html",
-            content=b"<html></html>", path=None,
+            artifact_id="a1",
+            filename="f.html",
+            mime_type="text/html",
+            content=b"<html></html>",
+            path=None,
         )
         fake_runner.run.return_value = artifact
         h = _handler(
@@ -292,9 +295,7 @@ class TestSchedulerCallback:
     async def test_scheduler_callback_uses_explicit_tenant_and_roles(self, fake_runner):
         configure_recipe_runner(fake_runner)
         recipe = _sample_recipe(
-            schedule=ScheduleSpec(
-                principal="svc-budget-bot", tenant_id="acme-corp", roles=["finance.read"]
-            )
+            schedule=ScheduleSpec(principal="svc-budget-bot", tenant_id="acme-corp", roles=["finance.read"])
         )
         fake_runner.store.get.return_value = recipe
         artifact = SimpleNamespace(artifact_id="a1", mime_type="text/html", filename="f.html")

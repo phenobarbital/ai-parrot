@@ -112,9 +112,7 @@ def register_recipe_routes(
     """
     if recipe_runner is None:
         if dataset_manager is None:
-            raise ValueError(
-                "register_recipe_routes requires either recipe_runner or dataset_manager"
-            )
+            raise ValueError("register_recipe_routes requires either recipe_runner or dataset_manager")
         recipe_runner = RecipeRunner(recipe_store, dataset_manager, artifact_store=artifact_store)
 
     app["recipe_store"] = recipe_store
@@ -189,13 +187,9 @@ class RecipeHandler(BaseView):
         try:
             if name:
                 recipe = await self.store.get(name, owner=owner)
-                return self.json_response(
-                    {"status": "success", "recipe": recipe.model_dump(mode="json")}
-                )
+                return self.json_response({"status": "success", "recipe": recipe.model_dump(mode="json")})
             recipes = await self.store.list(owner=owner)
-            return self.json_response(
-                {"status": "success", "count": len(recipes), "recipes": recipes}
-            )
+            return self.json_response({"status": "success", "count": len(recipes), "recipes": recipes})
         except RecipeNotFoundError as exc:
             return self._error_response(str(exc), status=404)
         except RuntimeError as exc:
@@ -241,9 +235,7 @@ class RecipeHandler(BaseView):
             await self.store.save(recipe)
         except RuntimeError as exc:
             return self._error_response(str(exc), status=500)
-        return self.json_response(
-            {"status": "success", "recipe": recipe.model_dump(mode="json")}
-        )
+        return self.json_response({"status": "success", "recipe": recipe.model_dump(mode="json")})
 
     async def delete(self) -> web.Response:
         """Delete a recipe.
@@ -297,9 +289,7 @@ class RecipeHandler(BaseView):
         try:
             artifact = await runner.run(name, params=params, pctx=pctx, recipe_owner=owner)
         except RecipeRunException as exc:
-            return self.json_response(
-                {"status": "error", **exc.error.model_dump()}, status=422
-            )
+            return self.json_response({"status": "error", **exc.error.model_dump()}, status=422)
         except RecipeNotFoundError as exc:
             return self._error_response(str(exc), status=404)
         except Exception as exc:  # noqa: BLE001
@@ -345,9 +335,7 @@ class RunInfographicRecipeCallback(BaseSchedulerCallback):
         "schedule.principal (no LLM in the loop); never falls back to a server identity."
     )
 
-    async def run(
-        self, result: Any, *, schedule_id: str, target_name: str, **kwargs
-    ) -> Dict[str, Any]:
+    async def run(self, result: Any, *, schedule_id: str, target_name: str, **kwargs) -> Dict[str, Any]:
         recipe_name = self.config.get("recipe_name")
         if not recipe_name:
             raise ValueError("run_infographic_recipe requires config.recipe_name")
