@@ -114,7 +114,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -122,8 +122,9 @@
       "parallelism_notes": "Root task: only jobs.py and test_jobs.py. Its reference to base.py (TASK-4154) is a TYPE_CHECKING-only string annotation that is never imported at runtime, so it is not a dependency. TASK-4156/4157 add jobs pointing at run_redis_job/run_redis_job_now and implement _run_redis_job.",
       "assigned_to": null,
       "started_at": "2026-10-08T18:01:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4152-scheduler-redis-trampolines.md"
+      "completed_at": "2026-10-08T20:39:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4152-scheduler-redis-trampolines.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4153",
