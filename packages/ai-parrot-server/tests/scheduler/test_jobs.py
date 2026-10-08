@@ -80,9 +80,7 @@ async def test_run_redis_job_delegates_with_definition(stub_manager):
     result = await jobs.run_redis_job("test_jobs_mgr", "sid", 3, definition)
 
     assert result == "redis"
-    stub_manager._run_redis_job.assert_awaited_once_with(
-        "sid", definition_version=3, definition=definition
-    )
+    stub_manager._run_redis_job.assert_awaited_once_with("sid", definition_version=3, definition=definition)
 
 
 async def test_run_redis_job_now_releases_guard_on_error(stub_manager):
