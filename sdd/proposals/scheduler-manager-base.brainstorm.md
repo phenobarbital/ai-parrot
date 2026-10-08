@@ -9,10 +9,10 @@ base_branch: dev
 #   (sdd-tooling, dev-loop, admin-ui, docs, ci). Unknown values warn, not fail.
 projects: [ai-parrot-server, ai-parrot-integrations, ai-parrot]
 # tags: free-form kebab-case keywords for organizing specs (e.g. memory, mcp).
-tags: [scheduler, apscheduler, target-registry, service-scheduler, hard-cut, run-state]
+tags: [scheduler, apscheduler, target-registry, service-scheduler, hard-cut, run-state, redis-jobstore]
 ---
 
-# Brainstorm: SchedulerManager base — target-agnostic scheduler with AgentSchedulerManager as a subclass
+# Brainstorm: SchedulerManager base — target-agnostic scheduler (Postgres, Redis-jobstore and code-declared jobs) with AgentSchedulerManager as a subclass
 
 **Date**: 2026-10-08
 **Author**: Jesus Lara (brainstorm drafted by Claude)
@@ -71,6 +71,14 @@ object (always truthy) and `crew_entry[0]` / `_, crew_def = crew_entry` raise `T
 agentd's `SingleAgentManager.get_crew()` (sync, returns `None`) and test doubles work. The new
 `CrewResolver` fixes this by construction.
 
+**Redis persistence is redundant today, and there is no Redis-only path.** `scheduler_type='redis'`
+only chooses which APScheduler jobstore holds the job (`_safe_jobstore`, `manager.py:1857`); the
+schedule row still lives in Postgres and `load_schedules_from_db()` re-adds every enabled row with
+`replace_existing=True` on each start (`manager.py:1378`). A job cannot exist without a Postgres row,
+so an API consumer that only has Redis (or does not want a DB row per job) has nothing to call. The
+global `misfire_grace_time=300` (`manager.py:398`) also means that a restart longer than five
+minutes silently drops the missed fire of every job, whatever its jobstore.
+
 **Why now:** the table `navigator.agents_scheduler` is barely used in deployments, so a hard-cut
 (new table, new columns, no row migration) is cheap today and gets more expensive with every
 schedule written. FEAT-631 and FEAT-635 both landed in the last week and are closed, so the
@@ -107,6 +115,23 @@ Decisions taken during discovery (Rounds 0–2):
 - **`@schedule` scanning generalised**: `SchedulerManager.register_object_schedules(obj, name)`
   scans any object; `AgentSchedulerManager.register_bot_schedules(bot)` wraps it and adds the
   `chatbot_id` / report env-var resolution.
+- **Three job backends, one axis** (Round 3): `backend = 'db' | 'redis' | 'code'`.
+  `db` → row in `service_scheduler` + `MemoryJobStore`, reloaded from Postgres at start.
+  `redis` → **no Postgres row**; the full definition (target_kind, target_name, target_id,
+  method_name, prompt, metadata, callbacks, send_result, trigger spec, misfire policy) is pickled
+  into the `RedisJobStore` job and APScheduler reloads it by itself at start.
+  `code` → `@schedule`-decorated methods, process-local, re-registered from code at start.
+  The `scheduler_type` column and the `scheduler_type` API field disappear (hard-cut).
+- **Missed fires** (Round 3): `backend='redis'` jobs default to `misfire_grace_time=None` (run any
+  missed fire) with `coalesce=True` (one catch-up run however long the outage); the API accepts a
+  per-job `misfire_grace_time` in seconds to bound it. `db` jobs keep the current 300 s default.
+- **Run state for Redis jobs** (Round 3): a Redis hash `parrot:scheduler:runstate:{job_id}` written
+  by the base; `get_last_result` / `list_jobs` / auto-disable work identically for `db` and `redis`
+  through a `RunStateStore` abstraction (`pg` columns | `redis` hash | `memory` for `code` jobs).
+- **One API surface** (Round 3): the same `add_schedule(...)` and the same
+  `POST /api/v1/scheduler/jobs` take a `backend` field; `list_jobs`, `pause`, `update`, `delete`,
+  `run_now` and `last-result` behave the same for every backend. `schedule_id` is the APScheduler
+  job id (a generated UUID) for `redis` jobs.
 - Existing invariants that must survive: picklable `jobs.py` trampolines keyed by
   `registered_name` (FEAT-631), fire-time row re-check + fingerprint reschedule, Redis fire
   coordination, delivery-outcome persistence (FEAT-635), `run_schedule_now` semantics
@@ -140,6 +165,13 @@ run-now, headless lifecycle, delivery callbacks, run-state stamping, the missing
 - agentd stops needing `SingleAgentManager`: `AgentSchedulerManager()` +
   `register_target(config.name, agent, kind="agent")`.
 
+Persistence is a second, independent axis inside the base: a `backend` per job selects where its
+definition lives (`db` row, `redis` jobstore, or `code`) and which `RunStateStore` receives its
+run state (Postgres columns, Redis hash, or process memory). The three fire trampolines in
+`jobs.py` become `run_db_schedule` (re-reads the row), `run_redis_job` (definition carried in the
+pickled kwargs) and `run_auto_schedule` (code-registered), all dispatching through
+`registered_name`.
+
 The subclass is therefore ~300 lines: two resolvers, `register_bot_schedules`, the report
 decorators' env-var resolution, and `on_startup`'s `app["bot_manager"]` auto-wiring.
 
@@ -153,6 +185,10 @@ decorators' env-var resolution, and `on_startup`'s `app["bot_manager"]` auto-wir
   call-site kwargs, not imports.
 - The `jobs.py` trampolines already dispatch through `registered_name`, not through the class, so
   they work for both classes unchanged (only type hints move to `SchedulerManager`).
+- `backend='redis'` reuses the FEAT-631 groundwork (picklable trampolines, `_ensure_redis_jobstore`,
+  fire coordination) — the jobstore is already attached on the aiohttp path
+  (`start_headless(use_redis=True)`, `manager.py:2055`); what is new is a job whose definition is
+  *only* there.
 
 ❌ **Cons:**
 - Highest blast radius of the three: a 2.2k-line file is split, a schema is replaced, five
@@ -253,6 +289,8 @@ missing targets increment `metadata["_run"]["consecutive_failures"]` and disable
 - Run state under a reserved JSON key is a convention, not a schema — the next contributor can
   break it silently, which is exactly how the current bug appeared.
 - Contradicts the discovery decisions (hard-cut, dedicated columns).
+- Cannot host Redis-only jobs: `_run_db_schedule` re-reads a Postgres row on every fire, so a job
+  with no row is skipped as "missing" (`manager.py:1489`).
 
 📊 **Effort:** Low
 
@@ -280,6 +318,8 @@ missing targets increment `metadata["_run"]["consecutive_failures"]` and disable
   and buys import stability for `jira_specialist.py`, `reminder.py`, `saved_execution_service.py`,
   agentd and two docs pages. A also keeps the "auto-wire from `app['bot_manager']`" behaviour where
   it is today.
+- Only A and B can carry the `backend` axis; C is structurally unable to run a job without a
+  Postgres row.
 - Option C is cheap but preserves the two root causes (private `BotManager` access and run state as
   JSON convention). Given the table is barely populated, paying the migration cost now is the whole
   point of the hard-cut.
@@ -297,9 +337,9 @@ and the server package is already at a major version where breaking changes are 
 
 - **Python API (base)** — `SchedulerManager(**kwargs)`; `register_target(name, obj, *, kind="service")`;
   `register_resolver(kind, resolver)`; `register_object_schedules(obj, name)`;
-  `add_schedule(target_kind, target_name, schedule_type, schedule_config, *, target_id=None, prompt=None,
-  method_name=None, created_by=None, created_email=None, metadata=None, send_result=None,
-  success_callback=None, scheduler_type="default", callbacks=None)`; the existing
+  `add_schedule(target_kind, target_name, schedule_type, schedule_config, *, backend="db", target_id=None,
+  prompt=None, method_name=None, created_by=None, created_email=None, metadata=None, send_result=None,
+  success_callback=None, callbacks=None, misfire_grace_time=None)`; the existing
   `remove_schedule`, `pause_schedule`, `update_schedule`, `delete_schedule`, `run_schedule_now`,
   `get_last_result`, `list_jobs`, `list_schedules`, `get_schedule`, `restart_scheduler`,
   `start_headless`, `stop_headless`, `setup`, `on_startup`, `on_shutdown` unchanged in semantics.
@@ -310,8 +350,12 @@ and the server package is already at a major version where breaking changes are 
   `parrot.scheduler`.
 - **HTTP** (`handlers/scheduler.py::SchedulerJobsHandler.post` and the legacy `SchedulerHandler`
   view in `manager.py`) — request body uses `target_kind` (required, one of `agent|crew|service`),
-  `target_name` (required) and optional `target_id`; `agent_name`, `agent_id`, `is_crew` are
-  rejected with 400 "unknown field". Serialized jobs (`_serialize_job`) expose `target_kind`,
+  `target_name` (required), optional `target_id`, `backend` (`db` default | `redis`) and
+  `misfire_grace_time` (seconds, `null` = always catch up; only meaningful for `redis`);
+  `agent_name`, `agent_id`, `is_crew` and `scheduler_type` are rejected with 400 "unknown field".
+  `backend='redis'` when no Redis jobstore is attached → 503 (strict, like today's
+  `_safe_jobstore(strict=True)` for an unknown alias — never a silent downgrade to memory).
+  Serialized jobs carry `backend`. Serialized jobs (`_serialize_job`) expose `target_kind`,
   `target_name`, `target_id`, `last_status`, `last_error`, `last_error_at`, `last_result_at`,
   `consecutive_failures`. `SchedulerLastResultHandler` reads the new columns instead of `metadata`.
 - **agentd RPC** — `schedules.add` passes `**params` straight to `add_schedule`, so clients send
@@ -323,12 +367,19 @@ and the server package is already at a major version where breaking changes are 
   configured notification channel. A later `PATCH enabled=true` re-arms it and resets the counter.
 - **Targets** — any method may opt into idempotency by declaring `fire_id: str` and/or
   `scheduled_at: datetime` (or `**kwargs`); nothing else about the call changes.
+- **Redis-backed jobs survive restarts without Postgres.** An operator can `POST` a job with
+  `backend: "redis"`, restart every worker, and the job is still listed, still fires, and — if the
+  outage covered one or more due times — fires **once** on startup (`coalesce`) unless the job's
+  `misfire_grace_time` says the missed fire is too old. `GET …/last-result` returns its run state
+  from Redis after the restart. `pause` / `update` / `delete` apply to the job in the jobstore.
 
 ### Internal Behavior
 
 1. **Module layout** (ai-parrot-server, `parrot/scheduler/`):
    `base.py` (`SchedulerManager`, `TargetRegistry`, `TargetResolver` protocol, `RegistryResolver`,
-   `FireContext`, `TargetMissingError`), `models.py` (`ServiceSchedule`, replaces `AgentSchedule`),
+   `FireContext`, `TargetMissingError`, `JobDefinition`), `runstate.py` (`RunStateStore` protocol,
+   `PostgresRunState`, `RedisRunState`, `MemoryRunState`), `models.py` (`ServiceSchedule`, replaces
+   `AgentSchedule`),
    `manager.py` (`AgentSchedulerManager`, `AgentResolver`, `CrewResolver`, decorators,
    `ScheduleType`, `SchedulerHandler`, `_resolve_report_schedule` and the env-var parsers),
    `jobs.py` / `coordination.py` / `sanitize.py` / `functions/` as today with renamed fields.
@@ -344,9 +395,33 @@ and the server package is already at a major version where breaking changes are 
    `last_error_at TIMESTAMPTZ`, `last_result TEXT`, `last_result_at TIMESTAMPTZ`,
    `consecutive_failures INTEGER DEFAULT 0`, `last_delivery_status VARCHAR`,
    `last_delivery_at TIMESTAMPTZ`, `last_callbacks JSONB DEFAULT '[]'`, `metadata JSONB DEFAULT '{}'`
-   (call kwargs only), `send_result JSONB DEFAULT '{}'`, `scheduler_type VARCHAR DEFAULT 'default'`,
-   `callbacks JSONB DEFAULT '[]'`. Indexes on `enabled` and `(target_kind, target_name)`.
-   The model's defaults use `datetime.now(timezone.utc)`.
+   (call kwargs only), `send_result JSONB DEFAULT '{}'`, `callbacks JSONB DEFAULT '[]'`.
+   **No `scheduler_type` column** — a row's backend is `db` by definition. Indexes on `enabled` and
+   `(target_kind, target_name)`. The model's defaults use `datetime.now(timezone.utc)`.
+2b. **`JobDefinition`** — one picklable, Pydantic-v2 dataclass shared by every backend:
+   `schedule_id`, `backend`, `target_kind`, `target_name`, `target_id`, `prompt`, `method_name`,
+   `schedule_type`, `schedule_config`, `metadata`, `send_result`, `callbacks`, `misfire_grace_time`,
+   `created_by`, `created_email`, `created_at`. `ServiceSchedule` ↔ `JobDefinition` conversion is
+   explicit; `schedule_fingerprint` is computed on the `JobDefinition`.
+2c. **Backends**:
+   - `db` — row written, APScheduler job `jobs.run_db_schedule(manager_name, schedule_id, fingerprint)`
+     in the `default` (memory) jobstore; reloaded from Postgres at start, as today.
+   - `redis` — no row; APScheduler job `jobs.run_redis_job(manager_name, schedule_id)` in the
+     `redis` jobstore with the full `JobDefinition` (as a plain dict) in `kwargs`, plus per-job
+     `misfire_grace_time` (default `None`) and `coalesce=True`. Nothing reloads it: the
+     `RedisJobStore` already holds it, and APScheduler re-reads the store on `scheduler.start()`
+     because `_ensure_redis_jobstore()` runs **before** start (today's `start_headless` order,
+     `manager.py:1919`). `update_schedule` on a `redis` job rewrites `kwargs` and reschedules via
+     `modify_job`/`reschedule_job`; `pause_schedule` uses APScheduler `pause_job` and flips an
+     `enabled` flag in the run-state hash; `delete_schedule` removes the job and the hash.
+   - `code` — `register_object_schedules`, memory jobstore, `MemoryRunState`; unchanged semantics
+     (`persist=False` today).
+2d. **`RunStateStore`** — `stamp_success(job_id, result, fire)`, `stamp_error(job_id, error, status, fire)`,
+   `stamp_delivery(job_id, outcomes)`, `read(job_id)`, `reset_failures(job_id)`, `disable(job_id)`,
+   `clear(job_id)`. `PostgresRunState` writes the columns above; `RedisRunState` writes a hash
+   `parrot:scheduler:runstate:{job_id}` (fields mirror the columns, ISO-8601 UTC strings, no TTL —
+   deleted with the job); `MemoryRunState` keeps a dict. `get_last_result` and `list_jobs` read
+   through the store selected by the job's backend.
 3. **`add_schedule`** — sanitise (`normalize_schedule_type`, `sanitize_schedule_config`,
    `_safe_jobstore`), validate `target_kind` against the installed resolvers, ask the resolver to
    `resolve(target_name)` (missing target → `ValueError`, as today), derive `target_id` from the
@@ -354,7 +429,8 @@ and the server package is already at a major version where breaking changes are 
    have no `method_name`, persist, add the `jobs.run_db_schedule` trampoline with the
    fingerprint. The fingerprint (`schedule_fingerprint`, `manager.py:327`) covers the new fields.
 4. **Fire path** — `_run_db_schedule` unchanged (re-read row, skip disabled/missing, fingerprint
-   reschedule) then `_execute_job(schedule, fire)` where `FireContext(fire_id, scheduled_at,
+   reschedule); `_run_redis_job` builds the `JobDefinition` from the job kwargs, consults the
+   run-state hash for `enabled`, then both call `_execute_job(definition, fire)` where `FireContext(fire_id, scheduled_at,
    run_now)` is built from the APScheduler run time (the same value `FireCoordinator.claim` keys on,
    so claim and `fire_id` agree). The resolver resolves the target and builds the call; the base
    injects `fire_id`/`scheduled_at` via `inspect.signature` only when accepted; the call runs;
@@ -366,6 +442,13 @@ and the server package is already at a major version where breaking changes are 
    Target missing: `last_status='target_missing'`, same error fields, counter += 1, and when the
    counter reaches the threshold: `enabled=false`, job removed, notification sent.
    `lock_unavailable` keeps its current semantics (`_on_coordination_unavailable`).
+5b. **Startup order** (both `on_startup` and `start_headless`): attach jobstores (`redis` when
+   requested) → build the fire coordinator → `scheduler.start()` (APScheduler loads `redis` jobs
+   here; missed fires are evaluated against each job's own `misfire_grace_time`) →
+   `load_schedules_from_db()` (only `db` rows, `replace_existing=True`) → `register_*_schedules`
+   (`code`). The three sets never overlap because their job ids come from different namespaces
+   (`<uuid>` for db, `<uuid>` stored under the `redis` alias, `auto_<name>_<method>` for code) and
+   `replace_existing` only targets the alias it is given.
 6. **Auto schedules** — `register_object_schedules(obj, name)` scans `inspect.getmembers` for
    `_schedule_config` markers and registers `jobs.run_auto_schedule` trampolines exactly as
    `register_bot_schedules` does now, storing `target_name` in `_auto_tasks`.
@@ -374,6 +457,10 @@ and the server package is already at a major version where breaking changes are 
 7. **Callbacks** — `BaseSchedulerCallback.run(result, *, schedule_id, target_name, **kwargs)`;
    `RunInfographicRecipeCallback.run` (`handlers/infographic_recipes.py:349`) and
    `SendEmailReportCallback` updated accordingly.
+7b. **Sanitisation** — `normalize_jobstore_alias` / `_safe_jobstore` / `_registered_jobstores`
+   become `normalize_backend(value, *, redis_available: bool, strict: bool)`; `sanitize.py` keeps
+   `normalize_schedule_type` and `sanitize_schedule_config`; a new `clean_misfire_grace_time`
+   accepts `None` or a non-negative int.
 8. **Callers migrated** — `handlers/scheduler.py` (POST body), `SchedulerHandler` in `manager.py`,
    `handlers/crew/saved_execution_service.py:285` (`target_kind="crew", target_name=crew_name`),
    agentd `service.py` (`SingleAgentManager` removed; `register_target(..., kind="agent")`),
@@ -403,6 +490,31 @@ and the server package is already at a major version where breaking changes are 
   name; resolvers are per-manager.
 - **Multi-worker** — the auto-disable `UPDATE` is idempotent, so two workers racing on the same
   miss cannot double-disable; the notification may be sent twice in that race (accepted, documented).
+- **Redis unavailable at startup** — the `redis` jobstore is attached lazily by `RedisJobStore`
+  (first `get_due_jobs`), so today's behaviour is a per-tick APScheduler error. Keep that for `db`
+  jobs (their definitions are safe in Postgres) but log one structured WARNING per minute, not
+  per tick; `add_schedule(backend='redis')` fails closed (503) until the store answers.
+- **Long outage, recurring `redis` job** — `coalesce=True` + `misfire_grace_time=None` ⇒ exactly one
+  catch-up fire at startup, then the normal cadence resumes. A job with `misfire_grace_time=600`
+  and an outage of 2 h ⇒ no catch-up, next regular fire only. Both are stamped in the run-state
+  hash (`last_status='success'` with `scheduled_at` = the original due time, so targets that opt
+  into `scheduled_at` can tell a catch-up from a live fire).
+- **Multi-worker + `redis` jobs** — every worker attaches the same `RedisJobStore` and sees the same
+  due fire; FEAT-631 fire claims (`SCHEDULER_COORDINATION=redis`) guarantee one execution. The
+  APScheduler `next_run_time` update in the store is performed by whichever worker processed the
+  fire; concurrent updates are last-writer-wins on the same value, which is harmless. Without
+  `SCHEDULER_COORDINATION=redis`, `redis` jobs on a multi-worker deployment fire N times — refuse
+  `backend='redis'` at `add_schedule` time when the coordinator is `NullFireCoordinator` and more
+  than one worker is configured? (open question).
+- **Same Redis, several apps** — today's keys `apscheduler.jobs` / `apscheduler.run_times` on
+  `db=6` are global. Two managers with the same `registered_name` in two apps sharing Redis would
+  load each other's `redis` jobs; namespace the keys by `registered_name` (open question).
+- **`update_schedule` on a `redis` job from another worker** — the job's kwargs in the store are
+  rewritten; other workers pick up the new definition at their next store read (APScheduler reloads
+  job state from the store on each `get_due_jobs`), so the fingerprint re-check is not needed for
+  this backend.
+- **`run_schedule_now` on a `redis` job** — same `DateTrigger(now)` one-shot and the same run-now
+  guard as `db`; result stamped into the hash.
 - **Old table present** — nothing reads `navigator.agents_scheduler`; `load_schedules_from_db` reads
   only `service_scheduler`. Operators are told in the migration note to drop the old table.
 
@@ -415,7 +527,10 @@ and the server package is already at a major version where breaking changes are 
   `TargetResolver`s, `FireContext` injection, dedicated run-state columns and the missing-target
   auto-disable policy.
 - `service-scheduler-schema`: `navigator.service_scheduler` table + `ServiceSchedule` model
-  (hard-cut replacement of `agents_scheduler` / `AgentSchedule`).
+  (hard-cut replacement of `agents_scheduler` / `AgentSchedule`), `scheduler_type` column removed.
+- `redis-backed-jobs`: `backend='redis'` jobs whose definition lives only in the `RedisJobStore`,
+  survive restarts, catch up missed fires per their own `misfire_grace_time`, and keep run state
+  in a Redis hash through `RunStateStore`.
 
 ### Modified Capabilities
 - `agent-scheduler` (FEAT-467 run-now / `new-scheduler-decorators` / FEAT-631
@@ -436,7 +551,11 @@ and the server package is already at a major version where breaking changes are 
 | `packages/ai-parrot-server/src/parrot/scheduler/models.py` | **breaking** | `AgentSchedule` → `ServiceSchedule`, new table/columns |
 | `packages/ai-parrot-server/src/parrot/scheduler/manager.py` | **breaking refactor** | shrinks to `AgentSchedulerManager(SchedulerManager)` + resolvers + decorators + `SchedulerHandler` |
 | `packages/ai-parrot-server/src/parrot/scheduler/jobs.py` | modifies | type hints → `SchedulerManager`; behaviour unchanged |
-| `packages/ai-parrot-server/src/parrot/scheduler/sanitize.py` | modifies | docstring/table name; no logic change |
+| `packages/ai-parrot-server/src/parrot/scheduler/runstate.py` | **new** | `RunStateStore` protocol + Postgres / Redis / memory implementations |
+| `packages/ai-parrot-server/src/parrot/scheduler/sanitize.py` | **breaking** | `normalize_jobstore_alias` → `normalize_backend`; new `clean_misfire_grace_time`; table name in docstring |
+| `packages/ai-parrot-server/src/parrot/scheduler/jobs.py` | extends | new `run_redis_job(manager_name, schedule_id)` trampoline |
+| `packages/ai-parrot-integrations/src/parrot/integrations/agentd/cli.py` / `config.py` | modifies | `SchedulerConfig.redis` keeps meaning "attach the Redis jobstore"; CLI flags/`scheduler_type` references (6 in `cli.py`) renamed to `backend` |
+| `docs/scheduler/multi-worker.md` | modifies | "Redis jobstore is not coordination" section rewritten for `backend='redis'`; catch-up semantics documented |
 | `packages/ai-parrot-server/src/parrot/scheduler/functions/__init__.py` | **breaking** | callback `run(..., target_name=...)` replaces `agent_name` |
 | `packages/ai-parrot-server/src/parrot/handlers/scheduler.py` | **breaking** | POST/PATCH payload fields; last-result handler reads columns |
 | `packages/ai-parrot-server/src/parrot/handlers/infographic_recipes.py` | modifies | callback signature |
@@ -509,11 +628,15 @@ class AgentSchedulerManager:                                # line 349
     async def delete_schedule(self, schedule_id: str) -> None:  # line 1727
     async def run_schedule_now(self, schedule_id: str) -> AgentSchedule:  # line 1739
     async def get_last_result(self, schedule_id: str) -> Dict[str, Any]:  # line 1802
-    def _build_jobstores(self, use_redis: bool = False) -> Dict[str, Any]:  # line 1875
+    def _registered_jobstores(self) -> Set[str]:            # line 1840
+    def _safe_jobstore(self, value: Any, *, strict: bool = False) -> str:  # line 1857 (strict=True → SchedulerConfigError for unknown alias)
+    def _build_jobstores(self, use_redis: bool = False) -> Dict[str, Any]:  # line 1875 ('default' MemoryJobStore always; 'redis' when use_redis)
+    def _make_redis_jobstore(self) -> RedisJobStore:        # line 1892 (jobs_key="apscheduler.jobs", run_times_key="apscheduler.run_times", db=6 via sanitize_redis_settings(CACHE_HOST, CACHE_PORT))
+    def _ensure_redis_jobstore(self) -> None:               # line 1906 (idempotent add_jobstore(alias="redis"))
     async def start_headless(self, ...):                    # line 1919
     async def stop_headless(self, *, wait: bool = True) -> None:  # line 1977
     def setup(self, app: web.Application) -> web.Application:  # line 2005
-    async def on_startup(self, app: web.Application, conn: Callable):  # line 2042  (falls back to app.get("bot_manager"), line 2062)
+    async def on_startup(self, app: web.Application, conn: Callable):  # line 2042  (calls start_headless(use_redis=True, register_listeners=True) line 2055; falls back to app.get("bot_manager"), line 2062)
     async def on_shutdown(self, app: web.Application, conn: Callable):  # line 2077
 class SchedulerHandler(CorsViewMixin, web.View):            # line 2098  (legacy HTTP view, uses agent_name)
 
@@ -565,6 +688,9 @@ class RunInfographicRecipeCallback(BaseSchedulerCallback):  # line 323
 # From packages/ai-parrot-server/src/parrot/handlers/crew/saved_execution_service.py
 class SavedExecutionService:  # __init__(..., scheduler_manager: Any = None, ...) line 87
     # add_schedule(crew_name, schedule_type, schedule_config, prompt=..., method_name=..., ..., is_crew=True, callbacks=...)  line 285
+
+# From packages/ai-parrot-integrations/src/parrot/integrations/agentd/config.py
+class SchedulerConfig(BaseModel):                           # line 115 — enabled: bool = True; dsn: str | None = None; redis: bool = False
 
 # From packages/ai-parrot-integrations/src/parrot/integrations/agentd/service.py
 class SingleAgentManager:                                   # line 240  — fake bot_manager: _bots dict, registry.get_instance(name), get_crew(name) -> None
@@ -620,7 +746,9 @@ from apscheduler.jobstores.redis import RedisJobStore
 - `AgentSchedulerManager._local_callbacks` → `Dict[str, Callable]` (manager.py:375); process-local `success_callback`s.
 - `AgentSchedulerManager._fire_coordinator` → `FireCoordinator` (manager.py:374).
 - `AgentSchedulerManager._LAST_RESULT_MAX_CHARS` → cap for `last_result` (manager.py:~945).
-- APScheduler `job_defaults`: `coalesce=True`, `max_instances=2`, `misfire_grace_time=300`, `timezone="UTC"` (manager.py:391-400).
+- APScheduler `job_defaults`: `coalesce=True`, `max_instances=2`, `misfire_grace_time=300`, `timezone="UTC"` (manager.py:391-400) — global today; `redis` jobs will override per job.
+- `start_headless(dsn=None, use_redis=False, ..., coordination=None)` (manager.py:1919) attaches the Redis jobstore **before** `scheduler.start()`, which is what lets `RedisJobStore` reload persisted jobs.
+- Tests that reference `scheduler_type` / `use_redis` and must be rewritten for `backend`: `test_manager_sanitization.py` (6), `test_headless.py` (4), `test_coordination.py` (2), `test_fire_recheck.py`, `test_multiworker.py`, `test_run_now.py`, `test_run_now_coordination.py` (1 each).
 - `apscheduler==3.11.2` pinned in `packages/ai-parrot-server/pyproject.toml:42` (extra `scheduler`).
 - `parrot.server.version.__version__ == "1.2.0"`.
 - Tests: `packages/ai-parrot-server/tests/scheduler/` — `test_callback_delivery.py`, `test_coordination.py`, `test_delivery_outcomes.py`, `test_fire_recheck.py`, `test_headless.py`, `test_jobs.py`, `test_listeners.py`, `test_manager_sanitization.py`, `test_multiworker.py`, `test_run_now.py`, `test_run_now_coordination.py`, `test_sanitize.py`; plus `packages/ai-parrot/tests/test_schedules.py` (imports `AgentSchedule`).
@@ -634,6 +762,10 @@ from apscheduler.jobstores.redis import RedisJobStore
 - ~~`BotManager.get_bot(name)`~~ — not verified; only `get_bots()` (manager.py:1257) and the private `_bots` dict were confirmed. Do not reference `get_bot`.
 - ~~synchronous `BotManager.get_crew(name)`~~ — it is **async**: `async def get_crew(self, identifier: str, as_new: bool = False, tenant: Optional[str] = None) -> Optional[Tuple[AgentCrew, CrewDefinition]]` (manager/manager.py:3019). The scheduler calls it **without `await`** at manager.py:681 and manager.py:1170, so against a real `BotManager` the walrus/unpack sees a coroutine object (latent bug, see Problem Statement). `CrewResolver` must `await` it.
 - ~~`AgentSchedule.last_status` / `.last_error` / `.consecutive_failures`~~ — today these live only inside `metadata`.
+- ~~`backend` field / column~~, ~~`JobDefinition`~~, ~~`RunStateStore`~~ / ~~`parrot.scheduler.runstate`~~, ~~`jobs.run_redis_job`~~, ~~`normalize_backend`~~, ~~`clean_misfire_grace_time`~~ — all new.
+- ~~a Redis-only job path~~ — every current trampoline except `run_auto_schedule` re-reads a Postgres row (`_run_db_schedule`, manager.py:1486); there is no job that lives only in the Redis jobstore.
+- ~~per-job `misfire_grace_time` in `add_schedule`/HTTP~~ — only the global `job_defaults` value exists (manager.py:398).
+- ~~`parrot:scheduler:runstate:*` keys~~ — the only Redis keys today are `apscheduler.jobs`, `apscheduler.run_times` (jobstore) and `parrot:scheduler:fire:*` / `parrot:scheduler:running:*` (coordination).
 - ~~`schedule_fingerprint` in `sanitize.py`~~ — it is defined in `manager.py:327`, not in `sanitize.py`.
 - ~~`parrot.scheduler.inprocess.InProcessScheduler` as a base~~ — exists (`packages/ai-parrot/src/parrot/scheduler/inprocess.py:49`) but is a tiny core-side helper unrelated to this manager; not a candidate base class.
 - ~~Admin UI scheduler pages~~ — `ui/src/.../a2ui/linked/scheduler.ts` is an A2UI linked-surface component; no admin page sends `agent_name` to this manager.
@@ -645,8 +777,10 @@ from apscheduler.jobstores.redis import RedisJobStore
 
 - **Internal parallelism**: low. The model/DDL, the base class, the subclass refactor and the caller
   hard-cut form a strict chain: callers cannot compile until `add_schedule`'s new signature exists,
-  and the base cannot be tested until `ServiceSchedule` exists. Only the docs/migration-note task
-  and the agentd task can run in parallel with the test rewrite once the base + subclass land.
+  and the base cannot be tested until `ServiceSchedule` exists. Once the base lands, the
+  `redis` backend (`run_redis_job` + `RedisRunState` + catch-up tests), the agentd task and the
+  docs/migration-note task are independent of each other and could run in parallel inside the
+  same worktree.
 - **Cross-feature independence**: FEAT-631 and FEAT-635 are closed (all tasks `done`), so
   `manager.py` has no in-flight writer. FEAT-430 (`dashboard-scheduled-notifications-canvas`,
   status `review`) *describes* `navigator.agents_scheduler` and must be rebased on the new table
@@ -669,6 +803,13 @@ from apscheduler.jobstores.redis import RedisJobStore
 - [x] How is fire context delivered to targets? — *Owner: Jesus Lara*: signature injection of `fire_id` / `scheduled_at` only when declared or `**kwargs`.
 - [x] Missing-target policy? — *Owner: Jesus Lara*: disable after N consecutive misses (default 3, env-configurable), WARNING per tick, notification on disable.
 - [x] Generalise `@schedule` scanning? — *Owner: Jesus Lara*: yes, `register_object_schedules(obj, name)` in the base; `register_bot_schedules(bot)` wraps it.
+- [x] How do Redis-only jobs fit? — *Owner: Jesus Lara*: one `backend` axis (`db | redis | code`); `redis` jobs have no Postgres row, their definition is pickled in the `RedisJobStore`; the `scheduler_type` column/field is removed.
+- [x] Missed-fire policy on restart? — *Owner: Jesus Lara*: `redis` jobs default to `misfire_grace_time=None` + `coalesce=True` (always one catch-up run), per-job override in seconds via the API; `db` jobs keep 300 s.
+- [x] Run state for Redis-only jobs? — *Owner: Jesus Lara*: Redis hash `parrot:scheduler:runstate:{job_id}` behind a `RunStateStore` abstraction (pg | redis | memory).
+- [x] API surface for Redis jobs? — *Owner: Jesus Lara*: same `add_schedule` and same `POST /api/v1/scheduler/jobs` with a `backend` field; all CRUD/run-now/last-result endpoints work for every backend.
+- [ ] Namespace the Redis jobstore keys by `registered_name` (e.g. `parrot:scheduler:{name}:jobs`) instead of the global `apscheduler.jobs` / `apscheduler.run_times`, so two apps sharing `db=6` cannot load each other's `redis` jobs? Brainstorm assumes **yes** (hard-cut already breaks key compatibility). — *Owner: Jesus Lara*
+- [ ] Should `add_schedule(backend='redis')` be refused when fire coordination is `none` and the deployment is multi-worker (cannot be detected reliably from inside a worker), or just documented? Brainstorm assumes **documented only**. — *Owner: Jesus Lara*
+- [ ] Redis jobstore `db=6` is hard-coded in `_make_redis_jobstore`; expose `SCHEDULER_REDIS_DB` via `parrot.conf`? — *Owner: Jesus Lara*
 - [ ] Should plain `error` runs (target found, call raised) also count toward auto-disable, or only `target_missing`? Brainstorm assumes **only `target_missing`** disables; `error` bumps the counter but never disables. — *Owner: Jesus Lara*
 - [ ] agentd RPC `schedules.add` forwards `**params` verbatim: hard-cut the RPC payload in this release (clients must send `target_kind`/`target_name`), or translate in `_handle_schedules_add`? Brainstorm assumes hard-cut. — *Owner: Jesus Lara*
 - [ ] Should the three open ledger issues on `manager.py` (`aa813ccc1927`, `7b5d75d2c81d`, `37f02d3c2474`) be closed inside this feature since the code moves to the base, or re-pointed at `base.py` and left for `/sdd-fix`? — *Owner: Jesus Lara*
