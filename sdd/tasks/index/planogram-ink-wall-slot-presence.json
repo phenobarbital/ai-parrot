@@ -35,7 +35,7 @@
       "feature_id": "FEAT-645",
       "feature": "planogram-ink-wall-slot-presence",
       "spec": "sdd/specs/planogram-ink-wall-slot-presence.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "TASK-4166 must land first because both tasks modify comparison/definition.py; preserve its SKU field and validator.",
       "assigned_to": null,
       "started_at": "2026-10-08T21:11:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4167-reporting-policy.md"
+      "completed_at": "2026-10-08T21:24:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4167-reporting-policy.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4168",
