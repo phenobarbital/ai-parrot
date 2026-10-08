@@ -97,7 +97,12 @@ def test_expected_facings_counts_shelves_with_facings():
     assert perceive_module._expected_facings(SimpleNamespace(definition=definition)) == [2, 1]
     assert perceive_module._expected_facings(SimpleNamespace(definition=None)) is None
     assert perceive_module._expected_facings(SimpleNamespace(definition=SimpleNamespace(shelves=[]))) is None
-    assert perceive_module._expected_facings(SimpleNamespace(definition=SimpleNamespace(shelves=[SimpleNamespace(facings=[])]))) is None
+    assert (
+        perceive_module._expected_facings(
+            SimpleNamespace(definition=SimpleNamespace(shelves=[SimpleNamespace(facings=[])]))
+        )
+        is None
+    )
 
 
 @pytest.fixture
