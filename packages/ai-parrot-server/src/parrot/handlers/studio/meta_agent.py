@@ -186,6 +186,9 @@ class StudioAssistantHandler(StudioBaseView):
                 return agent
             # the entry named an instance that expired / belongs to another partition: rebuild below
 
+        # a stale entry (instance missing on THIS worker) keeps its conversation id: with a shared conversation
+        # backend any worker continues the same history, and the entry no longer ping-pongs between workers
+        conversation = entry["session_id"] if entry is not None else uuid.uuid4().hex
         agent = AgentStudioAgent(
             name=f"agent_studio_{uuid.uuid4().hex[:8]}", api_key=api_key,
             declarative_only=await self._declarative_only(), chatbot_id=partition.chatbot_id,
@@ -197,7 +200,7 @@ class StudioAssistantHandler(StudioBaseView):
         if session is not None:
             session[SESSION_KEY] = {
                 **self._partition_entries(session),
-                partition.key: {"instance": agent.name, "session_id": uuid.uuid4().hex},
+                partition.key: {"instance": agent.name, "session_id": conversation},
             }
         return agent
 
