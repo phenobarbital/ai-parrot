@@ -16,7 +16,7 @@
       "feature_id": "FEAT-639",
       "feature": "jiratoolkit-docx-support",
       "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependencies: creates parrot/interfaces/file/session.py from scratch; nothing else in the feature exists yet.",
       "assigned_to": null,
       "started_at": "2026-10-07T23:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4128-session-file-store-sandbox-resolve.md"
+      "completed_at": "2026-10-08T00:02:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4128-session-file-store-sandbox-resolve.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4129",
@@ -134,7 +135,7 @@
       "feature_id": "FEAT-639",
       "feature": "jiratoolkit-docx-support",
       "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -142,8 +143,9 @@
       "parallelism_notes": "No dependencies: only widens a default MIME list literal in telegram/crew/payload.py; touches no FEAT-639 symbol.",
       "assigned_to": null,
       "started_at": "2026-10-07T23:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4134-telegram-mime-allowlist.md"
+      "completed_at": "2026-10-08T00:02:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4134-telegram-mime-allowlist.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4135",
@@ -192,7 +194,7 @@
       "feature_id": "FEAT-639",
       "feature": "jiratoolkit-docx-support",
       "spec": "sdd/specs/jiratoolkit-docx-support.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -200,8 +202,9 @@
       "parallelism_notes": "No dependencies: adds only new models/helpers to jiratoolkit.py; no existing tool changes behaviour, and it touches no file another pending task owns.",
       "assigned_to": null,
       "started_at": "2026-10-07T23:51:26+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4138-jira-attachment-result-models-and-size-limit.md"
+      "completed_at": "2026-10-08T00:02:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4138-jira-attachment-result-models-and-size-limit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4139",

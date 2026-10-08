@@ -301,3 +301,7 @@ class TestMaxAttachmentBytes:
 **Date**: YYYY-MM-DD
 **Notes**:
 **Deviations from spec**: none | describe if any
+
+## Completion Note
+
+Implemented by the sdd-coder engine and merged; merge-tier sweep red only from pre-existing unrelated failures (ibkr/pulumi/scraping). Orchestrator fixed stale telegram mime-count test.
