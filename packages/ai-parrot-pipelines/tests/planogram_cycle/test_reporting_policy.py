@@ -115,9 +115,9 @@ def test_effective_reporting_precedence() -> None:
     assert effective_reporting(layout, SlotsDefinition(meta={"reporting": {"product_label": "display_name"}})) == (
         ReportingPolicy(product_label="display_name", slot_presence=True, misplaced_min_confidence=0.7)
     )
-    assert effective_reporting(layout, SlotsDefinition(meta={"reporting": {"slot_presence": False}})) == ReportingPolicy(
-        product_label="product", misplaced_min_confidence=0.7
-    )
+    assert effective_reporting(
+        layout, SlotsDefinition(meta={"reporting": {"slot_presence": False}})
+    ) == ReportingPolicy(product_label="product", misplaced_min_confidence=0.7)
     assert effective_reporting(
         layout,
         SlotsDefinition(meta={"reporting": {"misplaced_min_confidence": 0.2}}),
