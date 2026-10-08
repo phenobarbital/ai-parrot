@@ -111,15 +111,15 @@ def project_compliance(
 
         product_labels = policy is not None and policy.product_label == "product"
         if product_labels:
-            missing = [f.product for f, status in occupied_expected if status == FacingStatus.EMPTY]
+            missing = [f.product or _label(f) for f, status in occupied_expected if status == FacingStatus.EMPTY]
             found = [
-                f.product
+                f.product or _label(f)
                 for f, position in pairs
                 if position is not None
                 and f.expected_occupancy != "empty"
                 and facing_presence(position, policy)[0] is True
             ]
-            expected = [f.product for f, _ in occupied_expected]
+            expected = [f.product or _label(f) for f, _ in occupied_expected]
         else:
             missing = [_label(f) for f, status in occupied_expected if status == FacingStatus.EMPTY]
             found = [(p.identity or _label(f)) for f, p in pairs if p is not None and p.status in _FOUND]
