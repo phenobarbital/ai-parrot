@@ -841,9 +841,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             found.append(attachment)
         return found
 
-    async def _handle_document_attachment(
-        self, turn_context: TurnContext, attachment: Attachment
-    ) -> Optional[str]:
+    async def _handle_document_attachment(self, turn_context: TurnContext, attachment: Attachment) -> Optional[str]:
         """Download a non-audio Teams attachment into the session store.
 
         Reuses the existing CDN token path. The session id is the Teams
@@ -857,9 +855,7 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
             async with aiohttp.ClientSession() as http:
                 async with http.get(attachment.content_url, headers=headers) as resp:
                     if resp.status != 200:
-                        self.logger.warning(
-                            "Teams attachment download failed (%s) for %s", resp.status, name
-                        )
+                        self.logger.warning("Teams attachment download failed (%s) for %s", resp.status, name)
                         return None
                     data = await resp.read()
             store = getattr(self, "_session_file_store", None)

@@ -1,4 +1,5 @@
 """Tests for MS Teams document attachment handling (FEAT-639)."""
+
 import logging
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
