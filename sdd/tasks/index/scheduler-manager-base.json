@@ -371,7 +371,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -383,8 +383,9 @@
       "parallelism_notes": "Deletes AgentSchedule from models.py (TASK-4147 last touched it) and normalize_jobstore_alias from sanitize.py (TASK-4150). Needs TASK-4159 and TASK-4160 because their migrated test modules (test_fire_recheck.py, test_multiworker.py, test_run_now.py, test_delivery_outcomes.py, test_schedules.py) import AgentSchedule until they are rewritten; needs TASK-4161 because saved_execution_service.py documents the AgentSchedule return value it replaces.",
       "assigned_to": null,
       "started_at": "2026-10-08T18:01:36+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4164-scheduler-legacy-removal.md"
+      "completed_at": "2026-10-08T21:36:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4164-scheduler-legacy-removal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4165",
