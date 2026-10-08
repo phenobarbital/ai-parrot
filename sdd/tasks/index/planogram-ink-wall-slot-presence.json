@@ -16,7 +16,7 @@
       "feature_id": "FEAT-645",
       "feature": "planogram-ink-wall-slot-presence",
       "spec": "sdd/specs/planogram-ink-wall-slot-presence.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No task dependencies: modifies definition.py and creates test_descriptor_sku.py; no other root task writes these files.",
       "assigned_to": null,
       "started_at": "2026-10-08T21:11:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4166-descriptor-sku.md"
+      "completed_at": "2026-10-08T21:18:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4166-descriptor-sku.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4167",
