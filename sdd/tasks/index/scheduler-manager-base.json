@@ -16,14 +16,14 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: creates ServiceSchedule/JobDefinition/RunState/FireContext/CodeJobRecord/utcnow/schedule_fingerprint in scheduler/models.py that TASK-4148, TASK-4154 and every later base task import. Touches only models.py + a new test file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4147-scheduler-models-definitions.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "Imports RunState, FireContext, utcnow from TASK-4147 (scheduler/models.py). Creates runstate.py, which TASK-4149 then extends.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4148-scheduler-runstate-pg-memory.md"
     },
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,7 +63,7 @@
       "parallel": false,
       "parallelism_notes": "EXCLUSIVE: creates packages/ai-parrot-server/tests/scheduler/conftest.py, which every scheduler test module loads. Depends on TASK-4148: modifies runstate.py (created there) and extends its test_runstate.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4149-scheduler-runstate-redis.md"
     },
@@ -74,14 +74,14 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: only sanitize.py and test_sanitize.py. TASK-4155 imports normalize_backend; TASK-4156 imports clean_misfire_grace_time/clean_method_name; TASK-4164 later deletes normalize_jobstore_alias from the same file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4150-scheduler-sanitize-backend.md"
     },
@@ -92,14 +92,14 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: only coordination.py and test_coordination.py. TASK-4155 calls the new manager_prefix()/redis_db()/build_fire_coordinator(prefix=); TASK-4157 reads CURRENT_RUN_TIME.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4151-scheduler-coordination-namespace.md"
     },
@@ -110,14 +110,14 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: only jobs.py and test_jobs.py. Its reference to base.py (TASK-4154) is a TYPE_CHECKING-only string annotation that is never imported at runtime, so it is not a dependency. TASK-4156/4157 add jobs pointing at run_redis_job/run_redis_job_now and implement _run_redis_job.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4152-scheduler-redis-trampolines.md"
     },
@@ -128,14 +128,14 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: renames the callback keyword in functions/__init__.py and infographic_recipes.py and the one legacy call site in manager.py:782 so the legacy manager keeps working. TASK-4157 calls callbacks with target_name=; TASK-4158 rewrites manager.py after this.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4153-scheduler-callbacks-target-name.md"
     },
@@ -146,7 +146,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -155,7 +155,7 @@
       "parallel": true,
       "parallelism_notes": "Imports JobDefinition, FireContext, utcnow from TASK-4147 (scheduler/models.py). Creates base.py, which TASK-4155/4156/4157 extend in order.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4154-scheduler-base-registry-resolvers.md"
     },
@@ -166,7 +166,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -179,7 +179,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies base.py created by TASK-4154. Builds RunStateStore instances: PostgresRunState/MemoryRunState (TASK-4148) and RedisRunState (TASK-4149, runstate.py) — and reuses TASK-4149's conftest Redis fixtures. Uses normalize_backend (TASK-4150, sanitize.py), manager_prefix/redis_db/build_fire_coordinator(prefix=) (TASK-4151, coordination.py) and jobs.register_manager typed to SchedulerManager (TASK-4152).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4155-scheduler-base-lifecycle.md"
     },
@@ -190,7 +190,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -199,7 +199,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies base.py after TASK-4155 (uses _run_state_for, redis_available, _create_trigger, targets/_resolvers, _code_jobs). Adds jobs pointing at jobs.run_redis_job / run_auto_schedule from TASK-4152 and uses clean_misfire_grace_time/clean_method_name from TASK-4150.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4156-scheduler-base-crud-backends.md"
     },
@@ -210,7 +210,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -220,7 +220,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies base.py after TASK-4156 (uses _locate, CodeJobRecord registry, add/serialize helpers). Calls delivery callbacks with target_name= (keyword renamed by TASK-4153 in scheduler/functions/__init__.py). CURRENT_RUN_TIME comes from TASK-4151 (via TASK-4155).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4157-scheduler-base-fire-path.md"
     },
@@ -231,7 +231,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -240,7 +240,7 @@
       "parallel": true,
       "parallelism_notes": "Subclasses SchedulerManager completed by TASK-4157 (base.py); rewrites manager.py, which TASK-4153 last modified (callback call site) — TASK-4157 already depends on TASK-4153, so the shared-file order is guaranteed.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4158-agent-scheduler-manager-subclass.md"
     },
@@ -251,7 +251,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -260,7 +260,7 @@
       "parallel": true,
       "parallelism_notes": "Rewrites tests that import AgentSchedulerManager internals rewritten by TASK-4158 (manager.py) and the base API of TASK-4155-4157 (base.py). Touches only five test modules, disjoint from TASK-4160's.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4159-scheduler-tests-migration-a.md"
     },
@@ -271,7 +271,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -281,7 +281,7 @@
       "parallel": true,
       "parallelism_notes": "Rewrites tests for internals rewritten by TASK-4158 (manager.py) and TASK-4157 (base.py); test_run_now.py exercises the HTTP run_now path whose status mapping TASK-4161 changes in handlers/scheduler.py. Disjoint files from TASK-4159.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4160-scheduler-tests-migration-b.md"
     },
@@ -292,7 +292,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -301,7 +301,7 @@
       "parallel": true,
       "parallelism_notes": "Calls SchedulerManager.add_schedule/get_schedule/_serialize_job and the typed errors from TASK-4154-4157 (base.py), and imports SchedulerRunNowConflictError/ScheduleType re-exported by TASK-4158 (manager.py). Touches handlers + saved-execution tests only.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4161-scheduler-http-handlers-hard-cut.md"
     },
@@ -312,7 +312,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -321,7 +321,7 @@
       "parallel": true,
       "parallelism_notes": "Uses AgentSchedulerManager() without bot_manager + register_target(kind='agent') resolved by AgentResolver (TASK-4158, manager.py). Touches only agentd files and a new agentd test.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4162-agentd-scheduler-register-target.md"
     },
@@ -332,7 +332,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -343,7 +343,7 @@
       "parallel": true,
       "parallelism_notes": "Exports names created by TASK-4154-4158 (base.py, models.py, manager.py); docs describe the HTTP payload of TASK-4161 (handlers/scheduler.py) and the agentd boot/RPC of TASK-4162. Touches docs + core __init__ + version only.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4163-scheduler-exports-docs-version.md"
     },
@@ -354,7 +354,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -365,7 +365,7 @@
       "parallel": true,
       "parallelism_notes": "Deletes AgentSchedule from models.py (TASK-4147 last touched it) and normalize_jobstore_alias from sanitize.py (TASK-4150). Needs TASK-4159 and TASK-4160 because their migrated test modules (test_fire_recheck.py, test_multiworker.py, test_run_now.py, test_delivery_outcomes.py, test_schedules.py) import AgentSchedule until they are rewritten; needs TASK-4161 because saved_execution_service.py documents the AgentSchedule return value it replaces.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4164-scheduler-legacy-removal.md"
     },
@@ -376,7 +376,7 @@
       "feature_id": "FEAT-644",
       "feature": "scheduler-manager-base",
       "spec": "sdd/specs/scheduler-manager-base.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -386,7 +386,7 @@
       "parallel": true,
       "parallelism_notes": "Integration tests over the finished feature: needs the final names/exports of TASK-4163 (core __init__) and the legacy removal of TASK-4164 (models.py/sanitize.py). Creates three new test files only.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-08T18:01:36+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4165-scheduler-integration-tests-ledger.md"
     }
