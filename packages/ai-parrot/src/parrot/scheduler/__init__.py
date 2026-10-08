@@ -5,7 +5,9 @@ is part of the server layer (ai-parrot-server satellite).
 
 Use: pip install ai-parrot-server[scheduler]
 """
+
 from pkgutil import extend_path
+
 __path__ = extend_path(__path__, __name__)
 
 # Server-side exports (move to satellite in TASK-1374 — lazy via __getattr__)
@@ -32,9 +34,7 @@ def __getattr__(name: str):
         from parrot._imports import load_satellite_attr
 
         module_path, cls_name = _SERVER_CLASSES[name]
-        return load_satellite_attr(
-            name, module_path, install="ai-parrot-server[scheduler]", attr=cls_name
-        )
+        return load_satellite_attr(name, module_path, install="ai-parrot-server[scheduler]", attr=cls_name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

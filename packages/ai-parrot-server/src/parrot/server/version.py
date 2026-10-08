@@ -2,10 +2,7 @@
 
 __version__ = "1.3.0"
 __title__ = "ai-parrot-server"
-__description__ = (
-    "Server infrastructure (handlers, MCP/A2A transports, scheduler, "
-    "autonomous) for AI-Parrot"
-)
+__description__ = "Server infrastructure (handlers, MCP/A2A transports, scheduler, " "autonomous) for AI-Parrot"
 __author__ = "Jesus Lara"
 __author_email__ = "jesuslara@phenobarbital.info"
 __license__ = "MIT"
