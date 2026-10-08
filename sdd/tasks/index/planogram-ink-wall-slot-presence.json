@@ -98,7 +98,7 @@
       "feature_id": "FEAT-645",
       "feature": "planogram-ink-wall-slot-presence",
       "spec": "sdd/specs/planogram-ink-wall-slot-presence.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -108,8 +108,9 @@
       "parallelism_notes": "Consumes facing_presence from TASK-4169 (comparison/presence.py) and ReportingPolicy from its TASK-4167 ancestor; writes projection.py and its own tests.",
       "assigned_to": null,
       "started_at": "2026-10-08T21:11:51+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4170-reporting-projection.md"
+      "completed_at": "2026-10-08T21:34:10+00:00",
+      "file": "sdd/tasks/completed/TASK-4170-reporting-projection.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4171",
