@@ -14,9 +14,13 @@ from ._models import TestAskRequest
 class _StudioTestingAskMixin:
     """Ask plumbing of ``StudioTestingHandler``."""
 
-    async def _ask_response(self, bot, agent_name: str, ask_request: TestAskRequest, **ctx: Any):
+    async def _ask_response(
+        self, bot, agent_name: str, ask_request: TestAskRequest, *, session_id: str, **ctx: Any
+    ):
         """Apply BYOK, run one ask on ``bot`` and shape the JSON response (shared by both backends).
 
+        ``session_id`` (the caller's ``studio_test:`` sid) and the resolved caller id form the conversation key
+        ``(chatbot, user, session)`` — without them ``ask()`` mints a fresh id per turn and forgets the history.
         ``ctx`` is bound into the request context of the ask (``studio_scope``, FEAT-605 C16).
         """
         byok_applied = False
@@ -26,8 +30,9 @@ class _StudioTestingAskMixin:
 
         try:
             self.request.session = await self._resolve_session()
+            user = await self._get_user()
             async with bot.session(request=self.request, app=self.request.app, **ctx) as live_bot:
-                response = await live_bot.ask(question=ask_request.query)
+                response = await live_bot.ask(question=ask_request.query, user_id=user.user_id, session_id=session_id)
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.exception("Studio test/ask failed for '%s'", agent_name)
             return self._error(f"Agent query failed: {exc}", status=502, code="query_failed")

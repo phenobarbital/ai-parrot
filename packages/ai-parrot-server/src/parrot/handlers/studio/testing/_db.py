@@ -45,7 +45,7 @@ class _StudioTestingDbMixin:
         sid = self._studio_session_id(await self._resolve_session(), key)
         try:
             async with manager.studio.use(key, session_id=sid, request=self.request) as bot:
-                return await self._ask_response(bot, agent_name, ask_request, **ctx)
+                return await self._ask_response(bot, agent_name, ask_request, session_id=sid, **ctx)
         except StudioNotFound:
             return self._not_found("agent", agent_name)
         except PermissionError as exc:  # AgentAccessDenied (PBAC deny, raised before any build)
