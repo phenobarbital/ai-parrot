@@ -61,7 +61,8 @@ transient: it is deleted after ingestion; only the derived knowledge persists.
   then the full ingest pipeline (LLM split into linked pages). Requires LLM +
   PageIndexToolkit + a charter for the target wiki.
 - **Size limits on all three platforms**: a configurable `max_size_mb` per
-  platform, checked before download whenever the platform exposes the size
+  platform, **default 10 MB** on Telegram, Teams and Slack,
+  checked before download whenever the platform exposes the size
   (Telegram is additionally capped at 20 MB by the Bot API).
 - **Audit = logs only**: a structured log record per upload attempt; no DB
   table.
@@ -287,7 +288,8 @@ same `IngestTarget` interface without touching the chat side.
    Then `UserInfoService` → `EmployeeProfile(username, groups)`.
 3. `KnowledgeUploadService.authorize(identity, target)`: allowed if
    `username ∈ allowed_usernames` OR `groups ∩ allowed_groups ≠ ∅`
-   (per-target lists may override global ones). Deny by default.
+   (one global list per bot for both targets — no per-target lists). Deny by
+   default.
 4. Validate extension (`.pdf .docx .md .markdown`) and size
    (`max_size_mb`), then download into a private `TemporaryDirectory`
    (0700) — bytes never touch a persistent store.
@@ -305,7 +307,10 @@ same `IngestTarget` interface without touching the chat side.
      `WikiIngestOrchestrator.ingest(..., triage=entry, charter_version=…)`
      (decision recorded with `decision_source="auto"`, as `--auto` does);
      `discard` → nothing is ingested and the user gets the triage briefing as
-     the reason; gray-zone / `archive` → see Open Questions. Dedicated ingest
+     the reason; gray-zone / `archive` → also rejected with the briefing as
+     explanation (no chat confirmation, `--force` does not bypass triage — it
+     only bypasses the duplicate check). Triage and ingest use the same LLM as
+     the bookstore (`google:gemini-3.1-flash-lite`). Dedicated ingest
      toolkit wired with PageIndex + LLM, same logical source naming so a
      re-upload replaces the same source slice; checkpoint WAL.
 7. `finally`: delete the temp dir; emit a structured audit log record (who,
@@ -317,7 +322,7 @@ same `IngestTarget` interface without touching the chat side.
 
 - Command without attachment → usage help. Attachment of wrong type or too
   large → rejected before download where the platform gives metadata.
-- Size: each platform has its own `max_size_mb`; oversize files are rejected
+- Size: each platform has its own `max_size_mb` (default 10 MB); oversize files are rejected
   before download when the platform reports the size (Telegram
   `document.file_size`, Teams attachment metadata when present, Slack
   `files.info` `size`), and the download is aborted past the limit otherwise.
@@ -368,7 +373,7 @@ same `IngestTarget` interface without touching the chat side.
 | `ai-parrot/.../knowledge/pageindex/toolkit.py` | modifies | tree cache invalidation |
 | `ai-parrot/.../auth/userinfo.py` | extends | lookup by email / username |
 | navigator-agent-server `env/integrations_bots.yaml` | config | `knowledge_upload` block; `force_authentication: true` + login enabled on **all four** Odoo bots |
-| navigator-agent-server `agents/odoo_wiki/.parrot/charter.yaml` | new config | editorial charter for `odoo-sop` (does not exist yet); required by the triage filter |
+| navigator-agent-server `agents/odoo_wiki/.parrot/charter.yaml` | new config | editorial charter for `odoo-sop` (does not exist yet); written by the user, NOT a deliverable of this feature; required by the triage filter |
 | `ai-parrot/.../knowledge/wiki/triage.py`, `ingest.py` | depends on | FEAT-402 triage router + orchestrator `triage=` path, reused as-is |
 | Slack app manifest | deployment | `users:read.email`, `files:read` scopes |
 
@@ -551,8 +556,8 @@ from parrot.integrations.slack.files import download_slack_file, extract_files_f
 - [x] Wiki filtering — *Owner: Jesus Lara*: apply the FEAT-402 charter-driven triage filter before ingesting
 - [x] Audit trail — *Owner: Jesus Lara*: logs only
 - [x] Size limits — *Owner: Jesus Lara*: configurable size limit on all three platforms
-- [ ] Triage gray zone / `archive` in chat: ask the uploader to confirm (keep the temp file only until a short timeout, then delete) or treat as rejected? Proposed default: reject with the briefing, user may re-upload with `--force` if they are in an allowed "curator" group — *Owner: Jesus Lara*
-- [ ] Who writes the `odoo-sop` charter (`agents/odoo_wiki/.parrot/charter.yaml`) and is it part of this feature's deliverables (navigator-agent-server config) — *Owner: Jesus Lara*
-- [ ] Per-target allow-lists (bookstore vs wiki) or one global list per bot? Proposed: global with optional per-target override — *Owner: Jesus Lara*
-- [ ] Wiki/triage LLM: `$WIKI_MODEL` / `$WIKI_LIGHTWEIGHT_MODEL` or reuse the bookstore's `google:gemini-3.1-flash-lite`? — *Owner: Jesus Lara*
-- [ ] Default `max_size_mb` values for Teams and Slack (Telegram: 20) — *Owner: Jesus Lara*
+- [x] Triage gray zone / `archive` — *Owner: Jesus Lara*: rejected with the triage briefing as explanation; `--force` does not bypass triage
+- [x] `odoo-sop` charter authorship — *Owner: Jesus Lara*: the user writes `agents/odoo_wiki/.parrot/charter.yaml`; not a deliverable of this feature (wiki command stays disabled until it exists)
+- [x] Allow-list scope — *Owner: Jesus Lara*: one global list (usernames + groups) per bot, shared by both targets
+- [x] Wiki/triage LLM — *Owner: Jesus Lara*: reuse the bookstore's `google:gemini-3.1-flash-lite`
+- [x] Size limit — *Owner: Jesus Lara*: 10 MB default on all three platforms (configurable)
