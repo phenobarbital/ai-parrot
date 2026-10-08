@@ -12,7 +12,7 @@ import numpy as np
 from parrot.conf import HUGGINGFACEHUB_API_TOKEN
 from parrot._imports import lazy_import
 from parrot.stores.models import Document
-from parrot.loaders.abstract import AbstractLoader
+from parrot.loaders.abstract import AbstractLoader, Seq2SeqGenerator
 
 if TYPE_CHECKING:
     from moviepy import VideoFileClip
@@ -200,21 +200,20 @@ class BaseVideoLoader(AbstractLoader):
         if self._summarizer is None:
             print("[ParrotBot] Loading summarizer model (BART-large-cnn)...")
             from transformers import (
-                pipeline,
                 AutoModelForSeq2SeqLM,
                 AutoTokenizer
             )
             self._ensure_torch()
-            self._summarizer = pipeline(
-                "summarization",
-                tokenizer=AutoTokenizer.from_pretrained(
+            self._summarizer = Seq2SeqGenerator(
+                AutoModelForSeq2SeqLM.from_pretrained(
                     self.summarization_model
                 ),
-                model=AutoModelForSeq2SeqLM.from_pretrained(
+                AutoTokenizer.from_pretrained(
                     self.summarization_model
                 ),
+                output_key="summary_text",
                 device=self._summarizer_device,
-                torch_dtype=self._summarizer_dtype,
+                dtype=self._summarizer_dtype,
             )
             print(f"[ParrotBot] ✓ Summarizer loaded on {self._summarizer_device}")
         return self._summarizer

@@ -34,6 +34,69 @@ from .splitters import (
 T = TypeVar("T")
 
 
+class Seq2SeqGenerator:
+    """Callable stand-in for the removed ``summarization``/``translation`` pipelines.
+
+    transformers 5 dropped those pipeline tasks. This wraps a seq2seq model and
+    its tokenizer and returns the same ``[{output_key: text}]`` shape the old
+    pipelines produced, so callers keep reading ``result[0]["summary_text"]``.
+
+    Args:
+        model: A loaded ``AutoModelForSeq2SeqLM`` instance.
+        tokenizer: The tokenizer matching ``model``.
+        output_key: Key of the generated text in each result dict.
+        device: Pipeline-style device (``-1``/``None`` CPU, GPU index, string or ``torch.device``).
+        dtype: Optional torch dtype to cast the model weights to.
+    """
+
+    def __init__(
+        self,
+        model: Any,
+        tokenizer: Any,
+        output_key: str,
+        device: Any = None,
+        dtype: Any = None,
+    ) -> None:
+        if device is None or device == -1:
+            device = "cpu"
+        elif isinstance(device, int):
+            device = f"cuda:{device}"
+        self.model = model.to(device=device, dtype=dtype) if dtype is not None else model.to(device)
+        self.model.eval()
+        self.tokenizer = tokenizer
+        self.output_key = output_key
+        self.device = device
+
+    def __call__(self, text: str | list[str], truncation: bool = True, **generate_kwargs: Any) -> list[dict[str, str]]:
+        """Generate text for one or more inputs.
+
+        Args:
+            text: Input text or list of texts.
+            truncation: Truncate inputs to the model's maximum length.
+            **generate_kwargs: Forwarded to ``model.generate`` (``max_length``, ``min_length``, ``do_sample``...).
+
+        Returns:
+            One ``{output_key: generated_text}`` dict per input.
+        """
+        import torch
+
+        inputs = self.tokenizer(
+            [text] if isinstance(text, str) else list(text),
+            return_tensors="pt",
+            padding=True,
+            truncation=truncation,
+        ).to(self.device)
+        if "max_length" in generate_kwargs:
+            # The old pipelines let max_length exceed the model limit; generate() would warn or fail.
+            limit = getattr(self.model.config, "max_position_embeddings", None)
+            if limit:
+                generate_kwargs["max_length"] = min(generate_kwargs["max_length"], limit)
+        with torch.inference_mode():
+            output_ids = self.model.generate(**inputs, **generate_kwargs)
+        texts = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+        return [{self.output_key: t.strip()} for t in texts]
+
+
 class AbstractLoader(ABC):
     """
     Base class for all loaders.
@@ -929,19 +992,19 @@ class AbstractLoader(ABC):
     def get_summarization_model(self, model_name: str = "facebook/bart-large-cnn"):
         if not self._summary_model:
             if self._use_summary_pipeline:
-                from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
+                from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-                _, pipe_dev, torch_dtype = self._get_device()
+                pipe_dev, _, torch_dtype = self._get_device()
                 summarize_model = AutoModelForSeq2SeqLM.from_pretrained(
                     model_name,
                 )
                 summarize_tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side="left")
-                self._summary_model = pipeline(
-                    "summarization",
-                    model=summarize_model,
-                    tokenizer=summarize_tokenizer,
+                self._summary_model = Seq2SeqGenerator(
+                    summarize_model,
+                    summarize_tokenizer,
+                    output_key="summary_text",
                     device=pipe_dev,  # 0 for CUDA, mps device, or -1
-                    torch_dtype=torch_dtype if pipe_dev != -1 else None,
+                    dtype=torch_dtype if pipe_dev != -1 else None,
                 )
             else:
                 # Use Google Gemini for Summarization:
@@ -1011,7 +1074,7 @@ class AbstractLoader(ABC):
 
         if cache_key not in self._translation_models:
             if self._use_translation_pipeline:
-                from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, pipeline
+                from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
                 # Select appropriate model based on language pair if not specified
                 if model_name is None:
@@ -1027,8 +1090,8 @@ class AbstractLoader(ABC):
                     translate_model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
                     translate_tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-                    self._translation_models[cache_key] = pipeline(
-                        "translation", model=translate_model, tokenizer=translate_tokenizer
+                    self._translation_models[cache_key] = Seq2SeqGenerator(
+                        translate_model, translate_tokenizer, output_key="translation_text"
                     )
                 except Exception as e:  # noqa: BLE001
                     self.logger.error(f"Error loading translation model {model_name}: {e}")

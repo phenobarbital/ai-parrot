@@ -14,7 +14,7 @@ authors = [
 ]
 dependencies = [
     "ai-parrot>=1.2.0",
-    "transformers>=4.48.0,<5.0",
+    "transformers>=5.3.0",
     # NOT declared here: `torch` — Gemma4Client imports both `torch` and
     # `transformers` lazily inside its methods (a pre-existing "avoid
     # pulling in heavy deps until actually used" pattern, kept as-is by
