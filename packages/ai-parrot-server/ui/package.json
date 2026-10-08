@@ -51,6 +51,11 @@
     "uuid": "^13.0.0",
     "world-atlas": "^2.0.2"
   },
+  "pnpm": {
+    "overrides": {
+      "tinypool": ">=2.1.1"
+    }
+  },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "@tailwindcss/vite": "^4.3.0",
