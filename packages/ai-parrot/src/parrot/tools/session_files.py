@@ -24,11 +24,22 @@ LOCAL_BACKENDS = frozenset({"fs"})
 #: Every backend this toolkit can ever address.
 SUPPORTED_BACKENDS = REMOTE_BACKENDS | LOCAL_BACKENDS
 
+#: Largest single session file accepted by this toolkit, in bytes.
+#: Above Jira's 10 MB default attachment limit (jiratoolkit.py:392) so a legitimate
+#: document is never blocked, far below FileManagerToolkit's 100 MB.
+DEFAULT_MAX_FILE_BYTES = 25 * 1024 * 1024
+
 
 class NoBoundSession(SessionFileError):
     """No RequestContext is bound to this asyncio task."""
 
     code = "no_session"
+
+
+class FileTooLarge(SessionFileError):
+    """The file exceeds the toolkit's per-file byte cap."""
+
+    code = "file_too_large"
 
 
 def _validate_remote_path(remote_path: str) -> str:
@@ -78,6 +89,7 @@ class SessionFileToolkit(AbstractToolkit):
         self,
         store: Optional[SessionFileStore] = None,
         local_import_root: Optional[Path | str] = None,
+        max_file_bytes: int = DEFAULT_MAX_FILE_BYTES,
     ) -> None:
         """Initialize the toolkit.
 
@@ -86,12 +98,17 @@ class SessionFileToolkit(AbstractToolkit):
             local_import_root: Directory the ``"fs"`` backend is confined to. When
                 ``None`` (the default) ``"fs"`` is refused outright, so no agent can
                 read the server's working directory.
+            max_file_bytes: Largest single file this toolkit will store, in bytes.
 
         Raises:
-            ValueError: If *local_import_root* is set but is not an existing directory.
+            ValueError: If *local_import_root* is not an existing directory, or
+                *max_file_bytes* is not positive.
         """
         super().__init__()
         self.store = store or SessionFileStore()
+        if max_file_bytes <= 0:
+            raise ValueError(f"max_file_bytes must be positive, got {max_file_bytes!r}")
+        self.max_file_bytes = max_file_bytes
         self.local_import_root: Optional[Path] = None
         if local_import_root is not None:
             resolved_root = Path(local_import_root).resolve()
@@ -113,6 +130,21 @@ class SessionFileToolkit(AbstractToolkit):
         if not session_id:
             raise NoBoundSession("No session is bound to this request; session files are unavailable")
         return str(session_id)
+
+    def _check_size(self, size: int, filename: str) -> None:
+        """Refuse *size* when it exceeds the configured per-file cap.
+
+        Args:
+            size: Byte count about to be stored.
+            filename: Name used in the refusal message.
+
+        Raises:
+            FileTooLarge: If *size* exceeds ``self.max_file_bytes``.
+        """
+        if size > self.max_file_bytes:
+            raise FileTooLarge(
+                f"{filename!r} is {size} bytes, over the {self.max_file_bytes}-byte per-file limit"
+            )
 
     async def list_session_files(self) -> Dict[str, Any]:
         """List the files available in this session.
@@ -146,7 +178,9 @@ class SessionFileToolkit(AbstractToolkit):
             content: Text content, stored as UTF-8.
         """
         session_id = self._require_session()
-        record = await self.store.put_bytes(session_id, filename, content.encode("utf-8"), origin="generated")
+        data = content.encode("utf-8")
+        self._check_size(len(data), filename)
+        record = await self.store.put_bytes(session_id, filename, data, origin="generated")
         return {"file_id": record.file_id, "filename": record.filename, "size": record.size}
 
     async def import_remote_file(
@@ -179,6 +213,8 @@ class SessionFileToolkit(AbstractToolkit):
             else:
                 manager = FileManagerToolkit(manager_type=backend)
             await manager.download_file(safe_path, str(destination))
+            downloaded = await asyncio.to_thread(destination.stat)
+            self._check_size(downloaded.st_size, filename or Path(safe_path).name)
             data = await asyncio.to_thread(destination.read_bytes)
             record = await self.store.put_bytes(
                 session_id,

@@ -6,7 +6,13 @@ from pathlib import Path
 import pytest
 
 from parrot.interfaces.file.session import SessionFileStore
-from parrot.tools.session_files import REMOTE_BACKENDS, SessionFileToolkit, _validate_remote_path
+from parrot.tools.session_files import (
+    DEFAULT_MAX_FILE_BYTES,
+    REMOTE_BACKENDS,
+    FileTooLarge,
+    SessionFileToolkit,
+    _validate_remote_path,
+)
 from parrot.utils.helpers import RequestContext, _current_ctx
 
 
@@ -43,9 +49,11 @@ def _recording_transport(monkeypatch, payload=b"remote document"):
             self.kwargs = kwargs
             calls.append(self)
             self.paths = []
+            self.destinations = []
 
         async def download_file(self, path, destination=None):
             self.paths.append(path)
+            self.destinations.append(destination)
             destination_path = Path(destination)
             destination_path.write_bytes(payload)
             return {"downloaded": True, "destination": str(destination_path), "size": len(payload)}
@@ -182,3 +190,64 @@ class TestRemotePathValidation:
         await toolkit.import_remote_file("s3", "./reports//brief.docx")
 
         assert calls[0].paths == ["reports/brief.docx"]
+
+
+class TestByteCap:
+    """Module 3 — neither write path may exceed the per-file cap."""
+
+    def test_rejects_non_positive_cap(self, tmp_path):
+        """AC9 — a zero or negative cap is a wiring error, caught at construction."""
+        for bad in (0, -1):
+            with pytest.raises(ValueError, match="max_file_bytes"):
+                SessionFileToolkit(store=SessionFileStore(root=tmp_path), max_file_bytes=bad)
+
+    def test_default_cap_exceeds_jira_limit(self):
+        """The default leaves Jira-legal attachments (10 MB) comfortably inside."""
+        assert DEFAULT_MAX_FILE_BYTES > 10 * 1024 * 1024
+
+    async def test_generated_file_over_cap(self, tmp_path, bind):
+        """AC7 — oversized generated text is refused and nothing is stored."""
+        toolkit = SessionFileToolkit(store=SessionFileStore(root=tmp_path), max_file_bytes=16)
+        bind("s1")
+
+        with pytest.raises(FileTooLarge) as excinfo:
+            await toolkit.store_generated_file("report.md", "x" * 17)
+
+        assert excinfo.value.code == "file_too_large"
+        assert await toolkit.list_session_files() == {"files": []}
+
+    async def test_generated_cap_measures_encoded_bytes(self, tmp_path, bind):
+        """The cap counts UTF-8 bytes, not characters."""
+        toolkit = SessionFileToolkit(store=SessionFileStore(root=tmp_path), max_file_bytes=4)
+        bind("s1")
+
+        with pytest.raises(FileTooLarge):
+            await toolkit.store_generated_file("report.md", "\u00e1\u00e9\u00ed")  # 3 chars, 6 bytes
+
+    async def test_import_over_cap_not_read_into_memory(self, tmp_path, bind, monkeypatch):
+        """AC8 — the cap is enforced on stat(), before the bytes are read."""
+        temp_dirs = _recording_transport(monkeypatch, payload=b"y" * 64)
+        toolkit = SessionFileToolkit(store=SessionFileStore(root=tmp_path), max_file_bytes=16)
+        bind("s1")
+
+        def _fail_read(self, *args, **kwargs):
+            raise AssertionError("the download must not be read into memory when over the cap")
+
+        monkeypatch.setattr(Path, "read_bytes", _fail_read)
+
+        with pytest.raises(FileTooLarge):
+            await toolkit.import_remote_file("s3", "reports/brief.docx")
+
+        assert await toolkit.list_session_files() == {"files": []}
+        # The transport's destination lived in a private temp dir removed by the finally.
+        assert not Path(temp_dirs[0].destinations[0]).parent.exists()
+
+    async def test_import_at_cap_succeeds(self, tmp_path, bind, monkeypatch):
+        """The boundary is inclusive: exactly max_file_bytes is stored."""
+        _recording_transport(monkeypatch, payload=b"z" * 16)
+        toolkit = SessionFileToolkit(store=SessionFileStore(root=tmp_path), max_file_bytes=16)
+        bind("s1")
+
+        result = await toolkit.import_remote_file("s3", "reports/brief.docx")
+
+        assert result["size"] == 16
