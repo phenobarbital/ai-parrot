@@ -1,0 +1,122 @@
+**Option B** is recommended because:
+
+- It is the only option that closes **all five** findings and leaves the
+  database unable to hold the bad state the issue describes. Option A fixes the
+  symptoms in code but the DDL change never reaches an existing database, which
+  is the exact failure mode the issue warns about ("fixing them post-data
+  requires a migration"). Option C adds a heavyweight mechanism that still needs
+  Option B's constraint work underneath.
+- It uses the escape hatch the DDL module already reserved for itself
+  ("columnas añadidas en futuras tasks con ALTER TABLE idempotente",
+  `fieldsync_schema.py:18-19`) instead of inventing a migration lane.
+- It keeps the FEAT-302/330 testing style intact: every assertion is on SQL text
+  or on `fetchrow` returning `None`, so the existing fake-pool suite extends
+  rather than being replaced.
+- The user's Round 2 decisions (service-level SQL check, composite FK, handler
+  400 + DB CHECK) are exactly Option B's shape.
+
+What we trade off: a bigger DDL diff and the first procedural `DO $$` blocks in
+the module, plus a grant requirement on `auth.organization_clients` for the venue
+pool's role. Both are acceptable for a security fix on empty tables.
+
+Treat the fix as "make the database unable to hold a cross-org row" plus "make
+the service unable to attempt one", and make `initialize()` converge any
+environment to the new shape.
+
+**Schema (`fieldsync_schema.py`)**
+- `CREATE TABLE IF NOT EXISTS` text updated for fresh databases:
+  - `sites`: `uq_sites_org_store_name UNIQUE (org_id, store_id, client_id, name)`
+    and `uq_sites_id_org UNIQUE (site_id, org_id)` (required target for the
+    composite FK).
+  - `locations`: `uq_locations_org_site_name UNIQUE (org_id, site_id, name)`,
+    `fk_locations_site_org FOREIGN KEY (site_id, org_id) REFERENCES
+    fieldsync.sites (site_id, org_id) ON DELETE CASCADE` (replacing the
+    single-column FK), and CHECK constraints `ck_locations_latitude`
+    (`latitude IS NULL OR latitude BETWEEN -90 AND 90`), `ck_locations_longitude`
+    (`BETWEEN -180 AND 180`), `ck_locations_geofence_radius`
+    (`geofence_radius_m IS NULL OR geofence_radius_m > 0`), and
+    `ck_locations_latlon_pair` (`(latitude IS NULL) = (longitude IS NULL)`).
+- A new ordered block of **idempotent ALTER statements** appended to `_ALL_DDL`
+  for databases that already have the v1 tables: `ALTER TABLE … DROP CONSTRAINT
+  IF EXISTS <old name>` for `uq_sites_store_name`, `uq_locations_site_name`,
+  `locations_site_id_fkey`; and, because Postgres has no `ADD CONSTRAINT IF NOT
+  EXISTS`, each `ADD CONSTRAINT` wrapped in a `DO $$ … IF NOT EXISTS (SELECT 1
+  FROM pg_constraint WHERE conname = '…') THEN … END IF $$` block. New constraint
+  names differ from the old ones so the drop/add pair is unambiguous and
+  re-runnable. `ddl_statements()` grows accordingly (the existing
+  `test_ddl_statements_returns_six` must be updated).
+
+**Service (`venue_service.py`)**
+- `_INSERT_SITE_SQL` → `INSERT … SELECT $1,$2,$3,$4 WHERE EXISTS (SELECT 1 FROM
+  auth.organization_clients WHERE client_id = $2 AND org_id = $3)`; 0 rows ⇒ new
+  `ClientNotInOrgError(client_id)`.
+- `_INSERT_LOCATION_SQL` → `INSERT … SELECT … WHERE EXISTS (site $1 in org $3)
+  AND EXISTS (client $2 in org $3)`; 0 rows ⇒ the service re-checks which guard
+  failed with one follow-up `SELECT` (site first) so it can raise
+  `SiteNotFoundError` vs `ClientNotInOrgError` precisely — or, simpler, raises
+  `SiteNotFoundError` when the site check fails and `ClientNotInOrgError`
+  otherwise. Both map to 404 in the handler.
+- Docstrings updated: "UNIQUE per `(org_id, store_id, client_id)`" etc.
+- `_db_utils.py` gains `is_check_violation()` (SQLSTATE `23514`) and
+  `is_foreign_key_violation()` (`23503`) next to `is_unique_violation()`, so the
+  service can surface a `VenueValidationError` instead of a bare asyncpg error if
+  a direct caller bypasses the handler.
+
+**Handler (`handlers.py`)**
+- `create_location`: validate `latitude` / `longitude` as finite floats in range,
+  `geofence_radius_m` as a positive int, lat/lon both present or both absent;
+  400 with the offending field name. Map `SiteNotFoundError` and
+  `ClientNotInOrgError` → 404, `VenueValidationError` → 400.
+- `create_site`: map `ClientNotInOrgError` → 404.
+
+**Org graph (`org_graph.py`)**
+- A verification task: a documented `psql` / `information_schema.columns` check
+  against `networkninja.stores_geographies` (with `ENV=prod`, per project memory),
+  then edit `_SQL_GET_STORES_FOR_CLIENT` to the real column names and delete the
+  NOTE. The fake-pool fixture in `test_org_graph_service.py:390-392` is keyed by
+  table name, not column, so it tolerates a rename.
+
+✅ **Pros:**
+- Cross-org rows become **impossible by any path** — the composite FK rejects
+  them even from a raw `INSERT`, and the EXISTS guard turns the attempt into a
+  clean 404 with no oracle.
+- `initialize()` converges both fresh and already-initialised databases, which
+  is exactly the escape hatch the DDL doctrine reserved; no out-of-band script
+  for ops to remember.
+- Client membership is enforced in the same statement as the write (one
+  round-trip) and holds for direct Python callers, not only the HTTP layer.
+- CHECK constraints make the 400 validation a convenience, not the only guard.
+- All of it is unit-testable with the existing fake pool (assert SQL text
+  contains `EXISTS`, `fetchrow` → `None` raises the right exception, DDL text
+  contains the constraint names, handler returns 400/404).
+
+❌ **Cons:**
+- Larger DDL diff; `_ALL_DDL` roughly doubles in statement count and the
+  `DO $$` blocks are the first procedural SQL in the module.
+- The `VenueService` pool's DB role now needs `SELECT` on
+  `auth.organization_clients` (true today for the `OrgGraphService` role, to be
+  confirmed for the venue pool — open question).
+- Constraint renames mean anyone with a hand-written v1 database must run
+  `initialize()` once; that is the intended path but it is a behaviour change to
+  document.
+- Without a real-Postgres test the ALTER block is only text-tested; a one-off
+  manual run against a disposable DB is recommended in the task's validation
+  commands.
+
+📊 **Effort:** Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `asyncpg` | driver; `conn.execute()` runs `DO $$` blocks fine | already a dependency |
+| `pydantic` v2 | optional `LocationCreate` input model for the bounds | already a dependency |
+| PostgreSQL ≥ 9.x | `DROP CONSTRAINT IF EXISTS`, composite FK, CHECK | server feature, nothing to install |
+
+🔗 **Existing Code to Reuse:**
+- `services/fieldsync_schema.py:124-131` — `_ALL_DDL` ordered list + `ddl_statements()` introspection used by tests
+- `services/venue_service.py:162-204` — SQL constants; `:259-266` / `:347-362` the `is_unique_violation` → `DuplicateVenueError` pattern to extend
+- `services/_db_utils.py:8-20` — `is_unique_violation()` template for the new helpers
+- `services/org_graph.py:179-184` — `_SQL_GET_CLIENT_SCOPED` is the exact membership predicate to inline as `EXISTS`
+- `api/handlers.py:2846-2880` — `get_location` shows the `LocationNotFoundError → 404` mapping style
+- `tests/unit/test_venue_service.py:39-120` — fake-pool helpers (`_make_conn`, `_make_pool`, `_site_row`, `_location_row`)
+- `tests/unit/test_fieldsync_schema.py:53-150` — DDL text + manager tests to extend
