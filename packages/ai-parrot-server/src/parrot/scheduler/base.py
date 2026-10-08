@@ -6,18 +6,21 @@ import asyncio
 import contextlib
 import inspect
 import logging
+import uuid
 from enum import Enum
 from typing import Any, Callable, Dict, Optional, Protocol, Sequence, Set, runtime_checkable
 
 import redis.asyncio as aioredis
 from aiohttp import web
 from apscheduler.jobstores.memory import MemoryJobStore
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.jobstores.redis import RedisJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from asyncdb import AsyncDB
+from asyncdb.exceptions import NoDataFound
 from navigator.connections import PostgresPool
 from navconfig import config as nav_config
 from parrot.conf import CACHE_HOST, CACHE_PORT, default_dsn
@@ -31,12 +34,15 @@ from .coordination import (
     manager_prefix,
     redis_db,
 )
-from .models import CodeJobRecord
+from .models import CodeJobRecord, JOB_DEFINITION_VERSION, ServiceSchedule, schedule_fingerprint
 from .models import FireContext, JobDefinition, utcnow
 from .runstate import MemoryRunState, PostgresRunState, RedisRunState, RunStateStore
 from .sanitize import (
     SchedulerConfigError,
     clean_int,
+    clean_method_name,
+    clean_misfire_grace_time,
+    normalize_backend,
     normalize_schedule_type,
     sanitize_redis_settings,
     sanitize_schedule_config,
@@ -358,6 +364,365 @@ class SchedulerManager:
         if normalized == "code":
             return self._memory_state
         raise ValueError(f"Unsupported scheduler backend: {backend!r}")
+
+    def _db_job_kwargs(self, definition: JobDefinition) -> dict[str, Any]:
+        """Build the JSON-safe trampoline arguments for a database schedule."""
+        return {
+            "manager_name": self.registered_name,
+            "schedule_id": definition.schedule_id,
+            "fingerprint": schedule_fingerprint(definition),
+        }
+
+    async def add_schedule(
+        self,
+        target_kind: str,
+        target_name: str,
+        schedule_type: str,
+        schedule_config: dict[str, Any],
+        *,
+        backend: str = "db",
+        target_id: str | None = None,
+        tenant: str | None = None,
+        prompt: str | None = None,
+        method_name: str | None = None,
+        created_by: int | None = None,
+        created_email: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        send_result: dict[str, Any] | None = None,
+        success_callback: Callable[..., Any] | None = None,
+        callbacks: list[dict[str, Any]] | None = None,
+        misfire_grace_time: int | None = None,
+    ) -> JobDefinition:
+        """Validate, persist or store, and schedule a target invocation.
+
+        Raises:
+            SchedulerConfigError: If scheduler configuration is invalid.
+            ValueError: If the target kind or target is unknown.
+        """
+        schedule_type = normalize_schedule_type(schedule_type)
+        schedule_config = sanitize_schedule_config(schedule_type, schedule_config)
+        backend = normalize_backend(backend, redis_available=self.redis_available, strict=True)
+        method_name = clean_method_name(method_name)
+        misfire_grace_time = clean_misfire_grace_time(misfire_grace_time)
+        resolver = self._resolvers.get(target_kind)
+        if resolver is None:
+            raise ValueError(f"Unknown target kind: {target_kind!r}")
+        if backend == "redis" and success_callback is not None:
+            raise ValueError("success_callback is not supported for redis schedules")
+
+        target = await resolver.resolve(target_name, target_id=target_id)
+        if target is None:
+            raise ValueError(f"Target not found: {target_kind}/{target_name}")
+        schedule_id = str(uuid.uuid4())
+        definition = JobDefinition(
+            schedule_id=schedule_id,
+            backend=backend,
+            target_kind=target_kind,
+            target_name=target_name,
+            target_id=target_id if target_id is not None else resolver.derive_target_id(target),
+            tenant=tenant,
+            prompt=prompt,
+            method_name=method_name,
+            schedule_type=schedule_type,
+            schedule_config=schedule_config,
+            metadata=dict(metadata or {}),
+            send_result=dict(send_result or {}),
+            callbacks=list(callbacks or []),
+            misfire_grace_time=300 if backend == "db" and misfire_grace_time is None else misfire_grace_time,
+            created_by=created_by,
+            created_email=created_email,
+        )
+        resolver.build_call(target, definition, FireContext.for_fire(schedule_id, utcnow()))
+        trigger = self._create_trigger(schedule_type, schedule_config)
+
+        if backend == "redis":
+            self.scheduler.add_job(
+                jobs.run_redis_job,
+                trigger=trigger,
+                id=schedule_id,
+                name=f"{target_name}_{schedule_type}",
+                kwargs={
+                    "manager_name": self.registered_name,
+                    "schedule_id": schedule_id,
+                    "definition_version": JOB_DEFINITION_VERSION,
+                    "definition": definition.model_dump(mode="json"),
+                },
+                jobstore="redis",
+                replace_existing=True,
+                misfire_grace_time=definition.misfire_grace_time,
+                coalesce=True,
+            )
+            return definition
+
+        pool = await self._get_connection_pool()
+        async with await pool.acquire() as conn:  # pylint: disable=no-member
+            ServiceSchedule.Meta.connection = conn
+            row = ServiceSchedule.from_definition(definition)
+            await row.save()
+        try:
+            job = self.scheduler.add_job(
+                jobs.run_db_schedule,
+                trigger=trigger,
+                id=schedule_id,
+                name=f"{target_name}_{schedule_type}",
+                kwargs=self._db_job_kwargs(definition),
+                jobstore="default",
+                replace_existing=True,
+                misfire_grace_time=definition.misfire_grace_time,
+            )
+            if job.next_run_time:
+                row.next_run = job.next_run_time
+                row.updated_at = utcnow()
+                async with await pool.acquire() as conn:  # pylint: disable=no-member
+                    ServiceSchedule.Meta.connection = conn
+                    await row.update()
+        except Exception as exc:
+            await row.delete()
+            raise RuntimeError(f"Failed to add schedule to jobstore: {exc}") from exc
+        if success_callback is not None:
+            self._local_callbacks[schedule_id] = success_callback
+        return definition
+
+    async def _locate(self, schedule_id: str) -> tuple[str, JobDefinition | None, Any]:
+        """Find a job by id across code, Redis, database, and external jobs."""
+        if schedule_id in self._code_jobs:
+            record = self._code_jobs[schedule_id]
+            return "code", record.to_definition(), record
+        redis_job = self.scheduler.get_job(schedule_id, jobstore="redis") if self.redis_available else None
+        if redis_job is not None and redis_job.func_ref == "parrot.scheduler.jobs:run_redis_job":
+            return "redis", JobDefinition(**redis_job.kwargs["definition"]), redis_job
+        if self._pool is not None:
+            try:
+                identifier = uuid.UUID(schedule_id)
+            except (TypeError, ValueError):
+                identifier = None
+            if identifier is not None:
+                async with await self._pool.acquire() as conn:  # pylint: disable=no-member
+                    ServiceSchedule.Meta.connection = conn
+                    try:
+                        row = await ServiceSchedule.get(schedule_id=identifier)
+                    except NoDataFound:
+                        row = None
+                if row is not None:
+                    return "db", row.to_definition(), row
+        for jobstore in self._registered_jobstores():
+            job = self.scheduler.get_job(schedule_id, jobstore=jobstore)
+            if job is not None:
+                return "external", None, job
+        raise NoDataFound(f"Schedule {schedule_id!r} not found")
+
+    async def get_schedule(self, schedule_id: str) -> JobDefinition:
+        """Return a definition for editable or code schedules."""
+        source, definition, _ = await self._locate(schedule_id)
+        if source == "external" or definition is None:
+            raise NoDataFound(f"Schedule {schedule_id!r} has no definition")
+        return definition
+
+    async def list_schedules(self) -> list[JobDefinition]:
+        """Return database, Redis, and code schedule definitions."""
+        definitions: list[JobDefinition] = []
+        if self._pool is not None:
+            async with await self._pool.acquire() as conn:  # pylint: disable=no-member
+                ServiceSchedule.Meta.connection = conn
+                definitions.extend(row.to_definition() for row in await ServiceSchedule.all())
+        if self.redis_available:
+            for job in self.scheduler.get_jobs(jobstore="redis"):
+                if job.func_ref == "parrot.scheduler.jobs:run_redis_job":
+                    definitions.append(JobDefinition(**job.kwargs["definition"]))
+        definitions.extend(record.to_definition() for record in self._code_jobs.values())
+        return definitions
+
+    def _serialize_job(self, definition: JobDefinition | None, job: Any = None, *, source: str) -> dict[str, Any]:
+        """Serialize an owned or foreign APScheduler job without leaking kwargs."""
+        jobstore = getattr(job, "_jobstore_alias", None)
+        next_run_time = getattr(job, "next_run_time", None) if job else None
+        job_payload = {
+            "id": str(job.id) if job else None,
+            "name": job.name if job else None,
+            "next_run": next_run_time.isoformat() if next_run_time else None,
+            "paused": bool(job and next_run_time is None),
+            "pending": job is not None,
+            "jobstore": jobstore,
+        }
+        if definition is None:
+            return {
+                "source": "external",
+                "schedule_id": str(job.id),
+                "enabled": next_run_time is not None,
+                "job": job_payload,
+            }
+        payload = definition.model_dump(mode="json")
+        payload.update({"source": source, "backend": definition.backend, "enabled": next_run_time is not None if job else True, "job": job_payload})
+        return payload
+
+    async def list_jobs(self) -> list[dict[str, Any]]:
+        """Return every scheduler job and database rows that have drifted."""
+        definitions = {definition.schedule_id: definition for definition in await self.list_schedules()}
+        payload: list[dict[str, Any]] = []
+        for jobstore in self._registered_jobstores():
+            for job in self.scheduler.get_jobs(jobstore=jobstore):
+                definition = definitions.pop(job.id, None)
+                if definition is not None:
+                    payload.append(self._serialize_job(definition, job, source=definition.backend))
+                else:
+                    payload.append(self._serialize_job(None, job, source="external"))
+        for definition in definitions.values():
+            payload.append(self._serialize_job(definition, source=definition.backend))
+        return payload
+
+    async def update_schedule(self, schedule_id: str, updates: dict[str, Any]) -> JobDefinition:
+        """Update an editable schedule and rebuild its APScheduler trigger."""
+        source, current, stored = await self._locate(schedule_id)
+        if source == "external" or current is None:
+            raise NotEditableError("external schedules cannot be edited")
+        if "backend" in updates:
+            raise NotEditableError("backend cannot change; delete and re-create")
+        if source == "code":
+            if set(updates) != {"enabled"}:
+                raise NotEditableError("code-declared schedules cannot be edited")
+            enabled = bool(updates["enabled"])
+            stored.enabled = enabled
+            if enabled:
+                self.scheduler.resume_job(schedule_id, jobstore="default")
+            else:
+                self.scheduler.pause_job(schedule_id, jobstore="default")
+            await self._run_state_for("code").set_enabled(schedule_id, enabled)
+            return stored.to_definition()
+
+        editable = {
+            "target_kind", "target_name", "target_id", "prompt", "method_name", "schedule_type", "schedule_config",
+            "metadata", "send_result", "callbacks", "misfire_grace_time", "tenant", "created_by", "created_email",
+        }
+        values = current.model_dump()
+        values.update({key: value for key, value in updates.items() if key in editable})
+        values["method_name"] = clean_method_name(values["method_name"])
+        values["schedule_type"] = normalize_schedule_type(values["schedule_type"])
+        values["schedule_config"] = sanitize_schedule_config(values["schedule_type"], values["schedule_config"])
+        values["misfire_grace_time"] = clean_misfire_grace_time(values["misfire_grace_time"])
+        if source == "db" and values["misfire_grace_time"] is None:
+            values["misfire_grace_time"] = 300
+        updated = JobDefinition(**values)
+        trigger = self._create_trigger(updated.schedule_type, updated.schedule_config)
+        enabled = bool(updates.get("enabled", getattr(stored, "enabled", True)))
+        if source == "redis":
+            kwargs = dict(stored.kwargs)
+            kwargs["definition"] = updated.model_dump(mode="json")
+            self.scheduler.modify_job(schedule_id, jobstore="redis", kwargs=kwargs, misfire_grace_time=updated.misfire_grace_time)
+            self.scheduler.reschedule_job(schedule_id, jobstore="redis", trigger=trigger)
+            if "enabled" in updates:
+                if enabled:
+                    self.scheduler.resume_job(schedule_id, jobstore="redis")
+                else:
+                    self.scheduler.pause_job(schedule_id, jobstore="redis")
+                await self._run_state_for("redis").set_enabled(schedule_id, enabled)
+            return updated
+
+        for key, value in updated.model_dump().items():
+            if key not in {"schedule_id", "backend", "misfire_grace_time"}:
+                setattr(stored, key, value)
+        stored.enabled = enabled
+        stored.updated_at = utcnow()
+        pool = await self._get_connection_pool()
+        async with await pool.acquire() as conn:  # pylint: disable=no-member
+            ServiceSchedule.Meta.connection = conn
+            await stored.update()
+        with contextlib.suppress(JobLookupError):
+            self.scheduler.remove_job(schedule_id, jobstore="default")
+        if enabled:
+            job = self.scheduler.add_job(
+                jobs.run_db_schedule, trigger=trigger, id=schedule_id, name=f"{updated.target_name}_{updated.schedule_type}",
+                kwargs=self._db_job_kwargs(updated), jobstore="default", replace_existing=True,
+                misfire_grace_time=updated.misfire_grace_time,
+            )
+            stored.next_run = job.next_run_time
+            async with await pool.acquire() as conn:  # pylint: disable=no-member
+                ServiceSchedule.Meta.connection = conn
+                await stored.update()
+        await self._run_state_for("db").set_enabled(schedule_id, enabled)
+        return updated
+
+    async def pause_schedule(self, schedule_id: str) -> JobDefinition:
+        """Pause an owned schedule while preserving its definition."""
+        return await self.update_schedule(schedule_id, {"enabled": False})
+
+    async def delete_schedule(self, schedule_id: str) -> None:
+        """Delete a database or Redis schedule and its scheduler state."""
+        source, _, stored = await self._locate(schedule_id)
+        if source in {"code", "external"}:
+            raise NotEditableError(f"{source} schedules cannot be deleted")
+        if source == "redis":
+            self.scheduler.remove_job(schedule_id, jobstore="redis")
+            await self._run_state_for("redis").clear(schedule_id)
+            return
+        with contextlib.suppress(JobLookupError):
+            self.scheduler.remove_job(schedule_id, jobstore="default")
+        pool = await self._get_connection_pool()
+        async with await pool.acquire() as conn:  # pylint: disable=no-member
+            ServiceSchedule.Meta.connection = conn
+            await stored.delete()
+        self._local_callbacks.pop(schedule_id, None)
+
+    async def remove_schedule(self, schedule_id: str) -> None:
+        """Backward-compatible alias of :meth:`delete_schedule`."""
+        await self.delete_schedule(schedule_id)
+
+    async def load_schedules_from_db(self) -> None:
+        """Load enabled database schedules into the default APScheduler jobstore."""
+        pool = await self._get_connection_pool()
+        query = "SELECT * FROM navigator.service_scheduler WHERE enabled = TRUE ORDER BY created_at"
+        async with await pool.acquire() as conn:  # pylint: disable=no-member
+            ServiceSchedule.Meta.connection = conn
+            rows, error = await conn.query(query)
+        if error:
+            self.logger.warning("Error querying service schedules: %s", error)
+            return
+        for record in rows:
+            try:
+                row = ServiceSchedule(**record)
+                definition = row.to_definition()
+                job = self.scheduler.add_job(
+                    jobs.run_db_schedule, trigger=self._create_trigger(definition.schedule_type, definition.schedule_config),
+                    id=definition.schedule_id, name=f"{definition.target_name}_{definition.schedule_type}",
+                    kwargs=self._db_job_kwargs(definition), jobstore="default", replace_existing=True,
+                    misfire_grace_time=300,
+                )
+                if job.next_run_time:
+                    row.next_run = job.next_run_time
+                    row.updated_at = utcnow()
+                    async with await pool.acquire() as conn:  # pylint: disable=no-member
+                        ServiceSchedule.Meta.connection = conn
+                        await row.update()
+            except Exception as exc:  # noqa: BLE001
+                self.logger.error("Failed to load schedule %s: %s", record.get("schedule_id"), exc)
+
+    def register_object_schedules(self, obj: Any, name: str) -> int:
+        """Register ``@schedule`` methods from an object as in-memory code jobs."""
+        registered = 0
+        for method_name, method in inspect.getmembers(obj, predicate=inspect.ismethod):
+            if not hasattr(method, "_schedule_config"):
+                continue
+            config = method._schedule_config
+            configured_name = config.get("method_name", method_name)
+            try:
+                schedule_type = normalize_schedule_type(config.get("schedule_type"))
+                schedule_config = sanitize_schedule_config(schedule_type, config.get("schedule_config", {}))
+                trigger = self._create_trigger(schedule_type, schedule_config)
+                job_id = f"auto_{name}_{configured_name}"
+                record = CodeJobRecord(
+                    job_id=job_id, target_name=name, method_name=configured_name, method=method,
+                    schedule_type=schedule_type, schedule_config=schedule_config,
+                    success_callback=config.get("success_callback"), send_result=config.get("send_result"),
+                    callbacks=list(config.get("callbacks") or []),
+                )
+                self._code_jobs[job_id] = record
+                self.scheduler.add_job(
+                    jobs.run_auto_schedule, trigger=trigger, id=job_id, name=f"{name}.{configured_name}",
+                    kwargs={"manager_name": self.registered_name, "job_id": job_id}, jobstore="default", replace_existing=True,
+                )
+                registered += 1
+            except Exception as exc:  # noqa: BLE001
+                self.logger.error("Failed to register auto-schedule for %s.%s: %s", name, configured_name, exc)
+        return registered
 
     async def start_headless(
         self,
