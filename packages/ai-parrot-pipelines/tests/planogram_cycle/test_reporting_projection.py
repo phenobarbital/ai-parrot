@@ -181,7 +181,13 @@ def test_project_compliance_default_unchanged() -> None:
         "Mismatch display",
         "Empty display",
     ]
-    assert default.found_products == ["Observed brand only", "Observed inferred brand", "Observed wrong model"]
+    assert default.found_products == [
+        "Observed brand only",
+        "Observed inferred brand",
+        "Observed threshold model",
+        "Observed after low view",
+        "Observed wrong model",
+    ]
     assert default.missing_products == ["Empty display"]
 
 
