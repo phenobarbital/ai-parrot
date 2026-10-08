@@ -131,9 +131,11 @@
       "status": "pending",
       "priority": "medium",
       "effort": "S",
-      "depends_on": [],
+      "depends_on": [
+        "TASK-4173"
+      ],
       "parallel": true,
-      "parallelism_notes": "Root task: renames the callback keyword in functions/__init__.py and infographic_recipes.py and the one legacy call site in manager.py:782 so the legacy manager keeps working. TASK-4157 calls callbacks with target_name=; TASK-4158 rewrites manager.py after this.",
+      "parallelism_notes": "Renames the callback keyword in functions/__init__.py and infographic_recipes.py and the one legacy call site in manager.py:782 so the legacy manager keeps working. TASK-4157 calls callbacks with target_name=; TASK-4158 rewrites manager.py after this. Depends on TASK-4173, which also modifies scheduler/manager.py _handle_job_success (success_callback isolation); this task edits the same function after it.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -177,7 +179,7 @@
         "TASK-4152"
       ],
       "parallel": true,
-      "parallelism_notes": "Modifies base.py created by TASK-4154. Builds RunStateStore instances: PostgresRunState/MemoryRunState (TASK-4148) and RedisRunState (TASK-4149, runstate.py) — and reuses TASK-4149's conftest Redis fixtures. Uses normalize_backend (TASK-4150, sanitize.py), manager_prefix/redis_db/build_fire_coordinator(prefix=) (TASK-4151, coordination.py) and jobs.register_manager typed to SchedulerManager (TASK-4152).",
+      "parallelism_notes": "Modifies base.py created by TASK-4154. Builds RunStateStore instances: PostgresRunState/MemoryRunState (TASK-4148) and RedisRunState (TASK-4149, runstate.py) \u2014 and reuses TASK-4149's conftest Redis fixtures. Uses normalize_backend (TASK-4150, sanitize.py), manager_prefix/redis_db/build_fire_coordinator(prefix=) (TASK-4151, coordination.py) and jobs.register_manager typed to SchedulerManager (TASK-4152).",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -238,7 +240,7 @@
         "TASK-4157"
       ],
       "parallel": true,
-      "parallelism_notes": "Subclasses SchedulerManager completed by TASK-4157 (base.py); rewrites manager.py, which TASK-4153 last modified (callback call site) — TASK-4157 already depends on TASK-4153, so the shared-file order is guaranteed.",
+      "parallelism_notes": "Subclasses SchedulerManager completed by TASK-4157 (base.py); rewrites manager.py, which TASK-4153 last modified (callback call site) \u2014 TASK-4157 already depends on TASK-4153, so the shared-file order is guaranteed.",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -410,6 +412,25 @@
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4172-namespace-imports-stale-host-assertions.md",
       "discovered_from": "issue:e523973539f5"
+    },
+    {
+      "id": "TASK-4173",
+      "slug": "success-callback-isolation",
+      "title": "Isolate a raising success_callback so deliveries and send_result still run",
+      "feature_id": "FEAT-644",
+      "feature": "scheduler-manager-base",
+      "spec": "sdd/specs/scheduler-manager-base.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Ledger promotion of issue:37f02d3c2474. No dependencies: lands the fix on the current manager.py before the rewrite. TASK-4153 (same _handle_job_success) and, transitively, TASK-4158/TASK-4160 (manager.py rewrite, test_delivery_outcomes.py migration) run after it.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4173-success-callback-isolation.md",
+      "discovered_from": "issue:37f02d3c2474"
     }
   ]
 }

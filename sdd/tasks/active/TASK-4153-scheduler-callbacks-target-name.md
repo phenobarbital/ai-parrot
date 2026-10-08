@@ -5,7 +5,7 @@
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: S (< 2h)
-**Depends-on**: none
+**Depends-on**: TASK-4173
 **Assigned-to**: unassigned
 
 ---
