@@ -1,0 +1,104 @@
+**Option A** is recommended because:
+
+- It is the only option that satisfies all discovery decisions at once: a real base class
+  (`SchedulerManager`) that external packages instantiate directly, a kind-keyed resolver so the
+  issue's `register_target()` is first-class rather than bolted on, and `AgentSchedulerManager`
+  surviving as a thin subclass so every in-repo import path keeps working.
+- Option B is architecturally slightly purer, but under the hard-cut rule it forces a repo-wide
+  rename of `AgentSchedulerManager` for no functional gain; the subclass in A costs ~300 lines
+  and buys import stability for `jira_specialist.py`, `reminder.py`, `saved_execution_service.py`,
+  agentd and two docs pages. A also keeps the "auto-wire from `app['bot_manager']`" behaviour where
+  it is today.
+- Only A and B can carry the `backend` axis; C is structurally unable to run a job without a
+  Postgres row.
+- Option C is cheap but preserves the two root causes (private `BotManager` access and run state as
+  JSON convention). Given the table is barely populated, paying the migration cost now is the whole
+  point of the hard-cut.
+
+**What we trade off:** one large, breaking PR instead of a series of small ones, and a required
+call-site update for every external consumer of `add_schedule`. That is acceptable because the
+API surface is small (one method plus three HTTP/RPC payload fields), the table is nearly empty,
+and the server package is already at a major version where breaking changes are expected.
+
+---
+
+Extract everything target-agnostic from `manager.py` into `parrot/scheduler/base.py` as
+`SchedulerManager`. The base owns APScheduler, jobstores, coordination, persistence, listeners,
+run-now, headless lifecycle, delivery callbacks, run-state stamping, the missing-target policy and
+`register_object_schedules()`. Target resolution is delegated to a small per-kind strategy table:
+
+- `TargetResolver` protocol: `resolve(name) -> Any | None` and
+  `build_call(target, schedule, fire) -> (args, kwargs)`.
+- The base installs one resolver: `service` → `RegistryResolver` backed by `TargetRegistry`
+  (`register_target(name, obj, kind="service")`). It requires `method_name`; a `service` schedule
+  with only a `prompt` is rejected at `add_schedule` time.
+- `AgentSchedulerManager(SchedulerManager)` installs `agent` → `AgentResolver(bot_manager)` and
+  `crew` → `CrewResolver(bot_manager)`. `AgentResolver` checks explicit registrations first
+  (`register_target(name, agent, kind="agent")`), then `bot_manager.get_bots()` (public, verified
+  at `manager/manager.py:1257`), then `bot_manager.registry.get_instance(name)`. It keeps the
+  `chat(prompt)` fallback and the crew prompt-mapping (`initial_task`/`query`/`tasks`) that today
+  lives in `_prepare_call_arguments`.
+- agentd stops needing `SingleAgentManager`: `AgentSchedulerManager()` +
+  `register_target(config.name, agent, kind="agent")`.
+
+Persistence is a second, independent axis inside the base: a `backend` per job selects where its
+definition lives (`db` row, `redis` jobstore, or `code`) and which `RunStateStore` receives its
+run state (Postgres columns, Redis hash, or process memory). The three fire trampolines in
+`jobs.py` become `run_db_schedule` (re-reads the row), `run_redis_job` (definition carried in the
+pickled kwargs) and `run_auto_schedule` (code-registered), all dispatching through
+`registered_name`.
+
+The subclass is therefore ~300 lines: two resolvers, `register_bot_schedules`, the report
+decorators' env-var resolution, and `on_startup`'s `app["bot_manager"]` auto-wiring.
+
+✅ **Pros:**
+- Matches the user's mental model (base + subclass) and the issue's `register_target()` ask in one
+  design.
+- The hook surface is tiny and typed (`TargetResolver`), so an external package can add a fourth
+  kind (`register_resolver("dagster", …)`) without subclassing.
+- `AgentSchedulerManager` keeps its name and import path (`parrot.scheduler.manager`), so
+  `jira_specialist.py`, `reminder.py`, `saved_execution_service.py` and agentd only change
+  call-site kwargs, not imports.
+- The `jobs.py` trampolines already dispatch through `registered_name`, not through the class, so
+  they work for both classes unchanged (only type hints move to `SchedulerManager`).
+- `backend='redis'` reuses the FEAT-631 groundwork (picklable trampolines, `_ensure_redis_jobstore`,
+  fire coordination) — the jobstore is already attached on the aiohttp path
+  (`start_headless(use_redis=True)`, `manager.py:2055`); what is new is a job whose definition is
+  *only* there.
+
+❌ **Cons:**
+- Highest blast radius of the three: a 2.2k-line file is split, a schema is replaced, five
+  callers and 13 test modules are touched in one feature.
+- Two classes to document and test; the resolver protocol is one more concept.
+- Hard-cut means external users (reportbuilder) must change call sites when they upgrade.
+
+📊 **Effort:** High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `apscheduler==3.11.2` | triggers, jobstores, `AsyncIOScheduler` | already pinned in the `scheduler` extra of ai-parrot-server |
+| `asyncdb` (`Model`, `Field`) | new `ServiceSchedule` model | already used by `AgentSchedule` |
+| `navigator.connections.PostgresPool` | connection pool in `setup()`/`start_headless()` | unchanged |
+| `redis` (via `RedisJobStore`, `RedisFireCoordinator`) | persistent jobstore + fire claims | unchanged (FEAT-631) |
+| `typing.Protocol` | `TargetResolver` contract | stdlib |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot-server/src/parrot/scheduler/manager.py` — everything from `__init__`
+  (`manager.py:362`) through `stop_headless` (`manager.py:1977`) moves to the base except the
+  agent/crew resolution blocks and `register_bot_schedules`.
+- `packages/ai-parrot-server/src/parrot/scheduler/jobs.py` — `register_manager`, `get_manager`,
+  `run_db_schedule`, `run_db_schedule_now`, `run_auto_schedule` stay as-is (type hints only).
+- `packages/ai-parrot-server/src/parrot/scheduler/coordination.py` — `FireCoordinator`,
+  `CoordinatedAsyncIOExecutor`, `build_fire_coordinator` unchanged; `fire_id` is derived from the
+  same `run_time` the coordinator claims on.
+- `packages/ai-parrot-server/src/parrot/scheduler/sanitize.py` — `normalize_schedule_type`,
+  `sanitize_schedule_config`, `normalize_jobstore_alias` reused verbatim; module docstring updated
+  to name the new table.
+- `packages/ai-parrot-server/src/parrot/scheduler/functions/__init__.py` — `CALLBACK_REGISTRY` +
+  `build_scheduler_callback` is the precedent for a name-keyed registry; `BaseSchedulerCallback.run`
+  gains `target_name` in place of `agent_name`.
+- `packages/ai-parrot/src/parrot/notifications/__init__.py:83` — `NotificationMixin` for the
+  auto-disable alert (already wrapped by `_SchedulerNotification`, `manager.py:342`).
+
+---
