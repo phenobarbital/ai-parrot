@@ -216,6 +216,7 @@ model → sf_import_remote_file(backend, remote_path)
 | `packages/ai-parrot-tools/src/parrot_tools/__init__.py` | MODIFY | Module 4 registry entry |
 | `packages/ai-parrot/tests/tools/test_session_files_remote_import.py` | MODIFY | existing tests use `backend="temp"`, which this feature removes |
 | `packages/ai-parrot/tests/tools/test_session_files_security.py` | CREATE | backend policy, traversal, cap |
+| `packages/ai-parrot/tests/tools/test_session_files_registry.py` | CREATE | Module 4 reachability |
 
 ### Backward compatibility
 
