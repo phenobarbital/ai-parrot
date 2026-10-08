@@ -45,6 +45,7 @@ __all__ = [
 
 _log = logging.getLogger("Parrot.Scheduler")
 
+
 # Decorator for scheduling agent methods
 def schedule(
     schedule_type: ScheduleType = ScheduleType.DAILY,
@@ -180,7 +181,6 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Env var resolution helpers for report decorators
 # ---------------------------------------------------------------------------
-
 
 
 def _parse_daily_schedule(raw: Optional[str]) -> Dict[str, Any]:
