@@ -460,7 +460,12 @@ class AddAttachmentInput(BaseModel):
     """Input for adding an attachment to an issue."""
 
     issue: str = Field(description="Issue key or id")
-    attachment: str = Field(description="Path to attachment file on disk")
+    file_ids: List[str] = Field(
+        description=(
+            "Session file handles to attach, from sf_list_session_files. "
+            "Filesystem paths and URLs are not accepted."
+        )
+    )
 
 
 class AssignIssueInput(BaseModel):
@@ -2428,17 +2433,22 @@ class JiraToolkit(AbstractToolkit):
 
     @requires_permission("jira.write")
     @tool_schema(AddAttachmentInput)
-    async def jira_add_attachment(self, issue: str, attachment: str) -> Dict[str, Any]:
-        """Add an attachment to an issue. Requires jira.write permission.
+    async def jira_add_attachment(self, issue: str, file_ids: List[str]) -> Dict[str, Any]:
+        """Attach one or more session files to an issue. Requires jira.write permission.
 
-        Example: jira.add_attachment(issue=issue, attachment='/path/to/file.txt')
+        file_ids come from sf_list_session_files. Returns a report with one entry per
+        handle; a per-file failure is reported, never raised — read
+        attachments[].error_code.
+
+        Example: jira_add_attachment(issue='NAV-123', file_ids=['Ab3...'])
         """
-
-        def _run():
-            return self.jira.add_attachment(issue=issue, attachment=attachment)
-
-        await asyncio.to_thread(_run)
-        return {"ok": True, "issue": issue, "attachment": attachment}
+        results = await self._attach_session_files(issue, file_ids)
+        return JiraAttachmentReport(
+            issue=issue,
+            attachments=results,
+            attached=sum(result.ok for result in results),
+            failed=sum(not result.ok for result in results),
+        ).model_dump()
 
     @requires_permission("jira.write")
     @tool_schema(AssignIssueInput)
