@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-642 — graph-test-models-fixes
 **Spec**: `sdd/specs/graph-test-models-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S
 **Depends-on**: none
@@ -22,8 +22,8 @@ Ledger issue:da0151296f53. See spec §1.
 - `packages/ai-parrot/tests/unit/scripts/__init__.py` (delete)
 
 ## Acceptance Criteria
-- [ ] Full `--collect-only` of `packages/ai-parrot/tests` no longer errors on either file.
-- [ ] Affected files pass together.
+- [x] Full `--collect-only` of `packages/ai-parrot/tests` no longer errors on either file.
+- [x] Affected files pass together.
 
 ## Validation Commands
 ```bash
@@ -32,3 +32,7 @@ PYTHONPATH=packages/ai-parrot/src pytest -q packages/ai-parrot/tests/knowledge/w
 ```
 
 ## Completion Note
+Added `tests/outputs/a2ui/graph/__init__.py` and removed the empty `tests/unit/scripts/__init__.py`.
+Full collection of `packages/ai-parrot/tests` (worktree, PYTHONPATH core+server): 23854 collected, neither file
+errors (+20 tests vs before); the only 2 remaining errors are the BotManager files fixed by FEAT-641 / PR #1608.
+Affected files together: 52 passed. Resolves ledger issue:da0151296f53.
