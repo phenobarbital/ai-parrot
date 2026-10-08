@@ -5,6 +5,7 @@ Framework-agnostic: does NOT import aiohttp or any HTTP concern. The HTTP
 handler (``CrewExecutionHistoryHandler``) is responsible for translating the
 exceptions raised here into HTTP responses.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -208,27 +209,20 @@ class SavedExecutionService:
         if self.bot_manager is None:
             raise CrewNotFoundError(f"Crew '{crew_name}' no longer exists")
 
-        crew, crew_def = await self.bot_manager.get_crew(
-            crew_name, as_new=True, tenant=tenant
-        )
+        crew, crew_def = await self.bot_manager.get_crew(crew_name, as_new=True, tenant=tenant)
         if not crew or not crew_def:
             raise CrewNotFoundError(f"Crew '{crew_name}' no longer exists")
 
         method = getattr(crew, method_name, None)
         if method is None:
-            raise CrewNotFoundError(
-                f"Crew '{crew_name}' no longer supports method '{method_name}'"
-            )
+            raise CrewNotFoundError(f"Crew '{crew_name}' no longer supports method '{method_name}'")
 
         if method_name == "run_parallel":
             # The saved `prompt` is a single string (the first task's query
             # at save time — see TASK-1771), not the original multi-agent
             # task list. Best-effort reconstruction: broadcast the saved
             # prompt to every agent currently on the crew.
-            tasks = [
-                {"agent_id": agent_id, "query": prompt}
-                for agent_id in crew.agents
-            ]
+            tasks = [{"agent_id": agent_id, "query": prompt} for agent_id in crew.agents]
             result = await method(tasks=tasks, user_id=user_id)
         else:
             param_name = METHOD_PARAM_MAP[method_name]
@@ -239,9 +233,7 @@ class SavedExecutionService:
             "crew_name": crew_name,
             "method": method_name,
             "status": "submitted",
-            "result": (
-                result.to_dict() if hasattr(result, "to_dict") else str(result)
-            ),
+            "result": (result.to_dict() if hasattr(result, "to_dict") else str(result)),
         }
 
     async def schedule_execution(

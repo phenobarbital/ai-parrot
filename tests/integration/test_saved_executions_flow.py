@@ -5,6 +5,7 @@ Exercises the full stack — ``PersistenceMixin._save_result()`` →
 ``AgentCrew`` — against an in-memory ``ResultStorage`` implementation (no
 real Postgres/Redis/DocumentDB backend required).
 """
+
 import asyncio
 import time
 import uuid
@@ -19,7 +20,6 @@ from parrot.bots.flows.crew import AgentCrew
 from parrot.clients.base import AbstractClient
 from parrot.handlers.crew.models import ScheduleRequest
 from parrot.handlers.crew.saved_execution_service import SavedExecutionService
-
 
 # ---------------------------------------------------------------------------
 # In-memory ResultStorage — no real database required
@@ -69,7 +69,7 @@ class InMemoryResultStorage(ResultStorage):
         if filters.get("method"):
             items = [i for i in items if i.get("method") == filters["method"]]
         items.sort(key=lambda d: d.get("timestamp", 0), reverse=True)
-        return items[offset:offset + limit]
+        return items[offset : offset + limit]
 
     async def get(self, collection: str, record_id: str) -> Optional[dict[str, Any]]:
         return self._bucket(collection).get(record_id)
@@ -230,9 +230,7 @@ class TestSavedExecutionsFlow:
         execution_id = await _seed_execution(mock_storage, user_id="user-001", tenant="acme")
         assert len(mock_storage.records["crew_executions"]) == 1
 
-        result = await service.replay_execution(
-            tenant="acme", user_id="user-001", execution_id=execution_id
-        )
+        result = await service.replay_execution(tenant="acme", user_id="user-001", execution_id=execution_id)
         # run_sequential's persist is fire-and-forget — await it before asserting.
         await asyncio.gather(*crew._persist_tasks, return_exceptions=True)
 
@@ -249,9 +247,7 @@ class TestSavedExecutionsFlow:
             tenant="acme",
             user_id="user-001",
             execution_id=execution_id,
-            schedule_config=ScheduleRequest(
-                schedule_type="DAILY", schedule_config={"hour": 9, "minute": 0}
-            ),
+            schedule_config=ScheduleRequest(schedule_type="DAILY", schedule_config={"hour": 9, "minute": 0}),
         )
 
         assert result == {"schedule_id": "sched-1", "target_name": "research-crew"}
@@ -284,9 +280,7 @@ class TestSavedExecutionsFlow:
                 timestamp=float(i),
             )
 
-        items, total = await service.list_executions(
-            tenant="acme", user_id="user-001", limit=2, offset=1
-        )
+        items, total = await service.list_executions(tenant="acme", user_id="user-001", limit=2, offset=1)
 
         assert total == 5
         assert len(items) == 2
@@ -308,9 +302,7 @@ class TestSavedExecutionsFlow:
     async def test_replay_no_prompt(self, service, mock_storage):
         """Replay fails with ValueError when the original prompt is unavailable
         (legacy record saved before FEAT-307)."""
-        execution_id = await _seed_execution(
-            mock_storage, tenant="acme", user_id="user-001", prompt=None
-        )
+        execution_id = await _seed_execution(mock_storage, tenant="acme", user_id="user-001", prompt=None)
 
         with pytest.raises(ValueError, match="prompt not available"):
             await service.replay_execution(tenant="acme", user_id="user-001", execution_id=execution_id)
@@ -318,9 +310,7 @@ class TestSavedExecutionsFlow:
     @pytest.mark.asyncio
     async def test_get_execution_not_found(self, service, mock_storage):
         """get_execution returns None for a nonexistent execution id."""
-        result = await service.get_execution(
-            tenant="acme", user_id="user-001", execution_id="does-not-exist"
-        )
+        result = await service.get_execution(tenant="acme", user_id="user-001", execution_id="does-not-exist")
 
         assert result is None
 
@@ -332,9 +322,7 @@ class TestSavedExecutionsFlow:
         SQL-level tenant/user_id scoping — see TASK-1768's Completion Note)."""
         execution_id = await _seed_execution(mock_storage, tenant="acme", user_id="user-001")
 
-        result = await service.get_execution(
-            tenant="other-tenant", user_id="user-001", execution_id=execution_id
-        )
+        result = await service.get_execution(tenant="other-tenant", user_id="user-001", execution_id=execution_id)
 
         assert result is None
 
@@ -343,23 +331,17 @@ class TestSavedExecutionsFlow:
         """get_execution returns None when user_id doesn't match, same tenant."""
         execution_id = await _seed_execution(mock_storage, tenant="acme", user_id="user-001")
 
-        result = await service.get_execution(
-            tenant="acme", user_id="someone-else", execution_id=execution_id
-        )
+        result = await service.get_execution(tenant="acme", user_id="someone-else", execution_id=execution_id)
 
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_delete_execution_wrong_tenant_leaves_record_intact(
-        self, service, mock_storage
-    ):
+    async def test_delete_execution_wrong_tenant_leaves_record_intact(self, service, mock_storage):
         """delete_execution refuses to delete a record belonging to a
         different tenant — verifies the record still exists afterward."""
         execution_id = await _seed_execution(mock_storage, tenant="acme", user_id="user-001")
 
-        deleted = await service.delete_execution(
-            tenant="other-tenant", user_id="user-001", execution_id=execution_id
-        )
+        deleted = await service.delete_execution(tenant="other-tenant", user_id="user-001", execution_id=execution_id)
 
         assert deleted is False
         assert execution_id in mock_storage.records["crew_executions"]

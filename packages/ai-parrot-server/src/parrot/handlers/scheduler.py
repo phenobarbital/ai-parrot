@@ -19,7 +19,6 @@ from ..scheduler.base import (
 )
 from ..scheduler.sanitize import SchedulerConfigError
 
-
 _POST_REQUIRED = frozenset({"target_kind", "target_name", "schedule_type", "schedule_config"})
 _POST_OPTIONAL = (
     "backend",
@@ -71,7 +70,9 @@ class SchedulerCatalogHelper(BaseHandler):
         manager = app.get("scheduler_manager")
         backends = ["db"]
         scheduler = getattr(manager, "scheduler", None) if manager is not None else None
-        if scheduler is not None and "redis" in getattr(scheduler, "_jobstores", {}):  # pylint: disable=protected-access
+        if scheduler is not None and "redis" in getattr(
+            scheduler, "_jobstores", {}
+        ):  # pylint: disable=protected-access
             backends.append("redis")
         return backends
 
@@ -119,9 +120,7 @@ class SchedulerJobsHandler(_SchedulerErrorMixin, BaseView):
         try:
             if schedule_id:
                 source, definition, job = await self.manager._locate(schedule_id)  # pylint: disable=protected-access
-                entry = self.manager._serialize_job(  # pylint: disable=protected-access
-                    definition, job, source=source
-                )
+                entry = self.manager._serialize_job(definition, job, source=source)  # pylint: disable=protected-access
                 return self.json_response({"status": "success", "schedule": entry})
 
             payload = await self.manager.list_jobs()
