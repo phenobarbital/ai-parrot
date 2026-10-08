@@ -6,8 +6,9 @@ import logging
 from typing import List, Sequence
 
 from parrot.models.detections import PlanogramDescription
-from parrot_pipelines.planogram.comparison.definition import SlotsDefinition
+from parrot_pipelines.planogram.comparison.definition import SlotsDefinition, effective_reporting
 from parrot_pipelines.planogram.comparison.identity import names_product, resolve_identity
+from parrot_pipelines.planogram.comparison.presence import build_slot_presence
 from parrot_pipelines.planogram.comparison.projection import finalize_comparison, project_compliance
 from parrot_pipelines.planogram.comparison.registration import ImageRegistration, register_image
 from parrot_pipelines.planogram.comparison.rules import evaluate_rules
@@ -219,4 +220,10 @@ def compare_observations(
     comparison = comparison.model_copy(
         update={"position_results": positions, "shelf_scores": shelves, "errors": list(ctx.errors)}
     )
-    return finalize_comparison(comparison, project_compliance(shelves, positions, definition, description))
+    policy = effective_reporting(ctx.layout, definition)
+    comparison = comparison.model_copy(
+        update={"products_found": build_slot_presence(positions, definition, policy) if policy.slot_presence else []}
+    )
+    return finalize_comparison(
+        comparison, project_compliance(shelves, positions, definition, description, policy=policy)
+    )
