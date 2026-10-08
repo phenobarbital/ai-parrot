@@ -216,7 +216,8 @@ def compare_observations(
     positions = merge_positions(definition, registrations, canonical, ctx.credit_policy)
     outcomes = evaluate_rules(perceptions, identifications, registrations, ctx)
     shelves = score_shelves(positions, definition, ctx.bindings, outcomes, description, ctx.credit_policy)
-    comparison = summarize(shelves, positions, definition, ctx.evidence_weights)
+    completeness = getattr(ctx.layout, "completeness", None)
+    comparison = summarize(shelves, positions, definition, ctx.evidence_weights, completeness=completeness)
     comparison = comparison.model_copy(
         update={"position_results": positions, "shelf_scores": shelves, "errors": list(ctx.errors)}
     )
@@ -225,5 +226,6 @@ def compare_observations(
         update={"products_found": build_slot_presence(positions, definition, policy) if policy.slot_presence else []}
     )
     return finalize_comparison(
-        comparison, project_compliance(shelves, positions, definition, description, policy=policy)
+        comparison,
+        project_compliance(shelves, positions, definition, description, policy=policy, completeness=completeness),
     )
