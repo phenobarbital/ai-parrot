@@ -1,4 +1,5 @@
 """Telegram commands for chat-driven knowledge upload (FEAT-647)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,7 +15,10 @@ from aiogram.filters.command import CommandObject
 from aiogram.types import ContentType, Message
 
 from parrot.integrations.knowledge_upload.models import (
-    UploaderIdentity, UploadOutcome, UploadRequest, UploadTargetKind,
+    UploaderIdentity,
+    UploadOutcome,
+    UploadRequest,
+    UploadTargetKind,
 )
 from parrot.integrations.knowledge_upload.service import KnowledgeUploadService
 
@@ -74,7 +78,8 @@ class TelegramKnowledgeUpload:
     def configured_commands(self) -> dict[str, UploadTargetKind]:
         """Commands whose target block is present in the config."""
         return {
-            name: kind for name, kind in COMMANDS.items()
+            name: kind
+            for name, kind in COMMANDS.items()
             if (kind is UploadTargetKind.BOOKSTORE and self.config.bookstore is not None)
             or (kind is UploadTargetKind.WIKI and self.config.wiki is not None)
         }
@@ -146,8 +151,10 @@ class TelegramKnowledgeUpload:
             return
         options = parse_ingest_args(args_text)
         identity = UploaderIdentity(
-            platform="telegram", platform_user_id=str(message.from_user.id),
-            nav_user_id=session.nav_user_id, email=session.nav_email,
+            platform="telegram",
+            platform_user_id=str(message.from_user.id),
+            nav_user_id=session.nav_user_id,
+            email=session.nav_email,
         )
         request = UploadRequest(target=target, identity=identity, filename=filename, data=data, **options)
 

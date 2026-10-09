@@ -1,11 +1,14 @@
 """FEAT-647 TASK-4187 — Telegram knowledge upload adapter (no network)."""
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from parrot.integrations.knowledge_upload.models import (
-    UploadOutcome, UploadStatus, UploadTargetKind,
+    UploadOutcome,
+    UploadStatus,
+    UploadTargetKind,
 )
 from parrot.integrations.telegram.knowledge_upload import TelegramKnowledgeUpload, parse_ingest_args
 
@@ -26,8 +29,13 @@ class FakeService:
 
     async def submit(self, request, notify):
         self.requests.append(request)
-        return UploadOutcome(job_id="j1", status=UploadStatus.ACCEPTED, target=request.target,
-                             filename=request.filename, message="Processing…")
+        return UploadOutcome(
+            job_id="j1",
+            status=UploadStatus.ACCEPTED,
+            target=request.target,
+            filename=request.filename,
+            message="Processing…",
+        )
 
     async def shutdown(self):
         self.stopped = True
@@ -44,15 +52,21 @@ def _make_wrapper(authenticated=True, bookstore=_ON, wiki=_ON):
         get_file=AsyncMock(return_value=SimpleNamespace(file_path="p/x.pdf")),
         download_file=AsyncMock(side_effect=download),
     )
-    session = SimpleNamespace(authenticated=authenticated, nav_user_id="u1" if authenticated else None,
-                              nav_email="a@b.c")
+    session = SimpleNamespace(
+        authenticated=authenticated, nav_user_id="u1" if authenticated else None, nav_email="a@b.c"
+    )
     cfg = SimpleNamespace(
-        enabled=True, bookstore=bookstore, wiki=wiki,
+        enabled=True,
+        bookstore=bookstore,
+        wiki=wiki,
         allowed_extensions=[".pdf", ".docx", ".md", ".markdown"],
     )
     return SimpleNamespace(
-        config=SimpleNamespace(knowledge_upload=cfg), logger=MagicMock(), bot=bot,
-        _is_authorized=lambda chat_id: True, _get_user_session=lambda message: session,
+        config=SimpleNamespace(knowledge_upload=cfg),
+        logger=MagicMock(),
+        bot=bot,
+        _is_authorized=lambda chat_id: True,
+        _get_user_session=lambda message: session,
     )
 
 
@@ -63,7 +77,9 @@ def wrapper():
 
 def _message(document=None, reply_document=None):
     return SimpleNamespace(
-        chat=SimpleNamespace(id=1), from_user=SimpleNamespace(id=42), document=document,
+        chat=SimpleNamespace(id=1),
+        from_user=SimpleNamespace(id=42),
+        document=document,
         reply_to_message=SimpleNamespace(document=reply_document) if reply_document else None,
         answer=AsyncMock(),
     )
