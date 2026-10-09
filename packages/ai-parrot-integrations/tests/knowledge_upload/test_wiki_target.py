@@ -25,7 +25,9 @@ def _target(tmp_path, entry, report=None):
         acquirer=MagicMock(acquire=AsyncMock(return_value=SimpleNamespace(text="# doc"))),
         router=MagicMock(triage=AsyncMock(return_value=entry)),
         orchestrator=MagicMock(
-            ingest=AsyncMock(return_value=report or SimpleNamespace(status="ok", error=None, pages_created=3, pages_updated=0))
+            ingest=AsyncMock(
+                return_value=report or SimpleNamespace(status="ok", error=None, pages_created=3, pages_updated=0)
+            )
         ),
         wiki_config=object(),
         charter=SimpleNamespace(version="v1"),
