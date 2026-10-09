@@ -115,7 +115,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -125,8 +125,9 @@
       "parallelism_notes": "Subclasses IngestTarget from TASK-4183 (knowledge_upload/targets/base.py); loaded lazily by build_targets in targets/__init__.py.",
       "assigned_to": null,
       "started_at": "2026-10-09T00:13:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4184-bookstore-upload-target.md"
+      "completed_at": "2026-10-09T00:45:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4184-bookstore-upload-target.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4185",
@@ -135,7 +136,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -146,8 +147,9 @@
       "parallelism_notes": "Subclasses IngestTarget from TASK-4183 (targets/base.py) and calls build_ingest_runtime from TASK-4180 (parrot/knowledge/wiki/runtime.py).",
       "assigned_to": null,
       "started_at": "2026-10-09T00:13:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4185-wiki-upload-target.md"
+      "completed_at": "2026-10-09T00:45:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4185-wiki-upload-target.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4186",
@@ -177,7 +179,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -188,8 +190,9 @@
       "parallelism_notes": "Uses KnowledgeUploadService from TASK-4183 (knowledge_upload/service.py) and reads config.knowledge_upload added by TASK-4186 (telegram/models.py).",
       "assigned_to": null,
       "started_at": "2026-10-09T00:13:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4187-telegram-knowledge-upload.md"
+      "completed_at": "2026-10-09T00:45:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4187-telegram-knowledge-upload.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4188",
