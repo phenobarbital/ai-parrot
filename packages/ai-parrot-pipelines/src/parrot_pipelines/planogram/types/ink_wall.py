@@ -25,6 +25,7 @@ from ..contracts import (
     Shape,
     Slot,
 )
+from ..identification.spill import suppress_neighbour_spill
 from ..identification.verify import verify_unresolved
 from ..layout import LayoutProfile, ReferencePolicy, resolve_layout_profile
 from ..perception.profiles import PRICE_TAG_PROFILE
@@ -107,9 +108,12 @@ class InkWall(AbstractPlanogramType):
     async def identify(
         self, image: Image.Image, perception: PerceptionResult, ctx: CycleContext
     ) -> IdentificationResult:
-        """Compose shared OCR/vision/evidence collection, then the optional closed-set verify pass."""
+        """Compose shared OCR/vision/evidence collection, the neighbour-spill guard, then the optional verify pass."""
         self._ensure_layout(ctx)
         result = await identify_image(image, perception, ctx)
+        result = result.model_copy(
+            update={"identifications": suppress_neighbour_spill(result.identifications, perception.slots)}
+        )
         if (self.config.planogram_config or {}).get("verify_pass") and ctx.definition is not None:
             boxes = {slot.slot_id: slot.box for slot in perception.slots}
             boxes.update({shape.shape_id: shape.box for shape in perception.shapes})

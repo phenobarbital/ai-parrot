@@ -231,6 +231,8 @@ def build_identify_prompt(
         "- occupancy is 'occupied' when a package or product body is visible, including a box seen from its "
         "side, tilted, dark, or with glare. Only shelf backing, a hook, divider, price tag or fixture parts is "
         "'empty'. Use 'unknown' only when the box itself is unreadable.\n"
+        "- A package whose body stands over a NEIGHBOURING area and only reaches into the edge of this box does "
+        "not make this area occupied: judge occupancy by the centre of the box (above its own price tag, if any).\n"
         "- ocr_text is NOT evidence of emptiness. Read the printed product code into text and product, correcting "
         "ocr_text when needed. Brand comes from the visible logo.\n"
         "- For each area report these descriptor fields inside descriptors: "
