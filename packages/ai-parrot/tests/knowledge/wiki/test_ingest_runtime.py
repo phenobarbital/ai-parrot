@@ -32,6 +32,9 @@ calibration: {}
 class _FakeAdapter:
     """Never called during construction; only identity matters."""
 
+    client = None
+    model = "fake-model"
+
 
 @pytest.fixture
 def wiki_project(tmp_path: Path) -> dict[str, Any]:
