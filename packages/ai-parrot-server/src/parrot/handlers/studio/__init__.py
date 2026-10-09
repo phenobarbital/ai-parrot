@@ -196,6 +196,14 @@ def _register_assistant(reg: _Registrar) -> None:
     reg.add("/assistant", StudioAssistantHandler)
 
 
+async def _apply_egress_guard(app: web.Application) -> None:
+    """Copy the host switch ``app[STUDIO_EGRESS_GUARD]`` to the tools' egress helper (read at startup, so the host may
+    set it any time before the app starts)."""
+    import parrot.tools.egress as egress
+
+    egress.configure(bool(app.get(egress.STUDIO_EGRESS_GUARD)))
+
+
 def setup_studio_routes(
     app: web.Application,
     *,
@@ -250,6 +258,8 @@ def setup_studio_routes(
 
     install_startup_hook_once(app, resolve_studio_storage)
     from .meta_agent import cleanup_studio_assistants
+
+    install_startup_hook_once(app, _apply_egress_guard)  # PA-13: app[STUDIO_EGRESS_GUARD] -> parrot.tools.egress
 
     install_startup_hook_once(app, cleanup_studio_assistants, signal="on_cleanup")  # assistant instances, every mode
     install_studio_storage_cleanup(app)  # unregisters the Postgres stores at cleanup

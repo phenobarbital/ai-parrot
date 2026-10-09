@@ -13,6 +13,7 @@ from parrot.handlers.catalog_decorator import (  # noqa: F401  (re-exported)
     CatalogDecorator,
 )
 
+from parrot.tools.egress import STUDIO_EGRESS_GUARD  # noqa: E402,F401  (re-exported)
 from parrot.tools.host_hooks import (  # noqa: E402,F401  (re-exported)
     FEATURES,
     STUDIO_TOOL_CALL_GUARDRAILS,
@@ -25,6 +26,7 @@ __all__ = [
     "CATALOG_KINDS",
     "FEATURES",
     "STUDIO_CATALOG_DECORATOR",
+    "STUDIO_EGRESS_GUARD",
     "STUDIO_TOOL_CALL_GUARDRAILS",
     "STUDIO_TOOLKIT_PARAM_HOOK",
     "CatalogDecorator",

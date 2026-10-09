@@ -533,7 +533,9 @@ class WordToMarkdownTool(AbstractDocumentTool):
         file_path = os.path.join(self._temp_dir, filename)
 
         # Download file
-        async with aiohttp.ClientSession() as session:
+        from parrot.tools.egress import egress_session
+
+        async with egress_session() as session:
             async with session.get(url) as response:
                 if response.status != 200:
                     raise Exception(f"Download failed with status {response.status}")
