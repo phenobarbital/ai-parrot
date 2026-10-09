@@ -70,7 +70,7 @@ class BookstoreTarget(IngestTarget):
                 force=request.force,
             )
         except BookstoreError as exc:
-            message = str(exc).replace(str(staged_path.absolute()), staged_path.name)
+            message = str(exc).replace(str(os.path.abspath(staged_path)), staged_path.name)
             message = message.replace(str(self.library_dir), "")
             return UploadOutcome(
                 job_id=job_id,
