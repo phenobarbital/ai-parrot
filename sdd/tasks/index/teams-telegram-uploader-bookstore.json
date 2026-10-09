@@ -201,7 +201,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -212,8 +212,9 @@
       "parallelism_notes": "Uses KnowledgeUploadService from TASK-4183 (service.py) and MSTeamsAgentConfig.knowledge_upload from TASK-4186 (msteams/models.py).",
       "assigned_to": null,
       "started_at": "2026-10-09T00:13:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4188-msteams-knowledge-upload.md"
+      "completed_at": "2026-10-09T00:52:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4188-msteams-knowledge-upload.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4189",
@@ -222,7 +223,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -233,8 +234,9 @@
       "parallelism_notes": "Uses KnowledgeUploadService from TASK-4183 (service.py) and SlackAgentConfig.knowledge_upload from TASK-4186 (slack/models.py).",
       "assigned_to": null,
       "started_at": "2026-10-09T00:13:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4189-slack-knowledge-upload.md"
+      "completed_at": "2026-10-09T00:52:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4189-slack-knowledge-upload.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4190",
