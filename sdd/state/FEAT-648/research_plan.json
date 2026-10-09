@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "mode_hint": "enrichment",
+  "rationale": "Source asks to extend an existing column (products_found, added for ink_wall in FEAT-645) to the other product-detecting planogram types (endcap with reference images first). No negation / failure wording: feature extension, not a bug.",
+  "queries": [
+    {"id": "Q001", "intent": "Orient: where products_found is produced for ink_wall and which module owns compliance output columns.", "type": "wiki_query", "priority": 0, "params": {"question": "planogram compliance products_found ink_wall output columns"}},
+    {"id": "Q002", "intent": "Orient: how the endcap planogram type detects printers with reference images.", "type": "wiki_query", "priority": 0, "params": {"question": "endcap planogram reference images printer detection compliance"}},
+    {"id": "Q003", "intent": "Exact occurrences of products_found across pipelines + tests (producer, schema, writer).", "type": "grep", "priority": 0, "params": {"pattern": "products_found", "path": "packages/ai-parrot-pipelines", "case_sensitive": true, "max_results": 60}},
+    {"id": "Q004", "intent": "Read the FEAT-645 spec sections that define the products_found structure (the 'identical structure' the request refers to).", "type": "read", "priority": 0, "params": {"path": "sdd/specs/planogram-ink-wall-slot-presence.spec.md", "lines": "products_found sections"}},
+    {"id": "Q005", "intent": "Inspect the uncommitted-to-release WIP commit b12e115c3 (ink wall) to see the latest shape of products_found.", "type": "git_log", "priority": 0, "params": {"path": "packages/ai-parrot-pipelines", "since": "30.days.ago", "max_results": 20}},
+    {"id": "Q006", "intent": "Find the planogram_type dispatch: which types exist and how ink_wall-specific branches are gated.", "type": "grep", "priority": 1, "params": {"pattern": "planogram_type|ink_wall|endcap", "path": "packages/ai-parrot-pipelines/src/parrot_pipelines", "case_sensitive": false, "max_results": 80}},
+    {"id": "Q007", "intent": "Find the reference-image detection path (how endcap matches printers to reference images) and what identity it yields.", "type": "grep", "priority": 1, "params": {"pattern": "reference_image|reference_images|use_reference", "path": "packages/ai-parrot-pipelines/src/parrot_pipelines", "case_sensitive": false, "max_results": 60}},
+    {"id": "Q008", "intent": "Read the compliance projection / output writer where the per-shelf and per-planogram columns (found_products, products_found) are built.", "type": "read", "priority": 1, "params": {"path": "<projection module from Q003>", "lines": null}},
+    {"id": "Q009", "intent": "Read the ink_wall-specific producer of products_found to assess reusability for other types.", "type": "read", "priority": 1, "params": {"path": "<producer module from Q003>", "lines": null}},
+    {"id": "Q010", "intent": "Existing tests for products_found: fixture shape and assertions to be preserved.", "type": "read", "priority": 2, "params": {"path": "<test module from Q003>", "lines": null}},
+    {"id": "Q011", "intent": "How the existing per-shelf found_products / expected_products / missing lists are derived for non-ink_wall types (candidate source of truth for products_found).", "type": "grep", "priority": 2, "params": {"pattern": "found_products|expected_products|missing_products", "path": "packages/ai-parrot-pipelines/src/parrot_pipelines", "case_sensitive": true, "max_results": 60}},
+    {"id": "Q012", "intent": "Downstream consumer: the flowtask side / DB column that stores products_found (schema plane or docs).", "type": "grep", "priority": 2, "params": {"pattern": "products_found", "path": "docs packages/ai-parrot-pipelines/docs sdd/specs", "case_sensitive": true, "max_results": 30}}
+  ],
+  "expected_findings": [
+    "Producer + schema of products_found for ink_wall (FEAT-645 / WIP commit)",
+    "planogram_type dispatch and the list of product-detecting types",
+    "Endcap reference-image detection path and the identity it yields",
+    "Where output columns are assembled (projection) and how type-specific columns are gated",
+    "Existing tests to preserve",
+    "Downstream consumers of products_found (flowtask / DB)"
+  ],
+  "meta": {
+    "source_signals": {"named_entities": ["products_found", "PlanogramCompliance", "ai-parrot-pipelines", "ink_wall", "Endcap", "reference images", "printers"], "verbs": ["agregar", "llenar", "debería siempre llenarse"], "polarity": "positive"},
+    "estimated_budget_use": {"wiki_queries": 4, "files_read": 8, "grep_calls": 6, "git_calls": 3}
+  }
+}
