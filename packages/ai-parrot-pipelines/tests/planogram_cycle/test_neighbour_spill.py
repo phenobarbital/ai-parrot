@@ -89,7 +89,14 @@ def test_spill_is_not_assessed_instead_of_variant_unresolved():
     from parrot_pipelines.planogram.comparison.definition import FacingDefinition
 
     facing = FacingDefinition.model_validate(
-        {"facing_id": "p062_f1", "product": "9248146", "brand": "Epson", "descriptors": {"family": "252"}}
+        {
+            "facing_id": "p062_f1",
+            "shelf_id": "shelf_1",
+            "slot": 16,
+            "product": "9248146",
+            "brand": "Epson",
+            "descriptors": {"family": "252"},
+        }
     )
     slots = [_slot(1), _slot(2)]
     idents = [_ident(1, brand="Epson"), _ident(2, brand="Epson", text="302XL")]
