@@ -16,14 +16,14 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: only modifies parrot/auth/userinfo.py (core) and adds its own test file.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-09T00:13:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4179-userinfo-email-lookup.md"
     },
@@ -34,14 +34,14 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: extracts runtime builders from parrot/knowledge/wiki/cli.py into new wiki/runtime.py; no other task touches these files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-09T00:13:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4180-wiki-ingest-runtime.md"
     },
@@ -52,14 +52,14 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependency: only modifies parrot/knowledge/pageindex/toolkit.py; consumers are the already-running agents, no task imports it.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-09T00:13:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4181-pageindex-tree-freshness.md"
     },
@@ -70,7 +70,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -79,7 +79,7 @@
       "parallel": true,
       "parallelism_notes": "Needs UserInfoService.get_profile_by_email from TASK-4179 (parrot/auth/userinfo.py) for resolve_profile in knowledge_upload/policy.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-09T00:13:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4182-upload-models-policy-staging.md"
     },
@@ -90,7 +90,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -99,7 +99,7 @@
       "parallel": true,
       "parallelism_notes": "Imports KnowledgeUploadConfig/UploadRequest/UploadOutcome, UploadPolicy and staged_file from TASK-4182 (knowledge_upload/models.py, policy.py, staging.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-09T00:13:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4183-upload-service.md"
     },
@@ -110,7 +110,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -119,7 +119,7 @@
       "parallel": true,
       "parallelism_notes": "Subclasses IngestTarget from TASK-4183 (knowledge_upload/targets/base.py); loaded lazily by build_targets in targets/__init__.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-09T00:13:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4184-bookstore-upload-target.md"
     },
@@ -130,7 +130,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -140,7 +140,7 @@
       "parallel": true,
       "parallelism_notes": "Subclasses IngestTarget from TASK-4183 (targets/base.py) and calls build_ingest_runtime from TASK-4180 (parrot/knowledge/wiki/runtime.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-09T00:13:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4185-wiki-upload-target.md"
     },
@@ -151,7 +151,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -160,7 +160,7 @@
       "parallel": true,
       "parallelism_notes": "Imports KnowledgeUploadConfig from TASK-4182 (knowledge_upload/models.py) into the three integration models.py files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-09T00:13:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4186-integration-config-fields.md"
     },
@@ -171,7 +171,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -181,7 +181,7 @@
       "parallel": true,
       "parallelism_notes": "Uses KnowledgeUploadService from TASK-4183 (knowledge_upload/service.py) and reads config.knowledge_upload added by TASK-4186 (telegram/models.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-09T00:13:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4187-telegram-knowledge-upload.md"
     },
@@ -192,7 +192,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -202,7 +202,7 @@
       "parallel": true,
       "parallelism_notes": "Uses KnowledgeUploadService from TASK-4183 (service.py) and MSTeamsAgentConfig.knowledge_upload from TASK-4186 (msteams/models.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-09T00:13:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4188-msteams-knowledge-upload.md"
     },
@@ -213,7 +213,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -223,7 +223,7 @@
       "parallel": true,
       "parallelism_notes": "Uses KnowledgeUploadService from TASK-4183 (service.py) and SlackAgentConfig.knowledge_upload from TASK-4186 (slack/models.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-09T00:13:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4189-slack-knowledge-upload.md"
     },
@@ -234,7 +234,7 @@
       "feature_id": "FEAT-647",
       "feature": "teams-telegram-uploader-bookstore",
       "spec": "sdd/specs/teams-telegram-uploader-bookstore.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -245,7 +245,7 @@
       "parallel": true,
       "parallelism_notes": "Documents the final command syntax and config implemented in TASK-4187 (telegram/knowledge_upload.py), TASK-4188 (msteams/commands/knowledge_upload.py) and TASK-4189 (slack/knowledge_upload.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-09T00:13:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4190-knowledge-upload-docs.md"
     }
