@@ -241,7 +241,7 @@ class KnowledgeUploadService:
                 "platform": platform,
                 "username": username,
                 "target": target,
-                "filename": filename,
+                "upload_filename": filename,
                 "sha256": sha256,
                 "size": size,
                 "status": status.value,
