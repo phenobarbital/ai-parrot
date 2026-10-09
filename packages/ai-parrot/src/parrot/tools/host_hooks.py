@@ -61,6 +61,7 @@ __all__ = [
     "ToolkitParamHook",
     "apply_exclude_tools",
     "bind_host_tool_call_guardrails",
+    "bind_tenant_allow_list_guardrail",
     "check_toolkit_params",
     "host_tool_call_pipeline",
     "run_toolkit_param_hook",
@@ -188,3 +189,60 @@ def host_tool_call_pipeline(guardrails: Any, studio: Mapping[str, Any]) -> Any:
     pipeline = GuardrailPipeline()
     bind_host_tool_call_guardrails(pipeline, guardrails, studio)
     return pipeline
+
+
+# -- per-tenant allow-lists at CALL time (PA-5, review fix 7) --------------------------------------------------------------
+
+
+def _governed_entry(tool_manager: Any, tool_name: str) -> Any:
+    """The resolver entry the registered tool ``tool_name`` was built from, or ``None`` (MCP / ad-hoc tools)."""
+    from parrot.tools.manager import get_toolkit_owner
+    from parrot.tools.resolver import get_toolkit_resolver
+
+    resolver = get_toolkit_resolver()
+    tool = tool_manager.get_tool(tool_name)
+    if tool is not None:
+        cls = type(get_toolkit_owner(tool) or tool)
+        entry = resolver.entry(cls.__name__)
+        if entry is not None and resolver.resolve(entry.slug) is cls:
+            return entry
+    return resolver.entry(tool_name)
+
+
+def bind_tenant_allow_list_guardrail(pipeline: Any, policy: Any, tenant: str | None, tool_manager: Any) -> bool:
+    """Enforce the host's per-tenant allow-lists (``tenant_builtin_tools`` / ``tenant_toolkits``) when a tool is CALLED.
+
+    The lists are write-time checks (an unchanged stored tool is exempt so an unrelated edit stays possible and a
+    stored agent still builds), so shrinking a tenant's list would otherwise leave every stored agent running the
+    removed tool. This guardrail closes that: a call to a built-in / host toolkit the tenant no longer has is BLOCKED
+    (``builtin_not_permitted`` / ``toolkit_unavailable``). Nothing is registered (returns ``False``) when there is no
+    tenant or the policy has neither callback, so hosts that do not use the lists see no change.
+    """
+    if not tenant or policy is None or (
+        getattr(policy, "tenant_builtin_tools", None) is None and getattr(policy, "tenant_toolkits", None) is None
+    ):
+        return False
+    from parrot.bots.guardrails.base import Guardrail, GuardrailAction, GuardrailContext, GuardrailResult, GuardrailStage
+
+    class _TenantAllowList(Guardrail):
+        name = "tenant-allow-list"
+        stages = {GuardrailStage.TOOL_CALL}
+        priority = -100
+        on_error = "fail_closed"
+
+        async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
+            entry = _governed_entry(tool_manager, ctx.tool_name or "")
+            if entry is None:
+                return GuardrailResult(action=GuardrailAction.PASS)
+            if entry.is_host:
+                enabled, code = policy.enabled_toolkits(tenant), "toolkit_unavailable"
+            else:
+                enabled, code = policy.enabled_builtin_tools(tenant), "builtin_not_permitted"
+            if enabled is not None and entry.slug.lower() not in enabled:
+                return GuardrailResult(
+                    action=GuardrailAction.BLOCK, reason=f"{code}: '{entry.slug}' is not enabled for this tenant"
+                )
+            return GuardrailResult(action=GuardrailAction.PASS)
+
+    pipeline.add(_TenantAllowList())
+    return True

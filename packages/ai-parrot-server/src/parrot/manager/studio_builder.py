@@ -187,9 +187,19 @@ class StudioAgentBuilder:
         guard = app.get("studio_confirmation_guard")
         if guard is not None:
             bot.tool_manager.set_confirmation_guard(guard)
-        # PA-10: the host's TOOL_CALL guardrails, bound to THIS bot's tenant/agent
+        # PA-5: the tenant's built-in / toolkit allow-lists are enforced when a stored agent CALLS a tool, not only at write
         from parrot.bots.guardrails.base import GuardrailStage
-        from parrot.tools.host_hooks import STUDIO_TOOL_CALL_GUARDRAILS, bind_host_tool_call_guardrails
+        from parrot.tools.host_hooks import (
+            STUDIO_TOOL_CALL_GUARDRAILS,
+            bind_host_tool_call_guardrails,
+            bind_tenant_allow_list_guardrail,
+        )
+
+        bind_tenant_allow_list_guardrail(
+            bot._guardrail_pipelines[GuardrailStage.TOOL_CALL], get_tenant_tooling_policy(app), part.tenant,
+            bot.tool_manager,
+        )
+        # PA-10: the host's TOOL_CALL guardrails, bound to THIS bot's tenant/agent
 
         if host_guardrails := app.get(STUDIO_TOOL_CALL_GUARDRAILS):
             bind_host_tool_call_guardrails(
