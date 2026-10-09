@@ -7,6 +7,7 @@ for agents and chatbots via ``AbstractToolkit``.
 
 from __future__ import annotations
 
+import functools
 import logging
 from pathlib import Path
 from typing import Any, Literal
@@ -20,11 +21,30 @@ from .models import ScrapingResult
 from .page_snapshot import PageSnapshot, snapshot_from_driver
 from .plan import ScrapingPlan
 from .plan_generator import PlanGenerator
-from .plan_io import load_plan_from_disk, save_plan_to_disk
+from .confine import FILES_ROOT
+from .plan_io import is_within, load_plan_from_disk, save_plan_to_disk
 from .registry import PlanRegistry
 from .toolkit_models import DriverConfig, PlanSaveResult, PlanSummary
 
 logger = logging.getLogger(__name__)
+
+
+def _confined(method):
+    """Run a scrape/crawl with the file root set when the toolkit was built ``confine_paths=True`` (PA-14)."""
+
+    @functools.wraps(method)
+    async def wrapper(self, *args, **kwargs):
+        if not getattr(self, "confine_paths", False):
+            return await method(self, *args, **kwargs)
+        root = self.files_root
+        root.mkdir(parents=True, exist_ok=True)
+        token = FILES_ROOT.set(root)
+        try:
+            return await method(self, *args, **kwargs)
+        finally:
+            FILES_ROOT.reset(token)
+
+    return wrapper
 
 
 # ── Refinement scoring ────────────────────────────────────────────────
@@ -322,6 +342,7 @@ class WebScrapingToolkit(AbstractToolkit):
         obscura_port: int = 9222,
         obscura_stealth: bool = False,
         obscura_allow_private_network: bool = False,
+        confine_paths: bool = False,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
@@ -351,7 +372,20 @@ class WebScrapingToolkit(AbstractToolkit):
         self._registry: PlanRegistry | None = None
         self._llm_client = llm_client
         self._plans_dir = Path(plans_dir) if plans_dir else Path("scraping_plans")
+        self.confine_paths = bool(confine_paths)
         self.logger = logging.getLogger(__name__)
+
+    def _plan_file(self, relative: str | Path) -> Path:
+        """A registry entry's plan file; refuses an entry that points outside the plans directory (PA-14)."""
+        path = self._plans_dir / relative
+        if not is_within(path, self._plans_dir):
+            raise ValueError("plan path escapes the plans directory")
+        return path
+
+    @property
+    def files_root(self) -> Path:
+        """Where the actions of a confined toolkit may read and write files: ``<plans_dir>/files``."""
+        return self._plans_dir / "files"
 
     # ── Lifecycle ─────────────────────────────────────────────────────
 
@@ -424,7 +458,7 @@ class WebScrapingToolkit(AbstractToolkit):
         if entry is None:
             return None
 
-        plan_path = self._plans_dir / entry.path
+        plan_path = self._plan_file(entry.path)
         try:
             cached = await load_plan_from_disk(plan_path)
             await registry.touch(entry.fingerprint)
@@ -471,7 +505,7 @@ class WebScrapingToolkit(AbstractToolkit):
         registry = await self._ensure_registry()
         entry = registry.lookup(url, allow_domain_fallback=objective is None)
         if entry is not None:
-            plan_path = self._plans_dir / entry.path
+            plan_path = self._plan_file(entry.path)
             try:
                 cached = await load_plan_from_disk(plan_path)
                 await registry.touch(entry.fingerprint)
@@ -536,7 +570,7 @@ class WebScrapingToolkit(AbstractToolkit):
             # it would return a plan generated for an unrelated path.
             entry = registry.lookup(url, allow_domain_fallback=False)
             if entry is not None:
-                plan_path = self._plans_dir / entry.path
+                plan_path = self._plan_file(entry.path)
                 try:
                     cached = await load_plan_from_disk(plan_path)
                     await registry.touch(entry.fingerprint)
@@ -635,7 +669,7 @@ class WebScrapingToolkit(AbstractToolkit):
         if entry is None:
             return None
 
-        plan_path = self._plans_dir / entry.path
+        plan_path = self._plan_file(entry.path)
         try:
             plan = await load_plan_from_disk(plan_path)
             await registry.touch(entry.fingerprint)
@@ -699,7 +733,7 @@ class WebScrapingToolkit(AbstractToolkit):
 
         # Remove file if requested
         if delete_file:
-            plan_path = self._plans_dir / entry.path
+            plan_path = self._plan_file(entry.path)
             try:
                 plan_path.unlink(missing_ok=True)
                 self.logger.info("Deleted plan file: %s", plan_path)
@@ -709,6 +743,7 @@ class WebScrapingToolkit(AbstractToolkit):
         # Remove from registry
         return await registry.remove(name)
 
+    @_confined
     async def scrape(
         self,
         url: str,
@@ -873,6 +908,7 @@ class WebScrapingToolkit(AbstractToolkit):
 
         return result
 
+    @_confined
     async def crawl(
         self,
         start_url: str,

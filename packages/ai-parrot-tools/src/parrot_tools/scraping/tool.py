@@ -37,6 +37,7 @@ try:
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
+from .confine import check_navigation, within_root
 from ..abstract import AbstractTool
 from .advanced_actions import (
     exec_conditional,
@@ -968,6 +969,7 @@ If no selectors are provided and full_page is False, the tool will still return 
 
     async def _navigate_to(self, action: Navigate, base_url: str):
         url = urljoin(base_url, action.url) if base_url else action.url
+        check_navigation(url)
         if self.driver_type == "selenium":
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self.driver.get, url)
@@ -1551,7 +1553,10 @@ If no selectors are provided and full_page is False, the tool will still return 
             screenshot_data = None
             output_path = action.output_path
             if isinstance(output_path, str):
-                output_path = Path(output_path).resolve()
+                confined = within_root(output_path or "")
+                if confined is not None:
+                    confined.mkdir(parents=True, exist_ok=True)
+                output_path = confined or Path(output_path).resolve()
             screenshot_name = action.get_filename()
 
             if self.driver_type == "selenium":
