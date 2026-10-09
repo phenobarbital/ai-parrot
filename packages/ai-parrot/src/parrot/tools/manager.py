@@ -598,6 +598,7 @@ class ToolManager(MCPToolManagerMixin):
             return dict(params), ()
         from .host_hooks import run_toolkit_param_hook, split_exclude_tools
 
+        slug = self._canonical_slug(slug)  # the hook is keyed by the canonical slug, never the caller's spelling
         hook, subject = self._toolkit_param_binding
         if phase is not None and subject is not None:
             subject = subject.model_copy(update={"phase": phase})
@@ -612,6 +613,17 @@ class ToolManager(MCPToolManagerMixin):
         instance = cls(**final)
         apply_exclude_tools(instance, exclude)
         return instance
+
+    @staticmethod
+    def _canonical_slug(name: str) -> str:
+        """The canonical (lower-case registry) slug of ``name``: a case variant or class-name alias is resolved
+        (``RSS_Feed_Reader`` / ``RSSFeedReader`` → ``rss_feed_reader``); an unknown name is lower-cased."""
+        try:
+            from .resolver import get_toolkit_resolver
+
+            return get_toolkit_resolver().canonical_slug(name) or name.lower()
+        except Exception:  # pylint: disable=broad-except
+            return name.lower()
 
     def _slug_of_class(self, cls: type) -> str:
         """Best-effort registry slug of ``cls`` (class-name alias), else its lower-cased name."""

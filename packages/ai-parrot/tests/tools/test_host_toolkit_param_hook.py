@@ -161,3 +161,35 @@ def test_write_time_enforcement_runs_the_hook_on_every_partition_and_skips_held_
     )
     check_toolkit_params({}, _tooling("wiki"), subject=_subject())   # no hook: a no-op
     enforce_tenant_tooling({}, _tooling("wiki"), subject=_subject(tenant=None))  # nothing registered at all
+
+
+# -- PA-V2 review fix 6: the hook is keyed by the CANONICAL slug, whatever spelling reached the manager ------------------
+
+
+@pytest.mark.parametrize("spelling", ["calculator", "Calculator", "CALCULATOR", "CalculatorTool"])
+def test_the_hook_receives_the_canonical_slug_for_every_spelling(spelling):
+    seen: list[str] = []
+
+    def hook(slug, params, subject):
+        seen.append(slug)
+        return params
+
+    manager = ToolManager()
+    manager.set_toolkit_param_hook(hook, _subject(phase="build"))
+    assert manager.load_tool(spelling) is True
+    assert seen == ["calculator"]
+
+
+def test_a_pass_through_policy_keyed_by_slug_cannot_be_dodged_by_case():
+    refused = {"calculator"}
+
+    def hook(slug, params, subject):
+        if slug in refused:
+            raise ToolParamRefused(["expression"])
+        return params
+
+    manager = ToolManager()
+    manager.set_toolkit_param_hook(hook, _subject(phase="build"))
+    for spelling in ("Calculator", "CALCULATOR"):
+        with pytest.raises(ToolParamRefused):
+            manager.load_tool(spelling)
