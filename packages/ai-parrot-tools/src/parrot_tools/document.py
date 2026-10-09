@@ -18,24 +18,48 @@ import aiofiles.os
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from .abstract import AbstractTool
+import parrot.tools.exports_mode as exports_mode
 from ._exports import ExportsToStoreMixin, safe_template_name
 
 
 class DocumentGenerationArgs(BaseModel):
     """Base arguments schema for document generation tools.
 
-    The LLM controls the CONTENT only (PA-11): where the file goes, what it is called, whether it overwrites and
-    which template file is read are server-side decisions, so none of those are arguments.
+    In the host's store-only mode (PA-11) the LLM controls the CONTENT only: where the file goes, what it is called,
+    whether it overwrites and which template file is read are server-side decisions, so ``output_filename``,
+    ``output_dir`` and ``overwrite_existing`` are hidden from the schema and dropped from a call.
     """
 
     content: str = Field(
         ...,
         description="Content to be converted to document (text, markdown, HTML, etc.)"
     )
+    output_filename: Optional[str] = Field(
+        None,
+        description="Custom filename for the output document (without extension). If None, auto-generates with timestamp"
+    )
     file_prefix: str = Field(
         "document",
         description="Prefix for auto-generated filenames"
     )
+    output_dir: Optional[str] = Field(
+        None,
+        description="Custom output directory. If None, uses tool's default directory"
+    )
+    overwrite_existing: bool = Field(
+        False,
+        description="Whether to overwrite existing files with the same name"
+    )
+
+    @field_validator('output_filename')
+    @classmethod
+    def validate_filename(cls, v):
+        if v is not None:
+            # Remove invalid filename characters
+            invalid_chars = r'[<>:"/\\|?*]'
+            if re.search(invalid_chars, v):
+                raise ValueError(f"Filename contains invalid characters: {invalid_chars}")
+        return v
 
     @field_validator('file_prefix')
     @classmethod
@@ -105,6 +129,8 @@ class AbstractDocumentTool(ExportsToStoreMixin, AbstractTool):
     document_type: str = "document"  # Override in subclasses (e.g., "presentation", "spreadsheet")
     default_extension: str = "txt"   # Override in subclasses (e.g., "pptx", "docx", "xlsx")
     supported_extensions: List[str] = []  # Override in subclasses
+    # hidden from the LLM (and dropped from a call) in the host's store-only mode (PA-11)
+    studio_hidden_args = frozenset({"output_filename", "output_dir", "overwrite_existing"})
 
     def __init__(
         self,
@@ -171,8 +197,12 @@ class AbstractDocumentTool(ExportsToStoreMixin, AbstractTool):
         Returns:
             Path object for the output directory
         """
-        # a caller-supplied directory is never honoured (PA-11): files go to the tool's own, constructor-set directory
-        output_dir = self.output_dir
+        if custom_dir and not exports_mode.is_enabled():
+            output_dir = Path(custom_dir).resolve()
+        else:
+            # store-only mode (PA-11): a caller-supplied directory is never honoured, files go to the tool's own,
+            # constructor-set directory
+            output_dir = self.output_dir
 
         # Create directory if it doesn't exist
         if not await aiofiles.os.path.exists(output_dir):
@@ -368,7 +398,7 @@ class AbstractDocumentTool(ExportsToStoreMixin, AbstractTool):
         template_name = safe_template_name(template_name)
         template_path = self.templates_dir / template_name
         root = Path(self.templates_dir).resolve()
-        if template_path.exists() and root not in template_path.resolve().parents:
+        if exports_mode.is_enabled() and template_path.exists() and root not in template_path.resolve().parents:
             raise ValueError("template must be a file inside the templates directory")
 
         if template_path.exists():

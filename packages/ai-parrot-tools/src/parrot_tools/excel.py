@@ -30,7 +30,7 @@ class ExcelArgs(DocumentGenerationArgs):
     )
     template_file: Optional[str] = Field(
         None,
-        description="File NAME of an Excel/ODS template offered by the server (never a path)"
+        description="Path to Excel/ODS template file to use as base"
     )
 
     @field_validator('template_file')

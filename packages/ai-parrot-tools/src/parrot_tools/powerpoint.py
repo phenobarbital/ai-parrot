@@ -38,7 +38,11 @@ class PowerPointArgs(DocumentGenerationArgs):
     )
     pptx_template: Optional[str] = Field(
         None,
-        description="File NAME of a PowerPoint template (.pptx or .potx) offered by the server (never a path)"
+        description="Filename of PowerPoint template file (.pptx or .potx) to use as base"
+    )
+    pptx_template_path: Optional[Path] = Field(
+        None,
+        description="Path where the PowerPoint template file is located"
     )
     slide_layout: int = Field(
         1,
@@ -138,6 +142,7 @@ class PowerPointTool(AbstractDocumentTool):
 
     # Document type configuration
     document_type = "presentation"
+    studio_hidden_args = AbstractDocumentTool.studio_hidden_args | {"pptx_template_path"}
     default_extension = "pptx"
     supported_extensions = [".pptx", ".potx"]
 

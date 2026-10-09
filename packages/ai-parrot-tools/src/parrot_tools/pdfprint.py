@@ -14,6 +14,7 @@ from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel, Field, field_validator
 import markdown
 from parrot._imports import lazy_import
+import parrot.tools.exports_mode as exports_mode
 from ._exports import ExportsToStoreMixin, current_tool_scope, safe_template_name
 from .abstract import AbstractTool
 
@@ -84,6 +85,10 @@ class PDFPrintArgs(BaseModel):
         None,
         description="Dictionary of variables to pass to the template (e.g., title, author, date)"
     )
+    stylesheets: Optional[List[str]] = Field(
+        None,
+        description="List of CSS file paths (relative to templates directory) to apply"
+    )
     auto_detect_markdown: bool = Field(
         True,
         description="Whether to automatically detect and convert Markdown content to HTML"
@@ -127,6 +132,7 @@ class PDFPrintTool(ExportsToStoreMixin, AbstractTool):
         "with enhanced table rendering. Can use custom HTML templates and CSS styling."
     )
     args_schema = PDFPrintArgs
+    studio_hidden_args = frozenset({"stylesheets"})  # store-only mode: CSS is server configuration
 
     def __init__(
         self,
@@ -919,7 +925,8 @@ footer {
         """Execute PDF generation with enhanced table support."""
         try:
             self._require_export_target()  # a Studio-scoped call with no store never writes a local file
-            stylesheets = None  # CSS files are server configuration (``default_stylesheets``), never an LLM argument
+            if exports_mode.is_enabled():
+                stylesheets = None  # store-only mode: CSS files are server configuration (``default_stylesheets``)
             self.logger.debug(
                 f"Starting PDF generation with {len(text)} characters of content"
             )

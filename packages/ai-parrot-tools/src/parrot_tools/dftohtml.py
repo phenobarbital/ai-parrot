@@ -7,6 +7,7 @@ from pathlib import Path
 from html import escape as html_escape
 import pandas as pd
 from pydantic import BaseModel, Field
+import parrot.tools.exports_mode as exports_mode
 from ._exports import ExportsToStoreMixin
 from .abstract import AbstractTool
 
@@ -16,6 +17,10 @@ class DfToHtmlArgs(BaseModel):
 
     dataframe: Any = Field(
         description="Pandas DataFrame to convert to HTML"
+    )
+    filename: Optional[str] = Field(
+        default=None,
+        description="Optional filename to save the HTML file (without extension)"
     )
     table_id: Optional[str] = Field(
         default=None,
@@ -64,8 +69,9 @@ class DfToHtmlTool(ExportsToStoreMixin, AbstractTool):
     """
 
     name: str = "df_to_html"
-    description: str = "Convert pandas DataFrame to styled HTML table (returned as HTML and, in Studio, as a download link)"
+    description: str = "Convert pandas DataFrame to styled HTML table with optional file saving"
     args_schema = DfToHtmlArgs
+    studio_hidden_args = frozenset({"filename"})  # store-only mode: the caller never names a file
     return_direct: bool = False
 
     def __init__(self, artifact_store: Any = None, **kwargs):
@@ -191,9 +197,9 @@ class DfToHtmlTool(ExportsToStoreMixin, AbstractTool):
             Dictionary containing the HTML string and optional file path
         """
 
-        # ``filename`` is not an LLM argument any more (PA-11): whatever arrives here never names a file.
-        filename = None
-        self._require_export_target()  # a Studio-scoped call with no store never writes a local file
+        if exports_mode.is_enabled():
+            filename = None  # store-only mode (PA-11): ``filename`` is not an LLM argument, nothing names a file
+        self._require_export_target()  # store-only mode: a Studio-scoped call with no store never writes a local file
 
         # Validate that we have a DataFrame
         if not isinstance(dataframe, pd.DataFrame):
@@ -282,10 +288,38 @@ class DfToHtmlTool(ExportsToStoreMixin, AbstractTool):
             "shape": df_to_convert.shape
         }
 
-        # With a store the table is published as a file; otherwise only the HTML string is returned (no file is
-        # ever named by the caller)
+        # With a store the table is published as a file (store-only mode: never a caller-named one)
         if self.exports_to_store:
             name = f"table_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
             result.update(await self._publish_export(name, complete_html, content_type="text/html"))
+        # Save to file if filename is provided
+        elif filename:
+            if not filename.endswith('.html'):
+                filename = f"{filename}.html"
+
+            # Ensure output directory exists
+            if self.output_dir:
+                self.output_dir.mkdir(parents=True, exist_ok=True)
+                file_path = self.output_dir / filename
+            else:
+                file_path = Path(filename)
+
+            # Write HTML to file
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(complete_html)
+
+                self.logger.info(f"HTML table saved to: {file_path}")
+
+                # Add file information to result
+                result.update({
+                    "file_path": str(file_path),
+                    "file_url": self.to_static_url(file_path),
+                    "file_size": file_path.stat().st_size
+                })
+
+            except Exception as e:
+                self.logger.error(f"Failed to save HTML file: {e}")
+                result["save_error"] = str(e)
 
         return result

@@ -37,7 +37,7 @@ class MSWordArgs(DocumentGenerationArgs):
     )
     docx_template: Optional[str] = Field(
         None,
-        description="File NAME of a DOCX template offered by the server (never a path)"
+        description="Path to a DOCX template file to use as base document"
     )
     style_config: Optional[Dict[str, Any]] = Field(
         None,

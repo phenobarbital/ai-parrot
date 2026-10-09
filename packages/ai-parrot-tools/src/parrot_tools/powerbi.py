@@ -15,6 +15,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pandas as pd
 from pydantic import BaseModel, Field, model_validator, PrivateAttr, ConfigDict
+import parrot.tools.exports_mode as exports_mode
 from ._exports import ExportStoreUnavailable, ExportsToStoreMixin
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 
@@ -324,7 +325,8 @@ class _BasePowerBIToolArgs(AbstractToolArgsSchema):
     max_backoff: float = Field(default=10.0, ge=0.0, description="Max backoff seconds")
 
     # Export knobs
-    export_csv: bool = Field(default=False, description="Export the result rows as a CSV file (returned as a download link)")
+    export_csv: bool = Field(default=False, description="Write result rows to CSV")
+    export_csv_path: Optional[str] = Field(default=None, description="CSV path; if not provided, a temp name is used")
     export_pandas: bool = Field(default=False, description="Return a pandas DataFrame in result (requires pandas)")
 
     # DAX templating
@@ -334,6 +336,10 @@ class _BasePowerBIToolArgs(AbstractToolArgsSchema):
     output_format: Optional[str] = Field(
         default=None,
         description="One of: row|rows|json|csv|dataframe|markdown|parquet|pyarrow.Table"
+    )
+    parquet_path: Optional[str] = Field(
+        default=None,
+        description="Where to write parquet if output_format='parquet'. Defaults to /tmp/..."
     )
 
 
@@ -352,6 +358,7 @@ class PowerBIQueryTool(ExportsToStoreMixin, AbstractTool):
     name = "powerbi_query"
     description = "Execute DAX against a Power BI dataset and return rows"
     args_schema = PowerBIQueryArgs
+    studio_hidden_args = frozenset({"export_csv_path", "parquet_path"})  # store-only mode: the caller names no path
 
     def __init__(self, artifact_store: Any = None, **kwargs):
         """``artifact_store`` is server-managed: CSV/parquet exports are published there, never written locally."""
@@ -442,8 +449,10 @@ class PowerBIQueryTool(ExportsToStoreMixin, AbstractTool):
             if self.exports_to_store:
                 result_payload |= {"csv_text": csv_text, **await self._publish_export(name, csv_text, content_type="text/csv")}
             else:
-                # no caller-chosen path ever: a server-named file in the temp directory (never in a Studio call)
-                path = os.path.join(tempfile.gettempdir(), name)
+                # store-only mode: no caller-chosen path ever (the argument is dropped): a server-named temp file
+                path = kwargs.get("export_csv_path") or f"/tmp/powerbi_{client.dataset_id[:8]}_{int(time.time())}.csv"
+                if exports_mode.is_enabled():
+                    path = os.path.join(tempfile.gettempdir(), name)
                 with open(path, "w", encoding="utf-8", newline="") as f:
                     f.write(csv_text)
                 csv_path = path
@@ -467,7 +476,10 @@ class PowerBIQueryTool(ExportsToStoreMixin, AbstractTool):
                     _write_parquet(rows, buffer)
                     result_payload |= await self._publish_export(name, buffer.getvalue(), content_type="application/vnd.apache.parquet")
                 else:
-                    parquet_path = _write_parquet(rows, os.path.join(tempfile.gettempdir(), name))
+                    path = kwargs.get("parquet_path") or f"/tmp/powerbi_{client.dataset_id[:8]}_{int(time.time())}.parquet"
+                    if exports_mode.is_enabled():
+                        path = os.path.join(tempfile.gettempdir(), name)
+                    parquet_path = _write_parquet(rows, path)
                     result_payload["parquet_path"] = parquet_path
             except ExportStoreUnavailable as exc:
                 return ToolResult(status="error", result=None, error=str(exc))
@@ -509,6 +521,7 @@ class PowerBITableInfoTool(AbstractTool):
     name = "powerbi_table_info"
     description = "Preview table info (sample rows) for a Power BI dataset"
     args_schema = PowerBITableInfoArgs
+    studio_hidden_args = frozenset({"export_csv_path", "parquet_path"})  # store-only mode: the caller names no path
 
     async def _execute(self, **kwargs) -> Any:
         cred = kwargs.get("credential", None)

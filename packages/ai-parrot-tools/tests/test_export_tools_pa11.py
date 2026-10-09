@@ -66,6 +66,16 @@ def studio_scope(tenant: str | None = "acme", agent: _Agent | None = None):
         _current_ctx.reset(token)
 
 
+@pytest.fixture(autouse=True)
+def _store_only_mode():
+    """PA-11 is the host's opt-in store-only mode (``app[STUDIO_EXPORTS_STORE_ONLY]``): every test here runs with it ON."""
+    import parrot.tools.exports_mode as exports_mode
+
+    exports_mode.configure(True)
+    yield
+    exports_mode.configure(False)
+
+
 @pytest.fixture
 def sandbox(tmp_path, monkeypatch):
     """HOME, TMPDIR and the working directory are fresh directories; ``watch`` lists every file under them."""
@@ -192,7 +202,7 @@ FACTORIES = {
 @pytest.mark.parametrize("name", sorted(FACTORIES))
 def test_the_llm_schema_has_no_path_overwrite_or_template_path_argument(name, sandbox, store):
     tool, _ = FACTORIES[name](sandbox, store)
-    properties = set(tool.args_schema.model_json_schema().get("properties", {}))
+    properties = set(tool.get_schema()["parameters"]["properties"])   # what the LLM is actually shown
     assert not properties & STRIPPED, properties & STRIPPED
     assert "artifact_store" in type(tool).server_managed_params
 
@@ -304,11 +314,11 @@ async def test_power_bi_exports_go_to_the_store(fmt, ext, aiohttp_server, monkey
     exported = _export_of(result)
     assert exported["filename"].endswith(ext) and exported["url"].startswith("/api/v1/astudio/exports/acme/")
     assert sandbox.watch() == before and not Path("/tmp/evil.csv").exists() and not Path("/tmp/evil.parquet").exists()
-    props = set(type(tool).args_schema.model_json_schema()["properties"])
+    props = set(tool.get_schema()["parameters"]["properties"])
     assert not props & {"export_csv_path", "parquet_path"}
 
 
 async def test_power_bi_table_info_schema_is_clean():
     from parrot_tools.powerbi import PowerBITableInfoTool
 
-    assert not set(PowerBITableInfoTool.args_schema.model_json_schema()["properties"]) & STRIPPED
+    assert not set(PowerBITableInfoTool().get_schema()["parameters"]["properties"]) & STRIPPED

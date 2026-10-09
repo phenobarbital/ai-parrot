@@ -196,6 +196,13 @@ def _register_assistant(reg: _Registrar) -> None:
     reg.add("/assistant", StudioAssistantHandler)
 
 
+async def _apply_exports_mode(app: web.Application) -> None:
+    """Copy the host switch ``app[STUDIO_EXPORTS_STORE_ONLY]`` to the export tools' mode (read at startup)."""
+    import parrot.tools.exports_mode as exports_mode
+
+    exports_mode.configure(bool(app.get(exports_mode.STUDIO_EXPORTS_STORE_ONLY)))
+
+
 async def _apply_egress_guard(app: web.Application) -> None:
     """Copy the host switch ``app[STUDIO_EGRESS_GUARD]`` to the tools' egress helper (read at startup, so the host may
     set it any time before the app starts)."""
@@ -259,6 +266,7 @@ def setup_studio_routes(
     install_startup_hook_once(app, resolve_studio_storage)
     from .meta_agent import cleanup_studio_assistants
 
+    install_startup_hook_once(app, _apply_exports_mode)  # PA-11: app[STUDIO_EXPORTS_STORE_ONLY] -> parrot.tools.exports_mode
     install_startup_hook_once(app, _apply_egress_guard)  # PA-13: app[STUDIO_EGRESS_GUARD] -> parrot.tools.egress
 
     install_startup_hook_once(app, cleanup_studio_assistants, signal="on_cleanup")  # assistant instances, every mode

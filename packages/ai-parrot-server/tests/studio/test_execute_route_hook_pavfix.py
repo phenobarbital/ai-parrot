@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import pytest
 
+import parrot.tools.exports_mode as exports_mode
 from parrot.handlers.studio import STUDIO_TOOLKIT_PARAM_HOOK
 from parrot.storage.artifacts import ArtifactStore
 from parrot.storage.backends.sqlite import ConversationSQLiteBackend
@@ -17,6 +18,12 @@ from .test_agents_db_mode import BASE, pool  # noqa: F401  (fixture)
 from .test_agents_visibility import tenant_app, who
 
 
+@pytest.fixture(autouse=True)
+def _reset_exports_mode():
+    yield
+    exports_mode.configure(False)
+
+
 def _app(pool, hook=None, store=None):  # noqa: F811
     app = tenant_app(pool)
     set_tenant_tooling_policy(app, TenantToolingPolicy(builtin_tools=frozenset({"doc_converter", "csv_export"})))
@@ -24,6 +31,7 @@ def _app(pool, hook=None, store=None):  # noqa: F811
         app[STUDIO_TOOLKIT_PARAM_HOOK] = hook
     if store is not None:
         app["artifact_store"] = store
+        app[exports_mode.STUDIO_EXPORTS_STORE_ONLY] = True   # the host opts in to store-only exports (PA-11)
     return app
 
 
@@ -76,3 +84,16 @@ async def test_the_artifact_store_is_injected_even_though_the_constructor_defaul
     resp, body = await _execute(client, "csv_export", {"content": [{"a": 1, "b": 2}]})
     assert resp.status == 200, body
     assert "/exports/acme/" in str(body), body                               # published to the tenant's store
+
+
+async def test_without_the_host_opt_in_the_store_is_not_injected(aiohttp_client, pool, tmp_path):  # noqa: F811
+    """No ``STUDIO_EXPORTS_STORE_ONLY``: ``app['artifact_store']`` (set for other purposes) is not wired into the tools."""
+    store = ArtifactStore(
+        dynamodb=ConversationSQLiteBackend(str(tmp_path / "c.db")),
+        s3_overflow=OverflowStore(LocalFileManager(base_path=tmp_path / "files")),
+    )
+    app = _app(pool)
+    app["artifact_store"] = store
+    client = await aiohttp_client(app)
+    resp, body = await _execute(client, "csv_export", {"content": [{"a": 1}]})
+    assert resp.status == 200 and "/exports/acme/" not in str(body), body
