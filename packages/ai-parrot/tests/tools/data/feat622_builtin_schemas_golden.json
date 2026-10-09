@@ -43,6 +43,9 @@
         "config": {
           "x-server-managed": true
         },
+        "confine_sources": {
+          "x-server-managed": true
+        },
         "graphindex_toolkit": {
           "x-server-managed": true
         },
