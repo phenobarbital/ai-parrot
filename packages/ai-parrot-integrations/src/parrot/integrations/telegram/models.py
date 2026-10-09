@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Any
 from navconfig import config
+from parrot.integrations.knowledge_upload.models import KnowledgeUploadConfig
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,8 @@ class TelegramAgentConfig:
     agent_timeout: float = 120.0
     # Document handling settings (FEAT-120)
     max_document_size_mb: int = 20
+    # Chat-driven knowledge upload (FEAT-647) — opt-in, disabled by default.
+    knowledge_upload: KnowledgeUploadConfig = field(default_factory=KnowledgeUploadConfig)
     # Reply context enrichment (FEAT-120)
     enable_reply_context: bool = True
     # Operator commands (FEAT-210)
@@ -294,6 +297,7 @@ class TelegramAgentConfig:
             singleton_agent=bool(data.get('singleton_agent', True)),
             agent_timeout=float(data.get('agent_timeout', 120.0)),
             max_document_size_mb=int(data.get('max_document_size_mb', 20)),
+            knowledge_upload=KnowledgeUploadConfig.model_validate(data.get('knowledge_upload') or {}),
             enable_reply_context=bool(data.get('enable_reply_context', True)),
             operator_chat_ids=[int(x) for x in data['operator_chat_ids']]
             if data.get('operator_chat_ids') else None,
