@@ -110,6 +110,12 @@ from parrot.knowledge.wiki.repo_scan import (
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiStoreBusy, create_wiki_store
 from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
+from parrot.knowledge.wiki.runtime import (
+    WikiRuntimeError,
+    build_ingest_runtime,
+    build_novelty_scorer,
+    build_triage_adapters,
+)
 from parrot.knowledge.wiki.ledger.service import LedgerService
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
@@ -4629,17 +4635,7 @@ def _build_triage_adapters(lightweight_model: str, model: str) -> tuple[Any, Any
         the lightweight model id, so mixing providers there would send
         one provider's client a model id meant for a different provider.
     """
-    from parrot.clients.factory import LLMFactory
-    from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
-
-    light_provider, light_model_id = LLMFactory.parse_llm_string(lightweight_model)
-    heavy_provider, heavy_model_id = LLMFactory.parse_llm_string(model)
-    light_client = LLMFactory.create(lightweight_model)
-    heavy_client = light_client if model == lightweight_model else LLMFactory.create(model)
-    light_adapter = PageIndexLLMAdapter(light_client, model=light_model_id)
-    heavy_adapter = PageIndexLLMAdapter(heavy_client, model=heavy_model_id)
-    same_provider = light_provider == heavy_provider
-    return light_adapter, heavy_adapter, light_model_id, same_provider
+    return build_triage_adapters(lightweight_model, model)
 
 
 def _resolve_ingest_model_ids(lightweight_model_opt: str | None, model_opt: str | None) -> tuple[str, str]:
@@ -4682,48 +4678,7 @@ def _build_novelty_scorer(root: Path, config: WikiProjectConfig, store: BaseWiki
     Returns:
         A configured ``NoveltyScorer``.
     """
-    from parrot.knowledge.wiki.search import WikiCombinedSearch
-    from parrot.knowledge.wiki.triage import NoveltyScorer
-
-    graph_db = config.graph_path(root) / f"{config.wiki_name}.db"
-    if not graph_db.exists():
-        return NoveltyScorer(
-            grounding_evaluator=None,
-            search=WikiCombinedSearch(None, None, store=store),
-        )
-
-    try:
-        from parrot.knowledge.graphindex.assemble import GraphAssembler
-        from parrot.knowledge.graphindex.factory import (
-            HashingGraphEmbedder,
-            make_stub_tenant_context,
-        )
-        from parrot.knowledge.graphindex.grounding import GroundingEvaluator
-        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
-        from parrot.knowledge.graphindex.retriever import GraphExpandedRetriever
-    except ImportError:
-        return NoveltyScorer(
-            grounding_evaluator=None,
-            search=WikiCombinedSearch(None, None, store=store),
-        )
-
-    async def _build_evaluator() -> Any:
-        persistence = SQLitePersistence(config.graph_path(root))
-        ctx = make_stub_tenant_context(config.wiki_name)
-        nodes, edges = await persistence.load_graph(ctx)
-        assembler = GraphAssembler(tenant_id=config.wiki_name)
-        for node in nodes:
-            assembler.add_node(node)
-        for edge in edges:
-            assembler.add_edge(edge)
-        embedder = HashingGraphEmbedder()
-        if nodes:
-            await embedder.embed_nodes(nodes)
-        retriever = GraphExpandedRetriever(graph=assembler.graph, nodes=nodes, embedder=embedder)
-        return GroundingEvaluator(retriever)
-
-    evaluator = _run(_build_evaluator())
-    return NoveltyScorer(grounding_evaluator=evaluator)
+    return _run(build_novelty_scorer(root, config, store))
 
 
 def _build_ingest_runtime(
@@ -4758,70 +4713,28 @@ def _build_ingest_runtime(
         click.ClickException: If neither model can be resolved or an LLM
             client cannot be constructed.
     """
-    from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
-    from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
-    from parrot.knowledge.wiki.documents import DocumentAcquirer
-    from parrot.knowledge.wiki.inbox.processor import InboxRuntime
-    from parrot.knowledge.wiki.ingest import WikiIngestOrchestrator
-    from parrot.knowledge.wiki.models import WikiConfig
-    from parrot.knowledge.wiki.search import WikiCombinedSearch
-    from parrot.knowledge.wiki.triage import IngestTriageRouter
-
     lightweight_model, model = _resolve_ingest_model_ids(lightweight_model_opt, model_opt)
     try:
-        light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
+        adapters = _build_triage_adapters(lightweight_model, model)
     except Exception as exc:
         raise click.ClickException(f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}") from exc
-
-    wiki_dir = config.storage_path(root)
-    pageindex_dir = wiki_dir / "pageindex"
-    pi_toolkit = PageIndexToolkit(
-        heavy_adapter,
-        storage_dir=pageindex_dir,
-        lightweight_model=light_model_id if same_provider else None,
-    )
-    if not same_provider:
-        _cli_logger.info(
-            "Stage-1/Stage-2 triage models use different providers "
-            "(%s / %s); PageIndexToolkit will use the Stage-2 (heavy) "
-            "model for its own internal page-generation steps too.",
-            lightweight_model,
-            model,
-        )
-    bookkeeper = WikiBookkeeper()
-    orchestrator = WikiIngestOrchestrator(
-        pi_toolkit,
-        None,
-        sources,
-        bookkeeper,
-        store=store,
-        sync_graph=config.sync_graph,
-    )
     novelty_scorer = _build_novelty_scorer(root, config, store)
-    router = IngestTriageRouter(charter, light_adapter, sources, novelty_scorer, heavy_adapter=heavy_adapter)
-    wiki_config = WikiConfig(
-        wiki_name=config.wiki_name,
-        storage_dir=wiki_dir,
-        charter_path=charter_path,
-        sync_graph=config.sync_graph,
-        storage_backend=config.backend,
-    )
-    return InboxRuntime(
-        root=root,
-        config=config,
-        wiki_config=wiki_config,
-        charter=charter,
-        store=store,
-        sources=sources,
-        bookkeeper=bookkeeper,
-        acquirer=DocumentAcquirer(fetch_timeout=fetch_timeout),
-        router=router,
-        orchestrator=orchestrator,
-        light_adapter=light_adapter,
-        heavy_adapter=heavy_adapter,
-        search=WikiCombinedSearch(None, None, store=store),
-        models={"lightweight": lightweight_model, "heavy": model},
-    )
+    try:
+        return build_ingest_runtime(
+            root,
+            config,
+            store,
+            sources,
+            charter,
+            charter_path,
+            lightweight_model=lightweight_model,
+            model=model,
+            novelty_scorer=novelty_scorer,
+            adapters=adapters,
+            fetch_timeout=fetch_timeout,
+        )
+    except WikiRuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def _print_triage_summary(entries: list[Any], skipped: list[str] | None = None) -> None:
