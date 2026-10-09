@@ -154,6 +154,15 @@ def _resolve_toolkit_class(slug: str) -> type | None:
     return get_toolkit_resolver().resolve(slug)
 
 
+_WIKI_TOOLKIT_KWARGS = ("confine_sources",)  # constructor switches of LLMWikiToolkit a host forces (PA-14), not WikiConfig
+
+
+def _split_wiki_params(params: dict) -> tuple[dict, dict]:
+    """``(WikiConfig fields, LLMWikiToolkit constructor switches)`` of the final (hooked) wiki params."""
+    toolkit_kwargs = {name: params[name] for name in _WIKI_TOOLKIT_KWARGS if name in params}
+    return {key: value for key, value in params.items() if key not in toolkit_kwargs}, toolkit_kwargs
+
+
 def _validate_wiki_storage_dir(raw: Path) -> Path:
     """Validate/resolve a client-submitted ``WikiConfig.storage_dir``.
 
@@ -353,8 +362,9 @@ class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, Studi
         — so ``None`` is passed; OKF-specific wiki tools are unavailable
         until a real OKF toolkit is wired in separately.
         """
+        config_params, toolkit_kwargs = _split_wiki_params(params)
         try:
-            config = WikiConfig(**params)
+            config = WikiConfig(**config_params)
         except ValidationError as exc:
             raise _ToolkitAssignError(422, "invalid_config", f"Invalid WikiConfig: {exc}") from exc
 
@@ -393,6 +403,7 @@ class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, Studi
             None,
             config,
             agent_id=bot.name,
+            **toolkit_kwargs,
         )
         apply_exclude_tools(toolkit, exclude)
         registered = bot.tool_manager.register_toolkit(toolkit)
