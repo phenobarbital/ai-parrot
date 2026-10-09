@@ -18,6 +18,16 @@ Toolkit-parameter hook (PA-9)
 
 The hook runs on every path that constructs a toolkit for a Studio agent: at write time (policy enforcement, dry
 run: the result is discarded), on a live assignment, and at build time of a stored agent (which fails closed).
+
+TOOL_CALL guardrails (PA-10)
+----------------------------
+``app[STUDIO_TOOL_CALL_GUARDRAILS] = [guardrail, ...]`` — the existing TOOL_CALL guardrail protocol
+(:class:`parrot.bots.guardrails.base.Guardrail`: ``async check(content, ctx) -> GuardrailResult``). Every Studio-built
+bot gets each of them on its TOOL_CALL pipeline, so they run before every tool call with
+``ctx.extras["arguments"]`` (the call's arguments) and ``ctx.tool_name``. Each guardrail is wrapped per bot: it sees
+``ctx.extras["studio"] == {"tenant", "agent_id", "agent", "visibility"}`` of THAT bot, a raising guardrail BLOCKS
+(fail closed) whatever its own ``on_error``, and a BLOCK's ``reason`` is the tool's refusal that reaches the LLM and the
+audit line. The direct ``POST /tools/{slug}/execute`` route runs the same guardrails (``agent`` is ``None`` there).
 """
 
 from __future__ import annotations
@@ -36,8 +46,9 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 STUDIO_TOOLKIT_PARAM_HOOK = "studio_toolkit_param_hook"
+STUDIO_TOOL_CALL_GUARDRAILS = "studio_tool_call_guardrails"
 EXCLUDE_TOOLS_KEY = "exclude_tools"
-FEATURES = frozenset({"toolkit_param_hook"})
+FEATURES = frozenset({"toolkit_param_hook", "tool_call_guardrails"})
 
 ToolkitParamHook = Callable[[str, dict[str, Any], "ToolingSubject"], Mapping[str, Any]]
 
@@ -45,10 +56,13 @@ __all__ = [
     "EXCLUDE_TOOLS_KEY",
     "FEATURES",
     "STUDIO_TOOLKIT_PARAM_HOOK",
+    "STUDIO_TOOL_CALL_GUARDRAILS",
     "ToolParamRefused",
     "ToolkitParamHook",
     "apply_exclude_tools",
+    "bind_host_tool_call_guardrails",
     "check_toolkit_params",
+    "host_tool_call_pipeline",
     "run_toolkit_param_hook",
     "split_exclude_tools",
 ]
@@ -128,3 +142,49 @@ def check_toolkit_params(
         if spec.slug.lower() in subject.held:  # stored and unchanged: the build re-checks it; an unrelated edit stays possible
             continue
         run_toolkit_param_hook(hook, spec.slug, spec.params, subject)
+
+
+# -- TOOL_CALL guardrails (PA-10) ----------------------------------------------------------------------------------
+
+
+def _host_guardrail(inner: Any, studio: Mapping[str, Any]) -> Any:
+    """``inner`` wrapped for one Studio bot: bot context in ``ctx.extras["studio"]``, fail-closed on any error."""
+    from parrot.bots.guardrails.base import Guardrail, GuardrailContext, GuardrailResult, GuardrailStage
+
+    class _HostToolCallGuardrail(Guardrail):
+        stages = {GuardrailStage.TOOL_CALL}
+        on_error = "fail_closed"
+
+        def __init__(self) -> None:
+            self.name = str(getattr(inner, "name", None) or type(inner).__name__)
+            self.priority = int(getattr(inner, "priority", 0) or 0)
+
+        async def check(self, content: str, ctx: GuardrailContext) -> GuardrailResult:
+            scoped = ctx.model_copy(update={"extras": {**ctx.extras, "studio": dict(studio)}})
+            result = inner.check(content, scoped)
+            if inspect.isawaitable(result):
+                result = await result
+            return result
+
+    return _HostToolCallGuardrail()
+
+
+def bind_host_tool_call_guardrails(pipeline: Any, guardrails: Any, studio: Mapping[str, Any]) -> int:
+    """Register the host's guardrails on ``pipeline`` (a bot's TOOL_CALL pipeline) for the bot described by
+    ``studio``; returns how many were registered. An object without a ``check`` method is a configuration error."""
+    count = 0
+    for guardrail in guardrails or ():
+        if not callable(getattr(guardrail, "check", None)):
+            raise TypeError(f"{type(guardrail).__name__} is not a guardrail: it has no check(content, ctx)")
+        pipeline.add(_host_guardrail(guardrail, studio))
+        count += 1
+    return count
+
+
+def host_tool_call_pipeline(guardrails: Any, studio: Mapping[str, Any]) -> Any:
+    """A stand-alone TOOL_CALL pipeline of the host's guardrails (for tool calls made outside a bot)."""
+    from parrot.bots.guardrails.pipeline import GuardrailPipeline
+
+    pipeline = GuardrailPipeline()
+    bind_host_tool_call_guardrails(pipeline, guardrails, studio)
+    return pipeline

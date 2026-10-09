@@ -15,6 +15,7 @@ from parrot.handlers.catalog_decorator import (  # noqa: F401  (re-exported)
 
 from parrot.tools.host_hooks import (  # noqa: E402,F401  (re-exported)
     FEATURES,
+    STUDIO_TOOL_CALL_GUARDRAILS,
     STUDIO_TOOLKIT_PARAM_HOOK,
     ToolkitParamHook,
     ToolParamRefused,
@@ -24,6 +25,7 @@ __all__ = [
     "CATALOG_KINDS",
     "FEATURES",
     "STUDIO_CATALOG_DECORATOR",
+    "STUDIO_TOOL_CALL_GUARDRAILS",
     "STUDIO_TOOLKIT_PARAM_HOOK",
     "CatalogDecorator",
     "ToolParamRefused",

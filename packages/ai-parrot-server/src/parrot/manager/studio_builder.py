@@ -187,6 +187,16 @@ class StudioAgentBuilder:
         guard = app.get("studio_confirmation_guard")
         if guard is not None:
             bot.tool_manager.set_confirmation_guard(guard)
+        # PA-10: the host's TOOL_CALL guardrails, bound to THIS bot's tenant/agent
+        from parrot.bots.guardrails.base import GuardrailStage
+        from parrot.tools.host_hooks import STUDIO_TOOL_CALL_GUARDRAILS, bind_host_tool_call_guardrails
+
+        if host_guardrails := app.get(STUDIO_TOOL_CALL_GUARDRAILS):
+            bind_host_tool_call_guardrails(
+                bot._guardrail_pipelines[GuardrailStage.TOOL_CALL], host_guardrails,
+                {"tenant": part.tenant, "agent_id": str(rec.agent_id), "agent": rec.name,
+                 "visibility": rec.visibility},
+            )
 
     async def _discard(self, bot: "AbstractBot | None", directory: Path | None, *, label: str) -> None:
         """Clean the half-built instance exactly once and remove the directory it created. Never raises."""

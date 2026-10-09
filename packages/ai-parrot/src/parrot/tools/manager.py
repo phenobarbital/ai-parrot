@@ -2750,6 +2750,9 @@ class ToolManager(MCPToolManagerMixin):
         if self._broker is not None:
             new_tm._broker = self._broker
         new_tm._toolkit_param_binding = self._toolkit_param_binding  # PA-9: a clone keeps constructing through the hook
+        # PA-10: a per-session clone (user toolkit overrides) must keep the bot's TOOL_CALL guardrails: the pipeline is
+        # the bot's, shared by reference, so a clone can never be the way around a host guardrail
+        new_tm._tool_call_pipeline = self._tool_call_pipeline
         # Share tool references. Tools that respect the per-invocation
         # CredentialResolver contract are safe; stateful toolkits caching
         # tokens on ``self`` should implement their own per-user clone.

@@ -31,7 +31,7 @@ from parrot.auth.confirmation import is_enforced_write_class
 from parrot.clients.factory import LLMFactory
 from parrot.tools.abstract import AbstractTool
 from parrot.tools.discovery import resolve_class
-from parrot.tools.host_hooks import apply_exclude_tools
+from parrot.tools.host_hooks import STUDIO_TOOL_CALL_GUARDRAILS, apply_exclude_tools, host_tool_call_pipeline
 from parrot.tools.tooling_policy import ToolParamRefused
 from parrot.tools.toolkit import AbstractToolkit
 from pydantic import ValidationError
@@ -196,7 +196,39 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
         except ValueError as exc:
             return self._error(f"Invalid arguments for '{slug}': {exc}", status=422, code="invalid_args")
 
+        if (blocked := await self._host_guardrail_refusal(slug, execute_request.args)) is not None:
+            return blocked
         return self._execute_response(await instance.execute(**execute_request.args))
+
+    async def _host_guardrail_refusal(self, slug: str, args: dict):
+        """403 ``tool_call_blocked`` when a host TOOL_CALL guardrail (PA-10) blocks this direct call; else ``None``.
+
+        The same guardrails a Studio-built bot runs before every tool call, so this route is not a way around them
+        (``agent`` is ``None`` here: no bot is involved).
+        """
+        guardrails = self.request.app.get(STUDIO_TOOL_CALL_GUARDRAILS)
+        if not guardrails:
+            return None
+        from parrot.bots.guardrails.base import GuardrailContext, GuardrailStage
+
+        part = await self._studio_partition()
+        user = await self._get_user()
+        pipeline = host_tool_call_pipeline(
+            guardrails, {"tenant": part.tenant, "agent_id": None, "agent": None, "visibility": None}
+        )
+        ctx = GuardrailContext(
+            stage=GuardrailStage.TOOL_CALL, agent_name=slug, tool_name=slug, user_id=user.user_id,
+            extras={"tool_name": slug, "arguments": args, "permission_context": None},
+        )
+        outcome = await pipeline.run(f"tool_call:{slug}", ctx)
+        if not outcome.blocked:
+            return None
+        message = outcome.reason or "Policy denied"
+        for report in outcome.flag_reports.values():
+            if isinstance(report, dict) and report.get("message"):
+                message = report["message"]
+                break
+        return self._error(message, status=403, code="tool_call_blocked")
 
 
 @is_authenticated()
