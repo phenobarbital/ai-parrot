@@ -7,7 +7,7 @@ from parrot.clients.factory import LLMFactory
 
 from ..access import _store_record, build_tool_scope
 from ..conversation import delete_studio_conversation
-from ..key_source import choose_key_source
+from ..key_source import KeySourceRefusal, choose_key_source
 from ..storage.models import StudioAgentKey, StudioNotFound, StudioStorageUnavailable
 from ._models import TestAskRequest
 
@@ -74,6 +74,12 @@ class _StudioTestingDbMixin:
             KeySourceRefusal: ``409 key_source_required`` / ``422 key_source_unavailable``.
         """
         llm_raw = getattr(bot, "_llm_raw", None)
+        if not isinstance(llm_raw, str) and ask_request.key_source == "byok":
+            # an explicit personal key is honoured or refused, never silently served by the server key (PA-2)
+            raise KeySourceRefusal(
+                422, "key_source_unavailable", "A personal key cannot be applied to this agent's LLM configuration.",
+                {"requested": "byok"},
+            )
         if not isinstance(llm_raw, str) or (not ask_request.use_byok and ask_request.key_source is None):
             return False
         provider, _model = LLMFactory.parse_llm_string(llm_raw)

@@ -170,6 +170,18 @@ async def test_ask_explicit_source_that_does_not_exist(aiohttp_client, pool, cle
     assert (await _ask(client, key_source="nope"))[0] == 400
 
 
+async def test_ask_byok_is_refused_when_it_cannot_be_applied(aiohttp_client, pool, clean_keys, keyed):  # noqa: F811
+    """PA-V2 fix 9: an agent whose LLM is not a plain ``provider:model`` string cannot take a personal key; an explicit
+    ``key_source="byok"`` is refused (422), never silently served by the server key and reported as ``server``."""
+    client = await aiohttp_client(_app(pool))
+    resp = await client.post(f"{BASE}/agents", json={"name": "alpha", "bot_class": "BasicBot"})  # no llm string stored
+    assert resp.status == 201, await resp.text()
+    await _store_key(client, KEYED_PROVIDER, "user-key-AAAA")
+    status, body = await _ask(client, key_source="byok")
+    assert status == 422 and body["code"] == "key_source_unavailable", body
+    assert body["details"] == {"requested": "byok"} and "user-key-AAAA" not in str(body)
+
+
 # -- the assistant -----------------------------------------------------------------------------------------------
 
 
