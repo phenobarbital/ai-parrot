@@ -16,7 +16,6 @@ from parrot.integrations.knowledge_upload import (
 )
 from parrot.integrations.knowledge_upload.targets.bookstore import BookstoreTarget
 
-
 try:
     import parrot.utils.types  # noqa: F401 - prefer the compiled extension when available
 except ModuleNotFoundError:
