@@ -4,6 +4,7 @@ The builders are kept separate from command-line concerns so async servers can
 construct the charter triage and ingest services without importing CLI code or
 starting a nested event loop.
 """
+
 from __future__ import annotations
 
 import logging
@@ -153,9 +154,7 @@ def build_ingest_runtime(
         try:
             adapters = build_triage_adapters(lightweight_model, model)
         except Exception as exc:
-            raise WikiRuntimeError(
-                f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}"
-            ) from exc
+            raise WikiRuntimeError(f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}") from exc
     light_adapter, heavy_adapter, light_model_id, same_provider = adapters
 
     wiki_dir = config.storage_path(root)

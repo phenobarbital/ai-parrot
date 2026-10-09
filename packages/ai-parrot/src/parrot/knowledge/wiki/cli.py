@@ -38,7 +38,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-import sys
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 import click

@@ -95,7 +95,9 @@ async def test_build_ingest_runtime_with_injected_adapters(wiki_project: dict[st
     assert runtime.models == {"lightweight": "google:light", "heavy": "google:heavy"}
 
 
-def test_build_ingest_runtime_wraps_adapter_failure(wiki_project: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_build_ingest_runtime_wraps_adapter_failure(
+    wiki_project: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The public builder reports adapter construction failures consistently."""
 
     def _boom(lightweight_model: str, model: str) -> None:
