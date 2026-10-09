@@ -13,6 +13,7 @@ non-goal: "Migration/removal of UserInfo/UserProfileKB").
 
 See `sdd/specs/pbac-guardrails.spec.md` §3 Module 4.
 """
+
 import logging
 from typing import Any
 
@@ -34,6 +35,7 @@ class ManagerRef(BaseModel):
         display_name: The manager's display name, if known.
         email: The manager's email, if known.
     """
+
     user_id: int | str
     display_name: str | None = None
     email: str | None = None
@@ -61,6 +63,7 @@ class EmployeeProfile(BaseModel):
         manager: The user's manager, as a nested `ManagerRef`, or `None`
             if the user has no recorded manager.
     """
+
     user_id: int | str
     username: str | None = None
     display_name: str | None = None
@@ -111,11 +114,9 @@ class UserInfoService:
         if self._db is None:
             dsn = self._dsn
             if dsn is None:
-                _qs_conf = lazy_import(
-                    "querysource.conf", package_name="querysource", extra="db"
-                )
+                _qs_conf = lazy_import("querysource.conf", package_name="querysource", extra="db")
                 dsn = _qs_conf.default_dsn
-            self._db = AsyncDB('pg', dsn=dsn)
+            self._db = AsyncDB("pg", dsn=dsn)
         return self._db
 
     async def _fetch_manager(self, manager_id: Any) -> ManagerRef | None:
