@@ -1,4 +1,5 @@
 """Authorization policy: username OR group allow-list, deny by default."""
+
 from __future__ import annotations
 
 import logging
@@ -15,7 +16,9 @@ class UploadPolicy:
     """Username-or-group allow-list; deny by default."""
 
     def __init__(self, allowed_usernames: Iterable[str], allowed_groups: Iterable[str]) -> None:
-        self._usernames = {username.strip().casefold() for username in allowed_usernames if username and username.strip()}
+        self._usernames = {
+            username.strip().casefold() for username in allowed_usernames if username and username.strip()
+        }
         self._groups = {group.strip().casefold() for group in allowed_groups if group and group.strip()}
 
     def is_allowed(self, profile: EmployeeProfile | None) -> bool:

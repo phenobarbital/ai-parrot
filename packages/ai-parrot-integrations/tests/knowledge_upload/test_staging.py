@@ -1,4 +1,5 @@
 """Unit tests for private knowledge upload staging."""
+
 import asyncio
 import stat
 

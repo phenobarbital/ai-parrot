@@ -1,4 +1,5 @@
 """Private staging of uploaded bytes with guaranteed deletion (AC5)."""
+
 from __future__ import annotations
 
 import asyncio

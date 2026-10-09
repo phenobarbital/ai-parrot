@@ -1,4 +1,5 @@
 """Unit tests for knowledge upload authorization."""
+
 from unittest.mock import AsyncMock
 
 from parrot.auth.userinfo import EmployeeProfile

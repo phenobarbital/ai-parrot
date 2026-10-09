@@ -1,4 +1,5 @@
 """Chat-driven document upload into the Bookstore / LLM wiki (FEAT-647)."""
+
 from .models import (
     BookstoreTargetConfig,
     KnowledgeUploadConfig,

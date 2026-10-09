@@ -1,4 +1,5 @@
 """Data models for chat-driven knowledge uploads (FEAT-647)."""
+
 from __future__ import annotations
 
 from enum import Enum
