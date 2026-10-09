@@ -4,6 +4,7 @@ Allows Slack integration without public webhook URLs by using WebSocket connecti
 Recommended for: local development, environments behind firewalls.
 For production, prefer webhook mode.
 """
+
 import asyncio
 import logging
 from typing import Any, Dict, Optional, TYPE_CHECKING
@@ -33,7 +34,7 @@ class SlackSocketHandler:
         client: The SocketModeClient for WebSocket communication.
     """
 
-    def __init__(self, wrapper: 'SlackAgentWrapper'):
+    def __init__(self, wrapper: "SlackAgentWrapper"):
         """Initialize the Socket Mode handler.
 
         Args:
@@ -45,8 +46,7 @@ class SlackSocketHandler:
             from slack_sdk.web.async_client import AsyncWebClient
         except ImportError as exc:
             raise ImportError(
-                "slack-sdk is required for Socket Mode. "
-                "Install it with: pip install slack-sdk"
+                "slack-sdk is required for Socket Mode. " "Install it with: pip install slack-sdk"
             ) from exc
 
         self.wrapper = wrapper
@@ -186,19 +186,15 @@ class SlackSocketHandler:
             return
 
         # Handle Agents & AI Apps events if assistant mode is enabled
-        if hasattr(self.wrapper, '_assistant_handler') and self.wrapper._assistant_handler:
+        if hasattr(self.wrapper, "_assistant_handler") and self.wrapper._assistant_handler:
             if event_type == "assistant_thread_started":
-                task = asyncio.create_task(
-                    self.wrapper._assistant_handler.handle_thread_started(event, payload)
-                )
+                task = asyncio.create_task(self.wrapper._assistant_handler.handle_thread_started(event, payload))
                 self.wrapper._background_tasks.add(task)
                 task.add_done_callback(self.wrapper._background_tasks.discard)
                 return
 
             if event_type == "assistant_thread_context_changed":
-                task = asyncio.create_task(
-                    self.wrapper._assistant_handler.handle_context_changed(event)
-                )
+                task = asyncio.create_task(self.wrapper._assistant_handler.handle_context_changed(event))
                 self.wrapper._background_tasks.add(task)
                 task.add_done_callback(self.wrapper._background_tasks.discard)
                 return
@@ -212,9 +208,7 @@ class SlackSocketHandler:
                     or (self._bot_user_id and event.get("user") == self._bot_user_id)
                 )
                 if not is_bot:
-                    task = asyncio.create_task(
-                        self.wrapper._assistant_handler.handle_user_message(event)
-                    )
+                    task = asyncio.create_task(self.wrapper._assistant_handler.handle_user_message(event))
                     self.wrapper._background_tasks.add(task)
                     task.add_done_callback(self.wrapper._background_tasks.discard)
                     return
@@ -232,6 +226,13 @@ class SlackSocketHandler:
             or (self._bot_user_id and event.get("user") == self._bot_user_id)
         ):
             return
+
+        if event.get("files") or event.get("subtype") == "file_share":
+            file_channel = event.get("channel")
+            file_user = event.get("user") or "unknown"
+            if file_channel and self.wrapper._is_authorized(file_channel, file_user):
+                if await self.wrapper._run_interceptors(event):
+                    return
 
         # Skip empty messages (e.g., file uploads with no text)
         text = (event.get("text") or "").strip()
@@ -302,9 +303,7 @@ class SlackSocketHandler:
                 "text": text,
                 "response_url": response_url or "",
             }
-            router_result = await self.wrapper._command_router.dispatch(
-                command_word, command_payload
-            )
+            router_result = await self.wrapper._command_router.dispatch(command_word, command_payload)
             if router_result is not None:
                 if response_url:
                     await self._send_response(response_url, router_result)
@@ -371,7 +370,7 @@ class SlackSocketHandler:
 
         # Check if wrapper has an interactive handler
         if hasattr(self.wrapper, "_interactive_handler"):
-            handler = getattr(self.wrapper, "_interactive_handler")
+            handler = self.wrapper._interactive_handler
             if handler:
                 await handler.handle(payload)
         else:

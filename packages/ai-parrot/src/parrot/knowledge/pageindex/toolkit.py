@@ -160,6 +160,9 @@ class PageIndexToolkit(AbstractToolkit):
             self._embed_fn = _make_embed_fn(emb_model_name, _backend)
 
         self._trees: dict[str, dict[str, Any]] = {}
+        # FEAT-647: on-disk signature (st_mtime_ns, st_size) of each cached tree,
+        # so trees rewritten by another toolkit/process are reloaded on read.
+        self._tree_sigs: dict[str, tuple[int, int]] = {}
         self._search: dict[str, HybridPageIndexSearch] = {}
         self._batch_depth: dict[str, int] = {}
         self._batch_dirty: dict[str, bool] = {}
@@ -176,13 +179,40 @@ class PageIndexToolkit(AbstractToolkit):
             lightweight_adapter=self._light_adapter,
         )
 
+    def _tree_signature(self, tree_name: str) -> tuple[int, int] | None:
+        """Return ``(st_mtime_ns, st_size)`` of the tree JSON, or ``None`` when it is missing."""
+        try:
+            st = self._store._path_for(tree_name).stat()
+        except OSError:
+            return None
+        return (st.st_mtime_ns, st.st_size)
+
+    def _remember_tree_signature(self, tree_name: str) -> None:
+        """Record the current on-disk signature of ``tree_name`` (after a load or own write)."""
+        sig = self._tree_signature(tree_name)
+        if sig is None:
+            self._tree_sigs.pop(tree_name, None)
+        else:
+            self._tree_sigs[tree_name] = sig
+
     def _load_tree(self, tree_name: str) -> dict[str, Any]:
-        if tree_name in self._trees:
-            return self._trees[tree_name]
+        cached = self._trees.get(tree_name)
+        if cached is not None:
+            if self._batch_depth.get(tree_name, 0) > 0:
+                return cached
+            if self._tree_signature(tree_name) == self._tree_sigs.get(tree_name):
+                return cached
+            logger.debug("PageIndex tree %r changed on disk; reloading", tree_name)
+            self._trees.pop(tree_name, None)
+            self._search.pop(tree_name, None)
+            self._content_store._cache_evict_tree(tree_name)
+            self._okf_toolkits.pop(tree_name, None)
+            self._tree_sigs.pop(tree_name, None)
         if not self._store.exists(tree_name):
             raise KeyError(f"Tree {tree_name!r} does not exist")
         tree = self._store.load(tree_name)
         self._trees[tree_name] = tree
+        self._remember_tree_signature(tree_name)
         return tree
 
     def _search_for(self, tree_name: str) -> HybridPageIndexSearch:
@@ -212,6 +242,7 @@ class PageIndexToolkit(AbstractToolkit):
             self._batch_dirty[tree_name] = True
             return
         self._store.save(tree_name, tree)
+        self._remember_tree_signature(tree_name)
         engine = self._search.get(tree_name)
         if engine is not None:
             engine.mark_dirty()
@@ -393,6 +424,7 @@ class PageIndexToolkit(AbstractToolkit):
         tree = {"doc_name": doc_name or tree_name, "structure": []}
         self._trees[tree_name] = tree
         self._store.save(tree_name, tree)
+        self._remember_tree_signature(tree_name)
         return {"tree_name": tree_name, "doc_name": tree["doc_name"]}
 
     async def delete_tree(self, tree_name: str) -> dict[str, Any]:
@@ -401,6 +433,7 @@ class PageIndexToolkit(AbstractToolkit):
         sidecars_removed = self._content_store.delete_tree(tree_name)
         self._trees.pop(tree_name, None)
         self._search.pop(tree_name, None)
+        self._tree_sigs.pop(tree_name, None)
         return {
             "tree_name": tree_name,
             "tree_removed": tree_removed,
@@ -493,6 +526,7 @@ class PageIndexToolkit(AbstractToolkit):
             for tree_name in affected_names:
                 self._trees.pop(tree_name, None)
                 self._search.pop(tree_name, None)
+                self._tree_sigs.pop(tree_name, None)
                 self._content_store._cache_evict_tree(tree_name)
                 self._okf_toolkits.pop(tree_name, None)
 
