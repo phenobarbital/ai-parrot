@@ -157,11 +157,11 @@ class _StudioDraftsMixin:
             "visibility": rec.visibility, "allowed_groups": list(rec.allowed_groups), "version": rec.version,
         }
 
-    def _error(self, message: str, *, status: int, code: str | None = None):
+    def _error(self, message: str, *, status: int, code: str | None = None, details=None):
         """See ``handlers/studio/agents/_mixin.py::_StudioAgentsMixin._error`` —
         ``BaseHandler.error()`` only maps a fixed status whitelist and
         silently falls back to 400 for 409/422/503."""
         return self.json_response(
-            StudioError(message=message, code=code).model_dump(),
+            StudioError(message=message, code=code, details=details).model_dump(),
             status=status,
         )

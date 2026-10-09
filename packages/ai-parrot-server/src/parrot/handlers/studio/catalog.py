@@ -4,8 +4,9 @@
     GET /api/v1/astudio/catalog/llm-clients
     GET /api/v1/astudio/catalog/tools
     GET /api/v1/astudio/catalog/vector-stores
+    GET /api/v1/astudio/catalog/model-params
 
-All four reuse existing sources of truth (no new registries), mirroring
+The first four reuse existing sources of truth (no new registries), mirroring
 ``tools_catalog.py``'s pattern: module-level cache built on first
 request, best-effort imports with swallowed failures, sorted stable
 output. The ``tools`` catalog reuses ``tools_catalog._CATALOG_CACHE``
@@ -30,7 +31,7 @@ import parrot.handlers.tools_catalog as tools_catalog_module
 from parrot.handlers.tools_catalog import _build_catalog, filter_catalog_for
 
 from ._base import StudioBaseView
-from .storage.models import StudioPartition
+from .storage.models import StudioModelParams, StudioPartition
 from .models import StudioError
 
 logger = logging.getLogger(__name__)
@@ -228,6 +229,9 @@ class StudioCatalogHandler(StudioBaseView):
             return await self._tools_for_caller()
         if kind == "vector-stores":
             return self.json_response(await self._get_vector_stores())
+        if kind == "model-params":
+            # the bounds the 422 ``invalid_config`` details are checked against, so a UI can validate client-side
+            return self.json_response(StudioModelParams.model_json_schema())
         return self._error(f"Unknown catalog '{kind}'.", status=404, code="not_found")
 
     @staticmethod

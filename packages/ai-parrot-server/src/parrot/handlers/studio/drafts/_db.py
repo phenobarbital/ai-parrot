@@ -9,10 +9,12 @@ from pydantic import ValidationError
 from .._base import is_valid_slug
 from ..access import _store_record
 from ..storage.models import (
+    INVALID_CONFIG_MESSAGE,
     RESERVED_CONFIG_KEY_MESSAGE,
     StudioAgentKey,
     StudioVersionConflict,
     StudioWriteGuard,
+    model_param_errors,
 )
 from ._models import ActivateDraftRequest, SaveDraftRequest
 
@@ -51,6 +53,8 @@ class _StudioDraftsDbMixin:
         except ValidationError as exc:
             if RESERVED_CONFIG_KEY_MESSAGE in str(exc):
                 return self._error(f"Invalid request: {exc}", status=400, code="reserved_config_key")
+            if (details := model_param_errors(exc)) is not None:
+                return self._error(INVALID_CONFIG_MESSAGE, status=422, code="invalid_config", details=details)
             code = "unsupported_config_key" if any("config" in e["loc"] for e in exc.errors()) else "invalid_request"
             return self._error(f"Invalid request: {exc}", status=422, code=code)
         except Exception:  # pylint: disable=broad-except

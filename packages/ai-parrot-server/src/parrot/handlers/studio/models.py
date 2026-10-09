@@ -32,7 +32,7 @@ class StudioError(BaseModel):
 
     message: str
     code: str | None = None
-    details: dict[str, Any] | None = None
+    details: dict[str, Any] | list[dict[str, Any]] | None = None
 
 
 class CreateAgentRequest(BaseModel):
