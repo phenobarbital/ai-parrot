@@ -79,7 +79,7 @@ class ToolingSubject(BaseModel, frozen=True):
     actor: str | None
     phase: Literal["write", "activate", "build", "attach", "execute"]
     held: frozenset[str] = frozenset()
-    """Lower-cased slugs the write leaves untouched: exempt from the per-tenant toolkit allow-list only (delta check)."""
+    """Lower-cased slugs the write leaves untouched: exempt from the per-tenant allow-lists only (delta check)."""
 
 
 def _split_https(url: str) -> tuple[str, int, str] | None:
@@ -135,6 +135,11 @@ class TenantToolingPolicy(BaseModel, frozen=True):
     apply_to_global: bool = False
     tenant_toolkits: Callable[[str], Collection[str] | None] | None = None
     """Host callback: enabled host-toolkit slugs for a tenant, ``None`` = unrestricted. Sync, no I/O."""
+    tenant_builtin_tools: Callable[[str], Collection[str] | None] | None = None
+    """PA-5: like ``tenant_toolkits`` but for BUILT-IN slugs (those also in ``builtin_tools``): the per-tenant
+    allow-list narrows the global ``builtin_tools`` set. ``None`` = no per-tenant narrowing. Same semantics:
+    fail closed when it errors, ``held`` stored tooling still builds (refused at call time), phase ``build``
+    and the tenant-less global partition are never refused."""
 
     @field_validator("mcp_endpoints")
     @classmethod
@@ -158,6 +163,7 @@ class TenantToolingPolicy(BaseModel, frozen=True):
             return
         if slug.lower() not in {name.lower() for name in self.builtin_tools}:
             raise TenantToolingRefused("builtin_not_permitted", item=slug)
+        self._check_tenant_builtin(slug, subject)
 
     def _check_tenant_toolkit(self, slug: str, subject: ToolingSubject) -> None:
         """Per-tenant host-toolkit allow-list; never applied to phase ``build`` (a stored agent must still build)."""
@@ -170,13 +176,30 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         if enabled is not None and slug.lower() not in enabled:
             raise TenantToolingRefused("toolkit_unavailable", item=slug)
 
+    def _check_tenant_builtin(self, slug: str, subject: ToolingSubject) -> None:
+        """Per-tenant built-in allow-list (PA-5); same rules as :meth:`_check_tenant_toolkit`."""
+        if self.tenant_builtin_tools is None or not subject.tenant or subject.phase == "build":
+            return
+        if slug.lower() in subject.held:  # stored, unchanged tooling: a disabled built-in is refused at call time
+            return
+        enabled = self.enabled_builtin_tools(subject.tenant)
+        if enabled is not None and slug.lower() not in enabled:
+            raise TenantToolingRefused("toolkit_unavailable", item=slug)
+
     def pinned_for(self, subject: ToolingSubject) -> "TenantToolingPolicy":
-        """This policy with the tenant's allow-list resolved ONCE: the callback runs (and logs a failure) once per
-        request, however many slugs are then checked. Returns ``self`` when the allow-list does not apply."""
-        if self.tenant_toolkits is None or not subject.tenant or subject.phase == "build":
+        """This policy with the tenant's allow-lists (host toolkits AND built-ins) resolved ONCE: each callback runs
+        (and logs a failure) once per request, however many slugs are then checked. Returns ``self`` when no
+        allow-list applies."""
+        if not subject.tenant or subject.phase == "build":
             return self
-        enabled = self.enabled_toolkits(subject.tenant)
-        return self.model_copy(update={"tenant_toolkits": lambda _tenant: enabled})
+        update: dict[str, Any] = {}
+        if self.tenant_toolkits is not None:
+            enabled = self.enabled_toolkits(subject.tenant)
+            update["tenant_toolkits"] = lambda _tenant: enabled
+        if self.tenant_builtin_tools is not None:
+            enabled_builtin = self.enabled_builtin_tools(subject.tenant)
+            update["tenant_builtin_tools"] = lambda _tenant: enabled_builtin
+        return self.model_copy(update=update) if update else self
 
     def enabled_toolkits(self, tenant: str) -> frozenset[str] | None:
         """Lower-cased enabled host-toolkit slugs for ``tenant``; ``None`` = unrestricted.
@@ -184,7 +207,17 @@ class TenantToolingPolicy(BaseModel, frozen=True):
         Anything the callback returns that is not ``None``, a ``str`` (one slug, never a substring pool) or an
         iterable of names — a coroutine, a bool, an int — and any exception it raises, fails CLOSED (empty set).
         """
-        callback = self.tenant_toolkits
+        return self._resolve_allow_list(self.tenant_toolkits, tenant, "tenant_toolkits")
+
+    def enabled_builtin_tools(self, tenant: str) -> frozenset[str] | None:
+        """Lower-cased built-in slugs ``tenant`` may use (PA-5); ``None`` = no per-tenant narrowing. Fails closed."""
+        return self._resolve_allow_list(self.tenant_builtin_tools, tenant, "tenant_builtin_tools")
+
+    @staticmethod
+    def _resolve_allow_list(
+        callback: Callable[[str], Collection[str] | None] | None, tenant: str, name: str
+    ) -> frozenset[str] | None:
+        """Run an allow-list ``callback`` for ``tenant``; the shared fail-closed rules of both allow-lists."""
         if callback is None:
             return None
         try:
@@ -195,12 +228,12 @@ class TenantToolingPolicy(BaseModel, frozen=True):
                 return frozenset({result.lower()})
             if inspect.isawaitable(result):
                 getattr(result, "close", lambda: None)()  # an async callback is never awaited: no "never awaited" noise
-                raise TypeError("tenant_toolkits must be synchronous")
+                raise TypeError(f"{name} must be synchronous")
             if not isinstance(result, Iterable):
-                raise TypeError(f"tenant_toolkits returned {type(result).__name__}, expected a collection of slugs")
-            return frozenset(str(name).lower() for name in result)
+                raise TypeError(f"{name} returned {type(result).__name__}, expected a collection of slugs")
+            return frozenset(str(item).lower() for item in result)
         except Exception:  # pylint: disable=broad-except
-            logger.exception("tenant_toolkits callback failed for tenant %r; refusing (fail closed)", tenant)
+            logger.exception("%s callback failed for tenant %r; refusing (fail closed)", name, tenant)
             return frozenset()
 
     def resolve_mcp(self, config: Mapping[str, Any], *, subject: ToolingSubject) -> dict[str, Any]:
