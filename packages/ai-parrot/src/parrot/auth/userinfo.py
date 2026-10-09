@@ -192,3 +192,40 @@ class UserInfoService:
         )
         await self._cache.set(cache_key, profile)
         return profile
+
+    async def get_profile_by_email(self, email: str) -> EmployeeProfile | None:
+        """Fetch the curated `EmployeeProfile` whose email matches `email`.
+
+        The match is case-insensitive. Used by chat integrations (MS Teams,
+        Slack) that know the user's email but not their navigator user id.
+
+        Args:
+            email: The email address to look up.
+
+        Returns:
+            The `EmployeeProfile` when exactly one `auth.vw_users` row matches;
+            `None` when the email is blank, when no row matches, or when more
+            than one row matches (an ambiguous identity is never resolved).
+        """
+        normalized = (email or "").strip()
+        if not normalized:
+            return None
+
+        db = self._get_db()
+        async with await db.connection() as conn:  # pylint: disable=E1101
+            rows = await conn.fetch_all(
+                """
+                SELECT user_id
+                FROM auth.vw_users WHERE lower(email) = lower($1)
+                LIMIT 2
+                """,
+                normalized,
+            )
+
+        rows = [dict(row) for row in (rows or [])]
+        if not rows:
+            return None
+        if len(rows) > 1:
+            self.logger.warning("get_profile_by_email: ambiguous email (%d rows)", len(rows))
+            return None
+        return await self.get_profile(rows[0]["user_id"])
