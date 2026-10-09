@@ -33,7 +33,7 @@ from pydantic import BaseModel
 from ._base import StudioBaseView
 from .access import StudioTenantRequired, build_tool_scope
 from .byok import resolve_user_api_key
-from .key_source import KeySourceRefusal, choose_key_source
+from .key_source import KeySourceRefusal, choose_key_source, key_source_choice_enabled
 from .conversation import studio_conversation_kwargs
 from .models import StudioError
 
@@ -272,7 +272,7 @@ class StudioAssistantHandler(StudioBaseView):
             try:
                 source = choose_key_source(
                     "anthropic", has_byok=bool(stored), requested=ask_request.key_source,
-                    use_byok=ask_request.use_byok,
+                    use_byok=ask_request.use_byok, ask_when_both=key_source_choice_enabled(self.request.app),
                 )
             except KeySourceRefusal as refusal:
                 return self._error(refusal.message, status=refusal.status, code=refusal.code,

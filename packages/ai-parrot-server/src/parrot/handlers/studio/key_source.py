@@ -18,6 +18,10 @@ from parrot.interfaces.documentdb import DocumentDb
 
 logger = logging.getLogger(__name__)
 
+STUDIO_KEY_SOURCE_CHOICE = "studio_key_source_choice"
+"""Host opt-in (``app[STUDIO_KEY_SOURCE_CHOICE] = True``): with BOTH a server and a personal key and no explicit
+``key_source`` the call is refused (``409 key_source_required``) instead of silently using the personal key."""
+
 KEY_SOURCES = ("server", "byok")
 KeySource = Literal["server", "byok"]
 # Several provider keys share one class (``bedrock``/``anthropic-aws`` -> ``AnthropicClient``) but authenticate
@@ -91,8 +95,14 @@ def credentials_for(provider: str, byok_providers: frozenset[str]) -> list[KeySo
     return out
 
 
+def key_source_choice_enabled(app: Any) -> bool:
+    """Whether the host opted in to :data:`STUDIO_KEY_SOURCE_CHOICE` (default off: the previous behaviour)."""
+    return bool(app.get(STUDIO_KEY_SOURCE_CHOICE))
+
+
 def choose_key_source(
-    provider: str, *, has_byok: bool, requested: str | None = None, use_byok: bool = True
+    provider: str, *, has_byok: bool, requested: str | None = None, use_byok: bool = True,
+    ask_when_both: bool = False,
 ) -> KeySource:
     """The key source of one call, or raise :class:`KeySourceRefusal`.
 
@@ -101,6 +111,8 @@ def choose_key_source(
         has_byok: The caller has a stored personal key for ``provider``.
         requested: Explicit ``key_source`` of the request (``None`` = not given).
         use_byok: Legacy opt-out; ``False`` with no explicit source means the server key (never asks).
+        ask_when_both: The host opted in to :data:`STUDIO_KEY_SOURCE_CHOICE`: both keys and no explicit source raise
+            ``409``. Off (default) the personal key wins silently, as before PA-2.
     """
     state = server_credential_state(provider)
     if requested is not None:
@@ -114,7 +126,7 @@ def choose_key_source(
         return requested  # type: ignore[return-value]
     if not use_byok:
         return "server"
-    if has_byok and state == "present":
+    if ask_when_both and has_byok and state == "present":
         raise KeySourceRefusal(
             409, "key_source_required", f"Both a server key and your own key exist for '{provider}': choose one.",
             {"provider": provider, "options": list(KEY_SOURCES)},

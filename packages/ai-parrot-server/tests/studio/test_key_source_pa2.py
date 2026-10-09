@@ -19,6 +19,8 @@ from parrot.handlers.studio.storage import byok_store as store_module
 from parrot.registry import registry as registry_module
 from parrot.handlers.studio.storage.byok_store import register_byok_store
 
+from parrot.handlers.studio.hooks import STUDIO_KEY_SOURCE_CHOICE
+
 from ._scripted_llm import KEYED_PROVIDER, SERVER_KEY_ENV, KeyEchoClient
 from .test_testing_db_mode import BASE, _app, pool  # noqa: F401  (pool is a fixture)
 from .test_assistant_partition import partition_app
@@ -119,8 +121,12 @@ def keyed(monkeypatch):
     monkeypatch.setitem(SUPPORTED_CLIENTS, KEYED_PROVIDER, KeyEchoClient)
 
 
-async def _keyed_client(aiohttp_client, pool):  # noqa: F811
-    client = await aiohttp_client(_app(pool))
+async def _keyed_client(aiohttp_client, pool, *, choice=True):  # noqa: F811
+    """``choice`` is the host opt-in ``STUDIO_KEY_SOURCE_CHOICE`` (the 409 ``key_source_required`` behaviour)."""
+    app = _app(pool)
+    if choice:
+        app[STUDIO_KEY_SOURCE_CHOICE] = True
+    client = await aiohttp_client(app)
     resp = await client.post(
         f"{BASE}/agents", json={"name": "alpha", "bot_class": "BasicBot", "llm": f"{KEYED_PROVIDER}:m"}
     )
@@ -147,6 +153,20 @@ async def test_ask_both_keys_requires_a_choice(aiohttp_client, pool, clean_keys,
     assert status == 200 and body["response"] == "key:None" and body["key_source"] == "server"
     status, body = await _ask(client, use_byok=False)  # the legacy opt-out never asks and never spends the key
     assert status == 200 and body["response"] == "key:None"
+
+
+async def test_ask_both_keys_without_the_host_opt_in_uses_the_personal_key_as_before(  # noqa: F811
+    aiohttp_client, pool, clean_keys, keyed, monkeypatch
+):
+    """No ``STUDIO_KEY_SOURCE_CHOICE``: both keys and no ``key_source`` is NOT a 409 (the pre-PA-2 behaviour); an
+    explicit ``key_source`` is still honoured."""
+    client = await _keyed_client(aiohttp_client, pool, choice=False)
+    await _store_key(client, KEYED_PROVIDER, "user-key-AAAA")
+    monkeypatch.setenv(SERVER_KEY_ENV, "server-key-BBBB")
+    status, body = await _ask(client)
+    assert status == 200 and body["response"] == "key:user-key-AAAA" and body["key_source"] == "byok"
+    status, body = await _ask(client, key_source="server")
+    assert status == 200 and body["response"] == "key:None" and body["key_source"] == "server"
 
 
 async def test_ask_single_source_is_used(aiohttp_client, pool, clean_keys, keyed, monkeypatch):  # noqa: F811
@@ -200,7 +220,9 @@ async def _say(client, **body):
 
 
 async def test_assistant_honours_key_source(aiohttp_client, pool, clean_keys, assistant, monkeypatch):  # noqa: F811
-    client = await aiohttp_client(partition_app(pool, resolver=False))
+    app = partition_app(pool, resolver=False)
+    app[STUDIO_KEY_SOURCE_CHOICE] = True
+    client = await aiohttp_client(app)
     await _store_key(client, "anthropic", "sk-ant-user-own-1234")
     monkeypatch.setenv("ANTHROPIC_API_KEY", SERVER_ANTHROPIC)
     status, body = await _say(client)

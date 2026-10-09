@@ -7,7 +7,7 @@ from parrot.clients.factory import LLMFactory
 
 from ..access import _store_record, build_tool_scope
 from ..conversation import delete_studio_conversation
-from ..key_source import KeySourceRefusal, choose_key_source
+from ..key_source import KeySourceRefusal, choose_key_source, key_source_choice_enabled
 from ..storage.models import StudioAgentKey, StudioNotFound, StudioStorageUnavailable
 from ._models import TestAskRequest
 
@@ -89,7 +89,8 @@ class _StudioTestingDbMixin:
 
         api_key = await _testing_pkg.resolve_user_api_key(self.request.app, user.user_id, provider)
         source = choose_key_source(
-            provider, has_byok=bool(api_key), requested=ask_request.key_source, use_byok=ask_request.use_byok
+            provider, has_byok=bool(api_key), requested=ask_request.key_source, use_byok=ask_request.use_byok,
+            ask_when_both=key_source_choice_enabled(self.request.app),
         )
         if source != "byok":
             return False
