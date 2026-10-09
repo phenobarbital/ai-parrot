@@ -1,4 +1,5 @@
 """FEAT-647 / TASK-4181 — PageIndexToolkit reloads trees rewritten on disk."""
+
 from __future__ import annotations
 
 import json
