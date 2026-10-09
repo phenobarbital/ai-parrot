@@ -7,7 +7,6 @@ for agents and chatbots via ``AbstractToolkit``.
 
 from __future__ import annotations
 
-import functools
 import logging
 from pathlib import Path
 from typing import Any, Literal
@@ -21,7 +20,7 @@ from .models import ScrapingResult
 from .page_snapshot import PageSnapshot, snapshot_from_driver
 from .plan import ScrapingPlan
 from .plan_generator import PlanGenerator
-from .confine import FILES_ROOT
+from .confine import confine_to_files_root
 from .plan_io import is_within, load_plan_from_disk, save_plan_to_disk
 from .registry import PlanRegistry
 from .toolkit_models import DriverConfig, PlanSaveResult, PlanSummary
@@ -29,22 +28,7 @@ from .toolkit_models import DriverConfig, PlanSaveResult, PlanSummary
 logger = logging.getLogger(__name__)
 
 
-def _confined(method):
-    """Run a scrape/crawl with the file root set when the toolkit was built ``confine_paths=True`` (PA-14)."""
-
-    @functools.wraps(method)
-    async def wrapper(self, *args, **kwargs):
-        if not getattr(self, "confine_paths", False):
-            return await method(self, *args, **kwargs)
-        root = self.files_root
-        root.mkdir(parents=True, exist_ok=True)
-        token = FILES_ROOT.set(root)
-        try:
-            return await method(self, *args, **kwargs)
-        finally:
-            FILES_ROOT.reset(token)
-
-    return wrapper
+_confined = confine_to_files_root  # PA-14: scrape/crawl run with the file root set when ``confine_paths``
 
 
 # ── Refinement scoring ────────────────────────────────────────────────

@@ -37,7 +37,7 @@ try:
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
-from .confine import check_navigation, within_root
+from .confine import check_navigation, confine_to_files_root, confined_file
 from ..abstract import AbstractTool
 from .advanced_actions import (
     exec_conditional,
@@ -320,6 +320,7 @@ If no selectors are provided and full_page is False, the tool will still return 
         auto_install: bool = True,
         plans_dir: Optional[Path] = None,
         driver_config: Optional[Dict[str, Any]] = None,
+        confine_paths: bool = False,
         **kwargs,
     ):
         warnings.warn(
@@ -358,6 +359,7 @@ If no selectors are provided and full_page is False, the tool will still return 
         logging.getLogger("urllib3.connectionpool").setLevel(logging.ERROR)
         # Plan registry for caching LLM-generated scraping plans
         self._plan_registry = PlanRegistry(plans_dir=plans_dir)
+        self.confine_paths = bool(confine_paths)
         self._registry_loaded: bool = False
 
         # Create the abstract driver via DriverFactory
@@ -415,6 +417,12 @@ If no selectors are provided and full_page is False, the tool will still return 
         except Exception:
             self.logger.exception("Failed to save/register plan")
 
+    @property
+    def files_root(self) -> Path:
+        """Where the actions of a confined tool may read and write files: ``<plans_dir>/files`` (PA-14)."""
+        return Path(self._plan_registry.plans_dir) / "files"
+
+    @confine_to_files_root
     async def _execute(
         self,
         steps: List[Dict[str, Any]],
@@ -597,6 +605,7 @@ If no selectors are provided and full_page is False, the tool will still return 
         self.page = await self.browser.new_page()
         await self.page.set_viewport_size({"width": 1920, "height": 1080})
 
+    @confine_to_files_root
     async def execute_scraping_workflow(
         self, steps: List[ScrapingStep], selectors: Optional[List[ScrapingSelector]] = None, base_url: str = ""
     ) -> List[ScrapingResult]:
@@ -1552,12 +1561,15 @@ If no selectors are provided and full_page is False, the tool will still return 
         try:
             screenshot_data = None
             output_path = action.output_path
-            if isinstance(output_path, str):
-                confined = within_root(output_path or "")
-                if confined is not None:
-                    confined.mkdir(parents=True, exist_ok=True)
-                output_path = confined or Path(output_path).resolve()
             screenshot_name = action.get_filename()
+            destination = None
+            if isinstance(output_path, str):
+                destination = confined_file(output_path or "", screenshot_name)  # the JOINED path, name included
+                if destination is not None:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    output_path = destination.parent
+                else:
+                    output_path = Path(output_path).resolve()
 
             if self.driver_type == "selenium":
                 loop = asyncio.get_running_loop()
@@ -1581,7 +1593,7 @@ If no selectors are provided and full_page is False, the tool will still return 
                 screenshot_bytes = await loop.run_in_executor(None, take_screenshot_sync)
 
                 # Save to file if path provided
-                filename = output_path.joinpath(screenshot_name)
+                filename = destination if destination is not None else output_path.joinpath(screenshot_name)
                 async with aiofiles.open(filename, "wb") as f:
                     await f.write(screenshot_bytes)
                 self.logger.info(f"Screenshot saved to: {filename}")
@@ -1608,9 +1620,10 @@ If no selectors are provided and full_page is False, the tool will still return 
 
                 # Save to file if path provided
                 if output_path:
-                    with open(output_path, "wb") as f:
+                    target = destination if destination is not None else Path(output_path) / screenshot_name
+                    with open(target, "wb") as f:
                         f.write(screenshot_bytes)
-                    self.logger.info(f"Screenshot saved to: {output_path}")
+                    self.logger.info(f"Screenshot saved to: {target}")
 
                 # Return base64 if requested
                 if action.return_base64:
@@ -1924,6 +1937,7 @@ If no selectors are provided and full_page is False, the tool will still return 
     # Multi-page crawl
     # ------------------------------------------------------------------
 
+    @confine_to_files_root
     async def crawl(
         self,
         start_url: str,

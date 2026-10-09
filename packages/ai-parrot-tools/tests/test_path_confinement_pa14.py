@@ -244,3 +244,86 @@ async def test_wiki_unconfined_toolkit_still_takes_any_path(tmp_path):
     toolkit._ingest_orch.ingest = AsyncMock(return_value=Mock(model_dump=lambda: {"status": "ok"}))
     await toolkit.ingest_source("w", "/anywhere/x.md")
     assert toolkit._ingest_orch.ingest.call_args[0][0] == "/anywhere/x.md"
+
+
+# -- PA-V2 review fix 2: the joined destination, the file name included ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name", ["../x", "../../../outside/x", "sub/../../x", "/tmp/abs-x", "a\\..\\..\\x"],
+    ids=["dotdot", "deep", "inner", "absolute", "backslash"],
+)
+async def test_an_output_name_with_path_components_cannot_leave_the_root(scraping, tmp_path, name):
+    toolkit, plans, _ = scraping
+    written: list[str] = []
+    result = await _scrape(toolkit, _driver(written), [{"action": "screenshot", "output_path": ".", "output_name": name}])
+    assert written == [] and result.metadata["step_errors"]
+    assert not (plans / "x.png").exists() and not (tmp_path / "x.png").exists()
+    assert not [p for p in tmp_path.rglob("*.png")]
+
+
+async def test_a_plain_output_name_still_lands_in_the_root(scraping):
+    toolkit, plans, _ = scraping
+    written: list[str] = []
+    await _scrape(toolkit, _driver(written), [{"action": "screenshot", "output_path": "shots", "output_name": "p"}])
+    assert written == [str((plans / "files" / "shots" / "p.png").resolve())]
+
+
+async def test_a_symlinked_name_inside_the_root_cannot_leave_it(scraping, tmp_path):
+    toolkit, plans, outside = scraping
+    outside.mkdir()
+    (plans / "files").mkdir()
+    (plans / "files" / "p.png").symlink_to(outside / "stolen.png")
+    written: list[str] = []
+    await _scrape(toolkit, _driver(written), [{"action": "screenshot", "output_path": ".", "output_name": "p"}])
+    assert written == [] and not list(outside.iterdir())
+
+
+def test_a_null_byte_is_a_confinement_error_not_a_crash(tmp_path):
+    from parrot_tools.scraping.confine import FILES_ROOT, PathConfinementError, within_root
+
+    token = FILES_ROOT.set(tmp_path)
+    try:
+        with pytest.raises(PathConfinementError):
+            within_root("a\0b")
+    finally:
+        FILES_ROOT.reset(token)
+
+
+@pytest.fixture
+def direct_tool(tmp_path):
+    pytest.importorskip("selenium")
+    from parrot_tools.scraping.tool import WebScrapingTool
+
+    plans = tmp_path / "tenant" / "plans"
+    plans.mkdir(parents=True)
+    with pytest.warns(DeprecationWarning):
+        tool = WebScrapingTool(plans_dir=plans, confine_paths=True, auto_install=False)
+    return tool, plans
+
+
+async def test_a_directly_used_scraping_tool_confines_screenshots_too(direct_tool, tmp_path):
+    """``WebScrapingTool`` with no toolkit around it: its own workflow sets the file root (real tool, fake browser)."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from parrot_tools.scraping.confine import FILES_ROOT
+    from parrot_tools.scraping.models import Screenshot, ScrapingStep
+
+    tool, plans = direct_tool
+    tool.driver_type = "selenium"
+    tool.delay_between_actions = 0
+    tool.driver = MagicMock()
+    tool.driver.get_screenshot_as_png.return_value = b"png"
+    tool.driver.page_source = "<html><body>t</body></html>"
+    tool.driver.current_url = "https://example.com/"
+    tool._session_alive = lambda: True
+    tool.cleanup = AsyncMock()
+
+    def step(name):
+        return ScrapingStep(action=Screenshot(output_path=".", output_name=name), description="shot")
+
+    await tool.execute_scraping_workflow([step("../escaped")])
+    assert not list(tmp_path.rglob("escaped*"))                         # the traversal name is refused
+    await tool.execute_scraping_workflow([step("kept")])
+    assert (plans / "files" / "kept.png").read_bytes() == b"png"        # a plain name lands under the root
+    assert FILES_ROOT.get() is None                                     # and the root does not leak out of the call
