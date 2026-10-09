@@ -14,7 +14,7 @@ from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel, Field, field_validator
 import markdown
 from parrot._imports import lazy_import
-from ._exports import ExportsToStoreMixin, safe_template_name
+from ._exports import ExportsToStoreMixin, current_tool_scope, safe_template_name
 from .abstract import AbstractTool
 
 
@@ -35,6 +35,34 @@ def count_tokens(text: str, model: str = "gpt-4") -> int:
     except Exception:
         # Fallback to rough character estimation
         return len(text) // 4
+
+
+def _restricted_url_fetcher(base_dir: Path):
+    """A WeasyPrint URL fetcher that serves ``data:`` URIs and files under ``base_dir`` only.
+
+    The HTML being rendered is LLM-controlled, so ``<img src="file:///etc/passwd">``, ``<link rel="attachment">``,
+    ``@import url(http://169.254.169.254/...)`` and the like must not read the server's files or reach the network
+    (the result is published and downloadable). Anything else raises, which WeasyPrint logs and skips.
+    """
+    from weasyprint import URLFetcher
+
+    root = Path(base_dir).resolve()
+
+    class _Restricted(URLFetcher):
+        def fetch(self, url, headers=None):  # noqa: D102
+            text = str(url)
+            if text.startswith("data:"):
+                return super().fetch(text, headers)
+            if text.startswith("file:"):
+                from urllib.request import url2pathname
+                from urllib.parse import urlsplit
+
+                path = Path(url2pathname(urlsplit(text).path)).resolve()
+                if path == root or root in path.parents:
+                    return super().fetch(text, headers)
+            raise PermissionError(f"resource not permitted in a PDF export: {text.split(':', 1)[0]}:")
+
+    return _Restricted()
 
 
 class PDFPrintArgs(BaseModel):
@@ -842,6 +870,14 @@ footer {
 
         return css_objects
 
+    def _fetcher_kwargs(self) -> Dict[str, Any]:
+        """The restricted fetcher whenever the export is host-managed (artifact store, Studio scope, egress guard on)."""
+        import parrot.tools.egress as egress
+
+        if self.exports_to_store or current_tool_scope() is not None or egress.is_enabled():
+            return {"url_fetcher": _restricted_url_fetcher(self.templates_dir)}
+        return {}
+
     async def _export_pdf(
         self,
         text: str,
@@ -853,7 +889,9 @@ footer {
     ) -> Dict[str, Any]:
         """Render the PDF in memory and publish it to the artifact store (no local file, no debug HTML)."""
         _weasyprint = lazy_import("weasyprint", extra="pdf")
-        html_obj = _weasyprint.HTML(string=processed_content, base_url=str(self.templates_dir))
+        html_obj = _weasyprint.HTML(
+            string=processed_content, base_url=str(self.templates_dir), **self._fetcher_kwargs()
+        )
         data = await asyncio.to_thread(html_obj.write_pdf, stylesheets=css_objects, presentational_hints=True)
         if not data:
             raise Exception("PDF file is empty (0 bytes)")
@@ -932,7 +970,8 @@ footer {
                 _weasyprint = lazy_import("weasyprint", extra="pdf")
                 html_obj = _weasyprint.HTML(
                     string=processed_content,
-                    base_url=str(self.templates_dir)
+                    base_url=str(self.templates_dir),
+                    **self._fetcher_kwargs(),
                 )
 
                 # Generate PDF with print-friendly settings
