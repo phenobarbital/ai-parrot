@@ -19,7 +19,9 @@ cluster NetworkPolicy / egress proxy is the only control.
 from __future__ import annotations
 
 import ipaddress
+import re
 import socket
+import unicodedata
 from typing import Any, Optional
 from urllib.parse import urlparse
 
@@ -67,36 +69,83 @@ def is_public_address(address: str) -> bool:
     )
 
 
+_INTERNAL_SUFFIXES = (".localhost", ".local", ".localdomain", ".internal", ".intranet", ".lan", ".home", ".corp", ".svc")
+_NUMERIC_HOST = re.compile(r"^[0-9a-fx.]+$", re.IGNORECASE)
+
+
+def _canonical_host(host: str) -> str:
+    """The host as a browser/stack sees it: NFKC + IDNA folded (full-width digits), lower-cased, no trailing dots.
+
+    ``ValueError`` when it cannot be put in canonical ASCII form (refused by the caller).
+    """
+    folded = unicodedata.normalize("NFKC", host).strip().lower().rstrip(".")
+    try:
+        return folded.encode("idna").decode("ascii")
+    except UnicodeError as exc:
+        raise ValueError(f"host {host!r} is not a valid name") from exc
+
+
 def _coerce_literal(host: str) -> Optional[str]:
-    """The IP a literal or numeric-encoded host stands for (``2130706433``, ``0x7f000001``), else ``None``."""
+    """The IP a literal or numeric-encoded host stands for, else ``None``.
+
+    Covers every spelling the platform IPv4 parser accepts (``127.1``, ``0x7f.0.0.1``, ``0177.0.0.1``,
+    ``2130706433``, ``0x7f000001``) besides plain IPv4/IPv6 literals.
+    """
     try:
-        return str(ipaddress.ip_address(host))
+        return str(ipaddress.ip_address(host.split("%", 1)[0]))
     except ValueError:
         pass
-    try:
-        if host.isdigit():
-            return str(ipaddress.ip_address(int(host)))
-        if host.lower().startswith("0x"):
-            return str(ipaddress.ip_address(int(host, 16)))
-    except ValueError:
-        pass
+    if _NUMERIC_HOST.match(host):
+        try:
+            return socket.inet_ntoa(socket.inet_aton(host))
+        except (OSError, ValueError):
+            pass
     return None
 
 
 def check_url(url: Any) -> None:
-    """Raise :class:`EgressBlocked` when ``url`` names ``localhost`` or a non-public IP literal.
+    """Raise :class:`EgressBlocked` when ``url`` names ``localhost``, an internal-only name or a non-public IP literal.
 
-    Hostnames are NOT resolved here (the connector's :class:`GuardedResolver` does that, once, for the real connect).
+    The host is canonicalised first (trailing dots, full-width digits, ``127.1``/octal/hex IPv4 spellings), and names
+    under internal-only suffixes (``.internal``, ``.local``, ``.svc``, ``.localhost`` …) are refused outright.
+    Other hostnames are NOT resolved here (the connector's :class:`GuardedResolver` does that, once, for the real
+    connect; browser callers use :func:`resolve_check`).
     """
-    parsed = urlparse(str(url))
-    host = (parsed.hostname or "").lower()
+    text = str(url)
+    if any(ch in text.split("?", 1)[0].split("#", 1)[0] for ch in ("\\", "\x00", "\t", "\r", "\n")):
+        raise EgressBlocked("egress refused: malformed URL")  # parsers disagree about these: never guess the host
+    parsed = urlparse(text)
+    try:
+        host = _canonical_host(parsed.hostname or "")
+    except ValueError as exc:
+        raise EgressBlocked(f"egress refused: {exc}") from exc
     if not host:
-        raise EgressBlocked(f"egress refused: no host in {str(url)!r}")
-    if host == "localhost" or host.endswith(".localhost"):
-        raise EgressBlocked(f"egress refused: loopback host {host!r}")
+        raise EgressBlocked(f"egress refused: no host in {text!r}")
+    if host == "localhost" or host.endswith(_INTERNAL_SUFFIXES):
+        raise EgressBlocked(f"egress refused: internal host {host!r}")
     literal = _coerce_literal(host)
     if literal is not None and not is_public_address(literal):
         raise EgressBlocked(f"egress refused: non-public address {host!r}")
+
+
+async def resolve_check(url: Any, resolver: Optional[AbstractResolver] = None) -> None:
+    """:func:`check_url`, then resolve a NAME and refuse it when any answer is non-public (for browser navigation).
+
+    A browser resolves the name again on its own, so this is a check, not a pin (the cluster NetworkPolicy remains the
+    real control); it still stops the plain cases (``metadata.google.internal``, a name pointing at ``10.x``).
+    """
+    check_url(url)
+    host = _canonical_host(urlparse(str(url)).hostname or "")
+    if _coerce_literal(host) is not None:
+        return
+    inner = resolver or GuardedResolver()
+    try:
+        await inner.resolve(host, 0, socket.AF_UNSPEC)
+    except socket.gaierror as exc:
+        raise EgressBlocked(f"egress refused: {host!r} did not resolve") from exc
+    finally:
+        if resolver is None:
+            await inner.close()
 
 
 class GuardedResolver(AbstractResolver):
@@ -167,4 +216,5 @@ __all__ = [
     "guarded_session",
     "is_enabled",
     "is_public_address",
+    "resolve_check",
 ]

@@ -978,7 +978,7 @@ If no selectors are provided and full_page is False, the tool will still return 
 
     async def _navigate_to(self, action: Navigate, base_url: str):
         url = urljoin(base_url, action.url) if base_url else action.url
-        check_navigation(url)
+        await check_navigation(url)
         if self.driver_type == "selenium":
             loop = asyncio.get_running_loop()
             await loop.run_in_executor(None, self.driver.get, url)

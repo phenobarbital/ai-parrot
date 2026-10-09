@@ -3,8 +3,9 @@
 A host (Agent Studio) builds ``WebScrapingToolkit(confine_paths=True, plans_dir=<tenant dir>)``: while a scrape or
 crawl runs, :data:`FILES_ROOT` holds ``<plans_dir>/files`` and every path an action reads or writes (screenshot
 ``output_path``, upload source, download directory, ``move_to``) must resolve inside it; relative paths are taken
-relative to it. Unset (the default) nothing changes. :func:`check_navigation` applies the PA-13 literal-host check to
-``navigate`` targets when the host enabled the egress guard (names are still resolved by the browser itself).
+relative to it. Unset (the default) nothing changes. :func:`check_navigation` applies the PA-13 host check
+(canonicalised literals, internal names, names resolved through the guarded resolver) to ``navigate`` targets when
+the host enabled the egress guard.
 """
 
 from __future__ import annotations
@@ -75,9 +76,14 @@ def confine_to_files_root(method):
     return wrapper
 
 
-def check_navigation(url: str) -> None:
-    """Refuse ``url`` when the egress guard is on and it targets localhost or a non-public IP literal."""
+async def check_navigation(url: str) -> None:
+    """Refuse ``url`` when the egress guard is on and it targets an internal name or a non-public address.
+
+    The host is canonicalised (``127.1``, ``0x7f.0.0.1``, ``0177.0.0.1``, ``localhost.``, full-width digits) and a
+    NAME is resolved through the guarded resolver, so ``metadata.google.internal`` or a name that points at a private
+    address is refused before the browser is asked to go there.
+    """
     import parrot.tools.egress as egress
 
     if egress.is_enabled():
-        egress.check_url(url)
+        await egress.resolve_check(url)

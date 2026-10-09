@@ -96,6 +96,45 @@ async def test_localhost_and_numeric_encodings_are_refused():
     egress.check_url("https://example.com/")
 
 
+# 127.0.0.1 is the test's stand-in for "public" (autouse fixture above), so the loopback spellings use 127.0.0.2.
+BYPASS_VECTORS = [
+    "http://127.2/", "http://0x7f.0.0.2/", "http://0177.0.0.2/", "http://0x7f000002/", "http://017700000002/",
+    "http://127.0.0.2./", "http://localhost./", "http://LOCALHOST/", "http://foo.localhost/",
+    "http://metadata.google.internal/", "http://metadata.google.internal./", "http://api.default.svc/",
+    "http://db.cluster.local/", "http://printer.local/", "http://0/", "http://0.0.0.0/", "http://[::ffff:127.0.0.2]/",
+    "http://\uff11\uff12\uff17.\uff10.\uff10.\uff12/",          # full-width digits fold to 127.0.0.2
+    "http://127.0.0.1\\@example.com/",                           # backslash: parsers disagree about the host
+    "http://169.254.169.254./latest/meta-data/", "http://2852039166/",
+]
+
+
+@pytest.mark.parametrize("url", BYPASS_VECTORS)
+def test_browser_navigation_bypass_vectors_are_refused(url):
+    with pytest.raises(egress.EgressBlocked):
+        egress.check_url(url)
+
+
+@pytest.mark.parametrize("url", ["https://example.com/", "http://93.184.216.34/", "https://sub.example.org:8443/a?b=c"])
+def test_public_urls_pass_the_canonical_check(url):
+    egress.check_url(url)
+
+
+async def test_resolve_check_refuses_a_name_that_resolves_to_a_private_address():
+    class Answers(egress.AbstractResolver):
+        def __init__(self, address):
+            self.address = address
+
+        async def resolve(self, host, port=0, family=0):
+            return [{"hostname": host, "host": self.address, "port": port, "family": family, "proto": 0, "flags": 0}]
+
+        async def close(self):
+            pass
+
+    with pytest.raises(egress.EgressBlocked):
+        await egress.resolve_check("http://rebind.example.com/", resolver=egress.GuardedResolver(Answers("10.1.2.3")))
+    await egress.resolve_check("http://ok.example.com/", resolver=egress.GuardedResolver(Answers("93.184.216.34")))
+
+
 async def test_a_redirect_to_an_internal_address_is_refused(servers):
     internal = await servers("127.0.0.2")
     outside = await servers("127.0.0.1", redirect_to=internal.url + "secret")

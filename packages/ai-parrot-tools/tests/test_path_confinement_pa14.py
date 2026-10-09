@@ -327,3 +327,42 @@ async def test_a_directly_used_scraping_tool_confines_screenshots_too(direct_too
     await tool.execute_scraping_workflow([step("kept")])
     assert (plans / "files" / "kept.png").read_bytes() == b"png"        # a plain name lands under the root
     assert FILES_ROOT.get() is None                                     # and the root does not leak out of the call
+
+
+# -- PA-V2 review fix 5: the browser never navigates to a disguised or resolved-internal host -------------------------
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["http://127.1/", "http://0x7f.0.0.1/", "http://0177.0.0.1/", "http://localhost./", "http://127.0.0.1./",
+     "http://metadata.google.internal/computeMetadata/v1/", "http://169.254.169.254./latest/meta-data/"],
+)
+async def test_navigate_refuses_the_disguised_internal_hosts(scraping, url):
+    import parrot.tools.egress as egress
+
+    toolkit, _, _ = scraping
+    driver = _driver([])
+    egress.configure(True)
+    try:
+        await _scrape(toolkit, driver, [{"action": "navigate", "url": url}])
+    finally:
+        egress.configure(False)
+    driver.navigate.assert_not_called()
+
+
+async def test_navigate_resolves_a_name_and_refuses_a_private_answer(scraping, monkeypatch):
+    import aiohttp
+    import parrot.tools.egress as egress
+
+    async def private(self, host, port=0, family=0):
+        return [{"hostname": host, "host": "10.9.8.7", "port": port, "family": family, "proto": 0, "flags": 0}]
+
+    monkeypatch.setattr(aiohttp.ThreadedResolver, "resolve", private)
+    toolkit, _, _ = scraping
+    driver = _driver([])
+    egress.configure(True)
+    try:
+        await _scrape(toolkit, driver, [{"action": "navigate", "url": "http://rebind.example.com/"}])
+    finally:
+        egress.configure(False)
+    driver.navigate.assert_not_called()

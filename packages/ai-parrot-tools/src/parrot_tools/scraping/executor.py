@@ -386,7 +386,7 @@ from .confine import check_navigation, confined_file  # noqa: E402
 async def _action_navigate(driver: AbstractDriver, action: Any, base_url: str) -> bool:
     """Navigate to a URL."""
     target = urljoin(base_url, action.url) if base_url else action.url
-    check_navigation(target)
+    await check_navigation(target)
     timeout = getattr(action, "timeout", None) or 30
     await driver.navigate(target, timeout=timeout)
     return True
