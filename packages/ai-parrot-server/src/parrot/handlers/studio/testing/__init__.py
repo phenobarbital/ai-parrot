@@ -31,8 +31,16 @@ from parrot.auth.confirmation import is_enforced_write_class
 from parrot.clients.factory import LLMFactory
 from parrot.tools.abstract import AbstractTool
 from parrot.tools.discovery import resolve_class
-from parrot.tools.host_hooks import STUDIO_TOOL_CALL_GUARDRAILS, apply_exclude_tools, host_tool_call_pipeline
-from parrot.tools.tooling_policy import ToolParamRefused
+from parrot.tools.host_hooks import (
+    STUDIO_TOOL_CALL_GUARDRAILS,
+    STUDIO_TOOLKIT_PARAM_HOOK,
+    apply_exclude_tools,
+    host_tool_call_pipeline,
+    run_toolkit_param_hook,
+    split_exclude_tools,
+)
+from parrot.tools.resolver import get_toolkit_resolver
+from parrot.tools.tooling_policy import ToolingSubject, ToolParamRefused
 from parrot.tools.toolkit import AbstractToolkit
 from pydantic import ValidationError
 
@@ -175,7 +183,10 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
             return refused
 
         try:
-            instance = _instantiate_tool(cls, self.request.app)
+            instance = _instantiate_tool(cls, self.request.app, await self._execute_param_hook(slug))
+        except ToolParamRefused as exc:  # PA-9: the host hook refused the construction parameters (fail closed)
+            return self._error(str(exc), status=422, code=exc.code,
+                               details={"reason": exc.reason, "item": exc.item, "params": exc.params})
         except _ServerManagedDepsError as exc:
             return self._error(
                 f"Tool '{slug}' requires server-managed dependencies.",
@@ -199,6 +210,25 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
         if (blocked := await self._host_guardrail_refusal(slug, execute_request.args)) is not None:
             return blocked
         return self._execute_response(await instance.execute(**execute_request.args))
+
+    async def _execute_param_hook(self, slug: str):
+        """``params -> final params`` of the host toolkit-parameter hook (PA-9) for ``slug``; ``None`` without a hook.
+
+        The hook gets the canonical slug and phase ``execute``, exactly as every other construction path.
+        """
+        hook = self.request.app.get(STUDIO_TOOLKIT_PARAM_HOOK)
+        if hook is None:
+            return None
+        part = await self._studio_partition()
+        subject = ToolingSubject(
+            tenant=part.tenant, agent_id=None, actor=(await self._get_user()).user_id, phase="execute"
+        )
+        canonical = get_toolkit_resolver().canonical_slug(slug) or slug
+
+        def run(params: dict) -> dict:
+            return split_exclude_tools(run_toolkit_param_hook(hook, canonical, params, subject))[0]
+
+        return run
 
     async def _host_guardrail_refusal(self, slug: str, args: dict):
         """403 ``tool_call_blocked`` when a host TOOL_CALL guardrail (PA-10) blocks this direct call; else ``None``.
