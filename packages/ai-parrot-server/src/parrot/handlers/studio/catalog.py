@@ -31,6 +31,8 @@ from parrot.stores import supported_stores
 import parrot.handlers.tools_catalog as tools_catalog_module
 from parrot.handlers.tools_catalog import _build_catalog, filter_catalog_for
 
+from parrot.handlers.catalog_decorator import decorate_rows
+
 from ._base import StudioBaseView
 from .key_source import credentials_for, user_byok_providers
 from .storage.models import StudioModelParams, StudioPartition
@@ -100,6 +102,11 @@ def _introspect_configurable_params(cls: type) -> dict[str, dict[str, Any]]:
     return out
 
 
+def _is_abstract(cls: type) -> bool:
+    """A class that cannot be instantiated as an agent: ``inspect.isabstract`` or an own ``studio_abstract = True``."""
+    return inspect.isabstract(cls) or cls.__dict__.get("studio_abstract") is True
+
+
 def _build_base_classes_catalog() -> list[dict]:
     """Introspect ``parrot.bots.__all__`` into a catalog of base-class rows.
 
@@ -122,6 +129,7 @@ def _build_base_classes_catalog() -> list[dict]:
                     "name": name,
                     "lazy": is_lazy,
                     "available": False,
+                    "abstract": False,
                     "error": str(exc),
                 }
             )
@@ -135,6 +143,7 @@ def _build_base_classes_catalog() -> list[dict]:
                 "params": _introspect_configurable_params(cls),
                 "lazy": is_lazy,
                 "available": True,
+                "abstract": _is_abstract(cls),
             }
         )
     return rows
@@ -294,13 +303,14 @@ class StudioCatalogHandler(StudioBaseView):
                     "available": True,
                     "allowed": True,
                     "host": True,
+                    "abstract": False,
                     "module": None,
                     "docstring": None,
                     "params": {},
                     "lazy": False,
                 }
             )
-        return rows
+        return decorate_rows(self.request.app, "base-classes", rows)
 
     @staticmethod
     async def _get_llm_clients() -> list[dict]:
@@ -319,9 +329,9 @@ class StudioCatalogHandler(StudioBaseView):
         user = await self._get_user()
         byok = await user_byok_providers(self.request.app, user.user_id)
         rows = [{**row, "credentials": credentials_for(row["provider"], byok)} for row in await self._get_llm_clients()]
-        if self.request.query.get("usable") == "0":
-            return rows
-        return [row for row in rows if row["credentials"]]
+        if self.request.query.get("usable") != "0":
+            rows = [row for row in rows if row["credentials"]]
+        return decorate_rows(self.request.app, "llm-clients", rows)
 
     async def _tools_for_caller(self):
         """The tools catalogue filtered by the tenant tooling policy for the caller's partition (FEAT-622 M7)."""
