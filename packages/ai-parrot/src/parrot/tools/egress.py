@@ -191,7 +191,14 @@ def _trace_config() -> aiohttp.TraceConfig:
 
 
 def guarded_session(**kwargs: Any) -> aiohttp.ClientSession:
-    """A guarded ``ClientSession`` regardless of the host switch (used by :func:`egress_session` and tests)."""
+    """A guarded ``ClientSession`` regardless of the host switch (used by :func:`egress_session` and tests).
+
+    ``trust_env=True`` is refused: it would route the request through the environment's proxy, so the connector would
+    resolve the PROXY and never the target and the guard would see nothing.
+    """
+    if kwargs.get("trust_env"):
+        raise ValueError("a guarded session cannot trust the environment's proxy settings (trust_env=True)")
+    kwargs["trust_env"] = False
     connector = kwargs.pop("connector", None) or aiohttp.TCPConnector(resolver=GuardedResolver())
     traces = list(kwargs.pop("trace_configs", None) or [])
     traces.append(_trace_config())

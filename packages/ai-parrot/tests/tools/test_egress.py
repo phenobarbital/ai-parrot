@@ -188,3 +188,12 @@ async def test_guard_off_leaves_the_plain_session(servers):
         async with session.get(private.url) as resp:
             assert resp.status == 200
     assert private.hits == ["/"]
+
+
+async def test_a_guarded_session_never_trusts_the_environment_proxy(monkeypatch):
+    """P3: with ``trust_env`` the connector would resolve the proxy, not the target: it is refused / forced off."""
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.2:3128")
+    async with egress.guarded_session() as session:
+        assert session.trust_env is False
+    with pytest.raises(ValueError):
+        egress.guarded_session(trust_env=True)

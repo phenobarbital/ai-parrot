@@ -13,7 +13,7 @@ from parrot.tools.dataset_manager.tool import DatasetManager
 from parrot.tools.resolver import get_toolkit_resolver
 from parrot.tools.server_params import constructor_server_params
 from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec, hydrate_mcp, hydrate_params, tooling_revision
-from parrot.tools.tooling_policy import TenantToolingPolicy, TenantToolingRefused, ToolingSubject
+from parrot.tools.tooling_policy import TenantToolingPolicy, TenantToolingRefused, ToolingSubject, ToolParamRefused
 
 from ..tools import AbstractTool
 from ..tools.manager import ToolDefinition
@@ -231,6 +231,11 @@ class ToolInterface:
         for spec in toolkits:
             try:
                 registered.extend(await self._register_toolkit_spec(spec, policy, subject, owner))
+            except ToolParamRefused as exc:  # the host hook refused the params: the toolkit is NOT built (fail closed)
+                self.logger.error(
+                    "Toolkit spec '%s' refused by the host param hook (params: %s); the toolkit is not registered",
+                    exc.item or spec.slug, ", ".join(exc.params) or "-",
+                )
             except TenantToolingRefused as exc:
                 self.logger.error("Tooling spec '%s' refused by tenant policy: %s", exc.item, exc.reason)
             except Exception as exc:  # noqa: BLE001 — a bad spec must never fail the agent boot

@@ -193,3 +193,32 @@ def test_a_pass_through_policy_keyed_by_slug_cannot_be_dodged_by_case():
     for spelling in ("Calculator", "CALCULATOR"):
         with pytest.raises(ToolParamRefused):
             manager.load_tool(spelling)
+
+
+def test_a_hook_mutating_a_nested_value_cannot_reach_the_callers_spec():
+    """P3: the hook gets a DEEP copy, so mutating a nested header dict / list never alters the stored spec."""
+    original = {"headers": {"X-A": "1"}, "paths": ["a"]}
+
+    def hook(slug, params, subject):
+        params["headers"]["X-Evil"] = "1"
+        params["paths"].append("/etc")
+        return params
+
+    run_toolkit_param_hook(hook, "x", original, _subject())
+    assert original == {"headers": {"X-A": "1"}, "paths": ["a"]}
+
+
+def test_a_server_managed_object_in_the_params_is_shared_not_copied():
+    class Store:
+        def __deepcopy__(self, memo):
+            raise RuntimeError("a store must never be copied")
+
+    store = Store()
+    seen = {}
+
+    def hook(slug, params, subject):
+        seen["store"] = params["artifact_store"]
+        return params
+
+    run_toolkit_param_hook(hook, "x", {"artifact_store": store}, _subject())
+    assert seen["store"] is store

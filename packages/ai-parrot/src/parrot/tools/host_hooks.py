@@ -73,6 +73,23 @@ def _refuse(slug: str, params: list[str] | None = None) -> ToolParamRefused:
     return ToolParamRefused(params or [], item=slug)
 
 
+def _copy_plain(value: Any) -> Any:
+    """``value`` with every nested dict / list / set / tuple copied; any other object (a store, a client) is shared.
+
+    The hook may mutate what it is given: copying the containers keeps that away from the caller's spec, while a
+    server-managed object in the params (``artifact_store``) must never be copied.
+    """
+    if isinstance(value, dict):
+        return {key: _copy_plain(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_copy_plain(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_copy_plain(item) for item in value)
+    if isinstance(value, (set, frozenset)):
+        return type(value)(_copy_plain(item) for item in value)
+    return value
+
+
 def run_toolkit_param_hook(
     hook: ToolkitParamHook, slug: str, params: Mapping[str, Any], subject: "ToolingSubject"
 ) -> dict[str, Any]:
@@ -82,7 +99,7 @@ def run_toolkit_param_hook(
     awaitable and a non-mapping result.
     """
     try:
-        result = hook(slug, dict(params), subject)
+        result = hook(slug, _copy_plain(dict(params)), subject)
     except ToolParamRefused as exc:
         if not exc.item:
             exc.item = slug
