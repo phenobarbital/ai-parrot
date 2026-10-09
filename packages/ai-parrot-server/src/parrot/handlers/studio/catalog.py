@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import re
 from typing import Any
 
 import parrot.bots as bots_module
@@ -149,6 +150,27 @@ def _provider_models(provider: str) -> tuple[list[str], list[str]]:
         return [], []
 
 
+IMPORT_FAILED = "import_failed"
+_DATED_SUFFIX = re.compile(r"-\d{8}$")
+
+
+def _normalise_default_model(default: Any, models: list[str]) -> str | None:
+    """``default`` as a member of ``models`` (resolving a dated alias either way), else ``None``.
+
+    ``claude-sonnet-4-5`` resolves to ``claude-sonnet-4-5-20250929`` (the newest dated member) and a dated default
+    resolves to its undated member; a default that is not listed at all is ``None``, never a made-up value.
+    """
+    if not isinstance(default, str) or not default:
+        return None
+    if default in models:
+        return default
+    dated = sorted(m for m in models if m.startswith(f"{default}-") and _DATED_SUFFIX.fullmatch(m[len(default) :]))
+    if dated:
+        return dated[-1]
+    undated = _DATED_SUFFIX.sub("", default)
+    return undated if undated != default and undated in models else None
+
+
 def _build_llm_clients_catalog() -> list[dict]:
     """Resolve ``SUPPORTED_CLIENTS`` into a catalog of LLM client rows.
 
@@ -169,13 +191,20 @@ def _build_llm_clients_catalog() -> list[dict]:
         is_lazy = callable(value) and not isinstance(value, type)
         try:
             cls = value() if is_lazy else value
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception:  # pylint: disable=broad-except
+            # the raw exception text can name paths/packages: it goes to the log, never to a tenant (PA-3)
+            logger.warning("LLM client for provider %r failed to import", provider, exc_info=True)
             rows.append(
                 {
                     "provider": provider,
+                    "class_name": None,
                     "lazy": True,
                     "available": False,
-                    "error": str(exc),
+                    "error": IMPORT_FAILED,
+                    "default_model": None,
+                    "models": [],
+                    "deprecated_models": [],
+                    "credentials": [],
                 }
             )
             continue
@@ -186,9 +215,11 @@ def _build_llm_clients_catalog() -> list[dict]:
                 "class_name": cls.__name__,
                 "lazy": is_lazy,
                 "available": True,
-                "default_model": getattr(cls, "_default_model", None),
+                "error": None,
+                "default_model": _normalise_default_model(getattr(cls, "_default_model", None), models),
                 "models": models,
                 "deprecated_models": deprecated_models,
+                "credentials": [],
             }
         )
     return rows
