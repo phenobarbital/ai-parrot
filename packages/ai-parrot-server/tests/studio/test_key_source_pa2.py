@@ -19,7 +19,7 @@ from parrot.handlers.studio.storage import byok_store as store_module
 from parrot.registry import registry as registry_module
 from parrot.handlers.studio.storage.byok_store import register_byok_store
 
-from parrot.handlers.studio.hooks import STUDIO_KEY_SOURCE_CHOICE
+from parrot.handlers.studio.hooks import STUDIO_CATALOG_USABLE_ONLY, STUDIO_KEY_SOURCE_CHOICE
 
 from ._scripted_llm import KEYED_PROVIDER, SERVER_KEY_ENV, KeyEchoClient
 from .test_testing_db_mode import BASE, _app, pool  # noqa: F401  (pool is a fixture)
@@ -57,6 +57,13 @@ async def clean_keys(pool):  # noqa: F811
         await conn.execute("TRUNCATE navigator.ai_user_llm_keys")
 
 
+def _usable_app(pool):  # noqa: F811
+    """The host opt-in ``STUDIO_CATALOG_USABLE_ONLY``: rows with no usable credential are omitted by default."""
+    app = _app(pool)
+    app[STUDIO_CATALOG_USABLE_ONLY] = True
+    return app
+
+
 async def _providers(client, user="u1", query=""):
     resp = await client.get(f"{BASE}/catalog/llm-clients{query}", headers={"X-User": user})
     assert resp.status == 200
@@ -77,7 +84,7 @@ async def _store_key(client, provider, key, user="u1"):
 
 async def test_server_key_only_lists_that_provider(aiohttp_client, pool, clean_keys, monkeypatch):  # noqa: F811
     monkeypatch.setenv("ANTHROPIC_API_KEY", SERVER_ANTHROPIC)
-    client = await aiohttp_client(_app(pool))
+    client = await aiohttp_client(_usable_app(pool))
     creds, text = await _providers(client)
     assert creds["anthropic"] == ["server"] and creds["claude"] == ["server"]
     assert "google" not in creds and "openai" not in creds
@@ -86,7 +93,7 @@ async def test_server_key_only_lists_that_provider(aiohttp_client, pool, clean_k
 
 
 async def test_byok_is_per_user_and_never_cached(aiohttp_client, pool, clean_keys):  # noqa: F811
-    client = await aiohttp_client(_app(pool))
+    client = await aiohttp_client(_usable_app(pool))
     assert "google" not in (await _providers(client, "u1"))[0]
     await _store_key(client, "google", USER_GOOGLE, user="u1")
     creds_u1, text = await _providers(client, "u1")
@@ -97,7 +104,7 @@ async def test_byok_is_per_user_and_never_cached(aiohttp_client, pool, clean_key
 
 
 async def test_both_sources_and_flip_without_restart(aiohttp_client, pool, clean_keys, monkeypatch):  # noqa: F811
-    client = await aiohttp_client(_app(pool))
+    client = await aiohttp_client(_usable_app(pool))
     await _store_key(client, "anthropic", "sk-ant-user-own-1234")
     monkeypatch.setenv("ANTHROPIC_API_KEY", SERVER_ANTHROPIC)
     assert (await _providers(client))[0]["anthropic"] == ["byok", "server"]
@@ -107,10 +114,18 @@ async def test_both_sources_and_flip_without_restart(aiohttp_client, pool, clean
 
 
 async def test_usable_zero_keeps_every_row(aiohttp_client, pool, clean_keys):  # noqa: F811
-    client = await aiohttp_client(_app(pool))
+    client = await aiohttp_client(_usable_app(pool))
     assert (await _providers(client))[0] == {}
     all_rows, _ = await _providers(client, query="?usable=0")
     assert "anthropic" in all_rows and all(v == [] for v in all_rows.values())
+
+
+async def test_without_the_host_opt_in_every_row_is_returned(aiohttp_client, pool, clean_keys):  # noqa: F811
+    """No ``STUDIO_CATALOG_USABLE_ONLY``: rows with no usable credential are NOT hidden (the pre-PA-3 catalogue)."""
+    client = await aiohttp_client(_app(pool))
+    default_rows, _ = await _providers(client)
+    all_rows, _ = await _providers(client, query="?usable=0")
+    assert default_rows == all_rows and "anthropic" in default_rows
 
 
 # -- key_source on test/ask --------------------------------------------------------------------------------------

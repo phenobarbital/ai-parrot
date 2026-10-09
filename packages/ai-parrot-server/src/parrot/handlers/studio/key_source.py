@@ -18,6 +18,10 @@ from parrot.interfaces.documentdb import DocumentDb
 
 logger = logging.getLogger(__name__)
 
+STUDIO_CATALOG_USABLE_ONLY = "studio_catalog_usable_only"
+"""Host opt-in (``app[STUDIO_CATALOG_USABLE_ONLY] = True``): ``/catalog/llm-clients`` hides rows with no usable
+credential unless ``?usable=0`` is sent. Off (default) every row is returned, as before PA-3."""
+
 STUDIO_KEY_SOURCE_CHOICE = "studio_key_source_choice"
 """Host opt-in (``app[STUDIO_KEY_SOURCE_CHOICE] = True``): with BOTH a server and a personal key and no explicit
 ``key_source`` the call is refused (``409 key_source_required``) instead of silently using the personal key."""

@@ -34,7 +34,7 @@ from parrot.handlers.tools_catalog import _build_catalog, filter_catalog_for
 from parrot.handlers.catalog_decorator import decorate_rows
 
 from ._base import StudioBaseView
-from .key_source import credentials_for, user_byok_providers
+from .key_source import STUDIO_CATALOG_USABLE_ONLY, credentials_for, user_byok_providers
 from .storage.models import StudioModelParams, StudioPartition
 from .models import StudioError
 
@@ -323,13 +323,14 @@ class StudioCatalogHandler(StudioBaseView):
         """Copies of the cached rows with the caller's ``credentials``; rows with none are omitted (PA-2).
 
         ``credentials`` is a per-request fact (the caller's BYOK keys, the server's keys as of NOW), so it is
-        computed here on copies and never stored in the process-wide cache. ``?usable=0`` keeps the unusable
-        rows (diagnostics). Never returns key material or environment-variable names.
+        computed here on copies and never stored in the process-wide cache. Rows with none are omitted only when the
+        host opted in to :data:`STUDIO_CATALOG_USABLE_ONLY` (and ``?usable=0`` keeps them: diagnostics); by default
+        every row is returned. Never returns key material or environment-variable names.
         """
         user = await self._get_user()
         byok = await user_byok_providers(self.request.app, user.user_id)
         rows = [{**row, "credentials": credentials_for(row["provider"], byok)} for row in await self._get_llm_clients()]
-        if self.request.query.get("usable") != "0":
+        if self.request.app.get(STUDIO_CATALOG_USABLE_ONLY) and self.request.query.get("usable") != "0":
             rows = [row for row in rows if row["credentials"]]
         return decorate_rows(self.request.app, "llm-clients", rows)
 

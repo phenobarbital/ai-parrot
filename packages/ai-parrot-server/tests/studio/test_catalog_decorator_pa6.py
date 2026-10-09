@@ -132,7 +132,9 @@ async def test_llm_clients_pass_through_the_hook(aiohttp_client, pool, monkeypat
             return None if kind == "llm-clients" else row
         return {**row, "label": "Anthropic"}
 
-    client = await aiohttp_client(_app(pool, decorate))
+    app = _app(pool, decorate)
+    app["studio_catalog_usable_only"] = True          # the host opts in to hiding rows with no usable credential
+    client = await aiohttp_client(app)
     rows = {r["provider"]: r for r in await _rows(client, "llm-clients")}
     assert set(rows) == {"anthropic"} and rows["anthropic"]["label"] == "Anthropic"
     assert all("label" not in r for r in catalog_module._LLM_CLIENTS_CACHE)
