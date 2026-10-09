@@ -134,9 +134,7 @@ class TeamsKnowledgeUpload:
         attachment = self.pick_attachment(turn_context.activity)
         command = parts[0] if parts else "/ingest"
         if attachment is None:
-            await self.wrapper.send_text(
-                f"Attach a PDF, DOCX or Markdown file to the {command} message.", turn_context
-            )
+            await self.wrapper.send_text(f"Attach a PDF, DOCX or Markdown file to the {command} message.", turn_context)
             return
 
         filename = attachment.name or "document"
@@ -154,7 +152,9 @@ class TeamsKnowledgeUpload:
         data = await self.download(turn_context, attachment, max_bytes)
         if data is None:
             limit_mb = max_bytes / (1024 * 1024)
-            await self.wrapper.send_text(f"File is too large or could not be downloaded (limit {limit_mb:g} MB).", turn_context)
+            await self.wrapper.send_text(
+                f"File is too large or could not be downloaded (limit {limit_mb:g} MB).", turn_context
+            )
             return
 
         identity = UploaderIdentity(
@@ -195,6 +195,7 @@ def register_knowledge_upload_commands(
             kind is UploadTargetKind.WIKI and holder.config.wiki is not None
         )
         if is_configured:
+
             async def handler(turn_context: TurnContext, upload_target: UploadTargetKind = kind) -> None:
                 await holder.handle(turn_context, upload_target)
 
