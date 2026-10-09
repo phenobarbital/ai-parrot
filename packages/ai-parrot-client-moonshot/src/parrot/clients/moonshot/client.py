@@ -120,6 +120,8 @@ class MoonshotClient(OpenAIBaseClient):
 
     client_type: str = "moonshot"
     client_name: str = "moonshot"
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ('MOONSHOT_API_KEY',)
 
     # FEAT-523 folder-convention attributes (read by LLMFactory).
     provider_keys: tuple[str, ...] = ("moonshot", "kimi")

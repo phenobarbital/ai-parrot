@@ -36,7 +36,7 @@ async def test_failed_import_row_has_the_full_key_set(aiohttp_client, pool, monk
     )
     client = await aiohttp_client(_app(pool))
     with caplog.at_level(logging.WARNING):
-        resp = await client.get(f"{BASE}/catalog/llm-clients")
+        resp = await client.get(f"{BASE}/catalog/llm-clients", params={"usable": "0"})
     rows = {r["provider"]: r for r in await resp.json()}
     assert resp.status == 200
     broken = rows["broken"]
@@ -51,7 +51,7 @@ async def test_failed_import_row_has_the_full_key_set(aiohttp_client, pool, monk
 
 async def test_every_installed_provider_has_a_member_default_model(aiohttp_client, pool):  # noqa: F811
     client = await aiohttp_client(_app(pool))
-    resp = await client.get(f"{BASE}/catalog/llm-clients")
+    resp = await client.get(f"{BASE}/catalog/llm-clients", params={"usable": "0"})
     rows = await resp.json()
     providers = set(LLMFactory.supported_clients())
     assert {r["provider"] for r in rows} == providers and providers

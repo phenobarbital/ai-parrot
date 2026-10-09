@@ -32,6 +32,7 @@ import parrot.handlers.tools_catalog as tools_catalog_module
 from parrot.handlers.tools_catalog import _build_catalog, filter_catalog_for
 
 from ._base import StudioBaseView
+from .key_source import credentials_for, user_byok_providers
 from .storage.models import StudioModelParams, StudioPartition
 from .models import StudioError
 
@@ -255,7 +256,7 @@ class StudioCatalogHandler(StudioBaseView):
         if kind == "base-classes":
             return self.json_response(await self._base_classes_for_caller())
         if kind == "llm-clients":
-            return self.json_response(await self._get_llm_clients())
+            return self.json_response(await self._llm_clients_for_caller())
         if kind == "tools":
             return await self._tools_for_caller()
         if kind == "vector-stores":
@@ -307,6 +308,20 @@ class StudioCatalogHandler(StudioBaseView):
         if _LLM_CLIENTS_CACHE is None:
             _LLM_CLIENTS_CACHE = await asyncio.to_thread(_build_llm_clients_catalog)
         return _LLM_CLIENTS_CACHE
+
+    async def _llm_clients_for_caller(self) -> list[dict]:
+        """Copies of the cached rows with the caller's ``credentials``; rows with none are omitted (PA-2).
+
+        ``credentials`` is a per-request fact (the caller's BYOK keys, the server's keys as of NOW), so it is
+        computed here on copies and never stored in the process-wide cache. ``?usable=0`` keeps the unusable
+        rows (diagnostics). Never returns key material or environment-variable names.
+        """
+        user = await self._get_user()
+        byok = await user_byok_providers(self.request.app, user.user_id)
+        rows = [{**row, "credentials": credentials_for(row["provider"], byok)} for row in await self._get_llm_clients()]
+        if self.request.query.get("usable") == "0":
+            return rows
+        return [row for row in rows if row["credentials"]]
 
     async def _tools_for_caller(self):
         """The tools catalogue filtered by the tenant tooling policy for the caller's partition (FEAT-622 M7)."""

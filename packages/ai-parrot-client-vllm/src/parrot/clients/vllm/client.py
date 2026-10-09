@@ -84,6 +84,8 @@ class vLLMClient(LocalLLMClient):
 
     client_type: str = "vllm"
     client_name: str = "vllm"
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ('VLLM_API_KEY', 'LOCAL_LLM_API_KEY')
 
     # FEAT-523 folder-convention attributes (read by LLMFactory).
     # No dedicated vLLM model enum exists in models.py (verified 2026-09-04);
