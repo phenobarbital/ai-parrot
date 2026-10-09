@@ -9,19 +9,46 @@ Removed the leaky ConversationDynamoDB-specific abstraction (FEAT-116).
 See docs/storage-backends.md for backend configuration.
 """
 
+import io
+import json
 import os
+import time
+import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Literal, Optional, Union
 
 from navconfig.logging import logging
 
 from .backends.base import ConversationBackend
+from .exports import (
+    DEFAULT_URL_BASE,
+    EXPORT_PREFIX,
+    ExportRef,
+    ExportTooLarge,
+    InvalidExportKey,
+    build_export_key,
+    guess_content_type,
+    max_bytes,
+    parse_export_key,
+    partition_segment,
+    ttl_seconds,
+)
 from .models import Artifact, ArtifactSummary, ArtifactType
 from .overflow import OverflowStore
 
 # Presigned URL expiry in seconds (default 7 days).
 # Override via INFOGRAPHIC_URL_EXPIRY_SECONDS environment variable.
 _URL_EXPIRY_SECONDS: int = int(os.environ.get("INFOGRAPHIC_URL_EXPIRY_SECONDS", "604800"))
+
+
+@dataclass(frozen=True)
+class ExportFile:
+    """A stored export: its bytes and metadata (:meth:`ArtifactStore.get_export`)."""
+
+    data: bytes
+    filename: str
+    content_type: str
 
 
 class ArtifactStore:
@@ -230,6 +257,93 @@ class ArtifactStore:
         return await self._overflow.generate_presigned_url(
             ref, expires_in=_URL_EXPIRY_SECONDS,
         )
+
+    # ------------------------------------------------------------------
+    # File exports (PA-12): tenant-partitioned, TTL-bound, size-capped
+    # ------------------------------------------------------------------
+
+    @property
+    def file_manager(self):
+        """The ``FileManagerInterface`` the store keeps files in (the overflow store's)."""
+        return self._overflow._fm  # pylint: disable=protected-access
+
+    @staticmethod
+    def _export_path(key: str) -> str:
+        return f"{EXPORT_PREFIX}/{key}"
+
+    async def save_export(
+        self,
+        tenant: Optional[str],
+        agent: Optional[str],
+        filename: str,
+        data: bytes,
+        *,
+        content_type: Optional[str] = None,
+        url_base: Optional[str] = None,
+        ttl: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> ExportRef:
+        """Store ``data`` under ``{tenant}/{agent}/{uuid}/{filename}`` (server-chosen parts only).
+
+        Raises:
+            InvalidExportKey: a tenant/agent segment that cannot be a partition name.
+            ExportTooLarge: ``data`` is above the per-file cap (``STUDIO_ARTIFACT_MAX_BYTES``).
+        """
+        cap = limit if limit is not None else max_bytes()
+        if len(data) > cap:
+            raise ExportTooLarge(f"export is {len(data)} bytes; the limit is {cap}")
+        key = build_export_key(tenant, agent, uuid.uuid4().hex, filename)
+        _, _, _, name = parse_export_key(key)
+        ctype = content_type or guess_content_type(name)
+        expires_at = time.time() + (ttl if ttl is not None else ttl_seconds())
+        meta = {"tenant": key.split("/")[0], "filename": name, "content_type": ctype, "bytes": len(data),
+                "expires_at": expires_at}
+        path = self._export_path(key)
+        await self.file_manager.create_from_bytes(path, data)
+        await self.file_manager.create_from_bytes(f"{path}.meta.json", json.dumps(meta).encode("utf-8"))
+        base = (url_base or DEFAULT_URL_BASE).rstrip("/")
+        return ExportRef(key=key, url=f"{base}/{key}", filename=name, bytes=len(data), content_type=ctype,
+                         expires_at=expires_at)
+
+    async def get_export(self, key: str, *, tenant: Optional[str]) -> Optional[ExportFile]:
+        """The export ``key`` for a caller of ``tenant``; ``None`` when it is unknown, expired, crafted or another
+        tenant's (a caller cannot tell those apart: the route answers 404 for all of them)."""
+        try:
+            key_tenant, _, _, _ = parse_export_key(key)
+            if key_tenant != partition_segment(tenant, what="tenant"):
+                return None
+        except InvalidExportKey:
+            return None
+        path = self._export_path(key)
+        try:
+            raw = io.BytesIO()
+            await self.file_manager.download_file(f"{path}.meta.json", raw)
+            meta = json.loads(raw.getvalue().decode("utf-8"))
+        except Exception:  # pylint: disable=broad-except
+            return None
+        if meta.get("tenant") != key_tenant:
+            return None
+        if float(meta.get("expires_at", 0)) <= time.time():
+            await self.delete_export(key)
+            return None
+        try:
+            body = io.BytesIO()
+            await self.file_manager.download_file(path, body)
+        except Exception:  # pylint: disable=broad-except
+            return None
+        return ExportFile(data=body.getvalue(), filename=meta.get("filename", key.rsplit("/", 1)[-1]),
+                          content_type=meta.get("content_type") or guess_content_type(key))
+
+    async def delete_export(self, key: str) -> bool:
+        """Remove an export and its metadata (best effort); ``True`` when the file existed."""
+        path = self._export_path(key)
+        existed = False
+        for item in (path, f"{path}.meta.json"):
+            try:
+                existed = bool(await self.file_manager.delete_file(item)) or existed
+            except Exception:  # pylint: disable=broad-except
+                continue
+        return existed
 
     @staticmethod
     def _deserialize(raw: dict, resolved_definition: Optional[dict]) -> Artifact:

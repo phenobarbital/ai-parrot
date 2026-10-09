@@ -178,6 +178,17 @@ def _register_catalog(reg: _Registrar) -> None:
     reg.add("/catalog/{kind}", StudioCatalogHandler)
 
 
+def _register_exports(reg: _Registrar) -> None:
+    # Tenant-checked download of an export tool's file (PA-12). ``export_tenant`` (not ``tenant``): a host prefix may
+    # itself contain ``{tenant}``.
+    from parrot.storage.exports import STUDIO_EXPORTS_URL_BASE_KEY
+
+    from .exports import StudioExportDownloadHandler
+
+    reg.add("/exports/{export_tenant}/{agent}/{export_id}/{filename}", StudioExportDownloadHandler)
+    reg.app.setdefault(STUDIO_EXPORTS_URL_BASE_KEY, f"{reg.base}/exports")
+
+
 def _register_assistant(reg: _Registrar) -> None:
     # AgentStudio meta-agent (FEAT-467 TASK-2521).
     from .meta_agent import StudioAssistantHandler
@@ -224,6 +235,7 @@ def setup_studio_routes(
         _register_testing,
         _register_toolkits,
         _register_catalog,
+        _register_exports,
         _register_assistant,
     ):
         register(reg)
