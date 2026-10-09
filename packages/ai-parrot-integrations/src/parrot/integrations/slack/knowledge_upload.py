@@ -29,7 +29,7 @@ COMMANDS: Dict[str, UploadTargetKind] = {
     "ingest_wiki": UploadTargetKind.WIKI,
 }
 USAGE = (
-    "Usage: share a .pdf/.docx/.md file with the text `ingest_book [--force] [--title \"…\"]` "
+    'Usage: share a .pdf/.docx/.md file with the text `ingest_book [--force] [--title "…"]` '
     "or `ingest_wiki [--force]`."
 )
 
