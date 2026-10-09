@@ -233,6 +233,13 @@ class SlackSocketHandler:
         ):
             return
 
+        if event.get("files") or event.get("subtype") == "file_share":
+            file_channel = event.get("channel")
+            file_user = event.get("user") or "unknown"
+            if file_channel and self.wrapper._is_authorized(file_channel, file_user):
+                if await self.wrapper._run_interceptors(event):
+                    return
+
         # Skip empty messages (e.g., file uploads with no text)
         text = (event.get("text") or "").strip()
         if not text:
