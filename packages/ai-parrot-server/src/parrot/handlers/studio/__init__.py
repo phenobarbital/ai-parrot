@@ -24,7 +24,7 @@ from typing import Any
 
 from aiohttp import web
 
-from .hooks import STUDIO_CATALOG_DECORATOR  # noqa: E402,F401  (host hook key, see hooks.py)
+from .hooks import STUDIO_CATALOG_DECORATOR, STUDIO_TOOLKIT_PARAM_HOOK  # noqa: E402,F401  (host hook keys, hooks.py)
 
 STUDIO_PREFIX = "/api/v1/astudio"
 

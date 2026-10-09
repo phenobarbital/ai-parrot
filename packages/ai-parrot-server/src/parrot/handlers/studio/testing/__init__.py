@@ -31,6 +31,8 @@ from parrot.auth.confirmation import is_enforced_write_class
 from parrot.clients.factory import LLMFactory
 from parrot.tools.abstract import AbstractTool
 from parrot.tools.discovery import resolve_class
+from parrot.tools.host_hooks import apply_exclude_tools
+from parrot.tools.tooling_policy import ToolParamRefused
 from parrot.tools.toolkit import AbstractToolkit
 from pydantic import ValidationError
 
@@ -265,22 +267,38 @@ class StudioToolAssignHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, _St
         if bot is None:
             return self._error(f"Agent '{name}' has no live instance.", status=404, code="not_found")
 
+        try:  # PA-9: the host parameter hook sees every toolkit entry before ANYTHING is registered
+            subject = await self._assign_subject(bot, user)
+            hooked = [
+                None if params is None else self._host_params(entry.slug, params, subject)
+                for entry, params in zip(assign_request.toolkits, managed)
+            ]
+        except _ToolkitAssignError as exc:
+            return self._assign_refusal(exc)
+
         errors: list[dict[str, Any]] = []
         registered_names: set[str] = set()
 
         if assign_request.tools:
             before = set(bot.tool_manager.list_tools())
-            bot.tool_manager.register_tools(assign_request.tools)
+            try:
+                bot.tool_manager.register_tools(assign_request.tools)
+            except ToolParamRefused as exc:  # PA-9: the host hook refused a named tool (the bot's bound hook)
+                return self._error(str(exc), status=422, code=exc.code,
+                                   details={"reason": exc.reason, "item": exc.item, "params": exc.params})
             after = set(bot.tool_manager.list_tools())
             registered_names |= after - before
 
-        for entry, params in zip(assign_request.toolkits, managed):
+        for entry, final in zip(assign_request.toolkits, hooked):
             cls = _resolve_registry_class(entry.slug)
-            if cls is None or not (isinstance(cls, type) and issubclass(cls, AbstractToolkit)):
+            if cls is None or final is None or not (isinstance(cls, type) and issubclass(cls, AbstractToolkit)):
                 errors.append({"slug": entry.slug, "error": "Unknown toolkit."})
                 continue
+            params, exclude = final
             try:
-                registered = bot.tool_manager.register_toolkit(cls, **params)
+                toolkit = cls(**params)
+                apply_exclude_tools(toolkit, exclude)
+                registered = bot.tool_manager.register_toolkit(toolkit)
             except Exception as exc:  # pylint: disable=broad-except
                 self.logger.error(
                     "Studio: failed to register toolkit '%s' on '%s': %s",

@@ -80,6 +80,7 @@ class StudioAgentBuilder:
         try:
             self._check_class(part, rec.definition.bot_class, app)
             bot_config, kwargs = self._constructor(snapshot)
+            self._bind_param_hook(kwargs, app, rec, part)
             bot = await self._registry.create_agent_factory(bot_config)(**kwargs)
             self._write_assets(bot, snapshot, directory)
             self._stamp_and_bind(bot, snapshot, app, part, directory)
@@ -153,6 +154,17 @@ class StudioAgentBuilder:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(asset.content, encoding="utf-8")
         bot._agents_dir = directory
+
+    @staticmethod
+    def _bind_param_hook(kwargs: dict[str, Any], app: Any, rec: Any, part: StudioPartition) -> None:
+        """PA-9: hand the host toolkit-parameter hook to the bot BEFORE its first tool is constructed (the tools named
+        in ``definition.tools`` are built in ``__init__``); every later construction goes through it as well."""
+        from parrot.tools.host_hooks import STUDIO_TOOLKIT_PARAM_HOOK
+        from parrot.tools.tooling_policy import ToolingSubject
+
+        if (hook := app.get(STUDIO_TOOLKIT_PARAM_HOOK)) is not None:
+            subject = ToolingSubject(tenant=part.tenant, agent_id=rec.agent_id, actor=None, phase="build")
+            kwargs["toolkit_param_binding"] = (hook, subject)
 
     @staticmethod
     def _stamp_and_bind(

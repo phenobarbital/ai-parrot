@@ -32,6 +32,7 @@ ToolingRefusal = Literal[
     "secret_ref_not_permitted",
     "builtin_not_permitted",
     "toolkit_unavailable",
+    "tool_params_not_permitted",
 ]
 _POLICY_KEY = "parrot.tenant_tooling_policy"
 _TENANT_MCP_FIELDS = frozenset(
@@ -61,6 +62,15 @@ class TenantToolingRefused(Exception):
         self.reason: ToolingRefusal = reason
         self.item = item
         super().__init__(f"{self.code}: {reason} ({item})")
+
+
+class ToolParamRefused(TenantToolingRefused):
+    """A host toolkit-parameter hook refuses constructor parameters (PA-9): 422 ``tooling_not_permitted``, reason
+    ``tool_params_not_permitted`` and ``details.params``; a stored agent that carries them fails its build closed."""
+
+    def __init__(self, params: Iterable[str] = (), *, item: str = "") -> None:
+        super().__init__("tool_params_not_permitted", item=item)
+        self.params: list[str] = sorted({str(name) for name in params})
 
 
 class HostMCPServer(BaseModel, frozen=True):
@@ -372,6 +382,8 @@ def get_tenant_tooling_policy(app: Mapping[str, Any]) -> TenantToolingPolicy:
 def enforce_tenant_tooling(app: Mapping[str, Any], tooling: NormalizedTooling, *, subject: ToolingSubject) -> None:
     """THE write/activation hook: raises TenantToolingRefused; pure, no I/O."""
     policy = get_tenant_tooling_policy(app)
-    if subject.tenant is None and not policy.apply_to_global:
-        return
-    policy.check_tooling(tooling, subject=subject)
+    if not (subject.tenant is None and not policy.apply_to_global):
+        policy.check_tooling(tooling, subject=subject)
+    from parrot.tools.host_hooks import check_toolkit_params  # lazy: host_hooks imports this module
+
+    check_toolkit_params(app, tooling, subject=subject)  # PA-9: the host parameter hook, every partition

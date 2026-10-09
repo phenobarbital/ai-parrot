@@ -10,7 +10,13 @@ from navigator_auth.decorators import is_authenticated, user_session
 from pydantic import ValidationError
 
 from parrot.tools.spec import hydrate_params, mask_mcp, mask_spec
-from parrot.tools.tooling_policy import TenantToolingRefused
+from parrot.tools.host_hooks import (
+    STUDIO_TOOLKIT_PARAM_HOOK,
+    apply_exclude_tools,
+    run_toolkit_param_hook,
+    split_exclude_tools,
+)
+from parrot.tools.tooling_policy import TenantToolingRefused, ToolingSubject
 
 from ._base import StudioBaseView
 from .agents import _StudioAgentsMixin
@@ -80,7 +86,10 @@ class _ToolingViewMixin(_StudioAgentsMixin):
     def _map_exc(self, exc: Exception):
         """Map persistence and vault exceptions to the Studio error contract."""
         if isinstance(exc, TenantToolingRefused):
-            return self._error(str(exc), status=422, code=exc.code, details={"reason": exc.reason, "item": exc.item})
+            details = {"reason": exc.reason, "item": exc.item}
+            if (params := getattr(exc, "params", None)) is not None:  # PA-9: tool_params_not_permitted
+                details["params"] = params
+            return self._error(str(exc), status=422, code=exc.code, details=details)
         if isinstance(exc, ServerManagedParamsRejected):
             return self._error(str(exc), status=422, code="server_managed", details={"params": exc.params})
         if isinstance(exc, _STUDIO_ERRORS):
@@ -237,20 +246,35 @@ class StudioToolkitOptionsHandler(_ToolingViewMixin, StudioBaseView):
         spec = next((item for item in state.tooling.toolkits if item.slug.lower() == slug.lower()), None)
         if spec is None:
             return self._error("Toolkit is not configured.", status=409, code="not_configured")
-        return await self._fetch_options(cls, spec, param)
+        return await self._fetch_options(cls, spec, param, state)
 
-    async def _fetch_options(self, cls, spec, param: str):
+    async def _hooked_option_params(self, slug: str, params: dict, state) -> tuple[dict, tuple[str, ...]]:
+        """The host toolkit-parameter hook (PA-9) over the params this route constructs a toolkit from."""
+        hook = self.request.app.get(STUDIO_TOOLKIT_PARAM_HOOK)
+        if hook is None:
+            return params, ()
+        part = await self._studio_partition()
+        rec = state._studio[1] if getattr(state, "source", None) == "studio" else None
+        subject = ToolingSubject(
+            tenant=part.tenant, agent_id=getattr(rec, "agent_id", None), actor=(await self._get_user()).user_id,
+            phase="build",
+        )
+        return split_exclude_tools(run_toolkit_param_hook(hook, slug, params, subject))
+
+    async def _fetch_options(self, cls, spec, param: str, state=None):
         """Vault read, construction and ``config_options`` (only after the scope gate); the JSON response."""
         instance = None
         try:
             hydrated = await hydrate_params(spec)
             ctor_params = inspect.signature(cls).parameters
             params = {key: value for key, value in hydrated.items() if key in ctor_params}
+            params, exclude = await self._hooked_option_params(spec.slug, params, state)
             instance = cls(**params)
+            apply_exclude_tools(instance, exclude)
             options = await asyncio.wait_for(instance.config_options(param), _OPTIONS_TIMEOUT_S)
         except asyncio.TimeoutError:
             return self._error("Unable to load toolkit options.", status=502, code="options_failed")
-        except (RuntimeError, ValueError, LookupError) as exc:
+        except (TenantToolingRefused, RuntimeError, ValueError, LookupError) as exc:
             return self._map_exc(exc)
         except Exception:
             return self._error("Unable to load toolkit options.", status=502, code="options_failed")

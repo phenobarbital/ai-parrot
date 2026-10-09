@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
+from parrot.tools.host_hooks import STUDIO_TOOLKIT_PARAM_HOOK, run_toolkit_param_hook, split_exclude_tools
 from parrot.tools.server_params import constructor_server_params
+from parrot.tools.tooling_policy import ToolingSubject, ToolParamRefused
 
 from .models import StudioError
 
@@ -37,6 +41,31 @@ class _ServerManagedAssignMixin:
             for name in constructor_server_params(cls)
             if declared[name].source == "app" and app.get(declared[name].key) is not None
         }
+
+    async def _assign_subject(self, bot, user) -> ToolingSubject:
+        """Who a live assignment is for (the host parameter hook's ``subject``; phase ``attach``)."""
+        part = await self._studio_partition()
+        try:
+            agent_id = UUID(str(getattr(bot, "chatbot_id", "")))
+        except ValueError:
+            agent_id = None
+        return ToolingSubject(tenant=part.tenant, agent_id=agent_id, actor=user.user_id, phase="attach")
+
+    def _host_params(self, slug: str, params: dict, subject: ToolingSubject | None) -> tuple[dict, tuple[str, ...]]:
+        """The host toolkit-parameter hook (PA-9) over ``params``: ``(final params, forced exclude_tools)``.
+
+        A refusal is the ``422 tooling_not_permitted`` / ``tool_params_not_permitted`` response with
+        ``details.params``; without a registered hook the params are returned unchanged.
+        """
+        hook = self.request.app.get(STUDIO_TOOLKIT_PARAM_HOOK)
+        if hook is None or subject is None:
+            return dict(params), ()
+        try:
+            return split_exclude_tools(run_toolkit_param_hook(hook, slug, params, subject))
+        except ToolParamRefused as exc:
+            raise _ToolkitAssignError(
+                422, exc.code, str(exc), details={"reason": exc.reason, "item": exc.item, "params": exc.params}
+            ) from exc
 
     def _managed_toolkit_params(self, entries: list, resolve) -> list[dict | None]:
         """Final constructor params per toolkit entry (``None`` when ``resolve`` finds no class).

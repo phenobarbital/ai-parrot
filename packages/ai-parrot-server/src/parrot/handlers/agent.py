@@ -1128,7 +1128,8 @@ class AgentTalk(BaseView):
                     if name != "self" and parameter.kind is not inspect.Parameter.VAR_KEYWORD
                 }
                 filtered = {name: value for name, value in params.items() if name in accepted}
-                base.register_toolkit(cls(**filtered))
+                # PA-9: a user override is a construction path too: through the agent's bound host parameter hook
+                base.register_toolkit(base.build_toolkit(cls, override.slug, filtered))
             request_session[f"{ref}_tool_manager"] = base
             request_session[marker_key] = marker
             return base
