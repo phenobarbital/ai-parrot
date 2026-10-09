@@ -12,7 +12,14 @@ from pathlib import Path
 
 from parrot.auth.userinfo import EmployeeProfile, UserInfoService
 
-from .models import KnowledgeUploadConfig, UploaderIdentity, UploadOutcome, UploadRequest, UploadStatus, UploadTargetKind
+from .models import (
+    KnowledgeUploadConfig,
+    UploaderIdentity,
+    UploadOutcome,
+    UploadRequest,
+    UploadStatus,
+    UploadTargetKind,
+)
 from .policy import UploadPolicy, resolve_profile
 from .staging import safe_filename, staged_file, sweep_staging
 from .targets.base import IngestTarget
@@ -133,9 +140,7 @@ class KnowledgeUploadService:
             message=f"Received {request.filename} → {request.target.value}. Processing…",
         )
 
-    async def _run_job(
-        self, job_id: str, request: UploadRequest, profile: EmployeeProfile, notify: Notify
-    ) -> None:
+    async def _run_job(self, job_id: str, request: UploadRequest, profile: EmployeeProfile, notify: Notify) -> None:
         """Run one staged upload and report its terminal outcome."""
         target = self._targets[request.target]
         started = time.monotonic()
