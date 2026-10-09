@@ -12,11 +12,13 @@ from .._base import is_valid_slug
 from ..access import _store_record
 from ..models import CreateAgentRequest
 from ..storage.models import (
+    INVALID_CONFIG_MESSAGE,
     RESERVED_CONFIG_KEY_MESSAGE,
     StudioAgentDefinition,
     StudioAgentKey,
     StudioAgentPatch,
     StudioNameConflict,
+    model_param_errors,
 )
 
 
@@ -127,6 +129,8 @@ class _StudioAgentsDbMixin:
         try:
             return StudioAgentDefinition.from_create_request(create_request)
         except ValidationError as exc:
+            if (details := model_param_errors(exc)) is not None:
+                return self._error(INVALID_CONFIG_MESSAGE, status=422, code="invalid_config", details=details)
             reserved = RESERVED_CONFIG_KEY_MESSAGE in str(exc)
             return self._error(
                 f"Invalid request: {exc}",
@@ -194,6 +198,8 @@ class _StudioAgentsDbMixin:
         try:
             return StudioAgentPatch(**payload)
         except ValidationError as exc:
+            if (details := model_param_errors(exc)) is not None:
+                return self._error(INVALID_CONFIG_MESSAGE, status=422, code="invalid_config", details=details)
             return self._error(f"Invalid request: {exc}", status=422, code="invalid_request")
 
     async def _patch_missing(self, part, name: str):

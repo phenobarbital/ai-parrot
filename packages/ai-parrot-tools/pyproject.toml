@@ -68,7 +68,7 @@ sandbox = ["docker>=7.1"]
 codeinterpreter = ["docker>=7.1"]
 pulumi = ["pulumi>=3.0"]
 kubernetes = ["kubernetes-asyncio>=24.2", "pyyaml>=6.0"]
-sitesearch = ["beautifulsoup4>=4.12", "html2text>=2024.0", "markitdown>=0.1.2"]
+sitesearch = ["beautifulsoup4>=4.12", "html2text>=2024.0", "markitdown>=0.1.2", "textblob>=0.17"]
 office365 = ["msgraph-sdk>=1.8", "azure-identity>=1.18", "microsoft-kiota-authentication-azure>=1.2"]
 scraping = ["selenium>=4.35", "undetected-chromedriver>=3.5", "webdriver-manager>=4.0", "playwright>=1.52", "rapidfuzz>=3.0"]
 # Selenium fallback for JS-heavy article pages reuses the `scraping` extra.
@@ -78,7 +78,7 @@ db = ["querysource>=5.1.2", "psycopg-binary>=3.2"]
 # 5.12.3 relaxes its requests pin (==2.32.4 -> >=2.33.0), compatible with
 # the workspace's requests>=2.34 override.
 flowtask = ["flowtask>=5.12.3"]
-google = ["aiogoogle>=5.17", "google-api-python-client>=2.151"]
+google = ["aiogoogle>=5.17", "google-api-python-client>=2.151", "textblob>=0.17"]
 arxiv = ["arxiv>=3.0.0"]
 wikipedia = ["wikipedia>=1.4", "mediawikiapi>=1.2"]
 weather = ["pyowm>=3.3"]
@@ -105,10 +105,27 @@ research = [
 # together; a standalone `pip install ai-parrot-tools[...]` without this
 # extra would fail on `import parrot_tools.business_automation.ingest`).
 business_automation = ["pandas>=2.0", "ai-parrot-loaders"]
+# PA-7: third-party packages an offered tool imports at module level that were declared only in ai-parrot extras
+# (or nowhere). Declared here so a host derives its install set from THIS file: an undeclared import silently hides
+# the tool (`available: false`). ``tests/test_registry_declared_extras.py`` keeps this list honest.
+powerpoint = ["python-pptx>=1.0.2"]
+reddit = ["praw>=7.8.1"]
+stats = ["scipy>=1.11", "statsmodels>=0.14"]
+forecasting = ["prophet==1.2.1"]
+bm25 = ["rank-bm25>=0.2.2"]
+notification = ["async-notify[all]>=1.6.0"]
+powerbi = ["pyarrow>=25.0"]
+msteams = ["ai-parrot-tools[office365]", "msal>=1.30.0"]
+document_converter = ["ai-parrot[docling]"]
 # FEAT-602: HoobaToolkit — BBVA Excel parsing (excel, business_automation), Playwright fallback (scraping), rules YAML.
 hooba = ["ai-parrot-tools[business_automation,excel,scraping]", "pyyaml>=6.0"]
 all = [
-    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,kubernetes,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security,rss,charts,research,business_automation,hooba]"
+    "ai-parrot-tools[jira,pdf,msword,slack,aws,docker,git,analysis,excel,sandbox,codeinterpreter,pulumi,kubernetes,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,security,rss,charts,research,business_automation,hooba,powerpoint,reddit,stats,forecasting,bm25,notification,powerbi,msteams,document_converter]"
+]
+# PA-7: what an Agent Studio host installs — `all` minus the infrastructure / shell / code-execution toolkits it
+# never offers (aws, docker, git, sandbox, codeinterpreter, pulumi, kubernetes, security), so the image stays small.
+studio = [
+    "ai-parrot-tools[jira,pdf,msword,slack,analysis,excel,sitesearch,office365,scraping,finance,db,flowtask,google,arxiv,wikipedia,weather,messaging,rss,charts,research,business_automation,hooba,powerpoint,reddit,stats,forecasting,bm25,notification,powerbi,msteams,document_converter]"
 ]
 
 [project.urls]

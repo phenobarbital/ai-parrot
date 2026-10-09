@@ -127,7 +127,7 @@ class _StudioAgentsMixin:
             "chatbot_id": str(agent.chatbot_id),
         }
 
-    def _error(self, message: str, *, status: int, code: str | None = None):
+    def _error(self, message: str, *, status: int, code: str | None = None, details=None):
         """Return a JSON error response shaped like :class:`StudioError`.
 
         ``BaseHandler.error()`` only maps a fixed status whitelist
@@ -137,7 +137,7 @@ class _StudioAgentsMixin:
         on that helper.
         """
         return self.json_response(
-            StudioError(message=message, code=code).model_dump(),
+            StudioError(message=message, code=code, details=details).model_dump(),
             status=status,
         )
 

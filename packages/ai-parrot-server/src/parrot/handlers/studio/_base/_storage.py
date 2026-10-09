@@ -180,6 +180,8 @@ class _StudioStorageMixin:
                     reason, item = getattr(exc, "reason", None), getattr(exc, "item", None)
                     if reason is not None or item is not None:
                         details = {"reason": reason, "item": item}
+                        if (params := getattr(exc, "params", None)) is not None:  # PA-9: tool_params_not_permitted
+                            details["params"] = params
                 return self.json_response(self._json_error(message, code, details), status=status)
         self.logger.error("Studio: unexpected storage error: %r", exc, exc_info=exc)
         return self.json_response(self._json_error("Internal server error.", "internal_error"), status=500)

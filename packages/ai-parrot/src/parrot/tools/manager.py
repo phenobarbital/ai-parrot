@@ -393,6 +393,8 @@ class ToolManager(MCPToolManagerMixin):
 
         # Confirmation guard for per-call HITL review (optional — FEAT-235)
         self._confirmation_guard: Optional["ConfirmationGuard"] = None
+        # PA-9: host toolkit-parameter hook bound to this manager, see parrot.tools.host_hooks
+        self._toolkit_param_binding: Optional[tuple[Callable[..., Any], Any]] = None
 
         # Execution policy: declarative tool → remote-executor routing.
         self._execution_policy = None
@@ -573,6 +575,64 @@ class ToolManager(MCPToolManagerMixin):
             The ConfirmationGuard instance, or None if no guard is configured.
         """
         return self._confirmation_guard
+
+    # ── Host toolkit-parameter hook (PA-9) ─────────────────────────────────────
+
+    def set_toolkit_param_hook(self, hook: Optional[Callable[..., Any]], subject: Any = None) -> None:
+        """Bind (or clear, with ``None``) the host hook every toolkit this manager constructs goes through.
+
+        ``subject`` is the :class:`~parrot.tools.tooling_policy.ToolingSubject` handed to the hook; see
+        :mod:`parrot.tools.host_hooks` for the hook contract.
+        """
+        self._toolkit_param_binding = None if hook is None else (hook, subject)
+
+    def hooked_toolkit_params(
+        self, slug: str, params: Dict[str, Any], *, phase: Optional[str] = None
+    ) -> tuple[Dict[str, Any], tuple[str, ...]]:
+        """``(final constructor params, forced exclude_tools)`` of ``slug`` after the host hook.
+
+        Without a bound hook the params come back unchanged. Raises ``ToolParamRefused`` (a ``TenantToolingRefused``)
+        when the hook refuses; ``phase`` overrides the bound subject's phase (e.g. ``attach`` for a live assignment).
+        """
+        if self._toolkit_param_binding is None:
+            return dict(params), ()
+        from .host_hooks import run_toolkit_param_hook, split_exclude_tools
+
+        slug = self._canonical_slug(slug)  # the hook is keyed by the canonical slug, never the caller's spelling
+        hook, subject = self._toolkit_param_binding
+        if phase is not None and subject is not None:
+            subject = subject.model_copy(update={"phase": phase})
+        return split_exclude_tools(run_toolkit_param_hook(hook, slug, params, subject))
+
+    def build_toolkit(self, cls: type, slug: str, params: Dict[str, Any], *, phase: Optional[str] = None) -> Any:
+        """Construct ``cls(**params)`` through the host hook: forced values applied, ``exclude_tools`` set on the
+        instance. Identical to ``cls(**params)`` when no hook is bound."""
+        from .host_hooks import apply_exclude_tools
+
+        final, exclude = self.hooked_toolkit_params(slug, params, phase=phase)
+        instance = cls(**final)
+        apply_exclude_tools(instance, exclude)
+        return instance
+
+    @staticmethod
+    def _canonical_slug(name: str) -> str:
+        """The canonical (lower-case registry) slug of ``name``: a case variant or class-name alias is resolved
+        (``RSS_Feed_Reader`` / ``RSSFeedReader`` → ``rss_feed_reader``); an unknown name is lower-cased."""
+        try:
+            from .resolver import get_toolkit_resolver
+
+            return get_toolkit_resolver().canonical_slug(name) or name.lower()
+        except Exception:  # pylint: disable=broad-except
+            return name.lower()
+
+    def _slug_of_class(self, cls: type) -> str:
+        """Best-effort registry slug of ``cls`` (class-name alias), else its lower-cased name."""
+        try:
+            from .resolver import get_toolkit_resolver
+
+            return get_toolkit_resolver().canonical_slug(cls.__name__) or cls.__name__.lower()
+        except Exception:  # pylint: disable=broad-except
+            return cls.__name__.lower()
 
     # ── Tool Search ────────────────────────────────────────────────────────────
 
@@ -1050,7 +1110,7 @@ class ToolManager(MCPToolManagerMixin):
         try:
             module = __import__(f"parrot.tools.{tool_file}", fromlist=[tool_name])
             cls = getattr(module, tool_name)
-            instance = cls(**kwargs)
+            instance = self.build_toolkit(cls, tool_name, kwargs)
             self.register_tool(instance)
             return True
         except (ImportError, AttributeError) as e:
@@ -1076,6 +1136,7 @@ class ToolManager(MCPToolManagerMixin):
         """
         from .discovery import discover_from_registry, resolve_class
         from .toolkit import AbstractToolkit
+        from .tooling_policy import ToolParamRefused
 
         registry = discover_from_registry()
         dotted_path = registry.get(tool_name)
@@ -1093,10 +1154,12 @@ class ToolManager(MCPToolManagerMixin):
 
         try:
             if isinstance(cls, type) and issubclass(cls, AbstractToolkit):
-                self.register_toolkit(cls, **kwargs)
+                self.register_toolkit(self.build_toolkit(cls, tool_name, kwargs))
             else:
-                self.register_tool(cls(**kwargs))
+                self.register_tool(self.build_toolkit(cls, tool_name, kwargs))
             return True
+        except ToolParamRefused:
+            raise  # a host refusal is not a "could not load" (the caller maps it to a 422 / failed build)
         except Exception as e:  # noqa: BLE001
             self.logger.error("Error instantiating tool %r (%s): %s", tool_name, dotted_path, e)
             return False
@@ -1145,7 +1208,7 @@ class ToolManager(MCPToolManagerMixin):
                 available = ToolkitRegistry.list_toolkits()
                 raise ValueError(f"Unknown toolkit: '{toolkit}'. " f"Available toolkits: {available}")
             try:
-                toolkit_instance = toolkit_class(**kwargs)
+                toolkit_instance = self.build_toolkit(toolkit_class, toolkit, kwargs)
             except Exception as e:
                 self.logger.error("Error instantiating toolkit %r: %s", toolkit, e)
                 raise
@@ -1154,7 +1217,7 @@ class ToolManager(MCPToolManagerMixin):
             # It's a toolkit class, instantiate it
             toolkit_name = toolkit.__name__
             try:
-                toolkit_instance = toolkit(**kwargs)
+                toolkit_instance = self.build_toolkit(toolkit, self._slug_of_class(toolkit), kwargs)
             except Exception as e:
                 self.logger.error("Error instantiating toolkit class %r: %s", toolkit_name, e)
                 raise
@@ -2698,6 +2761,10 @@ class ToolManager(MCPToolManagerMixin):
         # FEAT-264: carry the credential broker so cloned managers retain gating
         if self._broker is not None:
             new_tm._broker = self._broker
+        new_tm._toolkit_param_binding = self._toolkit_param_binding  # PA-9: a clone keeps constructing through the hook
+        # PA-10: a per-session clone (user toolkit overrides) must keep the bot's TOOL_CALL guardrails: the pipeline is
+        # the bot's, shared by reference, so a clone can never be the way around a host guardrail
+        new_tm._tool_call_pipeline = self._tool_call_pipeline
         # Share tool references. Tools that respect the per-invocation
         # CredentialResolver contract are safe; stateful toolkits caching
         # tokens on ``self`` should implement their own per-user clone.

@@ -7,6 +7,7 @@ from parrot.clients.factory import LLMFactory
 
 from ..access import _store_record, build_tool_scope
 from ..conversation import delete_studio_conversation
+from ..key_source import KeySourceRefusal, choose_key_source, key_source_choice_enabled
 from ..storage.models import StudioAgentKey, StudioNotFound, StudioStorageUnavailable
 from ._models import TestAskRequest
 
@@ -52,23 +53,34 @@ class _StudioTestingDbMixin:
         except PermissionError as exc:  # AgentAccessDenied (PBAC deny, raised before any build)
             return self._error(str(exc), status=403, code="access_denied")
 
-    async def _maybe_apply_byok(self, bot) -> bool:
-        """Swap ``bot.llm`` for a BYOK-keyed client, when a key is stored.
+    async def _maybe_apply_byok(self, bot, ask_request) -> bool:
+        """Swap ``bot.llm`` for a BYOK-keyed client when the chosen key source is the caller's own key.
 
         No-op when the bot's LLM was not configured from a plain
-        ``"provider:model"`` string, or when the caller has no stored key
-        for that provider. Never catches an auth failure and retries with
-        the server default (spec §7) — a swapped-in client that fails
-        auth on the subsequent ``ask()`` call surfaces as a query error.
+        ``"provider:model"`` string, or when the server key is the source. The source is
+        :func:`~parrot.handlers.studio.key_source.choose_key_source`'s call (PA-2): one available source is used,
+        both require ``key_source`` (``409``), a missing explicit one is ``422``. Never catches an auth failure
+        and retries with the server default (spec §7) — a swapped-in client that fails auth on the subsequent
+        ``ask()`` call surfaces as a query error.
 
         Args:
             bot: The (session-scoped) test bot instance.
+            ask_request: The parsed ask (``use_byok``, ``key_source``).
 
         Returns:
             ``True`` when a stored personal key replaced ``bot.llm`` for this ask.
+
+        Raises:
+            KeySourceRefusal: ``409 key_source_required`` / ``422 key_source_unavailable``.
         """
         llm_raw = getattr(bot, "_llm_raw", None)
-        if not isinstance(llm_raw, str):
+        if not isinstance(llm_raw, str) and ask_request.key_source == "byok":
+            # an explicit personal key is honoured or refused, never silently served by the server key (PA-2)
+            raise KeySourceRefusal(
+                422, "key_source_unavailable", "A personal key cannot be applied to this agent's LLM configuration.",
+                {"requested": "byok"},
+            )
+        if not isinstance(llm_raw, str) or (not ask_request.use_byok and ask_request.key_source is None):
             return False
         provider, _model = LLMFactory.parse_llm_string(llm_raw)
         user = await self._get_user()
@@ -76,7 +88,11 @@ class _StudioTestingDbMixin:
         from parrot.handlers.studio import testing as _testing_pkg
 
         api_key = await _testing_pkg.resolve_user_api_key(self.request.app, user.user_id, provider)
-        if not api_key:
+        source = choose_key_source(
+            provider, has_byok=bool(api_key), requested=ask_request.key_source, use_byok=ask_request.use_byok,
+            ask_when_both=key_source_choice_enabled(self.request.app),
+        )
+        if source != "byok":
             return False
         bot.llm = LLMFactory.create(llm_raw, tool_manager=bot.tool_manager, api_key=api_key)
         return True

@@ -43,6 +43,13 @@ TOOL_BASE_CLASSES = frozenset({
     # registering zero tools. It matches the "Toolkit" suffix convention,
     # so it must be excluded explicitly here (FEAT-426 / TASK-2243).
     "BaseResearchToolkit",
+    # PA-7: not selectable tools — abstract bases, plain wrapper "bundles" and helper classes that match the
+    # "Tool"/"Toolkit" suffix convention. Offering one of them makes the Studio catalogue list something that
+    # cannot be instantiated (or does nothing), so they stay out of TOOL_REGISTRY.
+    "AbstractDocumentTool", "AbstractSchemaManagerTool", "EnhancedDatabaseTool",
+    "GoogleBaseTool", "GooglePlacesBaseTool", "O365Tool", "QueryToolkit",
+    "SharePointToolkit", "OneDriveToolkit", "Office365FileManagementToolkit",
+    "StaticAnalysisTool", "PythonExecutionTool", "FileOperationsTool",
 })
 LOADER_BASE_CLASSES = frozenset({
     "AbstractLoader", "BaseLoader", "BasePDF", "BaseVideoLoader",

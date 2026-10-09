@@ -386,6 +386,10 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             execution_policy=kwargs.pop("execution_policy", None),
         )
         self.tool_manager.enable_redaction = self.enable_redaction
+        # PA-9: a host toolkit-parameter hook (``(hook, ToolingSubject)``) bound BEFORE the first tool is constructed,
+        # so the tools named in ``tools=[...]`` go through it too (see parrot.tools.host_hooks).
+        if (hook_binding := kwargs.pop("toolkit_param_binding", None)) is not None:
+            self.tool_manager.set_toolkit_param_hook(*hook_binding)
         self.tool_threshold = tool_threshold
         self.enable_tools: bool = kwargs.get("enable_tools", kwargs.get("use_tools", True))
         # Knowledge-index toolkits captured during tool registration so the

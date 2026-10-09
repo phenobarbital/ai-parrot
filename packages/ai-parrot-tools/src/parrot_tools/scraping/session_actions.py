@@ -697,6 +697,9 @@ _FILE_ROOT_ENV_VAR = "PARROT_SCRAPING_FILES_ROOT"
 _INCOMPLETE_DOWNLOAD_SUFFIXES = {".tmp", ".crdownload", ".part", ".download"}
 
 
+from .confine import PathConfinementError, within_root  # noqa: E402
+
+
 def _resolve_within_root(raw_path: str) -> Optional[Path]:
     """Resolve *raw_path*, rejecting it if it escapes the configured root.
 
@@ -707,6 +710,13 @@ def _resolve_within_root(raw_path: str) -> Optional[Path]:
     Returns:
         The resolved :class:`Path`, or ``None`` if it escapes the root.
     """
+    try:
+        confined = within_root(raw_path)
+    except PathConfinementError:
+        logger.error("Rejecting path outside the host-confined root: %s", raw_path)
+        return None
+    if confined is not None:
+        return confined
     path = Path(raw_path).expanduser().resolve()
     root = os.environ.get(_FILE_ROOT_ENV_VAR)
     if root:

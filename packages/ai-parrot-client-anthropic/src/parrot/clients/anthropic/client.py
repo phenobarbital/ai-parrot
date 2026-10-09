@@ -92,6 +92,8 @@ class AnthropicClient(AbstractClient):
     version: str = "2023-06-01"
     client_type: str = "anthropic"
     client_name: str = "claude"
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ('ANTHROPIC_API_KEY',)
 
     # FEAT-523 folder-convention attributes (read by LLMFactory). Includes
     # the PROVIDER_BACKEND keys (bedrock/anthropic-aws) so future entry-point

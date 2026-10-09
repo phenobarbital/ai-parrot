@@ -103,15 +103,15 @@ class TestStudioCatalogs:
         assert basic_row["available"] is True
         assert basic_row["lazy"] is False
 
-    @pytest.mark.asyncio
-    async def test_llm_clients_from_supported_clients(self):
-        app = web.Application()
-        handler = _make_handler(app, kind="llm-clients")
+    async def test_llm_clients_from_supported_clients(self, aiohttp_client, pool):  # noqa: F811
+        """Through the real route; ``?usable=0`` keeps the rows no credential serves (PA-2 omits them otherwise)."""
+        from .test_agents_db_mode import _app
 
-        response = await _unwrap(StudioCatalogHandler.get)(handler)
+        client = await aiohttp_client(_app(pool))
+        response = await client.get("/api/v1/astudio/catalog/llm-clients", params={"usable": "0"})
 
         assert response.status == 200
-        body = await _decode(response)
+        body = await response.json()
         providers = {row["provider"] for row in body}
         assert "anthropic" in providers
         assert "openai" in providers
@@ -120,9 +120,8 @@ class TestStudioCatalogs:
         assert anthropic_row["class_name"] == "AnthropicClient"
         assert anthropic_row["default_model"]
 
-    @pytest.mark.asyncio
-    async def test_llm_clients_lazy_loader_failure_graceful(self, monkeypatch):
-        app = web.Application()
+    async def test_llm_clients_lazy_loader_failure_graceful(self, monkeypatch, aiohttp_client, pool):  # noqa: F811
+        from .test_agents_db_mode import _app
 
         def _boom():
             raise ImportError("boto3 extra not installed")
@@ -135,12 +134,12 @@ class TestStudioCatalogs:
             "supported_clients",
             staticmethod(lambda: {"broken": _boom, "openai": _real_openai()}),
         )
-        handler = _make_handler(app, kind="llm-clients")
+        client = await aiohttp_client(_app(pool))
 
-        response = await _unwrap(StudioCatalogHandler.get)(handler)
+        response = await client.get("/api/v1/astudio/catalog/llm-clients", params={"usable": "0"})
 
         assert response.status == 200
-        body = await _decode(response)
+        body = await response.json()
         broken_row = next(row for row in body if row["provider"] == "broken")
         assert broken_row["available"] is False
         assert broken_row["lazy"] is True
@@ -210,7 +209,7 @@ from .test_agents_visibility import tenant_app, who  # noqa: E402
 
 async def test_llm_clients_rows_carry_models(aiohttp_client, pool):  # noqa: F811
     client = await aiohttp_client(tenant_app(pool))
-    resp = await client.get(f"{BASE}/catalog/llm-clients", headers=who("u1"))
+    resp = await client.get(f"{BASE}/catalog/llm-clients", headers=who("u1"), params={"usable": "0"})
     assert resp.status == 200
     rows = await resp.json()
     available = [r for r in rows if r["available"]]

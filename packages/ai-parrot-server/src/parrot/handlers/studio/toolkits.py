@@ -28,6 +28,7 @@ from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
 from parrot.knowledge.wiki import LLMWikiToolkit, WikiConfig
 from parrot.tools.config_schema import build_schema_envelope
 from parrot.tools.dataset_manager.tool import DatasetManager
+from parrot.tools.host_hooks import apply_exclude_tools
 from parrot.tools.infographic_toolkit import InfographicToolkit
 from parrot.tools.resolver import get_toolkit_resolver
 from parrot.tools.tooling_policy import (
@@ -151,6 +152,15 @@ def _missing_required_params(cls: type, provided: dict) -> list[str]:
 def _resolve_toolkit_class(slug: str) -> type | None:
     """Resolve ``slug`` through the shared ToolkitResolver (FEAT-622 M2 shim)."""
     return get_toolkit_resolver().resolve(slug)
+
+
+_WIKI_TOOLKIT_KWARGS = ("confine_sources",)  # constructor switches of LLMWikiToolkit a host forces (PA-14), not WikiConfig
+
+
+def _split_wiki_params(params: dict) -> tuple[dict, dict]:
+    """``(WikiConfig fields, LLMWikiToolkit constructor switches)`` of the final (hooked) wiki params."""
+    toolkit_kwargs = {name: params[name] for name in _WIKI_TOOLKIT_KWARGS if name in params}
+    return {key: value for key, value in params.items() if key not in toolkit_kwargs}, toolkit_kwargs
 
 
 def _validate_wiki_storage_dir(raw: Path) -> Path:
@@ -284,16 +294,20 @@ class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, Studi
 
         slug = assign_request.slug
         params = assign_request.params
+        subject = await self._assign_subject(bot, user)
         try:
             self._refuse_server_managed(slug, params)  # 422 server_managed on EVERY assign path
             if slug == "wiki":
-                registered_names, extra = await self._assign_wiki(bot, params)
+                params, exclude = self._host_params(slug, params, subject)  # PA-9: host hook, every assign path
+                registered_names, extra = await self._assign_wiki(bot, params, exclude)
             elif slug == "dataset_manager":
-                registered_names, extra = self._assign_dataset_manager(bot, params)
+                params, exclude = self._host_params(slug, params, subject)
+                registered_names, extra = self._assign_dataset_manager(bot, params, exclude)
             elif slug == "infographic":
-                registered_names, extra = self._assign_infographic(bot, params)
+                params, exclude = self._host_params(slug, params, subject)
+                registered_names, extra = self._assign_infographic(bot, params, exclude)
             else:
-                registered_names, extra = self._assign_generic(bot, slug, params)
+                registered_names, extra = self._assign_generic(bot, slug, params, subject=subject)
         except _ToolkitAssignError as exc:
             return self._error(exc.message, status=exc.status, code=exc.code, details=exc.details)
 
@@ -335,7 +349,7 @@ class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, Studi
 
     # -- Per-toolkit assignment helpers ---------------------------------
 
-    async def _assign_wiki(self, bot, params: dict) -> tuple[list[str], dict]:
+    async def _assign_wiki(self, bot, params: dict, exclude: tuple[str, ...] = ()) -> tuple[list[str], dict]:
         """Assign ``LLMWikiToolkit`` — reuse-else-build for pageindex/graphindex.
 
         Per TASK-2518 Codebase Contract: no bot-level capture attribute
@@ -348,8 +362,9 @@ class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, Studi
         — so ``None`` is passed; OKF-specific wiki tools are unavailable
         until a real OKF toolkit is wired in separately.
         """
+        config_params, toolkit_kwargs = _split_wiki_params(params)
         try:
-            config = WikiConfig(**params)
+            config = WikiConfig(**config_params)
         except ValidationError as exc:
             raise _ToolkitAssignError(422, "invalid_config", f"Invalid WikiConfig: {exc}") from exc
 
@@ -388,14 +403,16 @@ class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, Studi
             None,
             config,
             agent_id=bot.name,
+            **toolkit_kwargs,
         )
+        apply_exclude_tools(toolkit, exclude)
         registered = bot.tool_manager.register_toolkit(toolkit)
         return (
             [t.name for t in registered],
             {"pageindex_source": pageindex_source, "graphindex_source": graphindex_source},
         )
 
-    def _assign_dataset_manager(self, bot, params: dict) -> tuple[list[str], dict]:
+    def _assign_dataset_manager(self, bot, params: dict, exclude: tuple[str, ...] = ()) -> tuple[list[str], dict]:
         try:
             toolkit = DatasetManager(**params)
         except TypeError as exc:
@@ -406,10 +423,11 @@ class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, Studi
                 str(exc),
                 details={"missing": missing} if missing else None,
             ) from exc
+        apply_exclude_tools(toolkit, exclude)
         registered = bot.tool_manager.register_toolkit(toolkit)
         return [t.name for t in registered], {}
 
-    def _assign_infographic(self, bot, params: dict) -> tuple[list[str], dict]:
+    def _assign_infographic(self, bot, params: dict, exclude: tuple[str, ...] = ()) -> tuple[list[str], dict]:
         artifact_store = self.request.app.get("artifact_store")
         if artifact_store is None:
             raise _ToolkitAssignError(
@@ -428,6 +446,7 @@ class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, Studi
                 str(exc),
                 details={"missing": missing} if missing else None,
             ) from exc
+        apply_exclude_tools(toolkit, exclude)
         registered = bot.tool_manager.register_toolkit(toolkit)
         return [t.name for t in registered], {}
 
@@ -437,11 +456,14 @@ class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, Studi
         if known is not None:
             self._server_managed_inputs(known, params)
 
-    def _assign_generic(self, bot, slug: str, params: dict) -> tuple[list[str], dict]:
+    def _assign_generic(
+        self, bot, slug: str, params: dict, *, subject: ToolingSubject | None = None
+    ) -> tuple[list[str], dict]:
         cls = _resolve_toolkit_class(slug)
         if cls is None:
             raise _ToolkitAssignError(404, "not_found", f"Unknown toolkit '{slug}'.")
         params = {**params, **self._server_managed_inputs(cls, params)}
+        params, exclude = self._host_params(slug, params, subject)  # PA-9: AFTER the server fill, BEFORE construction
         missing = _missing_required_params(cls, params)
         if missing:
             raise _ToolkitAssignError(
@@ -454,5 +476,6 @@ class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, Studi
             toolkit = cls(**params)
         except TypeError as exc:
             raise _ToolkitAssignError(422, "invalid_params", str(exc)) from exc
+        apply_exclude_tools(toolkit, exclude)
         registered = bot.tool_manager.register_toolkit(toolkit)
         return [t.name for t in registered], {}

@@ -80,6 +80,7 @@ class StudioAgentBuilder:
         try:
             self._check_class(part, rec.definition.bot_class, app)
             bot_config, kwargs = self._constructor(snapshot)
+            self._bind_param_hook(kwargs, app, rec, part)
             bot = await self._registry.create_agent_factory(bot_config)(**kwargs)
             self._write_assets(bot, snapshot, directory)
             self._stamp_and_bind(bot, snapshot, app, part, directory)
@@ -155,6 +156,17 @@ class StudioAgentBuilder:
         bot._agents_dir = directory
 
     @staticmethod
+    def _bind_param_hook(kwargs: dict[str, Any], app: Any, rec: Any, part: StudioPartition) -> None:
+        """PA-9: hand the host toolkit-parameter hook to the bot BEFORE its first tool is constructed (the tools named
+        in ``definition.tools`` are built in ``__init__``); every later construction goes through it as well."""
+        from parrot.tools.host_hooks import STUDIO_TOOLKIT_PARAM_HOOK
+        from parrot.tools.tooling_policy import ToolingSubject
+
+        if (hook := app.get(STUDIO_TOOLKIT_PARAM_HOOK)) is not None:
+            subject = ToolingSubject(tenant=part.tenant, agent_id=rec.agent_id, actor=None, phase="build")
+            kwargs["toolkit_param_binding"] = (hook, subject)
+
+    @staticmethod
     def _stamp_and_bind(
         bot: "AbstractBot", snapshot: StudioAgentSnapshot, app: Any, part: StudioPartition, directory: Path
     ) -> None:
@@ -175,6 +187,26 @@ class StudioAgentBuilder:
         guard = app.get("studio_confirmation_guard")
         if guard is not None:
             bot.tool_manager.set_confirmation_guard(guard)
+        # PA-5: the tenant's built-in / toolkit allow-lists are enforced when a stored agent CALLS a tool, not only at write
+        from parrot.bots.guardrails.base import GuardrailStage
+        from parrot.tools.host_hooks import (
+            STUDIO_TOOL_CALL_GUARDRAILS,
+            bind_host_tool_call_guardrails,
+            bind_tenant_allow_list_guardrail,
+        )
+
+        bind_tenant_allow_list_guardrail(
+            bot._guardrail_pipelines[GuardrailStage.TOOL_CALL], get_tenant_tooling_policy(app), part.tenant,
+            bot.tool_manager,
+        )
+        # PA-10: the host's TOOL_CALL guardrails, bound to THIS bot's tenant/agent
+
+        if host_guardrails := app.get(STUDIO_TOOL_CALL_GUARDRAILS):
+            bind_host_tool_call_guardrails(
+                bot._guardrail_pipelines[GuardrailStage.TOOL_CALL], host_guardrails,
+                {"tenant": part.tenant, "agent_id": str(rec.agent_id), "agent": rec.name,
+                 "visibility": rec.visibility},
+            )
 
     async def _discard(self, bot: "AbstractBot | None", directory: Path | None, *, label: str) -> None:
         """Clean the half-built instance exactly once and remove the directory it created. Never raises."""

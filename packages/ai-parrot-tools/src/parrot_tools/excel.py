@@ -13,6 +13,7 @@ from odf.table import Table, TableRow, TableCell
 from odf.text import P
 from odf.style import Style, TableCellProperties, TextProperties
 from pydantic import Field, field_validator, ConfigDict
+from ._exports import safe_template_name
 from .document import AbstractDocumentTool, DocumentGenerationArgs
 
 
@@ -31,6 +32,11 @@ class ExcelArgs(DocumentGenerationArgs):
         None,
         description="Path to Excel/ODS template file to use as base"
     )
+
+    @field_validator('template_file')
+    @classmethod
+    def validate_template_file(cls, v):
+        return safe_template_name(v)
     output_format: Literal["excel", "ods"] = Field(
         "excel",
         description="Export format - 'excel' for .xlsx or 'ods' for OpenDocument"
@@ -117,6 +123,7 @@ class ExcelTool(AbstractDocumentTool):
         self,
         templates_dir: Optional[Path] = None,
         default_format: Literal["excel", "ods"] = "excel",
+        artifact_store: Any = None,
         **kwargs
     ):
         """
@@ -125,9 +132,10 @@ class ExcelTool(AbstractDocumentTool):
         Args:
             templates_dir: Directory containing Excel/ODS templates
             default_format: Default output format ('excel' or 'ods')
+            artifact_store: Server-managed artifact store (exports are published there when set)
             **kwargs: Additional arguments for AbstractDocumentTool
         """
-        super().__init__(templates_dir=templates_dir, **kwargs)
+        super().__init__(templates_dir=templates_dir, artifact_store=artifact_store, **kwargs)
         self.default_format = default_format
 
     def _detect_output_format(self, output_format: str, filename: Optional[str] = None) -> str:
@@ -676,7 +684,7 @@ class DataFrameToExcelTool(ExcelTool):
         )
 
         if result['status'] == 'success':
-            return result['metadata']['file_path']
+            return result['metadata'].get('file_path') or result['metadata']['url']
         else:
             raise Exception(
                 f"Export failed: {result.get('error', 'Unknown error')}"

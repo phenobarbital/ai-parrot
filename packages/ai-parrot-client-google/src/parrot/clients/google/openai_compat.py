@@ -26,6 +26,9 @@ class GeminiOpenAICompatClient(OpenAIBaseClient):
         ValueError: When no API key resolves.
     """
 
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ("GEMINI_API_KEY", "GOOGLE_API_KEY")
+
     def __init__(self, api_key: str | None = None, base_url: str | None = None, **kwargs) -> None:
         resolved_key = api_key or config.get("GEMINI_API_KEY") or config.get("GOOGLE_API_KEY")
         if not resolved_key:

@@ -13,7 +13,7 @@ from parrot.tools.dataset_manager.tool import DatasetManager
 from parrot.tools.resolver import get_toolkit_resolver
 from parrot.tools.server_params import constructor_server_params
 from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec, hydrate_mcp, hydrate_params, tooling_revision
-from parrot.tools.tooling_policy import TenantToolingPolicy, TenantToolingRefused, ToolingSubject
+from parrot.tools.tooling_policy import TenantToolingPolicy, TenantToolingRefused, ToolingSubject, ToolParamRefused
 
 from ..tools import AbstractTool
 from ..tools.manager import ToolDefinition
@@ -231,6 +231,11 @@ class ToolInterface:
         for spec in toolkits:
             try:
                 registered.extend(await self._register_toolkit_spec(spec, policy, subject, owner))
+            except ToolParamRefused as exc:  # the host hook refused the params: the toolkit is NOT built (fail closed)
+                self.logger.error(
+                    "Toolkit spec '%s' refused by the host param hook (params: %s); the toolkit is not registered",
+                    exc.item or spec.slug, ", ".join(exc.params) or "-",
+                )
             except TenantToolingRefused as exc:
                 self.logger.error("Tooling spec '%s' refused by tenant policy: %s", exc.item, exc.reason)
             except Exception as exc:  # noqa: BLE001 — a bad spec must never fail the agent boot
@@ -298,7 +303,8 @@ class ToolInterface:
         if spec.slug.lower() == "dataset_manager":
             return await self._register_dataset_manager(spec, params)
         filtered = self._filter_ctor_params(spec.slug, cls.__init__, params)
-        instance = cls(**{**filtered, **self._fill_server_params(cls)})
+        # PA-9: the host parameter hook (a no-op without one) sees the final params, a refusal fails this spec closed
+        instance = self.tool_manager.build_toolkit(cls, spec.slug, {**filtered, **self._fill_server_params(cls)})
         tools = self.tool_manager.register_toolkit(instance)
         self._capture_knowledge_toolkit(instance)
         return [tool.name for tool in tools]
@@ -312,7 +318,7 @@ class ToolInterface:
             dataset_manager = existing
         else:
             filtered = self._filter_ctor_params(spec.slug, DatasetManager.__init__, params)
-            dataset_manager = DatasetManager(**filtered)
+            dataset_manager = self.tool_manager.build_toolkit(DatasetManager, spec.slug, filtered)
             tools = self.tool_manager.register_toolkit(dataset_manager)
             self._capture_knowledge_toolkit(dataset_manager)
             self._dataset_manager = dataset_manager
