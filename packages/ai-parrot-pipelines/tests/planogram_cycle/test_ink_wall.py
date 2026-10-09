@@ -260,6 +260,22 @@ def test_ink_wall_profile_defaults():
     assert second.completeness.min_coverage == 0.9
 
 
+def test_ink_wall_does_not_use_reference_images():
+    """Ink walls identify from price-tag text: reference selection is disabled by default."""
+    assert InkWall.default_layout_profile().references.enabled is False
+
+
+def test_uses_reference_images_per_planogram_type():
+    """Callers can skip reference loading for types that do not use them; the layout profile may override."""
+    assert PlanogramCompliance.uses_reference_images("ink_wall") is False
+    assert PlanogramCompliance.uses_reference_images("product_on_shelves") is True
+    assert PlanogramCompliance.uses_reference_images(None, {"brand": "Epson"}) is True
+    override = {"layout_profile": {"references": {"enabled": True}}}
+    assert PlanogramCompliance.uses_reference_images("ink_wall", override) is True
+    with pytest.raises(ValueError, match="Unknown planogram_type"):
+        PlanogramCompliance.uses_reference_images("nope")
+
+
 def test_registrable_slots_keep_rows_with_occupancy_only():
     """An unreadable occupied row remains assessable even when product and brand are absent."""
     shapes = []

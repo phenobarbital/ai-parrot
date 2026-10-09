@@ -26,7 +26,7 @@ from ..contracts import (
     Slot,
 )
 from ..identification.verify import verify_unresolved
-from ..layout import LayoutProfile, resolve_layout_profile
+from ..layout import LayoutProfile, ReferencePolicy, resolve_layout_profile
 from ..perception.profiles import PRICE_TAG_PROFILE
 from ..perception.slots import AnchorRule
 from ..stages.compare import compare_observations
@@ -74,6 +74,8 @@ class InkWall(AbstractPlanogramType):
             min_row_items=4,
             descriptor_fields=list(_INK_DESCRIPTORS),
             required_descriptor_fields=list(_INK_REQUIRED),
+            # Ink cartridges are identified from the price-tag text; no reference images are used.
+            references=ReferencePolicy(enabled=False),
             reporting=ReportingPolicy(product_label="product", slot_presence=True),
             definition_gap_fill=True,
             completeness=CompletenessPolicy(min_coverage=0.9, min_shelf_coverage=0.8),

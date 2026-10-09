@@ -363,6 +363,16 @@ async def test_unknown_reference_id_is_rejected(perception):
     assert any("unknown reference_id ref-9999" in error for error in result.errors)
 
 
+@pytest.mark.parametrize("policy", [ReferencePolicy(), ReferencePolicy(enabled=False)])
+async def test_no_reference_diagnostic_without_bank_or_when_disabled(perception, policy):
+    """No reference bank, or references disabled: selection is skipped and nothing is reported per call."""
+    ids = [slot.slot_id for slot in perception.slots]
+    ctx = _ctx(StubAdapter(_answer([*ids, "img0:zone"])))
+    ctx.layout = _layout(references=policy)
+    result = await identify_full_image(_image(), perception, ctx, vocabulary=[])
+    assert not any("references:" in error for error in result.errors)
+
+
 async def test_capped_references_reported(perception):
     ids = [slot.slot_id for slot in perception.slots]
     ctx = _ctx(StubAdapter(_answer([*ids, "img0:zone"])))
