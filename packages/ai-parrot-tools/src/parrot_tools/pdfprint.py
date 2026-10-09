@@ -14,6 +14,7 @@ from jinja2 import Environment, FileSystemLoader
 from pydantic import BaseModel, Field, field_validator
 import markdown
 from parrot._imports import lazy_import
+from ._exports import ExportsToStoreMixin, safe_template_name
 from .abstract import AbstractTool
 
 
@@ -55,10 +56,6 @@ class PDFPrintArgs(BaseModel):
         None,
         description="Dictionary of variables to pass to the template (e.g., title, author, date)"
     )
-    stylesheets: Optional[List[str]] = Field(
-        None,
-        description="List of CSS file paths (relative to templates directory) to apply"
-    )
     auto_detect_markdown: bool = Field(
         True,
         description="Whether to automatically detect and convert Markdown content to HTML"
@@ -82,12 +79,13 @@ class PDFPrintArgs(BaseModel):
     @field_validator('template_name')
     @classmethod
     def validate_template_name(cls, v):
+        v = safe_template_name(v)
         if v and not v.endswith('.html'):
             v = f"{v}.html"
         return v
 
 
-class PDFPrintTool(AbstractTool):
+class PDFPrintTool(ExportsToStoreMixin, AbstractTool):
     """
     Enhanced PDF Print Tool with improved Markdown table support.
 
@@ -107,10 +105,15 @@ class PDFPrintTool(AbstractTool):
         templates_dir: Optional[Path] = None,
         default_template: str = "report.html",
         default_stylesheets: Optional[List[str]] = None,
+        artifact_store: Any = None,
         **kwargs
     ):
-        """Initialize the PDF Print Tool with enhanced table support."""
+        """Initialize the PDF Print Tool with enhanced table support.
+
+        ``artifact_store`` is server-managed: when set the PDF is published there (PA-11), never written locally.
+        """
         super().__init__(**kwargs)
+        self.artifact_store = artifact_store
 
         # Set up templates directory
         if templates_dir is None:
@@ -839,6 +842,32 @@ footer {
 
         return css_objects
 
+    async def _export_pdf(
+        self,
+        text: str,
+        processed_content: str,
+        css_objects: List[Any],
+        filename: str,
+        auto_detect_markdown: bool,
+        template_name: Optional[str],
+    ) -> Dict[str, Any]:
+        """Render the PDF in memory and publish it to the artifact store (no local file, no debug HTML)."""
+        _weasyprint = lazy_import("weasyprint", extra="pdf")
+        html_obj = _weasyprint.HTML(string=processed_content, base_url=str(self.templates_dir))
+        data = await asyncio.to_thread(html_obj.write_pdf, stylesheets=css_objects, presentational_hints=True)
+        if not data:
+            raise Exception("PDF file is empty (0 bytes)")
+        published = await self._publish_export(filename, data, content_type="application/pdf")
+        return {
+            **published,
+            "content_stats": {
+                "characters": len(text),
+                "was_markdown": auto_detect_markdown and self._is_markdown(text),
+                "template_used": template_name or self.default_template,
+                "tables_detected": processed_content.count('<table'),
+            },
+        }
+
     async def _execute(
         self,
         text: str,
@@ -851,6 +880,8 @@ footer {
     ) -> Dict[str, Any]:
         """Execute PDF generation with enhanced table support."""
         try:
+            self._require_export_target()  # a Studio-scoped call with no store never writes a local file
+            stylesheets = None  # CSS files are server configuration (``default_stylesheets``), never an LLM argument
             self.logger.debug(
                 f"Starting PDF generation with {len(text)} characters of content"
             )
@@ -875,6 +906,10 @@ footer {
                 extension="pdf",
                 include_timestamp=True
             )
+
+            if self.exports_to_store:
+                return await self._export_pdf(text, processed_content, css_objects, output_filename, auto_detect_markdown,
+                                              template_name)
 
             # Ensure output directory exists
             self.output_dir.mkdir(parents=True, exist_ok=True)

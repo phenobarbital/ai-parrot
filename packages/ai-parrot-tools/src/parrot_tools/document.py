@@ -18,41 +18,24 @@ import aiofiles.os
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from .abstract import AbstractTool
+from ._exports import ExportsToStoreMixin, safe_template_name
 
 
 class DocumentGenerationArgs(BaseModel):
-    """Base arguments schema for document generation tools."""
+    """Base arguments schema for document generation tools.
+
+    The LLM controls the CONTENT only (PA-11): where the file goes, what it is called, whether it overwrites and
+    which template file is read are server-side decisions, so none of those are arguments.
+    """
 
     content: str = Field(
         ...,
         description="Content to be converted to document (text, markdown, HTML, etc.)"
     )
-    output_filename: Optional[str] = Field(
-        None,
-        description="Custom filename for the output document (without extension). If None, auto-generates with timestamp"
-    )
     file_prefix: str = Field(
         "document",
         description="Prefix for auto-generated filenames"
     )
-    output_dir: Optional[str] = Field(
-        None,
-        description="Custom output directory. If None, uses tool's default directory"
-    )
-    overwrite_existing: bool = Field(
-        False,
-        description="Whether to overwrite existing files with the same name"
-    )
-
-    @field_validator('output_filename')
-    @classmethod
-    def validate_filename(cls, v):
-        if v is not None:
-            # Remove invalid filename characters
-            invalid_chars = r'[<>:"/\\|?*]'
-            if re.search(invalid_chars, v):
-                raise ValueError(f"Filename contains invalid characters: {invalid_chars}")
-        return v
 
     @field_validator('file_prefix')
     @classmethod
@@ -102,7 +85,7 @@ class DocumentMetadata(BaseModel):
     )
 
 
-class AbstractDocumentTool(AbstractTool):
+class AbstractDocumentTool(ExportsToStoreMixin, AbstractTool):
     """
     Abstract base class for document generation tools.
 
@@ -130,6 +113,7 @@ class AbstractDocumentTool(AbstractTool):
         default_template_name: Optional[str] = None,
         max_file_size_mb: float = 100.0,
         overwrite_existing: bool = False,
+        artifact_store: Any = None,
         **kwargs
     ):
         """
@@ -139,6 +123,8 @@ class AbstractDocumentTool(AbstractTool):
             templates_dir: Directory containing document templates
             default_template_name: Default template file name
             max_file_size_mb: Maximum allowed file size in MB
+            artifact_store: Server-managed artifact store; when set the document is published there (tenant
+                partition, download URL) instead of written to ``output_dir``
             **kwargs: Additional arguments for AbstractTool
         """
         # Set output_dir in kwargs if provided, so AbstractTool can use it
@@ -148,6 +134,7 @@ class AbstractDocumentTool(AbstractTool):
         super().__init__(**kwargs)
 
         self.overwrite_existing = overwrite_existing
+        self.artifact_store = artifact_store  # server-managed (app["artifact_store"]): exports go through it, PA-11
 
         # Template management
         self.templates_dir = templates_dir
@@ -184,10 +171,8 @@ class AbstractDocumentTool(AbstractTool):
         Returns:
             Path object for the output directory
         """
-        if custom_dir:
-            output_dir = Path(custom_dir).resolve()
-        else:
-            output_dir = self.output_dir
+        # a caller-supplied directory is never honoured (PA-11): files go to the tool's own, constructor-set directory
+        output_dir = self.output_dir
 
         # Create directory if it doesn't exist
         if not await aiofiles.os.path.exists(output_dir):
@@ -379,7 +364,12 @@ class AbstractDocumentTool(AbstractTool):
         if not template_name or not self.templates_dir:
             return None
 
+        # a template is a FILE NAME in the server-configured directory, never a path (an absolute one would escape it)
+        template_name = safe_template_name(template_name)
         template_path = self.templates_dir / template_name
+        root = Path(self.templates_dir).resolve()
+        if template_path.exists() and root not in template_path.resolve().parents:
+            raise ValueError("template must be a file inside the templates directory")
 
         if template_path.exists():
             return template_path
@@ -461,6 +451,10 @@ class AbstractDocumentTool(AbstractTool):
             elif not content:
                 raise ValueError("Content cannot be empty")
 
+            self._require_export_target()  # a Studio-scoped call with no store never writes a local file
+            if self.exports_to_store:
+                return await self._create_exported_document(content, output_filename, file_prefix, extension, **kwargs)
+
             # 2. Ensure output directory exists
             output_directory = await self._ensure_output_directory(output_dir)
 
@@ -495,6 +489,30 @@ class AbstractDocumentTool(AbstractTool):
                 "error": str(e),
                 "message": f"Failed to create {self.document_type}: {str(e)}"
             }
+
+    async def _create_exported_document(
+        self,
+        content: Any,
+        output_filename: Optional[str],
+        file_prefix: str,
+        extension: Optional[str],
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Generate the document in memory and publish it to the artifact store (no local file at all)."""
+        filename = self._generate_document_filename(None, file_prefix, extension)  # server-named, never LLM-named
+        document_content = await self._generate_document_content(content, **kwargs)
+        data = document_content.encode("utf-8") if isinstance(document_content, str) else bytes(document_content)
+        if len(data) / (1024 * 1024) > self.max_file_size_mb:
+            raise ValueError(f"Generated file is too large: {len(data) / (1024 * 1024):.2f}MB "
+                             f"(max allowed: {self.max_file_size_mb}MB)")
+        published = await self._publish_export(filename, data)
+        self.logger.info(f"Document exported to the artifact store: {filename}")
+        return {
+            "status": "success",
+            "message": f"{self.document_type.title()} created successfully",
+            "metadata": dict(published),
+            **published,
+        }
 
     @abstractmethod
     async def _generate_document_content(self, content: str, **kwargs) -> Union[bytes, str]:

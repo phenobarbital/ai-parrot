@@ -130,3 +130,21 @@ def _positive_int(raw: Any, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return value if value > 0 else default
+
+
+def export_url_base() -> str:
+    """The URL prefix of the download route for the CURRENT request (``app[STUDIO_EXPORTS_URL_BASE_KEY]``, a host
+    prefix may carry ``{tenant}``-style placeholders resolved from the request's route); the default otherwise."""
+    from parrot.utils.helpers import current_context  # lazy: keeps this module free of request machinery
+
+    ctx = current_context()
+    request = getattr(ctx, "request", None)
+    base = DEFAULT_URL_BASE
+    if request is not None:
+        configured = request.app.get(STUDIO_EXPORTS_URL_BASE_KEY)
+        base = configured if isinstance(configured, str) and configured else DEFAULT_URL_BASE
+        try:
+            base = base.format_map(dict(request.match_info))
+        except (KeyError, ValueError, IndexError):
+            pass
+    return base

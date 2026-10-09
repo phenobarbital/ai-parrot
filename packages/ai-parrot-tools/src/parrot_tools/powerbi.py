@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Union
 import os
+import tempfile
 import asyncio
 import random
 import logging
@@ -14,6 +15,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pandas as pd
 from pydantic import BaseModel, Field, model_validator, PrivateAttr, ConfigDict
+from ._exports import ExportStoreUnavailable, ExportsToStoreMixin
 from .abstract import AbstractTool, AbstractToolArgsSchema, ToolResult
 
 POWERBI_BASE_URL = os.getenv("POWERBI_BASE_URL", "https://api.powerbi.com/v1.0/myorg")
@@ -322,8 +324,7 @@ class _BasePowerBIToolArgs(AbstractToolArgsSchema):
     max_backoff: float = Field(default=10.0, ge=0.0, description="Max backoff seconds")
 
     # Export knobs
-    export_csv: bool = Field(default=False, description="Write result rows to CSV")
-    export_csv_path: Optional[str] = Field(default=None, description="CSV path; if not provided, a temp name is used")
+    export_csv: bool = Field(default=False, description="Export the result rows as a CSV file (returned as a download link)")
     export_pandas: bool = Field(default=False, description="Return a pandas DataFrame in result (requires pandas)")
 
     # DAX templating
@@ -333,10 +334,6 @@ class _BasePowerBIToolArgs(AbstractToolArgsSchema):
     output_format: Optional[str] = Field(
         default=None,
         description="One of: row|rows|json|csv|dataframe|markdown|parquet|pyarrow.Table"
-    )
-    parquet_path: Optional[str] = Field(
-        default=None,
-        description="Where to write parquet if output_format='parquet'. Defaults to /tmp/..."
     )
 
 
@@ -348,13 +345,18 @@ class PowerBIQueryArgs(_BasePowerBIToolArgs):
     )
 
 
-class PowerBIQueryTool(AbstractTool):
+class PowerBIQueryTool(ExportsToStoreMixin, AbstractTool):
     """
     Tool for executing DAX queries against a Power BI dataset.
     """
     name = "powerbi_query"
     description = "Execute DAX against a Power BI dataset and return rows"
     args_schema = PowerBIQueryArgs
+
+    def __init__(self, artifact_store: Any = None, **kwargs):
+        """``artifact_store`` is server-managed: CSV/parquet exports are published there, never written locally."""
+        super().__init__(**kwargs)
+        self.artifact_store = artifact_store
 
     async def _execute(self, **kwargs) -> Any:
         cred = kwargs.get("credential", None)
@@ -387,6 +389,10 @@ class PowerBIQueryTool(AbstractTool):
                 status="error", result=None, error="No DAX command provided (command/template missing)"
             )
 
+        try:
+            self._require_export_target()  # a Studio-scoped call with no store never writes a local file
+        except ExportStoreUnavailable as exc:
+            return ToolResult(status="error", result=None, error=str(exc))
         js = await client.arun(command, timeout=kwargs.get("timeout", 30))
         if "error" in js:
             return ToolResult(
@@ -432,14 +438,19 @@ class PowerBIQueryTool(AbstractTool):
 
         elif fmt == "csv":
             csv_text = _rows_to_csv_string(rows)
-            path = kwargs.get("export_csv_path") or f"/tmp/powerbi_{client.dataset_id[:8]}_{int(time.time())}.csv"
-            with open(path, "w", encoding="utf-8", newline="") as f:
-                f.write(csv_text)
-            csv_path = path
-            result_payload |= {
-                "csv_path": csv_path,
-                "csv_text": csv_text,
-            }
+            name = f"powerbi_{client.dataset_id[:8]}_{int(time.time())}.csv"
+            if self.exports_to_store:
+                result_payload |= {"csv_text": csv_text, **await self._publish_export(name, csv_text, content_type="text/csv")}
+            else:
+                # no caller-chosen path ever: a server-named file in the temp directory (never in a Studio call)
+                path = os.path.join(tempfile.gettempdir(), name)
+                with open(path, "w", encoding="utf-8", newline="") as f:
+                    f.write(csv_text)
+                csv_path = path
+                result_payload |= {
+                    "csv_path": csv_path,
+                    "csv_text": csv_text,
+                }
 
         elif fmt == "dataframe":
             try:
@@ -449,12 +460,19 @@ class PowerBIQueryTool(AbstractTool):
             result_payload["dataframe"] = df_obj  # note: not JSON-serializable
 
         elif fmt == "parquet":
-            path = kwargs.get("parquet_path") or f"/tmp/powerbi_{client.dataset_id[:8]}_{int(time.time())}.parquet"
+            name = f"powerbi_{client.dataset_id[:8]}_{int(time.time())}.parquet"
             try:
-                parquet_path = _write_parquet(rows, path)
+                if self.exports_to_store:
+                    buffer = io.BytesIO()
+                    _write_parquet(rows, buffer)
+                    result_payload |= await self._publish_export(name, buffer.getvalue(), content_type="application/vnd.apache.parquet")
+                else:
+                    parquet_path = _write_parquet(rows, os.path.join(tempfile.gettempdir(), name))
+                    result_payload["parquet_path"] = parquet_path
+            except ExportStoreUnavailable as exc:
+                return ToolResult(status="error", result=None, error=str(exc))
             except Exception as exc:
                 return ToolResult(status="error", result=None, error=str(exc))
-            result_payload["parquet_path"] = parquet_path
 
         elif fmt == "pyarrow.Table":
             try:
