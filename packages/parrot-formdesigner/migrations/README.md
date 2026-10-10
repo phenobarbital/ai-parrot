@@ -150,3 +150,17 @@ Orphaned rows are left with `form_uid IS NULL` permanently (there is
 nothing to backfill from) and are listed by `003_migrate_form_data.py`'s
 report for manual review. Neither migration deletes or otherwise
 modifies orphaned rows.
+
+## FEAT-649 — voice answer envelopes (009 / 010)
+
+Spoken answers are stored as `{"answer": …, "blob_ref": …, "source": "speech", …}` envelopes.
+Run per physical schema, in a maintenance window, AFTER deploying FEAT-649:
+
+1. `010_voice_envelope_report.py --dsn "$DSN" --schema navigator` — inventory before.
+2. `psql "$DSN" -c "SET search_path TO navigator;" -f 009_voice_envelope_form_data.sql`
+3. `009_voice_envelope_sink_tables.py --dsn "$DSN" --schema navigator --dry-run`, then without `--dry-run`.
+4. `010_voice_envelope_report.py … --blob-url file:///…` — inventory + orphan blob_refs after.
+
+Rollback: `010_voice_envelope_report.py … --downgrade --apply` (drops envelope evidence; prints how many
+`blob_ref`s are lost). Without `--apply` the downgrade only reports. CSV / Google Sheets sinks receive
+the envelope as a JSON string (like ARRAY today).
