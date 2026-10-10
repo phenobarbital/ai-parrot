@@ -497,9 +497,6 @@ class TestAudioWsV2Integration:
         assert (await until(ws2, "pong"))[-1]["type"] == "pong"
         await ws2.close()
 
-    @pytest.mark.xfail(strict=True, reason=(
-        "DEFECT (renderers/audio.py, outside TASK-4228 scope): AudioFormRenderer drops FieldOption.disabled when "
-        "building manifest options, so the engine's disabled-option guard (S4) never sees it."))
     async def test_audio_ws_disabled_option_rejected(self, aiohttp_client, voice_app: _Env) -> None:
         env = voice_app
         client = await aiohttp_client(env.app)
