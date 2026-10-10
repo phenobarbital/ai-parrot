@@ -333,8 +333,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: claude-sonnet-5-5 (sdd task agent)
+**Date**: 2026-10-10
+**Notes**: hint wired into HTML5 (tail insertion, escaped), JSON Schema (x-hint), Adaptive Card (subtle TextBlock), A2UI (Text sibling after control), PDF (italic line; page-break reserve extended by LINE_HEIGHT when a hint exists). A2UI `notice` degrade does NOT append the hint (unsupported control; keeps components[0] simple). 7 new tests + all tests/unit/renderers pass (199).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
