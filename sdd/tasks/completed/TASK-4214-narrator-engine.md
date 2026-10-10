@@ -374,8 +374,8 @@ def test_plan_review_hides_sensitive(): ...                          # FILL IN
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 5.5 (sdd task agent)
+**Date**: 2026-10-10
+**Notes**: Narrator, NARRATION_KEYS, render_author_prompt implemented; 13 tests pass, ruff clean. Options: auto + enumerate_options=False -> count-only; boolean -> boolean_prompt; disabled options skipped.
 
-**Deviations from spec**:
+**Deviations from spec**: `locale_chain` is imported from `narration/lexicon.py` (landed in TASK-4213) instead of redefined in engine.py; `__init__` still exports it from lexicon. review_intro rendered with both `count` and `total` (landed YAML uses `count`).

@@ -117,7 +117,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -128,8 +128,9 @@
       "parallelism_notes": "loads templates/YAML and modifies narration/__init__.py from TASK-4213; uses AudioQuestion/NarrationPlan/ReviewItemData from TASK-4211 (audio/models.py)",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4214-narrator-engine.md"
+      "completed_at": "2026-10-10T16:11:45+00:00",
+      "file": "sdd/tasks/completed/TASK-4214-narrator-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4215",
