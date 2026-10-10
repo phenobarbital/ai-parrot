@@ -17,7 +17,7 @@ tags: [a2ui, formdesigner, dialect, export, extractor, translator]
 **Feature ID**: FEAT-650
 **Date**: 2026-10-10
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: parrot-formdesigner 1.3.0 / ai-parrot 1.x
 **Brainstorm**: `sdd/proposals/a2ui-dialect-formbuilder.brainstorm.md` (accepted, Option A)
 
