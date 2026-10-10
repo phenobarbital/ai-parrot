@@ -102,8 +102,6 @@ additive and opt-in.
   vocabulary (FEAT-544 stays the single lowering truth; the extractor reads
   it, never redefines it).
 - Serving a surface from `GET /forms/{uid}` (resolved: raw `FormSchema` only).
-- An HTTP endpoint for JSON-Schema → A2UI translation (`POST /forms/translate`)
-  — library + CLI only in v1 (brainstorm Q6, decided here; see §8).
 - Storing A2UI as the canonical dialect (brainstorm Option C, rejected) and a
   browser-side adapter (Option D, rejected) — see the brainstorm.
 - Recovering style, snippets or lifecycle events from a JSON-Schema document
@@ -141,7 +139,8 @@ plus one line in ai-parrot's CLI:
 3. **JSON Schema → A2UI.** `JsonSchemaExtractor` rebuilds the section tree
    from `x-section`/`x-subsection` and reads `x-placeholder`, `x-read-only`,
    `x-options`, section-level `depends_on` (M4). `services/a2ui_translate.py`
-   composes extractor + renderer.
+   composes extractor + renderer; `POST /forms/translate` exposes it statelessly
+   (nothing is persisted).
 4. **A2UI → FormSchema.** `extractors/a2ui.py` (M5): `A2UIExtractor` with
    strict/heuristic modes and an `ExtractedForm` report. `POST /forms` detects
    a `createSurface` body (`a2ui_wire.is_a2ui_surface_body`) and imports it
@@ -182,8 +181,8 @@ translated to envelopes; import conflicts are 409 unless `overwrite`.
 | `FormAPIHandler.get_schema` (`api/handlers.py:884`) | modifies | A2UI branch after `onSchemaLoaded` resolution (before `return JSONResponse(content)` at line 914) |
 | `FormAPIHandler.list_forms` (`api/handlers.py:724`) | modifies | `dialect` key in descriptors; `?dialect=a2ui` enrichment capped by `A2UI_LIST_MAX` |
 | `FormAPIHandler.create_form` (`api/handlers.py:1135`) | modifies | surface-body detection before the LLM-client 503 guard; import path |
-| `FormAPIHandler` (new handler) | extends | `export_forms` for `POST {tp}/forms/export` |
-| `setup_form_api` (`api/routes.py:192`) | extends | one `add_post` next to the clone route (line 397) |
+| `FormAPIHandler` (new handlers) | extends | `export_forms` for `POST {tp}/forms/export`; `translate_form` for `POST {tp}/forms/translate` |
+| `setup_form_api` (`api/routes.py:192`) | extends | two `add_post` lines next to the clone route (line 397): `/forms/export`, `/forms/translate` |
 | `api/render.py` `get_renderer("a2ui")` / `supported_formats()` | uses | the dialect layer never instantiates its own renderer |
 | `api/a2ui_wire.py` | extends | `is_a2ui_surface_body()` beside `is_a2ui_request()` (line 122); `a2ui_response()` (line 275) reused for framing |
 | `services/event_dispatcher.apply_schema_overrides` (line 69) | uses (JSON path) / mirrors (A2UI path) | the same top-level keys are translated by `overrides_to_envelopes` |
@@ -249,7 +248,8 @@ Wire shapes fixed by this spec:
   `{"content", "content_type", "warnings", "metadata"}` exactly like
   `handle_render` does (`api/render.py:215-235`).
 - `GET /forms` descriptors gain `"dialect": "<stored value>"` for in-memory
-  entries. With `?dialect=a2ui` each descriptor gains a **manifest** only:
+  entries only; DB-only rows (from `storage.list_forms()` summaries) carry no
+  `dialect` key — never a `registry.get()` per row (resolved §8). With `?dialect=a2ui` each descriptor gains a **manifest** only:
   `"surface_url": "<prefix>/{tenant}/forms/{form_uid}/schema?dialect=a2ui"` —
   no rendering. Inline envelopes require `?dialect=a2ui&include=surface`, which
   adds `"surface"` + `"warnings"` per descriptor and is bounded by
@@ -257,6 +257,11 @@ Wire shapes fixed by this spec:
   `{"error": "too many forms for inline a2ui; use POST /forms/export", "max": N}` (S8).
 - `POST /forms/export` request `{"dialect": "a2ui"|"json_schema", "form_uids": [...]?, "published_only": bool?, "locale": "en"?}`;
   response `application/x-ndjson`, one `ExportedSurface` JSON object per line.
+- `POST /forms/translate` request `{"schema": <JSON Schema dict>, "form_id": str?, "title": str?, "locale": "en"?}`;
+  response = the `createSurface` envelope with `Content-Type: application/a2ui+json`
+  (`?with_meta=true` wraps it like `handle_render`); the form is NOT persisted and
+  gets the route tenant stamped; 400 on a missing/invalid `schema`, 413 over
+  `A2UI_MAX_BODY_BYTES`, 415 when the `a2ui` renderer is unavailable.
 - `POST /forms` (import) request = a v1.0 `createSurface` envelope
   (`{"version": "v1.0", "createSurface": {...}}`) or any body sent with
   `Content-Type: application/a2ui+json`; response 201
@@ -432,9 +437,9 @@ formdesigner  (click group: export | import | translate)   → `parrot formdesig
   ```
 
 ### Module 4: `JsonSchemaExtractor` fidelity + `translate_jsonschema_to_a2ui`
-- **Path**: `extractors/jsonschema.py` (modifies), `services/a2ui_translate.py` (new)
+- **Path**: `extractors/jsonschema.py` (modifies), `services/a2ui_translate.py` (new), `api/handlers.py` (new `translate_form`), `api/routes.py`
 - **Responsibility**: make JSON Schema → FormSchema faithful to what `JsonSchemaRenderer` emits, then compose with the FEAT-544 renderer.
-- **Depends on**: M1 (none functionally); `renderers/jsonschema.py` vocabulary (read-only)
+- **Depends on**: `renderers/jsonschema.py` vocabulary (read-only); `api/render.get_renderer`, `api/a2ui_wire.a2ui_response` (handler half)
 - **Interface Skeleton**:
   ```python
   # extractors/jsonschema.py  (modifies extractors/jsonschema.py:86 extract — section-tree rebuild; :176 _property_to_field)
@@ -457,6 +462,18 @@ formdesigner  (click group: export | import | translate)   → `parrot formdesig
   ) -> RenderedForm:
       """JsonSchemaExtractor().extract(...) → (tenant stamped on the FormSchema) → A2UIFormRenderer.render(...).
       Raises RuntimeError when the ``ai-parrot`` extra is missing (same message as api/a2ui_wire._a2ui_ns)."""
+
+  # api/handlers.py  (adds translate_form next to export_forms, before get_style at api/handlers.py:916)
+  class FormAPIHandler:
+      async def translate_form(self, request: web.Request) -> web.Response:
+          """POST /api/v1/{tenant}/forms/translate — stateless JSON Schema → A2UI (resolved §8).
+          Body {"schema": dict, "form_id"?, "title"?, "locale"?}; 400 when ``schema`` is missing or not an object or the
+          extractor raises; 413 over A2UI_MAX_BODY_BYTES; 415 {"supported": supported_formats()} when get_renderer("a2ui")
+          is None. Returns the createSurface via a2ui_wire.a2ui_response (single envelope) or the ``with_meta`` wrapper.
+          Never touches the registry."""
+
+  # api/routes.py  (modifies api/routes.py:397 — sibling of /forms/export, tenant mode "required")
+  app.router.add_post(f"{tp}/forms/translate", _wrap_auth(handler.translate_form))
   ```
 
 ### Module 5: `A2UIExtractor`
@@ -591,6 +608,7 @@ formdesigner  (click group: export | import | translate)   → `parrot formdesig
 | `tests/unit/api/test_export_forms.py` | M3 | NDJSON framing, `published_only`, `form_uids` filter, `dialect=json_schema`, 400/415 |
 | `tests/unit/extractors/test_jsonschema_sections.py` | M4 | `JsonSchemaRenderer` output with 2 sections + 1 subsection → extractor rebuilds the tree; `x-placeholder`/`x-read-only`/`x-options` round-trip; Pydantic input still yields the `"fields"` section |
 | `tests/unit/services/test_a2ui_translate.py` | M4 | composition returns a `RenderedForm` whose surface passes `validate_envelope(origin=TOOL)`; missing extra → `RuntimeError` |
+| `tests/unit/api/test_translate_forms.py` | M4 | `POST /forms/translate`: 200 envelope with route tenant in `parrot_tenant`, `with_meta` wrapper, 400 (no `schema`), 413, 415; registry untouched (no `register` call) |
 | `tests/unit/extractors/test_a2ui_extractor.py::test_strict_roundtrip_identity` | M5 | `A2UIFormRenderer.render(form)` → `extract` → equal `field_id`/`field_type`/section ids/required/constraints for every `FIELD_LOWERING` primitive ≠ notice/hidden |
 | `…::test_strict_missing_extension_warns` | M5 | stripping `parrot_field_type` from one component → warning + heuristic fallback for that field only |
 | `…::test_heuristic_basic_surface` | M5 | hand-written surface (Card/Column/TextField/ChoicePicker/Slider/DateTimeInput/CheckBox/Button) → expected FieldTypes, constraints from checks, sections from Cards, Tabs → sections |
@@ -636,6 +654,7 @@ formdesigner  (click group: export | import | translate)   → `parrot formdesig
 - [ ] AC11 — `POST /forms` with a surface body imports it (201 with `import` report); an existing `parrot_form_uid` → 409 unless `?overwrite=true`; bodies over `A2UI_MAX_BODY_BYTES` → 413; the legacy `{"prompt"}` body behaviour is unchanged.
 - [ ] AC12 — `import parrot_formdesigner`, `parrot_formdesigner.extractors`, `.api`, `.services` succeed without `ai-parrot` installed (AST test like `test_a2ui_export.py::test_package_import_does_not_import_ai_parrot_eagerly` extended to the new modules).
 - [ ] AC13 — `packages/parrot-formdesigner/docs/a2ui-renderer.md` documents the flag, precedence, export/import/translate and the loss rules.
+- [ ] AC16 — `POST /forms/translate` returns a validating `createSurface` for a JSON Schema body, stamps the route tenant, persists nothing, and answers 400/413/415 per §2.
 - [ ] AC15 — Negotiated `GET /schema` enforces membership for private forms and honours `onSchemaLoaded` aborts identically under both dialects, with the JSON error body (tests in §4, S10).
 - [ ] AC14 — `ruff check` clean; all new tests pass with `PYTHONPATH=packages/parrot-formdesigner/src:packages/ai-parrot/src`; no change to `renderers/a2ui.py`.
 
@@ -825,7 +844,8 @@ cli._lazy_commands = {... "toolkits": "parrot.cli.toolkits", ...}            # l
 | `render_a2ui_schema` | `a2ui_wire.a2ui_response` | framing of 1 vs N envelopes | `api/a2ui_wire.py:275` |
 | `overrides_to_envelopes` | `A2UIFormRenderer._lower_field` | re-lower a patched `FormField` copy for `properties.<id>` overrides (private method — the task pins the call; if renamed the task fails loudly, never guesses) | `renderers/a2ui.py:606` |
 | `A2UIExportService.export_tenant` | `FormRegistry.load_from_storage` / `list_forms` | `await registry.load_from_storage(tenant=t)` when `registry.storage is not None`, then `list_forms(tenant=t)` | `services/registry.py:1320, 1102` |
-| `export_forms` | `setup_form_api` | `app.router.add_post(f"{tp}/forms/export", _wrap_auth(handler.export_forms))` | `api/routes.py:397` |
+| `export_forms` / `translate_form` | `setup_form_api` | `app.router.add_post(f"{tp}/forms/export", …)` and `add_post(f"{tp}/forms/translate", …)` after the clone route | `api/routes.py:397` |
+| `translate_form` | `translate_jsonschema_to_a2ui` → `a2ui_wire.a2ui_response` | stateless handler | `api/a2ui_wire.py:275` |
 | `JsonSchemaExtractor.extract` (sections) | `JsonSchemaRenderer._build_structural_schema` | reads `x-section`/`x-subsection` dicts it emits | `renderers/jsonschema.py:432-447` |
 | `translate_jsonschema_to_a2ui` | `JsonSchemaExtractor.extract` → `A2UIFormRenderer.render` | composition | `extractors/jsonschema.py:86`, `renderers/a2ui.py:330` |
 | `A2UIExtractor.extract` | `parrot.outputs.a2ui.serialization.deserialize` | parse, then `message.create_surface` (alias `createSurface`) must be a `CreateSurface` | `serialization.py:155`, `models.py:695-718` |
@@ -841,7 +861,7 @@ cli._lazy_commands = {... "toolkits": "parrot.cli.toolkits", ...}            # l
 - ~~`parrot_formdesigner.services.a2ui_translate`~~ / ~~`translate_jsonschema_to_a2ui`~~ — added by M4.
 - ~~`parrot_formdesigner.extractors.a2ui`~~ / ~~`A2UIExtractor`~~ / ~~`ExtractedForm`~~ — added by M5.
 - ~~`a2ui_wire.is_a2ui_surface_body`~~ — added by M6; `is_a2ui_request` only detects `action` envelopes.
-- ~~`FormAPIHandler.export_forms`~~, ~~`FormAPIHandler._import_a2ui_surface`~~, ~~`POST /forms/export`~~ — added by M3/M6.
+- ~~`FormAPIHandler.export_forms`~~, ~~`FormAPIHandler.translate_form`~~, ~~`FormAPIHandler._import_a2ui_surface`~~, ~~`POST /forms/export`~~, ~~`POST /forms/translate`~~ — added by M3/M4/M6.
 - ~~`parrot_formdesigner/cli.py`~~, ~~`[project.scripts]` in parrot-formdesigner~~ — the package has no CLI; the `parrot` entry point is `parrot.cli:cli` in ai-parrot (`packages/ai-parrot/pyproject.toml:200`).
 - ~~`?dialect=` query param~~, ~~`Accept: application/a2ui+json` negotiation~~ — not implemented anywhere today; only `/render/{format}` serves A2UI.
 - ~~`POST /forms` accepting a `FormSchema` or surface body~~ — today it is LLM-prompt only (`body["prompt"]` required, 503 without client).
@@ -866,7 +886,7 @@ Verified against: `e0d88994a` (dev, 2026-10-10)
 | `packages/parrot-formdesigner/src/parrot_formdesigner/api/dialect.py` | CREATE | — | — | — |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `        return JSONResponse(content)` (end of `get_schema`; preceded by `content = apply_schema_overrides(content, dict(resolution.schema_overrides))`) | `api/handlers.py:914` | 1 |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `        forms = sorted(descriptors.values(), key=lambda d: d["form_id"] or "")` (end of `list_forms`) | `api/handlers.py:825` | 1 |
-| `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `    async def get_style(self, request: web.Request) -> web.Response:` (insert `export_forms` before it) | `api/handlers.py:916` | 1 |
+| `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `    async def get_style(self, request: web.Request) -> web.Response:` (insert `export_forms` (M3) and `translate_form` (M4) before it) | `api/handlers.py:916` | 1 |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/api/handlers.py` | MODIFY | `    async def create_form(self, request: web.Request) -> web.Response:` | `api/handlers.py:1135` | 1 |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/api/routes.py` | MODIFY | `    app.router.add_post(f"{tp}/forms/{{form_uid}}/clone", _wrap_auth(handler.clone_form))` | `api/routes.py:397` | 1 |
 | `packages/parrot-formdesigner/src/parrot_formdesigner/api/a2ui_wire.py` | MODIFY | `def is_a2ui_request(request: web.Request, body: Any) -> bool:` | `api/a2ui_wire.py:122` | 1 |
@@ -928,7 +948,7 @@ Verified against: `e0d88994a` (dev, 2026-10-10)
   | `Button` whose `action.event.name == "form.submit"` / `"form.cancel"` | — | `cancel_allowed` ← presence of a cancel button; not a field |
   | `Card` | section | title ← first `Text` child; `Column`/`Row` nested in a `Card` with its own leading `Text` → `FormSubsection` |
   | `Tabs` / `TabItem` | one section per `TabItem` | warning `tabs_flattened` |
-  | `Text` immediately preceding an input with no `label` | that input's `label` | brainstorm Q4 default — see §8 |
+  | `Text` immediately preceding an input with no `label` | that input's `label` | warning `label_inferred_from_text:<input id>`; a `Text` that is the first child of a `Card` is the section title instead (resolved §8) |
   | `Image`, `Video`, `AudioPlayer`, `Icon`, `Divider`, `List`, `Modal`, any non-Basic component | dropped | `DroppedComponent(reason="unsupported_component" | "not_in_basic_catalog")` |
 
   `checks` → constraints: `required` → `required=True`; `regex(pattern)` → `constraints.pattern`; `length(min,max)` → `min_length/max_length`; `numeric(min,max)` → `min_value/max_value`; `email` → `field_type=EMAIL` (when on a `TextField`). `field_id` = last token of the `value` binding path (`field_id_from_pointer_token`), else the component id with a leading `f-` stripped; collisions get `_2`, `_3` … and a warning. Strict mode uses `parrot_field_type` directly and only validates that `FIELD_LOWERING[field_type].primitive == component.component` (mismatch → warning, extension wins).
@@ -965,11 +985,11 @@ Verified against: `e0d88994a` (dev, 2026-10-10)
 - [x] Which GET routes honour the dialect flag? — *Resolved in brainstorm*: only `/schema` and `/forms`. `GET /forms/{uid}` ALWAYS returns the raw `FormSchema` (it is the form's identity, used by PUT/PATCH/clone/admin UI).
 - [x] `onSchemaLoaded.schema_overrides` on the A2UI path of `GET /schema`? — *Resolved in brainstorm*: translate them — the A2UI response is a `createSurface` followed by `updateComponents`/`updateDataModel` envelopes derived from the overrides; overrides that cannot be mapped to a component are reported as warnings. (§7 translation table.)
 - [x] Import conflict policy — *Resolved in brainstorm*: 409 unless `?overwrite=true` (CLI `--overwrite`), same contract as `FormRegistry.register(overwrite=...)`; with overwrite the form is replaced and its version bumped.
-- [x] Bulk export granularity + `--all-tenants` — *Decided in spec*: `POST /forms/export` streams NDJSON (never a single array); the HTTP endpoint is single-tenant (route tenant); the CLI takes `--tenant` repeatably and there is NO `--all-tenants` in v1 because `FormRegistry.list_tenants()` is a cache view and `PostgresFormStorage` is per-tenant-schema (codex S7). — *Owner: Jesus Lara (confirm on review)*
-- [x] Heuristic extractor: `Text` immediately before an unlabeled input — *Decided in spec*: used as that input's `label` (§7 table); a `Text` that is the first child of a `Card` is the section title instead. — *Owner: Jesus Lara (confirm on review)*
-- [x] HTTP endpoint for JSON-Schema → A2UI translation in v1? — *Decided in spec*: no; library + CLI only (Non-Goals). — *Owner: Jesus Lara (confirm on review)*
+- [x] Bulk export granularity + `--all-tenants` — *Resolved by Jesus Lara (spec review 2026-10-10)*: `POST /forms/export` streams NDJSON (never a single array); the HTTP endpoint is single-tenant (route tenant); the CLI takes `--tenant` repeatably and there is NO `--all-tenants` in v1 because `FormRegistry.list_tenants()` is a cache view and `PostgresFormStorage` is per-tenant-schema (codex S7). `--all-tenants` is a follow-up once storage can enumerate tenants.
+- [x] Heuristic extractor: `Text` immediately before an unlabeled input — *Resolved by Jesus Lara (spec review 2026-10-10)*: used as that input's `label` with warning `label_inferred_from_text:<id>`; a `Text` that is the first child of a `Card` is the section title instead (§7 table).
+- [x] HTTP endpoint for JSON-Schema → A2UI translation in v1? — *Resolved by Jesus Lara (spec review 2026-10-10)*: YES — `POST {tp}/forms/translate`, stateless (never persists), body `{schema, form_id?, title?, locale?}`, answers the `createSurface` with the route tenant stamped; lives in M4 next to `export_forms` (§2 wire shapes, §3 M4, AC16).
 - [x] `click` dependency placement — *Resolved via codex S11*: core `dependencies` of parrot-formdesigner, so `parrot_formdesigner.cli` is importable standalone and the `parrot` lazy entry is a thin, cleanly-failing integration.
-- [ ] Should `GET /forms` include `dialect` for DB-only rows (requires a `registry.get()` per row) or only for in-memory entries (proposed)? — *Owner: implementer (M2)*
+- [x] Should `GET /forms` include `dialect` for DB-only rows? — *Resolved by Jesus Lara (spec review 2026-10-10)*: only for in-memory entries; DB-only summary rows omit the key (no `registry.get()` per row, no storage change). Clients needing the value use `GET /forms/{uid}`.
 
 ---
 
@@ -1003,11 +1023,11 @@ Summary: **11** confirmed (S1 partial: projection rejected, test adopted) · **0
 - **Module dependency graph** (evidence in parentheses):
   - M2 → M1 (`resolve_dialect` returns `FormDialect`; `get_schema` reads `form.dialect`).
   - M6 → M5 (`_import_a2ui_surface` calls `A2UIExtractor.extract`), M6 → M1 (201 payload echoes `form.dialect`).
-  - M4b (`translate_jsonschema_to_a2ui`) → M4a (extractor fidelity) — same module, one task chain.
+  - M4b (`translate_jsonschema_to_a2ui` + `translate_form` handler/route) → M4a (extractor fidelity) — one task chain.
   - M7 → M3, M4, M5 (CLI commands call the three services).
   - M8 → M1–M7 (docs + integration round-trips).
   - M3 has no edge to M1/M2/M4/M5 (export only needs the registry and the FEAT-544 renderer) — runs concurrently with them. (`export_all_tenants` was removed per S7; nothing depends on it.) M5 has no edge to M1–M4 — runs concurrently.
-- **Shared files** (tasks serialized on them): `api/handlers.py` (M2 `get_schema`/`list_forms`, M3 `export_forms`, M6 `create_form`), `api/a2ui_wire.py` (M6 only), `extractors/__init__.py` (M5 only), `core/schema.py` (M1 only), `cli.py` (M7 only — three commands may be one task or three serialized tasks).
+- **Shared files** (tasks serialized on them): `api/handlers.py` (M2 `get_schema`/`list_forms`, M3 `export_forms`, M4 `translate_form`, M6 `create_form`), `api/routes.py` (M3, M4 — one line each), `api/a2ui_wire.py` (M6 only), `extractors/__init__.py` (M5 only), `core/schema.py` (M1 only), `cli.py` (M7 only — three commands may be one task or three serialized tasks).
 - **Exclusive resources**: none (no extension rebuild, no lockfile regeneration — the `click` extra edit is declarative; `uv lock` is not run inside the worktree).
 - **Cross-feature dependencies**: none open. FEAT-544 (`a2ui-form-output-renderer`) and FEAT-551 (`msteams-formdesigner-renderer`) are merged. FEAT-640 (`formdesigner-venue-tables`, draft) touches `services/` tables only. The one-line `parrot/cli/__init__.py` edit is shared with any concurrent feature registering a CLI group — trivial merge.
 
@@ -1018,3 +1038,4 @@ Summary: **11** confirmed (S1 partial: projection rejected, test adopted) · **0
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-10 | Jesus Lara | Initial draft from accepted brainstorm (Option A); §3 Q&A resolutions folded in; codex design research (11 suggestions) triaged into §2–§8 |
+| 0.2 | 2026-10-10 | Jesus Lara | §8 fully resolved: DB-only rows omit `dialect`; NDJSON + no `--all-tenants` confirmed; `Text`-as-label confirmed; `POST /forms/translate` ADDED to M4 (wire shape, handler, route, AC16) |
