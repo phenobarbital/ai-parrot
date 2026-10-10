@@ -329,7 +329,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -341,8 +341,9 @@
       "parallelism_notes": "replaces handlers.py:1818-1909 with SubmissionPipeline.submit from TASK-4222 (services/submission_pipeline.py); relies on envelope validation from TASK-4223 (validators.py); parity suite of TASK-4221 must stay green",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4224-http-pipeline-wiring.md"
+      "completed_at": "2026-10-10T16:24:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4224-http-pipeline-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4225",

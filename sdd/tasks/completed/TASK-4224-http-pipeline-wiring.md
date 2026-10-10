@@ -416,8 +416,19 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-coder agent (Claude Sonnet 5.5)
+**Date**: 2026-10-10
+**Notes**: submit_data now delegates from onBeforeSubmit to `SubmissionPipeline.submit` (built per call via
+`FormAPIHandler._build_submission_pipeline`), maps FormEventAbort/ValidationFailed/SubmitSinkError/PlausibilityBlocked
+to today's responses, adds additive `plausibility` to the 200 body. `validate` accepts `llm_validation` (body key, popped
+before visit-context extraction, or query) and adds `plausibility` to the plain JSON reply; A2UI envelopes are unchanged
+(report not attached: no new envelope types per FEAT-544). `app["submission_pipeline"]` published in `setup_form_api`.
+The outer try/except was dropped: the pipeline dispatches onError once and sets `request["_lifecycle_user_message"]`.
+Tests: new test_http_plausibility.py (9 tests) + parity/existing submit suites pass. Pre-existing unrelated failure:
+tests/unit/api/test_form_controls_endpoint.py::test_form_controls_payload_shape (supported_effects keys).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. Touched `services/submission_pipeline.py` (not task-listed): added optional `dispatch_fn` ctor kwarg (default module
+   `dispatch`) because existing suites monkeypatch `handlers_module.dispatch`; the handler passes a late-bound lambda.
+2. Partial-store cleanup after merge stays in the handler (keyed by the URL `form_uid`, as before) instead of passing
+   `merge_session_id` to the pipeline, to keep test_submit_merge unchanged (pipeline keys by `form.form_uid`).
