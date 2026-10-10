@@ -276,6 +276,16 @@ class TestEngineTurns:
         assert isinstance(out[-1], Question) and out[-1].field_id == "name"
         assert s.state.phase == Phase.ASKING and s.state.cursor == "name"
 
+    def test_sensitive_spoken_answer_not_recorded_nor_wrapped(self, started) -> None:
+        """Ledger 207af38a9ad7: a spoken PASSWORD stores no blob and submits the plain scalar."""
+        s, _ = started
+        s.state.cursor = "pw"
+        s.state.phase = Phase.ASKING
+        s.handle(AudioReceived(type="_audio", audio=b"abc", mime="audio/webm"))
+        out = s.handle(_tr("pw", "hunter2"))
+        assert not any(isinstance(o, StoreBlob) for o in out)
+        assert s._submission_data()["pw"] == "hunter2"
+
     def test_sensitive_masked_in_transcription_and_ack(self, started, caplog) -> None:
         s, _ = started
         s.state.cursor = "pw"

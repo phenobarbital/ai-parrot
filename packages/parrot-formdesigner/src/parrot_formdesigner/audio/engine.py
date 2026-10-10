@@ -337,7 +337,7 @@ class AudioFormSession:
         out: list[Outbound] = [AnswerAccepted(field_id=field_id, source=source, value=self._echo(field_id, value),
                                               matched=matched)]
         if (source == "speech" and self.cfg.store_recordings and self._last_audio
-                and self._last_audio[0] == field_id):
+                and self._last_audio[0] == field_id and not is_sensitive(self._fields[field_id])):
             _, audio, mime = self._last_audio
             out.append(StoreBlob(field_id=field_id, audio=audio, mime=mime or "audio/webm", version=version))
         self._last_audio = None
@@ -859,7 +859,9 @@ class AudioFormSession:
         """Scalars per answered field, with speech answers re-folded into voice evidence envelopes."""
         scalars = {fid: a.value for fid, a in self.state.answers.items()
                    if fid in self._fields and a.value is not None}
-        return wrap_voice(scalars, {fid: a for fid, a in self.state.answers.items() if fid in scalars})
+        # S8: a sensitive spoken answer is submitted as the plain scalar — never wrapped, never recorded.
+        return wrap_voice(scalars, {fid: a for fid, a in self.state.answers.items()
+                                    if fid in scalars and not is_sensitive(self._fields[fid])})
 
     def _submission_context(self) -> dict[str, Any]:
         """Context handed to the submission pipeline."""
