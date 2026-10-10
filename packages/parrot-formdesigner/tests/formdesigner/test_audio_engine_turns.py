@@ -104,7 +104,7 @@ class TestEngineTurns:
     def test_start_emits_replan_then_plan_ready_emits_started_prefetch_question(self, session) -> None:
         assert session.state.phase == Phase.PLANNING
         out = _advance(session)
-        assert _types(out) == ["session_started", "_synthesize", "question"]
+        assert _types(out) == ["session_started", "_synthesize", "section_enter", "question"]  # section_enter since TASK-4232 sets section_uid
         assert isinstance(out[0], SessionStarted) and out[0].total_questions == 5
         assert isinstance(out[1], Synthesize) and any(k.startswith("sys:") for k in out[1].keys)
         assert out[-1].field_id == "name" and out[-1].required is True
