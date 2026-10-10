@@ -1,0 +1,69 @@
+{
+  "feature": "products-found-endcap",
+  "feature_id": "FEAT-648",
+  "spec": "sdd/specs/products-found-endcap.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-10T01:46:24Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4206",
+      "slug": "shelf-types-slot-presence-opt-in",
+      "title": "Shelf-based types opt in to slot presence",
+      "feature_id": "FEAT-648",
+      "feature": "products-found-endcap",
+      "spec": "sdd/specs/products-found-endcap.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "root task: edits the four shelf type profiles and test_ink_wall.py (owns the test rewrite because the opt-in breaks the old test); no dependency",
+      "file": "sdd/tasks/active/TASK-4206-shelf-types-slot-presence-opt-in.md"
+    },
+    {
+      "id": "TASK-4207",
+      "slug": "products-found-types-tests",
+      "title": "Non-ink-wall products_found test module",
+      "feature_id": "FEAT-648",
+      "feature": "products-found-endcap",
+      "spec": "sdd/specs/products-found-endcap.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4206"
+      ],
+      "parallel": true,
+      "parallelism_notes": "needs reporting=ReportingPolicy(slot_presence=True) on the four default_layout_profile() from TASK-4206 (types/*.py) \u2014 its tests assert that behaviour",
+      "file": "sdd/tasks/active/TASK-4207-products-found-types-tests.md"
+    },
+    {
+      "id": "TASK-4208",
+      "slug": "reporting-policy-docs",
+      "title": "Document the reporting policy and products_found",
+      "feature_id": "FEAT-648",
+      "feature": "products-found-endcap",
+      "spec": "sdd/specs/products-found-endcap.spec.md",
+      "status": "pending",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "docs + FEAT-645 spec note only (docs/pipelines/planogram-compliance-cycle.md); content fixed by the spec, no code dependency \u2014 runs alongside TASK-4206",
+      "file": "sdd/tasks/active/TASK-4208-reporting-policy-docs.md"
+    }
+  ]
+}
