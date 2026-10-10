@@ -601,8 +601,7 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd task agent (Claude Sonnet 5.5)
+**Date**: 2026-10-10
+**Notes**: audio/engine.py (pure, no await) + 15 tests passing (incl. AST no-await). Landed-name mapping vs blueprint: AudioFrame -> AudioReceived (`_audio`, fields audio/mime); PlanReady carries `plan` + `delta` dict (validated into PlanDelta); StoreBlob/BlobStored carry `version` (stale BlobStored -> DeleteBlob); Transcribe has mime; AnswerAccepted requires `source`. SubmitDone.outcome contract used by the engine: success = dumped SubmitOutcome (`submission_id`, `stored_in`); validation rejection = dict with `errors` {field_id: [msgs]} -> TASK-4227 adapter must map ValidationFailed to that shape. Skipped optional fields are tracked in a private `_skipped` set (not snapshotted; TASK-4226 should persist it). History = visited cursors (planner.previous expects the current cursor last). SectionEnter derived from AudioQuestion.section_uid on cursor change. Narration is synthesised for sensitive questions too (labels only, never values). Sensitive echo is "[hidden]" (not omitted). INVALID_OPTION is an Error; required-empty is AnswerRejected. v2-only Question fields (hint/ui_cue/answer_modes/narration) are gated on protocol_version >= 2.
+**Deviations from spec**: none (private `_delta_messages` computes order_changed before plan is overwritten).
