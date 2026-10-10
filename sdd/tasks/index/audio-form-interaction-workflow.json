@@ -266,7 +266,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -274,8 +274,9 @@
       "parallelism_notes": "no dependency: tests only, against the current api/handlers.py submit_data; must land before TASK-4224 rewrites handlers.py:1818-1909",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4221-submit-data-parity-tests.md"
+      "completed_at": "2026-10-10T16:18:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4221-submit-data-parity-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4222",

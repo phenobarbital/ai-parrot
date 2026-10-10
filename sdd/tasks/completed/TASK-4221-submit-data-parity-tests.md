@@ -324,8 +324,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: claude-sonnet-5.5 (sdd task agent)
+**Date**: 2026-10-10
+**Notes**: Created test_submission_pipeline_parity.py (21 tests, all passing against current submit_data, no source changes). Covers sink-exclusive, generic storage, sink error mapping, lifecycle order, forwarder, partial merge/cleanup, unknown-fields, response shape, A2UI branch. Form ids use underscores because FormEventBinding.handler_ref requires an identifier pattern.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
