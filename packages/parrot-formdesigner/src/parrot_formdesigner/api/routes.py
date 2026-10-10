@@ -483,6 +483,11 @@ def setup_form_api(
         from .audio_ws import AudioFormWSHandler
         from ..services.validators import FormValidator
 
+        session_store = None
+        if partial_store is not None:
+            from ..audio.session_store import AudioSessionStore
+
+            session_store = AudioSessionStore(partial_store, ttl_seconds=3600)
         audio_handler = AudioFormWSHandler(
             registry=registry,
             synthesizer=synthesizer,
@@ -490,6 +495,10 @@ def setup_form_api(
             validator=FormValidator(),
             token_validator=token_validator,
             submission_storage=submission_storage,
+            pipeline=app.get("submission_pipeline"),
+            blob_storage=blob_storage,
+            session_store=session_store,
+            llm_client_getter=handler._get_llm_client,  # same lazy client as HTTP; adapter builds a per-form checker
             auto_synthesize=synthesizer is None,
         )
         app.router.add_get(
