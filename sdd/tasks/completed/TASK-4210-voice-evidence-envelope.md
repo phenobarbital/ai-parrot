@@ -330,8 +330,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: claude-sonnet-5.5 (sdd task agent)
+**Date**: 2026-10-10
+**Notes**: Implemented VoiceEvidenceEnvelope, is_voice_envelope, unwrap_voice, wrap_voice and core exports; 5 new tests pass. test_field_type_enum_total_count fails pre-existing. Code landed in two commits (tests first, source second) due to a tooling slip.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
