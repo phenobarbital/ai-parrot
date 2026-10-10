@@ -1,0 +1,89 @@
+**Option B** is recommended because:
+
+- The deadlock history (FEAT-395) is a structural property of Option A, not a bug that was fixed: awaiting I/O inside transitions in a 1 467-line handler. Option B's invariant — the engine never performs I/O — makes the class of defect unreachable and lets every new rule (planner, matcher, commands, review, resume) be tested as a pure function.
+- The owner's cross-cutting requirement (LLM-assisted plausibility "además de las validaciones existentes", on every channel) is only cheap if there is one submit path. Option B creates that path (`SubmissionPipeline`) and fixes four verified bugs (bypassed sinks/events/forwarder, lost tenant, raw transcript on PROMPT_SELECT, comma-joined MULTI_SELECT) as a side effect. Option A would implement the checker twice.
+- Option C's convergence is real but premature: A2UI has no voice primitive and `ai-parrot` is optional for formdesigner. B keeps the door open by isolating the protocol in `audio/events.py`.
+
+What we trade: a larger diff, a parity-test task for the extracted submit tail, and two new typed blocks on `FormSchema`. The parity task is the price of fixing the bypass properly; the schema blocks follow the `events` / `persistence` precedent (`core/schema.py:465`, `:473`) that the frontend already consumes.
+
+---
+
+--- Recommended option (B) as described ---
+
+: Transport-agnostic `AudioFormSession` engine + thin WS adapter + shared `SubmissionPipeline` with `AnswerPlausibilityChecker`
+
+Split the audio runtime into pure components with no I/O, and make the WebSocket handler an adapter that decodes frames, calls `engine.handle(event) -> list[Outbound]`, performs the I/O the outbound list asks for (synthesise, store blob, persist snapshot) and encodes replies. Extract the HTTP submit tail (`handlers.py:1818-1909`) into `services/submission_pipeline.py` so both HTTP and the engine run validation → plausibility → sink/generic storage → events → forwarder → partial cleanup through one code path.
+
+Proposed layout (new unless marked *modify*):
+
+```
+core/schema.py                    modify: FormField.hint: LocalizedString | None; FormField.llm_validation: bool | None;
+                                          FormSchema.voice: VoiceFormConfig | None; FormSchema.llm_validation: LLMValidationConfig | None
+core/voice.py                     VoiceFormConfig (per-form voice block) + FieldVoiceMeta (parsed from meta["voice"])
+core/llm_validation.py            LLMValidationConfig {enabled, threshold, on_error, model, timeout_s, max_fields}
+core/voice_answer.py              modify: VoiceEvidenceEnvelope(VoiceAnswerEnvelope) with answer: Any, confidence, source,
+                                          audio_mime, duration_ms, language, plausibility; helpers is_voice_envelope/unwrap_voice/wrap_voice
+audio/models.py                   modify: UiCue, NarrationPlan, OptionMatch, PlausibilityVerdict; deltas on AudioQuestion/AudioAnswer/AudioSessionState
+audio/events.py                   inbound/outbound Pydantic models discriminated by `type` (protocol v2)
+audio/planner.py                  QuestionPlanner: manifest + RuleEvaluator → visible plan, cap, cleared, next cursor
+audio/option_matcher.py           deterministic match_option() + per-locale lexicon (ordinals, yes/no, conjunctions)
+audio/commands.py                 classify_command(transcript, locale) → VoiceCommand | None (repeat/back/skip/help/stop/next/send/change N)
+audio/option_refiner.py           OptionRefiner protocol + optional LLM impl (AbstractClient), confirm-only, off by default
+audio/narration/{engine,lexicon}.py + templates/{en,es}/narration.yaml   Narrator (Jinja2 ImmutableSandboxedEnvironment)
+audio/segments.py                 AudioSegmentCache + synthesis (moves _presynthize_to_cache/_synthesize/_auto_synthesize_cached)
+audio/engine.py                   AudioFormSession: handle(event) -> list[Outbound]; phases below
+audio/session_store.py            AudioSessionStore over PartialSaveStore's Redis client (resume snapshots)
+audio/recordings.py               put/delete recordings via AbstractBlobStorage
+services/plausibility.py          AnswerPlausibilityChecker(client) .check(form, scalars, *, locale, fields) -> PlausibilityReport  [cross-cutting]
+services/submission_pipeline.py   SubmissionPipeline.submit(...) extracted from handlers.py:1818-1909; runs validator → plausibility → storage
+services/validators.py            modify: unwrap→validate→rewrap for envelopes on any field answered by voice
+services/sinks/mapper.py, postgres_table.py   modify: JSONB DDL/INSERT for voice-envelope columns
+api/audio_ws.py                   modify → adapter (~300 lines): auth, tenant, decode JSON/binary, engine.handle(), encode, I/O
+api/handlers.py, api/routes.py    modify: submit_data and validate use SubmissionPipeline / checker; `llm_validation` opt-in on POST …/validate;
+                                          POST …/voice/optimize; pass blob_storage/partial_store/client to the audio adapter
+tools/edit_toolkit.py             modify: `hint` and `llm_validation` in update_field; propose_voice_hints
+renderers/audio.py                modify: section/hint/ui_cue/narration/answer_modes on AudioQuestion
+renderers/{html5,jsonschema,adaptive_card,a2ui}.py   modify: expose `hint` (x-hint / <small class="hint">)
+migrations/009_voice_envelope_form_data.{sql,py}, 010_voice_envelope_report.py   (package root: packages/parrot-formdesigner/migrations/)
+docs/audio-form-voice-modes.md    modify: protocol v2 + plausibility + commands
+```
+
+✅ **Pros:**
+- Every requirement becomes a pure, unit-testable component (`planner`, `option_matcher`, `commands`, `narration`, `plausibility`) with no WebSocket in the test.
+- The engine never awaits inside a transition: `(state, event) → (state', outbound[])`. The FEAT-395 class of deadlock becomes structurally impossible.
+- Fixes the submit bypass, the lost tenant, the PROMPT_SELECT raw-transcript bug and the MULTI_SELECT string once, for every channel, by routing audio through `SubmissionPipeline`.
+- The plausibility checker lives in the pipeline, so HTML, A2UI, Telegram/Teams and audio all get the same cross-cutting LLM gate from one implementation, while `FormValidator` stays deterministic and `ai-parrot`-free.
+- Engine + events are reusable by the Telegram/Teams renderers and by a future A2UI voice surface (Option C's convergence path).
+
+❌ **Cons:**
+- Larger diff and a new sub-package to review.
+- Extracting ~90 lines of HTTP submit into `SubmissionPipeline` touches the hot path; needs its own task with parity tests against the existing `submit_data` fixtures.
+- Two schema blocks (`voice`, `llm_validation`) widen `FormSchema`; the frontend form designer must learn them (handled in the handoff).
+
+📊 **Effort:** High
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `jinja2>=3.1` | narration templates (`ImmutableSandboxedEnvironment`, `StrictUndefined`) | already a dependency (`pyproject.toml:41`) |
+| `difflib` (stdlib) | fuzzy option / command matching | `rapidfuzz` used only if importable (never a hard dep) |
+| `unicodedata` (stdlib) | NFKD + casefold normalisation of transcripts | — |
+| `redis>=4.5` | resume snapshots | existing extra (`pyproject.toml:61-62`), no-op without Redis like `PartialSaveStore` |
+| `asyncpg` | migrations 009/010 | pattern of `migrations/003_migrate_form_data.py` |
+| `ai-parrot>=1.2.1` (`AbstractClient.ask(structured_output=…)`) | plausibility batch + optional refiner/optimiser | optional extra (`pyproject.toml:53-54`); `StructuredOutputConfig` in `parrot/models/outputs.py:59` |
+| `pydantic>=2` | events, configs, verdicts | already used throughout |
+
+🔗 **Existing Code to Reuse:**
+- `services/rule_evaluator.py:555-598` — `RuleEvaluator.resolve()` drives the planner.
+- `services/partial_saves.py:24-66` — `PartialSaveStore` (Redis client, TTL, merge-only `save`) backs resume.
+- `services/blob_storage.py:55-170` — `BlobMetadata` (deterministic `blob_id`) + `AbstractBlobStorage.put/get/delete` for recordings.
+- `services/validators.py:200-345` — `FormValidator.validate()` stays the deterministic gate; `:542-548`, `:613-634` envelope acceptance to generalise.
+- `api/handlers.py:197-215` — `_get_llm_client()` (GoogleGenAI default) feeds the checker and optimiser; `:1818-1909` becomes `SubmissionPipeline`.
+- `api/handlers.py:1004` — `POST …/validate` dry-run gains the `llm_validation` opt-in.
+- `renderers/audio.py:95-130` (`classify_voice_mode`), `:131-216` (synth fallback), `:277-390` (`split_into_questions`, GROUP expansion).
+- `api/audio_ws.py:71-100` (`_sniff_audio_suffix`), `:282-347` (auth), `:1237-1330` (synthesis helpers) — moved, not rewritten.
+- `packages/ai-parrot-integrations/src/parrot/voice/tts/synthesizer.py:23,124,186,213` — `VoiceSynthesizer.synthesize`, `get_shared_synthesizer`, `close_shared_synthesizers`.
+- `packages/ai-parrot/src/parrot/clients/base.py:1817-1826` — `AbstractClient.ask(..., structured_output=type | StructuredOutputConfig)`.
+- `packages/ai-parrot-server/ui/src/lib/utils/voice-recorder.ts:12,35,68` — `RecordedVoiceNote`, `isVoiceRecordingSupported()`, `VoiceRecorder` to port into navigator-svelte.
+
+---
