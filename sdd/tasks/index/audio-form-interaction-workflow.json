@@ -423,7 +423,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -434,8 +434,9 @@
       "parallelism_notes": "constructs the new AudioFormWSHandler signature from TASK-4227 (api/audio_ws.py); modifies api/routes.py after TASK-4224 (same file, serialized; reuses app['submission_pipeline'])",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4228-audio-ws-routes-integration.md"
+      "completed_at": "2026-10-10T16:47:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4228-audio-ws-routes-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4229",

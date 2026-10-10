@@ -339,8 +339,10 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd task agent (Claude Sonnet 5.5)
+**Date**: 2026-10-10
+**Notes**: `setup_form_api` audio block now builds `AudioSessionStore(partial_store, ttl_seconds=3600)` (lazy import, only when `partial_store` is given) and passes `pipeline=app.get("submission_pipeline")`, `blob_storage`, `session_store`, `llm_client_getter=handler._get_llm_client` (landed names matched the task; no differences). New `test_audio_ws_v2_integration.py` (8 pass, 1 xfail): v1 client with extra keys, v2 prefetch/review/plausibility/confirm -> form_complete via the shared pipeline (URL tenant asserted by spying `pipeline.submit`), commands + go-back, resume (+ `/partial` shows no snapshot, `merge_partials` HTTP completion), HTTP block vs skip, adversarial suite (WRONG_FIELD, invalid option, hidden/required flips, sensitive never echoed, SESSION_ACTIVE, strict v2 keys), route wiring. test_audio_integration/routes/tenant pass unmodified. Fake Redis stub needed `eval` (CAS) in addition to the blueprint methods.
+**Defect found (not fixed, out of scope)**: `renderers/audio.py` (~L343) drops `FieldOption.disabled` when building manifest options, so a disabled option can be chosen by selection/voice (engine guard S4 never sees it). Recorded as `test_audio_ws_disabled_option_rejected` (xfail strict, flips to failure once fixed).
+**Observation**: importing `api/routes.py` already pulls `redis` (pre-existing, unrelated to the lazy imports); the light-import test asserts `parrot.voice`, `audio.session_store` and `api.audio_ws` are not imported.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: HTTP cross-channel steps call `FormAPIHandler.save_partial/get_partial/submit_data` directly (request doubles) because those routes sit behind navigator-auth; the audio WS side uses the real aiohttp client.
