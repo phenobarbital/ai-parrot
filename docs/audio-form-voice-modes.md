@@ -996,7 +996,7 @@ blobs, files and `data_url` values are **never** sent (S8); field types listed i
 | `on_error` | Behaviour |
 |---|---|
 | `skip` (default) | `plausibility_result` with `status: "skipped"` and a `reason`; the review continues |
-| `block` | `error` `PLAUSIBILITY_UNAVAILABLE`; nothing is stored and the review stays open, retry with `review_confirm` |
+| `block` | `error` `PLAUSIBILITY_UNAVAILABLE`; nothing is stored and the review stays open, `review_confirm` re-runs the check (it never submits an unchecked answer set) and repeats the error while the LLM stays unavailable |
 
 The same check is available over HTTP (additive, for the visual renderer):
 
@@ -2425,7 +2425,7 @@ function QuestionInput({
 | `RESUME_STALE` | Form changed since the snapshot | No | Start a new session |
 | `RESUME_UNAVAILABLE` | No session store (Redis) configured, or snapshot expired/not found | No | Start a new session |
 | `RESUME_CONFLICT` | Session snapshot modified from another connection (compare-and-set lost) | **Yes** | Start a new connection and resume |
-| `PLAUSIBILITY_UNAVAILABLE` | `llm_validation.on_error: block` and the LLM failed | No | Retry `review_confirm` |
+| `PLAUSIBILITY_UNAVAILABLE` | `llm_validation.on_error: block` and the LLM failed | No | `review_confirm` re-runs the check before any submit |
 | `BLOB_STORE_FAILED` | Internal: recording could not be stored (best-effort evidence) | No | None, the answer is kept |
 | `SUBMIT_FAILED` | Submission pipeline failed | No | Retry `review_confirm` |
 | `INTERNAL_ERROR` | Unhandled server exception | No | Log and retry if transient |

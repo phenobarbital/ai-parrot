@@ -113,12 +113,55 @@ class TestReviewAndResume:
         for fid, val in (("name", "Ana"), ("color", "r"), ("agree", "yes"), ("pw", "x")):
             s.handle(AnswerText(type="answer_text", field_id=fid, value=val))
             out = _advance(s)
+        # AC11: the check runs before the Submit, even without a review step.
+        assert any(isinstance(o, RunPlausibility) for o in out)
+        assert not any(isinstance(o, Submit) for o in out)
+        out = s.handle(PlausibilityDone(type="_plausibility_done", report=_report({"name": 0.9})))
         assert any(isinstance(o, Submit) for o in out)
-        assert not any(isinstance(o, RunPlausibility) for o in out)
 
     def test_review_never_submits_directly(self):
         s = _make(cfg=VoiceFormConfig(max_questions=None, review="never"))
         out = _answer_all(s)
+        assert any(isinstance(o, RunPlausibility) for o in out)
+        out = s.handle(PlausibilityDone(type="_plausibility_done", report=_report({"name": 0.9})))
+        assert any(isinstance(o, Submit) for o in out)
+
+    def test_review_never_without_llm_submits_directly(self):
+        form = _form()
+        form.llm_validation = None
+        s = _make(form, cfg=VoiceFormConfig(max_questions=None, review="never"))
+        out = _answer_all(s)
+        assert any(isinstance(o, Submit) for o in out)
+        assert not any(isinstance(o, RunPlausibility) for o in out)
+
+    def test_field_level_opt_in_runs_check_without_form_block(self):
+        """Ledger b2df7f6dec56: a field-level llm_validation=True is eligible although the form has no block."""
+        form = _form()
+        form.llm_validation = None
+        next(f for f in form.iter_fields_recursive() if f.field_id == "name").llm_validation = True
+        s = _make(form, cfg=VoiceFormConfig(max_questions=None, review="never"))
+        out = _answer_all(s)
+        run = next(o for o in out if isinstance(o, RunPlausibility))
+        assert set(run.fields) == {"name"}
+
+    def test_block_mode_confirm_after_block_reruns_check_not_submit(self):
+        """Ledger b2df7f6dec56 / AC13: a blocked report never leads to Submit."""
+        form = _form()
+        form.llm_validation = LLMValidationConfig(enabled=True, on_error="block")
+        s = _make(form)
+        _answer_all(s)
+        blocked = PlausibilityReport(status="blocked", reason="down", threshold=0.7)
+        out = s.handle(PlausibilityDone(type="_plausibility_done", report=blocked))
+        assert any(getattr(o, "code", "") == "PLAUSIBILITY_UNAVAILABLE" for o in out)
+        out = s.handle(ReviewConfirm(type="review_confirm", confirmed=True))
+        assert not any(isinstance(o, Submit) for o in out)
+        assert any(isinstance(o, RunPlausibility) for o in out)
+        out = s.handle(PlausibilityDone(type="_plausibility_done", report=blocked))
+        assert any(getattr(o, "code", "") == "PLAUSIBILITY_UNAVAILABLE" for o in out)
+        assert not any(isinstance(o, Submit) for o in out)
+        out = s.handle(ReviewConfirm(type="review_confirm", confirmed=True))
+        s.handle(PlausibilityDone(type="_plausibility_done", report=_report({"name": 0.9})))
+        out = s.handle(ReviewConfirm(type="review_confirm", confirmed=True))
         assert any(isinstance(o, Submit) for o in out)
 
     def test_engine_review_flag_and_edit_delta(self, v2_session):

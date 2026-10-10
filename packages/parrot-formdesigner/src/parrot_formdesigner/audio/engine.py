@@ -60,6 +60,7 @@ class AudioFormSession:
         self.lexicon = lexicon
         self.state = state
         self.llm_cfg = llm_cfg
+        self._llm = llm_cfg or LLMValidationConfig()   # effective config: field-level opt-in works without a form block
         self.planner = QuestionPlanner(form, manifest, cfg)   # adapter awaits planner.replan() on Replan
         self.logger = logging.getLogger(__name__)
         self._questions: dict[str, AudioQuestion] = {q.field_id: q for q in manifest.questions}
@@ -67,6 +68,7 @@ class AudioFormSession:
         self._last_audio: tuple[str, bytes, str | None] | None = None   # (field_id, bytes, mime) — never snapshotted
         self._skipped: set[str] = set()          # optional fields the user skipped (persisted via answer_meta)
         self._pl_requested: set[str] | None = None   # fields of the in-flight plausibility batch
+        self._pl_unchecked: set[str] = set()     # fields whose last plausibility batch was blocked (on_error=block)
         self._resume_snap: AudioSnapshot | None = None
         self._synthesized: set[str] = set()      # field_ids whose narration has already been requested
         self._started_emitted = False
@@ -527,11 +529,16 @@ class AudioFormSession:
         ``cfg.review == "ask"`` behaves like ``"always"`` here: the review prompt itself is the question the user
         answers with "yes/send" (submit) or "change N" (edit), so no separate yes/no turn is added.
         """
-        if not self._review_enabled():
-            self.state.phase = Phase.SUBMITTING
-            return [Submit(data=self._submission_data(), context=self._submission_context())]
-        self.state.cursor = None
         fields = self._plausibility_fields(set(self.state.answers))
+        if not self._review_enabled():
+            if fields:
+                # AC11: review "never" / v1 still run the check before the Submit.
+                self.state.cursor = None
+                self._pl_requested = set(fields)
+                self.state.phase = Phase.PLAUSIBILITY
+                return [RunPlausibility(fields=fields), self._save()]
+            return self._submit()
+        self.state.cursor = None
         if fields:
             self._pl_requested = set(fields)
             self.state.phase = Phase.PLAUSIBILITY
@@ -539,9 +546,7 @@ class AudioFormSession:
         return self._start_review(report=None)
 
     def _plausibility_fields(self, candidates: set[str]) -> set[str]:
-        """Answered, LLM-enabled, non-sensitive fields (S8: sensitive never sent)."""
-        if self.llm_cfg is None or not self.llm_cfg.enabled:
-            return set()
+        """Answered, LLM-enabled (field-level opt-in included), non-sensitive fields (S8: sensitive never sent)."""
         return {fid for fid in candidates
                 if fid in self._fields and fid in self.state.answers
                 and llm_validation_enabled(self.form, self._fields[fid])
@@ -554,10 +559,22 @@ class AudioFormSession:
         report: PlausibilityReport = ev.report
         requested, self._pl_requested = self._pl_requested, None
         if report.status == "blocked":
-            # Retryable and never stored: stay in REVIEW with the previous report (if any).
-            out: list[Outbound] = [Error(code="PLAUSIBILITY_UNAVAILABLE",
-                                         message=report.reason or "plausibility unavailable")]
+            self._pl_unchecked |= (requested or set())
+            if not self._review_enabled():
+                if self._llm.on_error != "block":
+                    return self._submit()
+                # No review to retry from: re-ask the last question; plan exhaustion re-runs the check.
+                out = [Error(code="PLAUSIBILITY_UNAVAILABLE", message=report.reason or "plausibility unavailable")]
+                last = self.state.plan[-1] if self.state.plan else None
+                if last is None:
+                    return out
+                self.state.cursor = last
+                self.state.phase = Phase.ASKING
+                return out + self._ask(last)
+            # Retryable and never stored: stay in REVIEW; review_confirm re-runs the check (AC13).
+            out = [Error(code="PLAUSIBILITY_UNAVAILABLE", message=report.reason or "plausibility unavailable")]
             return out + self._start_review(report=None)
+        self._pl_unchecked -= (requested or set())
         current = self.state.plausibility
         if current is None:
             merged = report.model_copy(update={"items": {}})
@@ -570,7 +587,7 @@ class AudioFormSession:
         for fid in list(merged.items):
             if fid not in self.state.answers:
                 merged.items.pop(fid)
-        threshold = self.llm_cfg.threshold if self.llm_cfg is not None else report.threshold
+        threshold = self._llm.threshold
         for fid, verdict in report.items.items():
             answer = self.state.answers.get(fid)
             if answer is None or fid not in self._fields or is_sensitive(self._fields[fid]):
@@ -580,6 +597,8 @@ class AudioFormSession:
                 if self.state.flagged.get(fid) != answer.version:
                     self.state.flagged[fid] = answer.version
         self.state.plausibility = merged
+        if not self._review_enabled():
+            return self._submit()
         return self._start_review(report=report)
 
     def _flagged_now(self) -> set[str]:
@@ -658,11 +677,23 @@ class AudioFormSession:
             return [Error(code="WRONG_PHASE", message="Nothing to review right now")]
         if not ev.confirmed:
             return self._start_review(report=None)
+        if self._llm.on_error == "block":
+            # AC13: a blocked (or never-run, e.g. after a resume) check must pass before anything is stored.
+            fields = self._plausibility_fields(set(self.state.answers))
+            pending = (self._pl_unchecked & fields) or (fields if self.state.plausibility is None else set())
+            if pending:
+                self._pl_requested = set(pending)
+                self.state.phase = Phase.PLAUSIBILITY
+                return [RunPlausibility(fields=pending), self._save()]
+        return self._submit() + [self._save()]
+
+    def _submit(self) -> list[Outbound]:
+        """SUBMITTING + Submit carrying the plausibility report (low confidence never blocks)."""
         self.state.phase = Phase.SUBMITTING
         context = self._submission_context()
         if self.state.plausibility is not None:
             context["llm_validation"] = self.state.plausibility.model_dump(mode="json")
-        return [Submit(data=self._submission_data(), context=context), self._save()]
+        return [Submit(data=self._submission_data(), context=context)]
 
     def on_review_edit(self, ev: ReviewEdit) -> list[Outbound]:
         """Re-ask one field from the review; its acceptance returns to the review via a delta plausibility batch."""
