@@ -285,7 +285,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -297,8 +297,9 @@
       "parallelism_notes": "imports unwrap_voice/wrap_voice from TASK-4210 (core/voice_answer.py), AnswerPlausibilityChecker/PlausibilityBlocked from TASK-4220 (services/plausibility.py); reuses the golden fixtures of TASK-4221 (test_submission_pipeline_parity.py)",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4222-submission-pipeline.md"
+      "completed_at": "2026-10-10T16:20:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4222-submission-pipeline.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4223",

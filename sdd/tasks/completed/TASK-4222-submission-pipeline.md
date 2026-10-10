@@ -499,8 +499,7 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-coder agent (Claude Sonnet 5.5)
+**Date**: 2026-10-10
+**Notes**: Implemented services/submission_pipeline.py as a move of submit_data's tail plus the plausibility step and envelope-verdict attachment. 35 tests pass (new unit suite + TASK-4221 parity). Handler untouched. Stale-branch ancestor check passed. Three additive params as specified (sink_factory, request, visit_context). Landed dependency names matched the contract.
+**Deviations from spec**: (1) validate() inside submit() also forwards locale/auth_context to FormValidator (handler passes neither today; TASK-4224 should pass locale="en"-equivalent). (2) FormSubmission gets user_id and locale from submit() params (handler leaves them None; enrichment overrides still apply). (3) Generic store call has no tenant kwarg, unchanged. (4) The envelope-verdict rebuild is tested via _attach_verdicts directly since the validator keeps envelopes only after TASK-4223.
