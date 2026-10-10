@@ -35,7 +35,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "imports PlausibilityVerdict from TASK-4209 (core/llm_validation.py); both modify core/__init__.py so serialized after TASK-4209",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4210-voice-evidence-envelope.md"
+      "completed_at": "2026-10-10T16:07:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4210-voice-evidence-envelope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4211",

@@ -50,7 +50,13 @@ from .style import (
     StyleSchema,
 )
 from .types import FieldType, LocalizedString
-from .voice_answer import VoiceAnswerEnvelope
+from .voice_answer import (
+    VoiceAnswerEnvelope,
+    VoiceEvidenceEnvelope,
+    is_voice_envelope,
+    unwrap_voice,
+    wrap_voice,
+)
 from .llm_validation import (
     LLMValidationConfig,
     PlausibilityReport,
@@ -73,6 +79,10 @@ __all__ = [
     "FieldType",
     # Voice answer envelope (FEAT-488)
     "VoiceAnswerEnvelope",
+    "VoiceEvidenceEnvelope",
+    "is_voice_envelope",
+    "unwrap_voice",
+    "wrap_voice",
     # Voice mode + LLM plausibility (FEAT-649)
     "HandsFreeConfig",
     "UiCue",
