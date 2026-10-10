@@ -391,8 +391,7 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd task agent (Claude Sonnet 5.5)
+**Date**: 2026-10-10
+**Notes**: audio/engine.py extended (still no await); 16 new tests + TASK-4225 tests pass (31). Landed-name mapping: `SaveSnapshot` carries `snapshot` (dumped AudioSnapshot dict), not state; `PlausibilityDone.report`; audio-in-REVIEW emits `Transcribe(field_id="_review")` and the adapter must echo that field_id in `TranscriptReady` (engine routes any transcript in REVIEW to `on_review_prompt_answer`). Review emission order: [PlausibilityResult?], ReviewStart, ReviewItem*, Synthesize(review:* + flag + review:close segments), ReviewPrompt(text), SaveSnapshot. Submit from review carries the plausibility report in `context["llm_validation"]` (pipeline attaches it itself when passed as ctx; adapter may also pass the report to the pipeline). Snapshot: sensitive answers are stored without value/transcript (S8) so a resume re-asks them; skipped fields persist under `answer_meta["_skipped"]={"fields":[...]}`; `revision` left 0 (store-owned). Resume: `from_snapshot(snap, **deps)` (deps incl. `state` with the CURRENT user/tenant) only stashes the snapshot; `on_start` with `resume_session_id` checks identity (RESUME_FORBIDDEN, also when no snapshot), form_version (RESUME_STALE), drops stale answers (unknown field/uid/invalid option -> AnswerCleared + DeleteBlob), resets return_to_review, re-plans and emits `SessionResumed` then `Replan`; SessionStarted/Synthesize/Question follow on PlanReady. `SaveSnapshot` is emitted from `_accept`, `on_skip` (before Replan), plausibility start, review start/confirm/edit. `review == "ask"` behaves like "always" (the review prompt is itself the yes/change question). Flag rule: not plausible OR confidence < threshold, once per answer version. `blocked` -> Error(PLAUSIBILITY_UNAVAILABLE) + review re-read without storing the report.
+**Deviations from spec**: after a review edit, if the replan reveals new unanswered fields they are asked (return_to_review stays set) before the delta plausibility; blueprint said never ask the next cursor.

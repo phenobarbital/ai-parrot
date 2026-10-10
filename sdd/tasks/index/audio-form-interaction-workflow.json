@@ -377,7 +377,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -388,8 +388,9 @@
       "parallelism_notes": "extends audio/engine.py created by TASK-4225 (same file, serialized); builds AudioSnapshot from TASK-4219 (audio/session_store.py)",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4226-audio-engine-review-resume.md"
+      "completed_at": "2026-10-10T16:32:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4226-audio-engine-review-resume.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4227",
