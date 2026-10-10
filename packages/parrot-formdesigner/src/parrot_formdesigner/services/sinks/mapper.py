@@ -162,8 +162,9 @@ def flatten_submission(form: FormSchema, submission: FormSubmission) -> dict[str
     row["extra_data"] = json.dumps(submission.extra_data) if submission.extra_data is not None else None
 
     data = submission.data
+    voice_cols = voice_capable_columns(form)
     for column_name, field in _iter_form_fields(form):
-        row[column_name] = _extract_value(data, column_name, field)
+        row[column_name] = _extract_value(data, column_name, field, voice=column_name in voice_cols)
 
     if form.metadata:
         for meta_field in form.metadata:
@@ -173,7 +174,7 @@ def flatten_submission(form: FormSchema, submission: FormSubmission) -> dict[str
     return row
 
 
-def _extract_value(data: dict[str, Any], column_name: str, field: FormField) -> Any:
+def _extract_value(data: dict[str, Any], column_name: str, field: FormField, *, voice: bool = False) -> Any:
     """Extract the value for ``column_name`` from a submission's ``data``.
 
     ``ARRAY`` values are JSON-serialized into a single column. Nested
@@ -187,9 +188,11 @@ def _extract_value(data: dict[str, Any], column_name: str, field: FormField) -> 
         data: The submission's raw ``data`` dict.
         column_name: The flattened column name (may contain ``__``).
         field: The schema field this column corresponds to.
+        voice: When True (FEAT-649 voice-capable column), any non-``None`` value is
+            JSON-serialized for the JSONB column; ``None`` stays ``None``.
 
     Returns:
-        The extracted value, JSON-serialized if ``field`` is an ``ARRAY``.
+        The extracted value, JSON-serialized if ``field`` is an ``ARRAY`` or ``voice`` is set.
     """
     if column_name in data:
         value = data[column_name]
@@ -205,6 +208,10 @@ def _extract_value(data: dict[str, Any], column_name: str, field: FormField) -> 
                 break
         value = cursor
 
+    if voice:
+        # FEAT-649: envelopes AND typed scalars in a voice column are stored as JSON
+        # (JSONB column, ::text::jsonb cast); None stays SQL NULL, never "null".
+        return json.dumps(value) if value is not None else None
     if field.field_type == FieldType.ARRAY:
         return json.dumps(value)
     return value
@@ -269,3 +276,30 @@ def field_types_for(form: FormSchema) -> dict[str, FieldType]:
         column name to its originating field's ``FieldType``.
     """
     return {name: field.field_type for name, field in _iter_form_fields(form)}
+
+
+_NON_VOICE_TYPES: frozenset[FieldType] = frozenset({
+    FieldType.HIDDEN, FieldType.PASSWORD, FieldType.ARRAY, FieldType.GROUP,
+})
+
+
+def voice_capable_columns(form: FormSchema) -> frozenset[str]:
+    """Return the flattened columns that may carry a ``VoiceEvidenceEnvelope`` (FEAT-649).
+
+    Rule (shared with migration 009, TASK-4230): a column is voice-capable when its field has
+    ``answer_envelope == "voice"`` (FEAT-488), or when the form enables voice (``form.voice`` set and
+    ``form.voice.enabled``) and the field type is not in ``_NON_VOICE_TYPES``
+    (HIDDEN, PASSWORD, ARRAY, GROUP).
+
+    Args:
+        form: The form whose tabular columns to classify.
+
+    Returns:
+        The set of column names whose values are JSON-serialised and stored as JSONB.
+    """
+    voice_cfg = getattr(form, "voice", None)
+    voice_on = bool(voice_cfg and voice_cfg.enabled)
+    return frozenset(
+        name for name, field in _iter_form_fields(form)
+        if field.answer_envelope == "voice" or (voice_on and field.field_type not in _NON_VOICE_TYPES)
+    )
