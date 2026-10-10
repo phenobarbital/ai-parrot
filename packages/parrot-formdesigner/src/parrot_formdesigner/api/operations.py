@@ -418,7 +418,10 @@ def _apply_update_field(form: FormSchema, op: UpdateField) -> FormSchema:
         if not patch_uid_matches:
             raise OperationError(-1, "update_field", "field_uid is immutable")
     existing = container[fi].model_dump()
-    merged = _deep_merge(existing, op.patch)
+    patch = dict(op.patch)
+    if "hint" in patch and patch["hint"] in ("", {}):
+        patch["hint"] = None  # FEAT-649: an empty hint clears it (RFC 7396 null = remove)
+    merged = _deep_merge(existing, patch)
     merged["field_uid"] = str(op.field_uid)  # identity pin moves to the UID
     new_field_id = merged.get("field_id")
     # Rename → per-form uniqueness check.

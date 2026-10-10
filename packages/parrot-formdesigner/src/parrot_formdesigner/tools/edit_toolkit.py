@@ -333,6 +333,9 @@ class EditToolkit(AbstractToolkit):
             field_uid: UUID string of the field to update — obtain from
                 ``get_form_summary`` or ``search_fields``.
             patch: RFC 7396 merge-patch dict with fields to update.
+                Voice/LLM keys (FEAT-649): ``hint`` (string or ``{locale: text}``;
+                ``""`` clears it) and ``llm_validation`` (``true``/``false``;
+                ``null`` inherits the form default).
 
         Returns:
             Success dict with updated field data, or error dict on failure.

@@ -87,6 +87,8 @@ The FormSchema must follow this structure:
           "description": "string (optional)",
           "required": true/false,
           "placeholder": "string (optional)",
+          "hint": "string (optional) — short help read aloud after the question and shown under the input",
+          "llm_validation": "true/false (optional) — ask an LLM to sanity-check the answer before submit",
           "default": "any (optional)",
           "constraints": {
             "min_length": int, "max_length": int,
