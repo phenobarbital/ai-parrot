@@ -280,9 +280,13 @@ class FormValidator:
         # accepted, and a visible field behaves exactly as before.
         from .rule_evaluator import RuleEvaluator  # noqa: PLC0415
 
+        # FEAT-649: rules and cross-field validators see the unwrapped scalar
+        # of a spoken answer, never the envelope (persistence keeps envelopes).
+        scalar_data = self._scalar_view(all_fields, data)
+
         resolution = await RuleEvaluator().resolve(
             form,
-            data,
+            scalar_data,
             locale=locale,
             location_vars=location_vars,
             visit_context=visit_context,
@@ -296,7 +300,7 @@ class FormValidator:
             field_errors = await self.validate_field(
                 field,
                 data.get(field.field_id),
-                all_data=data,
+                all_data=scalar_data,
                 locale=locale,
                 auth_context=auth_context,
                 required=effective_required,
@@ -318,7 +322,9 @@ class FormValidator:
                 else:
                     raw = data.get(field.field_id)
                     if self._is_evidence_envelope_value(field, raw):
-                        envelope = VoiceEvidenceEnvelope.model_validate(raw)
+                        envelope = (
+                            raw if isinstance(raw, VoiceEvidenceEnvelope) else VoiceEvidenceEnvelope.model_validate(raw)
+                        )
                         scalar = self._coerce_value(envelope.answer, field)
                         # An empty optional spoken answer is kept only when it references audio.
                         if scalar is not None or envelope.blob_ref:
@@ -400,6 +406,11 @@ class FormValidator:
         # FEAT-649: a spoken answer on any field type arrives as a VoiceEvidenceEnvelope —
         # validate its scalar with this field's normal rules (unwrap -> validate -> re-fold at sanitize time).
         if self._is_evidence_envelope_value(field, value):
+            if isinstance(value, dict):
+                try:
+                    VoiceEvidenceEnvelope.model_validate(value)
+                except PydanticValidationError:
+                    return [f"{label} has an invalid voice answer"]
             return await self.validate_field(
                 field,
                 value.get("answer") if isinstance(value, dict) else value.answer,
@@ -570,6 +581,16 @@ class FormValidator:
         )
 
     _EVIDENCE_KEYS = frozenset({"source", "confidence", "audio_mime", "duration_ms", "language", "plausibility"})
+
+    @classmethod
+    def _scalar_view(cls, fields: list[FormField], data: dict[str, Any]) -> dict[str, Any]:
+        """Return ``data`` with FEAT-649 spoken-answer envelopes replaced by their ``answer``."""
+        view = dict(data)
+        for field in fields:
+            raw = data.get(field.field_id)
+            if cls._is_evidence_envelope_value(field, raw):
+                view[field.field_id] = raw.get("answer") if isinstance(raw, dict) else raw.answer
+        return view
 
     @classmethod
     def _is_evidence_envelope_value(cls, field: FormField, value: Any) -> bool:

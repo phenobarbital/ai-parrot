@@ -79,3 +79,40 @@ class TestFeat488Unchanged:
         assert r.is_valid, r.errors
         assert r.sanitized_data["note"]["answer"] == "hello"
         assert r.sanitized_data["note"]["language"] == "en"
+
+
+class TestEnvelopeRulesAndShape:
+    """Review fixes: rules see scalars (ledger 67089d7203f4); bad envelope -> field error (ledger ea847adb2d3b)."""
+
+    @pytest.fixture
+    def rule_form(self) -> FormSchema:
+        from parrot_formdesigner.core.constraints import ConditionOperator, DependencyRule, FieldCondition
+
+        rule = DependencyRule(
+            conditions=[FieldCondition(field_id="has_pet", operator=ConditionOperator.EQ, value=True)],
+            effect="require",
+        )
+        fields = [
+            FormField(field_id="has_pet", field_type=FieldType.BOOLEAN, label="Pet"),
+            FormField(field_id="pet_name", field_type=FieldType.TEXT, label="Pet name", depends_on=rule),
+        ]
+        from parrot_formdesigner.core.resolution import resolve_rule_references
+
+        return resolve_rule_references(
+            FormSchema(form_id="f", title="F", sections=[FormSection(section_id="s", fields=fields)])
+        )
+
+    async def test_require_rule_fires_on_spoken_trigger(self, rule_form):
+        r = await _run(rule_form, {"has_pet": _env(True)})
+        assert not r.is_valid
+        assert "pet_name" in r.errors
+
+    async def test_require_rule_not_fired_when_false(self, rule_form):
+        r = await _run(rule_form, {"has_pet": _env(False)})
+        assert r.is_valid, r.errors
+
+    async def test_malformed_envelope_is_field_error(self, form):
+        bad = _env("red", confidence="not-a-number")
+        r = await _run(form, {"color": bad})
+        assert not r.is_valid
+        assert "color" in r.errors
