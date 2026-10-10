@@ -205,7 +205,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -213,8 +213,9 @@
       "parallelism_notes": "no dependency: uses only existing synthesize_with_fallback (renderers/audio.py:164), AbstractBlobStorage/BlobMetadata (services/blob_storage.py) and FormSchema/FormField",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4218-audio-segments-recordings.md"
+      "completed_at": "2026-10-10T16:15:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4218-audio-segments-recordings.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4219",

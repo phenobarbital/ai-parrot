@@ -368,8 +368,8 @@ async def test_recording_blob_id_deterministic(): ...       # FILL IN: same ref 
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 5.5 (sdd task agent)
+**Date**: 2026-10-10
+**Notes**: Implemented segments.py and recordings.py per blueprint; 7 unit tests pass, ruff clean. Cached value is re-inserted/refreshed in the process LRU under the lock (LRU hit also moves to end).
 
-**Deviations from spec**:
+**Deviations from spec**: None.
