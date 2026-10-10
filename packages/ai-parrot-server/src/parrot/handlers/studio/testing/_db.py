@@ -6,6 +6,7 @@ from __future__ import annotations
 from parrot.clients.factory import LLMFactory
 
 from ..access import _store_record, build_tool_scope
+from ..conversation import delete_studio_conversation
 from ..storage.models import StudioAgentKey, StudioNotFound, StudioStorageUnavailable
 from ._models import TestAskRequest
 
@@ -45,7 +46,7 @@ class _StudioTestingDbMixin:
         sid = self._studio_session_id(await self._resolve_session(), key)
         try:
             async with manager.studio.use(key, session_id=sid, request=self.request) as bot:
-                return await self._ask_response(bot, agent_name, ask_request, **ctx)
+                return await self._ask_response(bot, agent_name, ask_request, session_id=sid, **ctx)
         except StudioNotFound:
             return self._not_found("agent", agent_name)
         except PermissionError as exc:  # AgentAccessDenied (PBAC deny, raised before any build)
@@ -100,4 +101,7 @@ class _StudioTestingDbMixin:
             return self.json_response({"message": f"No active test session for '{agent_name}'"}, status=200)
         if (runtime := getattr(self._manager(), "studio", None)) is not None:
             runtime.evict_session(key, sid)
+        rec = await storage.services.agents.get(part, agent_name)
+        if rec is not None:  # a shared (redis) history outlives the evicted instance: ending the session deletes it
+            await delete_studio_conversation((await self._get_user()).user_id, sid, str(rec.agent_id))
         return self.json_response({"message": f"Test session for '{agent_name}' stopped", "agent_name": agent_name})

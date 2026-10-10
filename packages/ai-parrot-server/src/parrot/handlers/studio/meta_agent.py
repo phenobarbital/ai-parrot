@@ -33,6 +33,7 @@ from pydantic import BaseModel
 from ._base import StudioBaseView
 from .access import StudioTenantRequired, build_tool_scope
 from .byok import resolve_user_api_key
+from .conversation import studio_conversation_kwargs
 from .models import StudioError
 
 SESSION_KEY = "_studio_assistant"
@@ -185,9 +186,13 @@ class StudioAssistantHandler(StudioBaseView):
                 return agent
             # the entry named an instance that expired / belongs to another partition: rebuild below
 
+        # a stale entry (instance missing on THIS worker) keeps its conversation id: with a shared conversation
+        # backend any worker continues the same history, and the entry no longer ping-pongs between workers
+        conversation = entry["session_id"] if entry is not None else uuid.uuid4().hex
         agent = AgentStudioAgent(
             name=f"agent_studio_{uuid.uuid4().hex[:8]}", api_key=api_key,
             declarative_only=await self._declarative_only(), chatbot_id=partition.chatbot_id,
+            **studio_conversation_kwargs(),
         )
         await agent.configure(self.request.app)
         agent._assistant_partition = partition
@@ -195,7 +200,7 @@ class StudioAssistantHandler(StudioBaseView):
         if session is not None:
             session[SESSION_KEY] = {
                 **self._partition_entries(session),
-                partition.key: {"instance": agent.name, "session_id": uuid.uuid4().hex},
+                partition.key: {"instance": agent.name, "session_id": conversation},
             }
         return agent
 

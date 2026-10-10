@@ -14,6 +14,7 @@ from parrot.models.basic import ToolConfig
 from parrot.registry.registry import BotConfig
 from parrot.tools.spec import AgentMCPServerSpec, ToolkitSpec
 
+from ..handlers.studio.conversation import studio_conversation_kwargs
 from ..handlers.studio.storage.models import StudioAgentSnapshot, StudioPartition, StudioToolingRefused
 from ..handlers.studio.storage.services._common import (
     StudioClassAllowlist,
@@ -118,7 +119,7 @@ class StudioAgentBuilder:
             mcp_servers=[s.model_dump(mode="json") for s in servers], system_prompt=definition.system_prompt,
             model=None, config={}, startup_config={},
         )
-        kwargs: dict[str, Any] = {**definition.config, "chatbot_id": str(rec.agent_id), "created_by": rec.owner}
+        kwargs: dict[str, Any] = {**studio_conversation_kwargs(), **definition.config, "chatbot_id": str(rec.agent_id), "created_by": rec.owner}
         if definition.llm:
             kwargs["llm"] = definition.llm
         if definition.description is not None:
