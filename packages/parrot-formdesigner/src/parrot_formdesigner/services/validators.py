@@ -21,7 +21,7 @@ from ..core._location_data import is_valid_iso_country_code
 from ..core.constraints import ConditionOperator, DependencyOperation
 from ..core.schema import FormField, FormSchema, FormSection
 from ..core.types import FieldType, LocalizedString
-from ..core.voice_answer import VoiceAnswerEnvelope
+from ..core.voice_answer import VoiceAnswerEnvelope, VoiceEvidenceEnvelope, is_voice_envelope
 from .auth_context import AuthContext
 from .remote_response_resolver import RemoteResponseResolver, RemoteResponseSpec
 from .unknown_fields import compute_extra_data
@@ -316,9 +316,19 @@ class FormValidator:
                     if submitted is not None:
                         sanitized[field.field_id] = submitted
                 else:
-                    coerced = self._coerce_value(data.get(field.field_id), field)
-                    if coerced is not None:
-                        sanitized[field.field_id] = coerced
+                    raw = data.get(field.field_id)
+                    if self._is_evidence_envelope_value(field, raw):
+                        envelope = VoiceEvidenceEnvelope.model_validate(raw)
+                        scalar = self._coerce_value(envelope.answer, field)
+                        # An empty optional spoken answer is kept only when it references audio.
+                        if scalar is not None or envelope.blob_ref:
+                            sanitized[field.field_id] = envelope.model_copy(
+                                update={"answer": scalar}
+                            ).model_dump(mode="json")
+                    else:
+                        coerced = self._coerce_value(raw, field)
+                        if coerced is not None:
+                            sanitized[field.field_id] = coerced
 
         # FEAT-458 — payload-side diff, reported (not judged) into extra_data.
         #
@@ -386,6 +396,18 @@ class FormValidator:
         # REST: validate the submitted {answer, blob_ref, status?} shape
         if field.field_type == FieldType.REST:
             return self._validate_rest_field(field, value, label, is_required)
+
+        # FEAT-649: a spoken answer on any field type arrives as a VoiceEvidenceEnvelope —
+        # validate its scalar with this field's normal rules (unwrap -> validate -> re-fold at sanitize time).
+        if self._is_evidence_envelope_value(field, value):
+            return await self.validate_field(
+                field,
+                value.get("answer") if isinstance(value, dict) else value.answer,
+                all_data=all_data,
+                locale=locale,
+                auth_context=auth_context,
+                required=required,
+            )
 
         # Required check. FEAT-488: a dict answer needs its own emptiness
         # rule — `is_empty` used to only recognise None and blank strings, so
@@ -547,6 +569,17 @@ class FormValidator:
             and field.field_type in (FieldType.TEXT, FieldType.TEXT_AREA)
         )
 
+    _EVIDENCE_KEYS = frozenset({"source", "confidence", "audio_mime", "duration_ms", "language", "plausibility"})
+
+    @classmethod
+    def _is_evidence_envelope_value(cls, field: FormField, value: Any) -> bool:
+        """Whether `value` is a FEAT-649 spoken-answer envelope on a field outside the FEAT-488 TEXT path.
+
+        FEAT-488 declared TEXT/TEXT_AREA envelope fields keep their own handling; every other field
+        type answered by voice carries a VoiceEvidenceEnvelope whose ``answer`` is validated as the scalar.
+        """
+        return is_voice_envelope(value) and not cls._is_voice_envelope_field(field)
+
     def _is_empty_dict_answer(self, value: dict[str, Any], field: FormField) -> bool:
         """Whether a dict answer counts as "not answered" for the required check.
 
@@ -630,8 +663,9 @@ class FormValidator:
                 # The field declared a typed envelope, so the shape IS
                 # checkable — enforce it and return the canonical dump so
                 # consumers always see blob_ref/data_url present.
+                model = VoiceEvidenceEnvelope if self._EVIDENCE_KEYS & value.keys() else VoiceAnswerEnvelope
                 try:
-                    return VoiceAnswerEnvelope.model_validate(value).model_dump()
+                    return model.model_validate(value).model_dump()
                 except PydanticValidationError as exc:
                     raise ValueError(
                         f"{field.field_id} expects a voice answer envelope "
