@@ -706,8 +706,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude Sonnet 5.5 (sdd task agent)
+**Date**: 2026-10-10
+**Notes**: Implemented audio/events.py per blueprint (ClientInbound spelled out as explicit Union; v1 parse filters keys to model_fields) plus 9 tests, all passing; ruff clean. In-progress index commit skipped (index goes straight to done).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
