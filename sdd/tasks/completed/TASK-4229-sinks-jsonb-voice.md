@@ -363,8 +363,11 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker agent (Claude Sonnet 5.5)
+**Date**: 2026-10-10
+**Notes**: Implemented per blueprint. Final voice-capability rule (for TASK-4230): a column is voice-capable when its
+field has `answer_envelope == "voice"`, or when `form.voice` is set and `form.voice.enabled` and the field type is not
+in {HIDDEN, PASSWORD, ARRAY, GROUP}. Mismatch error names `009_voice_envelope_sink_tables.py`. 46 tests pass
+(new + existing sink/mapper suites).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
