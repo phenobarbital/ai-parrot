@@ -161,7 +161,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -172,8 +172,9 @@
       "parallelism_notes": "imports Lexicon/normalize from TASK-4213 (lexicon.py); Phase/OptionMatch from TASK-4211 (audio/models.py)",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4216-voice-commands-refiner.md"
+      "completed_at": "2026-10-10T16:13:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4216-voice-commands-refiner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4217",
