@@ -1,0 +1,23 @@
+FEAT-224 and FEAT-236 shipped a working but minimal audio form: a flat question list over a WebSocket, TTS per question, whole-file STT per answer, a confidence gate, and a direct write to `FormSubmissionStorage`. Field users (accessibility, hands-busy data capture), form authors, data operators who read `form_data`, and the `navigator-svelte` frontend team are all blocked by the following, every item verified in code:
+
+**Promised in FEAT-224/236 and never built**
+- No per-field voice hint. `FormField` (`core/schema.py:65-143`) has `label`, `description`, `placeholder`, `meta`, but no `hint`; the handler narrates only `label` + "Options: …" (`api/audio_ws.py:1333`). `description`/`placeholder` are never spoken.
+- `MAX_QUESTIONS = 10` is a module constant (`api/audio_ws.py:59`) that silently truncates the question list (`api/audio_ws.py:490`), required fields included.
+- No resume: `AudioSessionState` (`audio/models.py:179-210`) is memory-only with an integer `current_index`; the `PartialSaveStore` that `setup_form_api` receives (`api/routes.py:202`) is never passed to the audio handler (`api/routes.py:483-491`).
+- No voice→option matching: a binary answer on a PROMPT_SELECT question stores the raw transcript as the value without checking `options`.
+- No sections / dependencies: `RuleEvaluator.resolve()` (`services/rule_evaluator.py:578`) is never called from the audio path; `depends_on` / `post_depends` are ignored, questions advance by `index += 1` in two duplicated methods (`api/audio_ws.py:1072`, `:1094`).
+- `FormValidator` is injected (`api/audio_ws.py:147-158`) but never invoked. Submissions are stored with `is_valid` unverified.
+- The spoken audio is discarded after transcription (`_accept_answer`, `api/audio_ws.py:1009` stores only the string); `blob_storage` is never wired into the audio handler.
+
+**Additional bugs found**
+- `_finish_session` (`api/audio_ws.py:1115-1160`) builds `FormSubmission(form_version="1", data={fid: a.value})` and calls `FormSubmissionStorage.store()` directly, bypassing `FormAPIHandler.submit_data` (`api/handlers.py:1498`): no FEAT-457 sinks (`api/handlers.py:1824-1830`), no FEAT-188 lifecycle events, no forwarder (`api/handlers.py:1887`), and `registry.get(..., tenant=None)` (`api/audio_ws.py:1138`) loses the tenant from the URL.
+- MULTI_SELECT answers are stored as a comma-joined string (`api/audio_ws.py:595`).
+
+**New requirements (owner, 2026-10-10)** — quoted from the invocation and the proposal:
+1. Turn-based TTS→STT with per-field hints, pre-synthesised audio pushed over the WebSocket, visual cues, item-by-item option narration with voice selection, HTML fallbacks, persisted text+audio per answer, section/dependency awareness, a final review step, a deterministic runtime with templates, and an optional design-time LLM optimiser.
+2. *"Un atributo de validación LLM-assisted, al final (antes de enviar un formulario) además de las validaciones existentes: enviar pregunta+respuesta a un LLM que puede validar con un grado de confidencia que la respuesta tiene sentido en base a la pregunta — para evitar que ruido o cualquier otra cosa haya captado lo que no es y se haya registrado como respuesta."* This is a **cross-cutting FormBuilder change**, not an audio-only one.
+3. The spec must emit an artefact that lets the `navigator-svelte` project build a **Svelte 5, audio-first, hands-free renderer**.
+
+Why now: FEAT-544 (A2UI) and the Telegram/Teams renderers are converging on a shared form runtime; the audio handler is the only renderer that still owns its own submit path, and every new audio requirement would deepen that fork.
+
+---
