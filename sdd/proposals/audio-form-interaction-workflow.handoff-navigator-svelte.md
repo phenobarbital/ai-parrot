@@ -81,6 +81,8 @@ Keyboard shortcuts (space = push-to-talk override, R = repeat, B = back, Esc = s
 - **Hands-free is a client policy** signalled by `hands_free{auto_record, silence_ms}`: auto-open the microphone when the last segment of a question ends; end-of-speech by VAD + silence or `max_recording_seconds`. A push-to-talk override must always exist.
 - **One container per answer.** Never stream partial chunks; the server transcribes whole files.
 - **Session identity.** Persist `session_id` per `form_uid` in `localStorage` for resume; the server enforces one active session per user.
+- **Commands can be disabled per field** by the author (`meta.voice.commands: off`); the `question` payload will carry the effective command set — render `VoiceCommandHint` from it, not from a static list.
+- **Optimiser is staging-only**: `POST …/voice/optimize` returns proposals; applying them is a designer action through the regular field-update path.
 - **`hidden_by_cap`** questions exist (per-form cap, required always included): decide how the UI offers "more questions" or informs the user.
 
 ---
@@ -98,7 +100,7 @@ Keyboard shortcuts (space = push-to-talk override, R = repeat, B = back, Esc = s
 ## 6. Suggested open questions for the frontend proposal
 
 1. Where does the renderer mount first: public form page, formbuilder preview, or both?
-2. Hands-free end-of-speech: client VAD (which library, bundle size) vs timer-only?
+2. Hands-free end-of-speech is **decided**: client-side VAD + `silence_ms`, server reports only `max_recording_seconds`. Open here: which VAD library (bundle size, Safari/Capacitor support) and the default `silence_ms`.
 3. Default review playback: TTS read-back, the user's recording, or both?
 4. How to present `hidden_by_cap` questions and the per-form cap?
 5. Capacitor / mobile: MediaRecorder MIME support and background audio behaviour.
