@@ -16,7 +16,7 @@ tags: [a2ui, formdesigner, dialect, export, extractor, translator]
 
 **Date**: 2026-10-10
 **Author**: Jesus Lara
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A
 
 ---
@@ -744,10 +744,10 @@ from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID, ProducerOrigin
 
 ## Open Questions
 
-- [ ] `onSchemaLoaded.schema_overrides` on the A2UI path of `GET /schema`: ignore with a logged warning (proposed), or translate overrides into `updateComponents`/`updateDataModel` envelopes appended to the response? — *Owner: Jesus Lara*
-- [ ] Should `GET /forms/{uid}` (raw `FormSchema`) honour the dialect flag at all, or only `GET /forms/{uid}/schema` + `/forms`? Serving a surface from the "raw schema" URL may confuse tooling that expects `form_uid` at the top level. — *Owner: Jesus Lara*
+- [x] `onSchemaLoaded.schema_overrides` on the A2UI path of `GET /schema`: ignore with a logged warning, or translate overrides into `updateComponents`/`updateDataModel` envelopes appended to the response? — *Owner: Jesus Lara*: translate them — the A2UI response is a `createSurface` followed by `updateComponents`/`updateDataModel` envelopes derived from the overrides; overrides that cannot be mapped to a component are reported as warnings.
+- [x] Should `GET /forms/{uid}` (raw `FormSchema`) honour the dialect flag at all, or only `GET /forms/{uid}/schema` + `/forms`? — *Owner: Jesus Lara*: only `/schema` and `/forms`. `GET /forms/{uid}` ALWAYS returns the raw `FormSchema` (it is the form's identity, used by PUT/PATCH/clone/admin UI).
 - [ ] Bulk export granularity: `POST /forms/export` NDJSON stream (proposed) vs a single JSON array response; and should the CLI also support `--all-tenants` (iterating `list_tenants()`)? — *Owner: Jesus Lara*
 - [ ] Heuristic extractor: when a generic surface has a `Text` immediately before an input with no `label`, use it as the field label (proposed) or keep it as a section description? — *Owner: Jesus Lara*
-- [ ] Import conflict policy: 409 on existing `parrot_form_uid` unless `?overwrite=true` (proposed), or always mint a new `form_uid` and keep the imported one in `metadata`? — *Owner: Jesus Lara*
+- [x] Import conflict policy: 409 on existing `parrot_form_uid` unless `?overwrite=true`, or always mint a new `form_uid`? — *Owner: Jesus Lara*: 409 unless `?overwrite=true` (CLI `--overwrite`), same contract as `FormRegistry.register(overwrite=...)`; with overwrite the form is replaced and its version bumped.
 - [ ] Should `translate_jsonschema_to_a2ui` get an HTTP endpoint in v1 (`POST /forms/translate`), or stay library + CLI only (proposed)? — *Owner: Jesus Lara*
 - [ ] `click` is a transitive dependency of parrot-formdesigner today only through `ai-parrot`; declare it explicitly in the `ai-parrot`/`a2ui` extra or make the CLI module import it lazily? — *Owner: implementer*
