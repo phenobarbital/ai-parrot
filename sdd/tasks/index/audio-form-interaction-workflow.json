@@ -466,7 +466,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
@@ -474,8 +474,9 @@
       "parallelism_notes": "no dependency: standalone migration scripts (asyncpg, 003_migrate_form_data.py pattern); files only, never executed against a shared DB by tests",
       "assigned_to": null,
       "started_at": "2026-10-10T16:49:08Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4230-voice-envelope-migrations.md"
+      "completed_at": "2026-10-10T16:50:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4230-voice-envelope-migrations.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4231",

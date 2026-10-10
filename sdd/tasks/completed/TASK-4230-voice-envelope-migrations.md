@@ -516,8 +516,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker agent (Claude Sonnet 5.5)
+**Date**: 2026-10-10
+**Notes**: Implemented 009 SQL (fd_unwrap_voice, form_data_scalar, DO-loop legacy normalisation guarded by jsonb_typeof = 'string'; voice fields found via jsonb_path_query over schema_json), 009 sink-table script, 010 report/downgrade script, README section, and 9 DB-free tests (all pass, ruff clean). Voice-capability rule matches TASK-4229 on the dict level (answer_envelope == "voice", or voice.enabled not false and type not in the non-voice set; 010 loads 009's envelope_columns via importlib for the sink downgrade). Note: TASK-4229's landed non-voice set is {hidden, password, array, group} while this task's contract lists a larger set (file, image, signature, ...); the task contract set was used as specified. SQL normalisation covers top-level data keys only (GROUP child values are nested).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
