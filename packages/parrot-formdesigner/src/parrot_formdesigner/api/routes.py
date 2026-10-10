@@ -360,6 +360,9 @@ def setup_form_api(
         sink_factory=sink_factory,
     )
     app["form_api_handler"] = handler
+    # FEAT-649: one shared, form-agnostic SubmissionPipeline for non-HTTP channels (audio WS).
+    # plausibility=None here — the audio engine runs its own check at REVIEW and passes the report in.
+    app["submission_pipeline"] = handler._build_submission_pipeline()
 
     bp = base_path.rstrip("/")
     # FEAT-421: every FORMS route is mounted under a declared `{tenant}`

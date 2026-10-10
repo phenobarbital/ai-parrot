@@ -82,7 +82,9 @@ class SubmissionPipeline:
         plausibility: AnswerPlausibilityChecker | None,
         sink_factory: "SinkFactory | None" = None,
         logger: logging.Logger | None = None,
+        dispatch_fn: Any = None,
     ) -> None:
+        self._dispatch = dispatch_fn or dispatch
         self.validator = validator
         self.submission_storage = submission_storage
         self.forwarder = forwarder
@@ -136,13 +138,13 @@ class SubmissionPipeline:
 
         async def _on_error(exc: BaseException, where: str) -> None:
             try:
-                await dispatch("onError", form=form, request=request, tenant=tenant, auth_context=auth, error=exc)
+                await self._dispatch("onError", form=form, request=request, tenant=tenant, auth_context=auth, error=exc)
             except Exception:
                 self.logger.exception("onError handler raised during %s", where)
 
         try:
             # lifecycle: onBeforeSubmit — may mutate payload or abort (abort is never routed to onError)
-            resolution = await dispatch(
+            resolution = await self._dispatch(
                 "onBeforeSubmit", form=form, request=request, tenant=tenant, auth_context=auth, payload=data
             )
             if resolution.payload is not None:
@@ -287,7 +289,7 @@ class SubmissionPipeline:
 
             # lifecycle: onAfterSubmit — under `keep`, handlers see the same merged view as the endpoint.
             after_submit_payload = {**submission.data, **extras} if extras else submission.data
-            await dispatch(
+            await self._dispatch(
                 "onAfterSubmit",
                 form=form,
                 request=request,
@@ -310,7 +312,7 @@ class SubmissionPipeline:
         except Exception as exc:
             user_message: str | None = None
             try:
-                err_res = await dispatch(
+                err_res = await self._dispatch(
                     "onError", form=form, request=request, tenant=tenant, auth_context=auth, error=exc
                 )
                 user_message = err_res.user_message
