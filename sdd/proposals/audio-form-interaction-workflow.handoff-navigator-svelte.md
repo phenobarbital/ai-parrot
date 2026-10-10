@@ -43,30 +43,43 @@ Keyboard shortcuts (space = push-to-talk override, R = repeat, B = back, Esc = s
 
 ---
 
-## 3. Backend contract (verified in ai-parrot; v2 items are the brainstorm's design, to be frozen by `/sdd-spec`)
+## 3. Backend contract (frozen — implemented by FEAT-649; source of truth `audio/events.py`)
 
 **Endpoint and auth (v1, shipped):** `GET /api/v1/{tenant}/forms/{form_uid}/audio/ws` (`api/routes.py:493`). JWT either as a `Sec-WebSocket-Protocol` subprotocol or as the first text message `{"type": "auth", "token": "..."}` (`api/audio_ws.py:282-347`). Max message 10 MB. Binary frames are speech answers; the server sniffs the container (EBML/OggS/ftyp/RIFF); `< 256 bytes` → `EMPTY_AUDIO`.
 
-**Protocol v1 (shipped, keep working):** client → `start_session, answer_text, <binary>, answer_selection, answer_payload, confirm_answer, skip_question, go_back, repeat_question, end_session, ping`; server → `session_started, question, transcription, confirm_request, answer_accepted, answer_rejected, form_complete, session_ended, error, pong` (`docs/audio-form-voice-modes.md` §7; §9.10 vanilla JS and §9.11 React clients are reference implementations this renderer supersedes).
+**Protocol v1 (shipped, keep working):** client → `start_session`, `answer_text`, `<binary>`, `answer_selection`, `answer_payload`, `confirm_answer`, `skip_question`, `go_back`, `repeat_question`, `end_session`, `ping`; server → `session_started, question, transcription, confirm_request, answer_accepted, answer_rejected, form_complete, session_ended, error, pong` (`docs/audio-form-voice-modes.md` §7; §9.10 vanilla JS and §9.11 React clients are reference implementations this renderer supersedes).
 
-**Protocol v2 (this feature, additive):**
+**Protocol v2 (implemented, additive; source of truth `audio/events.py`, full reference in `docs/audio-form-voice-modes.md` §7.3-7.5).** Optional keys without a value are omitted from the JSON. Inbound v2 messages reject unknown keys.
 
-| Direction | Message | Notes |
+| Direction | Message | Payload keys (literal) |
 |---|---|---|
-| C→S | `start_session{form_uid, locale, protocol_version: 2, prefetch: true, resume_session_id?}` | v1 clients omit `protocol_version` and get base64 `audio` in `question` |
-| S→C | `session_started{protocol_version, sections[], review{mode, playback}, tts_mime, prefetch_count, max_recording_seconds, hands_free{auto_record, silence_ms}, plausibility{enabled}, warnings?}` | |
-| S→C | `audio_segment{key, mime, bytes, kind: label\|hint\|options\|review\|system}` **+ one binary frame** | buffer by `key`; `tts_mime` is `audio/wav` for SuperTonic |
-| S→C | `question{…v1…, field_uid, section{uid,title}, hint?, prompt?, position{index,total}, audio_keys[], ui_cue{control,focus,highlight,submit_via}, answer_modes[], options[{value,label,ordinal}], required, computed_default?}` | play `audio_keys` in order; `pause:<ms>` is a client timer |
-| S→C | `command_ack{command}` | after a recognised voice command; the usual effect message follows (`question`, `review_start`, `session_ended`…) |
-| S→C | `plan_updated{order, hidden, cleared, required_changed, hidden_by_cap}` · `section_enter{section_uid, title, audio_key}` · `question_skipped` · `answer_cleared{field_id}` | dependencies / sections |
-| S→C | `review_start{items[{position, field_id, label, answer_text, has_audio, audio_key\|blob_ref, flag?{confidence, reason}}]}` → `review_item` → `review_prompt` | `flag` comes from the LLM plausibility batch |
-| S→C | `plausibility_result{status: ok\|skipped, items{field_id: {plausible, confidence, reason}}, reason?}` | informational; never blocks |
-| C→S | `review_confirm{confirmed: bool}` · `review_edit{field_id}` | Send button / "Cambiar N" |
-| S→C | `validation_errors{errors, first_field_id}` | deterministic validator failed at submit; the server re-asks |
-| S→C | `session_resumed{answers, phase, cursor, plan}` | after `start_session{resume_session_id}` |
-| S→C | `form_complete{submission_id, stored_in, plausibility_summary}` | |
+| C→S | `start_session` | `form_uid`, `locale`, `protocol_version: 2`, `prefetch` (default true), `resume_session_id?`, `stt_confirm_threshold?`, `tts_backend?`, `tts_voice?`, `tts_mime_format?`, `auto_advance?`, `enumerate_options?` — v1 clients omit `protocol_version` and get base64 `audio` in `question` |
+| S→C | `session_started` | `session_id`, `total_questions`, `title`, `protocol_version`, `hands_free?{auto_record, silence_ms}`, `max_recording_seconds?`, `prefetch_count?` |
+| S→C | `audio_segment` | `key`, `mime`, `kind` (`question`\|`hint`\|`options`\|`system`\|`review`), `text` — **followed by one binary frame** with the bytes; buffer by `key` |
+| S→C | `question` | `index`, `field_id`, `label`, `required`, `field_type`, `voice_mode`, `render_mode`, `sensitive`, `description?`, `audio?` (base64, v1 or `prefetch: false` only), `options?[]`, `fallback_html?`, `hint?`, `section_uid?`, `ui_cue?{control, focus, highlight, submit_via}`, `answer_modes?[]`, `narration?{text, audio_keys[], segments{}}` — play `audio_keys` in order; `pause:<ms>` is a client timer |
+| S→C | `transcription` / `confirm_request` | `transcription{field_id, text, confidence?}`; `confirm_request{field_id, transcript, confidence?, matched?, alternatives?}` |
+| S→C | `answer_accepted` / `answer_rejected` | `answer_accepted{field_id, source, value? (omitted when sensitive), matched?{value, label, method, score}, blob_ref?}`; `answer_rejected{field_id, error, code?}` |
+| S→C | `command_ack` | `command`, `field_id?` — after a recognised voice command; the effect message follows (`question`, `review_start`, `session_ended`…) |
+| S→C | `plan_updated` | `order[]`, `hidden[]`, `cleared[]`, `required_changed{field_id: bool}`, `hidden_by_cap[]` |
+| S→C | `section_enter` | `section_uid`, `title?` |
+| S→C | `question_skipped` | `field_id`, `reason` |
+| S→C | `answer_cleared` | `field_id` |
+| S→C | `review_start` | `items[{position (1-based), field_id, label, answer_text, skipped, flagged, sensitive}]` |
+| S→C | `review_item` | `item{...same shape as a review_start item}` |
+| S→C | `review_prompt` | `text?` |
+| S→C | `plausibility_result` | `status` (`ok`\|`skipped`\|`blocked`), `items{field_id: {plausible, confidence, reason}}`, `reason?` — informational |
+| C→S | `review_confirm` | `confirmed: bool` (Send button / "enviar") |
+| C→S | `review_edit` | `field_id` (Change button / "cambiar N") |
+| S→C | `validation_errors` | `errors{field_id: [str]}`, `first_field_id?` — deterministic validator failed at submit; the server re-asks |
+| S→C | `session_resumed` | `session_id`, `phase`, `cursor?`, `answered[]` — after `start_session{resume_session_id}` |
+| S→C | `form_complete` | `submission_id`, `answers{}` (sensitive masked), `stored_in?`, `plausibility_summary?` |
+| S→C | `session_ended` / `error` / `pong` | `session_ended{session_id}`; `error{code, message}`; `pong{}` |
 
-**Error codes:** `EMPTY_AUDIO`, `UNSUPPORTED_AUDIO`, `AUDIO_DECODE_ERROR`, `WRONG_FIELD`, `NO_MATCH`, `TOO_MANY_QUESTIONS`, `RESUME_FORBIDDEN`, `RESUME_UNAVAILABLE`, `RESUME_STALE`.
+Differences from the brainstorm design: `session_started` carries no `sections[]`/`review{}`/`tts_mime`/`plausibility{}`/`warnings`; `question` carries `section_uid` (no `field_uid`/`position`/`prompt`/`computed_default`; options are the v1 `options[]`); `audio_segment` has no `bytes` key (bytes are the next binary frame); `section_enter` has no `audio_key`; review items have `skipped`/`flagged`/`sensitive` (no `has_audio`/`audio_key`/`flag{}`); `session_resumed` sends `answered[]` + `cursor`, not the full answers/plan (the next `question` follows).
+
+**Hands-free commands (en/es):** repeat, back, skip, next, help, stop; and in confirm/review phases yes, no, send, change ("cambiar N"). An exact option match beats a command; `meta.voice.commands: "off"` disables them.
+
+**Error codes** (`error.code` / `answer_rejected.code`): `EMPTY_AUDIO`, `UNSUPPORTED_AUDIO`, `AUDIO_DECODE_ERROR`, `TRANSCRIBER_UNAVAILABLE`, `TRANSCRIPTION_ERROR`, `NO_MATCH`, `EMPTY`, `REQUIRED`, `WRONG_FIELD`, `WRONG_PHASE`, `INVALID_FIELD`, `INVALID_OPTION`, `NO_PREVIOUS`, `COMMAND_NOT_AVAILABLE`, `SESSION_ACTIVE`, `RESUME_FORBIDDEN`, `RESUME_UNAVAILABLE`, `RESUME_STALE`, `RESUME_CONFLICT`, `PLAUSIBILITY_UNAVAILABLE`, `SUBMIT_FAILED`, plus the v1 codes. (`TOO_MANY_QUESTIONS` is not emitted: the planner caps questions and reports them in `plan_updated.hidden_by_cap`.)
 
 **HTTP (cross-cutting LLM validation, also for the visual renderer):** `POST /api/v1/{tenant}/forms/{form_uid}/validate` with `llm_validation: true` returns an additive `plausibility{field_id: {plausible, confidence, reason}}` block so the HTML renderer can show "Revisa la respuesta N" **before** submitting; `POST …/data` returns and persists the same block. Low confidence never changes the HTTP status.
 

@@ -401,6 +401,10 @@ All keys are optional; omitted keys use the model defaults.
 | `auto_advance` | boolean | `true` | When `true`, advance to the next question immediately after a valid answer. |
 | `enumerate_options` | boolean | `true` | When `true`, read option labels aloud for `PROMPT_SELECT` questions: *"Choose one: Engineering, Marketing, Operations."* |
 | `stt_confirm_threshold` | float 0–1 | `0.6` | STT confidence below this value triggers a `confirm_request` instead of auto-advancing. |
+| `form_uid` | string | (from URL) | v2: form to load (replaces `form_id`). |
+| `protocol_version` | int | `1` | `2` enables the additive v2 wire (section 7.3): `audio_segment` binary frames instead of base64 `audio`, strict inbound validation. |
+| `prefetch` | boolean | `true` | v2: push the next questions' audio segments ahead of time. `false` keeps base64 `audio` in `question`. |
+| `resume_session_id` | string \| null | `null` | v2: resume a saved session (answers, phase, cursor); replies `session_resumed`. Errors: `RESUME_FORBIDDEN`, `RESUME_UNAVAILABLE`, `RESUME_STALE`, `SESSION_ACTIVE`. |
 
 ---
 
@@ -790,6 +794,224 @@ Response to `ping`.
 ```json
 { "type": "pong" }
 ```
+
+### 7.3 Protocol v2 — additive messages (FEAT-649)
+
+Negotiated by `start_session.protocol_version: 2`. A client that omits `protocol_version` keeps the v1 wire
+(base64 `audio` inside `question`). v2 inbound messages reject unknown keys; v1 messages ignore them.
+The source of truth for every shape below is `parrot_formdesigner/audio/events.py`. Optional keys that have no
+value are **omitted** from the JSON (never `null`). Sensitive fields never carry their value on the wire (S8) and
+no `data_url` is ever sent by the server (AC8).
+
+#### `audio_segment`
+
+Header frame; the **next binary frame** carries the audio bytes for `key`. Buffer by `key` and play the
+`audio_keys` of each `question` in order (`pause:<ms>` keys are client-side timers). `kind` is one of
+`question`, `hint`, `options`, `system`, `review`.
+
+```json
+{"type": "audio_segment", "key": "q:3f2a…:label", "mime": "audio/wav", "kind": "label", "text": "What is your name?"}
+```
+
+#### `review_confirm`
+
+Client → server. Sent from the review phase: `confirmed: true` submits, `false` keeps reviewing.
+
+```json
+{"type": "review_confirm", "confirmed": true}
+```
+
+#### `review_edit`
+
+Client → server. Jump back to one field from the review ("Change 3" by voice or a UI button).
+
+```json
+{"type": "review_edit", "field_id": "email"}
+```
+
+#### `plan_updated`
+
+Emitted when dependencies (`visible_if`, `required_if`, `computed`) change the question plan.
+
+```json
+{"type": "plan_updated", "order": ["name", "country", "state"], "hidden": ["company"], "cleared": ["state"],
+ "required_changed": {"state": true}, "hidden_by_cap": []}
+```
+
+#### `section_enter`
+
+Sent the first time the cursor enters a section.
+
+```json
+{"type": "section_enter", "section_uid": "contact", "title": "Contact details"}
+```
+
+#### `question_skipped`
+
+```json
+{"type": "question_skipped", "field_id": "phone", "reason": "skipped"}
+```
+
+#### `answer_cleared`
+
+A previously accepted answer was discarded (its field became hidden, or the user went back).
+
+```json
+{"type": "answer_cleared", "field_id": "state"}
+```
+
+#### `command_ack`
+
+Sent after a recognised hands-free voice command (see 7.4); the usual effect message follows.
+
+```json
+{"type": "command_ack", "command": "repeat", "field_id": "name"}
+```
+
+#### `review_start`
+
+Opens the final review. `answer_text` of a sensitive field is masked and `sensitive` is `true`.
+
+```json
+{"type": "review_start", "items": [
+  {"position": 1, "field_id": "name", "label": "Name", "answer_text": "Ana Pérez", "skipped": false,
+   "flagged": false, "sensitive": false},
+  {"position": 2, "field_id": "age", "label": "Age", "answer_text": "212", "skipped": false,
+   "flagged": true, "sensitive": false}
+]}
+```
+
+#### `review_item`
+
+One review line, sent when a single item is re-announced or changed (same `ReviewItemData` shape as above).
+
+```json
+{"type": "review_item", "item": {"position": 2, "field_id": "age", "label": "Age", "answer_text": "21",
+ "skipped": false, "flagged": false, "sensitive": false}}
+```
+
+#### `review_prompt`
+
+The closing question of the review ("Say yes to send, or change and a number").
+
+```json
+{"type": "review_prompt", "text": "Everything correct? Say send, or change followed by a number."}
+```
+
+#### `plausibility_result`
+
+Informational. `status` is `ok`, `skipped` or `blocked`; `items` is keyed by `field_id`. See 7.5.
+
+```json
+{"type": "plausibility_result", "status": "ok",
+ "items": {"age": {"plausible": false, "confidence": 0.31, "reason": "Age 212 is not realistic"}}}
+```
+
+#### `validation_errors`
+
+The deterministic validator rejected the submission; the server re-asks `first_field_id`.
+
+```json
+{"type": "validation_errors", "errors": {"email": ["Invalid email"]}, "first_field_id": "email"}
+```
+
+#### `session_resumed`
+
+Reply to `start_session{resume_session_id}` instead of `session_started`'s first question (the question for
+`cursor` follows). `phase` is the engine phase the snapshot was taken in.
+
+```json
+{"type": "session_resumed", "session_id": "9b1c…", "phase": "asking", "cursor": "email", "answered": ["name"]}
+```
+
+#### v2 additions to existing messages
+
+`start_session` keys are listed in section 6.
+
+`session_started`:
+
+| Key | Type | Notes |
+|---|---|---|
+| `protocol_version` | int | `2` when negotiated, else `1` |
+| `hands_free` | `{auto_record: bool, silence_ms: int}` | omitted when hands-free is not configured |
+| `max_recording_seconds` | int | client must stop recording after this |
+| `prefetch_count` | int | number of upcoming questions whose segments are pushed ahead |
+
+`question`:
+
+| Key | Type | Notes |
+|---|---|---|
+| `audio` | string | base64; **only** for v1 or `prefetch: false` |
+| `section_uid` | string | section the field belongs to |
+| `hint` | string | field hint text |
+| `ui_cue` | `{control, focus, highlight, submit_via}` | which control to focus; `submit_via` is `voice`, `control` or `both` |
+| `answer_modes` | string[] | accepted answer channels |
+| `narration` | `{text, audio_keys[], segments{}}` | `audio_keys` are played in order; `segments` maps key to text |
+
+`answer_accepted`: adds optional `matched` (`{value, label, method, score}`, `method` one of `exact`, `ordinal`,
+`yes_no`, `numeric`, `contains`, `fuzzy`, `llm`) and `blob_ref` (stored recording reference). `value` is omitted for
+sensitive fields.
+
+`confirm_request`: adds optional `matched` and `alternatives` (list of the same match shape).
+
+`form_complete`: adds optional `stored_in` and `plausibility_summary` (object).
+
+### 7.4 Hands-free commands
+
+In protocol v2 the engine classifies a transcript as a command when the whole utterance (at most 4 words after
+normalisation) matches a phrase of the locale lexicon (`audio/narration/templates/<locale>/narration.yaml`;
+fuzzy match at 0.9 or better). A recognised command produces `command_ack`, then the effect message.
+
+| Command | en phrases | es phrases | Effect | Phase |
+|---|---|---|---|---|
+| `repeat` | repeat, say again, again, repeat that | repetir, repite, otra vez, de nuevo | re-send the current `question` | any |
+| `back` | back, go back, previous | atrás, regresar, volver, anterior | previous question | any |
+| `skip` | skip, skip it, pass | saltar, salta, omitir, paso | skip (required fields answer `REQUIRED`) | any |
+| `next` | next, continue | siguiente, continuar | like `skip` for optional fields | any |
+| `help` | help | ayuda | repeat the question | any |
+| `stop` | stop, cancel, quit | detener, parar, cancelar, salir | `session_ended` | any |
+| `yes` / `no` | yes, ok, okay, correct / no, incorrect | sí, si, ok, vale, correcto / no, incorrecto | answer a `confirm_request` | confirming, review |
+| `send` | send, submit (+ review confirmations) | enviar, mandar (+ confirmations) | submit from the review | review |
+| `change` | change, edit (+ "change N") | cambiar, corregir (+ "cambiar N") | `review_edit` of item N | review |
+
+Precedence: an exact option match always beats a command, so an option labelled "Next" is selected, not
+executed. Commands are not recognised once the session is submitting, complete or aborted, and `yes`, `no`, `send`
+and `change` only count in the confirming and review phases. A command that is recognised but cannot run emits
+`error` `COMMAND_NOT_AVAILABLE`. Commands can be switched off per form or per field with
+`meta.voice.commands: "off"` (default `"on"`); then the utterance is treated as an answer.
+
+### 7.5 LLM answer plausibility
+
+When the form enables `llm_validation` (form level `enabled`, overridable per field), the audio engine runs **one
+batched LLM call** after the last question, before the review (phase `plausibility`), and a delta call for only the
+changed answers after a `review_edit`. The result is sent as `plausibility_result`; low-confidence answers
+(below `threshold`, default 0.7) are marked `flagged: true` in `review_start` and the review prompt mentions them.
+Plausibility is advisory: a flag never blocks the submission by itself.
+
+What is sent to the model: label, description, hint, field type, options and the scalar answer. Sensitive fields,
+blobs, files and `data_url` values are **never** sent (S8); field types listed in `exclude_field_types` are skipped.
+
+`on_error` decides what happens when the LLM call fails or times out (`timeout_s`):
+
+| `on_error` | Behaviour |
+|---|---|
+| `skip` (default) | `plausibility_result` with `status: "skipped"` and a `reason`; the review continues |
+| `block` | `error` `PLAUSIBILITY_UNAVAILABLE`; nothing is stored and the review stays open, retry with `review_confirm` |
+
+The same check is available over HTTP (additive, for the visual renderer):
+
+- `POST /api/v1/{tenant}/forms/{form_uid}/validate` with `{"data": {...}, "llm_validation": true}` (or query
+  `?llm_validation=true`) returns the usual `{is_valid, errors}` plus a `plausibility` block.
+- `POST /api/v1/{tenant}/forms/{form_uid}/data` returns the same `plausibility` block alongside the submission.
+
+```json
+{"is_valid": true, "errors": {}, "plausibility": {"status": "ok", "threshold": 0.7, "model": "gemini-2.5-flash",
+ "latency_ms": 640, "items": {"age": {"plausible": false, "confidence": 0.31, "reason": "Age 212 is not realistic"}}}}
+```
+
+With `on_error: "block"` and an LLM failure these endpoints answer `503` with
+`{"error": "...", "code": "PLAUSIBILITY_UNAVAILABLE"}` and a `Retry-After: 30` header. Low confidence never changes
+the HTTP status.
 
 ---
 
@@ -1267,6 +1489,9 @@ function playWavAudio(base64Audio, mimeType = "audio/wav") {
 
 ### 9.10 Full vanilla JS reference client
 
+> **Superseded (FEAT-649).** Kept as a v1 reference. New clients follow the protocol v2 brief in
+> `sdd/proposals/audio-form-interaction-workflow.handoff-navigator-svelte.md`.
+
 A complete, framework-agnostic reference implementation that handles all
 VoiceModes, the confirm flow, and graceful TTS degradation.
 
@@ -1675,6 +1900,9 @@ client.connect("en");
 ---
 
 ### 9.11 React / TypeScript component
+
+> **Superseded (FEAT-649).** Kept as a v1 reference. New clients follow the protocol v2 brief in
+> `sdd/proposals/audio-form-interaction-workflow.handoff-navigator-svelte.md`.
 
 A production-ready React hook + component that wraps the WebSocket protocol.
 
@@ -2176,6 +2404,30 @@ function QuestionInput({
 | `NO_PENDING_ANSWER` | `confirm_answer` sent without prior `confirm_request` | No | Don't send `confirm_answer` unless `confirm_request` was received |
 | `FIELD_MISMATCH` | `confirm_answer.field_id` ≠ pending field | No | Use the `field_id` from `confirm_request` |
 | `WRONG_FIELD` | Answer `field_id` ≠ current question | No | Always use `field_id` from the last `question` message |
+| `EMPTY_AUDIO` | Binary frame too short to be audio (< 256 bytes) | No | Record again |
+| `UNSUPPORTED_AUDIO` | Binary frame container not recognised (not WebM/Ogg/MP4/WAV) | No | Use a supported recorder format or `answer_text` |
+| `AUDIO_DECODE_ERROR` | Audio could not be decoded | No | Record again or use `answer_text` |
+| `NO_MATCH` | Transcript matched no option of a select field | No | Answer again or pick the option |
+| `EMPTY` | Empty transcript or text answer | No | Answer again |
+| `REQUIRED` | Required field cannot be skipped | No | Answer the question |
+| `INVALID_OPTION` | Selected value is not an option of the field | No | Use a listed option |
+| `INVALID_FIELD` | `field_id` unknown or hidden in the current plan | No | Use a `field_id` from a `question` |
+| `NO_PREVIOUS` | `go_back` on the first question | No | Ignore |
+| `WRONG_PHASE` | Message not valid in the current phase | No | Wait for the expected message |
+| `ALREADY_STARTED` | `start_session` sent twice | No | Ignore |
+| `UNKNOWN_EVENT` | Engine received an event it does not handle | No | Check the message type |
+| `COMMAND_NOT_AVAILABLE` | Voice command recognised but not allowed here | No | Answer normally |
+| `INVALID_MESSAGE` | Message failed validation (v2: unknown keys rejected) | No | Fix the payload |
+| `TENANT_NOT_DECLARED` | Route has no tenant | **Yes** (1008) | Use a tenant route |
+| `TENANT_MISMATCH` | Token tenant differs from the route tenant | **Yes** (1008) | Use the right tenant |
+| `SESSION_ACTIVE` | Another live session already holds this user's session slot | No | Close the other session |
+| `RESUME_FORBIDDEN` | `resume_session_id` belongs to another user/tenant (no existence oracle) | No | Start a new session |
+| `RESUME_STALE` | Form changed since the snapshot | No | Start a new session |
+| `RESUME_UNAVAILABLE` | No session store (Redis) configured, or snapshot expired/not found | No | Start a new session |
+| `RESUME_CONFLICT` | Session snapshot modified from another connection (compare-and-set lost) | **Yes** | Start a new connection and resume |
+| `PLAUSIBILITY_UNAVAILABLE` | `llm_validation.on_error: block` and the LLM failed | No | Retry `review_confirm` |
+| `BLOB_STORE_FAILED` | Internal: recording could not be stored (best-effort evidence) | No | None, the answer is kept |
+| `SUBMIT_FAILED` | Submission pipeline failed | No | Retry `review_confirm` |
 | `INTERNAL_ERROR` | Unhandled server exception | No | Log and retry if transient |
 
 ---
