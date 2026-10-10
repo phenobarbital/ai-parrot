@@ -245,7 +245,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -255,8 +255,9 @@
       "parallelism_notes": "imports LLMValidationConfig/PlausibilityReport/PlausibilityVerdict/llm_validation_enabled from TASK-4209 (core/llm_validation.py) and is_sensitive (core/voice.py)",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4220-plausibility-checker.md"
+      "completed_at": "2026-10-10T16:17:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4220-plausibility-checker.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4221",
