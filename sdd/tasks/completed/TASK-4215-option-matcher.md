@@ -325,8 +325,8 @@ def test_match_review_item(es): ...                          # FILL IN
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 5.5 (sdd task agent)
+**Date**: 2026-10-10
+**Notes**: All finders implemented; 4 tests pass, ruff clean. rapidfuzz used only if importable.
 
-**Deviations from spec**:
+**Deviations from spec**: (1) Ordinal method is skipped for LIKERT/NPS/RANKING so a spoken "3" resolves via numeric (value), not as the 3rd position. (2) Multi-select tries whole-text exact before conjunction split; `lexicon.all` returns every enabled option, `none` returns accepted with empty matches. Lexicon landed as specified (ordinal "ultima" = -1).
