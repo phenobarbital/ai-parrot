@@ -399,7 +399,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -412,8 +412,9 @@
       "parallelism_notes": "drives AudioFormSession from TASK-4226 (audio/engine.py); performs I/O with AudioSegmentCache/store_recording from TASK-4218 (segments.py, recordings.py), AudioSessionStore from TASK-4219, SubmissionPipeline from TASK-4222; ports tests/formdesigner/test_audio_ws_handler.py to the public adapter path (sole owner of that file)",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4227-audio-ws-adapter.md"
+      "completed_at": "2026-10-10T16:42:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4227-audio-ws-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4228",
