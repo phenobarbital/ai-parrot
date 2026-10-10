@@ -33,7 +33,10 @@ def m010():
 
 
 class _Tx:
+    entered = 0
+
     async def __aenter__(self):
+        type(self).entered += 1
         return self
 
     async def __aexit__(self, *exc):
@@ -175,3 +178,35 @@ async def test_downgrade_requires_apply(m010):
     report = await m010.run_report(_Pool(conn), schema="navigator", downgrade=True, apply=True)
     assert len(conn.executed) == 1
     assert json.loads(conn.executed[0][1][0]) == {"v": "hi", "plain": "x"}
+
+
+def test_009_exclusions_are_the_sink_mapper_rule(m009):
+    """Ledger dfb11cf5d63f: the migration converts exactly the columns the sink writes as JSONB."""
+    from parrot_formdesigner.services.sinks.mapper import _NON_VOICE_TYPES
+
+    assert m009._NON_VOICE_TYPES == frozenset(t.value for t in _NON_VOICE_TYPES)
+    doc = _sink_form(voice=True)
+    doc["sections"][0]["fields"] += [
+        {"field_id": "up", "field_type": "file"},
+        {"field_id": "sig", "field_type": "signature"},
+    ]
+    assert m009.envelope_columns(doc) == ["a", "g__c", "up", "sig"]
+
+
+def test_009_alter_keeps_sql_null(m009):
+    assert "IS NULL THEN NULL" in m009.alter_sql("navigator", "t", "c")
+
+
+async def test_010_downgrade_keeps_scalars_and_is_transactional(m010):
+    """Ledger 8d6a964e54fe: bare JSON scalars survive the downgrade; the run is one transaction."""
+    assert "jsonb_typeof" in m010._downgrade_sql('"s"."t"', "c")
+    assert "#>> '{}'" in m010._downgrade_sql('"s"."t"', "c")
+    conn = _Conn([{"id": 1, "schema_json": json.dumps(_sink_form())}], {"a": "jsonb"})
+    _Tx.entered = 0
+    await m010.run_report(_Pool(conn), schema="navigator", downgrade=True, apply=True)
+    assert _Tx.entered == 1
+    alter = [sql for sql, _ in conn.executed if "ALTER TABLE" in sql]
+    assert len(alter) == 1 and "jsonb_typeof" in alter[0]
+    _Tx.entered = 0
+    await m010.run_report(_Pool(conn), schema="navigator", downgrade=True, apply=False)
+    assert _Tx.entered == 0

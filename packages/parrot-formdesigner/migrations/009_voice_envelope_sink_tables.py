@@ -2,7 +2,7 @@
 """Migration 009 (FEAT-649): per-form sink columns TEXT → JSONB for voice answer envelopes.
 
 For every ``form_schemas`` row whose ``persistence.data.type == "postgres_table"``, converts each
-envelope-capable column still typed text to ``JSONB USING jsonb_build_object('answer', col)``.
+envelope-capable column still typed text to ``JSONB USING jsonb_build_object('answer', col)`` (SQL NULL stays NULL).
 
 Idempotent: columns already typed ``jsonb`` are skipped. Run in a maintenance window, ``--dry-run`` first.
 
@@ -30,23 +30,13 @@ except ImportError:  # pragma: no cover - exercised only when asyncpg is absent
     asyncpg = None  # type: ignore[assignment]
 
 from parrot_formdesigner.services._identifiers import qualified_table, validate_identifier
+from parrot_formdesigner.services.sinks.mapper import _NON_VOICE_TYPES as _MAPPER_NON_VOICE_TYPES
 
 DEFAULT_BATCH_SIZE = 1000
 _SEP = "__"
-_NON_VOICE_TYPES = frozenset(
-    {
-        "hidden",
-        "file",
-        "image",
-        "image_dropzone",
-        "multi_upload",
-        "signature",
-        "signature_pad",
-        "credit_card",
-        "password",
-        "array",
-    }
-)
+# One classification, shared with the sink mapper: the mapper decides which columns the sink writes as JSONB,
+# so the migration must convert exactly those (any drift makes every submit fail with a type error).
+_NON_VOICE_TYPES = frozenset(t.value for t in _MAPPER_NON_VOICE_TYPES)
 
 
 @dataclass
@@ -104,7 +94,10 @@ def alter_sql(schema_name: str, table: str, column: str) -> str:
     """Return the ``ALTER COLUMN … TYPE JSONB`` statement for one column (identifiers validated)."""
     qt = qualified_table(schema_name, table)
     col = validate_identifier(column, kind="column")
-    return f'ALTER TABLE {qt} ALTER COLUMN "{col}" TYPE JSONB USING jsonb_build_object(\'answer\', "{col}")'
+    return (
+        f'ALTER TABLE {qt} ALTER COLUMN "{col}" TYPE JSONB USING '
+        f'(CASE WHEN "{col}" IS NULL THEN NULL ELSE jsonb_build_object(\'answer\', "{col}") END)'
+    )
 
 
 def _as_dict(value: Any) -> dict[str, Any]:

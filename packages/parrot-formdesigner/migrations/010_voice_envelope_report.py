@@ -23,6 +23,7 @@ import asyncio
 import importlib.util
 import json
 import sys
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -113,6 +114,15 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _downgrade_sql(qualified: str, column: str) -> str:
+    """``ALTER COLUMN … TYPE TEXT`` that unwraps envelopes and keeps bare JSON scalars (never NULLs them)."""
+    return (
+        f'ALTER TABLE {qualified} ALTER COLUMN "{column}" TYPE TEXT USING '
+        f"(CASE WHEN jsonb_typeof(\"{column}\") = 'object' AND \"{column}\" ? 'answer' "
+        f"THEN \"{column}\"->>'answer' ELSE \"{column}\" #>> '{{}}' END)"
+    )
+
+
 async def _downgrade_sink_columns(conn: Any, form_schemas_qt: str, report: EnvelopeReport, apply: bool) -> None:
     helpers = _load_sink_helpers()
     seen: set[tuple[str, str, str]] = set()
@@ -139,7 +149,7 @@ async def _downgrade_sink_columns(conn: Any, form_schemas_qt: str, report: Envel
             cid = validate_identifier(col, kind="column")
             report.sink_columns_downgraded.append(f"{t_schema}.{table}.{col}")
             if apply:
-                await conn.execute(f'ALTER TABLE {qt} ALTER COLUMN "{cid}" TYPE TEXT USING ("{cid}"->>\'answer\')')
+                await conn.execute(_downgrade_sql(qt, cid))
 
 
 async def run_report(
@@ -162,49 +172,66 @@ async def run_report(
     )
 
     async with pool.acquire() as conn:
-        last_id: Any = None
-        while True:
-            if last_id is None:
-                rows = await conn.fetch(
-                    f"SELECT id, form_uid, data FROM {form_data_qt} ORDER BY id LIMIT $1", batch_size
-                )
-            else:
-                rows = await conn.fetch(
-                    f"SELECT id, form_uid, data FROM {form_data_qt} WHERE id > $1 ORDER BY id LIMIT $2",
-                    last_id,
-                    batch_size,
-                )
-            if not rows:
-                break
-            for row in rows:
-                last_id = row["id"]
-                data = _as_dict(row["data"])
-                new_data = dict(data)
-                changed = False
-                for fid, value in data.items():
-                    if not is_envelope(value):
-                        continue
-                    key = f"{row['form_uid']}/{fid}"
-                    report.envelopes_by_field[key] = report.envelopes_by_field.get(key, 0) + 1
-                    ref = value.get("blob_ref")
-                    if ref:
-                        if report.orphan_check == "performed" and blob_exists(blob_url, str(ref)) is False:
-                            report.orphan_blob_refs.append(str(ref))
-                        if downgrade:
-                            report.lost_blob_refs += 1
-                    if downgrade:
-                        new_data[fid] = value.get("answer")
-                        report.downgraded += 1
-                        changed = True
-                if changed and apply:
-                    await conn.execute(
-                        f"UPDATE {form_data_qt} SET data = $1::jsonb WHERE id = $2",
-                        json.dumps(new_data),
-                        row["id"],
-                    )
-        if downgrade:
-            await _downgrade_sink_columns(conn, form_schemas_qt, report, apply)
+        # A destructive downgrade is all-or-nothing: form_data rewrites and column ALTERs share one transaction.
+        async with conn.transaction() if (downgrade and apply) else nullcontext():
+            await _scan(conn, report, form_data_qt, form_schemas_qt, blob_url, probe, downgrade, apply, batch_size)
     return report
+
+
+async def _scan(
+    conn: Any,
+    report: EnvelopeReport,
+    form_data_qt: str,
+    form_schemas_qt: str,
+    blob_url: str | None,
+    probe: Any,
+    downgrade: bool,
+    apply: bool,
+    batch_size: int,
+) -> None:
+    """Scan ``form_data`` in batches, then (optionally) downgrade the sink columns."""
+    last_id: Any = None
+    while True:
+        if last_id is None:
+            rows = await conn.fetch(
+                f"SELECT id, form_uid, data FROM {form_data_qt} ORDER BY id LIMIT $1", batch_size
+            )
+        else:
+            rows = await conn.fetch(
+                f"SELECT id, form_uid, data FROM {form_data_qt} WHERE id > $1 ORDER BY id LIMIT $2",
+                last_id,
+                batch_size,
+            )
+        if not rows:
+            break
+        for row in rows:
+            last_id = row["id"]
+            data = _as_dict(row["data"])
+            new_data = dict(data)
+            changed = False
+            for fid, value in data.items():
+                if not is_envelope(value):
+                    continue
+                key = f"{row['form_uid']}/{fid}"
+                report.envelopes_by_field[key] = report.envelopes_by_field.get(key, 0) + 1
+                ref = value.get("blob_ref")
+                if ref:
+                    if report.orphan_check == "performed" and blob_exists(blob_url, str(ref)) is False:
+                        report.orphan_blob_refs.append(str(ref))
+                    if downgrade:
+                        report.lost_blob_refs += 1
+                if downgrade:
+                    new_data[fid] = value.get("answer")
+                    report.downgraded += 1
+                    changed = True
+            if changed and apply:
+                await conn.execute(
+                    f"UPDATE {form_data_qt} SET data = $1::jsonb WHERE id = $2",
+                    json.dumps(new_data),
+                    row["id"],
+                )
+    if downgrade:
+        await _downgrade_sink_columns(conn, form_schemas_qt, report, apply)
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
