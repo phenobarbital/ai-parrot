@@ -560,8 +560,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: claude-sonnet-5-5 (sdd worker)
+**Date**: 2026-10-10
+**Notes**: Implemented core/voice.py, core/llm_validation.py, FormField/FormSchema attributes, core exports, tests. resolve_voice_config takes tts_backend only when explicitly set on the session (model_fields_set), tts_voice when truthy. Pre-existing unrelated failure: tests/unit/test_core_models.py::test_field_type_enum_total_count (expects 32 FieldType members, there are 45).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
