@@ -413,8 +413,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: claude-sonnet-5-5 (sdd task agent)
+**Date**: 2026-10-10
+**Notes**: Implemented per blueprint; 37 tests pass (v2 + existing audio models); ruff clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

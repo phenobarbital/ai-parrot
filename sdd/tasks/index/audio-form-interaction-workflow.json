@@ -56,7 +56,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -66,8 +66,9 @@
       "parallelism_notes": "imports UiCue/FieldVoiceMeta from TASK-4209 (core/voice.py) and PlausibilityReport from TASK-4209 (core/llm_validation.py)",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4211-audio-model-deltas.md"
+      "completed_at": "2026-10-10T16:08:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4211-audio-model-deltas.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4212",
