@@ -98,7 +98,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -106,8 +106,9 @@
       "parallelism_notes": "exclusive: edits packages/parrot-formdesigner/pyproject.toml (package-data, shared packaging manifest); no code dependency (pydantic + yaml only)",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4213-narration-lexicon-templates.md"
+      "completed_at": "2026-10-10T16:10:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4213-narration-lexicon-templates.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4214",
