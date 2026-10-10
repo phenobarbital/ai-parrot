@@ -348,8 +348,9 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-coder agent (Claude Sonnet 5.5)
+**Date**: 2026-10-10
+**Notes**: Section-aware split_into_questions (GROUP children inherit section context), second pass for n/total/author prompt, hint, ui_cue, voice_meta, answer_modes (AUDIO field -> ["audio"]), llm_validation, is_sensitive, disabled kept on option dicts. FormSection import omitted (unused). AudioQuestion.section_uid is a str, so the UUID is stringified.
+This also fixes the TASK-4228 defect (disabled dropped from options): `test_audio_ws_disabled_option_rejected` in test_audio_ws_v2_integration.py now XPASSes, which fails under xfail(strict=True). That test file is not in this task's list, so the xfail marker was NOT removed — follow-up: drop the xfail marker there.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
