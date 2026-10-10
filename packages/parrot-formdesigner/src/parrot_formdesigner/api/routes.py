@@ -418,6 +418,11 @@ def setup_form_api(
         f"{tp}/forms/{{form_uid}}/validate",
         _wrap_auth(handler.validate, tenant="public"),
     )
+    # FEAT-649 — design-time voice optimiser (proposals only, never writes).
+    app.router.add_post(
+        f"{tp}/forms/{{form_uid}}/voice/optimize",
+        _wrap_auth(handler.optimize_voice),
+    )
     app.router.add_post(
         f"{tp}/forms/{{form_uid}}/data",
         _wrap_auth(handler.submit_data, tenant="public"),

@@ -215,6 +215,50 @@ class FormAPIHandler:
             return None
         return self._client
 
+    async def optimize_voice(self, request: web.Request) -> web.Response:
+        """POST /api/v1/{tenant}/forms/{form_uid}/voice/optimize — voice hint proposals (never writes, FEAT-649)."""
+        from ..audio.narration.engine import Narrator
+        from ..audio.narration.lexicon import load_lexicon
+        from ..tools.voice_optimizer import VoiceOptimizer
+
+        form_uid = extract_form_uid(request)
+        tenant = self._get_tenant(request)
+        form = await self.registry.get(form_uid, tenant=tenant)
+        if form is None:
+            return JSONResponse({"error": f"Form '{form_uid}' not found"}, status=404)
+        self._assert_form_tenant(form, tenant)
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            body = {}
+        if not isinstance(body, dict):
+            return JSONResponse({"error": "Request body must be a JSON object"}, status=400)
+        locale = str(body.get("locale") or "en")
+        fields = body.get("fields")
+        if fields is not None and not (isinstance(fields, list) and all(isinstance(f, str) for f in fields)):
+            return JSONResponse({"error": "'fields' must be a list of field_id strings"}, status=400)
+        style = body.get("style", "concise")
+        if not isinstance(style, str):
+            return JSONResponse({"error": "'style' must be a string"}, status=400)
+        max_words = body.get("max_hint_words", 20)
+        if isinstance(max_words, bool) or not isinstance(max_words, int) or max_words < 1:
+            return JSONResponse({"error": "'max_hint_words' must be a positive integer"}, status=400)
+        lexicon = load_lexicon(locale)
+        client = self._get_llm_client()
+        if client is None:
+            return JSONResponse({"error": "LLM client unavailable", "self_test": []}, status=503)
+        optimizer = VoiceOptimizer(client, Narrator)
+        proposals, preview = await optimizer.propose(
+            form, locale=locale, fields=set(fields) if fields else None, style=style, max_hint_words=max_words
+        )
+        return JSONResponse(
+            {
+                "proposals": [p.model_dump(mode="json") for p in proposals],
+                "narration_preview": preview,
+                "self_test": optimizer.self_test(form, lexicon),
+            }
+        )
+
     def _build_submission_pipeline(self, form: FormSchema | None = None) -> "SubmissionPipeline":
         """Build the shared submit pipeline from the handler's CURRENT collaborators (FEAT-649).
 

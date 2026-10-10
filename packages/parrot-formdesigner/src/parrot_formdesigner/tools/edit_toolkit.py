@@ -92,6 +92,7 @@ class EditToolkit(AbstractToolkit):
                   the original is never mutated.
             **kwargs: Forwarded to AbstractToolkit.__init__.
         """
+        self._voice_optimizer = kwargs.pop("voice_optimizer", None)  # FEAT-649: design-time proposals only
         super().__init__(**kwargs)
         self._form: FormSchema = form.model_copy(deep=True)
         self._done: bool = False
@@ -1056,6 +1057,38 @@ class EditToolkit(AbstractToolkit):
     # ------------------------------------------------------------------
     # Control tool
     # ------------------------------------------------------------------
+
+    async def propose_voice_hints(
+        self,
+        form_uid: str,
+        *,
+        locale: str = "en",
+        fields: list[str] | None = None,
+        style: str = "concise",
+        max_hint_words: int = 20,
+    ) -> dict:
+        """Propose spoken hints/prompts for voice mode WITHOUT changing the form.
+
+        Returns proposals the author may apply later with ``update_field``.
+
+        Args:
+            form_uid: UUID string of the form being edited (must match the working form).
+            locale: Locale of the proposed hints.
+            fields: Optional field_ids to restrict proposals to.
+            style: Hint style, e.g. ``"concise"``.
+            max_hint_words: Soft limit per hint (longer ones carry a warning).
+
+        Returns:
+            ``{"proposals": [...], "narration_preview": {...}}`` or an error dict.
+        """
+        if self._voice_optimizer is None:
+            return {"error": "Voice optimiser is not configured."}
+        if str(self._form.form_uid) != str(form_uid):
+            return {"error": f"form_uid '{form_uid}' does not match the form being edited."}
+        proposals, preview = await self._voice_optimizer.propose(
+            self._form, locale=locale, fields=set(fields) if fields else None, style=style, max_hint_words=max_hint_words
+        )
+        return {"proposals": [p.model_dump(mode="json") for p in proposals], "narration_preview": preview}
 
     async def done(self) -> dict:
         """Signal that all edits are complete.
