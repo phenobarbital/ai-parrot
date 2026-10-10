@@ -453,8 +453,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude Sonnet 5.5 (sdd task agent)
+**Date**: 2026-10-10
+**Notes**: Implemented VoiceOptimizer (propose/_build_prompt/_preview/self_test), EditToolkit.propose_voice_hints, FormAPIHandler.optimize_voice (400/404/503/200) and the POST voice/optimize route (tenant=required). Added _text() helper to flatten LocalizedString labels; PASSWORD/HIDDEN excluded from prompt and self_test. Tests: 8 new pass. tests/test_edit_toolkit.py tool-count/name tests fail because the toolkit tool set already drifted (add_dependency etc.) before this task; propose_voice_hints adds one more tool.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

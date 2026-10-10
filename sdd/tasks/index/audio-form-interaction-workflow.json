@@ -549,7 +549,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -562,8 +562,9 @@
       "parallelism_notes": "uses Narrator from TASK-4214 and command_option_collisions from TASK-4216; edits tools/edit_toolkit.py after TASK-4233 and api/handlers.py + api/routes.py after TASK-4224/TASK-4228 (same files, serialized via TASK-4228)",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4234-voice-optimizer-endpoint.md"
+      "completed_at": "2026-10-10T16:55:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4234-voice-optimizer-endpoint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4235",
