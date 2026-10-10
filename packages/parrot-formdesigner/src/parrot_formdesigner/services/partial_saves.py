@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Iterable
 
 from ..core.partial import PartialFormData
 
@@ -161,6 +161,40 @@ class PartialSaveStore:
         if redis is None:
             return False
         return await self._redis_delete(redis, form_id, session_id)
+
+    async def remove_keys(
+        self,
+        form_id: str,
+        session_id: str,
+        keys: Iterable[str],
+    ) -> PartialFormData | None:
+        """Drop answer keys (cascade_clear) and refresh the TTL like ``save()``.
+
+        Args:
+            form_id: Form identifier.
+            session_id: Session identifier.
+            keys: Answer keys (field_uid strings) to remove.
+
+        Returns:
+            The updated PartialFormData, or None when Redis is unavailable or no entry exists.
+        """
+        redis = await self._get_redis()
+        if redis is None:
+            return None
+        existing = await self._redis_get(redis, form_id, session_id)
+        if existing is None:
+            return None
+        drop = set(keys)
+        now = datetime.now(tz=timezone.utc)
+        updated = existing.model_copy(
+            update={
+                "data": {k: v for k, v in existing.data.items() if k not in drop},
+                "saved_at": now,
+                "expires_at": now + self._ttl,
+            }
+        )
+        await self._redis_set(redis, updated)
+        return updated
 
     async def close(self) -> None:
         """Close the Redis connection if open."""
