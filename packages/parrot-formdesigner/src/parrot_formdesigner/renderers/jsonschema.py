@@ -501,6 +501,8 @@ class JsonSchemaRenderer(AbstractFormRenderer):
         # Description
         if field.description:
             prop["description"] = _resolve(field.description, locale)
+        if field.hint:
+            prop["x-hint"] = _resolve(field.hint, locale)
 
         # Format keyword for string types with semantic meaning
         if ft in _FORMAT_MAP:

@@ -948,6 +948,11 @@ class HTML5Renderer(AbstractFormRenderer):
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_input(field, value, locale))
 
+        hint = _resolve(field.hint, locale) if field.hint else None
+        if hint:
+            parts.append(
+                f'<small class="hint form-field__hint text-xs text-gray-500 mt-1 block">{html.escape(hint)}</small>'
+            )
         if error:
             parts.append(f'<span class="form-field__error text-sm text-red-600 mt-1 block" role="alert">{error}</span>')
 

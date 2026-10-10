@@ -336,7 +336,7 @@ class PdfRenderer(AbstractFormRenderer):
         """Render a single field (label + AcroForm widget). Returns new ``cursor_y``."""
         if render_warnings is None:
             render_warnings = []
-        cursor_y = self._maybe_new_page(c, cursor_y, mm * 25)
+        cursor_y = self._maybe_new_page(c, cursor_y, mm * 25 + (self.LINE_HEIGHT if field.hint else 0))
 
         label = _localize(field.label, locale, default=field.field_id)
         if field.required:
@@ -346,6 +346,12 @@ class PdfRenderer(AbstractFormRenderer):
         c.setFont("Helvetica", 10)
         c.drawString(self.MARGIN_X, cursor_y, label)
         cursor_y -= self.FIELD_HEIGHT
+        hint = _localize(field.hint, locale) if field.hint else ""
+        if hint:
+            c.setFont("Helvetica-Oblique", 8)
+            c.drawString(self.MARGIN_X, cursor_y, hint)
+            c.setFont("Helvetica", 10)
+            cursor_y -= self.LINE_HEIGHT
 
         _has_prefilled = bool(prefilled) and field.field_id in prefilled
         if field.field_type in UPLOAD_FIELD_TYPES:

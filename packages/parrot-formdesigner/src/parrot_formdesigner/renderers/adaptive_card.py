@@ -743,6 +743,19 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                 }
             )
 
+        # Hint (FEAT-649)
+        if field.hint:
+            elements.append(
+                {
+                    "type": "TextBlock",
+                    "text": _resolve(field.hint, locale),
+                    "isSubtle": True,
+                    "size": "Small",
+                    "wrap": True,
+                    "spacing": "None",
+                }
+            )
+
         # Input element
         input_elem = self._build_input_element(field, value, locale)
         if input_elem:

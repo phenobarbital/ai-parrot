@@ -700,6 +700,15 @@ class A2UIFormRenderer(AbstractFormRenderer):
         kwargs["metadata"] = _extensions(m, **base_extensions)
 
         components = [m.Component(**kwargs)]
+        if field.hint:
+            components.append(
+                m.Component(
+                    id=f"f-{field.field_id}-hint",
+                    component="Text",
+                    text=_resolve(field.hint, locale),
+                    metadata=_extensions(m, parrot_role="hint", parrot_field_id=field.field_id),
+                )
+            )
         message = errors.get(field.field_id)
         if message is not None:
             components.append(self._error_text(m, field, message))
