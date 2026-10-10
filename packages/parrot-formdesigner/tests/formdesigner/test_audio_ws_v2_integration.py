@@ -478,13 +478,13 @@ class TestAudioWsV2Integration:
         fr = await until(ws, "question", "review_start")
         assert fr[-1]["type"] == "question" and fr[-1]["field_id"] == "comment"
         assert any(m["type"] == "plan_updated" for m in jsons(fr, "plan_updated"))
-        await ws.close()
 
-        # one active session per user (AC16): a second concurrent start is refused
+        # one active session per user (AC16): a second concurrent start is refused while the first is connected
         busy = await connect(client, env)
         await busy.send_json({"type": "start_session", "form_uid": str(env.form.form_uid), "protocol_version": 2})
         assert (await until(busy, "error", "question"))[-1].get("code") == "SESSION_ACTIVE"
         await busy.close()
+        await ws.close()
 
         # v2 is strict: an unknown key is an INVALID_MESSAGE error, the session survives
         env2 = _Env(_voice_form(), FakeLLM())
@@ -536,3 +536,63 @@ class TestAudioWsV2Integration:
                 "'parrot_formdesigner.api.audio_ws') if m in sys.modules]; "
                 "sys.exit(1 if bad else 0)")
         assert subprocess.run([sys.executable, "-c", code]).returncode == 0
+
+
+def _active_keys(env: _Env) -> list[str]:
+    return [k for k in env.redis.data if k.startswith("parrot:audio:active:")]
+
+
+def _snapshot_keys(env: _Env) -> list[str]:
+    return [k for k in env.redis.data if k.startswith("parrot:audio:") and ":active:" not in k]
+
+
+class TestAudioWsActiveMarker:
+    """Ledger 4659f40427a4: the active-session marker never outlives the connection that holds it."""
+
+    async def test_end_before_first_answer_releases_marker(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        await start(ws, env)
+        assert _active_keys(env)
+        await ws.send_json({"type": "end_session"})
+        await until(ws, "session_ended")
+        await asyncio.sleep(0.2)
+        assert _active_keys(env) == []
+
+    async def test_disconnect_keeps_snapshot_releases_marker(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        sid = (await start(ws, env))[0]["session_id"]
+        await ws.send_json({"type": "answer_text", "field_id": "name", "value": "Ann"})
+        await until(ws, "question")
+        await ws.close()
+        await asyncio.sleep(0.2)
+        assert _snapshot_keys(env) and _active_keys(env) == []
+        # resume re-claims the marker
+        ws2 = await connect(client, env)
+        await ws2.send_json({"type": "start_session", "form_uid": str(env.form.form_uid), "protocol_version": 2,
+                             "resume_session_id": sid})
+        await until(ws2, "question", "error")
+        assert _active_keys(env)
+        await ws2.close()
+
+    async def test_stale_resume_releases_marker(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        sid = (await start(ws, env))[0]["session_id"]
+        await ws.send_json({"type": "answer_text", "field_id": "name", "value": "Ann"})
+        await until(ws, "question")
+        await ws.close()
+        await asyncio.sleep(0.2)
+        env.form.version = "99.0"
+        ws2 = await connect(client, env)
+        await ws2.send_json({"type": "start_session", "form_uid": str(env.form.form_uid), "protocol_version": 2,
+                             "resume_session_id": sid})
+        frames = await until(ws2, "error")
+        assert frames[-1]["code"] == "RESUME_STALE"
+        await asyncio.sleep(0.1)
+        assert _active_keys(env) == []
+        await ws2.close()

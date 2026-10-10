@@ -42,6 +42,7 @@ from ..audio.events import (
     AudioSegment,
     BlobStored,
     DeleteBlob,
+    Error,
     FormComplete,
     InboundEvent,
     IOFailed,
@@ -348,6 +349,12 @@ class AudioFormWSHandler:
                 await self._autosave(ctx, final=True)
             except Exception as exc:  # noqa: BLE001 — never mask the connection teardown
                 self.logger.warning("Final snapshot save failed: %s", type(exc).__name__)
+            if ctx.engine is not None and self._session_store is not None:
+                # Dropped connection: the snapshot stays resumable, the active marker does not (resume re-claims it).
+                try:
+                    await self._session_store.release_active(ctx.state.user_id, ctx.state.session_id)
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning("Active marker release failed: %s", type(exc).__name__)
             self._checkers.pop(ctx.state.session_id, None)
             # Release any per-session synthesizer built lazily in auto mode.
             cached_synth = self._session_synths.pop(ctx.state.session_id, None)
@@ -646,7 +653,13 @@ class AudioFormWSHandler:
         ctx.engine = engine
         ctx.prefetch = start.prefetch
         ctx.segments = AudioSegmentCache(self.synthesizer, lock=_SYNTH_LOCK)
-        await self._perform(ws, ctx, engine.handle(start))
+        opening = engine.handle(start)
+        if start.resume_session_id and any(
+            isinstance(o, Error) and o.code in ("RESUME_STALE", "RESUME_FORBIDDEN") for o in opening
+        ):
+            # The marker was claimed before the engine validated user/tenant/version: give it back.
+            await store.release_active(session.user_id, start.resume_session_id)
+        await self._perform(ws, ctx, opening)
 
     def _build_session_config(
         self,
@@ -1088,7 +1101,7 @@ class AudioFormWSHandler:
         if store is None:
             return
         try:
-            await store.delete(ctx.state.form_uid, ctx.state.session_id)
+            await store.delete(ctx.state.form_uid, ctx.state.session_id, user_id=ctx.state.user_id)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("Session release failed: %s", type(exc).__name__)
 

@@ -139,20 +139,39 @@ class AudioSessionStore:
             return None
         return AudioSnapshot.model_validate_json(raw) if raw else None
 
-    async def delete(self, form_uid: str, session_id: str) -> None:
-        """Delete the snapshot and release the active marker held by this session."""
+    async def delete(self, form_uid: str, session_id: str, *, user_id: str | None = None) -> None:
+        """Delete the snapshot and release the active marker held by this session.
+
+        ``user_id`` is the connection's known user: it releases the marker even when no snapshot was ever
+        saved (a session ended before its first answer would otherwise block the user until the TTL).
+        """
         redis = await self.partial_store._get_redis()
         if redis is None:
             return
         try:
             snap = await self.load(form_uid, session_id)
             await redis.delete(self._key(form_uid, session_id))
-            if snap is not None:
-                akey = self._active_key(snap.user_id)
-                if _text(await redis.get(akey)) == session_id:
-                    await redis.delete(akey)
+            owner = snap.user_id if snap is not None else user_id
+            if owner is not None:
+                await self._release(redis, owner, session_id)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("AudioSessionStore.delete failed: %s", exc)
+
+    async def _release(self, redis: Any, user_id: str, session_id: str) -> None:
+        """Delete the user's active marker when it is held by ``session_id``."""
+        akey = self._active_key(user_id)
+        if _text(await redis.get(akey)) == session_id:
+            await redis.delete(akey)
+
+    async def release_active(self, user_id: str, session_id: str) -> None:
+        """Release the active marker only (the snapshot stays resumable); best effort."""
+        redis = await self.partial_store._get_redis()
+        if redis is None:
+            return
+        try:
+            await self._release(redis, user_id, session_id)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("AudioSessionStore.release_active failed: %s", exc)
 
     async def claim_active(self, user_id: str, session_id: str) -> bool:
         """SET NX ``parrot:audio:active:{user_id}``; False when another session is active."""
