@@ -369,8 +369,8 @@ async def test_subsection_depends_on_ignored_q1(form_and_manifest): ...         
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 5.5 (sdd task agent)
+**Date**: 2026-10-10
+**Notes**: Implemented planner.py per blueprint; FILL INs done (_apply_cap fills optionals in manifest order; previous() skips history[-1] current cursor). 8 tests pass; ruff clean. Landed imports (unwrap_voice, VoiceFormConfig, AudioQuestion.section_uid) matched the contract. entered_section left None (engine fills via section_of).
 
-**Deviations from spec**:
+**Deviations from spec**: none
