@@ -1,0 +1,4 @@
+- [ ] Bulk export granularity: `POST /forms/export` NDJSON stream (proposed) vs a single JSON array response; and should the CLI also support `--all-tenants` (iterating `list_tenants()`)? — *Owner: Jesus Lara*
+- [ ] Heuristic extractor: when a generic surface has a `Text` immediately before an input with no `label`, use it as the field label (proposed) or keep it as a section description? — *Owner: Jesus Lara*
+- [ ] Should `translate_jsonschema_to_a2ui` get an HTTP endpoint in v1 (`POST /forms/translate`), or stay library + CLI only (proposed)? — *Owner: Jesus Lara*
+- [ ] `click` is a transitive dependency of parrot-formdesigner today only through `ai-parrot`; declare it explicitly in the `ai-parrot`/`a2ui` extra or make the CLI module import it lazily? — *Owner: implementer*
