@@ -299,8 +299,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-task agent (Sonnet 5.5)
+**Date**: 2026-10-10
+**Notes**: Envelope unwrap/validate/re-fold in validators.py plus tests (71 passed across the 3 validation suites). Empty optional spoken answer is kept only when blob_ref is set. Pre-existing ruff B904/C420 warnings untouched.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
