@@ -309,8 +309,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: claude sdd-task agent (Sonnet 5.5)
+**Date**: 2026-10-10
+**Notes**: YAML field hint/llm_validation (non-bool llm_validation warns and becomes None), form-level voice/llm_validation blocks, create_form prompt keys, empty-hint normalisation in _apply_update_field, update_field docstring, 4 new tests. Added `import logging` to yaml.py for the warning. test_edit_toolkit.py::test_tool_definitions_count / _has_required_names fail (22 != 15, add_post_dependency extra) - tool-count assertions unrelated to this task.
 
-**Deviations from spec**: `EditToolkit.update_field` keeps its merge-patch signature (spec skeleton showed kwargs) — decided at task time; confirm or describe.
+**Deviations from spec**: `EditToolkit.update_field` keeps its merge-patch signature; hint/llm_validation are accepted through `patch` (confirmed).

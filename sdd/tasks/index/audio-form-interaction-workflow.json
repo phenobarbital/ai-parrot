@@ -528,7 +528,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -538,8 +538,9 @@
       "parallelism_notes": "writes FormField.hint/llm_validation added by TASK-4209 (core/schema.py)",
       "assigned_to": null,
       "started_at": "2026-10-10T16:06:21+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4233-hint-roundtrip-toolkit.md"
+      "completed_at": "2026-10-10T16:53:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4233-hint-roundtrip-toolkit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4234",
