@@ -16,14 +16,14 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: only pydantic + existing core/types.py and core/schema.py; no dependency",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4209-voice-schema-config-models.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "imports PlausibilityVerdict from TASK-4209 (core/llm_validation.py); both modify core/__init__.py so serialized after TASK-4209",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4210-voice-evidence-envelope.md"
     },
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,7 +63,7 @@
       "parallel": true,
       "parallelism_notes": "imports UiCue/FieldVoiceMeta from TASK-4209 (core/voice.py) and PlausibilityReport from TASK-4209 (core/llm_validation.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4211-audio-model-deltas.md"
     },
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,7 +83,7 @@
       "parallel": true,
       "parallelism_notes": "imports Phase, OptionMatch, AudioSessionState from TASK-4211 (audio/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4212-audio-protocol-events.md"
     },
@@ -94,14 +94,14 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: edits packages/parrot-formdesigner/pyproject.toml (package-data, shared packaging manifest); no code dependency (pydantic + yaml only)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4213-narration-lexicon-templates.md"
     },
@@ -112,7 +112,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -122,7 +122,7 @@
       "parallel": true,
       "parallelism_notes": "loads templates/YAML and modifies narration/__init__.py from TASK-4213; uses AudioQuestion/NarrationPlan/ReviewItemData from TASK-4211 (audio/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4214-narrator-engine.md"
     },
@@ -133,7 +133,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,7 +143,7 @@
       "parallel": true,
       "parallelism_notes": "imports Lexicon/normalize from TASK-4213 (audio/narration/lexicon.py); OptionMatch/ReviewItemData from TASK-4211 (audio/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4215-option-matcher.md"
     },
@@ -154,7 +154,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -164,7 +164,7 @@
       "parallel": true,
       "parallelism_notes": "imports Lexicon/normalize from TASK-4213 (lexicon.py); Phase/OptionMatch from TASK-4211 (audio/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4216-voice-commands-refiner.md"
     },
@@ -175,7 +175,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -185,7 +185,7 @@
       "parallel": true,
       "parallelism_notes": "calls unwrap_voice from TASK-4210 (core/voice_answer.py); uses AudioAnswer/AudioFormManifest deltas from TASK-4211 (audio/models.py); VoiceFormConfig arrives transitively via TASK-4209",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4217-question-planner.md"
     },
@@ -196,14 +196,14 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency: uses only existing synthesize_with_fallback (renderers/audio.py:164), AbstractBlobStorage/BlobMetadata (services/blob_storage.py) and FormSchema/FormField",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4218-audio-segments-recordings.md"
     },
@@ -214,7 +214,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -223,7 +223,7 @@
       "parallel": true,
       "parallelism_notes": "AudioSnapshot fields mirror Phase/AudioSessionState from TASK-4211 (audio/models.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4219-audio-session-store.md"
     },
@@ -234,7 +234,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -243,7 +243,7 @@
       "parallel": true,
       "parallelism_notes": "imports LLMValidationConfig/PlausibilityReport/PlausibilityVerdict/llm_validation_enabled from TASK-4209 (core/llm_validation.py) and is_sensitive (core/voice.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4220-plausibility-checker.md"
     },
@@ -254,14 +254,14 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency: tests only, against the current api/handlers.py submit_data; must land before TASK-4224 rewrites handlers.py:1818-1909",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4221-submit-data-parity-tests.md"
     },
@@ -272,7 +272,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -283,7 +283,7 @@
       "parallel": true,
       "parallelism_notes": "imports unwrap_voice/wrap_voice from TASK-4210 (core/voice_answer.py), AnswerPlausibilityChecker/PlausibilityBlocked from TASK-4220 (services/plausibility.py); reuses the golden fixtures of TASK-4221 (test_submission_pipeline_parity.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4222-submission-pipeline.md"
     },
@@ -294,7 +294,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -303,7 +303,7 @@
       "parallel": true,
       "parallelism_notes": "imports VoiceEvidenceEnvelope/is_voice_envelope from TASK-4210 (core/voice_answer.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4223-validator-envelope-any-type.md"
     },
@@ -314,7 +314,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -325,7 +325,7 @@
       "parallel": true,
       "parallelism_notes": "replaces handlers.py:1818-1909 with SubmissionPipeline.submit from TASK-4222 (services/submission_pipeline.py); relies on envelope validation from TASK-4223 (validators.py); parity suite of TASK-4221 must stay green",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4224-http-pipeline-wiring.md"
     },
@@ -336,7 +336,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -349,7 +349,7 @@
       "parallel": true,
       "parallelism_notes": "composes InboundEvent/Outbound from TASK-4212 (audio/events.py), Narrator from TASK-4214 (narration/engine.py), match_option from TASK-4215 (option_matcher.py), classify_command from TASK-4216 (commands.py), QuestionPlanner from TASK-4217 (planner.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4225-audio-engine-turns.md"
     },
@@ -360,7 +360,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -370,7 +370,7 @@
       "parallel": true,
       "parallelism_notes": "extends audio/engine.py created by TASK-4225 (same file, serialized); builds AudioSnapshot from TASK-4219 (audio/session_store.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4226-audio-engine-review-resume.md"
     },
@@ -381,7 +381,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -393,7 +393,7 @@
       "parallel": true,
       "parallelism_notes": "drives AudioFormSession from TASK-4226 (audio/engine.py); performs I/O with AudioSegmentCache/store_recording from TASK-4218 (segments.py, recordings.py), AudioSessionStore from TASK-4219, SubmissionPipeline from TASK-4222; ports tests/formdesigner/test_audio_ws_handler.py to the public adapter path (sole owner of that file)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4227-audio-ws-adapter.md"
     },
@@ -404,7 +404,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -414,7 +414,7 @@
       "parallel": true,
       "parallelism_notes": "constructs the new AudioFormWSHandler signature from TASK-4227 (api/audio_ws.py); modifies api/routes.py after TASK-4224 (same file, serialized; reuses app['submission_pipeline'])",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4228-audio-ws-routes-integration.md"
     },
@@ -425,7 +425,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -434,7 +434,7 @@
       "parallel": true,
       "parallelism_notes": "uses is_voice_envelope from TASK-4210 (core/voice_answer.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4229-sinks-jsonb-voice.md"
     },
@@ -445,14 +445,14 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency: standalone migration scripts (asyncpg, 003_migrate_form_data.py pattern); files only, never executed against a shared DB by tests",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4230-voice-envelope-migrations.md"
     },
@@ -463,7 +463,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -472,7 +472,7 @@
       "parallel": true,
       "parallelism_notes": "reads FormField.hint added by TASK-4209 (core/schema.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4231-renderers-expose-hint.md"
     },
@@ -483,7 +483,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -493,7 +493,7 @@
       "parallel": true,
       "parallelism_notes": "fills AudioQuestion fields from TASK-4211 (audio/models.py); calls render_author_prompt from TASK-4214 (narration/engine.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4232-audio-renderer-questions-v2.md"
     },
@@ -504,7 +504,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -513,7 +513,7 @@
       "parallel": true,
       "parallelism_notes": "writes FormField.hint/llm_validation added by TASK-4209 (core/schema.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4233-hint-roundtrip-toolkit.md"
     },
@@ -524,7 +524,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -536,7 +536,7 @@
       "parallel": true,
       "parallelism_notes": "uses Narrator from TASK-4214 and command_option_collisions from TASK-4216; edits tools/edit_toolkit.py after TASK-4233 and api/handlers.py + api/routes.py after TASK-4224/TASK-4228 (same files, serialized via TASK-4228)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4234-voice-optimizer-endpoint.md"
     },
@@ -547,7 +547,7 @@
       "feature_id": "FEAT-649",
       "feature": "audio-form-interaction-workflow",
       "spec": "sdd/specs/audio-form-interaction-workflow.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -557,7 +557,7 @@
       "parallel": true,
       "parallelism_notes": "documents type literals from TASK-4212 (audio/events.py) and the wire implemented by TASK-4228 (routes + integration suite)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-10T16:06:21+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4235-audio-protocol-docs-handoff.md"
     }
