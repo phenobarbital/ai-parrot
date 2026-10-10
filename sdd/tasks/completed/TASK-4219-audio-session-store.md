@@ -398,8 +398,8 @@ async def test_partial_remove_keys(stores): ...                  # FILL IN
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Sonnet 5.5 (sdd task agent)
+**Date**: 2026-10-10
+**Notes**: CAS implemented as optimistic read + Lua EVAL compare-on-raw-value (SET only if the stored value is unchanged; up to 5 retries, then SnapshotConflict). FakeRedis emulates that eval. Redis errors are logged and swallowed; only SnapshotConflict/ResumeUnavailable propagate. 26 tests pass (new + test_partial_save_store.py); ruff clean.
 
-**Deviations from spec**:
+**Deviations from spec**: None. Dependency imports (Phase, VoiceFormConfig, PlausibilityReport) matched landed names.
