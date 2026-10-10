@@ -305,8 +305,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-coder agent (claude-sonnet-5-5)
+**Date**: 2026-10-10
+**Notes**: Documented protocol v2 in docs section 6 (new start_session keys) and new 7.3 (every v2 message + additions to session_started/question/answer_accepted/confirm_request/form_complete), 7.4 (command table from the en/es lexicon), 7.5 (plausibility, on_error, HTTP validate/data block); superseded notes on 9.10/9.11; 24 new section 10 rows. Handoff section 3 frozen from audio/events.py (table, error list). New test test_docs_protocol_types.py (4 tests pass) checks wire literals vs docs section 7 and handoff section 3, and emitted error codes vs section 10. The v1 client-message list in the handoff got backticks so the sync test matches.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Code differs from the brainstorm design; the handoff records the implemented shape: no `sections[]`/`review{}`/`tts_mime`/`plausibility{}` in session_started; question has `section_uid` (no field_uid/position/prompt); audio_segment has no `bytes` key; section_enter has no audio_key; review items use skipped/flagged/sensitive; session_resumed sends `answered[]`+`cursor`; `TOO_MANY_QUESTIONS` is not emitted (cap reported via plan_updated.hidden_by_cap).
