@@ -154,8 +154,22 @@ class StudioAgentToolkitsHandler(_ToolingViewMixin, StudioBaseView):
             reason=state.reason,
             toolkits=[mask_spec(spec) for spec in state.tooling.toolkits],
             unavailable=unavailable,
+            failed=self._live_failures(state),
         )
         return self.json_response(response.model_dump())
+
+    def _live_failures(self, state) -> list[dict[str, str]]:
+        """``[{slug, error}]`` the newest built instance of this Studio agent could not apply (empty: not built/none)."""
+        runtime = getattr(self.request.app.get("bot_manager"), "studio", None)
+        cache = getattr(runtime, "_cache", None)
+        if cache is None or getattr(state, "source", None) != "studio":
+            return []
+        agent_id = state._studio[1].agent_id
+        built = [entry for entry in cache.all_entries() if entry.agent_id == agent_id]
+        if not built:
+            return []
+        newest = max(built, key=lambda entry: entry.version)
+        return list(getattr(newest.bot, "tooling_failures", None) or [])
 
     async def put(self):
         """Persist one agent-level toolkit specification."""

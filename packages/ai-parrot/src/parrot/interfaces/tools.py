@@ -65,12 +65,13 @@ class ToolInterface:
                         self.logger.info(f"Successfully loaded tool: {tool}")
                         continue
 
+                    self._record_tooling_failure(tool, "unknown tool or toolkit")
                     self.logger.warning(f"Unknown tool or toolkit: {tool}")
 
                 elif isinstance(tool, type) and issubclass(tool, AbstractToolkit):
                     # It's a toolkit class, register it. Instantiate first so we
                     # can capture knowledge-index toolkits for the REST surface.
-                    instance = tool()
+                    instance = self.tool_manager.build_toolkit(tool, self.tool_manager._slug_of_class(tool), {})
                     self.tool_manager.register_toolkit(instance)
                     self._capture_knowledge_toolkit(instance)
                     self.logger.info(f"Registered toolkit class: {tool.__name__}")
@@ -106,6 +107,7 @@ class ToolInterface:
                     self.logger.warning(f"Unknown tool type: {type(tool)}")
 
             except Exception as e:
+                self._record_tooling_failure(str(getattr(tool, "__name__", tool)), f"{type(e).__name__}: {e}")
                 self.logger.error(f"Error initializing tool {tool}: {e}")
 
     # Knowledge-index capability surface (PageIndex / GraphIndex) ----------
@@ -232,14 +234,17 @@ class ToolInterface:
             try:
                 registered.extend(await self._register_toolkit_spec(spec, policy, subject, owner))
             except ToolParamRefused as exc:  # the host hook refused the params: the toolkit is NOT built (fail closed)
+                self._record_tooling_failure(spec.slug, f"params refused by the host hook: {', '.join(exc.params) or '-'}")
                 self.logger.error(
                     "Toolkit spec '%s' refused by the host param hook (params: %s); the toolkit is not registered",
                     exc.item or spec.slug, ", ".join(exc.params) or "-",
                 )
             except TenantToolingRefused as exc:
+                self._record_tooling_failure(spec.slug, f"refused by tenant policy: {exc.reason}")
                 self.logger.error("Tooling spec '%s' refused by tenant policy: %s", exc.item, exc.reason)
             except Exception as exc:  # noqa: BLE001 — a bad spec must never fail the agent boot
-                self.logger.warning("Toolkit spec '%s' skipped: %s", spec.slug, type(exc).__name__)
+                self._record_tooling_failure(spec.slug, f"{type(exc).__name__}: {exc}")
+                self.logger.error("Toolkit spec '%s' could not be applied and is NOT registered: %s", spec.slug, exc)
 
         for mspec in mcp_specs:
             try:
@@ -252,6 +257,16 @@ class ToolInterface:
         if registered and hasattr(self, "enable_tools"):
             self.enable_tools = True
         return registered
+
+    @property
+    def tooling_failures(self) -> list[dict[str, str]]:
+        """``[{"slug", "error"}]`` of the toolkit/tool specs the last build could not apply (never silently skipped)."""
+        return list(getattr(self, "_tooling_failures", None) or [])
+
+    def _record_tooling_failure(self, slug: str, error: str) -> None:
+        if getattr(self, "_tooling_failures", None) is None:
+            self._tooling_failures = []
+        self._tooling_failures.append({"slug": slug, "error": error})
 
     def _strip_server_params(self, cls: type, slug: str, params: dict[str, Any]) -> dict[str, Any]:
         """Drop every stored key the class declares server-managed (stripped on load, with a warning)."""
@@ -297,6 +312,7 @@ class ToolInterface:
             policy.precheck_toolkit(spec, subject=subject, owner=owner)
         cls = self._resolve_spec_class(spec.slug)
         if cls is None:
+            self._record_tooling_failure(spec.slug, "unknown slug")
             self.logger.warning("Toolkit spec '%s': unknown slug, skipped", spec.slug)
             return []
         params = self._strip_server_params(cls, spec.slug, await hydrate_params(spec))
@@ -305,6 +321,9 @@ class ToolInterface:
         filtered = self._filter_ctor_params(spec.slug, cls.__init__, params)
         # PA-9: the host parameter hook (a no-op without one) sees the final params, a refusal fails this spec closed
         instance = self.tool_manager.build_toolkit(cls, spec.slug, {**filtered, **self._fill_server_params(cls)})
+        if isinstance(instance, AbstractTool):  # a standalone tool is registered as a tool, not as a toolkit
+            self.tool_manager.register_tool(instance)
+            return [instance.name]
         tools = self.tool_manager.register_toolkit(instance)
         self._capture_knowledge_toolkit(instance)
         return [tool.name for tool in tools]

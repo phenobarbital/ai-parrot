@@ -395,6 +395,8 @@ class ToolManager(MCPToolManagerMixin):
         self._confirmation_guard: Optional["ConfirmationGuard"] = None
         # PA-9: host toolkit-parameter hook bound to this manager, see parrot.tools.host_hooks
         self._toolkit_param_binding: Optional[tuple[Callable[..., Any], Any]] = None
+        # Mapping (the aiohttp app) the server-managed ``source="app"`` constructor params are filled from.
+        self._server_param_source: Optional[Any] = None
 
         # Execution policy: declarative tool → remote-executor routing.
         self._execution_policy = None
@@ -604,11 +606,32 @@ class ToolManager(MCPToolManagerMixin):
             subject = subject.model_copy(update={"phase": phase})
         return split_exclude_tools(run_toolkit_param_hook(hook, slug, params, subject))
 
+    def set_server_param_source(self, source: Optional[Any]) -> None:
+        """Bind the mapping (the aiohttp app) every tool/toolkit this manager constructs gets its server-managed
+        ``source="app"`` constructor params from (e.g. ``artifact_store``), whichever path builds it."""
+        self._server_param_source = source
+
+    def server_filled_params(self, cls: type) -> Dict[str, Any]:
+        """Constructor values the server owns for ``cls``: ``source="app"`` params found in the bound source."""
+        source = self._server_param_source
+        declared = getattr(cls, "server_managed_params", None) or {}
+        if source is None or not declared:
+            return {}
+        from .server_params import constructor_server_params
+
+        return {
+            name: source[declared[name].key]
+            for name in constructor_server_params(cls)
+            if declared[name].source == "app" and source.get(declared[name].key) is not None
+        }
+
     def build_toolkit(self, cls: type, slug: str, params: Dict[str, Any], *, phase: Optional[str] = None) -> Any:
-        """Construct ``cls(**params)`` through the host hook: forced values applied, ``exclude_tools`` set on the
-        instance. Identical to ``cls(**params)`` when no hook is bound."""
+        """Construct ``cls(**params)`` for a toolkit OR a standalone tool: server-managed params filled, then the
+        host hook (forced values applied, ``exclude_tools`` set on the instance). Identical to ``cls(**params)``
+        when neither a hook nor a server-param source is bound."""
         from .host_hooks import apply_exclude_tools
 
+        params = {**params, **self.server_filled_params(cls)}
         final, exclude = self.hooked_toolkit_params(slug, params, phase=phase)
         instance = cls(**final)
         apply_exclude_tools(instance, exclude)
@@ -2761,6 +2784,7 @@ class ToolManager(MCPToolManagerMixin):
         # FEAT-264: carry the credential broker so cloned managers retain gating
         if self._broker is not None:
             new_tm._broker = self._broker
+        new_tm._server_param_source = self._server_param_source
         new_tm._toolkit_param_binding = self._toolkit_param_binding  # PA-9: a clone keeps constructing through the hook
         # PA-10: a per-session clone (user toolkit overrides) must keep the bot's TOOL_CALL guardrails: the pipeline is
         # the bot's, shared by reference, so a clone can never be the way around a host guardrail

@@ -162,6 +162,7 @@ class StudioAgentBuilder:
         from parrot.tools.host_hooks import STUDIO_TOOLKIT_PARAM_HOOK
         from parrot.tools.tooling_policy import ToolingSubject
 
+        kwargs["server_param_source"] = app  # server-managed ctor params (artifact_store) on EVERY tool path
         if (hook := app.get(STUDIO_TOOLKIT_PARAM_HOOK)) is not None:
             subject = ToolingSubject(tenant=part.tenant, agent_id=rec.agent_id, actor=None, phase="build")
             kwargs["toolkit_param_binding"] = (hook, subject)

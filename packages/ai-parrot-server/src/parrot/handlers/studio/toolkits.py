@@ -36,6 +36,7 @@ from parrot.tools.tooling_policy import (
     ToolingSubject,
     get_tenant_tooling_policy,
 )
+from parrot.tools.abstract import AbstractTool
 from parrot.tools.toolkit import AbstractToolkit
 from pydantic import BaseModel, Field, ValidationError
 
@@ -477,5 +478,8 @@ class StudioToolkitsHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, Studi
         except TypeError as exc:
             raise _ToolkitAssignError(422, "invalid_params", str(exc)) from exc
         apply_exclude_tools(toolkit, exclude)
+        if isinstance(toolkit, AbstractTool):  # a standalone tool is registered as a tool, not as a toolkit
+            bot.tool_manager.register_tool(toolkit)
+            return [toolkit.name], {}
         registered = bot.tool_manager.register_toolkit(toolkit)
         return [t.name for t in registered], {}
