@@ -69,6 +69,7 @@ class AudioFormSession:
         self._skipped: set[str] = set()          # optional fields the user skipped (persisted via answer_meta)
         self._pl_requested: set[str] | None = None   # fields of the in-flight plausibility batch
         self._pl_unchecked: set[str] = set()     # fields whose last plausibility batch was blocked (on_error=block)
+        self._stop_prev_phase: Phase | None = None   # set while a spoken STOP awaits yes/no confirmation
         self._resume_snap: AudioSnapshot | None = None
         self._synthesized: set[str] = set()      # field_ids whose narration has already been requested
         self._started_emitted = False
@@ -394,6 +395,15 @@ class AudioFormSession:
 
     def on_confirm(self, ev: ConfirmAnswer) -> list[Outbound]:
         """Confirm or discard the pending low-confidence answer."""
+        if self._stop_prev_phase is not None:
+            prev, self._stop_prev_phase = self._stop_prev_phase, None
+            if ev.confirmed:
+                return self.on_end(EndSession(type="end_session"))
+            self.state.phase = prev
+            if prev is Phase.REVIEW:
+                return [ReviewPrompt(text=self.narrator.render("review_all_correct"))]
+            cursor = self.state.cursor
+            return [self._question(cursor)] if cursor is not None else []
         pending = self.state.pending
         if pending is None:
             return [Error(code="NO_PENDING_ANSWER", message="No answer is awaiting confirmation")]
@@ -467,9 +477,22 @@ class AudioFormSession:
         return [self._question(cursor)]
 
     def on_end(self, ev: EndSession) -> list[Outbound]:
-        """End the session; delete nothing here (TASK-4226 owns recording cleanup on abandon)."""
+        """End the session immediately and delete every stored recording (S8)."""
+        self._stop_prev_phase = None
+        self.state.pending = None
+        out: list[Outbound] = []
+        for answer in self.state.answers.values():
+            if answer.blob_ref:
+                out.append(DeleteBlob(blob_ref=answer.blob_ref))
+                answer.blob_ref = None
         self.state.phase = Phase.ABORTED
-        return [SessionEnded(session_id=self.state.session_id)]
+        return out + [SessionEnded(session_id=self.state.session_id)]
+
+    def _request_stop_confirm(self) -> list[Outbound]:
+        """A spoken STOP is easy to mis-hear: ask yes/no (reusing the confirm turn) before ending."""
+        self._stop_prev_phase = self.state.phase
+        self.state.phase = Phase.CONFIRMING
+        return [ConfirmRequest(field_id=self.state.cursor or "", transcript="stop")]
 
     def on_ping(self, ev: Ping) -> list[Outbound]:
         """Keep-alive."""
@@ -513,7 +536,7 @@ class AudioFormSession:
         if cmd is VoiceCommand.HELP:
             return [ack] + self.on_repeat(RepeatQuestion(type="repeat_question"))
         if cmd is VoiceCommand.STOP:
-            return [ack] + self.on_end(EndSession(type="end_session"))
+            return [ack] + self._request_stop_confirm()
         if cmd in (VoiceCommand.YES, VoiceCommand.NO):
             return [ack] + self.on_confirm(ConfirmAnswer(type="confirm_answer", field_id=cursor or "",
                                                          confirmed=cmd is VoiceCommand.YES))
@@ -732,7 +755,7 @@ class AudioFormSession:
             return [CommandAck(command=cmd.value)] + self.on_review_confirm(
                 ReviewConfirm(type="review_confirm", confirmed=True))
         if cmd is VoiceCommand.STOP:
-            return [CommandAck(command=cmd.value)] + self.on_end(EndSession(type="end_session"))
+            return [CommandAck(command=cmd.value)] + self._request_stop_confirm()
         if cmd is not None:
             return [CommandAck(command=cmd.value),
                     ReviewPrompt(text=self.narrator.render("review_all_correct"))]

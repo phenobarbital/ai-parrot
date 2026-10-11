@@ -620,3 +620,36 @@ async def _ping_ok(ws: Any) -> bool:
         return False
     await ws.send_json({"type": "ping"})
     return True
+
+
+class TestAudioWsEndAndStop:
+    """Ledger f54f8e3bf8de: ending deletes recordings; a spoken STOP asks for confirmation first."""
+
+    async def test_end_session_deletes_stored_recordings(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        await start(ws, env)
+        await say(ws, env, "Ann")
+        for _ in range(50):
+            if env.blobs.blobs:
+                break
+            await asyncio.sleep(0.05)
+        assert env.blobs.blobs  # the spoken answer was recorded
+        await ws.send_json({"type": "end_session"})
+        await until(ws, "session_ended")
+        await asyncio.sleep(0.2)
+        assert env.blobs.blobs == {}
+
+    async def test_spoken_stop_needs_confirmation(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        await start(ws, env)
+        frames = await say(ws, env, "stop", 0.95, "confirm_request", "session_ended", "error")
+        assert frames[-1]["type"] == "confirm_request"  # not ended yet
+        frames = await say(ws, env, "no", 0.95, "question", "session_ended", "error")
+        assert frames[-1]["type"] == "question"
+        await say(ws, env, "stop", 0.95, "confirm_request")
+        frames = await say(ws, env, "yes", 0.95, "session_ended", "error")
+        assert frames[-1]["type"] == "session_ended"
