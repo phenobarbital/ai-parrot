@@ -39,6 +39,8 @@ from pydantic import ValidationError
 
 from ..audio.engine import AudioFormSession
 from ..audio.events import (
+    AnswerAccepted,
+    AnswerCleared,
     AudioReceived,
     AudioSegment,
     BlobStored,
@@ -754,6 +756,8 @@ class AudioFormWSHandler:
 
         if not is_io_request(item):
             await self._send_wire(ws, ctx, item)
+            if isinstance(item, (AnswerAccepted, AnswerCleared)):
+                await self._mirror_partial(ctx, item)
             if isinstance(item, SessionEnded):
                 await self._release_session(ctx)
                 ctx.closed = True
@@ -1088,6 +1092,36 @@ class AudioFormWSHandler:
     # -------------------------------------------------------------------------
     # Snapshots
     # -------------------------------------------------------------------------
+
+    async def _mirror_partial(self, ctx: _ConnCtx, item: "AnswerAccepted | AnswerCleared") -> None:
+        """AC16: keep ``/partial`` in step with the audio session (scalar answers only, never sensitive ones).
+
+        Partials are keyed like the HTTP routes: ``(form_uid, navigator-auth session id)`` → ``field_uid`` → value.
+        """
+        store = getattr(self._session_store, "partial_store", None)
+        form, engine = ctx.form, ctx.engine
+        if store is None or form is None or engine is None:
+            return
+        field = next((f for f in form.iter_fields_recursive() if f.field_id == item.field_id), None)
+        if field is None:
+            return
+        http_session = None
+        try:
+            if "session" in ctx.request:
+                http_session = ctx.request["session"].get("id")
+        except Exception:  # noqa: BLE001 — no navigator session on this connection
+            http_session = None
+        session_id = str(http_session) if http_session else ctx.state.session_id
+        uid = str(field.field_uid)
+        try:
+            if isinstance(item, AnswerCleared):
+                await store.remove_keys(str(form.form_uid), session_id, [uid])
+                return
+            if any(q.sensitive and q.field_id == item.field_id for q in engine.manifest.questions):
+                return
+            await store.save(str(form.form_uid), session_id, {uid: item.value})
+        except Exception as exc:  # noqa: BLE001 — the mirror is best effort, never fails the session
+            self.logger.warning("Partial mirror failed: %s", type(exc).__name__)
 
     async def _save_snapshot(self, ws: web.WebSocketResponse, ctx: _ConnCtx, snap: AudioSnapshot) -> None:
         """Compare-and-set save; a lost race surfaces ``RESUME_CONFLICT`` and ends the connection."""

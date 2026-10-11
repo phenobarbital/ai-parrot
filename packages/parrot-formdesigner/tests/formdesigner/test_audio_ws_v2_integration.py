@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -405,17 +406,18 @@ class TestAudioWsV2Integration:
         assert jsons(frames, "question")[-1]["field_id"] == "agree"
         await ws2.close()
 
-        # HTTP side: /partial only ever holds scalar answers, never the audio snapshot (AC16)
+        # HTTP side: /partial is fed by the audio session itself and only ever holds scalar answers (AC16)
         handler = env.app["form_api_handler"]
         uid = str(env.form.form_uid)
-        resp = await handler.save_partial(_http_request(uid, {"answers": {"agree": True}}))
+        resp = await handler.get_partial(_http_request(uid, method="GET", session_id=sid))
         assert resp.status == 200
-        body = json.loads((await handler.get_partial(_http_request(uid, method="GET"))).body)
+        body = json.loads(resp.body)
+        assert body["data"] == {"name": "Ann", "color": "green"}
         assert set(body["data"]).isdisjoint({"phase", "answer_meta", "cursor", "history", "blob_refs"})
         assert "answer_meta" not in json.dumps(body)
         # ... and a merge_partials HTTP submit completes the same form (cross-channel)
         resp = await handler.submit_data(_http_request(
-            uid, {"name": "Ann", "color": "green", "secret": "x"}, merge=True))
+            uid, {"agree": True, "secret": "x"}, merge=True, session_id=sid))
         assert resp.status == 200, resp.body
         stored = env.storage.store.call_args.args[0]
         assert stored.data["agree"] is True and stored.data["name"] == "Ann"
@@ -653,3 +655,29 @@ class TestAudioWsEndAndStop:
         await say(ws, env, "stop", 0.95, "confirm_request")
         frames = await say(ws, env, "yes", 0.95, "session_ended", "error")
         assert frames[-1]["type"] == "session_ended"
+
+
+class TestAudioWsPartialMirror:
+    """Ledger 3c4b1a24a4d4: scalar answers are mirrored to /partial; sensitive ones never; cascade clears."""
+
+    async def test_sensitive_never_mirrored_and_cleared_removed(self, aiohttp_client, voice_app: _Env) -> None:
+        from parrot_formdesigner.audio.events import AnswerCleared
+
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        sid = (await start(ws, env))[0]["session_id"]
+        await _fill(ws, env)
+        uid = str(env.form.form_uid)
+        partial = await env.partial_store.get(uid, sid)
+        assert partial is not None
+        fields = {f.field_id: str(f.field_uid) for f in env.form.iter_fields_recursive()}
+        assert fields["name"] in partial.data and fields["secret"] not in partial.data
+        # a cascade-cleared answer (AnswerCleared outbound) is dropped from the partial too
+        audio = next(r.handler.__self__ for r in env.app.router.routes()
+                     if r.resource is not None and r.resource.canonical.endswith("/audio/ws"))
+        ctx = SimpleNamespace(request={}, form=env.form, state=SimpleNamespace(session_id=sid),
+                              engine=SimpleNamespace(manifest=SimpleNamespace(questions=[])))
+        await audio._mirror_partial(ctx, AnswerCleared(field_id="name"))
+        assert fields["name"] not in (await env.partial_store.get(uid, sid)).data
+        await ws.close()
