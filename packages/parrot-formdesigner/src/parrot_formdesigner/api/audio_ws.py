@@ -399,7 +399,7 @@ class AudioFormWSHandler:
             await coro
         except Exception as exc:  # noqa: BLE001 — keep the connection alive
             self.logger.exception("Error handling audio frame (%s): %s", code, type(exc).__name__)
-            await self._send_error(ws, code, str(exc))
+            await self._send_error(ws, code, "Internal error while handling the request")
 
     # -------------------------------------------------------------------------
     # Authentication
@@ -584,7 +584,7 @@ class AudioFormWSHandler:
                 {**data, "type": "start_session", "form_uid": form_uid},
                 protocol_version=int(data.get("protocol_version", 1) or 1),
             )
-        except ValueError:  # pydantic.ValidationError, UnknownMessageType, bad protocol_version
+        except (ValueError, TypeError):  # pydantic.ValidationError, UnknownMessageType, bad protocol_version
             await self._send_error(ws, "INVALID_MESSAGE", "Invalid 'start_session' message")
             return
         assert isinstance(start, StartSession)

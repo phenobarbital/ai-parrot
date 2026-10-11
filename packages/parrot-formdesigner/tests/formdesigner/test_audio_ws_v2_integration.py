@@ -681,3 +681,32 @@ class TestAudioWsPartialMirror:
         await audio._mirror_partial(ctx, AnswerCleared(field_id="name"))
         assert fields["name"] not in (await env.partial_store.get(uid, sid)).data
         await ws.close()
+
+
+class TestAudioWsMinorHardening:
+    """Review minors: a non-numeric protocol_version is INVALID_MESSAGE; _guarded never leaks exception text."""
+
+    async def test_protocol_version_type_error(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        await ws.send_json({"type": "start_session", "form_uid": str(env.form.form_uid), "protocol_version": [2]})
+        msg = await recv(ws)
+        assert msg["type"] == "error" and msg["code"] == "INVALID_MESSAGE"
+
+    async def test_guarded_sends_generic_message(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        audio = next(r.handler.__self__ for r in env.app.router.routes()
+                     if r.resource is not None and r.resource.canonical.endswith("/audio/ws"))
+        sent: list[tuple[str, str]] = []
+
+        async def fake_send_error(ws: Any, code: str, message: str) -> None:
+            sent.append((code, message))
+
+        audio._send_error = fake_send_error
+
+        async def boom() -> None:
+            raise RuntimeError("secret-value-123")
+
+        await audio._guarded(None, boom(), "AUDIO_ERROR")
+        assert sent and "secret-value-123" not in sent[0][1]
