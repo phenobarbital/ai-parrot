@@ -194,7 +194,10 @@ class _AutoSynthAdapter:
         self._handler = handler
         self._state = state
         cfg = state.config
-        self.config = SimpleNamespace(mime_format=getattr(cfg, "tts_mime_format", None) or "audio/wav")
+        self.config = SimpleNamespace(
+            mime_format=getattr(cfg, "tts_mime_format", None) or "audio/wav",
+            backend=getattr(cfg, "tts_backend", None) or "supertonic",
+        )
 
     async def synthesize(self, text: str, language: Optional[str] = None) -> Any:
         """Synthesize via the per-session auto backend; raise when it degrades to text-only."""

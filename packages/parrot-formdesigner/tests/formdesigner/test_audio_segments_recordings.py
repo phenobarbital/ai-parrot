@@ -119,3 +119,30 @@ async def test_delete_never_raises():
             raise OSError("x")
 
     await delete_recording(_Boom(), "ref")
+
+
+@pytest.mark.asyncio
+async def test_cache_identity_includes_output_format() -> None:
+    """Round 2 #2: a WAV session and an MPEG session must not share cached bytes."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from parrot_formdesigner.audio import segments as seg
+
+    class _Synth:
+        def __init__(self, mime: str) -> None:
+            self.config = SimpleNamespace(mime_format=mime, backend="supertonic")
+            self.mime = mime
+
+        async def synthesize(self, text: str, language: str | None = None) -> SimpleNamespace:
+            return SimpleNamespace(audio=self.mime.encode() + b":" + text.encode())
+
+    seg._PROCESS_LRU.clear()
+    lock = asyncio.Lock()
+    kw = dict(locale="en", voice=None, form_uid="f-fmt", version="1")
+    wav = seg.AudioSegmentCache(_Synth("audio/wav"), lock=lock)
+    mpeg = seg.AudioSegmentCache(_Synth("audio/mpeg"), lock=lock)
+    a = await wav.ensure({"q:a:label": "Hello"}, **kw)
+    b = await mpeg.ensure({"q:a:label": "Hello"}, **kw)
+    assert a != b and b["q:a:label"].startswith(b"audio/mpeg")
+    assert mpeg.mime() == "audio/mpeg"
