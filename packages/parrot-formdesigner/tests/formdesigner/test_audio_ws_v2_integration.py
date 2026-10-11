@@ -710,3 +710,21 @@ class TestAudioWsMinorHardening:
 
         await audio._guarded(None, boom(), "AUDIO_ERROR")
         assert sent and "secret-value-123" not in sent[0][1]
+
+
+class TestAudioWsStopDuringReview:
+    """Round 2 #1: a spoken STOP in REVIEW is confirmable even though there is no cursor."""
+
+    async def test_stop_in_review_no_returns_yes_ends(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        await start(ws, env)
+        await _fill(ws, env)
+        frames = await say(ws, env, "stop", 0.95, "confirm_request", "session_ended", "error")
+        assert frames[-1]["type"] == "confirm_request"
+        frames = await say(ws, env, "no", 0.95, "review_prompt", "session_ended", "error")
+        assert frames[-1]["type"] == "review_prompt"
+        await say(ws, env, "stop", 0.95, "confirm_request", "session_ended", "error")
+        frames = await say(ws, env, "yes", 0.95, "session_ended", "error")
+        assert frames[-1]["type"] == "session_ended"

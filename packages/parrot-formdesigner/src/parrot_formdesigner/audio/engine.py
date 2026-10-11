@@ -242,9 +242,11 @@ class AudioFormSession:
 
     def on_audio_frame(self, ev: AudioReceived) -> list[Outbound]:
         """Stash the recording (never snapshotted) and request transcription for the cursor field."""
-        if self.state.phase == Phase.REVIEW:
+        if self.state.phase == Phase.REVIEW or self._stop_prev_phase is not None:
+            # A pending STOP confirmation is answered independently of the question cursor (it may be None).
             self._last_audio = None
-            return [Transcribe(field_id=_REVIEW_FIELD, audio=ev.audio, mime=ev.mime)]
+            field_id = _REVIEW_FIELD if self._stop_prev_phase is None else (self.state.cursor or _REVIEW_FIELD)
+            return [Transcribe(field_id=field_id, audio=ev.audio, mime=ev.mime)]
         if self.state.cursor is None:
             return [Error(code="SESSION_COMPLETE", message="All questions answered")]
         if self.state.phase not in _ANSWERING_PHASES:
@@ -254,6 +256,13 @@ class AudioFormSession:
 
     def on_transcript(self, ev: TranscriptReady) -> list[Outbound]:
         """Commands → option match → STT confidence gate → accept / confirm / reject."""
+        if self._stop_prev_phase is not None:
+            cmd = classify_command(ev.text, lexicon=self.lexicon, phase=Phase.CONFIRMING)
+            if cmd in (VoiceCommand.YES, VoiceCommand.NO):
+                return [CommandAck(command=cmd.value)] + self.on_confirm(
+                    ConfirmAnswer(type="confirm_answer", field_id=self.state.cursor or "",
+                                  confirmed=cmd is VoiceCommand.YES))
+            return [ConfirmRequest(field_id=self.state.cursor or "", transcript="stop")]
         if self.state.phase == Phase.REVIEW:
             return self.on_review_prompt_answer(ev)
         bad = self._guard(ev.field_id)
