@@ -14,6 +14,7 @@ Submodule redirector:
   exists.  This is done via a sys.meta_path finder installed at import time.
 """
 import importlib
+import pkgutil
 import importlib.abc
 import importlib.machinery
 import importlib.util
@@ -312,6 +313,11 @@ def __getattr__(name: str):
         obj = getattr(mod, name)
         setattr(sys.modules[__name__], name, obj)
         return obj
+
+    # --- Core submodule not imported yet (``from parrot.tools import exports_mode``): the import machinery asks
+    # this hook before it tries the submodule, and the ImportError below would otherwise end the import.
+    if any(info.name == name for info in pkgutil.iter_modules(__path__)):
+        return importlib.import_module(f".{name}", __name__)
 
     # --- External resolution (ai-parrot-tools package) ---
     result = _resolve_from_sources(name)
