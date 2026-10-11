@@ -1042,6 +1042,47 @@ class TestAskStreamCombinedModeGate:
         assert m["models.generate_content"].call_count >= 1
 
 
+class TestCleanGoogleSchemaOptionalEnum:
+    """An optional enum argument keeps its allowed values.
+
+    Pydantic v2 emits ``Optional[Literal[...]]`` / ``Optional[SomeEnum]`` as
+    ``anyOf: [{type: string, enum: [...]}, {type: null}]``. Flattening the
+    union must carry ``enum`` out of the chosen branch, or Gemini sees a free
+    string and guesses values the tool then refuses (``complete`` for
+    ``completed``).
+    """
+
+    def _clean(self, schema):
+        client = GoogleGenAIClient.__new__(GoogleGenAIClient)
+        return client.clean_google_schema(schema)
+
+    def test_optional_literal_keeps_enum(self):
+        schema = {
+            "anyOf": [{"enum": ["scheduled", "completed"], "type": "string"}, {"type": "null"}],
+            "default": None,
+            "title": "Status",
+        }
+        cleaned = self._clean(schema)
+        assert cleaned["type"] == "string"
+        assert cleaned["enum"] == ["scheduled", "completed"]
+        assert "anyOf" not in cleaned
+
+    def test_optional_enum_ref_keeps_enum(self):
+        schema = {
+            "$defs": {"Color": {"enum": ["red", "blue"], "title": "Color", "type": "string"}},
+            "type": "object",
+            "properties": {
+                "color": {"anyOf": [{"$ref": "#/$defs/Color"}, {"type": "null"}], "default": None},
+            },
+        }
+        cleaned = self._clean(schema)
+        assert cleaned["properties"]["color"]["enum"] == ["red", "blue"]
+
+    def test_optional_plain_string_has_no_enum(self):
+        cleaned = self._clean({"anyOf": [{"type": "string"}, {"type": "null"}], "default": None})
+        assert cleaned["type"] == "string" and "enum" not in cleaned
+
+
 class TestCleanGoogleSchemaArrayItems:
     """Regression for the Gemini 400 'array.items: missing field' error.
 

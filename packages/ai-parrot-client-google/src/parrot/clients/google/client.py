@@ -964,6 +964,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                 option_type = option.get("type")
                 if option_type and option_type != "null":
                     cleaned["type"] = option_type
+                    # Optional[Literal[...]] / Optional[Enum]: keep the allowed values,
+                    # or Gemini sees a free string and guesses values the tool refuses.
+                    if "enum" in option:
+                        cleaned["enum"] = option["enum"]
                     if option_type == "array" and "items" in option:
                         cleaned["items"] = self.clean_google_schema(option["items"])
                     if option_type == "object" and "properties" in option:
