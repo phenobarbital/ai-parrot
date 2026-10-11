@@ -1078,6 +1078,30 @@ class TestCleanGoogleSchemaOptionalEnum:
         cleaned = self._clean(schema)
         assert cleaned["properties"]["color"]["enum"] == ["red", "blue"]
 
+    def test_optional_numeric_literal_is_not_given_an_enum(self):
+        """The SDK types Schema.enum as list[str]: a numeric enum would make the declaration invalid."""
+        schema = {"anyOf": [{"enum": [1, 2], "type": "integer"}, {"type": "null"}], "default": None}
+        cleaned = self._clean(schema)
+        assert "enum" not in cleaned
+        from google.genai import types
+
+        types.FunctionDeclaration(
+            name="probe",
+            description="probe",
+            parameters={"type": "object", "properties": {"n": cleaned}},
+        )
+
+    def test_optional_literal_declaration_is_valid_for_the_sdk(self):
+        schema = {"anyOf": [{"enum": ["a", "b"], "type": "string"}, {"type": "null"}], "default": None}
+        from google.genai import types
+
+        decl = types.FunctionDeclaration(
+            name="probe",
+            description="probe",
+            parameters={"type": "object", "properties": {"s": self._clean(schema)}},
+        )
+        assert decl.parameters.properties["s"].enum == ["a", "b"]
+
     def test_optional_plain_string_has_no_enum(self):
         cleaned = self._clean({"anyOf": [{"type": "string"}, {"type": "null"}], "default": None})
         assert cleaned["type"] == "string" and "enum" not in cleaned
