@@ -510,6 +510,11 @@ def setup_form_api(
             f"{tp}/forms/{{form_uid}}/audio/ws",
             audio_handler.handle_websocket,
         )
+
+        async def _close_audio_tts(_app: web.Application) -> None:
+            await audio_handler.close_tts_backends()
+
+        app.on_cleanup.append(_close_audio_tts)
         logger.info("setup_form_api: audio WS endpoint mounted at %s/{tenant}/forms/{form_uid}/audio/ws", bp)
     # FEAT-300 — publish, question-bank, version history, import-report
     # Note: /versions and /import-report routes are registered BEFORE the

@@ -29,6 +29,7 @@ import logging
 from types import SimpleNamespace
 import os
 import tempfile
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -161,6 +162,9 @@ _V2_ONLY_TYPES = frozenset({
 _V2_QUESTION_KEYS = ("section_uid", "hint", "ui_cue", "answer_modes", "narration")
 
 
+TTS_UNAVAILABLE_COOLDOWN_S = 60.0  # a failed auto-mode backend is skipped this long (module constant)
+
+
 @dataclass
 class _ConnCtx:
     """Per-connection adapter state (replaces the old per-connection audio cache)."""
@@ -285,10 +289,11 @@ class AudioFormWSHandler:
         self._checkers: dict[str, AnswerPlausibilityChecker] = {}  # session_id → per-form checker
         self._max_msg_size = max_msg_size
         self._auto_synthesize = auto_synthesize
-        # Per-session working VoiceSynthesizer cache (session_id → synth) for the
-        # auto_synthesize path, so the chosen backend is reused across a
-        # session's questions instead of being rebuilt per narration (FEAT-236).
-        self._session_synths: dict[str, Any] = {}
+        # Process-wide registry of working auto-mode VoiceSynthesizers, keyed by the effective synthesis config
+        # (preferred backend, voice, mime format). Built lazily under ``_tts_lock``; closed on app cleanup.
+        self._tts_backends: dict[tuple[str, str, str], Any] = {}
+        self._tts_unavailable: dict[tuple[str, str, str], float] = {}  # (backend, voice, mime) → retry-after
+        self._tts_lock = asyncio.Lock()
         self.logger = logging.getLogger(__name__)
 
     # -------------------------------------------------------------------------
@@ -387,10 +392,6 @@ class AudioFormWSHandler:
                 except Exception as exc:  # noqa: BLE001
                     self.logger.warning("Active marker release failed: %s", type(exc).__name__)
             self._checkers.pop(ctx.state.session_id, None)
-            # Release any per-session synthesizer built lazily in auto mode.
-            cached_synth = self._session_synths.pop(ctx.state.session_id, None)
-            if cached_synth is not None:
-                await self._close_synth(cached_synth)
             self.logger.debug(
                 "AudioFormWSHandler: session %s closed", ctx.state.session_id
             )
@@ -1232,45 +1233,63 @@ class AudioFormWSHandler:
         ``session_id`` so subsequent questions reuse the same backend instead of
         rebuilding it. Never raises — degrades to text-only (``None``).
         """
-        sid = session.session_id
-        cached = self._session_synths.get(sid)
-        if cached is not None:
+        preferred = config.tts_backend if config is not None else "supertonic"
+        voice = (config.tts_voice if config is not None else None) or ""
+        mime_format = config.tts_mime_format if config is not None else "audio/wav"
+        key = (preferred, voice, mime_format)
+        shared = self._tts_backends.get(key)
+        if shared is not None:
             try:
-                result = await cached.synthesize(text, language=language)
+                result = await shared.synthesize(text, language=language)
                 return result.audio
-            except Exception as exc:  # noqa: BLE001 — rebuild on failure
-                self.logger.warning(
-                    "Cached TTS backend failed (%s); rebuilding", exc
-                )
-                await self._close_synth(cached)
-                self._session_synths.pop(sid, None)
+            except Exception as exc:  # noqa: BLE001 — rebuild once below
+                self.logger.warning("Shared TTS backend failed (%s); rebuilding", type(exc).__name__)
+                async with self._tts_lock:
+                    if self._tts_backends.get(key) is shared:
+                        self._tts_backends.pop(key, None)
+                        await self._close_synth(shared)
 
         try:
             from parrot.voice.tts.models import TTSConfig
             from parrot.voice.tts.synthesizer import VoiceSynthesizer
         except ImportError as exc:
-            self.logger.warning(
-                "parrot.voice TTS stack unavailable (%s); text-only", exc
-            )
+            self.logger.warning("parrot.voice TTS stack unavailable (%s); text-only", exc)
             return None
 
-        preferred = config.tts_backend if config is not None else "supertonic"
-        voice = config.tts_voice if config is not None else None
-        mime_format = config.tts_mime_format if config is not None else "audio/wav"
-        backends = [preferred] + [b for b in ("google",) if b != preferred]
-        for backend in backends:
-            candidate = VoiceSynthesizer(
-                TTSConfig(backend=backend, voice=voice, mime_format=mime_format)
-            )
-            try:
-                result = await candidate.synthesize(text, language=language)
-                # Keep the working backend open for reuse this session.
-                self._session_synths[sid] = candidate
-                return result.audio
-            except Exception as exc:  # noqa: BLE001 — never raise (FEAT-231)
-                self.logger.warning("TTS backend %s unavailable: %s", backend, exc)
-                await self._close_synth(candidate)
-        return None
+        async with self._tts_lock:
+            shared = self._tts_backends.get(key)  # a concurrent session may have built it meanwhile
+            if shared is None:
+                backends = [preferred] + [b for b in ("google",) if b != preferred]
+                for backend in backends:
+                    ckey = (backend, voice, mime_format)
+                    if self._tts_unavailable.get(ckey, 0.0) > time.monotonic():
+                        continue  # still cooling down: do not pay its timeout again
+                    candidate = VoiceSynthesizer(
+                        TTSConfig(backend=backend, voice=voice or None, mime_format=mime_format)
+                    )
+                    try:
+                        result = await candidate.synthesize(text, language=language)
+                    except Exception as exc:  # noqa: BLE001 — never raise (FEAT-231)
+                        self.logger.warning("TTS backend %s unavailable: %s", backend, exc)
+                        self._tts_unavailable[ckey] = time.monotonic() + TTS_UNAVAILABLE_COOLDOWN_S
+                        await self._close_synth(candidate)
+                        continue
+                    self._tts_backends[key] = candidate
+                    return result.audio
+                return None
+        try:
+            result = await shared.synthesize(text, language=language)
+            return result.audio
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Shared TTS backend failed: %s", type(exc).__name__)
+            return None
+
+    async def close_tts_backends(self) -> None:
+        """Close every shared auto-mode backend (app cleanup)."""
+        async with self._tts_lock:
+            backends, self._tts_backends = list(self._tts_backends.values()), {}
+        for synth in backends:
+            await self._close_synth(synth)
 
     async def _close_synth(self, synth: Any) -> None:
         """Close a VoiceSynthesizer, swallowing any teardown error."""

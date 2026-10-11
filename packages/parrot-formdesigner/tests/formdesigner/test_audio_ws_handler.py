@@ -573,13 +573,17 @@ class TestReviewHardening:
         assert ctx.engine.state.pending is not None  # not consumed
 
     @pytest.mark.asyncio
-    async def test_auto_synthesize_reuses_session_backend(self, handler: AudioFormWSHandler, monkeypatch) -> None:
-        """M-2: the working backend is built once per session and reused."""
-        constructed: list[str] = []
+    async def test_auto_synthesize_shares_one_backend_per_config(
+        self, handler: AudioFormWSHandler, monkeypatch
+    ) -> None:
+        """Round 3: one backend per (backend, voice, mime) across sessions; cooldown; cleanup closes them."""
+
+        constructed: list[tuple[str, str]] = []
+        closed: list[object] = []
 
         class _CountingSynth:
             def __init__(self, config=None) -> None:
-                constructed.append(getattr(config, "backend", None))
+                constructed.append((config.backend, config.mime_format))
                 self.config = config
 
             async def synthesize(self, text, *, language=None):
@@ -588,24 +592,59 @@ class TestReviewHardening:
                 return SimpleNamespace(audio=b"WAV")
 
             async def close(self) -> None:
-                return None
+                closed.append(self)
 
         monkeypatch.setattr("parrot.voice.tts.synthesizer.VoiceSynthesizer", _CountingSynth)
         handler.synthesizer = None  # type: ignore[assignment]
         handler._auto_synthesize = True
+        s1 = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
+        s2 = AudioSessionState(session_id="s2", form_uid="f1", user_id="u2")
+        wav = AudioSessionConfig(form_uid="f1")
+        mpeg = AudioSessionConfig(form_uid="f1", tts_mime_format="audio/mpeg")
+        assert await handler._synthesize("hi", config=wav, session=s1) == b"WAV"
+        assert await handler._synthesize("there", config=wav, session=s2) == b"WAV"
+        # SuperTonic tried once (then cooling down); google built once and shared by both sessions.
+        assert constructed.count(("supertonic", "audio/wav")) == 1
+        assert constructed.count(("google", "audio/wav")) == 1
+        assert len(handler._tts_backends) == 1
+        # different mime → different instance
+        assert await handler._synthesize("hi", config=mpeg, session=s1) == b"WAV"
+        assert len(handler._tts_backends) == 2
+        # a session ending never closes the shared backend; cleanup does
+        assert closed.count(next(iter(handler._tts_backends.values()))) == 0
+        shared = list(handler._tts_backends.values())
+        await handler.close_tts_backends()
+        assert all(b in closed for b in shared) and handler._tts_backends == {}
+
+    @pytest.mark.asyncio
+    async def test_failed_backend_cooldown_is_honoured(self, handler: AudioFormWSHandler, monkeypatch) -> None:
+
+        attempts: list[str] = []
+
+        class _Down:
+            def __init__(self, config=None) -> None:
+                self.config = config
+
+            async def synthesize(self, text, *, language=None):
+                attempts.append(self.config.backend)
+                raise RuntimeError("down")
+
+            async def close(self) -> None:
+                return None
+
+        monkeypatch.setattr("parrot.voice.tts.synthesizer.VoiceSynthesizer", _Down)
+        handler.synthesizer = None  # type: ignore[assignment]
+        handler._auto_synthesize = True
         session = AudioSessionState(session_id="s1", form_uid="f1", user_id="u1")
         cfg = AudioSessionConfig(form_uid="f1")
-        a1 = await handler._synthesize("hi", config=cfg, session=session)
-        a2 = await handler._synthesize("there", config=cfg, session=session)
-        assert a1 == b"WAV" and a2 == b"WAV"
-        # SuperTonic attempted once; Google built once and reused (not twice).
-        assert constructed.count("supertonic") == 1
-        assert constructed.count("google") == 1
-        assert session.session_id in handler._session_synths
-
-
-class TestAutoSynthesizeSharedCache:
-    """Ledger 6655da3275c0: the default auto_synthesize path shares the segment cache and _SYNTH_LOCK."""
+        assert await handler._synthesize("a", config=cfg, session=session) is None
+        n = len(attempts)
+        assert await handler._synthesize("b", config=cfg, session=session) is None
+        assert len(attempts) == n  # both backends cooling down: no new attempts
+        for k in handler._tts_unavailable:
+            handler._tts_unavailable[k] = 0.0  # cooldown elapsed
+        await handler._synthesize("c", config=cfg, session=session)
+        assert len(attempts) > n
 
     @pytest.mark.asyncio
     async def test_auto_path_goes_through_segment_cache_and_lock(self, handler: AudioFormWSHandler) -> None:
