@@ -26,6 +26,7 @@ import base64
 import html
 import json
 import logging
+from types import SimpleNamespace
 import os
 import tempfile
 import uuid
@@ -178,6 +179,30 @@ class _ConnCtx:
     def inline_audio(self) -> bool:
         """True when question audio travels base64 inside ``question`` (v1, or v2 with prefetch off)."""
         return self.state.protocol_version < 2 or not self.prefetch
+
+
+class _AutoSynthAdapter:
+    """Presents the handler's ``auto_synthesize`` fallback as a synthesiser for ``AudioSegmentCache``.
+
+    This puts the default path behind the same segment cache and process-wide ``_SYNTH_LOCK`` as an
+    injected synthesiser (AC17).
+    """
+
+    def __init__(self, handler: "AudioFormWSHandler", state: AudioSessionState) -> None:
+        self._handler = handler
+        self._state = state
+        cfg = state.config
+        self.config = SimpleNamespace(mime_format=getattr(cfg, "tts_mime_format", None) or "audio/wav")
+
+    async def synthesize(self, text: str, language: Optional[str] = None) -> Any:
+        """Synthesize via the per-session auto backend; raise when it degrades to text-only."""
+        language = None if language == "en" else language
+        audio = await self._handler._auto_synthesize_cached(
+            self._state, text, config=self._state.config, language=language
+        )
+        if not audio:
+            raise RuntimeError("auto TTS unavailable")
+        return SimpleNamespace(audio=audio)
 
 
 class AudioFormWSHandler:
@@ -652,7 +677,10 @@ class AudioFormWSHandler:
         ctx.form = form
         ctx.engine = engine
         ctx.prefetch = start.prefetch
-        ctx.segments = AudioSegmentCache(self.synthesizer, lock=_SYNTH_LOCK)
+        segment_synth: Any = self.synthesizer
+        if segment_synth is None and self._auto_synthesize:
+            segment_synth = _AutoSynthAdapter(self, ctx.state)
+        ctx.segments = AudioSegmentCache(segment_synth, lock=_SYNTH_LOCK)
         opening = engine.handle(start)
         if start.resume_session_id and any(
             isinstance(o, Error) and o.code in ("RESUME_STALE", "RESUME_FORBIDDEN") for o in opening
@@ -874,7 +902,7 @@ class AudioFormWSHandler:
         if not items:
             return {}
         state = ctx.state
-        if self.synthesizer is not None and ctx.segments is not None and ctx.form is not None:
+        if ctx.segments is not None and ctx.segments.synthesizer is not None and ctx.form is not None:
             cfg = ctx.engine.cfg if ctx.engine is not None else None
             return await ctx.segments.ensure(
                 items,

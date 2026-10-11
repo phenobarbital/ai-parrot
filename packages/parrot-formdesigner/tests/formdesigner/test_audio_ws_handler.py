@@ -602,3 +602,33 @@ class TestReviewHardening:
         assert constructed.count("supertonic") == 1
         assert constructed.count("google") == 1
         assert session.session_id in handler._session_synths
+
+
+class TestAutoSynthesizeSharedCache:
+    """Ledger 6655da3275c0: the default auto_synthesize path shares the segment cache and _SYNTH_LOCK."""
+
+    @pytest.mark.asyncio
+    async def test_auto_path_goes_through_segment_cache_and_lock(self, handler: AudioFormWSHandler) -> None:
+        from types import SimpleNamespace
+
+        from parrot_formdesigner.api.audio_ws import _AutoSynthAdapter, _ConnCtx
+        from parrot_formdesigner.audio import segments as seg
+
+        handler.synthesizer = None  # type: ignore[assignment]
+        handler._auto_synthesize = True
+        calls: list[str] = []
+
+        async def fake_cached(session, text, *, config=None, language=None):
+            calls.append(text)
+            return b"WAV"
+
+        handler._auto_synthesize_cached = fake_cached  # type: ignore[method-assign]
+        state = AudioSessionState(session_id="s-auto", form_uid="f1", user_id="u1")
+        ctx = _ConnCtx(request=None, user=None, tenant=None, state=state)
+        ctx.form = SimpleNamespace(form_uid="f-auto-cache", version="1")
+        ctx.segments = seg.AudioSegmentCache(_AutoSynthAdapter(handler, state), lock=seg._SYNTH_LOCK)
+        seg._PROCESS_LRU.clear()
+        first = await handler._synth_items(ctx, {"q:a:label": "Hello"})
+        second = await handler._synth_items(ctx, {"q:a:label": "Hello"})
+        assert first == second == {"q:a:label": b"WAV"}
+        assert calls == ["Hello"]  # second call served by the shared cache
