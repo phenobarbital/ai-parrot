@@ -378,6 +378,8 @@ class GeminiLiveClient(AbstractClient):
     # FEAT-523 folder-convention attributes (read by LLMFactory).
     provider_keys: tuple[str, ...] = ("gemini-live",)
     models: type[Enum] = GoogleModel
+    # realtime audio-in/audio-out client: it cannot serve a Studio (text) agent, so the Studio catalogue omits it
+    studio_offered: bool = False
 
     def __init__(
         self,

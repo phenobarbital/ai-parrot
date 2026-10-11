@@ -283,3 +283,41 @@ async def test_base_classes_host_rows_not_shown_to_global_partition(aiohttp_clie
     rows = await resp.json()
     assert resp.status == 200 and all("allowed" in r for r in rows)
     assert not [r for r in rows if r["name"] == "HostBot"]
+
+
+def test_every_catalogue_row_with_a_client_lists_models_and_google_compat_has_a_default(caplog):
+    """P2: ``google-compat`` lists the Gemini models with a real default; no traceback on a normal build."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger=catalog_module.logger.name):
+        rows = {r["provider"]: r for r in catalog_module._build_llm_clients_catalog()}
+    assert not [r for r in caplog.records if r.exc_info], "the catalogue build logged a traceback"
+    compat = rows["google-compat"]
+    assert compat["models"] and compat["default_model"] in compat["models"]
+    assert rows["google"]["default_model"] == compat["default_model"]
+
+
+def test_voice_only_gemini_live_is_not_offered():
+    """P2: a realtime audio client cannot serve a Studio agent, so the catalogue does not offer it."""
+    rows = {r["provider"] for r in catalog_module._build_llm_clients_catalog()}
+    assert "gemini-live" not in rows
+    assert "google" in rows
+
+
+@pytest.mark.asyncio
+async def test_model_params_reports_params_the_model_rejects():
+    """P1: the catalogue says which sampling params ``claude-opus-5`` does not take (and what it still takes)."""
+    app = web.Application()
+    for provider, model, expected in (
+        ("anthropic", "claude-opus-5", ["temperature", "top_p", "top_k"]),
+        ("anthropic", "claude-sonnet-4-6", []),
+    ):
+        request = make_mocked_request(
+            "GET", f"/catalog/model-params?provider={provider}&model={model}", match_info={"kind": "model-params"}, app=app
+        )
+        response = await _unwrap(StudioCatalogHandler.get)(StudioCatalogHandler(request))
+        body = await _decode(response)
+        assert body["unsupported"] == expected
+        assert "temperature" in body["properties"]
+    plain = make_mocked_request("GET", "/catalog/model-params", match_info={"kind": "model-params"}, app=app)
+    assert "unsupported" not in await _decode(await _unwrap(StudioCatalogHandler.get)(StudioCatalogHandler(plain)))
