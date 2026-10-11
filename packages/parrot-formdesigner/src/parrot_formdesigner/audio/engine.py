@@ -685,7 +685,9 @@ class AudioFormSession:
                 self._pl_requested = set(pending)
                 self.state.phase = Phase.PLAUSIBILITY
                 return [RunPlausibility(fields=pending), self._save()]
-        return self._submit() + [self._save()]
+        # The snapshot goes BEFORE the Submit: FormComplete deletes it, so a later save would lose its CAS.
+        submit = self._submit()
+        return [self._save(), *submit]
 
     def _submit(self) -> list[Outbound]:
         """SUBMITTING + Submit carrying the plausibility report (low confidence never blocks)."""

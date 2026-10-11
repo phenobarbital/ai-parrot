@@ -596,3 +596,27 @@ class TestAudioWsActiveMarker:
         await asyncio.sleep(0.1)
         assert _active_keys(env) == []
         await ws2.close()
+
+
+class TestAudioWsSnapshotAfterSubmit:
+    """Ledger d9981c44175f: a successful submit must not be followed by a RESUME_CONFLICT error."""
+
+    async def test_no_error_frame_after_form_complete(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        await start(ws, env)
+        await _fill(ws, env)
+        await ws.send_json({"type": "review_confirm", "confirmed": True})
+        done = await until(ws, "form_complete", "error")
+        assert done[-1]["type"] == "form_complete"
+        trailing = await until(ws, "pong", "error", "_closed") if await _ping_ok(ws) else []
+        assert not any(isinstance(m, dict) and m["type"] == "error" for m in trailing), trailing
+        assert _snapshot_keys(env) == []
+
+
+async def _ping_ok(ws: Any) -> bool:
+    if ws.closed:
+        return False
+    await ws.send_json({"type": "ping"})
+    return True

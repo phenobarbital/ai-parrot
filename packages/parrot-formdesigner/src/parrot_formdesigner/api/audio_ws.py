@@ -770,6 +770,8 @@ class AudioFormWSHandler:
             return None
 
         if isinstance(item, SaveSnapshot):
+            if engine.state.phase in (Phase.COMPLETE, Phase.ABORTED):
+                return None  # the session was released: a late save would only lose its compare-and-set
             await self._save_snapshot(ws, ctx, AudioSnapshot.model_validate(item.snapshot))
             return None
 
