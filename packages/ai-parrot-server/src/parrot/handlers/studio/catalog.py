@@ -160,6 +160,17 @@ def _provider_models(provider: str) -> tuple[list[str], list[str]]:
         return [], []
 
 
+def _unsupported_params(provider: str, model: str) -> list[str]:
+    """Model params ``provider``'s client rejects for ``model`` (``[]`` when it declares none or cannot be loaded)."""
+    try:
+        cls = LLMFactory.supported_clients().get(provider.lower())
+        cls = cls() if cls is not None and not isinstance(cls, type) else cls
+        return list(cls.unsupported_params(model)) if hasattr(cls, "unsupported_params") else []
+    except Exception:  # pylint: disable=broad-except
+        logger.warning("unsupported-params lookup failed for %r", provider, exc_info=True)
+        return []
+
+
 IMPORT_FAILED = "import_failed"
 _DATED_SUFFIX = re.compile(r"-\d{8}$")
 
@@ -218,6 +229,8 @@ def _build_llm_clients_catalog() -> list[dict]:
                 }
             )
             continue
+        if getattr(cls, "studio_offered", True) is False:
+            continue  # e.g. a realtime voice client: it cannot run a Studio agent
         models, deprecated_models = _provider_models(provider)
         rows.append(
             {
@@ -272,7 +285,11 @@ class StudioCatalogHandler(StudioBaseView):
             return self.json_response(await self._get_vector_stores())
         if kind == "model-params":
             # the bounds the 422 ``invalid_config`` details are checked against, so a UI can validate client-side
-            return self.json_response(StudioModelParams.model_json_schema())
+            schema = StudioModelParams.model_json_schema()
+            provider, model = self.request.query.get("provider"), self.request.query.get("model")
+            if provider and model:
+                schema["unsupported"] = _unsupported_params(provider, model)
+            return self.json_response(schema)
         return self._error(f"Unknown catalog '{kind}'.", status=404, code="not_found")
 
     @staticmethod

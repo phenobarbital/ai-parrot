@@ -4,6 +4,7 @@ from typing import AsyncIterator, Dict, List, Literal, Optional, Sequence, Union
 from typing import List as TypingList
 import base64
 import io
+import re
 import time
 from enum import Enum
 import uuid
@@ -303,12 +304,11 @@ class AnthropicClient(AbstractClient):
     # Fable 5 additionally rejects an explicit ``thinking={"type":"disabled"}``
     # — the param must be omitted entirely. Mirrors the guard pattern in
     # ``GoogleGenAIClient._requires_thinking``.
-    _ADAPTIVE_ONLY_PREFIXES: tuple = (
-        "claude-fable-5",  # covers fable-5 AND fable-5-1
-        "claude-sonnet-5",
-        "claude-opus-4-8",
-        "claude-opus-4-7",
+    # Every Fable, every 5.x+ generation (Sonnet/Opus/Haiku 5 …) and Opus 4.7/4.8.
+    _ADAPTIVE_ONLY_PATTERN = re.compile(
+        r"^claude-(?:fable-|(?:sonnet|opus|haiku)-(?:[5-9]|\d{2,})(?!\d)|opus-4-[78](?!\d))"
     )
+    SAMPLING_PARAMS: tuple = ("temperature", "top_p", "top_k")
 
     @staticmethod
     def _model_str(model) -> str:
@@ -325,7 +325,12 @@ class AnthropicClient(AbstractClient):
         which removed the sampling parameters.
         """
         m = cls._model_str(model)
-        return any(m.startswith(p) for p in cls._ADAPTIVE_ONLY_PREFIXES)
+        return bool(cls._ADAPTIVE_ONLY_PATTERN.match(m))
+
+    @classmethod
+    def unsupported_params(cls, model) -> list:
+        """Request params ``model`` rejects (the Studio ``/catalog/model-params`` reports exactly these)."""
+        return list(cls.SAMPLING_PARAMS) if cls._rejects_sampling_params(model) else []
 
     @classmethod
     def _rejects_explicit_thinking_disabled(cls, model) -> bool:
