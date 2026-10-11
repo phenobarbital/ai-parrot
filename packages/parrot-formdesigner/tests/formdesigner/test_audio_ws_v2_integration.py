@@ -676,7 +676,7 @@ class TestAudioWsPartialMirror:
         # a cascade-cleared answer (AnswerCleared outbound) is dropped from the partial too
         audio = next(r.handler.__self__ for r in env.app.router.routes()
                      if r.resource is not None and r.resource.canonical.endswith("/audio/ws"))
-        ctx = SimpleNamespace(request={}, form=env.form, state=SimpleNamespace(session_id=sid),
+        ctx = SimpleNamespace(request={}, form=env.form, partial_session_id=None, state=SimpleNamespace(session_id=sid),
                               engine=SimpleNamespace(manifest=SimpleNamespace(questions=[])))
         await audio._mirror_partial(ctx, AnswerCleared(field_id="name"))
         assert fields["name"] not in (await env.partial_store.get(uid, sid)).data
@@ -728,3 +728,38 @@ class TestAudioWsStopDuringReview:
         await say(ws, env, "stop", 0.95, "confirm_request", "session_ended", "error")
         frames = await say(ws, env, "yes", 0.95, "session_ended", "error")
         assert frames[-1]["type"] == "session_ended"
+
+
+class TestAudioWsPartialSessionKey:
+    """Round 2 #3: mirror, cascade-remove and submit cleanup all use the same partial-session key."""
+
+    async def test_partial_empty_after_form_complete_with_navigator_session(
+        self, aiohttp_client, voice_app: _Env
+    ) -> None:
+        env = voice_app
+
+        @web.middleware
+        async def _nav_session(request: web.Request, handler: Any) -> Any:
+            request["session"] = {"id": "nav-1"}
+            return await handler(request)
+
+        env.app.middlewares.append(_nav_session)
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        await start(ws, env)
+        await ws.send_json({"type": "answer_text", "field_id": "name", "value": "Ann"})
+        await until(ws, "question")
+        uid = str(env.form.form_uid)
+        assert (await env.partial_store.get(uid, "nav-1")).data  # mirrored under the navigator session id
+        await ws.send_json({"type": "answer_selection", "field_id": "color", "value": "red"})
+        await until(ws, "question")
+        await ws.send_json({"type": "answer_selection", "field_id": "agree", "value": True})
+        await until(ws, "question")
+        await ws.send_json({"type": "answer_text", "field_id": "secret", "value": "pw"})
+        frames = await until(ws, "question", "review_start")
+        if frames[-1]["type"] == "question":
+            await ws.send_json({"type": "skip_question", "field_id": "comment"})
+            await until(ws, "review_start")
+        await ws.send_json({"type": "review_confirm", "confirmed": True})
+        await until(ws, "form_complete", "error")
+        assert await env.partial_store.get(uid, "nav-1") is None

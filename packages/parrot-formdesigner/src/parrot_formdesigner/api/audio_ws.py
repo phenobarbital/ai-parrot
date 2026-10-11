@@ -176,6 +176,7 @@ class _ConnCtx:
     v1_audio: dict[str, bytes] = field(default_factory=dict)  # field_uid → narration audio (inline mode)
     prefetch: bool = True
     closed: bool = False
+    partial_session_id: Optional[str] = None  # resolved once: navigator-auth session id, else audio session id
 
     @property
     def inline_audio(self) -> bool:
@@ -1073,7 +1074,7 @@ class AudioFormWSHandler:
                 context=item.context,
                 extra_data=None,
                 auth_context=self._auth_context(ctx.user),
-                merge_session_id=state.session_id,
+                merge_session_id=self._partial_session(ctx),
                 plausibility=state.plausibility,
                 submission_id=state.submission_id,
             )
@@ -1096,6 +1097,18 @@ class AudioFormWSHandler:
     # Snapshots
     # -------------------------------------------------------------------------
 
+    def _partial_session(self, ctx: _ConnCtx) -> str:
+        """The partial-store session key, resolved once per connection (HTTP ``/partial`` uses the same id)."""
+        if ctx.partial_session_id is None:
+            http_session = None
+            try:
+                if "session" in ctx.request:
+                    http_session = ctx.request["session"].get("id")
+            except Exception:  # noqa: BLE001 — no navigator session on this connection
+                http_session = None
+            ctx.partial_session_id = str(http_session) if http_session else ctx.state.session_id
+        return ctx.partial_session_id
+
     async def _mirror_partial(self, ctx: _ConnCtx, item: "AnswerAccepted | AnswerCleared") -> None:
         """AC16: keep ``/partial`` in step with the audio session (scalar answers only, never sensitive ones).
 
@@ -1108,13 +1121,7 @@ class AudioFormWSHandler:
         field = next((f for f in form.iter_fields_recursive() if f.field_id == item.field_id), None)
         if field is None:
             return
-        http_session = None
-        try:
-            if "session" in ctx.request:
-                http_session = ctx.request["session"].get("id")
-        except Exception:  # noqa: BLE001 — no navigator session on this connection
-            http_session = None
-        session_id = str(http_session) if http_session else ctx.state.session_id
+        session_id = self._partial_session(ctx)
         uid = str(field.field_uid)
         try:
             if isinstance(item, AnswerCleared):
