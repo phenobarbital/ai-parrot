@@ -1,4 +1,5 @@
 """Tests for the design-time VoiceOptimizer, EditToolkit.propose_voice_hints and the optimize endpoint (FEAT-649)."""
+
 from __future__ import annotations
 
 import json
@@ -11,17 +12,25 @@ from parrot_formdesigner.core.options import FieldOption
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
 
-pytest.importorskip("parrot.tools.toolkit")   # EditToolkit needs ai-parrot
+pytest.importorskip("parrot.tools.toolkit")  # EditToolkit needs ai-parrot
 
 _FORM_UID = "11111111-1111-1111-1111-111111111111"
 
 
 def _form() -> FormSchema:
     pick = FormField(
-        field_id="pick", field_type=FieldType.SELECT, label="Pick",
-        options=[FieldOption(value="a", label="Saltar"), FieldOption(value="b", label="Rojo"), FieldOption(value="c", label="Rojos")],
+        field_id="pick",
+        field_type=FieldType.SELECT,
+        label="Pick",
+        options=[
+            FieldOption(value="a", label="Saltar"),
+            FieldOption(value="b", label="Rojo"),
+            FieldOption(value="c", label="Rojos"),
+        ],
     )
-    return FormSchema(form_id="demo", title="Demo", tenant="acme", sections=[FormSection(section_id="s", fields=[pick])])
+    return FormSchema(
+        form_id="demo", title="Demo", tenant="acme", sections=[FormSection(section_id="s", fields=[pick])]
+    )
 
 
 class FakeClient:

@@ -5,6 +5,7 @@ machine: it never awaits and performs no I/O. I/O is requested through
 ``Outbound`` request models that the WebSocket adapter performs and answers
 with ``*_Done`` / ``PlanReady`` / ``IOFailed`` events.
 """
+
 from __future__ import annotations
 
 import logging
@@ -17,16 +18,65 @@ from ..core.voice import VoiceFormConfig, field_voice_meta, is_sensitive
 from ..core.voice_answer import wrap_voice
 from .commands import VoiceCommand, classify_command
 from .events import (
-    AnswerAccepted, AnswerCleared, AnswerPayload, AnswerRejected, AnswerSelection, AnswerText, AudioReceived,
-    BlobStored, CommandAck, ConfirmAnswer, ConfirmRequest, DeleteBlob, EndSession, Error, FormComplete, GoBack,
-    InboundEvent, IOFailed, Outbound, Ping, PlanReady, PlanUpdated, PlausibilityDone, PlausibilityResult, Pong,
-    Question, QuestionSkipped, RepeatQuestion, Replan, ReviewConfirm, ReviewEdit, ReviewItem, ReviewPrompt,
-    ReviewStart, RunPlausibility, SaveSnapshot, SectionEnter, SessionEnded, SessionResumed, SessionStarted,
-    SkipQuestion, StartSession, StoreBlob, Submit, SubmitDone, Synthesize, Transcribe, Transcription,
-    TranscriptReady, ValidationErrors,
+    AnswerAccepted,
+    AnswerCleared,
+    AnswerPayload,
+    AnswerRejected,
+    AnswerSelection,
+    AnswerText,
+    AudioReceived,
+    BlobStored,
+    CommandAck,
+    ConfirmAnswer,
+    ConfirmRequest,
+    DeleteBlob,
+    EndSession,
+    Error,
+    FormComplete,
+    GoBack,
+    InboundEvent,
+    IOFailed,
+    Outbound,
+    Ping,
+    PlanReady,
+    PlanUpdated,
+    PlausibilityDone,
+    PlausibilityResult,
+    Pong,
+    Question,
+    QuestionSkipped,
+    RepeatQuestion,
+    Replan,
+    ReviewConfirm,
+    ReviewEdit,
+    ReviewItem,
+    ReviewPrompt,
+    ReviewStart,
+    RunPlausibility,
+    SaveSnapshot,
+    SectionEnter,
+    SessionEnded,
+    SessionResumed,
+    SessionStarted,
+    SkipQuestion,
+    StartSession,
+    StoreBlob,
+    Submit,
+    SubmitDone,
+    Synthesize,
+    Transcribe,
+    Transcription,
+    TranscriptReady,
+    ValidationErrors,
 )
 from .models import (
-    AudioAnswer, AudioFormManifest, AudioQuestion, AudioSessionState, OptionMatch, Phase, ReviewItemData,
+    AudioAnswer,
+    AudioFormManifest,
+    AudioQuestion,
+    AudioSessionState,
+    OptionMatch,
+    Phase,
+    ReviewItemData,
 )
 from .narration.engine import Narrator
 from .narration.lexicon import Lexicon, normalize
@@ -36,8 +86,8 @@ from .session_store import AudioSnapshot
 
 _SENSITIVE_MASK = "[hidden]"
 _ANSWERING_PHASES = (Phase.ASKING, Phase.CONFIRMING)
-_SKIPPED_META_KEY = "_skipped"   # answer_meta entry carrying the skipped field ids (snapshot only)
-_REVIEW_FIELD = "_review"        # Transcribe.field_id used for spoken review turns
+_SKIPPED_META_KEY = "_skipped"  # answer_meta entry carrying the skipped field ids (snapshot only)
+_REVIEW_FIELD = "_review"  # Transcribe.field_id used for spoken review turns
 
 
 class EngineError(Exception):
@@ -51,8 +101,17 @@ class EngineError(Exception):
 class AudioFormSession:
     """Pure audio form state machine — see module docstring."""
 
-    def __init__(self, *, form: FormSchema, manifest: AudioFormManifest, cfg: VoiceFormConfig, narrator: Narrator,
-                 lexicon: Lexicon, state: AudioSessionState, llm_cfg: LLMValidationConfig | None) -> None:
+    def __init__(
+        self,
+        *,
+        form: FormSchema,
+        manifest: AudioFormManifest,
+        cfg: VoiceFormConfig,
+        narrator: Narrator,
+        lexicon: Lexicon,
+        state: AudioSessionState,
+        llm_cfg: LLMValidationConfig | None,
+    ) -> None:
         self.form = form
         self.manifest = manifest
         self.cfg = cfg
@@ -60,28 +119,39 @@ class AudioFormSession:
         self.lexicon = lexicon
         self.state = state
         self.llm_cfg = llm_cfg
-        self._llm = llm_cfg or LLMValidationConfig()   # effective config: field-level opt-in works without a form block
-        self.planner = QuestionPlanner(form, manifest, cfg)   # adapter awaits planner.replan() on Replan
+        self._llm = llm_cfg or LLMValidationConfig()  # effective config: field-level opt-in works without a form block
+        self.planner = QuestionPlanner(form, manifest, cfg)  # adapter awaits planner.replan() on Replan
         self.logger = logging.getLogger(__name__)
         self._questions: dict[str, AudioQuestion] = {q.field_id: q for q in manifest.questions}
         self._fields: dict[str, FormField] = {f.field_id: f for f in form.iter_fields_recursive()}
-        self._last_audio: tuple[str, bytes, str | None] | None = None   # (field_id, bytes, mime) — never snapshotted
-        self._skipped: set[str] = set()          # optional fields the user skipped (persisted via answer_meta)
-        self._pl_requested: set[str] | None = None   # fields of the in-flight plausibility batch
-        self._pl_unchecked: set[str] = set()     # fields whose last plausibility batch was blocked (on_error=block)
-        self._stop_prev_phase: Phase | None = None   # set while a spoken STOP awaits yes/no confirmation
+        self._last_audio: tuple[str, bytes, str | None] | None = None  # (field_id, bytes, mime) — never snapshotted
+        self._skipped: set[str] = set()  # optional fields the user skipped (persisted via answer_meta)
+        self._pl_requested: set[str] | None = None  # fields of the in-flight plausibility batch
+        self._pl_unchecked: set[str] = set()  # fields whose last plausibility batch was blocked (on_error=block)
+        self._stop_prev_phase: Phase | None = None  # set while a spoken STOP awaits yes/no confirmation
         self._resume_snap: AudioSnapshot | None = None
-        self._synthesized: set[str] = set()      # field_ids whose narration has already been requested
+        self._synthesized: set[str] = set()  # field_ids whose narration has already been requested
         self._started_emitted = False
         self._last_section: str | None = None
         self._handlers: dict[str, Callable[[Any], list[Outbound]]] = {
-            "start_session": self.on_start, "_plan_ready": self.on_plan_ready, "_audio": self.on_audio_frame,
-            "_transcript": self.on_transcript, "answer_text": self.on_text, "answer_selection": self.on_selection,
-            "answer_payload": self.on_payload, "confirm_answer": self.on_confirm, "skip_question": self.on_skip,
-            "go_back": self.on_back, "repeat_question": self.on_repeat, "end_session": self.on_end,
-            "ping": self.on_ping, "_blob_stored": self.on_blob_stored, "_io_failed": self.on_io_failed,
+            "start_session": self.on_start,
+            "_plan_ready": self.on_plan_ready,
+            "_audio": self.on_audio_frame,
+            "_transcript": self.on_transcript,
+            "answer_text": self.on_text,
+            "answer_selection": self.on_selection,
+            "answer_payload": self.on_payload,
+            "confirm_answer": self.on_confirm,
+            "skip_question": self.on_skip,
+            "go_back": self.on_back,
+            "repeat_question": self.on_repeat,
+            "end_session": self.on_end,
+            "ping": self.on_ping,
+            "_blob_stored": self.on_blob_stored,
+            "_io_failed": self.on_io_failed,
             "_submit_done": self.on_submit_done,
-            "review_confirm": self.on_review_confirm, "review_edit": self.on_review_edit,
+            "review_confirm": self.on_review_confirm,
+            "review_edit": self.on_review_edit,
             "_plausibility_done": self.on_plausibility_done,
         }
 
@@ -132,13 +202,18 @@ class AudioFormSession:
         if first:
             self._started_emitted = True
             v2 = self.state.protocol_version >= 2
-            out.insert(0, SessionStarted(
-                session_id=self.state.session_id, total_questions=len(self.state.plan), title=self.manifest.title,
-                protocol_version=self.state.protocol_version,
-                hands_free=self.cfg.hands_free if v2 else None,
-                max_recording_seconds=self.cfg.max_recording_seconds if v2 else None,
-                prefetch_count=len(self.state.plan) if v2 else None,
-            ))
+            out.insert(
+                0,
+                SessionStarted(
+                    session_id=self.state.session_id,
+                    total_questions=len(self.state.plan),
+                    title=self.manifest.title,
+                    protocol_version=self.state.protocol_version,
+                    hands_free=self.cfg.hands_free if v2 else None,
+                    max_recording_seconds=self.cfg.max_recording_seconds if v2 else None,
+                    prefetch_count=len(self.state.plan) if v2 else None,
+                ),
+            )
             out.insert(1, self._synthesize_request(self.state.plan, include_system=True))
             self._synthesized.update(self.state.plan)
         if cursor is None:
@@ -160,9 +235,15 @@ class AudioFormSession:
         out: list[Outbound] = []
         order_changed = self._started_emitted and list(delta.order) != list(self.state.plan)
         if delta.hidden or delta.cleared or delta.required_changed or delta.hidden_by_cap or order_changed:
-            out.append(PlanUpdated(order=list(delta.order), hidden=list(delta.hidden), cleared=list(delta.cleared),
-                                   required_changed=dict(delta.required_changed),
-                                   hidden_by_cap=list(delta.hidden_by_cap)))
+            out.append(
+                PlanUpdated(
+                    order=list(delta.order),
+                    hidden=list(delta.hidden),
+                    cleared=list(delta.cleared),
+                    required_changed=dict(delta.required_changed),
+                    hidden_by_cap=list(delta.hidden_by_cap),
+                )
+            )
         for fid in delta.cleared:
             answer = self.state.answers.pop(fid, None)
             self._skipped.discard(fid)
@@ -181,8 +262,9 @@ class AudioFormSession:
             if prev is not None and prev.value == value:
                 continue
             version = (prev.version + 1) if prev is not None else 1
-            self.state.answers[fid] = AudioAnswer(field_id=fid, field_uid=field.field_uid, value=value,
-                                                  source="text", version=version)
+            self.state.answers[fid] = AudioAnswer(
+                field_id=fid, field_uid=field.field_uid, value=value, source="text", version=version
+            )
         return out
 
     def _synthesize_request(self, field_ids: list[str], *, include_system: bool) -> Synthesize:
@@ -219,9 +301,18 @@ class AudioFormSession:
         v2 = self.state.protocol_version >= 2
         meta = field_voice_meta(field, logger=self.logger)
         return Question(
-            index=index, field_id=field_id, label=q.label, required=self.planner.effective_required(field_id),
-            field_type=q.field_type, voice_mode=getattr(q.voice_mode, "value", q.voice_mode), render_mode=q.render_mode, sensitive=q.sensitive,
-            description=q.description, options=q.options, fallback_html=q.fallback_html, section_uid=q.section_uid,
+            index=index,
+            field_id=field_id,
+            label=q.label,
+            required=self.planner.effective_required(field_id),
+            field_type=q.field_type,
+            voice_mode=getattr(q.voice_mode, "value", q.voice_mode),
+            render_mode=q.render_mode,
+            sensitive=q.sensitive,
+            description=q.description,
+            options=q.options,
+            fallback_html=q.fallback_html,
+            section_uid=q.section_uid,
             hint=q.hint if v2 else None,
             ui_cue=(meta.ui_cue or q.ui_cue) if v2 else None,
             answer_modes=(list(q.answer_modes) or None) if v2 else None,
@@ -260,8 +351,10 @@ class AudioFormSession:
             cmd = classify_command(ev.text, lexicon=self.lexicon, phase=Phase.CONFIRMING)
             if cmd in (VoiceCommand.YES, VoiceCommand.NO):
                 return [CommandAck(command=cmd.value)] + self.on_confirm(
-                    ConfirmAnswer(type="confirm_answer", field_id=self.state.cursor or "",
-                                  confirmed=cmd is VoiceCommand.YES))
+                    ConfirmAnswer(
+                        type="confirm_answer", field_id=self.state.cursor or "", confirmed=cmd is VoiceCommand.YES
+                    )
+                )
             return [ConfirmRequest(field_id=self.state.cursor or "", transcript="stop", purpose="stop")]
         if self.state.phase == Phase.REVIEW:
             return self.on_review_prompt_answer(ev)
@@ -275,21 +368,35 @@ class AudioFormSession:
         shown = _SENSITIVE_MASK if sensitive else ev.text
         out: list[Outbound] = [Transcription(field_id=ev.field_id, text=shown, confidence=ev.confidence)]
         evidence = AudioAnswer(
-            field_id=ev.field_id, value=None, source="speech", confidence=ev.confidence,
-            raw_transcript=None if sensitive else ev.text, audio_mime=ev.audio_mime,
-            audio_bytes_len=ev.audio_bytes_len, duration_ms=ev.duration_ms, stt_language=ev.language,
+            field_id=ev.field_id,
+            value=None,
+            source="speech",
+            confidence=ev.confidence,
+            raw_transcript=None if sensitive else ev.text,
+            audio_mime=ev.audio_mime,
+            audio_bytes_len=ev.audio_bytes_len,
+            duration_ms=ev.duration_ms,
+            stt_language=ev.language,
         )
         outcome = None
         is_option = bool(q.options) or field.field_type == FieldType.BOOLEAN
         if is_option:
             outcome = match_option(
-                ev.text, q.options or [], field_type=field.field_type, lexicon=self.lexicon,
+                ev.text,
+                q.options or [],
+                field_type=field.field_type,
+                lexicon=self.lexicon,
                 threshold=meta.match_threshold if meta.match_threshold is not None else self.cfg.option_match_threshold,
-                confirm_floor=self.cfg.stt_confirm_threshold, stt_confidence=ev.confidence,
+                confirm_floor=self.cfg.stt_confirm_threshold,
+                stt_confidence=ev.confidence,
                 multi=field.field_type == FieldType.MULTI_SELECT,
             )
-        exact = (outcome is not None and outcome.status == "accepted" and outcome.match is not None
-                 and outcome.match.method == "exact")
+        exact = (
+            outcome is not None
+            and outcome.status == "accepted"
+            and outcome.match is not None
+            and outcome.match.method == "exact"
+        )
         if not exact and self._commands_enabled(field):
             cmd = classify_command(ev.text, lexicon=self.lexicon, phase=self.state.phase)
             if cmd is not None:
@@ -299,14 +406,22 @@ class AudioFormSession:
         if outcome is not None:
             multi = field.field_type == FieldType.MULTI_SELECT
             if outcome.status == "no_match":
-                return out + [AnswerRejected(field_id=ev.field_id, error=self.narrator.render("no_match"),
-                                             code="NO_MATCH")]
+                return out + [
+                    AnswerRejected(field_id=ev.field_id, error=self.narrator.render("no_match"), code="NO_MATCH")
+                ]
             value: Any = [m.value for m in outcome.matches] if multi else outcome.match.value  # type: ignore[union-attr]
             if outcome.status == "confirm" or confirm_pref == "always":
                 alternatives = outcome.alternatives or (outcome.matches if multi else [])
                 return out + self._request_confirm(evidence, value, ev.text, outcome.match, alternatives)
-            return out + self._accept(ev.field_id, value, source="speech", confidence=ev.confidence, raw=evidence.raw_transcript,
-                                      matched=outcome.match, evidence=evidence)
+            return out + self._accept(
+                ev.field_id,
+                value,
+                source="speech",
+                confidence=ev.confidence,
+                raw=evidence.raw_transcript,
+                matched=outcome.match,
+                evidence=evidence,
+            )
 
         # Free-form answer
         if not ev.text.strip():
@@ -315,49 +430,95 @@ class AudioFormSession:
         low = confidence < self.cfg.stt_confirm_threshold
         if confirm_pref == "always" or (low and confirm_pref != "never"):
             return out + self._request_confirm(evidence, ev.text, ev.text, None, [])
-        return out + self._accept(ev.field_id, ev.text, source="speech", confidence=ev.confidence,
-                                  raw=evidence.raw_transcript, evidence=evidence)
+        return out + self._accept(
+            ev.field_id,
+            ev.text,
+            source="speech",
+            confidence=ev.confidence,
+            raw=evidence.raw_transcript,
+            evidence=evidence,
+        )
 
-    def _request_confirm(self, evidence: AudioAnswer, value: Any, transcript: str, matched: OptionMatch | None,
-                         alternatives: list[OptionMatch]) -> list[Outbound]:
+    def _request_confirm(
+        self,
+        evidence: AudioAnswer,
+        value: Any,
+        transcript: str,
+        matched: OptionMatch | None,
+        alternatives: list[OptionMatch],
+    ) -> list[Outbound]:
         """Park the answer in ``state.pending`` and ask the client to confirm it."""
         sensitive = is_sensitive(self._fields[evidence.field_id])
         self.state.pending = evidence.model_copy(update={"value": value, "matched": matched})
         self.state.phase = Phase.CONFIRMING
-        return [ConfirmRequest(
-            field_id=evidence.field_id, transcript=_SENSITIVE_MASK if sensitive else transcript,
-            confidence=evidence.confidence, matched=matched, alternatives=alternatives or None,
-        )]
+        return [
+            ConfirmRequest(
+                field_id=evidence.field_id,
+                transcript=_SENSITIVE_MASK if sensitive else transcript,
+                confidence=evidence.confidence,
+                matched=matched,
+                alternatives=alternatives or None,
+            )
+        ]
 
-    def _accept(self, field_id: str, value: Any, *, source: str, confidence: float | None = None,
-                raw: str | None = None, matched: OptionMatch | None = None,
-                evidence: AudioAnswer | None = None) -> list[Outbound]:
+    def _accept(
+        self,
+        field_id: str,
+        value: Any,
+        *,
+        source: str,
+        confidence: float | None = None,
+        raw: str | None = None,
+        matched: OptionMatch | None = None,
+        evidence: AudioAnswer | None = None,
+    ) -> list[Outbound]:
         """Single acceptance funnel: bump version, store, ack, StoreBlob for speech, then Replan."""
         prev = self.state.answers.get(field_id)
         version = (prev.version + 1) if prev is not None else 1
         extra: dict[str, Any] = {}
         if evidence is not None:
-            extra = {"audio_mime": evidence.audio_mime, "audio_bytes_len": evidence.audio_bytes_len,
-                     "duration_ms": evidence.duration_ms, "stt_language": evidence.stt_language}
-        answer = AudioAnswer(field_id=field_id, field_uid=self._fields[field_id].field_uid, value=value,
-                             source=source, confidence=confidence, raw_transcript=raw, matched=matched,
-                             version=version, **extra)
+            extra = {
+                "audio_mime": evidence.audio_mime,
+                "audio_bytes_len": evidence.audio_bytes_len,
+                "duration_ms": evidence.duration_ms,
+                "stt_language": evidence.stt_language,
+            }
+        answer = AudioAnswer(
+            field_id=field_id,
+            field_uid=self._fields[field_id].field_uid,
+            value=value,
+            source=source,
+            confidence=confidence,
+            raw_transcript=raw,
+            matched=matched,
+            version=version,
+            **extra,
+        )
         self.state.answers[field_id] = answer
         self._skipped.discard(field_id)
         self.state.pending = None
         self.state.phase = Phase.ACCEPTING
-        out: list[Outbound] = [AnswerAccepted(field_id=field_id, source=source, value=self._echo(field_id, value),
-                                              matched=matched)]
-        if (source == "speech" and self.cfg.store_recordings and self._last_audio
-                and self._last_audio[0] == field_id and not is_sensitive(self._fields[field_id])):
+        out: list[Outbound] = [
+            AnswerAccepted(field_id=field_id, source=source, value=self._echo(field_id, value), matched=matched)
+        ]
+        if (
+            source == "speech"
+            and self.cfg.store_recordings
+            and self._last_audio
+            and self._last_audio[0] == field_id
+            and not is_sensitive(self._fields[field_id])
+        ):
             _, audio, mime = self._last_audio
             out.append(StoreBlob(field_id=field_id, audio=audio, mime=mime or "audio/webm", version=version))
         self._last_audio = None
         return out + [self._save(), Replan()]
 
     def _is_empty(self, value: Any) -> bool:
-        return value is None or (isinstance(value, str) and not value.strip()) or (
-            isinstance(value, (list, dict)) and not value)
+        return (
+            value is None
+            or (isinstance(value, str) and not value.strip())
+            or (isinstance(value, (list, dict)) and not value)
+        )
 
     def on_text(self, ev: AnswerText) -> list[Outbound]:
         """Typed answer for the cursor field."""
@@ -417,13 +578,24 @@ class AudioFormSession:
         if pending is None:
             return [Error(code="NO_PENDING_ANSWER", message="No answer is awaiting confirmation")]
         if ev.field_id and ev.field_id != pending.field_id:
-            return [Error(code="FIELD_MISMATCH",
-                          message=f"confirm_answer for '{ev.field_id}' but the pending answer is for "
-                                  f"'{pending.field_id}'")]
+            return [
+                Error(
+                    code="FIELD_MISMATCH",
+                    message=f"confirm_answer for '{ev.field_id}' but the pending answer is for "
+                    f"'{pending.field_id}'",
+                )
+            ]
         self.state.pending = None
         if ev.confirmed:
-            return self._accept(pending.field_id, pending.value, source="speech", confidence=pending.confidence,
-                                raw=pending.raw_transcript, matched=pending.matched, evidence=pending)
+            return self._accept(
+                pending.field_id,
+                pending.value,
+                source="speech",
+                confidence=pending.confidence,
+                raw=pending.raw_transcript,
+                matched=pending.matched,
+                evidence=pending,
+            )
         self._last_audio = None
         self.state.phase = Phase.ASKING
         return [self._question(pending.field_id)]
@@ -446,8 +618,9 @@ class AudioFormSession:
         if ev.field_id is not None and ev.field_id != cursor:
             return [Error(code="WRONG_FIELD", message=f"Expected '{cursor}', got '{ev.field_id}'")]
         if self.planner.effective_required(cursor):
-            return [AnswerRejected(field_id=cursor, error="This field is required and cannot be skipped",
-                                   code="REQUIRED")]
+            return [
+                AnswerRejected(field_id=cursor, error="This field is required and cannot be skipped", code="REQUIRED")
+            ]
         self._skipped.add(cursor)
         self.state.pending = None
         self._last_audio = None
@@ -469,7 +642,7 @@ class AudioFormSession:
         if dest is None:
             return [Error(code="NO_PREVIOUS", message="There is no previous question")]
         if dest in self.state.history:
-            del self.state.history[self.state.history.index(dest) + 1:]
+            del self.state.history[self.state.history.index(dest) + 1 :]
         else:
             self.state.history.append(dest)
         self.state.cursor = dest
@@ -539,16 +712,21 @@ class AudioFormSession:
             return [ack] + self.on_skip(SkipQuestion(type="skip_question"))
         if cmd is VoiceCommand.NEXT:
             if cursor is not None and self.planner.effective_required(cursor):
-                return [ack, AnswerRejected(field_id=cursor, error="This field is required and cannot be skipped",
-                                            code="REQUIRED")]
+                return [
+                    ack,
+                    AnswerRejected(
+                        field_id=cursor, error="This field is required and cannot be skipped", code="REQUIRED"
+                    ),
+                ]
             return [ack] + self.on_skip(SkipQuestion(type="skip_question"))
         if cmd is VoiceCommand.HELP:
             return [ack] + self.on_repeat(RepeatQuestion(type="repeat_question"))
         if cmd is VoiceCommand.STOP:
             return [ack] + self._request_stop_confirm()
         if cmd in (VoiceCommand.YES, VoiceCommand.NO):
-            return [ack] + self.on_confirm(ConfirmAnswer(type="confirm_answer", field_id=cursor or "",
-                                                         confirmed=cmd is VoiceCommand.YES))
+            return [ack] + self.on_confirm(
+                ConfirmAnswer(type="confirm_answer", field_id=cursor or "", confirmed=cmd is VoiceCommand.YES)
+            )
         return [Error(code="COMMAND_NOT_AVAILABLE", message=f"Command '{cmd.value}' is not available here")]
 
     def _review_enabled(self) -> bool:
@@ -579,10 +757,14 @@ class AudioFormSession:
 
     def _plausibility_fields(self, candidates: set[str]) -> set[str]:
         """Answered, LLM-enabled (field-level opt-in included), non-sensitive fields (S8: sensitive never sent)."""
-        return {fid for fid in candidates
-                if fid in self._fields and fid in self.state.answers
-                and llm_validation_enabled(self.form, self._fields[fid])
-                and not is_sensitive(self._fields[fid])}
+        return {
+            fid
+            for fid in candidates
+            if fid in self._fields
+            and fid in self.state.answers
+            and llm_validation_enabled(self.form, self._fields[fid])
+            and not is_sensitive(self._fields[fid])
+        }
 
     def on_plausibility_done(self, ev: PlausibilityDone) -> list[Outbound]:
         """Merge the (full or delta) report; flag low confidence once per answer version; (re)enter REVIEW."""
@@ -591,7 +773,7 @@ class AudioFormSession:
         report: PlausibilityReport = ev.report
         requested, self._pl_requested = self._pl_requested, None
         if report.status == "blocked":
-            self._pl_unchecked |= (requested or set())
+            self._pl_unchecked |= requested or set()
             if not self._review_enabled():
                 if self._llm.on_error != "block":
                     return self._submit()
@@ -606,15 +788,22 @@ class AudioFormSession:
             # Retryable and never stored: stay in REVIEW; review_confirm re-runs the check (AC13).
             out = [Error(code="PLAUSIBILITY_UNAVAILABLE", message=report.reason or "plausibility unavailable")]
             return out + self._start_review(report=None)
-        self._pl_unchecked -= (requested or set())
+        self._pl_unchecked -= requested or set()
         current = self.state.plausibility
         if current is None:
             merged = report.model_copy(update={"items": {}})
         else:
-            merged = current.model_copy(update={"status": report.status, "reason": report.reason,
-                                                "model": report.model, "threshold": report.threshold,
-                                                "latency_ms": report.latency_ms, "items": dict(current.items)})
-        for fid in (requested or set()):
+            merged = current.model_copy(
+                update={
+                    "status": report.status,
+                    "reason": report.reason,
+                    "model": report.model,
+                    "threshold": report.threshold,
+                    "latency_ms": report.latency_ms,
+                    "items": dict(current.items),
+                }
+            )
+        for fid in requested or set():
             merged.items.pop(fid, None)
         for fid in list(merged.items):
             if fid not in self.state.answers:
@@ -635,8 +824,11 @@ class AudioFormSession:
 
     def _flagged_now(self) -> set[str]:
         """Fields whose current answer version is already flagged (never flagged twice)."""
-        return {fid for fid, ver in self.state.flagged.items()
-                if fid in self.state.answers and self.state.answers[fid].version == ver}
+        return {
+            fid
+            for fid, ver in self.state.flagged.items()
+            if fid in self.state.answers and self.state.answers[fid].version == ver
+        }
 
     def _review_items(self) -> list[ReviewItemData]:
         """Review rows for the visible plan (positions kept, ``skip_in_review`` fields omitted)."""
@@ -681,8 +873,15 @@ class AudioFormSession:
         sensitive = is_sensitive(field)
         text = _SENSITIVE_MASK if sensitive else ("" if ans is None else self._display(field, ans.value))
         flagged = ans is not None and field_id in self._flagged_now()
-        return ReviewItemData(position=position, field_id=field_id, label=self._questions[field_id].label,
-                              answer_text=text, skipped=ans is None, flagged=flagged, sensitive=sensitive)
+        return ReviewItemData(
+            position=position,
+            field_id=field_id,
+            label=self._questions[field_id].label,
+            answer_text=text,
+            skipped=ans is None,
+            flagged=flagged,
+            sensitive=sensitive,
+        )
 
     def _display(self, field: FormField, value: Any) -> str:
         """Human-readable answer: option labels, yes/no for booleans, lists joined with the locale conjunction."""
@@ -741,7 +940,7 @@ class AudioFormSession:
         self.state.pending = None
         self._last_audio = None
         if ev.field_id in self.state.history:
-            del self.state.history[self.state.history.index(ev.field_id) + 1:]
+            del self.state.history[self.state.history.index(ev.field_id) + 1 :]
         else:
             self.state.history.append(ev.field_id)
         self.state.phase = Phase.ASKING
@@ -762,12 +961,12 @@ class AudioFormSession:
         cmd = classify_command(ev.text, lexicon=self.lexicon, phase=Phase.REVIEW)
         if cmd in (VoiceCommand.SEND, VoiceCommand.YES):
             return [CommandAck(command=cmd.value)] + self.on_review_confirm(
-                ReviewConfirm(type="review_confirm", confirmed=True))
+                ReviewConfirm(type="review_confirm", confirmed=True)
+            )
         if cmd is VoiceCommand.STOP:
             return [CommandAck(command=cmd.value)] + self._request_stop_confirm()
         if cmd is not None:
-            return [CommandAck(command=cmd.value),
-                    ReviewPrompt(text=self.narrator.render("review_all_correct"))]
+            return [CommandAck(command=cmd.value), ReviewPrompt(text=self.narrator.render("review_all_correct"))]
         return [ReviewPrompt(text=self.narrator.render("review_all_correct"))]
 
     # ---- snapshot / resume ---------------------------------------------
@@ -794,11 +993,21 @@ class AudioFormSession:
                 blobs[fid] = ans.blob_ref
         meta[_SKIPPED_META_KEY] = {"fields": sorted(self._skipped)}
         return AudioSnapshot(
-            form_version=self.form.version, phase=self.state.phase, cursor=self.state.cursor,
-            history=list(self.state.history), review_cursor=self.state.review_cursor,
-            return_to_review=self.state.return_to_review, locale=self.state.locale, config=self.cfg,
-            blob_refs=blobs, answer_meta=meta, plausibility=None, flagged=dict(self.state.flagged),
-            submission_id=self.state.submission_id, user_id=self.state.user_id, tenant=self.state.tenant,
+            form_version=self.form.version,
+            phase=self.state.phase,
+            cursor=self.state.cursor,
+            history=list(self.state.history),
+            review_cursor=self.state.review_cursor,
+            return_to_review=self.state.return_to_review,
+            locale=self.state.locale,
+            config=self.cfg,
+            blob_refs=blobs,
+            answer_meta=meta,
+            plausibility=None,
+            flagged=dict(self.state.flagged),
+            submission_id=self.state.submission_id,
+            user_id=self.state.user_id,
+            tenant=self.state.tenant,
         )
 
     @classmethod
@@ -812,8 +1021,9 @@ class AudioFormSession:
         session._resume_snap = snap
         return session
 
-    def _check_resume(self, ev: StartSession, snap_user: str, snap_tenant: str | None,
-                      snap_form_version: str) -> list[Outbound]:
+    def _check_resume(
+        self, ev: StartSession, snap_user: str, snap_tenant: str | None, snap_form_version: str
+    ) -> list[Outbound]:
         """RESUME_FORBIDDEN on user/tenant mismatch; RESUME_STALE on form changes; [] when resumable."""
         if snap_user != self.state.user_id or snap_tenant != self.state.tenant:
             return [Error(code="RESUME_FORBIDDEN", message="Session cannot be resumed")]
@@ -879,8 +1089,13 @@ class AudioFormSession:
         self._last_audio = None
         self._resume_snap = None
         self.state.phase = Phase.PLANNING
-        return [SessionResumed(session_id=self.state.session_id, phase=snap.phase, cursor=snap.cursor,
-                               answered=list(answers)), *out, Replan()]
+        return [
+            SessionResumed(
+                session_id=self.state.session_id, phase=snap.phase, cursor=snap.cursor, answered=list(answers)
+            ),
+            *out,
+            Replan(),
+        ]
 
     def on_submit_done(self, ev: SubmitDone) -> list[Outbound]:
         """FormComplete on success; ValidationErrors + re-ask first failing field otherwise.
@@ -893,13 +1108,18 @@ class AudioFormSession:
         if not errors:
             self.state.completed = True
             self.state.phase = Phase.COMPLETE
-            return [FormComplete(
-                submission_id=str(outcome.get("submission_id") or self.state.submission_id),
-                stored_in=outcome.get("stored_in"),
-                answers={fid: self._echo(fid, a.value) for fid, a in self.state.answers.items()
-                         if fid in self._fields and a.value is not None},
-                plausibility_summary=None,
-            )]
+            return [
+                FormComplete(
+                    submission_id=str(outcome.get("submission_id") or self.state.submission_id),
+                    stored_in=outcome.get("stored_in"),
+                    answers={
+                        fid: self._echo(fid, a.value)
+                        for fid, a in self.state.answers.items()
+                        if fid in self._fields and a.value is not None
+                    },
+                    plausibility_summary=None,
+                )
+            ]
         normalised: dict[str, list[str]] = {
             str(k): [str(m) for m in (v if isinstance(v, list) else [v])] for k, v in dict(errors).items()
         }
@@ -914,7 +1134,7 @@ class AudioFormSession:
             self.state.return_to_review = self._review_enabled()
             self.state.phase = Phase.ASKING
             if first in self.state.history:
-                del self.state.history[self.state.history.index(first) + 1:]
+                del self.state.history[self.state.history.index(first) + 1 :]
             else:
                 self.state.history.append(first)
             out.extend(self._ask(first))
@@ -922,16 +1142,21 @@ class AudioFormSession:
 
     def _submission_data(self) -> dict[str, Any]:
         """Scalars per answered field, with speech answers re-folded into voice evidence envelopes."""
-        scalars = {fid: a.value for fid, a in self.state.answers.items()
-                   if fid in self._fields and a.value is not None}
+        scalars = {fid: a.value for fid, a in self.state.answers.items() if fid in self._fields and a.value is not None}
         # S8: a sensitive spoken answer is submitted as the plain scalar — never wrapped, never recorded.
-        return wrap_voice(scalars, {fid: a for fid, a in self.state.answers.items()
-                                    if fid in scalars and not is_sensitive(self._fields[fid])})
+        return wrap_voice(
+            scalars,
+            {fid: a for fid, a in self.state.answers.items() if fid in scalars and not is_sensitive(self._fields[fid])},
+        )
 
     def _submission_context(self) -> dict[str, Any]:
         """Context handed to the submission pipeline."""
-        return {"channel": "audio", "session_id": self.state.session_id, "locale": self.state.locale,
-                "submission_id": self.state.submission_id}
+        return {
+            "channel": "audio",
+            "session_id": self.state.session_id,
+            "locale": self.state.locale,
+            "submission_id": self.state.submission_id,
+        }
 
     def _echo(self, field_id: str, value: Any) -> Any:
         """Value echoed back to the client — masked for sensitive fields (S8)."""

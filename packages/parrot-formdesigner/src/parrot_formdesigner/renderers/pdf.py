@@ -165,7 +165,7 @@ class PdfRenderer(AbstractFormRenderer):
                 return None
 
         renderer_inst = _PdfFieldRenderer(self)
-        self._registry = {ft: renderer_inst for ft in FieldType}
+        self._registry = dict.fromkeys(FieldType, renderer_inst)
 
     async def render(
         self,

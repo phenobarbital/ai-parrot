@@ -1,4 +1,5 @@
 """Visible-plan computation for audio form sessions (FEAT-649, Module 5)."""
+
 from __future__ import annotations
 
 import logging

@@ -240,9 +240,7 @@ def _section_index_by_uid(form: FormSchema, section_uid: uuid.UUID) -> int:
     raise OperationError(-1, "?", f"section '{section_uid}' not found")
 
 
-def _locate_field(
-    section: FormSection, field_uid: uuid.UUID
-) -> tuple[list, int]:
+def _locate_field(section: FormSection, field_uid: uuid.UUID) -> tuple[list, int]:
     """Locate a field by ``field_uid`` within a section (FEAT-393).
 
     Searches the section's own top-level ``FormField`` items, every
@@ -360,9 +358,7 @@ def _apply_move_field(form: FormSchema, op: MoveField) -> FormSchema:
         src_field_uid = uuid.UUID(str(src_field_uid))
         dst_section_uid = uuid.UUID(str(dst_section_uid))
     except (ValueError, AttributeError, TypeError) as exc:
-        raise OperationError(
-            -1, "move_field", f"section_uid/field_uid must be valid UUID strings: {exc}"
-        ) from exc
+        raise OperationError(-1, "move_field", f"section_uid/field_uid must be valid UUID strings: {exc}") from exc
 
     src_si = _section_index_by_uid(form, src_section_uid)
     src_section = form.sections[src_si]
@@ -426,9 +422,7 @@ def _apply_update_field(form: FormSchema, op: UpdateField) -> FormSchema:
     new_field_id = merged.get("field_id")
     # Rename → per-form uniqueness check.
     if new_field_id != existing["field_id"] and any(
-        f.field_id == new_field_id
-        for f in form.iter_fields_recursive()
-        if f.field_uid != op.field_uid
+        f.field_id == new_field_id for f in form.iter_fields_recursive() if f.field_uid != op.field_uid
     ):
         raise OperationError(-1, "update_field", f"duplicate field_id '{new_field_id}'")
     try:
@@ -438,9 +432,7 @@ def _apply_update_field(form: FormSchema, op: UpdateField) -> FormSchema:
     return form
 
 
-def _apply_update_section_meta(
-    form: FormSchema, op: UpdateSectionMeta
-) -> FormSchema:
+def _apply_update_section_meta(form: FormSchema, op: UpdateSectionMeta) -> FormSchema:
     si = _section_index_by_uid(form, op.section_uid)
     section = form.sections[si]
     existing_meta = section.meta or {}
@@ -454,9 +446,7 @@ def _apply_update_section_meta(
     return form
 
 
-def _apply_update_form_meta(
-    form: FormSchema, op: UpdateFormMeta
-) -> FormSchema:
+def _apply_update_form_meta(form: FormSchema, op: UpdateFormMeta) -> FormSchema:
     existing = form.meta or {}
     merged = _deep_merge(existing, op.patch)
     form_dict = form.model_dump()
@@ -467,9 +457,7 @@ def _apply_update_form_meta(
         raise OperationError(-1, "update_form_meta", str(exc)) from exc
 
 
-def _apply_duplicate_field(
-    form: FormSchema, op: DuplicateField
-) -> FormSchema:
+def _apply_duplicate_field(form: FormSchema, op: DuplicateField) -> FormSchema:
     src_section_uid = op.from_.get("section_uid")
     src_field_uid = op.from_.get("field_uid")
     if not src_section_uid or not src_field_uid:
@@ -548,17 +536,13 @@ async def handle_operations(request: web.Request) -> web.Response:
     registry = request.app.get("form_registry")
     if registry is None:
         logger.error("operations: app['form_registry'] is unset")
-        return web.json_response(
-            {"error": "form registry not configured"}, status=500
-        )
+        return web.json_response({"error": "form registry not configured"}, status=500)
 
     tenant = declared_tenant(request)
     form = await registry.get(form_uid, tenant=tenant)
     if form is None:
         logger.warning("operations: form '%s' not found", form_uid)
-        return web.json_response(
-            {"error": f"Form '{form_uid}' not found"}, status=404
-        )
+        return web.json_response({"error": f"Form '{form_uid}' not found"}, status=404)
 
     # If-Match optimistic concurrency (Q1)
     if_match = request.headers.get("If-Match")
@@ -584,9 +568,7 @@ async def handle_operations(request: web.Request) -> web.Response:
     try:
         envelope = OperationsEnvelope.model_validate(body)
     except ValidationError as exc:
-        return web.json_response(
-            {"errors": exc.errors()}, status=422
-        )
+        return web.json_response({"errors": exc.errors()}, status=422)
 
     working = form.model_copy(deep=True)
     for i, op in enumerate(envelope.operations):
@@ -602,11 +584,15 @@ async def handle_operations(request: web.Request) -> web.Response:
                 e.message,
             )
             return web.json_response(
-                {"errors": [{
-                    "index": i,
-                    "op": op.op,
-                    "message": e.message,
-                }]},
+                {
+                    "errors": [
+                        {
+                            "index": i,
+                            "op": op.op,
+                            "message": e.message,
+                        }
+                    ]
+                },
                 status=422,
             )
 
@@ -617,9 +603,7 @@ async def handle_operations(request: web.Request) -> web.Response:
     try:
         working = resolve_rule_references(working)
     except ValueError as exc:
-        logger.warning(
-            "operations: rule resolution failed for %s — %s", form_uid, exc
-        )
+        logger.warning("operations: rule resolution failed for %s — %s", form_uid, exc)
         return web.json_response(
             {"errors": [{"index": None, "op": None, "message": str(exc)}]},
             status=422,
@@ -634,12 +618,7 @@ async def handle_operations(request: web.Request) -> web.Response:
             schema_errors,
         )
         return web.json_response(
-            {
-                "errors": [
-                    {"index": None, "op": None, "message": err}
-                    for err in schema_errors
-                ]
-            },
+            {"errors": [{"index": None, "op": None, "message": err} for err in schema_errors]},
             status=422,
         )
 

@@ -1,4 +1,5 @@
 """Deterministic transcript → option matching (FEAT-649, Module 4)."""
+
 from __future__ import annotations
 
 import difflib
@@ -19,10 +20,30 @@ except Exception:  # pragma: no cover - depends on environment
 _TIE_DELTA = 0.05
 _NUMERIC_TYPES = frozenset({FieldType.LIKERT, FieldType.NPS, FieldType.RANKING})
 # Words that may surround a number without changing its meaning ("la 3", "opción 3", "the second one").
-_FILLER_TOKENS = frozenset({
-    "la", "el", "lo", "las", "los", "opcion", "opciones", "numero", "de", "del", "al", "option", "number",
-    "the", "a", "an", "one", "of", "choice", "item",
-})
+_FILLER_TOKENS = frozenset(
+    {
+        "la",
+        "el",
+        "lo",
+        "las",
+        "los",
+        "opcion",
+        "opciones",
+        "numero",
+        "de",
+        "del",
+        "al",
+        "option",
+        "number",
+        "the",
+        "a",
+        "an",
+        "one",
+        "of",
+        "choice",
+        "item",
+    }
+)
 _STATUS_RANK = {"accepted": 0, "confirm": 1, "no_match": 2}
 
 
@@ -32,7 +53,7 @@ class MatchOutcome(BaseModel):
     status: Literal["accepted", "confirm", "no_match"]
     match: OptionMatch | None = None
     alternatives: list[OptionMatch] = Field(default_factory=list)
-    matches: list[OptionMatch] = Field(default_factory=list)   # MULTI_SELECT results
+    matches: list[OptionMatch] = Field(default_factory=list)  # MULTI_SELECT results
 
 
 def _enabled(options: list[dict]) -> list[dict]:
@@ -90,11 +111,7 @@ def _by_exact(text: str, options: list[dict], lexicon: Lexicon) -> list[OptionMa
     """Normalised equality against value or label."""
     if not text:
         return []
-    return [
-        _candidate(o, "exact", 1.0)
-        for o in options
-        if text in (_norm_value(o, lexicon), _norm_label(o, lexicon))
-    ]
+    return [_candidate(o, "exact", 1.0) for o in options if text in (_norm_value(o, lexicon), _norm_label(o, lexicon))]
 
 
 def _by_ordinal(text: str, options: list[dict], lexicon: Lexicon) -> list[OptionMatch]:
@@ -185,8 +202,16 @@ def _match_single(text: str, options: list[dict], *, field_type: FieldType, lexi
     return []
 
 
-def _decide(text: str, enabled: list[dict], *, field_type: FieldType, lexicon: Lexicon, threshold: float,
-            confirm_floor: float, factor: float) -> MatchOutcome:
+def _decide(
+    text: str,
+    enabled: list[dict],
+    *,
+    field_type: FieldType,
+    lexicon: Lexicon,
+    threshold: float,
+    confirm_floor: float,
+    factor: float,
+) -> MatchOutcome:
     """Single-value decision: scoring, thresholds and tie rule."""
     ranked = [
         m.model_copy(update={"score": m.score * factor})
@@ -221,15 +246,27 @@ def _split_conjunctions(text: str, lexicon: Lexicon) -> list[str]:
     return pieces
 
 
-def match_option(transcript: str, options: list[dict], *, field_type: FieldType, lexicon: Lexicon, threshold: float = 0.8,
-                 confirm_floor: float = 0.6, stt_confidence: float | None = None, multi: bool = False) -> MatchOutcome:
+def match_option(
+    transcript: str,
+    options: list[dict],
+    *,
+    field_type: FieldType,
+    lexicon: Lexicon,
+    threshold: float = 0.8,
+    confirm_floor: float = 0.6,
+    stt_confidence: float | None = None,
+    multi: bool = False,
+) -> MatchOutcome:
     """exact → ordinal → yes/no → numeric → unique contains → fuzzy; disabled options never match; ties → confirm."""
     factor = stt_confidence if stt_confidence is not None else 1.0
     text = normalize(transcript, lexicon)
     enabled = _enabled(options)
     kwargs: dict[str, Any] = {
-        "field_type": field_type, "lexicon": lexicon, "threshold": threshold,
-        "confirm_floor": confirm_floor, "factor": factor,
+        "field_type": field_type,
+        "lexicon": lexicon,
+        "threshold": threshold,
+        "confirm_floor": confirm_floor,
+        "factor": factor,
     }
     if not multi:
         return _decide(text, enabled, **kwargs)

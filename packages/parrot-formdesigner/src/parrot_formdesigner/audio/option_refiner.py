@@ -1,4 +1,5 @@
 """Opt-in LLM option refiner (FEAT-649, Module 4) — results always go through confirm_request."""
+
 from __future__ import annotations
 
 import asyncio

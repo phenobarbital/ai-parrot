@@ -1628,7 +1628,6 @@ class FormAPIHandler:
         8. Return composite result — always 200, even when forwarding fails.
         """
 
-
         form_uid = extract_form_uid(request)
         tenant = self._get_tenant(request)
         form = await self.registry.get(form_uid, tenant=tenant)
@@ -1775,9 +1774,7 @@ class FormAPIHandler:
             try:
                 await self._partial_store.delete(str(form_uid), _merge_session_id)
             except Exception as exc:
-                self.logger.warning(
-                    "Failed to delete partial after submit %s/%s: %s", form_uid, _merge_session_id, exc
-                )
+                self.logger.warning("Failed to delete partial after submit %s/%s: %s", form_uid, _merge_session_id, exc)
         body_out: dict[str, Any] = {
             "submission_id": outcome.submission_id,
             "is_valid": True,
@@ -1788,7 +1785,6 @@ class FormAPIHandler:
         if outcome.plausibility is not None:
             body_out["plausibility"] = outcome.plausibility.model_dump(mode="json", exclude_none=True)
         return _reply(body_out, status=200)
-
 
     async def load_from_db(self, request: web.Request) -> web.Response:
         """POST /api/v1/forms/from-db — Load a form from database definition.

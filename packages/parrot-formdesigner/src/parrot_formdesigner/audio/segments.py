@@ -1,4 +1,5 @@
 """Pre-synthesised narration segments (FEAT-649, Module 6)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -12,8 +13,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-NARRATION_TEMPLATE_REV = "1"   # bump when narration.yaml semantics change (S7 cache identity)
-_SYNTH_LOCK: asyncio.Lock = asyncio.Lock()   # one per process (owner decision)
+NARRATION_TEMPLATE_REV = "1"  # bump when narration.yaml semantics change (S7 cache identity)
+_SYNTH_LOCK: asyncio.Lock = asyncio.Lock()  # one per process (owner decision)
 _PROCESS_LRU: "OrderedDict[tuple[str, ...], bytes]" = OrderedDict()
 
 
@@ -28,8 +29,9 @@ class AudioSegmentCache:
         self.logger = logging.getLogger(__name__)
 
     @staticmethod
-    def cache_key(*, form_uid: str, version: str, locale: str, voice: str | None, text: str,
-                  variant: str = "") -> tuple[str, ...]:
+    def cache_key(
+        *, form_uid: str, version: str, locale: str, voice: str | None, text: str, variant: str = ""
+    ) -> tuple[str, ...]:
         """(form_uid, version, locale, voice, template_rev, sha1(text), synthesis variant) — S7.
 
         ``variant`` is the effective synthesis config (output mime + backend/model): the same text rendered by a
@@ -49,8 +51,9 @@ class AudioSegmentCache:
         cfg = getattr(self.synthesizer, "config", None)
         return getattr(cfg, "mime_format", None) or "audio/wav"
 
-    async def ensure(self, items: dict[str, str], *, locale: str, voice: str | None, form_uid: str,
-                     version: str) -> dict[str, bytes]:
+    async def ensure(
+        self, items: dict[str, str], *, locale: str, voice: str | None, form_uid: str, version: str
+    ) -> dict[str, bytes]:
         """Synthesise missing keys sequentially under the shared lock; return key → bytes."""
         out: dict[str, bytes] = {}
         if self.synthesizer is None:
@@ -58,8 +61,9 @@ class AudioSegmentCache:
         for seg_key, text in items.items():
             if seg_key.startswith("pause:") or not text.strip():
                 continue
-            ck = self.cache_key(form_uid=form_uid, version=version, locale=locale, voice=voice, text=text,
-                                variant=self.variant())
+            ck = self.cache_key(
+                form_uid=form_uid, version=version, locale=locale, voice=voice, text=text, variant=self.variant()
+            )
             cached = self._session.get(ck) or _PROCESS_LRU.get(ck)
             if cached is None:
                 async with self.lock:
@@ -69,9 +73,7 @@ class AudioSegmentCache:
                             result = await self.synthesizer.synthesize(text, language=locale)
                             cached = result.audio
                         except Exception as exc:  # noqa: BLE001 — text-only fallback for this key
-                            self.logger.warning(
-                                "Segment synthesis failed for %s: %s", seg_key, type(exc).__name__
-                            )
+                            self.logger.warning("Segment synthesis failed for %s: %s", seg_key, type(exc).__name__)
                             continue
                         self.logger.debug("Synthesised %s (%d bytes)", seg_key, len(cached))
                     _PROCESS_LRU[ck] = cached

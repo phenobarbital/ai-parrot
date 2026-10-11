@@ -179,7 +179,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                 return self_._r._build_input_element(field, prefilled, locale)
 
         renderer_inst = _ACInputRenderer(self)
-        self._registry = {ft: renderer_inst for ft in FieldType}
+        self._registry = dict.fromkeys(FieldType, renderer_inst)
 
     async def render(
         self,

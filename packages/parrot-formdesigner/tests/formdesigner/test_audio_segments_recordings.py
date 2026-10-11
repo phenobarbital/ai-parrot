@@ -1,4 +1,5 @@
 """Tests for AudioSegmentCache and recordings (FEAT-649, Module 6)."""
+
 import asyncio
 import re
 import uuid
@@ -81,8 +82,9 @@ async def test_skips_pause_blank_and_none_synth():
 async def test_failure_omits_key_and_lru_bounded():
     synth = _FakeSynth(fail_on="bad")
     c = AudioSegmentCache(synth, lock=asyncio.Lock(), max_entries=2)
-    out = await c.ensure({"a": "bad", "b": "one", "c": "two", "d": "three"},
-                         locale="es", voice=None, form_uid="f", version="1")
+    out = await c.ensure(
+        {"a": "bad", "b": "one", "c": "two", "d": "three"}, locale="es", voice=None, form_uid="f", version="1"
+    )
     assert set(out) == {"b", "c", "d"}
     assert len(segments._PROCESS_LRU) == 2
 

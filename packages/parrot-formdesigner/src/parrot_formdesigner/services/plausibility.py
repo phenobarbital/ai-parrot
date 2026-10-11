@@ -3,6 +3,7 @@
 One batched structured-output call judges whether each eligible answer makes sense for its
 question. Advisory only: low confidence never blocks; ``on_error`` governs LLM failure only.
 """
+
 from __future__ import annotations
 
 import asyncio

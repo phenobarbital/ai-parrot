@@ -27,7 +27,9 @@ class TestEventsDiscriminatedUnionAndForbid:
 
     def test_internal_types_not_parseable(self):
         with pytest.raises(ev.UnknownMessageType):
-            ev.parse_inbound({"type": "_transcript", "field_id": "a", "text": "x", "audio_mime": "a", "audio_bytes_len": 1})
+            ev.parse_inbound(
+                {"type": "_transcript", "field_id": "a", "text": "x", "audio_mime": "a", "audio_bytes_len": 1}
+            )
 
     def test_v1_message_names_parse(self):
         samples = [
@@ -36,16 +38,27 @@ class TestEventsDiscriminatedUnionAndForbid:
             {"type": "answer_selection", "field_id": "a", "values": ["x", "y"]},
             {"type": "answer_payload", "field_id": "a", "value": {"k": 1}},
             {"type": "confirm_answer", "field_id": "a", "confirmed": True},
-            {"type": "skip_question"}, {"type": "go_back", "to_index": 0}, {"type": "repeat_question"},
-            {"type": "end_session"}, {"type": "ping"},
+            {"type": "skip_question"},
+            {"type": "go_back", "to_index": 0},
+            {"type": "repeat_question"},
+            {"type": "end_session"},
+            {"type": "ping"},
         ]
         for sample in samples:
             for version in (1, 2):
                 assert ev.parse_inbound(sample, protocol_version=version).type == sample["type"]
 
     def test_question_to_wire_omits_none(self):
-        q = ev.Question(index=0, field_id="a", label="A", required=True, field_type="text",
-                        voice_mode="voice", render_mode="voice", sensitive=False)
+        q = ev.Question(
+            index=0,
+            field_id="a",
+            label="A",
+            required=True,
+            field_type="text",
+            voice_mode="voice",
+            render_mode="voice",
+            sensitive=False,
+        )
         wire = q.to_wire()
         assert wire["type"] == "question" and "audio" not in wire and "options" not in wire
 
@@ -58,9 +71,13 @@ class TestEventsDiscriminatedUnionAndForbid:
 
 class TestLegacyInboundIgnoresUnknownKeys:
     def test_v1_start_session_extra_keys_accepted(self):
-        msg = ev.parse_inbound({"type": "start_session", "form_uid": "u", "client": "old-app", "foo": 1}, protocol_version=1)
+        msg = ev.parse_inbound(
+            {"type": "start_session", "form_uid": "u", "client": "old-app", "foo": 1}, protocol_version=1
+        )
         assert msg.form_uid == "u"
 
     def test_v2_start_session_extra_keys_rejected(self):
         with pytest.raises(ValidationError):
-            ev.parse_inbound({"type": "start_session", "form_uid": "u", "client": "old-app", "foo": 1}, protocol_version=2)
+            ev.parse_inbound(
+                {"type": "start_session", "form_uid": "u", "client": "old-app", "foo": 1}, protocol_version=2
+            )

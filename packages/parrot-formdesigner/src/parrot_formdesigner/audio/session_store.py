@@ -1,4 +1,5 @@
 """Redis snapshot store for resumable audio form sessions (FEAT-649, Module 7)."""
+
 from __future__ import annotations
 
 import logging
@@ -104,9 +105,7 @@ class AudioSessionStore:
                 raw = _text(await redis.get(key))
                 stored = AudioSnapshot.model_validate_json(raw).revision if raw else 0
                 if expected_revision is not None and stored != expected_revision:
-                    raise SnapshotConflict(
-                        f"expected revision {expected_revision}, stored {stored}"
-                    )
+                    raise SnapshotConflict(f"expected revision {expected_revision}, stored {stored}")
                 now = datetime.now(tz=timezone.utc)
                 new = snapshot.model_copy(
                     update={
@@ -115,9 +114,7 @@ class AudioSessionStore:
                         "expires_at": now + timedelta(seconds=self.ttl_seconds),
                     }
                 )
-                ok = await redis.eval(
-                    _CAS_SCRIPT, 1, key, raw or "", new.model_dump_json(), self.ttl_seconds
-                )
+                ok = await redis.eval(_CAS_SCRIPT, 1, key, raw or "", new.model_dump_json(), self.ttl_seconds)
                 if ok:
                     return new.revision
             raise SnapshotConflict("snapshot changed concurrently")

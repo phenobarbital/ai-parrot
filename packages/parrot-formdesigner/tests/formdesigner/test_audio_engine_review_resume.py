@@ -1,4 +1,5 @@
 """FEAT-649 TASK-4226 — review, delta plausibility, resume, sensitive policy."""
+
 from __future__ import annotations
 
 import asyncio
@@ -8,9 +9,25 @@ import pytest
 
 from parrot_formdesigner.audio.engine import AudioFormSession
 from parrot_formdesigner.audio.events import (
-    AnswerText, AudioReceived, Error, FormComplete, PlanReady, PlausibilityDone, Replan, ReviewConfirm, ReviewEdit,
-    ReviewPrompt, ReviewStart, RunPlausibility, SaveSnapshot, SessionResumed, StartSession, Submit, SubmitDone,
-    TranscriptReady, Transcribe,
+    AnswerText,
+    AudioReceived,
+    Error,
+    FormComplete,
+    PlanReady,
+    PlausibilityDone,
+    Replan,
+    ReviewConfirm,
+    ReviewEdit,
+    ReviewPrompt,
+    ReviewStart,
+    RunPlausibility,
+    SaveSnapshot,
+    SessionResumed,
+    StartSession,
+    Submit,
+    SubmitDone,
+    TranscriptReady,
+    Transcribe,
 )
 from parrot_formdesigner.audio.models import AudioFormManifest, AudioSessionState, Phase
 from parrot_formdesigner.audio.narration.engine import Narrator
@@ -27,33 +44,70 @@ from parrot_formdesigner.services.rule_evaluator import RuleResolution
 def _form() -> FormSchema:
     fields = [
         FormField(field_id="name", field_type=FieldType.TEXT, label="Name", required=True),
-        FormField(field_id="color", field_type=FieldType.SELECT, label="Color", required=False,
-                  options=[FieldOption(value="r", label="Rojo"), FieldOption(value="g", label="Verde")]),
+        FormField(
+            field_id="color",
+            field_type=FieldType.SELECT,
+            label="Color",
+            required=False,
+            options=[FieldOption(value="r", label="Rojo"), FieldOption(value="g", label="Verde")],
+        ),
         FormField(field_id="agree", field_type=FieldType.BOOLEAN, label="Agree", required=False),
         FormField(field_id="pw", field_type=FieldType.PASSWORD, label="Password", required=False),
     ]
-    return FormSchema(form_id="f", title="F", sections=[FormSection(section_id="s1", title="S", fields=fields)],
-                      llm_validation=LLMValidationConfig(enabled=True))
+    return FormSchema(
+        form_id="f",
+        title="F",
+        sections=[FormSection(section_id="s1", title="S", fields=fields)],
+        llm_validation=LLMValidationConfig(enabled=True),
+    )
 
 
-def _make(form: FormSchema | None = None, *, user: str = "u", tenant: str | None = None, protocol: int = 2,
-          snap=None, cfg: VoiceFormConfig | None = None) -> AudioFormSession:
+def _make(
+    form: FormSchema | None = None,
+    *,
+    user: str = "u",
+    tenant: str | None = None,
+    protocol: int = 2,
+    snap=None,
+    cfg: VoiceFormConfig | None = None,
+) -> AudioFormSession:
     form = form or _form()
     questions = AudioFormRenderer().split_into_questions(form, locale="es")
-    manifest = AudioFormManifest(form_uid=str(form.form_uid), title="F", total_questions=len(questions),
-                                 questions=questions, ws_endpoint="/ws", locale="es")
-    state = AudioSessionState(session_id="sess", form_uid=str(form.form_uid), user_id=user, tenant=tenant,
-                              manifest=manifest)
-    deps = dict(form=form, manifest=manifest, cfg=cfg or VoiceFormConfig(max_questions=None),
-                narrator=Narrator("es"), lexicon=load_lexicon("es"), state=state, llm_cfg=form.llm_validation)
+    manifest = AudioFormManifest(
+        form_uid=str(form.form_uid),
+        title="F",
+        total_questions=len(questions),
+        questions=questions,
+        ws_endpoint="/ws",
+        locale="es",
+    )
+    state = AudioSessionState(
+        session_id="sess", form_uid=str(form.form_uid), user_id=user, tenant=tenant, manifest=manifest
+    )
+    deps = dict(
+        form=form,
+        manifest=manifest,
+        cfg=cfg or VoiceFormConfig(max_questions=None),
+        narrator=Narrator("es"),
+        lexicon=load_lexicon("es"),
+        state=state,
+        llm_cfg=form.llm_validation,
+    )
     if snap is not None:
         return AudioFormSession.from_snapshot(snap, **deps)
     return AudioFormSession(**deps)
 
 
 def _start(s: AudioFormSession, *, resume: str | None = None, protocol: int = 2) -> list:
-    return s.handle(StartSession(type="start_session", form_uid=s.state.form_uid, locale="es",
-                                 protocol_version=protocol, resume_session_id=resume))
+    return s.handle(
+        StartSession(
+            type="start_session",
+            form_uid=s.state.form_uid,
+            locale="es",
+            protocol_version=protocol,
+            resume_session_id=resume,
+        )
+    )
 
 
 def _plan_ready(s: AudioFormSession) -> PlanReady:
@@ -86,8 +140,10 @@ def v2_session() -> AudioFormSession:
 
 def _report(items: dict[str, float], status: str = "ok", plausible: bool = True) -> PlausibilityReport:
     return PlausibilityReport(
-        status=status, threshold=0.7,
-        items={k: PlausibilityVerdict(plausible=plausible, confidence=v, reason="r") for k, v in items.items()})
+        status=status,
+        threshold=0.7,
+        items={k: PlausibilityVerdict(plausible=plausible, confidence=v, reason="r") for k, v in items.items()},
+    )
 
 
 def _types(out: list) -> list[str]:
@@ -200,8 +256,16 @@ class TestReviewAndResume:
         assert "s3cret" not in repr(out)
         for phrase in ("sí", "ok", "enviar"):
             s.state.phase = Phase.REVIEW
-            out = s.handle(TranscriptReady(type="_transcript", field_id="_review", text=phrase, confidence=0.9,
-                                           audio_mime="audio/webm", audio_bytes_len=1))
+            out = s.handle(
+                TranscriptReady(
+                    type="_transcript",
+                    field_id="_review",
+                    text=phrase,
+                    confidence=0.9,
+                    audio_mime="audio/webm",
+                    audio_bytes_len=1,
+                )
+            )
             assert any(isinstance(o, Submit) for o in out), phrase
         s.state.phase = Phase.REVIEW
         out = s.handle(ReviewConfirm(type="review_confirm", confirmed=True))
@@ -218,8 +282,16 @@ class TestReviewAndResume:
         s = v2_session
         _answer_all(s)
         s.handle(PlausibilityDone(type="_plausibility_done", report=_report({})))
-        out = s.handle(TranscriptReady(type="_transcript", field_id="_review", text="cambiar la 2",
-                                       confidence=0.9, audio_mime="audio/webm", audio_bytes_len=1))
+        out = s.handle(
+            TranscriptReady(
+                type="_transcript",
+                field_id="_review",
+                text="cambiar la 2",
+                confidence=0.9,
+                audio_mime="audio/webm",
+                audio_bytes_len=1,
+            )
+        )
         assert s.state.cursor == "color" and s.state.phase == Phase.ASKING
         assert any(o.type == "question" for o in out)
         s.handle(AnswerText(type="answer_text", field_id="color", value="g"))
@@ -238,8 +310,7 @@ class TestReviewAndResume:
     def test_plausibility_blocked_errors_and_never_submits(self, v2_session):
         s = v2_session
         _answer_all(s)
-        out = s.handle(PlausibilityDone(type="_plausibility_done",
-                                        report=_report({}, status="blocked")))
+        out = s.handle(PlausibilityDone(type="_plausibility_done", report=_report({}, status="blocked")))
         assert any(isinstance(o, Error) and o.code == "PLAUSIBILITY_UNAVAILABLE" for o in out)
         assert not any(isinstance(o, Submit) for o in out)
         assert s.state.plausibility is None and s.state.phase == Phase.REVIEW
@@ -321,6 +392,7 @@ class TestReviewAndResume:
         s.handle(AnswerText(type="answer_text", field_id="name", value="Ana"))
         _advance(s)
         from parrot_formdesigner.audio.events import SkipQuestion
+
         s.handle(SkipQuestion(type="skip_question"))
         r = _make(s.form, snap=s.snapshot())
         _start(r, resume="sess")

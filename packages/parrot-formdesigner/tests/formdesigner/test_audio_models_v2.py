@@ -30,8 +30,13 @@ class TestAudioModelDeltas:
         assert q.narration.audio_keys == ["q:x:label"]
 
     def test_answer_any_value_and_evidence(self):
-        a = AudioAnswer(field_id="c", value=["a", "b"], source="speech", blob_ref="voice-s-u",
-                        matched=OptionMatch(value="a", label="A", method="ordinal", score=1.0))
+        a = AudioAnswer(
+            field_id="c",
+            value=["a", "b"],
+            source="speech",
+            blob_ref="voice-s-u",
+            matched=OptionMatch(value="a", label="A", method="ordinal", score=1.0),
+        )
         assert a.version == 1 and a.value == ["a", "b"]
 
     def test_state_defaults(self):
@@ -45,8 +50,19 @@ class TestAudioModelDeltas:
             AudioAnswer(field_id="x", value="v", bogus=1)
 
     def test_phase_members_and_uicue_reexport(self):
-        assert {p.name for p in Phase} == {"IDLE", "PLANNING", "ASKING", "ACCEPTING", "CONFIRMING", "PLAUSIBILITY",
-                                          "REVIEW", "REVIEW_EDITING", "SUBMITTING", "COMPLETE", "ABORTED"}
+        assert {p.name for p in Phase} == {
+            "IDLE",
+            "PLANNING",
+            "ASKING",
+            "ACCEPTING",
+            "CONFIRMING",
+            "PLAUSIBILITY",
+            "REVIEW",
+            "REVIEW_EDITING",
+            "SUBMITTING",
+            "COMPLETE",
+            "ABORTED",
+        }
         assert UiCue is CoreUiCue
 
     def test_review_item_position_is_one_based(self):

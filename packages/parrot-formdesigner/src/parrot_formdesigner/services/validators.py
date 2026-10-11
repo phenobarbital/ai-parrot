@@ -328,9 +328,9 @@ class FormValidator:
                         scalar = self._coerce_value(envelope.answer, field)
                         # An empty optional spoken answer is kept only when it references audio.
                         if scalar is not None or envelope.blob_ref:
-                            sanitized[field.field_id] = envelope.model_copy(
-                                update={"answer": scalar}
-                            ).model_dump(mode="json")
+                            sanitized[field.field_id] = envelope.model_copy(update={"answer": scalar}).model_dump(
+                                mode="json"
+                            )
                     else:
                         coerced = self._coerce_value(raw, field)
                         if coerced is not None:
@@ -575,10 +575,7 @@ class FormValidator:
     @staticmethod
     def _is_voice_envelope_field(field: FormField) -> bool:
         """Whether `field` declares its dict answer as a VoiceAnswerEnvelope."""
-        return (
-            field.answer_envelope == "voice"
-            and field.field_type in (FieldType.TEXT, FieldType.TEXT_AREA)
-        )
+        return field.answer_envelope == "voice" and field.field_type in (FieldType.TEXT, FieldType.TEXT_AREA)
 
     _EVIDENCE_KEYS = frozenset({"source", "confidence", "audio_mime", "duration_ms", "language", "plausibility"})
 
@@ -1678,7 +1675,7 @@ class FormValidator:
 
         # DFS cycle detection
         UNVISITED, VISITING, VISITED = 0, 1, 2
-        state: dict[str, int] = {field_uid: UNVISITED for field_uid in graph}
+        state: dict[str, int] = dict.fromkeys(graph, UNVISITED)
         cycles: list[str] = []
 
         def dfs(node: str, path: list[str]) -> None:

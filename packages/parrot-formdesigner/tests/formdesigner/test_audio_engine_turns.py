@@ -1,4 +1,5 @@
 """FEAT-649 TASK-4225 — AudioFormSession part 1 (pure engine)."""
+
 from __future__ import annotations
 
 import ast
@@ -11,10 +12,34 @@ import pytest
 import parrot_formdesigner.audio.engine as engine_mod
 from parrot_formdesigner.audio.engine import AudioFormSession
 from parrot_formdesigner.audio.events import (
-    AnswerAccepted, AnswerPayload, AnswerRejected, AnswerSelection, AnswerText, AudioReceived, BlobStored,
-    CommandAck, ConfirmAnswer, ConfirmRequest, Error, FormComplete, GoBack, PlanReady, Question, RepeatQuestion,
-    Replan, SessionStarted, SkipQuestion, StartSession, StoreBlob, Submit, SubmitDone, Synthesize, Transcribe,
-    Transcription, TranscriptReady, ValidationErrors,
+    AnswerAccepted,
+    AnswerPayload,
+    AnswerRejected,
+    AnswerSelection,
+    AnswerText,
+    AudioReceived,
+    BlobStored,
+    CommandAck,
+    ConfirmAnswer,
+    ConfirmRequest,
+    Error,
+    FormComplete,
+    GoBack,
+    PlanReady,
+    Question,
+    RepeatQuestion,
+    Replan,
+    SessionStarted,
+    SkipQuestion,
+    StartSession,
+    StoreBlob,
+    Submit,
+    SubmitDone,
+    Synthesize,
+    Transcribe,
+    Transcription,
+    TranscriptReady,
+    ValidationErrors,
 )
 from parrot_formdesigner.audio.models import AudioFormManifest, AudioSessionState, Phase
 from parrot_formdesigner.audio.narration.engine import Narrator
@@ -45,24 +70,48 @@ def _opts(*pairs: tuple[str, str]) -> list[FieldOption]:
 def _build(extra_meta: dict | None = None, cfg: VoiceFormConfig | None = None, protocol: int = 1):
     fields = [
         FormField(field_id="name", field_type=FieldType.TEXT, label="Name", required=True),
-        FormField(field_id="color", field_type=FieldType.SELECT, label="Color", required=False,
-                  options=_opts(("r", "Rojo"), ("g", "Verde"), ("s", "Saltar"), ("b", "Azul")),
-                  meta=extra_meta),
+        FormField(
+            field_id="color",
+            field_type=FieldType.SELECT,
+            label="Color",
+            required=False,
+            options=_opts(("r", "Rojo"), ("g", "Verde"), ("s", "Saltar"), ("b", "Azul")),
+            meta=extra_meta,
+        ),
         FormField(field_id="agree", field_type=FieldType.BOOLEAN, label="Agree", required=False),
-        FormField(field_id="tags", field_type=FieldType.MULTI_SELECT, label="Tags", required=False,
-                  options=_opts(("x", "Manzana"), ("y", "Pera"), ("z", "Uva"))),
+        FormField(
+            field_id="tags",
+            field_type=FieldType.MULTI_SELECT,
+            label="Tags",
+            required=False,
+            options=_opts(("x", "Manzana"), ("y", "Pera"), ("z", "Uva")),
+        ),
         FormField(field_id="pw", field_type=FieldType.PASSWORD, label="Password", required=False),
     ]
     form = FormSchema(form_id="f", title="F", sections=[FormSection(section_id="s1", title="S", fields=fields)])
     questions = AudioFormRenderer().split_into_questions(form, locale="es")
-    manifest = AudioFormManifest(form_uid=str(form.form_uid), title="F", total_questions=len(questions),
-                                 questions=questions, ws_endpoint="/ws", locale="es")
+    manifest = AudioFormManifest(
+        form_uid=str(form.form_uid),
+        title="F",
+        total_questions=len(questions),
+        questions=questions,
+        ws_endpoint="/ws",
+        locale="es",
+    )
     state = AudioSessionState(session_id="sess", form_uid=str(form.form_uid), user_id="u", manifest=manifest)
     cfg = cfg or VoiceFormConfig(max_questions=None)
-    session = AudioFormSession(form=form, manifest=manifest, cfg=cfg, narrator=Narrator("es"),
-                               lexicon=load_lexicon("es"), state=state, llm_cfg=None)
-    session.handle(StartSession(type="start_session", form_uid=str(form.form_uid), locale="es",
-                                protocol_version=protocol))
+    session = AudioFormSession(
+        form=form,
+        manifest=manifest,
+        cfg=cfg,
+        narrator=Narrator("es"),
+        lexicon=load_lexicon("es"),
+        state=state,
+        llm_cfg=None,
+    )
+    session.handle(
+        StartSession(type="start_session", form_uid=str(form.form_uid), locale="es", protocol_version=protocol)
+    )
     return session
 
 
@@ -76,8 +125,14 @@ def _advance(session: AudioFormSession) -> list:
 
 
 def _tr(field_id: str, text: str, confidence: float | None = 0.95) -> TranscriptReady:
-    return TranscriptReady(type="_transcript", field_id=field_id, text=text, confidence=confidence,
-                           audio_mime="audio/webm", audio_bytes_len=3)
+    return TranscriptReady(
+        type="_transcript",
+        field_id=field_id,
+        text=text,
+        confidence=confidence,
+        audio_mime="audio/webm",
+        audio_bytes_len=3,
+    )
 
 
 def _text(field_id: str, value: str) -> AnswerText:
@@ -104,7 +159,12 @@ class TestEngineTurns:
     def test_start_emits_replan_then_plan_ready_emits_started_prefetch_question(self, session) -> None:
         assert session.state.phase == Phase.PLANNING
         out = _advance(session)
-        assert _types(out) == ["session_started", "_synthesize", "section_enter", "question"]  # section_enter since TASK-4232 sets section_uid
+        assert _types(out) == [
+            "session_started",
+            "_synthesize",
+            "section_enter",
+            "question",
+        ]  # section_enter since TASK-4232 sets section_uid
         assert isinstance(out[0], SessionStarted) and out[0].total_questions == 5
         assert isinstance(out[1], Synthesize) and any(k.startswith("sys:") for k in out[1].keys)
         assert out[-1].field_id == "name" and out[-1].required is True
@@ -139,7 +199,8 @@ class TestEngineTurns:
         s._questions["color"] = s._questions["color"].model_copy(update={"voice_mode": "prompt_select"})
         assert s._question("color").voice_mode == "prompt_select"
         s._questions["tags"] = s._questions["tags"].model_copy(
-            update={"voice_mode": "visual_fallback", "render_mode": "visual", "fallback_html": "<b/>"})
+            update={"voice_mode": "visual_fallback", "render_mode": "visual", "fallback_html": "<b/>"}
+        )
         vq = s._question("tags")
         assert vq.voice_mode == "visual_fallback" and vq.fallback_html == "<b/>"
         s.handle(_text("name", "Ana"))
@@ -198,7 +259,9 @@ class TestEngineTurns:
         s, _ = started
         assert s.handle(ConfirmAnswer(type="confirm_answer"))[0].code == "NO_PENDING_ANSWER"
         s.handle(_tr("name", "Ana", confidence=0.2))
-        assert s.handle(ConfirmAnswer(type="confirm_answer", field_id="zzz", confirmed=True))[0].code == "FIELD_MISMATCH"
+        assert (
+            s.handle(ConfirmAnswer(type="confirm_answer", field_id="zzz", confirmed=True))[0].code == "FIELD_MISMATCH"
+        )
         out = s.handle(ConfirmAnswer(type="confirm_answer", field_id="name", confirmed=False))
         assert isinstance(out[0], Question) and out[0].field_id == "name"
         assert "name" not in s.state.answers and s.state.phase == Phase.ASKING

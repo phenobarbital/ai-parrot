@@ -1,4 +1,5 @@
 """FEAT-649: FormValidator accepts voice evidence envelopes on any field type."""
+
 import pytest
 
 from parrot_formdesigner.core.constraints import FieldConstraints
@@ -19,14 +20,19 @@ def _opts(*vals):
 @pytest.fixture
 def form() -> FormSchema:
     fields = [
-        FormField(field_id="color", field_type=FieldType.SELECT, label="Color", required=True,
-                  options=_opts("red", "green")),
+        FormField(
+            field_id="color", field_type=FieldType.SELECT, label="Color", required=True, options=_opts("red", "green")
+        ),
         FormField(field_id="tags", field_type=FieldType.MULTI_SELECT, label="Tags", options=_opts("a", "b", "c")),
         FormField(field_id="ok", field_type=FieldType.BOOLEAN, label="Ok"),
-        FormField(field_id="age", field_type=FieldType.NUMBER, label="Age",
-                  constraints=FieldConstraints(min_value=0)),
-        FormField(field_id="note", field_type=FieldType.TEXT, label="Note", answer_envelope="voice",
-                  accept_content_types=["application/json"]),
+        FormField(field_id="age", field_type=FieldType.NUMBER, label="Age", constraints=FieldConstraints(min_value=0)),
+        FormField(
+            field_id="note",
+            field_type=FieldType.TEXT,
+            label="Note",
+            answer_envelope="voice",
+            accept_content_types=["application/json"],
+        ),
     ]
     return FormSchema(form_id="f", title="F", sections=[FormSection(section_id="s", fields=fields)])
 

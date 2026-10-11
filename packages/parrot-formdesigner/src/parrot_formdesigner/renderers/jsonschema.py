@@ -359,7 +359,7 @@ class JsonSchemaRenderer(AbstractFormRenderer):
                 return {"type": _TYPE_MAP.get(field.field_type, "string"), "x-field-type": field.field_type.value}
 
         renderer_inst = _JsonSchemaFieldRenderer(self)
-        self._registry = {ft: renderer_inst for ft in FieldType}
+        self._registry = dict.fromkeys(FieldType, renderer_inst)
 
     async def render(
         self,

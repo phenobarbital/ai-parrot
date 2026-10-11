@@ -140,7 +140,9 @@ async def migrate_sink_tables(
                 target = ((doc.get("persistence") or {}).get("data")) or {}
                 if target.get("type") != "postgres_table":
                     continue
-                target_schema = validate_identifier(str(target.get("schema_name") or target.get("schema")), kind="schema")
+                target_schema = validate_identifier(
+                    str(target.get("schema_name") or target.get("schema")), kind="schema"
+                )
                 table = validate_identifier(str(target.get("table")), kind="table")
                 columns = [c for c in envelope_columns(doc) if (target_schema, table, c) not in done]
                 if not columns:
@@ -210,9 +212,7 @@ async def _async_main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        report = await migrate_sink_tables(
-            pool, schema=args.schema, batch_size=args.batch_size, dry_run=args.dry_run
-        )
+        report = await migrate_sink_tables(pool, schema=args.schema, batch_size=args.batch_size, dry_run=args.dry_run)
     except Exception as exc:  # noqa: BLE001 - CLI boundary, report and exit cleanly
         print(f"error: migration failed: {exc}", file=sys.stderr)
         return 1

@@ -335,7 +335,9 @@ class TestForwarder:
         form = _endpoint_form()
         forwarder = MagicMock(spec=SubmissionForwarder)
         forwarder.forward = AsyncMock(return_value=ForwardResult(success=True, status_code=201))
-        handler = _make_handler(form, storage=_storage(), forwarder=forwarder, validation=_vr(sanitized={"comment": "x"}))
+        handler = _make_handler(
+            form, storage=_storage(), forwarder=forwarder, validation=_vr(sanitized={"comment": "x"})
+        )
         resp = await handler.submit_data(_make_request())
         assert resp.status == 200
         forwarder.forward.assert_awaited_once_with({"comment": "x"}, form.submit)

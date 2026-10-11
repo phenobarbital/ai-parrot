@@ -1,4 +1,5 @@
 """Unit tests for AnswerPlausibilityChecker (FEAT-649 Module 8)."""
+
 import asyncio
 
 import pytest
@@ -36,26 +37,34 @@ def _make_form(cfg: LLMValidationConfig | None = None) -> FormSchema:
         FormField(field_id="nick0", field_type=FieldType.TEXT, label="Optional"),
         FormField(field_id="name", field_type=FieldType.TEXT, label="Name", required=True),
         FormField(
-            field_id="color", field_type=FieldType.SELECT, label="Color",
+            field_id="color",
+            field_type=FieldType.SELECT,
+            label="Color",
             options=[FieldOption(value="r", label="Red"), FieldOption(value="b", label="Blue")],
         ),
         FormField(field_id="pin", field_type=FieldType.PASSWORD, label="Pin"),
         FormField(field_id="h", field_type=FieldType.HIDDEN, label="H"),
         FormField(field_id="nick", field_type=FieldType.TEXT, label="Nick", read_only=True),
-        FormField(
-            field_id="secret", field_type=FieldType.TEXT, label="Secret", meta={"voice": {"sensitive": True}}
-        ),
+        FormField(field_id="secret", field_type=FieldType.TEXT, label="Secret", meta={"voice": {"sensitive": True}}),
         FormField(field_id="doc", field_type=FieldType.TEXT, label="Doc"),
     ]
     return FormSchema(
-        form_id="f", title="F", sections=[FormSection(section_id="s", fields=fields)],
+        form_id="f",
+        title="F",
+        sections=[FormSection(section_id="s", fields=fields)],
         llm_validation=cfg or LLMValidationConfig(enabled=True),
     )
 
 
 SCALARS = {
-    "nick0": "x", "name": "Ann", "color": "r", "pin": "1234", "h": "hid", "nick": "n",
-    "secret": "TOPSECRET", "doc": {"blob_ref": "b1", "data_url": "data:x"},
+    "nick0": "x",
+    "name": "Ann",
+    "color": "r",
+    "pin": "1234",
+    "h": "hid",
+    "nick": "n",
+    "secret": "TOPSECRET",
+    "doc": {"blob_ref": "b1", "data_url": "data:x"},
 }
 
 
@@ -140,9 +149,11 @@ class TestCheck:
         assert rep.status == "skipped"
 
     async def test_unknown_id_dropped_and_clamped(self, form):
-        client = FakeClient(_batch(
-            {"field_id": "name", "plausible": False, "confidence": 1.7, "reason": "noise"},
-            {"field_id": "ghost", "plausible": True, "confidence": 0.5},
-        ))
+        client = FakeClient(
+            _batch(
+                {"field_id": "name", "plausible": False, "confidence": 1.7, "reason": "noise"},
+                {"field_id": "ghost", "plausible": True, "confidence": 0.5},
+            )
+        )
         rep = await AnswerPlausibilityChecker(client, config=form.llm_validation).check(form, SCALARS, locale="en")
         assert set(rep.items) == {"name"} and rep.items["name"].confidence == 1.0

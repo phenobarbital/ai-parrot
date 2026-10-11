@@ -1,4 +1,5 @@
 """FEAT-649 TASK-4227 — AudioFormWSHandler adapter I/O mapping."""
+
 from __future__ import annotations
 
 import base64
@@ -25,10 +26,17 @@ _WEBM = b"\x1a\x45\xdf\xa3" + b"\x00" * 512
 
 def _form(*ids: str, required: bool = True, **kwargs) -> FormSchema:
     return FormSchema(
-        form_id="f", title="T", tenant=_TENANT,
-        sections=[FormSection(section_id="s1", fields=[
-            FormField(field_id=i, field_type=FieldType.TEXT, label=f"{i}?", required=required) for i in ids
-        ])],
+        form_id="f",
+        title="T",
+        tenant=_TENANT,
+        sections=[
+            FormSection(
+                section_id="s1",
+                fields=[
+                    FormField(field_id=i, field_type=FieldType.TEXT, label=f"{i}?", required=required) for i in ids
+                ],
+            )
+        ],
         **kwargs,
     )
 
@@ -101,9 +109,7 @@ class TestEncoding:
         assert "audio" not in _msgs(ws)[first_q]  # prefetched: no inline base64
 
     async def test_v2_prefetch_off_inlines_audio(self, synth, stt) -> None:
-        ws, _ = await _boot(
-            _handler(_form("a"), synth, stt), start={"protocol_version": 2, "prefetch": False}
-        )
+        ws, _ = await _boot(_handler(_form("a"), synth, stt), start={"protocol_version": 2, "prefetch": False})
         assert "audio_segment" not in _types(ws)
         ws.send_bytes.assert_not_called()
         q = next(m for m in _msgs(ws) if m["type"] == "question")

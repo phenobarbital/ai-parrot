@@ -278,9 +278,14 @@ def field_types_for(form: FormSchema) -> dict[str, FieldType]:
     return {name: field.field_type for name, field in _iter_form_fields(form)}
 
 
-_NON_VOICE_TYPES: frozenset[FieldType] = frozenset({
-    FieldType.HIDDEN, FieldType.PASSWORD, FieldType.ARRAY, FieldType.GROUP,
-})
+_NON_VOICE_TYPES: frozenset[FieldType] = frozenset(
+    {
+        FieldType.HIDDEN,
+        FieldType.PASSWORD,
+        FieldType.ARRAY,
+        FieldType.GROUP,
+    }
+)
 
 
 def voice_capable_columns(form: FormSchema) -> frozenset[str]:
@@ -300,6 +305,7 @@ def voice_capable_columns(form: FormSchema) -> frozenset[str]:
     voice_cfg = getattr(form, "voice", None)
     voice_on = bool(voice_cfg and voice_cfg.enabled)
     return frozenset(
-        name for name, field in _iter_form_fields(form)
+        name
+        for name, field in _iter_form_fields(form)
         if field.answer_envelope == "voice" or (voice_on and field.field_type not in _NON_VOICE_TYPES)
     )

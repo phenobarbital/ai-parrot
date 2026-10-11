@@ -31,8 +31,7 @@ try:
     from parrot.tools.toolkit import AbstractToolkit
 except ImportError as exc:
     raise ImportError(
-        "parrot-formdesigner EditToolkit requires the 'ai-parrot' package. "
-        "Install it with: uv add ai-parrot"
+        "parrot-formdesigner EditToolkit requires the 'ai-parrot' package. " "Install it with: uv add ai-parrot"
     ) from exc
 
 from pydantic import ValidationError
@@ -122,9 +121,7 @@ class EditToolkit(AbstractToolkit):
                 return section
         return None
 
-    def _find_field_and_section(
-        self, field_uid: uuid.UUID
-    ) -> tuple[FormField, FormSection] | tuple[None, None]:
+    def _find_field_and_section(self, field_uid: uuid.UUID) -> tuple[FormField, FormSection] | tuple[None, None]:
         """Search the form for *field_uid* (FEAT-393).
 
         Delegates to the canonical ``find_field_by_uid`` lookup — reaches
@@ -253,9 +250,7 @@ class EditToolkit(AbstractToolkit):
             "field": field.model_dump(mode="json"),
         }
 
-    async def search_fields(
-        self, query: str, field_type: str | None = None
-    ) -> list[dict]:
+    async def search_fields(self, query: str, field_type: str | None = None) -> list[dict]:
         """Search for fields matching a label substring, type, or ID pattern.
 
         The *query* is matched as:
@@ -283,11 +278,7 @@ class EditToolkit(AbstractToolkit):
             for field in self._iter_section_fields(section):
                 # Type filter
                 if field_type is not None:
-                    ft = (
-                        field.field_type.value
-                        if hasattr(field.field_type, "value")
-                        else str(field.field_type)
-                    )
+                    ft = field.field_type.value if hasattr(field.field_type, "value") else str(field.field_type)
                     if ft != field_type:
                         continue
 
@@ -316,9 +307,7 @@ class EditToolkit(AbstractToolkit):
     # Mutation tools — delegate to operations.py apply functions
     # ------------------------------------------------------------------
 
-    async def update_field(
-        self, section_uid: str, field_uid: str, patch: dict
-    ) -> dict:
+    async def update_field(self, section_uid: str, field_uid: str, patch: dict) -> dict:
         """Apply an RFC 7396 merge-patch to a single field, addressed by UID.
 
         Keys present in *patch* override the existing value; keys absent in
@@ -359,9 +348,7 @@ class EditToolkit(AbstractToolkit):
                 "success": True,
                 "field_uid": field_uid,
                 "field_id": updated_field.field_id if updated_field else None,
-                "updated_field": (
-                    updated_field.model_dump(mode="json") if updated_field else None
-                ),
+                "updated_field": (updated_field.model_dump(mode="json") if updated_field else None),
             }
         except OperationError as exc:
             self.logger.warning("update_field failed: %s", exc)
@@ -692,9 +679,7 @@ class EditToolkit(AbstractToolkit):
         # must still match (code review fix).
         updated = [p for p in existing if uuid.UUID(p.target) != target_uuid]
         if len(updated) == len(existing):
-            return {
-                "error": f"No post_depends with target='{target}' found on field '{field_uid}'."
-            }
+            return {"error": f"No post_depends with target='{target}' found on field '{field_uid}'."}
 
         updated_field = field.model_copy(update={"post_depends": updated or None})
         self._form = self._replace_field_in_form(self._form, field_uuid, updated_field)
@@ -739,11 +724,7 @@ class EditToolkit(AbstractToolkit):
             new_items = []
             for item in items:
                 if isinstance(item, FormSubsection):
-                    new_items.append(
-                        item.model_copy(
-                            update={"fields": _replace_in_items(item.fields)}
-                        )
-                    )
+                    new_items.append(item.model_copy(update={"fields": _replace_in_items(item.fields)}))
                     continue
                 if item.field_uid == field_uid:
                     new_items.append(new_field)
@@ -752,15 +733,12 @@ class EditToolkit(AbstractToolkit):
                 if item.children:
                     updates["children"] = _replace_in_items(item.children)
                 if item.item_template is not None:
-                    updates["item_template"] = _replace_in_items(
-                        [item.item_template]
-                    )[0]
+                    updates["item_template"] = _replace_in_items([item.item_template])[0]
                 new_items.append(item.model_copy(update=updates) if updates else item)
             return new_items
 
         new_sections = [
-            section.model_copy(update={"fields": _replace_in_items(section.fields)})
-            for section in form.sections
+            section.model_copy(update={"fields": _replace_in_items(section.fields)}) for section in form.sections
         ]
         return form.model_copy(update={"sections": new_sections})
 
@@ -782,9 +760,7 @@ class EditToolkit(AbstractToolkit):
         rule_errors = validator.validate_rules(form)
         return cycle_errors + rule_errors
 
-    async def add_section(
-        self, section: dict, position: int | None = None
-    ) -> dict:
+    async def add_section(self, section: dict, position: int | None = None) -> dict:
         """Add a new section to the form at an optional position.
 
         Args:
@@ -1045,9 +1021,7 @@ class EditToolkit(AbstractToolkit):
         except Exception as exc:
             self.logger.error("update_section_title unexpected error: %s", exc)
             return {"error": f"Failed to rename section: {exc}"}
-        self.logger.info(
-            "update_section_title: section '%s' renamed to '%s'", section_id, title
-        )
+        self.logger.info("update_section_title: section '%s' renamed to '%s'", section_id, title)
         return {
             "success": True,
             "section_id": section_id,
@@ -1086,7 +1060,11 @@ class EditToolkit(AbstractToolkit):
         if str(self._form.form_uid) != str(form_uid):
             return {"error": f"form_uid '{form_uid}' does not match the form being edited."}
         proposals, preview = await self._voice_optimizer.propose(
-            self._form, locale=locale, fields=set(fields) if fields else None, style=style, max_hint_words=max_hint_words
+            self._form,
+            locale=locale,
+            fields=set(fields) if fields else None,
+            style=style,
+            max_hint_words=max_hint_words,
         )
         return {"proposals": [p.model_dump(mode="json") for p in proposals], "narration_preview": preview}
 

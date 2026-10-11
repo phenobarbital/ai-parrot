@@ -1,4 +1,5 @@
 """Tests for the deterministic Narrator (FEAT-649 TASK-4214)."""
+
 import uuid
 
 import pytest
@@ -9,8 +10,19 @@ from parrot_formdesigner.audio.narration import NARRATION_KEYS, Narrator, render
 from parrot_formdesigner.core.voice import FieldVoiceMeta, VoiceFormConfig
 
 CTX = {
-    "label": "Name", "required": True, "prompt": "P", "hint": "H", "count": 2, "ordinal": 1, "n": 1,
-    "answer": "A", "title": "T", "value": "V", "position": 1, "total": 3, "flagged": False,
+    "label": "Name",
+    "required": True,
+    "prompt": "P",
+    "hint": "H",
+    "count": 2,
+    "ordinal": 1,
+    "n": 1,
+    "answer": "A",
+    "title": "T",
+    "value": "V",
+    "position": 1,
+    "total": 3,
+    "flagged": False,
 }
 
 
@@ -76,12 +88,19 @@ def test_plan_question_hint_pause_and_description_fallback():
 
 def test_plan_question_options_rules():
     n = Narrator("en")
-    opts = [{"value": "a", "label": "Alpha"}, {"value": "b", "label": "Beta"}, {"value": "c", "label": "G", "disabled": True}]
+    opts = [
+        {"value": "a", "label": "Alpha"},
+        {"value": "b", "label": "Beta"},
+        {"value": "c", "label": "G", "disabled": True},
+    ]
     q = _q(field_type="select", options=opts)
     key = f"q:{q.field_uid}:options"
     plan = n.plan_question(q, VoiceFormConfig(), FieldVoiceMeta())
     assert "Alpha" in plan.segments[key] and "Beta" in plan.segments[key] and "G." not in plan.segments[key]
-    assert "2 options on screen" in n.plan_question(q, VoiceFormConfig(), FieldVoiceMeta(enumerate="count_only")).segments[key]
+    assert (
+        "2 options on screen"
+        in n.plan_question(q, VoiceFormConfig(), FieldVoiceMeta(enumerate="count_only")).segments[key]
+    )
     assert key not in n.plan_question(q, VoiceFormConfig(), FieldVoiceMeta(enumerate="never")).segments
     assert "on screen" in n.plan_question(q, VoiceFormConfig(enumerate_options=False), FieldVoiceMeta()).segments[key]
     qb = _q(field_type="boolean")

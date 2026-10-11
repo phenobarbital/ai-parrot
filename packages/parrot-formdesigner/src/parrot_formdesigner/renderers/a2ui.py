@@ -186,9 +186,7 @@ _SLIDER_DEFAULT_MAX: dict[FieldType, float] = {
 #: FieldTypes that lower to ``ChoicePicker(variant="multipleSelection")`` —
 #: their dataModel default is ``[]`` (not ``None``) when unset (spec §7
 #: implementation notes).
-_MULTI_SELECT_TYPES: frozenset[FieldType] = frozenset(
-    {FieldType.MULTI_SELECT, FieldType.TAGS, FieldType.TRANSFER_LIST}
-)
+_MULTI_SELECT_TYPES: frozenset[FieldType] = frozenset({FieldType.MULTI_SELECT, FieldType.TAGS, FieldType.TRANSFER_LIST})
 
 #: FieldType -> Basic primitive lowering table (spec §7, normative). Covers
 #: every member of ``FieldType`` (45 as of this writing — see TASK-3072
@@ -209,9 +207,7 @@ FIELD_LOWERING: dict[FieldType, A2UIFieldLowering] = {
     FieldType.EMAIL: A2UIFieldLowering(
         primitive="TextField", props={"variant": "shortText"}, check_functions=("email",)
     ),
-    FieldType.URL: A2UIFieldLowering(
-        primitive="TextField", props={"variant": "shortText"}, check_functions=("regex",)
-    ),
+    FieldType.URL: A2UIFieldLowering(primitive="TextField", props={"variant": "shortText"}, check_functions=("regex",)),
     FieldType.PHONE: A2UIFieldLowering(
         primitive="TextField", props={"variant": "shortText"}, check_functions=("regex",)
     ),
@@ -275,7 +271,9 @@ def _choice_options(options: list[FieldOption] | None, locale: str) -> list[dict
     """
     if not options:
         return []
-    return [{"label": _resolve(option.label, locale), "value": option.value} for option in options if not option.disabled]
+    return [
+        {"label": _resolve(option.label, locale), "value": option.value} for option in options if not option.disabled
+    ]
 
 
 def _extensions(m: Any, **values: Any) -> Any:
@@ -806,12 +804,12 @@ class A2UIFormRenderer(AbstractFormRenderer):
                     )
                 )
             elif fn == "regex" and not pattern_added:
-                default_pattern = (
-                    _DEFAULT_URL_PATTERN if field.field_type is FieldType.URL else _DEFAULT_PHONE_PATTERN
-                )
+                default_pattern = _DEFAULT_URL_PATTERN if field.field_type is FieldType.URL else _DEFAULT_PHONE_PATTERN
                 checks.append(
                     m.CheckRule(
-                        condition=m.FunctionCall(call="regex", args={"value": value_binding, "pattern": default_pattern}),
+                        condition=m.FunctionCall(
+                            call="regex", args={"value": value_binding, "pattern": default_pattern}
+                        ),
                         message=f"{label} has an invalid format.",
                     )
                 )

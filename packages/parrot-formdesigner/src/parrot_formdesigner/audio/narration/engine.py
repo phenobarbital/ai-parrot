@@ -1,4 +1,5 @@
 """Deterministic narration for audio forms (FEAT-649, Module 3)."""
+
 from __future__ import annotations
 
 import logging
@@ -16,24 +17,67 @@ from .lexicon import locale_chain
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
-NARRATION_KEYS: frozenset[str] = frozenset({
-    "question", "question_with_prompt", "hint_bridge", "options_intro", "option_item", "options_count_only",
-    "boolean_prompt", "required_mark", "confirm_readback", "confirm_option", "no_match", "required_reject", "skipped",
-    "section_intro", "computed_statement", "review_intro", "review_item", "review_item_skipped", "review_all_correct",
-    "review_edit_ack", "plausibility_flag", "plausibility_keep", "submitted", "resume_welcome", "command_ack_repeat",
-    "command_ack_back", "command_ack_skip", "command_ack_help", "command_ack_stop", "command_ack_next",
-    "command_ack_send", "command_ack_change",
-})
+NARRATION_KEYS: frozenset[str] = frozenset(
+    {
+        "question",
+        "question_with_prompt",
+        "hint_bridge",
+        "options_intro",
+        "option_item",
+        "options_count_only",
+        "boolean_prompt",
+        "required_mark",
+        "confirm_readback",
+        "confirm_option",
+        "no_match",
+        "required_reject",
+        "skipped",
+        "section_intro",
+        "computed_statement",
+        "review_intro",
+        "review_item",
+        "review_item_skipped",
+        "review_all_correct",
+        "review_edit_ack",
+        "plausibility_flag",
+        "plausibility_keep",
+        "submitted",
+        "resume_welcome",
+        "command_ack_repeat",
+        "command_ack_back",
+        "command_ack_skip",
+        "command_ack_help",
+        "command_ack_stop",
+        "command_ack_next",
+        "command_ack_send",
+        "command_ack_change",
+    }
+)
 # Keys pre-synthesised at start_session as ``sys:<key>`` (no per-question variables).
 _SYSTEM_KEYS: tuple[str, ...] = (
-    "no_match", "required_reject", "skipped", "review_all_correct", "submitted", "resume_welcome",
-    "command_ack_repeat", "command_ack_back", "command_ack_skip", "command_ack_help", "command_ack_stop",
-    "command_ack_next", "command_ack_send", "command_ack_change",
+    "no_match",
+    "required_reject",
+    "skipped",
+    "review_all_correct",
+    "submitted",
+    "resume_welcome",
+    "command_ack_repeat",
+    "command_ack_back",
+    "command_ack_skip",
+    "command_ack_help",
+    "command_ack_stop",
+    "command_ack_next",
+    "command_ack_send",
+    "command_ack_change",
 )
 _PROMPT_WHITELIST = ("label", "hint", "section", "n", "total")
-_SELECT_TYPES = frozenset({
-    FieldType.SELECT.value, FieldType.MULTI_SELECT.value, FieldType.DYNAMIC_SELECT.value,
-})
+_SELECT_TYPES = frozenset(
+    {
+        FieldType.SELECT.value,
+        FieldType.MULTI_SELECT.value,
+        FieldType.DYNAMIC_SELECT.value,
+    }
+)
 _HIDDEN = "[hidden]"
 
 
@@ -67,7 +111,7 @@ class Narrator:
         self._dir = templates_dir or _TEMPLATES_DIR
         self._env = ImmutableSandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
         self._templates: dict[str, str] = {}
-        for loc in reversed(locale_chain(locale)):          # en first, most specific last wins
+        for loc in reversed(locale_chain(locale)):  # en first, most specific last wins
             path = self._dir / loc / "narration.yaml"
             if not path.is_file():
                 continue
@@ -114,7 +158,7 @@ class Narrator:
         label_text = q.prompt or self.render("question", label=q.label, required=q.required)
         segments[f"q:{uid}:label"] = label_text
         keys.append(f"q:{uid}:label")
-        help_text = q.hint or q.description          # AC4: description narrated when hint is absent
+        help_text = q.hint or q.description  # AC4: description narrated when hint is absent
         if help_text:
             pause = meta.pause_ms if meta.pause_ms is not None else cfg.hint_pause_ms
             keys.append(f"pause:{pause}")
@@ -135,12 +179,19 @@ class Narrator:
             key = f"review:{item.position}"
             if item.skipped:
                 segments[key] = self.render(
-                    "review_item_skipped", position=item.position, label=item.label, flagged=item.flagged,
+                    "review_item_skipped",
+                    position=item.position,
+                    label=item.label,
+                    flagged=item.flagged,
                 )
             else:
                 answer = _HIDDEN if item.sensitive else item.answer_text
                 segments[key] = self.render(
-                    "review_item", position=item.position, label=item.label, answer=answer, flagged=item.flagged,
+                    "review_item",
+                    position=item.position,
+                    label=item.label,
+                    answer=answer,
+                    flagged=item.flagged,
                 )
             keys.append(key)
         text = " ".join(segments[k] for k in keys)

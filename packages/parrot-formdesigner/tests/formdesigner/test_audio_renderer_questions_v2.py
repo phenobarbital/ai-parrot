@@ -8,16 +8,29 @@ from parrot_formdesigner.renderers.audio import AudioFormRenderer
 
 def _form() -> FormSchema:
     color = FormField(
-        field_id="color", field_type=FieldType.SELECT, label="Color",
+        field_id="color",
+        field_type=FieldType.SELECT,
+        label="Color",
         options=[FieldOption(value="r", label="Red"), FieldOption(value="g", label="Green", disabled=True)],
     )
-    name = FormField(field_id="name", field_type=FieldType.TEXT, label="Name", hint={"en": "First name", "es": "Nombre"},
-                     meta={"voice": {"prompt": "{n}/{total}: {label} {{ 7*7 }}"}})
+    name = FormField(
+        field_id="name",
+        field_type=FieldType.TEXT,
+        label="Name",
+        hint={"en": "First name", "es": "Nombre"},
+        meta={"voice": {"prompt": "{n}/{total}: {label} {{ 7*7 }}"}},
+    )
     pin = FormField(field_id="pin", field_type=FieldType.TEXT, label="PIN", meta={"voice": {"sensitive": True}})
     return FormSchema(
-        form_id="demo", title="Demo", tenant="acme",
+        form_id="demo",
+        title="Demo",
+        tenant="acme",
         sections=[
-            FormSection(section_id="a", title="About you", fields=[name, FormSubsection(subsection_id="sub", title="Prefs", fields=[color])]),
+            FormSection(
+                section_id="a",
+                title="About you",
+                fields=[name, FormSubsection(subsection_id="sub", title="Prefs", fields=[color])],
+            ),
             FormSection(section_id="b", title="Security", fields=[pin]),
         ],
     )

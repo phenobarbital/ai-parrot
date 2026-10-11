@@ -1,4 +1,5 @@
 """Keep docs/audio-form-voice-modes.md and the navigator-svelte handoff in sync with audio/events.py (FEAT-649)."""
+
 from __future__ import annotations
 
 import re
@@ -12,7 +13,14 @@ DOC = REPO / "docs" / "audio-form-voice-modes.md"
 HANDOFF = REPO / "sdd" / "proposals" / "audio-form-interaction-workflow.handoff-navigator-svelte.md"
 SRC = REPO / "packages" / "parrot-formdesigner" / "src" / "parrot_formdesigner"
 IO_REQUESTS = {
-    "Synthesize", "Transcribe", "StoreBlob", "DeleteBlob", "SaveSnapshot", "RunPlausibility", "Submit", "Replan",
+    "Synthesize",
+    "Transcribe",
+    "StoreBlob",
+    "DeleteBlob",
+    "SaveSnapshot",
+    "RunPlausibility",
+    "Submit",
+    "Replan",
 }
 
 
@@ -35,7 +43,7 @@ def _wire_literals() -> set[str]:
 
 
 def _section(text: str, start: str, end: str) -> str:
-    return text[text.index(start): text.index(end)]
+    return text[text.index(start) : text.index(end)]
 
 
 def test_wire_literals_found():

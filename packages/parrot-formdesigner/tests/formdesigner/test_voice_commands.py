@@ -61,8 +61,14 @@ async def test_refiner_returns_llm_match_and_none_on_failure():
     assert m is not None and m.method == "llm" and m.value == "r" and m.score == 0.8
     assert len(client.calls) == 1
     assert await LLMOptionRefiner(_FakeClient({"value": "r", "confidence": 0.5})).refine("x", OPTS, locale="es")
-    assert await LLMOptionRefiner(_FakeClient(RefinedOption(value="zz", confidence=1))).refine("x", OPTS, locale="es") is None
-    assert await LLMOptionRefiner(_FakeClient(RefinedOption(value="a", confidence=1))).refine("x", OPTS, locale="es") is None
+    assert (
+        await LLMOptionRefiner(_FakeClient(RefinedOption(value="zz", confidence=1))).refine("x", OPTS, locale="es")
+        is None
+    )
+    assert (
+        await LLMOptionRefiner(_FakeClient(RefinedOption(value="a", confidence=1))).refine("x", OPTS, locale="es")
+        is None
+    )
     assert await LLMOptionRefiner(_FakeClient(exc=RuntimeError("boom"))).refine("x", OPTS, locale="es") is None
     slow = LLMOptionRefiner(_FakeClient(RefinedOption(value="r"), delay=0.5), timeout_s=0.05)
     assert await slow.refine("x", OPTS, locale="es") is None

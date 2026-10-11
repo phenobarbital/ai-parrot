@@ -168,7 +168,9 @@ async def run_report(
     report = EnvelopeReport(applied=bool(downgrade and apply))
     probe = blob_exists(blob_url, "x://probe") if blob_url else None
     report.orphan_check = (
-        "performed" if probe is not None else ("skipped (unsupported blob url)" if blob_url else "skipped (no --blob-url)")
+        "performed"
+        if probe is not None
+        else ("skipped (unsupported blob url)" if blob_url else "skipped (no --blob-url)")
     )
 
     async with pool.acquire() as conn:
@@ -193,9 +195,7 @@ async def _scan(
     last_id: Any = None
     while True:
         if last_id is None:
-            rows = await conn.fetch(
-                f"SELECT id, form_uid, data FROM {form_data_qt} ORDER BY id LIMIT $1", batch_size
-            )
+            rows = await conn.fetch(f"SELECT id, form_uid, data FROM {form_data_qt} ORDER BY id LIMIT $1", batch_size)
         else:
             rows = await conn.fetch(
                 f"SELECT id, form_uid, data FROM {form_data_qt} WHERE id > $1 ORDER BY id LIMIT $2",
@@ -242,7 +242,9 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--schema", required=True, help="Postgres schema containing form_schemas/form_data")
     parser.add_argument("--blob-url", default=None, help="file:// or filesystem root for the orphan blob check")
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE, help="Rows per batch")
-    parser.add_argument("--downgrade", action="store_true", help="Revert envelopes to scalars (destructive with --apply)")
+    parser.add_argument(
+        "--downgrade", action="store_true", help="Revert envelopes to scalars (destructive with --apply)"
+    )
     parser.add_argument("--apply", action="store_true", help="Actually write; without it nothing is modified")
     return parser
 

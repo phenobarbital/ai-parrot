@@ -69,9 +69,7 @@ def mock_registry() -> AsyncMock:
 def mock_synthesizer() -> AsyncMock:
     """Mock VoiceSynthesizer returning dummy audio."""
     synth = AsyncMock()
-    synth.synthesize.return_value = MagicMock(
-        audio=b"fake-audio", mime_format="audio/ogg"
-    )
+    synth.synthesize.return_value = MagicMock(audio=b"fake-audio", mime_format="audio/ogg")
     return synth
 
 
@@ -79,9 +77,7 @@ def mock_synthesizer() -> AsyncMock:
 def mock_transcriber() -> AsyncMock:
     """Mock FasterWhisperBackend returning fixed transcription."""
     transcriber = AsyncMock()
-    transcriber.transcribe.return_value = MagicMock(
-        text="hello", confidence=0.95, language="en"
-    )
+    transcriber.transcribe.return_value = MagicMock(text="hello", confidence=0.95, language="en")
     return transcriber
 
 
@@ -97,9 +93,7 @@ def mock_token_validator() -> AsyncMock:
     from parrot.voice.handler import AuthenticatedUser  # type: ignore[import-untyped]
 
     validator = AsyncMock()
-    validator.validate.return_value = AuthenticatedUser(
-        user_id="test-user-1", username="testuser"
-    )
+    validator.validate.return_value = AuthenticatedUser(user_id="test-user-1", username="testuser")
     return validator
 
 
@@ -128,17 +122,28 @@ def handler(
 _TENANT = "t1"
 
 
-def _fld(field_id: str, field_type: FieldType = FieldType.TEXT, *, label: str | None = None,
-         required: bool = False, options: list[tuple[str, str]] | None = None) -> FormField:
+def _fld(
+    field_id: str,
+    field_type: FieldType = FieldType.TEXT,
+    *,
+    label: str | None = None,
+    required: bool = False,
+    options: list[tuple[str, str]] | None = None,
+) -> FormField:
     return FormField(
-        field_id=field_id, field_type=field_type, label=label or f"{field_id}?", required=required,
+        field_id=field_id,
+        field_type=field_type,
+        label=label or f"{field_id}?",
+        required=required,
         options=[FieldOption(value=v, label=lbl) for v, lbl in options] if options else None,
     )
 
 
 def _form(*fields: FormField) -> FormSchema:
     return FormSchema(
-        form_id="f", title="T", tenant=_TENANT,
+        form_id="f",
+        title="T",
+        tenant=_TENANT,
         sections=[FormSection(section_id="s1", fields=list(fields))],
     )
 
@@ -169,7 +174,9 @@ async def _boot(handler: AudioFormWSHandler, form: FormSchema, *, start: dict | 
     ws = _fresh_ws()
     request = SimpleNamespace(match_info={"form_uid": "f1", "tenant": _TENANT}, headers={})
     ctx = _ConnCtx(
-        request=request, user=SimpleNamespace(user_id="u1", raw_payload={}), tenant=_TENANT,
+        request=request,
+        user=SimpleNamespace(user_id="u1", raw_payload={}),
+        tenant=_TENANT,
         state=AudioSessionState(session_id="s1", form_uid="f1", user_id="u1", tenant=_TENANT),
     )
     await handler._process_text(ws, ctx, {"type": "start_session", "form_uid": "f1", **(start or {})})
@@ -208,13 +215,18 @@ class TestHandlerInstantiation:
         assert handler.transcriber is not None
 
     def test_handler_without_token_validator(
-        self, mock_registry: AsyncMock, mock_synthesizer: AsyncMock,
-        mock_transcriber: AsyncMock, mock_validator: MagicMock,
+        self,
+        mock_registry: AsyncMock,
+        mock_synthesizer: AsyncMock,
+        mock_transcriber: AsyncMock,
+        mock_validator: MagicMock,
     ) -> None:
         """Handler can be created without a token_validator (anonymous mode)."""
         h = AudioFormWSHandler(
-            registry=mock_registry, synthesizer=mock_synthesizer,
-            transcriber=mock_transcriber, validator=mock_validator,
+            registry=mock_registry,
+            synthesizer=mock_synthesizer,
+            transcriber=mock_transcriber,
+            validator=mock_validator,
         )
         assert h._token_validator is None
         assert h._pipeline is None and h._session_store is None and h._blob_storage is None
@@ -261,8 +273,9 @@ class TestSessionLifecycle:
     async def test_message_before_start_is_rejected(self, handler: AudioFormWSHandler) -> None:
         """Anything but ping/start_session before start_session is SESSION_NOT_STARTED."""
         ws = _fresh_ws()
-        ctx = _ConnCtx(request=None, user=None, tenant=_TENANT,
-                       state=AudioSessionState(session_id="s", form_uid="f", user_id="u"))
+        ctx = _ConnCtx(
+            request=None, user=None, tenant=_TENANT, state=AudioSessionState(session_id="s", form_uid="f", user_id="u")
+        )
         await handler._process_text(ws, ctx, {"type": "answer_text", "field_id": "x", "value": "y"})
         assert _sent(ws)[0]["code"] == "SESSION_NOT_STARTED"
 
@@ -308,8 +321,9 @@ class TestNavigation:
         ws, ctx = await _boot(handler, _form(_fld("name")))
         await _say(handler, ws, ctx, type="ping")
         assert _sent(ws)[0]["type"] == "pong"
-        fresh = _ConnCtx(request=None, user=None, tenant=_TENANT,
-                         state=AudioSessionState(session_id="s", form_uid="f", user_id="u"))
+        fresh = _ConnCtx(
+            request=None, user=None, tenant=_TENANT, state=AudioSessionState(session_id="s", form_uid="f", user_id="u")
+        )
         ws2 = _fresh_ws()
         await handler._process_text(ws2, fresh, {"type": "ping"})
         assert _sent(ws2)[0]["type"] == "pong"
@@ -366,8 +380,9 @@ class TestSelectionAndPayloadHandlers:
     @pytest.mark.asyncio
     async def test_answer_selection_multi(self, handler: AudioFormWSHandler) -> None:
         """AC6: MULTI_SELECT is stored as a list; the v1 wire still echoes a comma-joined value."""
-        ws, ctx = await _boot(handler, _form(
-            _fld("tags", FieldType.MULTI_SELECT, options=[("a", "A"), ("b", "B")]), _fld("x")))
+        ws, ctx = await _boot(
+            handler, _form(_fld("tags", FieldType.MULTI_SELECT, options=[("a", "A"), ("b", "B")]), _fld("x"))
+        )
         await _say(handler, ws, ctx, type="answer_selection", field_id="tags", values=["a", "b"])
         assert ctx.engine.state.answers["tags"].value == ["a", "b"]
         assert ctx.engine.state.answers["tags"].source == "selection"
@@ -480,8 +495,9 @@ class TestBinaryGuards:
     @pytest.mark.asyncio
     async def test_audio_before_start_rejected(self, handler: AudioFormWSHandler) -> None:
         ws = _fresh_ws()
-        ctx = _ConnCtx(request=None, user=None, tenant=_TENANT,
-                       state=AudioSessionState(session_id="s", form_uid="f", user_id="u"))
+        ctx = _ConnCtx(
+            request=None, user=None, tenant=_TENANT, state=AudioSessionState(session_id="s", form_uid="f", user_id="u")
+        )
         await handler._process_binary(ws, ctx, _FAKE_WEBM)
         assert _sent(ws)[-1]["code"] == "SESSION_NOT_STARTED"
 
@@ -511,8 +527,13 @@ class TestReviewHardening:
     async def test_fallback_html_escapes_field_id(self, handler: AudioFormWSHandler) -> None:
         """H-1: a hostile field_id is HTML-escaped in the minimal fallback."""
         q = AudioQuestion(
-            field_uid=_UID, index=0, field_id='x" onfocus="alert(1)', field_type="rest",
-            label="L", voice_mode=VoiceMode.VISUAL_FALLBACK, render_mode="visual",
+            field_uid=_UID,
+            index=0,
+            field_id='x" onfocus="alert(1)',
+            field_type="rest",
+            label="L",
+            voice_mode=VoiceMode.VISUAL_FALLBACK,
+            render_mode="visual",
         )
         fhtml = await handler._build_fallback_html(q, AudioSessionConfig(form_uid="f1"))
         assert 'onfocus="' not in fhtml  # raw attribute breakout neutralized
@@ -552,9 +573,13 @@ class TestReviewHardening:
     @pytest.mark.asyncio
     async def test_answer_selection_wrong_field_rejected(self, handler: AudioFormWSHandler) -> None:
         """H-4: answering a non-current field is rejected and stores nothing."""
-        ws, ctx = await _boot(handler, _form(
-            _fld("color", FieldType.SELECT, options=[("red", "Red")]),
-            _fld("size", FieldType.SELECT, options=[("big", "Big")])))
+        ws, ctx = await _boot(
+            handler,
+            _form(
+                _fld("color", FieldType.SELECT, options=[("red", "Red")]),
+                _fld("size", FieldType.SELECT, options=[("big", "Big")]),
+            ),
+        )
         await _say(handler, ws, ctx, type="answer_selection", field_id="size", value="big")
         assert _sent(ws)[0]["type"] == "error"
         assert "size" not in ctx.engine.state.answers

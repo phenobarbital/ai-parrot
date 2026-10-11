@@ -274,9 +274,7 @@ class SubmissionPipeline:
                 forward_status = fwd_result.status_code
                 forward_error = fwd_result.error
                 if not forwarded:
-                    self.logger.warning(
-                        "Forward failed for submission %s: %s", submission.submission_id, forward_error
-                    )
+                    self.logger.warning("Forward failed for submission %s: %s", submission.submission_id, forward_error)
 
             # Cleanup: delete cached partial after successful submission
             if merge_session_id and self.partial_store is not None:

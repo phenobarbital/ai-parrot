@@ -1,4 +1,5 @@
 """FEAT-649 TASK-4229 — voice-capable sink columns are JSONB; envelopes serialised."""
+
 from __future__ import annotations
 
 import json

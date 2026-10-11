@@ -1,4 +1,5 @@
 """Design-time voice optimiser (FEAT-649): proposes hints/prompts, never writes."""
+
 from __future__ import annotations
 
 import difflib
@@ -154,7 +155,7 @@ class VoiceOptimizer:
                 continue
             labels = [(opt.value, normalize(_text(opt.label), lexicon)) for opt in field.options]
             for i, (va, la) in enumerate(labels):
-                for vb, lb in labels[i + 1:]:
+                for vb, lb in labels[i + 1 :]:
                     if difflib.SequenceMatcher(None, la, lb).ratio() >= _FUZZY_COLLISION:
                         findings.append(f"{field.field_id}: options '{va}' and '{vb}' sound alike")
             options = [{"value": o.value, "label": _text(o.label)} for o in field.options]

@@ -1,4 +1,5 @@
 """Tests for the deterministic option matcher (FEAT-649, TASK-4215)."""
+
 import pytest
 
 from parrot_formdesigner.audio.models import ReviewItemData
@@ -6,8 +7,12 @@ from parrot_formdesigner.audio.narration.lexicon import load_lexicon
 from parrot_formdesigner.audio.option_matcher import match_option, match_review_item
 from parrot_formdesigner.core.types import FieldType
 
-OPTS = [{"value": "r", "label": "Rojo"}, {"value": "g", "label": "Verde"}, {"value": "b", "label": "Azul", "disabled": True},
-        {"value": "s", "label": "Saltar"}]
+OPTS = [
+    {"value": "r", "label": "Rojo"},
+    {"value": "g", "label": "Verde"},
+    {"value": "b", "label": "Azul", "disabled": True},
+    {"value": "s", "label": "Saltar"},
+]
 
 
 @pytest.fixture
@@ -65,8 +70,10 @@ def test_match_option_skips_disabled_and_ties_confirm(es):
 
 
 def test_match_review_item(es):
-    items = [ReviewItemData(position=i + 1, field_id=f"f{i}", label=lab, answer_text="x")
-             for i, lab in enumerate(["Nombre", "Correo", "Teléfono"])]
+    items = [
+        ReviewItemData(position=i + 1, field_id=f"f{i}", label=lab, answer_text="x")
+        for i, lab in enumerate(["Nombre", "Correo", "Teléfono"])
+    ]
     assert match_review_item("cambiar la 2", items, es) == 2
     assert match_review_item("corregir la tercera", items, es) == 3
     assert match_review_item("cambiar la última", items, es) == 3

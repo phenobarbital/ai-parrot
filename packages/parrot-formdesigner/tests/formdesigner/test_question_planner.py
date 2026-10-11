@@ -1,4 +1,5 @@
 """Tests for QuestionPlanner (FEAT-649, TASK-4217)."""
+
 import logging
 
 import pytest
@@ -46,7 +47,10 @@ def form_and_manifest():
     )
     questions = AudioFormRenderer().split_into_questions(form)
     manifest = AudioFormManifest(
-        form_uid=str(form.form_uid), title="Plan", total_questions=len(questions), questions=questions,
+        form_uid=str(form.form_uid),
+        title="Plan",
+        total_questions=len(questions),
+        questions=questions,
         ws_endpoint="/ws",
     )
     return form, manifest

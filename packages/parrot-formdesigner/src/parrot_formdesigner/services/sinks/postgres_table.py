@@ -309,7 +309,9 @@ class PostgresTableSink(AbstractSubmissionSink):
                                 )
                             )
                         continue
-                    ddl_type = _ddl_type_for(field_type, voice=is_voice) if field_type is not None else _DEFAULT_DDL_TYPE
+                    ddl_type = (
+                        _ddl_type_for(field_type, voice=is_voice) if field_type is not None else _DEFAULT_DDL_TYPE
+                    )
                     await conn.execute(self._add_column_sql(column, ddl_type))
         except SinkTargetMismatchError:
             raise

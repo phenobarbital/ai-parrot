@@ -1,4 +1,5 @@
 """Hands-free voice command classification (FEAT-649, Module 4)."""
+
 from __future__ import annotations
 
 import difflib

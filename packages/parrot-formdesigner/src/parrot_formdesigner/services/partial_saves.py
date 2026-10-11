@@ -238,15 +238,12 @@ class PartialSaveStore:
             if self._redis is None and self._redis_url:
                 try:
                     from redis.asyncio import Redis  # type: ignore[import]
+
                     self._redis = await Redis.from_url(self._redis_url)
                 except ImportError:
-                    self.logger.warning(
-                        "redis package not installed — PartialSaveStore unavailable"
-                    )
+                    self.logger.warning("redis package not installed — PartialSaveStore unavailable")
                 except Exception as exc:
-                    self.logger.warning(
-                        "PartialSaveStore: failed to connect to Redis: %s", exc
-                    )
+                    self.logger.warning("PartialSaveStore: failed to connect to Redis: %s", exc)
         return self._redis
 
     async def _redis_set(self, redis: Any, partial: PartialFormData) -> None:
@@ -268,9 +265,7 @@ class PartialSaveStore:
                 exc,
             )
 
-    async def _redis_get(
-        self, redis: Any, form_id: str, session_id: str
-    ) -> PartialFormData | None:
+    async def _redis_get(self, redis: Any, form_id: str, session_id: str) -> PartialFormData | None:
         """Fetch and deserialize a PartialFormData entry from Redis.
 
         Args:
@@ -295,9 +290,7 @@ class PartialSaveStore:
             )
         return None
 
-    async def _redis_delete(
-        self, redis: Any, form_id: str, session_id: str
-    ) -> bool:
+    async def _redis_delete(self, redis: Any, form_id: str, session_id: str) -> bool:
         """Delete a PartialFormData entry from Redis.
 
         Args:

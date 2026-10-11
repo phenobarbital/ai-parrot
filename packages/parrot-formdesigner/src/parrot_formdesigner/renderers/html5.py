@@ -1231,7 +1231,7 @@ class HTML5Renderer(AbstractFormRenderer):
             f'data-place-level="state" data-cascade-parent="{country_id}">\n' + "\n".join(state_options) + "\n</select>"
             f'<select id="{city_id}" name="{field.field_id}[city]" class="{tw}" '
             f'data-place-level="city" data-cascade-parent="{state_id}">\n' + "\n".join(city_options) + "\n</select>"
-            f"</div>"
+            "</div>"
         )
 
     def _render_tree_select(self, field: FormField, value: Any, locale: str) -> str:

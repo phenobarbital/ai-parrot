@@ -1,4 +1,5 @@
 """FEAT-649 / TASK-4231 — every visual renderer exposes ``FormField.hint``."""
+
 from __future__ import annotations
 
 from io import BytesIO

@@ -1,4 +1,5 @@
 """FEAT-649 TASK-4228 — audio WS end-to-end over aiohttp (v2, commands, resume, block mode, adversarial)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -91,8 +92,12 @@ class FakeLLM:
         if self.exc:
             raise self.exc
         items = [
-            {"field_id": fid, "plausible": fid not in self.low, "confidence": 0.1 if fid in self.low else 0.95,
-             "reason": "odd" if fid in self.low else "ok"}
+            {
+                "field_id": fid,
+                "plausible": fid not in self.low,
+                "confidence": 0.1 if fid in self.low else 0.95,
+                "reason": "odd" if fid in self.low else "ok",
+            }
             for fid in ("name", "color", "agree", "comment")
         ]
         batch = PlausibilityBatch.model_validate({"items": items})
@@ -135,23 +140,51 @@ def _voice_form(**kwargs: Any) -> FormSchema:
         tenant=_TENANT,
         is_public=True,
         sections=[
-            FormSection(section_id="s1", title="About you", fields=[
-                FormField(field_id="name", field_type=FieldType.TEXT, label="What is your name?", required=True,
-                          hint="Your full name"),
-                FormField(field_id="color", field_type=FieldType.SELECT, label="Favourite color", required=True,
-                          options=[FieldOption(value="red", label="Red"), FieldOption(value="green", label="Green"),
-                                   FieldOption(value="blue", label="Blue"),
-                                   FieldOption(value="teal", label="Teal", disabled=True)]),
-                FormField(field_id="agree", field_type=FieldType.BOOLEAN, label="Do you agree?", required=True),
-            ]),
-            FormSection(section_id="s2", title="Details", fields=[
-                FormField(field_id="secret", field_type=FieldType.PASSWORD, label="Pick a passphrase", required=True),
-                FormField(field_id="comment", field_type=FieldType.TEXT, label="Any comment?", required=False,
-                          depends_on=DependencyRule(
-                              conditions=[FieldCondition(field_id="agree", operator=ConditionOperator.EQ,
-                                                         value=True)],
-                              effect="show")),
-            ]),
+            FormSection(
+                section_id="s1",
+                title="About you",
+                fields=[
+                    FormField(
+                        field_id="name",
+                        field_type=FieldType.TEXT,
+                        label="What is your name?",
+                        required=True,
+                        hint="Your full name",
+                    ),
+                    FormField(
+                        field_id="color",
+                        field_type=FieldType.SELECT,
+                        label="Favourite color",
+                        required=True,
+                        options=[
+                            FieldOption(value="red", label="Red"),
+                            FieldOption(value="green", label="Green"),
+                            FieldOption(value="blue", label="Blue"),
+                            FieldOption(value="teal", label="Teal", disabled=True),
+                        ],
+                    ),
+                    FormField(field_id="agree", field_type=FieldType.BOOLEAN, label="Do you agree?", required=True),
+                ],
+            ),
+            FormSection(
+                section_id="s2",
+                title="Details",
+                fields=[
+                    FormField(
+                        field_id="secret", field_type=FieldType.PASSWORD, label="Pick a passphrase", required=True
+                    ),
+                    FormField(
+                        field_id="comment",
+                        field_type=FieldType.TEXT,
+                        label="Any comment?",
+                        required=False,
+                        depends_on=DependencyRule(
+                            conditions=[FieldCondition(field_id="agree", operator=ConditionOperator.EQ, value=True)],
+                            effect="show",
+                        ),
+                    ),
+                ],
+            ),
         ],
         voice=VoiceFormConfig(),
         llm_validation=kwargs.pop("llm_validation", LLMValidationConfig(enabled=True)),
@@ -184,8 +217,14 @@ class _Env:
         validator.validate.return_value = AuthenticatedUser(user_id="test-user", username="testuser")
         self.app = web.Application()
         setup_form_api(
-            self.app, registry, client=llm, submission_storage=self.storage, blob_storage=self.blobs,
-            partial_store=self.partial_store, synthesizer=self.synth, transcriber=self.transcriber,
+            self.app,
+            registry,
+            client=llm,
+            submission_storage=self.storage,
+            blob_storage=self.blobs,
+            partial_store=self.partial_store,
+            synthesizer=self.synth,
+            transcriber=self.transcriber,
             token_validator=validator,
         )
         pipeline = self.app["submission_pipeline"]
@@ -265,12 +304,14 @@ async def start(ws: Any, env: _Env, **extra: Any) -> list[Any]:
 async def say(ws: Any, env: _Env, text: str, conf: float = 0.95, *stop: str) -> list[Any]:
     env.transcripts.append((text, conf))
     await ws.send_bytes(_WAV)
-    return await until(ws, *(stop or ("question", "review_start", "confirm_request", "answer_rejected", "error",
-                                       "command_ack")))
+    return await until(
+        ws, *(stop or ("question", "review_start", "confirm_request", "answer_rejected", "error", "command_ack"))
+    )
 
 
-def _http_request(form_uid: str, body: dict | None = None, *, method: str = "POST", merge: bool = False,
-                  session_id: str = "http-sess") -> MagicMock:
+def _http_request(
+    form_uid: str, body: dict | None = None, *, method: str = "POST", merge: bool = False, session_id: str = "http-sess"
+) -> MagicMock:
     """Handler-level request double (the /partial and submit routes sit behind navigator-auth in production)."""
     req = MagicMock(spec=web.Request)
     req.match_info = {"form_uid": form_uid}
@@ -281,7 +322,9 @@ def _http_request(form_uid: str, body: dict | None = None, *, method: str = "POS
     req.session = {"session": {"programs": [_TENANT]}}
     req.json = AsyncMock(return_value=body if body is not None else {})
     req.query = MagicMock()
-    req.query.get = MagicMock(side_effect=lambda key, default="": "true" if merge and key == "merge_partials" else default)
+    req.query.get = MagicMock(
+        side_effect=lambda key, default="": "true" if merge and key == "merge_partials" else default
+    )
     return req
 
 
@@ -351,7 +394,9 @@ class TestAudioWsV2Integration:
         await ws.send_json({"type": "review_confirm", "confirmed": True})
         done = await until(ws, "form_complete", "error", "validation_errors")
         fc = done[-1]
-        assert fc["type"] == "form_complete", [m for m in done if isinstance(m, dict) and m["type"] in ("validation_errors", "error")]
+        assert fc["type"] == "form_complete", [
+            m for m in done if isinstance(m, dict) and m["type"] in ("validation_errors", "error")
+        ]
         assert fc["submission_id"] and "hunter2" not in json.dumps(fc)
         # AC9: the audio submission went through the shared pipeline into the sink, preserving the URL tenant
         env.storage.store.assert_awaited_once()
@@ -398,8 +443,14 @@ class TestAudioWsV2Integration:
         assert audio_keys, "snapshot should be stored under the audio prefix"
 
         ws2 = await connect(client, env)
-        await ws2.send_json({"type": "start_session", "form_uid": str(env.form.form_uid), "protocol_version": 2,
-                             "resume_session_id": sid})
+        await ws2.send_json(
+            {
+                "type": "start_session",
+                "form_uid": str(env.form.form_uid),
+                "protocol_version": 2,
+                "resume_session_id": sid,
+            }
+        )
         frames = await until(ws2, "question", "error")
         resumed = jsons(frames, "session_resumed")
         assert resumed and set(resumed[0]["answered"]) == {"name", "color"}
@@ -416,8 +467,7 @@ class TestAudioWsV2Integration:
         assert set(body["data"]).isdisjoint({"phase", "answer_meta", "cursor", "history", "blob_refs"})
         assert "answer_meta" not in json.dumps(body)
         # ... and a merge_partials HTTP submit completes the same form (cross-channel)
-        resp = await handler.submit_data(_http_request(
-            uid, {"agree": True, "secret": "x"}, merge=True, session_id=sid))
+        resp = await handler.submit_data(_http_request(uid, {"agree": True, "secret": "x"}, merge=True, session_id=sid))
         assert resp.status == 200, resp.body
         stored = env.storage.store.call_args.args[0]
         assert stored.data["agree"] is True and stored.data["name"] == "Ann"
@@ -432,8 +482,10 @@ class TestAudioWsV2Integration:
         assert resp.status == 503 and json.loads(resp.body)["code"] == "PLAUSIBILITY_UNAVAILABLE"
         env.storage.store.assert_not_called()  # AC13: retryable, nothing stored
 
-        env2 = _Env(_voice_form(llm_validation=LLMValidationConfig(enabled=True, on_error="skip")),
-                    FakeLLM(exc=RuntimeError("llm down")))
+        env2 = _Env(
+            _voice_form(llm_validation=LLMValidationConfig(enabled=True, on_error="skip")),
+            FakeLLM(exc=RuntimeError("llm down")),
+        )
         resp = await env2.app["form_api_handler"].submit_data(_http_request(uid, dict(body)))
         assert resp.status == 200 and json.loads(resp.body)["plausibility"]["status"] == "skipped"
         env2.storage.store.assert_awaited_once()
@@ -515,8 +567,11 @@ class TestAudioWsV2Integration:
         from parrot_formdesigner.audio.session_store import AudioSessionStore
 
         env = voice_app
-        audio = next(r.handler.__self__ for r in env.app.router.routes()
-                     if r.resource is not None and r.resource.canonical.endswith("/audio/ws"))
+        audio = next(
+            r.handler.__self__
+            for r in env.app.router.routes()
+            if r.resource is not None and r.resource.canonical.endswith("/audio/ws")
+        )
         assert audio._pipeline is env.app["submission_pipeline"]  # AC9: one pipeline for HTTP and audio
         assert audio._blob_storage is env.blobs
         assert isinstance(audio._session_store, AudioSessionStore)
@@ -525,18 +580,23 @@ class TestAudioWsV2Integration:
 
         bare = web.Application()
         setup_form_api(bare, AsyncMock(), transcriber=AsyncMock())
-        audio2 = next(r.handler.__self__ for r in bare.router.routes()
-                      if r.resource is not None and r.resource.canonical.endswith("/audio/ws"))
+        audio2 = next(
+            r.handler.__self__
+            for r in bare.router.routes()
+            if r.resource is not None and r.resource.canonical.endswith("/audio/ws")
+        )
         assert audio2._session_store is None and audio2._pipeline is bare["submission_pipeline"]
 
     def test_routes_import_stays_light(self) -> None:
         import subprocess
         import sys
 
-        code = ("import sys, parrot_formdesigner.api.routes; "
-                "bad = [m for m in ('parrot.voice', 'parrot_formdesigner.audio.session_store', "
-                "'parrot_formdesigner.api.audio_ws') if m in sys.modules]; "
-                "sys.exit(1 if bad else 0)")
+        code = (
+            "import sys, parrot_formdesigner.api.routes; "
+            "bad = [m for m in ('parrot.voice', 'parrot_formdesigner.audio.session_store', "
+            "'parrot_formdesigner.api.audio_ws') if m in sys.modules]; "
+            "sys.exit(1 if bad else 0)"
+        )
         assert subprocess.run([sys.executable, "-c", code]).returncode == 0
 
 
@@ -574,8 +634,14 @@ class TestAudioWsActiveMarker:
         assert _snapshot_keys(env) and _active_keys(env) == []
         # resume re-claims the marker
         ws2 = await connect(client, env)
-        await ws2.send_json({"type": "start_session", "form_uid": str(env.form.form_uid), "protocol_version": 2,
-                             "resume_session_id": sid})
+        await ws2.send_json(
+            {
+                "type": "start_session",
+                "form_uid": str(env.form.form_uid),
+                "protocol_version": 2,
+                "resume_session_id": sid,
+            }
+        )
         await until(ws2, "question", "error")
         assert _active_keys(env)
         await ws2.close()
@@ -591,8 +657,14 @@ class TestAudioWsActiveMarker:
         await asyncio.sleep(0.2)
         env.form.version = "99.0"
         ws2 = await connect(client, env)
-        await ws2.send_json({"type": "start_session", "form_uid": str(env.form.form_uid), "protocol_version": 2,
-                             "resume_session_id": sid})
+        await ws2.send_json(
+            {
+                "type": "start_session",
+                "form_uid": str(env.form.form_uid),
+                "protocol_version": 2,
+                "resume_session_id": sid,
+            }
+        )
         frames = await until(ws2, "error")
         assert frames[-1]["code"] == "RESUME_STALE"
         await asyncio.sleep(0.1)
@@ -674,10 +746,18 @@ class TestAudioWsPartialMirror:
         fields = {f.field_id: str(f.field_uid) for f in env.form.iter_fields_recursive()}
         assert fields["name"] in partial.data and fields["secret"] not in partial.data
         # a cascade-cleared answer (AnswerCleared outbound) is dropped from the partial too
-        audio = next(r.handler.__self__ for r in env.app.router.routes()
-                     if r.resource is not None and r.resource.canonical.endswith("/audio/ws"))
-        ctx = SimpleNamespace(request={}, form=env.form, partial_session_id=None, state=SimpleNamespace(session_id=sid),
-                              engine=SimpleNamespace(manifest=SimpleNamespace(questions=[])))
+        audio = next(
+            r.handler.__self__
+            for r in env.app.router.routes()
+            if r.resource is not None and r.resource.canonical.endswith("/audio/ws")
+        )
+        ctx = SimpleNamespace(
+            request={},
+            form=env.form,
+            partial_session_id=None,
+            state=SimpleNamespace(session_id=sid),
+            engine=SimpleNamespace(manifest=SimpleNamespace(questions=[])),
+        )
         await audio._mirror_partial(ctx, AnswerCleared(field_id="name"))
         assert fields["name"] not in (await env.partial_store.get(uid, sid)).data
         await ws.close()
@@ -696,8 +776,11 @@ class TestAudioWsMinorHardening:
 
     async def test_guarded_sends_generic_message(self, aiohttp_client, voice_app: _Env) -> None:
         env = voice_app
-        audio = next(r.handler.__self__ for r in env.app.router.routes()
-                     if r.resource is not None and r.resource.canonical.endswith("/audio/ws"))
+        audio = next(
+            r.handler.__self__
+            for r in env.app.router.routes()
+            if r.resource is not None and r.resource.canonical.endswith("/audio/ws")
+        )
         sent: list[tuple[str, str]] = []
 
         async def fake_send_error(ws: Any, code: str, message: str) -> None:

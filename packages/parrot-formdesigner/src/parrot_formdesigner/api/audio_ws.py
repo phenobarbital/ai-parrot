@@ -150,14 +150,24 @@ def _sniff_audio_suffix(data: bytes) -> Optional[str]:
     return None
 
 
-
 _AUDIO_MIME_BY_SUFFIX = {".webm": "audio/webm", ".ogg": "audio/ogg", ".mp4": "audio/mp4", ".wav": "audio/wav"}
 
 # Wire messages that only exist in protocol v2 — never sent to a v1 client.
-_V2_ONLY_TYPES = frozenset({
-    "audio_segment", "plan_updated", "section_enter", "command_ack", "question_skipped", "answer_cleared",
-    "review_start", "review_item", "review_prompt", "plausibility_result", "session_resumed",
-})
+_V2_ONLY_TYPES = frozenset(
+    {
+        "audio_segment",
+        "plan_updated",
+        "section_enter",
+        "command_ack",
+        "question_skipped",
+        "answer_cleared",
+        "review_start",
+        "review_item",
+        "review_prompt",
+        "plausibility_result",
+        "session_resumed",
+    }
+)
 # Question keys added by v2.
 _V2_QUESTION_KEYS = ("section_uid", "hint", "ui_cue", "answer_modes", "narration")
 
@@ -300,9 +310,7 @@ class AudioFormWSHandler:
     # Main entry point
     # -------------------------------------------------------------------------
 
-    async def handle_websocket(
-        self, request: web.Request
-    ) -> web.WebSocketResponse:
+    async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle an incoming WebSocket connection for an audio form session.
 
         Args:
@@ -317,9 +325,7 @@ class AudioFormWSHandler:
         # handshake response MUST echo back one of the client's offered
         # subprotocols, or strict clients abort the connection immediately.
         offered_protocols = [
-            proto.strip()
-            for proto in request.headers.get("Sec-WebSocket-Protocol", "").split(",")
-            if proto.strip()
+            proto.strip() for proto in request.headers.get("Sec-WebSocket-Protocol", "").split(",") if proto.strip()
         ]
         ws = web.WebSocketResponse(
             heartbeat=30.0,
@@ -343,9 +349,7 @@ class AudioFormWSHandler:
         # tenant is reported as a WS close, never an HTTP 400.
         declared_tenant = request.match_info.get("tenant")
         if not declared_tenant:
-            await self._send_error(
-                ws, "TENANT_NOT_DECLARED", "This endpoint requires an explicit tenant."
-            )
+            await self._send_error(ws, "TENANT_NOT_DECLARED", "This endpoint requires an explicit tenant.")
             await ws.close(code=1008, message=b"tenant_not_declared")
             return ws
 
@@ -392,9 +396,7 @@ class AudioFormWSHandler:
                 except Exception as exc:  # noqa: BLE001
                     self.logger.warning("Active marker release failed: %s", type(exc).__name__)
             self._checkers.pop(ctx.state.session_id, None)
-            self.logger.debug(
-                "AudioFormWSHandler: session %s closed", ctx.state.session_id
-            )
+            self.logger.debug("AudioFormWSHandler: session %s closed", ctx.state.session_id)
 
         return ws
 
@@ -435,6 +437,7 @@ class AudioFormWSHandler:
                 "accepting anonymous connection (not for production use)"
             )
             from parrot.core.ws_auth import AuthenticatedUser  # type: ignore[import-untyped]
+
             return AuthenticatedUser(user_id="anonymous", username="anonymous")
 
         # Try Sec-WebSocket-Protocol header (token passed as subprotocol).
@@ -527,9 +530,7 @@ class AudioFormWSHandler:
             await self._send_error(ws, "SESSION_NOT_STARTED", "Call start_session first")
             return
         if self.transcriber is None:
-            await self._send_error(
-                ws, "TRANSCRIBER_UNAVAILABLE", "Audio transcription not configured"
-            )
+            await self._send_error(ws, "TRANSCRIBER_UNAVAILABLE", "Audio transcription not configured")
             return
 
         # Validate the incoming payload before touching the transcriber. A
@@ -547,8 +548,7 @@ class AudioFormWSHandler:
             await self._send_error(
                 ws,
                 "EMPTY_AUDIO",
-                "No audio captured. Hold the record button and speak, then "
-                "release to send.",
+                "No audio captured. Hold the record button and speak, then " "release to send.",
             )
             return
         if suffix is None:
@@ -565,7 +565,6 @@ class AudioFormWSHandler:
     # -------------------------------------------------------------------------
     # Session bootstrap
     # -------------------------------------------------------------------------
-
 
     async def _handle_start_session(
         self,
@@ -615,15 +614,12 @@ class AudioFormWSHandler:
             # FormAPIHandler._assert_form_tenant (TASK-2202). Close rather
             # than serve the form; never a 403 (existence oracle).
             self.logger.warning(
-                "Cross-tenant audio session blocked: form_uid=%s form.tenant=%s "
-                "declared=%s",
+                "Cross-tenant audio session blocked: form_uid=%s form.tenant=%s " "declared=%s",
                 form_uid,
                 form.tenant,
                 declared_tenant,
             )
-            await self._send_error(
-                ws, "TENANT_MISMATCH", "Form belongs to a different tenant."
-            )
+            await self._send_error(ws, "TENANT_MISMATCH", "Form belongs to a different tenant.")
             await ws.close(code=1008, message=b"tenant_mismatch")
             return
 
@@ -654,8 +650,12 @@ class AudioFormWSHandler:
         session.tenant = declared_tenant
 
         deps: dict[str, Any] = {
-            "form": form, "manifest": manifest, "cfg": resolve_voice_config(form, config),
-            "narrator": Narrator(locale), "lexicon": load_lexicon(locale), "state": session,
+            "form": form,
+            "manifest": manifest,
+            "cfg": resolve_voice_config(form, config),
+            "narrator": Narrator(locale),
+            "lexicon": load_lexicon(locale),
+            "state": session,
             "llm_cfg": form.llm_validation,
         }
         store = self._session_store
@@ -730,9 +730,7 @@ class AudioFormWSHandler:
         try:
             return AudioSessionConfig(**kwargs)
         except Exception as exc:  # noqa: BLE001 — never fail the session on config
-            self.logger.warning(
-                "Invalid audio session config (%s); using defaults", exc
-            )
+            self.logger.warning("Invalid audio session config (%s); using defaults", exc)
             return AudioSessionConfig(form_uid=form_uid, locale=locale)
 
     # -------------------------------------------------------------------------
@@ -790,8 +788,14 @@ class AudioFormWSHandler:
                 return None
             try:
                 blob_ref = await store_recording(
-                    self._blob_storage, audio=item.audio, mime=item.mime, form=form, field=field_def,
-                    session_id=state.session_id, submission_id=state.submission_id, tenant=ctx.tenant,
+                    self._blob_storage,
+                    audio=item.audio,
+                    mime=item.mime,
+                    form=form,
+                    field=field_def,
+                    session_id=state.session_id,
+                    submission_id=state.submission_id,
+                    tenant=ctx.tenant,
                 )
             except Exception as exc:  # noqa: BLE001 — recordings are best-effort evidence
                 self.logger.warning("Recording storage failed for field %s: %s", item.field_id, type(exc).__name__)
@@ -949,7 +953,7 @@ class AudioFormWSHandler:
             }
             audio = await self._synth_items(ctx, combined)
             for key, data in audio.items():
-                ctx.v1_audio[key[len("v1:"):]] = data
+                ctx.v1_audio[key[len("v1:") :]] = data
             return
         audio = await self._synth_items(ctx, {k: item.texts[k] for k in item.keys if k in item.texts})
         mime = ctx.segments.mime() if ctx.segments is not None else "audio/wav"
@@ -967,7 +971,9 @@ class AudioFormWSHandler:
         """Temp file → STT; returns ``TranscriptReady`` or ``IOFailed`` (never logs transcripts)."""
         if self.transcriber is None:
             return IOFailed(
-                type="_io_failed", request=item.type, code="TRANSCRIBER_UNAVAILABLE",
+                type="_io_failed",
+                request=item.type,
+                code="TRANSCRIBER_UNAVAILABLE",
                 detail="Audio transcription not configured",
             )
         suffix = _sniff_audio_suffix(item.audio) or ".webm"
@@ -985,7 +991,9 @@ class AudioFormWSHandler:
                     "Failed to decode/transcribe audio frame (%d bytes, %s): %s", len(item.audio), suffix, exc
                 )
                 return IOFailed(
-                    type="_io_failed", request=item.type, code="AUDIO_DECODE_ERROR",
+                    type="_io_failed",
+                    request=item.type,
+                    code="AUDIO_DECODE_ERROR",
                     detail="Could not decode the audio. Please re-record the answer.",
                 )
         finally:
@@ -1022,9 +1030,9 @@ class AudioFormWSHandler:
         engine, form = ctx.engine, ctx.form
         assert engine is not None and form is not None
         sensitive = {q.field_id for q in engine.manifest.questions if q.sensitive}
-        scalars = unwrap_voice({
-            fid: a.value for fid, a in ctx.state.answers.items() if a.value is not None and fid not in sensitive
-        })
+        scalars = unwrap_voice(
+            {fid: a.value for fid, a in ctx.state.answers.items() if a.value is not None and fid not in sensitive}
+        )
         checker = self._checker_for(form, session_id=ctx.state.session_id)
         try:
             report = await checker.check(form, scalars, locale=ctx.state.locale, fields=item.fields)
@@ -1088,11 +1096,14 @@ class AudioFormWSHandler:
             return IOFailed(
                 type="_io_failed", request=item.type, code="SUBMIT_FAILED", detail="The form could not be submitted."
             )
-        return SubmitDone(type="_submit_done", outcome={
-            "submission_id": outcome.submission_id,
-            "stored_in": outcome.stored_in,
-            "forwarded": outcome.forwarded,
-        })
+        return SubmitDone(
+            type="_submit_done",
+            outcome={
+                "submission_id": outcome.submission_id,
+                "stored_in": outcome.stored_in,
+                "forwarded": outcome.forwarded,
+            },
+        )
 
     # -------------------------------------------------------------------------
     # Snapshots
@@ -1140,9 +1151,7 @@ class AudioFormWSHandler:
         if store is None:
             return
         try:
-            revision = await store.save(
-                ctx.state.form_uid, ctx.state.session_id, snap, expected_revision=ctx.revision
-            )
+            revision = await store.save(ctx.state.form_uid, ctx.state.session_id, snap, expected_revision=ctx.revision)
         except SnapshotConflict:
             await self._send_error(ws, "RESUME_CONFLICT", "This session was modified from another connection")
             ctx.closed = True
@@ -1210,12 +1219,8 @@ class AudioFormWSHandler:
         if self._auto_synthesize:
             if session is None:
                 # No session to key a cache on → one-shot fallback.
-                return await synthesize_with_fallback(
-                    text, config=config, language=language
-                )
-            return await self._auto_synthesize_cached(
-                session, text, config=config, language=language
-            )
+                return await synthesize_with_fallback(text, config=config, language=language)
+            return await self._auto_synthesize_cached(session, text, config=config, language=language)
         return None
 
     async def _auto_synthesize_cached(
@@ -1297,7 +1302,6 @@ class AudioFormWSHandler:
             await synth.close()
         except Exception:  # noqa: BLE001 — best-effort cleanup
             pass
-
 
     async def _build_fallback_html(
         self,

@@ -1,4 +1,5 @@
 """Blob persistence for spoken-answer recordings (FEAT-649, Module 6)."""
+
 from __future__ import annotations
 
 import logging
@@ -25,8 +26,17 @@ async def _one_chunk(data: bytes) -> AsyncIterator[bytes]:
     yield data
 
 
-async def store_recording(storage: AbstractBlobStorage, *, audio: bytes, mime: str, form: FormSchema, field: FormField,
-                          session_id: str, submission_id: str, tenant: str | None) -> str:
+async def store_recording(
+    storage: AbstractBlobStorage,
+    *,
+    audio: bytes,
+    mime: str,
+    form: FormSchema,
+    field: FormField,
+    session_id: str,
+    submission_id: str,
+    tenant: str | None,
+) -> str:
     """storage.put(<one-chunk async stream>, metadata=BlobMetadata(...)) → blob_ref; same session+field overwrites."""
     metadata = BlobMetadata(
         form_uid=form.form_uid,

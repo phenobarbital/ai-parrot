@@ -1,4 +1,5 @@
 """Tests for AudioSessionStore and PartialSaveStore.remove_keys (FEAT-649 TASK-4219)."""
+
 import pytest
 
 from parrot_formdesigner.audio.models import Phase
