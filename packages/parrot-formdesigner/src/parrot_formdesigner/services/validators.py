@@ -713,7 +713,7 @@ class FormValidator:
                 s = str(value).strip()
                 return int(s) if ft == FieldType.INTEGER else float(s)
             except (ValueError, TypeError):
-                raise ValueError(f"'{value}' is not a valid number")
+                raise ValueError(f"'{value}' is not a valid number") from None
 
         elif ft == FieldType.BOOLEAN:
             if isinstance(value, bool):
@@ -759,7 +759,7 @@ class FormValidator:
             try:
                 return int(str(value).strip())
             except (ValueError, TypeError):
-                raise ValueError(f"'{value}' is not a valid integer")
+                raise ValueError(f"'{value}' is not a valid integer") from None
 
         elif ft == FieldType.LOCATION:
             return str(value).strip().upper()
@@ -893,7 +893,7 @@ class FormValidator:
             try:
                 json.dumps(value)
             except (TypeError, ValueError) as exc:
-                raise ValueError(f"AI capture value must be JSON-serialisable: {exc}")
+                raise ValueError(f"AI capture value must be JSON-serialisable: {exc}") from exc
             return value
 
         # FEAT-448 (TASK-2334) — credit_card REJECTS cardholder data, it does

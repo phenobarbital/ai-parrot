@@ -58,7 +58,7 @@ def extract_form_uid(request: web.Request) -> _uuid.UUID:
         raise web.HTTPBadRequest(
             text=json.dumps({"error": f"Invalid form_uid: {raw!r} is not a valid UUID"}),
             content_type="application/json",
-        )
+        ) from None
 
 
 def extract_uid(request: web.Request, param: str) -> _uuid.UUID:
@@ -86,7 +86,7 @@ def extract_uid(request: web.Request, param: str) -> _uuid.UUID:
         raise web.HTTPBadRequest(
             text=json.dumps({"error": f"Invalid {param}: {raw!r} is not a valid UUID"}),
             content_type="application/json",
-        )
+        ) from None
 
 
 if TYPE_CHECKING:
