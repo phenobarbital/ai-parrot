@@ -952,7 +952,9 @@ Reply to `start_session{resume_session_id}` instead of `session_started`'s first
 `yes_no`, `numeric`, `contains`, `fuzzy`, `llm`) and `blob_ref` (stored recording reference). `value` is omitted for
 sensitive fields.
 
-`confirm_request`: adds optional `matched` and `alternatives` (list of the same match shape).
+`confirm_request`: adds optional `matched` and `alternatives` (list of the same match shape), and `purpose`
+(`"answer"` default, or `"stop"` when the server asks the user to confirm a spoken STOP; for `"stop"` answer with
+`confirm_answer{confirmed}` — yes ends the session, no resumes; `field_id` may be `""` during review).
 
 `form_complete`: adds optional `stored_in` and `plausibility_summary` (object).
 

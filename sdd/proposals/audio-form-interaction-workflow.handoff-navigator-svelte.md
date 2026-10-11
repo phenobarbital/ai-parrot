@@ -24,7 +24,7 @@ Core pieces (names are suggestions; follow the repo's conventions):
 | `VoiceQuestionCard` | Label, then hint after the pause (visual mirror of the narration), transcript in an `aria-live="polite"` region, confidence state |
 | `VoiceControlCue` | Mounts the regular FormBuilder control for the field by `render_mode` / `ui_cue{control, focus, highlight, submit_via}`; uploader/date/etc. send `answer_payload`; a select renders `VoiceOptionList` |
 | `VoiceOptionList` | Options with **ordinal badges that match what was narrated**; `answer_accepted.matched` highlights the option; `confirm_request.alternatives` shows a disambiguation strip |
-| `VoiceConfirmBar` | For `confirm_request`: candidate text, "Sí / Repetir / Cambiar" by voice or buttons → `confirm_answer` |
+| `VoiceConfirmBar` | For `confirm_request` (`purpose: "stop"` → end-session prompt, not an answer): candidate text, "Sí / Repetir / Cambiar" by voice or buttons → `confirm_answer` |
 | `VoiceReviewList` | `review_start.items`; per item play TTS or the recording (`audio_segment{kind: review}`), "Cambiar" button, **plausibility flag** (`flag{confidence, reason}`) with "Mantener / Cambiar"; Send button → `review_confirm{confirmed: true}` |
 | `VoiceCommandHint` | Shows the available voice commands for the current phase (repeat / back / skip / help / stop / send / "cambiar la N") and the `command_ack` toast |
 | `VoiceResumeBanner` | When a `session_id` exists in `localStorage` for this `form_uid`: offer resume → `start_session{resume_session_id}` |
@@ -57,7 +57,7 @@ Keyboard shortcuts (space = push-to-talk override, R = repeat, B = back, Esc = s
 | S→C | `session_started` | `session_id`, `total_questions`, `title`, `protocol_version`, `hands_free?{auto_record, silence_ms}`, `max_recording_seconds?`, `prefetch_count?` |
 | S→C | `audio_segment` | `key`, `mime`, `kind` (`question`\|`hint`\|`options`\|`system`\|`review`), `text` — **followed by one binary frame** with the bytes; buffer by `key` |
 | S→C | `question` | `index`, `field_id`, `label`, `required`, `field_type`, `voice_mode`, `render_mode`, `sensitive`, `description?`, `audio?` (base64, v1 or `prefetch: false` only), `options?[]`, `fallback_html?`, `hint?`, `section_uid?`, `ui_cue?{control, focus, highlight, submit_via}`, `answer_modes?[]`, `narration?{text, audio_keys[], segments{}}` — play `audio_keys` in order; `pause:<ms>` is a client timer |
-| S→C | `transcription` / `confirm_request` | `transcription{field_id, text, confidence?}`; `confirm_request{field_id, transcript, confidence?, matched?, alternatives?}` |
+| S→C | `transcription` / `confirm_request` | `transcription{field_id, text, confidence?}`; `confirm_request{field_id, transcript, confidence?, matched?, alternatives?, purpose?}` — `purpose` is `"answer"` (default) or `"stop"` (confirming a spoken STOP: show a "¿Terminar?" prompt, reply `confirm_answer{confirmed}`; `field_id` may be `""`) |
 | S→C | `answer_accepted` / `answer_rejected` | `answer_accepted{field_id, source, value? (omitted when sensitive), matched?{value, label, method, score}, blob_ref?}`; `answer_rejected{field_id, error, code?}` |
 | S→C | `command_ack` | `command`, `field_id?` — after a recognised voice command; the effect message follows (`question`, `review_start`, `session_ended`…) |
 | S→C | `plan_updated` | `order[]`, `hidden[]`, `cleared[]`, `required_changed{field_id: bool}`, `hidden_by_cap[]` |

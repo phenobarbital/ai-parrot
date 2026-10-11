@@ -249,6 +249,7 @@ class ConfirmRequest(_Wire):
     confidence: float | None = None
     matched: OptionMatch | None = None
     alternatives: list[OptionMatch] | None = None
+    purpose: Literal["answer", "stop"] = "answer"  # "stop": confirming a spoken STOP, not an answer (additive)
 
 
 class AnswerAccepted(_Wire):

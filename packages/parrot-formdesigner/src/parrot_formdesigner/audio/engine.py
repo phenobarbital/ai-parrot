@@ -262,7 +262,7 @@ class AudioFormSession:
                 return [CommandAck(command=cmd.value)] + self.on_confirm(
                     ConfirmAnswer(type="confirm_answer", field_id=self.state.cursor or "",
                                   confirmed=cmd is VoiceCommand.YES))
-            return [ConfirmRequest(field_id=self.state.cursor or "", transcript="stop")]
+            return [ConfirmRequest(field_id=self.state.cursor or "", transcript="stop", purpose="stop")]
         if self.state.phase == Phase.REVIEW:
             return self.on_review_prompt_answer(ev)
         bad = self._guard(ev.field_id)
@@ -501,7 +501,7 @@ class AudioFormSession:
         """A spoken STOP is easy to mis-hear: ask yes/no (reusing the confirm turn) before ending."""
         self._stop_prev_phase = self.state.phase
         self.state.phase = Phase.CONFIRMING
-        return [ConfirmRequest(field_id=self.state.cursor or "", transcript="stop")]
+        return [ConfirmRequest(field_id=self.state.cursor or "", transcript="stop", purpose="stop")]
 
     def on_ping(self, ev: Ping) -> list[Outbound]:
         """Keep-alive."""

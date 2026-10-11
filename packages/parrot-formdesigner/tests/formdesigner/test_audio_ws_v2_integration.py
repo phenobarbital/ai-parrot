@@ -763,3 +763,18 @@ class TestAudioWsPartialSessionKey:
         await ws.send_json({"type": "review_confirm", "confirmed": True})
         await until(ws, "form_complete", "error")
         assert await env.partial_store.get(uid, "nav-1") is None
+
+
+class TestAudioWsConfirmPurpose:
+    """Round 3 #2: confirm_request carries a purpose discriminator."""
+
+    async def test_stop_confirm_has_purpose_stop_answer_confirm_default(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        await start(ws, env)
+        frames = await say(ws, env, "stop", 0.95, "confirm_request", "session_ended", "error")
+        assert frames[-1]["type"] == "confirm_request" and frames[-1]["purpose"] == "stop"
+        await say(ws, env, "no", 0.95, "question")
+        frames = await say(ws, env, "Ann", 0.2, "confirm_request", "question", "error")
+        assert frames[-1]["type"] == "confirm_request" and frames[-1]["purpose"] == "answer"
