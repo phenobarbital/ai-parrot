@@ -51,6 +51,8 @@ NARRATION_KEYS: frozenset[str] = frozenset(
         "command_ack_next",
         "command_ack_send",
         "command_ack_change",
+        "invalid_email",
+        "invalid_value",
     }
 )
 # Keys pre-synthesised at start_session as ``sys:<key>`` (no per-question variables).
@@ -69,6 +71,8 @@ _SYSTEM_KEYS: tuple[str, ...] = (
     "command_ack_next",
     "command_ack_send",
     "command_ack_change",
+    "invalid_email",
+    "invalid_value",
 )
 _PROMPT_WHITELIST = ("label", "hint", "section", "n", "total")
 _SELECT_TYPES = frozenset(

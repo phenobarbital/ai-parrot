@@ -7,7 +7,7 @@ import re
 import unicodedata
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
@@ -18,6 +18,34 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 DEFAULT_LOCALE = "en"
 _PUNCT_RE = re.compile(r"[^\w\s]", flags=re.UNICODE)
 _SPACE_RE = re.compile(r"\s+")
+
+
+class SpokenLexicon(BaseModel):
+    """Spoken-token tables for typed post-processors (FEAT-653). Keys are pre-folded with ``_strip_text``."""
+
+    units: dict[str, int] = Field(default_factory=dict)
+    tens: dict[str, int] = Field(default_factory=dict)
+    scales: dict[str, int] = Field(default_factory=dict)
+    number_joiners: list[str] = Field(default_factory=list)
+    decimal_words: list[str] = Field(default_factory=list)
+    minus_words: list[str] = Field(default_factory=list)
+    decimal_separator: str = "."
+    digit_aliases: dict[str, str] = Field(default_factory=dict)
+    repeat_words: dict[str, int] = Field(default_factory=dict)
+    plus_words: list[str] = Field(default_factory=list)
+    email_symbols: dict[str, str] = Field(default_factory=dict)
+    months: dict[str, int] = Field(default_factory=dict)
+    weekdays: dict[str, int] = Field(default_factory=dict)
+    relative_days: dict[str, int] = Field(default_factory=dict)
+    this_words: list[str] = Field(default_factory=list)
+    next_words: list[str] = Field(default_factory=list)
+    last_words: list[str] = Field(default_factory=list)
+    am_words: list[str] = Field(default_factory=list)
+    pm_words: list[str] = Field(default_factory=list)
+    noon_words: list[str] = Field(default_factory=list)
+    midnight_words: list[str] = Field(default_factory=list)
+    half_words: list[str] = Field(default_factory=list)
+    date_order: Literal["MDY", "DMY"] = "MDY"
 
 
 class Lexicon(BaseModel):
@@ -35,6 +63,7 @@ class Lexicon(BaseModel):
     commands: dict[str, list[str]] = Field(default_factory=dict)
     review_confirm: list[str] = Field(default_factory=list)
     review_change: list[str] = Field(default_factory=list)
+    spoken: SpokenLexicon = Field(default_factory=SpokenLexicon)
 
 
 def locale_chain(locale: str) -> list[str]:
@@ -104,6 +133,42 @@ def load_lexicon(locale: str) -> Lexicon:
     def _map(key: str) -> dict[str, int]:
         return {_strip_text(str(k)): int(v) for k, v in (raw.get(key) or {}).items()}
 
+    def _spoken(block: dict[str, Any]) -> SpokenLexicon:
+        def words(key: str) -> list[str]:
+            return [p for p in (_strip_text(str(v)) for v in (block.get(key) or [])) if p]
+
+        def ints(key: str) -> dict[str, int]:
+            return {_strip_text(str(k)): int(v) for k, v in (block.get(key) or {}).items()}
+
+        def strs(key: str) -> dict[str, str]:
+            return {_strip_text(str(k)): str(v) for k, v in (block.get(key) or {}).items()}
+
+        return SpokenLexicon(
+            units=ints("units"),
+            tens=ints("tens"),
+            scales=ints("scales"),
+            number_joiners=words("number_joiners"),
+            decimal_words=words("decimal_words"),
+            minus_words=words("minus_words"),
+            decimal_separator=str(block.get("decimal_separator") or "."),
+            digit_aliases=strs("digit_aliases"),
+            repeat_words=ints("repeat_words"),
+            plus_words=words("plus_words"),
+            email_symbols=strs("email_symbols"),
+            months=ints("months"),
+            weekdays=ints("weekdays"),
+            relative_days=ints("relative_days"),
+            this_words=words("this_words"),
+            next_words=words("next_words"),
+            last_words=words("last_words"),
+            am_words=words("am_words"),
+            pm_words=words("pm_words"),
+            noon_words=words("noon_words"),
+            midnight_words=words("midnight_words"),
+            half_words=words("half_words"),
+            date_order="DMY" if str(block.get("date_order") or "MDY").upper() == "DMY" else "MDY",
+        )
+
     commands = {
         str(name): [p for p in (_strip_text(str(v)) for v in (phrases or [])) if p]
         for name, phrases in (raw.get("commands") or {}).items()
@@ -121,4 +186,5 @@ def load_lexicon(locale: str) -> Lexicon:
         commands=commands,
         review_confirm=_list("review_confirm"),
         review_change=_list("review_change"),
+        spoken=_spoken(raw.get("spoken") or {}),
     )
