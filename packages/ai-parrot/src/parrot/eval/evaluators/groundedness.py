@@ -1,4 +1,5 @@
 """GroundednessMetric — offline FEAT-398 scoring over a Trajectory (FEAT-652, Module 3)."""
+
 from __future__ import annotations
 
 import logging
@@ -113,7 +114,5 @@ class GroundednessMetric(Metric):
         if report.no_evidence or report.no_factual_content:
             return MetricScore(name=self.name, value=1.0, passed=True, detail=detail)
 
-        passed = report.score >= self._min_score and (
-            not self._fail_on_contradicted or not report.contradicted
-        )
+        passed = report.score >= self._min_score and (not self._fail_on_contradicted or not report.contradicted)
         return MetricScore(name=self.name, value=report.score, passed=passed, detail=detail)

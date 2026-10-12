@@ -1,4 +1,5 @@
 """Unit tests for GroundednessMetric (TASK-4239)."""
+
 from parrot.eval.evaluators.groundedness import GroundednessMetric
 from parrot.eval.models import EvalTask, ToolCallRecord, Trajectory, TurnRecord
 from parrot.eval.registry import get_metric
