@@ -309,10 +309,16 @@ checked against `build_slot_presence` grouping (presence.py:50-54), not assumed.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4207
+- Feature: products-found-endcap
+- Implementation SHA: 432a289871c845c00363b9ddbce65a098b032d1b
+- Closed at (UTC): 2026-10-12T13:54:35+00:00
+- Fix commits: 21a91872d91a22e8a1faa979658e8d57f0d7058e
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 506.2s · Tokens: n/a |
+| validation_note | Selector run exit 5 (xdist collected no tests; harness issue). Direct run: test_products_found_types.py 11 passed; planogram_cycle only baseline failures (test_ocr_reader pillow pin; gitignored examples/ fixtures). Feedback coder-feedback:4cb7bed6bf9f71d9c14e1361. |
