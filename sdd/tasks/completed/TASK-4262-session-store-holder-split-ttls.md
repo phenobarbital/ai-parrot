@@ -338,8 +338,8 @@ See the blueprint test block above (spec §4, M1 rows).
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (sequential, no coder seats)
+**Date**: 2026-10-12
+**Notes**: Implemented per blueprint; 9 tests pass; 5 mutations (drop refresh call, drop same-session guard, ignore config TTL, drop legacy parse, marker TTL=resume TTL) each turned a test red. ruff unavailable in venv (not run).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
