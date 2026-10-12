@@ -9,6 +9,8 @@ with ``*_Done`` / ``PlanReady`` / ``IOFailed`` events.
 from __future__ import annotations
 
 import logging
+import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
@@ -16,7 +18,7 @@ from zoneinfo import ZoneInfo
 from ..core.llm_validation import LLMValidationConfig, PlausibilityReport, llm_validation_enabled
 from ..core.schema import FormField, FormSchema
 from ..core.types import FieldType
-from ..core.voice import VoiceFormConfig, field_voice_meta, is_sensitive
+from ..core.voice import FieldVoiceMeta, VoiceFormConfig, field_voice_meta, is_sensitive
 from ..core.voice_answer import wrap_voice
 from .commands import VoiceCommand, classify_command
 from .events import (
@@ -48,6 +50,7 @@ from .events import (
     Question,
     QuestionSkipped,
     RepeatQuestion,
+    RefineValue,
     Replan,
     ReviewConfirm,
     ReviewEdit,
@@ -69,6 +72,7 @@ from .events import (
     Transcribe,
     Transcription,
     TranscriptReady,
+    ValueRefined,
     ValidationErrors,
 )
 from .models import (
@@ -84,13 +88,23 @@ from .narration.engine import Narrator
 from .narration.lexicon import Lexicon, normalize
 from .option_matcher import match_option, match_review_item
 from .planner import PlanDelta, QuestionPlanner
-from .normalize import NormalizeContext, NormalizeResult, normalize_spoken, validate_typed
+from .normalize import REFINABLE_TYPES, NormalizeContext, NormalizeResult, normalize_spoken, validate_typed
 from .session_store import AudioSnapshot
 
 _SENSITIVE_MASK = "[hidden]"
 _ANSWERING_PHASES = (Phase.ASKING, Phase.CONFIRMING)
 _SKIPPED_META_KEY = "_skipped"  # answer_meta entry carrying the skipped field ids (snapshot only)
 _REVIEW_FIELD = "_review"  # Transcribe.field_id used for spoken review turns
+
+
+@dataclass
+class _PendingRefine:
+    """An answer parked while the LLM post-processor runs (never snapshotted)."""
+
+    evidence: AudioAnswer
+    rules: NormalizeResult
+    rules_by: str | None
+    request_id: str
 
 
 class EngineError(Exception):
@@ -135,6 +149,8 @@ class AudioFormSession:
         self._pl_unchecked: set[str] = set()  # fields whose last plausibility batch was blocked (on_error=block)
         self._stop_prev_phase: Phase | None = None  # set while a spoken STOP awaits yes/no confirmation
         self._resume_snap: AudioSnapshot | None = None
+        self._refining: _PendingRefine | None = None
+        self._refine_warned: set[str] = set()
         self._synthesized: set[str] = set()  # field_ids whose narration has already been requested
         self._started_emitted = False
         self._last_section: str | None = None
@@ -158,6 +174,7 @@ class AudioFormSession:
             "review_confirm": self.on_review_confirm,
             "review_edit": self.on_review_edit,
             "_plausibility_done": self.on_plausibility_done,
+            "_value_refined": self.on_value_refined,
         }
 
     def handle(self, event: InboundEvent) -> list[Outbound]:
@@ -435,7 +452,22 @@ class AudioFormSession:
         result = normalize_spoken(field.field_type, ev.text, ctx=self._normalize_ctx()) if meta.normalize else None
         candidate = result if result is not None else NormalizeResult.accepted(ev.text)
         refined_by = "rules" if result is not None else None
-        # (TASK-4252 inserts the optional LLM refine hand-off here)
+        if self._llm_refine_enabled(field, meta):
+            request_id = uuid.uuid4().hex
+            self._refining = _PendingRefine(
+                evidence=evidence, rules=candidate, rules_by=refined_by, request_id=request_id
+            )
+            return out + [
+                RefineValue(
+                    field_id=ev.field_id,
+                    request_id=request_id,
+                    transcript=ev.text,
+                    candidate=candidate.value,
+                    field_type=field.field_type.value,
+                    label=q.label,
+                    today=self._normalize_ctx().now.date().isoformat(),
+                )
+            ]
         return out + self._gate(evidence, candidate, refined_by=refined_by, llm_confidence=None)
 
     def _request_confirm(
@@ -567,6 +599,41 @@ class AudioFormSession:
             out.append(StoreBlob(field_id=field_id, audio=audio, mime=mime or "audio/webm", version=version))
         self._last_audio = None
         return out + [self._save(), Replan()]
+
+    def _llm_refine_enabled(self, field: FormField, meta: FieldVoiceMeta) -> bool:
+        """meta.llm_refine if not None else cfg.llm_refine_values; False for sensitive fields and for any type
+        outside REFINABLE_TYPES = {EMAIL, PHONE, NUMBER, INTEGER, DATE, TIME, DATETIME}."""
+        wanted = meta.llm_refine if meta.llm_refine is not None else self.cfg.llm_refine_values
+        if not wanted or is_sensitive(field):
+            return False
+        if field.field_type not in REFINABLE_TYPES:
+            if meta.llm_refine and field.field_id not in self._refine_warned:
+                self._refine_warned.add(field.field_id)
+                self.logger.warning(
+                    "llm_refine ignored for field %s: type %s is not refinable", field.field_id, field.field_type.value
+                )
+            return False
+        return True
+
+    def on_value_refined(self, ev: ValueRefined) -> list[Outbound]:
+        """Drop when stale (no in-flight refine, field or request_id mismatch); else re-normalize and _gate."""
+        pending = self._refining
+        if pending is None or ev.request_id != pending.request_id or ev.field_id != pending.evidence.field_id:
+            return []
+        self._refining = None
+        if self.state.cursor != ev.field_id:
+            return []
+        field = self._fields[ev.field_id]
+        if ev.status == "ok" and ev.value is not None:
+            renorm = normalize_spoken(field.field_type, ev.value, ctx=self._normalize_ctx())
+            if renorm is not None and renorm.status != "rejected":
+                return self._gate(
+                    pending.evidence,
+                    renorm,
+                    refined_by="llm",
+                    llm_confidence=ev.confidence if ev.confidence is not None else 0.0,
+                )
+        return self._gate(pending.evidence, pending.rules, refined_by=pending.rules_by, llm_confidence=None)
 
     def _normalize_ctx(self) -> NormalizeContext:
         """now = clock() in ZoneInfo(state.timezone) when valid, else UTC with timezone_known=False."""
@@ -1157,6 +1224,7 @@ class AudioFormSession:
         self.state.timezone = ev.timezone
         self.state.protocol_version = ev.protocol_version
         self.state.pending = None
+        self._refining = None
         self.state.plausibility = None
         self.state.cursor = None
         self.state.plan = []
