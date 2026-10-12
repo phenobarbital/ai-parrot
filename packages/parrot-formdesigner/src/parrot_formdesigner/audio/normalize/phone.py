@@ -13,6 +13,34 @@ from .numbers import parse_numbers, tokenize
 logger = logging.getLogger(__name__)
 
 _NON_DIGIT_RE = re.compile(r"\D")
+_EXTENSION_WORDS = frozenset({"extension", "extensions", "ext", "extn", "x"})
+_EXTENSION_GLUED_RE = re.compile(r"^(?:ext|extn|x)(\d+)$")
+
+
+def _split_extension(tokens: list[str]) -> tuple[list[str], bool]:
+    """Cut the utterance at an extension marker; returns ``(main number tokens, had an extension)``."""
+    for i, tok in enumerate(tokens):
+        if tok in _EXTENSION_WORDS or _EXTENSION_GLUED_RE.match(tok):
+            return tokens[:i], True
+    return tokens, False
+
+
+def _hundred_digits(run: list[str], spoken: SpokenLexicon) -> list[str]:
+    """Digits of a number-word run where 'eight hundred' is read as 8-0-0, not as the quantity 800 + the next word."""
+    parts: list[str] = []
+    start = 0
+    for k, tok in enumerate(run):
+        value = spoken.scales.get(tok, 0)
+        if 200 <= value <= 900 and value % 100 == 0:  # 'ochocientos' is the chunk 8-0-0
+            parts.extend(str(num) for num in parse_numbers(run[start:k], spoken))
+            parts.append(str(value))
+            start = k + 1
+        elif value == 100 and k > start and spoken.units.get(run[k - 1], 0) in range(1, 10):
+            parts.extend(str(num) for num in parse_numbers(run[start : k - 1], spoken))
+            parts.append(str(spoken.units[run[k - 1]]) + "00")
+            start = k + 1
+    parts.extend(str(num) for num in parse_numbers(run[start:], spoken))
+    return parts
 
 
 def _is_number_word(token: str, spoken: SpokenLexicon) -> bool:
@@ -28,8 +56,8 @@ def _build(tokens: list[str], spoken: SpokenLexicon) -> tuple[str, str]:
     n = len(tokens)
     while i < n:
         tok = tokens[i]
-        if tok in spoken.plus_words or (tok.startswith("+") and i == 0):
-            if i == 0 and not digits:
+        if tok in spoken.plus_words or (tok.startswith("+") and not digits):
+            if not digits:
                 plus = "+"
             if tok.startswith("+") and len(tok) > 1:
                 tok = tok[1:]
@@ -49,7 +77,7 @@ def _build(tokens: list[str], spoken: SpokenLexicon) -> tuple[str, str]:
             j = i
             while j < n and _is_number_word(tokens[j], spoken) and tokens[j] not in spoken.digit_aliases:
                 j += 1
-            parts = [str(num) for num in parse_numbers(tokens[i:j], spoken)]
+            parts = _hundred_digits(tokens[i:j], spoken)
             if parts and repeat > 1:
                 parts[0] = parts[0][0] * repeat + parts[0][1:] if len(parts[0]) > 1 else parts[0] * repeat
             repeat = 1
@@ -69,7 +97,8 @@ def normalize_phone(text: str, ctx: NormalizeContext) -> NormalizeResult:
     """Leading plus word/'+' kept; digit words, digit_aliases, repeat_words, compound tens ('fifty five'→'55');
     every separator (space , . - ( )) dropped; accepted iff PHONE_PATTERN matches, else rejected (too_short)."""
     try:
-        plus, digits = _build(tokenize(text), ctx.lexicon.spoken)
+        tokens, has_extension = _split_extension(tokenize(text))
+        plus, digits = _build(tokens, ctx.lexicon.spoken)
     except Exception as exc:  # noqa: BLE001
         logger.debug("normalize_phone failed: %s", type(exc).__name__)
         return NormalizeResult.rejected("no_parse")
@@ -77,5 +106,7 @@ def normalize_phone(text: str, ctx: NormalizeContext) -> NormalizeResult:
         return NormalizeResult.rejected("no_parse")
     value = plus + digits
     if len(digits) >= 7 and PHONE_PATTERN.match(value):
+        if has_extension:  # the extension is not part of the stored number: the user must see what is kept
+            return NormalizeResult.confirm(value, "has_extension")
         return NormalizeResult.accepted(value)
     return NormalizeResult.rejected("too_short", value=value)

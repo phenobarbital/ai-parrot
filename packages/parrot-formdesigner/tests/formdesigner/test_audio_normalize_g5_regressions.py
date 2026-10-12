@@ -207,8 +207,8 @@ def test_phone_eight_hundred_is_eight_zero_zero() -> None:
     assert (res.status, res.value) == ("accepted", "18005551212")
     res = run(FieldType.PHONE, "eight hundred five five five one two one two")
     assert (res.status, res.value) == ("accepted", "8005551212")
-    res = run(FieldType.PHONE, "ocho cientos cinco cinco cinco uno dos uno dos", "es")
-    assert res.status != "accepted" or res.value == "8005551212"
+    res = run(FieldType.PHONE, "ochocientos cinco cinco cinco uno dos uno dos", "es")
+    assert (res.status, res.value) == ("accepted", "8005551212")
 
 
 @pytest.mark.parametrize(
