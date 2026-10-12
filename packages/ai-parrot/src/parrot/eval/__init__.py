@@ -8,6 +8,7 @@ from here so callers can do:
 ``EvalTask.model_rebuild()`` is called here once ``SandboxSpec`` is available
 to resolve the forward reference in the ``sandbox_spec`` field.
 """
+
 from parrot.eval.models import (
     EvalDataset,
     EvalResult,
@@ -50,6 +51,7 @@ try:
         EvalRunCompleted,
         EvalRunStarted,
     )
+
     _EVENTS_AVAILABLE = True
 except ImportError:
     _EVENTS_AVAILABLE = False
