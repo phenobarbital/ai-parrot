@@ -229,3 +229,133 @@ def test_phone_plus_anywhere_before_digits(locale: str, text: str, expected: str
 def test_phone_plus_after_digits_is_not_a_prefix() -> None:
     res = run(FieldType.PHONE, "555 0100 plus")
     assert res.value == "5550100"
+
+
+# --------------------------------------------------------------------------- second pass: TIME around noon/midnight
+@pytest.mark.parametrize(
+    "locale,text,expected",
+    [
+        ("en", "a quarter to midnight", "23:45"),
+        ("en", "quarter to midnight", "23:45"),
+        ("en", "five to midnight", "23:55"),
+        ("en", "ten to midnight", "23:50"),
+        ("en", "quarter past midnight", "00:15"),
+        ("en", "half past midnight", "00:30"),
+        ("en", "twenty past midnight", "00:20"),
+        ("en", "a quarter to noon", "11:45"),
+        ("en", "ten to noon", "11:50"),
+        ("en", "ten to midday", "11:50"),
+        ("en", "twenty past noon", "12:20"),
+        ("en", "half past noon", "12:30"),
+        ("es", "menos cuarto para la medianoche", "23:45"),
+        ("es", "cuarto para la medianoche", "23:45"),
+        ("es", "diez para la medianoche", "23:50"),
+        ("es", "diez para el mediodía", "11:50"),
+        ("es", "medianoche y cuarto", "00:15"),
+        ("es", "mediodía y media", "12:30"),
+        ("es", "mediodía y diez", "12:10"),
+    ],
+)
+def test_time_relative_to_noon_or_midnight(locale: str, text: str, expected: str) -> None:
+    res = run(FieldType.TIME, text, locale)
+    assert (res.status, res.value) == ("accepted", expected)
+
+
+@pytest.mark.parametrize("locale,text", [("en", "midnight"), ("en", "at midnight"), ("en", "noon"), ("es", "medianoche"), ("es", "al mediodía")])
+def test_time_plain_noon_midnight_still_accepted(locale: str, text: str) -> None:
+    assert run(FieldType.TIME, text, locale).status == "accepted"
+
+
+@pytest.mark.parametrize(
+    "locale,text",
+    [("en", "half midnight"), ("en", "to midnight"), ("en", "banana to midnight"), ("en", "midnight 5"), ("es", "medianoche banana")],
+)
+def test_time_noon_midnight_with_leftovers_never_accepted(locale: str, text: str) -> None:
+    assert run(FieldType.TIME, text, locale).status != "accepted"
+
+
+# --------------------------------------------------------------------------- second pass: NUMBER fractions
+@pytest.mark.parametrize(
+    "locale,text,expected",
+    [
+        ("en", "one and a quarter", 1.25),
+        ("en", "two and a quarter", 2.25),
+        ("en", "two and three quarters", 2.75),
+        ("en", "ten and three quarters", 10.75),
+        ("en", "one and one quarter", 1.25),
+        ("es", "uno y cuarto", 1.25),
+        ("es", "cinco y cuarto", 5.25),
+        ("es", "dos y un cuarto", 2.25),
+        ("es", "dos y tres cuartos", 2.75),
+    ],
+)
+def test_number_quarters_accepted(locale: str, text: str, expected: float) -> None:
+    res = run(FieldType.NUMBER, text, locale)
+    assert (res.status, res.value) == ("accepted", expected)
+
+
+@pytest.mark.parametrize(
+    "locale,text",
+    [
+        ("en", "one and a third"),
+        ("en", "two and two thirds"),
+        ("en", "three and two fifths"),
+        ("en", "one and an eighth"),
+        ("es", "dos y un tercio"),
+        ("es", "tres y dos quintos"),
+        ("es", "uno y un octavo"),
+        ("en", "two and five quarters"),
+    ],
+)
+def test_number_unsupported_fractions_confirm_never_dropped(locale: str, text: str) -> None:
+    res = run(FieldType.NUMBER, text, locale)
+    assert res.status == "confirm"
+    assert res.value is not None and float(res.value) != int(float(res.value))
+
+
+def test_number_third_value_is_the_fraction() -> None:
+    assert run(FieldType.NUMBER, "one and a third").value == pytest.approx(1.3333, abs=1e-4)
+    assert run(FieldType.NUMBER, "three and two fifths").value == pytest.approx(3.4)
+
+
+@pytest.mark.parametrize(
+    "locale,text",
+    [("en", "five or six"), ("en", "12 and 15"), ("en", "twelve, fifteen"), ("es", "cinco o seis"), ("es", "doce y quince"), ("es", "10 o 20")],
+)
+def test_number_two_numbers_not_glued(locale: str, text: str) -> None:
+    res = run(FieldType.NUMBER, text, locale)
+    assert (res.status, res.reason) == ("rejected", "multiple_values")
+
+
+# --------------------------------------------------------------------------- second pass: PHONE two numbers
+@pytest.mark.parametrize(
+    "locale,text",
+    [
+        ("en", "555 1234 or 555 9876"),
+        ("en", "555 123 4567 and 555 987 6543"),
+        ("en", "555 1234, 555 9876"),
+        ("en", "five five five one two three four or five five five nine eight seven six"),
+        ("en", "555 1234 or maybe 555 9876"),
+        ("es", "555 1234 o 555 9876"),
+        ("es", "555 123 4567 y 555 987 6543"),
+        ("es", "cinco cinco cinco uno dos tres cuatro o cinco cinco cinco nueve ocho siete seis"),
+    ],
+)
+def test_phone_two_numbers_not_glued(locale: str, text: str) -> None:
+    res = run(FieldType.PHONE, text, locale)
+    assert res.status != "accepted"
+    assert (res.status, res.reason) == ("rejected", "multiple_values")
+
+
+@pytest.mark.parametrize(
+    "locale,text,expected",
+    [
+        ("en", "555, 123, 4567", "5551234567"),
+        ("en", "five five five, one two three, four five six seven", "5551234567"),
+        ("en", "555 1234 and 5", "55512345"),
+        ("es", "555 123 y 4567", "5551234567"),
+    ],
+)
+def test_phone_pauses_within_one_number_still_accepted(locale: str, text: str, expected: str) -> None:
+    res = run(FieldType.PHONE, text, locale)
+    assert (res.status, res.value) == ("accepted", expected)

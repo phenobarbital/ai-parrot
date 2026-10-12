@@ -14,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 _NON_DIGIT_RE = re.compile(r"\D")
 _EXTENSION_WORDS = frozenset({"extension", "extensions", "ext", "extn", "x"})
+_SEPARATOR_RE = re.compile(r"[,;]|\b(?:or|o|and|y|u)\b", flags=re.IGNORECASE)
+_MIN_PHONE_DIGITS = 7
 _EXTENSION_GLUED_RE = re.compile(r"^(?:ext|extn|x)(\d+)$")
 
 
@@ -93,12 +95,27 @@ def _build(tokens: list[str], spoken: SpokenLexicon) -> tuple[str, str]:
     return plus, "".join(digits)
 
 
+def _holds_several_numbers(text: str, spoken: SpokenLexicon) -> bool:
+    """True when ``or`` / ``o`` / ``and`` / ``y`` / a comma separates two parts that are each a whole phone number.
+
+    A pause inside one number ("555, 123, 4567") leaves parts too short to stand alone, so it is not flagged.
+    """
+    complete = 0
+    for part in _SEPARATOR_RE.split(text):
+        main, _ = _split_extension(tokenize(part))
+        if len(_build(main, spoken)[1]) >= _MIN_PHONE_DIGITS:
+            complete += 1
+    return complete > 1
+
+
 def normalize_phone(text: str, ctx: NormalizeContext) -> NormalizeResult:
     """Leading plus word/'+' kept; digit words, digit_aliases, repeat_words, compound tens ('fifty five'→'55');
     every separator (space , . - ( )) dropped; accepted iff PHONE_PATTERN matches, else rejected (too_short)."""
     try:
         tokens, has_extension = _split_extension(tokenize(text))
         plus, digits = _build(tokens, ctx.lexicon.spoken)
+        if _holds_several_numbers(text, ctx.lexicon.spoken):  # two numbers are never one number
+            return NormalizeResult.rejected("multiple_values")
     except Exception as exc:  # noqa: BLE001
         logger.debug("normalize_phone failed: %s", type(exc).__name__)
         return NormalizeResult.rejected("no_parse")
