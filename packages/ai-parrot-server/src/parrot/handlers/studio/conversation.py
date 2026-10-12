@@ -46,12 +46,15 @@ def studio_conversation_kwargs() -> dict[str, Any]:
         memory_config["redis_url"] = str(url)
     raw_ttl = config.get(TTL_SETTING)
     try:
-        ttl = int(float(raw_ttl)) if raw_ttl not in (None, "") else DEFAULT_TTL_SECONDS
-    except (TypeError, ValueError):
-        logger.error("%s=%r is not a number; using %s", TTL_SETTING, raw_ttl, DEFAULT_TTL_SECONDS)
+        ttl = int(raw_ttl) if raw_ttl not in (None, "") else DEFAULT_TTL_SECONDS
+        if ttl < 0:
+            raise ValueError("TTL must be non-negative")
+    except (TypeError, ValueError, OverflowError):
+        logger.error("%s=%r is not a non-negative integer; using %s", TTL_SETTING, raw_ttl, DEFAULT_TTL_SECONDS)
         ttl = DEFAULT_TTL_SECONDS
     if ttl > 0:
         memory_config["history_ttl"] = ttl
+        memory_config["omission_ttl"] = ttl
     return {"memory_type": "redis", "memory_config": memory_config}
 
 

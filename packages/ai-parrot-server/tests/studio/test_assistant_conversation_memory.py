@@ -6,12 +6,13 @@ Real app, real assistant handler, session and Redis conversation backend; only t
 from __future__ import annotations
 
 import os
+import uuid
 
 import pytest
 from parrot.bots.studio import AgentStudioAgent
 from parrot.clients.factory import SUPPORTED_CLIENTS
 from parrot.handlers.studio import meta_agent
-from parrot.handlers.studio.conversation import KEY_PREFIX
+from parrot.handlers.studio import conversation
 from redis.asyncio import Redis
 
 from ._scripted_llm import PROVIDER, ScriptedClient, history_seen
@@ -27,9 +28,10 @@ async def shared_redis(monkeypatch):
         pytest.skip("TEST_STUDIO_REDIS_URL not set; the redis conversation backend needs a Redis")
     monkeypatch.setenv("STUDIO_CONVERSATION_BACKEND", "redis")
     monkeypatch.setenv("STUDIO_CONVERSATION_REDIS_URL", REDIS_URL)
+    monkeypatch.setattr(conversation, "KEY_PREFIX", f"studio_test_{uuid.uuid4().hex}")
     client = Redis.from_url(REDIS_URL, decode_responses=True)
     yield client
-    keys = [k async for k in client.scan_iter(match=f"{KEY_PREFIX}*")]
+    keys = [k async for k in client.scan_iter(match=f"{conversation.KEY_PREFIX}*")]
     if keys:
         await client.delete(*keys)
     await client.aclose()
@@ -39,9 +41,7 @@ async def shared_redis(monkeypatch):
 def assistant(monkeypatch):
     """The assistant built on the scripted LLM (everything else — configure, tools, memory — is real)."""
     monkeypatch.setitem(SUPPORTED_CLIENTS, PROVIDER, ScriptedClient)
-    monkeypatch.setattr(
-        meta_agent, "AgentStudioAgent", lambda **kw: AgentStudioAgent(llm=f"{PROVIDER}:m", **kw)
-    )
+    monkeypatch.setattr(meta_agent, "AgentStudioAgent", lambda **kw: AgentStudioAgent(llm=f"{PROVIDER}:m", **kw))
 
 
 async def _say(client, text):
@@ -72,5 +72,5 @@ async def test_another_worker_keeps_the_conversation(aiohttp_client, pool, assis
     assert await _say(client, "two") == 2  # the rebuilt instance continues the same conversation
     (entry_after,) = app["_sessions"]["u1"][meta_agent.SESSION_KEY].values()
     assert entry_after["session_id"] == entry["session_id"]  # not re-minted
-    assert entry_after["instance"] != entry["instance"]  # a new instance did serve it
+    assert entry_after["instance"] == entry["instance"]  # stable identity across workers
     assert await _say(client, "three") == 4

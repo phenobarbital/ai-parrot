@@ -6,6 +6,7 @@ Only the LLM client is test-owned (``ScriptedClient``, replies with the number o
 from __future__ import annotations
 
 import os
+import uuid
 
 import pytest
 from redis.asyncio import Redis
@@ -13,11 +14,10 @@ from parrot.clients.factory import SUPPORTED_CLIENTS
 from parrot.bots.basic import BasicBot
 from parrot.handlers.studio import agents as agents_module
 from parrot.registry import registry as registry_module
-from parrot.handlers.studio.conversation import KEY_PREFIX
+from parrot.handlers.studio import conversation
 
 from ._scripted_llm import PROVIDER, ScriptedClient, history_seen
 from .test_testing_db_mode import BASE, KEY, _app, pool  # noqa: F401  (pool is a fixture)
-
 
 REDIS_URL = os.environ.get("TEST_STUDIO_REDIS_URL", "")  # a DEDICATED db: the fixture deletes only its own prefix
 
@@ -30,9 +30,10 @@ async def shared_redis(monkeypatch):
     monkeypatch.setenv("STUDIO_CONVERSATION_BACKEND", "redis")
     monkeypatch.setenv("STUDIO_CONVERSATION_REDIS_URL", REDIS_URL)
     monkeypatch.setenv("STUDIO_CONVERSATION_TTL_SECONDS", "600")
+    monkeypatch.setattr(conversation, "KEY_PREFIX", f"studio_test_{uuid.uuid4().hex}")
     client = Redis.from_url(REDIS_URL, decode_responses=True)
     yield client
-    keys = [k async for k in client.scan_iter(match=f"{KEY_PREFIX}*")]
+    keys = [k async for k in client.scan_iter(match=f"{conversation.KEY_PREFIX}*")]
     if keys:
         await client.delete(*keys)
     await client.aclose()
@@ -49,9 +50,7 @@ def scripted(monkeypatch, tmp_path):
 
 async def _client(aiohttp_client, pool):
     client = await aiohttp_client(_app(pool))
-    resp = await client.post(
-        f"{BASE}/agents", json={"name": "alpha", "bot_class": "BasicBot", "llm": f"{PROVIDER}:m"}
-    )
+    resp = await client.post(f"{BASE}/agents", json={"name": "alpha", "bot_class": "BasicBot", "llm": f"{PROVIDER}:m"})
     assert resp.status == 201, await resp.text()
     return client
 
@@ -114,7 +113,7 @@ async def test_redis_backend_keeps_history_on_another_worker(aiohttp_client, poo
     assert await _ask(client, "one") == 0
     sid = await _second_worker(client)
     assert await _ask(client, "two") == 2  # a rebuilt instance reads the shared conversation
-    keys = [k async for k in shared_redis.scan_iter(match=f"{KEY_PREFIX}*")]
+    keys = [k async for k in shared_redis.scan_iter(match=f"{conversation.KEY_PREFIX}*")]
     assert any(k.endswith(f":u1:{sid}") for k in keys), keys  # keyed (chatbot, user, session)
     ttls = [await shared_redis.ttl(k) for k in keys if k.endswith(f":u1:{sid}")]
     assert ttls and all(0 < t <= 600 for t in ttls)
@@ -133,9 +132,9 @@ async def test_stop_clears_the_shared_conversation(aiohttp_client, pool, scripte
     client = await _client(aiohttp_client, pool)
     assert await _ask(client, "one") == 0
     assert await _ask(client, "two") == 2
-    assert [k async for k in shared_redis.scan_iter(match=f"{KEY_PREFIX}*")]
+    assert [k async for k in shared_redis.scan_iter(match=f"{conversation.KEY_PREFIX}*")]
     assert (await client.delete(f"{BASE}/agents/alpha/test")).status == 200  # Stop
-    assert not [k async for k in shared_redis.scan_iter(match=f"{KEY_PREFIX}:*")]
+    assert not [k async for k in shared_redis.scan_iter(match=f"{conversation.KEY_PREFIX}:*")]
     assert await _ask(client, "three") == 0  # a new test session starts empty
 
 
@@ -144,4 +143,4 @@ async def test_stop_on_another_worker_still_clears(aiohttp_client, pool, scripte
     assert await _ask(client, "one") == 0
     await _second_worker(client)  # no live instance on the worker that handles Stop
     assert (await client.delete(f"{BASE}/agents/alpha/test")).status == 200
-    assert not [k async for k in shared_redis.scan_iter(match=f"{KEY_PREFIX}:*")]
+    assert not [k async for k in shared_redis.scan_iter(match=f"{conversation.KEY_PREFIX}:*")]
