@@ -218,134 +218,55 @@ class FormAPIHandler:
     # User context helpers (navigator-auth integration)
     # ------------------------------------------------------------------
 
-    def _get_org_id(self, request: web.Request) -> int | None:
-        """Extract org_id from the authenticated user's first organization.
+    def _get_org_ids(self, request: web.Request) -> list[int]:
+        """Read organization IDs from the authenticated user's organizations.
 
-        Reads ``request.user.organizations[0].org_id`` as set by the
-        ``@user_session()`` decorator from navigator-auth and normalises it
-        to an integer (the DB primary key type).
-
-        Args:
-            request: Incoming HTTP request with ``user`` attribute attached
-                by the navigator-auth ``user_session`` decorator.
-
-        Returns:
-            The ``org_id`` as an integer from the first organization, or
-            ``None`` if the user has no organizations, the user is not set,
-            or the value cannot be converted to an integer.
+        navigator-auth owns organization normalization; entries are Organization
+        objects exposing ``org_id``. No database lookup is performed here.
+        Missing or invalid organization context returns an empty list.
         """
         user = getattr(request, "user", None)
-        # navigator-auth's ``models.User`` (the session user on 0.28) has no
-        # ``organizations`` field at all; read it, never assume it.
-        organizations = getattr(user, "organizations", None) if user else None
-        if isinstance(organizations, (list, tuple)) and organizations:
-            try:
-                return int(user.organizations[0].org_id)
-            except (TypeError, ValueError):
-                self.logger.warning(
-                    "org_id value %r is not a valid integer",
-                    user.organizations[0].org_id,
-                )
-                return None
-        return None
-
-    def _session_user_id(self, request: web.Request) -> int | None:
-        """Return the numeric ``auth.users`` id from the navigator-auth session.
-
-        Reads ``session["session"]["user_id"]`` (the login userinfo, the
-        same dict :meth:`_get_programs` reads), then ``request.user.user_id``.
-
-        Args:
-            request: Incoming HTTP request after ``user_session``.
-
-        Returns:
-            The user id as an integer, or ``None`` when absent or not numeric.
-        """
-        session = getattr(request, "session", None)
-        userinfo = session.get("session", {}) if session is not None else {}
-        raw = userinfo.get("user_id") if isinstance(userinfo, dict) else None
-        if raw is None:
-            raw = getattr(getattr(request, "user", None), "user_id", None)
-        # Type-check, never truth-check or coerce: int() of a Mock is 1.
-        if isinstance(raw, int) and not isinstance(raw, bool):
-            return raw
-        # isascii(): "²".isdigit() is True and int("²") raises.
-        if isinstance(raw, str) and raw.isascii() and raw.isdigit():
-            return int(raw)
-        return None
-
-    async def _resolve_org_id(
-        self, request: web.Request
-    ) -> tuple[int | None, web.Response | None]:
-        """Resolve the caller's organization for the ``/org/*`` endpoints.
-
-        NAV-9522: navigator-auth never fills ``request.user.organizations``,
-        so :meth:`_get_org_id` alone returned ``None`` for every real login.
-
-        The user's active memberships in ``auth.organization_users`` are the
-        source of truth whenever the org-graph service is configured: one
-        membership is used as is; with several, the client must name one
-        with ``?org_id=``, honoured only for a member. A session-carried
-        organization is NOT trusted over the database (it can be stale).
-        Without the service, the legacy session read is the only option.
-
-        Args:
-            request: Incoming HTTP request after ``user_session``.
-
-        Returns:
-            ``(org_id, None)`` on success, or ``(None, response)`` with the
-            error response the handler must return.
-        """
-        if self._org_graph_service is None:
-            org_id = self._get_org_id(request)
-            if org_id is not None:
-                return org_id, None
-            return None, JSONResponse({"error": "org_id not found in session"}, status=400)
-        user_id = self._session_user_id(request)
-        if user_id is None:
-            return None, JSONResponse({"error": "user_id not found in session"}, status=400)
-        requested = request.query.get("org_id")
-        if requested is not None and not (
-            isinstance(requested, str) and requested.isascii() and requested.isdigit()
-        ):
-            return None, JSONResponse({"error": "org_id must be an integer"}, status=400)
+        organizations = getattr(user, "organizations", None) or []
         try:
-            member_of = await self._org_graph_service.get_user_org_ids(user_id)
-        except Exception as exc:
-            self.logger.exception("organization lookup failed: %s", exc)
-            return None, JSONResponse({"error": "Internal server error"}, status=500)
-        return self._pick_org_id(member_of, int(requested) if requested is not None else None)
+            return list(dict.fromkeys(int(org.org_id) for org in organizations))
+        except (AttributeError, TypeError, ValueError):
+            self.logger.warning("Invalid organizations in authenticated user")
+            return []
 
-    @staticmethod
-    def _pick_org_id(
-        member_of: list[int], requested: int | None
-    ) -> tuple[int | None, web.Response | None]:
-        """Choose the org id from the caller's memberships.
+    def _get_org_id(self, request: web.Request) -> int | None:
+        """Read the first session organization for existing form consumers."""
+        org_ids = self._get_org_ids(request)
+        return org_ids[0] if org_ids else None
 
-        Args:
-            member_of: The caller's active org ids.
-            requested: The ``?org_id=`` value, or ``None`` when absent.
+    def _resolve_org_id(self, request: web.Request) -> tuple[int | None, web.Response | None]:
+        """Select a session organization for the ``/org/*`` endpoints.
 
-        Returns:
-            ``(org_id, None)``, or ``(None, response)``: 403 for a
-            non-member or no membership, 400 when several memberships
-            leave the choice open.
+        One organization is selected automatically. Multiple organizations
+        require ``?org_id=``; a selection outside the user's organizations
+        returns 403. Missing organizations also return 403; malformed or
+        ambiguous selections return 400. Resolution is independent of which
+        application services are configured.
         """
+        requested = request.query.get("org_id")
         if requested is not None:
-            if requested in member_of:
+            try:
+                if not requested.isascii() or not requested.isdigit():
+                    raise ValueError("org_id must be an integer")
+                requested = int(requested)
+            except ValueError:
+                return None, JSONResponse({"error": "org_id must be an integer"}, status=400)
+
+        org_ids = self._get_org_ids(request)
+        if requested is not None:
+            if requested in org_ids:
                 return requested, None
-            return None, JSONResponse(
-                {"error": f"user is not a member of organization {requested}"}, status=403
-            )
-        if len(member_of) == 1:
-            return member_of[0], None
-        if not member_of:
+            return None, JSONResponse({"error": f"user is not a member of organization {requested}"}, status=403)
+        if len(org_ids) == 1:
+            return org_ids[0], None
+        if not org_ids:
             return None, JSONResponse({"error": "user belongs to no organization"}, status=403)
         return None, JSONResponse(
-            {
-                "error": "user belongs to several organizations; pass ?org_id=",
-                "org_ids": member_of,
-            },
+            {"error": "user belongs to several organizations; pass ?org_id=", "org_ids": org_ids},
             status=400,
         )
 
@@ -2466,7 +2387,7 @@ class FormAPIHandler:
         """GET /api/v1/org/graph — Return the org graph for the session's org.
 
         Calls ``OrgGraphService.get_graph()`` with the caller's org, resolved
-        by :meth:`_resolve_org_id` (``auth.organization_users`` is authoritative).
+        from ``request.user.organizations`` by :meth:`_resolve_org_id`.
 
         Args:
             request: Incoming HTTP request with navigator-auth session.
@@ -2474,16 +2395,14 @@ class FormAPIHandler:
 
         Returns:
             200: Serialized ``OrgGraph`` as JSON.
-            400: No user id in session, a non-integer ``org_id``, or several
-                memberships and no ``org_id``.
+            400: A non-integer ``org_id``, or several organizations and no selection.
             403: The user belongs to no organization, or not to ``org_id``.
-            500: The membership lookup failed.
             501: OrgGraphService not configured.
         """
         if self._org_graph_service is None:
             return JSONResponse({"error": "OrgGraphService not configured"}, status=501)
 
-        org_id, error = await self._resolve_org_id(request)
+        org_id, error = self._resolve_org_id(request)
         if error is not None:
             return error
 
@@ -2543,7 +2462,7 @@ class FormAPIHandler:
         # C-4 (write isolation): org_id comes from the authenticated session,
         # NEVER from the request body — a caller cannot create a project under
         # another tenant's org.
-        org_id, error = await self._resolve_org_id(request)
+        org_id, error = self._resolve_org_id(request)
         if error is not None:
             return error
 
@@ -2773,7 +2692,7 @@ class FormAPIHandler:
             return JSONResponse({"error": "VenueService not configured"}, status=501)
 
         store_id = request.match_info.get("store_id", "")
-        org_id, error = await self._resolve_org_id(request)
+        org_id, error = self._resolve_org_id(request)
         if error is not None:
             return error
 
@@ -2822,7 +2741,7 @@ class FormAPIHandler:
         except (TypeError, ValueError):
             return JSONResponse({"error": "client_id must be an integer"}, status=400)
 
-        org_id, error = await self._resolve_org_id(request)
+        org_id, error = self._resolve_org_id(request)
         if error is not None:
             return error
 
@@ -2862,7 +2781,7 @@ class FormAPIHandler:
         except (ValueError, TypeError):
             return JSONResponse({"error": f"Invalid site_id: {site_id_str!r}"}, status=400)
 
-        org_id, error = await self._resolve_org_id(request)
+        org_id, error = self._resolve_org_id(request)
         if error is not None:
             return error
 
@@ -2923,7 +2842,7 @@ class FormAPIHandler:
         except (TypeError, ValueError):
             return JSONResponse({"error": "client_id must be an integer"}, status=400)
 
-        org_id, error = await self._resolve_org_id(request)
+        org_id, error = self._resolve_org_id(request)
         if error is not None:
             return error
 
@@ -2968,7 +2887,7 @@ class FormAPIHandler:
         except (ValueError, TypeError):
             return JSONResponse({"error": f"Invalid location_id: {location_id_str!r}"}, status=400)
 
-        org_id, error = await self._resolve_org_id(request)
+        org_id, error = self._resolve_org_id(request)
         if error is not None:
             return error
 

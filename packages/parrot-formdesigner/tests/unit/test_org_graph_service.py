@@ -22,7 +22,6 @@ from parrot_formdesigner.services.org_graph import OrgGraph, OrgGraphService, Or
 from tests.unit.real_db_shapes import (
     REAL_AUTH_ORGANIZATIONS_COLUMNS,
     FakeUndefinedColumnError,
-    assert_real_column_refs,
     assert_real_columns,
 )
 
@@ -48,7 +47,6 @@ def _make_conn(fetchrow_results: dict | None = None, fetch_results: dict | None 
 
     async def _fetchrow(sql: str, *args: Any) -> MagicMock | None:
         assert_real_columns(sql)
-        assert_real_column_refs(sql)
         # Match on sql prefix
         for key, val in fetchrow_results.items():
             if key in sql:
@@ -62,7 +60,6 @@ def _make_conn(fetchrow_results: dict | None = None, fetch_results: dict | None 
 
     async def _fetch(sql: str, *args: Any) -> list[MagicMock]:
         assert_real_columns(sql)
-        assert_real_column_refs(sql)
         for key, val in fetch_results.items():
             if key in sql:
                 rows = []

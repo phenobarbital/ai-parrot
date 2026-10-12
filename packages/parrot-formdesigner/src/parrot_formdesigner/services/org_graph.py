@@ -135,23 +135,16 @@ FROM networkninja.markets
 WHERE client_id = $1 AND orgid = $2
 """
 
-# NAV-9522: networkninja.regions and networkninja.districts have NO
-# client_id column (production schema). A client's regions and districts
-# are the ones its markets point at.
 _SQL_GET_DISTRICTS_FOR_CLIENT = """
-SELECT DISTINCT d.district_id, d.district_name
-FROM networkninja.districts d
-JOIN networkninja.markets m ON m.district_id = d.district_id AND m.orgid = d.orgid
-WHERE m.client_id = $1 AND m.orgid = $2
-ORDER BY d.district_id
+SELECT district_id, district_name
+FROM networkninja.districts
+WHERE client_id = $1 AND orgid = $2
 """
 
 _SQL_GET_REGIONS_FOR_CLIENT = """
-SELECT DISTINCT r.region_id, r.region_name
-FROM networkninja.regions r
-JOIN networkninja.markets m ON m.region_id = r.region_id AND m.orgid = r.orgid
-WHERE m.client_id = $1 AND m.orgid = $2
-ORDER BY r.region_id
+SELECT region_id, region_name
+FROM networkninja.regions
+WHERE client_id = $1 AND orgid = $2
 """
 
 # FEAT-330 — Store sub-structure.
@@ -196,16 +189,6 @@ FROM auth.programs p
 JOIN auth.program_clients pc ON pc.program_id = p.program_id
 JOIN auth.organization_clients oc ON oc.client_id = pc.client_id
 WHERE p.program_id = $1 AND oc.org_id = $2
-"""
-
-# NAV-9522: the caller's organizations. navigator-auth never fills
-# ``request.user.organizations``, so ``/org/*`` resolves membership here.
-_SQL_GET_USER_ORG_IDS = """
-SELECT ou.org_id
-FROM auth.organization_users ou
-JOIN auth.organizations o ON o.org_id = ou.org_id
-WHERE ou.user_id = $1 AND o.is_active
-ORDER BY ou.org_id
 """
 
 # ---------------------------------------------------------------------------
@@ -487,28 +470,6 @@ class OrgGraphService:
                     "geofence_radius_m": lo["geofence_radius_m"],
                 },
             ))
-
-    async def get_user_org_ids(self, user_id: int) -> list[int]:
-        """Return the active organizations the user belongs to.
-
-        Reads ``auth.organization_users`` — the user → organization link.
-        The navigator-auth session carries no organization, so this is the
-        only source of a caller's ``org_id`` for the ``/org/*`` endpoints.
-
-        Args:
-            user_id: Numeric ``auth.users`` id from the session.
-
-        Returns:
-            Distinct org ids, ascending. Empty when the user belongs to no
-            active organization.
-
-        Raises:
-            RuntimeError: If no pool is available.
-        """
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(_SQL_GET_USER_ORG_IDS, user_id)
-        return sorted({int(row["org_id"]) for row in rows})
 
     async def get_node(
         self,
