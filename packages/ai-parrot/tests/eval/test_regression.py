@@ -1,4 +1,5 @@
 """Unit tests for the regression gate (TASK-4242)."""
+
 import os
 
 import pytest

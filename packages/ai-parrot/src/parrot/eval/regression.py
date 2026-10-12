@@ -1,4 +1,5 @@
 """pass^k regression gate over eval_baselines (FEAT-652, Module 6)."""
+
 from __future__ import annotations
 
 import logging
@@ -54,9 +55,7 @@ class InMemoryBaselineStore(BaselineStore):
             self._rows[(report.dataset_name, tag)] = value
 
 
-async def check_regression(
-    report: EvalReport, store: BaselineStore, *, tolerance: float = 0.05
-) -> RegressionVerdict:
+async def check_regression(report: EvalReport, store: BaselineStore, *, tolerance: float = 0.05) -> RegressionVerdict:
     """Compare a report with stored baselines per tag; never records.
 
     A tag regresses iff ``baseline - candidate > tolerance``, evaluated
