@@ -541,10 +541,10 @@ async def test_ink_wall_products_found_end_to_end(
 
 
 @pytest.mark.asyncio
-async def test_non_ink_wall_result_unchanged(
+async def test_non_ink_wall_labels_unchanged_with_presence(
     synthetic_slots_definition: dict[str, Any], fake_vision_client: Any
 ) -> None:
-    """A non-ink-wall comparison retains display-name labels and has no presence output."""
+    """A non-ink-wall comparison keeps display-name labels and now reports slot presence (FEAT-648)."""
     definition = load_slots_definition(synthetic_slots_definition)
     config = PlanogramConfig(
         planogram_type="product_on_shelves",
@@ -598,8 +598,18 @@ async def test_non_ink_wall_result_unchanged(
     )
     assembled = pipe._assemble([], [], comparison, [], context)
 
-    assert comparison.products_found == []
-    assert assembled["products_found"] == []
+    assert assembled["products_found"] == comparison.products_found
+    assert len(comparison.products_found) == 24  # 3 shelves x 8 occupied-expected positions
+    read = [presence for presence in comparison.products_found if presence.found is True]
+    assert {(presence.shelf_id, presence.model, presence.status) for presence in read} == {
+        ("shelf_1", "ACME-1-1", FacingStatus.MATCH),
+        ("shelf_1", "ACME-1-2", FacingStatus.MATCH),
+    }
+    assert all(
+        presence.found is None
+        for presence in comparison.products_found
+        if presence.model not in {"ACME-1-1", "ACME-1-2"}
+    )
     assert comparison.compliance_results[0].expected_products == [
         f"ACME-1-{slot}" if (1, slot) in UNDESCRIBED else f"Acme ink 1-{slot}" for slot in range(1, 9)
     ]

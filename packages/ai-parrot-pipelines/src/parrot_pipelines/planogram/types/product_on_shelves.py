@@ -12,7 +12,7 @@ from PIL import Image
 
 from parrot.models.detections import AisleConfig, PlanogramDescription
 
-from ..comparison.definition import SlotsDefinition
+from ..comparison.definition import ReportingPolicy, SlotsDefinition
 from ..comparison.tags import slot_above, tag_text
 from ..contracts import (
     ComparisonResult,
@@ -114,6 +114,7 @@ class ProductOnShelves(AbstractPlanogramType):
             min_usable_shapes=3,
             descriptor_fields=list(_SHELF_DESCRIPTORS),
             required_descriptor_fields=[],
+            reporting=ReportingPolicy(slot_presence=True),
         )
 
     def _ensure_layout(self, ctx: CycleContext) -> LayoutProfile:

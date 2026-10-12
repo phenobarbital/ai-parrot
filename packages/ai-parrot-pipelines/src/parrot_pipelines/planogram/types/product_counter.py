@@ -12,6 +12,7 @@ from PIL import Image
 
 from parrot.models.detections import AisleConfig, PlanogramDescription
 
+from ..comparison.definition import ReportingPolicy
 from ..contracts import (
     ComparisonResult,
     CycleContext,
@@ -100,6 +101,7 @@ class ProductCounter(AbstractPlanogramType):
             min_usable_shapes=1,
             descriptor_fields=["family", "colors", "pack"],
             required_descriptor_fields=[],
+            reporting=ReportingPolicy(slot_presence=True),
         )
 
     async def perceive(self, image: Image.Image, image_id: str, ctx: CycleContext) -> PerceptionResult:
