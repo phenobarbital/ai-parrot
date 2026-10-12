@@ -182,7 +182,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -192,8 +192,9 @@
       "parallelism_notes": "Modifies audio/engine.py after TASK-4251 (same file) and replaces its insertion-marker line; calls TASK-4251's _gate/_normalize_ctx.",
       "assigned_to": null,
       "started_at": "2026-10-12T19:44:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4252-engine-llm-refine.md"
+      "completed_at": "2026-10-12T20:12:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4252-engine-llm-refine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4253",
