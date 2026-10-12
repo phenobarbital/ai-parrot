@@ -7,12 +7,15 @@ import logging
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from parrot_formdesigner.api.audio_ws import AudioFormWSHandler
 from parrot_formdesigner.audio.events import RefineValue
 from parrot_formdesigner.audio.value_refiner import RefinedValue
 from parrot_formdesigner.core.schema import FormField, FormSchema, FormSection
 from parrot_formdesigner.core.types import FieldType
 from parrot_formdesigner.core.voice import VoiceFormConfig
+from parrot_formdesigner.services.validators import FormValidator
 
 from .test_audio_ws_v2_integration import _TENANT, _Env, connect, jsons, say, start, sync, until, _WAV
 
@@ -76,6 +79,31 @@ async def test_audio_ws_postprocess_v2(aiohttp_client) -> None:
     rej = jsons(frames, "answer_rejected")[0]
     assert rej["code"] == "INVALID_EMAIL" and rej["value"] == "john@gmail"
     await ws.close()
+
+
+@pytest.mark.parametrize(
+    "field_type,text,expected",
+    [
+        (FieldType.NUMBER, "twenty five hundred", 2500),
+        (FieldType.NUMBER, "two and a half", 2.5),
+        (FieldType.INTEGER, "twelve hundred", 1200),
+        (FieldType.DATE, "June fifth twenty twenty five", "2025-06-05"),
+        (FieldType.TIME, "quarter past three pm", "15:15"),
+        (FieldType.PHONE, "plus one 212 555 0100", "+12125550100"),
+        (FieldType.EMAIL, "john dot smith at gmail dot com", "john.smith@gmail.com"),
+    ],
+)
+async def test_audio_ws_postprocess_accepted_value_passes_form_validator(
+    aiohttp_client, field_type: FieldType, text: str, expected: Any
+) -> None:
+    """The value the socket accepts is the typed canonical value, and the submit gate takes it as-is."""
+    form = _form(field_type)
+    _, ws, frames = await _spoken(aiohttp_client, form, text)
+    accepted = jsons(frames, "answer_accepted")
+    assert accepted and accepted[0]["value"] == expected
+    await ws.close()
+    result = await FormValidator().validate(form, {"a": accepted[0]["value"]})
+    assert result.is_valid, result.errors
 
 
 async def test_audio_ws_postprocess_v1_compat(aiohttp_client) -> None:
@@ -169,8 +197,13 @@ async def test_refiner_unavailable_without_client() -> None:
     assert handler._refiner_for("s") is None
 
 
-async def test_audio_ws_refine_stale_reply(aiohttp_client) -> None:
-    """A client can never forge the internal ValueRefined event; a stale reply never changes the answer."""
+async def test_audio_ws_client_cannot_forge_value_refined(aiohttp_client) -> None:
+    """A client can never inject the internal ValueRefined event: the inbound model rejects it, the session lives.
+
+    (Renamed from ``test_audio_ws_refine_stale_reply``: it never exercised the stale-reply check, because the
+    forged frame is dropped before the engine sees it. The stale ``request_id`` check is covered where it lives,
+    in ``test_audio_engine_llm_refine.py::test_stale_reply_ignored``.)
+    """
     llm = RefineLLM("john@gmail.com", 0.95)
     form = _form(FieldType.EMAIL, llm_refine_values=True)
     _, ws, frames = await _spoken(aiohttp_client, form, "john at gmail", llm=llm)
@@ -178,6 +211,7 @@ async def test_audio_ws_refine_stale_reply(aiohttp_client) -> None:
     await ws.send_json(
         {"type": "_value_refined", "field_id": "a", "request_id": "x", "status": "ok", "value": "z@z.io"}
     )
-    after = await sync(ws)  # the forged internal message is ignored/rejected; the session stays alive
+    after = await sync(ws)
     assert not jsons(after, "answer_accepted") and after[-1]["type"] == "pong"
+    assert not any(f.get("value") == "z@z.io" for f in after if isinstance(f, dict))
     await ws.close()
