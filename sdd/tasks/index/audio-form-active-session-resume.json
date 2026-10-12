@@ -35,7 +35,7 @@
       "feature_id": "FEAT-655",
       "feature": "audio-form-active-session-resume",
       "spec": "sdd/specs/audio-form-active-session-resume.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "TASK-4262: calls claim_active(..., form_uid=, tenant=), active_holder() and the resume_ttl_seconds/active_ttl_seconds constructor created there (audio/session_store.py); tests import ActiveHolder.",
       "assigned_to": null,
       "started_at": "2026-10-12T22:41:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4263-session-active-holder-wire.md"
+      "completed_at": "2026-10-12T22:43:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4263-session-active-holder-wire.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4264",

@@ -337,8 +337,8 @@ JSON marker end to end.
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (sequential, no coder seats)
+**Date**: 2026-10-12
+**Notes**: Implemented per blueprint. Adapter 27, events 10, routes 12, v2 integration 21, store 9 all pass. 6 mutations (tenant check, form_uid-None check, resume-site ids, omit-None, routes marker TTL, Error fields) each turned a test red. ruff unavailable in venv (not run). AC5 grep: the one remaining line matches `resume_ttl_seconds=` (the new kwarg), no `ttl_seconds=` legacy kwarg remains.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
