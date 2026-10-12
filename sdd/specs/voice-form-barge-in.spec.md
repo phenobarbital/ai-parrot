@@ -10,7 +10,7 @@ tags: [audio-forms, voice, hands-free, barge-in, narration, tts]
 **Feature ID**: FEAT-654
 **Date**: 2026-10-12
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next parrot-formdesigner minor after FEAT-649 / FEAT-653
 
 ---
@@ -356,10 +356,21 @@ segment-key grammar and a new `AudioSegment.kind` value. `NarrationPlan`, `Narra
   - **New §7.6 "Barge-in (hands-free interruption)"**: the client rules of §2 Overview item 1,
     the two use cases, a sequence diagram (playback → VAD onset → stop → record → binary frame
     → `transcription` → `answer_accepted` / `confirm_request`), the acoustic guidance
-    (`getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}})`, raise the VAD
-    energy threshold while playback is active, prefer a headset on speaker-phone devices,
-    set `barge_in: false` when AEC is unavailable), and the note that the server never learns
-    playback was interrupted.
+    (`getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}})`; check
+    `track.getCapabilities()` and request `echoCancellation: "all"` where supported so
+    locally played TTS is cancelled, not only WebRTC audio; confirm an interruption only after
+    ~250 ms of sustained speech — e.g. `@ricky0123/vad-web` `onSpeechRealStart` with
+    `minSpeechMs` ≈ 250 and `preSpeechPadMs` ≈ 300 so the first syllable is kept — or, with an
+    energy VAD, a higher threshold while playback is active; prefer a headset on speaker-phone
+    devices), and the note that the server never learns playback was interrupted.
+  - **The `barge_in` ceiling rule (normative, §8 Q-B):** `hands_free.barge_in` is a ceiling,
+    never a floor. With `false` the client never interrupts playback. With `true` the client
+    MUST still disable barge-in for the session when `track.getSettings().echoCancellation`
+    is not `true` after the request (AEC unavailable or refused) or when the user turned it
+    off in a per-device preference; a client never enables barge-in when the form says
+    `false`. Rationale to state in the doc: without AEC the microphone hears the narration
+    itself, and an option item such as "2, Beta." matches the option label exactly, so the
+    engine would accept an answer the user never gave (`answer_accepted`, no confirmation).
   - **§7.4 / §12 FAQ**: one line each on how commands and option answers behave when spoken
     mid-enumeration (unchanged pipeline; an exact option match still beats a command).
   - **§1 "What changed"** style table or a short "FEAT-654" note at the top of §7.3.
@@ -430,8 +441,10 @@ segment-key grammar and a new `AudioSegment.kind` value. `NarrationPlan`, `Narra
   `audio/segments.py`); the `repeat` command keeps replaying the full `audio_keys`.
 - [ ] AC9. `docs/audio-form-voice-modes.md` contains the form-level voice settings table,
   the extended `hands_free` object, the new key grammar and `option` kind, and a "Barge-in"
-  section with client rules, echo-cancellation guidance and a sequence diagram covering both
-  use cases (known answer, mid-enumeration answer).
+  section with client rules, echo-cancellation guidance, the normative `barge_in` ceiling
+  rule (client disables barge-in when `getSettings().echoCancellation !== true` or by user
+  preference; never enables it when the form says `false`) and a sequence diagram covering
+  both use cases (known answer, mid-enumeration answer).
 - [ ] AC10. The navigator-svelte handoff and the parrot-formdesigner CHANGELOG mention the
   new flag, the new kind and the barge-in policy.
 - [ ] AC11. All tests in §4 pass:
@@ -630,6 +643,16 @@ Verified against: `d5f208317`
   the flag exists and why the docs must prescribe `echoCancellation: true`, a raised energy
   threshold during playback and `barge_in: false` as the escape hatch. The server cannot
   mitigate this.
+- **Self-accepted answers without AEC.** On a device whose AEC is off or ineffective, the
+  microphone records the narration; an option item ("2, Beta.") matches the option label
+  exactly and is accepted without confirmation. The mitigation is the client-side ceiling rule
+  (§8 Q-B); the navigator-svelte client today calls `getUserMedia({ audio: true })` with no AEC
+  constraint, so its follow-up must implement the rule before enabling barge-in.
+- **Synthesis fan-out.** Per-option segments turn one TTS call per select question into
+  `1 + n` calls. `AudioSegmentCache.ensure` synthesises sequentially under the process-wide
+  `_SYNTH_LOCK` (`audio/segments.py:54-69`), so long option lists lengthen time-to-first-question
+  and contend with other sessions. Not an AC (needs real TTS); measured in the e2e run (§8 Q-A).
+  Mitigation if it regresses: `enumerate: count_only` / `option_pause_ms` tuning on long lists.
 - **Short interrupted recordings.** A false VAD onset followed by silence produces a tiny
   container; `_process_binary` already rejects it with `EMPTY_AUDIO` (`< _MIN_AUDIO_BYTES`).
   Clients should treat `EMPTY_AUDIO` after a barge-in as "resume playback where it stopped",
@@ -688,11 +711,20 @@ Verified against: `d5f208317`
   the user, 2026-10-12*: yes, both in FEAT-654.
 - [x] Where does the pause go? — *Decided in this spec*: between consecutive option items
   only; none after the intro, none after the last item.
-- [ ] Default `option_pause_ms`: 500 ms is proposed; confirm against a real device test with
-  the navigator-svelte renderer (a longer gap makes the enumeration slower, a shorter one
-  gives the VAD less room). — *Owner: Jesus Lara*
-- [ ] Should `barge_in` be exposed as a `start_session` override in a later iteration (per
-  device capability, e.g. no AEC)? — *Owner: Jesus Lara* (not blocking; form-level only now)
+- [x] Q-A. Default `option_pause_ms` — *Resolved 2026-10-12 (Juan)*: ship **500 ms as a
+  provisional default** and calibrate it in the local end-to-end run with the navigator-svelte
+  renderer (FieldSync FEAT-701 host). Changing it is a one-line default change with no
+  contract impact; forms and fields can override it. The e2e run also measures time-to-first-
+  question and per-question narration time for 6- and 20-option selects (see §7 Known Risks,
+  "Synthesis fan-out").
+- [x] Q-B. Should `barge_in` be exposed as a `start_session` override (per device capability,
+  e.g. no AEC)? — *Resolved 2026-10-12 (Juan)*: **no server-side override, ever.** Barge-in is
+  a client policy the server never observes, and the only meaningful override is *turning it
+  off* on a device that cannot cancel echo — which the client can do on its own. `barge_in` is
+  therefore a **ceiling**: the client MUST disable it when AEC is not effective or the user opts
+  out, and never enables it when the form says `false` (normative rule in Module 3 / AC9). This
+  closes the question instead of deferring it: the failure it prevents is data corruption
+  (self-accepted option answers), not only UX.
 
 ---
 
@@ -715,3 +747,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-12 | Jesus Lara | Initial draft (barge_in flag, per-option narration segments, docs) |
+| 0.2 | 2026-10-12 | Juan Ruffato | Approved. Q-A: 500 ms provisional, calibrated in e2e. Q-B: no server override; `barge_in` is a client-side ceiling (normative rule in M3 / AC9). Risks: self-accept without AEC, synthesis fan-out. Guidance made VAD-agnostic (vad-web / energy). |
