@@ -315,4 +315,7 @@ async def test_assemble_and_handler_shape_for_non_ink_wall(fake_vision_client: A
 
     assert assembled["products_found"] == comparison.products_found
     assert all(isinstance(presence, SlotPresence) for presence in assembled["products_found"])
-    assert all(SlotPresence.model_validate(presence.model_dump(mode="json")) == presence for presence in assembled["products_found"])
+    assert all(
+        SlotPresence.model_validate(presence.model_dump(mode="json")) == presence
+        for presence in assembled["products_found"]
+    )
