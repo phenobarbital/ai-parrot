@@ -670,14 +670,18 @@ class AudioFormWSHandler:
             if snap is None:
                 await self._send_error(ws, "RESUME_UNAVAILABLE", "Session resume is not available")
                 return
-            if not await store.claim_active(session.user_id, start.resume_session_id):
-                await self._send_error(ws, "SESSION_ACTIVE", "Another session is already active")
+            if not await store.claim_active(
+                session.user_id, start.resume_session_id, form_uid=form_uid, tenant=session.tenant
+            ):
+                await self._send_session_active(ws, store, session)
                 return
             engine = AudioFormSession.from_snapshot(snap, **deps)
             ctx.revision = snap.revision
         else:
-            if store is not None and not await store.claim_active(session.user_id, session.session_id):
-                await self._send_error(ws, "SESSION_ACTIVE", "Another session is already active")
+            if store is not None and not await store.claim_active(
+                session.user_id, session.session_id, form_uid=form_uid, tenant=session.tenant
+            ):
+                await self._send_session_active(ws, store, session)
                 return
             engine = AudioFormSession(**deps)
 
@@ -1361,6 +1365,9 @@ class AudioFormWSHandler:
         ws: web.WebSocketResponse,
         code: str,
         message: str,
+        *,
+        session_id: str | None = None,
+        form_uid: str | None = None,
     ) -> None:
         """Send an error message over the WebSocket.
 
@@ -1368,8 +1375,28 @@ class AudioFormWSHandler:
             ws: Active WebSocket.
             code: Machine-readable error code.
             message: Human-readable error description.
+            session_id: SESSION_ACTIVE only — the session holding the user's slot.
+            form_uid: SESSION_ACTIVE only — that session's form.
         """
+        payload: dict[str, Any] = {"type": "error", "code": code, "message": message}
+        if session_id is not None:
+            payload["session_id"] = session_id
+        if form_uid is not None:
+            payload["form_uid"] = form_uid
         try:
-            await ws.send_json({"type": "error", "code": code, "message": message})
+            await ws.send_json(payload)
         except Exception:
             pass
+
+    async def _send_session_active(
+        self, ws: web.WebSocketResponse, store: "AudioSessionStore", session: AudioSessionState
+    ) -> None:
+        """SESSION_ACTIVE with the holder's ids when it belongs to the same tenant; today's error otherwise."""
+        message = "Another session is already active"
+        holder = await store.active_holder(session.user_id)
+        if holder is not None and holder.form_uid is not None and holder.tenant == session.tenant:
+            await self._send_error(
+                ws, "SESSION_ACTIVE", message, session_id=holder.session_id, form_uid=holder.form_uid
+            )
+        else:
+            await self._send_error(ws, "SESSION_ACTIVE", message)

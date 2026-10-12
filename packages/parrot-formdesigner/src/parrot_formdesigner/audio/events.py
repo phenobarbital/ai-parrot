@@ -442,6 +442,8 @@ class Error(_Wire):
     type: Literal["error"] = "error"
     code: str
     message: str
+    session_id: str | None = None  # SESSION_ACTIVE only: the session holding the user's slot (same tenant)
+    form_uid: str | None = None  # SESSION_ACTIVE only: that session's form
 
 
 class Pong(_Wire):

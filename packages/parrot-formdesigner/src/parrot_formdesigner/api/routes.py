@@ -492,7 +492,7 @@ def setup_form_api(
         if partial_store is not None:
             from ..audio.session_store import AudioSessionStore
 
-            session_store = AudioSessionStore(partial_store, ttl_seconds=3600)
+            session_store = AudioSessionStore(partial_store, resume_ttl_seconds=3600, active_ttl_seconds=600)
         audio_handler = AudioFormWSHandler(
             registry=registry,
             synthesizer=synthesizer,
