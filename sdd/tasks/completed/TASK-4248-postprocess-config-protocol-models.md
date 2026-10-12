@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-653 — Audio form voice post-processors
 **Spec**: `sdd/specs/audio-form-voice-postprocessors.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -327,10 +327,8 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5.5, sequential fallback loop)
+**Date**: 2026-10-12
+**Notes**: Config, events (ValueRefined/RefineValue, timezone, value/refined_by) and model fields added; 4 validation suites pass; ruff clean.
 
 **Deviations from spec**: none
