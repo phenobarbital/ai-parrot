@@ -65,18 +65,18 @@ A `products_found` entry represents a slot that is expected to contain a product
 - `shelf_id`, `shelf_level`, `slot`, `position` — the slot's location
 - `facing_ids` — the facing identifiers that belong to this slot
 - `model`, `sku`, `brand`, `display_name` — the product's identity
-- `found` — a tri-state flag indicating whether the slot is present:
+- `found` — a tri-state flag, resolved across the slot's facings (any found facing wins, then any undecided facing, otherwise false). `null` means "not visible / not assessed / conflict" and is never an absent entry:
   - `true` if at least one facing is found (MATCH, VARIANT_UNRESOLVED, INFERRED_PRESENT, or MISPLACED with confidence >= `misplaced_min_confidence`)
-  - `false` if all facings are MISMATCH or EMPTY
-  - `null` if any facing is NOT_VISIBLE, NOT_ASSESSED, CONFLICT, OCCUPIED_UNASSIGNED, or MISPLACED below the confidence threshold
-- `misplaced` — `true` if the slot is found and the deciding observation is MISPLACED with confidence >= `misplaced_min_confidence`
-- `status` — the status of the representative facing
-- `confidence` — the confidence of the deciding observation, or `null` if there is no deciding view
+  - `null` if no facing is found and at least one has no deciding view (NOT_VISIBLE, NOT_ASSESSED, CONFLICT, OCCUPIED_UNASSIGNED, or MISPLACED below the confidence threshold)
+  - `false` if every facing is MISMATCH or EMPTY
+- `misplaced` — `true` if the slot is found and the representative facing's observation is MISPLACED with confidence >= `misplaced_min_confidence`
+- `status` and `misplaced` come from the representative facing: the first facing whose own `found` value equals the slot's
+- `confidence` — the representative facing's observation confidence; `null` when it has no deciding view or no observations (it can be populated while `found` is `null`, e.g. a low-confidence MISPLACED)
 - `facings` — the total number of facings in the slot
 - `facings_found` — the number of facings that are found
 - `observed` — the observed identity of the slot (e.g., brand or model), or `null` if not observed
 
-To disable slot presence reporting, set `reporting.slot_presence = false` either in the type's layout profile or in `slots_definition["meta"]["reporting"]`:
+To disable slot presence reporting, set `reporting.slot_presence = false` either in the planogram config's `layout_profile.reporting` or in `slots_definition["meta"]["reporting"]`:
 
 ```json
 {
