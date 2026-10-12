@@ -73,6 +73,26 @@ from parrot.eval.rollout import (
     UserSimulator,
 )
 from parrot.eval.evaluators.state_based import StateBasedEvaluator, StateMatch
+from parrot.eval.evaluators.text import ContainsMatch, ExactMatch, TokenF1, normalize_text
+from parrot.eval.evaluators.composite import CompositeEvaluator
+from parrot.eval.evaluators.groundedness import GroundednessMetric
+from parrot.eval.evaluators.llm_judge import LLMJudgeMetric
+from parrot.eval.judge import (
+    InMemoryJudgeCache,
+    JudgeCache,
+    JudgeCriterion,
+    JudgeVerdict,
+    PostgresJudgeCache,
+    Rubric,
+    judge_cache_key,
+)
+from parrot.eval.regression import (
+    BaselineStore,
+    InMemoryBaselineStore,
+    PostgresBaselineStore,
+    RegressionVerdict,
+    check_regression,
+)
 from parrot.eval.sandbox.state import (
     DatabaseToolkitBinder,
     DictStateBackend,
@@ -151,4 +171,24 @@ __all__ = [
     "InMemoryStateSandboxProvider",
     "DatabaseToolkitBinder",
     "JiraToolkitBinder",
+    # FEAT-652 — answer-accuracy metrics
+    "normalize_text",
+    "ExactMatch",
+    "ContainsMatch",
+    "TokenF1",
+    "CompositeEvaluator",
+    "GroundednessMetric",
+    "LLMJudgeMetric",
+    "JudgeCriterion",
+    "Rubric",
+    "JudgeVerdict",
+    "judge_cache_key",
+    "JudgeCache",
+    "InMemoryJudgeCache",
+    "PostgresJudgeCache",
+    "BaselineStore",
+    "InMemoryBaselineStore",
+    "PostgresBaselineStore",
+    "RegressionVerdict",
+    "check_regression",
 ]
