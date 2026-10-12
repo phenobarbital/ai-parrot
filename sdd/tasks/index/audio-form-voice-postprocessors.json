@@ -16,7 +16,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependencies: owns lexicon.py, both narration.yaml files and narration/engine.py; nothing else in the feature modifies them.",
       "assigned_to": null,
       "started_at": "2026-10-12T19:44:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4244-spoken-lexicon-tables.md"
+      "completed_at": "2026-10-12T19:50:06+00:00",
+      "file": "sdd/tasks/completed/TASK-4244-spoken-lexicon-tables.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4245",
