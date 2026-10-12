@@ -8,7 +8,7 @@ from datetime import date, timedelta
 
 from ..narration.lexicon import SpokenLexicon
 from .base import NormalizeContext, NormalizeResult
-from .numbers import parse_numbers, tokenize
+from .numbers import _expand, parse_numbers, tokenize
 
 logger = logging.getLogger(__name__)
 
@@ -78,39 +78,83 @@ def _is_number_word(token: str, spoken: SpokenLexicon) -> bool:
     return token in spoken.units or token in spoken.tens or token in spoken.scales
 
 
-def _numeric_items(tokens: list[str], ctx: NormalizeContext) -> list[int]:
-    """Day/year candidates: digit tokens (with ordinal suffix), ordinal words and number-word runs."""
+def _is_pure_ordinal(token: str, ctx: NormalizeContext) -> bool:
+    """An ordinal word that is not also a cardinal ('fifth', 'thirtieth'; not 'twenty')."""
+    return not _is_number_word(token, ctx.lexicon.spoken) and _ordinal_value(token, ctx) is not None
+
+
+def _split_years(nums: list[int]) -> tuple[list[int], list[int]]:
+    """Split a spoken number run into ``(days, years)``.
+
+    Spoken years arrive as two groups ('twenty twenty five' → 20, 25; 'twenty oh five' → 20, 0, 5) or as one
+    large number ('two thousand twenty six' → 2026); everything else in 1..31 is a day.
+    """
+    days: list[int] = []
+    years: list[int] = []
+    i = 0
+    while i < len(nums):
+        v = nums[i]
+        nxt = nums[i + 1] if i + 1 < len(nums) else None
+        if v in (19, 20) and nxt is not None and nxt >= 10:
+            years.append(v * 100 + nxt)
+            i += 2
+        elif v in (19, 20) and nxt == 0 and i + 2 < len(nums) and 1 <= nums[i + 2] <= 9:
+            years.append(v * 100 + nums[i + 2])
+            i += 3
+        elif v > 31:
+            years.append(v)
+            i += 1
+        else:
+            if 1 <= v <= 31:
+                days.append(v)
+            i += 1
+    return days, years
+
+
+def _date_items(tokens: list[str], ctx: NormalizeContext) -> tuple[list[int], list[int]]:
+    """Day and year candidates: digit tokens (with ordinal suffix), ordinal words and number-word runs."""
     spoken = ctx.lexicon.spoken
-    items: list[int] = []
+    days: list[int] = []
+    years: list[int] = []
     i = 0
     n = len(tokens)
     while i < n:
         tok = tokens[i]
         m = _DAY_TOKEN_RE.match(tok)
         if m:
-            items.append(int(m.group(1)))
+            d, y = _split_years([int(m.group(1))])
+            days.extend(d)
+            years.extend(y)
             i += 1
-            continue
-        if _is_number_word(tok, spoken) or _ordinal_value(tok, ctx) is not None:
+        elif _is_number_word(tok, spoken):
             j = i
-            while j < n and (_is_number_word(tokens[j], spoken) or _ordinal_value(tokens[j], ctx) is not None):
+            while j < n and _is_number_word(tokens[j], spoken):
                 j += 1
-            run = tokens[i:j]
+            nums = [int(x) for x in parse_numbers(tokens[i:j], spoken)]
             tail: int | None = None
-            if not _is_number_word(run[-1], spoken):
-                tail = _ordinal_value(run[-1], ctx)
-                run = run[:-1]
-            nums = [int(x) for x in parse_numbers(run, spoken)] if run else []
+            if j < n and _is_pure_ordinal(tokens[j], ctx):
+                tail = _ordinal_value(tokens[j], ctx)
+                j += 1
+            ordinal_day: int | None = None
             if tail is not None:
                 if nums and nums[-1] >= 20 and nums[-1] % 10 == 0 and tail < 10:
-                    nums[-1] += tail
+                    ordinal_day = nums.pop() + tail  # 'twenty' + 'first'
                 else:
-                    nums.append(tail)
-            items.extend(nums)
+                    ordinal_day = tail
+            d, y = _split_years(nums)
+            days.extend(d)
+            years.extend(y)
+            if ordinal_day is not None and 1 <= ordinal_day <= 31:
+                days.append(ordinal_day)
             i = j
-            continue
-        i += 1
-    return items
+        elif _is_pure_ordinal(tok, ctx):
+            value = _ordinal_value(tok, ctx)
+            if value is not None and 1 <= value <= 31:
+                days.append(value)
+            i += 1
+        else:
+            i += 1
+    return days, years
 
 
 def _build_date(year: int, month: int, day: int) -> date | None:
@@ -137,8 +181,14 @@ def _numeric_date(a: int, b: int, y: int | None, ctx: NormalizeContext) -> Norma
     return NormalizeResult.accepted(mdy or dmy)
 
 
+def _mask_day_period(tokens: list[str]) -> list[str]:
+    """Hide 'la mañana' (the morning) so it is not read as the relative day 'mañana' (tomorrow)."""
+    return ["_" if tok == "manana" and i > 0 and tokens[i - 1] == "la" else tok for i, tok in enumerate(tokens)]
+
+
 def _parse_date(tokens: list[str], ctx: NormalizeContext) -> NormalizeResult:
     """Date grammar over already-tokenized input; value is a ``date`` (formatted by the caller)."""
+    tokens = _expand(tokens)
     spoken = ctx.lexicon.spoken
     today = ctx.now.date()
 
@@ -165,16 +215,18 @@ def _parse_date(tokens: list[str], ctx: NormalizeContext) -> NormalizeResult:
     month_at = next((i for i, t in enumerate(tokens) if t in spoken.months), None)
     if month_at is not None:
         month = spoken.months[tokens[month_at]]
-        items = _numeric_items(tokens[:month_at] + tokens[month_at + 1 :], ctx)
-        days = [v for v in items if 1 <= v <= 31]
-        years = [v for v in items if v > 31]
-        if not days:
-            return NormalizeResult.rejected("out_of_range" if items else "no_parse")
+        days, years = _date_items(tokens[:month_at] + tokens[month_at + 1 :], ctx)
+        if not days:  # "March twenty twenty six": a year with no day is never read as the day
+            return NormalizeResult.rejected("no_parse")
         year = _year(years[0]) if years else ctx.now.year
         built = _build_date(year, month, days[0])
-        return NormalizeResult.accepted(built) if built else NormalizeResult.rejected("out_of_range")
+        if built is None:
+            return NormalizeResult.rejected("out_of_range")
+        if len(set(days)) > 1:  # "March 5 25": which number is the day?
+            return NormalizeResult.confirm(built, "ambiguous_order")
+        return NormalizeResult.accepted(built)
 
-    hit = _find_phrase(tokens, spoken.relative_days)
+    hit = _find_phrase(_mask_day_period(tokens), spoken.relative_days)
     if hit is not None:
         return relative(today + timedelta(days=spoken.relative_days[hit[2]]))
 
