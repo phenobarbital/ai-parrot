@@ -16,14 +16,14 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: owns lexicon.py, both narration.yaml files and narration/engine.py; nothing else in the feature modifies them.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T19:44:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4244-spoken-lexicon-tables.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "Needs SpokenLexicon / Lexicon.spoken from TASK-4244 (audio/narration/lexicon.py) for the number tables.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T19:44:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4245-normalize-core-numbers.md"
     },
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,7 +63,7 @@
       "parallel": true,
       "parallelism_notes": "Imports tokenize/parse_numbers and NormalizeResult/NormalizeContext from TASK-4245 (audio/normalize/numbers.py, base.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T19:44:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4246-email-phone-normalizers.md"
     },
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -83,7 +83,7 @@
       "parallel": true,
       "parallelism_notes": "Imports tokenize/parse_numbers and NormalizeResult/NormalizeContext from TASK-4245 (audio/normalize/numbers.py, base.py); runs alongside TASK-4246.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T19:44:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4247-temporal-normalizers.md"
     },
@@ -94,14 +94,14 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: sole modifier of audio/events.py and the first modifier of core/voice.py and audio/models.py.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T19:44:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4248-postprocess-config-protocol-models.md"
     },
@@ -112,14 +112,14 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: new module audio/value_refiner.py, only needs FieldType (existing core/types.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T19:44:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4249-llm-value-refiner.md"
     },
@@ -130,7 +130,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -139,7 +139,7 @@
       "parallel": true,
       "parallelism_notes": "Tests build AudioAnswer(normalized_by=, llm_confidence=) — fields added by TASK-4248 (audio/models.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T19:44:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4250-evidence-envelope-provenance.md"
     },
@@ -150,7 +150,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -163,7 +163,7 @@
       "parallel": true,
       "parallelism_notes": "Imports normalize_spoken/validate_typed (TASK-4245) and dispatches to email/phone (TASK-4246) and temporal (TASK-4247); uses AudioAnswer.normalized_by, StartSession.timezone, ConfirmRequest.value from TASK-4248; asserts the wrap_voice envelope keys from TASK-4250 (core/voice_answer.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T19:44:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4251-engine-normalize-gate.md"
     },
@@ -174,7 +174,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -183,7 +183,7 @@
       "parallel": true,
       "parallelism_notes": "Modifies audio/engine.py after TASK-4251 (same file) and replaces its insertion-marker line; calls TASK-4251's _gate/_normalize_ctx.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T19:44:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4252-engine-llm-refine.md"
     },
@@ -194,7 +194,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -204,7 +204,7 @@
       "parallel": true,
       "parallelism_notes": "Instantiates LLMValueRefiner from TASK-4249 (audio/value_refiner.py); performs the RefineValue request the engine emits since TASK-4252 (audio/engine.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T19:44:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4253-ws-adapter-postprocess.md"
     },
@@ -215,7 +215,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -224,7 +224,7 @@
       "parallel": true,
       "parallelism_notes": "Documents the merged behaviour of TASK-4253's adapter (api/audio_ws.py) and the engine/protocol it exposes; must read the landed code.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T19:44:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4254-docs-voice-postprocessors.md"
     },
@@ -235,7 +235,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -246,7 +246,7 @@
       "parallel": true,
       "parallelism_notes": "Runs normalize_spoken over email/phone (TASK-4246) and temporal (TASK-4247) normalizers and LLMValueRefiner from TASK-4249 (audio/value_refiner.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T19:44:31+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4255-calibration-harness.md"
     },
