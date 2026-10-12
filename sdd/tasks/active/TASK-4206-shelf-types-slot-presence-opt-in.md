@@ -51,6 +51,7 @@ docs (TASK-4208).
 | `packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/product_counter.py` | MODIFY | import + `reporting=` kwarg |
 | `packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/graphic_panel_display.py` | MODIFY | import + `reporting=` kwarg |
 | `packages/ai-parrot-pipelines/tests/planogram_cycle/test_ink_wall.py` | MODIFY | rename + positive assertions in the non-ink-wall test |
+| `packages/ai-parrot-pipelines/tests/planogram_cycle/test_reporting_layout.py` | MODIFY | default-reporting assertion follows the opt-in (found missing at merge validation) |
 
 ---
 
