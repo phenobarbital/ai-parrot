@@ -1,0 +1,32 @@
+{
+  "feature": "fixgroup-5725d520238f",
+  "feature_id": "FEAT-651",
+  "spec": "sdd/specs/fixgroup-5725d520238f.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-12T14:10:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4236",
+      "slug": "counter-panel-ensure-layout",
+      "title": "ProductCounter / GraphicPanelDisplay resolve their own layout profile",
+      "feature_id": "FEAT-651",
+      "feature": "fixgroup-5725d520238f",
+      "spec": "sdd/specs/fixgroup-5725d520238f.spec.md",
+      "status": "pending",
+      "priority": "low",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "single task; no dependencies; touches only its three declared files",
+      "discovered_from": "issue:0a49138a5ac3",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4236-counter-panel-ensure-layout.md"
+    }
+  ]
+}
