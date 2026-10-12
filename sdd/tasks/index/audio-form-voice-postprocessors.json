@@ -56,7 +56,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -66,8 +66,9 @@
       "parallelism_notes": "Imports tokenize/parse_numbers and NormalizeResult/NormalizeContext from TASK-4245 (audio/normalize/numbers.py, base.py).",
       "assigned_to": null,
       "started_at": "2026-10-12T19:44:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4246-email-phone-normalizers.md"
+      "completed_at": "2026-10-12T19:55:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4246-email-phone-normalizers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4247",
