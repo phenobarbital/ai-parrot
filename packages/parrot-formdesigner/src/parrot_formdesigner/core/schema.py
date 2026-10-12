@@ -23,6 +23,8 @@ from .options import FieldOption, OptionsSource
 from .persistence import FormPersistenceConfig
 from .relations import RelationSpec
 from .types import FieldType, LocalizedString
+from .llm_validation import LLMValidationConfig
+from .voice import VoiceFormConfig
 
 # Legal (field_type) sets for each (mode, cardinality) combination of
 # FormField.relation — spec §2 "Canonical combinations" table (FEAT-456).
@@ -116,6 +118,10 @@ class FormField(BaseModel):
             and makes the validator enforce that shape. ``None`` (default)
             leaves a submitted dict unvalidated, which is what a field simply
             holding arbitrary JSON wants.
+        hint: Optional voice hint narrated after the pause; shown as help
+            text by renderers (FEAT-649).
+        llm_validation: Per-field LLM plausibility opt-in; ``None`` inherits
+            ``FormSchema.llm_validation.enabled`` (FEAT-649).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -141,6 +147,10 @@ class FormField(BaseModel):
     content_type: str | None = None
     accept_content_types: list[str] | None = None
     answer_envelope: Literal["voice"] | None = None
+    # FEAT-649 — voice hint narrated after the pause; shown as help text by renderers.
+    hint: LocalizedString | None = None
+    # FEAT-649 — LLM plausibility opt-in; None inherits FormSchema.llm_validation.enabled.
+    llm_validation: bool | None = None
 
     @property
     def is_relational(self) -> bool:
@@ -427,6 +437,8 @@ class FormSchema(BaseModel):
             (e.g. ``"epson"`` → ``epson.form_schemas``). ``None`` falls
             back to the storage's default schema.
         metadata: Declared contextual metadata fields captured on submission.
+        voice: Optional typed voice-mode configuration block (FEAT-649).
+        llm_validation: Optional LLM answer-plausibility block (FEAT-649).
         events: Optional lifecycle event bindings (FEAT-188). Maps each
             lifecycle event name (``onBeforeOpen``, ``onSchemaLoaded``,
             ``onBeforeSubmit``, ``onAfterSubmit``, ``onError``) to a
@@ -473,6 +485,10 @@ class FormSchema(BaseModel):
     persistence: FormPersistenceConfig | None = None
     # FEAT-458 — Unknown-Field Capture
     unknown_fields: UnknownFieldsPolicy = UnknownFieldsPolicy.DROP
+    # FEAT-649 — typed voice-mode block (owner decision: typed, not meta).
+    voice: VoiceFormConfig | None = None
+    # FEAT-649 — LLM-assisted answer plausibility (all channels).
+    llm_validation: LLMValidationConfig | None = None
 
     def iter_all_fields(self) -> Iterator[FormField]:
         """Yield every ``FormField`` across all sections, flattening subsections.

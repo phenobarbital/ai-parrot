@@ -33,7 +33,11 @@ from parrot_formdesigner.services.sinks.base import (
     SinkTargetMismatchError,
     SinkUnavailableError,
 )
-from parrot_formdesigner.services.sinks.mapper import column_names_for, field_types_for
+from parrot_formdesigner.services.sinks.mapper import (
+    column_names_for,
+    field_types_for,
+    voice_capable_columns,
+)
 from parrot_formdesigner.services.submissions import FormSubmission
 
 # Reserved-column DDL, matching FormSubmissionStorage's own CREATE TABLE
@@ -80,13 +84,21 @@ _DEFAULT_DDL_TYPE = "TEXT"
 _DEFAULT_COMPATIBLE_TYPES = frozenset({"text", "character varying", "varchar"})
 
 
-def _ddl_type_for(field_type: FieldType) -> str:
-    """Return the ``ADD COLUMN`` SQL type fragment for ``field_type``."""
+_VOICE_DDL_TYPE = "JSONB"
+_VOICE_COMPATIBLE_TYPES = frozenset({"jsonb", "json"})
+
+
+def _ddl_type_for(field_type: FieldType, *, voice: bool = False) -> str:
+    """Return the ``ADD COLUMN`` SQL type fragment for ``field_type`` (``JSONB`` for voice columns)."""
+    if voice:
+        return _VOICE_DDL_TYPE
     return _FIELD_TYPE_PG.get(field_type, (_DEFAULT_DDL_TYPE, _DEFAULT_COMPATIBLE_TYPES))[0]
 
 
-def _compatible_types_for(field_type: FieldType) -> frozenset[str]:
+def _compatible_types_for(field_type: FieldType, *, voice: bool = False) -> frozenset[str]:
     """Return the set of compatible ``information_schema`` data types."""
+    if voice:
+        return _VOICE_COMPATIBLE_TYPES
     return _FIELD_TYPE_PG.get(field_type, (_DEFAULT_DDL_TYPE, _DEFAULT_COMPATIBLE_TYPES))[1]
 
 
@@ -126,6 +138,7 @@ class PostgresTableSink(AbstractSubmissionSink):
         self._max_size = max_size
         self._pool_kwargs = pool_kwargs
         self._known_field_types: dict[str, FieldType] = {}
+        self._voice_columns: frozenset[str] = frozenset()
         self.logger = logging.getLogger(__name__)
 
     @property
@@ -258,6 +271,7 @@ class PostgresTableSink(AbstractSubmissionSink):
         """
         field_types = field_types_for(form)
         self._known_field_types = field_types
+        self._voice_columns = voice_capable_columns(form)
 
         try:
             pool = await self._ensure_pool()
@@ -275,8 +289,11 @@ class PostgresTableSink(AbstractSubmissionSink):
                     if column in _RESERVED_COLUMN_DDL:
                         continue  # already covered by _create_table_sql
                     field_type = field_types.get(column)
+                    is_voice = column in self._voice_columns
                     compatible = (
-                        _compatible_types_for(field_type) if field_type is not None else _DEFAULT_COMPATIBLE_TYPES
+                        _compatible_types_for(field_type, voice=is_voice)
+                        if field_type is not None
+                        else _DEFAULT_COMPATIBLE_TYPES
                     )
                     if column in existing:
                         if existing[column] not in compatible:
@@ -284,9 +301,17 @@ class PostgresTableSink(AbstractSubmissionSink):
                                 f"Column {column!r} exists as "
                                 f"{existing[column]!r}, incompatible with "
                                 f"form field type {field_type!r}"
+                                + (
+                                    "; voice-capable columns must be JSONB - run migration "
+                                    "009_voice_envelope_sink_tables.py"
+                                    if is_voice
+                                    else ""
+                                )
                             )
                         continue
-                    ddl_type = _ddl_type_for(field_type) if field_type is not None else _DEFAULT_DDL_TYPE
+                    ddl_type = (
+                        _ddl_type_for(field_type, voice=is_voice) if field_type is not None else _DEFAULT_DDL_TYPE
+                    )
                     await conn.execute(self._add_column_sql(column, ddl_type))
         except SinkTargetMismatchError:
             raise
@@ -319,9 +344,11 @@ class PostgresTableSink(AbstractSubmissionSink):
         # FEAT-458: "extra_data" joins "context" as a reserved JSONB column —
         # subject to the same double-encoding hazard the ::text::jsonb cast
         # exists to prevent (services/submissions.py:254-282).
-        jsonb_columns = {"context", "extra_data"} | {
-            column for column, field_type in self._known_field_types.items() if field_type == FieldType.ARRAY
-        }
+        jsonb_columns = (
+            {"context", "extra_data"}
+            | {column for column, field_type in self._known_field_types.items() if field_type == FieldType.ARRAY}
+            | set(self._voice_columns)
+        )
 
         columns = list(payload.keys())
         values = []

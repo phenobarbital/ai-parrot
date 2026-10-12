@@ -8,6 +8,11 @@ Public exports:
     AudioQuestion
     AudioSessionConfig
     AudioSessionState
+    NarrationPlan
+    OptionMatch
+    Phase
+    ReviewItemData
+    UiCue
 
 Added by FEAT-224 (FormDesigner Audio Renderer).
 """
@@ -18,6 +23,11 @@ from .models import (
     AudioQuestion,
     AudioSessionConfig,
     AudioSessionState,
+    NarrationPlan,
+    OptionMatch,
+    Phase,
+    ReviewItemData,
+    UiCue,
 )
 
 __all__ = [
@@ -26,4 +36,9 @@ __all__ = [
     "AudioQuestion",
     "AudioSessionConfig",
     "AudioSessionState",
+    "NarrationPlan",
+    "OptionMatch",
+    "Phase",
+    "ReviewItemData",
+    "UiCue",
 ]
