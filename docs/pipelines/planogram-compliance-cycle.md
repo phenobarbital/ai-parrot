@@ -34,6 +34,7 @@ alias is accepted only when it does not contradict `layout_profile.perception_mo
 | Geometry | `shape_profiles`, `anchor_rule`, `fill_gaps`, `untagged_bottom_row`, `min_usable_shapes`, `min_row_items`, `max_row_slope`, `work_width`, `substrip_max_slots` |
 | Identification | `identify_strategy`, `descriptor_fields`, `required_descriptor_fields`, `ocr_targets`, `ocr_batch_size` |
 | Perception | `perception_mode` (`cv` by default, or `llm_detector`) |
+| Reporting | `reporting.product_label` (`display_name` or `product`), `reporting.slot_presence`, `reporting.misplaced_min_confidence` |
 | References | `references.enabled`, `selection` (`all` or `by_brand`), provisional `max_per_call` default `5`, and `brand_by_reference` |
 | Zones | `zone_selectors` with `zone_id`, optional profile/kind, ordinal, or normalized region |
 
@@ -48,6 +49,60 @@ unassessed zone does not become a passing observation.
 | `endcap_no_shelves_promotional` | `full_image` | 1 | zones and configured promotional rules |
 | `graphic_panel_display` | `full_image` | 1 | zones and graphic/text/illumination rules |
 | `product_counter` | `full_image` | 1 | product bodies, background, and information-label zones |
+
+## Reporting policy and `products_found`
+
+`ReportingPolicy` controls how products are labelled and whether slot presence is reported. It resolves in this order, each step overriding the previous one: the policy defaults, the type's layout profile, `planogram_config["layout_profile"]["reporting"]`, and finally `slots_definition["meta"]["reporting"]`. Unknown keys are rejected.
+
+| Type | `product_label` | `slot_presence` |
+|---|---|---|
+| `ink_wall` | `product` | on |
+| `endcap_backlit_multitier`, `product_on_shelves`, `product_counter`, `graphic_panel_display` | `display_name` | on |
+| `endcap_no_shelves_promotional` | `display_name` | off (zone-only definitions) |
+
+A `products_found` entry represents a slot that is expected to contain a product. It carries the following fields:
+
+- `shelf_id`, `shelf_level`, `slot`, `position` — the slot's location
+- `facing_ids` — the facing identifiers that belong to this slot
+- `model`, `sku`, `brand`, `display_name` — the product's identity
+- `found` — a tri-state flag indicating whether the slot is present:
+  - `true` if at least one facing is found (MATCH, VARIANT_UNRESOLVED, INFERRED_PRESENT, or MISPLACED with confidence >= `misplaced_min_confidence`)
+  - `false` if all facings are MISMATCH or EMPTY
+  - `null` if any facing is NOT_VISIBLE, NOT_ASSESSED, CONFLICT, OCCUPIED_UNASSIGNED, or MISPLACED below the confidence threshold
+- `misplaced` — `true` if the slot is found and the deciding observation is MISPLACED with confidence >= `misplaced_min_confidence`
+- `status` — the status of the representative facing
+- `confidence` — the confidence of the deciding observation, or `null` if there is no deciding view
+- `facings` — the total number of facings in the slot
+- `facings_found` — the number of facings that are found
+- `observed` — the observed identity of the slot (e.g., brand or model), or `null` if not observed
+
+To disable slot presence reporting, set `reporting.slot_presence = false` either in the type's layout profile or in `slots_definition["meta"]["reporting"]`:
+
+```json
+{
+  "planogram_config": {
+    "layout_profile": {
+      "reporting": {
+        "slot_presence": false
+      }
+    }
+  }
+}
+```
+
+or
+
+```json
+{
+  "slots_definition": {
+    "meta": {
+      "reporting": {
+        "slot_presence": false
+      }
+    }
+  }
+}
+```
 
 ## OCR and references
 
@@ -123,7 +178,7 @@ score, coverage, or status.
 `shelf_regions`, `rendered_image`, and `overlay_path`. Rendered-image fields refer to the first
 successfully processed image, while `shelf_regions` are observed regions.
 
-Additive keys are `detections`, `identifications`, `position_results`, `shelf_scores`, `coverage`,
+Additive keys are `detections`, `identifications`, `position_results`, `products_found`, `shelf_scores`, `coverage`,
 `detected_products`, `definition_coverage`, `assessment_status`, `strict_compliance_score`,
 `evidence_quality`, `detection_source`, `ocr_available`, `resolved_backend`, `renders`, and
 `errors`. New runs report `cv`, `llm`, or `mixed` detection provenance; older serialized
