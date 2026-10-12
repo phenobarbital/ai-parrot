@@ -957,6 +957,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         # Handle anyOf (union types) - Simplified for Gemini
         if "anyOf" in schema:
             # Pick the first non-null type, effectively flattening the union
+            non_null_options = [
+                option for option in schema["anyOf"] if isinstance(option, dict) and option.get("type") != "null"
+            ]
             found_valid_option = False
             for option in schema["anyOf"]:
                 if not isinstance(option, dict):
@@ -968,8 +971,14 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
                     # or Gemini sees a free string and guesses values the tool refuses.
                     # Only string enums: the SDK types Schema.enum as list[str], and a
                     # rejected declaration silently drops the whole tool.
+                    # Other non-null branches may allow values outside this enum.
                     enum = option.get("enum")
-                    if isinstance(enum, list) and enum and all(isinstance(v, str) for v in enum):
+                    if (
+                        len(non_null_options) == 1
+                        and isinstance(enum, list)
+                        and enum
+                        and all(isinstance(v, str) for v in enum)
+                    ):
                         cleaned["enum"] = enum
                     if option_type == "array" and "items" in option:
                         cleaned["items"] = self.clean_google_schema(option["items"])
