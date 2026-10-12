@@ -131,9 +131,7 @@ class TestArangoDBWikiStore:
 
     @pytest.mark.asyncio
     async def test_initialize_skips_existing_view(self, store, mock_db):
-        mock_db._connection.views = AsyncMock(
-            return_value=[{"name": "test_pages_view"}, {"name": "test_symbols_view"}]
-        )
+        mock_db._connection.views = AsyncMock(return_value=[{"name": "test_pages_view"}, {"name": "test_symbols_view"}])
         await store.initialize()
         mock_db._connection.create_view.assert_not_awaited()
 
