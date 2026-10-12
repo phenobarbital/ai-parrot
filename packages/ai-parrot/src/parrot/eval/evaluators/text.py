@@ -3,6 +3,7 @@
 ``exact_match`` / ``contains`` / ``token_f1`` score ``trajectory.final_output``
 against ``task.expected`` — no LLM anywhere in this module.
 """
+
 from __future__ import annotations
 
 import re
@@ -54,9 +55,7 @@ class ExactMatch(Metric):
         self._casefold = casefold
         self._strip_punct = strip_punct
 
-    async def score(
-        self, task: EvalTask, trajectory: Trajectory, sandbox: Sandbox | None = None
-    ) -> MetricScore:
+    async def score(self, task: EvalTask, trajectory: Trajectory, sandbox: Sandbox | None = None) -> MetricScore:
         """Score the final output against any accepted exact answer."""
         answers = _expected_answers(task)
         if not answers:
@@ -65,7 +64,9 @@ class ExactMatch(Metric):
         normalized_answers = [
             normalize_text(answer, casefold=self._casefold, strip_punct=self._strip_punct) for answer in answers
         ]
-        matched = next((answer for answer, normalized in zip(answers, normalized_answers) if normalized == output), None)
+        matched = next(
+            (answer for answer, normalized in zip(answers, normalized_answers) if normalized == output), None
+        )
         value = 1.0 if matched is not None else 0.0
         return MetricScore(
             name=self.name,
@@ -85,9 +86,7 @@ class ContainsMatch(Metric):
         self._mode = mode
         self._regex = regex
 
-    async def score(
-        self, task: EvalTask, trajectory: Trajectory, sandbox: Sandbox | None = None
-    ) -> MetricScore:
+    async def score(self, task: EvalTask, trajectory: Trajectory, sandbox: Sandbox | None = None) -> MetricScore:
         """Score the fraction of required substrings or patterns found in the output."""
         needles = _expected_answers(task, "must_contain")
         if not needles:
@@ -125,9 +124,7 @@ class TokenF1(Metric):
         recall = common / len(ref)
         return 2 * precision * recall / (precision + recall) if precision + recall else 0.0
 
-    async def score(
-        self, task: EvalTask, trajectory: Trajectory, sandbox: Sandbox | None = None
-    ) -> MetricScore:
+    async def score(self, task: EvalTask, trajectory: Trajectory, sandbox: Sandbox | None = None) -> MetricScore:
         """Score the final output against the best token-overlap answer."""
         answers = _expected_answers(task)
         if not answers:

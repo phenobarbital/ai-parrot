@@ -36,18 +36,14 @@ def test_registered():
 
 
 async def test_required_overrides_threshold():
-    evaluator = CompositeEvaluator(
-        [_Const("a", 0.8, False), _Const("b", 1.0, True)], required={"a"}, threshold=0.5
-    )
+    evaluator = CompositeEvaluator([_Const("a", 0.8, False), _Const("b", 1.0, True)], required={"a"}, threshold=0.5)
     result = await evaluator.evaluate(_task(), _trajectory())
     assert result.passed is False
     assert sum(score.value for score in result.scores) / 2 == 0.9
 
 
 async def test_weights_and_passed_none():
-    evaluator = CompositeEvaluator(
-        [_Const("a", 0.5, None), _Const("b", 1.0, True)], weights={"a": 3}, threshold=0.6
-    )
+    evaluator = CompositeEvaluator([_Const("a", 0.5, None), _Const("b", 1.0, True)], weights={"a": 3}, threshold=0.6)
     result = await evaluator.evaluate(_task(), _trajectory())
     assert result.passed is True
 

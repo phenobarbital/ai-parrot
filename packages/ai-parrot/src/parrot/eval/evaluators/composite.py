@@ -1,4 +1,5 @@
 """CompositeEvaluator — combine any registered metrics (FEAT-652, Module 2)."""
+
 from __future__ import annotations
 
 import logging
@@ -31,9 +32,7 @@ class CompositeEvaluator(AbstractEvaluator):
         self._threshold = threshold
         self._weights = dict(weights or {})
 
-    async def evaluate(
-        self, task: EvalTask, trajectory: Trajectory, sandbox: Sandbox | None = None
-    ) -> EvalResult:
+    async def evaluate(self, task: EvalTask, trajectory: Trajectory, sandbox: Sandbox | None = None) -> EvalResult:
         """Evaluate all metrics, recording an individual failure on exceptions."""
         scores: list[MetricScore] = []
         for metric in self._metrics:
