@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-653 — Audio form voice post-processors
 **Spec**: `sdd/specs/audio-form-voice-postprocessors.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4249, TASK-4252
@@ -340,10 +340,8 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5, sequential fallback loop)
+**Date**: 2026-10-12
+**Notes**: Timezone validation, _refiner_for/_do_refine with timeout, v1 pops for confirm_request/answer_rejected. 9 new aiohttp round-trip tests; adapter, v2 integration and audio integration suites pass; ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Spec's test_audio_ws_refine_stale_reply is covered at engine level (test_audio_engine_llm_refine) plus a WS test that a forged _value_refined frame cannot alter state; the 'unavailable' path is tested by calling _do_refine on a bare handler.

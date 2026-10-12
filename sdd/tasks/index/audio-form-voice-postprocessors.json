@@ -203,7 +203,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -214,8 +214,9 @@
       "parallelism_notes": "Instantiates LLMValueRefiner from TASK-4249 (audio/value_refiner.py); performs the RefineValue request the engine emits since TASK-4252 (audio/engine.py).",
       "assigned_to": null,
       "started_at": "2026-10-12T19:44:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4253-ws-adapter-postprocess.md"
+      "completed_at": "2026-10-12T20:15:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4253-ws-adapter-postprocess.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4254",
