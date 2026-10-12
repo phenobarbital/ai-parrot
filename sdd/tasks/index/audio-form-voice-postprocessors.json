@@ -246,7 +246,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -258,8 +258,9 @@
       "parallelism_notes": "Runs normalize_spoken over email/phone (TASK-4246) and temporal (TASK-4247) normalizers and LLMValueRefiner from TASK-4249 (audio/value_refiner.py).",
       "assigned_to": null,
       "started_at": "2026-10-12T19:44:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4255-calibration-harness.md"
+      "completed_at": "2026-10-12T20:19:24+00:00",
+      "file": "sdd/tasks/completed/TASK-4255-calibration-harness.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4256",

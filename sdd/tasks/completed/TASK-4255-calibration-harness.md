@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-653 — Audio form voice post-processors
 **Spec**: `sdd/specs/audio-form-voice-postprocessors.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4246, TASK-4247, TASK-4249
@@ -363,10 +363,8 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5.5, sequential fallback loop)
+**Date**: 2026-10-12
+**Notes**: Re-runnable harness (CorpusItem, run_calibration, recommend, render_markdown, main) with offline tests (fake STT/refiner): shape, privacy (aggregates only), language hint, skipped relative dates, request budget, decision rule, fallback below 30 samples, --llm opt-in refusal. NOT run against a real corpus; TASK-4256 left pending.
 
 **Deviations from spec**: none
