@@ -12,6 +12,7 @@ from PIL import Image
 
 from parrot.models.detections import AisleConfig, PlanogramDescription
 
+from ..comparison.definition import ReportingPolicy
 from ..contracts import (
     ComparisonResult,
     CycleContext,
@@ -79,6 +80,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
             identify_strategy=IdentifyStrategy.FULL_IMAGE,
             perception_mode="cv",
             min_usable_shapes=1,
+            reporting=ReportingPolicy(slot_presence=True),
         )
 
     async def perceive(self, image: Image.Image, image_id: str, ctx: CycleContext) -> PerceptionResult:
