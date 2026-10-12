@@ -59,3 +59,15 @@ async def test_metric_exception_recorded():
 def test_empty_metrics_raises():
     with pytest.raises(ValueError, match="at least one metric"):
         CompositeEvaluator([])
+
+
+def test_duplicate_metric_names_rejected():
+    with pytest.raises(ValueError, match="unique"):
+        CompositeEvaluator([_Const("a", 1.0, True), _Const("a", 0.0, False)])
+
+
+def test_unknown_required_or_weight_rejected():
+    with pytest.raises(ValueError, match="unknown"):
+        CompositeEvaluator([_Const("a", 1.0, True)], required={"missing"})
+    with pytest.raises(ValueError, match="unknown"):
+        CompositeEvaluator([_Const("a", 1.0, True)], weights={"missing": 2})

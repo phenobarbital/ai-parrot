@@ -32,10 +32,23 @@ class JudgeVerdict(BaseModel):
     rationale: str = ""
 
 
-def judge_cache_key(*, judge_model: str, rubric: Rubric, question: str, expected: Any, answer: str) -> str:
+# Bump whenever ``LLMJudgeMetric.build_prompt`` changes so stale cached verdicts are never served.
+PROMPT_VERSION = "1"
+
+
+def judge_cache_key(
+    *,
+    judge_model: str,
+    rubric: Rubric,
+    question: str,
+    expected: Any,
+    answer: str,
+    prompt_version: str = PROMPT_VERSION,
+) -> str:
     """sha256 hex of the canonical JSON of everything that determines a verdict (never the verdict itself)."""
     payload = {
         "judge_model": judge_model,
+        "prompt_version": prompt_version,
         "rubric_name": rubric.name,
         "rubric_version": rubric.version,
         "criteria": [[c.name, c.question] for c in rubric.criteria],

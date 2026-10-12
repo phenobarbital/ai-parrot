@@ -27,6 +27,13 @@ class CompositeEvaluator(AbstractEvaluator):
     ) -> None:
         if not metrics:
             raise ValueError("CompositeEvaluator needs at least one metric")
+        names = [metric.name for metric in metrics]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"CompositeEvaluator metrics must have unique names; duplicated: {duplicates}")
+        unknown = sorted((set(required) | set(weights or {})) - set(names))
+        if unknown:
+            raise ValueError(f"CompositeEvaluator required/weights reference unknown metrics: {unknown}")
         self._metrics = list(metrics)
         self._required = set(required)
         self._threshold = threshold

@@ -83,9 +83,10 @@ class ContainsMatch(Metric):
 
     name = "contains"
 
-    def __init__(self, *, mode: Literal["all", "any"] = "all", regex: bool = False) -> None:
+    def __init__(self, *, mode: Literal["all", "any"] = "all", regex: bool = False, ignore_case: bool = True) -> None:
         self._mode = mode
         self._regex = regex
+        self._flags = re.IGNORECASE if ignore_case else 0
 
     async def score(self, task: EvalTask, trajectory: Trajectory, sandbox: Sandbox | None = None) -> MetricScore:
         """Score the fraction of required substrings or patterns found in the output."""
@@ -94,10 +95,18 @@ class ContainsMatch(Metric):
             return _missing(self.name, "must_contain")
         output = _output_text(trajectory)
         if self._regex:
-            found = [needle for needle in needles if re.search(needle, output, re.I) is not None]
+            try:
+                found = [needle for needle in needles if re.search(needle, output, self._flags) is not None]
+            except re.error as exc:
+                return MetricScore(name=self.name, value=0.0, passed=False, detail={"error": f"invalid regex: {exc}"})
         else:
             normalized_output = normalize_text(output)
-            found = [needle for needle in needles if normalize_text(needle) in normalized_output]
+            # A needle that normalizes to "" (e.g. "?") would match everything; it never counts as found.
+            found = [
+                needle
+                for needle in needles
+                if (normalized := normalize_text(needle)) and normalized in normalized_output
+            ]
         missing = [needle for needle in needles if needle not in found]
         value = len(found) / len(needles)
         passed = all(needle in found for needle in needles) if self._mode == "all" else bool(found)

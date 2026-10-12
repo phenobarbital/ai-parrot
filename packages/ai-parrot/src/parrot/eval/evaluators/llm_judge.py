@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from parrot.eval.evaluators.base import Metric
 from parrot.eval.judge import JudgeCache, JudgeVerdict, Rubric, judge_cache_key
+from parrot.eval.judge.models import PROMPT_VERSION
 from parrot.eval.models import EvalTask, MetricScore, Trajectory
 from parrot.eval.registry import register_metric
 from parrot.eval.rollout import _extract_question, _extract_text
@@ -64,6 +65,8 @@ class LLMJudgeMetric(Metric):
         if n_samples < 1:
             raise ValueError("n_samples must be >= 1")
         self._client = client
+        self._model_under_test = model_under_test
+        self._inflight: dict[str, asyncio.Task[tuple[JudgeVerdict | None, bool]]] = {}
         self._judge_model = judge_model
         self._rubric = rubric
         self._cache = cache
@@ -103,6 +106,38 @@ class LLMJudgeMetric(Metric):
         )
         return _parse_verdict(response)
 
+    async def _obtain(self, key: str, task: EvalTask, answer: str) -> tuple[JudgeVerdict | None, bool]:
+        """Return ``(verdict, cached)`` for ``key``; ``verdict`` is None when no sample parsed.
+
+        Shared by concurrent callers of the same key (in-flight deduplication), so the judge is
+        paid at most once per key at a time.
+        """
+        verdict = None
+        if self._cache is not None:
+            try:
+                verdict = await self._cache.get(key)
+            except Exception as exc:  # a cache outage must not look like a bad judgment
+                logger.warning("judge cache get failed for task %s: %s", task.task_id, exc)
+        if verdict is not None:
+            return verdict, True
+        prompt = self.build_prompt(task, answer)
+        samples = await asyncio.gather(*(self._ask_once(prompt) for _ in range(self._n_samples)))
+        parsed = [sample for sample in samples if sample is not None]
+        if not parsed:
+            return None, False
+        verdict = self._merge(parsed, self._rubric)
+        if self._cache is not None:
+            try:
+                await self._cache.set(
+                    key,
+                    verdict,
+                    judge_model_version=self._judge_model,
+                    rubric_version=self._rubric.version,
+                )
+            except Exception as exc:  # keep the paid verdict even if caching fails
+                logger.warning("judge cache set failed for task %s: %s", task.task_id, exc)
+        return verdict, False
+
     async def score(self, task: EvalTask, trajectory: Trajectory, sandbox: Sandbox | None = None) -> MetricScore:
         """Score a trajectory with cached, self-consistent rubric judgments."""
         del sandbox
@@ -114,6 +149,7 @@ class LLMJudgeMetric(Metric):
             question=question,
             expected=task.expected,
             answer=answer,
+            prompt_version=PROMPT_VERSION,
         )
         base_detail: dict[str, Any] = {
             "judge_model": self._judge_model,
@@ -121,36 +157,28 @@ class LLMJudgeMetric(Metric):
             "model_under_test": trajectory.model,
             "samples": self._n_samples,
         }
+        if self._model_under_test is None and trajectory.model == self._judge_model:
+            logger.warning("llm_judge refused task %s: judge_model equals the model under test", task.task_id)
+            return MetricScore(
+                name=self.name,
+                value=0.0,
+                passed=False,
+                detail={**base_detail, "error": "judge_model must differ from the model under test"},
+            )
         try:
-            verdict = None
-            if self._cache is not None:
-                try:
-                    verdict = await self._cache.get(key)
-                except Exception as exc:  # a cache outage must not look like a bad judgment
-                    logger.warning("judge cache get failed for task %s: %s", task.task_id, exc)
-            cached = verdict is not None
+            pending = self._inflight.get(key)
+            if pending is None:
+                pending = asyncio.ensure_future(self._obtain(key, task, answer))
+                self._inflight[key] = pending
+                pending.add_done_callback(lambda _t, k=key: self._inflight.pop(k, None))
+            verdict, cached = await asyncio.shield(pending)
             if verdict is None:
-                prompt = self.build_prompt(task, answer)
-                samples = await asyncio.gather(*(self._ask_once(prompt) for _ in range(self._n_samples)))
-                parsed = [sample for sample in samples if sample is not None]
-                if not parsed:
-                    return MetricScore(
-                        name=self.name,
-                        value=0.0,
-                        passed=False,
-                        detail={**base_detail, "error": "judge output unparseable"},
-                    )
-                verdict = self._merge(parsed, self._rubric)
-                if self._cache is not None:
-                    try:
-                        await self._cache.set(
-                            key,
-                            verdict,
-                            judge_model_version=self._judge_model,
-                            rubric_version=self._rubric.version,
-                        )
-                    except Exception as exc:  # keep the paid verdict even if caching fails
-                        logger.warning("judge cache set failed for task %s: %s", task.task_id, exc)
+                return MetricScore(
+                    name=self.name,
+                    value=0.0,
+                    passed=False,
+                    detail={**base_detail, "error": "judge output unparseable"},
+                )
         except Exception as exc:
             logger.warning("llm_judge failed for task %s: %s", task.task_id, exc)
             return MetricScore(name=self.name, value=0.0, passed=False, detail={**base_detail, "error": str(exc)})

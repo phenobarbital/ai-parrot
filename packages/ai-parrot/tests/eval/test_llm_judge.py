@@ -108,3 +108,42 @@ async def test_parses_text_json_fallback():
 
     assert score.value == 1.0
     assert score.passed is True
+
+
+@pytest.mark.asyncio
+async def test_concurrent_same_key_calls_judge_once():
+    import asyncio
+
+    client = FakeJudgeClient([verdict(True)])
+    original = client.ask
+
+    async def slow_ask(prompt, model, **kwargs):
+        await asyncio.sleep(0.01)
+        return await original(prompt, model, **kwargs)
+
+    client.ask = slow_ask
+    metric = LLMJudgeMetric(client, judge_model="judge", rubric=RUBRIC)
+
+    scores = await asyncio.gather(*(metric.score(TASK, TRAJECTORY) for _ in range(4)))
+
+    assert client.calls == 1
+    assert all(score.value == 1.0 for score in scores)
+
+
+@pytest.mark.asyncio
+async def test_cache_key_depends_on_prompt_version():
+    from parrot.eval.judge import judge_cache_key
+
+    base = dict(judge_model="j", rubric=RUBRIC, question="q", expected=None, answer="a")
+    assert judge_cache_key(**base, prompt_version="1") != judge_cache_key(**base, prompt_version="2")
+
+
+@pytest.mark.asyncio
+async def test_self_judging_at_score_time_fails_closed():
+    client = FakeJudgeClient([verdict(True)])
+    metric = LLMJudgeMetric(client, judge_model="under-test", rubric=RUBRIC)
+
+    score = await metric.score(TASK, TRAJECTORY)
+
+    assert score.passed is False and score.value == 0.0
+    assert client.calls == 0

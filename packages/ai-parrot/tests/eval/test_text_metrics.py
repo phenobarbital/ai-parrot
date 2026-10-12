@@ -54,3 +54,34 @@ async def test_text_metrics_missing_expected():
         assert score.value == 0.0
         assert score.passed is False
         assert score.detail["reason"] == f"expected.{key} missing"
+
+
+async def test_contains_invalid_regex_is_scored_failure():
+    from parrot.eval.evaluators.text import ContainsMatch
+    from parrot.eval.models import EvalTask, Trajectory
+
+    task = EvalTask(task_id="t", inputs={}, expected={"must_contain": ["("]})
+    traj = Trajectory(task_id="t", attempt=1, final_output="anything")
+    score = await ContainsMatch(regex=True).score(task, traj)
+    assert score.value == 0.0 and score.passed is False
+    assert "invalid regex" in score.detail["error"]
+
+
+async def test_contains_punctuation_only_needle_not_found():
+    from parrot.eval.evaluators.text import ContainsMatch
+    from parrot.eval.models import EvalTask, Trajectory
+
+    task = EvalTask(task_id="t", inputs={}, expected={"must_contain": ["?"]})
+    traj = Trajectory(task_id="t", attempt=1, final_output="hello")
+    score = await ContainsMatch().score(task, traj)
+    assert score.value == 0.0 and score.detail["missing"] == ["?"]
+
+
+async def test_contains_ignore_case_flag():
+    from parrot.eval.evaluators.text import ContainsMatch
+    from parrot.eval.models import EvalTask, Trajectory
+
+    task = EvalTask(task_id="t", inputs={}, expected={"must_contain": ["PARIS"]})
+    traj = Trajectory(task_id="t", attempt=1, final_output="paris")
+    assert (await ContainsMatch(regex=True).score(task, traj)).value == 1.0
+    assert (await ContainsMatch(regex=True, ignore_case=False).score(task, traj)).value == 0.0
