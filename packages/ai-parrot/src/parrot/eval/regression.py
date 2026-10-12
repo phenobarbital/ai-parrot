@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from abc import ABC, abstractmethod
 
@@ -96,6 +97,17 @@ class PostgresBaselineStore(BaselineStore):
     def __init__(self, dsn: str | None = None) -> None:
         self._dsn = dsn or PostgresEvalSink._resolve_dsn()
         self.logger = logging.getLogger(__name__)
+        self._schema_ready = False
+        self._schema_lock = asyncio.Lock()
+
+    async def _ensure_schema(self, conn) -> None:
+        """Run the schema DDL at most once per instance (serialized, so concurrent callers never race)."""
+        if self._schema_ready:
+            return
+        async with self._schema_lock:
+            if not self._schema_ready:
+                await conn.execute(_SCHEMA_DDL)
+                self._schema_ready = True
 
     def _require_dsn(self) -> str:
         if not self._dsn:
@@ -109,7 +121,7 @@ class PostgresBaselineStore(BaselineStore):
 
         conn = await asyncpg.connect(dsn)
         try:
-            await conn.execute(_SCHEMA_DDL)
+            await self._ensure_schema(conn)
             row = await conn.fetchrow(
                 "SELECT pass_k FROM eval_baselines WHERE dataset_name = $1 AND tag = $2 "
                 "ORDER BY captured_at DESC, id DESC LIMIT 1",
@@ -131,7 +143,7 @@ class PostgresBaselineStore(BaselineStore):
 
         conn = await asyncpg.connect(dsn)
         try:
-            await conn.execute(_SCHEMA_DDL)
+            await self._ensure_schema(conn)
             for tag, value in rows:
                 await conn.execute(
                     "INSERT INTO eval_baselines (dataset_name, tag, run_id, pass_k) VALUES ($1, $2, $3, $4)",

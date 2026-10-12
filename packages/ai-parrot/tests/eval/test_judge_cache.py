@@ -70,3 +70,31 @@ async def test_postgres_upsert():
     finally:
         await conn.close()
     assert n == 1
+
+
+async def test_postgres_cache_schema_ddl_runs_once(monkeypatch):
+    """Concurrent get() calls on one cache execute the schema DDL a single time."""
+    import asyncio
+    import sys
+    import types
+
+    executed: list[str] = []
+
+    class FakeConn:
+        async def execute(self, sql, *args):
+            executed.append(sql)
+
+        async def fetchrow(self, sql, *args):
+            return None
+
+        async def close(self):
+            return None
+
+    async def connect(dsn):
+        return FakeConn()
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=connect))
+    cache = PostgresJudgeCache(dsn="postgresql://fake")
+    await asyncio.gather(*(cache.get(f"k{i}") for i in range(5)))
+
+    assert len(executed) == 1

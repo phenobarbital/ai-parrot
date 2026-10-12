@@ -78,3 +78,32 @@ async def test_postgres_roundtrip():
     await store.record(_report(0.8, {"A": 0.7}, name=name))
     assert await store.get_baseline(name) == pytest.approx(0.8)
     assert await store.get_baseline(name, "A") == pytest.approx(0.7)
+
+
+async def test_postgres_schema_ddl_runs_once(monkeypatch):
+    """Concurrent calls on one store execute the schema DDL a single time."""
+    import asyncio
+    import sys
+    import types
+
+    executed: list[str] = []
+
+    class FakeConn:
+        async def execute(self, sql, *args):
+            executed.append(sql)
+
+        async def fetchrow(self, sql, *args):
+            return None
+
+        async def close(self):
+            return None
+
+    async def connect(dsn):
+        return FakeConn()
+
+    monkeypatch.setitem(sys.modules, "asyncpg", types.SimpleNamespace(connect=connect))
+    store = PostgresBaselineStore(dsn="postgresql://fake")
+    await asyncio.gather(*(store.get_baseline("qa", "t") for _ in range(5)))
+    await store.get_baseline("qa", "t")
+
+    assert len(executed) == 1

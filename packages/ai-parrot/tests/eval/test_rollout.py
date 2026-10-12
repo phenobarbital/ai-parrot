@@ -215,3 +215,32 @@ async def test_conversational_accumulates_tokens():
     assert trajectory.model == "fake:model-under-test"
     assert len(agent_turns) == 3
     assert all(len(turn.tool_calls) == 1 for turn in agent_turns)
+
+
+async def test_single_turn_tolerates_malformed_usage_and_metadata():
+    """Malformed usage/tool-call values never turn a good answer into an errored trajectory."""
+    import datetime
+    import json
+
+    response = type(
+        "M",
+        (),
+        {
+            "content": "x",
+            "usage": type("U", (), {"prompt_tokens": object(), "completion_tokens": 1, "total_tokens": 2})(),
+            "tool_calls": [type("C", (), {"name": "t", "arguments": 5, "execution_time": "n/a"})()],
+            "model": "m",
+            "metadata": {"when": datetime.datetime(2026, 1, 1)},
+        },
+    )()
+    bot = AsyncMock()
+    bot.ask.return_value = response
+
+    async with NoopSandbox() as sandbox:
+        trajectory = await SingleTurnRollout().run(bot, EvalTask(task_id="t", inputs={"query": "q"}), sandbox)
+
+    assert trajectory.error is None
+    assert trajectory.final_output == "x"
+    assert trajectory.tokens.total == 0
+    assert trajectory.turns[0].tool_calls == []
+    assert json.dumps(trajectory.response_metadata)

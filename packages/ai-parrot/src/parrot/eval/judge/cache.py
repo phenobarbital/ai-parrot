@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -45,6 +46,17 @@ class PostgresJudgeCache(JudgeCache):
     def __init__(self, dsn: str | None = None) -> None:
         self._dsn = dsn or PostgresEvalSink._resolve_dsn()
         self.logger = logging.getLogger(__name__)
+        self._schema_ready = False
+        self._schema_lock = asyncio.Lock()
+
+    async def _ensure_schema(self, conn) -> None:
+        """Run the schema DDL at most once per instance (serialized, so concurrent callers never race)."""
+        if self._schema_ready:
+            return
+        async with self._schema_lock:
+            if not self._schema_ready:
+                await conn.execute(_SCHEMA_DDL)
+                self._schema_ready = True
 
     def _require_dsn(self) -> str:
         if not self._dsn:
@@ -58,7 +70,7 @@ class PostgresJudgeCache(JudgeCache):
 
         conn = await asyncpg.connect(dsn)
         try:
-            await conn.execute(_SCHEMA_DDL)
+            await self._ensure_schema(conn)
             row = await conn.fetchrow("SELECT verdict FROM judge_cache WHERE cache_key = $1", key)
         finally:
             await conn.close()
@@ -76,7 +88,7 @@ class PostgresJudgeCache(JudgeCache):
 
         conn = await asyncpg.connect(dsn)
         try:
-            await conn.execute(_SCHEMA_DDL)
+            await self._ensure_schema(conn)
             await conn.execute(
                 "INSERT INTO judge_cache (cache_key, judge_model_version, rubric_version, verdict) "
                 "VALUES ($1, $2, $3, $4::jsonb) "

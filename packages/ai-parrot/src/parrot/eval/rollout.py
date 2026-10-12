@@ -17,6 +17,7 @@ Provided implementations:
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -402,52 +403,69 @@ def _extract_question(task: EvalTask) -> str:
             if isinstance(val, str):
                 return val
     # Fallback: serialize the whole inputs dict
-    import json
-
     return json.dumps(task.inputs)
 
 
+def _json_safe(value: Any) -> Any:
+    """Return ``value`` as plain JSON data, stringifying anything not natively serializable."""
+    try:
+        return json.loads(json.dumps(value, default=str))
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def _usage_from_response(response: Any) -> TokenUsage:
-    """Map ``response.usage`` to ``TokenUsage``; use zeros when absent.
+    """Map ``response.usage`` to ``TokenUsage``; use zeros when absent or malformed.
 
     Reads usage fields tolerantly so mock responses without a ``usage``
-    attribute yield ``TokenUsage()``.
+    attribute (or with odd values) yield ``TokenUsage()`` instead of failing the rollout.
     """
     usage = getattr(response, "usage", None)
     if usage is None:
         return TokenUsage()
-    prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
-    completion = int(getattr(usage, "completion_tokens", 0) or 0)
-    total = int(getattr(usage, "total_tokens", 0) or 0) or (prompt + completion)
-    return TokenUsage(prompt=prompt, completion=completion, total=total)
+    try:
+        prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
+        completion = int(getattr(usage, "completion_tokens", 0) or 0)
+        total = int(getattr(usage, "total_tokens", 0) or 0) or (prompt + completion)
+        return TokenUsage(prompt=prompt, completion=completion, total=total)
+    except (TypeError, ValueError):
+        return TokenUsage()
 
 
 def _tool_calls_from_response(response: Any) -> list[ToolCallRecord]:
-    """Map response tool calls to records; use an empty list when absent.
+    """Map response tool calls to records; skip malformed calls, empty list when absent.
 
     ``ToolCall.execution_time`` is seconds and ``ToolCallRecord.latency_ms``
     is milliseconds.
     """
     records: list[ToolCallRecord] = []
-    for call in getattr(response, "tool_calls", None) or []:
-        execution_time = getattr(call, "execution_time", None)
-        records.append(
-            ToolCallRecord(
-                name=str(getattr(call, "name", "")),
-                arguments=dict(getattr(call, "arguments", None) or {}),
-                result=getattr(call, "result", None),
-                error=getattr(call, "error", None),
-                latency_ms=(float(execution_time) * 1000.0) if execution_time is not None else None,
+    try:
+        calls = list(getattr(response, "tool_calls", None) or [])
+    except TypeError:
+        return records
+    for call in calls:
+        try:
+            execution_time = getattr(call, "execution_time", None)
+            records.append(
+                ToolCallRecord(
+                    name=str(getattr(call, "name", "")),
+                    arguments=_json_safe(dict(getattr(call, "arguments", None) or {})),
+                    result=_json_safe(getattr(call, "result", None)),
+                    error=getattr(call, "error", None),
+                    latency_ms=(float(execution_time) * 1000.0) if execution_time is not None else None,
+                )
             )
-        )
+        except (TypeError, ValueError):
+            continue
     return records
 
 
 def _metadata_from_response(response: Any) -> tuple[str | None, dict[str, Any]]:
-    """Return the response model and a copied metadata mapping, if present."""
+    """Return the response model and a JSON-safe copy of its metadata mapping, if present."""
     model = getattr(response, "model", None)
     metadata = getattr(response, "metadata", None)
-    return (str(model) if model else None, dict(metadata) if isinstance(metadata, dict) else {})
+    safe = _json_safe(metadata) if isinstance(metadata, dict) else {}
+    return (str(model) if model else None, safe if isinstance(safe, dict) else {})
 
 
 def _extract_text(response: Any) -> str | None:
