@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-651 — `ProductCounter` / `GraphicPanelDisplay` resolve their own layout profile
 **Spec**: `sdd/specs/fixgroup-5725d520238f.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: low
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -330,10 +330,14 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude (via `/sdd-fix issue:0a49138a5ac3`, session 3be6929f)
+**Date**: 2026-10-12
+**Notes**: Added `_ensure_layout()` (verbatim copy of `ProductOnShelves._ensure_layout`) to
+`ProductCounter` and `GraphicPanelDisplay`, extended the `..layout` import with
+`resolve_layout_profile`, and prepended `self._ensure_layout(ctx)` to `perceive()`,
+`identify()` and `compare()` in both types. Added two parametrized compare-level tests
+(`test_counter_and_panel_products_found_without_layout`, `test_counter_and_panel_keep_provided_layout`)
+covering both types. Validation: 43 passed across the four listed modules; `ruff check` and
+`black --check` clean. Code commit `fa0795893`.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

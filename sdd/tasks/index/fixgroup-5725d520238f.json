@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-12T14:10:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-12T14:11:28+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-651",
       "feature": "fixgroup-5725d520238f",
       "spec": "sdd/specs/fixgroup-5725d520238f.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
@@ -24,9 +24,10 @@
       "parallelism_notes": "single task; no dependencies; touches only its three declared files",
       "discovered_from": "issue:0a49138a5ac3",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4236-counter-panel-ensure-layout.md"
+      "started_at": "2026-10-12T14:09:25+00:00",
+      "completed_at": "2026-10-12T14:09:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4236-counter-panel-ensure-layout.md",
+      "verification": "verified"
     }
   ]
 }

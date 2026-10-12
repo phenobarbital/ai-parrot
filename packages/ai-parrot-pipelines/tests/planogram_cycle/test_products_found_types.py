@@ -275,6 +275,42 @@ async def test_endcap_backlit_multitier_products_found(fake_vision_client: Any) 
     ]
 
 
+_LAYOUT_SELF_RESOLVING = ["product_counter", "graphic_panel_display"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("type_name", _LAYOUT_SELF_RESOLVING)
+async def test_counter_and_panel_products_found_without_layout(type_name: str, fake_vision_client: Any) -> None:
+    """compare() with ctx.layout=None resolves the type profile and reports tri-state presence (issue:0a49138a5ac3)."""
+    definition = _definition()
+    pipe = _pipeline(type_name, definition, fake_vision_client)
+    context = _ctx(definition)
+    comparison = await pipe._type_handler.compare(
+        [_perception([1, 2, 3])],
+        [_identifications({1: {"product": "ET-2850", "brand": "Epson"}, 3: {"product": "ET-4850", "brand": "Epson"}})],
+        context,
+    )
+
+    assert context.layout is not None
+    assert [(item.found, item.status) for item in comparison.products_found] == [
+        (True, FacingStatus.MATCH),
+        (None, FacingStatus.NOT_VISIBLE),
+        (True, FacingStatus.MATCH),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("type_name", _LAYOUT_SELF_RESOLVING)
+async def test_counter_and_panel_keep_provided_layout(type_name: str, fake_vision_client: Any) -> None:
+    """_ensure_layout() returns the already-populated ctx.layout unchanged (orchestrator path is a no-op)."""
+    definition = _definition()
+    pipe = _pipeline(type_name, definition, fake_vision_client)
+    context = _ctx(definition, layout=pipe._layout)
+
+    assert pipe._type_handler._ensure_layout(context) is pipe._layout
+    assert context.layout is pipe._layout
+
+
 @pytest.mark.asyncio
 async def test_layout_profile_reporting_override_disables_presence(fake_vision_client: Any) -> None:
     """The planogram config reporting override disables slot-presence output (AC-6)."""
