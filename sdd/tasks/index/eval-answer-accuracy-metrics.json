@@ -93,7 +93,7 @@
       "feature_id": "FEAT-652",
       "feature": "eval-answer-accuracy-metrics",
       "spec": "sdd/specs/eval-answer-accuracy-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +103,9 @@
       "parallelism_notes": "imports Rubric, JudgeVerdict, JudgeCache, judge_cache_key from TASK-4240 (parrot/eval/judge/); creates evaluators/llm_judge.py + its test only.",
       "assigned_to": null,
       "started_at": "2026-10-12T17:09:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4241-llm-judge-metric.md"
+      "completed_at": "2026-10-12T17:28:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4241-llm-judge-metric.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4242",
