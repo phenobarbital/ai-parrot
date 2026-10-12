@@ -16,16 +16,17 @@
       "feature_id": "FEAT-648",
       "feature": "products-found-endcap",
       "spec": "sdd/specs/products-found-endcap.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-10-12T13:28:37+00:00",
-      "completed_at": null,
+      "completed_at": "2026-10-12T13:39:30+00:00",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: edits the four shelf type profiles and test_ink_wall.py (owns the test rewrite because the opt-in breaks the old test); no dependency",
-      "file": "sdd/tasks/active/TASK-4206-shelf-types-slot-presence-opt-in.md"
+      "file": "sdd/tasks/completed/TASK-4206-shelf-types-slot-presence-opt-in.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4207",

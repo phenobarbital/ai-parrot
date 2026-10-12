@@ -268,10 +268,16 @@ assert all(p.found is None for p in comparison.products_found if p.model not in 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4206
+- Feature: products-found-endcap
+- Implementation SHA: b514a776188cf9db66b3296a1c058058edf84733
+- Closed at (UTC): 2026-10-12T13:39:30+00:00
+- Fix commits: 18af9484bf61d883c4d3d068b5a15deed207acfe
 
-**Deviations from spec**: Spec §3 places the `test_ink_wall.py` rewrite in Module 2; it lives here because the opt-in alone breaks the old test (see Context).
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 323.3s · Tokens: n/a |
+| validation_note | Merge-tier selector run was red on the feature worktree: failures are baseline (unchanged on dev): test_endcap_no_shelves_promotional x2, test_ocr_reader pillow pin, plus examples/ gitignored files absent in worktree. One genuine regression (test_reporting_layout::test_other_types_default_reporting) fixed by orchestrator in 18af9484b. |
