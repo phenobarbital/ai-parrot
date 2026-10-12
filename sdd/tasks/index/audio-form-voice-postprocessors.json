@@ -225,7 +225,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -235,8 +235,9 @@
       "parallelism_notes": "Documents the merged behaviour of TASK-4253's adapter (api/audio_ws.py) and the engine/protocol it exposes; must read the landed code.",
       "assigned_to": null,
       "started_at": "2026-10-12T19:44:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4254-docs-voice-postprocessors.md"
+      "completed_at": "2026-10-12T20:17:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4254-docs-voice-postprocessors.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4255",
