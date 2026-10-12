@@ -201,7 +201,8 @@ class AudioSessionStore:
             raw = _text(await redis.get(key))
             holder = _parse_holder(raw)
             if raw is not None and holder is not None and holder.session_id == session_id:
-                await redis.set(key, raw, ex=self.active_ttl_seconds)
+                # atomic: only re-set (with the new EX) while the stored value is still what we read
+                await redis.eval(_CAS_SCRIPT, 1, key, raw, raw, self.active_ttl_seconds)
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("AudioSessionStore._refresh_active failed: %s", exc)
 

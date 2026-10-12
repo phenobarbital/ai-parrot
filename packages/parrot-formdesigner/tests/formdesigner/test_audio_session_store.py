@@ -157,3 +157,25 @@ async def test_save_refreshes_marker_of_same_session_only(stores):
     await store.save("f", "sess", _snap())
     assert partial._redis.ttls[MARKER] == 1
     assert partial._redis.kv[MARKER] == '{"session_id": "other"}'
+
+
+async def test_refresh_marker_does_not_clobber_concurrent_new_holder(stores):
+    """The marker is replaced by another session between the refresh's GET and its write."""
+    partial, store = stores
+    await store.claim_active("u1", "sess", form_uid="f", tenant="t1")
+    new_holder = '{"session_id": "B", "form_uid": "f2", "tenant": "t1"}'
+
+    class RacingRedis(FakeRedis):
+        async def get(self, key):
+            value = await super().get(key)
+            if key == MARKER and self.kv[key] != new_holder:
+                self.kv[key] = new_holder
+                self.ttls[key] = 99
+            return value
+
+    racing = RacingRedis()
+    racing.kv, racing.ttls = partial._redis.kv, partial._redis.ttls
+    partial._redis = racing
+    await store._refresh_active(racing, "u1", "sess")
+    assert racing.kv[MARKER] == new_holder
+    assert racing.ttls[MARKER] == 99
