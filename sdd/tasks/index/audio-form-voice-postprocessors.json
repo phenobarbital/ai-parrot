@@ -117,7 +117,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -125,8 +125,9 @@
       "parallelism_notes": "No dependencies: new module audio/value_refiner.py, only needs FieldType (existing core/types.py).",
       "assigned_to": null,
       "started_at": "2026-10-12T19:44:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4249-llm-value-refiner.md"
+      "completed_at": "2026-10-12T20:01:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4249-llm-value-refiner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4250",
