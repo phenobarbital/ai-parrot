@@ -71,7 +71,7 @@ docs/audio-form-voice-modes.md
 sdd/proposals/audio-form-interaction-workflow.handoff-navigator-svelte.md
   :94   - **Hands-free is a client policy**                     (grep -cF → 1)
 packages/parrot-formdesigner/CHANGELOG.md
-  :5    ## [Unreleased]   (followed by `### Changed`)
+  :5    ## [Unreleased]   (followed by `### Changed`) — NOTE: a second, stale `## [Unreleased]` exists at :156; edit only the top one
 ```
 Line numbers shift as you edit — re-locate with `grep -nF` each time.
 
@@ -145,8 +145,12 @@ Line numbers shift as you edit — re-locate with `grep -nF` each time.
 
 ### `packages/parrot-formdesigner/CHANGELOG.md` (MODIFY)
 ```markdown
-# occurrences: 1 (verified: grep -c '^## \[Unreleased\]' packages/parrot-formdesigner/CHANGELOG.md)
-# AFTER — insert below `## [Unreleased]`:
+# occurrences: 2 (verified: grep -c '^## \[Unreleased\]' packages/parrot-formdesigner/CHANGELOG.md → lines 5 and 156)
+# Use the TOP one — disambiguated by its context (verified: CHANGELOG.md:3-5):
+#   All notable changes to `parrot-formdesigner` will be documented in this file.
+#
+#   ## [Unreleased]
+# AFTER — insert below that first `## [Unreleased]` (never the stale one at :156):
 
 ### Added
 
