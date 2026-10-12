@@ -117,6 +117,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
 
     client_type: str = "google"
     client_name: str = "google"
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ('GOOGLE_API_KEY',)
 
     # FEAT-523 folder-convention attributes (read by LLMFactory).
     provider_keys: tuple[str, ...] = ("google",)

@@ -20,6 +20,7 @@ import mammoth
 import markdown
 from bs4 import BeautifulSoup, NavigableString
 from markdownify import markdownify as md
+from ._exports import safe_template_name
 from .document import AbstractDocumentTool, DocumentGenerationArgs
 
 
@@ -50,9 +51,15 @@ class MSWordArgs(DocumentGenerationArgs):
     @field_validator('template_name')
     @classmethod
     def validate_template_name(cls, v):
+        v = safe_template_name(v)
         if v and not v.endswith('.html'):
             v = f"{v}.html"
         return v
+
+    @field_validator('docx_template')
+    @classmethod
+    def validate_docx_template(cls, v):
+        return safe_template_name(v)
 
 
 class MSWordTool(AbstractDocumentTool):
@@ -90,6 +97,7 @@ class MSWordTool(AbstractDocumentTool):
         self,
         templates_dir: Optional[Path] = None,
         default_html_template: Optional[str] = None,
+        artifact_store: Any = None,
         **kwargs
     ):
         """
@@ -98,9 +106,10 @@ class MSWordTool(AbstractDocumentTool):
         Args:
             templates_dir: Directory containing HTML and DOCX templates
             default_html_template: Default HTML template for content processing
+            artifact_store: Server-managed artifact store (exports are published there when set)
             **kwargs: Additional arguments for AbstractDocumentTool
         """
-        super().__init__(templates_dir=templates_dir, **kwargs)
+        super().__init__(templates_dir=templates_dir, artifact_store=artifact_store, **kwargs)
 
         self.default_html_template = default_html_template
 
@@ -504,9 +513,9 @@ class WordToMarkdownTool(AbstractDocumentTool):
     default_extension = "md"
     supported_extensions = [".md", ".txt"]
 
-    def __init__(self, **kwargs):
+    def __init__(self, artifact_store: Any = None, **kwargs):
         """Initialize the Word to Markdown tool."""
-        super().__init__(**kwargs)
+        super().__init__(artifact_store=artifact_store, **kwargs)
         self._temp_dir = None
 
     async def _download_file(self, url: str) -> str:
@@ -524,7 +533,9 @@ class WordToMarkdownTool(AbstractDocumentTool):
         file_path = os.path.join(self._temp_dir, filename)
 
         # Download file
-        async with aiohttp.ClientSession() as session:
+        from parrot.tools.egress import egress_session
+
+        async with egress_session() as session:
             async with session.get(url) as response:
                 if response.status != 200:
                     raise Exception(f"Download failed with status {response.status}")
@@ -604,11 +615,12 @@ class WordToMarkdownTool(AbstractDocumentTool):
                     **kwargs
                 )
                 if file_result['status'] == 'success':
-                    result.update({
-                        "saved_file": file_result['metadata'],
-                        "file_path": file_result['metadata']['file_path'],
-                        "file_url": file_result['metadata']['file_url']
-                    })
+                    saved = file_result['metadata']
+                    result.update({"saved_file": saved})
+                    if 'file_path' in saved:  # a store export has no local path: ``url`` is its address
+                        result.update({"file_path": saved['file_path'], "file_url": saved['file_url']})
+                    else:
+                        result.update({"url": saved['url']})
 
             return result
 

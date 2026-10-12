@@ -95,7 +95,7 @@ def test_policy_named_host_server_allows_host_stdio():
 def test_policy_builtin_allowlist(host_plugins):
     """deny_all refuses built-ins; allow-listed passes; host toolkit passes; unknown is unavailable."""
     deny = TenantToolingPolicy.deny_all()
-    for slug in ("shell", "python_execution", "docker"):
+    for slug in ("shell", "code_interpreter", "docker"):
         with pytest.raises(TenantToolingRefused) as err:
             deny.check_tool(slug, subject=SUBJECT)
         assert err.value.reason == "builtin_not_permitted"

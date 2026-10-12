@@ -24,6 +24,12 @@ from typing import Any
 
 from aiohttp import web
 
+from .hooks import (  # noqa: E402,F401  (host hook keys, see hooks.py)
+    STUDIO_CATALOG_DECORATOR,
+    STUDIO_TOOL_CALL_GUARDRAILS,
+    STUDIO_TOOLKIT_PARAM_HOOK,
+)
+
 STUDIO_PREFIX = "/api/v1/astudio"
 
 _STUDIO_MOUNTS_APP_KEY = "_astudio_mounted_prefixes"
@@ -172,11 +178,37 @@ def _register_catalog(reg: _Registrar) -> None:
     reg.add("/catalog/{kind}", StudioCatalogHandler)
 
 
+def _register_exports(reg: _Registrar) -> None:
+    # Tenant-checked download of an export tool's file (PA-12). ``export_tenant`` (not ``tenant``): a host prefix may
+    # itself contain ``{tenant}``.
+    from parrot.storage.exports import STUDIO_EXPORTS_URL_BASE_KEY
+
+    from .exports import StudioExportDownloadHandler
+
+    reg.add("/exports/{export_tenant}/{agent}/{export_id}/{filename}", StudioExportDownloadHandler)
+    reg.app.setdefault(STUDIO_EXPORTS_URL_BASE_KEY, f"{reg.base}/exports")
+
+
 def _register_assistant(reg: _Registrar) -> None:
     # AgentStudio meta-agent (FEAT-467 TASK-2521).
     from .meta_agent import StudioAssistantHandler
 
     reg.add("/assistant", StudioAssistantHandler)
+
+
+async def _apply_exports_mode(app: web.Application) -> None:
+    """Copy the host switch ``app[STUDIO_EXPORTS_STORE_ONLY]`` to the export tools' mode (read at startup)."""
+    import parrot.tools.exports_mode as exports_mode
+
+    exports_mode.configure(bool(app.get(exports_mode.STUDIO_EXPORTS_STORE_ONLY)))
+
+
+async def _apply_egress_guard(app: web.Application) -> None:
+    """Copy the host switch ``app[STUDIO_EGRESS_GUARD]`` to the tools' egress helper (read at startup, so the host may
+    set it any time before the app starts)."""
+    import parrot.tools.egress as egress
+
+    egress.configure(bool(app.get(egress.STUDIO_EGRESS_GUARD)))
 
 
 def setup_studio_routes(
@@ -218,6 +250,7 @@ def setup_studio_routes(
         _register_testing,
         _register_toolkits,
         _register_catalog,
+        _register_exports,
         _register_assistant,
     ):
         register(reg)
@@ -232,6 +265,9 @@ def setup_studio_routes(
 
     install_startup_hook_once(app, resolve_studio_storage)
     from .meta_agent import cleanup_studio_assistants
+
+    install_startup_hook_once(app, _apply_exports_mode)  # PA-11: app[STUDIO_EXPORTS_STORE_ONLY] -> parrot.tools.exports_mode
+    install_startup_hook_once(app, _apply_egress_guard)  # PA-13: app[STUDIO_EGRESS_GUARD] -> parrot.tools.egress
 
     install_startup_hook_once(app, cleanup_studio_assistants, signal="on_cleanup")  # assistant instances, every mode
     install_studio_storage_cleanup(app)  # unregisters the Postgres stores at cleanup

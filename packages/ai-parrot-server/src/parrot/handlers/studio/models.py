@@ -32,7 +32,7 @@ class StudioError(BaseModel):
 
     message: str
     code: str | None = None
-    details: dict[str, Any] | None = None
+    details: dict[str, Any] | list[dict[str, Any]] | None = None
 
 
 class CreateAgentRequest(BaseModel):
@@ -134,6 +134,7 @@ class AgentToolkitsResponse(BaseModel):
     reason: str | None = None
     toolkits: list[dict[str, Any]] = Field(default_factory=list)
     unavailable: list[str] = Field(default_factory=list)
+    failed: list[dict[str, str]] = Field(default_factory=list)  # specs the running agent could NOT apply: {slug, error}
 
 
 class ToolkitPersistResponse(BaseModel):

@@ -31,6 +31,16 @@ from parrot.auth.confirmation import is_enforced_write_class
 from parrot.clients.factory import LLMFactory
 from parrot.tools.abstract import AbstractTool
 from parrot.tools.discovery import resolve_class
+from parrot.tools.host_hooks import (
+    STUDIO_TOOL_CALL_GUARDRAILS,
+    STUDIO_TOOLKIT_PARAM_HOOK,
+    apply_exclude_tools,
+    host_tool_call_pipeline,
+    run_toolkit_param_hook,
+    split_exclude_tools,
+)
+from parrot.tools.resolver import get_toolkit_resolver
+from parrot.tools.tooling_policy import ToolingSubject, ToolParamRefused
 from parrot.tools.toolkit import AbstractToolkit
 from pydantic import ValidationError
 
@@ -173,7 +183,10 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
             return refused
 
         try:
-            instance = _instantiate_tool(cls, self.request.app)
+            instance = _instantiate_tool(cls, self.request.app, await self._execute_param_hook(slug))
+        except ToolParamRefused as exc:  # PA-9: the host hook refused the construction parameters (fail closed)
+            return self._error(str(exc), status=422, code=exc.code,
+                               details={"reason": exc.reason, "item": exc.item, "params": exc.params})
         except _ServerManagedDepsError as exc:
             return self._error(
                 f"Tool '{slug}' requires server-managed dependencies.",
@@ -194,7 +207,58 @@ class StudioToolExecuteHandler(_StudioTestingMixin, StudioBaseView):
         except ValueError as exc:
             return self._error(f"Invalid arguments for '{slug}': {exc}", status=422, code="invalid_args")
 
+        if (blocked := await self._host_guardrail_refusal(slug, execute_request.args)) is not None:
+            return blocked
         return self._execute_response(await instance.execute(**execute_request.args))
+
+    async def _execute_param_hook(self, slug: str):
+        """``params -> final params`` of the host toolkit-parameter hook (PA-9) for ``slug``; ``None`` without a hook.
+
+        The hook gets the canonical slug and phase ``execute``, exactly as every other construction path.
+        """
+        hook = self.request.app.get(STUDIO_TOOLKIT_PARAM_HOOK)
+        if hook is None:
+            return None
+        part = await self._studio_partition()
+        subject = ToolingSubject(
+            tenant=part.tenant, agent_id=None, actor=(await self._get_user()).user_id, phase="execute"
+        )
+        canonical = get_toolkit_resolver().canonical_slug(slug) or slug
+
+        def run(params: dict) -> dict:
+            return split_exclude_tools(run_toolkit_param_hook(hook, canonical, params, subject))[0]
+
+        return run
+
+    async def _host_guardrail_refusal(self, slug: str, args: dict):
+        """403 ``tool_call_blocked`` when a host TOOL_CALL guardrail (PA-10) blocks this direct call; else ``None``.
+
+        The same guardrails a Studio-built bot runs before every tool call, so this route is not a way around them
+        (``agent`` is ``None`` here: no bot is involved).
+        """
+        guardrails = self.request.app.get(STUDIO_TOOL_CALL_GUARDRAILS)
+        if not guardrails:
+            return None
+        from parrot.bots.guardrails.base import GuardrailContext, GuardrailStage
+
+        part = await self._studio_partition()
+        user = await self._get_user()
+        pipeline = host_tool_call_pipeline(
+            guardrails, {"tenant": part.tenant, "agent_id": None, "agent": None, "visibility": None}
+        )
+        ctx = GuardrailContext(
+            stage=GuardrailStage.TOOL_CALL, agent_name=slug, tool_name=slug, user_id=user.user_id,
+            extras={"tool_name": slug, "arguments": args, "permission_context": None},
+        )
+        outcome = await pipeline.run(f"tool_call:{slug}", ctx)
+        if not outcome.blocked:
+            return None
+        message = outcome.reason or "Policy denied"
+        for report in outcome.flag_reports.values():
+            if isinstance(report, dict) and report.get("message"):
+                message = report["message"]
+                break
+        return self._error(message, status=403, code="tool_call_blocked")
 
 
 @is_authenticated()
@@ -265,22 +329,38 @@ class StudioToolAssignHandler(_ServerManagedAssignMixin, _StudioAgentsMixin, _St
         if bot is None:
             return self._error(f"Agent '{name}' has no live instance.", status=404, code="not_found")
 
+        try:  # PA-9: the host parameter hook sees every toolkit entry before ANYTHING is registered
+            subject = await self._assign_subject(bot, user)
+            hooked = [
+                None if params is None else self._host_params(entry.slug, params, subject)
+                for entry, params in zip(assign_request.toolkits, managed)
+            ]
+        except _ToolkitAssignError as exc:
+            return self._assign_refusal(exc)
+
         errors: list[dict[str, Any]] = []
         registered_names: set[str] = set()
 
         if assign_request.tools:
             before = set(bot.tool_manager.list_tools())
-            bot.tool_manager.register_tools(assign_request.tools)
+            try:
+                bot.tool_manager.register_tools(assign_request.tools)
+            except ToolParamRefused as exc:  # PA-9: the host hook refused a named tool (the bot's bound hook)
+                return self._error(str(exc), status=422, code=exc.code,
+                                   details={"reason": exc.reason, "item": exc.item, "params": exc.params})
             after = set(bot.tool_manager.list_tools())
             registered_names |= after - before
 
-        for entry, params in zip(assign_request.toolkits, managed):
+        for entry, final in zip(assign_request.toolkits, hooked):
             cls = _resolve_registry_class(entry.slug)
-            if cls is None or not (isinstance(cls, type) and issubclass(cls, AbstractToolkit)):
+            if cls is None or final is None or not (isinstance(cls, type) and issubclass(cls, AbstractToolkit)):
                 errors.append({"slug": entry.slug, "error": "Unknown toolkit."})
                 continue
+            params, exclude = final
             try:
-                registered = bot.tool_manager.register_toolkit(cls, **params)
+                toolkit = cls(**params)
+                apply_exclude_tools(toolkit, exclude)
+                registered = bot.tool_manager.register_toolkit(toolkit)
             except Exception as exc:  # pylint: disable=broad-except
                 self.logger.error(
                     "Studio: failed to register toolkit '%s' on '%s': %s",

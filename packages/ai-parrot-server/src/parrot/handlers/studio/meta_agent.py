@@ -23,7 +23,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 from aiohttp import web
 from navigator_auth.decorators import is_authenticated, user_session
@@ -33,6 +33,8 @@ from pydantic import BaseModel
 from ._base import StudioBaseView
 from .access import StudioTenantRequired, build_tool_scope
 from .byok import resolve_user_api_key
+from .key_source import KeySourceRefusal, choose_key_source, key_source_choice_enabled
+from .conversation import studio_conversation_kwargs
 from .models import StudioError
 
 SESSION_KEY = "_studio_assistant"
@@ -119,6 +121,7 @@ class AssistantAskRequest(BaseModel):
 
     query: str
     use_byok: bool = True
+    key_source: Literal["server", "byok"] | None = None  # PA-2: required when both a server and a personal key exist
 
 
 @is_authenticated()
@@ -126,9 +129,9 @@ class AssistantAskRequest(BaseModel):
 class StudioAssistantHandler(StudioBaseView):
     """``/api/v1/astudio/assistant`` — converse with the AgentStudio meta-agent."""
 
-    def _error(self, message: str, *, status: int, code: str | None = None):
+    def _error(self, message: str, *, status: int, code: str | None = None, details: dict | None = None):
         return self.json_response(
-            StudioError(message=message, code=code).model_dump(),
+            StudioError(message=message, code=code, details=details).model_dump(),
             status=status,
         )
 
@@ -179,15 +182,26 @@ class StudioAssistantHandler(StudioBaseView):
         """
         partition = identity or _ANONYMOUS
         entry = self._partition_entry(session, partition)
+        instance_name = f"agent_studio_{uuid.uuid4().hex[:8]}"
         if entry is not None:
             agent = self._instances().get((*partition, entry["instance"]))
             if agent is not None and getattr(agent, "_assistant_partition", None) == partition:
                 return agent
-            # the entry named an instance that expired / belongs to another partition: rebuild below
+            if agent is None:
+                # Keep the shared cache identity stable across workers. Each worker
+                # can then reuse its own instance when the next turn returns to it.
+                instance_name = entry["instance"]
+            # A mismatched partition still gets a fresh instance identity.
 
+        # a stale entry (instance missing on THIS worker) keeps its conversation id: with a shared conversation
+        # backend any worker continues the same history, and the entry no longer ping-pongs between workers
+        conversation = entry["session_id"] if entry is not None else uuid.uuid4().hex
         agent = AgentStudioAgent(
-            name=f"agent_studio_{uuid.uuid4().hex[:8]}", api_key=api_key,
-            declarative_only=await self._declarative_only(), chatbot_id=partition.chatbot_id,
+            name=instance_name,
+            api_key=api_key,
+            declarative_only=await self._declarative_only(),
+            chatbot_id=partition.chatbot_id,
+            **studio_conversation_kwargs(),
         )
         await agent.configure(self.request.app)
         agent._assistant_partition = partition
@@ -195,7 +209,7 @@ class StudioAssistantHandler(StudioBaseView):
         if session is not None:
             session[SESSION_KEY] = {
                 **self._partition_entries(session),
-                partition.key: {"instance": agent.name, "session_id": uuid.uuid4().hex},
+                partition.key: {"instance": agent.name, "session_id": conversation},
             }
         return agent
 
@@ -260,8 +274,17 @@ class StudioAssistantHandler(StudioBaseView):
             return ask_request
         user, session = await self._get_user(), await self._resolve_session()
         api_key = None
-        if ask_request.use_byok:
-            api_key = await resolve_user_api_key(self.request.app, user.user_id, "anthropic")
+        if ask_request.use_byok or ask_request.key_source is not None:
+            stored = await resolve_user_api_key(self.request.app, user.user_id, "anthropic")
+            try:
+                source = choose_key_source(
+                    "anthropic", has_byok=bool(stored), requested=ask_request.key_source,
+                    use_byok=ask_request.use_byok, ask_when_both=key_source_choice_enabled(self.request.app),
+                )
+            except KeySourceRefusal as refusal:
+                return self._error(refusal.message, status=refusal.status, code=refusal.code,
+                                   details=refusal.details or None)
+            api_key = stored if source == "byok" else None
         try:
             agent = await self._get_or_create_assistant(session, api_key=None, identity=partition)
         except Exception as exc:  # pylint: disable=broad-except

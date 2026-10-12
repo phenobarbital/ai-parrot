@@ -159,6 +159,7 @@ class CSVExportTool(AbstractDocumentTool):
         default_encoding: str = "utf-8",
         default_delimiter: str = ",",
         add_bom: bool = False,
+        artifact_store: Any = None,
         **kwargs
     ):
         """
@@ -168,9 +169,10 @@ class CSVExportTool(AbstractDocumentTool):
             default_encoding: Default file encoding
             default_delimiter: Default field delimiter
             add_bom: Whether to add BOM for Excel compatibility by default
+            artifact_store: Server-managed artifact store (exports are published there when set)
             **kwargs: Additional arguments for AbstractDocumentTool
         """
-        super().__init__(**kwargs)
+        super().__init__(artifact_store=artifact_store, **kwargs)
         self.default_encoding = default_encoding
         self.default_delimiter = default_delimiter
         self.add_bom = add_bom
@@ -520,7 +522,7 @@ class CSVExportTool(AbstractDocumentTool):
         result = await self.export_data(data=data, output_filename=filename)
 
         if result['status'] == 'success':
-            return result['metadata']['file_path']
+            return result['metadata'].get('file_path') or result['metadata']['url']
         else:
             raise Exception(f"Export failed: {result.get('error', 'Unknown error')}")
 
@@ -581,6 +583,6 @@ class DataFrameToCSVTool(CSVExportTool):
         )
 
         if result['status'] == 'success':
-            return result['metadata']['file_path']
+            return result['metadata'].get('file_path') or result['metadata']['url']
         else:
             raise Exception(f"Export failed: {result.get('error', 'Unknown error')}")

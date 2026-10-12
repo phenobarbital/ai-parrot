@@ -155,6 +155,8 @@ class JevClient(AbstractClient):
 
     client_type: str = "jev"
     client_name: str = "jev"
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ('TYPESAFE_API_KEY',)
     #: Provider label stamped on every ``AIMessage`` / ``InvokeResult``.
     provider_name: str = "typesafe"
 
