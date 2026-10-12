@@ -10,7 +10,7 @@ tags: [audio-forms, voice, session-resume, redis, ttl]
 **Feature ID**: FEAT-655
 **Date**: 2026-10-12
 **Author**: Juan Ruffato (requested by Jesus Lara as a continuation of FEAT-649)
-**Status**: draft
+**Status**: approved
 **Target version**: next parrot-formdesigner minor (same train as FEAT-653 / FEAT-654)
 **Continues**: `sdd/specs/audio-form-interaction-workflow.spec.md` (FEAT-649, Module 7 "resume" and AC16)
 
@@ -533,3 +533,4 @@ came directly from Jesús on 2026-10-12)
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-12 | Juan Ruffato | Initial draft — continuation of FEAT-649 requested by Jesús (holder ids on SESSION_ACTIVE, split marker/resume TTLs, wire resume_ttl_seconds) |
+| 0.2 | 2026-10-12 | Juan Ruffato | Approved (reviewed by Jesús Lara) |
