@@ -16,7 +16,7 @@
       "feature_id": "FEAT-652",
       "feature": "eval-answer-accuracy-metrics",
       "spec": "sdd/specs/eval-answer-accuracy-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "independent: edits only eval/models.py, eval/rollout.py and tests/eval/test_rollout.py; no other task touches them.",
       "assigned_to": null,
       "started_at": "2026-10-12T17:09:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4237-trajectory-enrichment.md"
+      "completed_at": "2026-10-12T17:17:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4237-trajectory-enrichment.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4238",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-652",
       "feature": "eval-answer-accuracy-metrics",
       "spec": "sdd/specs/eval-answer-accuracy-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "independent: creates evaluators/text.py, evaluators/composite.py and their two test files only; reads only Metric/AbstractEvaluator from evaluators/base.py.",
       "assigned_to": null,
       "started_at": "2026-10-12T17:09:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4238-text-metrics-composite.md"
+      "completed_at": "2026-10-12T17:17:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4238-text-metrics-composite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4239",
@@ -72,7 +74,7 @@
       "feature_id": "FEAT-652",
       "feature": "eval-answer-accuracy-metrics",
       "spec": "sdd/specs/eval-answer-accuracy-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -80,8 +82,9 @@
       "parallelism_notes": "independent: creates the new parrot/eval/judge/ package and tests/eval/test_judge_cache.py; reuses _SCHEMA_DDL/PostgresEvalSink from eval/sink.py read-only.",
       "assigned_to": null,
       "started_at": "2026-10-12T17:09:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4240-judge-models-cache.md"
+      "completed_at": "2026-10-12T17:18:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4240-judge-models-cache.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4241",
