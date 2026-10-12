@@ -168,10 +168,16 @@ type's layout profile, `planogram_config["layout_profile"]["reporting"]`, and fi
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4208
+- Feature: products-found-endcap
+- Implementation SHA: ffe0f03ea8dd06f3ba14f8383d61929fca0d2600
+- Closed at (UTC): 2026-10-12T13:39:43+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: glm · Backend: nova · Model: zai.glm-4.7-flash · Attempts: 1 · Duration: 54.7s · Tokens: 604588/2823 |
+| validation_note | Merge-tier selector run was red on the feature worktree: failures are baseline (unchanged on dev): test_endcap_no_shelves_promotional x2, test_ocr_reader pillow pin, plus examples/ gitignored files absent in worktree. One genuine regression (test_reporting_layout::test_other_types_default_reporting) fixed by orchestrator in 18af9484b. |
