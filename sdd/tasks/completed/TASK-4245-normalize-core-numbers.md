@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-653 — Audio form voice post-processors
 **Spec**: `sdd/specs/audio-form-voice-postprocessors.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4244
@@ -421,10 +421,8 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (Claude Sonnet 5.5, sequential fallback loop)
+**Date**: 2026-10-12
+**Notes**: normalize package (base/numbers/__init__), lazy registry for email/phone/temporal. 46 tests pass; ruff clean.
 
 **Deviations from spec**: none
