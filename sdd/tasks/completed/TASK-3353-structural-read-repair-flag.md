@@ -257,3 +257,10 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: sonnet (native). read_repair rootless flag; anchors had drifted, adapted to current code.
+
+Validation: task tests pass. The merge-tier sweep reported 2 failures in tests/sdd/test_ledger_lifecycle_acceptance.py (close_task.sh subprocess); unrelated to this diff, the same test passes in the main checkout (worktree environment issue).

@@ -276,3 +276,8 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: sonnet (native), 1 attempt. Remote build/upsert/ingest push + sync push/pull. Deviations (see commit e08ec6ebf): tool results parsed from MCP content text; stable source ids file:<rel>/doc:<..>; pull staging holder preserves timestamps. Known limits: build does not push deletions of files removed since last run; dir: pages not pushed; remote sync push --dry-run sends nothing.

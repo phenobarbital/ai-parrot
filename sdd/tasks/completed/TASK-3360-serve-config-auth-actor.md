@@ -326,3 +326,8 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: sonnet (native), 1 attempt. serve.py config/auth/actor middleware; test_serve_auth.py passes (needs ai-parrot-server/src on PYTHONPATH for the key-store test).

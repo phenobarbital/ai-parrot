@@ -272,3 +272,10 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: attempts 1-2 (gpt-5.6-luna, gpt-5.6-terra) were empty deliveries; implemented by the orchestrator (attempt 3). claim/close tool actor args now default to None and resolve via current_actor().
+
+Validation: task tests pass. The merge-tier sweep reported 2 failures in tests/sdd/test_ledger_lifecycle_acceptance.py (close_task.sh subprocess); unrelated to this diff, the same test passes in the main checkout (worktree environment issue).

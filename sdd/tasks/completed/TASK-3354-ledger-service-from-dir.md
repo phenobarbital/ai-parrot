@@ -226,3 +226,10 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: gpt-5.6-terra (codex), 1 attempt. LedgerService.from_dir.
+
+Validation: task tests pass; wider wiki suites show only failures that also fail on plain dev (15 in packages/ai-parrot/tests/knowledge/wiki: hooks/installer/mcp-server subprocess tests).

@@ -1714,6 +1714,8 @@ Data flow:
 
 ## See Also
 
+- [Remote MCP server (serve, proxy, install)](llm-wiki-remote.md) — share a wiki over HTTPS without exposing ArangoDB (FEAT-569)
+
 - [LLM Wiki architecture (3-layer)](../llm-wiki.md) — PageIndex + GraphIndex
   + Ontology composition
 - [WikiToolkit as Claude Code infrastructure](../wiki-claude-code.md) —

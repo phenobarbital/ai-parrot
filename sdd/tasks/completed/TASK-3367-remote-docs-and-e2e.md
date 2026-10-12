@@ -262,3 +262,8 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: gpt-5.6-terra (codex), 1 attempt. Remote docs + e2e. Review fix d15c7c62d: golden tool lists were stale (4 existing local tools missing); the official-SDK interop test skips when tests/mcp shadows `mcp` under pytest here, so SDK interop was NOT verified in this run.

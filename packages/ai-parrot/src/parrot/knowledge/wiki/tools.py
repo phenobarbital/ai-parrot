@@ -9,6 +9,7 @@ via a Bash-invoked CLI.
 
 import asyncio
 import hashlib
+import json
 from datetime import UTC, date as _date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Union
@@ -17,12 +18,14 @@ from pydantic import BaseModel, Field
 
 from parrot.knowledge.lint import LintOptions, LintRunner
 from parrot.knowledge.lint.routing import FindingRouter
+from parrot.knowledge.wiki.actor import current_actor, scoped_actor
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results
 from parrot.knowledge.wiki.decisions.models import ADR_CATEGORY, ADR_MANAGED_PAGE
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
-from parrot.knowledge.wiki.project import WikiProjectConfig
-from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, estimate_tokens
+from parrot.knowledge.wiki.project import WikiProjectConfig, wiki_write_lock
+from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, WikiStoreBusy, estimate_tokens
+from parrot.knowledge.wiki.symbols import SymbolRecord
 from parrot.tools.abstract import AbstractTool, ToolResult
 
 
@@ -393,7 +396,7 @@ class WikiRememberTool(AbstractTool):
                     body=fact,
                     token_count=estimate_tokens(fact),
                     origin="memory",
-                    asserted_by="agent:mcp",
+                    asserted_by=current_actor(),
                 )
             ]
         )
@@ -427,7 +430,7 @@ class WikiRememberTool(AbstractTool):
                 WikiBookkeeper().log_operation(
                     self._storage_dir,
                     "REMEMBER",
-                    f"page_id: {page_id}, title: {resolved_title!r}, " f"category: {category}, by: agent:mcp",
+                    f"page_id: {page_id}, title: {resolved_title!r}, " f"category: {category}, by: {current_actor()}",
                 )
             except OSError as exc:
                 self.logger.warning("Failed to log REMEMBER to wiki audit trail: %s", exc)
@@ -479,7 +482,7 @@ class WikiNoteTool(AbstractTool):
 
         stamp = datetime.now(tz=UTC).strftime("%Y-%m-%d")
         body = str(page.get("body") or "")
-        body += f"\n\n> **Note ({stamp}, agent:mcp):** {text}"
+        body += f"\n\n> **Note ({stamp}, {current_actor()}):** {text}"
 
         await self._store.upsert_pages(
             [
@@ -493,7 +496,7 @@ class WikiNoteTool(AbstractTool):
                     source_id=page.get("source_id"),
                     token_count=estimate_tokens(body),
                     origin=page.get("origin") or "ingest",
-                    asserted_by="agent:mcp",
+                    asserted_by=current_actor(),
                 )
             ]
         )
@@ -505,7 +508,7 @@ class WikiNoteTool(AbstractTool):
                 WikiBookkeeper().log_operation(
                     self._storage_dir,
                     "NOTE",
-                    f"page_id: {page['concept_id']}, by: agent:mcp",
+                    f"page_id: {page['concept_id']}, by: {current_actor()}",
                 )
             except OSError as exc:
                 self.logger.warning("Failed to log NOTE to wiki audit trail: %s", exc)
@@ -745,7 +748,7 @@ class VaultIngestTool(AbstractTool):
                 "VAULT_INGEST",
                 f"vault: {vault}, notes: {stats.notes}, tags: {stats.tags}, "
                 f"ingested: {counts.get('written', 0)}, removed: {removed}, "
-                f"by: agent:mcp",
+                f"by: {current_actor()}",
             )
         except OSError as exc:
             self.logger.warning("Failed to log VAULT_INGEST to wiki audit trail: %s", exc)
@@ -802,13 +805,17 @@ class LedgerReadyInput(BaseModel):
 
 class LedgerClaimInput(BaseModel):
     issue_id: str = Field(..., description="Issue ID to claim")
-    actor: str = Field(default="agent:mcp", description="Actor claiming the issue, e.g. agent:sdd-fix")
+    actor: str | None = Field(
+        default=None, description="Actor claiming the issue, e.g. agent:sdd-fix (default: the request actor)"
+    )
 
 
 class LedgerCloseInput(BaseModel):
     issue_id: str = Field(..., description="Issue ID to close")
     reason: str = Field(..., description="Reason for closing")
-    actor: str = Field(default="agent:mcp", description="Actor closing the issue, e.g. agent:sdd-fix")
+    actor: str | None = Field(
+        default=None, description="Actor closing the issue, e.g. agent:sdd-fix (default: the request actor)"
+    )
     resolved_by: str | None = Field(
         default=None, description="Evidence that resolved the issue, e.g. commit:<sha> or task:TASK-<NNN> (FEAT-572 S4)"
     )
@@ -847,7 +854,7 @@ class LedgerOpenTool(AbstractTool):
                 severity=severity,
                 discovered_from=discovered_from,
                 about=about,
-                actor="agent:mcp",
+                actor=current_actor(),
             )
             return ToolResult(result={"issue_id": issue_id})
         except Exception as exc:
@@ -886,9 +893,9 @@ class LedgerClaimTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._ledger_service = ledger_service
 
-    async def _execute(self, issue_id: str, actor: str = "agent:mcp") -> ToolResult:
+    async def _execute(self, issue_id: str, actor: str | None = None) -> ToolResult:
         try:
-            success = await self._ledger_service.claim(issue_id, actor)
+            success = await self._ledger_service.claim(issue_id, scoped_actor() or actor or current_actor())
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
@@ -906,12 +913,14 @@ class LedgerCloseTool(AbstractTool):
         self._ledger_service = ledger_service
 
     async def _execute(
-        self, issue_id: str, reason: str, resolved_by: str | None = None, actor: str = "agent:mcp"
+        self, issue_id: str, reason: str, resolved_by: str | None = None, actor: str | None = None
     ) -> ToolResult:
         """Close a ledger issue, carrying the evidence reference and actor through."""
         try:
             kwargs = {"resolved_by": resolved_by} if resolved_by is not None else {}
-            success = await self._ledger_service.close_issue(issue_id, reason, actor, **kwargs)
+            success = await self._ledger_service.close_issue(
+                issue_id, reason, scoped_actor() or actor or current_actor(), **kwargs
+            )
             return ToolResult(result={"success": success})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
@@ -934,6 +943,279 @@ class LedgerContextTool(AbstractTool):
             return ToolResult(result={"context": context})
         except Exception as exc:
             return ToolResult(success=False, status="error", result=None, error=str(exc))
+
+
+INGEST_MAX_SLICES = 200
+INGEST_MAX_BYTES = 1_048_576
+_INGEST_LOCK = asyncio.Lock()
+HASHES_MAX_IDS = 2000
+
+
+class SourceSlicePayload(BaseModel):
+    """One `replace_source_slice` unit crossing the wire (FEAT-569)."""
+
+    source_id: str
+    pages: list[WikiPageRecord] = Field(default_factory=list)
+    edges: list[tuple[str, str, str]] = Field(default_factory=list)
+    symbols: list[SymbolRecord] = Field(default_factory=list)
+
+
+class IngestBatchInput(BaseModel):
+    """Arguments of `wiki_ingest_batch`."""
+
+    slices: list[SourceSlicePayload] = Field(default_factory=list)
+    deleted_source_ids: list[str] = Field(default_factory=list)
+    batch_id: str | None = None
+
+
+class PageHashesInput(BaseModel):
+    """Arguments of `wiki_page_hashes`."""
+
+    concept_ids: list[str] = Field(default_factory=list)
+
+
+class IngestBatchReport(BaseModel):
+    """Outcome of one `wiki_ingest_batch` call."""
+
+    slices_applied: int = 0
+    slices_deleted: int = 0
+    pages_written: int = 0
+    edges_written: int = 0
+    symbols_written: int = 0
+    symbols_dropped: int = 0
+    rejected: list[str] = Field(default_factory=list)
+
+
+SYNC_PULL_MAX = 2000
+
+
+class SyncPagesInput(BaseModel):
+    """Authored knowledge crossing the wire (push payload / pull result)."""
+
+    pages: list[WikiPageRecord] = Field(default_factory=list)
+    edges: list[tuple[str, str, str, str]] = Field(default_factory=list)
+    since: str | None = None
+    skip_asserted_by: str | None = None
+    limit: int = Field(default=500, ge=1, le=SYNC_PULL_MAX)
+    cursor: str | None = None
+
+
+class WikiPageHashesTool(AbstractTool):
+    """Return stored content hashes for up to 2000 page ids.
+
+    Delta oracle for the `wikitoolkit` CLI build push; not meant for agents.
+    """
+
+    name = "wiki_page_hashes"
+    args_schema = PageHashesInput
+
+    def __init__(self, store: BaseWikiStore):
+        super().__init__()
+        self._store = store
+
+    async def _execute(self, concept_ids: list[str]) -> ToolResult:
+        if len(concept_ids) > HASHES_MAX_IDS:
+            return ToolResult(
+                success=False, status="error", result=None, error=f"at most {HASHES_MAX_IDS} ids per call"
+            )
+        return ToolResult(result={"hashes": await self._store.page_hashes(concept_ids)})
+
+
+class WikiIngestBatchTool(AbstractTool):
+    """Apply source slices pushed by `wikitoolkit build/upsert/ingest` in remote mode.
+
+    At most 200 slices and 1 MiB per call. For the CLI build push, not for agents.
+    """
+
+    name = "wiki_ingest_batch"
+    args_schema = IngestBatchInput
+
+    def __init__(self, store: BaseWikiStore, root: Path, config: WikiProjectConfig):
+        super().__init__()
+        self._store, self._root, self._config = store, root, config
+
+    @staticmethod
+    def _error(message: str) -> ToolResult:
+        return ToolResult(success=False, status="error", result=None, error=message)
+
+    async def _execute(
+        self,
+        slices: list[SourceSlicePayload] | None = None,
+        deleted_source_ids: list[str] | None = None,
+        batch_id: str | None = None,
+    ) -> ToolResult:
+        slices = [
+            s if isinstance(s, SourceSlicePayload) else SourceSlicePayload.model_validate(s) for s in slices or []
+        ]
+        deleted_source_ids = deleted_source_ids or []
+        # Validate everything BEFORE taking the lock or writing anything.
+        if len(slices) > INGEST_MAX_SLICES or len(deleted_source_ids) > INGEST_MAX_SLICES:
+            return self._error(f"at most {INGEST_MAX_SLICES} slices per call")
+        if len(json.dumps([s.model_dump(mode="json") for s in slices]).encode()) > INGEST_MAX_BYTES:
+            return self._error("payload too large (max 1 MiB)")
+        report = IngestBatchReport()
+        try:
+            # In-process callers queue on an asyncio lock; the cross-process flock
+            # (which polls with time.sleep) is entered/left in a worker thread so
+            # it can never stall the serving event loop.
+            async with _INGEST_LOCK:
+                cm = wiki_write_lock(self._config.storage_path(self._root), timeout=self._config.sqlite_busy_timeout)
+                acquired = await asyncio.to_thread(cm.__enter__)
+                try:
+                    if not acquired:
+                        return self._error("busy: wiki writer lock is held by another process")
+                    await self._apply(slices, deleted_source_ids, batch_id, report)
+                finally:
+                    await asyncio.to_thread(cm.__exit__, None, None, None)
+        except WikiStoreBusy as exc:
+            return self._error(f"busy: {exc}")
+        return ToolResult(result=report.model_dump())
+
+    async def _apply(
+        self,
+        slices: list[SourceSlicePayload],
+        deleted_source_ids: list[str],
+        batch_id: str | None,
+        report: IngestBatchReport,
+    ) -> None:
+        """Write the validated slices and deletions; the caller holds the writer lock."""
+        for s in slices:
+            result = await self._store.replace_source_slice(s.source_id, s.pages, s.edges)
+            report.pages_written += int(result.get("pages_written", 0))
+            report.edges_written += int(result.get("edges_written", 0))
+            count = await self._store.upsert_symbols(s.symbols, source_id=s.source_id)
+            report.symbols_written += count
+            if s.symbols and count == 0:
+                report.symbols_dropped += len(s.symbols)
+            report.slices_applied += 1
+            self.logger.info("ingest_batch %s applied %s", batch_id, s.source_id)
+        for sid in deleted_source_ids:
+            await self._store.replace_source_slice(sid, [], [])
+            report.slices_deleted += 1
+            self.logger.info("ingest_batch %s deleted %s", batch_id, sid)
+
+
+class WikiSyncPushTool(AbstractTool):
+    """Merge remote sync data used by `wikitoolkit sync` in remote mode; not for agents."""
+
+    name = "wiki_sync_push"
+    args_schema = SyncPagesInput
+
+    def __init__(self, store: BaseWikiStore, wiki_name: str):
+        super().__init__()
+        self._store, self._wiki_name = store, wiki_name
+
+    async def _execute(
+        self,
+        pages: list[WikiPageRecord],
+        edges: list[tuple[str, str, str, str]] | None = None,
+        **_unused: Any,
+    ) -> ToolResult:
+        """Merge a client memory slice into the server wiki plane."""
+        from parrot.knowledge.wiki.sync import SyncReport, _merge_body, _record_from
+
+        pages = [page if isinstance(page, WikiPageRecord) else WikiPageRecord.model_validate(page) for page in pages]
+        # Apply last-writer-wins directly against the server store. A staging
+        # store is not used: it would re-stamp ``updated_at`` with "now" and
+        # defeat the comparison against the caller's own timestamps.
+        report = SyncReport(direction="push", env=self._wiki_name, dry_run=False)
+        concept_ids: set[str] = set()
+        for record in pages:
+            if record.origin != "memory":
+                continue
+            page = record.model_dump()
+            concept_id = record.concept_id
+            concept_ids.add(concept_id)
+            existing = await self._store.get_page(concept_id, include_body=True)
+            if existing is None:
+                report.created += 1
+                report.details.append(f"created: {concept_id}")
+                await self._store.upsert_pages([_record_from(page, record.body)])
+                continue
+            if (record.updated_at or "") <= (existing.get("updated_at") or ""):
+                report.skipped_older += 1
+                report.details.append(f"skipped_older: {concept_id}")
+                continue
+            report.updated += 1
+            report.details.append(f"updated: {concept_id}")
+            merged_body = _merge_body(record.body, existing.get("body", ""))
+            await self._store.upsert_pages([_record_from(page, merged_body)])
+        to_write = [
+            (edge[0], edge[1], edge[2], "asserted")
+            for edge in (edges or [])
+            if edge[0] in concept_ids or edge[1] in concept_ids
+        ]
+        if to_write:
+            await self._store.add_edges(to_write)
+        return ToolResult(result=report.model_dump())
+
+
+class WikiSyncPullTool(AbstractTool):
+    """Return remote sync data used by `wikitoolkit sync` in remote mode; not for agents."""
+
+    name = "wiki_sync_pull"
+    args_schema = SyncPagesInput
+
+    def __init__(self, store: BaseWikiStore):
+        super().__init__()
+        self._store = store
+
+    async def _execute(
+        self,
+        since: str | None = None,
+        skip_asserted_by: str | None = None,
+        limit: int = 500,
+        cursor: str | None = None,
+        **_unused: Any,
+    ) -> ToolResult:
+        """Return a deterministic page of server-authored memory records."""
+        from parrot.knowledge.wiki.sync import _synced_memory_pages
+
+        limit = max(1, min(limit, SYNC_PULL_MAX))
+        pages = await _synced_memory_pages(self._store)
+        pages = [
+            page
+            for page in pages
+            if (since is None or (page.get("updated_at") or "") > since)
+            and (skip_asserted_by is None or page.get("asserted_by") != skip_asserted_by)
+        ]
+        pages.sort(key=lambda page: (page.get("updated_at") or "", page["concept_id"]))
+        if cursor is not None:
+            cursor_updated_at, _, cursor_concept_id = cursor.partition("|")
+            pages = [
+                page
+                for page in pages
+                if (page.get("updated_at") or "", page["concept_id"]) > (cursor_updated_at, cursor_concept_id)
+            ]
+
+        selected = pages[:limit]
+        concept_ids = {page["concept_id"] for page in selected}
+        edges = [
+            (edge["src"], edge["dst"], edge["rel"], "asserted")
+            for edge in await self._store.dump_edges()
+            if edge["src"] in concept_ids or edge["dst"] in concept_ids
+        ]
+        next_cursor = None
+        if len(pages) > limit:
+            last = selected[-1]
+            next_cursor = f"{last.get('updated_at') or ''}|{last['concept_id']}"
+        return ToolResult(
+            result={
+                "pages": [WikiPageRecord.model_validate(page).model_dump(mode="json") for page in selected],
+                "edges": edges,
+                "next_cursor": next_cursor,
+            }
+        )
+
+
+def create_bulk_tools(store: BaseWikiStore, root: Path, config: WikiProjectConfig) -> list[AbstractTool]:
+    """Server-only page hash, ingest, and remote sync tools for the CLI."""
+    return [
+        WikiPageHashesTool(store),
+        WikiIngestBatchTool(store, root, config),
+        WikiSyncPushTool(store, config.wiki_name),
+        WikiSyncPullTool(store),
+    ]
 
 
 def create_wiki_tools(

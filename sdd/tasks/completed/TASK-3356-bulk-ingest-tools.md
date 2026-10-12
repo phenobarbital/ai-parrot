@@ -291,3 +291,10 @@ When you pick up this task:
 **Notes**:
 
 **Deviations from spec**: none | describe if any
+
+
+## Completion Note
+
+Seat: sonnet (native), 1 attempt. wiki_ingest_batch / wiki_page_hashes tools; wiki_write_lock yields False rather than raising, mapped to a busy error.
+
+Validation: task tests pass; wider wiki suites show only failures that also fail on plain dev (15 in packages/ai-parrot/tests/knowledge/wiki: hooks/installer/mcp-server subprocess tests).

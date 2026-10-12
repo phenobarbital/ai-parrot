@@ -66,18 +66,50 @@ def codex() -> None:
     show_default=True,
     help="Install the opt-in PreToolUse read guard (FEAT-543) that denies unbounded reads of large files.",
 )
+@click.option(
+    "--remote",
+    "use_remote",
+    is_flag=True,
+    help=(
+        "Register wikitoolkit as a native HTTP MCP (url + bearer_token_env_var). "
+        "NOTE: Codex cannot send X-Wiki-Actor; the stdio pass-through is recommended."
+    ),
+)
+@click.option(
+    "--remote-url", default=None, help="Remote wiki mount URL (default: `remote.url` from .parrot/wiki.json)."
+)
+@click.option(
+    "--token-env",
+    default=None,
+    help="Env var holding the bearer token (default: `remote.token_env` or WIKITOOLKIT_TOKEN).",
+)
 def install(
     path_: Optional[str],
     gitignore: bool,
     build_now: bool,
     bookstore: bool,
     tool_guards: bool,
+    use_remote: bool,
+    remote_url: Optional[str],
+    token_env: Optional[str],
 ) -> None:
     """Install WikiToolkit and Bookstore MCP servers and skills for Codex."""
     root = _resolve_root(path_)
     try:
         config = load_effective_config(root).config
-        actions = install_codex_integration(root, config, gitignore=gitignore, bookstore=bookstore)
+        remote = None
+        if use_remote:
+            from parrot.knowledge.wiki.project import WikiRemoteConfig
+
+            if remote_url:
+                remote = WikiRemoteConfig(url=remote_url, token_env=token_env or "WIKITOOLKIT_TOKEN")
+            elif config.remote is not None:
+                remote = (
+                    config.remote if token_env is None else config.remote.model_copy(update={"token_env": token_env})
+                )
+            else:
+                raise click.ClickException("--remote needs --remote-url or a `remote` block in .parrot/wiki.json")
+        actions = install_codex_integration(root, config, gitignore=gitignore, bookstore=bookstore, remote=remote)
     except (RuntimeError, WikiConfigError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc
 

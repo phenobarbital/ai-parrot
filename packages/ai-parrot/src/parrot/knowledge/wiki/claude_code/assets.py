@@ -120,6 +120,15 @@ def mcp_json_entry(root: Path) -> dict:
     }
 
 
+def mcp_json_entry_remote(url: str, token_env: str) -> dict:
+    """Native Claude Code HTTP entry for a remote wiki mount (FEAT-569).
+
+    Claude Code expands ``${VAR}`` inside ``.mcp.json`` header values (2.1.274+),
+    so the token never lands on disk.
+    """
+    return {"type": "http", "url": url, "headers": {"Authorization": f"Bearer ${{{token_env}}}"}}
+
+
 def resolve_parrot_bin(root: Path) -> str:
     """Return the absolute path to the ``parrot`` binary.
 
