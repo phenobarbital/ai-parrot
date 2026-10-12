@@ -96,7 +96,7 @@ def test_build_fire_coordinator_modes(monkeypatch):
     assert isinstance(coord.build_fire_coordinator(), coord.NullFireCoordinator)
     values["SCHEDULER_COORDINATION"] = "redis"
     assert isinstance(coord.build_fire_coordinator(), coord.RedisFireCoordinator)
-    assert isinstance(coord.build_fire_coordinator("none", use_redis=True), coord.NullFireCoordinator)
+    assert isinstance(coord.build_fire_coordinator("none", use_redis=True), coord.RedisFireCoordinator)
     values["SCHEDULER_COORDINATION"] = "bogus"
     with pytest.raises(SchedulerConfigError):
         coord.build_fire_coordinator()
@@ -142,3 +142,70 @@ async def test_executor_unavailable_fails_closed():
     assert len(unavailable) == 1
     assert unavailable[0][0] == "job"
     assert isinstance(unavailable[0][1], coord.FireCoordinationError)
+
+
+def _patch_config(monkeypatch, values):
+    class Config:
+        def get(self, key):
+            return values.get(key)
+
+    monkeypatch.setattr("navconfig.config", Config())
+
+
+def test_forced_redis_logs_warning(monkeypatch, caplog):
+    _patch_config(monkeypatch, {})
+    monkeypatch.setattr(coord.aioredis, "Redis", lambda **kwargs: FakeRedis())
+
+    with caplog.at_level("WARNING", logger="Parrot.Scheduler.coordination"):
+        result = coord.build_fire_coordinator("none", use_redis=True)
+
+    assert isinstance(result, coord.RedisFireCoordinator)
+    assert any("ignored" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_manager_prefix_namespaces_claim_keys(monkeypatch):
+    _patch_config(monkeypatch, {})
+    client = FakeRedis()
+    monkeypatch.setattr(coord.aioredis, "Redis", lambda **kwargs: client)
+
+    coordinator = coord.build_fire_coordinator(use_redis=True, prefix=coord.manager_prefix("x"))
+    assert coordinator._prefix == "parrot:scheduler:x:"
+    await coordinator.claim("job", datetime(2026, 1, 1, tzinfo=timezone.utc))
+    assert all(k.startswith("parrot:scheduler:x:fire:") for k in client.store)
+
+
+def test_redis_db_env_and_fallback(monkeypatch):
+    values = {}
+    _patch_config(monkeypatch, values)
+
+    assert coord.redis_db() == 6
+    values["SCHEDULER_REDIS_DB"] = "3"
+    assert coord.redis_db() == 3
+    values["SCHEDULER_REDIS_DB"] = "99"
+    assert coord.redis_db() == 6
+
+
+@pytest.mark.asyncio
+async def test_current_run_time_matches_claim(monkeypatch):
+    claimed = []
+    seen = []
+
+    class Recording(coord.NullFireCoordinator):
+        async def claim(self, job_id, run_time):
+            claimed.append(run_time)
+            return True
+
+    async def fake_run(job, alias, run_times, logger_name):
+        seen.append(coord.CURRENT_RUN_TIME.get())
+        return []
+
+    monkeypatch.setattr(coord, "run_coroutine_job", fake_run)
+    executor = coord.CoordinatedAsyncIOExecutor(Recording())
+    run_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    assert coord.CURRENT_RUN_TIME.get() is None
+    await executor._claimed_run(_Job(), [run_time])
+
+    assert seen == claimed == [run_time]
+    assert coord.CURRENT_RUN_TIME.get() is None

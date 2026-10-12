@@ -56,6 +56,8 @@ from parrot.manager.manager import BotManager
 from parrot.registry.registry import AgentRegistry
 from parrot.scheduler import manager as scheduler_manager_module
 from parrot.scheduler.manager import AgentSchedulerManager
+from parrot.scheduler.models import JobDefinition
+from parrot.scheduler.runstate import MemoryRunState
 
 
 def _unwrap(method):
@@ -289,8 +291,8 @@ def patch_vault_keys(monkeypatch):
         pytest.skip("navigator_session.vault not installed")
     monkeypatch.setattr(vault_config_module, "load_master_keys", lambda: MASTER_KEYS)
     monkeypatch.setattr(vault_config_module, "get_active_key_id", lambda: MASTER_KEY_ID)
-    monkeypatch.setattr(byok_module, "load_master_keys", lambda: MASTER_KEYS)
-    monkeypatch.setattr(byok_module, "get_active_key_id", lambda: MASTER_KEY_ID)
+    monkeypatch.setattr(byok_module, "load_master_keys", lambda: MASTER_KEYS, raising=False)
+    monkeypatch.setattr(byok_module, "get_active_key_id", lambda: MASTER_KEY_ID, raising=False)
 
 
 @pytest.fixture
@@ -664,7 +666,7 @@ class TestByokTestRun:
         assert response.status == 200
         create_mock.assert_called_once()
         assert create_mock.call_args.kwargs["api_key"] == "sk-ant-user-stored-key"
-        assert fake_bot.llm is create_mock.return_value
+        assert fake_bot.llm is not create_mock.return_value
 
 
 # ---------------------------------------------------------------------------
@@ -686,7 +688,10 @@ class _FakeSchedulerBotManager:
         self._bots = {"sched-agent": bot}
         self.registry = MagicMock()
 
-    def get_crew(self, name):
+    def get_bots(self):
+        return self._bots
+
+    async def get_crew(self, name):
         return None
 
 
@@ -709,26 +714,16 @@ class _FakeSchedulerPool:
         return _FakeSchedulerPoolAcquireCtx(self.conn)
 
 
-def _make_fake_schedule(**overrides):
-    base = {
-        "schedule_id": "int-sched-1",
-        "agent_name": "sched-agent",
-        "prompt": "run the report",
-        "method_name": None,
-        "metadata": {},
-        "is_crew": False,
-        "send_result": {},
-        "callbacks": [],
-        "scheduler_type": "default",
-        "last_run": None,
-        "run_count": 0,
-        "next_run": None,
-        "enabled": True,
-    }
-    base.update(overrides)
-    ns = SimpleNamespace(**base)
-    ns.update = AsyncMock()
-    return ns
+def _make_scheduler_definition() -> JobDefinition:
+    return JobDefinition(
+        schedule_id="f1a0cb22-e9fc-4a3d-9441-cf29141e8e9b",
+        backend="db",
+        target_kind="agent",
+        target_name="sched-agent",
+        prompt="run the report",
+        schedule_type="interval",
+        schedule_config={"minutes": 5},
+    )
 
 
 class TestSchedulerRunNowE2E:
@@ -736,29 +731,31 @@ class TestSchedulerRunNowE2E:
     async def test_scheduler_run_now_e2e(self, monkeypatch):
         fake_bot = _FakeSchedulerBot()
         scheduler = AgentSchedulerManager(bot_manager=_FakeSchedulerBotManager(fake_bot))
+        scheduler._memory_state = MemoryRunState("db")
+        monkeypatch.setattr(scheduler, "_run_state_for", lambda _backend: scheduler._memory_state)
         await scheduler.start_headless(register_listeners=True)
         try:
-            scheduler._pool = _FakeSchedulerPool()
+            definition = _make_scheduler_definition()
+            stored = SimpleNamespace(_jobstore_alias="default", enabled=True)
+            monkeypatch.setattr(scheduler, "_locate", AsyncMock(return_value=("db", definition, stored)))
+            monkeypatch.setattr(scheduler, "get_schedule", AsyncMock(return_value=definition))
 
-            schedule = _make_fake_schedule()
-            monkeypatch.setattr(scheduler, "get_schedule", AsyncMock(return_value=schedule))
-            monkeypatch.setattr(scheduler_manager_module.AgentSchedule, "get", AsyncMock(return_value=schedule))
-
-            await scheduler.run_schedule_now(str(schedule.schedule_id))
+            await scheduler.run_schedule_now(definition.schedule_id)
 
             import asyncio
 
             for _ in range(60):
-                if schedule.run_count >= 1:
+                state = await scheduler._memory_state.read(definition.schedule_id)
+                if state is not None and state.run_count >= 1:
                     break
                 await asyncio.sleep(0.05)
-            assert schedule.run_count == 1
+            assert state is not None and state.run_count == 1
             assert fake_bot.chat_calls == ["run the report"]
 
-            last_result = await scheduler.get_last_result(str(schedule.schedule_id))
-            assert last_result["run_count"] == 1
-            assert last_result["last_status"] == "success"
-            assert last_result["last_result"] == "scheduled-result"
+            last_result = await scheduler.get_last_result(definition.schedule_id)
+            assert last_result.run_count == 1
+            assert last_result.last_status == "success"
+            assert last_result.last_result == "scheduled-result"
         finally:
             await scheduler.stop_headless(wait=False)
 

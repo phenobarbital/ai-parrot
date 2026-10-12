@@ -6,8 +6,8 @@ the type system's reach:
 * **navconfig environment variables** — ``CACHE_HOST`` / ``CACHE_PORT``.
   navconfig's ``fallback=`` only applies when a key is *absent*; a key that is
   present-but-empty (``CACHE_PORT=`` in a ``.env`` file) resolves to ``''``.
-* **the ``navigator.agents_scheduler`` table** — ``schedule_type``,
-  ``scheduler_type`` and the free-form ``schedule_config`` JSONB column, all of
+* **the ``navigator.service_scheduler`` table** — ``schedule_type``,
+  ``backend`` and the free-form ``schedule_config`` JSONB column, all of
   which are written by API callers and hand-edited by operators.
 
 Neither source guarantees a trimmed, non-empty, correctly-typed value, and
@@ -41,19 +41,22 @@ The helpers here apply a single, consistent policy at the boundary:
    blank cron field therefore falls back to its documented default (``0``),
    never to ``None``.
 """
+
 from __future__ import annotations
 
 import logging
 import re
 from datetime import date, datetime
-from typing import Any, Dict, FrozenSet, Iterable, Optional, Set, Tuple
+from typing import Any, Dict, FrozenSet, Optional, Set, Tuple
 
 __all__ = (
     "SchedulerConfigError",
     "clean_bool",
     "clean_int",
+    "clean_method_name",
+    "clean_misfire_grace_time",
     "clean_str",
-    "normalize_jobstore_alias",
+    "normalize_backend",
     "normalize_schedule_type",
     "sanitize_redis_settings",
     "sanitize_schedule_config",
@@ -63,9 +66,7 @@ logger = logging.getLogger("Parrot.Scheduler.sanitize")
 
 #: Case-insensitive tokens that operators and JSON serializers use to mean
 #: "no value". Treated identically to a missing key.
-NULL_TOKENS: FrozenSet[str] = frozenset(
-    {"", "none", "null", "nil", "nan", "undefined", "n/a", "~", "-"}
-)
+NULL_TOKENS: FrozenSet[str] = frozenset({"", "none", "null", "nil", "nan", "undefined", "n/a", "~", "-"})
 
 _TRUE_TOKENS: FrozenSet[str] = frozenset({"true", "t", "yes", "y", "on", "1"})
 _FALSE_TOKENS: FrozenSet[str] = frozenset({"false", "f", "no", "n", "off", "0"})
@@ -77,8 +78,18 @@ WEEKDAYS: Tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 #: ``TypeError`` when ``schedule_type == 'cron'`` splats the JSONB config.
 CRON_TRIGGER_FIELDS: FrozenSet[str] = frozenset(
     {
-        "year", "month", "day", "week", "day_of_week", "hour", "minute", "second",
-        "start_date", "end_date", "timezone", "jitter",
+        "year",
+        "month",
+        "day",
+        "week",
+        "day_of_week",
+        "hour",
+        "minute",
+        "second",
+        "start_date",
+        "end_date",
+        "timezone",
+        "jitter",
     }
 )
 
@@ -93,7 +104,7 @@ _MIN_REDIS_DB, _MAX_REDIS_DB = 0, 15
 #: Generous upper bounds for interval components — these reject nonsense
 #: (negative values, absurd magnitudes), not legitimate long intervals.
 _INTERVAL_MAX: Dict[str, int] = {
-    "weeks": 520,        # ~10 years
+    "weeks": 520,  # ~10 years
     "days": 3650,
     "hours": 87600,
     "minutes": 5256000,
@@ -139,7 +150,9 @@ def clean_str(
         if field and text:
             logger.warning(
                 "Scheduler config: field %r had null-ish value %r; using %r",
-                field, value, default,
+                field,
+                value,
+                default,
             )
         return default
     return text.lower() if lower else text
@@ -174,7 +187,10 @@ def clean_int(
     def _fallback(reason: str) -> Optional[int]:
         logger.warning(
             "Scheduler config: %s %r (%s); using default %r",
-            field or "value", value, reason, default,
+            field or "value",
+            value,
+            reason,
+            default,
         )
         return default
 
@@ -224,9 +240,7 @@ def clean_bool(value: Any, *, default: bool) -> bool:
         return True
     if text in _FALSE_TOKENS:
         return False
-    logger.warning(
-        "Scheduler config: unrecognized boolean %r; using default %r", value, default
-    )
+    logger.warning("Scheduler config: unrecognized boolean %r; using default %r", value, default)
     return default
 
 
@@ -272,58 +286,84 @@ def sanitize_redis_settings(
     }
 
 
-def normalize_jobstore_alias(
-    value: Any,
-    *,
-    available: Optional[Iterable[str]] = None,
-    default: str = "default",
-    strict: bool = False,
-) -> str:
-    """Normalize a ``scheduler_type`` column into a usable jobstore alias.
+BACKENDS: Tuple[str, ...] = ("db", "redis")
 
-    ``AsyncIOScheduler.add_job(jobstore=...)`` raises ``KeyError`` for an alias
-    that was never registered — which happens whenever a row says ``'redis'``
-    but the scheduler started with ``use_redis=False``.
 
-    The two callers want different behavior for an unregistered alias:
-
-    * **recovering rows from the database** — fall back to the always-present
-      ``'default'`` store, so an old row keeps running in memory instead of
-      being dropped entirely (``strict=False``);
-    * **an explicit API request** — raise, because silently downgrading a
-      caller's stated durability choice to an in-memory store is worse than
-      telling them Redis is not enabled (``strict=True``).
+def normalize_backend(value: Any, *, redis_available: bool, strict: bool = False) -> str:
+    """Normalize a caller-supplied ``backend`` to ``'db'`` or ``'redis'``.
 
     Args:
-        value: Raw ``scheduler_type`` value.
-        available: Aliases registered on the scheduler. When ``None`` the
-            registration check is skipped.
-        default: Alias used when ``value`` is blank, or unregistered and not
-            ``strict``.
-        strict: Raise instead of falling back when the alias is unregistered.
+        value: Raw backend value supplied by an API caller or database row.
+        redis_available: Whether a Redis jobstore is attached to the scheduler.
+        strict: Raise instead of falling back to ``'db'`` for unavailable Redis.
 
     Returns:
-        A jobstore alias safe to pass to ``add_job()``.
+        The normalized backend name.
 
     Raises:
-        SchedulerConfigError: When ``strict`` and the alias is unregistered.
+        SchedulerConfigError: If the backend is unknown, or Redis is requested
+            strictly when no Redis jobstore is attached.
     """
-    alias = clean_str(value, default=default, lower=True) or default
-    if available is not None:
-        known: Set[str] = {str(item).lower() for item in available}
-        if alias not in known:
-            if strict:
-                raise SchedulerConfigError(
-                    f"Jobstore {alias!r} is not enabled on this scheduler "
-                    f"(available: {', '.join(sorted(known)) or 'none'})"
-                )
-            logger.warning(
-                "Scheduler config: jobstore %r is not registered (available: %s); "
-                "falling back to %r",
-                alias, sorted(known) or "none", default,
-            )
-            return default
-    return alias
+    backend = clean_str(value, default="db", lower=True) or "db"
+    if backend not in BACKENDS:
+        raise SchedulerConfigError(f"Unsupported backend: {backend!r} (expected one of {', '.join(BACKENDS)})")
+    if backend == "redis" and not redis_available:
+        if strict:
+            raise SchedulerConfigError("Redis backend is not available")
+        logger.warning("Scheduler config: Redis backend is not available; falling back to 'db'")
+        return "db"
+    return backend
+
+
+def clean_misfire_grace_time(value: Any) -> Optional[int]:
+    """Return ``None`` or a non-negative number of seconds.
+
+    Args:
+        value: Raw API value. Null-ish values mean that the job always catches
+            up after a missed fire.
+
+    Returns:
+        A non-negative integer number of seconds, or ``None``.
+
+    Raises:
+        SchedulerConfigError: If the value is not a non-negative integer.
+    """
+    text = clean_str(value)
+    if text is None:
+        return None
+
+    if isinstance(value, bool):
+        raise SchedulerConfigError("misfire_grace_time must be a non-negative integer")
+    try:
+        number = float(text)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise SchedulerConfigError("misfire_grace_time must be a non-negative integer") from exc
+    if not number.is_integer() or number < 0:
+        raise SchedulerConfigError("misfire_grace_time must be a non-negative integer")
+    cleaned = clean_int(value, default=None, minimum=0)
+    if cleaned is None:
+        raise SchedulerConfigError("misfire_grace_time must be a non-negative integer")
+    return cleaned
+
+
+def clean_method_name(value: Any) -> Optional[str]:
+    """Return a public Python identifier or ``None``.
+
+    Args:
+        value: Raw method name supplied by an API caller.
+
+    Returns:
+        A trimmed method name, or ``None`` for a null-ish value.
+
+    Raises:
+        SchedulerConfigError: If the value is not a public Python identifier.
+    """
+    method_name = clean_str(value)
+    if method_name is None:
+        return None
+    if not method_name.isidentifier() or method_name.startswith("_"):
+        raise SchedulerConfigError("method_name must be a public identifier")
+    return method_name
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +375,7 @@ def _known_schedule_types() -> Set[str]:
     Imported lazily so this module stays importable without pulling in
     ``manager`` (which imports aiohttp, asyncdb and navigator).
     """
-    from .manager import ScheduleType  # local import — avoids a circular import
+    from .base import ScheduleType  # local import — avoids a circular import
 
     return {member.value for member in ScheduleType}
 
@@ -356,14 +396,11 @@ def normalize_schedule_type(value: Any) -> str:
     """
     schedule_type = clean_str(value, lower=True)
     if not schedule_type:
-        raise SchedulerConfigError(
-            f"schedule_type is required but was empty (got {value!r})"
-        )
+        raise SchedulerConfigError(f"schedule_type is required but was empty (got {value!r})")
     known = _known_schedule_types()
     if schedule_type not in known:
         raise SchedulerConfigError(
-            f"Unsupported schedule type: {schedule_type!r} "
-            f"(expected one of {', '.join(sorted(known))})"
+            f"Unsupported schedule type: {schedule_type!r} " f"(expected one of {', '.join(sorted(known))})"
         )
     return schedule_type
 
@@ -384,9 +421,7 @@ def _clean_day_of_week(value: Any, *, default: str = "mon") -> str:
     abbreviated = text[:3]
     if abbreviated in WEEKDAYS:
         return abbreviated
-    logger.warning(
-        "Scheduler config: invalid day_of_week %r; using default %r", value, default
-    )
+    logger.warning("Scheduler config: invalid day_of_week %r; using default %r", value, default)
     return default
 
 
@@ -414,8 +449,7 @@ def _sanitize_once(config: Dict[str, Any]) -> Dict[str, Any]:
         datetime.fromisoformat(text)
     except ValueError as exc:
         raise SchedulerConfigError(
-            f"Invalid run_date {raw!r} for a 'once' schedule: expected an "
-            f"ISO-8601 datetime ({exc})"
+            f"Invalid run_date {raw!r} for a 'once' schedule: expected an " f"ISO-8601 datetime ({exc})"
         ) from exc
     return {"run_date": text}
 
@@ -429,9 +463,7 @@ def _sanitize_interval(config: Dict[str, Any]) -> Dict[str, Any]:
             **one-second** interval, which would hammer the target agent.
     """
     cleaned = {
-        unit: _clean_cron_int(
-            config.get(unit), default=0, maximum=_INTERVAL_MAX[unit], field=unit
-        )
+        unit: _clean_cron_int(config.get(unit), default=0, maximum=_INTERVAL_MAX[unit], field=unit)
         for unit in ("weeks", "days", "hours", "minutes", "seconds")
     }
     if not any(cleaned.values()):
@@ -471,9 +503,7 @@ def _sanitize_cron(config: Dict[str, Any]) -> Dict[str, Any]:
         cleaned[field] = text
 
     if not cleaned:
-        raise SchedulerConfigError(
-            f"A 'cron' schedule needs at least one usable field; got {config!r}"
-        )
+        raise SchedulerConfigError(f"A 'cron' schedule needs at least one usable field; got {config!r}")
     return cleaned
 
 
@@ -486,16 +516,11 @@ def _sanitize_crontab(config: Dict[str, Any]) -> Dict[str, Any]:
     """
     expr = clean_str(config.get("expr"), field="expr")
     if not expr:
-        raise SchedulerConfigError(
-            "A 'crontab' schedule requires a non-empty 'expr'; got "
-            f"{config.get('expr')!r}"
-        )
+        raise SchedulerConfigError("A 'crontab' schedule requires a non-empty 'expr'; got " f"{config.get('expr')!r}")
     expr = re.sub(r"\s+", " ", expr)
     field_count = len(expr.split(" "))
     if field_count != 5:
-        raise SchedulerConfigError(
-            f"Invalid crontab 'expr' {expr!r}: expected 5 fields, got {field_count}"
-        )
+        raise SchedulerConfigError(f"Invalid crontab 'expr' {expr!r}: expected 5 fields, got {field_count}")
     return {"expr": expr}
 
 
@@ -528,9 +553,7 @@ def sanitize_schedule_config(
     if config is None:
         config = {}
     if not isinstance(config, dict):
-        raise SchedulerConfigError(
-            f"schedule_config must be a mapping, got {type(config).__name__}"
-        )
+        raise SchedulerConfigError(f"schedule_config must be a mapping, got {type(config).__name__}")
 
     if stype == "once":
         return _sanitize_once(config)

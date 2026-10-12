@@ -1,4 +1,4 @@
-"""AgentDaemon — lifecycle, RPC handlers, SingleAgentManager, sd_notify.
+"""AgentDaemon — lifecycle, RPC handlers, sd_notify.
 
 Implements Module 5 of ``sdd/specs/agent-cli-daemon.spec.md``: the daemon
 itself. Binds one agent (``resolve_agent()``, TASK-2210) + an optional
@@ -27,6 +27,7 @@ from parrot.human import HumanChannel
 
 from .config import AgentServiceConfig, default_socket_path, resolve_agent
 from .protocol import (
+    INVALID_PARAMS,
     INTERNAL_ERROR,
     METHOD_AGENT_INFO,
     METHOD_AGENT_INVOKE,
@@ -55,7 +56,6 @@ from .server import Handler, JsonRpcUnixServer, RpcHandlerError, Session
 
 __all__ = [
     "AgentDaemon",
-    "SingleAgentManager",
     "sd_notify",
 ]
 
@@ -118,9 +118,7 @@ class _AgentdHumanChannel(HumanChannel):
         """Publish a one-way notification (no response expected)."""
         server = self._daemon.server
         if server is not None:
-            await server.event_broker.publish(
-                _HITL_NOTIFY_NOTIFICATION, {"recipient": recipient, "message": message}
-            )
+            await server.event_broker.publish(_HITL_NOTIFY_NOTIFICATION, {"recipient": recipient, "message": message})
 
     async def cancel_interaction(self, interaction_id: str, recipient: str) -> bool:
         """Publish a cancellation notice for a pending interaction."""
@@ -237,42 +235,6 @@ def _agent_response_to_rpc(response: Any) -> dict[str, Any]:
     return {"output": output, "metadata": metadata}
 
 
-class SingleAgentManager:
-    """Minimal `bot_manager` contract for `AgentSchedulerManager`.
-
-    Exposes exactly the surface `AgentSchedulerManager._execute_agent_job`
-    touches: `_bots` (dict), `registry.get_instance(name)`, and
-    `get_crew(name)` (always `None` -- agentd v1 is single-agent, no crew
-    support; multi-agent/crew orchestration is covered by the aiohttp
-    server, per spec §1 Non-Goals).
-    """
-
-    class _Registry:
-        """Minimal stand-in for `BotManager.registry`."""
-
-        def __init__(self, bots: dict[str, Any]) -> None:
-            self._bots = bots
-
-        async def get_instance(self, name: str) -> Any:
-            """Return the single registered agent by name.
-
-            Raises:
-                ValueError: If `name` does not match the registered agent.
-            """
-            agent = self._bots.get(name)
-            if agent is None:
-                raise ValueError(f"Agent {name!r} not found")
-            return agent
-
-    def __init__(self, agent: Any, name: str) -> None:
-        self._bots: dict[str, Any] = {name: agent}
-        self.registry = SingleAgentManager._Registry(self._bots)
-
-    def get_crew(self, name: str) -> None:
-        """Always return `None` -- no crew support in agentd v1."""
-        return
-
-
 class AgentDaemon:
     """Foreground per-agent daemon (spec §2 "Daemon lifecycle").
 
@@ -321,9 +283,7 @@ class AgentDaemon:
         await self._start_scheduler()
 
         socket_path = self.config.socket or default_socket_path(self.config.name)
-        self.server = JsonRpcUnixServer(
-            socket_path, self._build_dispatch(), max_line_bytes=self.config.max_line_bytes
-        )
+        self.server = JsonRpcUnixServer(socket_path, self._build_dispatch(), max_line_bytes=self.config.max_line_bytes)
         await self.server.start()
 
         self._start_time = time.monotonic()
@@ -372,14 +332,10 @@ class AgentDaemon:
         """
         tool_manager = getattr(self.agent, "tool_manager", None)
         if tool_manager is None:
-            self.logger.debug(
-                "Agent target has no tool_manager; skipping bridged-HITL wiring."
-            )
+            self.logger.debug("Agent target has no tool_manager; skipping bridged-HITL wiring.")
             return
         if getattr(tool_manager, "confirmation_guard", None) is not None:
-            self.logger.debug(
-                "ToolManager already has a ConfirmationGuard; leaving it as-is."
-            )
+            self.logger.debug("ToolManager already has a ConfirmationGuard; leaving it as-is.")
             return
 
         from parrot.auth import (
@@ -390,9 +346,7 @@ class AgentDaemon:
         from parrot.human import HumanInteractionManager
 
         self._hitl_channel = _AgentdHumanChannel(self)
-        self._human_manager = HumanInteractionManager(
-            channels={"agentd": self._hitl_channel}
-        )
+        self._human_manager = HumanInteractionManager(channels={"agentd": self._hitl_channel})
         await self._human_manager.startup()
         self._confirmation_guard = ConfirmationGuard(
             store=InMemoryConfirmationWindowStore(),
@@ -400,13 +354,9 @@ class AgentDaemon:
             config=ConfirmationConfig(window_seconds=0, default_channel="agentd"),
         )
         tool_manager.set_confirmation_guard(self._confirmation_guard)
-        self.logger.info(
-            "Bridged HITL wiring configured: channel=agentd window_seconds=0"
-        )
+        self.logger.info("Bridged HITL wiring configured: channel=agentd window_seconds=0")
 
-    async def _handle_hitl_respond(
-        self, session: Session, params: dict[str, Any]
-    ) -> Any:
+    async def _handle_hitl_respond(self, session: Session, params: dict[str, Any]) -> Any:
         """Handle `hitl.respond`: a human's answer to a bridged confirmation.
 
         Raises:
@@ -416,9 +366,7 @@ class AgentDaemon:
                 `tool_manager`).
         """
         if self._hitl_channel is None or self._hitl_channel._response_callback is None:
-            raise RpcHandlerError(
-                INTERNAL_ERROR, "No bridged HITL channel is configured."
-            )
+            raise RpcHandlerError(INTERNAL_ERROR, "No bridged HITL channel is configured.")
 
         from parrot.human.models import HumanResponse, InteractionType
 
@@ -458,18 +406,13 @@ class AgentDaemon:
         `register_tools`, no tool manager) still serves RPC perfectly well,
         so a failure here is logged, never raised.
         """
-        names = (
-            self.config.exposed_methods
-            if self.config.expose_as_tools is None
-            else self.config.expose_as_tools
-        )
+        names = self.config.exposed_methods if self.config.expose_as_tools is None else self.config.expose_as_tools
         if not names:
             return
         register = getattr(self.agent, "register_tools", None)
         if not callable(register):
             self.logger.warning(
-                "Agent %s has no register_tools(); exposed methods stay "
-                "RPC-only and the LLM cannot call them",
+                "Agent %s has no register_tools(); exposed methods stay " "RPC-only and the LLM cannot call them",
                 type(self.agent).__name__,
             )
             return
@@ -487,9 +430,7 @@ class AgentDaemon:
                 ", ".join(t.name for t in tools),
             )
         except Exception as exc:  # noqa: BLE001 - see docstring
-            self.logger.warning(
-                "Could not register LLM tools from exposed_methods: %s", exc
-            )
+            self.logger.warning("Could not register LLM tools from exposed_methods: %s", exc)
 
     async def _start_scheduler(self) -> None:
         """Best-effort headless scheduler bootstrap (spec §2, step 3).
@@ -521,11 +462,9 @@ class AgentDaemon:
             )
             return
 
-        single_agent_manager = SingleAgentManager(self.agent, self.config.name)
-        manager = AgentSchedulerManager(bot_manager=single_agent_manager)
-        await manager.start_headless(
-            dsn=self.config.scheduler.dsn, use_redis=self.config.scheduler.redis
-        )
+        manager = AgentSchedulerManager()
+        manager.register_target(self.config.name, self.agent, kind="agent")
+        await manager.start_headless(dsn=self.config.scheduler.dsn, use_redis=self.config.scheduler.redis)
         manager.register_bot_schedules(self.agent)
         manager.scheduler.add_listener(self._on_job_executed, EVENT_JOB_EXECUTED)
         manager.scheduler.add_listener(self._on_job_error, EVENT_JOB_ERROR)
@@ -631,23 +570,17 @@ class AgentDaemon:
         metadata.setdefault("permission_context", session.permission_context)
 
         if not stream:
-            response = await self.agent.ask(
-                prompt, session_id=session.session_id, **metadata
-            )
+            response = await self.agent.ask(prompt, session_id=session.session_id, **metadata)
             return _agent_response_to_rpc(response)
 
         stream_id = params.get("stream_id") or uuid.uuid4().hex
         session.stream_ids.add(stream_id)
-        task = asyncio.create_task(
-            self._run_stream(session, stream_id, prompt, metadata)
-        )
+        task = asyncio.create_task(self._run_stream(session, stream_id, prompt, metadata))
         session.tasks.add(task)
         task.add_done_callback(session.tasks.discard)
         return {"stream_id": stream_id}
 
-    async def _run_stream(
-        self, session: Session, stream_id: str, prompt: str, metadata: dict[str, Any]
-    ) -> None:
+    async def _run_stream(self, session: Session, stream_id: str, prompt: str, metadata: dict[str, Any]) -> None:
         """Iterate `agent.ask_stream()`, emitting `chat.delta`/`chat.complete`.
 
         `AbstractBot.ask_stream()`'s real contract yields text deltas
@@ -661,9 +594,7 @@ class AgentDaemon:
         accumulated: list[str] = []
         final_response: Any = None
         try:
-            async for chunk in self.agent.ask_stream(
-                prompt, session_id=session.session_id, **metadata
-            ):
+            async for chunk in self.agent.ask_stream(prompt, session_id=session.session_id, **metadata):
                 if isinstance(chunk, str):
                     text = chunk
                 elif hasattr(chunk, "text"):
@@ -677,9 +608,7 @@ class AgentDaemon:
                 else:
                     text = str(chunk)
                 accumulated.append(text)
-                await session.notify(
-                    METHOD_CHAT_DELTA, {"stream_id": stream_id, "text": text}
-                )
+                await session.notify(METHOD_CHAT_DELTA, {"stream_id": stream_id, "text": text})
 
             response_text = "".join(accumulated)
             if final_response is not None:
@@ -698,13 +627,9 @@ class AgentDaemon:
                 },
             )
         except Exception as exc:
-            self.logger.exception(
-                "Streaming chat.send failed for stream_id=%s", stream_id
-            )
+            self.logger.exception("Streaming chat.send failed for stream_id=%s", stream_id)
             with contextlib.suppress(Exception):
-                await session.notify(
-                    METHOD_CHAT_ERROR, {"stream_id": stream_id, "error": str(exc)}
-                )
+                await session.notify(METHOD_CHAT_ERROR, {"stream_id": stream_id, "error": str(exc)})
         finally:
             session.stream_ids.discard(stream_id)
 
@@ -745,23 +670,14 @@ class AgentDaemon:
         kwargs = params.get("kwargs") or {}
 
         if not method_name or method_name.startswith("_"):
-            raise RpcHandlerError(
-                UNKNOWN_AGENT_METHOD, f"Method not allowed: {method_name!r}"
-            )
+            raise RpcHandlerError(UNKNOWN_AGENT_METHOD, f"Method not allowed: {method_name!r}")
 
-        if (
-            self.config.exposed_methods
-            and method_name not in self.config.exposed_methods
-        ):
-            raise RpcHandlerError(
-                UNKNOWN_AGENT_METHOD, f"Method not in allowlist: {method_name!r}"
-            )
+        if self.config.exposed_methods and method_name not in self.config.exposed_methods:
+            raise RpcHandlerError(UNKNOWN_AGENT_METHOD, f"Method not in allowlist: {method_name!r}")
 
         method = getattr(self.agent, method_name, None)
         if method is None or not callable(method):
-            raise RpcHandlerError(
-                UNKNOWN_AGENT_METHOD, f"Unknown agent method: {method_name!r}"
-            )
+            raise RpcHandlerError(UNKNOWN_AGENT_METHOD, f"Unknown agent method: {method_name!r}")
 
         result = method(*args, **kwargs)
         if inspect.isawaitable(result):
@@ -774,8 +690,7 @@ class AgentDaemon:
         if self._scheduler_manager is None:
             raise RpcHandlerError(
                 SCHEDULER_UNAVAILABLE,
-                "Scheduler is not available (ai-parrot-server not "
-                "installed, or scheduler.enabled=false in config).",
+                "Scheduler is not available (ai-parrot-server not " "installed, or scheduler.enabled=false in config).",
             )
         return self._scheduler_manager
 
@@ -787,8 +702,14 @@ class AgentDaemon:
     async def _handle_schedules_add(self, session: Session, params: dict[str, Any]) -> Any:
         """Handle `schedules.add`."""
         manager = await self._require_scheduler()
-        schedule = await manager.add_schedule(**params)
-        return _serialize_for_rpc(schedule)
+        try:
+            schedule = await manager.add_schedule(**params)
+        except (TypeError, ValueError) as exc:
+            # TypeError: unknown/missing kwargs (e.g. the removed ``agent_name``).
+            # ValueError covers pydantic.ValidationError, SchedulerConfigError
+            # and unknown target kind/name.
+            raise RpcHandlerError(INVALID_PARAMS, str(exc)) from exc
+        return _serialize_for_rpc(schedule.model_dump(mode="json"))
 
     async def _handle_schedules_pause(self, session: Session, params: dict[str, Any]) -> Any:
         """Handle `schedules.pause`."""
@@ -803,9 +724,7 @@ class AgentDaemon:
         """Handle `schedules.resume` (re-enable + reschedule the job)."""
         manager = await self._require_scheduler()
         try:
-            schedule = await manager.update_schedule(
-                params.get("schedule_id"), {"enabled": True}
-            )
+            schedule = await manager.update_schedule(params.get("schedule_id"), {"enabled": True})
         except Exception as exc:
             raise RpcHandlerError(SCHEDULE_NOT_FOUND, str(exc)) from exc
         return _serialize_for_rpc(schedule)
@@ -831,9 +750,7 @@ class AgentDaemon:
 
     async def _handle_daemon_status(self, session: Session, params: dict[str, Any]) -> Any:
         """Handle `daemon.status`."""
-        scheduler_info: dict[str, Any] = {
-            "available": self._scheduler_manager is not None
-        }
+        scheduler_info: dict[str, Any] = {"available": self._scheduler_manager is not None}
         if self._scheduler_manager is not None:
             scheduler_info["running"] = bool(self._scheduler_manager.scheduler.running)
             scheduler_info["jobs"] = len(self._scheduler_manager.scheduler.get_jobs())

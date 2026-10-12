@@ -378,17 +378,20 @@ in-memory.
 ### 6.2 Dynamic schedules (runtime)
 
 Add, pause, resume, or remove schedules at runtime from the
-interactive console:
+interactive console. Dynamic schedules identify their target explicitly and
+select a persistence backend:
 
 ```
 # List current schedules:
 /schedules list
 
-# Add a new interval schedule:
-/schedules add --type interval --hours 4 --method sync_fireflies_transcripts
+# Add a database-backed interval schedule:
+/schedules add --target-kind agent --target-name FirefliesObsidianAgent \
+    --backend db --type interval --hours 4 --method sync_fireflies_transcripts
 
-# Add a cron schedule:
-/schedules add --type cron --hour 9 --minute 0 --day-of-week mon-fri \
+# Add a Redis-backed cron schedule:
+/schedules add --target-kind agent --target-name FirefliesObsidianAgent \
+    --backend redis --type cron --hour 9 --minute 0 --day-of-week mon-fri \
     --method morning_digest
 
 # Pause a schedule:
@@ -405,7 +408,7 @@ interactive console:
 
 Dynamic schedules are **in-memory by default** — they disappear when
 the daemon restarts. To persist them across restarts, configure a
-Postgres DSN:
+Postgres DSN for `db` schedules:
 
 ```yaml
 scheduler:
