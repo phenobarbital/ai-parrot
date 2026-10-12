@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-10T01:46:24Z",
-  "completed_at": null,
+  "completed_at": "2026-10-12T13:54:35+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -35,10 +35,10 @@
       "feature_id": "FEAT-648",
       "feature": "products-found-endcap",
       "spec": "sdd/specs/products-found-endcap.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-10-12T13:28:37+00:00",
-      "completed_at": null,
+      "completed_at": "2026-10-12T13:54:35+00:00",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -46,7 +46,8 @@
       ],
       "parallel": true,
       "parallelism_notes": "needs reporting=ReportingPolicy(slot_presence=True) on the four default_layout_profile() from TASK-4206 (types/*.py) — its tests assert that behaviour",
-      "file": "sdd/tasks/active/TASK-4207-products-found-types-tests.md"
+      "file": "sdd/tasks/completed/TASK-4207-products-found-types-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4208",
