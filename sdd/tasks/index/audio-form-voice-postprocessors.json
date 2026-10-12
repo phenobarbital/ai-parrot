@@ -136,7 +136,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -146,8 +146,9 @@
       "parallelism_notes": "Tests build AudioAnswer(normalized_by=, llm_confidence=) — fields added by TASK-4248 (audio/models.py).",
       "assigned_to": null,
       "started_at": "2026-10-12T19:44:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4250-evidence-envelope-provenance.md"
+      "completed_at": "2026-10-12T20:03:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4250-evidence-envelope-provenance.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4251",
