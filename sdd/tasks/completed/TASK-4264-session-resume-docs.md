@@ -198,8 +198,8 @@ Documentation task. Before closing: `grep -n 'active_ttl_seconds\|resume_ttl_sec
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (sequential, no coder seats)
+**Date**: 2026-10-12
+**Notes**: Docs only. §6 row, §10 row, new "Active-session marker and resume TTLs" subsection (after `session_resumed` in §7.3) with wire example, handoff line, top CHANGELOG entry. test_audio_events passes.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
