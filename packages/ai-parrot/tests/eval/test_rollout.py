@@ -1,4 +1,5 @@
 """Unit tests for rollout strategies + user simulators (TASK-1423)."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -161,9 +162,7 @@ async def test_single_turn_copies_usage_tool_calls_model_metadata():
     bot.ask.return_value = _ai_message_like()
 
     async with NoopSandbox() as sandbox:
-        trajectory = await SingleTurnRollout().run(
-            bot, EvalTask(task_id="t", inputs={"query": "q"}), sandbox
-        )
+        trajectory = await SingleTurnRollout().run(bot, EvalTask(task_id="t", inputs={"query": "q"}), sandbox)
 
     assert trajectory.tokens.total == 15
     assert trajectory.turns[0].tool_calls[0].name == "get_revenue"
@@ -178,9 +177,7 @@ async def test_single_turn_defaults_without_usage():
     bot.ask.return_value = type("M", (), {"content": "x"})()
 
     async with NoopSandbox() as sandbox:
-        trajectory = await SingleTurnRollout().run(
-            bot, EvalTask(task_id="t", inputs={"query": "q"}), sandbox
-        )
+        trajectory = await SingleTurnRollout().run(bot, EvalTask(task_id="t", inputs={"query": "q"}), sandbox)
 
     assert trajectory.tokens.prompt == 0
     assert trajectory.tokens.completion == 0

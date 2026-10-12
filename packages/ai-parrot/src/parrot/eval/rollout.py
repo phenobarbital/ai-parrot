@@ -14,6 +14,7 @@ Provided implementations:
 - ``LLMUserSimulator`` — calls ``client.ask()`` to generate synthetic user
   turns (τ-bench style, temperature = 0 for reproducibility).
 """
+
 from __future__ import annotations
 
 import logging
@@ -353,9 +354,7 @@ class ConversationalRollout(RolloutStrategy):
 
         except Exception as exc:
             latency_ms = (time.perf_counter() - t_start) * 1000.0
-            self.logger.error(
-                "ConversationalRollout failed for task %s: %s", task.task_id, exc
-            )
+            self.logger.error("ConversationalRollout failed for task %s: %s", task.task_id, exc)
             return Trajectory(
                 task_id=task.task_id,
                 attempt=0,
@@ -404,6 +403,7 @@ def _extract_question(task: EvalTask) -> str:
                 return val
     # Fallback: serialize the whole inputs dict
     import json
+
     return json.dumps(task.inputs)
 
 

@@ -5,6 +5,7 @@ FEAT-217 — All evaluation data contracts live here.  No behavior — pure data
 via a forward reference in ``EvalTask``; call ``EvalTask.model_rebuild()``
 once ``SandboxSpec`` is importable (done in ``parrot/eval/__init__.py``).
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
