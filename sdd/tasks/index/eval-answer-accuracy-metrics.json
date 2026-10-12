@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-12T16:23:50Z",
-  "completed_at": null,
+  "completed_at": "2026-10-12T17:35:07+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -134,7 +134,7 @@
       "feature_id": "FEAT-652",
       "feature": "eval-answer-accuracy-metrics",
       "spec": "sdd/specs/eval-answer-accuracy-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -149,8 +149,9 @@
       "parallelism_notes": "imports every public name created by TASK-4237..4242 into eval/__init__.py (the only task editing that file) and the e2e test exercises all of them together.",
       "assigned_to": null,
       "started_at": "2026-10-12T17:09:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4243-public-surface-docs.md"
+      "completed_at": "2026-10-12T17:35:07+00:00",
+      "file": "sdd/tasks/completed/TASK-4243-public-surface-docs.md",
+      "verification": "verified"
     }
   ]
 }
