@@ -1,0 +1,13 @@
+| # | Suggestion (kind) | Disposition | Reason | Landed in |
+|---|---|---|---|---|
+| S1 | Typed normalization outputs and statuses (api) | CONFIRM | A plain `ok` flag let "yes" store a value the submit gate rejects; replaced with `accepted`/`confirm`/`rejected` and a reject path | §2 Overview + matrix, Data Models, AC3 |
+| S2 | Propagate and validate timezone (architecture) | CONFIRM | Already designed (`StartSession.timezone`, `AudioSessionState.timezone`, `ZoneInfo`, `timezone_known`); the "persist in snapshot" part is rejected because resume receives a fresh `start_session` | M5, M7, M8 |
+| S3 | Dedicated token grammar, not `normalize()` (architecture) | CONFIRM | Already designed: separate `Lexicon.spoken`, `cardinals` untouched, per-normalizer tokenizer | M1, M2, §7 |
+| S4 | Make `email-validator` a direct dependency (risk) | REJECT | A second validator would disagree with the submit gate's `EMAIL_PATTERN` (`services/validators.py:56`), so a voice-accepted email could still fail at submit; the gate's regex stays the single source of truth. The typed `INVALID_EMAIL` part was already in scope | — |
+| S5 | Canonical representations per family (api) | CONFIRM | Already in the §2 table; DATETIME keeps the naive local `YYYY-MM-DDTHH:MM` (offset part rejected: it matches HTML `datetime-local`, and the validator leaves temporal strings unparsed) | §2 table |
+| S6 | LLM through the engine's I/O protocol (architecture) | CONFIRM | Already designed (`RefineValue` / `ValueRefined` with `request_id`, adapter timeout) | M5, M7, M8 |
+| S7 | Separate refine config, not `LLMValidationConfig` (architecture) | CONFIRM | Already separate (`VoiceFormConfig.llm_refine_*`, `FieldVoiceMeta.llm_refine`, `REFINABLE_TYPES`). A per-feature model setting is rejected: it reuses `llm_client_getter` like plausibility | M5, M7 |
+| S8 | Provenance through every representation (risk) | CONFIRM | Gap found: `_accept` rebuilds the `AudioAnswer`, so provenance would be lost across a confirmation. `_accept` now takes `normalized_by`/`llm_confidence`, stamped on `state.pending` | §2 step 6, M7, AC5 |
+| S9 | Precedence between STT, normalization and LLM (risk) | CONFIRM | Explicit decision matrix; the LLM never overrides the STT rule or `confirm: "always"` | §2 matrix, AC3 |
+| S10 | Phone normalization vs. final validation (risk) | CONFIRM | Already aligned with `PHONE_PATTERN`; short numbers are now `rejected`, not confirmable | §2 table |
+| S11 | Layered test matrix + wire assertions (testing) | CONFIRM | Added matrix, provenance-round-trip, timezone-validation and stale-reply tests | §4 |

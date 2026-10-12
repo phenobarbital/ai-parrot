@@ -1,0 +1,11 @@
+
+End-to-end testing of FEAT-649 (audio form workflow) hosted by FieldSync FEAT-701 and rendered by
+navigator-svelte FEAT-700 surfaced five backend defects. The product is used in the United States,
+in English, by field reps answering short forms by voice.
+
+2. **Spoken emails are stored as words.** "john at gmail dot com" was stored as
+   "en man 6321 arroyenme el punto con". The free-form path stores the raw transcript whatever the
+   field type.
+3. **Spoken phone numbers are stored with separators** ("0,4,12,523,573").
+4. **Spoken numbers and dates are not parsed** ("twenty five", "next Friday").
+5. **STT guesses the language.** With `locale == "en"` the handler passes `language=None`, so

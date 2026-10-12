@@ -10,8 +10,8 @@ tags: [audio-forms, voice, normalization, post-processors, llm-refine]
 **Feature ID**: FEAT-653
 **Date**: 2026-10-12
 **Author**: Jesus Lara (from Emmanuel Arroyo's brainstorm)
-**Status**: draft
-**Target version**: next parrot-formdesigner release after FEAT-649
+**Status**: approved
+**Target version**: ships together with the FEAT-649 release (same parrot-formdesigner version; §8 Q5)
 
 **Source**: `sdd/proposals/audio-form-voice-followups.brainstorm.md` (branch
 `origin/feat/audio-form-voice-followups`, commit `fbd7a7a24d`, status `exploration`), defects 2–4
@@ -61,10 +61,12 @@ heard (decision by Jesús Lara, 2026-10-12).
   (`FormValidator`) accepts.
 - G2. Normalization applies to **spoken answers only**. Typed answers are stored as typed.
   **Email validation** applies to both (typed EMAIL answers are rejected early with `INVALID_EMAIL`).
-- G3. A result that is not certain goes to the existing confirm flow, carrying the normalized
-  candidate. It is never stored silently and never stored as words.
-- G4. Optional **LLM post-processor** (`llm_refine`): when enabled for a field, it runs on *every*
-  spoken answer of that field, after the rules. Its value is accepted without confirmation only when
+- G3. A valid but uncertain result goes to the existing confirm flow, carrying the normalized
+  candidate. A result that cannot be valid is rejected and re-asked, with the candidate offered
+  for editing. Nothing invalid is stored, and nothing is stored as words.
+- G4. Optional **LLM post-processor** (`llm_refine`): when enabled for a field of a typed family
+  (EMAIL, PHONE, NUMBER/INTEGER, DATE/TIME/DATETIME — never TEXT/TEXT_AREA, §8 Q3), it runs on
+  *every* spoken answer of that field, after the rules. Its value is accepted without confirmation only when
   all three hold:
   - its confidence is ≥ `llm_refine_threshold`;
   - its output passes the same deterministic normalizer/validator;
@@ -74,6 +76,11 @@ heard (decision by Jesús Lara, 2026-10-12).
   to a wrong value.
 - G6. Relative dates are resolved in the **client's IANA timezone**, sent in `start_session`.
 - G7. Protocol changes are additive. v1 and v2 clients that send none of the new fields keep working.
+- G8. Every spoken (non-sensitive) answer persists which post-processor produced it
+  (`normalized_by`, plus `llm_confidence` when the LLM did) in its `VoiceEvidenceEnvelope`, for all
+  field types (§8 Q2).
+- G9. The LLM threshold/timeout defaults and the STT confirm threshold are set from a
+  **calibration run** over real field recordings, not guessed (§8 Q4).
 
 ### Non-Goals (explicitly out of scope)
 
@@ -98,45 +105,72 @@ heard (decision by Jesús Lara, 2026-10-12).
 A new pure package `audio/normalize/` exposes one entry point:
 `normalize_spoken(field_type, text, *, ctx) -> NormalizeResult | None`. It dispatches to one
 normalizer per type family. `None` means "type not handled, pass through". A `NormalizeResult`
-carries the canonical `value`, `ok` (certain and valid) and a `reason` code when not ok.
+carries the canonical `value`, a three-way `status` and a `reason` code (design research S1):
+
+- **`accepted`**: a valid canonical value, parsed with certainty.
+- **`confirm`**: a *valid* canonical value whose reading is uncertain: an ambiguous numeric date,
+  am/pm missing, a relative date without a timezone. "Yes" stores it.
+- **`rejected`**: no valid value can be produced (an invalid email, a phone too short, no parse,
+  several numbers, non-integral for INTEGER). This is **never** offered as a "yes" confirmation,
+  because "yes" would store a value the submit gate rejects. The best-effort candidate, if any, is
+  returned so the client can prefill an editable input.
 
 The engine calls it on the **free-form speech path only** (`on_transcript`, after commands and
-after the option path), then applies the gates in this order:
+after the option path):
 
-1. **Rules.** `det = normalize_spoken(...)`, unless `meta.voice.normalize` is false.
-2. **Optional LLM refine.** It runs when `llm_refine` is in effect for the field and the field is not
-   sensitive (S8: a sensitive value never leaves the process). The engine parks the answer and
-   emits a `RefineValue` I/O request. The adapter awaits `LLMValueRefiner.refine(...)` with a
-   timeout and feeds back `ValueRefined`. The LLM's string is **re-run through the same normalizer**:
-   - If it comes out ok, it becomes the candidate (`normalized_by="llm"`).
-   - Otherwise, or on failure, timeout or no client, the rules candidate stands.
-3. **Gate.** Confirm when any of these holds:
-   - the field's `confirm` is `"always"`;
-   - the candidate is not ok (even with `confirm: "never"`, because an invalid value must never be
-     stored silently);
-   - the STT confidence is below `stt_confirm_threshold` and `confirm` is not `"never"` (unchanged
-     rule);
-   - the candidate came from the LLM with confidence below `llm_refine_threshold`.
+1. **Rules.** `det = normalize_spoken(...)`, unless `meta.voice.normalize` is false (then the raw
+   text, `status="accepted"`, `normalized_by=None`).
+2. **Optional LLM refine.** It runs when all three hold:
+   - `llm_refine` is in effect for the field;
+   - the field type is in `REFINABLE_TYPES` (the typed families, never TEXT/TEXT_AREA);
+   - the field is not sensitive (S8: a sensitive value never leaves the process).
 
-   Otherwise accept.
+   The engine parks the answer and emits a `RefineValue` I/O request. The adapter awaits
+   `LLMValueRefiner.refine(...)` with a timeout and feeds back `ValueRefined`. The LLM's string is
+   **re-run through the same normalizer**:
+   - If it comes out `accepted` or `confirm`, it becomes the candidate (`normalized_by="llm"`).
+   - Otherwise, or on failure, timeout, no client or a stale reply, the rules result stands.
+3. **Decision**, using the matrix below. The LLM never overrides the existing STT confidence rule or
+   `confirm: "always"`; it can only add a reason to confirm (design research S9).
 4. **Confirm.** `ConfirmRequest` carries `transcript` (the words, masked if sensitive) plus the new
-   `value` (the normalized candidate, v2 only, omitted if sensitive) and `refined_by`. "Yes" stores
-   the candidate. A typed correction (`answer_text`) is stored as typed. For EMAIL it is validated.
-5. **Accept.** `AudioAnswer.value` is the canonical value. `raw_transcript` keeps the words for
-   audit (already true). The new `AudioAnswer.normalized_by` records `"rules"`, `"llm"` or `None`.
+   `value` (the candidate, v2 only, omitted if sensitive) and `refined_by`. "Yes" stores the
+   candidate with its provenance. A typed correction (`answer_text`) is stored as typed. For EMAIL it
+   is validated.
+5. **Reject.** `AnswerRejected` gets `code` = `INVALID_EMAIL` (EMAIL) or `INVALID_VALUE` (other
+   types) and the localized narration. The new optional `value` field carries the best-effort
+   candidate (v2 only, omitted if sensitive). The question stays on the cursor (phase ASKING), like
+   today's `NO_MATCH`.
+6. **Accept.** `AudioAnswer.value` is the canonical value. `raw_transcript` keeps the words for
+   audit (already true). The new `AudioAnswer.normalized_by` (`"rules"`, `"llm"` or `None`) and
+   `AudioAnswer.llm_confidence` travel through `state.pending` and `_accept` (they survive a
+   confirmation), into the snapshot (resume), and into the submission's `VoiceEvidenceEnvelope`
+   via `wrap_voice` (G8, design research S8).
+
+**Decision matrix.** "STT low" means `confidence < stt_confirm_threshold` and `confirm` ≠ `"never"`.
+"LLM low" means the candidate came from the LLM with `confidence < llm_refine_threshold`.
+
+| Candidate status | `confirm: "always"` | STT low | LLM low | Outcome |
+|---|---|---|---|---|
+| `rejected` | any | any | any | **reject** (`INVALID_EMAIL` / `INVALID_VALUE`), re-ask |
+| `confirm` | any | any | any | **confirm**, even with `confirm: "never"` |
+| `accepted` | yes | any | any | **confirm** |
+| `accepted` | no | yes | any | **confirm** (unchanged FEAT-649 rule) |
+| `accepted` | no | no | yes | **confirm** |
+| `accepted` | no | no | no | **accept** |
+| LLM timeout / failure / unavailable | — | — | — | the rules result goes through the same matrix |
 
 Canonical output per type (what `FormValidator._coerce_value` / `_validate_by_type` accept):
 
-| FieldType | Canonical value | `ok=False` when |
-|---|---|---|
-| EMAIL | lowercase `str` matching `EMAIL_PATTERN` | not exactly one `@`, or no `EMAIL_PATTERN` match |
-| PHONE | `str`: optional leading `+`, then digits only | fails `PHONE_PATTERN` (fewer than 7 digits) |
-| INTEGER | `int` | no number, several numbers, non-integral |
-| NUMBER | `int` if integral, else `float` | no number, several numbers |
-| DATE | `"YYYY-MM-DD"` | no parse; relative phrase without a valid timezone; `"next <weekday>"` (§8 Q1); numeric date valid in both orders (e.g. 3/4) |
-| TIME | `"HH:MM"` (24 h) | no parse; hour 1–12 with no am/pm |
-| DATETIME | `"YYYY-MM-DDTHH:MM"` (naive, client local, like HTML `datetime-local`) | either part not ok |
-| anything else | — (`None`, pass-through) | — |
+| FieldType | Canonical value | `confirm` when | `rejected` when |
+|---|---|---|---|
+| EMAIL | lowercase `str` matching `EMAIL_PATTERN` | — | not exactly one `@`, or no `EMAIL_PATTERN` match |
+| PHONE | `str`: optional leading `+`, then digits only, matching `PHONE_PATTERN` | — | fewer than 7 digits / no digits |
+| INTEGER | `int` | — | no number, several numbers, non-integral |
+| NUMBER | `int` if integral, else `float` | — | no number, several numbers |
+| DATE | `"YYYY-MM-DD"` | relative phrase without a valid timezone (resolved in UTC); numeric date valid in both orders (e.g. 3/4; candidate uses the locale order) | no parse, impossible date |
+| TIME | `"HH:MM"` (24 h) | hour 1–12 with no am/pm (candidate uses the literal hour) | no parse, out of range |
+| DATETIME | `"YYYY-MM-DDTHH:MM"` (naive, client local, like HTML `datetime-local`; design research S5 offset part rejected) | either part `confirm` | either part `rejected` |
+| anything else | — (`None`, pass-through) | — | — |
 
 ### Component Diagram
 ```
@@ -166,6 +200,8 @@ TranscriptReady ──→ AudioFormSession.on_transcript
 | `_IORequest` / `InboundEvent` (`audio/events.py:451,250`) | extends | `RefineValue`, `ValueRefined` |
 | `AudioSessionState`, `AudioAnswer` (`audio/models.py:258,214`) | extends | `timezone`; `normalized_by` |
 | `VoiceFormConfig`, `FieldVoiceMeta` (`core/voice.py:50,35`) | extends | refine config; `normalize`, `llm_refine` |
+| `VoiceEvidenceEnvelope` / `wrap_voice` (`core/voice_answer.py:39,77`) | extends | `normalized_by`, `llm_confidence` persisted |
+| `FormValidator._EVIDENCE_KEYS` (`services/validators.py:580`) | extends | the two new envelope keys |
 | `AudioFormWSHandler` (`api/audio_ws.py`) | modifies | Timezone, `RefineValue` handling, v1 encode, refiner from `llm_client_getter` |
 | `LLMOptionRefiner` (`audio/option_refiner.py:33`) | pattern only | Same shape for `LLMValueRefiner` |
 
@@ -173,15 +209,18 @@ TranscriptReady ──→ AudioFormSession.on_transcript
 ```python
 # audio/normalize/base.py
 class NormalizeResult(BaseModel):
-    value: Any
-    ok: bool
-    reason: str | None = None          # "invalid_email" | "too_short" | "ambiguous" | "no_parse" | "needs_timezone" | "ambiguous_meridiem" | "non_integral" | "multiple_values"
+    value: Any = None                  # canonical value (accepted/confirm) or best-effort candidate / None (rejected)
+    status: Literal["accepted", "confirm", "rejected"]
+    reason: str | None = None          # confirm: "ambiguous_order" | "needs_timezone" | "ambiguous_meridiem"
+                                       # rejected: "invalid_email" | "too_short" | "no_parse" | "multiple_values" | "non_integral" | "out_of_range"
+
+REFINABLE_TYPES: frozenset[FieldType]  # {EMAIL, PHONE, NUMBER, INTEGER, DATE, TIME, DATETIME}
 
 @dataclass(frozen=True)
 class NormalizeContext:
     lexicon: Lexicon                    # carries .spoken
     now: datetime                       # tz-aware, already converted to the client tz (UTC if unknown)
-    timezone_known: bool                # False → relative date phrases are ok=False ("needs_timezone")
+    timezone_known: bool                # False → relative date phrases resolve in UTC with status="confirm" ("needs_timezone")
 
 # audio/value_refiner.py
 class RefinedValue(BaseModel):          # LLM structured output
@@ -209,12 +248,14 @@ class LLMValueRefiner:
 | M1: Spoken lexicon tables | yes | `SpokenLexicon` fields below; YAML keys under `lexicon.spoken` | — |
 | M2: Normalize core + numbers | yes | `NormalizeResult`, `NormalizeContext`, `normalize_spoken`, `parse_number` grammar in §7 | — |
 | M3: Email + phone | yes | Canonical table §2; patterns from validators | — |
-| M4: Temporal | no | Grammar is specified, but the relative-date edge rules (§8 Q1, year roll-over) need judgment | date semantics |
+| M4: Temporal | no | Grammar is specified, but the year roll-over and numeric-ambiguity edge rules need judgment | date semantics |
 | M5: Config + protocol models | yes | Field names/types below; v1 drops new keys | — |
 | M6: LLM value refiner | yes | Mirrors `LLMOptionRefiner`; prompt contract §7 | — |
 | M7: Engine integration | no | Gate ordering and stale-refine handling are the design core | state machine |
 | M8: WS adapter | yes | `_perform_one` row; timezone validation; refiner construction | — |
 | M9: Docs | yes | Sections listed | — |
+| M10: Evidence envelope | yes | Two optional fields; `wrap_voice` copies them; `_EVIDENCE_KEYS` extended | — |
+| M11: Calibration harness + run | no | Metrics and decision rule below; corpus contents depend on the field recordings | threshold choice is a judgment over the report |
 
 ### Module 1: Spoken lexicon tables
 - **Path**: `audio/narration/lexicon.py` (modify), `audio/narration/templates/{en,es}/narration.yaml` (modify)
@@ -272,7 +313,7 @@ class LLMValueRefiner:
   def parse_numbers(tokens: list[str], spoken: SpokenLexicon) -> list[float | int]:
       """Every number in the token stream (words and written digits, grouping commas, decimals, minus)."""
   def normalize_number(text: str, ctx: NormalizeContext, *, integer: bool) -> NormalizeResult:
-      """Exactly one number → int/float; 0 or >1 numbers → ok=False."""
+      """Exactly one number → accepted int/float; 0 or >1 numbers → rejected (no_parse / multiple_values)."""
   ```
 
 ### Module 3: Email + phone
@@ -282,10 +323,10 @@ class LLMValueRefiner:
   ```python
   from ...services.validators import EMAIL_PATTERN, PHONE_PATTERN   # verified: services/validators.py:56,58 (import checked cycle-free on d180783c5)
   def normalize_email(text: str, ctx: NormalizeContext) -> NormalizeResult:
-      """Map email_symbols, join spelled letters, number words → digits, drop spaces, lowercase; ok iff EMAIL_PATTERN matches."""
+      """Map email_symbols, join spelled letters, number words → digits, drop spaces, lowercase; accepted iff EMAIL_PATTERN matches, else rejected (invalid_email) with the candidate."""
   def normalize_phone(text: str, ctx: NormalizeContext) -> NormalizeResult:
       """Leading plus word/'+' kept; digit words, digit_aliases, repeat_words, compound tens ('fifty five'→'55'); every
-      separator (space , . - ( )) dropped; ok iff PHONE_PATTERN matches."""
+      separator (space , . - ( )) dropped; accepted iff PHONE_PATTERN matches, else rejected (too_short)."""
   ```
 
 ### Module 4: Temporal (DATE / TIME / DATETIME)
@@ -296,7 +337,7 @@ class LLMValueRefiner:
   def normalize_date(text: str, ctx: NormalizeContext) -> NormalizeResult: ...
   def normalize_time(text: str, ctx: NormalizeContext) -> NormalizeResult: ...
   def normalize_datetime(text: str, ctx: NormalizeContext) -> NormalizeResult:
-      """Split into a date phrase and a time phrase ('tomorrow at three pm'); ok iff both are ok."""
+      """Split into a date phrase and a time phrase ('tomorrow at three pm'); worst status of the two parts wins."""
   ```
 
 ### Module 5: Config + protocol models
@@ -322,6 +363,9 @@ class LLMValueRefiner:
       ...
       value: Any = None                             # normalized candidate (v2 only; omitted when sensitive)
       refined_by: Literal["rules", "llm"] | None = None
+  class AnswerRejected(_Wire):                      # verified :353
+      ...
+      value: Any = None                             # best-effort candidate for a rejected spoken value (v2 only; omitted when sensitive)
   class ValueRefined(_Inbound):                     # internal, joins InboundEvent (:250)
       type: Literal["_value_refined"]
       field_id: str
@@ -345,6 +389,7 @@ class LLMValueRefiner:
   class AudioAnswer(BaseModel):                     # verified :214 (extra="forbid")
       ...
       normalized_by: Optional[Literal["rules", "llm"]] = None
+      llm_confidence: Optional[float] = None
   ```
 
 ### Module 6: LLM value refiner
@@ -372,9 +417,14 @@ class LLMValueRefiner:
       def _normalize_ctx(self) -> NormalizeContext:
           """now = clock() converted to ZoneInfo(state.timezone) when valid, else UTC with timezone_known=False."""
       def _llm_refine_enabled(self, field: FormField, meta: FieldVoiceMeta) -> bool:
-          """meta.llm_refine if not None else cfg.llm_refine_values; always False for sensitive fields."""
+          """meta.llm_refine if not None else cfg.llm_refine_values; False for sensitive fields and for any type
+          outside REFINABLE_TYPES = {EMAIL, PHONE, NUMBER, INTEGER, DATE, TIME, DATETIME}."""
       def _gate(self, evidence: AudioAnswer, candidate: NormalizeResult, *, refined_by, llm_confidence) -> list[Outbound]:
-          """Single confirm/accept decision (§2 step 3)."""
+          """Single reject/confirm/accept decision: the §2 decision matrix, nothing else."""
+      def _accept(self, field_id, value, *, source, confidence=None, raw=None, matched=None, evidence=None,
+                  normalized_by: str | None = None, llm_confidence: float | None = None) -> list[Outbound]:
+          """verified :464 — two new keyword args, copied onto the stored AudioAnswer; on_confirm passes them from
+          state.pending (which _request_confirm now stamps with normalized_by / llm_confidence)."""
       def on_value_refined(self, ev: ValueRefined) -> list[Outbound]:
           """Drop when stale (no in-flight refine, field or request_id mismatch); else re-normalize and _gate."""
       def on_start(...)   # also records ev.timezone
@@ -395,7 +445,7 @@ class LLMValueRefiner:
   - Perform `RefineValue`: get the client from `llm_client_getter`, call the refiner under
     `asyncio.wait_for(cfg.llm_refine_timeout_s)`, and return `ValueRefined`. A missing client gives
     `status="unavailable"`; an exception or timeout gives `"failed"`.
-  - In `_encode`, v1 `confirm_request` pops `value` and `refined_by`.
+  - In `_encode`, v1 `confirm_request` pops `value` and `refined_by`, and v1 `answer_rejected` pops `value`.
 - **Interface Skeleton**:
   ```python
   async def _do_refine(self, ctx: _ConnCtx, item: RefineValue) -> "InboundEvent": ...
@@ -408,8 +458,70 @@ class LLMValueRefiner:
 - **Responsibility**:
   - Document the per-type post-processors and canonical formats.
   - Document the `meta.voice.normalize` / `llm_refine` and form `llm_refine_*` settings.
-  - Document `start_session.timezone`, `confirm_request.value` / `refined_by`, and `INVALID_EMAIL`.
+  - Document `start_session.timezone`, `confirm_request.value` / `refined_by`, `answer_rejected.value`, and the `INVALID_EMAIL` / `INVALID_VALUE` codes.
   - Front note: show `value` (not `transcript`) as the editable candidate, and send `timezone`.
+
+
+### Module 10: Evidence envelope (post-processor audit)
+- **Path**: `core/voice_answer.py`, `services/validators.py` (modify)
+- **Responsibility**: persist `normalized_by` and `llm_confidence` with every non-sensitive spoken
+  answer, for all field types (§8 Q2). Pre-FEAT-653 envelopes keep validating.
+- **Depends on**: M5 (`AudioAnswer.normalized_by`, `llm_confidence`)
+- **Interface Skeleton**:
+  ```python
+  # core/voice_answer.py
+  class VoiceEvidenceEnvelope(VoiceAnswerEnvelope):                       # verified :39
+      ...
+      normalized_by: Literal["rules", "llm"] | None = None                # new, after plausibility (:52)
+      llm_confidence: float | None = None
+  def wrap_voice(scalars, evidence) -> dict[str, Any]:                    # verified :77 — also copies the two fields
+  # services/validators.py:580
+  _EVIDENCE_KEYS = frozenset({..., "normalized_by", "llm_confidence"})
+  ```
+
+### Module 11: Calibration harness + run
+- **Path**: `packages/parrot-formdesigner/scripts/calibrate_voice_postprocessors.py` (new); report
+  under `sdd/state/FEAT-653/calibration/` (`report.md`, `report.json`)
+- **Responsibility**: measure the post-processors on real field recordings, then set the shipped
+  defaults of `llm_refine_threshold`, `llm_refine_timeout_s` and `stt_confirm_threshold` from the
+  measurement (§8 Q4).
+- **Depends on**: M2, M3, M4, M6
+- **Corpus** (never committed; user data): a JSONL manifest passed with `--corpus`. Each line holds
+  `{audio, field_type, locale, timezone, label, expected}`, where `expected` is the canonical value
+  the rep finally confirmed or typed. Source: FieldSync FEAT-701 test sessions (`store_recordings`
+  is on by default). Minimum 30 items per field-type family per locale that is calibrated.
+- **What it does per item**:
+  1. Transcribe with `FasterWhisperBackend`, passing the language exactly as the WS handler does
+     today, and record the STT confidence.
+  2. Run `normalize_spoken` against a clock fixed at the recording date.
+  3. Run `LLMValueRefiner`, timing it with no timeout.
+  4. Re-normalize the LLM value.
+  5. Compare everything with `expected`.
+- **Metrics**, per type family and locale:
+  - Rules: exact-match accuracy, accepted/confirm/rejected rates, and **false-accept rate** (accepted but wrong).
+  - LLM: accuracy as a function of the confidence threshold (0.5–0.95, step 0.05), and false-accept
+    rate among auto-accepted values.
+  - LLM latency: p50, p95, p99.
+  - STT: confidence distribution of correct vs. wrong transcripts, and false-accept rate as a
+    function of the threshold.
+- **Decision rule** (written into the report):
+  - `llm_refine_threshold`: the lowest value with LLM false-accept ≤ 2 %.
+  - `llm_refine_timeout_s`: p95 latency rounded up to 0.5 s, capped at 6 s.
+  - `stt_confirm_threshold`: the lowest value with free-form false-accept ≤ 5 %.
+
+  A family with too few items keeps the spec default and says so.
+- **Privacy**: the committed report holds aggregates only. No transcripts, values, audio paths or
+  user ids.
+- **Interface Skeleton**:
+  ```python
+  class CorpusItem(BaseModel): audio: Path; field_type: FieldType; locale: str; timezone: str | None; label: str; expected: Any
+  async def run_calibration(items: list[CorpusItem], *, transcriber: AbstractTranscriberBackend,
+                            refiner: ValueRefiner | None, recorded_at: datetime | None = None) -> CalibrationReport: ...
+  def recommend(report: CalibrationReport) -> dict[str, float]:
+      """Apply the decision rule; returns the three defaults (or the spec defaults with a reason)."""
+  def main(argv: list[str] | None = None) -> int: ...   # --corpus, --out, --llm (provider:model), --max-requests
+  ```
+  Real LLM calls need explicit `PARROT_TEST_REAL_LLM=1` and stay within the `--max-requests` budget.
 
 ---
 
@@ -423,19 +535,23 @@ Tests live in `packages/parrot-formdesigner/tests/formdesigner/`. Run them with
 |---|---|---|
 | `test_spoken_lexicon_loads_en_es` | M1 | `load_lexicon("en"/"es").spoken` populated; `cardinals` unchanged (1–10) |
 | `test_number_words_and_digits` | M2 | "twenty five"→25, "two hundred and five"→205, "1,250"→1250, "three point five"→3.5, "minus four"→-4, "veinticinco"→25, es "1,5"→1.5 |
-| `test_number_rejects_many_or_none` | M2 | "five or six" → ok=False `multiple_values`; "hello" → `no_parse`; INTEGER "3.5" → `non_integral` |
-| `test_email_spoken_and_written` | M3 | "john dot smith at gmail dot com"→john.smith@gmail.com; "J O H N at gmail dot com"→john@gmail.com; "anne dash marie at x dot io"; "juan arroba gmail punto com" (es); "john at gmail" → ok=False |
-| `test_phone_variants` | M3 | "0,4,12,523,573"→0412523573; "five five five oh one two three"→5550123; "double five"→55; "plus one 555 0100"→+15550100; "123" → ok=False `too_short`; output always matches PHONE_PATTERN when ok |
-| `test_date_grammar` | M4 | today/tomorrow/yesterday; "March third"; "third of March 2027"; "3/12" en→03-12, es→12-03; "3/4" with both orders valid in a locale → ok=False `ambiguous`; "2026-03-12"; "next Friday" → ok=False (§8 Q1); relative without timezone → `needs_timezone` |
-| `test_time_grammar` | M4 | "three thirty pm"→15:30; "noon"→12:00; "midnight"→00:00; "15:30"; "three thirty" → ok=False `ambiguous_meridiem` |
+| `test_number_rejects_many_or_none` | M2 | "five or six" → rejected `multiple_values`; "hello" → `no_parse`; INTEGER "3.5" → `non_integral` |
+| `test_email_spoken_and_written` | M3 | "john dot smith at gmail dot com"→john.smith@gmail.com; "J O H N at gmail dot com"→john@gmail.com; "anne dash marie at x dot io"; "juan arroba gmail punto com" (es); "john at gmail" → rejected `invalid_email` with candidate `john@gmail` |
+| `test_phone_variants` | M3 | "0,4,12,523,573"→0412523573; "five five five oh one two three"→5550123; "double five"→55; "plus one 555 0100"→+15550100; "123" → rejected `too_short`; output always matches PHONE_PATTERN when accepted |
+| `test_date_grammar` | M4 | today/tomorrow/yesterday; "March third"; "third of March 2027"; "3/12" en→03-12, es→12-03; "3/4" → confirm `ambiguous_order` (candidate in locale order); "2026-03-12"; with the Monday 2026-10-12 clock "Friday"/"this Friday"/"next Friday" → 2026-10-16 and "next Monday" → 2026-10-19; relative without timezone → `needs_timezone` |
+| `test_time_grammar` | M4 | "three thirty pm"→15:30; "noon"→12:00; "midnight"→00:00; "15:30"; "three thirty" → confirm `ambiguous_meridiem` (03:30) |
 | `test_datetime_grammar` | M4 | "tomorrow at three pm" with a fixed clock + tz |
 | `test_unhandled_type_passthrough` | M2 | TEXT/URL → `None` |
 | `test_validate_typed_email` | M2 | invalid typed email → "INVALID_EMAIL"; other types → None |
 | `test_llm_value_refiner_contract` | M6 | fake client returns `structured_output`; exception/garbage → None |
 | `test_engine_freeform_normalizes` | M7 | PHONE transcript accepted as canonical; `raw_transcript` keeps words; `normalized_by="rules"` |
-| `test_engine_not_ok_confirms_even_never` | M7 | invalid email with `confirm: never` → `ConfirmRequest(value=…)` |
+| `test_engine_decision_matrix` | M7 | one case per §2 matrix row: rejected → `AnswerRejected(INVALID_EMAIL / INVALID_VALUE, value=…)` and cursor unchanged; confirm-status with `confirm: never` → `ConfirmRequest(value=…)`; STT low + LLM high → confirm; LLM low → confirm; all clear → accept |
+| `test_engine_provenance_survives_confirm_and_resume` | M7 | `normalized_by`/`llm_confidence` kept through `confirm_answer{yes}`, `snapshot()` → `from_snapshot` and `_submission_data()` |
 | `test_engine_llm_refine_flow` | M7 | `RefineValue` emitted; `ValueRefined ok ≥ threshold` → accept (`normalized_by="llm"`); below threshold → confirm; LLM value failing re-normalization → rules candidate; `failed`/`unavailable` → rules candidate; stale request_id ignored |
 | `test_engine_sensitive_never_refined` | M7 | sensitive field: rules applied, no `RefineValue`, confirm value omitted |
+| `test_engine_text_never_refined` | M7 | TEXT/TEXT_AREA with `llm_refine: true` → no `RefineValue` (config ignored, warning logged once) |
+| `test_wrap_voice_carries_postprocessor` | M10 | envelope has `normalized_by`/`llm_confidence`; old envelopes without them still validate; `_scalar_view` unwraps them |
+| `test_calibration_report_shape` | M11 | harness over a 3-item fixture corpus with a fake transcriber/LLM writes the report with every metric |
 | `test_engine_typed_email_rejected` | M7 | `answer_text` invalid email → `AnswerRejected(code="INVALID_EMAIL")`; typed phone "0,4,12" stored as typed |
 | `test_engine_timezone_on_resume` | M7 | resumed session takes `timezone` from the new `start_session` |
 
@@ -445,6 +561,8 @@ Tests live in `packages/parrot-formdesigner/tests/formdesigner/`. Run them with
 | `test_audio_ws_postprocess_v2` | v2 WS session: spoken phone/email/number/date stored canonically; the submission passes `FormValidator`; `confirm_request.value` present |
 | `test_audio_ws_postprocess_v1_compat` | v1 client: `confirm_request` without `value`/`refined_by`; existing v1 fixtures unchanged |
 | `test_audio_ws_llm_refine_timeout` | slow fake client → falls back to rules within `llm_refine_timeout_s` |
+| `test_audio_ws_timezone_validation` | invalid IANA string → logged, treated as absent; valid one reaches `AudioSessionState.timezone`; resume takes the new value |
+| `test_audio_ws_refine_stale_reply` | a `ValueRefined` with an old `request_id` is ignored by the engine |
 
 ### Test Data / Fixtures
 ```python
@@ -463,12 +581,15 @@ Redis: none is needed (the normalizers are pure). Integration tests reuse the di
   the canonical form of §2. Every accepted value passes `FormValidator` for its type.
 - [ ] AC2. Typed answers (`answer_text`, including corrections during CONFIRMING) are never
   normalized. A non-empty typed EMAIL failing `EMAIL_PATTERN` is rejected with `INVALID_EMAIL`.
-- [ ] AC3. An `ok=False` result always goes to `confirm_request`, even with `confirm: "never"`. No
-  invalid or unparsed value is accepted silently.
-- [ ] AC4. `confirm_request.value` carries the normalized candidate for v2 clients. It is omitted for
-  sensitive fields and for v1 clients.
+- [ ] AC3. The §2 decision matrix holds. A `rejected` result is never stored and never offered as a
+  "yes" confirmation (`AnswerRejected` `INVALID_EMAIL`/`INVALID_VALUE`, question re-asked). A
+  `confirm` result always goes to `confirm_request`, even with `confirm: "never"`. The LLM never
+  overrides the STT-confidence rule or `confirm: "always"`.
+- [ ] AC4. `confirm_request.value` and `answer_rejected.value` carry the normalized candidate for v2
+  clients. Both are omitted for sensitive fields and for v1 clients.
 - [ ] AC5. `raw_transcript` keeps the original words. `AudioAnswer.normalized_by` is `"rules"`,
-  `"llm"` or `None`.
+  `"llm"` or `None`. It and `llm_confidence` survive a confirmation (`state.pending` → `_accept`), a
+  snapshot/resume round trip and `wrap_voice`.
 - [ ] AC6. With `llm_refine` in effect, every spoken free-form answer of the field triggers exactly
   one `RefineValue`. Auto-accept requires LLM confidence ≥ `llm_refine_threshold`, a passing
   re-normalization, and no other confirmation gate firing. On failure, timeout or no client, the
@@ -486,6 +607,14 @@ Redis: none is needed (the normalizers are pure). Integration tests reuse the di
   touched files.
 - [ ] AC13. `docs/audio-form-voice-modes.md` and the navigator-svelte handoff document the new
   fields, settings and error code.
+- [ ] AC14. `llm_refine` never runs on TEXT/TEXT_AREA (or any type outside the typed families).
+- [ ] AC15. Every non-sensitive spoken answer in a submission carries `normalized_by` (and
+  `llm_confidence` when the LLM produced it) in its envelope, for all field types; pre-FEAT-653
+  envelopes still validate.
+- [ ] AC16. The calibration run has been executed on the real corpus. Its report is committed under
+  `sdd/state/FEAT-653/calibration/`, and the shipped defaults of `llm_refine_threshold`,
+  `llm_refine_timeout_s` and `stt_confirm_threshold` equal the report's recommendation (or the
+  deviation is justified in the report).
 
 ---
 
@@ -501,6 +630,8 @@ from parrot_formdesigner.audio.narration.lexicon import Lexicon, load_lexicon, n
 from parrot_formdesigner.services.validators import EMAIL_PATTERN, PHONE_PATTERN  # P/services/validators.py:56,58 — imported alongside audio.engine without a cycle (checked)
 from parrot_formdesigner.audio.models import OptionMatch, Phase, AudioAnswer, AudioSessionState  # P/audio/models.py:59,43,214,258
 from zoneinfo import ZoneInfo                                                     # stdlib
+from parrot.voice.transcriber.backend import AbstractTranscriberBackend           # packages/ai-parrot-integrations/src/parrot/voice/transcriber/backend.py:18 (M11 only)
+from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend  # .../faster_whisper_backend.py:21 (M11 only)
 ```
 
 ### Existing Class Signatures
@@ -585,7 +716,7 @@ def _checker_for(self, form, *, session_id="")                        # :1019 (p
 - ~~`dateparser`, `python-dateutil`, `word2number`, `text2num`, `num2words`, `phonenumbers`~~: in no package.
 - ~~`FieldType.TEL`~~: it is `PHONE`.
 - ~~`ConfirmAnswer.value` / an "edited confirm" message~~: corrections arrive as `answer_text`.
-- ~~`ConfirmRequest.value`~~ (added by M5), ~~`StartSession.timezone`~~ (M5), ~~`AudioSessionState.timezone`~~ (M5).
+- ~~`ConfirmRequest.value`~~, ~~`AnswerRejected.value`~~ (added by M5), ~~`INVALID_VALUE`~~ error code (new), ~~`StartSession.timezone`~~ (M5), ~~`AudioSessionState.timezone`~~ (M5).
 - ~~`Phase.REFINING`~~: deliberately not added. The in-flight refine is private engine state.
 - ~~A wired `LLMOptionRefiner`~~: the class exists, and `llm_refine_options` exists, but nothing calls either.
 - ~~Typed parsing of free-form transcripts~~: today raw text is stored for every type.
@@ -621,13 +752,17 @@ Verified against: `d180783c5`
 | `P/api/audio_ws.py` | MODIFY | `        if isinstance(item, Transcribe):` | `audio_ws.py:780` | 1 |
 | `P/api/audio_ws.py` | MODIFY | `        elif mtype == "confirm_request":` | `audio_ws.py:874` | 1 |
 | `docs/audio-form-voice-modes.md` | MODIFY | (section anchors chosen at task time) | — | — |
+| `P/core/voice_answer.py` | MODIFY | `    plausibility: PlausibilityVerdict \| None = None` | `voice_answer.py:52` | 1 |
+| `P/core/voice_answer.py` | MODIFY | `            language=getattr(answer, "stt_language", None),` | `voice_answer.py:96` | 1 |
+| `P/services/validators.py` | MODIFY | `    _EVIDENCE_KEYS = frozenset({"source", "confidence", "audio_mime", "duration_ms", "language", "plausibility"})` | `validators.py:580` | 1 |
+| `packages/parrot-formdesigner/scripts/calibrate_voice_postprocessors.py` | CREATE | — | — | — |
 
 ---
 
 ## 7. Implementation Notes & Constraints
 
 ### Patterns to Follow
-- Normalizers are **pure, sync, never raise**. Any internal error gives `ok=False, reason="no_parse"`
+- Normalizers are **pure, sync, never raise**. Any internal error gives `status="rejected", reason="no_parse"`
   plus a `logger.debug`. The engine stays "never awaits" (`engine.py:158`).
 - Tokenization is normalizer-specific. `lexicon.normalize()` strips `@ . , / : - +`, so it must not
   be used before email, phone or date parsing. Lexicon *phrases* are still pre-folded with
@@ -647,9 +782,10 @@ Verified against: `d180783c5`
     in the client tz.
   - Written `M/D[/Y]` or `D/M[/Y]` per `date_order`. A two-digit year means 20YY. ISO `YYYY-MM-DD`
     is accepted in every locale.
-  - `relative_days`. Bare weekday or `this <weekday>` means the nearest occurrence ≥ today.
-    `next <weekday>` is parsed (nearest occurrence > today) but is ok=False until §8 Q1 is decided.
-    `last <weekday>` means the nearest occurrence < today.
+  - `relative_days`. Bare weekday, `this <weekday>` and `next <weekday>` all mean **the nearest
+    occurrence after today** (strictly > today; said on a Friday, "Friday" / "next Friday" is
+    today + 7) — decision §8 Q1. `last <weekday>` means the nearest occurrence before today. All of
+    them are `accepted` when the timezone is known.
 - Times: `H[:MM]` with am/pm words, `H o'clock`, spoken "three thirty pm", noon, midnight,
   "half past" / "y media", and 24-hour written `HH:MM`.
 - **LLM prompt contract** (`LLMValueRefiner`):
@@ -668,17 +804,24 @@ Verified against: `d180783c5`
   inbound frames queue behind the refine; that is acceptable, since the client waits for
   `answer_accepted` / `confirm_request` anyway.
 - **"Always on" LLM can rewrite correct values**: mitigated by re-normalization plus the confidence
-  threshold. On TEXT/TEXT_AREA fields (no validator) an enabled LLM may change wording. The form
-  author opts in per field; `normalized_by="llm"` and `raw_transcript` keep the audit trail.
-- **Behaviour change of `confirm: "never"`**: an `ok=False` candidate now confirms anyway (AC3).
+  threshold, and by never running on free TEXT/TEXT_AREA (§8 Q3). `normalized_by="llm"`,
+  `llm_confidence` and `raw_transcript` keep the audit trail.
+- **Behaviour change of `confirm: "never"`**: a `confirm`-status candidate now confirms anyway, and a
+  `rejected` one is re-asked instead of stored (AC3).
   Document this.
 - **Whisper language misdetection** (out-of-scope defect 5): an English answer transcribed as
   Spanish words defeats the `en` tables, so the result goes to confirmation. The STT spec fixes the
   input.
 - **Snapshots**: `AudioAnswer` is `extra="forbid"`, and snapshots dump answers. The new
   `normalized_by` has a default, so old snapshots load. Do not add required fields.
-- **Envelope**: `normalized_by` is not added to the voice evidence envelope (`wrap_voice`,
-  `core/voice_answer.py:77`), so it is not persisted with the submission (§8 Q2).
+- **Envelope**: `VoiceEvidenceEnvelope` is `extra="forbid"` (inherited from `VoiceAnswerEnvelope`,
+  `core/voice_answer.py:33`). The two new keys must be optional with a `None` default so stored
+  pre-FEAT-653 envelopes and CSV/GSheet JSON strings still validate. JSONB sinks (migrations
+  009/010) need no DDL change. Sensitive answers are never wrapped (S8), so they carry no evidence.
+- **Calibration depends on STT confidence**: the 0.6 `stt_confirm_threshold` is calibrated against
+  today's `info.language_probability` (`faster_whisper_backend.py:165`). When the out-of-scope STT
+  spec switches to a transcript-based confidence, the run must be repeated. The harness is built to
+  be re-runnable for exactly that reason.
 
 ### External Dependencies
 | Package | Version | Reason |
@@ -700,11 +843,17 @@ Verified against: `d180783c5`
   - M7 → M2, M3, M4, M5
   - M8 → M5, M6, M7
   - M9 → M7, M8
+  - M10 → M5 (`AudioAnswer.normalized_by` / `llm_confidence`); the engine (M7) sets them
+  - M11 → M2, M3, M4, M6 (runs the real normalizers and refiner); it is `parallel: false` because it
+    needs the corpus, a real LLM (`PARROT_TEST_REAL_LLM=1`) and the STT model, and it writes the
+    defaults back into M5's `core/voice.py`
 
   M1, M5 and M6 have no mutual edges, and neither do M3 and M4, so both groups run concurrently.
-- **Shared files**: none across modules. `engine.py` is only M7, `events.py`/`models.py`/`voice.py`
-  only M5, `audio_ws.py` only M8.
-- **Exclusive resources**: none (no migration, lockfile or extension rebuild).
+- **Shared files**: `core/voice.py` (M5 adds the settings, M11 may change their defaults; serialized).
+  Otherwise `engine.py` is only M7, `events.py`/`models.py` only M5, `audio_ws.py` only M8,
+  `voice_answer.py`/`validators.py` only M10.
+- **Exclusive resources**: M11's calibration run (real LLM calls under a request budget, the local
+  faster-whisper model, the recordings corpus).
 - **Cross-feature dependencies**: FEAT-649 is merged. The future session-lock and STT specs from
   the same brainstorm also modify `api/audio_ws.py` and `audio/events.py`. Land them sequentially
   after this one, or rebase.
@@ -713,23 +862,25 @@ Verified against: `d180783c5`
 
 ## 8. Open Questions
 
-- [ ] Q1. Meaning of "next <weekday>" for US field reps: the nearest occurrence after today, or the
-  occurrence in the following week? Until decided, it is parsed but always confirmed. — *Owner: Jesús*
-- [ ] Q2. Should `normalized_by` (and the LLM confidence) be persisted in the voice evidence envelope
-  for audit? — *Owner: Juan*
-- [ ] Q3. Should `llm_refine` be allowed on TEXT/TEXT_AREA fields at all, or restricted to the typed
-  families? The spec currently allows it per explicit field opt-in. — *Owner: Jesús*
-- [ ] Q4. Default `llm_refine_threshold` 0.8 and `llm_refine_timeout_s` 4 s: calibrate on real
-  field recordings. — *Owner: Emmanuel / Juan*
-- [ ] Q5. Release order relative to the FieldSync PR blocked on the FEAT-649 release (carried from
-  the brainstorm). — *Owner: Juan*
-- [x] Q6. Date grammar scope and numeric order (carried from the brainstorm: "confirm that the
-  US-only M/D order is right") — *Resolved 2026-10-12 (Jesús)*: order per locale, `en` M/D, `es`
-  D/M, via `SpokenLexicon.date_order`. A numeric date valid in both orders and with no way to
-  disambiguate goes to confirmation.
+- [x] Q1. Meaning of "next <weekday>" — *Resolved 2026-10-12 (Jesús)*: always the nearest occurrence
+  after today. Bare, `this` and `next` weekday phrases resolve the same way (§7). They are not
+  confirmed when the timezone is known.
+- [x] Q2. Persist `normalized_by` (and the LLM confidence) in the voice evidence envelope? —
+  *Resolved 2026-10-12 (Jesús)*: yes, on all fields (M10, AC15).
+- [x] Q3. Allow `llm_refine` on TEXT/TEXT_AREA? — *Resolved 2026-10-12 (Jesús)*: no. Only the typed
+  families (AC14).
+- [x] Q4. Calibrate the defaults (`llm_refine_threshold` 0.8, `llm_refine_timeout_s` 4 s,
+  `stt_confirm_threshold` 0.6) — *Resolved 2026-10-12 (Jesús)*: yes, run a calibration (M11, AC16).
+- [x] Q5. Release order — *Resolved 2026-10-12 (Jesús)*: everything ships together with the FEAT-649
+  release.
+- [x] Q6. Date grammar scope and numeric order (carried from the brainstorm) — *Resolved 2026-10-12
+  (Jesús)*: order per locale, `en` M/D, `es` D/M, via `SpokenLexicon.date_order`. A numeric date
+  valid in both orders with no way to disambiguate goes to confirmation.
 - [x] Q7. When does the LLM post-processor run? — *Resolved 2026-10-12 (Jesús)*: on every spoken
-  free-form answer of a field where it is enabled (opt-in), after the rules. It auto-accepts above
-  `llm_refine_threshold`.
+  free-form answer of a typed-family field where it is enabled (opt-in), after the rules. It
+  auto-accepts at or above `llm_refine_threshold`.
+- [ ] Q8. Calibration corpus: who exports the FieldSync recordings plus their confirmed values, and
+  for which locales (en only, or en + es)? — *Owner: Emmanuel / Juan*
 - Brainstorm questions on marker TTL/heartbeat, `SESSION_REPLACED` close code and transcript
   confidence calibration belong to the out-of-scope session-lock / STT specs. They are not carried
   here.
@@ -738,12 +889,26 @@ Verified against: `d180783c5`
 
 ## 9. Design Research Cross-Check
 
-Status: skipped (brainstorm status is `exploration`, not `accepted`).
+> Independent design opinion from the `codex` seat over the brainstorm (normalization scope) plus the
+> owner's decisions of 2026-10-12. It never saw this spec. Model: `gpt-5.6-luna` · Status: completed
+> · Transcript: `sdd/state/FEAT-653/design_research/`
 
 | # | Suggestion (kind) | Disposition | Reason | Landed in |
 |---|---|---|---|---|
+| S1 | Typed normalization outputs and statuses (api) | CONFIRM | A plain `ok` flag let "yes" store a value the submit gate rejects; replaced with `accepted`/`confirm`/`rejected` and a reject path | §2 Overview + matrix, Data Models, AC3 |
+| S2 | Propagate and validate timezone (architecture) | CONFIRM | Already designed (`StartSession.timezone`, `AudioSessionState.timezone`, `ZoneInfo`, `timezone_known`); the "persist in snapshot" part is rejected because resume receives a fresh `start_session` | M5, M7, M8 |
+| S3 | Dedicated token grammar, not `normalize()` (architecture) | CONFIRM | Already designed: separate `Lexicon.spoken`, `cardinals` untouched, per-normalizer tokenizer | M1, M2, §7 |
+| S4 | Make `email-validator` a direct dependency (risk) | REJECT | A second validator would disagree with the submit gate's `EMAIL_PATTERN` (`services/validators.py:56`), so a voice-accepted email could still fail at submit; the gate's regex stays the single source of truth. The typed `INVALID_EMAIL` part was already in scope | — |
+| S5 | Canonical representations per family (api) | CONFIRM | Already in the §2 table; DATETIME keeps the naive local `YYYY-MM-DDTHH:MM` (offset part rejected: it matches HTML `datetime-local`, and the validator leaves temporal strings unparsed) | §2 table |
+| S6 | LLM through the engine's I/O protocol (architecture) | CONFIRM | Already designed (`RefineValue` / `ValueRefined` with `request_id`, adapter timeout) | M5, M7, M8 |
+| S7 | Separate refine config, not `LLMValidationConfig` (architecture) | CONFIRM | Already separate (`VoiceFormConfig.llm_refine_*`, `FieldVoiceMeta.llm_refine`, `REFINABLE_TYPES`). A per-feature model setting is rejected: it reuses `llm_client_getter` like plausibility | M5, M7 |
+| S8 | Provenance through every representation (risk) | CONFIRM | Gap found: `_accept` rebuilds the `AudioAnswer`, so provenance would be lost across a confirmation. `_accept` now takes `normalized_by`/`llm_confidence`, stamped on `state.pending` | §2 step 6, M7, AC5 |
+| S9 | Precedence between STT, normalization and LLM (risk) | CONFIRM | Explicit decision matrix; the LLM never overrides the STT rule or `confirm: "always"` | §2 matrix, AC3 |
+| S10 | Phone normalization vs. final validation (risk) | CONFIRM | Already aligned with `PHONE_PATTERN`; short numbers are now `rejected`, not confirmable | §2 table |
+| S11 | Layered test matrix + wire assertions (testing) | CONFIRM | Added matrix, provenance-round-trip, timezone-validation and stale-reply tests | §4 |
 
-Summary: **0** confirmed · **0** rejected · **0** escalated.
+Summary: **10** confirmed (S2, S3, S5, S6, S7, S10 were already in the draft; S1, S8, S9, S11
+changed it) · **1** rejected (S4) · **0** escalated.
 
 ---
 
@@ -752,3 +917,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-12 | Jesus Lara | Initial draft: defects 2–4 of the voice follow-ups brainstorm, claims re-verified, optional LLM post-processor added |
+| 0.2 | 2026-10-12 | Jesus Lara | Q1–Q5 resolved (nearest weekday, provenance in envelope, no LLM on TEXT, calibration module, ship with FEAT-649); codex design research folded in (three-way status + reject path, decision matrix, provenance through confirm); status approved |
