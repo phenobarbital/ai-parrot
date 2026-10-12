@@ -47,6 +47,8 @@ def _parse_written(token: str, sep: str) -> list[int | float] | None:
     if _INT_RE.match(body):
         return [sign * int(body)]
     grouped, grp = _grouping_re(sep)
+    if body.startswith("0") and re.match(r"^0[.,]\d+$", body):  # "0.250" is 0.25, never a thousands group
+        return [sign * _to_number(body.replace(",", "."))]
     if grouped.match(body):
         return [sign * _to_number(body.replace(grp, "").replace(sep, "."))]
     if re.match(rf"^\d+{re.escape(sep)}\d+$", body):
@@ -121,8 +123,8 @@ def _read_words(tokens: list[str], i: int, spoken: SpokenLexicon) -> tuple[int |
                 current = 0
                 last = "s"
             else:
-                if v == 100 and 0 < current < 10:
-                    current *= 100
+                if v == 100 and 0 < current < 100 and last in ("u", "t"):
+                    current *= 100  # "five hundred", "twelve hundred", "twenty five hundred"
                 elif last in ("h",):
                     break
                 else:
@@ -137,8 +139,18 @@ def _read_words(tokens: list[str], i: int, spoken: SpokenLexicon) -> tuple[int |
     return total + current, end
 
 
-def parse_numbers(tokens: list[str], spoken: SpokenLexicon) -> list[int | float]:
-    """Every number in the token stream, in order (words and written digits)."""
+_HALF_WORDS = frozenset({"half", "medio", "media"})
+_ARTICLES = frozenset({"a", "an"})
+_DOZEN_WORDS = frozenset({"docena", "docenas", "dozen", "dozens"})
+
+
+def parse_numbers(
+    tokens: list[str], spoken: SpokenLexicon, *, colloquial: bool = False
+) -> list[int | float]:
+    """Every number in the token stream, in order (words and written digits).
+
+    ``colloquial`` additionally reads a bare ``point five`` as 0.5 and ``two and a half`` / ``dos y medio`` as 2.5.
+    """
     toks = _expand(tokens)
     numbers: list[int | float] = []
     n = len(toks)
@@ -158,11 +170,21 @@ def parse_numbers(tokens: list[str], spoken: SpokenLexicon) -> list[int | float]
             word, nxt = _read_words(toks, j, spoken)
             if word is not None:
                 values = [word]
+        if not values and colloquial and toks[j] in spoken.decimal_words:
+            digits, after = _fraction(toks, j + 1, spoken)
+            if digits:
+                values, nxt = [float(f"0.{digits}")], after
         if not values:
             i += 1
             continue
         if len(values) == 1:
             value = values[0]
+            if colloquial and nxt < n and toks[nxt] in spoken.number_joiners and isinstance(value, int):
+                k = nxt + 1
+                if k < n and toks[k] in _ARTICLES:
+                    k += 1
+                if k < n and toks[k] in _HALF_WORDS:
+                    value, nxt = value + 0.5, k + 1
             if nxt < n and toks[nxt] in spoken.decimal_words and isinstance(value, int):
                 digits, after = _fraction(toks, nxt + 1, spoken)
                 if digits:
@@ -179,10 +201,28 @@ def parse_numbers(tokens: list[str], spoken: SpokenLexicon) -> list[int | float]
     return numbers
 
 
+def _dozen(tokens: list[str], spoken: SpokenLexicon) -> NormalizeResult | None:
+    """'una docena' / 'two dozen' / 'media docena': a quantity word, so the reading is confirmed, not accepted."""
+    at = next((i for i, t in enumerate(tokens) if t in _DOZEN_WORDS), None)
+    if at is None:
+        return None
+    before = tokens[:at]
+    if before and before[-1] in _HALF_WORDS:
+        return NormalizeResult.confirm(6, "ambiguous_quantity")
+    nums = parse_numbers(before, spoken) if before else []
+    if len(nums) > 1 or any(not float(x).is_integer() for x in nums):
+        return NormalizeResult.rejected("multiple_values")
+    return NormalizeResult.confirm(int(nums[0]) * 12 if nums else 12, "ambiguous_quantity")
+
+
 def normalize_number(text: str, ctx: NormalizeContext, *, integer: bool) -> NormalizeResult:
     """Exactly one number → accepted int/float; 0 or >1 numbers → rejected (no_parse / multiple_values)."""
     try:
-        numbers = parse_numbers(tokenize(text), ctx.lexicon.spoken)
+        tokens = tokenize(text)
+        dozen = _dozen(tokens, ctx.lexicon.spoken)
+        if dozen is not None:
+            return dozen if not integer or float(dozen.value).is_integer() else NormalizeResult.rejected("non_integral")
+        numbers = parse_numbers(tokens, ctx.lexicon.spoken, colloquial=True)
     except Exception as exc:  # noqa: BLE001 — normalizers never raise
         logger.debug("normalize_number failed: %s", type(exc).__name__)
         return NormalizeResult.rejected("no_parse")
