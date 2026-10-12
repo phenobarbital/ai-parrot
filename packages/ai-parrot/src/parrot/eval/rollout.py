@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING, Any
 
 from parrot.eval.models import (
     EvalTask,
+    TokenUsage,
+    ToolCallRecord,
     Trajectory,
     TurnRecord,
 )
@@ -218,12 +220,16 @@ class SingleTurnRollout(RolloutStrategy):
         t0 = time.perf_counter()
         try:
             response = await bot.ask(question)
+            tokens = _usage_from_response(response)
+            tool_calls = _tool_calls_from_response(response)
+            model, response_metadata = _metadata_from_response(response)
             text = _extract_text(response)
             latency_ms = (time.perf_counter() - t0) * 1000.0
 
             turn = TurnRecord(
                 role="agent",
                 content=text,
+                tool_calls=tool_calls,
                 timestamp=time.time(),
             )
             return Trajectory(
@@ -232,6 +238,9 @@ class SingleTurnRollout(RolloutStrategy):
                 turns=[turn],
                 final_output=text,
                 latency_ms=latency_ms,
+                tokens=tokens,
+                model=model,
+                response_metadata=response_metadata,
             )
         except Exception as exc:
             latency_ms = (time.perf_counter() - t0) * 1000.0
@@ -291,6 +300,9 @@ class ConversationalRollout(RolloutStrategy):
         session_id = f"eval-{task.task_id}"
         t_start = time.perf_counter()
         final_output: Any = None
+        tokens = TokenUsage()
+        model: str | None = None
+        response_metadata: dict[str, Any] = {}
 
         # Seed the conversation with the task's initial query (if any)
         initial_question = _extract_question(task)
@@ -317,6 +329,13 @@ class ConversationalRollout(RolloutStrategy):
                     session_id=session_id,
                 )
                 _turn_latency = (time.perf_counter() - t_turn) * 1000.0
+                turn_usage = _usage_from_response(response)
+                tokens = TokenUsage(
+                    prompt=tokens.prompt + turn_usage.prompt,
+                    completion=tokens.completion + turn_usage.completion,
+                    total=tokens.total + turn_usage.total,
+                )
+                model, response_metadata = _metadata_from_response(response)
 
                 agent_text = _extract_text(response)
                 final_output = agent_text
@@ -324,6 +343,7 @@ class ConversationalRollout(RolloutStrategy):
                     TurnRecord(
                         role="agent",
                         content=agent_text,
+                        tool_calls=_tool_calls_from_response(response),
                         timestamp=time.time(),
                     )
                 )
@@ -342,6 +362,9 @@ class ConversationalRollout(RolloutStrategy):
                 turns=turns,
                 latency_ms=latency_ms,
                 error=str(exc),
+                tokens=tokens,
+                model=model,
+                response_metadata=response_metadata,
             )
 
         latency_ms = (time.perf_counter() - t_start) * 1000.0
@@ -351,6 +374,9 @@ class ConversationalRollout(RolloutStrategy):
             turns=turns,
             final_output=final_output,
             latency_ms=latency_ms,
+            tokens=tokens,
+            model=model,
+            response_metadata=response_metadata,
         )
 
 
@@ -379,6 +405,49 @@ def _extract_question(task: EvalTask) -> str:
     # Fallback: serialize the whole inputs dict
     import json
     return json.dumps(task.inputs)
+
+
+def _usage_from_response(response: Any) -> TokenUsage:
+    """Map ``response.usage`` to ``TokenUsage``; use zeros when absent.
+
+    Reads usage fields tolerantly so mock responses without a ``usage``
+    attribute yield ``TokenUsage()``.
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return TokenUsage()
+    prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
+    completion = int(getattr(usage, "completion_tokens", 0) or 0)
+    total = int(getattr(usage, "total_tokens", 0) or 0) or (prompt + completion)
+    return TokenUsage(prompt=prompt, completion=completion, total=total)
+
+
+def _tool_calls_from_response(response: Any) -> list[ToolCallRecord]:
+    """Map response tool calls to records; use an empty list when absent.
+
+    ``ToolCall.execution_time`` is seconds and ``ToolCallRecord.latency_ms``
+    is milliseconds.
+    """
+    records: list[ToolCallRecord] = []
+    for call in getattr(response, "tool_calls", None) or []:
+        execution_time = getattr(call, "execution_time", None)
+        records.append(
+            ToolCallRecord(
+                name=str(getattr(call, "name", "")),
+                arguments=dict(getattr(call, "arguments", None) or {}),
+                result=getattr(call, "result", None),
+                error=getattr(call, "error", None),
+                latency_ms=(float(execution_time) * 1000.0) if execution_time is not None else None,
+            )
+        )
+    return records
+
+
+def _metadata_from_response(response: Any) -> tuple[str | None, dict[str, Any]]:
+    """Return the response model and a copied metadata mapping, if present."""
+    model = getattr(response, "model", None)
+    metadata = getattr(response, "metadata", None)
+    return (str(model) if model else None, dict(metadata) if isinstance(metadata, dict) else {})
 
 
 def _extract_text(response: Any) -> str | None:

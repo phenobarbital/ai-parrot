@@ -6,6 +6,7 @@ from parrot.eval import ConversationalRollout, SingleTurnRollout
 from parrot.eval.models import EvalTask
 from parrot.eval.rollout import LLMUserSimulator, UserSimulator
 from parrot.eval.sandbox.base import NoopSandbox
+from parrot.models.basic import CompletionUsage, ToolCall
 
 
 async def test_single_turn_records_trajectory():
@@ -129,3 +130,91 @@ async def test_llm_user_simulator_returns_none_on_error():
     sim = LLMUserSimulator(client)
     result = await sim.respond([], "do something")
     assert result is None
+
+
+def _ai_message_like(text: str = "Revenue was $1,243,500.") -> object:
+    """Create a minimal object with the AIMessage attributes rollouts read."""
+    return type(
+        "Msg",
+        (),
+        {
+            "content": text,
+            "model": "fake:model-under-test",
+            "usage": CompletionUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15),
+            "tool_calls": [
+                ToolCall(
+                    id="t1",
+                    name="get_revenue",
+                    arguments={"q": "Q3"},
+                    result={"revenue": 1243500},
+                    execution_time=0.02,
+                )
+            ],
+            "metadata": {"guardrails": {"groundedness": {"score": 1.0}}},
+        },
+    )()
+
+
+async def test_single_turn_copies_usage_tool_calls_model_metadata():
+    """Single-turn rollouts retain the complete response accounting data."""
+    bot = AsyncMock()
+    bot.ask.return_value = _ai_message_like()
+
+    async with NoopSandbox() as sandbox:
+        trajectory = await SingleTurnRollout().run(
+            bot, EvalTask(task_id="t", inputs={"query": "q"}), sandbox
+        )
+
+    assert trajectory.tokens.total == 15
+    assert trajectory.turns[0].tool_calls[0].name == "get_revenue"
+    assert trajectory.turns[0].tool_calls[0].latency_ms == 20.0
+    assert trajectory.model == "fake:model-under-test"
+    assert "guardrails" in trajectory.response_metadata
+
+
+async def test_single_turn_defaults_without_usage():
+    """Bare mock responses preserve trajectory enrichment defaults."""
+    bot = AsyncMock()
+    bot.ask.return_value = type("M", (), {"content": "x"})()
+
+    async with NoopSandbox() as sandbox:
+        trajectory = await SingleTurnRollout().run(
+            bot, EvalTask(task_id="t", inputs={"query": "q"}), sandbox
+        )
+
+    assert trajectory.tokens.prompt == 0
+    assert trajectory.tokens.completion == 0
+    assert trajectory.tokens.total == 0
+    assert trajectory.turns[0].tool_calls == []
+    assert trajectory.model is None
+    assert trajectory.response_metadata == {}
+
+
+async def test_conversational_accumulates_tokens():
+    """Conversational rollouts aggregate response usage for every agent turn."""
+    bot = AsyncMock()
+    bot.conversation.return_value = _ai_message_like()
+
+    class ThreeTurnSimulator(UserSimulator):
+        """Supply two follow-up messages before ending the conversation."""
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def respond(self, conversation, scenario):
+            self.calls += 1
+            return "follow up" if self.calls < 3 else None
+
+    rollout = ConversationalRollout(user_sim=ThreeTurnSimulator(), max_turns=5)
+    async with NoopSandbox() as sandbox:
+        trajectory = await rollout.run(
+            bot,
+            EvalTask(task_id="t", inputs={"query": "q"}, user_scenario="scenario"),
+            sandbox,
+        )
+
+    agent_turns = [turn for turn in trajectory.turns if turn.role == "agent"]
+    assert trajectory.tokens.total == 45
+    assert trajectory.model == "fake:model-under-test"
+    assert len(agent_turns) == 3
+    assert all(len(turn.tool_calls) == 1 for turn in agent_turns)
