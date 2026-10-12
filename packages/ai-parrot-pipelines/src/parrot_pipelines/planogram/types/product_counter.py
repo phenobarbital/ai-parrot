@@ -21,7 +21,7 @@ from ..contracts import (
     PerceptionResult,
     ShapeKind,
 )
-from ..layout import LayoutProfile
+from ..layout import LayoutProfile, resolve_layout_profile
 from ..perception.profiles import ShapeProfile
 from ..perception.slots import AnchorRule
 from ..stages.compare import compare_observations
@@ -104,14 +104,26 @@ class ProductCounter(AbstractPlanogramType):
             reporting=ReportingPolicy(slot_presence=True),
         )
 
+    def _ensure_layout(self, ctx: CycleContext) -> LayoutProfile:
+        """Resolve defaults and configuration when the orchestrator has not populated the context."""
+        if ctx.layout is None:
+            ctx.layout = resolve_layout_profile(
+                self.default_layout_profile(),
+                dict(self.config.planogram_config or {}),
+                config_name=str(getattr(self.config, "config_name", None) or type(self).__name__),
+            )
+        return ctx.layout
+
     async def perceive(self, image: Image.Image, image_id: str, ctx: CycleContext) -> PerceptionResult:
         """Shared CV perception (product bodies + zones) with ``ctx.layout``."""
+        self._ensure_layout(ctx)
         return await perceive_image(image, image_id, ctx)
 
     async def identify(
         self, image: Image.Image, perception: PerceptionResult, ctx: CycleContext
     ) -> IdentificationResult:
         """Shared OCR/vision identification plus neutral zone evidence."""
+        self._ensure_layout(ctx)
         return await identify_image(image, perception, ctx)
 
     async def compare(
@@ -121,6 +133,7 @@ class ProductCounter(AbstractPlanogramType):
         ctx: CycleContext,
     ) -> ComparisonResult:
         """Deterministic facing + zone comparison with configured weights; no provider call."""
+        self._ensure_layout(ctx)
         return compare_observations(perceptions, identifications, ctx, self._description())
 
     def _description(self) -> PlanogramDescription:
