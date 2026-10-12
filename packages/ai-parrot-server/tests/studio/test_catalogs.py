@@ -103,15 +103,15 @@ class TestStudioCatalogs:
         assert basic_row["available"] is True
         assert basic_row["lazy"] is False
 
-    @pytest.mark.asyncio
-    async def test_llm_clients_from_supported_clients(self):
-        app = web.Application()
-        handler = _make_handler(app, kind="llm-clients")
+    async def test_llm_clients_from_supported_clients(self, aiohttp_client, pool):  # noqa: F811
+        """Through the real route; ``?usable=0`` keeps the rows no credential serves (PA-2 omits them otherwise)."""
+        from .test_agents_db_mode import _app
 
-        response = await _unwrap(StudioCatalogHandler.get)(handler)
+        client = await aiohttp_client(_app(pool))
+        response = await client.get("/api/v1/astudio/catalog/llm-clients", params={"usable": "0"})
 
         assert response.status == 200
-        body = await _decode(response)
+        body = await response.json()
         providers = {row["provider"] for row in body}
         assert "anthropic" in providers
         assert "openai" in providers
@@ -120,9 +120,8 @@ class TestStudioCatalogs:
         assert anthropic_row["class_name"] == "AnthropicClient"
         assert anthropic_row["default_model"]
 
-    @pytest.mark.asyncio
-    async def test_llm_clients_lazy_loader_failure_graceful(self, monkeypatch):
-        app = web.Application()
+    async def test_llm_clients_lazy_loader_failure_graceful(self, monkeypatch, aiohttp_client, pool):  # noqa: F811
+        from .test_agents_db_mode import _app
 
         def _boom():
             raise ImportError("boto3 extra not installed")
@@ -135,12 +134,12 @@ class TestStudioCatalogs:
             "supported_clients",
             staticmethod(lambda: {"broken": _boom, "openai": _real_openai()}),
         )
-        handler = _make_handler(app, kind="llm-clients")
+        client = await aiohttp_client(_app(pool))
 
-        response = await _unwrap(StudioCatalogHandler.get)(handler)
+        response = await client.get("/api/v1/astudio/catalog/llm-clients", params={"usable": "0"})
 
         assert response.status == 200
-        body = await _decode(response)
+        body = await response.json()
         broken_row = next(row for row in body if row["provider"] == "broken")
         assert broken_row["available"] is False
         assert broken_row["lazy"] is True
@@ -210,7 +209,7 @@ from .test_agents_visibility import tenant_app, who  # noqa: E402
 
 async def test_llm_clients_rows_carry_models(aiohttp_client, pool):  # noqa: F811
     client = await aiohttp_client(tenant_app(pool))
-    resp = await client.get(f"{BASE}/catalog/llm-clients", headers=who("u1"))
+    resp = await client.get(f"{BASE}/catalog/llm-clients", headers=who("u1"), params={"usable": "0"})
     assert resp.status == 200
     rows = await resp.json()
     available = [r for r in rows if r["available"]]
@@ -284,3 +283,41 @@ async def test_base_classes_host_rows_not_shown_to_global_partition(aiohttp_clie
     rows = await resp.json()
     assert resp.status == 200 and all("allowed" in r for r in rows)
     assert not [r for r in rows if r["name"] == "HostBot"]
+
+
+def test_every_catalogue_row_with_a_client_lists_models_and_google_compat_has_a_default(caplog):
+    """P2: ``google-compat`` lists the Gemini models with a real default; no traceback on a normal build."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger=catalog_module.logger.name):
+        rows = {r["provider"]: r for r in catalog_module._build_llm_clients_catalog()}
+    assert not [r for r in caplog.records if r.exc_info], "the catalogue build logged a traceback"
+    compat = rows["google-compat"]
+    assert compat["models"] and compat["default_model"] in compat["models"]
+    assert rows["google"]["default_model"] == compat["default_model"]
+
+
+def test_voice_only_gemini_live_is_not_offered():
+    """P2: a realtime audio client cannot serve a Studio agent, so the catalogue does not offer it."""
+    rows = {r["provider"] for r in catalog_module._build_llm_clients_catalog()}
+    assert "gemini-live" not in rows
+    assert "google" in rows
+
+
+@pytest.mark.asyncio
+async def test_model_params_reports_params_the_model_rejects():
+    """P1: the catalogue says which sampling params ``claude-opus-5`` does not take (and what it still takes)."""
+    app = web.Application()
+    for provider, model, expected in (
+        ("anthropic", "claude-opus-5", ["temperature", "top_p", "top_k"]),
+        ("anthropic", "claude-sonnet-4-6", []),
+    ):
+        request = make_mocked_request(
+            "GET", f"/catalog/model-params?provider={provider}&model={model}", match_info={"kind": "model-params"}, app=app
+        )
+        response = await _unwrap(StudioCatalogHandler.get)(StudioCatalogHandler(request))
+        body = await _decode(response)
+        assert body["unsupported"] == expected
+        assert "temperature" in body["properties"]
+    plain = make_mocked_request("GET", "/catalog/model-params", match_info={"kind": "model-params"}, app=app)
+    assert "unsupported" not in await _decode(await _unwrap(StudioCatalogHandler.get)(StudioCatalogHandler(plain)))

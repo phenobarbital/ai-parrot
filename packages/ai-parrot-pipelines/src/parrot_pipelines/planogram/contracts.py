@@ -228,6 +228,27 @@ class PositionResult(BaseModel):
     notes: List[str] = Field(default_factory=list)
 
 
+class SlotPresence(BaseModel):
+    """Presence of the expected model in one logical shelf slot."""
+
+    shelf_id: str
+    shelf_level: Optional[str] = None
+    slot: int
+    position: Optional[int] = None
+    facing_ids: List[str]
+    model: str
+    sku: Optional[str] = None
+    brand: Optional[str] = None
+    display_name: Optional[str] = None
+    found: Optional[bool] = None
+    misplaced: bool = False
+    status: FacingStatus
+    confidence: Optional[float] = None
+    facings: int = 1
+    facings_found: int = 0
+    observed: Optional[str] = None
+
+
 class ShelfScore(BaseModel):
     """Per-shelf measures (spec §2 scoring contract)."""
 
@@ -327,6 +348,7 @@ class ComparisonResult(BaseModel):
 
     compliance_results: List[ComplianceResult] = Field(default_factory=list)
     position_results: List[PositionResult] = Field(default_factory=list)
+    products_found: List[SlotPresence] = Field(default_factory=list)
     shelf_scores: List[ShelfScore] = Field(default_factory=list)
     overall_compliance_score: float = 0.0
     strict_compliance_score: Optional[float] = None

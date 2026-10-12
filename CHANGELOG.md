@@ -9,6 +9,45 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.2.1] — 2026-10-09 — Session files and document attachments, ink-wall planogram reporting, dependency security sweep
+
+Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.1`, the other core-line packages to `1.2.1`,
+satellites to `0.4.1`). Satellites are re-pinned to `ai-parrot>=1.2.1`.
+
+### Security
+
+- **`SessionFileToolkit.import_remote_file` no longer reads local files (FEAT-643).** Only remote backends are
+  accepted, so `fs`/`temp` are gone and a model can no longer pull files like `env/.env` from the server's working
+  directory into a Jira attachment. `remote_path` is validated (no traversal), and both write paths enforce a
+  per-file byte cap.
+- **Dependency advisories cleared.** About 50 Dependabot advisories are fixed: docling, asyncssh, pymongo, geopy,
+  `transformers>=5.3.0` (CVE-2026-4372), `weasyprint` 70.0, a `tinypool>=2.1.1` override, the admin UI (echarts 6,
+  vitest 4, uuid 13) and the WhatsApp bridge (`gorilla/websocket` 1.5.3).
+
+### Added
+
+- **Documents of any type reach the agent (FEAT-639).** `Agent.handle_files` now saves every upload, not only
+  tabular ones. An upload that comes with a prompt is ingested too. Telegram and MS Teams accept office documents,
+  and Jira attachments keep their original filename. A new `SessionFileToolkit` hands the files to tools, with
+  Jira attachment result models and a size limit. There are operator docs for the session file store.
+- **Ink-wall slot presence (FEAT-645).** Under an opt-in reporting policy, expected, found and missing products
+  are labelled by facing model or SKU, never by brand alone. Results include a per-slot presence list, and the
+  `sku` descriptor is kept.
+
+### Fixed
+
+- **Ink-wall registration and completeness (FEAT-646).** Bottom-shelf slots are no longer lost when price tags are
+  missing, and row blocks can span several bays. Completeness is graded, so one unresolved facing no longer makes
+  a whole ink-wall photo `inconclusive`.
+- Ink-wall reporting accepts SKUs given as integral floats. When `product` is `None`, the facing label is used.
+- The BotManager test-collection hang (FEAT-641) and order-dependent graph test collisions (FEAT-642) are fixed.
+- The jira-specialist daily standup greeting is localized, and its skip button works.
+- `sdd-coder`: a `run_chunk` handle is settled even when the runner finishes before registration.
+- The ledger's `close_issue` and `unclaim` are atomic, like `claim_issue`.
+- The deterministic E2E gate no longer blocks CI.
+
+---
+
 ## [1.2.0] — 2026-10-08 — Agent Studio visibility and storage phase 2, scheduler delivery correctness, wikitoolkit lint/standup/inbox
 
 All twelve core-line distributions move one minor step (`ai-parrot-pipelines` to `1.3.0`, the rest to `1.2.0`).

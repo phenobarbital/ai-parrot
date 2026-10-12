@@ -359,7 +359,7 @@ class JsonSchemaRenderer(AbstractFormRenderer):
                 return {"type": _TYPE_MAP.get(field.field_type, "string"), "x-field-type": field.field_type.value}
 
         renderer_inst = _JsonSchemaFieldRenderer(self)
-        self._registry = {ft: renderer_inst for ft in FieldType}
+        self._registry = dict.fromkeys(FieldType, renderer_inst)
 
     async def render(
         self,
@@ -501,6 +501,8 @@ class JsonSchemaRenderer(AbstractFormRenderer):
         # Description
         if field.description:
             prop["description"] = _resolve(field.description, locale)
+        if field.hint:
+            prop["x-hint"] = _resolve(field.hint, locale)
 
         # Format keyword for string types with semantic meaning
         if ft in _FORMAT_MAP:

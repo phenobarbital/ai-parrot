@@ -18,6 +18,7 @@ from parrot.handlers.planogram_compliance import PlanogramComplianceHandler
 from parrot.handlers.jobs.models import Job, JobStatus
 from parrot.handlers.jobs.job import JobManager
 from parrot.pipelines.models import PlanogramConfig, EndcapGeometry
+from parrot_pipelines.planogram.contracts import FacingStatus, SlotPresence
 
 # ---------------------------------------------------------------------------
 # Helpers — minimal JPEG bytes (valid 1×1 JPEG)
@@ -606,6 +607,94 @@ async def test_job_result_has_additive_fields(planogram_db_row, job_manager):
     assert result["errors"] == ["img0: something"]
     assert "llm" not in pipeline_class.call_args.kwargs
     assert set(pipeline_class.call_args.kwargs) == {"planogram_config"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("include_presence", [True, False])
+async def test_handler_serialises_products_found(
+    planogram_db_row: dict[str, Any], job_manager: Any, include_presence: bool
+) -> None:
+    """Completed job JSON includes serialized presence and defaults missing results to an empty list."""
+    presence = [
+        SlotPresence(
+            shelf_id="shelf-1",
+            slot=1,
+            facing_ids=["facing-1"],
+            model="MODEL-1",
+            sku="SKU-1",
+            found=None,
+            status=FacingStatus.NOT_VISIBLE,
+        ),
+        SlotPresence(
+            shelf_id="shelf-1",
+            slot=2,
+            facing_ids=["facing-2"],
+            model="MODEL-2",
+            found=True,
+            status=FacingStatus.MATCH,
+        ),
+    ]
+    fake_result = {
+        "overall_compliant": True,
+        "overall_compliance_score": 1.0,
+        "compliance_results": [],
+        "overlay_path": None,
+        "assessment_status": "complete",
+        "coverage": 1.0,
+        "errors": [],
+    }
+    if include_presence:
+        fake_result["products_found"] = presence
+    pipeline = AsyncMock()
+    pipeline.run = AsyncMock(return_value=fake_result)
+    response, job = await _run_job(
+        _make_handler(job_manager, db_row=planogram_db_row), job_manager, MagicMock(return_value=pipeline)
+    )
+
+    assert response.status == 202
+    assert job.status == JobStatus.COMPLETED, job.error
+    assert {"overall_compliant", "overall_compliance_score", "shelf_results", "products_found"} <= set(job.result)
+    if not include_presence:
+        assert job.result["products_found"] == []
+        return
+    assert job.result["products_found"] == [
+        {
+            "shelf_id": "shelf-1",
+            "shelf_level": None,
+            "slot": 1,
+            "position": None,
+            "facing_ids": ["facing-1"],
+            "model": "MODEL-1",
+            "sku": "SKU-1",
+            "brand": None,
+            "display_name": None,
+            "found": None,
+            "misplaced": False,
+            "status": "not_visible",
+            "confidence": None,
+            "facings": 1,
+            "facings_found": 0,
+            "observed": None,
+        },
+        {
+            "shelf_id": "shelf-1",
+            "shelf_level": None,
+            "slot": 2,
+            "position": None,
+            "facing_ids": ["facing-2"],
+            "model": "MODEL-2",
+            "sku": None,
+            "brand": None,
+            "display_name": None,
+            "found": True,
+            "misplaced": False,
+            "status": "match",
+            "confidence": None,
+            "facings": 1,
+            "facings_found": 0,
+            "observed": None,
+        },
+    ]
 
 
 @pytest.mark.asyncio

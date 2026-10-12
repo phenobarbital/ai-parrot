@@ -9,6 +9,7 @@ Uses yaml_rs (Rust) when available, falls back to PyYAML.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -194,6 +195,8 @@ class YamlExtractor:
         version = str(data.get("version", "1.0"))
         cancel_allowed = data.get("cancel_allowed", True)
         meta = data.get("meta") or data.get("metadata")
+        voice_block = data.get("voice")
+        llm_validation_block = data.get("llm_validation")
 
         # Parse sections
         sections: list[FormSection] = []
@@ -219,6 +222,8 @@ class YamlExtractor:
             sections=sections,
             submit=submit,
             cancel_allowed=cancel_allowed,
+            voice=voice_block,
+            llm_validation=llm_validation_block,
             meta=meta,
         )
         # FEAT-393: mint UIDs (free — model default_factory) and resolve
@@ -349,6 +354,14 @@ class YamlExtractor:
             item_template = self._parse_field(field_config["item_template"])
 
         meta = field_config.get("meta")
+        # FEAT-649: spoken/visible help text and LLM plausibility opt-in (None inherits the form default).
+        hint = self._parse_localized(field_config.get("hint")) if "hint" in field_config else None
+        llm_validation = field_config.get("llm_validation")
+        if llm_validation is not None and not isinstance(llm_validation, bool):
+            logging.getLogger(__name__).warning(
+                "Field %r: llm_validation must be a boolean, got %r; ignoring", field_id, llm_validation
+            )
+            llm_validation = None
 
         return FormField(
             field_id=field_id,
@@ -356,6 +369,8 @@ class YamlExtractor:
             label=label,
             description=description,
             placeholder=placeholder,
+            hint=hint,
+            llm_validation=llm_validation,
             required=required,
             default=default,
             read_only=read_only,

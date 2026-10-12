@@ -151,3 +151,54 @@ def test_hole_inside_the_block_is_not_a_row_gap():
     got = _by_id(assign_membership(holed, [], SIZE))
     assert all(s.membership == ON for s in got.values())
     assert all(s.membership_evidence == ["row_block"] for s in got.values())
+
+
+def _bay_row(row: int, indices, prefix: str = "b"):
+    return [
+        _shape(
+            f"{prefix}{row}_{i}", 100 + i * 150, 400 + row * 300, w=100, h=40, kind=ShapeKind.PRICE_TAG, row_index=row
+        )
+        for i in indices
+    ]
+
+
+def _two_bay_rows():
+    """Row 0 right bay, row 1 middle, row 2 both bays (main run right), row 3 lone left tag + right bay."""
+    return (
+        _bay_row(0, range(6, 14))
+        + _bay_row(1, range(3, 11))
+        + _bay_row(2, range(4))
+        + _bay_row(2, range(6, 13))
+        + _bay_row(3, [0])
+        + _bay_row(3, range(6, 12))
+    )
+
+
+def test_row_block_multi_bay_edge_cluster_on():
+    """Two-bay rows, some main runs in the right bay, a lone left-edge tag => ON_FIXTURE (row_block)."""
+    got = _by_id(assign_membership(_two_bay_rows(), [], (2400, 1500)))
+    assert got["b3_0"].membership == ON
+    assert "row_block" in got["b3_0"].membership_evidence
+    assert got["b2_0"].membership == ON
+    assert all(s.membership == ON for s in got.values())
+
+
+def test_row_block_adjacent_fixture_still_off():
+    """A cluster beyond every block row's extent (neighbour fixture) stays OFF_FIXTURE (row_gap)."""
+    shapes = _two_bay_rows() + _bay_row(3, [18, 19], prefix="n")
+    got = _by_id(assign_membership(shapes, [], (3200, 1500)))
+    assert got["b3_0"].membership == ON
+    for sid in ("n3_18", "n3_19"):
+        assert got[sid].membership == OFF
+        assert got[sid].membership_evidence == ["row_gap"]
+
+
+def test_row_block_single_bay_unchanged():
+    """Single-bay rows => the same votes as before (hole stays on, far cluster off)."""
+    full = _tag_rows()
+    shapes = [s for s in full if s.shape_id != "t1_3"]
+    shapes += [_shape("far0_1", 1730, 400, w=100, h=40, kind=ShapeKind.PRICE_TAG, row_index=0)]
+    shapes += [_shape("far0_2", 1860, 400, w=100, h=40, kind=ShapeKind.PRICE_TAG, row_index=0)]
+    got = _by_id(assign_membership(shapes, [], SIZE))
+    assert all(got[s.shape_id].membership == ON for s in shapes if not s.shape_id.startswith("far"))
+    assert all(got[sid].membership == OFF for sid in ("far0_1", "far0_2"))

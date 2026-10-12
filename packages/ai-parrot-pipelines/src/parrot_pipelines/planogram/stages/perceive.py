@@ -56,6 +56,13 @@ def _expected_rows(ctx: CycleContext) -> Optional[int]:
     return sum(1 for shelf in shelves if shelf.facings) or None
 
 
+def _expected_facings(ctx: CycleContext) -> Optional[List[int]]:
+    """Facing count of every definition shelf that carries facings, top-to-bottom."""
+    shelves = getattr(ctx.definition, "shelves", None) or []
+    counts = [len(shelf.facings) for shelf in shelves if shelf.facings]
+    return counts or None
+
+
 def _shape_from_candidate(image_id: str, candidate: ShapeCandidate) -> Shape:
     """Convert a CV candidate to a shape using the slot-anchor id scheme."""
     try:
@@ -251,6 +258,7 @@ async def rebuild_geometry(
         fill_gaps=profile.fill_gaps,
         untagged_bottom_row=profile.untagged_bottom_row,
         max_rows=_expected_rows(ctx),
+        expected_facings=_expected_facings(ctx) if profile.definition_gap_fill else None,
     )
     slots = [
         slot.model_copy(update={"anchor_shape_id": by_candidate.get(slot.anchor_shape_id or "", slot.anchor_shape_id)})

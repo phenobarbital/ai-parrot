@@ -154,6 +154,8 @@ class PlanogramCompliance(AbstractPipeline):
         self.right_margin_ratio = geometry.right_margin_ratio
 
         self.reference_images = planogram_config.reference_images or {}
+        if self.reference_images and not self._layout.references.enabled:
+            self.logger.debug("Planogram type %s does not use reference images; ignoring %d", ptype, len(self.reference_images))
 
         source = planogram_config.slots_definition
         if isinstance(source, dict):
@@ -165,6 +167,36 @@ class PlanogramCompliance(AbstractPipeline):
                     f"PlanogramConfig {config_name!r}: slots_definition path {self._definition_path} does not exist; convert it as described in {MIGRATION_RUNBOOK}"
                 )
         self._type_handler = composable_cls(pipeline=self, config=planogram_config)
+
+    @classmethod
+    def uses_reference_images(
+        cls, planogram_type: Optional[str] = None, planogram_config: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """Return whether a planogram type consumes reference images.
+
+        Callers (e.g. Flowtask) use it to skip resolving and loading reference images for types
+        that identify products without them, such as ``ink_wall``.
+
+        Args:
+            planogram_type: Planogram type name; ``None`` means ``product_on_shelves``.
+            planogram_config: The configuration's ``planogram_config`` dict; its ``layout_profile``
+                may override the type default (``references.enabled``).
+
+        Returns:
+            True when the resolved layout profile enables reference selection.
+
+        Raises:
+            ValueError: Unknown planogram type or an invalid ``layout_profile`` override.
+        """
+        ptype = planogram_type or "product_on_shelves"
+        composable_cls = cls._PLANOGRAM_TYPES.get(ptype)
+        if composable_cls is None:
+            available = ", ".join(sorted(cls._PLANOGRAM_TYPES))
+            raise ValueError(f"Unknown planogram_type '{ptype}'. Available types: {available}")
+        layout = resolve_layout_profile(
+            composable_cls.default_layout_profile(), planogram_config or {}, config_name=ptype
+        )
+        return layout.references.enabled
 
     def _load_definition(self, source: Union[Dict[str, Any], str, Path]) -> Tuple[SlotsDefinition, List[Any]]:
         """Load and validate a definition, bindings, and layout zone selectors."""
@@ -484,6 +516,7 @@ class PlanogramCompliance(AbstractPipeline):
             "detections": [p.model_dump() for p in perceptions],
             "identifications": [i.model_dump() for i in identifications],
             "position_results": comparison.position_results,
+            "products_found": comparison.products_found,
             "shelf_scores": comparison.shelf_scores,
             "coverage": comparison.coverage,
             "detected_products": comparison.detected_products,

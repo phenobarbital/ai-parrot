@@ -41,7 +41,7 @@ class _StudioTestingLegacyMixin:
         except RuntimeError as exc:
             return self._error(str(exc), status=503, code="unavailable")
 
-        return await self._ask_response(bot, agent_name, ask_request)
+        return await self._ask_response(bot, agent_name, ask_request, session_id=bot.name)
 
     async def _legacy_delete(self):
         agent_name = self.request.match_info.get("name")

@@ -1,10 +1,12 @@
 """
 Data models for Telegram bot configuration.
 """
+
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Any
 from navconfig import config
+from parrot.integrations.knowledge_upload.models import KnowledgeUploadConfig
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +33,7 @@ class PostAuthAction:
                   primary authentication session. If False (default), the
                   primary session remains authenticated even on failure.
     """
+
     provider: str
     required: bool = False
 
@@ -62,6 +65,7 @@ class TelegramAgentConfig:
         enable_operator_commands: Feature toggle — set ``False`` to skip
             registering all operator command handlers entirely.
     """
+
     name: str
     chatbot_id: str
     bot_token: Optional[str] = None
@@ -126,6 +130,8 @@ class TelegramAgentConfig:
     agent_timeout: float = 120.0
     # Document handling settings (FEAT-120)
     max_document_size_mb: int = 20
+    # Chat-driven knowledge upload (FEAT-647) — opt-in, disabled by default.
+    knowledge_upload: KnowledgeUploadConfig = field(default_factory=KnowledgeUploadConfig)
     # Reply context enrichment (FEAT-120)
     enable_reply_context: bool = True
     # Operator commands (FEAT-210)
@@ -161,7 +167,7 @@ class TelegramAgentConfig:
             env_var_name = f"{self.name.upper()}_TELEGRAM_TOKEN"
             self.bot_token = config.get(env_var_name)
         if not self.auth_url:
-            self.auth_url = config.get('NAVIGATOR_AUTH_URL')
+            self.auth_url = config.get("NAVIGATOR_AUTH_URL")
 
         # FEAT-109: Normalize auth_methods.
         # When not explicitly set, derive from the legacy auth_method singleton.
@@ -185,21 +191,15 @@ class TelegramAgentConfig:
         # Generalizes the former auth_method == "oauth2" branch.
         if "oauth2" in self.auth_methods:
             if not self.oauth2_client_id:
-                self.oauth2_client_id = config.get(
-                    f"{name_upper}_OAUTH2_CLIENT_ID"
-                )
+                self.oauth2_client_id = config.get(f"{name_upper}_OAUTH2_CLIENT_ID")
             if not self.oauth2_client_secret:
-                self.oauth2_client_secret = config.get(
-                    f"{name_upper}_OAUTH2_CLIENT_SECRET"
-                )
+                self.oauth2_client_secret = config.get(f"{name_upper}_OAUTH2_CLIENT_SECRET")
 
         # Resolve Azure auth URL from env var or derive from auth_url.
         # Generalizes the former auth_method == "azure" branch.
         if "azure" in self.auth_methods:
             if not self.azure_auth_url:
-                self.azure_auth_url = config.get(
-                    f"{name_upper}_AZURE_AUTH_URL"
-                )
+                self.azure_auth_url = config.get(f"{name_upper}_AZURE_AUTH_URL")
             # Derive azure_auth_url from auth_url when still not set
             if not self.azure_auth_url and self.auth_url:
                 base = self.auth_url.rstrip("/")
@@ -212,9 +212,7 @@ class TelegramAgentConfig:
         # Resolve Google auth URL from env var or derive from auth_url.
         if "google" in self.auth_methods:
             if not self.google_auth_url:
-                self.google_auth_url = config.get(
-                    f"{name_upper}_GOOGLE_AUTH_URL"
-                )
+                self.google_auth_url = config.get(f"{name_upper}_GOOGLE_AUTH_URL")
             # Derive google_auth_url from auth_url when still not set
             if not self.google_auth_url and self.auth_url:
                 base = self.auth_url.rstrip("/")
@@ -228,12 +226,13 @@ class TelegramAgentConfig:
         return self.voice_config is not None and self.voice_config.enabled
 
     @classmethod
-    def from_dict(cls, name: str, data: Dict[str, Any]) -> 'TelegramAgentConfig':
+    def from_dict(cls, name: str, data: Dict[str, Any]) -> "TelegramAgentConfig":
         """Create config from dictionary (YAML parsed data)."""
         # Parse voice_config if provided
         voice_config = None
-        if voice_data := data.get('voice_config'):
+        if voice_data := data.get("voice_config"):
             from parrot.voice.transcriber import VoiceTranscriberConfig
+
             if isinstance(voice_data, dict):
                 voice_config = VoiceTranscriberConfig(**voice_data)
             elif isinstance(voice_data, VoiceTranscriberConfig):
@@ -241,20 +240,20 @@ class TelegramAgentConfig:
 
         # Parse post_auth_actions if provided
         post_auth_actions: List[PostAuthAction] = []
-        if pa_data := data.get('post_auth_actions'):
+        if pa_data := data.get("post_auth_actions"):
             for entry in pa_data:
                 if isinstance(entry, PostAuthAction):
                     post_auth_actions.append(entry)
                 elif isinstance(entry, dict):
                     post_auth_actions.append(
                         PostAuthAction(
-                            provider=entry['provider'],
-                            required=bool(entry.get('required', False)),
+                            provider=entry["provider"],
+                            required=bool(entry.get("required", False)),
                         )
                     )
 
         # FEAT-109: parse auth_methods — accept list or string form.
-        raw_auth_methods = data.get('auth_methods')
+        raw_auth_methods = data.get("auth_methods")
         if isinstance(raw_auth_methods, str):
             auth_methods: List[str] = [raw_auth_methods]
         elif isinstance(raw_auth_methods, list):
@@ -264,45 +263,45 @@ class TelegramAgentConfig:
 
         return cls(
             name=name,
-            chatbot_id=data.get('chatbot_id', name),  # Default to name if not specified
-            bot_token=data.get('bot_token'),
-            allowed_chat_ids=data.get('allowed_chat_ids'),
-            welcome_message=data.get('welcome_message'),
-            system_prompt_override=data.get('system_prompt_override'),
-            commands=data.get('commands', {}),
-            enable_group_mentions=data.get('enable_group_mentions', True),
-            enable_group_commands=data.get('enable_group_commands', True),
-            reply_in_thread=data.get('reply_in_thread', True),
-            enable_channel_posts=data.get('enable_channel_posts', False),
-            register_menu=data.get('register_menu', True),
-            auth_url=data.get('auth_url'),
-            login_page_url=data.get('login_page_url'),
-            enable_login=data.get('enable_login', True),
-            use_html=data.get('use_html', False),
-            force_authentication=data.get('force_authentication', False),
-            auth_method=data.get('auth_method', 'basic'),
+            chatbot_id=data.get("chatbot_id", name),  # Default to name if not specified
+            bot_token=data.get("bot_token"),
+            allowed_chat_ids=data.get("allowed_chat_ids"),
+            welcome_message=data.get("welcome_message"),
+            system_prompt_override=data.get("system_prompt_override"),
+            commands=data.get("commands", {}),
+            enable_group_mentions=data.get("enable_group_mentions", True),
+            enable_group_commands=data.get("enable_group_commands", True),
+            reply_in_thread=data.get("reply_in_thread", True),
+            enable_channel_posts=data.get("enable_channel_posts", False),
+            register_menu=data.get("register_menu", True),
+            auth_url=data.get("auth_url"),
+            login_page_url=data.get("login_page_url"),
+            enable_login=data.get("enable_login", True),
+            use_html=data.get("use_html", False),
+            force_authentication=data.get("force_authentication", False),
+            auth_method=data.get("auth_method", "basic"),
             auth_methods=auth_methods,
-            oauth2_provider=data.get('oauth2_provider', 'google'),
-            oauth2_client_id=data.get('oauth2_client_id'),
-            oauth2_client_secret=data.get('oauth2_client_secret'),
-            oauth2_scopes=data.get('oauth2_scopes'),
-            oauth2_redirect_uri=data.get('oauth2_redirect_uri'),
-            azure_auth_url=data.get('azure_auth_url'),
-            google_auth_url=data.get('google_auth_url'),
+            oauth2_provider=data.get("oauth2_provider", "google"),
+            oauth2_client_id=data.get("oauth2_client_id"),
+            oauth2_client_secret=data.get("oauth2_client_secret"),
+            oauth2_scopes=data.get("oauth2_scopes"),
+            oauth2_redirect_uri=data.get("oauth2_redirect_uri"),
+            azure_auth_url=data.get("azure_auth_url"),
+            google_auth_url=data.get("google_auth_url"),
             voice_config=voice_config,
             post_auth_actions=post_auth_actions,
-            singleton_agent=bool(data.get('singleton_agent', True)),
-            agent_timeout=float(data.get('agent_timeout', 120.0)),
-            max_document_size_mb=int(data.get('max_document_size_mb', 20)),
-            enable_reply_context=bool(data.get('enable_reply_context', True)),
-            operator_chat_ids=[int(x) for x in data['operator_chat_ids']]
-            if data.get('operator_chat_ids') else None,
-            enable_operator_commands=bool(data.get('enable_operator_commands', True)),
+            singleton_agent=bool(data.get("singleton_agent", True)),
+            agent_timeout=float(data.get("agent_timeout", 120.0)),
+            max_document_size_mb=int(data.get("max_document_size_mb", 20)),
+            knowledge_upload=KnowledgeUploadConfig.model_validate(data.get("knowledge_upload") or {}),
+            enable_reply_context=bool(data.get("enable_reply_context", True)),
+            operator_chat_ids=[int(x) for x in data["operator_chat_ids"]] if data.get("operator_chat_ids") else None,
+            enable_operator_commands=bool(data.get("enable_operator_commands", True)),
             # FEAT-213: TTS voice reply (opt-in, defaults match dataclass defaults)
-            tts_enabled=bool(data.get('tts_enabled', False)),
-            tts_backend=data.get('tts_backend', 'google'),
-            tts_voice=data.get('tts_voice'),
-            reply_in_kind=bool(data.get('reply_in_kind', True)),
+            tts_enabled=bool(data.get("tts_enabled", False)),
+            tts_backend=data.get("tts_backend", "google"),
+            tts_voice=data.get("tts_voice"),
+            reply_in_kind=bool(data.get("reply_in_kind", True)),
         )
 
 
@@ -320,13 +319,14 @@ class TelegramBotsConfig:
             welcome_message: "Hello! I'm your HR Assistant."
             # bot_token: optional - defaults to HRAGENT_TELEGRAM_TOKEN env var
     """
+
     agents: Dict[str, TelegramAgentConfig] = field(default_factory=dict)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'TelegramBotsConfig':
+    def from_dict(cls, data: Dict[str, Any]) -> "TelegramBotsConfig":
         """Create config from dictionary (YAML parsed data)."""
         agents = {}
-        agents_data = data.get('agents', {})
+        agents_data = data.get("agents", {})
         for name, agent_data in agents_data.items():
             agents[name] = TelegramAgentConfig.from_dict(name, agent_data)
         return cls(agents=agents)
@@ -352,8 +352,7 @@ class TelegramBotsConfig:
                 errors.append(f"Agent '{name}': missing 'chatbot_id'")
             if not agent_config.bot_token:
                 errors.append(
-                    f"Agent '{name}': missing bot_token (set in YAML or "
-                    f"env var {name.upper()}_TELEGRAM_TOKEN)"
+                    f"Agent '{name}': missing bot_token (set in YAML or " f"env var {name.upper()}_TELEGRAM_TOKEN)"
                 )
 
             # FEAT-109: per-method validation — iterates auth_methods list.

@@ -2,10 +2,13 @@
 DataFrame to HTML Tool - Convert pandas DataFrames to styled HTML tables.
 """
 from typing import Any, Dict, Optional
+from datetime import datetime
 from pathlib import Path
 from html import escape as html_escape
 import pandas as pd
 from pydantic import BaseModel, Field
+import parrot.tools.exports_mode as exports_mode
+from ._exports import ExportsToStoreMixin
 from .abstract import AbstractTool
 
 
@@ -57,7 +60,7 @@ class DfToHtmlArgs(BaseModel):
     )
 
 
-class DfToHtmlTool(AbstractTool):
+class DfToHtmlTool(ExportsToStoreMixin, AbstractTool):
     """
     Tool for converting pandas DataFrames to styled HTML tables.
 
@@ -68,7 +71,13 @@ class DfToHtmlTool(AbstractTool):
     name: str = "df_to_html"
     description: str = "Convert pandas DataFrame to styled HTML table with optional file saving"
     args_schema = DfToHtmlArgs
+    studio_hidden_args = frozenset({"filename"})  # store-only mode: the caller never names a file
     return_direct: bool = False
+
+    def __init__(self, artifact_store: Any = None, **kwargs):
+        """``artifact_store`` is server-managed: when set the HTML file is published there, never written locally."""
+        super().__init__(**kwargs)
+        self.artifact_store = artifact_store
 
     def _default_output_dir(self) -> Optional[Path]:
         """Default output directory for HTML files."""
@@ -188,6 +197,10 @@ class DfToHtmlTool(AbstractTool):
             Dictionary containing the HTML string and optional file path
         """
 
+        if exports_mode.is_enabled():
+            filename = None  # store-only mode (PA-11): ``filename`` is not an LLM argument, nothing names a file
+        self._require_export_target()  # store-only mode: a Studio-scoped call with no store never writes a local file
+
         # Validate that we have a DataFrame
         if not isinstance(dataframe, pd.DataFrame):
             raise ValueError("Input must be a pandas DataFrame")
@@ -275,8 +288,12 @@ class DfToHtmlTool(AbstractTool):
             "shape": df_to_convert.shape
         }
 
+        # With a store the table is published as a file (store-only mode: never a caller-named one)
+        if self.exports_to_store:
+            name = f"table_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            result.update(await self._publish_export(name, complete_html, content_type="text/html"))
         # Save to file if filename is provided
-        if filename:
+        elif filename:
             if not filename.endswith('.html'):
                 filename = f"{filename}.html"
 

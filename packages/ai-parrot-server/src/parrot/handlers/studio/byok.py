@@ -90,9 +90,9 @@ class StudioKeysHandler(StudioBaseView):
     dual-write), DELETE (remove both copies).
     """
 
-    def _error(self, message: str, *, status: int, code: str | None = None):
+    def _error(self, message: str, *, status: int, code: str | None = None, details: list[dict] | None = None):
         return self.json_response(
-            StudioError(message=message, code=code).model_dump(),
+            StudioError(message=message, code=code, details=details).model_dump(),
             status=status,
         )
 
@@ -165,6 +165,13 @@ class StudioKeysHandler(StudioBaseView):
             key_request = ByokKeyRequest(**(payload or {}))
         except ValidationError as exc:
             return self._error(f"Invalid request: {exc}", status=400, code="invalid_request")
+
+        if not key_request.api_key.get_secret_value().strip():
+            return self._error(
+                "api_key must not be empty.", status=422, code="invalid_config",
+                details=[{"field": "api_key", "constraint": "min_length", "limit": 1,
+                          "message": "api_key must not be empty."}],
+            )
 
         provider = key_request.provider.lower()
         if provider not in SUPPORTED_CLIENTS:

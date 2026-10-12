@@ -5,6 +5,7 @@ Data models for MS Teams bot configuration.
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Any
 from navconfig import config
+from parrot.integrations.knowledge_upload.models import KnowledgeUploadConfig
 from parrot.outputs.cards.spec import DEFAULT_ADAPTIVE_CARD_VERSION
 
 if TYPE_CHECKING:
@@ -44,6 +45,8 @@ class MSTeamsAgentConfig:
     # User/conversation whitelisting
     allowed_conversation_ids: Optional[List[str]] = None
     allowed_user_ids: Optional[List[str]] = None
+    # Chat-driven knowledge upload (FEAT-647) — opt-in, disabled by default.
+    knowledge_upload: KnowledgeUploadConfig = field(default_factory=KnowledgeUploadConfig)
     voice_config: Optional["VoiceTranscriberConfig"] = None
     adaptive_card_version: str = DEFAULT_ADAPTIVE_CARD_VERSION
 
@@ -153,6 +156,7 @@ class MSTeamsAgentConfig:
             enable_group_commands=data.get("enable_group_commands", True),
             allowed_conversation_ids=data.get("allowed_conversation_ids"),
             allowed_user_ids=data.get("allowed_user_ids"),
+            knowledge_upload=KnowledgeUploadConfig.model_validate(data.get("knowledge_upload") or {}),
             voice_config=voice_config,
             adaptive_card_version=data.get("adaptive_card_version", DEFAULT_ADAPTIVE_CARD_VERSION),
             # Jira OAuth (FEAT-225)

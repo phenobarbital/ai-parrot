@@ -231,6 +231,8 @@ def build_identify_prompt(
         "- occupancy is 'occupied' when a package or product body is visible, including a box seen from its "
         "side, tilted, dark, or with glare. Only shelf backing, a hook, divider, price tag or fixture parts is "
         "'empty'. Use 'unknown' only when the box itself is unreadable.\n"
+        "- A package whose body stands over a NEIGHBOURING area and only reaches into the edge of this box does "
+        "not make this area occupied: judge occupancy by the centre of the box (above its own price tag, if any).\n"
         "- ocr_text is NOT evidence of emptiness. Read the printed product code into text and product, correcting "
         "ocr_text when needed. Brand comes from the visible logo.\n"
         "- For each area report these descriptor fields inside descriptors: "
@@ -443,7 +445,12 @@ async def _run_call(
     target_ids = {_target_id(target) for target in targets}
     call_readings = {key: value for key, value in perception.ocr_readings.items() if key in target_ids}
     policy = ctx.layout.references if ctx.layout is not None else None
-    references, diagnostics = select_references(ctx.reference_bank, call_readings, policy) if policy else ([], [])
+    # Nothing to select when the type does not use references or none were loaded: skip the per-call
+    # selection instead of reporting the same diagnostic once per identify call.
+    if policy is not None and policy.enabled and ctx.reference_bank:
+        references, diagnostics = select_references(ctx.reference_bank, call_readings, policy)
+    else:
+        references, diagnostics = [], []
     labels = [reference.label for reference in references]
     prompt = build_identify_prompt(areas, vocabulary, reference_labels=labels)
     errors = []
