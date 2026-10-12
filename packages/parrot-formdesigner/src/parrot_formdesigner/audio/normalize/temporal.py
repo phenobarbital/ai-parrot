@@ -21,6 +21,17 @@ _CLOCK_RE = re.compile(r"^(\d{1,2})(?::(\d{2}))?(am|pm)?$")
 _ISO_DATETIME_RE = re.compile(r"^(\d{4}-\d{1,2}-\d{1,2})t(\d{1,2}:\d{2})$")
 _MERIDIEM_DOTTED_RE = re.compile(r"^([ap])\.m$")
 _O_CLOCK = {"o", "clock", "oclock"}
+_NUMERIC_TOKEN_RE = re.compile(r"^\d+$")
+# marker → direction: en "ten past/to three" (minutes first), es "tres y/menos diez" (hour first)
+_REL_MARKERS = {"past": "plus", "to": "minus", "y": "plus", "menos": "minus"}
+# filler words that carry no time information; anything else left over downgrades an accepted time to a confirm
+_TIME_IGNORABLE = frozenset(
+    {
+        "at", "a", "an", "the", "it", "s", "is", "its", "about", "around", "approximately", "exactly", "sharp",
+        "please", "thanks", "hours", "hrs", "hr", "h", "hs",
+        "las", "la", "los", "el", "son", "es", "en", "punto", "por", "favor", "hora", "aproximadamente", "como",
+    }
+)
 
 
 def _weekday_after(today: date, weekday: int) -> date:
@@ -210,36 +221,97 @@ def _parse_time(tokens: list[str], ctx: NormalizeContext) -> NormalizeResult:
     if special is not None:
         return NormalizeResult.accepted(special)
 
+    def known(token: str, *, numbers: bool = True) -> bool:
+        if token in _TIME_IGNORABLE:
+            return True
+        if not numbers:
+            return False
+        return bool(_NUMERIC_TOKEN_RE.match(token)) or _is_number_word(token, spoken) or token in spoken.number_joiners
+
+    def finish(hour: int, minute: int, leading_zero: bool, rest: list[str], *, numbers: bool = True) -> NormalizeResult:
+        res = _finish_time(hour, minute, meridiem, leading_zero)
+        if res.status == "accepted" and not all(known(t, numbers=numbers) for t in rest):
+            return NormalizeResult.confirm(res.value, "unrecognized_words")
+        return res
+
     hour: int | None = None
     minute = 0
-    leading_zero = False
-    for tok in toks:
-        m = _CLOCK_RE.match(tok)
-        if m and (m.group(2) is not None or m.group(3) is not None or len(toks) == 1 or tok.isdigit()):
-            hour = int(m.group(1))
-            leading_zero = len(m.group(1)) == 2 and m.group(1).startswith("0") and m.group(2) is not None
-            minute = int(m.group(2)) if m.group(2) is not None else 0
-            if m.group(3):
-                meridiem = meridiem or m.group(3)
-            if hour is not None:
-                break
-    if hour is None:
-        nums = [int(x) for x in parse_numbers(toks, spoken)]
-        if not nums:
+    clock_at = next(
+        (i for i, t in enumerate(toks) if (m := _CLOCK_RE.match(t)) and (m.group(2) is not None or m.group(3) is not None)),
+        None,
+    )
+    if clock_at is not None:  # "15:30", "3:30pm", "3pm"
+        m = _CLOCK_RE.match(toks[clock_at])
+        assert m is not None
+        hour = int(m.group(1))
+        minute = int(m.group(2)) if m.group(2) is not None else 0
+        if m.group(3):
+            meridiem = meridiem or m.group(3)
+        leading_zero = len(m.group(1)) == 2 and m.group(1).startswith("0") and m.group(2) is not None
+        if minute > 59 or hour > 23:
+            return NormalizeResult.rejected("out_of_range")
+        return finish(hour, minute, leading_zero, toks[:clock_at] + toks[clock_at + 1 :], numbers=False)
+
+    marker = next((i for i, t in enumerate(toks) if t in _REL_MARKERS), None)
+    if marker is not None:  # "quarter past three", "ten to four", "las cinco y cuarto", "las cinco menos diez"
+        word = toks[marker]
+        before = [t for t in toks[:marker] if t not in _TIME_IGNORABLE]
+        after = [t for t in toks[marker + 1 :] if t not in _TIME_IGNORABLE]
+        minutes_first = word in ("past", "to")
+        minute_part, hour_part = (before, after) if minutes_first else (after, before)
+        rel_minute = _small_number(minute_part, spoken, allow_quarter=True)
+        rel_hour = _small_number(hour_part, spoken, allow_quarter=False)
+        if rel_minute is None or rel_hour is None or not 1 <= rel_minute <= 59 or not 0 <= rel_hour <= 23:
             return NormalizeResult.rejected("no_parse")
-        hour = nums[0]
-        if len(nums) == 1 and 100 <= hour <= 2359 and hour % 100 < 60:
-            hour, minute = hour // 100, hour % 100
-        elif len(nums) == 2:
-            minute = nums[1]
-        elif len(nums) == 3 and nums[1] == 0 and nums[2] < 10:
-            minute = nums[2]
-        elif len(nums) > 1:
-            return NormalizeResult.rejected("no_parse")
+        if _REL_MARKERS[word] == "minus":
+            if rel_hour == 0:
+                return NormalizeResult.rejected("no_parse")
+            minute = 60 - rel_minute
+            hour = 12 if rel_hour == 1 else rel_hour - 1
+            if rel_hour == 12 and meridiem is not None:  # "ten to twelve pm" flips the half of the day: never guess
+                return NormalizeResult.confirm((11 if meridiem == "pm" else 23, minute), "ambiguous_meridiem")
+        else:
+            hour, minute = rel_hour, rel_minute
+        return finish(hour, minute, False, [])
+
+    nums = [x for x in parse_numbers(toks, spoken)]
+    if not nums or any(not float(x).is_integer() for x in nums):
+        return NormalizeResult.rejected("no_parse")
+    nums = [int(x) for x in nums]
+    hour = nums[0]
+    if len(nums) == 1 and 100 <= hour <= 2359 and hour % 100 < 60:
+        hour, minute = hour // 100, hour % 100
+    elif len(nums) == 2:
+        minute = nums[1]
+    elif len(nums) == 3 and nums[1] == 0 and nums[2] < 10:
+        minute = nums[2]
+    elif len(nums) > 1:
+        return NormalizeResult.rejected("no_parse")
     if half:
         minute = 30
     if minute > 59 or hour > 23:
         return NormalizeResult.rejected("out_of_range")
+    return finish(hour, minute, False, toks)
+
+
+def _small_number(tokens: list[str], spoken: SpokenLexicon, *, allow_quarter: bool) -> int | None:
+    """A single integer made of ``tokens`` only (digits or words); 'quarter'/'cuarto' = 15 when allowed."""
+    if not tokens:
+        return None
+    if allow_quarter and tokens in (["quarter"], ["cuarto"]):
+        return 15
+    nums = parse_numbers(tokens, spoken)
+    if len(nums) != 1 or not float(nums[0]).is_integer():
+        return None
+    if not all(
+        _NUMERIC_TOKEN_RE.match(t) or _is_number_word(t, spoken) or t in spoken.number_joiners for t in tokens
+    ):
+        return None
+    return int(nums[0])
+
+
+def _finish_time(hour: int, minute: int, meridiem: str | None, leading_zero: bool) -> NormalizeResult:
+    """Apply the meridiem; an hour with no meridiem that could be either half of the day is a confirm."""
     if meridiem is not None:
         if not 1 <= hour <= 12:
             return NormalizeResult.rejected("out_of_range")
