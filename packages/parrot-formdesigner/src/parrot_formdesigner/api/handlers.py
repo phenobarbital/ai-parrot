@@ -2466,7 +2466,7 @@ class FormAPIHandler:
         """GET /api/v1/org/graph — Return the org graph for the session's org.
 
         Calls ``OrgGraphService.get_graph()`` with the caller's org, resolved
-        by :meth:`_resolve_org_id` (session, then ``auth.organization_users``).
+        by :meth:`_resolve_org_id` (``auth.organization_users`` is authoritative).
 
         Args:
             request: Incoming HTTP request with navigator-auth session.
@@ -2477,6 +2477,7 @@ class FormAPIHandler:
             400: No user id in session, a non-integer ``org_id``, or several
                 memberships and no ``org_id``.
             403: The user belongs to no organization, or not to ``org_id``.
+            500: The membership lookup failed.
             501: OrgGraphService not configured.
         """
         if self._org_graph_service is None:

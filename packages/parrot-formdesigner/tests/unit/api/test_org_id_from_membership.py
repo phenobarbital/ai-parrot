@@ -109,6 +109,7 @@ class _MembershipConn:
 
     async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
         assert_real_columns(sql)
+        assert_real_column_refs(sql)
         self.queries.append((sql, args))
         if "auth.organization_users" not in sql:
             raise AssertionError(f"unexpected query: {sql}")
