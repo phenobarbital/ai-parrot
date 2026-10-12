@@ -321,10 +321,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- Task: TASK-4241
+- Feature: eval-answer-accuracy-metrics
+- Implementation SHA: ab98fd254e87d90d1f719dffb77ee37f2ce13c58
+- Closed at (UTC): 2026-10-12T17:28:03+00:00
+- Fix commits: ab98fd254e87d90d1f719dffb77ee37f2ce13c58
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 1 |
+| seat_summary | Seat: gpt-5.6-luna · Backend: codex · Model: gpt-5.6-luna · Attempts: 1 · Duration: 76s · Tokens: n/a |

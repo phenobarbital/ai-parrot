@@ -5,6 +5,7 @@ FEAT-217 — All evaluation data contracts live here.  No behavior — pure data
 via a forward reference in ``EvalTask``; call ``EvalTask.model_rebuild()``
 once ``SandboxSpec`` is importable (done in ``parrot/eval/__init__.py``).
 """
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Literal
@@ -111,6 +112,9 @@ class Trajectory(BaseModel):
         latency_ms: Rollout-only wall-clock time.
         error: Exception string if the attempt failed, otherwise ``None``.
         trace_context: W3C traceparent/tracestate for distributed tracing.
+        model: Model identifier of the last agent response, when known.
+        response_metadata: ``AIMessage.metadata`` of the last agent response —
+            guardrail reports, routing trace, and similar response context.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -126,6 +130,8 @@ class Trajectory(BaseModel):
     latency_ms: float = 0.0
     error: str | None = None
     trace_context: dict[str, str] | None = None
+    model: str | None = None
+    response_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class MetricScore(BaseModel):

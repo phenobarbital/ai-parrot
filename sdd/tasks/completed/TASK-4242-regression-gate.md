@@ -291,10 +291,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+- Implemented by seat sonnet (native), 1 attempt, 89s. Merged and lint-committed by the engine.
+- Validation: eval suite `packages/ai-parrot/tests/eval` 144 passed, 3 skipped (merge-tier validation completed green, HEAD d5c1b893e).
+- Postgres-backed paths are skipped without `EVAL_DB_DSN`; not exercised against a real DB.
+- Closed manually via close_task.sh: finalize_task fidelity gate rejected it because a sibling task's review-fix commit sat in the same range.
+- Deviations from spec: none.

@@ -312,10 +312,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- Task: TASK-4240
+- Feature: eval-answer-accuracy-metrics
+- Implementation SHA: a30b942983d9d41fc3b6b3a09f3d274cd57242ba
+- Closed at (UTC): 2026-10-12T17:18:04+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 113s · Tokens: n/a |

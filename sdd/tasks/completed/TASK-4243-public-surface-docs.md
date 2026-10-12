@@ -281,10 +281,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+- Task: TASK-4243
+- Feature: eval-answer-accuracy-metrics
+- Implementation SHA: fb18b4609622de47e94415f1553ad04db4095ed4
+- Closed at (UTC): 2026-10-12T17:35:07+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 259s · Tokens: n/a |
