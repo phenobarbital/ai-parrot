@@ -1,4 +1,5 @@
 """JudgeCache backends (FEAT-652, Module 4)."""
+
 from __future__ import annotations
 
 import json

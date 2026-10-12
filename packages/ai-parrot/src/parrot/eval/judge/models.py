@@ -1,4 +1,5 @@
 """Rubric / verdict models and the deterministic judge cache key (FEAT-652, Module 4)."""
+
 from __future__ import annotations
 
 import hashlib
