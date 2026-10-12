@@ -50,6 +50,8 @@ class VoiceEvidenceEnvelope(VoiceAnswerEnvelope):
     duration_ms: int | None = None
     language: str | None = None
     plausibility: PlausibilityVerdict | None = None
+    normalized_by: Literal["rules", "llm"] | None = None  # FEAT-653: which post-processor produced `answer`
+    llm_confidence: float | None = None
 
 
 def is_voice_envelope(value: Any) -> bool:
@@ -94,5 +96,7 @@ def wrap_voice(scalars: dict[str, Any], evidence: dict[str, AudioAnswer]) -> dic
             audio_mime=getattr(answer, "audio_mime", None),
             duration_ms=getattr(answer, "duration_ms", None),
             language=getattr(answer, "stt_language", None),
+            normalized_by=getattr(answer, "normalized_by", None),
+            llm_confidence=getattr(answer, "llm_confidence", None),
         ).model_dump()
     return out
