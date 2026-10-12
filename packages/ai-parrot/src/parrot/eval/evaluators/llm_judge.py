@@ -1,4 +1,5 @@
 """LLMJudgeMetric — rubric-based LLM-as-judge with cache and self-consistency (FEAT-652, Module 5)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -78,8 +79,7 @@ class LLMJudgeMetric(Metric):
         criteria = "\n".join(f"- {criterion.name} — {criterion.question}" for criterion in self._rubric.criteria)
         sections.append(f"CRITERIA:\n{criteria}")
         sections.append(
-            'Reply ONLY with JSON {"criteria": {"<name>": true|false, ...}, '
-            '"rationale": "<one sentence>"}.'
+            'Reply ONLY with JSON {"criteria": {"<name>": true|false, ...}, ' '"rationale": "<one sentence>"}.'
         )
         return "\n\n".join(sections)
 
