@@ -157,7 +157,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -171,8 +171,9 @@
       "parallelism_notes": "Imports normalize_spoken/validate_typed (TASK-4245) and dispatches to email/phone (TASK-4246) and temporal (TASK-4247); uses AudioAnswer.normalized_by, StartSession.timezone, ConfirmRequest.value from TASK-4248; asserts the wrap_voice envelope keys from TASK-4250 (core/voice_answer.py).",
       "assigned_to": null,
       "started_at": "2026-10-12T19:44:31+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4251-engine-normalize-gate.md"
+      "completed_at": "2026-10-12T20:08:56+00:00",
+      "file": "sdd/tasks/completed/TASK-4251-engine-normalize-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4252",
