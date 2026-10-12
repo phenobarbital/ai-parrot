@@ -58,9 +58,12 @@ def _make_request(
     req = MagicMock(spec=web.Request)
     req.method = method
     req.match_info = match_info or {}
+    # A real request has a (possibly empty) query mapping; a Mock answers
+    # .get() with another Mock, which reads as a malformed ?org_id=.
+    req.query = {}
 
     programs = session_programs if session_programs is not None else [tenant]
-    session_obj = {"session": {"programs": programs}}
+    session_obj = {"session": {"programs": programs, "user_id": 1}}
     req.session = session_obj
     req.__contains__ = lambda self, key: False
 
@@ -176,6 +179,7 @@ class TestGetOrgGraph:
         graph = _make_org_graph()
         svc = MagicMock()
         svc.get_graph = AsyncMock(return_value=graph)
+        svc.get_user_org_ids = AsyncMock(return_value=[7])  # NAV-9522: DB membership
         handler = _make_handler(org_graph_service=svc)
         req = _make_request(method="GET")
         resp = await handler.get_org_graph(req)
@@ -185,11 +189,14 @@ class TestGetOrgGraph:
         assert body["root"]["node_type"] == "company"
 
     @pytest.mark.asyncio
-    async def test_get_org_graph_400_no_org_id(self) -> None:
+    async def test_get_org_graph_400_no_org_and_no_user_id(self) -> None:
+        # NAV-9522: with no session organizations the handler looks up
+        # auth.organization_users; with no user id either it must refuse.
+        # The real-shape cases live in api/test_org_id_from_membership.py.
         svc = MagicMock()
         handler = _make_handler(org_graph_service=svc)
-        # No organizations
         req = _make_request(method="GET", user_id="anonymous")
+        req.session["session"].pop("user_id")
         req.user.organizations = []
         resp = await handler.get_org_graph(req)
         assert resp.status == 400
@@ -205,6 +212,7 @@ class TestGetOrgGraph:
     async def test_get_org_graph_404_not_found(self) -> None:
         svc = MagicMock()
         svc.get_graph = AsyncMock(side_effect=KeyError("Organization 99 not found"))
+        svc.get_user_org_ids = AsyncMock(return_value=[99])  # NAV-9522: DB membership
         handler = _make_handler(org_graph_service=svc)
         req = _make_request()
         resp = await handler.get_org_graph(req)
