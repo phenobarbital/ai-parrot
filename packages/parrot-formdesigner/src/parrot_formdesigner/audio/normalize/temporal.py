@@ -29,7 +29,7 @@ _TIME_IGNORABLE = frozenset(
     {
         "at", "a", "an", "the", "it", "s", "is", "its", "about", "around", "approximately", "exactly", "sharp",
         "please", "thanks", "hours", "hrs", "hr", "h", "hs",
-        "las", "la", "los", "el", "son", "es", "en", "punto", "por", "favor", "hora", "aproximadamente", "como",
+        "las", "la", "los", "el", "al", "son", "es", "en", "punto", "por", "favor", "hora", "aproximadamente", "como",
     }
 )
 
@@ -271,7 +271,7 @@ def _parse_time(tokens: list[str], ctx: NormalizeContext) -> NormalizeResult:
         else:
             half = True
     if special is not None:
-        return NormalizeResult.accepted(special)
+        return _special_time(special, toks, half, spoken)
 
     def known(token: str, *, numbers: bool = True) -> bool:
         if token in _TIME_IGNORABLE:
@@ -344,6 +344,34 @@ def _parse_time(tokens: list[str], ctx: NormalizeContext) -> NormalizeResult:
     if minute > 59 or hour > 23:
         return NormalizeResult.rejected("out_of_range")
     return finish(hour, minute, False, toks)
+
+
+_MINUS_WORDS = frozenset({"to", "menos", "para"})
+_PLUS_WORDS = frozenset({"past", "y"})
+
+
+def _special_time(base: tuple[int, int], toks: list[str], half: bool, spoken: SpokenLexicon) -> NormalizeResult:
+    """Noon/midnight, bare or relative ("a quarter to midnight" → 23:45, "medianoche y cuarto" → 00:15).
+
+    Anything left over that cannot be read as a minute offset is never silently dropped: a confirm at best.
+    """
+    rest = [t for t in toks if t not in _TIME_IGNORABLE]
+    if half:  # the "half past" / "y media" phrase already carries its own direction and offset
+        return NormalizeResult.accepted((base[0], 30)) if not rest else NormalizeResult.confirm((base[0], 30), "unrecognized_words")
+    if not rest:
+        return NormalizeResult.accepted(base)
+    minus = [t for t in rest if t in _MINUS_WORDS]
+    plus = [t for t in rest if t in _PLUS_WORDS]
+    if bool(minus) == bool(plus):  # "midnight banana", "to midnight": no direction to apply
+        return NormalizeResult.confirm(base, "unrecognized_words")
+    words = [t for t in rest if t not in _MINUS_WORDS and t not in _PLUS_WORDS]
+    offset = _small_number(words, spoken, allow_quarter=True)
+    if offset is None or not 1 <= offset <= 59:
+        return NormalizeResult.confirm(base, "unrecognized_words")
+    hour, _ = base
+    if minus:
+        return NormalizeResult.accepted(((hour - 1) % 24, 60 - offset))
+    return NormalizeResult.accepted((hour, offset))
 
 
 def _small_number(tokens: list[str], spoken: SpokenLexicon, *, allow_quarter: bool) -> int | None:
