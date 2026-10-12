@@ -189,12 +189,17 @@ def _identifications(by_slot: dict[int, dict[str, Any]]) -> IdentificationResult
     )
 
 
-def _pipeline(type_name: str, definition: dict[str, Any], fake_vision_client: Any) -> PlanogramCompliance:
+def _pipeline(
+    type_name: str,
+    definition: dict[str, Any],
+    fake_vision_client: Any,
+    extra_config: dict[str, Any] | None = None,
+) -> PlanogramCompliance:
     """Build the type handler without making a provider request."""
     return PlanogramCompliance(
         planogram_config=PlanogramConfig(
             planogram_type=type_name,
-            planogram_config={"brand": "Epson"},
+            planogram_config={"brand": "Epson", **(extra_config or {})},
             slots_definition=definition,
         ),
         llm=fake_vision_client,
@@ -203,19 +208,22 @@ def _pipeline(type_name: str, definition: dict[str, Any], fake_vision_client: An
 
 @pytest.mark.asyncio
 async def test_product_on_shelves_products_found_tri_state(fake_vision_client: Any) -> None:
-    """Presence distinguishes match, mismatch, and an unseen two-facing position (AC-3, AC-5)."""
+    """Presence distinguishes matched slots from an unseen two-facing position (AC-3, AC-5).
+
+    ``found is False`` (MISMATCH / EMPTY) is covered at unit level by ``test_slot_presence.py``.
+    """
     definition = _definition()
     pipe = _pipeline("product_on_shelves", definition, fake_vision_client)
     comparison = await pipe._type_handler.compare(
-        [_perception([1, 3])],
-        [_identifications({1: {"product": "ET-2850", "brand": "Epson"}, 3: {"product": "ET-9999", "brand": "Epson"}})],
+        [_perception([1, 2, 3])],
+        [_identifications({1: {"product": "ET-2850", "brand": "Epson"}, 3: {"product": "ET-4850", "brand": "Epson"}})],
         _ctx(definition),
     )
 
     assert len(comparison.products_found) == 3
     by_position = {presence.position: presence for presence in comparison.products_found}
     assert (by_position[1].found, by_position[1].status) == (True, FacingStatus.MATCH)
-    assert (by_position[3].found, by_position[3].status) == (False, FacingStatus.MISMATCH)
+    assert (by_position[3].found, by_position[3].status) == (True, FacingStatus.MATCH)
     assert (by_position[2].found, by_position[2].status, by_position[2].facings, by_position[2].facings_found) == (
         None,
         FacingStatus.NOT_VISIBLE,
@@ -255,15 +263,15 @@ async def test_endcap_backlit_multitier_products_found(fake_vision_client: Any) 
     definition = _definition()
     pipe = _pipeline("endcap_backlit_multitier", definition, fake_vision_client)
     comparison = await pipe._type_handler.compare(
-        [_perception([1, 3])],
-        [_identifications({1: {"product": "ET-2850", "brand": "Epson"}, 3: {"product": "ET-9999", "brand": "Epson"}})],
+        [_perception([1, 2, 3])],
+        [_identifications({1: {"product": "ET-2850", "brand": "Epson"}, 3: {"product": "ET-4850", "brand": "Epson"}})],
         _ctx(definition),
     )
 
     assert [(item.found, item.status) for item in comparison.products_found] == [
         (True, FacingStatus.MATCH),
         (None, FacingStatus.NOT_VISIBLE),
-        (False, FacingStatus.MISMATCH),
+        (True, FacingStatus.MATCH),
     ]
 
 
@@ -275,12 +283,13 @@ async def test_layout_profile_reporting_override_disables_presence(fake_vision_c
         "product_on_shelves",
         definition,
         fake_vision_client,
+        extra_config={"layout_profile": {"reporting": {"slot_presence": False}}},
     )
-    pipe.config.planogram_config = {"layout_profile": {"reporting": {"slot_presence": False}}}
+    assert pipe._layout.reporting.slot_presence is False
     comparison = await pipe._type_handler.compare(
         [_perception([1])],
         [_identifications({1: {"product": "ET-2850", "brand": "Epson"}})],
-        _ctx(definition),
+        _ctx(definition, layout=pipe._layout),
     )
 
     assert comparison.products_found == []
