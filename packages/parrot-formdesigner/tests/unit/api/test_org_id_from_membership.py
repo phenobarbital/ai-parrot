@@ -313,8 +313,13 @@ def _graph_sql_constants() -> dict[str, str]:
     }
 
 
-def test_every_org_graph_query_references_only_real_columns() -> None:
-    """The production schema refuses a column a table lacks; so must we."""
+def test_org_graph_queries_on_known_tables_reference_only_real_columns() -> None:
+    """The production schema refuses a column a table lacks; so must we.
+
+    Only tables with a recorded shape are checked (``real_db_shapes``); the
+    depth >= 4 store query on ``networkninja.stores_geographies`` is a known
+    open defect recorded in the FEAT-302 spec, not covered here.
+    """
     constants = _graph_sql_constants()
     assert "_SQL_GET_REGIONS_FOR_CLIENT" in constants
     for name, sql in constants.items():
@@ -393,3 +398,32 @@ async def test_without_the_service_a_user_class_lacking_organizations_is_a_400_n
 
     assert org_id is None
     assert error is not None and error.status == 400
+
+
+@pytest.mark.asyncio
+async def test_a_failed_membership_lookup_is_a_json_500_not_a_crash() -> None:
+    handler, service, _ = _handler({USER_ID: [7]})
+    service.get_user_org_ids = AsyncMock(side_effect=RuntimeError("pool down"))
+
+    response = await handler.get_org_graph(_request())
+
+    assert response.status == 500, response.text
+    assert "Internal server error" in response.text
+    service.get_graph.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "name, joins",
+    [
+        ("_SQL_GET_REGIONS_FOR_CLIENT", ["m.region_id = r.region_id", "m.orgid = r.orgid"]),
+        ("_SQL_GET_DISTRICTS_FOR_CLIENT", ["m.district_id = d.district_id", "m.orgid = d.orgid"]),
+    ],
+)
+def test_geography_is_joined_through_the_clients_markets(name: str, joins: list[str]) -> None:
+    """The fakes do not execute SQL, so pin the join predicates themselves:
+    a join on a wrong but existing column (m.region_id = d.district_id)
+    would pass the column check. Proven on real Postgres in the NAV-9522 run."""
+    sql = " ".join(_graph_sql_constants()[name].split())
+    for predicate in joins:
+        assert predicate in sql, (name, predicate)
+    assert "WHERE m.client_id = $1 AND m.orgid = $2" in sql
