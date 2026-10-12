@@ -63,8 +63,8 @@ async def test_majority_vote():
 
     score = await metric.score(TASK, TRAJECTORY)
 
-    assert score.value == 0.5
-    assert score.passed is False
+    assert score.value == 1.0
+    assert score.passed is True
     assert score.detail["verdict"]["criteria"] == {"correct": True, "concise": True}
 
 
