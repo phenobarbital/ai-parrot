@@ -140,16 +140,60 @@ def _read_words(tokens: list[str], i: int, spoken: SpokenLexicon) -> tuple[int |
 
 
 _HALF_WORDS = frozenset({"half", "medio", "media"})
-_ARTICLES = frozenset({"a", "an"})
+_ARTICLES = frozenset({"a", "an", "un", "una"})
+# fraction word → denominator (en + es; accent-folded). Only halves and quarters are exact enough to be accepted.
+_FRACTION_DENOMINATORS: dict[str, int] = {
+    "half": 2, "halves": 2, "medio": 2, "medios": 2, "media": 2, "medias": 2,
+    "quarter": 4, "quarters": 4, "cuarto": 4, "cuartos": 4,
+    "third": 3, "thirds": 3, "tercio": 3, "tercios": 3,
+    "fifth": 5, "fifths": 5, "quinto": 5, "quintos": 5,
+    "sixth": 6, "sixths": 6, "sexto": 6, "sextos": 6,
+    "seventh": 7, "sevenths": 7, "septimo": 7, "septimos": 7,
+    "eighth": 8, "eighths": 8, "octavo": 8, "octavos": 8,
+    "ninth": 9, "ninths": 9, "noveno": 9, "novenos": 9,
+    "tenth": 10, "tenths": 10, "decimo": 10, "decimos": 10,
+}
+APPROXIMATE_FRACTION = "approximate_fraction"
+UNHANDLED_FRACTION = "unhandled_fraction"
 _DOZEN_WORDS = frozenset({"docena", "docenas", "dozen", "dozens"})
 
 
+def _read_fraction(toks: list[str], k: int, spoken: SpokenLexicon) -> tuple[float, bool, int] | None:
+    """Read ``[a|N] <fraction word>`` at ``k``; returns ``(value, exact, next index)`` or None.
+
+    Exact means a proper fraction over 2 or 4 ("a half", "three quarters"); thirds, fifths and improper
+    fractions are approximate and must be confirmed by the user.
+    """
+    n = len(toks)
+    if k >= n:
+        return None
+    numerator = 1
+    at = k
+    if toks[k] in _FRACTION_DENOMINATORS:
+        pass
+    else:
+        if toks[k] in _ARTICLES:
+            at = k + 1
+        else:
+            word, after = _read_words(toks, k, spoken)
+            if word is None:
+                return None
+            numerator, at = word, after
+        if at >= n or toks[at] not in _FRACTION_DENOMINATORS:
+            return None
+    den = _FRACTION_DENOMINATORS[toks[at]]
+    exact = den in (2, 4) and 0 < numerator < den
+    return numerator / den, exact, at + 1
+
+
 def parse_numbers(
-    tokens: list[str], spoken: SpokenLexicon, *, colloquial: bool = False
+    tokens: list[str], spoken: SpokenLexicon, *, colloquial: bool = False, notes: list[str] | None = None
 ) -> list[int | float]:
     """Every number in the token stream, in order (words and written digits).
 
-    ``colloquial`` additionally reads a bare ``point five`` as 0.5 and ``two and a half`` / ``dos y medio`` as 2.5.
+    ``colloquial`` additionally reads a bare ``point five`` as 0.5 and ``two and a half`` / ``dos y medio`` as 2.5,
+    ``one and three quarters`` as 1.75. When ``notes`` is given it collects ``approximate_fraction`` for a fraction
+    that is not exact (thirds…) and one ``fraction_consumed`` per fraction word that was read.
     """
     toks = _expand(tokens)
     numbers: list[int | float] = []
@@ -180,11 +224,13 @@ def parse_numbers(
         if len(values) == 1:
             value = values[0]
             if colloquial and nxt < n and toks[nxt] in spoken.number_joiners and isinstance(value, int):
-                k = nxt + 1
-                if k < n and toks[k] in _ARTICLES:
-                    k += 1
-                if k < n and toks[k] in _HALF_WORDS:
-                    value, nxt = value + 0.5, k + 1
+                frac = _read_fraction(toks, nxt + 1, spoken)
+                if frac is not None:
+                    value, nxt = round(value + frac[0], 4) if not frac[1] else value + frac[0], frac[2]
+                    if notes is not None:
+                        notes.append("fraction_consumed")
+                        if not frac[1]:
+                            notes.append(APPROXIMATE_FRACTION)
             if nxt < n and toks[nxt] in spoken.decimal_words and isinstance(value, int):
                 digits, after = _fraction(toks, nxt + 1, spoken)
                 if digits:
@@ -222,7 +268,9 @@ def normalize_number(text: str, ctx: NormalizeContext, *, integer: bool) -> Norm
         dozen = _dozen(tokens, ctx.lexicon.spoken)
         if dozen is not None:
             return dozen if not integer or float(dozen.value).is_integer() else NormalizeResult.rejected("non_integral")
-        numbers = parse_numbers(tokens, ctx.lexicon.spoken, colloquial=True)
+        notes: list[str] = []
+        numbers = parse_numbers(tokens, ctx.lexicon.spoken, colloquial=True, notes=notes)
+        fraction_words = sum(1 for t in _expand(tokens) if t in _FRACTION_DENOMINATORS)
     except Exception as exc:  # noqa: BLE001 — normalizers never raise
         logger.debug("normalize_number failed: %s", type(exc).__name__)
         return NormalizeResult.rejected("no_parse")
@@ -234,4 +282,9 @@ def normalize_number(text: str, ctx: NormalizeContext, *, integer: bool) -> Norm
     is_integral = float(value).is_integer()
     if integer and not is_integral:
         return NormalizeResult.rejected("non_integral", value=value)
-    return NormalizeResult.accepted(int(value) if is_integral else float(value))
+    value = int(value) if is_integral else float(value)
+    if fraction_words > notes.count("fraction_consumed"):  # a fraction word we could not place: never dropped silently
+        return NormalizeResult.confirm(value, UNHANDLED_FRACTION)
+    if APPROXIMATE_FRACTION in notes:
+        return NormalizeResult.confirm(value, APPROXIMATE_FRACTION)
+    return NormalizeResult.accepted(value)
