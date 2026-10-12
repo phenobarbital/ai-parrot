@@ -37,3 +37,26 @@ class ScriptedClient(AbstractClient):
 def history_seen(response_text: str) -> int:
     """The number of history messages the scripted client received, from its reply."""
     return int(response_text.split(":")[1])
+
+
+KEYED_PROVIDER = "scripted-keyed"
+SERVER_KEY_ENV = "SCRIPTED_KEYED_API_KEY"
+
+
+class KeyEchoClient(ScriptedClient):
+    """Replies ``key:<api_key it was built with>`` so a test can read WHICH key served the call (PA-2).
+
+    Declares a server key variable like a shipped satellite does; a client built without ``api_key=`` is the
+    server-key path (``key:None``).
+    """
+
+    client_type = KEYED_PROVIDER
+    client_name = KEYED_PROVIDER
+    credential_env = (SERVER_KEY_ENV,)
+
+    async def ask(self, prompt, model=None, *args, history=None, **kwargs):
+        text = f"key:{self.api_key}"
+        return AIMessage(
+            input=prompt, output=text, response=text, model=model or "m", provider=KEYED_PROVIDER,
+            usage=CompletionUsage(),
+        )

@@ -293,6 +293,8 @@ class NvidiaClient(OpenAIBaseClient):
 
     client_type: str = "nvidia"
     client_name: str = "nvidia"
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ('NVIDIA_API_KEY',)
 
     # FEAT-523 folder-convention attributes (read by LLMFactory).
     provider_keys: tuple[str, ...] = ("nvidia",)

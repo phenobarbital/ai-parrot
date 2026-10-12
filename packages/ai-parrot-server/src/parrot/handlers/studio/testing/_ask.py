@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from ..key_source import KeySourceRefusal
 from ..storage.models import StudioAgentKey
 from ._models import TestAskRequest
 
@@ -23,10 +24,12 @@ class _StudioTestingAskMixin:
         ``(chatbot, user, session)`` — without them ``ask()`` mints a fresh id per turn and forgets the history.
         ``ctx`` is bound into the request context of the ask (``studio_scope``, FEAT-605 C16).
         """
-        byok_applied = False
         default_llm = getattr(bot, "llm", None)
-        if ask_request.use_byok:
-            byok_applied = await self._maybe_apply_byok(bot)
+        try:
+            byok_applied = await self._maybe_apply_byok(bot, ask_request)
+        except KeySourceRefusal as refusal:  # PA-2: both keys and no key_source, or a source that does not exist
+            return self._error(refusal.message, status=refusal.status, code=refusal.code,
+                               details=refusal.details or None)
 
         try:
             self.request.session = await self._resolve_session()
@@ -50,6 +53,7 @@ class _StudioTestingAskMixin:
                 "response": content,
                 "metadata": metadata,
                 "byok": byok_applied,
+                "key_source": "byok" if byok_applied else "server",
             }
         )
 

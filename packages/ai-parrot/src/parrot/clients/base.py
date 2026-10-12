@@ -10,6 +10,7 @@ from typing import (
     Any,
     Callable,
     FrozenSet,
+    Tuple,
     TYPE_CHECKING,
 )
 from parrot._imports import lazy_import
@@ -261,6 +262,17 @@ class AbstractClient(EventEmitterMixin, ABC):
     client_type: str = "generic"
     client_name: str = "generic"
     use_session: bool = False
+
+    # Names of the config/environment variables (resolved through navconfig) that hold this provider's SERVER-side
+    # API key. ``None`` = unknown (the class cannot say whether a server key is configured): such a client is never
+    # reported as having server credentials unless it overrides :meth:`has_server_credentials` (ambient
+    # credentials, e.g. an IAM role). Names are declarative; the values are never exposed.
+    credential_env: Optional[Tuple[str, ...]] = None
+
+    @classmethod
+    def has_server_credentials(cls) -> bool:
+        """Whether the server itself holds a usable credential for this provider (any ``credential_env`` resolves)."""
+        return any(config.get(name) for name in (cls.credential_env or ()))
 
     # FEAT-550: providers that can honour a cumulative question budget list the
     # public text methods they cover. Empty means "unsupported": any requested or
