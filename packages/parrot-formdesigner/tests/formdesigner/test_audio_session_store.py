@@ -54,7 +54,7 @@ class FakeRedis:
 def stores():
     partial = PartialSaveStore(redis_url="redis://fake")
     partial._redis = FakeRedis()
-    return partial, AudioSessionStore(partial, ttl_seconds=60)
+    return partial, AudioSessionStore(partial, resume_ttl_seconds=60, active_ttl_seconds=30)
 
 
 def _snap(**kw):
@@ -68,12 +68,12 @@ async def test_session_store_roundtrip_and_claim(stores):
     loaded = await store.load("f", "sess")
     assert loaded.revision == 2 and loaded.saved_at and loaded.expires_at
     assert await store.load("f", "none") is None
-    assert await store.claim_active("u1", "sess") is True
-    assert await store.claim_active("u1", "other") is False
-    assert await store.claim_active("u1", "sess") is True
+    assert await store.claim_active("u1", "sess", form_uid="f", tenant="t1") is True
+    assert await store.claim_active("u1", "other", form_uid="f", tenant="t1") is False
+    assert await store.claim_active("u1", "sess", form_uid="f", tenant="t1") is True
     await store.delete("f", "sess")
     assert await store.load("f", "sess") is None
-    assert await store.claim_active("u1", "other") is True
+    assert await store.claim_active("u1", "other", form_uid="f", tenant="t1") is True
 
 
 async def test_snapshot_cas_conflict(stores):
@@ -85,11 +85,11 @@ async def test_snapshot_cas_conflict(stores):
 
 
 async def test_resume_unavailable_without_redis():
-    store = AudioSessionStore(PartialSaveStore(), ttl_seconds=60)
+    store = AudioSessionStore(PartialSaveStore())
     with pytest.raises(ResumeUnavailable):
         await store.load("f", "s")
     assert await store.save("f", "s", _snap()) == 0
-    assert await store.claim_active("u1", "s") is True
+    assert await store.claim_active("u1", "s", form_uid="f", tenant="t1") is True
 
 
 async def test_partial_remove_keys(stores):
@@ -101,3 +101,59 @@ async def test_partial_remove_keys(stores):
     assert isinstance(updated, PartialFormData)
     assert updated.data == {"b": 2}
     assert (await partial.get("f", "s")).data == {"b": 2}
+
+
+MARKER = "parrot:audio:active:u1"
+
+
+async def test_claim_active_stores_holder_json(stores):
+    from parrot_formdesigner.audio.session_store import ActiveHolder
+
+    partial, store = stores
+    assert await store.claim_active("u1", "s1", form_uid="f1", tenant="t1") is True
+    assert await store.active_holder("u1") == ActiveHolder(session_id="s1", form_uid="f1", tenant="t1")
+    assert partial._redis.ttls[MARKER] == 30
+
+
+async def test_active_holder_legacy_bare_value(stores):
+    from parrot_formdesigner.audio.session_store import ActiveHolder
+
+    partial, store = stores
+    partial._redis.kv[MARKER] = "s1"
+    assert await store.active_holder("u1") == ActiveHolder(session_id="s1", form_uid=None, tenant=None)
+    assert await store.claim_active("u1", "s1", form_uid="f", tenant="t1") is True
+    assert partial._redis.kv[MARKER].startswith("{")
+    partial._redis.kv[MARKER] = "s1"
+    await store.release_active("u1", "s1")
+    assert MARKER not in partial._redis.kv
+
+
+async def test_active_holder_absent_and_no_redis(stores):
+    _, store = stores
+    assert await store.active_holder("u1") is None
+    assert await AudioSessionStore(PartialSaveStore()).active_holder("u1") is None
+
+
+async def test_save_uses_snapshot_resume_ttl(stores):
+    from parrot_formdesigner.core.voice import VoiceFormConfig
+
+    partial, store = stores
+    await store.save("f", "sess", _snap(config=VoiceFormConfig(resume_ttl_seconds=7200)))
+    assert partial._redis.ttls["parrot:audio:f:sess"] == 7200
+    loaded = await store.load("f", "sess")
+    assert (loaded.expires_at - loaded.saved_at).total_seconds() == 7200
+    await store.save("f", "sess2", _snap())
+    assert partial._redis.ttls["parrot:audio:f:sess2"] == 60
+
+
+async def test_save_refreshes_marker_of_same_session_only(stores):
+    partial, store = stores
+    await store.claim_active("u1", "sess", form_uid="f", tenant="t1")
+    partial._redis.ttls[MARKER] = 1
+    await store.save("f", "sess", _snap())
+    assert partial._redis.ttls[MARKER] == 30
+    partial._redis.kv[MARKER] = '{"session_id": "other"}'
+    partial._redis.ttls[MARKER] = 1
+    await store.save("f", "sess", _snap())
+    assert partial._redis.ttls[MARKER] == 1
+    assert partial._redis.kv[MARKER] == '{"session_id": "other"}'
