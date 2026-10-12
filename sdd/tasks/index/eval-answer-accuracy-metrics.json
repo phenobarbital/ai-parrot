@@ -54,7 +54,7 @@
       "feature_id": "FEAT-652",
       "feature": "eval-answer-accuracy-metrics",
       "spec": "sdd/specs/eval-answer-accuracy-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -64,8 +64,9 @@
       "parallelism_notes": "needs TurnRecord.tool_calls populated by the rollouts and Trajectory.response_metadata from TASK-4237 (eval/rollout.py, eval/models.py); creates evaluators/groundedness.py + its test only.",
       "assigned_to": null,
       "started_at": "2026-10-12T17:09:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4239-groundedness-metric.md"
+      "completed_at": "2026-10-12T17:29:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4239-groundedness-metric.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4240",
@@ -114,7 +115,7 @@
       "feature_id": "FEAT-652",
       "feature": "eval-answer-accuracy-metrics",
       "spec": "sdd/specs/eval-answer-accuracy-metrics.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -122,8 +123,9 @@
       "parallelism_notes": "independent: creates eval/regression.py and tests/eval/test_regression.py; reads EvalReport from eval/runner.py and _SCHEMA_DDL from eval/sink.py without modifying them.",
       "assigned_to": null,
       "started_at": "2026-10-12T17:09:43+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4242-regression-gate.md"
+      "completed_at": "2026-10-12T17:29:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4242-regression-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4243",
