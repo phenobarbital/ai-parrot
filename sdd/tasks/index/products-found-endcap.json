@@ -16,9 +16,9 @@
       "feature_id": "FEAT-648",
       "feature": "products-found-endcap",
       "spec": "sdd/specs/products-found-endcap.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T13:28:37+00:00",
       "completed_at": null,
       "priority": "high",
       "effort": "S",
@@ -34,9 +34,9 @@
       "feature_id": "FEAT-648",
       "feature": "products-found-endcap",
       "spec": "sdd/specs/products-found-endcap.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T13:28:37+00:00",
       "completed_at": null,
       "priority": "high",
       "effort": "M",
@@ -44,7 +44,7 @@
         "TASK-4206"
       ],
       "parallel": true,
-      "parallelism_notes": "needs reporting=ReportingPolicy(slot_presence=True) on the four default_layout_profile() from TASK-4206 (types/*.py) \u2014 its tests assert that behaviour",
+      "parallelism_notes": "needs reporting=ReportingPolicy(slot_presence=True) on the four default_layout_profile() from TASK-4206 (types/*.py) — its tests assert that behaviour",
       "file": "sdd/tasks/active/TASK-4207-products-found-types-tests.md"
     },
     {
@@ -54,15 +54,15 @@
       "feature_id": "FEAT-648",
       "feature": "products-found-endcap",
       "spec": "sdd/specs/products-found-endcap.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-12T13:28:37+00:00",
       "completed_at": null,
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "docs + FEAT-645 spec note only (docs/pipelines/planogram-compliance-cycle.md); content fixed by the spec, no code dependency \u2014 runs alongside TASK-4206",
+      "parallelism_notes": "docs + FEAT-645 spec note only (docs/pipelines/planogram-compliance-cycle.md); content fixed by the spec, no code dependency — runs alongside TASK-4206",
       "file": "sdd/tasks/active/TASK-4208-reporting-policy-docs.md"
     }
   ]
