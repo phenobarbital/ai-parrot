@@ -559,20 +559,31 @@ class SchedulerManager:
 
     async def list_schedules(self) -> list[JobDefinition]:
         """Return database, Redis, and code schedule definitions."""
-        definitions: list[JobDefinition] = []
+        return [definition for definition, _ in await self._list_schedule_records()]
+
+    async def _list_schedule_records(self) -> list[tuple[JobDefinition, Any]]:
+        """Keep persisted enabled flags alongside definitions for serialization."""
+        records: list[tuple[JobDefinition, Any]] = []
         if self._pool is not None:
             async with await self._pool.acquire() as conn:  # pylint: disable=no-member
                 ServiceSchedule.Meta.connection = conn
-                definitions.extend(row.to_definition() for row in await ServiceSchedule.all())
+                records.extend((row.to_definition(), row) for row in await ServiceSchedule.all())
         if self.redis_available:
             for job in self.scheduler.get_jobs(jobstore="redis"):
                 if job.func_ref == "parrot.scheduler.jobs:run_redis_job":
-                    definitions.append(JobDefinition(**job.kwargs["definition"]))
-        definitions.extend(record.to_definition() for record in self._code_jobs.values())
-        return definitions
+                    records.append((JobDefinition(**job.kwargs["definition"]), job))
+        records.extend((record.to_definition(), record) for record in self._code_jobs.values())
+        return records
 
     def _serialize_job(self, definition: JobDefinition | None, job: Any = None, *, source: str) -> dict[str, Any]:
         """Serialize an owned or foreign APScheduler job without leaking kwargs."""
+        enabled = None
+        if definition is not None and source in {"db", "code"}:
+            if job is not None and hasattr(job, "enabled"):
+                enabled = bool(job.enabled)
+            job = self.scheduler.get_job(definition.schedule_id, jobstore="default")
+        elif definition is not None and job is None:
+            job = self.scheduler.get_job(definition.schedule_id, jobstore="redis")
         jobstore = getattr(job, "_jobstore_alias", None)
         next_run_time = getattr(job, "next_run_time", None) if job else None
         job_payload = {
@@ -595,7 +606,7 @@ class SchedulerManager:
             {
                 "source": source,
                 "backend": definition.backend,
-                "enabled": next_run_time is not None if job else True,
+                "enabled": enabled if enabled is not None else bool(job and next_run_time is not None),
                 "job": job_payload,
             }
         )
@@ -603,17 +614,15 @@ class SchedulerManager:
 
     async def list_jobs(self) -> list[dict[str, Any]]:
         """Return every scheduler job and database rows that have drifted."""
-        definitions = {definition.schedule_id: definition for definition in await self.list_schedules()}
+        records = await self._list_schedule_records()
+        owned_ids = {definition.schedule_id for definition, _ in records}
         payload: list[dict[str, Any]] = []
+        for definition, stored in records:
+            payload.append(self._serialize_job(definition, stored, source=definition.backend))
         for jobstore in self._registered_jobstores():
             for job in self.scheduler.get_jobs(jobstore=jobstore):
-                definition = definitions.pop(job.id, None)
-                if definition is not None:
-                    payload.append(self._serialize_job(definition, job, source=definition.backend))
-                else:
+                if job.id not in owned_ids:
                     payload.append(self._serialize_job(None, job, source="external"))
-        for definition in definitions.values():
-            payload.append(self._serialize_job(definition, source=definition.backend))
         return payload
 
     async def update_schedule(self, schedule_id: str, updates: dict[str, Any]) -> JobDefinition:
@@ -663,17 +672,18 @@ class SchedulerManager:
         trigger = self._create_trigger(updated.schedule_type, updated.schedule_config)
         enabled = bool(updates.get("enabled", getattr(stored, "enabled", True)))
         if source == "redis":
+            enabled = bool(updates.get("enabled", getattr(stored, "next_run_time", None) is not None))
             kwargs = dict(stored.kwargs)
             kwargs["definition"] = updated.model_dump(mode="json")
             self.scheduler.modify_job(
                 schedule_id, jobstore="redis", kwargs=kwargs, misfire_grace_time=updated.misfire_grace_time
             )
             self.scheduler.reschedule_job(schedule_id, jobstore="redis", trigger=trigger)
+            if not enabled:
+                self.scheduler.pause_job(schedule_id, jobstore="redis")
             if "enabled" in updates:
                 if enabled:
                     self.scheduler.resume_job(schedule_id, jobstore="redis")
-                else:
-                    self.scheduler.pause_job(schedule_id, jobstore="redis")
                 await self._run_state_for("redis").set_enabled(schedule_id, enabled)
             return updated
 
@@ -979,6 +989,12 @@ class SchedulerManager:
         if not run_now and fingerprint and schedule_fingerprint(definition) != fingerprint:
             job = self.scheduler.get_job(schedule_id)
             if job is not None:
+                self.scheduler.modify_job(
+                    schedule_id,
+                    jobstore=getattr(job, "_jobstore_alias", "default"),
+                    kwargs=self._db_job_kwargs(definition),
+                    misfire_grace_time=definition.misfire_grace_time,
+                )
                 self.scheduler.reschedule_job(
                     schedule_id,
                     jobstore=getattr(job, "_jobstore_alias", "default"),
@@ -1008,7 +1024,6 @@ class SchedulerManager:
             version = (getattr(job, "kwargs", {}) or {}).get("definition_version")
         if not isinstance(payload, dict):
             raise TargetMissingError(f"Redis definition {schedule_id!r} is unavailable")
-        job_definition = JobDefinition(**payload)
         fire = FireContext.for_fire(schedule_id, CURRENT_RUN_TIME.get() or utcnow(), run_now=run_now)
         if version != JOB_DEFINITION_VERSION:
             self.logger.warning("Skipping Redis job %s with incompatible definition version %s", schedule_id, version)
@@ -1022,6 +1037,7 @@ class SchedulerManager:
             with contextlib.suppress(JobLookupError):
                 self.scheduler.pause_job(schedule_id, jobstore="redis")
             return jobs.SKIPPED
+        job_definition = JobDefinition(**payload)
         state = await self._run_state_for("redis").read(schedule_id)
         if not run_now and state is not None and not state.enabled:
             return jobs.SKIPPED
@@ -1312,8 +1328,25 @@ class SchedulerManager:
     async def stop_headless(self, *, wait: bool = True) -> None:
         """Stop owned scheduler resources and remove the jobs registry entry."""
         if self.scheduler.running:
-            with contextlib.suppress(Exception):
+            stopped = asyncio.Event()
+
+            def on_stopped(event: Any) -> None:
+                stopped.set()
+
+            self.scheduler.add_listener(on_stopped, EVENT_SCHEDULER_SHUTDOWN)
+            try:
                 self.scheduler.shutdown(wait=wait)
+                await stopped.wait()
+            finally:
+                self.scheduler.remove_listener(on_stopped)
+
+        pending = tuple(self._pending_success_tasks)
+        if pending:
+            if not wait:
+                for task in pending:
+                    task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            self._pending_success_tasks.difference_update(pending)
 
         if self._owns_pool and self._pool is not None:
             with contextlib.suppress(Exception):
@@ -1374,9 +1407,14 @@ class SchedulerManager:
         try:
             self.logger.info("Restarting scheduler")
             if self.scheduler.running:
-                self.scheduler.shutdown(wait=True)
-            await self.load_schedules_from_db()
-            self.scheduler.start()
+                self.scheduler.pause()
+            else:
+                self.scheduler.start(paused=True)
+            try:
+                if self._pool is not None:
+                    await self.load_schedules_from_db()
+            finally:
+                self.scheduler.resume()
             self.logger.info("Scheduler restarted successfully")
         except Exception as exc:
             self.logger.error("Error restarting scheduler: %s", exc)

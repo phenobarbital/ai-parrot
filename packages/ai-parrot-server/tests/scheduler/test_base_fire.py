@@ -231,3 +231,28 @@ async def test_get_last_result_per_backend(manager: SchedulerManager) -> None:
     state = await manager.get_last_result("auto_target_automatic")
     assert state.backend == "code"
     assert state.schedule_id == "auto_target_automatic"
+
+
+async def test_incompatible_redis_schema_is_not_parsed(manager: SchedulerManager) -> None:
+    """An unknown version may have entirely different fields and still must be paused."""
+    manager.scheduler.add_jobstore(MemoryJobStore(), alias="redis")
+    job_id = "future-schema"
+    manager.scheduler.add_job(
+        jobs.run_redis_job,
+        "interval",
+        minutes=5,
+        id=job_id,
+        jobstore="redis",
+        kwargs={
+            "manager_name": manager.registered_name,
+            "schedule_id": job_id,
+            "definition_version": 99,
+            "definition": {"future_field": "new representation"},
+        },
+    )
+    try:
+        assert await manager._run_redis_job(job_id) is jobs.SKIPPED
+        assert manager.scheduler.get_job(job_id, jobstore="redis").next_run_time is None
+        assert (await manager._memory_state.read(job_id)).last_status == "incompatible"
+    finally:
+        await manager.stop_headless(wait=False)

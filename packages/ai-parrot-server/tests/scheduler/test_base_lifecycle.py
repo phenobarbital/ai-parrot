@@ -103,3 +103,45 @@ def test_setup_registers_routes(manager: SchedulerManager, scheduler_namespace: 
         "/api/v1/parrot/scheduler/callbacks",
         "/api/v1/parrot/scheduler/restart",
     } <= routes
+
+
+async def test_restart_preserves_code_jobs(manager: SchedulerManager, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Restarting must not race asynchronous shutdown or discard code schedules."""
+    from unittest.mock import AsyncMock
+    from parrot.scheduler.manager import schedule, ScheduleType
+
+    class Target:
+        @schedule(ScheduleType.INTERVAL, minutes=5)
+        async def run(self) -> str:
+            return "ok"
+
+    manager.register_object_schedules(Target(), "target")
+    await manager.start_headless(coordination="none")
+    monkeypatch.setattr(manager, "load_schedules_from_db", AsyncMock())
+    await manager.restart_scheduler()
+    assert manager.scheduler.running
+    assert manager.scheduler.get_job("auto_target_run") is not None
+
+
+async def test_stop_waits_for_success_finalization(manager: SchedulerManager) -> None:
+    """Run-state and delivery writes finish before their resources are closed."""
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    await manager.start_headless(coordination="none")
+    pool = AsyncMock()
+    manager._pool = pool
+    manager._owns_pool = True
+    finished = asyncio.Event()
+
+    async def finalize() -> None:
+        await asyncio.sleep(0)
+        pool.close.assert_not_awaited()
+        finished.set()
+
+    task = asyncio.create_task(finalize())
+    manager._pending_success_tasks.add(task)
+    await manager.stop_headless(wait=True)
+    assert finished.is_set()
+    assert not manager.scheduler.running
+    await task

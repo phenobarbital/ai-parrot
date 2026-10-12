@@ -183,3 +183,25 @@ async def test_start_headless_installs_coordinator_and_rejects_unknown_mode(mana
     with pytest.raises(SchedulerConfigError):
         await other.start_headless(coordination="bogus")
     await other.stop_headless(wait=False)
+
+
+async def test_changed_definition_executes_on_the_next_fire(
+    manager: AgentSchedulerManager, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Refreshing a stale placement must also replace its stored fingerprint."""
+    original = _schedule()
+    manager.scheduler.add_job(
+        jobs.run_db_schedule,
+        "interval",
+        seconds=60,
+        id=original.schedule_id,
+        kwargs=manager._db_job_kwargs(original),
+    )
+    updated = _schedule(prompt="changed by another worker")
+    monkeypatch.setattr(manager, "get_schedule", AsyncMock(return_value=updated))
+    execute = AsyncMock(return_value="done")
+    monkeypatch.setattr(manager, "_execute_job", execute)
+
+    assert await jobs.run_db_schedule(**manager.scheduler.get_job(original.schedule_id).kwargs) is jobs.SKIPPED
+    assert await jobs.run_db_schedule(**manager.scheduler.get_job(original.schedule_id).kwargs) == "done"
+    execute.assert_awaited_once()

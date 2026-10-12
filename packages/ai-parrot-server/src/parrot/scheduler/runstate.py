@@ -352,79 +352,79 @@ class RedisRunState:
             fields[name] = values.get(name) or None
         return RunState(**fields)
 
-    async def _state(self, job_id: str) -> RunState:
-        """Read a state hash or construct the enabled initial state."""
-        return self._decode(job_id, await self._client.hgetall(self._key(job_id)))
-
-    async def _write(self, job_id: str, state: RunState) -> None:
-        """Persist the Redis-owned fields of ``state`` to its hash."""
-        fields = state.model_dump(exclude={"schedule_id", "backend"})
-        await self._client.hset(self._key(job_id), mapping=self._encode(fields))
-
-    async def stamp_success(
-        self, job_id: str, *, result_text: str | None, fire: FireContext, next_run: Any | None
-    ) -> RunState:
-        """Record a successful execution and reset the failure state."""
-        state = await self._state(job_id)
-        timestamp = utcnow()
-        state.last_run = timestamp
-        state.next_run = next_run
-        state.run_count += 1
-        state.last_status = "success"
-        state.last_result = truncate(result_text)
-        state.last_result_at = timestamp
-        state.last_error = None
-        state.last_error_at = None
-        state.consecutive_failures = 0
-        await self._write(job_id, state)
-        return state
-
-    async def stamp_failure(
-        self, job_id: str, *, status: str, error: str, fire: FireContext, threshold: int
-    ) -> tuple[RunState, bool]:
-        """Atomically record a failure and report exactly one threshold crossing."""
+    async def _transition(self, job_id: str, update: Callable[[RunState], None]) -> RunState:
+        """Apply a state transition atomically, retrying concurrent hash changes."""
         key = self._key(job_id)
         for attempt in range(self._MAX_WATCH_RETRIES):
             try:
                 async with self._client.pipeline(transaction=True) as pipe:
                     await pipe.watch(key)
                     state = self._decode(job_id, await pipe.hgetall(key))
-                    timestamp = utcnow()
-                    state.last_status = status
-                    state.last_error = truncate(error)
-                    state.last_error_at = timestamp
-                    crossed_threshold = False
-                    if status != STATUS_LOCK_UNAVAILABLE:
-                        state.last_run = timestamp
-                        state.run_count += 1
-                        state.consecutive_failures += 1
-                        crossed_threshold = state.consecutive_failures == threshold
-                        if state.consecutive_failures >= threshold:
-                            state.enabled = False
-
+                    update(state)
                     pipe.multi()
                     fields = state.model_dump(exclude={"schedule_id", "backend"})
                     pipe.hset(key, mapping=self._encode(fields))
                     await pipe.execute()
-                    return state, crossed_threshold
+                    return state
             except WatchError:
                 if attempt == self._MAX_WATCH_RETRIES - 1:
                     raise
         raise RuntimeError("Redis WATCH retry loop exhausted")
 
+    async def stamp_success(
+        self, job_id: str, *, result_text: str | None, fire: FireContext, next_run: Any | None
+    ) -> RunState:
+        """Record a successful execution and reset the failure state."""
+
+        def update(state: RunState) -> None:
+            timestamp = utcnow()
+            state.last_run = timestamp
+            state.next_run = next_run
+            state.run_count += 1
+            state.last_status = "success"
+            state.last_result = truncate(result_text)
+            state.last_result_at = timestamp
+            state.last_error = None
+            state.last_error_at = None
+            state.consecutive_failures = 0
+
+        return await self._transition(job_id, update)
+
+    async def stamp_failure(
+        self, job_id: str, *, status: str, error: str, fire: FireContext, threshold: int
+    ) -> tuple[RunState, bool]:
+        """Atomically record a failure and report exactly one threshold crossing."""
+
+        def update(state: RunState) -> None:
+            timestamp = utcnow()
+            state.last_status = status
+            state.last_error = truncate(error)
+            state.last_error_at = timestamp
+            if status != STATUS_LOCK_UNAVAILABLE:
+                state.last_run = timestamp
+                state.run_count += 1
+                state.consecutive_failures += 1
+                if state.consecutive_failures >= threshold:
+                    state.enabled = False
+
+        state = await self._transition(job_id, update)
+        return state, status != STATUS_LOCK_UNAVAILABLE and state.consecutive_failures == threshold
+
     async def stamp_delivery(self, job_id: str, outcomes: list[dict[str, Any]]) -> None:
         """Record normalized delivery outcomes without changing execution state."""
-        state = await self._state(job_id)
         stored = []
         for outcome in outcomes:
             stored_outcome = dict(outcome)
             if stored_outcome.get("error") is not None:
                 stored_outcome["error"] = truncate(str(stored_outcome["error"]))
             stored.append(stored_outcome)
-        state.last_callbacks = stored
-        state.last_delivery_status = aggregate_delivery_status(outcomes)
-        state.last_delivery_at = utcnow()
-        await self._write(job_id, state)
+
+        def update(state: RunState) -> None:
+            state.last_callbacks = stored
+            state.last_delivery_status = aggregate_delivery_status(outcomes)
+            state.last_delivery_at = utcnow()
+
+        await self._transition(job_id, update)
 
     async def read(self, job_id: str) -> RunState | None:
         """Return the current state when its Redis hash has been initialized."""
@@ -433,11 +433,13 @@ class RedisRunState:
 
     async def set_enabled(self, job_id: str, enabled: bool) -> None:
         """Set enabled state and reset failures when a job is re-enabled."""
-        state = await self._state(job_id)
-        state.enabled = enabled
-        if enabled:
-            state.consecutive_failures = 0
-        await self._write(job_id, state)
+
+        def update(state: RunState) -> None:
+            state.enabled = enabled
+            if enabled:
+                state.consecutive_failures = 0
+
+        await self._transition(job_id, update)
 
     async def clear(self, job_id: str) -> None:
         """Delete Redis state for a removed job."""

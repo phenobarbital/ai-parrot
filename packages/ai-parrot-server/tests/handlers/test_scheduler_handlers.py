@@ -122,3 +122,43 @@ async def test_last_result_from_run_state():
     assert response.body["status"] == "success"
     assert response.body["last_error_at"].replace("Z", "+00:00") == "2026-10-08T10:00:00+00:00"
     assert response.body["consecutive_failures"] == 2
+
+
+@pytest.mark.parametrize("backend", ["db", "code"])
+async def test_get_serializes_stored_records(backend: str) -> None:
+    """GET must serialize a row/code record separately from its APScheduler job."""
+    from parrot.scheduler.base import SchedulerManager
+    from parrot.scheduler.models import JobDefinition, ServiceSchedule, CodeJobRecord
+
+    manager = SchedulerManager(registered_name=f"handler-record-{backend}")
+    definition = JobDefinition(
+        schedule_id="12345678-1234-5678-1234-567812345678",
+        backend=backend,
+        target_kind="service",
+        target_name="report",
+        method_name="run",
+        schedule_type="interval",
+        schedule_config={"minutes": 5},
+    )
+    if backend == "db":
+        stored = ServiceSchedule.from_definition(definition)
+        stored.enabled = False
+    else:
+        stored = CodeJobRecord(
+            job_id=definition.schedule_id,
+            target_name="report",
+            method_name="run",
+            method=AsyncMock(),
+            schedule_type="interval",
+            schedule_config={"minutes": 5},
+            enabled=False,
+        )
+    manager._locate = AsyncMock(return_value=(backend, definition, stored))
+    handler = _handler(SchedulerJobsHandler, _app(manager), {"schedule_id": definition.schedule_id})
+    try:
+        response = await handler.get()
+        assert response.status == 200
+        assert response.body["schedule"]["enabled"] is False
+        assert response.body["schedule"]["job"]["id"] is None
+    finally:
+        await manager.stop_headless(wait=False)

@@ -176,3 +176,14 @@ async def test_runstate_parity_matrix(parity_manager: SchedulerManager) -> None:
         assert state.schedule_id == definition.schedule_id
         assert state.backend == definition.backend
         assert state.run_count == 1
+
+
+async def test_list_preserves_disabled_database_state(parity_manager: SchedulerManager) -> None:
+    """A disabled DB row with no APScheduler job must remain disabled in the API."""
+    definition = await parity_manager.add_schedule(
+        "service", "service", "interval", {"minutes": 5}, backend="db", method_name="run"
+    )
+    await parity_manager.pause_schedule(definition.schedule_id)
+    payload = next(item for item in await parity_manager.list_jobs() if item["schedule_id"] == definition.schedule_id)
+    assert payload["enabled"] is False
+    assert payload["job"]["id"] is None

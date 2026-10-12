@@ -113,3 +113,20 @@ async def test_external_job_is_listed_readonly(memory_manager: SchedulerManager)
     assert "kwargs" not in payload
     with pytest.raises(NotEditableError):
         await memory_manager.pause_schedule("foreign")
+
+
+async def test_editing_paused_redis_schedule_preserves_pause(memory_manager: SchedulerManager) -> None:
+    """Editing a definition must not undo an explicit pause."""
+    memory_manager.scheduler.start(paused=True)
+    definition = await memory_manager.add_schedule(
+        "service", "service", "interval", {"minutes": 5}, backend="redis", method_name="run"
+    )
+    await memory_manager.pause_schedule(definition.schedule_id)
+    await memory_manager.update_schedule(definition.schedule_id, {"prompt": "edited"})
+
+    job = memory_manager.scheduler.get_job(definition.schedule_id, jobstore="redis")
+    assert job.next_run_time is None
+    assert (await memory_manager.get_last_result(definition.schedule_id)).enabled is False
+
+    await memory_manager.update_schedule(definition.schedule_id, {"enabled": True})
+    assert job.next_run_time is not None
