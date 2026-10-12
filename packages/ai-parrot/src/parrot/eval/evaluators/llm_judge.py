@@ -122,7 +122,12 @@ class LLMJudgeMetric(Metric):
             "samples": self._n_samples,
         }
         try:
-            verdict = await self._cache.get(key) if self._cache is not None else None
+            verdict = None
+            if self._cache is not None:
+                try:
+                    verdict = await self._cache.get(key)
+                except Exception as exc:  # a cache outage must not look like a bad judgment
+                    logger.warning("judge cache get failed for task %s: %s", task.task_id, exc)
             cached = verdict is not None
             if verdict is None:
                 prompt = self.build_prompt(task, answer)
@@ -137,18 +142,24 @@ class LLMJudgeMetric(Metric):
                     )
                 verdict = self._merge(parsed, self._rubric)
                 if self._cache is not None:
-                    await self._cache.set(
-                        key,
-                        verdict,
-                        judge_model_version=self._judge_model,
-                        rubric_version=self._rubric.version,
-                    )
+                    try:
+                        await self._cache.set(
+                            key,
+                            verdict,
+                            judge_model_version=self._judge_model,
+                            rubric_version=self._rubric.version,
+                        )
+                    except Exception as exc:  # keep the paid verdict even if caching fails
+                        logger.warning("judge cache set failed for task %s: %s", task.task_id, exc)
         except Exception as exc:
             logger.warning("llm_judge failed for task %s: %s", task.task_id, exc)
             return MetricScore(name=self.name, value=0.0, passed=False, detail={**base_detail, "error": str(exc)})
 
-        value = sum(verdict.criteria.get(criterion.name, False) for criterion in self._rubric.criteria) / len(
-            self._rubric.criteria
+        criteria = self._rubric.criteria
+        value = (
+            sum(verdict.criteria.get(criterion.name, False) for criterion in criteria) / len(criteria)
+            if criteria
+            else 0.0
         )
         return MetricScore(
             name=self.name,

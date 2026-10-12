@@ -65,7 +65,8 @@ class ExactMatch(Metric):
             normalize_text(answer, casefold=self._casefold, strip_punct=self._strip_punct) for answer in answers
         ]
         matched = next(
-            (answer for answer, normalized in zip(answers, normalized_answers) if normalized == output), None
+            (answer for answer, normalized in zip(answers, normalized_answers, strict=True) if normalized == output),
+            None,
         )
         value = 1.0 if matched is not None else 0.0
         return MetricScore(
