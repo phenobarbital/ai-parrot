@@ -267,8 +267,14 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: agent:sdd-fix (Claude Code session)
+**Date**: 2026-10-14
+**Notes**: Replaced proc.communicate() with _read_bounded() chunked drains of
+stdout/stderr gathered with proc.wait() under one asyncio.wait_for timeout.
+Bound applied in bytes pre-decode; kill-and-reap branch preserved. 4 tests
+cover AC1-AC4; full test_complexity_collectors.py passes (17 passed).
 
-**Deviations from spec**:
+**Deviations from spec**: spec §4 said existing tests pass "unchanged", but
+test_run_subprocess / test_run_subprocess_timeout mocked proc.communicate()
+(an implementation detail the fix removes); both were converted to real
+subprocess invocations with the same assertions' intent.
