@@ -165,6 +165,14 @@ class Json2Transport(AbstractOdooTransport):
             body.setdefault("operation", args[0])
             return body
 
+        if method == "get_views":
+            if not args or len(args) > 2:
+                raise OdooRPCError("JSON-2 get_views requires views and optional options arguments.")
+            body.setdefault("views", args[0])
+            if len(args) > 1:
+                body.setdefault("options", args[1])
+            return body
+
         if method == "load":
             if len(args) != 2:
                 raise OdooRPCError("JSON-2 load requires fields and data arguments.")
