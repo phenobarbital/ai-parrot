@@ -689,6 +689,37 @@ class TestAudioWsSnapshotAfterSubmit:
         assert _snapshot_keys(env) == []
 
 
+class TestAudioWsClientSubmit:
+    """FEAT-656: submit_mode="client" — voice collects, the host submits; nothing is persisted."""
+
+    async def test_audio_ws_client_submit(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        await start(ws, env, submit_mode="client")
+        await say(ws, env, "Ann", 0.95, "question")
+        await ws.send_json({"type": "answer_selection", "field_id": "color", "value": "red"})
+        await until(ws, "question")
+        await ws.send_json({"type": "answer_selection", "field_id": "agree", "value": True})
+        await until(ws, "question")
+        await ws.send_json({"type": "answer_text", "field_id": "secret", "value": "hunter2"})
+        frames = await until(ws, "question", "review_start")
+        if frames[-1]["type"] == "question":
+            await ws.send_json({"type": "skip_question", "field_id": "comment"})
+            await until(ws, "review_start")
+        await ws.send_json({"type": "review_confirm", "confirmed": True})
+        done = await until(ws, "answers_ready", "form_complete", "error")
+        assert done[-1]["type"] == "answers_ready", done[-1]
+        data = done[-1]["data"]
+        assert data["name"]["answer"] == "Ann" and data["name"]["blob_ref"]  # spoken answer: envelope + recording
+        assert data["secret"] == "hunter2"  # sensitive typed value stays plain
+        assert not any(m["type"] == "form_complete" for m in done if isinstance(m, dict))
+        env.app["submission_pipeline"].submit.assert_not_called()
+        env.storage.store.assert_not_called()
+        assert env.stored == []
+        assert _snapshot_keys(env) == [] and _active_keys(env) == []
+
+
 async def _ping_ok(ws: Any) -> bool:
     if ws.closed:
         return False

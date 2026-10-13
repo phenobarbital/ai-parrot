@@ -47,6 +47,7 @@ from ..audio.events import (
     BlobStored,
     DeleteBlob,
     Error,
+    AnswersReady,
     FormComplete,
     InboundEvent,
     IOFailed,
@@ -765,7 +766,7 @@ class AudioFormWSHandler:
                 await self._release_session(ctx)
                 ctx.closed = True
                 await ws.close()
-            elif isinstance(item, FormComplete):
+            elif isinstance(item, (FormComplete, AnswersReady)):
                 await self._release_session(ctx)
             return None
 
@@ -1067,12 +1068,9 @@ class AudioFormWSHandler:
         form = ctx.form
         assert form is not None
         state = ctx.state
-        data = dict(item.data)
-        # A visual-fallback REST answer arrives as the client's plain reference; the REST validator wants the
-        # ``{"answer", "blob_ref"}`` shape, so wrap scalars (a dict is already in the validator's shape).
-        for q in ctx.engine.manifest.questions if ctx.engine is not None else []:
-            if q.field_type == "rest" and q.field_id in data and not isinstance(data[q.field_id], dict):
-                data[q.field_id] = {"answer": data[q.field_id], "blob_ref": None}
+        if state.submit_mode == "client":
+            return await self._do_client_submit(ctx, item)
+        data = self._wrap_rest_scalars(ctx, dict(item.data))
         try:
             outcome = await self._pipeline_for().submit(
                 form,
@@ -1104,6 +1102,36 @@ class AudioFormWSHandler:
                 "forwarded": outcome.forwarded,
             },
         )
+
+    @staticmethod
+    def _wrap_rest_scalars(ctx: _ConnCtx, data: dict[str, Any]) -> dict[str, Any]:
+        """Wrap a visual-fallback REST answer's plain reference into the validator's ``{"answer", "blob_ref"}`` shape."""
+        for q in ctx.engine.manifest.questions if ctx.engine is not None else []:
+            if q.field_type == "rest" and q.field_id in data and not isinstance(data[q.field_id], dict):
+                data[q.field_id] = {"answer": data[q.field_id], "blob_ref": None}
+        return data
+
+    async def _do_client_submit(self, ctx: _ConnCtx, item: Submit) -> "InboundEvent":
+        """Client-submit mode: validate only, persist nothing, hand the sanitized data back to the client."""
+        form = ctx.form
+        assert form is not None
+        state = ctx.state
+        data = self._wrap_rest_scalars(ctx, dict(item.data))
+        pipeline = self._pipeline_for()
+        try:
+            result, _ = await pipeline.validate(
+                form, data, locale=state.locale, auth_context=self._auth_context(ctx.user), llm_validation=False
+            )
+        except Exception as exc:  # noqa: BLE001 — surface and re-ask, like a failed submit (never logs answers)
+            self.logger.warning("Audio client validation failed: %s", type(exc).__name__)
+            return IOFailed(
+                type="_io_failed", request=item.type, code="SUBMIT_FAILED", detail="The form could not be validated."
+            )
+        if not result.is_valid:
+            return SubmitDone(type="_submit_done", outcome={"errors": result.errors})
+        client_data = pipeline.attach_verdicts(result.sanitized_data, state.plausibility)
+        summary = state.plausibility.model_dump(mode="json") if state.plausibility is not None else None
+        return SubmitDone(type="_submit_done", outcome={"client_data": client_data, "plausibility_summary": summary})
 
     # -------------------------------------------------------------------------
     # Snapshots

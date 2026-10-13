@@ -167,7 +167,7 @@ class TestPlausibility:
         assert sub.context["llm_validation"]["status"] == "ok"
         # Envelope rebuild (the validator keeps envelopes only from TASK-4223, so exercise it directly).
         env = {"answer": "hi", "source": "speech", "confidence": 0.9}
-        data = pipe._attach_verdicts({"comment": env, "other": 1}, checker.report)
+        data = pipe.attach_verdicts({"comment": env, "other": 1}, checker.report)
         assert data["comment"]["plausibility"]["plausible"] is False
         assert data["other"] == 1
 
