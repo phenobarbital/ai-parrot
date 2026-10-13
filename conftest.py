@@ -22,6 +22,7 @@ import os
 import re
 import types
 
+import importlib
 import importlib.util
 
 import pytest
@@ -257,8 +258,6 @@ except Exception:  # noqa: BLE001
 # test conftest registers its stub via setdefault).  The test conftest's
 # _install_parrot_stubs() uses setdefault so it won't override a module
 # that's already present.
-import importlib as _importlib
-
 # ── Cython extension stubs (compiled .so files absent in git worktrees) ─────
 # Worktrees contain only the .pyx sources, not the compiled .so modules.
 # Inject minimal pure-Python stubs so that package __init__ files can import
@@ -308,7 +307,7 @@ for _mod_name in (
 ):
     if _mod_name not in sys.modules:
         try:
-            _importlib.import_module(_mod_name)
+            importlib.import_module(_mod_name)
         except ImportError:
             pass  # noqa: S110 — some deps may not be available in all envs
 
