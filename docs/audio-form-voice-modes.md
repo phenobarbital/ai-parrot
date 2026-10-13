@@ -862,7 +862,7 @@ Response to `ping`.
 ### 7.3 Protocol v2 — additive messages (FEAT-649)
 
 > **FEAT-654**: `hands_free.barge_in`, per-option narration segments (`options_intro`, `opt:<n>`, kind `option`)
-> and `option_pause_ms` are additive; see sections 6 and 7.6.
+> and `option_pause_ms` are additive; see sections 6 and 7.7.
 
 Negotiated by `start_session.protocol_version: 2`. A client that omits `protocol_version` keeps the v1 wire
 (base64 `audio` inside `question`). v2 inbound messages reject unknown keys; v1 messages ignore them.
@@ -1028,7 +1028,7 @@ Recommended client flow: show *Continue where you left off* and connect to that 
 | Key | Type | Notes |
 |---|---|---|
 | `protocol_version` | int | `2` when negotiated, else `1` |
-| `hands_free` | `{auto_record: bool, silence_ms: int, barge_in: bool}` | omitted when hands-free is not configured; `barge_in` is a ceiling — see section 7.6 |
+| `hands_free` | `{auto_record: bool, silence_ms: int, barge_in: bool}` | omitted when hands-free is not configured; `barge_in` is a ceiling — see section 7.7 |
 | `max_recording_seconds` | int | client must stop recording after this |
 | `prefetch_count` | int | number of upcoming questions whose segments are pushed ahead |
 
@@ -1072,7 +1072,7 @@ fuzzy match at 0.9 or better). A recognised command produces `command_ack`, then
 | `change` | change, edit (+ "change N") | cambiar, corregir (+ "cambiar N") | `review_edit` of item N | review |
 
 Precedence: an exact option match always beats a command, so an option labelled "Next" is selected, not
-executed. Commands and option answers spoken mid-enumeration (including a barge-in, section 7.6) go through the
+executed. Commands and option answers spoken mid-enumeration (including a barge-in, section 7.7) go through the
 same pipeline as any other recording. Commands are not recognised once the session is submitting, complete or aborted, and `yes`, `no`, `send`
 and `change` only count in the confirming and review phases. A command that is recognised but cannot run emits
 `error` `COMMAND_NOT_AVAILABLE`. Commands can be switched off per form or per field with
@@ -2749,7 +2749,7 @@ that paste option values programmatically.
 
 **Can the user speak while the options are being read?**
 
-Yes — see section 7.6 (barge-in). A spoken option or command goes through the same pipeline; an exact
+Yes — see section 7.7 (barge-in). A spoken option or command goes through the same pipeline; an exact
 option match still beats a command.
 
 **Can I use `enumerate_options: false` to suppress reading option labels?**
