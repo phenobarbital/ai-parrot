@@ -1055,7 +1055,9 @@ Examples: phone `"0,4,12,523,573"` → `"0412523573"`; `"plus one 555 0100"` →
 
 Weekday phrases (bare, `this <weekday>`, `next <weekday>`) all mean the nearest occurrence **after** today;
 `last <weekday>` the nearest one before. Numeric dates follow the locale order (`en` month/day, `es` day/month);
-ISO `YYYY-MM-DD` is accepted everywhere. A relative date is certain only when `start_session.timezone` is valid.
+ISO `YYYY-MM-DD` is accepted everywhere. A relative date is certain only when `start_session.timezone` is valid: with a missing or invalid timezone the
+server never guesses UTC — any relative phrase (today, tomorrow, yesterday, weekday names, next/this/last …, and
+their Spanish equivalents) yields a `confirm_request`; absolute dates and times are unaffected.
 
 #### Decision matrix
 
@@ -1083,7 +1085,7 @@ stores the candidate; a rejected value is **never** offered as a "yes". `raw_tra
 | field `meta.voice` | `llm_refine` | inherit | `true` / `false` overrides the form-level LLM setting for this field |
 | form `voice` | `llm_refine_values` | `false` | opt-in LLM post-processor for spoken answers of typed fields |
 | form `voice` | `llm_refine_threshold` | `0.8` | minimum LLM confidence to auto-accept (below it → `confirm_request`) |
-| form `voice` | `llm_refine_timeout_s` | `4.0` | per-answer LLM deadline; on timeout the rules result is used |
+| form `voice` | `llm_refine_timeout_s` | `4.0` | per-answer LLM deadline (`0 < x <= 10`; larger values are rejected); on timeout the rules result is used. The wait blocks that session's message queue, so it is capped |
 
 The shipped defaults of `llm_refine_threshold`, `llm_refine_timeout_s` and `stt_confirm_threshold` are provisional
 until the calibration run over real field recordings (`scripts/calibrate_voice_postprocessors.py`) sets them.
@@ -1094,8 +1096,10 @@ When enabled for a field of a typed family (EMAIL, PHONE, NUMBER, INTEGER, DATE,
 TEXT_AREA, never a `sensitive` field), **every** spoken answer of that field runs through the rules first and then the
 LLM, which sees the field type and label, locale, timezone, today's date, the transcript and the rules candidate (never
 other fields' answers). The LLM's string is **re-normalized by the same rules**: only a value that comes out
-accepted/confirm becomes the candidate (`refined_by: "llm"`). The LLM can only add a reason to confirm: it never
-overrides the STT-confidence rule or `confirm: "always"`. A failure, timeout or missing LLM client falls back to the
+accepted/confirm becomes the candidate (`refined_by: "llm"`). The LLM **never turns a rules `confirm` or `rejected`
+into an accept**: when the rules said confirm/rejected, a usable LLM value yields at most a `confirm_request` carrying
+the refined value; when the rules said accepted, the outcome stays on the table above. It never overrides the
+STT-confidence rule or `confirm: "always"`. A failure, timeout or missing LLM client falls back to the
 rules result, so the turn is never lost. The client sees no extra message: the answer simply takes up to
 `llm_refine_timeout_s` longer.
 
@@ -1107,11 +1111,22 @@ rules result, so the turn is never lost. The client sees no extra message: the a
 - `answer_rejected.value` — v2 only; omitted for sensitive fields.
 - Error codes `INVALID_EMAIL`, `INVALID_VALUE` (§10).
 
+#### v1 clients (legacy protocol)
+
+v1 clients never receive `value` / `refined_by` on `confirm_request`, so a v1 client confirms a normalized value
+**without seeing it** (it still sees the spoken transcript). This is accepted: v1 is the legacy protocol and
+`navigator-svelte` speaks v2. `answer_accepted.value` stays a **string** for v1 (numbers are sent as their decimal
+string, e.g. `"2500"`); v2 receives the typed number.
+
 #### Stored evidence
 
 Every non-sensitive spoken answer of a submission carries `normalized_by` (`"rules"`, `"llm"` or `null`) and, when the
 LLM produced it, `llm_confidence` in its voice evidence envelope, for all field types. The provenance survives
 `confirm_answer`, snapshot/resume and `wrap_voice`. Envelopes stored before FEAT-653 still validate.
+
+> **Rollback.** Snapshots and evidence envelopes written once these fields exist carry `normalized_by` /
+> `llm_confidence`, which models from before FEAT-653 (`extra="forbid"`) reject. There is no backward compatibility:
+> once voice data with these fields has been stored, do not downgrade below this version.
 
 ---
 

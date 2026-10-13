@@ -7,6 +7,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Rollback
+
+- **Do not downgrade below the audio-form voice post-processors (FEAT-653) once voice data exists.** Session
+  snapshots and `VoiceEvidenceEnvelope`s now carry `normalized_by` / `llm_confidence`; older models declare
+  `extra="forbid"` and reject them. No backward compatibility is provided.
+
+### Changed
+
+- **Audio forms (FEAT-653):** the LLM value refiner can no longer turn a rules `confirm`/`rejected` into an accepted
+  answer (at most a confirm with the refined value); `llm_refine_timeout_s` is capped at 10 s; relative dates/times
+  never auto-accept without a valid session timezone; v1 `answer_accepted.value` stays a string for numeric fields.
+
 ---
 
 ## [1.2.1] — 2026-10-09 — Session files and document attachments, ink-wall planogram reporting, dependency security sweep
