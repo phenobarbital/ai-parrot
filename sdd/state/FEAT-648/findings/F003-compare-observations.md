@@ -2,7 +2,7 @@
 id: F003
 query_id: Q008
 type: read
-intent: Read compare_observations: how products_found is produced and gated
+intent: "Read compare_observations: how products_found is produced and gated"
 executed_at: 2026-10-09T20:49:59Z
 duration_ms: 0
 parent_id: null

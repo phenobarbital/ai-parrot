@@ -2,7 +2,7 @@
 id: F006
 query_id: Q006
 type: read
-intent: Read the add-comment path: AddCommentInput + jira_add_comment.
+intent: "Read the add-comment path: AddCommentInput + jira_add_comment."
 executed_at: 2026-10-07T22:55:00Z
 duration_ms: 2000
 parent_id: null

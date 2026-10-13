@@ -2,7 +2,7 @@
 id: F009
 query_id: Q004
 type: read
-intent: FEAT-645 spec: the products_found contract and its explicit non-ink-wall decision
+intent: "FEAT-645 spec: the products_found contract and its explicit non-ink-wall decision"
 executed_at: 2026-10-09T20:49:59Z
 duration_ms: 0
 parent_id: null

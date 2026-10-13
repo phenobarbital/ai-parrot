@@ -2,7 +2,7 @@
 id: F001
 query_id: Q001
 type: grep | glob | read | git_log | tree
-intent: <copied from the query's intent>
+intent: "<copied from the query's intent — keep it quoted, it often contains ': '>"
 executed_at: YYYY-MM-DDTHH:MM:SSZ
 duration_ms: 234
 parent_id: null   # set if this finding came from a recursive follow-up

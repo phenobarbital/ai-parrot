@@ -2,7 +2,7 @@
 id: F012
 query_id: Q008
 type: read
-intent: Output contract: SlotPresence model, _assemble, handler; docs coverage
+intent: "Output contract: SlotPresence model, _assemble, handler; docs coverage"
 executed_at: 2026-10-09T20:49:59Z
 duration_ms: 0
 parent_id: null

@@ -2,7 +2,7 @@
 id: F002
 query_id: Q001
 type: wiki_query
-intent: Orient: products_found / ink_wall and endcap reference-image detection
+intent: "Orient: products_found / ink_wall and endcap reference-image detection"
 executed_at: 2026-10-09T20:49:59Z
 duration_ms: 0
 parent_id: null
