@@ -131,27 +131,61 @@ class Narrator:
         """``sys:*`` keys pre-synthesised at start_session."""
         return {f"sys:{k}": self.render(k) for k in _SYSTEM_KEYS}
 
+    def _enumerated_options(
+        self, q: AudioQuestion, cfg: VoiceFormConfig, meta: FieldVoiceMeta
+    ) -> list[dict[str, Any]] | None:
+        """Enabled options when ``q`` is narrated item by item, else None (single-segment or no narration)."""
+        if q.field_type not in _SELECT_TYPES or meta.enumerate in ("never", "count_only"):
+            return None
+        if meta.enumerate == "auto" and not cfg.enumerate_options:
+            return None
+        options = [o for o in (q.options or []) if not o.get("disabled")]
+        return options or None
+
     def _options_text(self, q: AudioQuestion, cfg: VoiceFormConfig, meta: FieldVoiceMeta) -> str | None:
-        """Build the options narration for ``q`` or None when nothing is narrated."""
+        """Single-segment options narration (boolean prompt / count-only) or None.
+
+        Returns None also when the options ARE enumerated — that case is handled by
+        ``_option_segments``.
+        """
         if q.field_type == FieldType.BOOLEAN.value:
             return self.render("boolean_prompt")
+        if self._enumerated_options(q, cfg, meta) is not None:
+            return None
         if q.field_type not in _SELECT_TYPES or meta.enumerate == "never":
             return None
         options = [o for o in (q.options or []) if not o.get("disabled")]
         if not options:
             return None
-        if meta.enumerate == "count_only":
-            return self.render("options_count_only", count=len(options))
-        if meta.enumerate == "auto" and not cfg.enumerate_options:
-            return self.render("options_count_only", count=len(options))
-        parts = [self.render("options_intro", count=len(options))]
+        return self.render("options_count_only", count=len(options))
+
+    def _option_segments(
+        self, q: AudioQuestion, cfg: VoiceFormConfig, meta: FieldVoiceMeta
+    ) -> tuple[list[str], dict[str, str]] | None:
+        """Per-option narration for an enumerated select question, or None when not enumerated.
+
+        Keys: ``q:<uid>:options_intro, q:<uid>:opt:1, pause:<ms>, q:<uid>:opt:2, …`` — the pause sits
+        only between consecutive items and is omitted when the effective ``option_pause_ms`` is 0.
+        Effective pause = ``meta.option_pause_ms`` if not None else ``cfg.option_pause_ms``.
+        """
+        options = self._enumerated_options(q, cfg, meta)
+        if options is None:
+            return None
+        uid = str(q.field_uid)
+        pause = meta.option_pause_ms if meta.option_pause_ms is not None else cfg.option_pause_ms
+        keys = [f"q:{uid}:options_intro"]
+        segments = {f"q:{uid}:options_intro": self.render("options_intro", count=len(options))}
         for i, opt in enumerate(options, start=1):
             label = opt.get("label", opt.get("value", ""))
-            parts.append(self.render("option_item", ordinal=i, n=i, label=str(label)))
-        return " ".join(parts)
+            if i > 1 and pause > 0:
+                keys.append(f"pause:{pause}")
+            key = f"q:{uid}:opt:{i}"
+            keys.append(key)
+            segments[key] = self.render("option_item", ordinal=i, n=i, label=str(label))
+        return keys, segments
 
     def plan_question(self, q: AudioQuestion, cfg: VoiceFormConfig, meta: FieldVoiceMeta) -> NarrationPlan:
-        """label → ``pause:<ms>`` → hint_bridge + hint (or description) → options; keys ``q:<uid>:label|hint|options``."""
+        """label → pause:<ms> → hint → options (single segment) | options_intro + opt:<n> with pauses."""
         uid = str(q.field_uid)
         segments: dict[str, str] = {}
         keys: list[str] = []
@@ -164,10 +198,16 @@ class Narrator:
             keys.append(f"pause:{pause}")
             segments[f"q:{uid}:hint"] = f"{self.render('hint_bridge', hint=help_text)} {help_text}".strip()
             keys.append(f"q:{uid}:hint")
-        options_text = self._options_text(q, cfg, meta)
-        if options_text:
-            segments[f"q:{uid}:options"] = options_text
-            keys.append(f"q:{uid}:options")
+        per_option = self._option_segments(q, cfg, meta)
+        if per_option is not None:
+            opt_keys, opt_segments = per_option
+            keys.extend(opt_keys)
+            segments.update(opt_segments)
+        else:
+            options_text = self._options_text(q, cfg, meta)
+            if options_text:
+                segments[f"q:{uid}:options"] = options_text
+                keys.append(f"q:{uid}:options")
         text = " ".join(segments[k] for k in keys if not k.startswith("pause:"))
         return NarrationPlan(text=text, audio_keys=keys, segments=segments)
 
