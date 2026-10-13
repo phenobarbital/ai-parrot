@@ -195,6 +195,8 @@ class Json2Transport(AbstractOdooTransport):
     def _is_create_signature_error(exc: OdooRPCError) -> bool:
         """True when Odoo rejected a JSON-2 ``create`` because of its argument name (422/500)."""
         text = str(exc)
+        if "vals_list" in text and "unexpected keyword argument" in text:
+            return True
         if ".create:" not in text:
             return False
         return "missing a required argument" in text or "unexpected keyword argument" in text
