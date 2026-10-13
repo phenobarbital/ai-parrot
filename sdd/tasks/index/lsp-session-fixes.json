@@ -35,7 +35,7 @@
       "feature_id": "FEAT-657",
       "feature": "lsp-session-fixes",
       "spec": "sdd/specs/lsp-session-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -44,7 +44,7 @@
       "parallel": true,
       "parallelism_notes": "depends on TASK-4270 source fixes in session.py; test file only, no overlap",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-13T23:01:15+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4271-lsp-session-fix-tests.md"
     }
