@@ -4,6 +4,13 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Audio forms: client-submit mode** (FEAT-656): `start_session.submit_mode: "client"` (protocol v2 only,
+  default `"server"`) makes `review_confirm` validate the answers and reply `answers_ready{data,
+  plausibility_summary?}` without persisting anything, so the host can submit through its own endpoint.
+  `SubmissionPipeline.attach_verdicts` is now public.
+
 ### Changed
 
 - **NetworkNinja importer — multi-photo questions are `MULTI_UPLOAD`**:

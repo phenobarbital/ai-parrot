@@ -53,7 +53,7 @@ Keyboard shortcuts (space = push-to-talk override, R = repeat, B = back, Esc = s
 
 | Direction | Message | Payload keys (literal) |
 |---|---|---|
-| C→S | `start_session` | `form_uid`, `locale`, `protocol_version: 2`, `prefetch` (default true), `resume_session_id?`, `stt_confirm_threshold?`, `tts_backend?`, `tts_voice?`, `tts_mime_format?`, `auto_advance?`, `enumerate_options?` — v1 clients omit `protocol_version` and get base64 `audio` in `question` |
+| C→S | `start_session` | `form_uid`, `locale`, `protocol_version: 2`, `prefetch` (default true), `resume_session_id?`, `stt_confirm_threshold?`, `tts_backend?`, `tts_voice?`, `tts_mime_format?`, `auto_advance?`, `enumerate_options?`, `submit_mode?` (`"server"` default | `"client"`, v2 only: the host submits, see `answers_ready`) — v1 clients omit `protocol_version` and get base64 `audio` in `question` |
 | S→C | `session_started` | `session_id`, `total_questions`, `title`, `protocol_version`, `hands_free?{auto_record, silence_ms}`, `max_recording_seconds?`, `prefetch_count?` |
 | S→C | `audio_segment` | `key`, `mime`, `kind` (`question`\|`hint`\|`options`\|`system`\|`review`), `text` — **followed by one binary frame** with the bytes; buffer by `key` |
 | S→C | `question` | `index`, `field_id`, `label`, `required`, `field_type`, `voice_mode`, `render_mode`, `sensitive`, `description?`, `audio?` (base64, v1 or `prefetch: false` only), `options?[]`, `fallback_html?`, `hint?`, `section_uid?`, `ui_cue?{control, focus, highlight, submit_via}`, `answer_modes?[]`, `narration?{text, audio_keys[], segments{}}` — play `audio_keys` in order; `pause:<ms>` is a client timer |
@@ -73,6 +73,7 @@ Keyboard shortcuts (space = push-to-talk override, R = repeat, B = back, Esc = s
 | S→C | `validation_errors` | `errors{field_id: [str]}`, `first_field_id?` — deterministic validator failed at submit; the server re-asks |
 | S→C | `session_resumed` | `session_id`, `phase`, `cursor?`, `answered[]` — after `start_session{resume_session_id}` |
 | S→C | `form_complete` | `submission_id`, `answers{}` (sensitive masked), `stored_in?`, `plausibility_summary?` |
+| S→C | `answers_ready` | `data{}` (validated; voice envelopes + verdicts), `plausibility_summary?` — only when `start_session.submit_mode == "client"` (v2); replaces `form_complete`, nothing is persisted: the host submits `data` itself (idempotency and Action linking are the host's) |
 | S→C | `session_ended` / `error` / `pong` | `session_ended{session_id}`; `error{code, message}`; `pong{}` |
 
 Differences from the brainstorm design: `session_started` carries no `sections[]`/`review{}`/`tts_mime`/`plausibility{}`/`warnings`; `question` carries `section_uid` (no `field_uid`/`position`/`prompt`/`computed_default`; options are the v1 `options[]`); `audio_segment` has no `bytes` key (bytes are the next binary frame); `section_enter` has no `audio_key`; review items have `skipped`/`flagged`/`sensitive` (no `has_audio`/`audio_key`/`flag{}`); `session_resumed` sends `answered[]` + `cursor`, not the full answers/plan (the next `question` follows).
