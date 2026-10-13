@@ -232,6 +232,8 @@ class AudioAnswer(BaseModel):
         duration_ms: Recording duration in milliseconds.
         matched: Option match resolved from the transcript, if any.
         stt_language: Language reported by the STT engine.
+        normalized_by: Post-processor that produced ``value`` (FEAT-653): 'rules', 'llm' or None.
+        llm_confidence: Confidence reported by the LLM post-processor, when it produced ``value``.
         answered_at: When the answer was accepted.
         version: Answer version, incremented on every re-answer.
     """
@@ -251,6 +253,8 @@ class AudioAnswer(BaseModel):
     duration_ms: Optional[int] = None
     matched: Optional[OptionMatch] = None
     stt_language: Optional[str] = None
+    normalized_by: Optional[Literal["rules", "llm"]] = None  # FEAT-653 post-processor provenance
+    llm_confidence: Optional[float] = None
     answered_at: Optional[datetime] = None
     version: int = Field(default=1, ge=1)
 
@@ -286,8 +290,10 @@ class AudioSessionState(BaseModel):
         locale: Session locale.
         submission_id: Pre-generated id making the commit idempotent.
         protocol_version: Wire protocol version (1 = legacy).
+        submit_mode: "server" persists on review_confirm; "client" replies answers_ready.
         plausibility: Latest plausibility report, if any.
         flagged: field_id -> answer version flagged (one flag per version).
+        timezone: Client IANA timezone (FEAT-653); set on every start/resume, never snapshotted.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -313,5 +319,7 @@ class AudioSessionState(BaseModel):
     locale: str = "en"
     submission_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     protocol_version: int = 1
+    submit_mode: Literal["server", "client"] = "server"
     plausibility: Optional[PlausibilityReport] = None
     flagged: dict[str, int] = Field(default_factory=dict)
+    timezone: Optional[str] = None  # FEAT-653: client IANA timezone; set on every start/resume, never snapshotted

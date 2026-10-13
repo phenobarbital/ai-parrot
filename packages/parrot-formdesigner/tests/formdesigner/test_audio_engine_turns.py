@@ -156,6 +156,19 @@ def started(session: AudioFormSession):
 
 
 class TestEngineTurns:
+    def test_engine_accepts_audio_right_after_question(self, started) -> None:
+        """Barge-in premise (AC2): a recording arriving right after `question` — before any
+        client playback could have ended — is transcribed against the cursor field."""
+        s, out = started
+        assert s.state.phase == Phase.ASKING
+        assert out[-1].type == "question"
+        field_id = out[-1].field_id
+        assert field_id == s.state.cursor
+        out = s.handle(AudioReceived(type="_audio", audio=b"abc", mime="audio/webm"))
+        assert isinstance(out[0], Transcribe)
+        assert out[0].field_id == field_id
+        assert s._last_audio == (field_id, b"abc", "audio/webm")
+
     def test_start_emits_replan_then_plan_ready_emits_started_prefetch_question(self, session) -> None:
         assert session.state.phase == Phase.PLANNING
         out = _advance(session)

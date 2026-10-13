@@ -346,6 +346,39 @@ async def _fill(ws: Any, env: _Env, *, agree: bool = True) -> list[Any]:
 
 
 class TestAudioWsV2Integration:
+    async def test_question_narration_v2_prefetch_includes_option_keys(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        frames = await start(ws, env)
+        await ws.send_json({"type": "answer_text", "field_id": "name", "value": "Ann"})
+        frames += await until(ws, "question")
+        q = jsons(frames, "question")[-1]
+        assert q["field_id"] == "color"
+        keys = q["narration"]["audio_keys"]
+        opt_keys = [k for k in keys if ":opt:" in k]
+        assert [k.rsplit(":", 1)[1] for k in opt_keys] == ["1", "2", "3"]  # Teal is disabled
+        assert any(k.endswith(":options_intro") for k in keys)
+        headers = {m["key"]: m["kind"] for m in jsons(frames, "audio_segment")}
+        assert all(headers.get(k) == "option" for k in opt_keys)
+        assert not [k for k in headers if k.startswith("pause:")]
+        await ws.close()
+
+    async def test_barge_in_flow_v2(self, aiohttp_client, voice_app: _Env) -> None:
+        """Barge-in end to end: a recording sent before 'playing' anything is accepted for the cursor field."""
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        frames = await start(ws, env)
+        assert frames[0]["hands_free"]["barge_in"] is True
+        await ws.send_json({"type": "answer_text", "field_id": "name", "value": "Ann"})
+        await until(ws, "question")  # "color" question: client is (virtually) mid-playback
+        fr = await say(ws, env, "Green", 0.95, "question", "confirm_request", "answer_rejected", "error")
+        accepted = jsons(fr, "answer_accepted")
+        assert accepted and accepted[0]["field_id"] == "color"
+        assert jsons(fr, "question")[-1]["field_id"] != "color"
+        await ws.close()
+
     async def test_audio_ws_v1_client_still_works(self, aiohttp_client, voice_app: _Env) -> None:
         """AC1: a v1 client (no protocol_version, extra keys) sees the legacy wire and submits without review."""
         env = voice_app
@@ -687,6 +720,50 @@ class TestAudioWsSnapshotAfterSubmit:
         trailing = await until(ws, "pong", "error", "_closed") if await _ping_ok(ws) else []
         assert not any(isinstance(m, dict) and m["type"] == "error" for m in trailing), trailing
         assert _snapshot_keys(env) == []
+
+
+class TestAudioWsClientSubmit:
+    """FEAT-656: submit_mode="client" — voice collects, the host submits; nothing is persisted."""
+
+    async def test_audio_ws_client_submit(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        await start(ws, env, submit_mode="client")
+        await say(ws, env, "Ann", 0.95, "question")
+        await ws.send_json({"type": "answer_selection", "field_id": "color", "value": "red"})
+        await until(ws, "question")
+        await ws.send_json({"type": "answer_selection", "field_id": "agree", "value": True})
+        await until(ws, "question")
+        await ws.send_json({"type": "answer_text", "field_id": "secret", "value": "hunter2"})
+        frames = await until(ws, "question", "review_start")
+        if frames[-1]["type"] == "question":
+            await ws.send_json({"type": "skip_question", "field_id": "comment"})
+            await until(ws, "review_start")
+        await ws.send_json({"type": "review_confirm", "confirmed": True})
+        done = await until(ws, "answers_ready", "form_complete", "error")
+        assert done[-1]["type"] == "answers_ready", done[-1]
+        data = done[-1]["data"]
+        assert data["name"]["answer"] == "Ann" and data["name"]["blob_ref"]  # spoken answer: envelope + recording
+        assert data["secret"] == "hunter2"  # sensitive typed value stays plain
+        assert not any(m["type"] == "form_complete" for m in done if isinstance(m, dict))
+        env.app["submission_pipeline"].submit.assert_not_called()
+        env.storage.store.assert_not_called()
+        assert env.stored == []
+        assert _snapshot_keys(env) == [] and _active_keys(env) == []
+
+    async def test_answers_ready_clears_partial_mirror(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        sid = (await start(ws, env, submit_mode="client"))[0]["session_id"]
+        await _fill(ws, env)
+        uid = str(env.form.form_uid)
+        assert await env.partial_store.get(uid, sid) is not None  # mirrored while answering
+        await ws.send_json({"type": "review_confirm", "confirmed": True})
+        done = await until(ws, "answers_ready", "error")
+        assert done[-1]["type"] == "answers_ready"
+        assert await env.partial_store.get(uid, sid) is None  # cleared like server mode after submit
 
 
 async def _ping_ok(ws: Any) -> bool:

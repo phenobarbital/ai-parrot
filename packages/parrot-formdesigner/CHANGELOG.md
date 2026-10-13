@@ -4,8 +4,27 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Voice forms — barge-in (FEAT-654)**: `hands_free.barge_in` (default `true`, a client-side
+  ceiling) tells v2 clients they may keep the microphone armed during narration and cancel
+  playback on speech onset. Enumerated select options are narrated one segment per item
+  (`q:<uid>:options_intro`, `q:<uid>:opt:<n>`, `audio_segment.kind: "option"`) with a
+  `pause:<option_pause_ms>` gap (`VoiceFormConfig.option_pause_ms`, default 500 ms, per-field
+  `meta.voice.option_pause_ms`). Protocol v1 audio is unchanged.
+- **Audio forms: client-submit mode** (FEAT-656): `start_session.submit_mode: "client"` (protocol v2 only,
+  default `"server"`) makes `review_confirm` validate the answers and reply `answers_ready{data,
+  plausibility_summary?}` without persisting anything, so the host can submit through its own endpoint.
+  `SubmissionPipeline.attach_verdicts` is now public.
+
 ### Changed
 
+- **Voice forms — active-session resume hint (FEAT-655)**: `SESSION_ACTIVE` now carries the
+  `session_id` and `form_uid` of the session holding the user's slot (same tenant only), so clients
+  can offer "Continue where you left off". The active marker (`active_ttl_seconds`, 600 s, refreshed
+  on every saved answer) and the resume snapshot (`voice.resume_ttl_seconds`, per form) have
+  separate TTLs. `AudioSessionStore(ttl_seconds=…)` is replaced by
+  `resume_ttl_seconds` / `active_ttl_seconds`.
 - **NetworkNinja importer — multi-photo questions are `MULTI_UPLOAD`**:
   `FIELD_IMAGE_UPLOAD_MULTIPLE` now imports as `FieldType.MULTI_UPLOAD`
   (keeping `meta.accept = "image/*"`) instead of `FieldType.FILE` with a

@@ -50,15 +50,26 @@ class VoiceEvidenceEnvelope(VoiceAnswerEnvelope):
     duration_ms: int | None = None
     language: str | None = None
     plausibility: PlausibilityVerdict | None = None
+    normalized_by: Literal["rules", "llm"] | None = None  # FEAT-653: which post-processor produced `answer`
+    llm_confidence: float | None = None
+
+
+_V1_VOICE_KEYS = frozenset({"answer", "blob_ref", "data_url"})  # VoiceAnswerEnvelope is extra="forbid"
 
 
 def is_voice_envelope(value: Any) -> bool:
-    """Return True for a value carrying the voice-envelope shape."""
+    """True for a voice envelope: a model instance, a speech evidence dict, or the exact v1 dict shape.
+
+    Upload/photo answers (``{answer, blob_ref, display}`` or ``{answer, filename, content_type, blob_ref, …}``)
+    are NOT voice: any key outside ``answer`` / ``blob_ref`` / ``data_url`` rules the v1 shape out.
+    """
     if isinstance(value, VoiceAnswerEnvelope):
         return True
     if not isinstance(value, dict) or "answer" not in value:
         return False
-    return value.get("source") == "speech" or "blob_ref" in value
+    if value.get("source") == "speech":
+        return True
+    return "blob_ref" in value and set(value) <= _V1_VOICE_KEYS
 
 
 def unwrap_voice(data: dict[str, Any]) -> dict[str, Any]:
@@ -94,5 +105,7 @@ def wrap_voice(scalars: dict[str, Any], evidence: dict[str, AudioAnswer]) -> dic
             audio_mime=getattr(answer, "audio_mime", None),
             duration_ms=getattr(answer, "duration_ms", None),
             language=getattr(answer, "stt_language", None),
+            normalized_by=getattr(answer, "normalized_by", None),
+            llm_confidence=getattr(answer, "llm_confidence", None),
         ).model_dump()
     return out
