@@ -58,3 +58,21 @@ def test_answer_and_state_fields_default_none() -> None:
     assert a.normalized_by is None and a.llm_confidence is None
     assert AudioAnswer.model_validate({"field_id": "a", "value": "v", "source": "speech"})  # old snapshot shape
     assert AudioSessionState(session_id="s", form_uid="f", user_id="u").timezone is None
+
+
+def test_refine_timeout_is_capped() -> None:
+    """Product decision 3: 10 s is the ceiling; 11 is rejected, and resolve_voice_config never exceeds it."""
+    from pydantic import ValidationError
+
+    from parrot_formdesigner.audio.models import AudioSessionConfig
+    from parrot_formdesigner.core.schema import FormSchema
+    from parrot_formdesigner.core.voice import resolve_voice_config
+
+    assert VoiceFormConfig(llm_refine_timeout_s=10.0).llm_refine_timeout_s == 10.0
+    with pytest.raises(ValidationError):
+        VoiceFormConfig(llm_refine_timeout_s=11.0)
+    with pytest.raises(ValidationError):
+        VoiceFormConfig(llm_refine_timeout_s=0.0)
+    form = FormSchema.model_construct(voice=VoiceFormConfig.model_construct(llm_refine_timeout_s=60.0))
+    assert resolve_voice_config(form, None).llm_refine_timeout_s == 10.0
+    assert resolve_voice_config(form, AudioSessionConfig(form_uid="f")).llm_refine_timeout_s == 10.0
