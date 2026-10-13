@@ -10,7 +10,7 @@ tags: [audio-forms, voice, submission, client-submit]
 **Feature ID**: FEAT-656
 **Date**: 2026-10-12
 **Author**: Juan Ruffato
-**Status**: draft
+**Status**: approved
 **Target version**: next parrot-formdesigner minor, in ONE voice release with FEAT-653/654/655 (Juan, 2026-10-12: "todo sale junto"); FieldSync FEAT-715 and navigator-svelte FEAT-711..714 ship with it
 **Continues**: FEAT-649 (`sdd/specs/audio-form-interaction-workflow.spec.md`)
 **Consumers**: navigator-svelte FEAT-714 (rep voice forms, Rep Mode) and FieldSync FEAT-715
@@ -178,3 +178,4 @@ One feature worktree; M2 → M1, M3 → M1/M2, M4 → M3. Lands after FEAT-653 �
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-12 | Juan Ruffato | Initial draft — option A for rep voice forms (voice collects, host submits) |
+| 0.2 | 2026-10-12 | Juan Ruffato | Approved (Juan) |
