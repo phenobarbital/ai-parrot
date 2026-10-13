@@ -218,33 +218,57 @@ class FormAPIHandler:
     # User context helpers (navigator-auth integration)
     # ------------------------------------------------------------------
 
-    def _get_org_id(self, request: web.Request) -> int | None:
-        """Extract org_id from the authenticated user's first organization.
+    def _get_org_ids(self, request: web.Request) -> list[int]:
+        """Read organization IDs from the authenticated user's organizations.
 
-        Reads ``request.user.organizations[0].org_id`` as set by the
-        ``@user_session()`` decorator from navigator-auth and normalises it
-        to an integer (the DB primary key type).
-
-        Args:
-            request: Incoming HTTP request with ``user`` attribute attached
-                by the navigator-auth ``user_session`` decorator.
-
-        Returns:
-            The ``org_id`` as an integer from the first organization, or
-            ``None`` if the user has no organizations, the user is not set,
-            or the value cannot be converted to an integer.
+        navigator-auth owns organization normalization; entries are Organization
+        objects exposing ``org_id``. No database lookup is performed here.
+        Missing or invalid organization context returns an empty list.
         """
         user = getattr(request, "user", None)
-        if user and user.organizations:
+        organizations = getattr(user, "organizations", None) or []
+        try:
+            return list(dict.fromkeys(int(org.org_id) for org in organizations))
+        except (AttributeError, TypeError, ValueError):
+            self.logger.warning("Invalid organizations in authenticated user")
+            return []
+
+    def _get_org_id(self, request: web.Request) -> int | None:
+        """Read the first session organization for existing form consumers."""
+        org_ids = self._get_org_ids(request)
+        return org_ids[0] if org_ids else None
+
+    def _resolve_org_id(self, request: web.Request) -> tuple[int | None, web.Response | None]:
+        """Select a session organization for the ``/org/*`` endpoints.
+
+        One organization is selected automatically. Multiple organizations
+        require ``?org_id=``; a selection outside the user's organizations
+        returns 403. Missing organizations also return 403; malformed or
+        ambiguous selections return 400. Resolution is independent of which
+        application services are configured.
+        """
+        requested = request.query.get("org_id")
+        if requested is not None:
             try:
-                return int(user.organizations[0].org_id)
-            except (TypeError, ValueError):
-                self.logger.warning(
-                    "org_id value %r is not a valid integer",
-                    user.organizations[0].org_id,
-                )
-                return None
-        return None
+                if not requested.isascii() or not requested.isdigit():
+                    raise ValueError("org_id must be an integer")
+                requested = int(requested)
+            except ValueError:
+                return None, JSONResponse({"error": "org_id must be an integer"}, status=400)
+
+        org_ids = self._get_org_ids(request)
+        if requested is not None:
+            if requested in org_ids:
+                return requested, None
+            return None, JSONResponse({"error": f"user is not a member of organization {requested}"}, status=403)
+        if len(org_ids) == 1:
+            return org_ids[0], None
+        if not org_ids:
+            return None, JSONResponse({"error": "user belongs to no organization"}, status=403)
+        return None, JSONResponse(
+            {"error": "user belongs to several organizations; pass ?org_id=", "org_ids": org_ids},
+            status=400,
+        )
 
     def _get_programs(self, request: web.Request) -> list[str]:
         """Extract programs (tenant context) from the user session.
@@ -2362,23 +2386,25 @@ class FormAPIHandler:
     async def get_org_graph(self, request: web.Request) -> web.Response:
         """GET /api/v1/org/graph — Return the org graph for the session's org.
 
-        Calls ``OrgGraphService.get_graph()`` using the org_id extracted from
-        the navigator-auth session (``request.user.organizations[0].org_id``).
+        Calls ``OrgGraphService.get_graph()`` with the caller's org, resolved
+        from ``request.user.organizations`` by :meth:`_resolve_org_id`.
 
         Args:
             request: Incoming HTTP request with navigator-auth session.
+                Optional query ``org_id`` picks one of several memberships.
 
         Returns:
             200: Serialized ``OrgGraph`` as JSON.
-            400: Missing org_id in session.
+            400: A non-integer ``org_id``, or several organizations and no selection.
+            403: The user belongs to no organization, or not to ``org_id``.
             501: OrgGraphService not configured.
         """
         if self._org_graph_service is None:
             return JSONResponse({"error": "OrgGraphService not configured"}, status=501)
 
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:
@@ -2436,9 +2462,9 @@ class FormAPIHandler:
         # C-4 (write isolation): org_id comes from the authenticated session,
         # NEVER from the request body — a caller cannot create a project under
         # another tenant's org.
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:
@@ -2666,9 +2692,9 @@ class FormAPIHandler:
             return JSONResponse({"error": "VenueService not configured"}, status=501)
 
         store_id = request.match_info.get("store_id", "")
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:
@@ -2715,9 +2741,9 @@ class FormAPIHandler:
         except (TypeError, ValueError):
             return JSONResponse({"error": "client_id must be an integer"}, status=400)
 
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:
@@ -2755,9 +2781,9 @@ class FormAPIHandler:
         except (ValueError, TypeError):
             return JSONResponse({"error": f"Invalid site_id: {site_id_str!r}"}, status=400)
 
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:
@@ -2816,9 +2842,9 @@ class FormAPIHandler:
         except (TypeError, ValueError):
             return JSONResponse({"error": "client_id must be an integer"}, status=400)
 
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:
@@ -2861,9 +2887,9 @@ class FormAPIHandler:
         except (ValueError, TypeError):
             return JSONResponse({"error": f"Invalid location_id: {location_id_str!r}"}, status=400)
 
-        org_id = self._get_org_id(request)
-        if org_id is None:
-            return JSONResponse({"error": "org_id not found in session"}, status=400)
+        org_id, error = self._resolve_org_id(request)
+        if error is not None:
+            return error
 
         tenant = self._session_tenant(request)
         try:

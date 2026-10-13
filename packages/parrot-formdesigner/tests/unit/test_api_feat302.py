@@ -58,6 +58,7 @@ def _make_request(
     req = MagicMock(spec=web.Request)
     req.method = method
     req.match_info = match_info or {}
+    req.query = {}
 
     programs = session_programs if session_programs is not None else [tenant]
     session_obj = {"session": {"programs": programs}}
@@ -185,14 +186,14 @@ class TestGetOrgGraph:
         assert body["root"]["node_type"] == "company"
 
     @pytest.mark.asyncio
-    async def test_get_org_graph_400_no_org_id(self) -> None:
+    async def test_get_org_graph_403_no_org_id(self) -> None:
         svc = MagicMock()
         handler = _make_handler(org_graph_service=svc)
         # No organizations
         req = _make_request(method="GET", user_id="anonymous")
         req.user.organizations = []
         resp = await handler.get_org_graph(req)
-        assert resp.status == 400
+        assert resp.status == 403
 
     @pytest.mark.asyncio
     async def test_get_org_graph_501_not_configured(self) -> None:
