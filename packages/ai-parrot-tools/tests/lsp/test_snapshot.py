@@ -331,3 +331,38 @@ class TestWorkerCancelReapsProcess:
         await asyncio.sleep(0.1)
         after2 = _matching_pids(b"54321")
         assert not (during2 & after2), "the cancelled snapshot worker's child was not reaped"
+
+
+class TestExtendsChain:
+    """FEAT-658 TASK-4274: pyrightconfig.json ``extends`` is followed."""
+
+    def test_follows_extends(self, tmp_path: Path) -> None:
+        (tmp_path / "base").mkdir()
+        (tmp_path / "base" / "shared.json").write_text("{}")
+        (tmp_path / "pyrightconfig.json").write_text('{"extends": "base/shared.json"}')
+        manifest = {"pyrightconfig.json"}
+        snapshot._follow_extends_chain(tmp_path, manifest)
+        assert "base/shared.json" in manifest
+
+    def test_depth_limit_and_cycle(self, tmp_path: Path) -> None:
+        (tmp_path / "pyrightconfig.json").write_text('{"extends": "pyrightconfig.json"}')
+        manifest = {"pyrightconfig.json"}
+        snapshot._follow_extends_chain(tmp_path, manifest)
+        assert manifest == {"pyrightconfig.json"}
+
+    def test_bad_json_and_missing_ignored(self, tmp_path: Path) -> None:
+        (tmp_path / "pyrightconfig.json").write_text("{not json")
+        manifest = {"pyrightconfig.json"}
+        snapshot._follow_extends_chain(tmp_path, manifest)
+        (tmp_path / "pyrightconfig.json").write_text('{"extends": "nope.json"}')
+        snapshot._follow_extends_chain(tmp_path, manifest)
+        assert manifest == {"pyrightconfig.json"}
+
+    def test_outside_repo_ignored(self, tmp_path: Path) -> None:
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (tmp_path / "outside.json").write_text("{}")
+        (repo / "pyrightconfig.json").write_text('{"extends": "../outside.json"}')
+        manifest = {"pyrightconfig.json"}
+        snapshot._follow_extends_chain(repo, manifest)
+        assert manifest == {"pyrightconfig.json"}
