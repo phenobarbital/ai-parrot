@@ -35,7 +35,7 @@
       "feature_id": "FEAT-656",
       "feature": "audio-form-client-submit",
       "spec": "sdd/specs/audio-form-client-submit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "imports StartSession.submit_mode, AnswersReady, AudioSessionState.submit_mode and AudioSnapshot.submit_mode from TASK-4265 (audio/events.py, audio/models.py, audio/session_store.py).",
       "assigned_to": null,
       "started_at": "2026-10-13T01:37:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4266-engine-client-submit-branch.md"
+      "completed_at": "2026-10-13T01:40:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4266-engine-client-submit-branch.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4267",

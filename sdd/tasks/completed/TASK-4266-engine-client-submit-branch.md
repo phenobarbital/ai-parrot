@@ -197,10 +197,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential, no MCP coder seats)
+**Date**: 2026-10-12
+**Notes**: v2 guard in on_start and _resume (resume guard checks either the requested or the saved mode); client_data branch in on_submit_done; snapshot/resume carry submit_mode (saved mode wins, no raise). 6 mutations each turned a test red. ruff unavailable.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
