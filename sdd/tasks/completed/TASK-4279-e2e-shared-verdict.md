@@ -50,4 +50,4 @@ PYTHONPATH=packages/ai-parrot-server/src:packages/ai-parrot/src pytest packages/
 
 ## Completion Note
 
-(filled by implementing agent)
+Added e2e/_verdict.py evaluate_required_nodes() returning per-node findings (missing/blocked/not_passed/phase_failure); runner._verdict_status and evidence.verify_evidence both delegate. Semantics unchanged. Unit e2e suite: 451 pass; 1 pre-existing failure test_mcp_targets real_subprocess (fails on clean tree too).

@@ -52,4 +52,4 @@ PYTHONPATH=packages/ai-parrot-server/src:packages/ai-parrot/src pytest packages/
 
 ## Completion Note
 
-(filled by implementing agent)
+Bridge lookup keeps the existing rootdir-suffix fallback but now matches only on a path-component boundary (no fabricated passes from partial-name suffixes). Tests in tests/e2e/test_runner_bridge.py (run with PARROT_TEST_E2E=1). Committed together with TASK-4279.
