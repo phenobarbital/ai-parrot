@@ -1,0 +1,82 @@
+# FEAT-649 — English narration templates (Jinja2 source, rendered in a sandbox) + lexicon.
+templates:
+  question: "{{ label }}"
+  question_with_prompt: "{{ prompt }}"
+  hint_bridge: "Hint:"
+  options_intro: "There are {{ count }} options:"
+  option_item: "{{ ordinal }}, {{ label }}."
+  options_count_only: "There are {{ count }} options on screen."
+  boolean_prompt: "Please answer yes or no."
+  required_mark: "This question is required."
+  confirm_readback: "I heard: {{ answer }}. Is that correct?"
+  confirm_option: "Did you mean {{ label }}?"
+  no_match: "Sorry, I could not match that answer. Please try again."
+  required_reject: "This question is required and cannot be skipped."
+  skipped: "Skipped."
+  section_intro: "Section: {{ title }}."
+  computed_statement: "{{ label }} is set to {{ value }}."
+  review_intro: "Let's review your {{ count }} answers."
+  review_item: "{{ position }}. {{ label }}: {{ answer }}."
+  review_item_skipped: "{{ position }}. {{ label }}: skipped."
+  review_all_correct: "Is everything correct? Say yes to send, or say change and the number."
+  review_edit_ack: "Let's change {{ label }}."
+  plausibility_flag: "Your answer to {{ label }} may not fit the question. Say change to fix it, or yes to keep it."
+  plausibility_keep: "Keeping your answer."
+  submitted: "Thank you. Your form has been sent."
+  resume_welcome: "Welcome back. Let's continue where you left off."
+  command_ack_repeat: "Repeating."
+  command_ack_back: "Going back."
+  command_ack_skip: "Skipping."
+  command_ack_help: "You can say repeat, back, skip, next, or stop."
+  command_ack_stop: "Stopping the session."
+  command_ack_next: "Next question."
+  command_ack_send: "Sending your form."
+  command_ack_change: "Which answer do you want to change?"
+  invalid_email: "That does not look like a valid email address. Please say it again or type it."
+  invalid_value: "Sorry, I could not understand that value. Please say it again or type it."
+lexicon:
+  ordinals: {first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7, eighth: 8, ninth: 9, tenth: 10, last: -1}
+  cardinals: {one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10}
+  spoken:
+    units: {zero: 0, oh: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19}
+    tens: {twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90}
+    scales: {hundred: 100, thousand: 1000, million: 1000000}
+    number_joiners: ["and"]
+    decimal_words: ["point"]
+    minus_words: ["minus", "negative"]
+    decimal_separator: "."
+    digit_aliases: {oh: "0", o: "0"}
+    repeat_words: {double: 2, triple: 3}
+    plus_words: ["plus"]
+    email_symbols: {at: "@", dot: ".", period: ".", underscore: "_", dash: "-", hyphen: "-", plus: "+"}
+    months: {january: 1, jan: 1, february: 2, feb: 2, march: 3, mar: 3, april: 4, apr: 4, may: 5, june: 6, jun: 6, july: 7, jul: 7, august: 8, aug: 8, september: 9, sep: 9, sept: 9, october: 10, oct: 10, november: 11, nov: 11, december: 12, dec: 12}
+    weekdays: {monday: 0, mon: 0, tuesday: 1, tue: 1, tues: 1, wednesday: 2, wed: 2, thursday: 3, thu: 3, thur: 3, thurs: 3, friday: 4, fri: 4, saturday: 5, sat: 5, sunday: 6, sun: 6}
+    relative_days: {today: 0, tomorrow: 1, yesterday: -1}
+    this_words: ["this"]
+    next_words: ["next", "coming"]
+    last_words: ["last", "past"]
+    am_words: ["am", "a m", "in the morning"]
+    pm_words: ["pm", "p m", "in the afternoon", "in the evening", "at night"]
+    noon_words: ["noon", "midday"]
+    midnight_words: ["midnight"]
+    half_words: ["half past"]
+    date_order: MDY
+  "yes": ["yes", "yeah", "yep", "ok", "okay", "sure", "correct", "right", "true"]
+  "no": ["no", "nope", "incorrect", "wrong", "false"]
+  all: ["all", "all of them", "everything"]
+  none: ["none", "nothing", "none of them"]
+  conjunctions: ["and", "plus", "also"]
+  fillers: ["um", "uh", "er", "hmm", "well", "please"]
+  commands:
+    repeat: ["repeat", "say again", "again", "repeat that"]
+    back: ["back", "go back", "previous"]
+    skip: ["skip", "skip it", "pass"]
+    help: ["help"]
+    stop: ["stop", "cancel", "quit"]
+    next: ["next", "continue"]
+    send: ["send", "submit"]
+    change: ["change", "edit"]
+    "yes": ["yes", "ok", "okay", "correct"]
+    "no": ["no", "incorrect"]
+  review_confirm: ["yes", "ok", "okay", "send", "submit", "confirm", "correct"]
+  review_change: ["change", "edit", "modify", "fix"]

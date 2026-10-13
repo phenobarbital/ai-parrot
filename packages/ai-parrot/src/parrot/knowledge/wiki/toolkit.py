@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+from urllib.parse import urlparse
 from typing import Any, Optional
 
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
@@ -81,6 +82,7 @@ class LLMWikiToolkit(AbstractToolkit):
         config: WikiConfig,
         agent_id: str = "agent",
         store: Optional[BaseWikiStore] = None,
+        confine_sources: bool = False,
         **kwargs: Any,
     ) -> None:
         """Initialise the LLMWikiToolkit with composed dependencies.
@@ -99,9 +101,13 @@ class LLMWikiToolkit(AbstractToolkit):
                 (FEAT-450): ``list_wikis`` then enumerates them and the
                 read methods dispatch on ``wiki_name``. Source tracking
                 and every write stay on the local plane.
+            confine_sources: PA-14 host switch (forced through the PA-9 hook): ``ingest_source`` accepts a URL or a
+                file under ``<storage_dir>/sources`` only, ``ingest_obsidian_vault`` a vault under it, and
+                ``export_okf`` writes only under ``<storage_dir>/exports``.
             **kwargs: Forwarded to :class:`AbstractToolkit`.
         """
         super().__init__(**kwargs)
+        self.confine_sources = bool(confine_sources)
         self._pi = pageindex_toolkit
         self._gi = graphindex_toolkit
         self._okf = okf_toolkit
@@ -263,6 +269,8 @@ class LLMWikiToolkit(AbstractToolkit):
         """
         self.logger.info("Ingesting source into wiki '%s': %s", wiki_name, source_path)
         effective_config = self._local_config_for(wiki_name)
+        if self.confine_sources and urlparse(str(source_path)).scheme not in ("http", "https"):
+            source_path = str(self._confined_path(source_path, effective_config.storage_dir / "sources"))
         report: IngestReport = await self._ingest_orch.ingest(source_path, effective_config)
         return report.model_dump()
 
@@ -298,6 +306,8 @@ class LLMWikiToolkit(AbstractToolkit):
 
         self.logger.info("Ingesting Obsidian vault into wiki '%s': %s", wiki_name, vault_path)
         effective_config = self._local_config_for(wiki_name)
+        if self.confine_sources:
+            vault_path = str(self._confined_path(vault_path, effective_config.storage_dir / "sources"))
         loader = ObsidianVaultLoader(vault_path)
         if incremental:
             raw_report = await loader.incremental_update(self._pi, wiki_name, self._sources)
@@ -1190,6 +1200,8 @@ class LLMWikiToolkit(AbstractToolkit):
         from parrot.knowledge.wiki.export import export_okf_bundle
 
         self._config_for(wiki_name)
+        if self.confine_sources:
+            output_dir = str(self._confined_path(output_dir, self._config_for(wiki_name).storage_dir / "exports"))
         report = await export_okf_bundle(self._store, Path(output_dir), wiki_name=wiki_name)
         await asyncio.to_thread(
             self._bookkeeper.log_operation,
@@ -1264,6 +1276,19 @@ class LLMWikiToolkit(AbstractToolkit):
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _confined_path(raw: str, root: Path) -> Path:
+        """``raw`` resolved against ``root`` (relative paths) and required to stay inside it (PA-14)."""
+        candidate = Path(str(raw)).expanduser()
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(root.resolve())
+        except ValueError as exc:
+            raise ValueError(f"path is outside the permitted directory ({root.name}/): {raw}") from exc
+        return resolved
 
     def _local_config_for(self, wiki_name: str) -> WikiConfig:
         """Config for a WRITE, which may only ever target the local wiki.

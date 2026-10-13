@@ -286,6 +286,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         # Register agent-declared commands (@telegram_command decorator)
         self._register_agent_commands()
 
+        # ─── Knowledge upload (FEAT-647) — before generic text/document handlers ───
+        self._knowledge_upload = None
+        if self.config.knowledge_upload.enabled:
+            from .knowledge_upload import TelegramKnowledgeUpload
+
+            self._knowledge_upload = TelegramKnowledgeUpload(self)
+            self._add_platform_commands(self._knowledge_upload.register(self.router))
+
         # ─── Operator Commands (FEAT-210) — before generic text handler ───
         # Must be registered here, before the generic message handler so that
         # Command("x") filters catch these commands before the text handler does.
@@ -3300,6 +3308,9 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         if self._synthesizer is not None:
             await self._synthesizer.close()
             self._synthesizer = None
+        # FEAT-647: cancel running knowledge-upload jobs (their finally deletes staged files)
+        if getattr(self, "_knowledge_upload", None) is not None:
+            await self._knowledge_upload.shutdown()
 
     async def handle_voice(self, message: Message) -> None:
         """Handle voice note (ContentType.VOICE) and audio file (ContentType.AUDIO).

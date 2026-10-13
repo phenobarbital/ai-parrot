@@ -29,6 +29,8 @@
 7. [WebSocket Protocol — Complete Message Reference](#7-websocket-protocol-complete-message-reference)
    - 7.1 [Client → Server messages](#71-client-server-messages)
    - 7.2 [Server → Client messages](#72-server-client-messages)
+   - 7.6 [Typed post-processors (FEAT-653)](#76-typed-post-processors-feat-653)
+   - 7.7 [Barge-in (hands-free interruption)](#77-barge-in-hands-free-interruption)
 8. [Flow Diagrams by VoiceMode](#8-flow-diagrams-by-voicemode)
    - 8.1 [VOICE — spoken or typed answer](#81-voice-spoken-or-typed-answer)
    - 8.2 [PROMPT\_SELECT — narrated + UI selection](#82-prompt_select-narrated-ui-selection)
@@ -401,6 +403,32 @@ All keys are optional; omitted keys use the model defaults.
 | `auto_advance` | boolean | `true` | When `true`, advance to the next question immediately after a valid answer. |
 | `enumerate_options` | boolean | `true` | When `true`, read option labels aloud for `PROMPT_SELECT` questions: *"Choose one: Engineering, Marketing, Operations."* |
 | `stt_confirm_threshold` | float 0–1 | `0.6` | STT confidence below this value triggers a `confirm_request` instead of auto-advancing. |
+| `form_uid` | string | (from URL) | v2: form to load (replaces `form_id`). |
+| `protocol_version` | int | `1` | `2` enables the additive v2 wire (section 7.3): `audio_segment` binary frames instead of base64 `audio`, strict inbound validation. |
+| `prefetch` | boolean | `true` | v2: push the next questions' audio segments ahead of time. `false` keeps base64 `audio` in `question`. |
+| `resume_session_id` | string \| null | `null` | v2: resume a saved session (answers, phase, cursor); replies `session_resumed`. Errors: `RESUME_FORBIDDEN`, `RESUME_UNAVAILABLE`, `RESUME_STALE`, `SESSION_ACTIVE` (which now carries the holder's `session_id` + `form_uid`, see section 10). |
+| `timezone` | string \| null | `null` | FEAT-653: client IANA timezone (e.g. `America/New_York`). Relative spoken dates ("tomorrow", "next Friday") resolve in it; absent or invalid (logged and ignored) → UTC, and relative dates are sent to confirmation. Send it on every start **and** on resume; it is never restored from a snapshot. |
+| `submit_mode` | `"server"` \| `"client"` | `"server"` | v2: `"client"` makes `review_confirm` validate and reply `answers_ready` without persisting anything (the host submits). `client` with `protocol_version: 1` is rejected with `INVALID_MESSAGE`. |
+
+### Form-level voice settings (`FormSchema.voice`)
+
+Form authors configure voice behaviour on `FormSchema.voice` (`VoiceFormConfig`); the client-relevant keys are
+below. Hands-free keys reach the client in `session_started.hands_free` (section 7.3).
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `hands_free.auto_record` | boolean | `true` | Auto-open the microphone when the last narration segment of a question ends. |
+| `hands_free.silence_ms` | int ≥ 0 | `1200` | End-of-speech silence that stops the recording. |
+| `hands_free.barge_in` | boolean | `true` | Ceiling for barge-in: the client MAY keep the mic armed during narration and cancel playback on speech onset (section 7.7). |
+| `hint_pause_ms` | int ≥ 0 | `600` | `pause:<ms>` between the question label and its hint. |
+| `option_pause_ms` | int ≥ 0 | `500` | `pause:<ms>` between enumerated options (not after the intro nor after the last one; `0` removes the pauses). Provisional default, to be calibrated end to end. |
+| `max_recording_seconds` | int ≥ 1 | `60` | Maximum length of one recording. |
+| `enumerate_options` | boolean | `true` | Narrate options item by item; `false` narrates only a count. |
+
+Per-field overrides live under `meta.voice` of a field: `pause_ms` (label→hint gap), `option_pause_ms`
+(gap between options of that field; wins over the form value, `0` allowed) and `enumerate`
+(`auto` \| `always` \| `never` \| `count_only`). There is no per-session override of `barge_in` or
+`option_pause_ms` in `start_session`.
 
 ---
 
@@ -703,6 +731,8 @@ Sent instead of `answer_accepted` when the STT `confidence` is below the
 The session is paused. No other answer is accepted until `confirm_answer` is sent.
 
 > For `sensitive` fields `transcript` is `"[hidden]"`.
+>
+> FEAT-653 (v2 only): `value` is the post-processed candidate (see §7.6) and `refined_by` is `"rules"` or `"llm"`. Show `value`, not `transcript`, as the editable candidate. Both are omitted for sensitive fields and for answers that were not post-processed.
 
 ---
 
@@ -738,6 +768,8 @@ The session does not advance — the same question is still active.
 }
 ```
 
+FEAT-653: for a spoken value that cannot be valid, `code` is `INVALID_EMAIL` or `INVALID_VALUE` and the optional `value` carries the best-effort candidate (v2 only, omitted for sensitive fields) so the client can prefill an editable input. See §7.6.
+
 ---
 
 #### `form_complete`
@@ -759,6 +791,42 @@ All questions answered. The form has been submitted to storage (when configured)
 
 `submission_id` is `null` if no `submission_storage` was configured or if the
 store write failed (a `WARNING` is logged; the session still completes normally).
+
+---
+
+#### `answers_ready`
+
+Terminal message of a session started with `submit_mode: "client"` (protocol v2 only). It replaces
+`form_complete`: on `review_confirm` the server runs the same deterministic validation (and the plausibility
+rules already applied before submit) but **persists nothing**, then completes the session (snapshot and active
+marker are released, as after `form_complete`).
+
+```json
+{
+  "type": "answers_ready",
+  "data": {
+    "qty":   { "answer": 520, "transcript": "five hundred twenty", "blob_ref": "voice-…" },
+    "email": "a@b.co"
+  },
+  "plausibility_summary": { "status": "ok", "threshold": 0.7, "items": {} }
+}
+```
+
+`data` is exactly what the submission pipeline would have stored: validator-sanitized values, voice evidence
+envelopes (with `blob_ref` to the stored recording when `store_recordings` is on) and plausibility verdicts
+attached to the envelopes. `plausibility_summary` is omitted when no plausibility report exists.
+Validation failures behave as in server mode: `validation_errors` and the first failing field is re-asked.
+
+**Host responsibilities**
+
+- The host submits `data` through its own endpoint (for FieldSync, the execution Action submit). There is no
+  "submit later" message and parrot knows nothing about Actions, visits or events.
+- Idempotency (e.g. a `client_request_id`) and Action/visit linking belong to the host.
+- `answers_ready` is terminal like `form_complete`; no `session_ended` follows.
+- `data` includes sensitive values the client typed on the same connection (they are never spoken or recorded).
+  `answers_ready` is never logged by the server; the host must treat it accordingly.
+- `submit_mode: "client"` requires `protocol_version: 2`; with v1 the server replies `INVALID_MESSAGE`
+  (`submit_mode client requires protocol v2`). A resumed session keeps the mode it was started with.
 
 ---
 
@@ -790,6 +858,413 @@ Response to `ping`.
 ```json
 { "type": "pong" }
 ```
+
+### 7.3 Protocol v2 — additive messages (FEAT-649)
+
+> **FEAT-654**: `hands_free.barge_in`, per-option narration segments (`options_intro`, `opt:<n>`, kind `option`)
+> and `option_pause_ms` are additive; see sections 6 and 7.7.
+
+Negotiated by `start_session.protocol_version: 2`. A client that omits `protocol_version` keeps the v1 wire
+(base64 `audio` inside `question`). v2 inbound messages reject unknown keys; v1 messages ignore them.
+The source of truth for every shape below is `parrot_formdesigner/audio/events.py`. Optional keys that have no
+value are **omitted** from the JSON (never `null`). Sensitive fields never carry their value on the wire (S8) and
+no `data_url` is ever sent by the server (AC8).
+
+#### `audio_segment`
+
+Header frame; the **next binary frame** carries the audio bytes for `key`. Buffer by `key` and play the
+`audio_keys` of each `question` in order (`pause:<ms>` keys are client-side timers and never get a header
+nor a binary frame). `kind` is one of `question`, `hint`, `options`, `option`, `system`, `review`.
+
+Key grammar: `q:<uid>:label | hint | options | options_intro | opt:<n>`, `pause:<ms>`, `sys:*`, `review:*`.
+An enumerated select question is narrated one segment per option:
+`q:<uid>:label`, [`pause`, `q:<uid>:hint`], `q:<uid>:options_intro` (kind `options`), `q:<uid>:opt:1`,
+`pause:<option_pause_ms>`, `q:<uid>:opt:2`, … (kind `option`). Count-only narration, `enumerate: never` and
+boolean questions keep the single `q:<uid>:options` segment. Protocol v1 / `prefetch: false` inline audio is
+unchanged: one `audio` with the whole narration in order.
+
+```json
+{"type": "audio_segment", "key": "q:3f2a…:label", "mime": "audio/wav", "kind": "question", "text": "What is your name?"}
+{"type": "audio_segment", "key": "q:3f2a…:opt:2", "mime": "audio/wav", "kind": "option", "text": "2, Beta."}
+```
+
+#### `review_confirm`
+
+Client → server. Sent from the review phase: `confirmed: true` submits, `false` keeps reviewing.
+
+```json
+{"type": "review_confirm", "confirmed": true}
+```
+
+#### `review_edit`
+
+Client → server. Jump back to one field from the review ("Change 3" by voice or a UI button).
+
+```json
+{"type": "review_edit", "field_id": "email"}
+```
+
+#### `plan_updated`
+
+Emitted when dependencies (`visible_if`, `required_if`, `computed`) change the question plan.
+
+```json
+{"type": "plan_updated", "order": ["name", "country", "state"], "hidden": ["company"], "cleared": ["state"],
+ "required_changed": {"state": true}, "hidden_by_cap": []}
+```
+
+#### `section_enter`
+
+Sent the first time the cursor enters a section.
+
+```json
+{"type": "section_enter", "section_uid": "contact", "title": "Contact details"}
+```
+
+#### `question_skipped`
+
+```json
+{"type": "question_skipped", "field_id": "phone", "reason": "skipped"}
+```
+
+#### `answer_cleared`
+
+A previously accepted answer was discarded (its field became hidden, or the user went back).
+
+```json
+{"type": "answer_cleared", "field_id": "state"}
+```
+
+#### `command_ack`
+
+Sent after a recognised hands-free voice command (see 7.4); the usual effect message follows.
+
+```json
+{"type": "command_ack", "command": "repeat", "field_id": "name"}
+```
+
+#### `review_start`
+
+Opens the final review. `answer_text` of a sensitive field is masked and `sensitive` is `true`.
+
+```json
+{"type": "review_start", "items": [
+  {"position": 1, "field_id": "name", "label": "Name", "answer_text": "Ana Pérez", "skipped": false,
+   "flagged": false, "sensitive": false},
+  {"position": 2, "field_id": "age", "label": "Age", "answer_text": "212", "skipped": false,
+   "flagged": true, "sensitive": false}
+]}
+```
+
+#### `review_item`
+
+One review line, sent when a single item is re-announced or changed (same `ReviewItemData` shape as above).
+
+```json
+{"type": "review_item", "item": {"position": 2, "field_id": "age", "label": "Age", "answer_text": "21",
+ "skipped": false, "flagged": false, "sensitive": false}}
+```
+
+#### `review_prompt`
+
+The closing question of the review ("Say yes to send, or change and a number").
+
+```json
+{"type": "review_prompt", "text": "Everything correct? Say send, or change followed by a number."}
+```
+
+#### `plausibility_result`
+
+Informational. `status` is `ok`, `skipped` or `blocked`; `items` is keyed by `field_id`. See 7.5.
+
+```json
+{"type": "plausibility_result", "status": "ok",
+ "items": {"age": {"plausible": false, "confidence": 0.31, "reason": "Age 212 is not realistic"}}}
+```
+
+#### `validation_errors`
+
+The deterministic validator rejected the submission; the server re-asks `first_field_id`.
+
+```json
+{"type": "validation_errors", "errors": {"email": ["Invalid email"]}, "first_field_id": "email"}
+```
+
+#### `session_resumed`
+
+Reply to `start_session{resume_session_id}` instead of `session_started`'s first question (the question for
+`cursor` follows). `phase` is the engine phase the snapshot was taken in.
+
+```json
+{"type": "session_resumed", "session_id": "9b1c…", "phase": "asking", "cursor": "email", "answered": ["name"]}
+```
+
+#### Active-session marker and resume TTLs (FEAT-655)
+
+A user has one active session at a time. When a second `start_session` is refused, the error carries the
+holder (only when it belongs to the same tenant; otherwise, or for a legacy marker, only `code`/`message`):
+
+```json
+{"type": "error", "code": "SESSION_ACTIVE", "message": "Another session is already active",
+ "session_id": "9b1c…", "form_uid": "7f3a…"}
+```
+
+Recommended client flow: show *Continue where you left off* and connect to that `form_uid`'s WS with
+`start_session{form_uid, resume_session_id: session_id}`. To discard the session instead, resume it and send `end`.
+
+- The snapshot lives `voice.resume_ttl_seconds` (per form, default 3600 s).
+- The active marker lives `active_ttl_seconds` = 600 s after the last saved answer (refreshed on every save), so a
+  session lost to a server crash stops blocking within 10 minutes.
+- The `/partial` mirror keeps its own TTL (`PartialSaveStore`, 3600 s).
+- **Second-device caveat**: continuing on device B while device A's connection is still open puts both on one
+  session; the first conflicting save closes one of them with `RESUME_CONFLICT` (no takeover arbitration yet).
+
+#### v2 additions to existing messages
+
+`start_session` keys are listed in section 6.
+
+`session_started`:
+
+| Key | Type | Notes |
+|---|---|---|
+| `protocol_version` | int | `2` when negotiated, else `1` |
+| `hands_free` | `{auto_record: bool, silence_ms: int, barge_in: bool}` | omitted when hands-free is not configured; `barge_in` is a ceiling — see section 7.7 |
+| `max_recording_seconds` | int | client must stop recording after this |
+| `prefetch_count` | int | number of upcoming questions whose segments are pushed ahead |
+
+`question`:
+
+| Key | Type | Notes |
+|---|---|---|
+| `audio` | string | base64; **only** for v1 or `prefetch: false` |
+| `section_uid` | string | section the field belongs to |
+| `hint` | string | field hint text |
+| `ui_cue` | `{control, focus, highlight, submit_via}` | which control to focus; `submit_via` is `voice`, `control` or `both` |
+| `answer_modes` | string[] | accepted answer channels |
+| `narration` | `{text, audio_keys[], segments{}}` | `audio_keys` are played in order; `segments` maps key to text |
+
+`answer_accepted`: adds optional `matched` (`{value, label, method, score}`, `method` one of `exact`, `ordinal`,
+`yes_no`, `numeric`, `contains`, `fuzzy`, `llm`) and `blob_ref` (stored recording reference). `value` is omitted for
+sensitive fields.
+
+`confirm_request`: adds optional `matched` and `alternatives` (list of the same match shape), FEAT-653 `value` and `refined_by` (§7.6), and `purpose`
+(`"answer"` default, or `"stop"` when the server asks the user to confirm a spoken STOP; for `"stop"` answer with
+`confirm_answer{confirmed}` — yes ends the session, no resumes; `field_id` may be `""` during review).
+
+`form_complete`: adds optional `stored_in` and `plausibility_summary` (object).
+
+### 7.4 Hands-free commands
+
+In protocol v2 the engine classifies a transcript as a command when the whole utterance (at most 4 words after
+normalisation) matches a phrase of the locale lexicon (`audio/narration/templates/<locale>/narration.yaml`;
+fuzzy match at 0.9 or better). A recognised command produces `command_ack`, then the effect message.
+
+| Command | en phrases | es phrases | Effect | Phase |
+|---|---|---|---|---|
+| `repeat` | repeat, say again, again, repeat that | repetir, repite, otra vez, de nuevo | re-send the current `question` | any |
+| `back` | back, go back, previous | atrás, regresar, volver, anterior | previous question | any |
+| `skip` | skip, skip it, pass | saltar, salta, omitir, paso | skip (required fields answer `REQUIRED`) | any |
+| `next` | next, continue | siguiente, continuar | like `skip` for optional fields | any |
+| `help` | help | ayuda | repeat the question | any |
+| `stop` | stop, cancel, quit | detener, parar, cancelar, salir | `session_ended` | any |
+| `yes` / `no` | yes, ok, okay, correct / no, incorrect | sí, si, ok, vale, correcto / no, incorrecto | answer a `confirm_request` | confirming, review |
+| `send` | send, submit (+ review confirmations) | enviar, mandar (+ confirmations) | submit from the review | review |
+| `change` | change, edit (+ "change N") | cambiar, corregir (+ "cambiar N") | `review_edit` of item N | review |
+
+Precedence: an exact option match always beats a command, so an option labelled "Next" is selected, not
+executed. Commands and option answers spoken mid-enumeration (including a barge-in, section 7.7) go through the
+same pipeline as any other recording. Commands are not recognised once the session is submitting, complete or aborted, and `yes`, `no`, `send`
+and `change` only count in the confirming and review phases. A command that is recognised but cannot run emits
+`error` `COMMAND_NOT_AVAILABLE`. Commands can be switched off per form or per field with
+`meta.voice.commands: "off"` (default `"on"`); then the utterance is treated as an answer.
+
+### 7.5 LLM answer plausibility
+
+When the form enables `llm_validation` (form level `enabled`, overridable per field), the audio engine runs **one
+batched LLM call** after the last question, before the review (phase `plausibility`), and a delta call for only the
+changed answers after a `review_edit`. The result is sent as `plausibility_result`; low-confidence answers
+(below `threshold`, default 0.7) are marked `flagged: true` in `review_start` and the review prompt mentions them.
+Plausibility is advisory: a flag never blocks the submission by itself.
+
+What is sent to the model: label, description, hint, field type, options and the scalar answer. Sensitive fields,
+blobs, files and `data_url` values are **never** sent (S8); field types listed in `exclude_field_types` are skipped.
+
+`on_error` decides what happens when the LLM call fails or times out (`timeout_s`):
+
+| `on_error` | Behaviour |
+|---|---|
+| `skip` (default) | `plausibility_result` with `status: "skipped"` and a `reason`; the review continues |
+| `block` | `error` `PLAUSIBILITY_UNAVAILABLE`; nothing is stored and the review stays open, `review_confirm` re-runs the check (it never submits an unchecked answer set) and repeats the error while the LLM stays unavailable |
+
+The same check is available over HTTP (additive, for the visual renderer):
+
+- `POST /api/v1/{tenant}/forms/{form_uid}/validate` with `{"data": {...}, "llm_validation": true}` (or query
+  `?llm_validation=true`) returns the usual `{is_valid, errors}` plus a `plausibility` block.
+- `POST /api/v1/{tenant}/forms/{form_uid}/data` returns the same `plausibility` block alongside the submission.
+
+```json
+{"is_valid": true, "errors": {}, "plausibility": {"status": "ok", "threshold": 0.7, "model": "gemini-2.5-flash",
+ "latency_ms": 640, "items": {"age": {"plausible": false, "confidence": 0.31, "reason": "Age 212 is not realistic"}}}}
+```
+
+With `on_error: "block"` and an LLM failure these endpoints answer `503` with
+`{"error": "...", "code": "PLAUSIBILITY_UNAVAILABLE"}` and a `Retry-After: 30` header. Low confidence never changes
+the HTTP status.
+
+### 7.6 Typed post-processors (FEAT-653)
+
+Every **spoken free-form answer** (a transcript that is neither a command nor an option match) goes through a
+**post-processor** chosen by the field type. It turns what was heard into the canonical value the submit gate
+(`FormValidator`) accepts, so nothing is stored as words and nothing invalid is stored.
+
+- **Spoken answers only.** Typed answers (`answer_text`, including a correction typed while confirming) are stored
+  exactly as typed. The one exception is EMAIL: a non-empty typed email that does not match the gate's
+  `EMAIL_PATTERN` is rejected with `INVALID_EMAIL`.
+- Each normalizer accepts both the written form Whisper usually produces ("0,4,12,523,573", "3/12", "john@gmail.com",
+  "$25") and the spoken-word form ("john at gmail dot com", "twenty five", "next Friday"). The spoken-token tables
+  live in the `en` / `es` narration YAML (`lexicon.spoken`). A phrase a locale's tables do not cover goes to
+  confirmation, never to a wrong value.
+- Option fields (SELECT, MULTI_SELECT, BOOLEAN, NPS, LIKERT) keep going through option matching, and TEXT, TEXT_AREA,
+  URL, MASKED, LOCATION and other types pass through unchanged.
+
+#### Canonical values
+
+| Field type | Canonical value | Goes to confirmation (`confirm_request.value`) when | Rejected (re-asked) when |
+|---|---|---|---|
+| `EMAIL` | lowercase `str` matching `EMAIL_PATTERN` | — | not exactly one `@`, or no pattern match (`INVALID_EMAIL`) |
+| `PHONE` | optional leading `+`, then digits only (leading zeros kept) | — | fewer than 7 digits, or no digits (`INVALID_VALUE`) |
+| `INTEGER` | `int` | — | no number, several numbers, non-integral |
+| `NUMBER` | `int` when integral, else `float` | — | no number, several numbers |
+| `DATE` | `"YYYY-MM-DD"` | relative phrase with no valid timezone (resolved in UTC); numeric date valid in both orders, e.g. `3/4` (candidate uses the locale order) | no parse, impossible date |
+| `TIME` | `"HH:MM"` (24 h) | hour 1–12 with no am/pm (candidate keeps the literal hour) | no parse, out of range |
+| `DATETIME` | `"YYYY-MM-DDTHH:MM"` (naive, client local time, like HTML `datetime-local`) | either part needs confirmation | either part rejected |
+
+Examples: phone `"0,4,12,523,573"` → `"0412523573"`; `"plus one 555 0100"` → `"+15550100"`; email
+`"john at gmail dot com"` → `"john@gmail.com"`; `"twenty five"` → `25`; with the client in `America/New_York`,
+`"next Friday"` said on Monday 2026-10-12 → `"2026-10-16"`.
+
+Weekday phrases (bare, `this <weekday>`, `next <weekday>`) all mean the nearest occurrence **after** today;
+`last <weekday>` the nearest one before. Numeric dates follow the locale order (`en` month/day, `es` day/month);
+ISO `YYYY-MM-DD` is accepted everywhere. A relative date is certain only when `start_session.timezone` is valid: with a missing or invalid timezone the
+server never guesses UTC — any relative phrase (today, tomorrow, yesterday, weekday names, next/this/last …, and
+their Spanish equivalents) yields a `confirm_request`; absolute dates and times are unaffected.
+
+#### Decision matrix
+
+| Candidate status | `confirm: "always"` | STT low¹ | LLM low² | Outcome |
+|---|---|---|---|---|
+| rejected | any | any | any | `answer_rejected` (`INVALID_EMAIL` for EMAIL, else `INVALID_VALUE`) with the candidate in `value`; the question stays active |
+| confirm | any | any | any | `confirm_request` with `value` — **even with `confirm: "never"`** |
+| accepted | yes | any | any | `confirm_request` |
+| accepted | no | yes | any | `confirm_request` (unchanged FEAT-649 rule) |
+| accepted | no | no | yes | `confirm_request` |
+| accepted | no | no | no | `answer_accepted` with the canonical value |
+
+¹ `confidence < stt_confirm_threshold` and `confirm` ≠ `"never"`. ² the candidate came from the LLM with
+`confidence < llm_refine_threshold`.
+
+Behaviour change to be aware of: with `confirm: "never"` a post-processed value that needs confirmation is still
+confirmed, and a rejected one is re-asked instead of being stored raw. "Yes" (`confirm_answer{confirmed: true}`)
+stores the candidate; a rejected value is **never** offered as a "yes". `raw_transcript` always keeps the words.
+
+#### Settings
+
+| Where | Key | Default | Meaning |
+|---|---|---|---|
+| field `meta.voice` | `normalize` | `true` | `false` stores the raw transcript for this field (no rules post-processor) |
+| field `meta.voice` | `llm_refine` | inherit | `true` / `false` overrides the form-level LLM setting for this field |
+| form `voice` | `llm_refine_values` | `false` | opt-in LLM post-processor for spoken answers of typed fields |
+| form `voice` | `llm_refine_threshold` | `0.8` | minimum LLM confidence to auto-accept (below it → `confirm_request`) |
+| form `voice` | `llm_refine_timeout_s` | `4.0` | per-answer LLM deadline (`0 < x <= 10`; larger values are rejected); on timeout the rules result is used. The wait blocks that session's message queue, so it is capped |
+
+The shipped defaults of `llm_refine_threshold`, `llm_refine_timeout_s` and `stt_confirm_threshold` are provisional
+until the calibration run over real field recordings (`scripts/calibrate_voice_postprocessors.py`) sets them.
+
+#### LLM post-processor (opt-in)
+
+When enabled for a field of a typed family (EMAIL, PHONE, NUMBER, INTEGER, DATE, TIME, DATETIME — never TEXT /
+TEXT_AREA, never a `sensitive` field), **every** spoken answer of that field runs through the rules first and then the
+LLM, which sees the field type and label, locale, timezone, today's date, the transcript and the rules candidate (never
+other fields' answers). The LLM's string is **re-normalized by the same rules**: only a value that comes out
+accepted/confirm becomes the candidate (`refined_by: "llm"`). The LLM **never turns a rules `confirm` or `rejected`
+into an accept**: when the rules said confirm/rejected, a usable LLM value yields at most a `confirm_request` carrying
+the refined value; when the rules said accepted, the outcome stays on the table above. It never overrides the
+STT-confidence rule or `confirm: "always"`. A failure, timeout or missing LLM client falls back to the
+rules result, so the turn is never lost. The client sees no extra message: the answer simply takes up to
+`llm_refine_timeout_s` longer.
+
+#### Wire changes (all additive; v1 clients are unaffected)
+
+- `start_session.timezone` (see §6).
+- `confirm_request.value`, `confirm_request.refined_by` — v2 only; omitted for sensitive fields and for answers that
+  were not post-processed.
+- `answer_rejected.value` — v2 only; omitted for sensitive fields.
+- Error codes `INVALID_EMAIL`, `INVALID_VALUE` (§10).
+
+#### v1 clients (legacy protocol)
+
+v1 clients never receive `value` / `refined_by` on `confirm_request`, so a v1 client confirms a normalized value
+**without seeing it** (it still sees the spoken transcript). This is accepted: v1 is the legacy protocol and
+`navigator-svelte` speaks v2. `answer_accepted.value` stays a **string** for v1 (numbers are sent as their decimal
+string, e.g. `"2500"`); v2 receives the typed number.
+
+#### Stored evidence
+
+Every non-sensitive spoken answer of a submission carries `normalized_by` (`"rules"`, `"llm"` or `null`) and, when the
+LLM produced it, `llm_confidence` in its voice evidence envelope, for all field types. The provenance survives
+`confirm_answer`, snapshot/resume and `wrap_voice`. Envelopes stored before FEAT-653 still validate.
+
+> **Rollback.** Snapshots and evidence envelopes written once these fields exist carry `normalized_by` /
+> `llm_confidence`, which models from before FEAT-653 (`extra="forbid"`) reject. There is no backward compatibility:
+> once voice data with these fields has been stored, do not downgrade below this version.
+
+---
+### 7.7 Barge-in (hands-free interruption)
+
+Barge-in lets the user answer (or say a command) while the narration is still playing. It is a **client policy**:
+the server needs nothing new — it already accepts a recording at any time during the asking and confirming
+phases and never learns that playback was interrupted. The server only announces the policy with
+`session_started.hands_free.barge_in` (default `true`).
+
+Client rules:
+
+1. While narration segments play, keep the microphone armed with a VAD. On confirmed speech onset: stop
+   playback (the current segment and the remaining `audio_keys`), start recording, and send the complete
+   recording as one binary frame, exactly like a normal answer.
+2. The user normally interrupts at an option boundary: that is why each option is its own segment with a
+   `pause:<option_pause_ms>` gap in between — stop at the segment boundary and listen.
+3. Two use cases: (a) the user already knows the answer and speaks over the question/hint/option list;
+   (b) the user hears the wanted option ("2, Beta.") and says it right away.
+4. After a barge-in the server replies as usual: `transcription`, then `answer_accepted` (next `question`) or
+   `confirm_request`. If the reply is `EMPTY_AUDIO` (the speech onset was noise), resume playback where it
+   stopped.
+
+```
+client                                   server
+  |-- playing opt:2 ("2, Beta.") --------|
+  |  VAD speech onset (~250 ms)          |
+  |  stop playback, start recording      |
+  |-- binary frame (one container) ----->|  STT
+  |<------------------ transcription ----|
+  |<------ answer_accepted + question ---|  (or confirm_request)
+```
+
+Acoustic guidance (VAD-agnostic): request `echoCancellation: true` and `noiseSuppression: true` on the
+`getUserMedia` audio track; check `getCapabilities()` and request `echoCancellation: "all"` where supported.
+Confirm an interruption only after about 250 ms of sustained speech — e.g. `@ricky0123/vad-web`
+`onSpeechRealStart` with `minSpeechMs` ≈ 250 and `preSpeechPadMs` ≈ 300 — or use a higher energy threshold
+during playback with an energy-based VAD. Prefer a headset over speaker-phone.
+
+**Ceiling rule (normative).** `hands_free.barge_in` is a ceiling, never a floor:
+
+- With `false` the client MUST NOT interrupt narration.
+- With `true` the client MUST still disable barge-in when `track.getSettings().echoCancellation !== true` after
+  requesting it, or when the user opted out in a per-device preference.
+- A client MUST NOT enable barge-in when the form says `false`.
+
+Rationale: without effective echo cancellation the microphone hears the narration itself, and an item such as
+"2, Beta." matches the option label exactly — the engine would then accept an answer the user never gave
+(`answer_accepted`, with no confirmation).
 
 ---
 
@@ -1267,6 +1742,9 @@ function playWavAudio(base64Audio, mimeType = "audio/wav") {
 
 ### 9.10 Full vanilla JS reference client
 
+> **Superseded (FEAT-649).** Kept as a v1 reference. New clients follow the protocol v2 brief in
+> `sdd/proposals/audio-form-interaction-workflow.handoff-navigator-svelte.md`.
+
 A complete, framework-agnostic reference implementation that handles all
 VoiceModes, the confirm flow, and graceful TTS degradation.
 
@@ -1675,6 +2153,9 @@ client.connect("en");
 ---
 
 ### 9.11 React / TypeScript component
+
+> **Superseded (FEAT-649).** Kept as a v1 reference. New clients follow the protocol v2 brief in
+> `sdd/proposals/audio-form-interaction-workflow.handoff-navigator-svelte.md`.
 
 A production-ready React hook + component that wraps the WebSocket protocol.
 
@@ -2176,6 +2657,32 @@ function QuestionInput({
 | `NO_PENDING_ANSWER` | `confirm_answer` sent without prior `confirm_request` | No | Don't send `confirm_answer` unless `confirm_request` was received |
 | `FIELD_MISMATCH` | `confirm_answer.field_id` ≠ pending field | No | Use the `field_id` from `confirm_request` |
 | `WRONG_FIELD` | Answer `field_id` ≠ current question | No | Always use `field_id` from the last `question` message |
+| `EMPTY_AUDIO` | Binary frame too short to be audio (< 256 bytes) | No | Record again |
+| `UNSUPPORTED_AUDIO` | Binary frame container not recognised (not WebM/Ogg/MP4/WAV) | No | Use a supported recorder format or `answer_text` |
+| `AUDIO_DECODE_ERROR` | Audio could not be decoded | No | Record again or use `answer_text` |
+| `NO_MATCH` | Transcript matched no option of a select field | No | Answer again or pick the option |
+| `INVALID_EMAIL` | A spoken or typed email is not a valid address (FEAT-653) | No | Say it again or type it; `answer_rejected.value` holds the candidate |
+| `INVALID_VALUE` | A spoken phone, number, date or time could not be turned into a valid value (FEAT-653) | No | Say it again or type it; `answer_rejected.value` holds the candidate |
+| `EMPTY` | Empty transcript or text answer | No | Answer again |
+| `REQUIRED` | Required field cannot be skipped | No | Answer the question |
+| `INVALID_OPTION` | Selected value is not an option of the field | No | Use a listed option |
+| `INVALID_FIELD` | `field_id` unknown or hidden in the current plan | No | Use a `field_id` from a `question` |
+| `NO_PREVIOUS` | `go_back` on the first question | No | Ignore |
+| `WRONG_PHASE` | Message not valid in the current phase | No | Wait for the expected message |
+| `ALREADY_STARTED` | `start_session` sent twice | No | Ignore |
+| `UNKNOWN_EVENT` | Engine received an event it does not handle | No | Check the message type |
+| `COMMAND_NOT_AVAILABLE` | Voice command recognised but not allowed here | No | Answer normally |
+| `INVALID_MESSAGE` | Message failed validation (v2: unknown keys rejected) | No | Fix the payload |
+| `TENANT_NOT_DECLARED` | Route has no tenant | **Yes** (1008) | Use a tenant route |
+| `TENANT_MISMATCH` | Token tenant differs from the route tenant | **Yes** (1008) | Use the right tenant |
+| `SESSION_ACTIVE` | Another live session already holds this user's session slot. Carries `session_id` and `form_uid` of that session when it belongs to the same tenant | No | Offer "Continue where you left off": `start_session{form_uid, resume_session_id: session_id}` on that form's WS; without ids, ask the user to close the other session |
+| `RESUME_FORBIDDEN` | `resume_session_id` belongs to another user/tenant (no existence oracle) | No | Start a new session |
+| `RESUME_STALE` | Form changed since the snapshot | No | Start a new session |
+| `RESUME_UNAVAILABLE` | No session store (Redis) configured, or snapshot expired/not found | No | Start a new session |
+| `RESUME_CONFLICT` | Session snapshot modified from another connection (compare-and-set lost) | **Yes** | Start a new connection and resume |
+| `PLAUSIBILITY_UNAVAILABLE` | `llm_validation.on_error: block` and the LLM failed | No | `review_confirm` re-runs the check before any submit |
+| `BLOB_STORE_FAILED` | Internal: recording could not be stored (best-effort evidence) | No | None, the answer is kept |
+| `SUBMIT_FAILED` | Submission pipeline failed | No | Retry `review_confirm` |
 | `INTERNAL_ERROR` | Unhandled server exception | No | Log and retry if transient |
 
 ---
@@ -2239,6 +2746,11 @@ It is accepted as-is (`source: "text"`). The validator does not enforce
 only `answer_selection` validates the value against the options list. Using
 `answer_text` bypasses options validation — useful for accessibility tools
 that paste option values programmatically.
+
+**Can the user speak while the options are being read?**
+
+Yes — see section 7.7 (barge-in). A spoken option or command goes through the same pipeline; an exact
+option match still beats a command.
 
 **Can I use `enumerate_options: false` to suppress reading option labels?**
 

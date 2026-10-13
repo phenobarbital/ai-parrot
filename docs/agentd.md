@@ -8,7 +8,7 @@
 service (systemd/supervisord-managed), and lets you converse with it from
 a terminal, from a one-shot script, or from an external LLM (Claude Code
 and friends) over MCP — all while its internal machinery
-(`AgentSchedulerManager` jobs, method invocation) keeps working exactly as
+(`SchedulerManager` jobs, method invocation) keeps working exactly as
 it does under the full aiohttp server.
 
 It sits between two existing options:
@@ -193,14 +193,34 @@ ImportError raised from inside an installed `agentd`.
 `AgentSchedulerManager` boots **headless** — no aiohttp import anywhere in
 the daemon's process path — via `start_headless(dsn=..., use_redis=...)`.
 Decorator-registered schedules (`@schedule(...)` on your agent's methods)
-always work; DB-backed dynamic schedules (`schedules.add/pause/resume/
-remove`) need a DSN.
+always work. Dynamic schedules use the target-agnostic payload below; `db`
+jobs need a DSN, while `redis` jobs use the Redis jobstore and `code` jobs
+remain in process.
+
+To add a dynamic schedule over the daemon protocol:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "schedules.add",
+  "params": {
+    "target_kind": "agent",
+    "target_name": "FirefliesObsidianSync",
+    "backend": "db",
+    "schedule_type": "interval",
+    "schedule_config": {"hours": 8},
+    "method_name": "sync_fireflies_transcripts",
+    "metadata": {"limit": 20}
+  }
+}
+```
 
 | `scheduler.dsn` | `scheduler.redis` | Jobstores | Decorator schedules | `schedules.add/pause/resume/remove` |
 |---|---|---|---|---|
-| `null` | `false` | in-memory only | ✅ | proxy errors (no DB to persist to, but calls don't crash the daemon) |
-| set | `false` | in-memory + Postgres-backed | ✅ | ✅ |
-| set | `true` | in-memory + Postgres + Redis | ✅ | ✅ |
+| `null` | `false` | in-memory only | ✅ | `code` jobs only |
+| set | `false` | in-memory + Postgres-backed | ✅ | `db` jobs ✅ |
+| set | `true` | in-memory + Postgres + Redis | ✅ | `db` and `redis` jobs ✅ |
 
 `schedules.list` always works regardless of DSN — it degrades gracefully
 to a JobStore-only view (decorator schedules) when no DB is configured.
@@ -364,7 +384,7 @@ one conversation session.
 | `tools.list` | — | `{tools: [...]}` |
 | `agent.invoke` | `{method, args?, kwargs?}` | Serialized result of a public agent method (underscore-prefixed methods always rejected; `exposed_methods` acts as an allowlist when non-empty) |
 | `schedules.list` | — | Jobs: id, trigger, next_run_time, `source` (`db`/`auto`) |
-| `schedules.add` | schedule fields | ack (`AgentSchedule`) |
+| `schedules.add` | `{target_kind, target_name, backend, schedule_type, schedule_config, ...}` | ack (`ServiceSchedule` or backend job definition) |
 | `schedules.pause` / `schedules.resume` / `schedules.remove` | `{schedule_id}` | ack |
 | `events.subscribe` / `events.unsubscribe` | — | `{subscribed: bool}` |
 | `daemon.status` | — | `{pid, uptime_s, version, scheduler: {available, running, jobs}, active_connections}` |

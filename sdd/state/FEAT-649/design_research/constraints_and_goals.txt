@@ -1,0 +1,13 @@
+- **Deterministic runtime.** No LLM in the per-turn loop. The only LLM touch points are (a) the design-time hint optimiser and (b) the end-of-form plausibility batch, both optional and fail-open. Narration comes from templates.
+- **Additive protocol.** Inbound Pydantic models use `extra="forbid"` (pattern in `core/schema.py:121`); a v1 client must keep working against a v2 server, and a v2 client must negotiate (`protocol_version`) before relying on `audio_segment` prefetch.
+- **`parrot.voice.*` and `parrot.clients.*` stay optional.** `audio_ws.py:47-54` guards them under `TYPE_CHECKING`; `parrot-formdesigner` must import and run without `ai-parrot` installed (the `ai-parrot` extra is `pyproject.toml:53-54`). The plausibility checker is therefore a separate service that degrades to `skipped`.
+- **STT is whole-file.** `AbstractTranscriberBackend.transcribe(audio_path, language)` (`packages/ai-parrot-integrations/src/parrot/voice/transcriber/backend.py:39`) takes a `Path`; there is no streaming or `bytes` entry point. Moonshine is English-only and may return `confidence=None` (`transcriber/backend.py:59`, `moonshine_backend.py:33-35`).
+- **SuperTonic TTS is WAV without SSML** (`tts/models.py:47`), so pauses are separate segments, never markup.
+- **One tenant per URL** (`/api/v1/{tenant}/forms/{form_uid}/audio/ws`, `api/routes.py:493`); the audio submit must carry it.
+- **Never truncate required fields; never narrate or send `sensitive` content** (today `sensitive` is derived: `field.field_type == FieldType.PASSWORD`, `renderers/audio.py:361`).
+- **Plausibility check never blocks** (owner, Round 1): low confidence re-asks (audio) or flags (HTTP); LLM failure or absence ⇒ submit proceeds with an audit mark.
+- **Plausibility input is text only**: label, description, hint, field type, options and the scalar answer. Never `sensitive` fields, never blobs or `data_url`, no cross-field context in v1 (owner, Round 2).
+- **Owner decisions from the proposal** (do not re-litigate): WS-only prefetch; `FormField.hint` first-class; voice envelope in `data[field_id]` for every spoken answer; list-all-then-listen selectors; per-form DDL migration + legacy normalisation; voice-or-button review confirmation; resume, per-form cap, optimiser, handoff and migration all in scope.
+- Existing `FormValidator.validate()` signature (`services/validators.py:221-229`) and `ValidationResult` (`services/validators.py:160-178`: `is_valid`, `errors`, `sanitized_data`, `extra_data`) are the deterministic gate; the plausibility report is **additive**, never folded into `errors`.
+
+---

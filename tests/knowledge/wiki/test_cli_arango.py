@@ -108,8 +108,8 @@ class TestBuildBackendChoice:
         ):
             result = _build_arangodb(runner, repo, "--no-graph", "--no-export")
         assert result.exit_code == 0, result.output
-        mock_arango_driver._connection.create_view.assert_awaited_once()
-        assert mock_arango_driver.create_collection.await_count == 5
+        assert mock_arango_driver._connection.create_view.await_count == 2  # pages + symbols views
+        assert mock_arango_driver.create_collection.await_count == 6
 
     def test_sqlite_backend_still_works(self, runner, repo):
         result = runner.invoke(

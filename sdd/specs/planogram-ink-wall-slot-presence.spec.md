@@ -326,7 +326,7 @@ class SlotPresence(BaseModel):                 # contracts.py
 | Test | Description |
 |---|---|
 | `test_ink_wall_products_found_end_to_end` | `test_ink_wall_example.py`-style run with a fake vision client: result dict has `products_found`, per-shelf lists are models, no brand-only entries |
-| `test_non_ink_wall_result_unchanged` | an endcap / product_on_shelves fixture run: `products_found == []`, lists identical to before |
+| `test_non_ink_wall_result_unchanged` | an endcap / product_on_shelves fixture run: `products_found == []`, lists identical to before. **Superseded by FEAT-648** (`sdd/specs/products-found-endcap.spec.md`): shelf-based types now opt in; the test became `test_non_ink_wall_labels_unchanged_with_presence`. |
 | `test_handler_serialises_products_found` | `handlers/planogram_compliance.py` job JSON contains `products_found` |
 
 ### Test Data / Fixtures

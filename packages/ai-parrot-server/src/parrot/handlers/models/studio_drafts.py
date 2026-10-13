@@ -5,7 +5,7 @@ Draft ``.py`` content lives on disk at ``AGENTS_DIR/_drafts/<name>.py``
 (and, once activated, at ``AGENTS_DIR/<name>.py``); this table holds
 ONLY the lifecycle state/audit trail (status, validation findings,
 ownership) — never the source itself. Pattern:
-``scheduler/models.py::AgentSchedule``.
+``scheduler/models.py::ServiceSchedule``.
 
 NOTE: deliberately NOT using ``from __future__ import annotations`` —
 asyncdb's Model/datamodel Cython field processor introspects
@@ -15,7 +15,7 @@ evaluation string literals the future import would produce; with it,
 constructing ``StudioDraft(...)`` raises ``TypeError: Expected type,
 got str`` inside ``datamodel.validation`` (confirmed empirically —
 matches the working, future-import-free ``scheduler/models.py::
-AgentSchedule`` pattern).
+ServiceSchedule`` pattern).
 
 BUGFIX (FEAT-467 TASK-2522): native PEP 604 ``X | None`` syntax is
 ``types.UnionType`` at class-definition time — NOT the same as

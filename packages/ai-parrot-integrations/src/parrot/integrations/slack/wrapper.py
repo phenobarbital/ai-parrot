@@ -123,6 +123,7 @@ class SlackAgentWrapper:
 
         # Command router (Jira commands delegated here before built-in dispatch)
         self._command_router = SlackCommandRouter()
+        self._knowledge_upload = None
         if oauth_manager is not None:
             register_jira_commands(self._command_router, oauth_manager)
             # Register the OAuth notifier on the app so the callback route
@@ -161,10 +162,20 @@ class SlackAgentWrapper:
     async def start(self) -> None:
         """Start the deduplication cleanup task."""
         await self._dedup.start()
+        if self.config.knowledge_upload.enabled:
+            from ..knowledge_upload.service import KnowledgeUploadService
+            from .knowledge_upload import SlackKnowledgeUpload
+
+            service = await KnowledgeUploadService.from_config(self.config.knowledge_upload)
+            self._knowledge_upload = SlackKnowledgeUpload(self, service)
+            self._knowledge_upload.register()
         self.logger.info("SlackWrapper started for %s", self.config.name)
 
     async def stop(self) -> None:
         """Stop background tasks and cleanup."""
+        upload = getattr(self, "_knowledge_upload", None)
+        if upload is not None:
+            await upload.service.shutdown()
         await self._dedup.stop()
         # Cancel any pending background tasks
         for task in self._background_tasks:
@@ -286,6 +297,15 @@ class SlackAgentWrapper:
 
             # Handle DM messages in assistant mode
             if event_type == "message" and event.get("channel_type") == "im":
+                dm_channel = event.get("channel")
+                dm_user = event.get("user") or "unknown"
+                if (
+                    event.get("files")
+                    and dm_channel
+                    and self._is_authorized(dm_channel, dm_user)
+                    and await self._run_interceptors(event)
+                ):
+                    return web.json_response({"ok": True})
                 # Skip bot messages
                 if not event.get("subtype") and not event.get("bot_id"):
                     task = asyncio.create_task(self._assistant_handler.handle_user_message(event))

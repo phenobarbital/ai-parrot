@@ -347,6 +347,9 @@ class AbstractTool(EventEmitterMixin, ABC):
     access: ClassVar[Optional[str]] = None
     # FEAT-622: Mapping[str, ServerParam] — params the server fills (see parrot.tools.server_params).
     server_managed_params: ClassVar[Dict[str, Any]] = {}
+    studio_hidden_args: ClassVar[frozenset] = frozenset()
+    """Arguments the host's store-only mode (:mod:`parrot.tools.exports_mode`) removes from the LLM schema and drops
+    from a call. Empty = the tool is not affected; with the mode off nothing here has any effect."""
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -680,8 +683,22 @@ class AbstractTool(EventEmitterMixin, ABC):
                 "$defs": pydantic_schema.get("$defs", {}),
             }
 
+        hidden = self._hidden_args()
+        if hidden:
+            params = schema["parameters"]
+            params["properties"] = {k: v for k, v in params.get("properties", {}).items() if k not in hidden}
+            params["required"] = [r for r in params.get("required", []) if r not in hidden]
+
         _enforce_no_extra_fields(schema["parameters"])
         return schema
+
+    def _hidden_args(self) -> frozenset:
+        """The arguments hidden from the LLM right now (``studio_hidden_args`` while the host's store-only mode is on)."""
+        if not self.studio_hidden_args:
+            return frozenset()
+        import parrot.tools.exports_mode as exports_mode
+
+        return self.studio_hidden_args if exports_mode.is_enabled() else frozenset()
 
     def get_tool_schema(self) -> Dict[str, Any]:
         """
@@ -985,6 +1002,8 @@ class AbstractTool(EventEmitterMixin, ABC):
 
             # Validate arguments (FEAT-622: an LLM-supplied server-managed value is dropped first)
             kwargs = gates.drop_server_managed(self, kwargs)
+            if hidden := self._hidden_args():
+                kwargs = {key: value for key, value in kwargs.items() if key not in hidden}
             validated_args = self.validate_args(**kwargs)
 
             # Resolve the kwargs dict that the tool actually receives (+ server-managed scope values).

@@ -14,6 +14,15 @@ from .plan import ScrapingPlan
 logger = logging.getLogger(__name__)
 
 
+def is_within(path: Path, root: Path) -> bool:
+    """Whether ``path`` resolves inside ``root`` (symlinks and ``..`` followed)."""
+    try:
+        path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 async def save_plan_to_disk(plan: ScrapingPlan, plans_dir: Path) -> Path:
     """Save a ScrapingPlan to disk following the naming convention.
 
@@ -28,10 +37,11 @@ async def save_plan_to_disk(plan: ScrapingPlan, plans_dir: Path) -> Path:
         Path to the saved file.
     """
     domain_dir = plans_dir / plan.domain
-    domain_dir.mkdir(parents=True, exist_ok=True)
-
     filename = f"{plan.name}_v{plan.version}_{plan.fingerprint}.json"
     file_path = domain_dir / filename
+    if not is_within(file_path, plans_dir):
+        raise ValueError("plan domain/name would write outside the plans directory")
+    domain_dir.mkdir(parents=True, exist_ok=True)
 
     async with aiofiles.open(file_path, "w") as f:
         await f.write(plan.model_dump_json(indent=2))

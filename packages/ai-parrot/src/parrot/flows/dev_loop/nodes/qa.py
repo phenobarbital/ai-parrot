@@ -608,7 +608,7 @@ class QANode(DevLoopNode):
             core = any(t.reason in ("core", "escalated") for t in inv.targets)
             criteria.append(
                 ShellCriterion(
-                    name=f"pytest[{inv.distribution}]" + (" (core escalation)" if core else ""),
+                    name=f"pytest[{inv.distribution}]" + (" (escalation)" if core else ""),
                     command=shlex.join(inv.argv),
                 )
             )
@@ -618,27 +618,23 @@ class QANode(DevLoopNode):
     async def _record_green_escalations(
         self, shared: Dict[str, Any], research: ResearchOutput, report: QAReport
     ) -> None:
-        """Record passed core and cap escalation criteria in the test-scope ledger. Never raises."""
+        """Record passed core escalation criteria in the test-scope ledger. Never raises."""
         plan = shared.get("test_scope_plan")
-        if plan is None or (not plan.core_hits and not getattr(plan, "cap_hits", {})):
+        if plan is None or not plan.core_hits:
             return
         try:
             for result in report.criterion_results:
-                if not result.passed or not result.name.endswith(" (core escalation)"):
+                if not result.passed or not result.name.endswith(" (escalation)"):
                     continue
                 dist = result.name[len("pytest[") : result.name.index("]")]
                 core_files = [hit.path for hit in plan.core_hits if dist in hit.distributions]
-                impact_files = list(getattr(plan, "cap_hits", {}).get(dist, ()))
-                impacted_hashes = {dist: plan.cap_impacted[dist]} if dist in getattr(plan, "cap_impacted", {}) else {}
-                if not core_files and not impact_files:
+                if not core_files:
                     continue
                 await asyncio.to_thread(
                     record_green_escalation,
                     Path(research.worktree_path),
                     [dist],
                     core_files,
-                    impact_files,
-                    impacted_hashes,
                 )
         except Exception as exc:  # noqa: BLE001 — ledger recording must never fail QA
             self.logger.warning("Could not record green escalations for %s: %s", research.feat_id, exc)

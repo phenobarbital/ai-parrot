@@ -576,7 +576,6 @@ class ValidationSupervisor:
             await asyncio.to_thread(log_path.parent.mkdir, parents=True, exist_ok=True)
 
             if not plan.invocations:
-                await asyncio.to_thread(log_path.write_bytes, b"")
                 await asyncio.to_thread(
                     self._append_log,
                     log_path,

@@ -158,3 +158,54 @@ def test_sanitize_mutates_in_place_and_returns_same_dict(client):
     out = client._sanitize_payload_for_model(payload)
     assert out is payload
     assert "temperature" not in payload
+
+
+# ── Claude 5 generation / Studio meta-agent default model (P1 integration fix) ──
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["claude-opus-5", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"],
+)
+def test_claude_5_generation_rejects_sampling(model):
+    assert AnthropicClient._rejects_sampling_params(model) is True
+    assert AnthropicClient.unsupported_params(model) == ["temperature", "top_p", "top_k"]
+
+
+def test_models_that_accept_sampling_report_no_unsupported_params():
+    assert AnthropicClient.unsupported_params("claude-sonnet-4-6") == []
+    assert AnthropicClient.unsupported_params("claude-opus-4-6") == []
+
+
+class _Captured(Exception):
+    """Raised by the fake SDK after recording the request, so no response parsing is needed."""
+
+
+@pytest.mark.asyncio
+async def test_studio_meta_agent_default_model_request_carries_no_temperature():
+    """The REAL request building of the meta agent's default model: no ``temperature`` reaches the SDK."""
+    from parrot.bots.studio.agent import AgentStudioAgent
+
+    agent = AgentStudioAgent(api_key="test-key")
+    seen: dict = {}
+
+    class _Messages:
+        async def create(self, **kwargs):
+            seen.update(kwargs)
+            raise _Captured
+
+    class _Sdk:
+        messages = _Messages()
+
+    llm = agent.llm
+
+    async def _get_client():
+        return _Sdk()
+
+    llm.get_client = _get_client
+    with pytest.raises(Exception):
+        await llm.ask("hello", temperature=0.1)
+    assert seen, "the SDK was never called"
+    assert seen["model"].startswith("claude-")
+    for param in ("temperature", "top_p", "top_k"):
+        assert param not in seen

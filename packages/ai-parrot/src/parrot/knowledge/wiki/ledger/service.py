@@ -33,7 +33,7 @@ from parrot.knowledge.wiki.project import (
     load_effective_config,
     sqlite_policy_from_config,
 )
-from parrot.knowledge.wiki.store import WikiStoreBusy, estimate_tokens
+from parrot.knowledge.wiki.store import SQLitePragmaPolicy, WikiStoreBusy, estimate_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +141,30 @@ class LedgerService:
         log = LedgerLog(str(ledger_dir / "events.jsonl"))
         index = LedgerIndex(store, log)
         return cls(index, store, log, shared_root)
+
+    @classmethod
+    def from_dir(cls, ledger_dir: Path, *, sqlite_policy: SQLitePragmaPolicy | None = None) -> "LedgerService":
+        """Open (creating if needed) a ledger at an explicit directory — no git root required (FEAT-569).
+
+        Used by ``wikitoolkit serve``: the server host has no checkout, so the
+        ledger location is configuration, not discovery. ``shared_root`` is
+        derived as ``ledger_dir.parent.parent`` (mirroring ``<root>/.parrot/ledger``);
+        :meth:`merge_blockers` therefore finds no per-spec index there and
+        returns ``[]`` — the merge gate keeps running on the shared checkout.
+
+        Args:
+            ledger_dir: Directory holding ``ledger.db`` and ``events.jsonl``.
+            sqlite_policy: Connection policy for the ledger's SQLite plane.
+
+        Returns:
+            A ready-to-use ``LedgerService``.
+        """
+        ledger_dir = ledger_dir.resolve()
+        ledger_dir.mkdir(parents=True, exist_ok=True)
+        store = LedgerStore(ledger_dir / "ledger.db", wiki_name="ledger", sqlite_policy=sqlite_policy)
+        log = LedgerLog(str(ledger_dir / "events.jsonl"))
+        index = LedgerIndex(store, log)
+        return cls(index, store, log, ledger_dir.parent.parent)
 
     async def _sync_best_effort(self) -> None:
         """Sync the index, tolerating a busy writer lock (reads use a stale index instead)."""

@@ -19,6 +19,7 @@ from pydantic import Field, field_validator
 import markdown
 from bs4 import BeautifulSoup, NavigableString
 from navconfig import BASE_DIR
+from ._exports import safe_template_name
 from .document import (
     AbstractDocumentTool,
     DocumentGenerationArgs
@@ -95,9 +96,16 @@ class PowerPointArgs(DocumentGenerationArgs):
     @field_validator('template_name')
     @classmethod
     def validate_template_name(cls, v):
+        v = safe_template_name(v)
         if v and not v.endswith('.html'):
             v = f"{v}.html"
         return v
+
+    @field_validator('pptx_template')
+    @classmethod
+    def validate_pptx_template(cls, v):
+        return safe_template_name(v)
+
 
 class PowerPointTool(AbstractDocumentTool):
     """
@@ -134,6 +142,7 @@ class PowerPointTool(AbstractDocumentTool):
 
     # Document type configuration
     document_type = "presentation"
+    studio_hidden_args = AbstractDocumentTool.studio_hidden_args | {"pptx_template_path"}
     default_extension = "pptx"
     supported_extensions = [".pptx", ".potx"]
 
@@ -143,6 +152,7 @@ class PowerPointTool(AbstractDocumentTool):
         output_dir: Optional[Union[str, Path]] = None,
         pptx_template_path: Optional[Path] = None,
         default_html_template: Optional[str] = None,
+        artifact_store: Any = None,
         **kwargs
     ):
         """
@@ -152,13 +162,14 @@ class PowerPointTool(AbstractDocumentTool):
             templates_dir: Directory containing HTML and PowerPoint templates
             output_dir: Directory where generated presentations will be saved
             default_html_template: Default HTML template for content processing
+            artifact_store: Server-managed artifact store (exports are published there when set)
             **kwargs: Additional arguments for AbstractDocumentTool
         """
         # Set up output directory before calling super().__init__
         if output_dir:
             kwargs['output_dir'] = Path(output_dir)
 
-        super().__init__(templates_dir=templates_dir, **kwargs)
+        super().__init__(templates_dir=templates_dir, artifact_store=artifact_store, **kwargs)
 
         self.default_html_template = default_html_template
         self.pptx_template_path = pptx_template_path or BASE_DIR.joinpath('presentations')
@@ -351,7 +362,9 @@ class PowerPointTool(AbstractDocumentTool):
     def _create_presentation(self, template_path: Optional[str] = None) -> Presentation:
         """Create or load PowerPoint presentation."""
         if template_path:
-            pptx_template = self._get_template_path(template_path)
+            # a Path was composed by the server from a validated NAME and ``pptx_template_path``; a bare name is
+            # resolved (and sandboxed) against the templates directory
+            pptx_template = template_path if isinstance(template_path, Path) else self._get_template_path(template_path)
             if pptx_template and pptx_template.exists():
                 self.logger.info(f"Loading PowerPoint template: {pptx_template}")
                 return Presentation(str(pptx_template))
@@ -983,7 +996,7 @@ class PowerPointTool(AbstractDocumentTool):
             processed_content = self._render_html_template(content, template_name, template_vars)
 
             if pptx_template:
-                pptx_template = self.pptx_template_path.joinpath(pptx_template)
+                pptx_template = self.pptx_template_path.joinpath(safe_template_name(pptx_template))
 
             # Preprocess markdown
             cleaned_content = self._preprocess_markdown(processed_content)

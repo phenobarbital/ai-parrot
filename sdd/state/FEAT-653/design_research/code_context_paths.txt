@@ -1,0 +1,16 @@
+packages/parrot-formdesigner/src/parrot_formdesigner/audio/engine.py
+packages/parrot-formdesigner/src/parrot_formdesigner/audio/events.py
+packages/parrot-formdesigner/src/parrot_formdesigner/audio/models.py
+packages/parrot-formdesigner/src/parrot_formdesigner/audio/narration/lexicon.py
+packages/parrot-formdesigner/src/parrot_formdesigner/audio/narration/templates/en/narration.yaml
+packages/parrot-formdesigner/src/parrot_formdesigner/audio/narration/templates/es/narration.yaml
+packages/parrot-formdesigner/src/parrot_formdesigner/audio/option_matcher.py
+packages/parrot-formdesigner/src/parrot_formdesigner/audio/option_refiner.py
+packages/parrot-formdesigner/src/parrot_formdesigner/core/voice.py
+packages/parrot-formdesigner/src/parrot_formdesigner/core/voice_answer.py
+packages/parrot-formdesigner/src/parrot_formdesigner/core/types.py
+packages/parrot-formdesigner/src/parrot_formdesigner/services/validators.py
+packages/parrot-formdesigner/src/parrot_formdesigner/api/audio_ws.py
+packages/parrot-formdesigner/pyproject.toml
+packages/ai-parrot/pyproject.toml
+packages/ai-parrot-integrations/src/parrot/voice/transcriber/faster_whisper_backend.py

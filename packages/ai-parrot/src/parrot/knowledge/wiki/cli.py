@@ -38,7 +38,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-import sys
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 import click
@@ -102,6 +101,7 @@ from parrot.knowledge.wiki.project import (
     validate_namespace_name,
     wiki_write_lock,
 )
+from parrot.knowledge.wiki import remote_cli
 from parrot.knowledge.wiki.repo_scan import (
     is_inside_wiki_bundle,
     is_wiki_relevant,
@@ -110,6 +110,12 @@ from parrot.knowledge.wiki.repo_scan import (
 from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiStoreBusy, create_wiki_store
 from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
+from parrot.knowledge.wiki.runtime import (
+    WikiRuntimeError,
+    build_ingest_runtime,
+    build_novelty_scorer,
+    build_triage_adapters,
+)
 from parrot.knowledge.wiki.ledger.service import LedgerService
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
@@ -1461,6 +1467,38 @@ def wiki(ctx: click.Context, verbose: bool) -> None:
 
 
 @wiki.command()
+@click.option(
+    "--config",
+    "config_path",
+    required=True,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="server.yaml",
+)
+@click.option("--host", default=None, help="Bind address (default: server.yaml host).")
+@click.option("--port", default=None, type=int, help="Bind port (default: server.yaml port).")
+@click.option(
+    "--ssl-cert",
+    "ssl_cert",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="TLS certificate (or terminate TLS at a reverse proxy).",
+)
+@click.option("--ssl-key", "ssl_key", default=None, type=click.Path(path_type=Path), help="TLS private key.")
+def serve(config_path: Path, host: str | None, port: int | None, ssl_cert: Path | None, ssl_key: Path | None) -> None:
+    """Serve one or more wikis as MCP Streamable HTTP at <base_path>/<wiki> (FEAT-569).
+
+    Runs ONE process; sessions are in-memory. Put a reverse proxy in front for
+    TLS and high availability. Requires `pip install 'ai-parrot[wikitoolkit-server]'`.
+    """
+    from parrot.knowledge.wiki.serve import WikiServerConfig, run_server
+
+    config = WikiServerConfig.from_yaml(config_path)
+    if ssl_cert or ssl_key:
+        config = config.model_copy(update={"ssl_cert_path": ssl_cert, "ssl_key_path": ssl_key})
+    _run(run_server(config, host=host, port=port))
+
+
+@wiki.command()
 def mcp() -> None:
     """Start wikitoolkit as a local MCP stdio server (FEAT-403).
 
@@ -1512,6 +1550,13 @@ def mcp() -> None:
         ".obsidian/ directory."
     ),
 )
+@click.option(
+    "--no-push",
+    "no_push",
+    is_flag=True,
+    help="Remote mode: scan locally but do not push to the remote server.",
+)
+@remote_cli.remote_aware(proxied=True)
 def build(
     path_: str | None,
     name: str | None,
@@ -1523,6 +1568,7 @@ def build(
     no_graph: bool,
     graph_kinds: str,
     vault_mode: bool | None,
+    no_push: bool,
 ) -> None:
     """Generate (or refresh) the KB graph from the current repository.
 
@@ -1540,6 +1586,7 @@ def build(
     # config (never the environment-merged one) — an environment/overlay
     # value must never leak into the committed .parrot/wiki.json.
     base_config = load_project_config(root)
+    push_files: list[str] | None = None
     with wiki_write_lock(config.storage_path(root)) as _acquired:
         if not _acquired:
             click.echo(
@@ -1743,6 +1790,54 @@ def build(
         # FEAT-578: refresh the ADR decision plane LAST — after ordinary
         # ingestion, export/graph generation and deletion handling above.
         _run(_refresh_adr_plane(_open_store(root, config), root, config))
+        push_files = [f.rel_path for f in getattr(scan, "files", [])]
+
+    _push_after_local(root, config, push_files, (), no_push)
+
+
+def _push_after_local(
+    root: Path,
+    config: WikiProjectConfig,
+    rel_paths: list[str] | None,
+    deleted: list[str] | tuple[str, ...],
+    no_push: bool,
+    *,
+    quiet: bool = False,
+) -> None:
+    """Remote mode only: push what the local run wrote (additive, scan semantics untouched)."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is None or no_push or rel_paths is None:
+        return
+    client = remote_cli.remote_client(remote)
+    report = remote_cli._run_push(client, _open_store(root, config), rel_paths, deleted)
+    if not quiet:
+        remote_cli.echo_push_report(report, remote.url)
+
+
+def _push_ingested_sources(
+    root: Path,
+    config: WikiProjectConfig,
+    sources: SourceCollectionManager,
+    uris: list[str],
+    no_push: bool,
+) -> None:
+    """Remote mode only: push the document slices an `ingest` run produced."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is None or no_push:
+        return
+    local_sources: dict[str, str] = {}
+    for uri in uris:
+        resolved = str(Path(uri).resolve())
+        source_id = sources.find_by_uri(resolved) or sources.find_by_uri(uri)
+        if source_id:
+            try:
+                label = Path(resolved).relative_to(root).as_posix()
+            except ValueError:
+                label = resolved
+            local_sources[f"doc:{label}"] = source_id
+    client = remote_cli.remote_client(remote)
+    report = remote_cli._run_push(client, _open_store(root, config), [], (), local_sources=local_sources)
+    remote_cli.echo_push_report(report, remote.url)
 
 
 def _changed_files_from_git(root: Path) -> list[str]:
@@ -1799,11 +1894,19 @@ def _changed_files_from_git(root: Path) -> list[str]:
     help="Upsert the files touched by the last git commit.",
 )
 @click.option("--quiet", "-q", is_flag=True, help="Suppress output (for git hooks).")
+@click.option(
+    "--no-push",
+    "no_push",
+    is_flag=True,
+    help="Remote mode: scan locally but do not push to the remote server.",
+)
+@remote_cli.remote_aware(proxied=True)
 def upsert(
     paths: tuple[str, ...],
     path_: str | None,
     changed: bool,
     quiet: bool,
+    no_push: bool,
 ) -> None:
     """Incrementally re-ingest specific files (or last-commit changes).
 
@@ -1813,6 +1916,7 @@ def upsert(
     next full `wikitoolkit build`.
     """
     root, config = _resolve_project(path_)
+    push_plan: tuple[list[str], list[str]] | None = None
     # Wait out a peer upsert (sub-second) rather than dropping the
     # commit's files; give up quickly if a multi-minute build holds it.
     with wiki_write_lock(config.storage_path(root), timeout=UPSERT_LOCK_WAIT_SECONDS) as _acquired:
@@ -1928,6 +2032,10 @@ def upsert(
         # FEAT-578: refresh the ADR decision plane LAST — after ordinary
         # ingestion and deletion handling above.
         _run(_refresh_adr_plane(_open_store(root, config), root, config))
+        push_plan = (existing, deleted)
+
+    if push_plan is not None:
+        _push_after_local(root, config, push_plan[0], push_plan[1], no_push, quiet=quiet)
 
 
 @wiki.command()
@@ -1957,6 +2065,7 @@ def upsert(
     help="Also fetch/render the full body of the top-ranked page.",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON results.")
+@remote_cli.remote_aware(proxied=True, tool="wiki_query")
 def query(
     question: str,
     path_: str | None,
@@ -1978,6 +2087,21 @@ def query(
     with `wikitoolkit page <id>` to read a full page, or
     `wikitoolkit related <id>` to walk the graph.
     """
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        if as_table:
+            remote_cli.refuse_remote("query --table", "remote mode prints tool text; use --json for raw results")
+        arguments = {
+            "question": question,
+            "budget_tokens": budget,
+            "namespace": ns_opt,
+            "include_symbols": False,
+        }
+        if as_json:
+            click.echo(json.dumps(remote_cli.call_remote(remote, "wiki_query", arguments), indent=2, default=str))
+        else:
+            click.echo(remote_cli.call_remote_text(remote, "wiki_query", arguments))
+        return
     store = _resolve_read_store(path_, store_opt, backend_opt, ns_opt)
     rows = _run(store.search_fts(question, category=category, limit=top_k))
     if not isinstance(store, FederatedWikiStore):
@@ -2028,6 +2152,7 @@ def query(
 @_store_options
 @ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@remote_cli.remote_aware(proxied=True, tool="wiki_page")
 def page(
     page_id: str,
     path_: str | None,
@@ -2042,6 +2167,14 @@ def page(
     PAGE_ID may carry a namespace prefix (``other::file:a.py``); with
     ``--ns <name>`` a bare id is resolved inside that namespace.
     """
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {"page_id": page_id, "namespace": ns_opt}
+        if as_json:
+            click.echo(json.dumps(remote_cli.call_remote(remote, "wiki_page", arguments), indent=2, default=str))
+        else:
+            click.echo(remote_cli.call_remote_text(remote, "wiki_page", arguments))
+        return
     store = _resolve_read_store(path_, store_opt, backend_opt, ns_opt)
     page_id = _qualify_for_ns(page_id, ns_opt)
     data = _run(store.get_page(page_id, include_body=True))
@@ -2076,6 +2209,7 @@ def page(
 @_store_options
 @ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@remote_cli.remote_aware(proxied=True, tool="wiki_related")
 def related(
     page_id: str,
     path_: str | None,
@@ -2091,6 +2225,14 @@ def related(
     PAGE_ID may carry a namespace prefix (``other::dir:pkg``); with
     ``--ns <name>`` a bare id is resolved inside that namespace.
     """
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {"page_id": page_id, "namespace": ns_opt}
+        if as_json:
+            click.echo(json.dumps(remote_cli.call_remote(remote, "wiki_related", arguments), indent=2, default=str))
+        else:
+            click.echo(remote_cli.call_remote_text(remote, "wiki_related", arguments))
+        return
     store = _resolve_read_store(path_, store_opt, backend_opt, ns_opt)
     page_id = _qualify_for_ns(page_id, ns_opt)
     rows = _run(store.neighbors(page_id, rel=rel, direction=direction))
@@ -2247,8 +2389,17 @@ def lint(
 @path_option
 @ns_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@remote_cli.remote_aware(proxied=True, tool="wiki_status")
 def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
     """Show wiki plane statistics, namespaces, and source staleness."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        if as_json:
+            click.echo(json.dumps(remote_cli.call_remote(remote, "wiki_status", {}), indent=2, default=str))
+        else:
+            click.echo(f"Mode      : remote ({remote.url})")
+            click.echo(remote_cli.call_remote_text(remote, "wiki_status", {}))
+        return
     root, effective = _resolve_project_effective(path_)
     config = effective.config
     overlay_label = str(effective.overlay_path) if effective.overlay_path else "base (no overlay)"
@@ -2488,6 +2639,7 @@ def symbols() -> None:
 @click.option("--path-prefix", "path_prefix", default=None, help="rel_path must start with this prefix.")
 @click.option("--limit", default=20, type=int, help="Maximum results.")
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
+@remote_cli.remote_aware(proxied=True, tool="wiki_symbol_lookup")
 def symbols_lookup(
     path_: str | None,
     ns_opt: str | None,
@@ -2499,6 +2651,23 @@ def symbols_lookup(
     as_json: bool,
 ) -> None:
     """Find a symbol (function/class/method) by name or qualname."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {
+            "query": query,
+            "kind": kind,
+            "language": language,
+            "path_prefix": path_prefix,
+            "limit": limit,
+            "namespace": ns_opt,
+        }
+        if as_json:
+            click.echo(
+                json.dumps(remote_cli.call_remote(remote, "wiki_symbol_lookup", arguments), indent=2, default=str)
+            )
+        else:
+            click.echo(remote_cli.call_remote_text(remote, "wiki_symbol_lookup", arguments))
+        return
     tool = _structural_tool("wiki_symbol_lookup", path_, ns_opt)
     kind_enum = SymbolKind(kind) if kind else None
     result = _run(tool._execute(query=query, kind=kind_enum, language=language, path_prefix=path_prefix, limit=limit))
@@ -2512,6 +2681,7 @@ def symbols_lookup(
 @click.option("--depth", default=2, type=int, help="Maximum symbol nesting depth.")
 @click.option("--source", "include_source", is_flag=True, help="Include a capped source excerpt (sym: targets only).")
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
+@remote_cli.remote_aware(proxied=True, tool="wiki_code_outline")
 def symbols_outline(
     path_: str | None,
     ns_opt: str | None,
@@ -2521,6 +2691,16 @@ def symbols_outline(
     as_json: bool,
 ) -> None:
     """Get the symbol outline of a file: file:<rel>, sym:<rel>#<q>, or a relative path."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {"target": target, "depth": depth, "include_source": include_source, "namespace": ns_opt}
+        if as_json:
+            click.echo(
+                json.dumps(remote_cli.call_remote(remote, "wiki_code_outline", arguments), indent=2, default=str)
+            )
+        else:
+            click.echo(remote_cli.call_remote_text(remote, "wiki_code_outline", arguments))
+        return
     tool = _structural_tool("wiki_code_outline", path_, ns_opt)
     result = _run(tool._execute(target=target, depth=depth, include_source=include_source))
     _echo_structural_result(result, as_json)
@@ -2550,6 +2730,7 @@ def symbols_outline(
     help="Include symbols under a tests/ path.",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit the raw Pydantic dict as JSON.")
+@remote_cli.remote_aware(proxied=True, tool="wiki_blast_radius")
 def symbols_blast(
     path_: str | None,
     ns_opt: str | None,
@@ -2561,6 +2742,23 @@ def symbols_blast(
     as_json: bool,
 ) -> None:
     """Find every symbol that transitively depends on (calls/extends/implements) SYMBOL."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {
+            "symbol": symbol,
+            "relations": list(relations) or None,
+            "depth": depth,
+            "include_inferred": include_inferred,
+            "include_tests": include_tests,
+            "namespace": ns_opt,
+        }
+        if as_json:
+            click.echo(
+                json.dumps(remote_cli.call_remote(remote, "wiki_blast_radius", arguments), indent=2, default=str)
+            )
+        else:
+            click.echo(remote_cli.call_remote_text(remote, "wiki_blast_radius", arguments))
+        return
     tool = _structural_tool("wiki_blast_radius", path_, ns_opt)
     result = _run(
         tool._execute(
@@ -2690,6 +2888,7 @@ def ns() -> None:
 @ns.command("list")
 @path_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@remote_cli.remote_aware(proxied=False)
 def ns_list(path_: str | None, as_json: bool) -> None:
     """List the namespaces visible from this project (repo + global)."""
     root, config = _resolve_project(path_)
@@ -2787,6 +2986,7 @@ def ns_list(path_: str | None, as_json: bool) -> None:
     is_flag=True,
     help="Write to the per-user registry (PARROT_HOME/wikis.json) " "instead of this repo's wiki.json.",
 )
+@remote_cli.remote_aware(proxied=False)
 def ns_add(
     name: str,
     path_: str | None,
@@ -2900,6 +3100,7 @@ def ns_add(
     is_flag=True,
     help="Remove from the per-user registry instead of this repo.",
 )
+@remote_cli.remote_aware(proxied=False)
 def ns_remove(name: str, path_: str | None, is_global: bool) -> None:
     """Remove namespace NAME from this repo (or the global registry)."""
     if is_global:
@@ -2980,6 +3181,7 @@ def ledger() -> None:
 @click.option("--about", multiple=True, help="Symbol/file IDs affected by this issue.")
 @click.option("--title", required=True, help="Issue title.")
 @click.option("--body", required=True, help="Issue description.")
+@remote_cli.remote_aware(proxied=True, tool="ledger_open")
 def ledger_open(
     kind: str,
     severity: str,
@@ -2989,6 +3191,18 @@ def ledger_open(
     body: str,
 ) -> None:
     """Open a new issue in the ledger."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {
+            "title": title,
+            "body": body,
+            "kind": kind,
+            "severity": severity,
+            "discovered_from": discovered_from,
+            "about": list(about) or None,
+        }
+        click.echo(remote_cli.call_remote_text(remote, "ledger_open", arguments))
+        return
     try:
         service = LedgerService.from_root()
         issue_id = _run(
@@ -3013,8 +3227,13 @@ def ledger_open(
 
 @ledger.command("ready")
 @click.option("--kind", type=click.Choice(["bug", "tech_debt", "feature_gap", "vulnerability"]), default=None)
+@remote_cli.remote_aware(proxied=True, tool="ledger_ready")
 def ledger_ready(kind: str | None) -> None:
     """List unclaimed, open issues."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        click.echo(remote_cli.call_remote_text(remote, "ledger_ready", {"kind": kind}))
+        return
     service = LedgerService.from_root()
     try:
         kind_enum = cast(IssueKind, kind) if kind else None
@@ -3030,8 +3249,15 @@ def ledger_ready(kind: str | None) -> None:
 @ledger.command("claim")
 @click.argument("issue_id")
 @click.option("--actor", default="agent:cli", help="Actor claiming the issue.")
+@remote_cli.remote_aware(proxied=True, tool="ledger_claim")
 def ledger_claim(issue_id: str, actor: str) -> None:
     """Claim an issue for work."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        click.echo(
+            remote_cli.call_remote_text(remote, "ledger_claim", {"issue_id": issue_id, "actor": actor}, by=actor)
+        )
+        return
     service = LedgerService.from_root()
     try:
         success = _run(service.claim(issue_id, actor))
@@ -3049,6 +3275,7 @@ def ledger_claim(issue_id: str, actor: str) -> None:
 @click.argument("issue_id")
 @click.option("--reason", required=True, help="Reason for acknowledgement.")
 @click.option("--actor", required=True, help="Must be human:<name>.")
+@remote_cli.remote_aware(proxied=False)
 def ledger_acknowledge(issue_id: str, reason: str, actor: str) -> None:
     """Acknowledge a critical issue (human-only)."""
     service = LedgerService.from_root()
@@ -3065,8 +3292,14 @@ def ledger_acknowledge(issue_id: str, reason: str, actor: str) -> None:
 @click.option("--reason", required=True, help="Reason for closing.")
 @click.option("--actor", default="agent:cli", help="Actor closing the issue.")
 @click.option("--resolved-by", default=None, help="Evidence ref: commit:<sha> or task:TASK-<NNN>.")
+@remote_cli.remote_aware(proxied=True, tool="ledger_close")
 def ledger_close(issue_id: str, reason: str, actor: str, resolved_by: str | None) -> None:
     """Close an issue."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {"issue_id": issue_id, "reason": reason, "resolved_by": resolved_by, "actor": actor}
+        click.echo(remote_cli.call_remote_text(remote, "ledger_close", arguments, by=actor))
+        return
     service = LedgerService.from_root()
     try:
         success = _run(service.close_issue(issue_id, reason, actor, resolved_by=resolved_by))
@@ -3146,8 +3379,19 @@ def ledger_unclaim(issue_id: str, reason: str, actor: str) -> None:
 @ledger.command("context")
 @click.argument("file_paths", nargs=-1, required=True)
 @click.option("--max-tokens", default=3000, help="Token budget for context.")
+@remote_cli.remote_aware(proxied=True, tool="ledger_context")
 def ledger_context(file_paths: tuple[str, ...], max_tokens: int) -> None:
     """Get context for file paths: open issues touching them."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        click.echo(
+            remote_cli.call_remote_text(
+                remote,
+                "ledger_context",
+                {"file_paths": list(file_paths), "max_tokens": max_tokens},
+            )
+        )
+        return
     service = LedgerService.from_root()
     context = _run(service.get_context(list(file_paths), max_tokens=max_tokens))
     if context:
@@ -3158,6 +3402,7 @@ def ledger_context(file_paths: tuple[str, ...], max_tokens: int) -> None:
 
 @ledger.command("blockers")
 @click.argument("feature_id")
+@remote_cli.remote_aware(proxied=False)
 def ledger_blockers(feature_id: str) -> None:
     """List unacknowledged critical issues blocking a feature merge."""
     service = LedgerService.from_root()
@@ -3174,6 +3419,7 @@ def ledger_blockers(feature_id: str) -> None:
 
 @ledger.command("export")
 @click.option("--dest", default="sdd/ledger/issues.jsonl", help="Export destination.")
+@remote_cli.remote_aware(proxied=False)
 def ledger_export(dest: str) -> None:
     """Export the ledger snapshot."""
     service = LedgerService.from_root()
@@ -3186,6 +3432,7 @@ def ledger_export(dest: str) -> None:
 
 
 @ledger.command("sync")
+@remote_cli.remote_aware(proxied=False)
 def ledger_sync() -> None:
     """Sync the ledger index from the event log."""
     service = LedgerService.from_root()
@@ -3201,6 +3448,7 @@ def ledger_sync() -> None:
 
 
 @ledger.command("rebuild")
+@remote_cli.remote_aware(proxied=False)
 def ledger_rebuild() -> None:
     """Rebuild the ledger index from scratch and checkpoint.
 
@@ -3231,6 +3479,7 @@ def ledger_rebuild() -> None:
 
 
 @ledger.command("ingest-sdd")
+@remote_cli.remote_aware(proxied=False)
 def ledger_ingest_sdd() -> None:
     """Ingest SDD specs and task indexes into the ledger."""
     from parrot.knowledge.wiki.ledger.sdd_ingest import SDDGraphIngest
@@ -3253,6 +3502,7 @@ def ledger_ingest_sdd() -> None:
 
 @ledger.command("compact")
 @click.option("--older-than", default=30, help="Days: events older than this can be compacted.")
+@remote_cli.remote_aware(proxied=False)
 def ledger_compact(older_than: int) -> None:
     """Compact the ledger index (index-only; manual only)."""
     service = LedgerService.from_root()
@@ -3265,6 +3515,7 @@ def ledger_compact(older_than: int) -> None:
 
 
 @ledger.command("audit")
+@remote_cli.remote_aware(proxied=False)
 def ledger_audit() -> None:
     """Print ledger audit: log size, event counts, and index stats."""
     service = LedgerService.from_root()
@@ -3498,6 +3749,7 @@ def schema_lookup(ref: str, as_json: bool) -> None:
     help="Also compute and print inter-community relations (FEAT-401).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@remote_cli.remote_aware(proxied=False)
 def communities(
     path_: str | None,
     graph_kinds: str,
@@ -3599,6 +3851,7 @@ def communities(
     show_default=True,
     help="Output directory for the markdown bundle (relative to root).",
 )
+@remote_cli.remote_aware(proxied=False)
 def export(path_: str | None, output: str) -> None:
     """Export the wiki as a human-readable markdown bundle.
 
@@ -3909,6 +4162,7 @@ def _extract_into_graph(
 @click.option("--date", "date_", default=None, help="ISO date (entity attribute).")
 @click.option("--due", default=None, help="ISO due date (entity attribute).")
 @click.option("--owner", default=None, help="Owner identity (entity attribute).")
+@remote_cli.remote_aware(proxied=True, tool="wiki_remember")
 def remember(
     text: str,
     path_: str | None,
@@ -3940,6 +4194,22 @@ def remember(
     """
     import hashlib
 
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {
+            "fact": text,
+            "category": category,
+            "title": title,
+            "link_page_id": links[0] if links else None,
+            "rel": rel,
+        }
+        if as_json:
+            click.echo(
+                json.dumps(remote_cli.call_remote(remote, "wiki_remember", arguments, by=by), indent=2, default=str)
+            )
+        else:
+            click.echo(remote_cli.call_remote_text(remote, "wiki_remember", arguments, by=by))
+        return
     store, storage_dir, root, config = _resolve_write_store(path_, store_opt, backend_opt, ns_opt)
     asserted_by = _authoring_identity(by)
     run_id = _authoring_run_id()
@@ -4085,6 +4355,7 @@ def remember(
 @ns_option
 @click.option("--by", default=None, help="Identity asserting this note.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@remote_cli.remote_aware(proxied=True, tool="wiki_note")
 def note(
     page_id: str,
     text: str,
@@ -4102,6 +4373,14 @@ def note(
     """
     from datetime import datetime
 
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {"page_id": page_id, "text": text}
+        if as_json:
+            click.echo(json.dumps(remote_cli.call_remote(remote, "wiki_note", arguments, by=by), indent=2, default=str))
+        else:
+            click.echo(remote_cli.call_remote_text(remote, "wiki_note", arguments, by=by))
+        return
     store, storage_dir, _root, _config = _resolve_write_store(path_, store_opt, backend_opt, ns_opt)
     page_id = _write_id_for_ns(page_id, ns_opt)
     page = _run(store.get_page(page_id, include_body=True))
@@ -4164,6 +4443,7 @@ def note(
 @ns_option
 @click.option("--by", default=None, help="Identity asserting this link.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@remote_cli.remote_aware(proxied=False)
 def link(
     src: str,
     dst: str,
@@ -4221,6 +4501,7 @@ def link(
 @click.option("--category", default=None, help="Filter by category.")
 @click.option("--limit", default=50, type=int, help="Maximum rows.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@remote_cli.remote_aware(proxied=False)
 def memories(
     path_: str | None,
     store_opt: str | None,
@@ -4251,6 +4532,7 @@ def memories(
 @_store_options
 @click.option("--limit", default=30, type=int, help="Maximum entries per plane.")
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@remote_cli.remote_aware(proxied=False)
 def audit(
     path_: str | None,
     store_opt: str | None,
@@ -4304,6 +4586,7 @@ def audit(
 @click.argument("claim")
 @path_option
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@remote_cli.remote_aware(proxied=False)
 def ground(
     claim: str,
     path_: str | None,
@@ -4395,12 +4678,31 @@ def sync() -> None:
     help="Target environment whose effective config names the shared plane.",
 )
 @click.option("--dry-run", is_flag=True, help="Compute and print the report; apply nothing.")
+@remote_cli.remote_aware(proxied=True)
 def sync_push_cmd(path_: str | None, target_env: str, dry_run: bool) -> None:
     """Push local memories/notes/asserted edges to the ENV plane.
 
     Every local memory page moves — push never filters by authorship.
+    In remote mode the pages travel through ``wiki_sync_push`` and ``--env`` is ignored.
     """
     from parrot.knowledge.wiki.sync import SyncError, default_local_identity, sync_push
+
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        root, config = _resolve_project(path_)
+        local = _require_built(root, config)
+        client = remote_cli.remote_client(remote)
+        if dry_run:
+            click.echo("DRY RUN — nothing applied (remote mode sends nothing)")
+            return
+        if target_env != "dev":
+            click.echo("Note: --env is ignored in remote mode.")
+        result = _run(remote_cli.sync_push_remote(client, local))
+        click.echo(
+            f"pushed: created={result.get('created', 0)} updated={result.get('updated', 0)} "
+            f"skipped-older={result.get('skipped_older', 0)}"
+        )
+        return
 
     root, _config = _resolve_project(path_)
     try:
@@ -4438,13 +4740,33 @@ def sync_push_cmd(path_: str | None, target_env: str, dry_run: bool) -> None:
         "— default excludes them so your own memories stay authoritative."
     ),
 )
+@remote_cli.remote_aware(proxied=True)
 def sync_pull_cmd(path_: str | None, target_env: str, dry_run: bool, include_own: bool) -> None:
     """Pull memories/notes/asserted edges from the ENV plane.
 
     By default, records authored by the local identity (``human:<user>``)
     are excluded (``--all`` switches to pure last-write-wins).
+    In remote mode the pages come through ``wiki_sync_pull`` and ``--env`` is ignored.
     """
     from parrot.knowledge.wiki.sync import SyncError, default_local_identity, sync_pull
+
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        root, config = _resolve_project(path_)
+        local = _require_built(root, config)
+        client = remote_cli.remote_client(remote)
+        report = _run(
+            remote_cli.sync_pull_remote(
+                client, local, wiki_name=config.wiki_name, include_own=include_own, dry_run=dry_run
+            )
+        )
+        if report.dry_run:
+            click.echo("DRY RUN — nothing applied")
+        click.echo(
+            f"pulled: created={report.created} updated={report.updated} "
+            f"skipped-older={report.skipped_older} skipped-own={report.skipped_own}"
+        )
+        return
 
     root, _config = _resolve_project(path_)
     try:
@@ -4502,6 +4824,7 @@ def sync_pull_cmd(path_: str | None, target_env: str, dry_run: bool, include_own
 )
 @click.option("--dry-run", is_flag=True, help="Compute and print the report; write nothing.")
 @click.option("--verbose", "-v", "verbose_", is_flag=True, help="Print one line per note.")
+@remote_cli.remote_aware(proxied=False)
 def sync_obsidian_cmd(
     path_: str | None,
     vault_opt: str | None,
@@ -4629,17 +4952,7 @@ def _build_triage_adapters(lightweight_model: str, model: str) -> tuple[Any, Any
         the lightweight model id, so mixing providers there would send
         one provider's client a model id meant for a different provider.
     """
-    from parrot.clients.factory import LLMFactory
-    from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
-
-    light_provider, light_model_id = LLMFactory.parse_llm_string(lightweight_model)
-    heavy_provider, heavy_model_id = LLMFactory.parse_llm_string(model)
-    light_client = LLMFactory.create(lightweight_model)
-    heavy_client = light_client if model == lightweight_model else LLMFactory.create(model)
-    light_adapter = PageIndexLLMAdapter(light_client, model=light_model_id)
-    heavy_adapter = PageIndexLLMAdapter(heavy_client, model=heavy_model_id)
-    same_provider = light_provider == heavy_provider
-    return light_adapter, heavy_adapter, light_model_id, same_provider
+    return build_triage_adapters(lightweight_model, model)
 
 
 def _resolve_ingest_model_ids(lightweight_model_opt: str | None, model_opt: str | None) -> tuple[str, str]:
@@ -4682,48 +4995,7 @@ def _build_novelty_scorer(root: Path, config: WikiProjectConfig, store: BaseWiki
     Returns:
         A configured ``NoveltyScorer``.
     """
-    from parrot.knowledge.wiki.search import WikiCombinedSearch
-    from parrot.knowledge.wiki.triage import NoveltyScorer
-
-    graph_db = config.graph_path(root) / f"{config.wiki_name}.db"
-    if not graph_db.exists():
-        return NoveltyScorer(
-            grounding_evaluator=None,
-            search=WikiCombinedSearch(None, None, store=store),
-        )
-
-    try:
-        from parrot.knowledge.graphindex.assemble import GraphAssembler
-        from parrot.knowledge.graphindex.factory import (
-            HashingGraphEmbedder,
-            make_stub_tenant_context,
-        )
-        from parrot.knowledge.graphindex.grounding import GroundingEvaluator
-        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
-        from parrot.knowledge.graphindex.retriever import GraphExpandedRetriever
-    except ImportError:
-        return NoveltyScorer(
-            grounding_evaluator=None,
-            search=WikiCombinedSearch(None, None, store=store),
-        )
-
-    async def _build_evaluator() -> Any:
-        persistence = SQLitePersistence(config.graph_path(root))
-        ctx = make_stub_tenant_context(config.wiki_name)
-        nodes, edges = await persistence.load_graph(ctx)
-        assembler = GraphAssembler(tenant_id=config.wiki_name)
-        for node in nodes:
-            assembler.add_node(node)
-        for edge in edges:
-            assembler.add_edge(edge)
-        embedder = HashingGraphEmbedder()
-        if nodes:
-            await embedder.embed_nodes(nodes)
-        retriever = GraphExpandedRetriever(graph=assembler.graph, nodes=nodes, embedder=embedder)
-        return GroundingEvaluator(retriever)
-
-    evaluator = _run(_build_evaluator())
-    return NoveltyScorer(grounding_evaluator=evaluator)
+    return _run(build_novelty_scorer(root, config, store))
 
 
 def _build_ingest_runtime(
@@ -4758,70 +5030,28 @@ def _build_ingest_runtime(
         click.ClickException: If neither model can be resolved or an LLM
             client cannot be constructed.
     """
-    from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
-    from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
-    from parrot.knowledge.wiki.documents import DocumentAcquirer
-    from parrot.knowledge.wiki.inbox.processor import InboxRuntime
-    from parrot.knowledge.wiki.ingest import WikiIngestOrchestrator
-    from parrot.knowledge.wiki.models import WikiConfig
-    from parrot.knowledge.wiki.search import WikiCombinedSearch
-    from parrot.knowledge.wiki.triage import IngestTriageRouter
-
     lightweight_model, model = _resolve_ingest_model_ids(lightweight_model_opt, model_opt)
     try:
-        light_adapter, heavy_adapter, light_model_id, same_provider = _build_triage_adapters(lightweight_model, model)
+        adapters = _build_triage_adapters(lightweight_model, model)
     except Exception as exc:
         raise click.ClickException(f"Could not build LLM client(s) for {lightweight_model!r}/{model!r}: {exc}") from exc
-
-    wiki_dir = config.storage_path(root)
-    pageindex_dir = wiki_dir / "pageindex"
-    pi_toolkit = PageIndexToolkit(
-        heavy_adapter,
-        storage_dir=pageindex_dir,
-        lightweight_model=light_model_id if same_provider else None,
-    )
-    if not same_provider:
-        _cli_logger.info(
-            "Stage-1/Stage-2 triage models use different providers "
-            "(%s / %s); PageIndexToolkit will use the Stage-2 (heavy) "
-            "model for its own internal page-generation steps too.",
-            lightweight_model,
-            model,
-        )
-    bookkeeper = WikiBookkeeper()
-    orchestrator = WikiIngestOrchestrator(
-        pi_toolkit,
-        None,
-        sources,
-        bookkeeper,
-        store=store,
-        sync_graph=config.sync_graph,
-    )
     novelty_scorer = _build_novelty_scorer(root, config, store)
-    router = IngestTriageRouter(charter, light_adapter, sources, novelty_scorer, heavy_adapter=heavy_adapter)
-    wiki_config = WikiConfig(
-        wiki_name=config.wiki_name,
-        storage_dir=wiki_dir,
-        charter_path=charter_path,
-        sync_graph=config.sync_graph,
-        storage_backend=config.backend,
-    )
-    return InboxRuntime(
-        root=root,
-        config=config,
-        wiki_config=wiki_config,
-        charter=charter,
-        store=store,
-        sources=sources,
-        bookkeeper=bookkeeper,
-        acquirer=DocumentAcquirer(fetch_timeout=fetch_timeout),
-        router=router,
-        orchestrator=orchestrator,
-        light_adapter=light_adapter,
-        heavy_adapter=heavy_adapter,
-        search=WikiCombinedSearch(None, None, store=store),
-        models={"lightweight": lightweight_model, "heavy": model},
-    )
+    try:
+        return build_ingest_runtime(
+            root,
+            config,
+            store,
+            sources,
+            charter,
+            charter_path,
+            lightweight_model=lightweight_model,
+            model=model,
+            novelty_scorer=novelty_scorer,
+            adapters=adapters,
+            fetch_timeout=fetch_timeout,
+        )
+    except WikiRuntimeError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def _print_triage_summary(entries: list[Any], skipped: list[str] | None = None) -> None:
@@ -5049,6 +5279,13 @@ def _dispatch_roblox_api_ingest(
         "generation. Ignored for every other SOURCE."
     ),
 )
+@click.option(
+    "--no-push",
+    "no_push",
+    is_flag=True,
+    help="Remote mode: scan locally but do not push to the remote server.",
+)
+@remote_cli.remote_aware(proxied=True)
 def ingest(
     source: str,
     path_: str | None,
@@ -5065,6 +5302,7 @@ def ingest(
     recursive: bool,
     fetch_timeout: float,
     refresh_flag: bool,
+    no_push: bool,
 ) -> None:
     """Supervised (charter-driven) ingestion of a document corpus.
 
@@ -5263,6 +5501,7 @@ def ingest(
         )
         _run(_apply_all(applied, wiki_config, header.charter_version))
         _checkpoint_if_sqlite(store, "ingest")
+        _push_ingested_sources(root, config, sources, [e.source_uri for e in applied], no_push)
         click.echo(f"Applied {len(applied)} decision(s) from {review_opt}.")
         return
 
@@ -5360,6 +5599,7 @@ def ingest(
         ManifestWriter(manifest_path).write(header, entries)
         _run(_apply_all(entries, wiki_config, charter.version, acquired_by_uri))
         _checkpoint_if_sqlite(store, "ingest")
+        _push_ingested_sources(root, config, sources, [e.source_uri for e in entries], no_push)
         click.echo(
             f"Applied {len(entries)} interactive decision(s)," f" skipped {len(skipped)}. Manifest: {manifest_path}"
         )
@@ -5390,6 +5630,7 @@ def ingest(
     ManifestWriter(manifest_path).write(header, entries)
     _run(_apply_all(entries, wiki_config, charter.version, acquired_by_uri))
     _checkpoint_if_sqlite(store, "ingest")
+    _push_ingested_sources(root, config, sources, [e.source_uri for e in entries], no_push)
     audited = [e for e in entries if e.audit_sample]
     click.echo(
         f"Applied {len(entries)} auto decision(s), skipped {len(skipped)}."
@@ -5567,6 +5808,7 @@ def inbox(
     help="Emit the SweepReport as JSON.",
 )
 @click.option("--quiet", "-q", is_flag=True, help="Only print the final summary line.")
+@remote_cli.remote_aware(proxied=False)
 def ingest_jira(
     jql: str | None,
     project_key: str | None,

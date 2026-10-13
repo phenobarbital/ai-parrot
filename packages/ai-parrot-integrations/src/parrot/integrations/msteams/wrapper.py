@@ -181,6 +181,13 @@ class MSTeamsAgentWrapper(ActivityHandler, MessageHandler):
         agent_cmd_handler = AgentCommandHandler(agent, self)
         agent_cmd_handler.register(self._command_router)
 
+        # Chat-driven knowledge upload (FEAT-647) — /ingest_book, /ingest_wiki
+        self._knowledge_upload = None
+        if config.knowledge_upload.enabled:
+            from .commands.knowledge_upload import register_knowledge_upload_commands
+
+            self._knowledge_upload = register_knowledge_upload_commands(self._command_router, self)
+
         if oauth_manager is not None:
             register_jira_commands(self._command_router, oauth_manager)
             # Register the OAuth notifier for proactive messaging after callback.

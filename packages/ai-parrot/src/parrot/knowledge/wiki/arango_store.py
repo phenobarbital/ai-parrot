@@ -39,6 +39,7 @@ from parrot.knowledge.wiki.store import (
     estimate_tokens,
     rank_by_cosine,
 )
+from parrot.knowledge.wiki.symbols import SymbolRecord, sym_concept_id
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ EDGES_COLLECTION = "wiki_edges"
 EMBEDDINGS_COLLECTION = "wiki_embeddings"
 SOURCES_COLLECTION = "wiki_sources"
 META_COLLECTION = "wiki_meta"
+SYMBOLS_COLLECTION = "wiki_symbols"
 
 
 def _now_iso() -> str:
@@ -298,11 +300,13 @@ class ArangoDBWikiStore(BaseWikiStore):
                 (EMBEDDINGS_COLLECTION, False),
                 (SOURCES_COLLECTION, False),
                 (META_COLLECTION, False),
+                (SYMBOLS_COLLECTION, False),
             ):
                 if not await self._db.collection_exists(name):
                     await self._db.create_collection(name, edge=is_edge)
 
             await self._create_pages_view()
+            await self._create_symbols_view()
             self._loop = asyncio.get_running_loop()
             self._initialized = True
 
@@ -330,11 +334,12 @@ class ArangoDBWikiStore(BaseWikiStore):
 
         self._db = AsyncDB("arangodb", params={**self._params, "database": self._database})
         await self._db.connection()
-        if not await self._db.collection_exists(PAGES_COLLECTION):
-            raise FileNotFoundError(
-                f"ArangoDB database {self._database!r} has no"
-                f" {PAGES_COLLECTION} collection — the wiki was never built"
-            )
+        for collection in (PAGES_COLLECTION, SYMBOLS_COLLECTION):
+            if not await self._db.collection_exists(collection):
+                raise FileNotFoundError(
+                    f"ArangoDB database {self._database!r} has no"
+                    f" {collection} collection — the wiki was never built"
+                )
 
     @property
     def _view_properties(self) -> dict[str, Any]:
@@ -351,6 +356,53 @@ class ArangoDBWikiStore(BaseWikiStore):
                 }
             }
         }
+
+    @property
+    def _symbols_view_name(self) -> str:
+        """Name of the ArangoSearch view backing symbol search."""
+        return f"{self._wiki_name}_symbols_view"
+
+    @property
+    def _symbols_view_properties(self) -> dict[str, Any]:
+        """Link symbol text fields with the configured ArangoSearch analyzers."""
+        return {
+            "links": {
+                SYMBOLS_COLLECTION: {
+                    "analyzers": list(self.analyzers),
+                    "fields": {"name": {}, "qualname": {}, "doc": {}, "signature": {}},
+                }
+            }
+        }
+
+    async def _create_symbols_view(self) -> None:
+        """Create or reconcile the ArangoSearch view over symbol documents."""
+        connection = self._db._connection
+        existing_views = await connection.views()
+        if not any(v.get("name") == self._symbols_view_name for v in existing_views):
+            await connection.create_view(
+                name=self._symbols_view_name,
+                view_type="arangosearch",
+                properties=self._symbols_view_properties,
+            )
+            return
+
+        try:
+            info = await connection.view_info(self._symbols_view_name)
+        except Exception as exc:  # noqa: BLE001 - a failed probe must not rewrite a live view
+            self.logger.warning(
+                "Could not read properties of view %s (%s); leaving it as is",
+                self._symbols_view_name,
+                exc,
+            )
+            return
+        link = (info.get("links") or {}).get(SYMBOLS_COLLECTION) or {}
+        if set(link.get("analyzers") or []) != set(self.analyzers):
+            self.logger.info(
+                "Updating ArangoSearch view %s to analyzers %s",
+                self._symbols_view_name,
+                self.analyzers,
+            )
+            await connection.replace_view(self._symbols_view_name, self._symbols_view_properties)
 
     async def _create_pages_view(self) -> None:
         """Create the ArangoSearch pages view, or update a stale one.
@@ -795,6 +847,11 @@ class ArangoDBWikiStore(BaseWikiStore):
                 {"old_keys": old_keys, "@collection": PAGES_COLLECTION},
             )
 
+        await self._execute(
+            "FOR s IN @@collection FILTER s.source_id == @sid REMOVE s IN @@collection",
+            {"@collection": SYMBOLS_COLLECTION, "sid": source_id},
+        )
+
         written = await self.upsert_pages(pages)
         if edges:
             await self.add_edges(edges)
@@ -812,6 +869,113 @@ class ArangoDBWikiStore(BaseWikiStore):
             "pages_written": written,
             "edges_written": len(edges),
         }
+
+    def _symbol_doc(self, record: SymbolRecord, source_id: Optional[str], now: str) -> dict[str, Any]:
+        """Build the ArangoDB document for one symbol record."""
+        concept_id = sym_concept_id(record.rel_path, record.qualname)
+        return {
+            "_key": document_key(concept_id),
+            "concept_id": concept_id,
+            "source_id": source_id if source_id is not None else f"file:{record.rel_path}",
+            "updated_at": now,
+            **record.model_dump(mode="json"),
+        }
+
+    def _doc_to_symbol_record(self, doc: dict[str, Any]) -> SymbolRecord:
+        """Rebuild a :class:`SymbolRecord` from a symbol collection document."""
+        fields = {key: value for key, value in doc.items() if key in SymbolRecord.model_fields}
+        return SymbolRecord.model_validate(fields)
+
+    async def upsert_symbols(self, symbols: list[SymbolRecord], source_id: Optional[str] = None) -> int:
+        """Persist symbols with optional source-slice replacement semantics."""
+        if not symbols and source_id is None:
+            return 0
+        self._assert_writable()
+        await self._ensure_init()
+        now = _now_iso()
+        docs = [self._symbol_doc(record, source_id, now) for record in symbols]
+        if source_id is not None:
+            keep = [doc["_key"] for doc in docs]
+            await self._query(
+                "FOR s IN @@c FILTER s.source_id == @sid AND s._key NOT IN @keep REMOVE s IN @@c",
+                {"@c": SYMBOLS_COLLECTION, "sid": source_id, "keep": keep},
+            )
+        if docs:
+            await self._query(
+                "FOR d IN @docs UPSERT {_key: d._key} INSERT d REPLACE d IN @@c",
+                {"@c": SYMBOLS_COLLECTION, "docs": docs},
+            )
+        return len(docs)
+
+    async def symbols_for(self, rel_path: str) -> list[SymbolRecord]:
+        """Return every symbol for a file, ordered by source line."""
+        await self._ensure_init()
+        rows = await self._query(
+            "FOR s IN @@c FILTER s.rel_path == @p SORT s.start_line RETURN s",
+            {"@c": SYMBOLS_COLLECTION, "p": rel_path},
+        )
+        return [self._doc_to_symbol_record(row) for row in rows]
+
+    async def find_symbols(
+        self,
+        name: Optional[str] = None,
+        *,
+        qualname_prefix: Optional[str] = None,
+        kind: Optional[str] = None,
+        language: Optional[str] = None,
+        path_prefix: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[SymbolRecord]:
+        """Find symbols using exact and prefix filters."""
+        await self._ensure_init()
+        filters: list[str] = []
+        bind_vars: dict[str, Any] = {"@c": SYMBOLS_COLLECTION, "name": name, "limit": limit}
+        if name is not None:
+            filters.append("s.name == @name")
+            bind_vars["name"] = name
+        if qualname_prefix is not None:
+            filters.append("STARTS_WITH(s.qualname, @qualname_prefix)")
+            bind_vars["qualname_prefix"] = qualname_prefix
+        if kind is not None:
+            filters.append("s.kind == @kind")
+            bind_vars["kind"] = kind
+        if language is not None:
+            filters.append("s.language == @language")
+            bind_vars["language"] = language
+        if path_prefix is not None:
+            filters.append("STARTS_WITH(s.rel_path, @path_prefix)")
+            bind_vars["path_prefix"] = path_prefix
+        filter_clause = f"FILTER {' AND '.join(filters)} " if filters else ""
+        aql = (
+            "FOR s IN @@c "
+            f"{filter_clause}"
+            "SORT (s.name == @name ? 0 : 1), s.rel_path, s.qualname "
+            "LIMIT @limit RETURN s"
+        )
+        rows = await self._query(aql, bind_vars)
+        return [self._doc_to_symbol_record(row) for row in rows]
+
+    async def search_symbols_fts(self, query: str, limit: int = 20) -> list[SymbolRecord]:
+        """Search symbol names and documentation through the ArangoSearch view."""
+        await self._ensure_init()
+        bind_vars: dict[str, Any] = {"query": query, "limit": limit}
+        clauses = []
+        for index, analyzer in enumerate(self.analyzers):
+            key = f"analyzer{index}"
+            bind_vars[key] = analyzer
+            clauses.append(
+                f"ANALYZER(s.name IN TOKENS(@query, @{key}) OR"
+                f" s.qualname IN TOKENS(@query, @{key}) OR"
+                f" s.doc IN TOKENS(@query, @{key}) OR"
+                f" s.signature IN TOKENS(@query, @{key}), @{key})"
+            )
+        aql = (
+            f"FOR s IN `{self._symbols_view_name}` "
+            f"SEARCH {' OR '.join(clauses)} "
+            "SORT BM25(s) DESC LIMIT @limit RETURN s"
+        )
+        rows = await self._query(aql, bind_vars)
+        return [self._doc_to_symbol_record(row) for row in rows]
 
     async def delete_page(self, concept_id: str) -> bool:
         """Delete a page and its embeddings/edges.

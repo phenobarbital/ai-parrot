@@ -1,0 +1,517 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-648",
+  "mode": "enrichment",
+  "summary_oneline": "Fill products_found (SlotPresence list) for every product-detecting planogram type by turning the existing slot_presence reporting policy on beyond ink_wall.",
+  "localization": [
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/definition.py",
+      "symbol": "ReportingPolicy",
+      "lines": "49-57",
+      "role": "policy whose `slot_presence: bool = False` default is the only reason non-ink-wall types return `[]`",
+      "evidence": [
+        "F004",
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/definition.py",
+      "symbol": "effective_reporting",
+      "lines": "196-225",
+      "role": "merges layout-profile reporting with the per-row `slots_definition.meta.reporting` override (kill switch per configuration)",
+      "evidence": [
+        "F004"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/stages/compare.py",
+      "symbol": "compare_observations",
+      "lines": "188-231",
+      "role": "shared compare stage; computes `products_found = build_slot_presence(...) if policy.slot_presence else []` for every type",
+      "evidence": [
+        "F003",
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/presence.py",
+      "symbol": "build_slot_presence",
+      "lines": "42-99",
+      "role": "type-agnostic builder: one SlotPresence per occupied-expected (shelf, position) from definition + PositionResults",
+      "evidence": [
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/ink_wall.py",
+      "symbol": "InkWall.default_layout_profile",
+      "lines": "65-84",
+      "role": "the only type that enables `slot_presence=True` (and `product_label=\"product\"`)",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/layout.py",
+      "symbol": "LayoutProfile.reporting",
+      "lines": "98-100",
+      "role": "per-type layout profile field defaulting to `ReportingPolicy()`",
+      "evidence": [
+        "F006"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_backlit_multitier.py",
+      "symbol": "EndcapBacklitMultitier.compare",
+      "lines": "214-222",
+      "role": "endcap (printers on tiers, reference images) — delegates to compare_observations",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/product_on_shelves.py",
+      "symbol": "ProductOnShelves.compare",
+      "lines": "141-158",
+      "role": "shelf type (reference images) — delegates to compare_observations",
+      "evidence": [
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_no_shelves_promotional.py",
+      "symbol": "EndcapNoShelvesPromotional.compare",
+      "lines": "96-103",
+      "role": "zone-based endcap — delegates to compare_observations; no shelves ⇒ products_found stays []",
+      "evidence": [
+        "F007",
+        "F005"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/graphic_panel_display.py",
+      "symbol": "GraphicPanelDisplay.compare",
+      "lines": "94-101",
+      "role": "delegates to compare_observations",
+      "evidence": [
+        "F006",
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/product_counter.py",
+      "symbol": "ProductCounter.compare",
+      "lines": "115-122",
+      "role": "delegates to compare_observations",
+      "evidence": [
+        "F006",
+        "F007"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/stages/compare.py",
+      "symbol": "_reference_product",
+      "lines": "34-57",
+      "role": "maps a reference-image match (ref-NNNN → catalog_key) to a definition product, so a found printer's identity is the facing model",
+      "evidence": [
+        "F008"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/contracts.py",
+      "symbol": "SlotPresence",
+      "lines": "231-249",
+      "role": "the structure to reuse unchanged for every type",
+      "evidence": [
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/plan.py",
+      "symbol": "PlanogramCompliance._assemble",
+      "lines": "505-540",
+      "role": "exposes result key `products_found` (already additive, type-agnostic)",
+      "evidence": [
+        "F001",
+        "F012"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/handlers/planogram_compliance.py",
+      "symbol": "PlanogramComplianceHandler",
+      "lines": "191-193",
+      "role": "serialises `products_found` in the job JSON (already type-agnostic)",
+      "evidence": [
+        "F001"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/tests/planogram_cycle/test_ink_wall.py",
+      "symbol": "test_non_ink_wall_result_unchanged",
+      "lines": "546-613",
+      "role": "asserts `products_found == []` for product_on_shelves — must be inverted/replaced",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "packages/ai-parrot-pipelines/tests/planogram_cycle/test_ink_wall.py",
+      "symbol": "test_reporting_meta_override_reaches_pipeline",
+      "lines": "616-630",
+      "role": "shows the per-row `meta.reporting.slot_presence=false` opt-out already works",
+      "evidence": [
+        "F009"
+      ]
+    },
+    {
+      "path": "docs/pipelines/planogram-compliance-cycle.md",
+      "symbol": null,
+      "lines": null,
+      "role": "only planogram doc; has no section on reporting / products_found — to be documented",
+      "evidence": [
+        "F012"
+      ]
+    }
+  ],
+  "constraints": [
+    {
+      "statement": "products_found is already produced by the shared compare stage; the only gate is `ReportingPolicy.slot_presence` (default False), set to True only by InkWall's layout profile",
+      "evidence": [
+        "F003",
+        "F004",
+        "F006"
+      ],
+      "implication": "no per-type code is needed to fill the column; the change is a policy default (or per-type profile) plus tests and docs"
+    },
+    {
+      "statement": "build_slot_presence walks `definition.shelves` and groups occupied-expected facings; every occupied facing has a non-blank `product` (validator), legacy rows map `product = name`",
+      "evidence": [
+        "F005",
+        "F004",
+        "F013"
+      ],
+      "implication": "endcap/shelf definitions produce one SlotPresence per slot with `model` = printer/product name; zone-only definitions (endcap_no_shelves_promotional) legitimately yield []"
+    },
+    {
+      "statement": "a reference-image match is resolved to a definition product through `_reference_product` (catalog_key → resolve_identity)",
+      "evidence": [
+        "F008"
+      ],
+      "implication": "`found` / `observed` for printers detected via reference images follow the same FacingStatus semantics as ink_wall; no new identity path is required"
+    },
+    {
+      "statement": "FEAT-645 explicitly scoped presence to ink_wall and encoded it in `test_non_ink_wall_result_unchanged` and AC 'empty list when presence is off'",
+      "evidence": [
+        "F009"
+      ],
+      "implication": "this feature reverses a recorded decision: the spec must say so and the test must be replaced by a positive assertion for a non-ink-wall type"
+    },
+    {
+      "statement": "`product_label` (display_name vs product) is independent from `slot_presence`; only ink_wall switches shelf lists to model names",
+      "evidence": [
+        "F004",
+        "F013"
+      ],
+      "implication": "turning presence on does not change `expected_products` / `found_products` for other types unless `product_label` is also changed — a separate, riskier decision for flowtask reports"
+    },
+    {
+      "statement": "flowtask (FEAT-564) consumes `result['products_found']` without branching on planogram_type; absent key → []",
+      "evidence": [
+        "F010"
+      ],
+      "implication": "no downstream change needed; endcap rows will start persisting non-empty `products_found` as soon as ai-parrot-pipelines ships"
+    },
+    {
+      "statement": "`slots_definition.meta.reporting` is a validated per-row override",
+      "evidence": [
+        "F004",
+        "F009"
+      ],
+      "implication": "a configuration can opt out (`{\"reporting\": {\"slot_presence\": false}}`) if a default-on policy is adopted"
+    },
+    {
+      "statement": "the planogram package is under active ink-wall work (FEAT-646 merged 2026-10-09, WIP neighbour-spill commit b12e115c3 on dev)",
+      "evidence": [
+        "F011"
+      ],
+      "implication": "base the feature branch on origin/dev and keep the diff to policy/tests/docs to avoid conflicts with identify/spill changes"
+    }
+  ],
+  "investigation": null,
+  "enrichment": {
+    "whats_new": [
+      {
+        "item": "`products_found` populated for every planogram type that runs compare_observations over a shelves-based definition (endcap_backlit_multitier, product_on_shelves, product_counter, graphic_panel_display) — same `SlotPresence` structure as ink_wall",
+        "evidence": [
+          "F003",
+          "F005",
+          "F007"
+        ]
+      },
+      {
+        "item": "positive tests: a product_on_shelves / endcap fixture with reference-image identifications yields one SlotPresence per slot with `found` True/False/None",
+        "evidence": [
+          "F009",
+          "F008"
+        ]
+      },
+      {
+        "item": "documentation of `ReportingPolicy` (`slot_presence`, `product_label`, `misplaced_min_confidence`), the per-row meta override and the `products_found` contract in docs/pipelines/planogram-compliance-cycle.md",
+        "evidence": [
+          "F012"
+        ]
+      }
+    ],
+    "what_changes": [
+      {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/comparison/definition.py",
+        "symbol": "ReportingPolicy",
+        "change": "Option A (recommended): `slot_presence` default flips to True — one-line change; every type inherits it; rows opt out via `meta.reporting`",
+        "evidence": [
+          "F004",
+          "F006"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/types/endcap_backlit_multitier.py",
+        "symbol": "EndcapBacklitMultitier.default_layout_profile",
+        "change": "Option B (alternative): set `reporting=ReportingPolicy(slot_presence=True)` per product-detecting type (and product_on_shelves, product_counter); keeps the policy default False",
+        "evidence": [
+          "F006"
+        ]
+      },
+      {
+        "path": "packages/ai-parrot-pipelines/tests/planogram_cycle/test_ink_wall.py",
+        "symbol": "test_non_ink_wall_result_unchanged",
+        "change": "replace with `test_non_ink_wall_products_found` asserting a non-empty, model-labelled presence list while `expected_products` keep display-name labels",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "path": "sdd/specs/planogram-ink-wall-slot-presence.spec.md",
+        "symbol": null,
+        "change": "cross-reference: AC 'empty list when presence is off' remains true but the default changes; note superseded by FEAT-648",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "path": "docs/pipelines/planogram-compliance-cycle.md",
+        "symbol": null,
+        "change": "add a 'Reporting policy & products_found' section",
+        "evidence": [
+          "F012"
+        ]
+      }
+    ],
+    "untouched": [
+      "`SlotPresence` model, `build_slot_presence`, `compare_observations`, `_assemble`, the aiohttp handler — all already type-agnostic (F001, F003, F005)",
+      "`product_label` default (`display_name`) for non-ink-wall types — shelf-level `expected_products`/`found_products` lists keep their labels (F013)",
+      "scoring, credits, FacingStatus semantics, reference-image selection (F005, F008)",
+      "flowtask consumer (FEAT-564) — already type-agnostic (F010)",
+      "endcap_no_shelves_promotional (zone-only definitions keep `products_found == []`, by construction)"
+    ],
+    "patterns": [
+      {
+        "pattern": "per-type behaviour lives in `default_layout_profile()` policies (`ReferencePolicy`, `ReportingPolicy`, `CompletenessPolicy`), overridable per row via `slots_definition.meta`",
+        "evidence": [
+          "F004",
+          "F006"
+        ]
+      },
+      {
+        "pattern": "additive result keys in `_assemble`; handler serialises with `model_dump(mode='json')`",
+        "evidence": [
+          "F001",
+          "F012"
+        ]
+      },
+      {
+        "pattern": "synthetic end-to-end tests with `fake_vision_client` + `synthetic_slots_definition` in tests/planogram_cycle",
+        "evidence": [
+          "F009"
+        ]
+      }
+    ],
+    "risks": [
+      {
+        "risk": "Reversal of FEAT-645's recorded decision (non-ink-wall → [])",
+        "impact_mitigation": "state it in the FEAT-648 spec motivation; replace the negative test with a positive one; keep the per-row opt-out",
+        "evidence": [
+          "F009"
+        ]
+      },
+      {
+        "risk": "Slots whose only observation is NOT_VISIBLE report `found=None`, not False — consumers may misread None as 'not found'",
+        "impact_mitigation": "document the tri-state in the docs section and in flowtask reporting",
+        "evidence": [
+          "F005",
+          "F009"
+        ]
+      },
+      {
+        "risk": "Types with multi-facing positions (CLOSEOUT ×3) group by (shelf, position): `facings_found` counts, `found` is True if any facing is found",
+        "impact_mitigation": "covered by existing presence tests; add one endcap multi-facing case",
+        "evidence": [
+          "F005"
+        ]
+      },
+      {
+        "risk": "Changing `product_label` for other types would alter legacy `found_products` lists consumed by flowtask reports",
+        "impact_mitigation": "out of scope unless the user asks (U1)",
+        "evidence": [
+          "F013",
+          "F010"
+        ]
+      }
+    ]
+  },
+  "confidence_map": [
+    {
+      "id": "C1",
+      "statement": "products_found is gated solely by ReportingPolicy.slot_presence inside the shared compare_observations",
+      "evidence": [
+        "F003",
+        "F004",
+        "F006"
+      ],
+      "confidence": "high",
+      "reasoning": "direct read of compare.py:224-227 and grep showing the only True assignment is ink_wall.py:80"
+    },
+    {
+      "id": "C2",
+      "statement": "All six registered types delegate compare() to compare_observations",
+      "evidence": [
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "each compare() body read; InkWall's model_copy preserves products_found"
+    },
+    {
+      "id": "C3",
+      "statement": "build_slot_presence works unchanged for endcap/shelf definitions (model = facing.product, descriptors sku/display_name)",
+      "evidence": [
+        "F005",
+        "F004",
+        "F013"
+      ],
+      "confidence": "high",
+      "reasoning": "builder reads only definition + positions; occupied facings always carry a product; legacy rows set product=name"
+    },
+    {
+      "id": "C4",
+      "statement": "A printer matched by reference image resolves to a definition product, so SlotPresence.found/observed are meaningful for endcaps",
+      "evidence": [
+        "F008"
+      ],
+      "confidence": "high",
+      "reasoning": "_reference_product → resolve_identity(product=catalog_key) read directly"
+    },
+    {
+      "id": "C5",
+      "statement": "flowtask persists products_found for any type with no change",
+      "evidence": [
+        "F010"
+      ],
+      "confidence": "medium",
+      "reasoning": "based on the sibling-repo spec text, not on flowtask code"
+    },
+    {
+      "id": "C6",
+      "statement": "Per-type opt-in (Option B) is the adopted activation: slot_presence=True in the default_layout_profile of the four shelf-based types; ReportingPolicy default stays False",
+      "evidence": [
+        "F004",
+        "F006",
+        "F009"
+      ],
+      "confidence": "high",
+      "reasoning": "user decision at the Q&A gate (U2); mechanism verified in F006"
+    },
+    {
+      "id": "C7",
+      "statement": "No doc currently describes ReportingPolicy / products_found",
+      "evidence": [
+        "F012"
+      ],
+      "confidence": "high",
+      "reasoning": "grep over docs/ and packages/ai-parrot-pipelines/docs returned nothing"
+    },
+    {
+      "id": "C8",
+      "statement": "Zone-only types (endcap_no_shelves_promotional) will keep products_found == [] under either option",
+      "evidence": [
+        "F005",
+        "F007"
+      ],
+      "confidence": "high",
+      "reasoning": "builder iterates definition.shelves; zone definitions have no shelves"
+    }
+  ],
+  "unknowns": [
+    {
+      "id": "U1",
+      "question": "For non-ink-wall types, should `product_label` also switch to `product` (model names in `expected_products` / `found_products`), or keep display names and change only `products_found`?",
+      "blocks_claims": [
+        "C6"
+      ],
+      "plausible_answers": [
+        "keep display_name — only products_found changes (lowest risk for flowtask reports)",
+        "switch to product everywhere, like ink_wall",
+        "decide per type"
+      ],
+      "ask_user": true,
+      "user_answer": "No, solo products_found — las listas por estante siguen con display_name; solo se llena products_found."
+    },
+    {
+      "id": "U2",
+      "question": "Enable presence by default for all types (flip `ReportingPolicy.slot_presence` default to True, Option A) or opt in per product-detecting type in each `default_layout_profile` (Option B)?",
+      "blocks_claims": [
+        "C6"
+      ],
+      "plausible_answers": [
+        "Option A — default True, rows opt out via meta.reporting",
+        "Option B — per-type opt-in (endcap_backlit_multitier, product_on_shelves, product_counter, graphic_panel_display)",
+        "Option B but only endcap_backlit_multitier + product_on_shelves"
+      ],
+      "ask_user": true,
+      "user_answer": "Opción B: opt-in por tipo — mantener el default False y poner reporting=ReportingPolicy(slot_presence=True) en el default_layout_profile de endcap_backlit_multitier, product_on_shelves, product_counter y graphic_panel_display."
+    },
+    {
+      "id": "U3",
+      "question": "Is there an endcap/printer configuration row (troc.planograms_configurations) with reference images that can serve as the e2e fixture for the positive test?",
+      "blocks_claims": [],
+      "plausible_answers": [
+        "yes — <config name>",
+        "use the synthetic product_on_shelves fixture with a fake reference bank",
+        "no fixture; unit tests only"
+      ],
+      "ask_user": true,
+      "user_answer": "Fixture sintético — product_on_shelves sintético con banco de referencias falso y fake_vision_client."
+    }
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is complete and high-confidence; the change is a policy default plus tests and docs. No architectural fork beyond the Option A/B choice, which is a one-answer decision."
+  },
+  "overall_confidence": "high",
+  "meta": {
+    "findings_used": [
+      "F001",
+      "F002",
+      "F003",
+      "F004",
+      "F005",
+      "F006",
+      "F007",
+      "F008",
+      "F009",
+      "F010",
+      "F011",
+      "F012",
+      "F013"
+    ],
+    "findings_unused": [],
+    "notes": "Research completed within budget (19 files, 11 greps, 5 git, 2 wiki queries); not truncated."
+  }
+}

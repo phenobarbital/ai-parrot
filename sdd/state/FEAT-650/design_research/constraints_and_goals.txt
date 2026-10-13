@@ -1,0 +1,27 @@
+- **Zero change for legacy callers.** Default dialect of every existing and
+  new form stays `json_schema`; `GET /forms/{uid}` and `/schema` return
+  byte-for-byte what they return today unless the caller or the form opts in.
+- **Reuse FEAT-544, do not fork it.** `A2UIFormRenderer`, the `FIELD_LOWERING`
+  table, `api/a2ui_wire.py`, the `form-{uid}` surface id and the `parrot_*`
+  extension vocabulary are the single source of A2UI truth. The dialect layer
+  calls them; it never re-implements lowering.
+- **ai-parrot stays an optional extra** for parrot-formdesigner (`[ai-parrot]`
+  / `[a2ui]` extras, `ai-parrot>=1.2.1`). Every new module that touches
+  `parrot.outputs.a2ui` imports it lazily; when the extra is missing the
+  dialect flag is rejected with a clear 415/501, exactly like the render
+  dispatcher does today.
+- **Produced surfaces validate** with `validate_envelope(origin=ProducerOrigin.TOOL)`
+  and `validate_message()`; no `Form` catalog component (dialect spec G6).
+- **Reverse extraction is lossy-with-warnings, never silent.** Every dropped
+  component, inferred type or guessed section is reported in the result;
+  the API import still creates the form (user decision, Round 2).
+- **Both translators are deterministic and testable as round-trips**:
+  `FormSchema → A2UI → FormSchema` must be identity on the fields the surface
+  can express (strict mode), and `FormSchema → JSON Schema → FormSchema → A2UI`
+  must preserve sections/subsections once the extractor gaps are fixed.
+- Tenant isolation rules of `FormRegistry` apply to bulk export (never
+  aggregate across tenants in one call; iterate `list_tenants()`).
+- Multitenant security: the dialect switch must not bypass
+  `enforce_membership_unless_public` or the `onBeforeOpen` lifecycle hook.
+
+---

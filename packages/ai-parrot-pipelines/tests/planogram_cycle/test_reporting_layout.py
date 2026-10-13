@@ -25,7 +25,7 @@ def test_ink_wall_default_reporting() -> None:
 
 @pytest.mark.parametrize("kind", sorted(PlanogramCompliance._PLANOGRAM_TYPES))
 def test_other_types_default_reporting(kind: str) -> None:
-    """All registered types except ink-wall retain legacy reporting."""
+    """Only ink-wall relabels products; shelf-based types opt in to slot presence (FEAT-648)."""
     profile = PlanogramCompliance._PLANOGRAM_TYPES[kind].default_layout_profile()
 
     if kind == "ink_wall":
@@ -33,7 +33,8 @@ def test_other_types_default_reporting(kind: str) -> None:
         assert profile.reporting.slot_presence is True
     else:
         assert profile.reporting.product_label == "display_name"
-        assert profile.reporting.slot_presence is False
+        # zone-only types yield no slots, so they keep presence off (FEAT-648 non-goal)
+        assert profile.reporting.slot_presence is (kind != "endcap_no_shelves_promotional")
     assert profile.reporting.misplaced_min_confidence == 0.9
 
 

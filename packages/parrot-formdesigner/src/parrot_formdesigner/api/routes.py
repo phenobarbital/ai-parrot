@@ -360,6 +360,9 @@ def setup_form_api(
         sink_factory=sink_factory,
     )
     app["form_api_handler"] = handler
+    # FEAT-649: one shared, form-agnostic SubmissionPipeline for non-HTTP channels (audio WS).
+    # plausibility=None here — the audio engine runs its own check at REVIEW and passes the report in.
+    app["submission_pipeline"] = handler._build_submission_pipeline()
 
     bp = base_path.rstrip("/")
     # FEAT-421: every FORMS route is mounted under a declared `{tenant}`
@@ -414,6 +417,11 @@ def setup_form_api(
     app.router.add_post(
         f"{tp}/forms/{{form_uid}}/validate",
         _wrap_auth(handler.validate, tenant="public"),
+    )
+    # FEAT-649 — design-time voice optimiser (proposals only, never writes).
+    app.router.add_post(
+        f"{tp}/forms/{{form_uid}}/voice/optimize",
+        _wrap_auth(handler.optimize_voice),
     )
     app.router.add_post(
         f"{tp}/forms/{{form_uid}}/data",
@@ -480,6 +488,11 @@ def setup_form_api(
         from .audio_ws import AudioFormWSHandler
         from ..services.validators import FormValidator
 
+        session_store = None
+        if partial_store is not None:
+            from ..audio.session_store import AudioSessionStore
+
+            session_store = AudioSessionStore(partial_store, resume_ttl_seconds=3600, active_ttl_seconds=600)
         audio_handler = AudioFormWSHandler(
             registry=registry,
             synthesizer=synthesizer,
@@ -487,12 +500,21 @@ def setup_form_api(
             validator=FormValidator(),
             token_validator=token_validator,
             submission_storage=submission_storage,
+            pipeline=app.get("submission_pipeline"),
+            blob_storage=blob_storage,
+            session_store=session_store,
+            llm_client_getter=handler._get_llm_client,  # same lazy client as HTTP; adapter builds a per-form checker
             auto_synthesize=synthesizer is None,
         )
         app.router.add_get(
             f"{tp}/forms/{{form_uid}}/audio/ws",
             audio_handler.handle_websocket,
         )
+
+        async def _close_audio_tts(_app: web.Application) -> None:
+            await audio_handler.close_tts_backends()
+
+        app.on_cleanup.append(_close_audio_tts)
         logger.info("setup_form_api: audio WS endpoint mounted at %s/{tenant}/forms/{form_uid}/audio/ws", bp)
     # FEAT-300 — publish, question-bank, version history, import-report
     # Note: /versions and /import-report routes are registered BEFORE the

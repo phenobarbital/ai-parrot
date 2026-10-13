@@ -1,0 +1,102 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-648",
+  "feature_slug": "products-found-endcap",
+  "started_at": "2026-10-09T20:44:30Z",
+  "updated_at": "2026-10-09T22:51:53Z",
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "jira_url": null,
+    "file_path": null,
+    "raw_path": "sdd/state/FEAT-648/source.md",
+    "fetched_at": "2026-10-09T20:44:30Z",
+    "summary_oneline": "Fill products_found for every product-detecting planogram type (Endcap etc.), not only ink_wall"
+  },
+  "mode": "auto",
+  "phase": "committed",
+  "phases": {
+    "source": {
+      "status": "completed",
+      "started_at": "2026-10-09T20:44:30Z",
+      "completed_at": "2026-10-09T20:44:30Z",
+      "duration_seconds": 1
+    },
+    "plan": {
+      "status": "completed",
+      "started_at": "2026-10-09T20:44:30Z",
+      "completed_at": "2026-10-09T20:49:59Z",
+      "duration_seconds": null,
+      "queries_total": 12,
+      "approved_by_user": false,
+      "edited_by_user": false,
+      "plan_path": "sdd/state/FEAT-648/research_plan.json",
+      "note": "gate auto-passed: research is read-only; user gates consolidated at the synthesis review"
+    },
+    "research": {
+      "status": "completed",
+      "started_at": "2026-10-09T20:44:30Z",
+      "completed_at": "2026-10-09T20:49:59Z",
+      "duration_seconds": null,
+      "queries_executed": 12,
+      "queries_skipped": 0,
+      "depth_reached": 1,
+      "files_read": 19,
+      "grep_calls": 11,
+      "git_calls": 5,
+      "truncated": false,
+      "truncation_reason": null
+    },
+    "synthesis": {
+      "status": "completed",
+      "started_at": "2026-10-09T22:51:46Z",
+      "completed_at": "2026-10-09T22:51:46Z",
+      "duration_seconds": null,
+      "synthesis_path": "sdd/state/FEAT-648/synthesis.json",
+      "thinking_path": null,
+      "overall_confidence": "high",
+      "claims_total": 8,
+      "claims_high_conf": 7,
+      "claims_medium_conf": 1,
+      "claims_low_conf": 0,
+      "unknowns_count": 3,
+      "lint_passed": true,
+      "lint_iterations": 1
+    },
+    "qa": {
+      "status": "completed",
+      "started_at": "2026-10-09T22:51:46Z",
+      "completed_at": "2026-10-09T22:51:46Z",
+      "duration_seconds": null,
+      "questions_total": 3,
+      "questions_answered": 3,
+      "skipped_reason": null
+    },
+    "output": {
+      "status": "completed",
+      "started_at": "2026-10-09T22:51:46Z",
+      "completed_at": "2026-10-09T22:51:53Z",
+      "duration_seconds": null,
+      "proposal_path": "sdd/proposals/products-found-endcap.proposal.md",
+      "commit_sha": "4dbf67c8c958914fc40562fa295e681d767e6204",
+      "next_command_recommended": "sdd-spec",
+      "next_command_rationale": "Localization complete and high-confidence; four one-line profile edits + tests + docs; A/B fork already decided."
+    }
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 19,
+    "grep_calls": 11,
+    "git_calls": 5,
+    "wall_seconds": 420
+  },
+  "errors": [],
+  "detected_mode": "enrichment"
+}

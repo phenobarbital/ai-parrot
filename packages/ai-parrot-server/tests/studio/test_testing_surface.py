@@ -99,7 +99,7 @@ class _FakeTestBot:
     def session(self, request=None, app=None, **kwargs):
         return _FakeSessionCtx(self)
 
-    async def ask(self, question: str):
+    async def ask(self, question: str, **kwargs):
         self.ask_calls.append(question)
         if self._ask_error is not None:
             raise self._ask_error
@@ -235,9 +235,9 @@ class TestTestAsk:
         default_client, served = bot.llm, []
         plain_ask = bot.ask
 
-        async def _recording_ask(question):
+        async def _recording_ask(question, **kwargs):
             served.append(bot.llm)
-            return await plain_ask(question)
+            return await plain_ask(question, **kwargs)
 
         bot.ask = _recording_ask
         response = await _unwrap(StudioTestingHandler.post)(handler)

@@ -62,7 +62,6 @@ LSP_ERROR_CODES: frozenset[str] = frozenset(
         "baseline_missing",
         "baseline_scope_mismatch",
         "baseline_incompatible",
-        "result_limit",
     }
 )
 

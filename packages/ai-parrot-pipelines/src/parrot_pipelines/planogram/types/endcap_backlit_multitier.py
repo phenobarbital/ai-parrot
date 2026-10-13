@@ -13,6 +13,7 @@ from PIL import Image
 
 from parrot.models.detections import AisleConfig, PlanogramDescription
 
+from ..comparison.definition import ReportingPolicy
 from ..contracts import (
     ComparisonResult,
     CycleContext,
@@ -170,6 +171,7 @@ class EndcapBacklitMultitier(AbstractPlanogramType):
             min_usable_shapes=3,
             descriptor_fields=list(_BACKLIT_DESCRIPTORS),
             required_descriptor_fields=[],
+            reporting=ReportingPolicy(slot_presence=True),
         )
 
     def _ensure_layout(self, ctx: CycleContext) -> LayoutProfile:

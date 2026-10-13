@@ -159,6 +159,7 @@ class StudioToolingGate:
             refused.code = exc.code  # type: ignore[attr-defined]
             refused.reason = exc.reason  # type: ignore[attr-defined]
             refused.item = exc.item  # type: ignore[attr-defined]
+            refused.params = getattr(exc, "params", None)  # type: ignore[attr-defined]  # ToolParamRefused (PA-9)
             raise refused from exc
 
 

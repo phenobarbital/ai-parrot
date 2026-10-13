@@ -32,6 +32,7 @@ from parrot.e2e.errors import (
     E2EError,
     E2EPrerequisiteError,
 )
+from parrot.e2e._verdict import evaluate_required_nodes
 from parrot.e2e.evidence import capture_identity
 from parrot.e2e.models import E2EPlan, E2EVerdict, ScenarioResult, ScenarioSpec
 from parrot.e2e.plan import load_plan
@@ -320,7 +321,11 @@ def _find_by_rootdir_suffix(node_id: str, observed: dict[str, Any]) -> dict[str,
     (the suffix includes the full file path plus ``::``-qualified test name).
     """
     for observed_node_id, item in observed.items():
-        if observed_node_id and node_id.endswith(observed_node_id):
+        if not observed_node_id:
+            continue
+        # Match on a path-component boundary so ``tests/e2e/x.py::t`` never
+        # matches ``other_tests/e2e/x.py::t``.
+        if node_id == observed_node_id or node_id.endswith("/" + observed_node_id.lstrip("/")):
             return item
     return None
 
@@ -354,10 +359,10 @@ def _verdict_status(
     if plan.policy == "none":
         return "PASS", EXIT_SUCCESS, True
     required = {node_id for item in plan.scenarios if item.required for node_id in item.node_ids}
-    by_node = {result.node_id: result for result in results}
-    if any(by_node.get(node_id) is None or by_node[node_id].outcome == "blocked" for node_id in required):
+    findings = evaluate_required_nodes(required, {result.node_id: result for result in results})
+    if any(finding.kind in {"missing", "blocked"} for finding in findings):
         return "BLOCKED", EXIT_BLOCKED, False
-    if any(by_node[node_id].outcome != "passed" for node_id in required):
+    if findings:
         return "FAIL", EXIT_FAILURE, False
     return "PASS", EXIT_SUCCESS, True
 

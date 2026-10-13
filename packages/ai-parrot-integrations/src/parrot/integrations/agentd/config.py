@@ -46,9 +46,7 @@ _DEFAULT_MAX_LINE_BYTES = 10 * 1024 * 1024  # 10 MB
 _NAME_INVALID_CHARS = frozenset("/\\")
 
 #: Regex for ``${VAR}`` and ``${VAR:-default}`` interpolation.
-_ENV_VAR_PATTERN = re.compile(
-    r"\$\{(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?::[-](?P<default>[^}]*))?\}"
-)
+_ENV_VAR_PATTERN = re.compile(r"\$\{(?P<name>[A-Za-z_][A-Za-z0-9_]*)(?::[-](?P<default>[^}]*))?\}")
 
 #: Bare env-var name: uppercase letters, digits, underscores, 2+ chars.
 _BARE_ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,}$")
@@ -69,6 +67,7 @@ def _expand_env_string(value: str) -> str:
        ``os.environ``, the value is replaced wholesale.  This lets users
        write ``vault_path: OBSIDIAN_VAULT_PATH`` as a shorthand.
     """
+
     def _replacer(match: re.Match) -> str:
         name = match.group("name")
         default = match.group("default")
@@ -116,7 +115,9 @@ class SchedulerConfig(BaseModel):
     """Headless scheduler bootstrap options for the daemon.
 
     Attributes:
-        enabled: Whether to boot `AgentSchedulerManager` at all.
+        enabled: Whether to boot `AgentSchedulerManager` at all. The daemon's
+            single agent is registered as a scheduler target of kind ``agent``
+            under the service name.
         dsn: Postgres DSN for schedule persistence. `None` means no
             Postgres pool is created (decorator-registered schedules only).
         redis: Whether to attach a Redis-backed jobstore.
@@ -186,11 +187,11 @@ class ServiceIdentityConfig(BaseModel):
         roles_raw = os.environ.get(_ENV_SERVICE_IDENTITY_ROLES, "")
         roles = frozenset(r.strip() for r in roles_raw.split(",") if r.strip())
         kwargs: dict[str, Any] = {"roles": roles}
-        if (value := os.environ.get(_ENV_SERVICE_IDENTITY_DISPLAY_NAME)):
+        if value := os.environ.get(_ENV_SERVICE_IDENTITY_DISPLAY_NAME):
             kwargs["display_name"] = value
-        if (value := os.environ.get(_ENV_SERVICE_IDENTITY_USER_ID)):
+        if value := os.environ.get(_ENV_SERVICE_IDENTITY_USER_ID):
             kwargs["user_id"] = value
-        if (value := os.environ.get(_ENV_SERVICE_IDENTITY_TENANT_ID)):
+        if value := os.environ.get(_ENV_SERVICE_IDENTITY_TENANT_ID):
             kwargs["tenant_id"] = value
         return cls(**kwargs)
 
@@ -312,9 +313,7 @@ class AgentServiceConfig(BaseModel):
         return cls.model_validate(expanded)
 
     @classmethod
-    def from_target(
-        cls, target: str, name: str, **overrides: Any
-    ) -> AgentServiceConfig:
+    def from_target(cls, target: str, name: str, **overrides: Any) -> AgentServiceConfig:
         """Build a config directly from a `module:attr` target (no YAML).
 
         Args:
@@ -361,14 +360,10 @@ def _split_target(target: str) -> tuple[str, str]:
         AgentTargetError: If `target` is not of the form `"module:attr"`.
     """
     if ":" not in target:
-        raise AgentTargetError(
-            f"Invalid agent target {target!r}: expected 'module.path:attr'"
-        )
+        raise AgentTargetError(f"Invalid agent target {target!r}: expected 'module.path:attr'")
     module_path, _, attr_path = target.partition(":")
     if not module_path or not attr_path:
-        raise AgentTargetError(
-            f"Invalid agent target {target!r}: expected 'module.path:attr'"
-        )
+        raise AgentTargetError(f"Invalid agent target {target!r}: expected 'module.path:attr'")
     return module_path, attr_path
 
 
@@ -400,10 +395,7 @@ async def resolve_agent(cfg: AgentTargetConfig) -> Any:
     try:
         module = importlib.import_module(module_path)
     except ImportError as exc:
-        raise AgentTargetError(
-            f"Cannot import module {module_path!r} from target "
-            f"{cfg.target!r}: {exc}"
-        ) from exc
+        raise AgentTargetError(f"Cannot import module {module_path!r} from target " f"{cfg.target!r}: {exc}") from exc
 
     attr: Any = module
     for part in attr_path.split("."):
@@ -411,8 +403,7 @@ async def resolve_agent(cfg: AgentTargetConfig) -> Any:
             attr = getattr(attr, part)
         except AttributeError as exc:
             raise AgentTargetError(
-                f"Attribute {attr_path!r} not found on module "
-                f"{module_path!r} (target {cfg.target!r}): {exc}"
+                f"Attribute {attr_path!r} not found on module " f"{module_path!r} (target {cfg.target!r}): {exc}"
             ) from exc
 
     try:
@@ -426,9 +417,7 @@ async def resolve_agent(cfg: AgentTargetConfig) -> Any:
     except AgentTargetError:
         raise
     except Exception as exc:
-        raise AgentTargetError(
-            f"Failed to resolve agent target {cfg.target!r}: {exc}"
-        ) from exc
+        raise AgentTargetError(f"Failed to resolve agent target {cfg.target!r}: {exc}") from exc
 
     configure = getattr(instance, "configure", None)
     if configure is not None and inspect.iscoroutinefunction(configure):

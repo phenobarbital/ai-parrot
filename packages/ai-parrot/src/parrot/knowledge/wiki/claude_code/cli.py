@@ -109,6 +109,20 @@ def claude() -> None:
     show_default=True,
     help="Also run `claude plugin marketplace add` / `claude plugin install` when the claude CLI is on PATH.",
 )
+@click.option(
+    "--remote",
+    "use_remote",
+    is_flag=True,
+    help="Register wikitoolkit as a native HTTP MCP pointing at the configured remote (FEAT-569).",
+)
+@click.option(
+    "--remote-url", default=None, help="Remote wiki mount URL (default: `remote.url` from .parrot/wiki.json)."
+)
+@click.option(
+    "--token-env",
+    default=None,
+    help="Env var holding the bearer token (default: `remote.token_env` or WIKITOOLKIT_TOKEN).",
+)
 def install(
     path_: Optional[str],
     git_hook: bool,
@@ -120,6 +134,9 @@ def install(
     compaction: bool,
     typesafe_api_key: Optional[str],
     plugin_cli: bool,
+    use_remote: bool,
+    remote_url: Optional[str],
+    token_env: Optional[str],
 ) -> None:
     """Install the wiki toolkit as Claude Code infrastructure.
 
@@ -134,6 +151,18 @@ def install(
     root = _resolve_root(path_)
     try:
         config = load_effective_config(root).config
+        remote = None
+        if use_remote:
+            from parrot.knowledge.wiki.project import WikiRemoteConfig
+
+            if remote_url:
+                remote = WikiRemoteConfig(url=remote_url, token_env=token_env or "WIKITOOLKIT_TOKEN")
+            elif config.remote is not None:
+                remote = (
+                    config.remote if token_env is None else config.remote.model_copy(update={"token_env": token_env})
+                )
+            else:
+                raise click.ClickException("--remote needs --remote-url or a `remote` block in .parrot/wiki.json")
         actions = install_claude_integration(
             root,
             config,
@@ -144,6 +173,7 @@ def install(
             compaction=compaction,
             typesafe_api_key=typesafe_api_key,
             plugin_cli=plugin_cli,
+            remote=remote,
         )
     except (RuntimeError, WikiConfigError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc

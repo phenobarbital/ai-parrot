@@ -242,6 +242,62 @@ def _read_trace(attempt_dir: Path, attempt_id: str, seat_id: str) -> tuple[list[
     return records, True
 
 
+def _read_trace_counters(attempt_dir: Path, usage: list[ModelUsage]) -> dict[str, int]:
+    """Derive tool/LSP/correction/retry counters from the seat's trace data.
+
+    Sources, all optional and never fatal when absent or malformed:
+
+    - ``attempt_meta.json``: an object whose ``tool_calls``, ``lsp_operations``,
+      ``correction_cycles`` and ``retries`` integer keys are used verbatim.
+    - ``trace.jsonl`` event lines (lines that are not ``ModelUsage`` records):
+      ``{"event": "tool_call", "tool": <name>}`` counts a tool call (and an
+      LSP operation when the name starts with ``lsp_``);
+      ``{"event": "correction_cycle"}`` counts a correction cycle;
+      ``{"event": "retry"}`` counts a retry.
+    - ``usage`` records flagged ``is_retry`` also count as retries.
+
+    Returns:
+        A dict with ``tool_calls``, ``lsp_operations``, ``correction_cycles``
+        and ``retries`` (all 0 when no data is available).
+    """
+    counters = {"tool_calls": 0, "lsp_operations": 0, "correction_cycles": 0, "retries": 0}
+    meta_path = attempt_dir / "attempt_meta.json"
+    try:
+        if meta_path.is_file():
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if isinstance(meta, dict):
+                for key in counters:
+                    value = meta.get(key)
+                    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                        counters[key] = value
+    except (OSError, ValueError):
+        pass
+    event_retries = 0
+    trace_path = attempt_dir / _TRACE_FILENAME
+    try:
+        lines = trace_path.read_text(encoding="utf-8").splitlines() if trace_path.is_file() else []
+    except (OSError, ValueError):
+        lines = []
+    for line in lines:
+        try:
+            payload = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        event = payload.get("event")
+        if event == "tool_call":
+            counters["tool_calls"] += 1
+            if str(payload.get("tool", "")).startswith("lsp_"):
+                counters["lsp_operations"] += 1
+        elif event == "correction_cycle":
+            counters["correction_cycles"] += 1
+        elif event == "retry":
+            event_retries += 1
+    counters["retries"] = max(counters["retries"], event_retries, sum(1 for u in usage if u.is_retry))
+    return counters
+
+
 def _prepare_attempt_dir(fixture: ScenarioFixture, attempt_dir: Path) -> None:
     """Blocking setup for one attempt: fresh isolated directory + materialized fixture."""
     if attempt_dir.exists():
@@ -337,6 +393,7 @@ async def _run_one_attempt(
     elapsed_ms = int((time.monotonic() - started_at) * 1000)
 
     usage, trace_present = await asyncio.to_thread(_read_trace, attempt_dir, spec.attempt_id, spec.seat.arm)
+    counters = await asyncio.to_thread(_read_trace_counters, attempt_dir, usage)
     evidence_dir = output_dir / _EVIDENCE_DIRNAME / spec.attempt_id
     raw_trace_refs = [await asyncio.to_thread(_archive_trace, attempt_dir, evidence_dir)] if trace_present else []
 
@@ -358,6 +415,10 @@ async def _run_one_attempt(
         raw_trace_refs=raw_trace_refs,
         cold_start=spec.repetition == 1,
         elapsed_ms=elapsed_ms,
+        tool_calls=counters["tool_calls"],
+        lsp_operations=counters["lsp_operations"],
+        correction_cycles=counters["correction_cycles"],
+        retries=counters["retries"],
     )
 
     if accepted or not keep_failed:

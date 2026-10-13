@@ -25,8 +25,9 @@ from ..contracts import (
     Shape,
     Slot,
 )
+from ..identification.spill import suppress_neighbour_spill
 from ..identification.verify import verify_unresolved
-from ..layout import LayoutProfile, resolve_layout_profile
+from ..layout import LayoutProfile, ReferencePolicy, resolve_layout_profile
 from ..perception.profiles import PRICE_TAG_PROFILE
 from ..perception.slots import AnchorRule
 from ..stages.compare import compare_observations
@@ -74,6 +75,8 @@ class InkWall(AbstractPlanogramType):
             min_row_items=4,
             descriptor_fields=list(_INK_DESCRIPTORS),
             required_descriptor_fields=list(_INK_REQUIRED),
+            # Ink cartridges are identified from the price-tag text; no reference images are used.
+            references=ReferencePolicy(enabled=False),
             reporting=ReportingPolicy(product_label="product", slot_presence=True),
             definition_gap_fill=True,
             completeness=CompletenessPolicy(min_coverage=0.9, min_shelf_coverage=0.8),
@@ -105,9 +108,12 @@ class InkWall(AbstractPlanogramType):
     async def identify(
         self, image: Image.Image, perception: PerceptionResult, ctx: CycleContext
     ) -> IdentificationResult:
-        """Compose shared OCR/vision/evidence collection, then the optional closed-set verify pass."""
+        """Compose shared OCR/vision/evidence collection, the neighbour-spill guard, then the optional verify pass."""
         self._ensure_layout(ctx)
         result = await identify_image(image, perception, ctx)
+        result = result.model_copy(
+            update={"identifications": suppress_neighbour_spill(result.identifications, perception.slots)}
+        )
         if (self.config.planogram_config or {}).get("verify_pass") and ctx.definition is not None:
             boxes = {slot.slot_id: slot.box for slot in perception.slots}
             boxes.update({shape.shape_id: shape.box for shape in perception.shapes})

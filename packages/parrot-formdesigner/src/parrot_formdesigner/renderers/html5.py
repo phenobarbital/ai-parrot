@@ -948,6 +948,11 @@ class HTML5Renderer(AbstractFormRenderer):
                 parts.append(f'<span class="form-field__help text-xs text-gray-500 mb-1 block">{description}</span>')
             parts.append(self._render_input(field, value, locale))
 
+        hint = _resolve(field.hint, locale) if field.hint else None
+        if hint:
+            parts.append(
+                f'<small class="hint form-field__hint text-xs text-gray-500 mt-1 block">{html.escape(hint)}</small>'
+            )
         if error:
             parts.append(f'<span class="form-field__error text-sm text-red-600 mt-1 block" role="alert">{error}</span>')
 
@@ -1226,7 +1231,7 @@ class HTML5Renderer(AbstractFormRenderer):
             f'data-place-level="state" data-cascade-parent="{country_id}">\n' + "\n".join(state_options) + "\n</select>"
             f'<select id="{city_id}" name="{field.field_id}[city]" class="{tw}" '
             f'data-place-level="city" data-cascade-parent="{state_id}">\n' + "\n".join(city_options) + "\n</select>"
-            f"</div>"
+            "</div>"
         )
 
     def _render_tree_select(self, field: FormField, value: Any, locale: str) -> str:

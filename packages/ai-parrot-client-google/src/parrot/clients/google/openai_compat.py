@@ -10,6 +10,7 @@ from __future__ import annotations
 from navconfig import config  # verified in use: google/client.py:189
 
 from ..openai_base import OpenAIBaseClient  # verified: parrot/clients/openai_base.py:66
+from .models import GoogleModel
 
 GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
@@ -25,6 +26,12 @@ class GeminiOpenAICompatClient(OpenAIBaseClient):
     Raises:
         ValueError: When no API key resolves.
     """
+
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ("GEMINI_API_KEY", "GOOGLE_API_KEY")
+    # the same Gemini catalogue as ``GoogleGenAIClient`` (read by ``LLMFactory.list_models`` / the Studio catalogue)
+    models = GoogleModel
+    _default_model: str = GoogleModel.GEMINI_FLASH_LATEST.value
 
     def __init__(self, api_key: str | None = None, base_url: str | None = None, **kwargs) -> None:
         resolved_key = api_key or config.get("GEMINI_API_KEY") or config.get("GOOGLE_API_KEY")

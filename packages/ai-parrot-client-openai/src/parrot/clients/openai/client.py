@@ -92,6 +92,8 @@ class OpenAIClient(OpenAIBaseClient):
     # (FEAT-438) — no need to redeclare it here.
     model: str = OpenAIModel.GPT5_MINI.value
     client_name: str = "openai"
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ('OPENAI_API_KEY',)
 
     # FEAT-523 folder-convention attributes (read by LLMFactory).
     provider_keys: tuple[str, ...] = ("openai",)

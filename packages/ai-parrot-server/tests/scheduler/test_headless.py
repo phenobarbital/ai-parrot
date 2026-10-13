@@ -40,7 +40,7 @@ class TestStartHeadless:
 
     async def test_redis_not_constructed_when_disabled(self, manager):
         with (
-            patch("parrot.scheduler.manager.RedisJobStore") as mock_redis_cls,
+            patch("parrot.scheduler.base.RedisJobStore") as mock_redis_cls,
             patch.object(manager, "load_schedules_from_db", new=AsyncMock()),
         ):
             await manager.start_headless(use_redis=False)
@@ -80,7 +80,7 @@ class TestStartHeadless:
     async def test_dsn_creates_pool_and_loads_db(self, manager):
         fake_pool = AsyncMock()
         with (
-            patch("parrot.scheduler.manager.AsyncDB", return_value=fake_pool) as mock_asyncdb,
+            patch("parrot.scheduler.base.AsyncDB", return_value=fake_pool) as mock_asyncdb,
             patch.object(manager, "load_schedules_from_db", new=AsyncMock()) as mock_load,
         ):
             await manager.start_headless(dsn="postgres://fake")
@@ -99,7 +99,7 @@ class TestStartHeadless:
     async def test_stop_headless_closes_owned_pool(self, manager):
         fake_pool = AsyncMock()
         with (
-            patch("parrot.scheduler.manager.AsyncDB", return_value=fake_pool),
+            patch("parrot.scheduler.base.AsyncDB", return_value=fake_pool),
             patch.object(manager, "load_schedules_from_db", new=AsyncMock()),
         ):
             await manager.start_headless(dsn="postgres://fake")

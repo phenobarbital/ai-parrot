@@ -94,18 +94,18 @@ class BaseSchedulerCallback(NotificationMixin):
             "error": error,
         }
 
-    async def run(self, result: Any, *, schedule_id: str, agent_name: str, **kwargs) -> Dict[str, Any]:
+    async def run(self, result: Any, *, schedule_id: str, target_name: str, **kwargs) -> Dict[str, Any]:
         raise NotImplementedError
 
-    async def __call__(self, result: Any, *, schedule_id: str, agent_name: str, **kwargs) -> Dict[str, Any]:
-        return await self.run(result, schedule_id=schedule_id, agent_name=agent_name, **kwargs)
+    async def __call__(self, result: Any, *, schedule_id: str, target_name: str, **kwargs) -> Dict[str, Any]:
+        return await self.run(result, schedule_id=schedule_id, target_name=target_name, **kwargs)
 
 
 class SendEmailReportCallback(BaseSchedulerCallback):
     callback_name = "send_email_report"
     description = "Send the result as markdown or PDF to one or more email recipients."
 
-    async def run(self, result: Any, *, schedule_id: str, agent_name: str, **kwargs) -> Dict[str, Any]:
+    async def run(self, result: Any, *, schedule_id: str, target_name: str, **kwargs) -> Dict[str, Any]:
         payload = self.process_output(result)
         recipients = self.config.get("recipients") or self.config.get("email") or self.config.get("to")
         if not recipients:
@@ -121,7 +121,7 @@ class SendEmailReportCallback(BaseSchedulerCallback):
         response = await self.send_email(
             message=self.config.get("message", markdown or payload["text"]),
             recipients=recipients,
-            subject=self.config.get("subject", f"Scheduler report for {agent_name}"),
+            subject=self.config.get("subject", f"Scheduler report for {target_name}"),
             attachments=attachments,
             with_attachments=True,
         )
@@ -152,11 +152,11 @@ class CreateFileCallback(BaseSchedulerCallback):
     callback_name = "create_file"
     description = "Persist the agent output as a markdown file."
 
-    async def run(self, result: Any, *, schedule_id: str, agent_name: str, **kwargs) -> Dict[str, Any]:
+    async def run(self, result: Any, *, schedule_id: str, target_name: str, **kwargs) -> Dict[str, Any]:
         payload = self.process_output(result)
         output_dir = Path(self.config.get("output_dir", tempfile.gettempdir()))
         await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
-        filename = self.config.get("filename", f"{agent_name}_{schedule_id}.md")
+        filename = self.config.get("filename", f"{target_name}_{schedule_id}.md")
         destination = output_dir / filename
         destination.write_text(payload["markdown"], encoding="utf-8")
         return {"status": "saved", "path": str(destination)}
@@ -166,22 +166,22 @@ class SaveDataCallback(BaseSchedulerCallback):
     callback_name = "saving_data"
     description = "Persist the result data as CSV and optionally email it as an attachment."
 
-    async def run(self, result: Any, *, schedule_id: str, agent_name: str, **kwargs) -> Dict[str, Any]:
+    async def run(self, result: Any, *, schedule_id: str, target_name: str, **kwargs) -> Dict[str, Any]:
         payload = self.process_output(result)
         dataframe = self._to_dataframe(payload["data"])
         if dataframe is None:
             raise ValueError("saving_data requires result.data or structured tabular output")
         output_dir = Path(self.config.get("output_dir", tempfile.gettempdir()))
         await asyncio.to_thread(output_dir.mkdir, parents=True, exist_ok=True)
-        filename = self.config.get("filename", f"{agent_name}_{schedule_id}.csv")
+        filename = self.config.get("filename", f"{target_name}_{schedule_id}.csv")
         destination = output_dir / filename
         dataframe.to_csv(destination, index=False)
         response: Dict[str, Any] = {"status": "saved", "path": str(destination), "rows": len(dataframe.index)}
         if self.config.get("email_to"):
             email_response = await self.send_email(
-                message=self.config.get("message", f"CSV report for {agent_name}"),
+                message=self.config.get("message", f"CSV report for {target_name}"),
                 recipients=self.config["email_to"],
-                subject=self.config.get("subject", f"CSV data for {agent_name}"),
+                subject=self.config.get("subject", f"CSV data for {target_name}"),
                 attachments=[destination],
                 with_attachments=True,
             )
@@ -212,7 +212,7 @@ class SendNotifyReportCallback(BaseSchedulerCallback):
     callback_name = "send_notify_report"
     description = "Send the result through Telegram, Microsoft Teams, or Slack; CSV data can be attached when present."
 
-    async def run(self, result: Any, *, schedule_id: str, agent_name: str, **kwargs) -> Dict[str, Any]:
+    async def run(self, result: Any, *, schedule_id: str, target_name: str, **kwargs) -> Dict[str, Any]:
         payload = self.process_output(result)
         provider = str(self.config.get("provider", "telegram")).lower()
         recipients = self.config.get("recipients") or self.config.get("recipient")
@@ -222,7 +222,7 @@ class SendNotifyReportCallback(BaseSchedulerCallback):
         attachments = list(payload["files"])
         dataframe = SaveDataCallback(config=self.config, logger=self.logger)._to_dataframe(payload["data"])
         if dataframe is not None and self.config.get("attach_data", True):
-            csv_path = Path(tempfile.gettempdir()) / f"{agent_name}_{schedule_id}.csv"
+            csv_path = Path(tempfile.gettempdir()) / f"{target_name}_{schedule_id}.csv"
             dataframe.to_csv(csv_path, index=False)
             attachments.append(csv_path)
         response = await self.send_notification(
