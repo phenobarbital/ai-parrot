@@ -56,7 +56,7 @@
       "feature_id": "FEAT-654",
       "feature": "voice-form-barge-in",
       "spec": "sdd/specs/voice-form-barge-in.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -66,8 +66,9 @@
       "parallelism_notes": "TASK-4258: reads VoiceFormConfig.option_pause_ms and FieldVoiceMeta.option_pause_ms created there (core/voice.py) in Narrator._option_segments (audio/narration/engine.py).",
       "assigned_to": null,
       "started_at": "2026-10-13T01:35:19+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4259-per-option-narration-segments.md"
+      "completed_at": "2026-10-13T01:37:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4259-per-option-narration-segments.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4260",
