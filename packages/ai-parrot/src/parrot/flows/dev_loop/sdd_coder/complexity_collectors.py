@@ -1054,9 +1054,33 @@ class SubprocessResult:
         self.stderr = stderr
 
 
+_SUBPROCESS_READ_CHUNK = 65536
+
+
+async def _read_bounded(stream: asyncio.StreamReader, max_bytes: int) -> bytes:
+    """Drain `stream` to EOF, retaining at most `max_bytes` bytes.
+
+    Reads fixed chunks; once `max_bytes` is reached, later chunks are
+    discarded but the stream keeps being drained so the child process
+    never blocks on a full pipe (spec FEAT-663 §7).
+    """
+    buf = bytearray()
+    while True:
+        chunk = await stream.read(_SUBPROCESS_READ_CHUNK)
+        if not chunk:
+            return bytes(buf)
+        if len(buf) < max_bytes:
+            buf.extend(chunk[: max_bytes - len(buf)])
+
+
 async def _run_subprocess(cmd: List[str], cwd: Path, timeout_seconds: int, max_output_bytes: int) -> SubprocessResult:
-    """Run a subprocess with bounded output and timeout."""
-    # Create subprocess
+    """Run a subprocess with output bounded in bytes during capture.
+
+    stdout/stderr drains and the process wait run concurrently under one
+    timeout. The byte bound is applied while reading (never buffering the
+    full output), and decoding happens after the bound with
+    errors="replace" so a split multibyte sequence cannot raise.
+    """
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=cwd,
@@ -1065,14 +1089,19 @@ async def _run_subprocess(cmd: List[str], cwd: Path, timeout_seconds: int, max_o
     )
 
     try:
-        # Wait for completion with timeout
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
-
-        # Decode output, limiting size
-        stdout_str = stdout.decode("utf-8", errors="replace")[:max_output_bytes]
-        stderr_str = stderr.decode("utf-8", errors="replace")[:max_output_bytes]
-
-        return SubprocessResult(proc.returncode, stdout_str, stderr_str)
+        stdout_b, stderr_b, _ = await asyncio.wait_for(
+            asyncio.gather(
+                _read_bounded(proc.stdout, max_output_bytes),
+                _read_bounded(proc.stderr, max_output_bytes),
+                proc.wait(),
+            ),
+            timeout=timeout_seconds,
+        )
+        return SubprocessResult(
+            proc.returncode,
+            stdout_b.decode("utf-8", errors="replace"),
+            stderr_b.decode("utf-8", errors="replace"),
+        )
 
     except (asyncio.TimeoutError, asyncio.CancelledError):
         # Kill and reap on EITHER a timeout OR the awaiting task being

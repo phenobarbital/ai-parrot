@@ -526,37 +526,41 @@ def test_subprocess_result():
 
 @pytest.mark.asyncio
 async def test_run_subprocess():
-    """Test subprocess execution with limits."""
-    with patch("asyncio.create_subprocess_exec") as mock_create:
-        # Mock process
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(return_value=(b"output", b"errors"))
-        mock_proc.returncode = 0
-        mock_create.return_value = mock_proc
+    """Test subprocess execution with limits (real process, small output)."""
+    cmd = ["python", "-c", "import sys; sys.stdout.write('output'); sys.stderr.write('errors')"]
+    result = await _run_subprocess(cmd, Path("."), 30, 1000)
 
-        result = await _run_subprocess(["echo", "test"], Path("."), 10, 1000)
-
-        assert result.returncode == 0
-        assert result.stdout == "output"
-        assert result.stderr == "errors"
+    assert result.returncode == 0
+    assert result.stdout == "output"
+    assert result.stderr == "errors"
 
 
 @pytest.mark.asyncio
 async def test_run_subprocess_timeout():
-    """Test subprocess timeout handling."""
-    with patch("asyncio.create_subprocess_exec") as mock_create:
-        # Mock process
-        mock_proc = AsyncMock()
-        mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
-        mock_proc.kill = Mock()  # real asyncio.subprocess.Process.kill() is sync, not a coroutine
-        mock_proc.wait = AsyncMock()
-        mock_create.return_value = mock_proc
+    """Test subprocess timeout handling: raises and reaps the child (AC4)."""
+    with pytest.raises(asyncio.TimeoutError):
+        await _run_subprocess(["sleep", "10"], Path("."), 1, 1000)
 
-        with pytest.raises(asyncio.TimeoutError):
-            await _run_subprocess(["sleep", "10"], Path("."), 1, 1000)
 
-        # Verify process was killed
-        mock_proc.kill.assert_called_once()
+@pytest.mark.asyncio
+async def test_run_subprocess_bounds_stdout_during_capture():
+    """Output beyond max_output_bytes is discarded during capture (AC1, AC3)."""
+    cmd = ["python", "-c", "import sys; sys.stdout.write('x' * 1_000_000)"]
+    result = await _run_subprocess(cmd, Path("."), 30, 1024)
+    assert result.returncode == 0  # child ran to completion despite exceeding the bound
+    assert len(result.stdout.encode("utf-8")) <= 1024
+    assert result.stdout == "x" * 1024
+
+
+@pytest.mark.asyncio
+async def test_run_subprocess_bound_is_bytes_not_chars():
+    """The bound applies to bytes pre-decode; a split code point must not raise (AC2)."""
+    # 'é' is 2 bytes in UTF-8; an odd byte bound splits the final code point.
+    cmd = ["python", "-c", "import sys; sys.stdout.buffer.write('é'.encode() * 100)"]
+    result = await _run_subprocess(cmd, Path("."), 30, 33)
+    assert result.returncode == 0
+    # 16 whole 'é' (32 bytes) + 1 dangling lead byte -> U+FFFD replacement char.
+    assert result.stdout == "é" * 16 + "�"
 
 
 # --- Post-review regression coverage: three defects a feature-wide adversarial
