@@ -4,6 +4,15 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Voice forms — barge-in (FEAT-654)**: `hands_free.barge_in` (default `true`, a client-side
+  ceiling) tells v2 clients they may keep the microphone armed during narration and cancel
+  playback on speech onset. Enumerated select options are narrated one segment per item
+  (`q:<uid>:options_intro`, `q:<uid>:opt:<n>`, `audio_segment.kind: "option"`) with a
+  `pause:<option_pause_ms>` gap (`VoiceFormConfig.option_pause_ms`, default 500 ms, per-field
+  `meta.voice.option_pause_ms`). Protocol v1 audio is unchanged.
+
 ### Changed
 
 - **NetworkNinja importer — multi-photo questions are `MULTI_UPLOAD`**:

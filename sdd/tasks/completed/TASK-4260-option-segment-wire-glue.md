@@ -314,8 +314,8 @@ See the blueprint test blocks above.
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (sequential, no MCP coder seats)
+**Date**: 2026-10-12
+**Notes**: _segment_kind option/options_intro, _v1_group_uid helper for v1 inline grouping, AudioSegment.kind comment; adapter + v2 integration tests (prefetch option keys, barge-in flow). Mutations red: opt kind branch removed (adapter+integration), v1 opt grouping removed, options_intro kind removed. ruff unavailable in venv.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

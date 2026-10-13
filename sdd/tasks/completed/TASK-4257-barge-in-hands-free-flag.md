@@ -235,8 +235,8 @@ See the blueprint test blocks above (`test_hands_free_config_barge_in_default`,
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (sequential, no MCP coder seats)
+**Date**: 2026-10-12
+**Notes**: Added `HandsFreeConfig.barge_in` (default True) + docstring; schema/wire tests and `test_engine_accepts_audio_right_after_question`. Mutation checks: `barge_in` default→False turns 2 schema tests red; removing `_last_audio` assignment in engine turns the new engine test red. ruff not installed in the worktree venv (not run).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

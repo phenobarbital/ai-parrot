@@ -212,8 +212,8 @@ Documentation task — no new tests. Before closing, `grep -n 'barge_in\|options
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (sequential, no MCP coder seats)
+**Date**: 2026-10-12
+**Notes**: Docs: §6 form voice settings, §7.3 key grammar/option kind/hands_free row, new §7.6 with normative ceiling rule, §7.4/§12 notes, TOC, handoff doc, CHANGELOG. Names verified against code. Doc-only: no mutation checks.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

@@ -17,10 +17,18 @@ _logger = logging.getLogger(__name__)
 
 
 class HandsFreeConfig(BaseModel):
-    """Client hands-free behaviour: auto-open mic after TTS, end-of-speech silence."""
+    """Client hands-free behaviour: auto-open mic after TTS, end-of-speech silence, barge-in.
+
+    ``barge_in`` (default True) tells the client it MAY keep the microphone armed with VAD while
+    narration segments play and cancel playback on speech onset. It is a client policy and a
+    ceiling: the client must still disable it when echo cancellation is not effective or the
+    user opts out, and never enables it when the form says False. The server already accepts a
+    recording at any time during ASKING/CONFIRMING and never learns playback was interrupted.
+    """
 
     auto_record: bool = True
     silence_ms: int = Field(default=1200, ge=0)
+    barge_in: bool = True
 
 
 class UiCue(BaseModel):
@@ -48,6 +56,7 @@ class FieldVoiceMeta(BaseModel):
     sensitive: bool = False
     normalize: bool = True  # FEAT-653: typed rules post-processor for spoken answers of this field
     llm_refine: bool | None = None  # FEAT-653: None → inherit VoiceFormConfig.llm_refine_values
+    option_pause_ms: int | None = Field(default=None, ge=0)  # per-field gap between enumerated options (ms)
 
 
 #: Hard ceiling for ``llm_refine_timeout_s``: the refine blocks the session's socket queue while it runs.
@@ -60,6 +69,7 @@ class VoiceFormConfig(BaseModel):
     enabled: bool = True
     max_questions: int | None = Field(default=10, ge=1)
     hint_pause_ms: int = Field(default=600, ge=0)
+    option_pause_ms: int = Field(default=500, ge=0)  # gap between enumerated options (ms); provisional, spec §8 Q-A
     enumerate_options: bool = True
     stt_confirm_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     option_match_threshold: float = Field(default=0.8, ge=0.0, le=1.0)

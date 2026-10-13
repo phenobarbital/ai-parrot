@@ -304,8 +304,8 @@ See the blueprint test blocks above.
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (sequential, no MCP coder seats)
+**Date**: 2026-10-12
+**Notes**: Added Narrator._enumerated_options/_option_segments, _options_text now single-segment only, plan_question emits options_intro/opt:<n>/pause. Mutations all red: pause before first item, ignoring pause=0, ignoring per-field precedence, count_only falling into enumerated path. ruff unavailable in venv.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

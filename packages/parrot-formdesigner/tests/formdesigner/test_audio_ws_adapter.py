@@ -348,3 +348,57 @@ class TestSnapshots:
         assert ctx2.revision == 4
         assert ctx2.engine.state.answers["a"].value == "x"
         assert [m for m in _msgs(ws2) if m["type"] == "question"][-1]["field_id"] == "b"
+
+
+def _select_form() -> FormSchema:
+    from parrot_formdesigner.core.options import FieldOption
+
+    return FormSchema(
+        form_id="f",
+        title="T",
+        tenant=_TENANT,
+        sections=[
+            FormSection(
+                section_id="s1",
+                fields=[
+                    FormField(
+                        field_id="c",
+                        field_type=FieldType.SELECT,
+                        label="Color?",
+                        required=True,
+                        options=[FieldOption(value="r", label="Red"), FieldOption(value="g", label="Green")],
+                    ),
+                ],
+            )
+        ],
+    )
+
+
+def test_segment_kind_new_keys() -> None:
+    assert AudioFormWSHandler._segment_kind("q:u:options_intro") == "options"
+    assert AudioFormWSHandler._segment_kind("q:u:opt:3") == "option"
+    assert AudioFormWSHandler._segment_kind("q:u:label") == "question"
+    assert AudioFormWSHandler._segment_kind("q:u:hint") == "hint"
+    assert AudioFormWSHandler._segment_kind("q:u:options") == "options"
+    assert AudioFormWSHandler._segment_kind("review:1") == "review"
+    assert AudioFormWSHandler._segment_kind("sys:x") == "system"
+
+
+class TestOptionSegments:
+    async def test_do_synthesize_v2_emits_option_segments(self, synth, stt) -> None:
+        ws, _ = await _boot(_handler(_select_form(), synth, stt), start={"protocol_version": 2})
+        segs = [m for m in _msgs(ws) if m["type"] == "audio_segment"]
+        kinds = [s["kind"] for s in segs]
+        assert kinds.count("option") == 2
+        intro = [s for s in segs if s["key"].endswith(":options_intro")]
+        assert len(intro) == 1 and intro[0]["kind"] == "options"
+        assert not [s for s in segs if s["key"].startswith("pause:")]
+        assert ws.send_bytes.await_count == len(segs)
+
+    async def test_do_synthesize_v1_inline_groups_option_keys(self, synth, stt) -> None:
+        ws, _ = await _boot(_handler(_select_form(), synth, stt))
+        texts = [c[0][0] for c in synth.synthesize.call_args_list]
+        assert len(texts) == 1
+        assert texts[0].endswith("1, Red. 2, Green.")
+        q = next(m for m in _msgs(ws) if m["type"] == "question")
+        assert q["audio"] == base64.b64encode(b"AUDIO").decode()
