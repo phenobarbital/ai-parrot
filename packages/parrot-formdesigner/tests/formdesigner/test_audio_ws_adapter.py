@@ -448,3 +448,30 @@ class TestClientSubmitAdapter:
         pipeline.submit.assert_awaited_once()
         pipeline.validate.assert_not_called()
         assert "form_complete" in _types(ws)
+
+    async def test_rejected_client_resume_releases_marker_and_allows_retry(self, synth, stt) -> None:
+        store = MagicMock()
+        store.claim_active = AsyncMock(return_value=True)
+        store.release_active = AsyncMock()
+        store.save = AsyncMock(return_value=1)
+        store.delete = AsyncMock()
+        form = _form("a", "b")
+        h = _handler(form, synth, stt, pipeline=self._pipeline(), session_store=store)
+        ws, ctx = await _boot(h, start={"protocol_version": 2, "submit_mode": "client"})
+        await h._process_text(ws, ctx, {"type": "answer_text", "field_id": "a", "value": "x"})
+        snap = ctx.engine.snapshot().model_copy(update={"revision": 2})
+        assert snap.submit_mode == "client"
+        store.load = AsyncMock(return_value=snap)
+        h2 = _handler(form, synth, stt, pipeline=self._pipeline(), session_store=store)
+        # resume the saved client-mode session over protocol v1 -> rejected
+        ws2, ctx2 = await _boot(h2, start={"resume_session_id": "s1"})
+        assert _msgs(ws2)[-1]["code"] == "INVALID_MESSAGE"
+        store.release_active.assert_awaited_once_with("u1", "s1")
+        assert ctx2.engine is None
+        # a corrected start on the same connection is not ALREADY_STARTED
+        ws2.send_json.reset_mock()
+        await h2._process_text(
+            ws2, ctx2, {"type": "start_session", "form_uid": "f1", "protocol_version": 2, "resume_session_id": "s1"}
+        )
+        assert "session_resumed" in _types(ws2) and "ALREADY_STARTED" not in [m.get("code") for m in _msgs(ws2)]
+        assert ctx2.engine.state.submit_mode == "client"

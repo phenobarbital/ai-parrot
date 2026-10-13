@@ -695,6 +695,13 @@ class AudioFormWSHandler:
         ):
             # The marker was claimed before the engine validated user/tenant/version: give it back.
             await store.release_active(session.user_id, start.resume_session_id)
+        elif start.resume_session_id and any(isinstance(o, Error) and o.code == "INVALID_MESSAGE" for o in opening):
+            # Rejected client-mode resume (e.g. v1): give the marker back; the engine is dropped after the
+            # error is sent so the same connection can send a corrected start_session.
+            await store.release_active(session.user_id, start.resume_session_id)
+            await self._perform(ws, ctx, opening)
+            ctx.engine = None
+            return
         await self._perform(ws, ctx, opening)
 
     def _build_session_config(
