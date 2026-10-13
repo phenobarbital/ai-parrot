@@ -246,6 +246,7 @@ class LSPToolkit(AbstractToolkit):
 
     async def _open(self) -> None:
         """Establish ownership only; the Pyright process starts lazily per call."""
+        self.logger.debug("LSPToolkit opened (Pyright session starts lazily)")
         return
 
     async def _close(self) -> None:
@@ -437,6 +438,7 @@ class LSPToolkit(AbstractToolkit):
         )
         self._last_cold_start = needs_restart
         if needs_restart:
+            self.logger.debug("LSP session cold start (restart needed; generation=%d)", self._session_generation + 1)
             await self._close_session_locked()
             self._session_generation += 1
             session = PyrightSession()
@@ -444,6 +446,8 @@ class LSPToolkit(AbstractToolkit):
             self._session = session
             self._session_digest = before.digest
             self._session_config_digest = before.config_digest
+        else:
+            self.logger.debug("LSP session cache hit (generation=%d)", self._session_generation)
         assert self._session is not None
         return self._session
 
@@ -462,6 +466,7 @@ class LSPToolkit(AbstractToolkit):
         the child process — so the currently-running task is never
         cancelled, only a genuinely stale/foreign one.
         """
+        self.logger.debug("Closing LSP session (owned=%s)", self._session is not None)
         current_task = asyncio.current_task()
         if self._idle_task is not None and not self._idle_task.done() and self._idle_task is not current_task:
             self._idle_task.cancel()
@@ -488,6 +493,7 @@ class LSPToolkit(AbstractToolkit):
             await asyncio.sleep(delay)
         except asyncio.CancelledError:
             return
+        self.logger.debug("LSP idle timeout (%.1fs) reached; shutting down session", delay)
         async with self._operation_lock:
             await self._close_session_locked()
 
@@ -933,11 +939,13 @@ class LSPToolkit(AbstractToolkit):
 
     def _uri_for_path(self, path: str) -> str:
         """Return the ``file://`` URI for a repository-relative document path."""
-        return _path_to_file_uri(self._config.repo_root / path)
+        root = self._canonical_root if self._canonical_root is not None else self._config.repo_root
+        return _path_to_file_uri(root / path)
 
     def _failure_result(self, operation: str, exc: LSPFailure) -> LSPResult:
         """Map one :class:`LSPFailure` into its typed :class:`LSPResult` envelope."""
         status = "unavailable" if exc.code in _UNAVAILABLE_CODES else "error"
+        self.logger.warning("LSP operation %s failed: code=%s detail=%s", operation, exc.code, exc.detail)
         return LSPResult(
             status=status,
             operation=operation,
