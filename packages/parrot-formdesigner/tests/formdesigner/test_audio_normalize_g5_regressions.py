@@ -359,3 +359,133 @@ def test_phone_two_numbers_not_glued(locale: str, text: str) -> None:
 def test_phone_pauses_within_one_number_still_accepted(locale: str, text: str, expected: str) -> None:
     res = run(FieldType.PHONE, text, locale)
     assert (res.status, res.value) == ("accepted", expected)
+
+
+# --------------------------------------------------------------------------- third pass: PHONE hundreds and es pairs
+@pytest.mark.parametrize(
+    "locale,text,expected",
+    [
+        ("en", "two hundred twelve five five five oh one nine nine", "2125550199"),
+        ("en", "eight hundred five five five one two one two", "8005551212"),
+        ("en", "one eight hundred five five five one two one two", "18005551212"),
+        ("es", "seiscientos doce trescientos cuarenta y cinco seiscientos setenta y ocho", "612345678"),
+        ("es", "novecientos doce treinta y cuatro cincuenta y seis", "9123456"),
+        ("es", "doce treinta y cuatro cincuenta y seis setenta y ocho", "12345678"),
+    ],
+)
+def test_phone_hundreds_compose_unless_digits_follow(locale: str, text: str, expected: str) -> None:
+    res = run(FieldType.PHONE, text, locale)
+    assert (res.status, res.value) == ("accepted", expected)
+
+
+def test_phone_longer_than_e164_is_rejected() -> None:
+    res = run(FieldType.PHONE, "one two three four five six seven eight nine one two three four five six seven")
+    assert (res.status, res.reason) == ("rejected", "too_long")
+
+
+# --------------------------------------------------------------------------- third pass: TIME ranges and alternatives
+@pytest.mark.parametrize(
+    "locale,text",
+    [
+        ("en", "2 to 4 pm"),
+        ("en", "1 to 2 pm"),
+        ("en", "3 to 4 in the afternoon"),
+        ("en", "3 or 4 pm"),
+        ("en", "between 2 and 4 pm"),
+        ("en", "two and four pm"),
+        ("es", "las tres o cuatro de la tarde"),
+        ("es", "las tres o las cuatro de la tarde"),
+        ("es", "entre las dos y las cuatro de la tarde"),
+    ],
+)
+def test_time_two_candidates_rejected(locale: str, text: str) -> None:
+    res = run(FieldType.TIME, text, locale)
+    assert (res.status, res.reason) == ("rejected", "multiple_values")
+
+
+@pytest.mark.parametrize(
+    "locale,text,expected",
+    [
+        ("es", "diez para las cinco de la tarde", "16:50"),
+        ("es", "cuarto para las cinco de la tarde", "16:45"),
+        ("es", "para las cinco de la tarde", "17:00"),
+        ("en", "five to four pm", "15:55"),
+        ("en", "ten to four pm", "15:50"),
+    ],
+)
+def test_time_minutes_to_hour(locale: str, text: str, expected: str) -> None:
+    res = run(FieldType.TIME, text, locale)
+    assert (res.status, res.value) == ("accepted", expected)
+
+
+# --------------------------------------------------------------------------- third pass: NUMBER fractions and dozens
+@pytest.mark.parametrize(
+    "locale,text,expected",
+    [("en", "three quarters", 0.75), ("es", "un cuarto", 0.25), ("es", "tres cuartos", 0.75), ("en", "half", 0.5)],
+)
+def test_number_bare_fraction_is_the_value(locale: str, text: str, expected: float) -> None:
+    res = run(FieldType.NUMBER, text, locale)
+    assert (res.status, res.value) == ("accepted", expected)
+
+
+def test_number_bare_approximate_fraction_confirms_its_value() -> None:
+    res = run(FieldType.NUMBER, "one fifth")
+    assert (res.status, res.value) == ("confirm", 0.2)
+
+
+@pytest.mark.parametrize(
+    "locale,text,expected",
+    [("en", "half a dozen", 6), ("en", "a half dozen", 6), ("es", "media docena", 6), ("en", "2.5 dozen", 30)],
+)
+def test_number_dozen_variants_confirm_the_product(locale: str, text: str, expected: int) -> None:
+    res = run(FieldType.NUMBER, text, locale)
+    assert (res.status, res.value) == ("confirm", expected)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["twelve, a dozen", "I have a dozen of 5", "three dozen and a half", "five, half a dozen"],
+)
+def test_number_dozen_with_another_quantity_rejected(text: str) -> None:
+    res = run(FieldType.NUMBER, text)
+    assert (res.status, res.reason) == ("rejected", "multiple_values")
+
+
+@pytest.mark.parametrize("text", ["2 and 1/2", "1/2"])
+def test_number_written_fraction_never_dropped(text: str) -> None:
+    assert run(FieldType.NUMBER, text).status == "rejected"
+
+
+@pytest.mark.parametrize(
+    "locale,text,expected",
+    [
+        ("es", "seiscientos doce", 612),
+        ("es", "dos mil doscientos", 2200),
+        ("es", "mil ciento veinte", 1120),
+        ("es", "novecientos noventa y nueve", 999),
+        ("en", "two thousand five hundred", 2500),
+    ],
+)
+def test_number_hundreds_still_compose(locale: str, text: str, expected: int) -> None:
+    res = run(FieldType.NUMBER, text, locale)
+    assert (res.status, res.value) == ("accepted", expected)
+
+
+def test_number_hundreds_after_a_number_start_a_new_one() -> None:
+    res = run(FieldType.NUMBER, "seiscientos doce trescientos", "es")
+    assert (res.status, res.reason) == ("rejected", "multiple_values")
+
+
+# --------------------------------------------------------------------------- third pass: DATE es days and years
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("treinta y uno de marzo", "2026-03-31"),
+        ("veintiuno de marzo", "2026-03-21"),
+        ("cinco de marzo del veintisiete", "2027-03-05"),
+        ("cinco de marzo del dos mil veintisiete", "2027-03-05"),
+    ],
+)
+def test_date_es_compound_day_and_del_year(text: str, expected: str) -> None:
+    res = run(FieldType.DATE, text, "es")
+    assert (res.status, res.value) == ("accepted", expected)

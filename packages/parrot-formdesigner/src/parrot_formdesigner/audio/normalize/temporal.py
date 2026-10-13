@@ -22,8 +22,14 @@ _ISO_DATETIME_RE = re.compile(r"^(\d{4}-\d{1,2}-\d{1,2})t(\d{1,2}:\d{2})$")
 _MERIDIEM_DOTTED_RE = re.compile(r"^([ap])\.m$")
 _O_CLOCK = {"o", "clock", "oclock"}
 _NUMERIC_TOKEN_RE = re.compile(r"^\d+$")
-# marker → direction: en "ten past/to three" (minutes first), es "tres y/menos diez" (hour first)
-_REL_MARKERS = {"past": "plus", "to": "minus", "y": "plus", "menos": "minus"}
+# marker → direction: en "ten past/to three", es "diez para las cinco" (minutes first); es "tres y/menos diez" (hour first)
+_REL_MARKERS = {"past": "plus", "to": "minus", "para": "minus", "y": "plus", "menos": "minus"}
+_MINUTES_FIRST = frozenset({"past", "to", "para"})
+_MINUS_WORDS = frozenset(w for w, d in _REL_MARKERS.items() if d == "minus")
+_PLUS_WORDS = frozenset(w for w, d in _REL_MARKERS.items() if d == "plus")
+# two candidate times ("three or four", "between two and four", "de tres a cuatro"): never pick one
+_ALTERNATIVE_WORDS = frozenset({"or"})
+_RANGE_WORDS = frozenset({"between", "entre", "from", "desde"})
 # filler words that carry no time information; anything else left over downgrades an accepted time to a confirm
 _TIME_IGNORABLE = frozenset(
     {
@@ -128,9 +134,21 @@ def _date_items(tokens: list[str], ctx: NormalizeContext) -> tuple[list[int], li
             i += 1
         elif _is_number_word(tok, spoken):
             j = i
-            while j < n and _is_number_word(tokens[j], spoken):
+            while j < n and (
+                _is_number_word(tokens[j], spoken)
+                or (  # 'treinta y uno' is one number, 31
+                    tokens[j] in spoken.number_joiners
+                    and tokens[j - 1] in spoken.tens
+                    and j + 1 < n
+                    and 1 <= spoken.units.get(tokens[j + 1], 0) <= 9
+                )
+            ):
                 j += 1
             nums = [int(x) for x in parse_numbers(tokens[i:j], spoken)]
+            if i > 0 and tokens[i - 1] == "del":  # es 'cinco de marzo del veintisiete': the year
+                years.extend(nums)
+                i = j
+                continue
             tail: int | None = None
             if j < n and _is_pure_ordinal(tokens[j], ctx):
                 tail = _ordinal_value(tokens[j], ctx)
@@ -246,6 +264,9 @@ def _parse_time(tokens: list[str], ctx: NormalizeContext) -> NormalizeResult:
     """Time grammar; value is a ``(hour, minute)`` tuple (formatted by the caller)."""
     spoken = ctx.lexicon.spoken
     toks = [("am" if m.group(1) == "a" else "pm") if (m := _MERIDIEM_DOTTED_RE.match(t)) else t for t in tokens]
+    alternatives = _ALTERNATIVE_WORDS | ({"o", "u"} if ctx.lexicon.locale == "es" else set())  # es "o"/"u" = "or"
+    if any(t in alternatives or t in _RANGE_WORDS for t in toks):
+        return NormalizeResult.rejected("multiple_values")
     toks = [t for t in toks if t not in _O_CLOCK]
 
     meridiem: str | None = None
@@ -294,7 +315,8 @@ def _parse_time(tokens: list[str], ctx: NormalizeContext) -> NormalizeResult:
     )
     if clock_at is not None:  # "15:30", "3:30pm", "3pm"
         m = _CLOCK_RE.match(toks[clock_at])
-        assert m is not None
+        if m is None:
+            return NormalizeResult.rejected("no_parse")
         hour = int(m.group(1))
         minute = int(m.group(2)) if m.group(2) is not None else 0
         if m.group(3):
@@ -304,17 +326,21 @@ def _parse_time(tokens: list[str], ctx: NormalizeContext) -> NormalizeResult:
             return NormalizeResult.rejected("out_of_range")
         return finish(hour, minute, leading_zero, toks[:clock_at] + toks[clock_at + 1 :], numbers=False)
 
+    if toks and toks[0] == "para":  # "para las cinco": 'for five', not 'N to five'
+        toks = toks[1:]
     marker = next((i for i, t in enumerate(toks) if t in _REL_MARKERS), None)
     if marker is not None:  # "quarter past three", "ten to four", "las cinco y cuarto", "las cinco menos diez"
         word = toks[marker]
         before = [t for t in toks[:marker] if t not in _TIME_IGNORABLE]
         after = [t for t in toks[marker + 1 :] if t not in _TIME_IGNORABLE]
-        minutes_first = word in ("past", "to")
+        minutes_first = word in _MINUTES_FIRST
         minute_part, hour_part = (before, after) if minutes_first else (after, before)
         rel_minute = _small_number(minute_part, spoken, allow_quarter=True)
         rel_hour = _small_number(hour_part, spoken, allow_quarter=False)
         if rel_minute is None or rel_hour is None or not 1 <= rel_minute <= 59 or not 0 <= rel_hour <= 23:
             return NormalizeResult.rejected("no_parse")
+        if word == "to" and rel_minute <= 12 and rel_minute % 5 and minute_part != ["quarter"]:
+            return NormalizeResult.rejected("multiple_values")  # "2 to 4 pm" is a range, not 3:58
         if _REL_MARKERS[word] == "minus":
             if rel_hour == 0:
                 return NormalizeResult.rejected("no_parse")
@@ -326,10 +352,12 @@ def _parse_time(tokens: list[str], ctx: NormalizeContext) -> NormalizeResult:
             hour, minute = rel_hour, rel_minute
         return finish(hour, minute, False, [])
 
-    nums = [x for x in parse_numbers(toks, spoken)]
+    nums = list(parse_numbers(toks, spoken))
     if not nums or any(not float(x).is_integer() for x in nums):
         return NormalizeResult.rejected("no_parse")
     nums = [int(x) for x in nums]
+    if len(nums) > 1 and any(t in spoken.number_joiners for t in toks):  # "two and four pm": two hours
+        return NormalizeResult.rejected("multiple_values")
     hour = nums[0]
     if len(nums) == 1 and 100 <= hour <= 2359 and hour % 100 < 60:
         hour, minute = hour // 100, hour % 100
@@ -345,9 +373,6 @@ def _parse_time(tokens: list[str], ctx: NormalizeContext) -> NormalizeResult:
         return NormalizeResult.rejected("out_of_range")
     return finish(hour, minute, False, toks)
 
-
-_MINUS_WORDS = frozenset({"to", "menos", "para"})
-_PLUS_WORDS = frozenset({"past", "y"})
 
 
 def _special_time(base: tuple[int, int], toks: list[str], half: bool, spoken: SpokenLexicon) -> NormalizeResult:

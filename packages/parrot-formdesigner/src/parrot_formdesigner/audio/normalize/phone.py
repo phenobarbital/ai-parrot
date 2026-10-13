@@ -16,6 +16,7 @@ _NON_DIGIT_RE = re.compile(r"\D")
 _EXTENSION_WORDS = frozenset({"extension", "extensions", "ext", "extn", "x"})
 _SEPARATOR_RE = re.compile(r"[,;]|\b(?:or|o|and|y|u)\b", flags=re.IGNORECASE)
 _MIN_PHONE_DIGITS = 7
+_MAX_PHONE_DIGITS = 15  # E.164: no real number is longer, so more digits means several numbers or a misread
 _EXTENSION_GLUED_RE = re.compile(r"^(?:ext|extn|x)(\d+)$")
 
 
@@ -27,17 +28,35 @@ def _split_extension(tokens: list[str]) -> tuple[list[str], bool]:
     return tokens, False
 
 
+def _digit_word(token: str, spoken: SpokenLexicon) -> bool:
+    return 0 <= spoken.units.get(token, -1) <= 9 or token in spoken.digit_aliases
+
+
+def _hundred_closes_chunk(run: list[str], k: int, spoken: SpokenLexicon) -> bool:
+    """True when the hundred at ``k`` is a chunk of its own ('eight hundred | five five five').
+
+    It composes with what follows ('two hundred twelve' = 212, 'seiscientos doce' = 612) unless the run ends there
+    or digits are dictated one by one after it (two single digits in a row).
+    """
+    rest = run[k + 1 :]
+    if not rest or rest[0] in spoken.scales:
+        return True
+    return len(rest) >= 2 and _digit_word(rest[0], spoken) and _digit_word(rest[1], spoken)
+
+
 def _hundred_digits(run: list[str], spoken: SpokenLexicon) -> list[str]:
-    """Digits of a number-word run where 'eight hundred' is read as 8-0-0, not as the quantity 800 + the next word."""
+    """Digits of a number-word run; 'eight hundred five five five' is 8-0-0 5 5 5, not 805 5 5."""
     parts: list[str] = []
     start = 0
     for k, tok in enumerate(run):
         value = spoken.scales.get(tok, 0)
-        if 200 <= value <= 900 and value % 100 == 0:  # 'ochocientos' is the chunk 8-0-0
+        if not 100 <= value <= 900 or value % 100 != 0 or not _hundred_closes_chunk(run, k, spoken):
+            continue
+        if value >= 200:  # 'ochocientos' is the chunk 8-0-0 on its own
             parts.extend(str(num) for num in parse_numbers(run[start:k], spoken))
             parts.append(str(value))
             start = k + 1
-        elif value == 100 and k > start and spoken.units.get(run[k - 1], 0) in range(1, 10):
+        elif k > start and spoken.units.get(run[k - 1], 0) in range(1, 10):
             parts.extend(str(num) for num in parse_numbers(run[start : k - 1], spoken))
             parts.append(str(spoken.units[run[k - 1]]) + "00")
             start = k + 1
@@ -47,6 +66,17 @@ def _hundred_digits(run: list[str], spoken: SpokenLexicon) -> list[str]:
 
 def _is_number_word(token: str, spoken: SpokenLexicon) -> bool:
     return token in spoken.units or token in spoken.tens or token in spoken.scales
+
+
+def _joins_tens_and_unit(tokens: list[str], j: int, spoken: SpokenLexicon) -> bool:
+    """A joiner between a tens word and a unit word ('treinta y cuatro'), so the run must not break there."""
+    return (
+        tokens[j] in spoken.number_joiners
+        and j > 0
+        and j + 1 < len(tokens)
+        and tokens[j - 1] in spoken.tens
+        and 1 <= spoken.units.get(tokens[j + 1], 0) <= 9
+    )
 
 
 def _build(tokens: list[str], spoken: SpokenLexicon) -> tuple[str, str]:
@@ -77,8 +107,13 @@ def _build(tokens: list[str], spoken: SpokenLexicon) -> tuple[str, str]:
             continue
         if _is_number_word(tok, spoken):
             j = i
-            while j < n and _is_number_word(tokens[j], spoken) and tokens[j] not in spoken.digit_aliases:
-                j += 1
+            while j < n and tokens[j] not in spoken.digit_aliases:
+                if _is_number_word(tokens[j], spoken):
+                    j += 1
+                elif _joins_tens_and_unit(tokens, j, spoken):  # es 'treinta y cuatro' is one chunk, 34
+                    j += 2
+                else:
+                    break
             parts = _hundred_digits(tokens[i:j], spoken)
             if parts and repeat > 1:
                 parts[0] = parts[0][0] * repeat + parts[0][1:] if len(parts[0]) > 1 else parts[0] * repeat
@@ -122,7 +157,9 @@ def normalize_phone(text: str, ctx: NormalizeContext) -> NormalizeResult:
     if not digits:
         return NormalizeResult.rejected("no_parse")
     value = plus + digits
-    if len(digits) >= 7 and PHONE_PATTERN.match(value):
+    if len(digits) > _MAX_PHONE_DIGITS:
+        return NormalizeResult.rejected("too_long", value=value)
+    if len(digits) >= _MIN_PHONE_DIGITS and PHONE_PATTERN.match(value):
         if has_extension:  # the extension is not part of the stored number: the user must see what is kept
             return NormalizeResult.confirm(value, "has_extension")
         return NormalizeResult.accepted(value)

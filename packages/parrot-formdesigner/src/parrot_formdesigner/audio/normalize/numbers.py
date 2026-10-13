@@ -125,8 +125,8 @@ def _read_words(tokens: list[str], i: int, spoken: SpokenLexicon) -> tuple[int |
             else:
                 if v == 100 and 0 < current < 100 and last in ("u", "t"):
                     current *= 100  # "five hundred", "twelve hundred", "twenty five hundred"
-                elif last in ("h",):
-                    break
+                elif last in ("h",) or current:
+                    break  # 'seiscientos doce trescientos': the hundreds start a new number, never 612 + 300
                 else:
                     current += v
                 last = "h"
@@ -156,6 +156,7 @@ _FRACTION_DENOMINATORS: dict[str, int] = {
 APPROXIMATE_FRACTION = "approximate_fraction"
 UNHANDLED_FRACTION = "unhandled_fraction"
 _DOZEN_WORDS = frozenset({"docena", "docenas", "dozen", "dozens"})
+_WRITTEN_FRACTION_RE = re.compile(r"^\d+/\d+$")
 
 
 def _read_fraction(toks: list[str], k: int, spoken: SpokenLexicon) -> tuple[float, bool, int] | None:
@@ -207,6 +208,15 @@ def parse_numbers(
             j += 1
         values: list[int | float] | None = None
         nxt = j
+        bare = _read_fraction(toks, j, spoken) if colloquial else None
+        if bare is not None:  # "three quarters", "un cuarto", "one fifth": the fraction is the whole number
+            numbers.append(-bare[0] if negative else bare[0])
+            if notes is not None:
+                notes.append("fraction_consumed")
+                if not bare[1]:
+                    notes.append(APPROXIMATE_FRACTION)
+            i = bare[2]
+            continue
         written = _parse_written(toks[j], spoken.decimal_separator)
         if written is not None:
             values, nxt = written, j + 1
@@ -248,17 +258,36 @@ def parse_numbers(
 
 
 def _dozen(tokens: list[str], spoken: SpokenLexicon) -> NormalizeResult | None:
-    """'una docena' / 'two dozen' / 'media docena': a quantity word, so the reading is confirmed, not accepted."""
+    """'una docena' / 'two dozen' / 'half a dozen': a quantity word, so the reading is confirmed, not accepted.
+
+    Anything else that carries a number ('twelve, a dozen', 'a dozen of 5', 'three dozen and a half') is not
+    guessed: rejected, so the user is asked again instead of confirming a made-up product.
+    """
     at = next((i for i, t in enumerate(tokens) if t in _DOZEN_WORDS), None)
     if at is None:
         return None
     before = tokens[:at]
-    if before and before[-1] in _HALF_WORDS:
+    after = tokens[at + 1 :]
+    if parse_numbers(after, spoken, colloquial=True) or any(t in _FRACTION_DENOMINATORS for t in after):
+        return NormalizeResult.rejected("multiple_values")
+    article = bool(before) and before[-1] in _ARTICLES
+    if article:
+        before = before[:-1]
+    if before and before[-1] in _HALF_WORDS:  # 'media docena', 'a half dozen', 'half a dozen'
+        rest = before[:-1]
+        if rest and rest[-1] in _ARTICLES:
+            rest = rest[:-1]
+        if parse_numbers(rest, spoken):
+            return NormalizeResult.rejected("multiple_values")
         return NormalizeResult.confirm(6, "ambiguous_quantity")
     nums = parse_numbers(before, spoken) if before else []
-    if len(nums) > 1 or any(not float(x).is_integer() for x in nums):
+    if len(nums) > 1 or (article and nums):  # 'twelve, a dozen': two quantities
         return NormalizeResult.rejected("multiple_values")
-    return NormalizeResult.confirm(int(nums[0]) * 12 if nums else 12, "ambiguous_quantity")
+    factor = nums[0] if nums else 1
+    total = factor * 12
+    if not float(total).is_integer():
+        return NormalizeResult.rejected("non_integral")
+    return NormalizeResult.confirm(int(total), "ambiguous_quantity")
 
 
 def normalize_number(text: str, ctx: NormalizeContext, *, integer: bool) -> NormalizeResult:
@@ -271,8 +300,11 @@ def normalize_number(text: str, ctx: NormalizeContext, *, integer: bool) -> Norm
         notes: list[str] = []
         numbers = parse_numbers(tokens, ctx.lexicon.spoken, colloquial=True, notes=notes)
         fraction_words = sum(1 for t in _expand(tokens) if t in _FRACTION_DENOMINATORS)
+        unreadable = any(_WRITTEN_FRACTION_RE.match(t) for t in tokens)
     except Exception as exc:  # noqa: BLE001 — normalizers never raise
         logger.debug("normalize_number failed: %s", type(exc).__name__)
+        return NormalizeResult.rejected("no_parse")
+    if unreadable:  # "2 and 1/2": a written fraction is never dropped silently
         return NormalizeResult.rejected("no_parse")
     if not numbers:
         return NormalizeResult.rejected("no_parse")
@@ -283,8 +315,8 @@ def normalize_number(text: str, ctx: NormalizeContext, *, integer: bool) -> Norm
     if integer and not is_integral:
         return NormalizeResult.rejected("non_integral", value=value)
     value = int(value) if is_integral else float(value)
-    if fraction_words > notes.count("fraction_consumed"):  # a fraction word we could not place: never dropped silently
-        return NormalizeResult.confirm(value, UNHANDLED_FRACTION)
+    if fraction_words > notes.count("fraction_consumed"):  # a fraction word we could not place: the value is unknown
+        return NormalizeResult.rejected(UNHANDLED_FRACTION)
     if APPROXIMATE_FRACTION in notes:
         return NormalizeResult.confirm(value, APPROXIMATE_FRACTION)
     return NormalizeResult.accepted(value)
