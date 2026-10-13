@@ -16,14 +16,14 @@
       "feature_id": "FEAT-667",
       "feature": "fixgroup-04e6aabc0d26",
       "spec": "sdd/specs/fixgroup-04e6aabc0d26.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task in this feature; touches resolver.py and its two auth test files",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-13T23:42:38.413061+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4288-queryslug-fetch-path-authorization.md"
     }
