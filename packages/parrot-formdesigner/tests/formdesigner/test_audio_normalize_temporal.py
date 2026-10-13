@@ -122,3 +122,52 @@ def test_datetime_grammar() -> None:
 def test_never_raises(text: str) -> None:
     for ft in (FieldType.DATE, FieldType.TIME, FieldType.DATETIME):
         assert normalize_spoken(ft, text, ctx=ctx()).status in ("accepted", "confirm", "rejected")
+
+
+_RELATIVE = [
+    ("en", "today"),
+    ("en", "tomorrow"),
+    ("en", "yesterday"),
+    ("en", "friday"),
+    ("en", "next friday"),
+    ("en", "this friday"),
+    ("en", "last friday"),
+    ("en", "the day after tomorrow"),
+    ("es", "hoy"),
+    ("es", "mañana"),
+    ("es", "ayer"),
+    ("es", "pasado mañana"),
+    ("es", "el viernes"),
+    ("es", "el próximo viernes"),
+    ("es", "el viernes pasado"),
+]
+
+
+@pytest.mark.parametrize("locale,phrase", _RELATIVE)
+def test_relative_date_never_accepted_without_timezone(locale: str, phrase: str) -> None:
+    """Product decision 4: an unknown timezone is never guessed — relative phrases confirm, known tz accepts."""
+    res = normalize_spoken(FieldType.DATE, phrase, ctx=ctx(locale, tz_known=False))
+    assert res is not None and res.status == "confirm" and res.reason == "needs_timezone"
+    assert normalize_spoken(FieldType.DATE, phrase, ctx=ctx(locale)).status == "accepted"
+
+
+@pytest.mark.parametrize("locale,phrase", [("en", "tomorrow at three pm"), ("es", "mañana a las tres de la tarde")])
+def test_relative_datetime_never_accepted_without_timezone(locale: str, phrase: str) -> None:
+    res = normalize_spoken(FieldType.DATETIME, phrase, ctx=ctx(locale, tz_known=False))
+    assert res is not None and res.status == "confirm" and res.reason == "needs_timezone"
+    assert normalize_spoken(FieldType.DATETIME, phrase, ctx=ctx(locale)).status == "accepted"
+
+
+@pytest.mark.parametrize(
+    "locale,ft,phrase",
+    [
+        ("en", FieldType.DATE, "March 5"),
+        ("es", FieldType.DATE, "5 de marzo"),
+        ("en", FieldType.DATETIME, "2026-03-12 at three pm"),
+        ("en", FieldType.TIME, "three pm"),
+        ("es", FieldType.TIME, "las tres de la tarde"),
+    ],
+)
+def test_absolute_values_unaffected_by_unknown_timezone(locale: str, ft: FieldType, phrase: str) -> None:
+    res = normalize_spoken(ft, phrase, ctx=ctx(locale, tz_known=False))
+    assert res is not None and res.status == "accepted"

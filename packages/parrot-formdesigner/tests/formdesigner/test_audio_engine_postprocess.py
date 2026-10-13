@@ -162,6 +162,23 @@ class TestDecisionMatrix:
         out = s.handle(_tr("d", "tomorrow"))
         assert next(o for o in out if isinstance(o, ConfirmRequest)).value == "2026-10-13"
 
+    def test_relative_date_with_invalid_timezone_confirms_en_es(self) -> None:
+        """Product decision 4: an invalid session timezone is treated like a missing one — never guessed as UTC."""
+        for locale, phrase in (("en", "tomorrow"), ("es", "mañana"), ("en", "next friday"), ("es", "el viernes")):
+            s = _build([_f("d", FieldType.DATE)], tz="Not/AZone", locale=locale)
+            out = s.handle(_tr("d", phrase, confidence=0.99))
+            assert not any(isinstance(o, AnswerAccepted) for o in out), phrase
+            assert next(o for o in out if isinstance(o, ConfirmRequest)).refined_by == "rules"
+
+    def test_relative_confirm_even_when_confirm_never(self) -> None:
+        s = _build([_f("d", FieldType.DATE, meta={"voice": {"confirm": "never"}})], tz=None, locale="es")
+        assert any(isinstance(o, ConfirmRequest) for o in s.handle(_tr("d", "ayer", confidence=0.99)))
+
+    def test_absolute_date_accepts_without_timezone(self) -> None:
+        s = _build([_f("d", FieldType.DATE)], tz=None)
+        out = s.handle(_tr("d", "March 5 2026"))
+        assert next(o for o in out if isinstance(o, AnswerAccepted)).value == "2026-03-05"
+
     def test_relative_date_with_timezone_accepts(self) -> None:
         s = _build([_f("d", FieldType.DATE)])
         out = s.handle(_tr("d", "tomorrow"))
