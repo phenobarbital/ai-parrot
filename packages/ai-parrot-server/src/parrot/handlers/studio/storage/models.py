@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Any, ClassVar, Final, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from parrot.handlers.studio.models import CreateAgentRequest
 from parrot.tools.config_schema import build_schema_envelope, is_secret_name, secret_paths
@@ -86,6 +86,37 @@ class StudioModelParams(BaseModel):
     max_tokens: int | None = Field(default=None, gt=0)
     top_k: int | None = Field(default=None, gt=0)
     top_p: float | None = Field(default=None, gt=0.0, le=1.0)
+
+
+INVALID_CONFIG_MESSAGE = "One or more model settings are out of range or of the wrong type."
+_BOUND_CONSTRAINTS = ("gt", "ge", "lt", "le")
+
+
+def model_param_errors(exc: ValidationError) -> list[dict[str, Any]] | None:
+    """Per-field detail entries for a validation error made only of :class:`StudioModelParams` errors.
+
+    Each entry is ``{"field", "constraint", "limit", "message"}``: ``constraint`` is the violated bound
+    (``gt``/``ge``/``lt``/``le``, with ``limit`` its value) or ``"type"`` (``limit`` ``None``) for a value of
+    the wrong type. Returns ``None`` when ANY error is about something else (an unknown key, a reserved key,
+    another field), so the caller keeps its own refusal code.
+    """
+    details: list[dict[str, Any]] = []
+    for err in exc.errors():
+        loc = err.get("loc") or ()
+        field = loc[-1] if loc else None
+        if field not in StudioModelParams.model_fields or err.get("type") == "extra_forbidden":
+            return None
+        ctx = err.get("ctx") or {}
+        bound = next((name for name in _BOUND_CONSTRAINTS if name in ctx), None)
+        details.append(
+            {
+                "field": field,
+                "constraint": bound or "type",
+                "limit": ctx[bound] if bound else None,
+                "message": err.get("msg", ""),
+            }
+        )
+    return details or None
 
 
 class StudioAgentDefinition(BaseModel):

@@ -179,7 +179,7 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                 return self_._r._build_input_element(field, prefilled, locale)
 
         renderer_inst = _ACInputRenderer(self)
-        self._registry = {ft: renderer_inst for ft in FieldType}
+        self._registry = dict.fromkeys(FieldType, renderer_inst)
 
     async def render(
         self,
@@ -736,6 +736,19 @@ class AdaptiveCardRenderer(AbstractFormRenderer):
                 {
                     "type": "TextBlock",
                     "text": _resolve(field.description, locale),
+                    "isSubtle": True,
+                    "size": "Small",
+                    "wrap": True,
+                    "spacing": "None",
+                }
+            )
+
+        # Hint (FEAT-649)
+        if field.hint:
+            elements.append(
+                {
+                    "type": "TextBlock",
+                    "text": _resolve(field.hint, locale),
                     "isSubtle": True,
                     "size": "Small",
                     "wrap": True,

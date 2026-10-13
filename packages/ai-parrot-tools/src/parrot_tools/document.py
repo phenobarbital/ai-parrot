@@ -18,10 +18,17 @@ import aiofiles.os
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from .abstract import AbstractTool
+import parrot.tools.exports_mode as exports_mode
+from ._exports import ExportsToStoreMixin, safe_template_name
 
 
 class DocumentGenerationArgs(BaseModel):
-    """Base arguments schema for document generation tools."""
+    """Base arguments schema for document generation tools.
+
+    In the host's store-only mode (PA-11) the LLM controls the CONTENT only: where the file goes, what it is called,
+    whether it overwrites and which template file is read are server-side decisions, so ``output_filename``,
+    ``output_dir`` and ``overwrite_existing`` are hidden from the schema and dropped from a call.
+    """
 
     content: str = Field(
         ...,
@@ -102,7 +109,7 @@ class DocumentMetadata(BaseModel):
     )
 
 
-class AbstractDocumentTool(AbstractTool):
+class AbstractDocumentTool(ExportsToStoreMixin, AbstractTool):
     """
     Abstract base class for document generation tools.
 
@@ -122,6 +129,8 @@ class AbstractDocumentTool(AbstractTool):
     document_type: str = "document"  # Override in subclasses (e.g., "presentation", "spreadsheet")
     default_extension: str = "txt"   # Override in subclasses (e.g., "pptx", "docx", "xlsx")
     supported_extensions: List[str] = []  # Override in subclasses
+    # hidden from the LLM (and dropped from a call) in the host's store-only mode (PA-11)
+    studio_hidden_args = frozenset({"output_filename", "output_dir", "overwrite_existing"})
 
     def __init__(
         self,
@@ -130,6 +139,7 @@ class AbstractDocumentTool(AbstractTool):
         default_template_name: Optional[str] = None,
         max_file_size_mb: float = 100.0,
         overwrite_existing: bool = False,
+        artifact_store: Any = None,
         **kwargs
     ):
         """
@@ -139,6 +149,8 @@ class AbstractDocumentTool(AbstractTool):
             templates_dir: Directory containing document templates
             default_template_name: Default template file name
             max_file_size_mb: Maximum allowed file size in MB
+            artifact_store: Server-managed artifact store; when set the document is published there (tenant
+                partition, download URL) instead of written to ``output_dir``
             **kwargs: Additional arguments for AbstractTool
         """
         # Set output_dir in kwargs if provided, so AbstractTool can use it
@@ -148,6 +160,7 @@ class AbstractDocumentTool(AbstractTool):
         super().__init__(**kwargs)
 
         self.overwrite_existing = overwrite_existing
+        self.artifact_store = artifact_store  # server-managed (app["artifact_store"]): exports go through it, PA-11
 
         # Template management
         self.templates_dir = templates_dir
@@ -184,9 +197,11 @@ class AbstractDocumentTool(AbstractTool):
         Returns:
             Path object for the output directory
         """
-        if custom_dir:
+        if custom_dir and not exports_mode.is_enabled():
             output_dir = Path(custom_dir).resolve()
         else:
+            # store-only mode (PA-11): a caller-supplied directory is never honoured, files go to the tool's own,
+            # constructor-set directory
             output_dir = self.output_dir
 
         # Create directory if it doesn't exist
@@ -379,7 +394,12 @@ class AbstractDocumentTool(AbstractTool):
         if not template_name or not self.templates_dir:
             return None
 
+        # a template is a FILE NAME in the server-configured directory, never a path (an absolute one would escape it)
+        template_name = safe_template_name(template_name)
         template_path = self.templates_dir / template_name
+        root = Path(self.templates_dir).resolve()
+        if exports_mode.is_enabled() and template_path.exists() and root not in template_path.resolve().parents:
+            raise ValueError("template must be a file inside the templates directory")
 
         if template_path.exists():
             return template_path
@@ -461,6 +481,10 @@ class AbstractDocumentTool(AbstractTool):
             elif not content:
                 raise ValueError("Content cannot be empty")
 
+            self._require_export_target()  # a Studio-scoped call with no store never writes a local file
+            if self.exports_to_store:
+                return await self._create_exported_document(content, output_filename, file_prefix, extension, **kwargs)
+
             # 2. Ensure output directory exists
             output_directory = await self._ensure_output_directory(output_dir)
 
@@ -495,6 +519,30 @@ class AbstractDocumentTool(AbstractTool):
                 "error": str(e),
                 "message": f"Failed to create {self.document_type}: {str(e)}"
             }
+
+    async def _create_exported_document(
+        self,
+        content: Any,
+        output_filename: Optional[str],
+        file_prefix: str,
+        extension: Optional[str],
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Generate the document in memory and publish it to the artifact store (no local file at all)."""
+        filename = self._generate_document_filename(None, file_prefix, extension)  # server-named, never LLM-named
+        document_content = await self._generate_document_content(content, **kwargs)
+        data = document_content.encode("utf-8") if isinstance(document_content, str) else bytes(document_content)
+        if len(data) / (1024 * 1024) > self.max_file_size_mb:
+            raise ValueError(f"Generated file is too large: {len(data) / (1024 * 1024):.2f}MB "
+                             f"(max allowed: {self.max_file_size_mb}MB)")
+        published = await self._publish_export(filename, data)
+        self.logger.info(f"Document exported to the artifact store: {filename}")
+        return {
+            "status": "success",
+            "message": f"{self.document_type.title()} created successfully",
+            "metadata": dict(published),
+            **published,
+        }
 
     @abstractmethod
     async def _generate_document_content(self, content: str, **kwargs) -> Union[bytes, str]:

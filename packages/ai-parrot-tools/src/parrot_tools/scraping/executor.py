@@ -380,9 +380,13 @@ async def _dispatch_step(
 # ── Individual action handlers ────────────────────────────────────────
 
 
+from .confine import check_navigation, confined_file  # noqa: E402
+
+
 async def _action_navigate(driver: AbstractDriver, action: Any, base_url: str) -> bool:
     """Navigate to a URL."""
     target = urljoin(base_url, action.url) if base_url else action.url
+    await check_navigation(target)
     timeout = getattr(action, "timeout", None) or 30
     await driver.navigate(target, timeout=timeout)
     return True
@@ -866,7 +870,10 @@ async def _action_screenshot(driver: AbstractDriver, action: Any) -> bool:
     """Take a screenshot."""
     output_path = getattr(action, "output_path", None) or "."
     filename = action.get_filename() if hasattr(action, "get_filename") else f"screenshot_{int(time.time())}.png"
-    full_path = f"{output_path}/{filename}"
+    confined = confined_file(output_path if output_path != "." else "", filename)  # the JOINED path, name included
+    if confined is not None:
+        confined.parent.mkdir(parents=True, exist_ok=True)
+    full_path = str(confined) if confined is not None else f"{output_path}/{filename}"
 
     await driver.screenshot(full_path)
     logger.info("Screenshot saved: %s", full_path)

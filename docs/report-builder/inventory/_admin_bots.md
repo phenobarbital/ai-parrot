@@ -154,19 +154,19 @@ ui/models.py `BotsListResponse` is a codegen-only descriptor for `GET /api/v1/bo
 |---|---|---|---|---|---|---|
 | WS | /ws/userinfo | `UserSocketManager` handlers/user.py:28 (navigator `WebSocketManager`; instantiated app.py:197) | user presence / channel pub-sub / notifications | in: `auth{token}`, `location`, `message`, `broadcast`, `direct{target,content}`, `subscribe`, `unsubscribe`, `get_users` (user.py:531-645); out: `auth_success`, `subscribed`, `users_list`, `direct`, `error`... ; server push `notify_channel()` (user.py:694) | in-band bearer token (`_validate_token` :179); path auth-excluded unless SaaS mode (:91) | Redis `user_socket:{username}` hash TTL 1d; default channels information/following |
 
-### 5c. Scheduler (handlers/scheduler.py, mounted scheduler/manager.py:1818-1827) — **all MW only (no decorators, no owner scoping)**
+### 5c. Scheduler (handlers/scheduler.py, mounted scheduler/manager.py:1818-1827) — **all MW only (no owner scoping)**
 
 | METHOD | PATH | Handler file:line | Purpose | Request | Response |
 |---|---|---|---|---|---|
 | GET | /api/v1/parrot/scheduler/schedules[/{schedule_id}] | `SchedulerJobsHandler.get` scheduler.py:73 (class :55) | list / one schedule (+ APScheduler next run) | — | `{status,count,schedules[]}` / `{schedule}` |
-| POST | /api/v1/parrot/scheduler/schedules | scheduler.py:93 | create schedule | `{agent_name*, schedule_type* (once/daily/weekly/monthly/interval/cron/crontab — scheduler/manager.py:62), schedule_config*, prompt, method_name, created_by, created_email, metadata, agent_id, is_crew, send_result, scheduler_type, callbacks[]}` | schedule |
+| POST | /api/v1/parrot/scheduler/schedules | scheduler.py:93 | create schedule | `{target_kind*, target_name*, target_id?, backend* (db\|redis\|code), schedule_type*, schedule_config*, prompt, method_name, created_by, created_email, metadata, send_result, callbacks[]}` | schedule |
 | PATCH | /api/v1/parrot/scheduler/schedules/{schedule_id} | scheduler.py:127 | `action`: pause / resume / **run_now** (409 if running) / update (editable fields scheduler/manager.py:1446) | `{action, ...fields}` | schedule |
 | DELETE | /api/v1/parrot/scheduler/schedules/{schedule_id} | scheduler.py:160 | delete | — | msg |
 | GET | /api/v1/parrot/scheduler/schedules/{schedule_id}/last-result | `SchedulerLastResultHandler.get` scheduler.py:198 (class :172) | last execution output | — | `{status, ...result}` |
 | GET | /api/v1/parrot/scheduler/callbacks | `SchedulerCallbacksHandler.get` scheduler.py:45 (class :36) | callbacks + jobstore types | — | `{callbacks[], schedule_types[]}` |
 | POST | /api/v1/parrot/scheduler/restart | `AgentSchedulerManager.restart_handler` (scheduler/manager.py:1827) | restart scheduler | — | — |
 
-Persistence: `navigator.agents_scheduler` (scheduler/manager.py:1252) + APScheduler jobstores. Callbacks (scheduler/functions/__init__.py): `send_email_report` (:69; recipients, subject, message, **as_pdf** → WeasyPrint PDF of markdown), `create_file` (:117; markdown file, output_dir/filename), `saving_data` (:131; CSV via DataFrame, optional email_to), `send_notify_report` (:169).
+Persistence: `navigator.service_scheduler` for `db` definitions, namespaced Redis jobstore and run-state hashes for `redis`, and process memory for `code`; run state is no longer mixed into `metadata`. Callbacks (scheduler/functions/__init__.py): `send_email_report` (:69; recipients, subject, message, **as_pdf** → WeasyPrint PDF of markdown), `create_file` (:117; markdown file, output_dir/filename), `saving_data` (:131; CSV via DataFrame, optional email_to), `send_notify_report` (:169).
 
 ### 5d. Peripheral (one line each)
 

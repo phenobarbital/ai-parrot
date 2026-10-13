@@ -9,9 +9,11 @@ import pytest
 from asyncdb.exceptions import NoDataFound
 
 from parrot.scheduler import jobs
-from parrot.scheduler import manager as manager_module
+from parrot.scheduler import base as base_module
 from parrot.scheduler.coordination import RedisFireCoordinator
 from parrot.scheduler.manager import AgentSchedulerManager, ScheduleType, schedule
+from parrot.scheduler.models import JobDefinition
+from parrot.scheduler.runstate import MemoryRunState
 
 
 class FakeRedis:
@@ -58,6 +60,10 @@ class _FakeBotManager:
         self._bots = {"test_agent": bot}
         self.registry = MagicMock()
 
+    def get_bots(self):
+        """Expose the public bot lookup used by the agent resolver."""
+        return self._bots
+
     def get_crew(self, name: str):
         """This test fixture contains no crews."""
         return None
@@ -94,11 +100,11 @@ class _FakePool:
         return ([row for row in self.rows if row["enabled"]], None)
 
 
-class _FakeAgentSchedule:
+class _FakeServiceSchedule:
     """Schedule model double backed by a shared row map."""
 
     Meta = SimpleNamespace(connection=None)
-    records: dict[str, "_FakeAgentSchedule"] = {}
+    records: dict[str, "_FakeServiceSchedule"] = {}
 
     def __init__(self, **record) -> None:
         self.__dict__.update(record)
@@ -119,26 +125,40 @@ class _FakeAgentSchedule:
         """Remove this row from the shared store."""
         self.records.pop(str(self.schedule_id), None)
 
+    def to_definition(self) -> JobDefinition:
+        """Return the backend-neutral definition consumed by the manager."""
+        return JobDefinition(
+            schedule_id=str(self.schedule_id),
+            backend="db",
+            target_kind=self.target_kind,
+            target_name=self.target_name,
+            target_id=self.target_id,
+            prompt=self.prompt,
+            method_name=self.method_name,
+            schedule_type=self.schedule_type,
+            schedule_config=self.schedule_config,
+            metadata=self.metadata,
+            send_result=self.send_result,
+            callbacks=self.callbacks,
+            misfire_grace_time=300,
+        )
+
 
 def _row(schedule_id: str = "00000000-0000-0000-0000-000000000001") -> dict:
     """Build one enabled interval schedule row for both workers to load."""
     return {
         "schedule_id": schedule_id,
-        "agent_id": "agent-1",
-        "agent_name": "test_agent",
+        "target_kind": "agent",
+        "target_name": "test_agent",
+        "target_id": "agent-1",
         "prompt": "do the thing",
         "method_name": None,
         "metadata": {},
-        "is_crew": False,
         "send_result": {},
         "callbacks": [],
-        "scheduler_type": "default",
         "schedule_type": "interval",
         "schedule_config": {"seconds": 60},
         "enabled": True,
-        "run_count": 0,
-        "last_run": None,
-        "next_run": None,
     }
 
 
@@ -155,15 +175,17 @@ async def _fire_once(manager: AgentSchedulerManager, job_id: str, run_time: date
 async def _start_managers(monkeypatch, redis: FakeRedis):
     """Start two schedulers over a shared fake Redis, row store, and bot."""
     rows = [_row()]
-    shared = _FakeAgentSchedule(**rows[0])
-    _FakeAgentSchedule.records = {str(shared.schedule_id): shared}
-    monkeypatch.setattr(manager_module, "AgentSchedule", _FakeAgentSchedule)
+    shared = _FakeServiceSchedule(**rows[0])
+    _FakeServiceSchedule.records = {str(shared.schedule_id): shared}
+    monkeypatch.setattr(base_module, "ServiceSchedule", _FakeServiceSchedule)
     bot = _FakeBot()
     pool = _FakePool(rows)
+    store = MemoryRunState(backend="db")
     managers = []
     for worker_id in ("w1", "w2"):
         manager = AgentSchedulerManager(bot_manager=_FakeBotManager(bot), registered_name=f"multiworker_{worker_id}")
         manager._pool = pool
+        manager._run_state_for = lambda _backend: store  # type: ignore[method-assign]
         await manager.start_headless(coordination="none")
         coordinator = RedisFireCoordinator(redis, worker_id=worker_id)
         manager._fire_coordinator = coordinator
@@ -187,15 +209,16 @@ async def test_two_workers_one_fire(two_managers):
     """One DB schedule fire executes once across two scheduler managers."""
     first, second, row, bot = two_managers
     callbacks: list[str] = []
-    first._local_callbacks[str(row.schedule_id)] = lambda result: callbacks.append(result)
-    second._local_callbacks[str(row.schedule_id)] = lambda result: callbacks.append(result)
+    first._local_callbacks[str(row.schedule_id)] = lambda result, **_kwargs: callbacks.append(result)
+    second._local_callbacks[str(row.schedule_id)] = lambda result, **_kwargs: callbacks.append(result)
     run_time = datetime.now(timezone.utc)
 
     await _fire_once(first, str(row.schedule_id), run_time)
     await _fire_once(second, str(row.schedule_id), run_time)
 
     assert bot.chat_calls == ["do the thing"]
-    assert row.run_count == 1
+    state = await first.get_last_result(str(row.schedule_id))
+    assert state.run_count == 1
     assert callbacks == ["ok-result"]
 
 
@@ -242,8 +265,9 @@ async def test_redis_down_fails_closed(monkeypatch):
         await _fire_once(managers[1], str(row.schedule_id), run_time)
 
         assert bot.chat_calls == []
-        assert row.run_count == 0
-        assert row.metadata["last_status"] == "lock_unavailable"
+        state = await managers[0].get_last_result(str(row.schedule_id))
+        assert state.run_count == 0
+        assert state.last_status == "lock_unavailable"
     finally:
         for manager in managers:
             await manager.stop_headless(wait=False)

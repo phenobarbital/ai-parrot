@@ -7,6 +7,7 @@ import os
 import socket
 import sys
 import uuid
+from contextvars import ContextVar
 from datetime import datetime
 from typing import Awaitable, Callable, Optional, Protocol, Set, runtime_checkable
 
@@ -17,13 +18,29 @@ from apscheduler.util import iscoroutinefunction_partial
 
 from parrot.conf import CACHE_HOST, CACHE_PORT
 
-from .sanitize import DEFAULT_REDIS_JOBSTORE_DB, SchedulerConfigError, sanitize_redis_settings
+from .sanitize import SchedulerConfigError, sanitize_redis_settings
 
 logger = logging.getLogger("Parrot.Scheduler.coordination")
 
 DEFAULT_PREFIX = "parrot:scheduler:"
 DEFAULT_FIRE_TTL = 86400
 DEFAULT_RUN_NOW_TTL = 3600
+
+CURRENT_RUN_TIME: ContextVar[Optional[datetime]] = ContextVar("scheduler_current_run_time", default=None)
+# Scheduled run time of the fire being executed; set by CoordinatedAsyncIOExecutor (FEAT-644, aa813ccc1927).
+
+
+def manager_prefix(registered_name: str) -> str:
+    """Return the Redis key prefix owned by one scheduler manager (``parrot:scheduler:<name>:``)."""
+    return f"{DEFAULT_PREFIX}{registered_name}:"
+
+
+def redis_db() -> int:
+    """Logical Redis db for jobstore, run state and coordination (``SCHEDULER_REDIS_DB``, default 6)."""
+    from navconfig import config as nav_config
+
+    raw = nav_config.get("SCHEDULER_REDIS_DB")
+    return int(sanitize_redis_settings(host=CACHE_HOST, port=CACHE_PORT, db=raw)["db"])
 
 
 class FireCoordinationError(Exception):
@@ -136,12 +153,13 @@ class RedisFireCoordinator:
             logger.warning("Could not close scheduler coordination Redis client", exc_info=True)
 
 
-def build_fire_coordinator(mode: Optional[str] = None, *, use_redis: bool = False) -> FireCoordinator:
-    """Resolve and build the configured fire coordinator.
+def build_fire_coordinator(
+    mode: Optional[str] = None, *, use_redis: bool = False, prefix: str = DEFAULT_PREFIX
+) -> FireCoordinator:
+    """Resolve and build the fire coordinator.
 
-    Args:
-        mode: Explicit ``redis`` or ``none`` selection.
-        use_redis: Legacy fallback when no mode is explicitly configured.
+    A Redis jobstore (``use_redis=True``) always yields ``RedisFireCoordinator``: ``none`` from the argument or
+    ``SCHEDULER_COORDINATION`` is overridden with a WARNING (FEAT-644 AC14). ``prefix`` namespaces the claim keys.
 
     Raises:
         SchedulerConfigError: If the resolved mode is unknown.
@@ -150,15 +168,18 @@ def build_fire_coordinator(mode: Optional[str] = None, *, use_redis: bool = Fals
 
     raw = mode or nav_config.get("SCHEDULER_COORDINATION") or ("redis" if use_redis else "none")
     normalized = str(raw).strip().lower()
+    if normalized == "none" and use_redis:
+        logger.warning(
+            "SCHEDULER_COORDINATION=none ignored: a Redis jobstore is attached, fires must be claimed (FEAT-644)"
+        )
+        normalized = "redis"
     if normalized == "none":
         return NullFireCoordinator()
     if normalized == "redis":
         fire_ttl = nav_config.get("SCHEDULER_FIRE_LOCK_TTL") or DEFAULT_FIRE_TTL
         run_now_ttl = nav_config.get("SCHEDULER_RUN_NOW_LOCK_TTL") or DEFAULT_RUN_NOW_TTL
-        client = aioredis.Redis(
-            **sanitize_redis_settings(host=CACHE_HOST, port=CACHE_PORT, db=DEFAULT_REDIS_JOBSTORE_DB)
-        )
-        return RedisFireCoordinator(client, fire_ttl=int(fire_ttl), run_now_ttl=int(run_now_ttl))
+        client = aioredis.Redis(**sanitize_redis_settings(host=CACHE_HOST, port=CACHE_PORT, db=redis_db()))
+        return RedisFireCoordinator(client, fire_ttl=int(fire_ttl), run_now_ttl=int(run_now_ttl), prefix=prefix)
     raise SchedulerConfigError(f"Unknown SCHEDULER_COORDINATION {raw!r}; expected 'redis' or 'none'")
 
 
@@ -195,7 +216,11 @@ class CoordinatedAsyncIOExecutor(AsyncIOExecutor):
         if not won:
             logger.debug("Job %s @ %s claimed by another worker; skipping", job.id, run_times[-1])
             return []
-        return await run_coroutine_job(job, job._jobstore_alias, run_times, self._logger.name)
+        token = CURRENT_RUN_TIME.set(run_times[-1])
+        try:
+            return await run_coroutine_job(job, job._jobstore_alias, run_times, self._logger.name)
+        finally:
+            CURRENT_RUN_TIME.reset(token)
 
     def _do_submit_job(self, job, run_times):
         if not iscoroutinefunction_partial(job.func):

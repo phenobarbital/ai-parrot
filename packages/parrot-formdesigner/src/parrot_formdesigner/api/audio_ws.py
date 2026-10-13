@@ -1,8 +1,11 @@
-"""AudioFormWSHandler — WebSocket handler for interactive audio form sessions.
+"""AudioFormWSHandler — WebSocket adapter for interactive audio form sessions.
 
-Manages a stateful audio Q&A session over WebSocket: one question at a time,
-text or audio answers, TTS delivery, STT transcription, validation, and
-final form submission.
+Thin I/O adapter over the pure :class:`~parrot_formdesigner.audio.engine.AudioFormSession`
+state machine: it authenticates the connection, decodes JSON/binary frames into
+engine events, performs every I/O request the engine returns (TTS, STT, blob
+storage, re-planning, plausibility, snapshots, submission), feeds the results
+back as events and encodes the wire messages (v1 shapes preserved, v2 adds
+``audio_segment`` headers followed by a binary frame).
 
 WebSocket protocol (see spec §2 for full message definitions):
 - Client sends JSON messages with a "type" field.
@@ -13,7 +16,7 @@ Authentication: JWT token extracted from Sec-WebSocket-Protocol header or
 from the first "auth" type message. Unauthenticated connections receive an
 error and are closed.
 
-Added by FEAT-224 (FormDesigner Audio Renderer).
+Added by FEAT-224 (FormDesigner Audio Renderer); rewritten by FEAT-649.
 """
 
 from __future__ import annotations
@@ -23,40 +26,88 @@ import base64
 import html
 import json
 import logging
+from types import SimpleNamespace
 import os
 import tempfile
+import time
 import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from aiohttp import WSMsgType, web
+from pydantic import ValidationError
 
+from ..audio.engine import AudioFormSession
+from ..audio.events import (
+    AnswerAccepted,
+    AnswerCleared,
+    AudioReceived,
+    AudioSegment,
+    BlobStored,
+    DeleteBlob,
+    Error,
+    FormComplete,
+    InboundEvent,
+    IOFailed,
+    Outbound,
+    PlanReady,
+    PlausibilityDone,
+    Question,
+    Replan,
+    RunPlausibility,
+    SaveSnapshot,
+    SessionEnded,
+    StartSession,
+    StoreBlob,
+    Submit,
+    SubmitDone,
+    Synthesize,
+    Transcribe,
+    TranscriptReady,
+    UnknownMessageType,
+    is_io_request,
+    parse_inbound,
+)
 from ..audio.models import (
-    AudioAnswer,
     AudioFormManifest,
     AudioQuestion,
     AudioSessionConfig,
     AudioSessionState,
+    Phase,
     VoiceMode,
 )
+from ..audio.narration.engine import Narrator
+from ..audio.narration.lexicon import load_lexicon
+from ..audio.recordings import delete_recording, store_recording
+from ..audio.segments import _SYNTH_LOCK, AudioSegmentCache
+from ..audio.session_store import AudioSnapshot, ResumeUnavailable, SnapshotConflict
+from ..core.llm_validation import LLMValidationConfig, PlausibilityReport
+from ..core.voice import resolve_voice_config
+from ..core.voice_answer import unwrap_voice
 from ..renderers.audio import (
     AudioFormRenderer,
     synthesize_with_fallback,
 )
+from ..services.auth_context import AuthContext
+from ..services.plausibility import AnswerPlausibilityChecker, PlausibilityBlocked
+from ..services.submission_pipeline import SubmissionPipeline, ValidationFailed
 
 if TYPE_CHECKING:
+    from parrot.clients.base import AbstractClient
     from parrot.core.ws_auth import AuthenticatedUser, TokenValidator
     from parrot.voice.tts.synthesizer import VoiceSynthesizer
-    from parrot.voice.transcriber.faster_whisper_backend import FasterWhisperBackend
+    from parrot.voice.transcriber.backend import AbstractTranscriberBackend
 
+    from ..audio.session_store import AudioSessionStore
+    from ..core.schema import FormSchema
+    from ..services.blob_storage import AbstractBlobStorage
     from ..services.registry import FormRegistry
-    from ..services.validators import FormValidator
     from ..services.submissions import FormSubmissionStorage
+    from ..services.validators import FormValidator
 
 logger = logging.getLogger(__name__)
 
-# Maximum audio questions per session (spec open question resolved: 10 max).
-MAX_QUESTIONS = 10
 
 # Client-facing placeholder used in lieu of a sensitive (e.g. password) value
 # in transcription / confirm_request messages (FEAT-236).
@@ -99,24 +150,103 @@ def _sniff_audio_suffix(data: bytes) -> Optional[str]:
     return None
 
 
-class AudioFormWSHandler:
-    """WebSocket handler for interactive audio form sessions.
+_AUDIO_MIME_BY_SUFFIX = {".webm": "audio/webm", ".ogg": "audio/ogg", ".mp4": "audio/mp4", ".wav": "audio/wav"}
 
-    Manages one stateful audio session per WebSocket connection:
+# Wire messages that only exist in protocol v2 — never sent to a v1 client.
+_V2_ONLY_TYPES = frozenset(
+    {
+        "audio_segment",
+        "plan_updated",
+        "section_enter",
+        "command_ack",
+        "question_skipped",
+        "answer_cleared",
+        "review_start",
+        "review_item",
+        "review_prompt",
+        "plausibility_result",
+        "session_resumed",
+    }
+)
+# Question keys added by v2.
+_V2_QUESTION_KEYS = ("section_uid", "hint", "ui_cue", "answer_modes", "narration")
+
+
+TTS_UNAVAILABLE_COOLDOWN_S = 60.0  # a failed auto-mode backend is skipped this long (module constant)
+
+
+@dataclass
+class _ConnCtx:
+    """Per-connection adapter state (replaces the old per-connection audio cache)."""
+
+    request: Any
+    user: Any
+    tenant: Optional[str]
+    state: AudioSessionState
+    engine: Optional[AudioFormSession] = None
+    form: Optional["FormSchema"] = None
+    revision: int = 0
+    segments: Optional[AudioSegmentCache] = None
+    v1_audio: dict[str, bytes] = field(default_factory=dict)  # field_uid → narration audio (inline mode)
+    prefetch: bool = True
+    closed: bool = False
+    partial_session_id: Optional[str] = None  # resolved once: navigator-auth session id, else audio session id
+
+    @property
+    def inline_audio(self) -> bool:
+        """True when question audio travels base64 inside ``question`` (v1, or v2 with prefetch off)."""
+        return self.state.protocol_version < 2 or not self.prefetch
+
+
+class _AutoSynthAdapter:
+    """Presents the handler's ``auto_synthesize`` fallback as a synthesiser for ``AudioSegmentCache``.
+
+    This puts the default path behind the same segment cache and process-wide ``_SYNTH_LOCK`` as an
+    injected synthesiser (AC17).
+    """
+
+    def __init__(self, handler: "AudioFormWSHandler", state: AudioSessionState) -> None:
+        self._handler = handler
+        self._state = state
+        cfg = state.config
+        self.config = SimpleNamespace(
+            mime_format=getattr(cfg, "tts_mime_format", None) or "audio/wav",
+            backend=getattr(cfg, "tts_backend", None) or "supertonic",
+        )
+
+    async def synthesize(self, text: str, language: Optional[str] = None) -> Any:
+        """Synthesize via the per-session auto backend; raise when it degrades to text-only."""
+        language = None if language == "en" else language
+        audio = await self._handler._auto_synthesize_cached(
+            self._state, text, config=self._state.config, language=language
+        )
+        if not audio:
+            raise RuntimeError("auto TTS unavailable")
+        return SimpleNamespace(audio=audio)
+
+
+class AudioFormWSHandler:
+    """WebSocket adapter for interactive audio form sessions.
+
+    One engine (:class:`AudioFormSession`) per connection; this class performs
+    all I/O the engine requests:
     - JWT authentication via Sec-WebSocket-Protocol header or first message.
-    - start_session: loads FormSchema, builds AudioFormManifest, sends Q1.
-    - answer_text: validates text answer, stores it, advances to next question.
-    - answer_audio: binary frame → temp file → STT transcription → validate.
-    - skip_question, go_back, repeat_question, end_session navigation.
-    - After last answer: submits form data, sends form_complete.
+    - start_session: loads the FormSchema (URL tenant), builds the manifest and engine.
+    - text/binary frames are decoded into engine events; STT, TTS, blob storage,
+      re-planning, plausibility, autosave snapshots and submission are performed here.
+    - Submission always goes through :class:`SubmissionPipeline` (sinks, events, forwarder).
 
     Args:
         registry: FormRegistry to look up forms by ID.
         synthesizer: VoiceSynthesizer for TTS question audio.
-        transcriber: FasterWhisperBackend for STT transcription.
-        validator: FormValidator for answer validation.
+        transcriber: STT backend for audio answers.
+        validator: FormValidator used by the lazily built submission pipeline.
         token_validator: TokenValidator for JWT authentication.
-        submission_storage: Optional storage backend for form submissions.
+        submission_storage: Storage backend for the lazily built submission pipeline.
+        pipeline: Shared SubmissionPipeline (``app["submission_pipeline"]``); built lazily when omitted.
+        blob_storage: Optional blob storage for spoken-answer recordings.
+        session_store: Optional AudioSessionStore for autosave/resume snapshots.
+        llm_client_getter: Callable returning the LLM client used for per-form plausibility checks.
         auto_synthesize: When True and no explicit ``synthesizer`` is injected,
             the handler synthesizes TTS via the SuperTonic-first fallback helper
             (SuperTonic → Google → text-only). Defaults to False so callers that
@@ -134,7 +264,7 @@ class AudioFormWSHandler:
             token_validator=TokenValidator(secret_key=SECRET),
         )
         # Register route: app.router.add_get(
-        #   "/api/v1/forms/{form_uid}/audio/ws",
+        #   "/api/v1/{tenant}/forms/{form_uid}/audio/ws",
         #   handler.handle_websocket
         # )
     """
@@ -143,36 +273,44 @@ class AudioFormWSHandler:
         self,
         registry: "FormRegistry",
         synthesizer: Optional["VoiceSynthesizer"],
-        transcriber: Optional["FasterWhisperBackend"],
+        transcriber: Optional["AbstractTranscriberBackend"],
         validator: "FormValidator",
         *,
         token_validator: Optional["TokenValidator"] = None,
         submission_storage: Optional["FormSubmissionStorage"] = None,
+        pipeline: Optional[SubmissionPipeline] = None,
+        blob_storage: Optional["AbstractBlobStorage"] = None,
+        session_store: Optional["AudioSessionStore"] = None,
+        llm_client_getter: Optional[Callable[[], Optional["AbstractClient"]]] = None,
         max_msg_size: int = 10 * 1024 * 1024,
         auto_synthesize: bool = False,
     ) -> None:
-        """Initialize the AudioFormWSHandler."""
+        """Initialize the adapter; every new collaborator is optional (degrades, never fails)."""
         self.registry = registry
         self.synthesizer = synthesizer
         self.transcriber = transcriber
         self.validator = validator
         self._token_validator = token_validator
         self._submission_storage = submission_storage
+        self._pipeline = pipeline
+        self._blob_storage = blob_storage
+        self._session_store = session_store
+        self._llm_client_getter = llm_client_getter
+        self._checkers: dict[str, AnswerPlausibilityChecker] = {}  # session_id → per-form checker
         self._max_msg_size = max_msg_size
         self._auto_synthesize = auto_synthesize
-        # Per-session working VoiceSynthesizer cache (session_id → synth) for the
-        # auto_synthesize path, so the chosen backend is reused across a
-        # session's questions instead of being rebuilt per narration (FEAT-236).
-        self._session_synths: dict[str, Any] = {}
+        # Process-wide registry of working auto-mode VoiceSynthesizers, keyed by the effective synthesis config
+        # (preferred backend, voice, mime format). Built lazily under ``_tts_lock``; closed on app cleanup.
+        self._tts_backends: dict[tuple[str, str, str], Any] = {}
+        self._tts_unavailable: dict[tuple[str, str, str], float] = {}  # (backend, voice, mime) → retry-after
+        self._tts_lock = asyncio.Lock()
         self.logger = logging.getLogger(__name__)
 
     # -------------------------------------------------------------------------
     # Main entry point
     # -------------------------------------------------------------------------
 
-    async def handle_websocket(
-        self, request: web.Request
-    ) -> web.WebSocketResponse:
+    async def handle_websocket(self, request: web.Request) -> web.WebSocketResponse:
         """Handle an incoming WebSocket connection for an audio form session.
 
         Args:
@@ -187,9 +325,7 @@ class AudioFormWSHandler:
         # handshake response MUST echo back one of the client's offered
         # subprotocols, or strict clients abort the connection immediately.
         offered_protocols = [
-            proto.strip()
-            for proto in request.headers.get("Sec-WebSocket-Protocol", "").split(",")
-            if proto.strip()
+            proto.strip() for proto in request.headers.get("Sec-WebSocket-Protocol", "").split(",") if proto.strip()
         ]
         ws = web.WebSocketResponse(
             heartbeat=30.0,
@@ -213,21 +349,21 @@ class AudioFormWSHandler:
         # tenant is reported as a WS close, never an HTTP 400.
         declared_tenant = request.match_info.get("tenant")
         if not declared_tenant:
-            await self._send_error(
-                ws, "TENANT_NOT_DECLARED", "This endpoint requires an explicit tenant."
-            )
+            await self._send_error(ws, "TENANT_NOT_DECLARED", "This endpoint requires an explicit tenant.")
             await ws.close(code=1008, message=b"tenant_not_declared")
             return ws
 
-        form_uid = request.match_info.get("form_uid", "")
-        session = AudioSessionState(
-            session_id=str(uuid.uuid4()),
-            form_uid=form_uid,
-            user_id=user.user_id,
+        ctx = _ConnCtx(
+            request=request,
+            user=user,
+            tenant=declared_tenant,
+            state=AudioSessionState(
+                session_id=str(uuid.uuid4()),
+                form_uid=request.match_info.get("form_uid", ""),
+                user_id=user.user_id,
+                tenant=declared_tenant,
+            ),
         )
-
-        # Per-session TTS audio cache: question index → base64 audio str
-        _audio_cache: dict[int, str] = {}
 
         # Step 2: Message loop
         try:
@@ -238,42 +374,39 @@ class AudioFormWSHandler:
                     except json.JSONDecodeError:
                         await self._send_error(ws, "INVALID_JSON", "Invalid JSON message")
                         continue
-
-                    msg_type = data.get("type", "")
-                    try:
-                        await self._dispatch_text(
-                            ws, msg_type, data, session, request, _audio_cache
-                        )
-                    except Exception as exc:
-                        self.logger.exception(
-                            "Error handling message type=%s: %s", msg_type, exc
-                        )
-                        await self._send_error(ws, "INTERNAL_ERROR", str(exc))
-
+                    if not isinstance(data, dict):
+                        await self._send_error(ws, "INVALID_JSON", "Invalid JSON message")
+                        continue
+                    await self._guarded(ws, self._process_text(ws, ctx, data), "INTERNAL_ERROR")
                 elif msg.type == WSMsgType.BINARY:
-                    try:
-                        await self._handle_answer_audio(
-                            ws, msg.data, session, _audio_cache
-                        )
-                    except Exception as exc:
-                        self.logger.exception(
-                            "Error handling binary audio frame: %s", exc
-                        )
-                        await self._send_error(ws, "TRANSCRIPTION_ERROR", str(exc))
-
+                    await self._guarded(ws, self._process_binary(ws, ctx, msg.data), "TRANSCRIPTION_ERROR")
                 elif msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE):
                     break
-
+                if ctx.closed:
+                    break
         finally:
-            # Release any per-session synthesizer built lazily in auto mode.
-            cached_synth = self._session_synths.pop(session.session_id, None)
-            if cached_synth is not None:
-                await self._close_synth(cached_synth)
-            self.logger.debug(
-                "AudioFormWSHandler: session %s closed", session.session_id
-            )
+            try:
+                await self._autosave(ctx, final=True)
+            except Exception as exc:  # noqa: BLE001 — never mask the connection teardown
+                self.logger.warning("Final snapshot save failed: %s", type(exc).__name__)
+            if ctx.engine is not None and self._session_store is not None:
+                # Dropped connection: the snapshot stays resumable, the active marker does not (resume re-claims it).
+                try:
+                    await self._session_store.release_active(ctx.state.user_id, ctx.state.session_id)
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.warning("Active marker release failed: %s", type(exc).__name__)
+            self._checkers.pop(ctx.state.session_id, None)
+            self.logger.debug("AudioFormWSHandler: session %s closed", ctx.state.session_id)
 
         return ws
+
+    async def _guarded(self, ws: web.WebSocketResponse, coro: Any, code: str) -> None:
+        """Run ``coro``; an unexpected exception becomes an ``error`` message (no transcript/value logging)."""
+        try:
+            await coro
+        except Exception as exc:  # noqa: BLE001 — keep the connection alive
+            self.logger.exception("Error handling audio frame (%s): %s", code, type(exc).__name__)
+            await self._send_error(ws, code, "Internal error while handling the request")
 
     # -------------------------------------------------------------------------
     # Authentication
@@ -304,6 +437,7 @@ class AudioFormWSHandler:
                 "accepting anonymous connection (not for production use)"
             )
             from parrot.core.ws_auth import AuthenticatedUser  # type: ignore[import-untyped]
+
             return AuthenticatedUser(user_id="anonymous", username="anonymous")
 
         # Try Sec-WebSocket-Protocol header (token passed as subprotocol).
@@ -343,59 +477,224 @@ class AudioFormWSHandler:
         return None
 
     # -------------------------------------------------------------------------
-    # Text message dispatcher
+    # Frame processing
     # -------------------------------------------------------------------------
 
-    async def _dispatch_text(
+    def _decode_text(self, data: dict[str, Any], *, protocol_version: int) -> Optional["InboundEvent"]:
+        """Decode a client JSON message into an engine event.
+
+        v1 (``protocol_version < 2``) ignores unknown keys; v2 forbids them (S6). Internal ``_*`` types are never
+        accepted from clients.
+
+        Returns:
+            The event, or ``None`` for an unknown message type.
+
+        Raises:
+            pydantic.ValidationError: malformed payload (surfaced as ``INVALID_MESSAGE`` by the caller).
+        """
+        try:
+            return parse_inbound(data, protocol_version=protocol_version)  # type: ignore[return-value]
+        except UnknownMessageType:
+            return None
+
+    async def _process_text(self, ws: web.WebSocketResponse, ctx: _ConnCtx, data: dict[str, Any]) -> None:
+        """start_session bootstraps the engine; every other message is decoded and handled."""
+        msg_type = data.get("type", "")
+        if msg_type == "start_session":
+            if ctx.engine is not None:
+                await self._send_error(ws, "ALREADY_STARTED", "Session already started")
+                return
+            await self._handle_start_session(
+                ws=ws, data=data, session=ctx.state, request=ctx.request, audio_cache={}, ctx=ctx
+            )
+            return
+        try:
+            event = self._decode_text(data, protocol_version=ctx.state.protocol_version)
+        except ValidationError:
+            await self._send_error(ws, "INVALID_MESSAGE", f"Invalid '{msg_type}' message")
+            return
+        if event is None:
+            await self._send_error(ws, "UNKNOWN_MESSAGE_TYPE", f"Unknown message type: {msg_type}")
+            return
+        if ctx.engine is None:
+            if event.type == "ping":
+                await ws.send_json({"type": "pong"})
+            else:
+                await self._send_error(ws, "SESSION_NOT_STARTED", "Call start_session first")
+            return
+        await self._perform(ws, ctx, ctx.engine.handle(event))
+
+    async def _process_binary(self, ws: web.WebSocketResponse, ctx: _ConnCtx, audio: bytes) -> None:
+        """Validate a binary audio frame (v1 guards), then hand it to the engine as ``AudioReceived``."""
+        if ctx.engine is None:
+            await self._send_error(ws, "SESSION_NOT_STARTED", "Call start_session first")
+            return
+        if self.transcriber is None:
+            await self._send_error(ws, "TRANSCRIBER_UNAVAILABLE", "Audio transcription not configured")
+            return
+
+        # Validate the incoming payload before touching the transcriber. A
+        # too-small or non-container frame is an empty/instant recording or a
+        # partial MediaRecorder chunk — decoding it raises a cryptic libav EBML
+        # error, so reject it here with an actionable message instead.
+        suffix = _sniff_audio_suffix(audio)
+        self.logger.debug(
+            "Received audio frame: %d bytes, magic=%s, detected=%s",
+            len(audio),
+            audio[:8].hex(" ") if audio else "(empty)",
+            suffix or "unknown",
+        )
+        if len(audio) < _MIN_AUDIO_BYTES:
+            await self._send_error(
+                ws,
+                "EMPTY_AUDIO",
+                "No audio captured. Hold the record button and speak, then " "release to send.",
+            )
+            return
+        if suffix is None:
+            await self._send_error(
+                ws,
+                "UNSUPPORTED_AUDIO",
+                "Unrecognized audio format. Send a complete WebM, OGG, MP4 or "
+                "WAV recording as a single binary frame.",
+            )
+            return
+        event = AudioReceived(type="_audio", audio=audio, mime=_AUDIO_MIME_BY_SUFFIX.get(suffix))
+        await self._perform(ws, ctx, ctx.engine.handle(event))
+
+    # -------------------------------------------------------------------------
+    # Session bootstrap
+    # -------------------------------------------------------------------------
+
+    async def _handle_start_session(
         self,
+        *,
         ws: web.WebSocketResponse,
-        msg_type: str,
         data: dict[str, Any],
         session: AudioSessionState,
         request: web.Request,
         audio_cache: dict[int, str],
+        ctx: Optional[_ConnCtx] = None,
     ) -> None:
-        """Dispatch a text JSON message to the appropriate handler method.
+        """Load the form with the URL tenant, build manifest + engine, feed ``StartSession``."""
+        form_uid = data.get("form_uid") or session.form_uid
+        locale = data.get("locale", "en")
+        if ctx is None:
+            ctx = _ConnCtx(request=request, user=None, tenant=request.match_info.get("tenant"), state=session)
 
-        Args:
-            ws: Active WebSocket.
-            msg_type: The "type" field of the incoming message.
-            data: Full parsed message dict.
-            session: Current session state.
-            request: Original HTTP request (for tenant resolution).
-            audio_cache: Per-session TTS audio cache.
-        """
-        handlers: dict[str, Any] = {
-            "start_session": self._handle_start_session,
-            "answer_text": self._handle_answer_text,
-            "answer_selection": self._handle_answer_selection,
-            "answer_payload": self._handle_answer_payload,
-            "confirm_answer": self._handle_confirm_answer,
-            "skip_question": self._handle_skip_question,
-            "go_back": self._handle_go_back,
-            "repeat_question": self._handle_repeat_question,
-            "end_session": self._handle_end_session,
-            "ping": self._handle_ping,
-        }
-        handler = handlers.get(msg_type)
-        if handler is None:
-            await self._send_error(
-                ws, "UNKNOWN_MESSAGE_TYPE", f"Unknown message type: {msg_type}"
+        # Decode the start message first. v1 clients send ``form_id`` (or nothing): the URL ``form_uid`` is used.
+        try:
+            start = parse_inbound(
+                {**data, "type": "start_session", "form_uid": form_uid},
+                protocol_version=int(data.get("protocol_version", 1) or 1),
             )
+        except (ValueError, TypeError):  # pydantic.ValidationError, UnknownMessageType, bad protocol_version
+            await self._send_error(ws, "INVALID_MESSAGE", "Invalid 'start_session' message")
+            return
+        assert isinstance(start, StartSession)
+
+        # Build the per-session config from the start_session payload (FEAT-236),
+        # falling back to defaults for any omitted key.
+        config = self._build_session_config(form_uid, locale, data)
+        session.config = config
+
+        # Load form — tenant-scoped by the declaration validated in
+        # handle_websocket (FEAT-421). `request.match_info["tenant"]` is
+        # guaranteed non-empty here: handle_websocket closes the socket
+        # before the message loop (and thus before start_session can ever
+        # be dispatched) when the tenant is missing.
+        declared_tenant = request.match_info.get("tenant")
+        form = await self.registry.get(form_uid, tenant=declared_tenant)
+        if form is None:
+            await self._send_error(ws, "FORM_NOT_FOUND", f"Form '{form_uid}' not found")
+            return
+        if form.tenant != declared_tenant:
+            # Defense-in-depth: registry.get() is already tenant-scoped, so
+            # this should never fire — see the equivalent
+            # FormAPIHandler._assert_form_tenant (TASK-2202). Close rather
+            # than serve the form; never a 403 (existence oracle).
+            self.logger.warning(
+                "Cross-tenant audio session blocked: form_uid=%s form.tenant=%s " "declared=%s",
+                form_uid,
+                form.tenant,
+                declared_tenant,
+            )
+            await self._send_error(ws, "TENANT_MISMATCH", "Form belongs to a different tenant.")
+            await ws.close(code=1008, message=b"tenant_mismatch")
             return
 
-        # Pass common args; individual handlers accept **kwargs for flexibility.
-        await handler(
-            ws=ws,
-            data=data,
-            session=session,
-            request=request,
-            audio_cache=audio_cache,
+        # Build manifest (the question cap is applied by the planner, not here).
+        renderer = AudioFormRenderer(synthesizer=self.synthesizer)
+        questions = renderer.split_into_questions(form, locale=locale)
+
+        def _resolve_str(v: Any) -> str:
+            if isinstance(v, str):
+                return v
+            if isinstance(v, dict):
+                return v.get(locale) or v.get("en") or next(iter(v.values()), "")
+            return str(v) if v else ""
+
+        form_title = _resolve_str(form.title)
+        manifest = AudioFormManifest(
+            form_uid=form_uid,
+            title=form_title,
+            total_questions=len(questions),
+            questions=questions,
+            ws_endpoint=f"/api/v1/{declared_tenant}/forms/{form_uid}/audio/ws",
+            locale=locale,
         )
 
-    # -------------------------------------------------------------------------
-    # Message handlers
-    # -------------------------------------------------------------------------
+        session.form_uid = form_uid
+        session.manifest = manifest
+        session.current_index = 0
+        session.tenant = declared_tenant
+
+        deps: dict[str, Any] = {
+            "form": form,
+            "manifest": manifest,
+            "cfg": resolve_voice_config(form, config),
+            "narrator": Narrator(locale),
+            "lexicon": load_lexicon(locale),
+            "state": session,
+            "llm_cfg": form.llm_validation,
+        }
+        store = self._session_store
+        if start.resume_session_id:
+            if store is None:
+                await self._send_error(ws, "RESUME_UNAVAILABLE", "Session resume is not available")
+                return
+            try:
+                snap = await store.load(form_uid, start.resume_session_id)
+            except ResumeUnavailable:
+                snap = None
+            if snap is None:
+                await self._send_error(ws, "RESUME_UNAVAILABLE", "Session resume is not available")
+                return
+            if not await store.claim_active(session.user_id, start.resume_session_id):
+                await self._send_error(ws, "SESSION_ACTIVE", "Another session is already active")
+                return
+            engine = AudioFormSession.from_snapshot(snap, **deps)
+            ctx.revision = snap.revision
+        else:
+            if store is not None and not await store.claim_active(session.user_id, session.session_id):
+                await self._send_error(ws, "SESSION_ACTIVE", "Another session is already active")
+                return
+            engine = AudioFormSession(**deps)
+
+        ctx.form = form
+        ctx.engine = engine
+        ctx.prefetch = start.prefetch
+        segment_synth: Any = self.synthesizer
+        if segment_synth is None and self._auto_synthesize:
+            segment_synth = _AutoSynthAdapter(self, ctx.state)
+        ctx.segments = AudioSegmentCache(segment_synth, lock=_SYNTH_LOCK)
+        opening = engine.handle(start)
+        if start.resume_session_id and any(
+            isinstance(o, Error) and o.code in ("RESUME_STALE", "RESUME_FORBIDDEN") for o in opening
+        ):
+            # The marker was claimed before the engine validated user/tenant/version: give it back.
+            await store.release_active(session.user_id, start.resume_session_id)
+        await self._perform(ws, ctx, opening)
 
     def _build_session_config(
         self,
@@ -431,808 +730,468 @@ class AudioFormWSHandler:
         try:
             return AudioSessionConfig(**kwargs)
         except Exception as exc:  # noqa: BLE001 — never fail the session on config
-            self.logger.warning(
-                "Invalid audio session config (%s); using defaults", exc
-            )
+            self.logger.warning("Invalid audio session config (%s); using defaults", exc)
             return AudioSessionConfig(form_uid=form_uid, locale=locale)
 
-    async def _handle_start_session(
-        self,
-        *,
-        ws: web.WebSocketResponse,
-        data: dict[str, Any],
-        session: AudioSessionState,
-        request: web.Request,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Handle start_session message: load form, build manifest, send Q1."""
-        form_uid = data.get("form_uid") or session.form_uid
-        locale = data.get("locale", "en")
+    # -------------------------------------------------------------------------
+    # Outbound performance (I/O mapping)
+    # -------------------------------------------------------------------------
 
-        # Build the per-session config from the start_session payload (FEAT-236),
-        # falling back to defaults for any omitted key.
-        config = self._build_session_config(form_uid, locale, data)
-        session.config = config
+    async def _perform(self, ws: web.WebSocketResponse, ctx: _ConnCtx, outbound: list["Outbound"]) -> None:
+        """Perform outbound items in order; I/O results are fed back into the engine (iteratively)."""
+        assert ctx.engine is not None
+        queue = list(outbound)
+        while queue and not ctx.closed:
+            item = queue.pop(0)
+            feedback = await self._perform_one(ws, ctx, item)
+            if feedback is not None:
+                queue[:0] = ctx.engine.handle(feedback)  # results run before the remaining items
 
-        # Load form — tenant-scoped by the declaration validated in
-        # handle_websocket (FEAT-421). `request.match_info["tenant"]` is
-        # guaranteed non-empty here: handle_websocket closes the socket
-        # before the message loop (and thus before start_session can ever
-        # be dispatched) when the tenant is missing.
-        declared_tenant = request.match_info.get("tenant")
-        form = await self.registry.get(form_uid, tenant=declared_tenant)
-        if form is None:
-            await self._send_error(ws, "FORM_NOT_FOUND", f"Form '{form_uid}' not found")
-            return
-        if form.tenant != declared_tenant:
-            # Defense-in-depth: registry.get() is already tenant-scoped, so
-            # this should never fire — see the equivalent
-            # FormAPIHandler._assert_form_tenant (TASK-2202). Close rather
-            # than serve the form; never a 403 (existence oracle).
-            self.logger.warning(
-                "Cross-tenant audio session blocked: form_uid=%s form.tenant=%s "
-                "declared=%s",
-                form_uid,
-                form.tenant,
-                declared_tenant,
-            )
-            await self._send_error(
-                ws, "TENANT_MISMATCH", "Form belongs to a different tenant."
-            )
-            await ws.close(code=1008, message=b"tenant_mismatch")
-            return
+    async def _perform_one(
+        self, ws: web.WebSocketResponse, ctx: _ConnCtx, item: "Outbound"
+    ) -> Optional["InboundEvent"]:
+        """One mapping-table row; returns the event to feed back, or None for wire messages."""
+        engine = ctx.engine
+        assert engine is not None
+        state = ctx.state
+        form = ctx.form
+        assert form is not None
 
-        # Build manifest
-        renderer = AudioFormRenderer(synthesizer=self.synthesizer)
-        questions = renderer.split_into_questions(form, locale=locale)
+        if not is_io_request(item):
+            await self._send_wire(ws, ctx, item)
+            if isinstance(item, (AnswerAccepted, AnswerCleared)):
+                await self._mirror_partial(ctx, item)
+            if isinstance(item, SessionEnded):
+                await self._release_session(ctx)
+                ctx.closed = True
+                await ws.close()
+            elif isinstance(item, FormComplete):
+                await self._release_session(ctx)
+            return None
 
-        if len(questions) > MAX_QUESTIONS:
-            questions = questions[:MAX_QUESTIONS]
-            self.logger.warning(
-                "Form %s has >%d questions; truncating to %d",
-                form_uid, MAX_QUESTIONS, MAX_QUESTIONS,
-            )
+        if isinstance(item, Synthesize):
+            await self._do_synthesize(ws, ctx, item)
+            return None
 
+        if isinstance(item, Replan):
+            plan, delta = await engine.planner.replan(state.answers, locale=state.locale)
+            return PlanReady(type="_plan_ready", plan=list(plan), delta=delta.model_dump(mode="json"))
 
-        def _resolve_str(v: Any) -> str:
-            if isinstance(v, str):
-                return v
-            if isinstance(v, dict):
-                return v.get(locale) or v.get("en") or next(iter(v.values()), "")
-            return str(v) if v else ""
+        if isinstance(item, Transcribe):
+            return await self._do_transcribe(item, ctx)
 
-        form_title = _resolve_str(form.title)
-        manifest = AudioFormManifest(
-            form_uid=form_uid,
-            title=form_title,
-            total_questions=len(questions),
-            questions=questions,
-            ws_endpoint=f"/api/v1/{declared_tenant}/forms/{form_uid}/audio/ws",
-            locale=locale,
-        )
+        if isinstance(item, StoreBlob):
+            if self._blob_storage is None:
+                return None
+            field_def = next((f for f in form.iter_fields_recursive() if f.field_id == item.field_id), None)
+            if field_def is None:
+                return None
+            try:
+                blob_ref = await store_recording(
+                    self._blob_storage,
+                    audio=item.audio,
+                    mime=item.mime,
+                    form=form,
+                    field=field_def,
+                    session_id=state.session_id,
+                    submission_id=state.submission_id,
+                    tenant=ctx.tenant,
+                )
+            except Exception as exc:  # noqa: BLE001 — recordings are best-effort evidence
+                self.logger.warning("Recording storage failed for field %s: %s", item.field_id, type(exc).__name__)
+                return IOFailed(type="_io_failed", request=item.type, code="BLOB_STORE_FAILED")
+            return BlobStored(type="_blob_stored", field_id=item.field_id, blob_ref=blob_ref, version=item.version)
 
-        session.form_uid = form_uid
-        session.manifest = manifest
-        session.current_index = 0
+        if isinstance(item, DeleteBlob):
+            if self._blob_storage is not None:
+                try:
+                    await delete_recording(self._blob_storage, item.blob_ref)
+                except Exception as exc:  # noqa: BLE001 — best effort
+                    self.logger.warning("Recording delete failed: %s", type(exc).__name__)
+            return None
 
-        # Pre-synthesize all questions only when an explicit synthesizer is
-        # injected. In auto_synthesize mode questions are synthesized on demand
-        # in _send_question (one at a time) to avoid bulk backend calls.
-        if self.synthesizer is not None:
-            await self._presynthize_to_cache(questions, audio_cache, locale=locale)
+        if isinstance(item, SaveSnapshot):
+            if engine.state.phase in (Phase.COMPLETE, Phase.ABORTED):
+                return None  # the session was released: a late save would only lose its compare-and-set
+            await self._save_snapshot(ws, ctx, AudioSnapshot.model_validate(item.snapshot))
+            return None
 
-        await ws.send_json({
-            "type": "session_started",
-            "session_id": session.session_id,
-            "total_questions": len(questions),
-            "title": form_title,
-        })
+        if isinstance(item, RunPlausibility):
+            return await self._do_plausibility(ctx, item)
 
-        # Deliver first question.
-        if questions:
-            await self._send_question(
-                ws, questions[0], audio_cache, config=config, session=session
-            )
-        else:
-            await self._finish_session(ws, session)
+        if isinstance(item, Submit):
+            return await self._do_submit(ctx, item)
 
-    async def _handle_answer_text(
-        self,
-        *,
-        ws: web.WebSocketResponse,
-        data: dict[str, Any],
-        session: AudioSessionState,
-        request: web.Request,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Handle answer_text: validate, store, advance."""
-        field_id = data.get("field_id", "")
-        value = str(data.get("value", ""))
+        self.logger.warning("Unhandled outbound item: %s", type(item).__name__)
+        return None
 
-        accepted = await self._accept_answer(
-            ws, session, field_id, value, source="text"
-        )
-        if accepted:
-            await self._advance_session(ws, session, request, audio_cache)
+    async def _send_wire(self, ws: web.WebSocketResponse, ctx: _ConnCtx, msg: "Outbound") -> None:
+        """Encode and send one wire message (v1-only suppressed messages are skipped)."""
+        if isinstance(msg, Question) and msg.voice_mode == VoiceMode.VISUAL_FALLBACK.value and not msg.fallback_html:
+            manifest_q = self._manifest_question(ctx, msg.field_id)
+            if manifest_q is not None:
+                fallback = await self._build_fallback_html(manifest_q, ctx.state.config)
+                msg = msg.model_copy(update={"fallback_html": fallback})
+        wire = self._encode(ctx, msg)
+        if wire:
+            await ws.send_json(wire)
 
-    async def _handle_answer_selection(
-        self,
-        *,
-        ws: web.WebSocketResponse,
-        data: dict[str, Any],
-        session: AudioSessionState,
-        request: web.Request,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Handle answer_selection for a PROMPT_SELECT question (FEAT-236).
+    @staticmethod
+    def _manifest_question(ctx: _ConnCtx, field_id: str) -> Optional[AudioQuestion]:
+        """The manifest question for ``field_id`` (or None)."""
+        if ctx.engine is None:
+            return None
+        return next((q for q in ctx.engine.manifest.questions if q.field_id == field_id), None)
 
-        Accepts ``{field_id, value}`` (single) or ``{field_id, values: [...]}``
-        (multi). The ``field_id`` must match the current question. Validates each
-        value against the question's ``options`` and stores an
-        ``AudioAnswer(source="selection")``. Multi values are stored as a
-        comma-joined string.
+    def _encode(self, ctx: _ConnCtx, msg: "Outbound") -> dict[str, Any]:
+        """Wire dict for one message; v1 clients get the FEAT-236 shapes (and base64 audio on question).
+
+        Returns an empty dict when the message must not be sent (v2-only messages for a v1 client).
         """
-        field_id = data.get("field_id", "")
-        question = await self._current_question(ws, session, field_id)
-        if question is None:
-            return  # error already sent by _current_question
+        wire: dict[str, Any] = msg.to_wire()  # type: ignore[union-attr]
+        v2 = ctx.state.protocol_version >= 2
+        mtype = wire.get("type")
+        if v2:
+            if mtype == "question" and ctx.inline_audio:
+                self._attach_audio(ctx, wire)
+            return wire
+        if mtype in _V2_ONLY_TYPES:
+            return {}
+        if mtype == "session_started":
+            wire.pop("protocol_version", None)
+        elif mtype == "question":
+            for key in _V2_QUESTION_KEYS:
+                wire.pop(key, None)
+            self._attach_audio(ctx, wire)
+        elif mtype == "answer_accepted":
+            q = self._manifest_question(ctx, wire.get("field_id", ""))
+            wire.pop("matched", None)
+            wire.pop("blob_ref", None)
+            if q is not None and q.sensitive:
+                wire.pop("value", None)  # v1: a sensitive value is never echoed
+            elif isinstance(wire.get("value"), list):
+                wire["value"] = ",".join(str(v) for v in wire["value"])
+        elif mtype == "confirm_request":
+            wire.pop("matched", None)
+            wire.pop("alternatives", None)
+        elif mtype == "form_complete":
+            wire.pop("stored_in", None)
+            wire.pop("plausibility_summary", None)
+            answers = ctx.engine.state.answers if ctx.engine is not None else {}
+            wire["answers"] = {
+                fid: {"value": value, "source": answers[fid].source if fid in answers else "text"}
+                for fid, value in (wire.get("answers") or {}).items()
+            }
+        return wire
 
-        allowed = {opt.get("value") for opt in (question.options or [])}
+    def _attach_audio(self, ctx: _ConnCtx, wire: dict[str, Any]) -> None:
+        """Attach the base64 narration of a question (never for sensitive questions)."""
+        if wire.get("sensitive"):
+            return
+        q = self._manifest_question(ctx, wire.get("field_id", ""))
+        audio = ctx.v1_audio.get(str(q.field_uid)) if q is not None else None
+        if audio:
+            wire["audio"] = base64.b64encode(audio).decode()
 
-        if "values" in data:
-            raw_values = data.get("values") or []
-            values = [str(v) for v in raw_values]
-            if question.required and not values:
-                await self._reject_answer(
-                    ws, field_id, "Select at least one option"
-                )
-                return
-            if allowed and any(v not in allowed for v in values):
-                await self._reject_answer(
-                    ws, field_id, "One or more selected values are not valid options"
-                )
-                return
-            value = ",".join(values)
-        else:
-            value = str(data.get("value", ""))
-            if allowed and value not in allowed:
-                await self._reject_answer(
-                    ws, field_id, f"'{value}' is not a valid option"
-                )
-                return
+    # -------------------------------------------------------------------------
+    # I/O requests
+    # -------------------------------------------------------------------------
 
-        accepted = await self._accept_answer(
-            ws, session, field_id, value, source="selection"
-        )
-        if accepted:
-            await self._advance_session(ws, session, request, audio_cache)
+    @staticmethod
+    def _segment_kind(key: str) -> str:
+        """Header ``kind`` for a narration segment key."""
+        if key.startswith("review:"):
+            return "review"
+        if key.endswith(":hint"):
+            return "hint"
+        if key.endswith(":options"):
+            return "options"
+        if key.startswith("q:"):
+            return "question"
+        return "system"
 
-    async def _handle_answer_payload(
-        self,
-        *,
-        ws: web.WebSocketResponse,
-        data: dict[str, Any],
-        session: AudioSessionState,
-        request: web.Request,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Handle answer_payload for a VISUAL_FALLBACK question (FEAT-236).
-
-        Accepts ``{field_id, value}`` collected after the client completes the
-        inline single-field visual render. The ``field_id`` must match the
-        current question. Stores ``source="text"`` and advances. A required REST
-        field can be completed this way.
-        """
-        field_id = data.get("field_id", "")
-        if await self._current_question(ws, session, field_id) is None:
-            return  # error already sent by _current_question
-        value = str(data.get("value", ""))
-
-        accepted = await self._accept_answer(
-            ws, session, field_id, value, source="text"
-        )
-        if accepted:
-            await self._advance_session(ws, session, request, audio_cache)
-
-    async def _handle_confirm_answer(
-        self,
-        *,
-        ws: web.WebSocketResponse,
-        data: dict[str, Any],
-        session: AudioSessionState,
-        request: web.Request,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Handle confirm_answer for a low-confidence transcript (FEAT-236).
-
-        ``{field_id, confirmed: bool}`` — on ``true`` the pending transcript is
-        stored and the session advances; on ``false`` the pending transcript is
-        discarded and the SAME question is re-sent (no advance).
-        """
-        pending = session.pending
-        if pending is None:
-            await self._send_error(
-                ws, "NO_PENDING_ANSWER", "No answer is awaiting confirmation"
+    async def _synth_items(self, ctx: _ConnCtx, items: dict[str, str]) -> dict[str, bytes]:
+        """Synthesize ``items`` (key → text); failures degrade to missing keys (text-only)."""
+        if not items:
+            return {}
+        state = ctx.state
+        if ctx.segments is not None and ctx.segments.synthesizer is not None and ctx.form is not None:
+            cfg = ctx.engine.cfg if ctx.engine is not None else None
+            return await ctx.segments.ensure(
+                items,
+                locale=state.locale,
+                voice=getattr(cfg, "tts_voice", None),
+                form_uid=str(ctx.form.form_uid),
+                version=str(ctx.form.version),
             )
+        out: dict[str, bytes] = {}
+        if self._auto_synthesize:
+            language = state.locale if state.locale != "en" else None
+            for key, text in items.items():
+                if key.startswith("pause:") or not text.strip():
+                    continue
+                audio = await self._synthesize(text, config=state.config, language=language, session=state)
+                if audio:
+                    out[key] = audio
+        return out
+
+    async def _do_synthesize(self, ws: web.WebSocketResponse, ctx: _ConnCtx, item: Synthesize) -> None:
+        """v2: send ``audio_segment`` header + binary frame per key; v1/inline: keep bytes for ``question``."""
+        engine = ctx.engine
+        assert engine is not None
+        if ctx.inline_audio:
+            groups: dict[str, list[str]] = {}
+            for key in item.keys:
+                parts = key.split(":")
+                if len(parts) == 3 and parts[0] == "q" and parts[2] in ("label", "hint", "options"):
+                    groups.setdefault(parts[1], []).append(item.texts.get(key, ""))
+            sensitive = {str(q.field_uid) for q in engine.manifest.questions if q.sensitive}
+            combined = {
+                f"v1:{uid}": " ".join(t for t in texts if t.strip())
+                for uid, texts in groups.items()
+                if uid not in sensitive
+            }
+            audio = await self._synth_items(ctx, combined)
+            for key, data in audio.items():
+                ctx.v1_audio[key[len("v1:") :]] = data
             return
+        audio = await self._synth_items(ctx, {k: item.texts[k] for k in item.keys if k in item.texts})
+        mime = ctx.segments.mime() if ctx.segments is not None else "audio/wav"
+        if not isinstance(mime, str):
+            mime = "audio/wav"
+        for key in item.keys:
+            data = audio.get(key)
+            if not data:
+                continue
+            header = AudioSegment(key=key, mime=mime, kind=self._segment_kind(key), text=item.texts.get(key, ""))
+            await ws.send_json(header.to_wire())
+            await ws.send_bytes(data)
 
-        client_field_id = data.get("field_id", "")
-        if client_field_id and client_field_id != pending.field_id:
-            await self._send_error(
-                ws,
-                "FIELD_MISMATCH",
-                f"confirm_answer for '{client_field_id}' but the pending "
-                f"answer is for '{pending.field_id}'",
-            )
-            return
-
-        confirmed = bool(data.get("confirmed", False))
-        session.pending = None
-
-        if confirmed:
-            accepted = await self._accept_answer(
-                ws, session, pending.field_id, pending.value,
-                source="speech", confidence=pending.confidence,
-                raw_transcript=pending.raw_transcript,
-            )
-            if accepted:
-                await self._advance_session(ws, session, request, audio_cache)
-        else:
-            # Re-send the current (same) question; nothing is stored.
-            if session.manifest is not None and session.current_index < len(
-                session.manifest.questions
-            ):
-                current_q = session.manifest.questions[session.current_index]
-                await self._send_question(
-                    ws, current_q, audio_cache,
-                    config=session.config, session=session,
-                )
-
-    async def _handle_answer_audio(
-        self,
-        ws: web.WebSocketResponse,
-        audio_bytes: bytes,
-        session: AudioSessionState,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Handle binary audio frame: write to temp file, transcribe, validate."""
-        if session.manifest is None:
-            await self._send_error(ws, "SESSION_NOT_STARTED", "Call start_session first")
-            return
-
-        manifest = session.manifest
-        if session.current_index >= len(manifest.questions):
-            await self._send_error(ws, "SESSION_COMPLETE", "All questions answered")
-            return
-
-        current_q = manifest.questions[session.current_index]
-
+    async def _do_transcribe(self, item: Transcribe, ctx: _ConnCtx) -> "InboundEvent":
+        """Temp file → STT; returns ``TranscriptReady`` or ``IOFailed`` (never logs transcripts)."""
         if self.transcriber is None:
-            await self._send_error(
-                ws, "TRANSCRIBER_UNAVAILABLE", "Audio transcription not configured"
+            return IOFailed(
+                type="_io_failed",
+                request=item.type,
+                code="TRANSCRIBER_UNAVAILABLE",
+                detail="Audio transcription not configured",
             )
-            return
-
-        # Validate the incoming payload before touching the transcriber. A
-        # too-small or non-container frame is an empty/instant recording or a
-        # partial MediaRecorder chunk — decoding it raises a cryptic libav EBML
-        # error, so reject it here with an actionable message instead.
-        suffix = _sniff_audio_suffix(audio_bytes)
-        self.logger.debug(
-            "Received audio frame: %d bytes, magic=%s, detected=%s",
-            len(audio_bytes),
-            audio_bytes[:8].hex(" ") if audio_bytes else "(empty)",
-            suffix or "unknown",
-        )
-        if len(audio_bytes) < _MIN_AUDIO_BYTES:
-            await self._send_error(
-                ws,
-                "EMPTY_AUDIO",
-                "No audio captured. Hold the record button and speak, then "
-                "release to send.",
-            )
-            return
-        if suffix is None:
-            await self._send_error(
-                ws,
-                "UNSUPPORTED_AUDIO",
-                "Unrecognized audio format. Send a complete WebM, OGG, MP4 or "
-                "WAV recording as a single binary frame.",
-            )
-            return
-
-        # Write audio bytes to a temp file for transcription.
+        suffix = _sniff_audio_suffix(item.audio) or ".webm"
         tmp_path: Optional[Path] = None
         try:
-            with tempfile.NamedTemporaryFile(
-                suffix=suffix, delete=False, prefix="audio_form_"
-            ) as tmp:
-                tmp.write(audio_bytes)
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False, prefix="audio_form_") as tmp:
+                tmp.write(item.audio)
                 tmp_path = Path(tmp.name)
-
+            locale = ctx.state.locale
             try:
-                result = await self.transcriber.transcribe(
-                    tmp_path,
-                    language=manifest.locale if manifest.locale != "en" else None,
-                )
+                result = await self.transcriber.transcribe(tmp_path, language=locale if locale != "en" else None)
             except Exception as exc:  # noqa: BLE001 — surface decode failures cleanly
-                # A malformed/truncated container (e.g. a partial recording)
-                # raises deep inside libav. Convert it to a clean, recoverable
-                # client error rather than tearing down the session turn.
+                # A malformed/truncated container (e.g. a partial recording) raises deep inside libav.
                 self.logger.warning(
-                    "Failed to decode/transcribe audio frame (%d bytes, %s): %s",
-                    len(audio_bytes),
-                    suffix,
-                    exc,
+                    "Failed to decode/transcribe audio frame (%d bytes, %s): %s", len(item.audio), suffix, exc
                 )
-                await self._send_error(
-                    ws,
-                    "AUDIO_DECODE_ERROR",
-                    "Could not decode the audio. Please re-record the answer.",
+                return IOFailed(
+                    type="_io_failed",
+                    request=item.type,
+                    code="AUDIO_DECODE_ERROR",
+                    detail="Could not decode the audio. Please re-record the answer.",
                 )
-                return
-
-            transcript = result.text
-            confidence = result.confidence
-
-            # Never echo a sensitive (e.g. password) value back to the client;
-            # the real transcript is still stored server-side (FEAT-236).
-            display_text = _SENSITIVE_MASK if current_q.sensitive else transcript
-
-            # Send transcription back to client.
-            await ws.send_json({
-                "type": "transcription",
-                "field_id": current_q.field_id,
-                "text": display_text,
-                "confidence": confidence,
-            })
-
-            # Low-confidence read-back gate (FEAT-236): when the STT confidence
-            # is below the configured threshold, hold the transcript as PENDING
-            # and ask the client to confirm before storing. Do NOT advance.
-            threshold = (
-                session.config.stt_confirm_threshold
-                if session.config is not None
-                else 0.6
-            )
-            if confidence is None:
-                self.logger.debug(
-                    "STT returned no confidence for field %s; auto-advancing",
-                    current_q.field_id,
-                )
-            if confidence is not None and confidence < threshold:
-                session.pending = AudioAnswer(
-                    field_id=current_q.field_id,
-                    value=transcript,
-                    source="speech",
-                    confidence=confidence,
-                    raw_transcript=transcript,
-                )
-                await ws.send_json({
-                    "type": "confirm_request",
-                    "field_id": current_q.field_id,
-                    "transcript": display_text,
-                    "confidence": confidence,
-                })
-                return
-
-            # Validate and store the answer.
-            accepted = await self._accept_answer(
-                ws, session, current_q.field_id, transcript,
-                source="speech", confidence=confidence,
-                raw_transcript=transcript,
-            )
-            if accepted:
-                # Need to advance — but we can't pass request/audio_cache here
-                # easily since this is called from the binary handler.
-                # Use a minimal advance that doesn't need request.
-                await self._advance_session_no_request(ws, session, audio_cache)
-
         finally:
-            if tmp_path and tmp_path.exists():
+            if tmp_path is not None and tmp_path.exists():
                 try:
                     os.unlink(tmp_path)
                 except OSError:
                     pass
-
-    async def _handle_skip_question(
-        self,
-        *,
-        ws: web.WebSocketResponse,
-        data: dict[str, Any],
-        session: AudioSessionState,
-        request: web.Request,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Handle skip_question: advance past optional, reject for required."""
-        if session.manifest is None:
-            await self._send_error(ws, "SESSION_NOT_STARTED", "Call start_session first")
-            return
-
-        manifest = session.manifest
-        if session.current_index >= len(manifest.questions):
-            return
-
-        current_q = manifest.questions[session.current_index]
-        if current_q.required:
-            await ws.send_json({
-                "type": "answer_rejected",
-                "field_id": current_q.field_id,
-                "error": "This field is required and cannot be skipped",
-            })
-            return
-
-        session.current_index += 1
-        await self._advance_session(ws, session, request, audio_cache)
-
-    async def _handle_go_back(
-        self,
-        *,
-        ws: web.WebSocketResponse,
-        data: dict[str, Any],
-        session: AudioSessionState,
-        request: web.Request,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Handle go_back: navigate to a previous question."""
-        if session.manifest is None:
-            await self._send_error(ws, "SESSION_NOT_STARTED", "Call start_session first")
-            return
-
-        to_index = data.get("to_index")
-        if to_index is not None:
-            target = int(to_index)
-        else:
-            target = max(0, session.current_index - 1)
-
-        manifest = session.manifest
-        if target < 0 or target >= len(manifest.questions):
-            await self._send_error(
-                ws, "INVALID_INDEX", f"Index {target} out of range"
-            )
-            return
-
-        session.current_index = target
-        await self._send_question(
-            ws, manifest.questions[target], audio_cache,
-            config=session.config, session=session,
+        confidence = getattr(result, "confidence", None)
+        language = getattr(result, "language", None)
+        seconds = getattr(result, "duration_seconds", None)
+        return TranscriptReady(
+            type="_transcript",
+            field_id=item.field_id,
+            text=str(result.text),
+            language=language if isinstance(language, str) else None,
+            confidence=float(confidence) if isinstance(confidence, (int, float)) else None,
+            audio_mime=item.mime or _AUDIO_MIME_BY_SUFFIX.get(suffix, "audio/webm"),
+            audio_bytes_len=len(item.audio),
+            duration_ms=int(seconds * 1000) if isinstance(seconds, (int, float)) else None,
         )
 
-    async def _handle_repeat_question(
-        self,
-        *,
-        ws: web.WebSocketResponse,
-        data: dict[str, Any],
-        session: AudioSessionState,
-        request: web.Request,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Handle repeat_question: re-send TTS audio for current question."""
-        if session.manifest is None:
-            await self._send_error(ws, "SESSION_NOT_STARTED", "Call start_session first")
-            return
+    def _checker_for(self, form: "FormSchema", *, session_id: str = "") -> AnswerPlausibilityChecker:
+        """Per-session plausibility checker built from the form's own ``llm_validation`` config."""
+        checker = self._checkers.get(session_id)
+        if checker is None:
+            client = self._llm_client_getter() if self._llm_client_getter is not None else None
+            checker = AnswerPlausibilityChecker(client, config=form.llm_validation or LLMValidationConfig())
+            self._checkers[session_id] = checker
+        return checker
 
-        manifest = session.manifest
-        if session.current_index >= len(manifest.questions):
-            return
+    async def _do_plausibility(self, ctx: _ConnCtx, item: RunPlausibility) -> "InboundEvent":
+        """Run the plausibility batch; ``PlausibilityBlocked`` / failures become a ``blocked`` report."""
+        engine, form = ctx.engine, ctx.form
+        assert engine is not None and form is not None
+        sensitive = {q.field_id for q in engine.manifest.questions if q.sensitive}
+        scalars = unwrap_voice(
+            {fid: a.value for fid, a in ctx.state.answers.items() if a.value is not None and fid not in sensitive}
+        )
+        checker = self._checker_for(form, session_id=ctx.state.session_id)
+        try:
+            report = await checker.check(form, scalars, locale=ctx.state.locale, fields=item.fields)
+        except PlausibilityBlocked as exc:
+            report = PlausibilityReport(status="blocked", reason=exc.reason, threshold=checker.config.threshold)
+        except Exception as exc:  # noqa: BLE001 — never fail the session on the advisory check
+            self.logger.warning("Plausibility check failed: %s", type(exc).__name__)
+            report = PlausibilityReport(status="blocked", reason="check failed", threshold=checker.config.threshold)
+        return PlausibilityDone(type="_plausibility_done", report=report)
 
-        current_q = manifest.questions[session.current_index]
-        await self._send_question(
-            ws, current_q, audio_cache, config=session.config, session=session
+    def _pipeline_for(self) -> SubmissionPipeline:
+        """The shared pipeline, or a lazily built one (the engine hands its own plausibility report to submit)."""
+        if self._pipeline is None:
+            self._pipeline = SubmissionPipeline(
+                validator=self.validator,
+                submission_storage=self._submission_storage,
+                forwarder=None,
+                partial_store=None,
+                plausibility=None,
+            )
+        return self._pipeline
+
+    def _auth_context(self, user: Optional["AuthenticatedUser"]) -> AuthContext:
+        """S11: AuthenticatedUser → AuthContext for the submission pipeline."""
+        if user is None:
+            return AuthContext(scheme="none")
+        scheme = "bearer" if self._token_validator is not None else "none"
+        return AuthContext(scheme=scheme, claims=dict(getattr(user, "raw_payload", {}) or {}))
+
+    async def _do_submit(self, ctx: _ConnCtx, item: Submit) -> "InboundEvent":
+        """Submit through the SubmissionPipeline (URL tenant, auth context); map rejections to ``SubmitDone``."""
+        form = ctx.form
+        assert form is not None
+        state = ctx.state
+        data = dict(item.data)
+        # A visual-fallback REST answer arrives as the client's plain reference; the REST validator wants the
+        # ``{"answer", "blob_ref"}`` shape, so wrap scalars (a dict is already in the validator's shape).
+        for q in ctx.engine.manifest.questions if ctx.engine is not None else []:
+            if q.field_type == "rest" and q.field_id in data and not isinstance(data[q.field_id], dict):
+                data[q.field_id] = {"answer": data[q.field_id], "blob_ref": None}
+        try:
+            outcome = await self._pipeline_for().submit(
+                form,
+                data,
+                tenant=ctx.tenant,
+                user_id=state.user_id,
+                locale=state.locale,
+                context=item.context,
+                extra_data=None,
+                auth_context=self._auth_context(ctx.user),
+                merge_session_id=self._partial_session(ctx),
+                plausibility=state.plausibility,
+                submission_id=state.submission_id,
+            )
+        except ValidationFailed as exc:
+            return SubmitDone(type="_submit_done", outcome={"errors": exc.errors})
+        except PlausibilityBlocked as exc:
+            return IOFailed(type="_io_failed", request=item.type, code="PLAUSIBILITY_UNAVAILABLE", detail=exc.reason)
+        except Exception as exc:  # noqa: BLE001 — sink/lifecycle failures: surface and re-ask the last question
+            self.logger.warning("Audio submission failed: %s", type(exc).__name__)
+            return IOFailed(
+                type="_io_failed", request=item.type, code="SUBMIT_FAILED", detail="The form could not be submitted."
+            )
+        return SubmitDone(
+            type="_submit_done",
+            outcome={
+                "submission_id": outcome.submission_id,
+                "stored_in": outcome.stored_in,
+                "forwarded": outcome.forwarded,
+            },
         )
 
-    async def _handle_end_session(
-        self,
-        *,
-        ws: web.WebSocketResponse,
-        data: dict[str, Any],
-        session: AudioSessionState,
-        request: web.Request,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Handle end_session: abort the session."""
-        await ws.send_json({"type": "session_ended", "session_id": session.session_id})
-        await ws.close()
-
-    async def _handle_ping(
-        self,
-        *,
-        ws: web.WebSocketResponse,
-        data: dict[str, Any],
-        session: AudioSessionState,
-        request: web.Request,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Handle ping keep-alive."""
-        await ws.send_json({"type": "pong"})
-
     # -------------------------------------------------------------------------
-    # Answer validation helpers
+    # Snapshots
     # -------------------------------------------------------------------------
 
-    def _question_for_field(
-        self,
-        session: AudioSessionState,
-        field_id: str,
-    ) -> Optional[AudioQuestion]:
-        """Return the manifest question for ``field_id`` (or None)."""
-        if session.manifest is None:
-            return None
-        for q in session.manifest.questions:
-            if q.field_id == field_id:
-                return q
-        return None
-
-    async def _current_question(
-        self,
-        ws: web.WebSocketResponse,
-        session: AudioSessionState,
-        field_id: str,
-    ) -> Optional[AudioQuestion]:
-        """Return the current question iff ``field_id`` matches it.
-
-        Enforces in-order answering for the FEAT-236 hybrid handlers: sends an
-        error and returns None when the session has not started, is complete, or
-        the client answered a field that is not the current question.
-        """
-        if session.manifest is None:
-            await self._send_error(
-                ws, "SESSION_NOT_STARTED", "Call start_session first"
-            )
-            return None
-        if session.current_index >= len(session.manifest.questions):
-            await self._send_error(ws, "SESSION_COMPLETE", "All questions answered")
-            return None
-        current = session.manifest.questions[session.current_index]
-        if field_id != current.field_id:
-            await self._send_error(
-                ws,
-                "WRONG_FIELD",
-                f"Expected an answer for '{current.field_id}', got '{field_id}'",
-            )
-            return None
-        return current
-
-    async def _reject_answer(
-        self,
-        ws: web.WebSocketResponse,
-        field_id: str,
-        reason: str,
-    ) -> None:
-        """Send an answer_rejected message for ``field_id``."""
-        await ws.send_json({
-            "type": "answer_rejected",
-            "field_id": field_id,
-            "reason": reason,
-        })
-
-    async def _accept_answer(
-        self,
-        ws: web.WebSocketResponse,
-        session: AudioSessionState,
-        field_id: str,
-        value: str,
-        *,
-        source: Literal["text", "speech", "selection"] = "text",
-        confidence: Optional[float] = None,
-        raw_transcript: Optional[str] = None,
-    ) -> bool:
-        """Validate and store an answer for the current question.
-
-        Args:
-            ws: Active WebSocket.
-            session: Current session state.
-            field_id: Field ID being answered.
-            value: Answer value string.
-            source: 'text', 'speech' or 'selection'.
-            confidence: STT confidence (speech only).
-            raw_transcript: Raw transcript (speech only).
-
-        Returns:
-            True if accepted, False if rejected (error message sent).
-        """
-        answer = AudioAnswer(
-            field_id=field_id,
-            value=value,
-            source=source,
-            confidence=confidence,
-            raw_transcript=raw_transcript,
-        )
-
-        # Look up the answered question (for required + sensitive handling).
-        question = self._question_for_field(session, field_id)
-
-        # Validate the answer if a form registry and manifest are available.
-        if self.validator is not None and session.manifest is not None:
-            if question is not None and question.required and not value.strip():
-                await ws.send_json({
-                    "type": "answer_rejected",
-                    "field_id": field_id,
-                    "reason": "This field is required",
-                })
-                return False
-
-        session.answers[field_id] = answer
-
-        # Never echo a sensitive (e.g. password) value back to the client.
-        ack: dict[str, Any] = {
-            "type": "answer_accepted",
-            "field_id": field_id,
-            "source": source,
-        }
-        if question is None or not question.sensitive:
-            ack["value"] = value
-        await ws.send_json(ack)
-        return True
-
-    # -------------------------------------------------------------------------
-    # Session advancement
-    # -------------------------------------------------------------------------
-
-    async def _advance_session(
-        self,
-        ws: web.WebSocketResponse,
-        session: AudioSessionState,
-        request: web.Request,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Advance to the next question or finish the session."""
-        if session.manifest is None:
-            return
-
-        manifest = session.manifest
-        session.current_index += 1
-
-        if session.current_index >= len(manifest.questions):
-            await self._finish_session(ws, session)
-        else:
-            next_q = manifest.questions[session.current_index]
-            await self._send_question(
-                ws, next_q, audio_cache, config=session.config, session=session
-            )
-
-    async def _advance_session_no_request(
-        self,
-        ws: web.WebSocketResponse,
-        session: AudioSessionState,
-        audio_cache: dict[int, str],
-    ) -> None:
-        """Advance session (called from binary handler without request)."""
-        if session.manifest is None:
-            return
-
-        manifest = session.manifest
-        session.current_index += 1
-
-        if session.current_index >= len(manifest.questions):
-            await self._finish_session(ws, session)
-        else:
-            next_q = manifest.questions[session.current_index]
-            await self._send_question(
-                ws, next_q, audio_cache, config=session.config, session=session
-            )
-
-    async def _finish_session(
-        self,
-        ws: web.WebSocketResponse,
-        session: AudioSessionState,
-    ) -> None:
-        """Submit form data and send form_complete message."""
-        session.completed = True
-        answers_out = {
-            fid: {"value": a.value, "source": a.source}
-            for fid, a in session.answers.items()
-        }
-        submission_id: Optional[str] = None
-
-        # Attempt form submission using FormSubmission model and store().
-        if self._submission_storage is not None and session.manifest is not None:
+    def _partial_session(self, ctx: _ConnCtx) -> str:
+        """The partial-store session key, resolved once per connection (HTTP ``/partial`` uses the same id)."""
+        if ctx.partial_session_id is None:
+            http_session = None
             try:
-                from ..services.submissions import FormSubmission
+                if "session" in ctx.request:
+                    http_session = ctx.request["session"].get("id")
+            except Exception:  # noqa: BLE001 — no navigator session on this connection
+                http_session = None
+            ctx.partial_session_id = str(http_session) if http_session else ctx.state.session_id
+        return ctx.partial_session_id
 
-                # FormSubmission requires both form_uid (identity, FEAT-389)
-                # and form_id (human-readable slug). AudioSessionState only
-                # carries form_uid, so re-resolve the form to recover its
-                # current slug for the submission record; fall back to the
-                # uid itself if the form was deleted mid-session.
-                _form = await self.registry.get(session.form_uid, tenant=None)
-                _form_id = _form.form_id if _form is not None else session.form_uid
+    async def _mirror_partial(self, ctx: _ConnCtx, item: "AnswerAccepted | AnswerCleared") -> None:
+        """AC16: keep ``/partial`` in step with the audio session (scalar answers only, never sensitive ones).
 
-                submission = FormSubmission(
-                    form_uid=session.form_uid,
-                    form_id=_form_id,
-                    form_version="1",
-                    data={fid: a.value for fid, a in session.answers.items()},
-                    is_valid=True,
-                    user_id=session.user_id,
-                )
-                submission_id = await self._submission_storage.store(submission)
-            except Exception as exc:
-                self.logger.warning(
-                    "Form submission failed for session %s: %s",
-                    session.session_id,
-                    exc,
-                )
-
-        await ws.send_json({
-            "type": "form_complete",
-            "submission_id": submission_id,
-            "answers": answers_out,
-        })
-
-    # -------------------------------------------------------------------------
-    # Question delivery
-    # -------------------------------------------------------------------------
-
-    async def _send_question(
-        self,
-        ws: web.WebSocketResponse,
-        question: AudioQuestion,
-        audio_cache: dict[int, str],
-        *,
-        config: Optional[AudioSessionConfig] = None,
-        session: Optional[AudioSessionState] = None,
-    ) -> None:
-        """Send a question message with VoiceMode metadata and optional audio.
-
-        Carries ``voice_mode``/``render_mode``/``sensitive`` always, ``options``
-        for selection questions, and ``fallback_html`` for VISUAL_FALLBACK
-        questions. Sensitive questions (e.g. password) are delivered without TTS
-        audio. PROMPT_SELECT questions optionally enumerate their option labels
-        in the narration (FEAT-236).
-
-        Args:
-            ws: Active WebSocket.
-            question: The AudioQuestion to send.
-            audio_cache: Per-session cache of pre-synthesized audio (base64).
-            config: The session config (locale, enumerate_options, backend).
-            session: The session, used to key the per-session synthesizer cache
-                in auto_synthesize mode.
+        Partials are keyed like the HTTP routes: ``(form_uid, navigator-auth session id)`` → ``field_uid`` → value.
         """
-        # Sensitive questions are never narrated — mute TTS read-back entirely.
-        audio_b64: Optional[str] = None
-        if not question.sensitive:
-            audio_b64 = audio_cache.get(question.index)
-            if audio_b64 is None:
-                tts_text = self._narration_text(question, config)
-                language = (
-                    config.locale
-                    if config is not None and config.locale != "en"
-                    else None
-                )
-                audio_bytes = await self._synthesize(
-                    tts_text, config=config, language=language, session=session
-                )
-                if audio_bytes:
-                    audio_b64 = base64.b64encode(audio_bytes).decode()
-                    audio_cache[question.index] = audio_b64
+        store = getattr(self._session_store, "partial_store", None)
+        form, engine = ctx.form, ctx.engine
+        if store is None or form is None or engine is None:
+            return
+        field = next((f for f in form.iter_fields_recursive() if f.field_id == item.field_id), None)
+        if field is None:
+            return
+        session_id = self._partial_session(ctx)
+        uid = str(field.field_uid)
+        try:
+            if isinstance(item, AnswerCleared):
+                await store.remove_keys(str(form.form_uid), session_id, [uid])
+                return
+            if any(q.sensitive and q.field_id == item.field_id for q in engine.manifest.questions):
+                return
+            await store.save(str(form.form_uid), session_id, {uid: item.value})
+        except Exception as exc:  # noqa: BLE001 — the mirror is best effort, never fails the session
+            self.logger.warning("Partial mirror failed: %s", type(exc).__name__)
 
-        # Single-field visual fallback HTML for VISUAL_FALLBACK questions.
-        fallback_html = question.fallback_html
-        if question.voice_mode == VoiceMode.VISUAL_FALLBACK and not fallback_html:
-            fallback_html = await self._build_fallback_html(question, config)
+    async def _save_snapshot(self, ws: web.WebSocketResponse, ctx: _ConnCtx, snap: AudioSnapshot) -> None:
+        """Compare-and-set save; a lost race surfaces ``RESUME_CONFLICT`` and ends the connection."""
+        store = self._session_store
+        if store is None:
+            return
+        try:
+            revision = await store.save(ctx.state.form_uid, ctx.state.session_id, snap, expected_revision=ctx.revision)
+        except SnapshotConflict:
+            await self._send_error(ws, "RESUME_CONFLICT", "This session was modified from another connection")
+            ctx.closed = True
+            await ws.close()
+            return
+        ctx.revision = max(ctx.revision, revision)
 
-        msg: dict[str, Any] = {
-            "type": "question",
-            "index": question.index,
-            "field_id": question.field_id,
-            "label": question.label,
-            "required": question.required,
-            "field_type": question.field_type,
-            "voice_mode": question.voice_mode.value,
-            "render_mode": question.render_mode,
-            "sensitive": question.sensitive,
-        }
-        if question.description:
-            msg["description"] = question.description
-        if audio_b64:
-            msg["audio"] = audio_b64
-        if question.options:
-            msg["options"] = question.options
-        if fallback_html:
-            msg["fallback_html"] = fallback_html
+    async def _autosave(self, ctx: _ConnCtx, *, final: bool = False) -> None:
+        """Save the engine snapshot (no-op without a store); release the session once COMPLETE / ABORTED."""
+        store, engine = self._session_store, ctx.engine
+        if store is None or engine is None:
+            return
+        phase = engine.state.phase
+        if phase in (Phase.COMPLETE, Phase.ABORTED):
+            await self._release_session(ctx)
+            return
+        if phase == Phase.IDLE or ctx.closed:
+            return
+        try:
+            revision = await store.save(
+                ctx.state.form_uid, ctx.state.session_id, engine.snapshot(), expected_revision=ctx.revision
+            )
+        except SnapshotConflict:
+            self.logger.warning("Snapshot conflict for session %s (final=%s)", ctx.state.session_id, final)
+            return
+        ctx.revision = max(ctx.revision, revision)
 
-        await ws.send_json(msg)
+    async def _release_session(self, ctx: _ConnCtx) -> None:
+        """Delete the snapshot and active marker of a finished session (best effort)."""
+        store = self._session_store
+        if store is None:
+            return
+        try:
+            await store.delete(ctx.state.form_uid, ctx.state.session_id, user_id=ctx.state.user_id)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Session release failed: %s", type(exc).__name__)
+
+    # -------------------------------------------------------------------------
+    # TTS synthesis
+    # -------------------------------------------------------------------------
 
     async def _synthesize(
         self,
@@ -1260,12 +1219,8 @@ class AudioFormWSHandler:
         if self._auto_synthesize:
             if session is None:
                 # No session to key a cache on → one-shot fallback.
-                return await synthesize_with_fallback(
-                    text, config=config, language=language
-                )
-            return await self._auto_synthesize_cached(
-                session, text, config=config, language=language
-            )
+                return await synthesize_with_fallback(text, config=config, language=language)
+            return await self._auto_synthesize_cached(session, text, config=config, language=language)
         return None
 
     async def _auto_synthesize_cached(
@@ -1283,45 +1238,63 @@ class AudioFormWSHandler:
         ``session_id`` so subsequent questions reuse the same backend instead of
         rebuilding it. Never raises — degrades to text-only (``None``).
         """
-        sid = session.session_id
-        cached = self._session_synths.get(sid)
-        if cached is not None:
+        preferred = config.tts_backend if config is not None else "supertonic"
+        voice = (config.tts_voice if config is not None else None) or ""
+        mime_format = config.tts_mime_format if config is not None else "audio/wav"
+        key = (preferred, voice, mime_format)
+        shared = self._tts_backends.get(key)
+        if shared is not None:
             try:
-                result = await cached.synthesize(text, language=language)
+                result = await shared.synthesize(text, language=language)
                 return result.audio
-            except Exception as exc:  # noqa: BLE001 — rebuild on failure
-                self.logger.warning(
-                    "Cached TTS backend failed (%s); rebuilding", exc
-                )
-                await self._close_synth(cached)
-                self._session_synths.pop(sid, None)
+            except Exception as exc:  # noqa: BLE001 — rebuild once below
+                self.logger.warning("Shared TTS backend failed (%s); rebuilding", type(exc).__name__)
+                async with self._tts_lock:
+                    if self._tts_backends.get(key) is shared:
+                        self._tts_backends.pop(key, None)
+                        await self._close_synth(shared)
 
         try:
             from parrot.voice.tts.models import TTSConfig
             from parrot.voice.tts.synthesizer import VoiceSynthesizer
         except ImportError as exc:
-            self.logger.warning(
-                "parrot.voice TTS stack unavailable (%s); text-only", exc
-            )
+            self.logger.warning("parrot.voice TTS stack unavailable (%s); text-only", exc)
             return None
 
-        preferred = config.tts_backend if config is not None else "supertonic"
-        voice = config.tts_voice if config is not None else None
-        mime_format = config.tts_mime_format if config is not None else "audio/wav"
-        backends = [preferred] + [b for b in ("google",) if b != preferred]
-        for backend in backends:
-            candidate = VoiceSynthesizer(
-                TTSConfig(backend=backend, voice=voice, mime_format=mime_format)
-            )
-            try:
-                result = await candidate.synthesize(text, language=language)
-                # Keep the working backend open for reuse this session.
-                self._session_synths[sid] = candidate
-                return result.audio
-            except Exception as exc:  # noqa: BLE001 — never raise (FEAT-231)
-                self.logger.warning("TTS backend %s unavailable: %s", backend, exc)
-                await self._close_synth(candidate)
-        return None
+        async with self._tts_lock:
+            shared = self._tts_backends.get(key)  # a concurrent session may have built it meanwhile
+            if shared is None:
+                backends = [preferred] + [b for b in ("google",) if b != preferred]
+                for backend in backends:
+                    ckey = (backend, voice, mime_format)
+                    if self._tts_unavailable.get(ckey, 0.0) > time.monotonic():
+                        continue  # still cooling down: do not pay its timeout again
+                    candidate = VoiceSynthesizer(
+                        TTSConfig(backend=backend, voice=voice or None, mime_format=mime_format)
+                    )
+                    try:
+                        result = await candidate.synthesize(text, language=language)
+                    except Exception as exc:  # noqa: BLE001 — never raise (FEAT-231)
+                        self.logger.warning("TTS backend %s unavailable: %s", backend, exc)
+                        self._tts_unavailable[ckey] = time.monotonic() + TTS_UNAVAILABLE_COOLDOWN_S
+                        await self._close_synth(candidate)
+                        continue
+                    self._tts_backends[key] = candidate
+                    return result.audio
+                return None
+        try:
+            result = await shared.synthesize(text, language=language)
+            return result.audio
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("Shared TTS backend failed: %s", type(exc).__name__)
+            return None
+
+    async def close_tts_backends(self) -> None:
+        """Close every shared auto-mode backend (app cleanup)."""
+        async with self._tts_lock:
+            backends, self._tts_backends = list(self._tts_backends.values()), {}
+        for synth in backends:
+            await self._close_synth(synth)
 
     async def _close_synth(self, synth: Any) -> None:
         """Close a VoiceSynthesizer, swallowing any teardown error."""
@@ -1329,34 +1302,6 @@ class AudioFormWSHandler:
             await synth.close()
         except Exception:  # noqa: BLE001 — best-effort cleanup
             pass
-
-    def _narration_text(
-        self,
-        question: AudioQuestion,
-        config: Optional[AudioSessionConfig],
-    ) -> str:
-        """Build the TTS narration text for a question.
-
-        For PROMPT_SELECT questions with ``enumerate_options`` enabled, appends
-        the option labels so the user hears the choices.
-        """
-        text = question.label
-        enumerate_options = (
-            config.enumerate_options if config is not None else True
-        )
-        if (
-            question.voice_mode == VoiceMode.PROMPT_SELECT
-            and enumerate_options
-            and question.options
-        ):
-            labels = [
-                str(opt.get("label") or opt.get("value") or "")
-                for opt in question.options
-            ]
-            labels = [label for label in labels if label]
-            if labels:
-                text = f"{text} Options: {', '.join(labels)}."
-        return text
 
     async def _build_fallback_html(
         self,
@@ -1406,43 +1351,6 @@ class AudioFormWSHandler:
             )
         safe_field_id = html.escape(question.field_id, quote=True)
         return f'<input type="text" name="{safe_field_id}" />'
-
-    # -------------------------------------------------------------------------
-    # TTS pre-synthesis
-    # -------------------------------------------------------------------------
-
-    async def _presynthize_to_cache(
-        self,
-        questions: list[AudioQuestion],
-        audio_cache: dict[int, str],
-        *,
-        locale: str = "en",
-    ) -> None:
-        """Pre-synthesize TTS audio for all questions into the cache.
-
-        Args:
-            questions: List of AudioQuestion to synthesize.
-            audio_cache: Dict to populate with base64 audio strings.
-            locale: BCP 47 language tag for TTS.
-        """
-        if self.synthesizer is None:
-            return
-
-        for q in questions:
-            # Sensitive questions are never narrated (FEAT-236) — skip entirely.
-            if q.sensitive:
-                continue
-            try:
-                result = await self.synthesizer.synthesize(
-                    q.label,
-                    language=locale if locale != "en" else None,
-                )
-                audio_cache[q.index] = base64.b64encode(result.audio).decode()
-            except Exception as exc:
-                self.logger.warning(
-                    "Pre-synthesis failed for q%d (%s): %s",
-                    q.index, q.field_id, exc
-                )
 
     # -------------------------------------------------------------------------
     # Error utilities

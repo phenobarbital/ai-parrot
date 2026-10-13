@@ -9,7 +9,13 @@ from pathlib import Path
 from typing import Any, Optional
 
 from parrot.knowledge.wiki.codex import assets
-from parrot.knowledge.wiki.project import WikiProjectConfig, config_path, load_effective_config, save_project_config
+from parrot.knowledge.wiki.project import (
+    WikiProjectConfig,
+    WikiRemoteConfig,
+    config_path,
+    load_effective_config,
+    save_project_config,
+)
 
 _TABLE_HEADER = re.compile(r"^\s*\[([^]]+)]\s*(?:#.*)?$")
 
@@ -232,7 +238,7 @@ def reconcile_toolkit_tables(root: Path) -> tuple[list[str], list[str]]:
     return actions, warnings
 
 
-def _install_mcp(root: Path) -> str:
+def _install_mcp(root: Path, *, remote: Optional[WikiRemoteConfig] = None) -> str:
     """Write/refresh the managed MCP block: wikitoolkit table plus one
     ``[mcp_servers.parrot-<name>]`` table per enabled toolkit section
     (FEAT-485). Re-running regenerates the whole managed block from
@@ -264,7 +270,7 @@ def _install_mcp(root: Path) -> str:
         # Replace an existing block in place: removing and appending it would
         # reorder adjacent managed integrations (such as Bookstore) on rerun.
         before if assets.MCP_BEGIN in before else without_existing,
-        assets.mcp_block(root, toolkit_block),
+        assets.mcp_block(root, toolkit_block, remote=remote),
         assets.MCP_BEGIN,
         assets.MCP_END,
     )
@@ -318,6 +324,7 @@ def install_codex_integration(
     config: Optional[WikiProjectConfig] = None,
     gitignore: bool = True,
     bookstore: bool = True,
+    remote: Optional[WikiRemoteConfig] = None,
 ) -> list[str]:
     """Install project-scoped Codex instructions, skill, MCP, and rules.
 
@@ -350,7 +357,7 @@ def install_codex_integration(
         _install_skill(root),
     ]
 
-    actions.append(_install_mcp(root))
+    actions.append(_install_mcp(root, remote=remote))
     actions.append(_install_rules(root))
     if gitignore:
         actions.append(_install_gitignore(root))

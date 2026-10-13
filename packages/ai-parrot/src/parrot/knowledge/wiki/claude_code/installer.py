@@ -34,6 +34,7 @@ from parrot.knowledge.wiki.claude_code import assets
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
     WikiProjectConfig,
+    WikiRemoteConfig,
     config_path,
     load_effective_config,
     save_project_config,
@@ -690,7 +691,7 @@ def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]:
     return actions, warnings
 
 
-def _install_mcp_json(root: Path) -> str:
+def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None) -> str:
     """Write/refresh the wikitoolkit entry plus one managed entry per
     enabled toolkit section in the project's .mcp.json (FEAT-485).
 
@@ -716,14 +717,20 @@ def _install_mcp_json(root: Path) -> str:
     if not isinstance(data, dict):
         data = {}
 
-    entry = assets.mcp_json_entry(root)
+    if remote is not None:
+        entry = assets.mcp_json_entry_remote(remote.url, remote.token_env)
+    else:
+        entry = assets.mcp_json_entry(root)
 
     servers = data.get("mcpServers")
     if not isinstance(servers, dict):
         servers = data["mcpServers"] = {}
 
     changed = False
-    if servers.get("wikitoolkit") == entry:
+    if "wikitoolkit" in servers and not _is_wikitoolkit_entry(servers["wikitoolkit"]):
+        sys.stderr.write(".mcp.json: existing 'wikitoolkit' entry is not managed by parrot; leaving it untouched\n")
+        wikitoolkit_status = "wikitoolkit entry is foreign — left untouched"
+    elif servers.get("wikitoolkit") == entry:
         wikitoolkit_status = "wikitoolkit entry already current"
     else:
         wikitoolkit_status = "wikitoolkit entry updated" if "wikitoolkit" in servers else "wikitoolkit entry added"
@@ -741,6 +748,18 @@ def _install_mcp_json(root: Path) -> str:
 
     parts = [wikitoolkit_status, *toolkit_actions]
     return ".mcp.json — " + "; ".join(parts)
+
+
+def _is_wikitoolkit_entry(entry: Any) -> bool:
+    """True for BOTH managed shapes: stdio (``command`` ends with wikitoolkit, args == ["mcp"]) and http."""
+    if not isinstance(entry, dict):
+        return False
+    if entry.get("type") == "http":
+        headers = entry.get("headers")
+        auth = headers.get("Authorization", "") if isinstance(headers, dict) else ""
+        return isinstance(entry.get("url"), str) and isinstance(auth, str) and auth.startswith("Bearer ${")
+    command = entry.get("command")
+    return isinstance(command, str) and command.endswith("wikitoolkit") and entry.get("args") == ["mcp"]
 
 
 def _uninstall_mcp_json(root: Path) -> tuple[str | None, list[str]]:
@@ -773,7 +792,7 @@ def _uninstall_mcp_json(root: Path) -> tuple[str | None, list[str]]:
         return None, []
 
     removed: list[str] = []
-    if "wikitoolkit" in servers:
+    if "wikitoolkit" in servers and _is_wikitoolkit_entry(servers["wikitoolkit"]):
         del servers["wikitoolkit"]
         removed.append("wikitoolkit")
 
@@ -971,6 +990,7 @@ def install_claude_integration(
     compaction: bool = False,
     typesafe_api_key: Optional[str] = None,
     plugin_cli: bool = True,
+    remote: Optional[WikiRemoteConfig] = None,
 ) -> list[str]:
     """Install the wiki ↔ Claude Code integration into a repository.
 
@@ -991,6 +1011,8 @@ def install_claude_integration(
             it to ``TYPESAFE_API_KEY``.
         plugin_cli: Let the compaction installer also run the ``claude
             plugin`` CLI when it is on ``PATH``.
+        remote: When given, register wikitoolkit as a native HTTP MCP entry
+            pointing at this remote instead of the local stdio server.
 
     Returns:
         Human-readable list of actions performed.
@@ -1021,7 +1043,7 @@ def install_claude_integration(
     actions.append(_install_claude_md(root))
     actions.append(_install_settings_hook(root))
     actions.extend(_install_permissions(root))
-    actions.append(_install_mcp_json(root))
+    actions.append(_install_mcp_json(root, remote=remote))
 
     from parrot.mcp.toolkit_config import load_toolkits_config
 
@@ -1234,13 +1256,18 @@ def integration_status(root: Path) -> dict[str, Any]:
 
     mcp_json_path = root / ".mcp.json"
     mcp_json_installed = False
+    mcp_transport: Optional[str] = None
     if mcp_json_path.exists():
         try:
             mcp_data = json.loads(mcp_json_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             mcp_data = None
         if isinstance(mcp_data, dict):
-            mcp_json_installed = "wikitoolkit" in mcp_data.get("mcpServers", {})
+            mcp_servers = mcp_data.get("mcpServers", {})
+            mcp_json_installed = "wikitoolkit" in mcp_servers
+            wk_entry = mcp_servers.get("wikitoolkit") if isinstance(mcp_servers, dict) else None
+            if _is_wikitoolkit_entry(wk_entry):
+                mcp_transport = "http" if wk_entry.get("type") == "http" else "stdio"
 
     # Compute mcp_approved (True when every _managed_server_names(root) entry appears in enabledMcpjsonServers)
     mcp_approved = False
@@ -1272,6 +1299,7 @@ def integration_status(root: Path) -> dict[str, Any]:
         "slash_command": (root / ".claude" / "commands" / assets.SLASH_COMMAND_FILENAME).exists(),
         "git_post_commit_hook": git_hook_installed,
         "mcp_json": mcp_json_installed,
+        "mcp_transport": mcp_transport,
         "mcp_servers_authorized": mcp_approved,
         "toolkits_yaml": (root / ".parrot" / "mcp-toolkits.yaml").exists(),
     }

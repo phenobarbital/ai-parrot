@@ -1,0 +1,41 @@
+Option A (recommended in brainstorm) — normalization part:
+Add a small `audio/normalize/` package: one deterministic normalizer per field-type family
+(email, phone, number, date/datetime/time).
+
+- **Where it runs:** the engine calls it on the free-form speech path before the confidence gate.
+  A normalizer returns `(value, ok, reason)`. A failed validation (email) or an ambiguous parse
+  routes to the existing `_request_confirm`, carrying the normalized value.
+- **Locale:** spoken-token tables extend the existing `Lexicon` (en/es YAML), including cardinals
+  beyond 10, so the language stays data, not code.
+- **Validation:** emails are validated with `email-validator`, already a dependency of ai-parrot.
+- **Dates:** relative dates are resolved with `zoneinfo` (stdlib) and the client's IANA timezone,
+  stored on the session state.
+
+Internal behavior (normalization part):
+- **Protocol (additive):**
+  - StartSession gains timezone: str | None (IANA).
+  - New error code: INVALID_EMAIL if surfaced.
+- **Engine:** the free-form speech path asks `normalize_spoken(field_type, text, lexicon, tz, now)`.
+  - Unknown types pass through unchanged.
+  - The result's `ok=False`, or the existing low-confidence rule, routes to `_request_confirm` with
+    the normalized value. `raw_transcript` keeps the original words for audit.
+  - Typed answers skip normalization. Email validation also runs on typed answers (`REQUIRED`-style
+    `AnswerRejected` with a clear message).
+
+Edge cases (normalization part):
+- **Email with spoken punctuation inside a name** ("anne-marie" said as "anne dash marie"):
+  supported. Spelled letters ("j o h n") are joined.
+- **Phone with extension words ("extension 12"):** digits only. The extension is joined too
+  (documented limitation).
+- **Numbers:**
+  - A decimal said as "point" is supported.
+  - Negative numbers ("minus") are supported.
+  - Ranges are not supported and go to confirmation.
+- **Relative date without a client timezone** (old client): the server falls back to UTC and asks
+  for confirmation.
+- **Time and datetime:** "three thirty pm", "noon" and "midnight" are supported. Anything else
+  goes to confirmation.
+- **Sensitive fields:** normalization still applies. The transcript is never echoed (existing
+  masking).
+- **Locale `es`:** the same tables come from the `es` lexicon. A gap in the `es` grammar goes to
+  confirmation, never to a wrong value.

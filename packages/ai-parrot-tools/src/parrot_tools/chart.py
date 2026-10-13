@@ -37,6 +37,7 @@ try:
 except ImportError:
     import logging
 
+from ._exports import ExportsToStoreMixin
 from .abstract import AbstractTool, ToolResult
 from .decorators import tool_schema
 
@@ -147,7 +148,7 @@ class GenerateChartInput(BaseModel):
         return values
 
 
-class ChartTool(AbstractTool):
+class ChartTool(ExportsToStoreMixin, AbstractTool):
     """
     Tool for generating charts from structured data.
 
@@ -191,9 +192,11 @@ class ChartTool(AbstractTool):
         style: Optional[ChartStyle] = None,
         auto_cleanup: bool = True,
         cleanup_age_hours: int = 24,
+        artifact_store: Any = None,
         **kwargs
     ):
         super().__init__(**kwargs)
+        self.artifact_store = artifact_store  # server-managed: charts are published there when set (PA-11)
         if backend not in ("altair", "plotly"):
             raise ValueError(
                 f"Unsupported backend: {backend!r}. ChartTool supports "
@@ -254,6 +257,8 @@ class ChartTool(AbstractTool):
             except ValueError:
                 format_enum = ChartFormat.VEGALITE_JSON
 
+            self._require_export_target()  # a Studio-scoped call with no store never keeps a local file
+
             # Auto cleanup old charts
             if self.auto_cleanup:
                 await self._cleanup_old_charts()
@@ -299,6 +304,24 @@ class ChartTool(AbstractTool):
                     self.logger.warning(
                         f"Could not encode image to base64: {e}"
                     )
+
+            if self.exports_to_store:
+                # the chart lives in the store (tenant partition + download URL), not on this machine
+                published = await self._publish_export(path.name, path.read_bytes())
+                path.unlink(missing_ok=True)
+                return ToolResult(
+                    success=True,
+                    status="success",
+                    result=f"Chart '{title}' generated successfully: {published['url']}",
+                    images=[],
+                    metadata={
+                        **published,
+                        "format": path.suffix.lstrip("."),
+                        "title": title,
+                        "chart_type": chart_type,
+                        "image_base64": image_base64,
+                    },
+                )
 
             return ToolResult(
                 success=True,

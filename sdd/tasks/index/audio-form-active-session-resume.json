@@ -1,0 +1,71 @@
+{
+  "feature": "audio-form-active-session-resume",
+  "feature_id": "FEAT-655",
+  "spec": "sdd/specs/audio-form-active-session-resume.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-12T22:28:54+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4262",
+      "slug": "session-store-holder-split-ttls",
+      "title": "AudioSessionStore \u2014 ActiveHolder marker, split resume/active TTLs, marker refresh",
+      "feature_id": "FEAT-655",
+      "feature": "audio-form-active-session-resume",
+      "spec": "sdd/specs/audio-form-active-session-resume.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: self-contained change to audio/session_store.py and its test file.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4262-session-store-holder-split-ttls.md"
+    },
+    {
+      "id": "TASK-4263",
+      "slug": "session-active-holder-wire",
+      "title": "SESSION_ACTIVE carries the holder's ids; Error fields; split-TTL composition",
+      "feature_id": "FEAT-655",
+      "feature": "audio-form-active-session-resume",
+      "spec": "sdd/specs/audio-form-active-session-resume.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4262"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4262: calls claim_active(..., form_uid=, tenant=), active_holder() and the resume_ttl_seconds/active_ttl_seconds constructor created there (audio/session_store.py); tests import ActiveHolder.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4263-session-active-holder-wire.md"
+    },
+    {
+      "id": "TASK-4264",
+      "slug": "session-resume-docs",
+      "title": "Docs \u2014 SESSION_ACTIVE holder ids, Continue where you left off, marker vs resume TTL",
+      "feature_id": "FEAT-655",
+      "feature": "audio-form-active-session-resume",
+      "spec": "sdd/specs/audio-form-active-session-resume.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4263"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4263: documents Error.session_id/form_uid and the AudioSessionStore constructor kwargs as wired in audio/events.py and api/routes.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4264-session-resume-docs.md"
+    }
+  ]
+}

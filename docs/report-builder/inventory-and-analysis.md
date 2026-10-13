@@ -48,7 +48,7 @@
 | Legacy dashboards (Mongo) | tabs and widgets | ⛔ `ENABLE_DASHBOARDS=False`, no auth or owner check |
 | AgentTalk | output modes `a2ui`, `infographic`, `interactive`, `structured_*`, streaming SSE/NDJSON/chunked/WS | ✅ (FEAT-611 adds the linked envelope lift in `ask` and `ask_stream`) |
 | Form designer | form CRUD, batched `/operations` + `If-Match`, publish/versions, palette `/form-controls`, multi-format render | ✅ **the builder model to copy** |
-| Scheduler | `navigator.agents_scheduler` (PDF email-report callbacks) | ⚠️ no owner scoping; not linked to surfaces |
+| Scheduler | `navigator.service_scheduler` (`ServiceSchedule`; db, redis, and code backends) | ⚠️ no owner scoping; not linked to surfaces |
 
 ### 1.2 Components and models
 
@@ -118,7 +118,7 @@ ReportVersion (one row per version, like formdesigner)
       surface: <A2UI v1.0 createSurface>                               ← components + parrot_data_sources
     }]
   }
-ReportShare / ReportSchedule  → reuse ui_surface_shares and agents_scheduler (FK to report_id)
+ReportShare / ReportSchedule  → reuse ui_surface_shares and service_scheduler (FK to report_id)
 ```
 
 - **Each page is an A2UI v1.0 surface.** That reuses validation, renderers, linked data, refresh and Navigator's renderer. The `layout` grid lives alongside, in the same 12-column format as `navigator.dashboards.attributes.widget_location`, but **keyed by `component_id`, not by title**. This avoids the known rename-breaks-layout bug.
@@ -137,7 +137,7 @@ ReportShare / ReportSchedule  → reuse ui_surface_shares and agents_scheduler (
 | POST | `/api/v1/reports/{id}/render?format=html\|pdf\|png\|xlsx[&page=]` | Unified export (G12); PDF via weasyprint/print2pdf; PNG via a headless renderer |
 | POST | `/api/v1/reports/{id}/refresh[?page=&source=]` | Refresh per report, page or source, with partial `dataModel` (G10) |
 | POST/DELETE | `/api/v1/reports/{id}/share[/{token}]` · PATCH visibility | Reuses the `ui_surfaces` share lane |
-| POST/GET | `/api/v1/reports/{id}/schedules` | Delivery (card + URL, per FEAT-430) via `agents_scheduler` (G13) |
+| POST/GET | `/api/v1/reports/{id}/schedules` | Delivery (card + URL, per FEAT-430) via `service_scheduler` (G13) |
 
 ### 3.3 Agent
 

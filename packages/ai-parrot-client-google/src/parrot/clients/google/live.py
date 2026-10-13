@@ -371,11 +371,15 @@ class GeminiLiveClient(AbstractClient):
     # Class attributes following AbstractClient pattern
     client_type: str = "google_live"
     client_name: str = "google_live"
+    # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
+    credential_env = ('GOOGLE_API_KEY',)
     _default_model: str = GoogleVoiceModel.DEFAULT.value
 
     # FEAT-523 folder-convention attributes (read by LLMFactory).
     provider_keys: tuple[str, ...] = ("gemini-live",)
     models: type[Enum] = GoogleModel
+    # realtime audio-in/audio-out client: it cannot serve a Studio (text) agent, so the Studio catalogue omits it
+    studio_offered: bool = False
 
     def __init__(
         self,

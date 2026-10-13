@@ -329,8 +329,8 @@ async def test_studio_disabled_every_route_but_me(aiohttp_client, scoped_app):
         path = route.resource.canonical.replace("{tenant}", "acme")
         if path.endswith("/me"):
             continue
-        path = path.replace("{filename:.*}", "f.md")
-        for part in ("name", "id", "slug", "kind", "provider", "param"):
+        path = path.replace("{filename:.*}", "f.md").replace("{filename}", "f.md")
+        for part in ("name", "id", "slug", "kind", "provider", "param", "export_tenant", "agent", "export_id"):
             path = path.replace("{" + part + "}", "x")
         resp = await client.get(path, headers=off)
         if resp.status == 405:

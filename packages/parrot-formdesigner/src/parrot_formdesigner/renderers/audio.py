@@ -20,9 +20,12 @@ from ..audio.models import (
     AudioSessionConfig,
     VoiceMode,
 )
-from ..core.schema import FormField, FormSchema, RenderedForm
+from ..audio.narration.engine import render_author_prompt
+from ..core.llm_validation import llm_validation_enabled
+from ..core.schema import FormField, FormSchema, FormSubsection, RenderedForm
 from ..core.style import StyleSchema
 from ..core.types import FieldType, LocalizedString
+from ..core.voice import field_voice_meta, is_sensitive
 from .base import AbstractFormRenderer
 
 if TYPE_CHECKING:
@@ -89,6 +92,13 @@ _RENDER_MODE_BY_VOICE: dict[VoiceMode, str] = {
     VoiceMode.VOICE: "voice",
     VoiceMode.PROMPT_SELECT: "select",
     VoiceMode.VISUAL_FALLBACK: "visual",
+}
+
+# FEAT-649: how a question may be answered, per VoiceMode (client hint; engine enforces).
+_ANSWER_MODES_BY_VOICE: dict[VoiceMode, list[str]] = {
+    VoiceMode.VOICE: ["voice", "text"],
+    VoiceMode.PROMPT_SELECT: ["voice", "selection"],
+    VoiceMode.VISUAL_FALLBACK: ["control"],
 }
 
 
@@ -290,27 +300,52 @@ class AudioFormRenderer(AbstractFormRenderer):
             form: The FormSchema to convert.
             locale: BCP 47 locale for label resolution.
 
+        Each question carries its section/subsection context (GROUP children
+        inherit the parent's). ``required`` is the static ``field.required``;
+        the dynamic value is applied by the planner from ``RuleResolution.required``.
+
         Returns:
             Ordered list of AudioQuestion objects, one per voiced field.
         """
         questions: list[AudioQuestion] = []
-        index = 0
+        for section in form.sections:
+            ctx: dict[str, Any] = {
+                "section_uid": section.section_uid,
+                "section_title": _resolve(section.title, locale) or None,
+                "subsection_title": None,
+            }
+            for item in section.fields:
+                if isinstance(item, FormSubsection):
+                    sub_ctx = {**ctx, "subsection_title": _resolve(item.title, locale) or None}
+                    for field in item.fields:
+                        questions.extend(self._field_to_questions(field, locale=locale, form=form, context=sub_ctx))
+                else:
+                    questions.extend(self._field_to_questions(item, locale=locale, form=form, context=ctx))
 
-        for field in form.iter_all_fields():
-            new_questions = self._field_to_questions(field, locale=locale)
-            for q in new_questions:
-                # model_copy preserves the FEAT-236 voice fields
-                # (voice_mode / render_mode / sensitive / fallback_html).
-                questions.append(q.model_copy(update={"index": index}))
-                index += 1
-
-        return questions
+        total = len(questions)
+        result: list[AudioQuestion] = []
+        for index, q in enumerate(questions):
+            # model_copy preserves the FEAT-236 voice fields.
+            update: dict[str, Any] = {"index": index}
+            if q.voice_meta is not None and q.voice_meta.prompt:
+                update["prompt"] = render_author_prompt(
+                    q.voice_meta.prompt,
+                    label=q.label,
+                    hint=q.hint or "",
+                    section=q.section_title or "",
+                    n=index + 1,
+                    total=total,
+                )
+            result.append(q.model_copy(update=update))
+        return result
 
     def _field_to_questions(
         self,
         field: FormField,
         *,
         locale: str = "en",
+        form: FormSchema | None = None,
+        context: dict[str, Any] | None = None,
     ) -> list[AudioQuestion]:
         """Convert a single FormField into one or more AudioQuestion objects.
 
@@ -332,7 +367,7 @@ class AudioFormRenderer(AbstractFormRenderer):
             children = field.children or []
             result: list[AudioQuestion] = []
             for child in children:
-                result.extend(self._field_to_questions(child, locale=locale))
+                result.extend(self._field_to_questions(child, locale=locale, form=form, context=context))
             return result
 
         label = _resolve(field.label, locale)
@@ -344,6 +379,7 @@ class AudioFormRenderer(AbstractFormRenderer):
                 {
                     "value": opt.value,
                     "label": _resolve(opt.label, locale),
+                    "disabled": opt.disabled,
                 }
                 for opt in field.options
             ]
@@ -358,13 +394,22 @@ class AudioFormRenderer(AbstractFormRenderer):
 
         voice_mode = classify_voice_mode(field)
         render_mode = _RENDER_MODE_BY_VOICE[voice_mode]
-        sensitive = field.field_type == FieldType.PASSWORD
+        sensitive = is_sensitive(field)
 
         # FEAT-488: Propagate accept_content_types from FormField to AudioQuestion.
         # When set, the client may submit a VoiceAnswerEnvelope dict instead of
         # a plain string.
         accept_content_types = field.accept_content_types
         answer_envelope = field.answer_envelope
+
+        voice_meta = field_voice_meta(field, logger=self.logger)
+        hint = _resolve(field.hint, locale) or None
+        answer_modes = list(_ANSWER_MODES_BY_VOICE[voice_mode])
+        if field.field_type == FieldType.AUDIO:
+            answer_modes = ["audio"]  # recorded answer
+        llm_flag = llm_validation_enabled(form, field) if form is not None else bool(field.llm_validation)
+        ctx = context or {}
+        section_uid = ctx.get("section_uid")
 
         return [
             AudioQuestion(
@@ -383,6 +428,14 @@ class AudioFormRenderer(AbstractFormRenderer):
                 sensitive=sensitive,
                 accept_content_types=accept_content_types,
                 answer_envelope=answer_envelope,
+                section_uid=str(section_uid) if section_uid is not None else None,
+                section_title=ctx.get("section_title"),
+                subsection_title=ctx.get("subsection_title"),
+                hint=hint,
+                ui_cue=voice_meta.ui_cue,
+                answer_modes=answer_modes,
+                voice_meta=voice_meta,
+                llm_validation=llm_flag,
             )
         ]
 

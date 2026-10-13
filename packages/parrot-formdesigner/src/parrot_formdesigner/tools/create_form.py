@@ -87,6 +87,8 @@ The FormSchema must follow this structure:
           "description": "string (optional)",
           "required": true/false,
           "placeholder": "string (optional)",
+          "hint": "string (optional) — short help read aloud after the question and shown under the input",
+          "llm_validation": "true/false (optional) — ask an LLM to sanity-check the answer before submit",
           "default": "any (optional)",
           "constraints": {
             "min_length": int, "max_length": int,
@@ -458,18 +460,14 @@ class CreateFormTool(AbstractTool):
                 success=False,
                 status="error",
                 result=None,
-                metadata={
-                    "error": "Provide either 'prompt' or structured input (schema/sections/fields), not both"
-                },
+                metadata={"error": "Provide either 'prompt' or structured input (schema/sections/fields), not both"},
             )
         if not has_structured and not prompt:
             return ToolResult(
                 success=False,
                 status="error",
                 result=None,
-                metadata={
-                    "error": "Either 'prompt' or structured input (schema/sections/fields) is required"
-                },
+                metadata={"error": "Either 'prompt' or structured input (schema/sections/fields) is required"},
             )
 
         if has_structured:
@@ -520,13 +518,9 @@ class CreateFormTool(AbstractTool):
 
                 if form is None:
                     # Fallback: use existing full-form refinement path
-                    self.logger.info(
-                        "Falling back to full-form refinement for '%s'.", refine_form_uid
-                    )
+                    self.logger.info("Falling back to full-form refinement for '%s'.", refine_form_uid)
                     messages = self._build_refinement_messages(existing, prompt)
-                    form = await self._generate_with_retry(
-                        messages, effective_form_id, effective_form_uid
-                    )
+                    form = await self._generate_with_retry(messages, effective_form_id, effective_form_uid)
             else:
                 effective_form_uid = form_uid or uuid.uuid4()
                 messages = self._build_creation_messages(prompt)
@@ -550,13 +544,17 @@ class CreateFormTool(AbstractTool):
 
             if refine_form_uid and existing is not None:
                 from ..api._utils import _bump_version
+
                 form.version = _bump_version(existing.version)
 
             if persist and self._registry is not None:
                 try:
                     overwrite = refine_form_uid is not None
                     await self._registry.register(
-                        form, persist=True, overwrite=overwrite, tenant=self._tenant,
+                        form,
+                        persist=True,
+                        overwrite=overwrite,
+                        tenant=self._tenant,
                     )
                 except Exception as exc:
                     self.logger.warning("Failed to persist form %s: %s", form.form_id, exc)
@@ -614,13 +612,9 @@ class CreateFormTool(AbstractTool):
             if schema is not None:
                 form = self._assembler.assemble(schema, form_id=form_id)
             elif sections is not None:
-                form = self._assembler.assemble_from_sections(
-                    sections, form_id=form_id, title=form_id or "Form"
-                )
+                form = self._assembler.assemble_from_sections(sections, form_id=form_id, title=form_id or "Form")
             else:
-                form = self._assembler.assemble_from_fields(
-                    fields, form_id=form_id, title=form_id or "Form"
-                )
+                form = self._assembler.assemble_from_fields(fields, form_id=form_id, title=form_id or "Form")
             # FEAT-393: resolve authored field_id rule references to
             # field_uid before returning — same build-boundary pass the
             # LLM path applies right after FormSchema.model_validate()
@@ -647,7 +641,10 @@ class CreateFormTool(AbstractTool):
         if persist and self._registry is not None:
             try:
                 await self._registry.register(
-                    form, persist=True, overwrite=False, tenant=self._tenant,
+                    form,
+                    persist=True,
+                    overwrite=False,
+                    tenant=self._tenant,
                 )
             except Exception as exc:
                 self.logger.warning("Failed to persist form %s: %s", form.form_id, exc)
@@ -884,7 +881,5 @@ class CreateFormTool(AbstractTool):
             )
             return None
 
-        self.logger.info(
-            "Toolkit edit for form '%s' completed successfully.", existing.form_id
-        )
+        self.logger.info("Toolkit edit for form '%s' completed successfully.", existing.form_id)
         return toolkit.form

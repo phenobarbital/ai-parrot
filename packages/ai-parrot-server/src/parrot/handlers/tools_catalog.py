@@ -28,6 +28,7 @@ from typing import Any, Dict, List
 from navconfig.logging import logging as nav_logging
 from navigator.views import BaseView
 from navigator_auth.decorators import is_authenticated, user_session
+from parrot.handlers.catalog_decorator import decorate_rows
 from parrot.handlers.scope import get_scope_resolver, has_installed_resolver
 from parrot.tools.resolver import ToolkitEntry, get_toolkit_resolver
 from parrot.tools.toolkit import AbstractToolkit, effective_access
@@ -40,7 +41,8 @@ _CATALOG_CACHE: List[Dict[str, Any]] | None = None
 
 
 def _enrich(entry: Dict[str, Any], cls: type) -> None:
-    """Add the first docstring line as ``description`` and the ``category`` of ``cls`` to ``entry``."""
+    """Add the first docstring line as ``description`` plus the optional ``category`` / ``display_name`` /
+    ``summary`` class attributes of ``cls`` to ``entry`` (upstream defaults; a host decorator may replace them)."""
     doc = (cls.__doc__ or "").strip()
     if doc:
         # Take only the first non-empty line as the description.
@@ -48,6 +50,10 @@ def _enrich(entry: Dict[str, Any], cls: type) -> None:
     category = getattr(cls, "category", None)
     if category:
         entry["category"] = str(category)
+    for attr in ("display_name", "summary"):
+        value = getattr(cls, attr, None)
+        if isinstance(value, str) and value.strip():
+            entry[attr] = value.strip()
 
 
 _TOOLKIT_MANAGEMENT = frozenset(
@@ -88,6 +94,7 @@ def _catalog_entry(item: ToolkitEntry, cls: type | None) -> Dict[str, Any]:
         "dotted_path": dotted_path,
         "source": item.source,
         "access": _entry_access(cls),
+        "available": cls is not None,  # False: the slug is registered but its class does not import here
     }
     if cls is not None:
         _enrich(entry, cls)
@@ -102,7 +109,8 @@ def _build_catalog() -> List[Dict[str, Any]]:
     imported still appear in the output — they just lack a ``description``.
 
     Returns:
-        Sorted list of ``{slug, dotted_path, source, access, description?, category?}`` dicts.
+        Sorted list of ``{slug, dotted_path, source, access, available, description?, category?, display_name?,
+        summary?}`` dicts.
     """
     resolver = get_toolkit_resolver()
     entries: List[Dict[str, Any]] = []
@@ -118,8 +126,11 @@ def _build_catalog() -> List[Dict[str, Any]]:
 
 
 def filter_catalog_for(app: Any, subject: ToolingSubject | None, catalog: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Entries the tenant policy permits (unchanged when it does not apply); host ``dotted_path`` is never exposed."""
-    return [_redact_host_path(entry) for entry in _permitted(app, subject, catalog)]
+    """Entries the tenant policy permits (unchanged when it does not apply); host ``dotted_path`` is never exposed.
+
+    The host catalogue decorator (PA-6, ``app[STUDIO_CATALOG_DECORATOR]``) runs LAST, on copies of the surviving rows.
+    """
+    return decorate_rows(app, "tools", [_redact_host_path(entry) for entry in _permitted(app, subject, catalog)])
 
 
 def _redact_host_path(entry: Dict[str, Any]) -> Dict[str, Any]:

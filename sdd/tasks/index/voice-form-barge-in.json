@@ -1,0 +1,113 @@
+{
+  "feature": "voice-form-barge-in",
+  "feature_id": "FEAT-654",
+  "spec": "sdd/specs/voice-form-barge-in.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-12T19:36:13+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4257",
+      "slug": "barge-in-hands-free-flag",
+      "title": "HandsFreeConfig.barge_in flag + server barge-in regression test",
+      "feature_id": "FEAT-654",
+      "feature": "voice-form-barge-in",
+      "spec": "sdd/specs/voice-form-barge-in.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: adds one field to HandsFreeConfig (core/voice.py) plus tests in test_voice_schema_models.py and test_audio_engine_turns.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4257-barge-in-hands-free-flag.md"
+    },
+    {
+      "id": "TASK-4258",
+      "slug": "option-pause-config",
+      "title": "option_pause_ms voice config (form default + per-field override)",
+      "feature_id": "FEAT-654",
+      "feature": "voice-form-barge-in",
+      "spec": "sdd/specs/voice-form-barge-in.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4257"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4257: both modify core/voice.py (HandsFreeConfig vs FieldVoiceMeta/VoiceFormConfig) and test_voice_schema_models.py \u2014 serialized, lower id first.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4258-option-pause-config.md"
+    },
+    {
+      "id": "TASK-4259",
+      "slug": "per-option-narration-segments",
+      "title": "Narrator \u2014 one narration segment per enumerated option, with pauses",
+      "feature_id": "FEAT-654",
+      "feature": "voice-form-barge-in",
+      "spec": "sdd/specs/voice-form-barge-in.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4258"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4258: reads VoiceFormConfig.option_pause_ms and FieldVoiceMeta.option_pause_ms created there (core/voice.py) in Narrator._option_segments (audio/narration/engine.py).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4259-per-option-narration-segments.md"
+    },
+    {
+      "id": "TASK-4260",
+      "slug": "option-segment-wire-glue",
+      "title": "Wire glue \u2014 option segment kind, v1 inline grouping, barge-in v2 integration test",
+      "feature_id": "FEAT-654",
+      "feature": "voice-form-barge-in",
+      "spec": "sdd/specs/voice-form-barge-in.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4257",
+        "TASK-4259"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4259: _segment_kind/_v1_group_uid and the adapter/integration tests consume the q:<uid>:options_intro and q:<uid>:opt:<n> keys Narrator.plan_question emits; TASK-4257: test_barge_in_flow_v2 asserts session_started.hands_free.barge_in.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4260-option-segment-wire-glue.md"
+    },
+    {
+      "id": "TASK-4261",
+      "slug": "barge-in-docs",
+      "title": "Docs \u2014 form voice settings, option segments, barge-in client rules (ceiling rule)",
+      "feature_id": "FEAT-654",
+      "feature": "voice-form-barge-in",
+      "spec": "sdd/specs/voice-form-barge-in.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4258",
+        "TASK-4260"
+      ],
+      "parallel": true,
+      "parallelism_notes": "TASK-4258: documents option_pause_ms names/defaults (core/voice.py); TASK-4260: documents the option kind and key grammar as implemented in api/audio_ws.py and audio/events.py (barge_in from TASK-4257 is reached transitively).",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4261-barge-in-docs.md"
+    }
+  ]
+}

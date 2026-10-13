@@ -386,6 +386,13 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
             execution_policy=kwargs.pop("execution_policy", None),
         )
         self.tool_manager.enable_redaction = self.enable_redaction
+        # PA-9: a host toolkit-parameter hook (``(hook, ToolingSubject)``) bound BEFORE the first tool is constructed,
+        # so the tools named in ``tools=[...]`` go through it too (see parrot.tools.host_hooks).
+        if (hook_binding := kwargs.pop("toolkit_param_binding", None)) is not None:
+            self.tool_manager.set_toolkit_param_hook(*hook_binding)
+        # Server-managed ``source="app"`` constructor params (artifact_store...) of every tool built for this bot,
+        # bound BEFORE the first tool is constructed, like the hook.
+        self.tool_manager.set_server_param_source(kwargs.pop("server_param_source", None))
         self.tool_threshold = tool_threshold
         self.enable_tools: bool = kwargs.get("enable_tools", kwargs.get("use_tools", True))
         # Knowledge-index toolkits captured during tool registration so the
@@ -1539,6 +1546,8 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         self.app = None
         if app:
             self.app = app if isinstance(app, web.Application) else app.get_app()
+            if self.tool_manager._server_param_source is None:  # a Studio build already bound it before its tools
+                self.tool_manager.set_server_param_source(self.app)
         try:
             # Configure conversation memory FIRST
             self.configure_conversation_memory()

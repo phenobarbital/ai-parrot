@@ -12,6 +12,7 @@ from PIL import Image
 
 from parrot.models.detections import AisleConfig, PlanogramDescription
 
+from ..comparison.definition import ReportingPolicy
 from ..contracts import (
     ComparisonResult,
     CycleContext,
@@ -20,7 +21,7 @@ from ..contracts import (
     PerceptionResult,
     ShapeKind,
 )
-from ..layout import LayoutProfile
+from ..layout import LayoutProfile, resolve_layout_profile
 from ..perception.profiles import ShapeProfile
 from ..perception.slots import AnchorRule
 from ..stages.compare import compare_observations
@@ -79,16 +80,29 @@ class GraphicPanelDisplay(AbstractPlanogramType):
             identify_strategy=IdentifyStrategy.FULL_IMAGE,
             perception_mode="cv",
             min_usable_shapes=1,
+            reporting=ReportingPolicy(slot_presence=True),
         )
+
+    def _ensure_layout(self, ctx: CycleContext) -> LayoutProfile:
+        """Resolve defaults and configuration when the orchestrator has not populated the context."""
+        if ctx.layout is None:
+            ctx.layout = resolve_layout_profile(
+                self.default_layout_profile(),
+                dict(self.config.planogram_config or {}),
+                config_name=str(getattr(self.config, "config_name", None) or type(self).__name__),
+            )
+        return ctx.layout
 
     async def perceive(self, image: Image.Image, image_id: str, ctx: CycleContext) -> PerceptionResult:
         """Shared CV perception (zones) with ``ctx.layout``."""
+        self._ensure_layout(ctx)
         return await perceive_image(image, image_id, ctx)
 
     async def identify(
         self, image: Image.Image, perception: PerceptionResult, ctx: CycleContext
     ) -> IdentificationResult:
         """Shared zone OCR/vision identification plus neutral text/illumination/presence evidence."""
+        self._ensure_layout(ctx)
         return await identify_image(image, perception, ctx)
 
     async def compare(
@@ -98,6 +112,7 @@ class GraphicPanelDisplay(AbstractPlanogramType):
         ctx: CycleContext,
     ) -> ComparisonResult:
         """Deterministic zone-only comparison; no provider call."""
+        self._ensure_layout(ctx)
         return compare_observations(perceptions, identifications, ctx, self._description())
 
     def _description(self) -> PlanogramDescription:

@@ -1,5 +1,6 @@
 import pytest
 
+from typing import Literal
 from unittest.mock import AsyncMock, MagicMock, patch
 from PIL import Image
 from parrot.clients.google import GoogleGenAIClient
@@ -1040,6 +1041,94 @@ class TestAskStreamCombinedModeGate:
 
         # Two-phase: reformat call should fire.
         assert m["models.generate_content"].call_count >= 1
+
+
+class TestCleanGoogleSchemaOptionalEnum:
+    """An optional enum argument keeps its allowed values.
+
+    Pydantic v2 emits ``Optional[Literal[...]]`` / ``Optional[SomeEnum]`` as
+    ``anyOf: [{type: string, enum: [...]}, {type: null}]``. Flattening the
+    union must carry ``enum`` out of the chosen branch, or Gemini sees a free
+    string and guesses values the tool then refuses (``complete`` for
+    ``completed``).
+    """
+
+    def _clean(self, schema):
+        client = GoogleGenAIClient.__new__(GoogleGenAIClient)
+        return client.clean_google_schema(schema)
+
+    def test_optional_literal_keeps_enum(self):
+        schema = {
+            "anyOf": [{"enum": ["scheduled", "completed"], "type": "string"}, {"type": "null"}],
+            "default": None,
+            "title": "Status",
+        }
+        cleaned = self._clean(schema)
+        assert cleaned["type"] == "string"
+        assert cleaned["enum"] == ["scheduled", "completed"]
+        assert "anyOf" not in cleaned
+
+    def test_optional_enum_ref_keeps_enum(self):
+        schema = {
+            "$defs": {"Color": {"enum": ["red", "blue"], "title": "Color", "type": "string"}},
+            "type": "object",
+            "properties": {
+                "color": {"anyOf": [{"$ref": "#/$defs/Color"}, {"type": "null"}], "default": None},
+            },
+        }
+        cleaned = self._clean(schema)
+        assert cleaned["properties"]["color"]["enum"] == ["red", "blue"]
+
+    def test_optional_numeric_literal_is_not_given_an_enum(self):
+        """The SDK types Schema.enum as list[str]: a numeric enum would make the declaration invalid."""
+        schema = {"anyOf": [{"enum": [1, 2], "type": "integer"}, {"type": "null"}], "default": None}
+        cleaned = self._clean(schema)
+        assert "enum" not in cleaned
+        from google.genai import types
+
+        types.FunctionDeclaration(
+            name="probe",
+            description="probe",
+            parameters={"type": "object", "properties": {"n": cleaned}},
+        )
+
+    def test_optional_literal_declaration_is_valid_for_the_sdk(self):
+        schema = {"anyOf": [{"enum": ["a", "b"], "type": "string"}, {"type": "null"}], "default": None}
+        from google.genai import types
+
+        decl = types.FunctionDeclaration(
+            name="probe",
+            description="probe",
+            parameters={"type": "object", "properties": {"s": self._clean(schema)}},
+        )
+        assert decl.parameters.properties["s"].enum == ["a", "b"]
+
+    def test_optional_plain_string_has_no_enum(self):
+        cleaned = self._clean({"anyOf": [{"type": "string"}, {"type": "null"}], "default": None})
+        assert cleaned["type"] == "string" and "enum" not in cleaned
+
+    @pytest.mark.parametrize(
+        "annotation",
+        [
+            Literal["scheduled", "completed"] | str,
+            Literal["scheduled", "completed"] | str | None,
+            Literal["scheduled", "completed"] | Literal["cancelled", "pending"],
+            Literal["scheduled", "completed"] | Literal["cancelled", "pending"] | None,
+        ],
+    )
+    def test_multiple_non_null_branches_do_not_restrict_enum(self, annotation: object) -> None:
+        """Values allowed by later union branches remain available to Gemini."""
+        from google.genai import types
+        from pydantic import create_model
+
+        args_model = create_model("UnionArgs", status=(annotation, ...))
+        assert args_model(status="cancelled").status == "cancelled"
+
+        cleaned = self._clean(args_model.model_json_schema())
+        assert cleaned["properties"]["status"]["type"] == "string"
+        assert "enum" not in cleaned["properties"]["status"]
+        declaration = types.FunctionDeclaration(name="probe", parameters=cleaned)
+        assert declaration.parameters.properties["status"].enum is None
 
 
 class TestCleanGoogleSchemaArrayItems:

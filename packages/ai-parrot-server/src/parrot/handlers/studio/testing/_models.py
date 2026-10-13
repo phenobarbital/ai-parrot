@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -30,10 +30,14 @@ class TestAskRequest(BaseModel):
             this is a no-op — the agent's normally-configured client is
             used. An auth failure from a genuinely stored key is NEVER
             retried against the server's default key (spec §7).
+        key_source: ``"server"`` or ``"byok"`` (PA-2). Required (``409 key_source_required``) when BOTH a server
+            key and a stored personal key exist for the provider; a source that does not exist is
+            ``422 key_source_unavailable``. An explicit source wins over ``use_byok``.
     """
 
     query: str
     use_byok: bool = True
+    key_source: Literal["server", "byok"] | None = None
 
 
 class ToolExecuteRequest(BaseModel):
