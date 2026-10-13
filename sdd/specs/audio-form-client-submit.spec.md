@@ -11,7 +11,7 @@ tags: [audio-forms, voice, submission, client-submit]
 **Date**: 2026-10-12
 **Author**: Juan Ruffato
 **Status**: draft
-**Target version**: next parrot-formdesigner minor (after FEAT-653/654/655)
+**Target version**: next parrot-formdesigner minor, in ONE voice release with FEAT-653/654/655 (Juan, 2026-10-12: "todo sale junto"); FieldSync FEAT-715 and navigator-svelte FEAT-711..714 ship with it
 **Continues**: FEAT-649 (`sdd/specs/audio-form-interaction-workflow.spec.md`)
 **Consumers**: navigator-svelte FEAT-714 (rep voice forms, Rep Mode) and FieldSync FEAT-715
 (execution Action submit accepts voice evidence envelopes).
