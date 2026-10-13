@@ -449,9 +449,7 @@ class TestServerInfoVersionCheck:
         assert session._process is None
 
     @pytest.mark.asyncio
-    async def test_absent_server_info_warns_and_starts(
-        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    async def test_absent_server_info_warns_and_starts(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         session = PyrightSession()
         config = _make_config(tmp_path, scenario="happy_path")
         with caplog.at_level(logging.WARNING):
