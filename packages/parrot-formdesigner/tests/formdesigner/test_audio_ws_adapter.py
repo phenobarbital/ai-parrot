@@ -451,3 +451,181 @@ class TestOptionSegments:
         assert texts[0].endswith("1, Red. 2, Green.")
         q = next(m for m in _msgs(ws) if m["type"] == "question")
         assert q["audio"] == base64.b64encode(b"AUDIO").decode()
+
+
+class TestClientSubmitAdapter:
+    """FEAT-656 TASK-4267 — submit_mode="client": validate only, never persist."""
+
+    @staticmethod
+    def _pipeline(*, valid: bool = True, errors: dict | None = None, data: dict | None = None) -> MagicMock:
+        pipeline = MagicMock()
+        pipeline.submit = AsyncMock()
+        result = SimpleNamespace(is_valid=valid, sanitized_data=data or {"a": "x"}, errors=errors or {})
+        pipeline.validate = AsyncMock(return_value=(result, None))
+        pipeline.attach_verdicts = MagicMock(side_effect=lambda d, report: {**d, "_verdicts": report is not None})
+        return pipeline
+
+    async def test_client_mode_never_submits(self, synth, stt) -> None:
+        pipeline = self._pipeline()
+        storage = MagicMock()
+        storage.store = AsyncMock()
+        h = _handler(_form("a"), synth, stt, pipeline=pipeline, submission_storage=storage)
+        ws, ctx = await _boot(h, start={"protocol_version": 2, "submit_mode": "client"})
+        ws.send_json.reset_mock()
+        await h._process_text(ws, ctx, {"type": "answer_text", "field_id": "a", "value": "x"})
+        await h._process_text(ws, ctx, {"type": "review_confirm", "confirmed": True})
+        pipeline.validate.assert_awaited_once()
+        assert pipeline.validate.call_args.kwargs["llm_validation"] is False
+        pipeline.submit.assert_not_called()
+        storage.store.assert_not_called()
+        kinds = _types(ws)
+        assert "answers_ready" in kinds and "form_complete" not in kinds
+        ready = next(m for m in _msgs(ws) if m["type"] == "answers_ready")
+        assert ready["data"] == {"a": "x", "_verdicts": False}
+        assert ctx.engine.state.phase == Phase.COMPLETE
+
+    async def test_client_data_carries_verdicts_and_summary(self, synth, stt) -> None:
+        from parrot_formdesigner.core.llm_validation import PlausibilityReport
+
+        pipeline = self._pipeline()
+        h = _handler(_form("a"), synth, stt, pipeline=pipeline)
+        ws, ctx = await _boot(h, start={"protocol_version": 2, "submit_mode": "client"})
+        ctx.engine.state.plausibility = PlausibilityReport(status="ok", threshold=0.7, items={})
+        ws.send_json.reset_mock()
+        await h._process_text(ws, ctx, {"type": "answer_text", "field_id": "a", "value": "x"})
+        await h._process_text(ws, ctx, {"type": "review_confirm", "confirmed": True})
+        assert pipeline.attach_verdicts.call_args.args[1] is ctx.engine.state.plausibility
+        ready = next(m for m in _msgs(ws) if m["type"] == "answers_ready")
+        assert ready["data"]["_verdicts"] is True
+        assert ready["plausibility_summary"]["status"] == "ok"
+
+    async def test_client_mode_invalid_reasks(self, synth, stt) -> None:
+        pipeline = self._pipeline(valid=False, errors={"a": ["too short"]})
+        h = _handler(_form("a"), synth, stt, pipeline=pipeline)
+        ws, ctx = await _boot(h, start={"protocol_version": 2, "submit_mode": "client"})
+        ws.send_json.reset_mock()
+        await h._process_text(ws, ctx, {"type": "answer_text", "field_id": "a", "value": "x"})
+        await h._process_text(ws, ctx, {"type": "review_confirm", "confirmed": True})
+        kinds = _types(ws)
+        assert "validation_errors" in kinds and "answers_ready" not in kinds
+        pipeline.submit.assert_not_called()
+        assert ctx.engine.state.cursor == "a" and not ctx.engine.state.completed
+
+    async def test_client_validate_failure_surfaces_io_failure(self, synth, stt) -> None:
+        pipeline = self._pipeline()
+        pipeline.validate = AsyncMock(side_effect=RuntimeError("boom"))
+        h = _handler(_form("a"), synth, stt, pipeline=pipeline)
+        ws, ctx = await _boot(h, start={"protocol_version": 2, "submit_mode": "client"})
+        ws.send_json.reset_mock()
+        await h._process_text(ws, ctx, {"type": "answer_text", "field_id": "a", "value": "x"})
+        await h._process_text(ws, ctx, {"type": "review_confirm", "confirmed": True})
+        assert "answers_ready" not in _types(ws)
+        pipeline.submit.assert_not_called()
+        assert any(m["type"] == "error" and m["code"] == "SUBMIT_FAILED" for m in _msgs(ws))
+        assert not ctx.engine.state.completed
+
+    async def test_client_mode_v1_rejected(self, synth, stt) -> None:
+        h = _handler(_form("a"), synth, stt, pipeline=self._pipeline())
+        ws, ctx = await _boot(h, start={"submit_mode": "client"})
+        assert _msgs(ws)[0]["type"] == "error" and _msgs(ws)[0]["code"] == "INVALID_MESSAGE"
+
+    async def test_answers_ready_releases_session(self, synth, stt) -> None:
+        store = MagicMock()
+        store.claim_active = AsyncMock(return_value=True)
+        store.save = AsyncMock(return_value=1)
+        store.delete = AsyncMock()
+        h = _handler(_form("a"), synth, stt, pipeline=self._pipeline(), session_store=store)
+        ws, ctx = await _boot(h, start={"protocol_version": 2, "submit_mode": "client"})
+        await h._process_text(ws, ctx, {"type": "answer_text", "field_id": "a", "value": "x"})
+        await h._process_text(ws, ctx, {"type": "review_confirm", "confirmed": True})
+        assert "answers_ready" in _types(ws)
+        store.delete.assert_awaited()
+
+    async def test_server_mode_still_submits(self, synth, stt) -> None:
+        pipeline = self._pipeline()
+        pipeline.submit = AsyncMock(return_value=SimpleNamespace(submission_id="s", stored_in="none", forwarded=False))
+        h = _handler(_form("a"), synth, stt, pipeline=pipeline)
+        ws, ctx = await _boot(h, start={"protocol_version": 2})
+        await h._process_text(ws, ctx, {"type": "answer_text", "field_id": "a", "value": "x"})
+        await h._process_text(ws, ctx, {"type": "review_confirm", "confirmed": True})
+        pipeline.submit.assert_awaited_once()
+        pipeline.validate.assert_not_called()
+        assert "form_complete" in _types(ws)
+
+    async def test_rejected_client_resume_releases_marker_and_allows_retry(self, synth, stt) -> None:
+        store = MagicMock()
+        store.claim_active = AsyncMock(return_value=True)
+        store.release_active = AsyncMock()
+        store.save = AsyncMock(return_value=1)
+        store.delete = AsyncMock()
+        form = _form("a", "b")
+        h = _handler(form, synth, stt, pipeline=self._pipeline(), session_store=store)
+        ws, ctx = await _boot(h, start={"protocol_version": 2, "submit_mode": "client"})
+        await h._process_text(ws, ctx, {"type": "answer_text", "field_id": "a", "value": "x"})
+        snap = ctx.engine.snapshot().model_copy(update={"revision": 2})
+        assert snap.submit_mode == "client"
+        store.load = AsyncMock(return_value=snap)
+        h2 = _handler(form, synth, stt, pipeline=self._pipeline(), session_store=store)
+        # resume the saved client-mode session over protocol v1 -> rejected
+        ws2, ctx2 = await _boot(h2, start={"resume_session_id": "s1"})
+        assert _msgs(ws2)[-1]["code"] == "INVALID_MESSAGE"
+        store.release_active.assert_awaited_once_with("u1", "s1")
+        assert ctx2.engine is None
+        # a corrected start on the same connection is not ALREADY_STARTED
+        ws2.send_json.reset_mock()
+        await h2._process_text(
+            ws2, ctx2, {"type": "start_session", "form_uid": "f1", "protocol_version": 2, "resume_session_id": "s1"}
+        )
+        assert "session_resumed" in _types(ws2) and "ALREADY_STARTED" not in [m.get("code") for m in _msgs(ws2)]
+        assert ctx2.engine.state.submit_mode == "client"
+
+    async def test_fresh_v1_client_rejected_before_bootstrap_then_v2_ok(self, synth, stt) -> None:
+        store = MagicMock()
+        store.claim_active = AsyncMock(return_value=True)
+        store.release_active = AsyncMock()
+        store.save = AsyncMock(return_value=1)
+        store.delete = AsyncMock()
+        h = _handler(_form("a"), synth, stt, pipeline=self._pipeline(), session_store=store)
+        ws, ctx = await _boot(h, start={"submit_mode": "client"})
+        assert _msgs(ws)[-1]["code"] == "INVALID_MESSAGE"
+        store.claim_active.assert_not_called()  # nothing claimed, nothing to unwind
+        assert ctx.engine is None
+        ws.send_json.reset_mock()
+        await h._process_text(
+            ws, ctx, {"type": "start_session", "form_uid": "f1", "protocol_version": 2, "submit_mode": "client"}
+        )
+        kinds = _types(ws)
+        assert "session_started" in kinds and "error" not in kinds
+        store.claim_active.assert_awaited_once()
+
+    async def test_rejected_resume_then_fresh_start_saves_from_revision_zero(self, synth, stt) -> None:
+        store = MagicMock()
+        store.claim_active = AsyncMock(return_value=True)
+        store.release_active = AsyncMock()
+        store.save = AsyncMock(return_value=1)
+        store.delete = AsyncMock()
+        form = _form("a", "b")
+        h = _handler(form, synth, stt, pipeline=self._pipeline(), session_store=store)
+        ws, ctx = await _boot(h, start={"protocol_version": 2, "submit_mode": "client"})
+        await h._process_text(ws, ctx, {"type": "answer_text", "field_id": "a", "value": "x"})
+        snap = ctx.engine.snapshot().model_copy(update={"revision": 7})
+        store.load = AsyncMock(return_value=snap)
+        h2 = _handler(form, synth, stt, pipeline=self._pipeline(), session_store=store)
+        ws2, ctx2 = await _boot(h2, start={"resume_session_id": "s1"})  # v1 resume of a client snapshot
+        assert _msgs(ws2)[-1]["code"] == "INVALID_MESSAGE" and ctx2.revision == 0
+        store.save.reset_mock()
+        await h2._process_text(ws2, ctx2, {"type": "start_session", "form_uid": "f1", "protocol_version": 2})
+        await h2._process_text(ws2, ctx2, {"type": "answer_text", "field_id": "a", "value": "y"})
+        assert store.save.call_args.kwargs["expected_revision"] == 0
+
+    async def test_every_fresh_start_resets_revision(self, synth, stt) -> None:
+        store = MagicMock()
+        store.claim_active = AsyncMock(return_value=True)
+        store.save = AsyncMock(return_value=1)
+        store.delete = AsyncMock()
+        h = _handler(_form("a", "b"), synth, stt, session_store=store)
+        ws, ctx = await _boot(h, start={"protocol_version": 2})
+        ctx.engine = None
+        ctx.revision = 9  # stale value left by some earlier attempt on this connection
+        await h._process_text(ws, ctx, {"type": "start_session", "form_uid": "f1", "protocol_version": 2})
+        assert ctx.revision == 0

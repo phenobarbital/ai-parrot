@@ -107,6 +107,7 @@ class StartSession(_Inbound):
     auto_advance: bool | None = None
     enumerate_options: bool | None = None
     timezone: str | None = None  # FEAT-653: client IANA timezone (validated by the adapter)
+    submit_mode: Literal["server", "client"] = "server"  # "client": answers_ready, nothing persisted
 
 
 class AnswerText(_Inbound):
@@ -451,6 +452,14 @@ class FormComplete(_Wire):
     plausibility_summary: dict[str, Any] | None = None
 
 
+class AnswersReady(_Wire):
+    """Client-submit mode terminal message: validated answers for the host to submit (never logged, S8)."""
+
+    type: Literal["answers_ready"] = "answers_ready"
+    data: dict[str, Any]
+    plausibility_summary: dict[str, Any] | None = None
+
+
 class SessionEnded(_Wire):
     type: Literal["session_ended"] = "session_ended"
     session_id: str
@@ -551,6 +560,7 @@ WireMessage = Union[
     ValidationErrors,
     SessionResumed,
     FormComplete,
+    AnswersReady,
     SessionEnded,
     Error,
     Pong,

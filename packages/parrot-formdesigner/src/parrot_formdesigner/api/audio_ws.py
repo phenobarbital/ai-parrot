@@ -48,6 +48,7 @@ from ..audio.events import (
     BlobStored,
     DeleteBlob,
     Error,
+    AnswersReady,
     FormComplete,
     InboundEvent,
     IOFailed,
@@ -605,6 +606,10 @@ class AudioFormWSHandler:
             except Exception:  # noqa: BLE001 — ZoneInfoNotFoundError / ValueError for malformed keys
                 self.logger.warning("start_session: ignoring invalid timezone %r", start.timezone)
                 start = start.model_copy(update={"timezone": None})
+        if start.submit_mode == "client" and start.protocol_version < 2:
+            # Rejected before anything is loaded, claimed or created, so there is nothing to unwind.
+            await self._send_error(ws, "INVALID_MESSAGE", "submit_mode client requires protocol v2")
+            return
 
         # Build the per-session config from the start_session payload (FEAT-236),
         # falling back to defaults for any omitted key.
@@ -696,6 +701,7 @@ class AudioFormWSHandler:
             ):
                 await self._send_session_active(ws, store, session)
                 return
+            ctx.revision = 0
             engine = AudioFormSession(**deps)
 
         ctx.form = form
@@ -711,6 +717,14 @@ class AudioFormWSHandler:
         ):
             # The marker was claimed before the engine validated user/tenant/version: give it back.
             await store.release_active(session.user_id, start.resume_session_id)
+        elif start.resume_session_id and any(isinstance(o, Error) and o.code == "INVALID_MESSAGE" for o in opening):
+            # Rejected client-mode resume (e.g. v1): give the marker back; the engine is dropped after the
+            # error is sent so the same connection can send a corrected start_session.
+            await store.release_active(session.user_id, start.resume_session_id)
+            await self._perform(ws, ctx, opening)
+            ctx.engine = None
+            ctx.revision = 0
+            return
         await self._perform(ws, ctx, opening)
 
     def _build_session_config(
@@ -782,7 +796,9 @@ class AudioFormWSHandler:
                 await self._release_session(ctx)
                 ctx.closed = True
                 await ws.close()
-            elif isinstance(item, FormComplete):
+            elif isinstance(item, (FormComplete, AnswersReady)):
+                if isinstance(item, AnswersReady):
+                    await self._clear_partial_mirror(ctx)
                 await self._release_session(ctx)
             return None
 
@@ -1157,12 +1173,9 @@ class AudioFormWSHandler:
         form = ctx.form
         assert form is not None
         state = ctx.state
-        data = dict(item.data)
-        # A visual-fallback REST answer arrives as the client's plain reference; the REST validator wants the
-        # ``{"answer", "blob_ref"}`` shape, so wrap scalars (a dict is already in the validator's shape).
-        for q in ctx.engine.manifest.questions if ctx.engine is not None else []:
-            if q.field_type == "rest" and q.field_id in data and not isinstance(data[q.field_id], dict):
-                data[q.field_id] = {"answer": data[q.field_id], "blob_ref": None}
+        if state.submit_mode == "client":
+            return await self._do_client_submit(ctx, item)
+        data = self._wrap_rest_scalars(ctx, dict(item.data))
         try:
             outcome = await self._pipeline_for().submit(
                 form,
@@ -1195,6 +1208,36 @@ class AudioFormWSHandler:
             },
         )
 
+    @staticmethod
+    def _wrap_rest_scalars(ctx: _ConnCtx, data: dict[str, Any]) -> dict[str, Any]:
+        """Wrap a visual-fallback REST answer's plain reference into ``{"answer", "blob_ref"}``."""
+        for q in ctx.engine.manifest.questions if ctx.engine is not None else []:
+            if q.field_type == "rest" and q.field_id in data and not isinstance(data[q.field_id], dict):
+                data[q.field_id] = {"answer": data[q.field_id], "blob_ref": None}
+        return data
+
+    async def _do_client_submit(self, ctx: _ConnCtx, item: Submit) -> "InboundEvent":
+        """Client-submit mode: validate only, persist nothing, hand the sanitized data back to the client."""
+        form = ctx.form
+        assert form is not None
+        state = ctx.state
+        data = self._wrap_rest_scalars(ctx, dict(item.data))
+        pipeline = self._pipeline_for()
+        try:
+            result, _ = await pipeline.validate(
+                form, data, locale=state.locale, auth_context=self._auth_context(ctx.user), llm_validation=False
+            )
+        except Exception as exc:  # noqa: BLE001 — surface and re-ask, like a failed submit (never logs answers)
+            self.logger.warning("Audio client validation failed: %s", type(exc).__name__)
+            return IOFailed(
+                type="_io_failed", request=item.type, code="SUBMIT_FAILED", detail="The form could not be validated."
+            )
+        if not result.is_valid:
+            return SubmitDone(type="_submit_done", outcome={"errors": result.errors})
+        client_data = pipeline.attach_verdicts(result.sanitized_data, state.plausibility)
+        summary = state.plausibility.model_dump(mode="json") if state.plausibility is not None else None
+        return SubmitDone(type="_submit_done", outcome={"client_data": client_data, "plausibility_summary": summary})
+
     # -------------------------------------------------------------------------
     # Snapshots
     # -------------------------------------------------------------------------
@@ -1210,6 +1253,17 @@ class AudioFormWSHandler:
                 http_session = None
             ctx.partial_session_id = str(http_session) if http_session else ctx.state.session_id
         return ctx.partial_session_id
+
+    async def _clear_partial_mirror(self, ctx: _ConnCtx) -> None:
+        """Client-submit mode: drop the ``/partial`` mirror after ``answers_ready`` (as server mode after submit)."""
+        store = getattr(self._session_store, "partial_store", None)
+        form = ctx.form
+        if store is None or form is None:
+            return
+        try:
+            await store.delete(str(form.form_uid), self._partial_session(ctx))
+        except Exception as exc:  # noqa: BLE001 — best effort, never fails the session
+            self.logger.warning("Partial cleanup after answers_ready failed: %s", type(exc).__name__)
 
     async def _mirror_partial(self, ctx: _ConnCtx, item: "AnswerAccepted | AnswerCleared") -> None:
         """AC16: keep ``/partial`` in step with the audio session (scalar answers only, never sensitive ones).

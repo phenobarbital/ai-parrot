@@ -12,6 +12,10 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
   (`q:<uid>:options_intro`, `q:<uid>:opt:<n>`, `audio_segment.kind: "option"`) with a
   `pause:<option_pause_ms>` gap (`VoiceFormConfig.option_pause_ms`, default 500 ms, per-field
   `meta.voice.option_pause_ms`). Protocol v1 audio is unchanged.
+- **Audio forms: client-submit mode** (FEAT-656): `start_session.submit_mode: "client"` (protocol v2 only,
+  default `"server"`) makes `review_confirm` validate the answers and reply `answers_ready{data,
+  plausibility_summary?}` without persisting anything, so the host can submit through its own endpoint.
+  `SubmissionPipeline.attach_verdicts` is now public.
 
 ### Changed
 

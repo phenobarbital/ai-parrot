@@ -192,7 +192,7 @@ class SubmissionPipeline:
             # flat-merged into the outbound payload. Declared answers win a key collision.
             outbound = {**result.sanitized_data, **extras} if extras else result.sanitized_data
 
-            stored_data = self._attach_verdicts(result.sanitized_data, plausibility)
+            stored_data = self.attach_verdicts(result.sanitized_data, plausibility)
             ctx = dict(context or {})
             if plausibility is not None:
                 ctx["llm_validation"] = plausibility.model_dump(mode="json")
@@ -321,8 +321,8 @@ class SubmissionPipeline:
             self.logger.exception("submit failed for form %r: %s", form.form_uid, type(exc).__name__)
             raise
 
-    def _attach_verdicts(self, data: dict[str, Any], report: PlausibilityReport | None) -> dict[str, Any]:
-        """Copy each verdict into its spoken envelope (``VoiceEvidenceEnvelope.plausibility``); scalars untouched."""
+    def attach_verdicts(self, data: dict[str, Any], report: PlausibilityReport | None) -> dict[str, Any]:
+        """Public (audio client-submit mode): copy each verdict into its spoken envelope (``VoiceEvidenceEnvelope.plausibility``); scalars untouched."""
         if report is None or not report.items:
             return data
         out = dict(data)

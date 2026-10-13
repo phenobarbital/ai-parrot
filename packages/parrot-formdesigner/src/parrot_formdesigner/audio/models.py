@@ -290,6 +290,7 @@ class AudioSessionState(BaseModel):
         locale: Session locale.
         submission_id: Pre-generated id making the commit idempotent.
         protocol_version: Wire protocol version (1 = legacy).
+        submit_mode: "server" persists on review_confirm; "client" replies answers_ready.
         plausibility: Latest plausibility report, if any.
         flagged: field_id -> answer version flagged (one flag per version).
         timezone: Client IANA timezone (FEAT-653); set on every start/resume, never snapshotted.
@@ -318,6 +319,7 @@ class AudioSessionState(BaseModel):
     locale: str = "en"
     submission_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     protocol_version: int = 1
+    submit_mode: Literal["server", "client"] = "server"
     plausibility: Optional[PlausibilityReport] = None
     flagged: dict[str, int] = Field(default_factory=dict)
     timezone: Optional[str] = None  # FEAT-653: client IANA timezone; set on every start/resume, never snapshotted

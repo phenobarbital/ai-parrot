@@ -52,3 +52,26 @@ class TestVoiceEvidenceEnvelopeSubclass:
         assert wrapped["b"] == "typed"
         assert scalars == {"a": "red", "b": "typed"}
         assert wrap_voice(wrapped, evidence) == wrapped
+
+
+PHOTO_LEGACY = {"answer": "a.jpg", "blob_ref": "s3://b/k", "display": "a.jpg"}
+PHOTO_FILE = {"answer": "a.jpg", "filename": "a.jpg", "content_type": "image/jpeg", "blob_ref": "s3://b/k"}
+V1_NULL = {"answer": "hi", "blob_ref": None}
+V1_FULL = {"answer": "hi", "blob_ref": "voice-s-f", "data_url": None}
+SPEECH = {"answer": 3, "source": "speech", "blob_ref": "voice-s-f", "confidence": 0.9}
+
+
+def test_photo_shapes_are_not_voice():
+    assert not is_voice_envelope(PHOTO_LEGACY)
+    assert not is_voice_envelope(PHOTO_FILE)
+
+
+def test_v1_and_speech_are_voice():
+    assert is_voice_envelope(V1_NULL)
+    assert is_voice_envelope(V1_FULL)
+    assert is_voice_envelope(SPEECH)
+
+
+def test_unwrap_voice_keeps_photos():
+    data = {"photo": dict(PHOTO_LEGACY), "file": dict(PHOTO_FILE), "v": dict(V1_FULL), "s": dict(SPEECH)}
+    assert unwrap_voice(data) == {"photo": PHOTO_LEGACY, "file": PHOTO_FILE, "v": "hi", "s": 3}

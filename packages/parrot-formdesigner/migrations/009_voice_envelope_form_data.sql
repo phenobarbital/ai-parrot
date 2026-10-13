@@ -10,7 +10,9 @@ LANGUAGE sql IMMUTABLE AS $$
             CASE
                 WHEN jsonb_typeof(kv.value) = 'object'
                      AND kv.value ? 'answer'
-                     AND (kv.value->>'source' = 'speech' OR kv.value ? 'blob_ref')
+                     AND (kv.value->>'source' = 'speech'
+                          OR (kv.value ? 'blob_ref'
+                              AND (kv.value - 'answer' - 'blob_ref' - 'data_url') = '{}'::jsonb))
                 THEN kv.value->'answer'
                 ELSE kv.value
             END

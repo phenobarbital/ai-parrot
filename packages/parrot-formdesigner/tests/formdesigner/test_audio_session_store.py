@@ -179,3 +179,10 @@ async def test_refresh_marker_does_not_clobber_concurrent_new_holder(stores):
     await store._refresh_active(racing, "u1", "sess")
     assert racing.kv[MARKER] == new_holder
     assert racing.ttls[MARKER] == 99
+
+
+def test_snapshot_keeps_submit_mode():
+    assert _snap().submit_mode == "server"
+    snap = _snap(submit_mode="client")
+    again = AudioSnapshot.model_validate(snap.model_dump(mode="json"))
+    assert again.submit_mode == "client"

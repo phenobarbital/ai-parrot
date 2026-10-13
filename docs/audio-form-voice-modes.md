@@ -408,6 +408,7 @@ All keys are optional; omitted keys use the model defaults.
 | `prefetch` | boolean | `true` | v2: push the next questions' audio segments ahead of time. `false` keeps base64 `audio` in `question`. |
 | `resume_session_id` | string \| null | `null` | v2: resume a saved session (answers, phase, cursor); replies `session_resumed`. Errors: `RESUME_FORBIDDEN`, `RESUME_UNAVAILABLE`, `RESUME_STALE`, `SESSION_ACTIVE` (which now carries the holder's `session_id` + `form_uid`, see section 10). |
 | `timezone` | string \| null | `null` | FEAT-653: client IANA timezone (e.g. `America/New_York`). Relative spoken dates ("tomorrow", "next Friday") resolve in it; absent or invalid (logged and ignored) → UTC, and relative dates are sent to confirmation. Send it on every start **and** on resume; it is never restored from a snapshot. |
+| `submit_mode` | `"server"` \| `"client"` | `"server"` | v2: `"client"` makes `review_confirm` validate and reply `answers_ready` without persisting anything (the host submits). `client` with `protocol_version: 1` is rejected with `INVALID_MESSAGE`. |
 
 ### Form-level voice settings (`FormSchema.voice`)
 
@@ -790,6 +791,42 @@ All questions answered. The form has been submitted to storage (when configured)
 
 `submission_id` is `null` if no `submission_storage` was configured or if the
 store write failed (a `WARNING` is logged; the session still completes normally).
+
+---
+
+#### `answers_ready`
+
+Terminal message of a session started with `submit_mode: "client"` (protocol v2 only). It replaces
+`form_complete`: on `review_confirm` the server runs the same deterministic validation (and the plausibility
+rules already applied before submit) but **persists nothing**, then completes the session (snapshot and active
+marker are released, as after `form_complete`).
+
+```json
+{
+  "type": "answers_ready",
+  "data": {
+    "qty":   { "answer": 520, "transcript": "five hundred twenty", "blob_ref": "voice-…" },
+    "email": "a@b.co"
+  },
+  "plausibility_summary": { "status": "ok", "threshold": 0.7, "items": {} }
+}
+```
+
+`data` is exactly what the submission pipeline would have stored: validator-sanitized values, voice evidence
+envelopes (with `blob_ref` to the stored recording when `store_recordings` is on) and plausibility verdicts
+attached to the envelopes. `plausibility_summary` is omitted when no plausibility report exists.
+Validation failures behave as in server mode: `validation_errors` and the first failing field is re-asked.
+
+**Host responsibilities**
+
+- The host submits `data` through its own endpoint (for FieldSync, the execution Action submit). There is no
+  "submit later" message and parrot knows nothing about Actions, visits or events.
+- Idempotency (e.g. a `client_request_id`) and Action/visit linking belong to the host.
+- `answers_ready` is terminal like `form_complete`; no `session_ended` follows.
+- `data` includes sensitive values the client typed on the same connection (they are never spoken or recorded).
+  `answers_ready` is never logged by the server; the host must treat it accordingly.
+- `submit_mode: "client"` requires `protocol_version: 2`; with v1 the server replies `INVALID_MESSAGE`
+  (`submit_mode client requires protocol v2`). A resumed session keeps the mode it was started with.
 
 ---
 

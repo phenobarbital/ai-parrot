@@ -227,10 +227,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential, no MCP coder seats)
+**Date**: 2026-10-12
+**Notes**: Added StartSession.submit_mode, AnswersReady (+WireMessage), state/snapshot fields. Mutation-checked (union member, default, snapshot field, state field). ruff not installed in venv: not run.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Spec example shows plausibility_summary:null on the wire; _Wire.to_wire uses exclude_none so the key is omitted when None (v1 parity). Tests assert omission.

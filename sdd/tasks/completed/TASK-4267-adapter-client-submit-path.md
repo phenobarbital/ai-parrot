@@ -235,10 +235,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential, no MCP coder seats)
+**Date**: 2026-10-12
+**Notes**: _do_client_submit (validate-only, llm_validation=False), _wrap_rest_scalars extracted, public attach_verdicts, release on AnswersReady; plausibility_summary = state.plausibility.model_dump(mode=json) or None. Mutation-checked 5 ways (dispatch, release, llm_validation, verdicts, summary). ruff unavailable.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Also edited tests/formdesigner/test_submission_pipeline.py (one call site renamed _attach_verdicts -> attach_verdicts), a file not listed in the task but required by the rename.
