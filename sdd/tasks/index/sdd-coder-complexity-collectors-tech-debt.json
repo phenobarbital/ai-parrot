@@ -16,14 +16,14 @@
       "feature_id": "FEAT-663",
       "feature": "sdd-coder-complexity-collectors-tech-debt",
       "spec": "sdd/specs/sdd-coder-complexity-collectors-tech-debt.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task in this feature; touches only complexity_collectors.py and its test file",
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-13T23:26:17.897058+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4284-bounded-streaming-subprocess-capture.md"
     }
