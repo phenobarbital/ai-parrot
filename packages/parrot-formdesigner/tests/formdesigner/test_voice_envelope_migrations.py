@@ -210,3 +210,27 @@ async def test_010_downgrade_keeps_scalars_and_is_transactional(m010):
     _Tx.entered = 0
     await m010.run_report(_Pool(conn), schema="navigator", downgrade=True, apply=False)
     assert _Tx.entered == 0
+
+
+def test_010_mirror_parity_with_core_predicate(m010):
+    from parrot_formdesigner.core.voice_answer import is_voice_envelope
+
+    samples = [
+        {"answer": "a.jpg", "blob_ref": "s3://b/k", "display": "a.jpg"},
+        {"answer": "a.jpg", "filename": "a.jpg", "content_type": "image/jpeg", "blob_ref": "s3://b/k"},
+        {"answer": "hi", "blob_ref": None},
+        {"answer": "hi", "blob_ref": "v", "data_url": None},
+        {"answer": 3, "source": "speech", "blob_ref": "v", "confidence": 0.9},
+        {"answer": "x"},
+        {"blob_ref": "v"},
+        "x",
+        None,
+    ]
+    for sample in samples:
+        assert m010.is_envelope(sample) == is_voice_envelope(sample), sample
+
+
+def test_009_sql_uses_exact_rule():
+    sql = (MIGRATIONS_DIR / "009_voice_envelope_form_data.sql").read_text()
+    assert "- 'answer' - 'blob_ref' - 'data_url'" in sql
+    assert "OR kv.value ? 'blob_ref')" not in sql

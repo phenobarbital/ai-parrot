@@ -41,7 +41,11 @@ DEFAULT_BATCH_SIZE = 1000
 
 def is_envelope(value: Any) -> bool:
     """Local mirror of core.voice_answer.is_voice_envelope (kept standalone on purpose)."""
-    return isinstance(value, dict) and "answer" in value and (value.get("source") == "speech" or "blob_ref" in value)
+    if not isinstance(value, dict) or "answer" not in value:
+        return False
+    if value.get("source") == "speech":
+        return True
+    return "blob_ref" in value and set(value) <= {"answer", "blob_ref", "data_url"}
 
 
 @dataclass

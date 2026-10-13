@@ -52,13 +52,22 @@ class VoiceEvidenceEnvelope(VoiceAnswerEnvelope):
     plausibility: PlausibilityVerdict | None = None
 
 
+_V1_VOICE_KEYS = frozenset({"answer", "blob_ref", "data_url"})  # VoiceAnswerEnvelope is extra="forbid"
+
+
 def is_voice_envelope(value: Any) -> bool:
-    """Return True for a value carrying the voice-envelope shape."""
+    """True for a voice envelope: a model instance, a speech evidence dict, or the exact v1 dict shape.
+
+    Upload/photo answers (``{answer, blob_ref, display}`` or ``{answer, filename, content_type, blob_ref, …}``)
+    are NOT voice: any key outside ``answer`` / ``blob_ref`` / ``data_url`` rules the v1 shape out.
+    """
     if isinstance(value, VoiceAnswerEnvelope):
         return True
     if not isinstance(value, dict) or "answer" not in value:
         return False
-    return value.get("source") == "speech" or "blob_ref" in value
+    if value.get("source") == "speech":
+        return True
+    return "blob_ref" in value and set(value) <= _V1_VOICE_KEYS
 
 
 def unwrap_voice(data: dict[str, Any]) -> dict[str, Any]:
