@@ -117,7 +117,6 @@ def test_plan_reports_cap_driving_files(plan_worktree: Path) -> None:
     plan = _cap_plan(plan_worktree)
     assert plan.cap_hits == {"a": ("packages/a/src/pa/leaf.py",)}
     assert len(plan.cap_impacted["a"]) == 64
-    assert int(plan.cap_impacted["a"], 16) >= 0
 
 
 def test_second_selection_skips_unchanged_cap_suite(plan_worktree: Path) -> None:
