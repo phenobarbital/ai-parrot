@@ -224,8 +224,12 @@ async def test_service_guard_skips_derived_and_snapshots_it(linked_source, fake_
 
     patched = await service.ensure_snapshot(_dashboard_envelope(linked_source), owner_pctx=owner)
 
-    # One owner-level check (the service) + one fetch-time check (AuthorizingDataSource) — both for the parent only.
-    assert [r.source_id for r in guard.calls if r.source_id] == ["public:epson_field_activity"]
+    # One owner-level check (the service) + one fetch-time check (AuthorizingDataSource) — both for the parent
+    # only, and since FEAT-667 both carry the slug identity (the fetch-time resources used to be empty).
+    assert [r.source_id for r in guard.calls if r.source_id] == [
+        "public:epson_field_activity",
+        "public:epson_field_activity",
+    ]
     assert len(guard.calls) == 2
     assert patched["dataModel"]["by_program"] == {"rows": [{"program": "a", "visits": 3}]}
     assert patched["metadata"]["extensions"]["parrot_data_sources"]["by_program"]["snapshot_at"] is not None
