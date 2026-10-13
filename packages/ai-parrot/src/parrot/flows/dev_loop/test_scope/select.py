@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import subprocess
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Sequence
 
 from .context import pending_escalations
@@ -153,6 +154,7 @@ def plan_tests(
     escalated: list[str] = []
     hits: list[CoreHit] = []
     skipped: list[str] = []
+    # Cap detection runs at tier == "merge" only; feature/task tiers leave these empty.
     cap_hits: dict[str, tuple[str, ...]] = {}
     cap_impacted: dict[str, str] = {}
     if tier != "task":
@@ -284,7 +286,7 @@ def plan_tests(
         escalated=escalated,
         core_hits=hits,
         skipped_escalations=skipped,
-        cap_hits=cap_hits,
-        cap_impacted=cap_impacted,
+        cap_hits=MappingProxyType(cap_hits),
+        cap_impacted=MappingProxyType(cap_impacted),
         notes=notes,
     )
