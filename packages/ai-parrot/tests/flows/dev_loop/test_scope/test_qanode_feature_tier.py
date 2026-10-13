@@ -83,7 +83,7 @@ async def test_qanode_records_green_escalations(tmp_path, monkeypatch):
     shared = {"test_scope_plan": plan}
     report = QAReport(
         passed=True,
-        criterion_results=[CriterionResult(name="pytest[ai-parrot] (core escalation)", passed=True)],
+        criterion_results=[CriterionResult(name="pytest[ai-parrot] (escalation)", passed=True)],
         lint_passed=True,
     )
     record_mock = MagicMock()

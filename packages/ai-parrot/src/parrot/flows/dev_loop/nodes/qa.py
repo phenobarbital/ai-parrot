@@ -608,7 +608,7 @@ class QANode(DevLoopNode):
             core = any(t.reason in ("core", "escalated") for t in inv.targets)
             criteria.append(
                 ShellCriterion(
-                    name=f"pytest[{inv.distribution}]" + (" (core escalation)" if core else ""),
+                    name=f"pytest[{inv.distribution}]" + (" (escalation)" if core else ""),
                     command=shlex.join(inv.argv),
                 )
             )
@@ -624,7 +624,7 @@ class QANode(DevLoopNode):
             return
         try:
             for result in report.criterion_results:
-                if not result.passed or not result.name.endswith(" (core escalation)"):
+                if not result.passed or not result.name.endswith(" (escalation)"):
                     continue
                 dist = result.name[len("pytest[") : result.name.index("]")]
                 core_files = [hit.path for hit in plan.core_hits if dist in hit.distributions]
