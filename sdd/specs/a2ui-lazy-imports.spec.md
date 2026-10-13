@@ -10,7 +10,7 @@ tags: [a2ui, lazy-import, startup, infographic-recipes]
 **Feature ID**: FEAT-668
 **Date**: 2026-10-14
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -440,9 +440,9 @@ None.
 
 ## 8. Open Questions
 
-- [ ] Should `catalog.base`'s import of `jsonschema` (pulled by `handlers/ui_surfaces.py:45`
+- [x] Should `catalog.base`'s import of `jsonschema` (pulled by `handlers/ui_surfaces.py:45`
       via `CatalogValidationError`) also be deferred? It registers nothing; left out of
-      scope unless importtime shows it matters. — *Owner: Jesus Lara*
+      scope unless importtime shows it matters. — *Owner: Jesus Lara*: left out of scope
 
 ---
 
