@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from ..core.llm_validation import PlausibilityReport
 from ..core.voice import VoiceFormConfig
@@ -67,13 +67,44 @@ def _text(value: Any) -> str | None:
     return value.decode() if isinstance(value, (bytes, bytearray)) else str(value)
 
 
+class ActiveHolder(BaseModel):
+    """Who holds a user's active-session slot (value of ``parrot:audio:active:{user_id}``).
+
+    ``form_uid`` / ``tenant`` are None only for a legacy bare-string marker.
+    """
+
+    session_id: str
+    form_uid: str | None = None
+    tenant: str | None = None
+
+
+def _parse_holder(raw: str | None) -> ActiveHolder | None:
+    """JSON holder → ActiveHolder; a legacy bare session id → ActiveHolder(session_id=raw); None/'' → None."""
+    if not raw:
+        return None
+    if raw.lstrip().startswith("{"):
+        try:
+            return ActiveHolder.model_validate_json(raw)
+        except ValidationError:
+            return None
+    return ActiveHolder(session_id=raw)
+
+
 class AudioSessionStore:
     """Snapshots under ``parrot:audio:{form_uid}:{session_id}`` reusing the partial store's Redis client."""
 
-    def __init__(self, partial_store: PartialSaveStore, *, ttl_seconds: int) -> None:
+    def __init__(
+        self, partial_store: PartialSaveStore, *, resume_ttl_seconds: int = 3600, active_ttl_seconds: int = 600
+    ) -> None:
+        """``resume_ttl_seconds``: snapshot TTL when the snapshot has no config; ``active_ttl_seconds``: marker TTL."""
         self.partial_store = partial_store
-        self.ttl_seconds = ttl_seconds
+        self.resume_ttl_seconds = resume_ttl_seconds
+        self.active_ttl_seconds = active_ttl_seconds
         self.logger = logging.getLogger(__name__)
+
+    def _resume_ttl(self, snapshot: AudioSnapshot) -> int:
+        """``snapshot.config.resume_ttl_seconds`` when a config is present, else the store default."""
+        return snapshot.config.resume_ttl_seconds if snapshot.config is not None else self.resume_ttl_seconds
 
     @staticmethod
     def _key(form_uid: str, session_id: str) -> str:
@@ -100,6 +131,7 @@ class AudioSessionStore:
         if redis is None:
             return snapshot.revision
         key = self._key(form_uid, session_id)
+        ttl = self._resume_ttl(snapshot)
         try:
             for _ in range(_MAX_CAS_RETRIES):
                 raw = _text(await redis.get(key))
@@ -111,11 +143,12 @@ class AudioSessionStore:
                     update={
                         "revision": stored + 1,
                         "saved_at": now,
-                        "expires_at": now + timedelta(seconds=self.ttl_seconds),
+                        "expires_at": now + timedelta(seconds=ttl),
                     }
                 )
-                ok = await redis.eval(_CAS_SCRIPT, 1, key, raw or "", new.model_dump_json(), self.ttl_seconds)
+                ok = await redis.eval(_CAS_SCRIPT, 1, key, raw or "", new.model_dump_json(), ttl)
                 if ok:
+                    await self._refresh_active(redis, snapshot.user_id, session_id)
                     return new.revision
             raise SnapshotConflict("snapshot changed concurrently")
         except SnapshotConflict:
@@ -157,8 +190,21 @@ class AudioSessionStore:
     async def _release(self, redis: Any, user_id: str, session_id: str) -> None:
         """Delete the user's active marker when it is held by ``session_id``."""
         akey = self._active_key(user_id)
-        if _text(await redis.get(akey)) == session_id:
+        holder = _parse_holder(_text(await redis.get(akey)))
+        if holder is not None and holder.session_id == session_id:
             await redis.delete(akey)
+
+    async def _refresh_active(self, redis: Any, user_id: str, session_id: str) -> None:
+        """Re-set the marker with EX ``active_ttl_seconds`` only when held by ``session_id``; best effort."""
+        key = self._active_key(user_id)
+        try:
+            raw = _text(await redis.get(key))
+            holder = _parse_holder(raw)
+            if raw is not None and holder is not None and holder.session_id == session_id:
+                # atomic: only re-set (with the new EX) while the stored value is still what we read
+                await redis.eval(_CAS_SCRIPT, 1, key, raw, raw, self.active_ttl_seconds)
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("AudioSessionStore._refresh_active failed: %s", exc)
 
     async def release_active(self, user_id: str, session_id: str) -> None:
         """Release the active marker only (the snapshot stays resumable); best effort."""
@@ -170,19 +216,35 @@ class AudioSessionStore:
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("AudioSessionStore.release_active failed: %s", exc)
 
-    async def claim_active(self, user_id: str, session_id: str) -> bool:
-        """SET NX ``parrot:audio:active:{user_id}``; False when another session is active."""
+    async def claim_active(self, user_id: str, session_id: str, *, form_uid: str, tenant: str | None) -> bool:
+        """SET NX the holder JSON with EX ``active_ttl_seconds``; the same session re-claims (and rewrites) it.
+
+        Returns False when another session holds the slot. Without Redis it cannot enforce → True.
+        """
         redis = await self.partial_store._get_redis()
         if redis is None:
             return True  # no Redis → cannot enforce; resume is unavailable anyway
         key = self._active_key(user_id)
+        value = ActiveHolder(session_id=session_id, form_uid=form_uid, tenant=tenant).model_dump_json()
         try:
-            if await redis.set(key, session_id, nx=True, ex=self.ttl_seconds):
+            if await redis.set(key, value, nx=True, ex=self.active_ttl_seconds):
                 return True
-            if _text(await redis.get(key)) == session_id:
-                await redis.set(key, session_id, ex=self.ttl_seconds)
+            holder = _parse_holder(_text(await redis.get(key)))
+            if holder is not None and holder.session_id == session_id:
+                await redis.set(key, value, ex=self.active_ttl_seconds)
                 return True
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("AudioSessionStore.claim_active failed: %s", exc)
             return True
         return False
+
+    async def active_holder(self, user_id: str) -> ActiveHolder | None:
+        """Current holder of the user's slot; None without Redis, when absent, or on a Redis error."""
+        redis = await self.partial_store._get_redis()
+        if redis is None:
+            return None
+        try:
+            return _parse_holder(_text(await redis.get(self._active_key(user_id))))
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning("AudioSessionStore.active_holder failed: %s", exc)
+            return None

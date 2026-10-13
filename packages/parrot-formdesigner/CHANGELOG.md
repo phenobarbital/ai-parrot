@@ -15,6 +15,12 @@ All notable changes to `parrot-formdesigner` will be documented in this file.
 
 ### Changed
 
+- **Voice forms — active-session resume hint (FEAT-655)**: `SESSION_ACTIVE` now carries the
+  `session_id` and `form_uid` of the session holding the user's slot (same tenant only), so clients
+  can offer "Continue where you left off". The active marker (`active_ttl_seconds`, 600 s, refreshed
+  on every saved answer) and the resume snapshot (`voice.resume_ttl_seconds`, per form) have
+  separate TTLs. `AudioSessionStore(ttl_seconds=…)` is replaced by
+  `resume_ttl_seconds` / `active_ttl_seconds`.
 - **NetworkNinja importer — multi-photo questions are `MULTI_UPLOAD`**:
   `FIELD_IMAGE_UPLOAD_MULTIPLE` now imports as `FieldType.MULTI_UPLOAD`
   (keeping `meta.accept = "image/*"`) instead of `FieldType.FILE` with a

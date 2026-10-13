@@ -83,6 +83,8 @@ Differences from the brainstorm design: `session_started` carries no `sections[]
 
 **Error codes** (`error.code` / `answer_rejected.code`): `EMPTY_AUDIO`, `UNSUPPORTED_AUDIO`, `AUDIO_DECODE_ERROR`, `TRANSCRIBER_UNAVAILABLE`, `TRANSCRIPTION_ERROR`, `NO_MATCH`, `INVALID_EMAIL`, `INVALID_VALUE`, `EMPTY`, `REQUIRED`, `WRONG_FIELD`, `WRONG_PHASE`, `INVALID_FIELD`, `INVALID_OPTION`, `NO_PREVIOUS`, `COMMAND_NOT_AVAILABLE`, `SESSION_ACTIVE`, `RESUME_FORBIDDEN`, `RESUME_UNAVAILABLE`, `RESUME_STALE`, `RESUME_CONFLICT`, `PLAUSIBILITY_UNAVAILABLE`, `SUBMIT_FAILED`, plus the v1 codes. (`TOO_MANY_QUESTIONS` is not emitted: the planner caps questions and reports them in `plan_updated.hidden_by_cap`.)
 
+`SESSION_ACTIVE` may carry `session_id` + `form_uid` (FEAT-655): show a *Continue where you left off* action that resumes that session, not a fatal error.
+
 **HTTP (cross-cutting LLM validation, also for the visual renderer):** `POST /api/v1/{tenant}/forms/{form_uid}/validate` with `llm_validation: true` returns an additive `plausibility{field_id: {plausible, confidence, reason}}` block so the HTML renderer can show "Revisa la respuesta N" **before** submitting; `POST …/data` returns and persists the same block. Low confidence never changes the HTTP status.
 
 ---

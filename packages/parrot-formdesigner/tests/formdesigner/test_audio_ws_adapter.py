@@ -313,9 +313,58 @@ class TestSnapshots:
     async def test_second_active_session_rejected(self, synth, stt) -> None:
         store = MagicMock()
         store.claim_active = AsyncMock(return_value=False)
+        store.active_holder = AsyncMock(return_value=None)
         h = _handler(_form("a"), synth, stt, session_store=store)
         ws, ctx = await _boot(h)
         assert _msgs(ws)[0]["code"] == "SESSION_ACTIVE"
+        assert ctx.engine is None
+
+    async def test_second_active_session_returns_holder(self, synth, stt) -> None:
+        from parrot_formdesigner.audio.session_store import ActiveHolder
+
+        store = MagicMock()
+        store.claim_active = AsyncMock(return_value=False)
+        store.active_holder = AsyncMock(return_value=ActiveHolder(session_id="old", form_uid="fA", tenant=_TENANT))
+        h = _handler(_form("a"), synth, stt, session_store=store)
+        ws, ctx = await _boot(h)
+        err = _msgs(ws)[0]
+        assert err["code"] == "SESSION_ACTIVE" and err["session_id"] == "old" and err["form_uid"] == "fA"
+        kwargs = store.claim_active.await_args.kwargs
+        assert kwargs["tenant"] == _TENANT and kwargs["form_uid"]
+        assert ctx.engine is None
+
+    async def test_second_active_session_other_tenant_hides_holder(self, synth, stt) -> None:
+        from parrot_formdesigner.audio.session_store import ActiveHolder
+
+        for holder in (
+            ActiveHolder(session_id="old", form_uid="fA", tenant="other"),
+            ActiveHolder(session_id="old", form_uid=None, tenant=_TENANT),
+        ):
+            store = MagicMock()
+            store.claim_active = AsyncMock(return_value=False)
+            store.active_holder = AsyncMock(return_value=holder)
+            h = _handler(_form("a"), synth, stt, session_store=store)
+            ws, _ = await _boot(h)
+            assert set(_msgs(ws)[0]) == {"type", "code", "message"}
+
+    async def test_resume_claim_refused_returns_holder(self, synth, stt) -> None:
+        from parrot_formdesigner.audio.session_store import ActiveHolder
+
+        seed = MagicMock()
+        seed.claim_active = AsyncMock(return_value=True)
+        seed.save = AsyncMock(return_value=1)
+        form = _form("a", "b")
+        h0 = _handler(form, synth, stt, session_store=seed)
+        _, ctx0 = await _boot(h0)
+        snap = ctx0.engine.snapshot().model_copy(update={"revision": 2})
+        store = MagicMock()
+        store.load = AsyncMock(return_value=snap)
+        store.claim_active = AsyncMock(return_value=False)
+        store.active_holder = AsyncMock(return_value=ActiveHolder(session_id="old", form_uid="fA", tenant=_TENANT))
+        h = _handler(form, synth, stt, session_store=store)
+        ws, ctx = await _boot(h, start={"protocol_version": 2, "resume_session_id": "old"})
+        err = _msgs(ws)[0]
+        assert err["code"] == "SESSION_ACTIVE" and err["session_id"] == "old" and err["form_uid"] == "fA"
         assert ctx.engine is None
 
     async def test_resume_without_store_is_unavailable(self, synth, stt) -> None:

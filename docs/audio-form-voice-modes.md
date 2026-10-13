@@ -406,7 +406,7 @@ All keys are optional; omitted keys use the model defaults.
 | `form_uid` | string | (from URL) | v2: form to load (replaces `form_id`). |
 | `protocol_version` | int | `1` | `2` enables the additive v2 wire (section 7.3): `audio_segment` binary frames instead of base64 `audio`, strict inbound validation. |
 | `prefetch` | boolean | `true` | v2: push the next questions' audio segments ahead of time. `false` keeps base64 `audio` in `question`. |
-| `resume_session_id` | string \| null | `null` | v2: resume a saved session (answers, phase, cursor); replies `session_resumed`. Errors: `RESUME_FORBIDDEN`, `RESUME_UNAVAILABLE`, `RESUME_STALE`, `SESSION_ACTIVE`. |
+| `resume_session_id` | string \| null | `null` | v2: resume a saved session (answers, phase, cursor); replies `session_resumed`. Errors: `RESUME_FORBIDDEN`, `RESUME_UNAVAILABLE`, `RESUME_STALE`, `SESSION_ACTIVE` (which now carries the holder's `session_id` + `form_uid`, see section 10). |
 | `timezone` | string \| null | `null` | FEAT-653: client IANA timezone (e.g. `America/New_York`). Relative spoken dates ("tomorrow", "next Friday") resolve in it; absent or invalid (logged and ignored) → UTC, and relative dates are sent to confirmation. Send it on every start **and** on resume; it is never restored from a snapshot. |
 
 ### Form-level voice settings (`FormSchema.voice`)
@@ -418,7 +418,7 @@ below. Hands-free keys reach the client in `session_started.hands_free` (section
 |---|---|---|---|
 | `hands_free.auto_record` | boolean | `true` | Auto-open the microphone when the last narration segment of a question ends. |
 | `hands_free.silence_ms` | int ≥ 0 | `1200` | End-of-speech silence that stops the recording. |
-| `hands_free.barge_in` | boolean | `true` | Ceiling for barge-in: the client MAY keep the mic armed during narration and cancel playback on speech onset (section 7.6). |
+| `hands_free.barge_in` | boolean | `true` | Ceiling for barge-in: the client MAY keep the mic armed during narration and cancel playback on speech onset (section 7.7). |
 | `hint_pause_ms` | int ≥ 0 | `600` | `pause:<ms>` between the question label and its hint. |
 | `option_pause_ms` | int ≥ 0 | `500` | `pause:<ms>` between enumerated options (not after the intro nor after the last one; `0` removes the pauses). Provisional default, to be calibrated end to end. |
 | `max_recording_seconds` | int ≥ 1 | `60` | Maximum length of one recording. |
@@ -961,6 +961,26 @@ Reply to `start_session{resume_session_id}` instead of `session_started`'s first
 ```json
 {"type": "session_resumed", "session_id": "9b1c…", "phase": "asking", "cursor": "email", "answered": ["name"]}
 ```
+
+#### Active-session marker and resume TTLs (FEAT-655)
+
+A user has one active session at a time. When a second `start_session` is refused, the error carries the
+holder (only when it belongs to the same tenant; otherwise, or for a legacy marker, only `code`/`message`):
+
+```json
+{"type": "error", "code": "SESSION_ACTIVE", "message": "Another session is already active",
+ "session_id": "9b1c…", "form_uid": "7f3a…"}
+```
+
+Recommended client flow: show *Continue where you left off* and connect to that `form_uid`'s WS with
+`start_session{form_uid, resume_session_id: session_id}`. To discard the session instead, resume it and send `end`.
+
+- The snapshot lives `voice.resume_ttl_seconds` (per form, default 3600 s).
+- The active marker lives `active_ttl_seconds` = 600 s after the last saved answer (refreshed on every save), so a
+  session lost to a server crash stops blocking within 10 minutes.
+- The `/partial` mirror keeps its own TTL (`PartialSaveStore`, 3600 s).
+- **Second-device caveat**: continuing on device B while device A's connection is still open puts both on one
+  session; the first conflicting save closes one of them with `RESUME_CONFLICT` (no takeover arbitration yet).
 
 #### v2 additions to existing messages
 
@@ -2618,7 +2638,7 @@ function QuestionInput({
 | `INVALID_MESSAGE` | Message failed validation (v2: unknown keys rejected) | No | Fix the payload |
 | `TENANT_NOT_DECLARED` | Route has no tenant | **Yes** (1008) | Use a tenant route |
 | `TENANT_MISMATCH` | Token tenant differs from the route tenant | **Yes** (1008) | Use the right tenant |
-| `SESSION_ACTIVE` | Another live session already holds this user's session slot | No | Close the other session |
+| `SESSION_ACTIVE` | Another live session already holds this user's session slot. Carries `session_id` and `form_uid` of that session when it belongs to the same tenant | No | Offer "Continue where you left off": `start_session{form_uid, resume_session_id: session_id}` on that form's WS; without ids, ask the user to close the other session |
 | `RESUME_FORBIDDEN` | `resume_session_id` belongs to another user/tenant (no existence oracle) | No | Start a new session |
 | `RESUME_STALE` | Form changed since the snapshot | No | Start a new session |
 | `RESUME_UNAVAILABLE` | No session store (Redis) configured, or snapshot expired/not found | No | Start a new session |

@@ -81,3 +81,9 @@ class TestLegacyInboundIgnoresUnknownKeys:
             ev.parse_inbound(
                 {"type": "start_session", "form_uid": "u", "client": "old-app", "foo": 1}, protocol_version=2
             )
+
+
+def test_error_wire_session_ids_optional():
+    assert set(ev.Error(code="X", message="m").to_wire()) == {"type", "code", "message"}
+    wire = ev.Error(code="SESSION_ACTIVE", message="m", session_id="s", form_uid="f").to_wire()
+    assert wire["session_id"] == "s" and wire["form_uid"] == "f"
