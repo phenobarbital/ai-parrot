@@ -29,6 +29,7 @@
 7. [WebSocket Protocol — Complete Message Reference](#7-websocket-protocol-complete-message-reference)
    - 7.1 [Client → Server messages](#71-client-server-messages)
    - 7.2 [Server → Client messages](#72-server-client-messages)
+   - 7.6 [Barge-in (hands-free interruption)](#76-barge-in-hands-free-interruption)
 8. [Flow Diagrams by VoiceMode](#8-flow-diagrams-by-voicemode)
    - 8.1 [VOICE — spoken or typed answer](#81-voice-spoken-or-typed-answer)
    - 8.2 [PROMPT\_SELECT — narrated + UI selection](#82-prompt_select-narrated-ui-selection)
@@ -405,6 +406,26 @@ All keys are optional; omitted keys use the model defaults.
 | `protocol_version` | int | `1` | `2` enables the additive v2 wire (section 7.3): `audio_segment` binary frames instead of base64 `audio`, strict inbound validation. |
 | `prefetch` | boolean | `true` | v2: push the next questions' audio segments ahead of time. `false` keeps base64 `audio` in `question`. |
 | `resume_session_id` | string \| null | `null` | v2: resume a saved session (answers, phase, cursor); replies `session_resumed`. Errors: `RESUME_FORBIDDEN`, `RESUME_UNAVAILABLE`, `RESUME_STALE`, `SESSION_ACTIVE`. |
+
+### Form-level voice settings (`FormSchema.voice`)
+
+Form authors configure voice behaviour on `FormSchema.voice` (`VoiceFormConfig`); the client-relevant keys are
+below. Hands-free keys reach the client in `session_started.hands_free` (section 7.3).
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `hands_free.auto_record` | boolean | `true` | Auto-open the microphone when the last narration segment of a question ends. |
+| `hands_free.silence_ms` | int ≥ 0 | `1200` | End-of-speech silence that stops the recording. |
+| `hands_free.barge_in` | boolean | `true` | Ceiling for barge-in: the client MAY keep the mic armed during narration and cancel playback on speech onset (section 7.6). |
+| `hint_pause_ms` | int ≥ 0 | `600` | `pause:<ms>` between the question label and its hint. |
+| `option_pause_ms` | int ≥ 0 | `500` | `pause:<ms>` between enumerated options (not after the intro nor after the last one; `0` removes the pauses). Provisional default, to be calibrated end to end. |
+| `max_recording_seconds` | int ≥ 1 | `60` | Maximum length of one recording. |
+| `enumerate_options` | boolean | `true` | Narrate options item by item; `false` narrates only a count. |
+
+Per-field overrides live under `meta.voice` of a field: `pause_ms` (label→hint gap), `option_pause_ms`
+(gap between options of that field; wins over the form value, `0` allowed) and `enumerate`
+(`auto` \| `always` \| `never` \| `count_only`). There is no per-session override of `barge_in` or
+`option_pause_ms` in `start_session`.
 
 ---
 
@@ -797,6 +818,9 @@ Response to `ping`.
 
 ### 7.3 Protocol v2 — additive messages (FEAT-649)
 
+> **FEAT-654**: `hands_free.barge_in`, per-option narration segments (`options_intro`, `opt:<n>`, kind `option`)
+> and `option_pause_ms` are additive; see sections 6 and 7.6.
+
 Negotiated by `start_session.protocol_version: 2`. A client that omits `protocol_version` keeps the v1 wire
 (base64 `audio` inside `question`). v2 inbound messages reject unknown keys; v1 messages ignore them.
 The source of truth for every shape below is `parrot_formdesigner/audio/events.py`. Optional keys that have no
@@ -806,11 +830,19 @@ no `data_url` is ever sent by the server (AC8).
 #### `audio_segment`
 
 Header frame; the **next binary frame** carries the audio bytes for `key`. Buffer by `key` and play the
-`audio_keys` of each `question` in order (`pause:<ms>` keys are client-side timers). `kind` is one of
-`question`, `hint`, `options`, `system`, `review`.
+`audio_keys` of each `question` in order (`pause:<ms>` keys are client-side timers and never get a header
+nor a binary frame). `kind` is one of `question`, `hint`, `options`, `option`, `system`, `review`.
+
+Key grammar: `q:<uid>:label | hint | options | options_intro | opt:<n>`, `pause:<ms>`, `sys:*`, `review:*`.
+An enumerated select question is narrated one segment per option:
+`q:<uid>:label`, [`pause`, `q:<uid>:hint`], `q:<uid>:options_intro` (kind `options`), `q:<uid>:opt:1`,
+`pause:<option_pause_ms>`, `q:<uid>:opt:2`, … (kind `option`). Count-only narration, `enumerate: never` and
+boolean questions keep the single `q:<uid>:options` segment. Protocol v1 / `prefetch: false` inline audio is
+unchanged: one `audio` with the whole narration in order.
 
 ```json
-{"type": "audio_segment", "key": "q:3f2a…:label", "mime": "audio/wav", "kind": "label", "text": "What is your name?"}
+{"type": "audio_segment", "key": "q:3f2a…:label", "mime": "audio/wav", "kind": "question", "text": "What is your name?"}
+{"type": "audio_segment", "key": "q:3f2a…:opt:2", "mime": "audio/wav", "kind": "option", "text": "2, Beta."}
 ```
 
 #### `review_confirm`
@@ -933,7 +965,7 @@ Reply to `start_session{resume_session_id}` instead of `session_started`'s first
 | Key | Type | Notes |
 |---|---|---|
 | `protocol_version` | int | `2` when negotiated, else `1` |
-| `hands_free` | `{auto_record: bool, silence_ms: int}` | omitted when hands-free is not configured |
+| `hands_free` | `{auto_record: bool, silence_ms: int, barge_in: bool}` | omitted when hands-free is not configured; `barge_in` is a ceiling — see section 7.6 |
 | `max_recording_seconds` | int | client must stop recording after this |
 | `prefetch_count` | int | number of upcoming questions whose segments are pushed ahead |
 
@@ -977,7 +1009,8 @@ fuzzy match at 0.9 or better). A recognised command produces `command_ack`, then
 | `change` | change, edit (+ "change N") | cambiar, corregir (+ "cambiar N") | `review_edit` of item N | review |
 
 Precedence: an exact option match always beats a command, so an option labelled "Next" is selected, not
-executed. Commands are not recognised once the session is submitting, complete or aborted, and `yes`, `no`, `send`
+executed. Commands and option answers spoken mid-enumeration (including a barge-in, section 7.6) go through the
+same pipeline as any other recording. Commands are not recognised once the session is submitting, complete or aborted, and `yes`, `no`, `send`
 and `change` only count in the confirming and review phases. A command that is recognised but cannot run emits
 `error` `COMMAND_NOT_AVAILABLE`. Commands can be switched off per form or per field with
 `meta.voice.commands: "off"` (default `"on"`); then the utterance is treated as an answer.
@@ -1014,6 +1047,53 @@ The same check is available over HTTP (additive, for the visual renderer):
 With `on_error: "block"` and an LLM failure these endpoints answer `503` with
 `{"error": "...", "code": "PLAUSIBILITY_UNAVAILABLE"}` and a `Retry-After: 30` header. Low confidence never changes
 the HTTP status.
+
+### 7.6 Barge-in (hands-free interruption)
+
+Barge-in lets the user answer (or say a command) while the narration is still playing. It is a **client policy**:
+the server needs nothing new — it already accepts a recording at any time during the asking and confirming
+phases and never learns that playback was interrupted. The server only announces the policy with
+`session_started.hands_free.barge_in` (default `true`).
+
+Client rules:
+
+1. While narration segments play, keep the microphone armed with a VAD. On confirmed speech onset: stop
+   playback (the current segment and the remaining `audio_keys`), start recording, and send the complete
+   recording as one binary frame, exactly like a normal answer.
+2. The user normally interrupts at an option boundary: that is why each option is its own segment with a
+   `pause:<option_pause_ms>` gap in between — stop at the segment boundary and listen.
+3. Two use cases: (a) the user already knows the answer and speaks over the question/hint/option list;
+   (b) the user hears the wanted option ("2, Beta.") and says it right away.
+4. After a barge-in the server replies as usual: `transcription`, then `answer_accepted` (next `question`) or
+   `confirm_request`. If the reply is `EMPTY_AUDIO` (the speech onset was noise), resume playback where it
+   stopped.
+
+```
+client                                   server
+  |-- playing opt:2 ("2, Beta.") --------|
+  |  VAD speech onset (~250 ms)          |
+  |  stop playback, start recording      |
+  |-- binary frame (one container) ----->|  STT
+  |<------------------ transcription ----|
+  |<------ answer_accepted + question ---|  (or confirm_request)
+```
+
+Acoustic guidance (VAD-agnostic): request `echoCancellation: true` and `noiseSuppression: true` on the
+`getUserMedia` audio track; check `getCapabilities()` and request `echoCancellation: "all"` where supported.
+Confirm an interruption only after about 250 ms of sustained speech — e.g. `@ricky0123/vad-web`
+`onSpeechRealStart` with `minSpeechMs` ≈ 250 and `preSpeechPadMs` ≈ 300 — or use a higher energy threshold
+during playback with an energy-based VAD. Prefer a headset over speaker-phone.
+
+**Ceiling rule (normative).** `hands_free.barge_in` is a ceiling, never a floor:
+
+- With `false` the client MUST NOT interrupt narration.
+- With `true` the client MUST still disable barge-in when `track.getSettings().echoCancellation !== true` after
+  requesting it, or when the user opted out in a per-device preference.
+- A client MUST NOT enable barge-in when the form says `false`.
+
+Rationale: without effective echo cancellation the microphone hears the narration itself, and an item such as
+"2, Beta." matches the option label exactly — the engine would then accept an answer the user never gave
+(`answer_accepted`, with no confirmation).
 
 ---
 
@@ -2493,6 +2573,11 @@ It is accepted as-is (`source: "text"`). The validator does not enforce
 only `answer_selection` validates the value against the options list. Using
 `answer_text` bypasses options validation — useful for accessibility tools
 that paste option values programmatically.
+
+**Can the user speak while the options are being read?**
+
+Yes — see section 7.6 (barge-in). A spoken option or command goes through the same pipeline; an exact
+option match still beats a command.
 
 **Can I use `enumerate_options: false` to suppress reading option labels?**
 
