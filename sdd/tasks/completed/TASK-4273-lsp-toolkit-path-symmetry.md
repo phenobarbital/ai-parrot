@@ -74,3 +74,6 @@ PYTHONPATH=packages/ai-parrot-tools/src:packages/ai-parrot/src pytest packages/a
 ## Completion Note
 
 (filled by implementing agent)
+
+
+Completed: implemented as specified; tests in tests/lsp (33 passed).
