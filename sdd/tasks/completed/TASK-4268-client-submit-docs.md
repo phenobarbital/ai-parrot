@@ -172,10 +172,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (sequential, no MCP coder seats)
+**Date**: 2026-10-12
+**Notes**: Docs table row, answers_ready subsection with host responsibilities, handoff row + submit_mode note, CHANGELOG under first Unreleased (line 5, second at 163 untouched). No version numbers.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: Docs state plausibility_summary is omitted (not null) when absent, matching to_wire exclude_none.

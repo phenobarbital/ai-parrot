@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-12T23:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-13T01:43:52+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -78,7 +78,7 @@
       "feature_id": "FEAT-656",
       "feature": "audio-form-client-submit",
       "spec": "sdd/specs/audio-form-client-submit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -88,8 +88,9 @@
       "parallelism_notes": "documents the shipped behaviour of TASK-4267 (audio_ws.py `_do_client_submit`) and the wire from TASK-4265; shares the same three doc files as FEAT-655's docs task, so land after it.",
       "assigned_to": null,
       "started_at": "2026-10-13T01:37:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4268-client-submit-docs.md"
+      "completed_at": "2026-10-13T01:43:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4268-client-submit-docs.md",
+      "verification": "verified"
     }
   ]
 }
