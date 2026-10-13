@@ -33,9 +33,40 @@ _RANGE_WORDS = frozenset({"between", "entre", "from", "desde"})
 # filler words that carry no time information; anything else left over downgrades an accepted time to a confirm
 _TIME_IGNORABLE = frozenset(
     {
-        "at", "a", "an", "the", "it", "s", "is", "its", "about", "around", "approximately", "exactly", "sharp",
-        "please", "thanks", "hours", "hrs", "hr", "h", "hs",
-        "las", "la", "los", "el", "al", "son", "es", "en", "punto", "por", "favor", "hora", "aproximadamente", "como",
+        "at",
+        "a",
+        "an",
+        "the",
+        "it",
+        "s",
+        "is",
+        "its",
+        "about",
+        "around",
+        "approximately",
+        "exactly",
+        "sharp",
+        "please",
+        "thanks",
+        "hours",
+        "hrs",
+        "hr",
+        "h",
+        "hs",
+        "las",
+        "la",
+        "los",
+        "el",
+        "al",
+        "son",
+        "es",
+        "en",
+        "punto",
+        "por",
+        "favor",
+        "hora",
+        "aproximadamente",
+        "como",
     }
 )
 
@@ -310,7 +341,11 @@ def _parse_time(tokens: list[str], ctx: NormalizeContext) -> NormalizeResult:
     hour: int | None = None
     minute = 0
     clock_at = next(
-        (i for i, t in enumerate(toks) if (m := _CLOCK_RE.match(t)) and (m.group(2) is not None or m.group(3) is not None)),
+        (
+            i
+            for i, t in enumerate(toks)
+            if (m := _CLOCK_RE.match(t)) and (m.group(2) is not None or m.group(3) is not None)
+        ),
         None,
     )
     if clock_at is not None:  # "15:30", "3:30pm", "3pm"
@@ -374,7 +409,6 @@ def _parse_time(tokens: list[str], ctx: NormalizeContext) -> NormalizeResult:
     return finish(hour, minute, False, toks)
 
 
-
 def _special_time(base: tuple[int, int], toks: list[str], half: bool, spoken: SpokenLexicon) -> NormalizeResult:
     """Noon/midnight, bare or relative ("a quarter to midnight" → 23:45, "medianoche y cuarto" → 00:15).
 
@@ -382,7 +416,11 @@ def _special_time(base: tuple[int, int], toks: list[str], half: bool, spoken: Sp
     """
     rest = [t for t in toks if t not in _TIME_IGNORABLE]
     if half:  # the "half past" / "y media" phrase already carries its own direction and offset
-        return NormalizeResult.accepted((base[0], 30)) if not rest else NormalizeResult.confirm((base[0], 30), "unrecognized_words")
+        return (
+            NormalizeResult.accepted((base[0], 30))
+            if not rest
+            else NormalizeResult.confirm((base[0], 30), "unrecognized_words")
+        )
     if not rest:
         return NormalizeResult.accepted(base)
     minus = [t for t in rest if t in _MINUS_WORDS]
@@ -408,9 +446,7 @@ def _small_number(tokens: list[str], spoken: SpokenLexicon, *, allow_quarter: bo
     nums = parse_numbers(tokens, spoken)
     if len(nums) != 1 or not float(nums[0]).is_integer():
         return None
-    if not all(
-        _NUMERIC_TOKEN_RE.match(t) or _is_number_word(t, spoken) or t in spoken.number_joiners for t in tokens
-    ):
+    if not all(_NUMERIC_TOKEN_RE.match(t) or _is_number_word(t, spoken) or t in spoken.number_joiners for t in tokens):
         return None
     return int(nums[0])
 

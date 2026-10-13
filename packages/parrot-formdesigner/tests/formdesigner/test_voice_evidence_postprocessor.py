@@ -11,7 +11,12 @@ from parrot_formdesigner.services.validators import FormValidator
 
 def test_wrap_voice_carries_postprocessor() -> None:
     ans = AudioAnswer(
-        field_id="email", value="john@gmail.com", source="speech", confidence=0.9, normalized_by="llm", llm_confidence=0.93
+        field_id="email",
+        value="john@gmail.com",
+        source="speech",
+        confidence=0.9,
+        normalized_by="llm",
+        llm_confidence=0.93,
     )
     out = wrap_voice({"email": "john@gmail.com"}, {"email": ans})
     assert out["email"]["normalized_by"] == "llm" and out["email"]["llm_confidence"] == 0.93

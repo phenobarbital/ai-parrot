@@ -193,7 +193,11 @@ def test_integer_and_half_is_not_integral() -> None:
 
 # --------------------------------------------------------------------------- #5 PHONE
 def test_phone_extension_is_not_glued() -> None:
-    for text in ("555 123 4567 extension 23", "555 123 4567 ext 23", "five five five one two three four five six seven extension two three"):
+    for text in (
+        "555 123 4567 extension 23",
+        "555 123 4567 ext 23",
+        "five five five one two three four five six seven extension two three",
+    ):
         res = run(FieldType.PHONE, text)
         assert res.status == "confirm" and res.value == "5551234567", text
     res = run(FieldType.PHONE, "555 123 4567 extensión 23", "es")
@@ -261,14 +265,23 @@ def test_time_relative_to_noon_or_midnight(locale: str, text: str, expected: str
     assert (res.status, res.value) == ("accepted", expected)
 
 
-@pytest.mark.parametrize("locale,text", [("en", "midnight"), ("en", "at midnight"), ("en", "noon"), ("es", "medianoche"), ("es", "al mediodía")])
+@pytest.mark.parametrize(
+    "locale,text",
+    [("en", "midnight"), ("en", "at midnight"), ("en", "noon"), ("es", "medianoche"), ("es", "al mediodía")],
+)
 def test_time_plain_noon_midnight_still_accepted(locale: str, text: str) -> None:
     assert run(FieldType.TIME, text, locale).status == "accepted"
 
 
 @pytest.mark.parametrize(
     "locale,text",
-    [("en", "half midnight"), ("en", "to midnight"), ("en", "banana to midnight"), ("en", "midnight 5"), ("es", "medianoche banana")],
+    [
+        ("en", "half midnight"),
+        ("en", "to midnight"),
+        ("en", "banana to midnight"),
+        ("en", "midnight 5"),
+        ("es", "medianoche banana"),
+    ],
 )
 def test_time_noon_midnight_with_leftovers_never_accepted(locale: str, text: str) -> None:
     assert run(FieldType.TIME, text, locale).status != "accepted"
@@ -320,7 +333,14 @@ def test_number_third_value_is_the_fraction() -> None:
 
 @pytest.mark.parametrize(
     "locale,text",
-    [("en", "five or six"), ("en", "12 and 15"), ("en", "twelve, fifteen"), ("es", "cinco o seis"), ("es", "doce y quince"), ("es", "10 o 20")],
+    [
+        ("en", "five or six"),
+        ("en", "12 and 15"),
+        ("en", "twelve, fifteen"),
+        ("es", "cinco o seis"),
+        ("es", "doce y quince"),
+        ("es", "10 o 20"),
+    ],
 )
 def test_number_two_numbers_not_glued(locale: str, text: str) -> None:
     res = run(FieldType.NUMBER, text, locale)
