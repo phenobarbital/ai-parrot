@@ -593,6 +593,10 @@ class AudioFormWSHandler:
             await self._send_error(ws, "INVALID_MESSAGE", "Invalid 'start_session' message")
             return
         assert isinstance(start, StartSession)
+        if start.submit_mode == "client" and start.protocol_version < 2:
+            # Rejected before anything is loaded, claimed or created, so there is nothing to unwind.
+            await self._send_error(ws, "INVALID_MESSAGE", "submit_mode client requires protocol v2")
+            return
 
         # Build the per-session config from the start_session payload (FEAT-236),
         # falling back to defaults for any omitted key.
@@ -680,6 +684,7 @@ class AudioFormWSHandler:
             if store is not None and not await store.claim_active(session.user_id, session.session_id):
                 await self._send_error(ws, "SESSION_ACTIVE", "Another session is already active")
                 return
+            ctx.revision = 0
             engine = AudioFormSession(**deps)
 
         ctx.form = form
@@ -701,6 +706,7 @@ class AudioFormWSHandler:
             await store.release_active(session.user_id, start.resume_session_id)
             await self._perform(ws, ctx, opening)
             ctx.engine = None
+            ctx.revision = 0
             return
         await self._perform(ws, ctx, opening)
 

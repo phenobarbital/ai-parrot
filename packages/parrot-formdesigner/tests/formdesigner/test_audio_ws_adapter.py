@@ -475,3 +475,54 @@ class TestClientSubmitAdapter:
         )
         assert "session_resumed" in _types(ws2) and "ALREADY_STARTED" not in [m.get("code") for m in _msgs(ws2)]
         assert ctx2.engine.state.submit_mode == "client"
+
+    async def test_fresh_v1_client_rejected_before_bootstrap_then_v2_ok(self, synth, stt) -> None:
+        store = MagicMock()
+        store.claim_active = AsyncMock(return_value=True)
+        store.release_active = AsyncMock()
+        store.save = AsyncMock(return_value=1)
+        store.delete = AsyncMock()
+        h = _handler(_form("a"), synth, stt, pipeline=self._pipeline(), session_store=store)
+        ws, ctx = await _boot(h, start={"submit_mode": "client"})
+        assert _msgs(ws)[-1]["code"] == "INVALID_MESSAGE"
+        store.claim_active.assert_not_called()  # nothing claimed, nothing to unwind
+        assert ctx.engine is None
+        ws.send_json.reset_mock()
+        await h._process_text(
+            ws, ctx, {"type": "start_session", "form_uid": "f1", "protocol_version": 2, "submit_mode": "client"}
+        )
+        kinds = _types(ws)
+        assert "session_started" in kinds and "error" not in kinds
+        store.claim_active.assert_awaited_once()
+
+    async def test_rejected_resume_then_fresh_start_saves_from_revision_zero(self, synth, stt) -> None:
+        store = MagicMock()
+        store.claim_active = AsyncMock(return_value=True)
+        store.release_active = AsyncMock()
+        store.save = AsyncMock(return_value=1)
+        store.delete = AsyncMock()
+        form = _form("a", "b")
+        h = _handler(form, synth, stt, pipeline=self._pipeline(), session_store=store)
+        ws, ctx = await _boot(h, start={"protocol_version": 2, "submit_mode": "client"})
+        await h._process_text(ws, ctx, {"type": "answer_text", "field_id": "a", "value": "x"})
+        snap = ctx.engine.snapshot().model_copy(update={"revision": 7})
+        store.load = AsyncMock(return_value=snap)
+        h2 = _handler(form, synth, stt, pipeline=self._pipeline(), session_store=store)
+        ws2, ctx2 = await _boot(h2, start={"resume_session_id": "s1"})  # v1 resume of a client snapshot
+        assert _msgs(ws2)[-1]["code"] == "INVALID_MESSAGE" and ctx2.revision == 0
+        store.save.reset_mock()
+        await h2._process_text(ws2, ctx2, {"type": "start_session", "form_uid": "f1", "protocol_version": 2})
+        await h2._process_text(ws2, ctx2, {"type": "answer_text", "field_id": "a", "value": "y"})
+        assert store.save.call_args.kwargs["expected_revision"] == 0
+
+    async def test_every_fresh_start_resets_revision(self, synth, stt) -> None:
+        store = MagicMock()
+        store.claim_active = AsyncMock(return_value=True)
+        store.save = AsyncMock(return_value=1)
+        store.delete = AsyncMock()
+        h = _handler(_form("a", "b"), synth, stt, session_store=store)
+        ws, ctx = await _boot(h, start={"protocol_version": 2})
+        ctx.engine = None
+        ctx.revision = 9  # stale value left by some earlier attempt on this connection
+        await h._process_text(ws, ctx, {"type": "start_session", "form_uid": "f1", "protocol_version": 2})
+        assert ctx.revision == 0
