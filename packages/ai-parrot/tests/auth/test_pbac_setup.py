@@ -172,3 +172,27 @@ async def test_setup_pbac_navigator_auth_unavailable():
                     result = await pbac_module.setup_pbac(app, policy_dir=tmpdir)
 
     assert result == (None, None, None)
+
+
+def test_setup_pbac_is_idempotent_per_app(sample_policies_dir: Path):
+    """A second call on the same app reuses the registered PDP (no second setup)."""
+    from aiohttp import web
+
+    try:
+        from navigator_auth.abac.middleware import abac_middleware
+    except ImportError:
+        pytest.skip("navigator-auth not installed")
+
+    from parrot.auth.pbac import setup_pbac
+
+    app = web.Application()
+    first = setup_pbac(app, policy_dir=str(sample_policies_dir))
+    startup_hooks = len(app.on_startup)
+    second = setup_pbac(app, policy_dir=str(sample_policies_dir))
+
+    assert first[0] is not None
+    assert second[0] is first[0]
+    assert second[1] is first[1]
+    assert second[2] is first[2]
+    assert len(app.on_startup) == startup_hooks
+    assert list(app.middlewares).count(abac_middleware) == 1
