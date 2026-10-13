@@ -1,0 +1,27 @@
+{
+  "feature": "sdd-lsp-models-fixes",
+  "feature_id": "FEAT-661",
+  "spec": "sdd/specs/sdd-lsp-models-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-14T01:00:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4280",
+      "feature_id": "FEAT-661",
+      "feature": "sdd-lsp-models-fixes",
+      "status": "pending",
+      "depends_on": [],
+      "file": "sdd/tasks/active/TASK-4280-attempt-record-metrics.md"
+    },
+    {
+      "id": "TASK-4281",
+      "feature_id": "FEAT-661",
+      "feature": "sdd-lsp-models-fixes",
+      "status": "pending",
+      "depends_on": [],
+      "file": "sdd/tasks/active/TASK-4281-result-limit-dead-code.md"
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "feature": "nodes-qa-tech-debt",
+  "feature_id": "FEAT-659",
+  "spec": "sdd/specs/nodes-qa-tech-debt.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-14T01:00:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4275",
+      "feature_id": "FEAT-659",
+      "feature": "nodes-qa-tech-debt",
+      "status": "pending",
+      "depends_on": [],
+      "file": "sdd/tasks/active/TASK-4275-qa-dead-cap-plumbing.md"
+    },
+    {
+      "id": "TASK-4276",
+      "feature_id": "FEAT-659",
+      "feature": "nodes-qa-tech-debt",
+      "status": "pending",
+      "depends_on": [],
+      "file": "sdd/tasks/active/TASK-4276-scopeplan-freeze-dicts.md"
+    },
+    {
+      "id": "TASK-4277",
+      "feature_id": "FEAT-659",
+      "feature": "nodes-qa-tech-debt",
+      "status": "pending",
+      "depends_on": [],
+      "file": "sdd/tasks/active/TASK-4277-qa-nitpicks.md"
+    }
+  ]
+}
