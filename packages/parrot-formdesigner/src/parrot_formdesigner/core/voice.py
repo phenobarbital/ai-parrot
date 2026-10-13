@@ -17,10 +17,18 @@ _logger = logging.getLogger(__name__)
 
 
 class HandsFreeConfig(BaseModel):
-    """Client hands-free behaviour: auto-open mic after TTS, end-of-speech silence."""
+    """Client hands-free behaviour: auto-open mic after TTS, end-of-speech silence, barge-in.
+
+    ``barge_in`` (default True) tells the client it MAY keep the microphone armed with VAD while
+    narration segments play and cancel playback on speech onset. It is a client policy and a
+    ceiling: the client must still disable it when echo cancellation is not effective or the
+    user opts out, and never enables it when the form says False. The server already accepts a
+    recording at any time during ASKING/CONFIRMING and never learns playback was interrupted.
+    """
 
     auto_record: bool = True
     silence_ms: int = Field(default=1200, ge=0)
+    barge_in: bool = True
 
 
 class UiCue(BaseModel):

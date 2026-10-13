@@ -89,3 +89,23 @@ def test_core_does_not_import_audio():
     code = "import sys, parrot_formdesigner.core; assert 'parrot_formdesigner.audio' not in sys.modules"
     res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert res.returncode == 0, res.stderr
+
+
+def test_hands_free_config_barge_in_default():
+    from parrot_formdesigner.core.voice import HandsFreeConfig
+
+    assert HandsFreeConfig().barge_in is True
+    off = HandsFreeConfig(barge_in=False)
+    assert off.model_dump() == {"auto_record": True, "silence_ms": 1200, "barge_in": False}
+    assert HandsFreeConfig(**off.model_dump()).barge_in is False
+
+
+def test_session_started_wire_carries_barge_in():
+    from parrot_formdesigner.audio.events import SessionStarted
+    from parrot_formdesigner.core.voice import HandsFreeConfig
+
+    v2 = SessionStarted(session_id="s", total_questions=1, title="T", protocol_version=2,
+                        hands_free=HandsFreeConfig()).to_wire()
+    assert v2["hands_free"] == {"auto_record": True, "silence_ms": 1200, "barge_in": True}
+    v1 = SessionStarted(session_id="s", total_questions=1, title="T").to_wire()
+    assert "hands_free" not in v1
