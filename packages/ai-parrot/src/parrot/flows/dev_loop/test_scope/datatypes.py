@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Mapping
 
 
 @dataclass(frozen=True)
@@ -46,8 +48,15 @@ class ScopePlan:
     core_hits: tuple[CoreHit, ...]
     skipped_escalations: tuple[str, ...]
     notes: tuple[str, ...]
-    cap_hits: dict[str, tuple[str, ...]] = field(default_factory=dict)
-    cap_impacted: dict[str, str] = field(default_factory=dict)
+    cap_hits: Mapping[str, tuple[str, ...]] = field(default_factory=lambda: MappingProxyType({}))
+    cap_impacted: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+
+    def __post_init__(self) -> None:
+        """Freeze the mapping fields so the frozen dataclass is truly immutable."""
+        for name in ("cap_hits", "cap_impacted"):
+            value = getattr(self, name)
+            if not isinstance(value, MappingProxyType):
+                object.__setattr__(self, name, MappingProxyType(dict(value)))
 
 
 @dataclass(frozen=True)
