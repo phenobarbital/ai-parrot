@@ -234,8 +234,16 @@ See blueprint blocks above.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: agent:sdd-fix (Claude Code session)
+**Date**: 2026-10-14
+**Notes**: QuerySlugSource branch of resolve_physical_resources now returns
+PhysicalResources(source_type="query_slug", source_id="<tenant|public>:<slug>"),
+mirroring service.py's persistence identity, so AuthorizingDataSource gates
+source:read on the fetch/refresh path. 27 tests pass in the two declared auth
+test files; full linked suite (253) passes.
 
-**Deviations from spec**:
+**Deviations from spec**: one extra file modified —
+packages/ai-parrot/tests/outputs/a2ui/linked/test_derived_sources.py
+(test_service_guard_skips_derived_and_snapshots_it pinned the OLD empty
+fetch-time resources; its expectation now asserts both guard calls carry the
+parent slug identity). Direct, necessary fallout of the fix.

@@ -107,13 +107,23 @@ class TestResolvePhysicalResources:
         assert result.driver is None
         assert result.tables == set()
 
-    def test_query_slug_source_returns_empty(self) -> None:
+    def test_query_slug_source_returns_slug_identity(self) -> None:
         from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
 
         source = QuerySlugSource(slug="my_slug")
         result = resolve_physical_resources(source)
         assert result.driver is None
         assert result.tables == set()
+        assert result.source_type == "query_slug"
+        assert result.source_id == "public:my_slug"
+
+    def test_query_slug_source_tenant_in_identity(self) -> None:
+        from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
+
+        source = QuerySlugSource(slug="my_slug", tenant="acme")
+        result = resolve_physical_resources(source)
+        assert result.source_type == "query_slug"
+        assert result.source_id == "acme:my_slug"
 
     def test_sql_source_unknown_dialect_returns_driver_only(self) -> None:
         """Unknown dialect → driver returned, tables not resolved."""

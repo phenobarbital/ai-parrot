@@ -165,9 +165,15 @@ def resolve_physical_resources(
         )
 
     if isinstance(source, QuerySlugSource):
-        # Slug resources are declared at registration time; the guard checks
-        # dataset-level grants for slugs via the existing L1 path.
-        return PhysicalResources()
+        # Mirror LinkedSurfaceService's persistence identity (service.py:118):
+        # DataPlanePolicyGuard gates source:read on
+        # "query_slug:<tenant|public>:<slug>" (FEAT-598 rev 0.3). An empty
+        # PhysicalResources here made AuthorizingDataSource a no-op for slug
+        # sources on the fetch/refresh path (issue:176ec55ba7c3).
+        return PhysicalResources(
+            source_type="query_slug",
+            source_id=f"{source.tenant or 'public'}:{source.slug}",
+        )
 
     if isinstance(source, InMemorySource):
         # In-memory DataFrames have no driver and no external data surface.
