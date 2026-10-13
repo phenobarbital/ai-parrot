@@ -145,4 +145,9 @@ Mutation-check: revert the subset clause → the photo tests go RED; restore fro
 - `pytest packages/parrot-formdesigner/tests/formdesigner/test_audio_ws_v2_integration.py -q`
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+**Completed by**: sdd-worker (sequential, no MCP coder seats)
+**Date**: 2026-10-12
+**Notes**: Exact rule in is_voice_envelope (_V1_VOICE_KEYS subset), 009 fd_unwrap_voice SQL and 010 mirror. Tests: photo shapes not voice, v1/speech voice, unwrap keeps photos, 010 parity over 9 samples, 009 SQL text. Mutations (drop subset clause in py, in 010, in 009) each went red. 009 SQL is only text-checked (no DB available). ruff unavailable.
+
+**Deviations from spec**: none
