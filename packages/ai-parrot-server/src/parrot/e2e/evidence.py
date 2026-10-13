@@ -78,6 +78,7 @@ from typing import Any, Optional
 
 from pydantic import ValidationError
 
+from parrot.e2e._verdict import evaluate_required_nodes
 from parrot.e2e.errors import E2EConfigError, E2EEvidenceError
 from parrot.e2e.models import E2EPlan, E2EVerdict, SourceIdentity, VerificationResult
 from parrot.e2e.plan import load_plan
@@ -652,21 +653,10 @@ async def verify_evidence(plan_path: Path, *, worktree: Path) -> VerificationRes
         for node_id in scenario.node_ids
     }
     results_by_node = {result.node_id: result for result in verdict.results}
-    reason_codes: list[str] = []
-    for node_id in sorted(required_node_ids):
-        result = results_by_node.get(node_id)
-        if result is None:
-            reason_codes.append(f"required_node_missing:{node_id}")
-            continue
-        if result.outcome != "passed":
-            reason_codes.append(f"required_node_not_passed:{node_id}:{result.outcome}")
-            continue
-        if result.setup_outcome not in (None, "passed"):
-            reason_codes.append(f"required_node_setup_failure:{node_id}")
-        if result.call_outcome not in (None, "passed"):
-            reason_codes.append(f"required_node_call_failure:{node_id}")
-        if result.teardown_outcome not in (None, "passed"):
-            reason_codes.append(f"required_node_teardown_failure:{node_id}")
+    reason_codes = [
+        finding.reason_code
+        for finding in evaluate_required_nodes(required_node_ids, results_by_node, check_phases=True)
+    ]
 
     if reason_codes:
         return VerificationResult(status="FAIL", gate_satisfied=False, reason_codes=reason_codes)
