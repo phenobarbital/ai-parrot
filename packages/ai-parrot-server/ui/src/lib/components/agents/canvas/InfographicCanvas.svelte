@@ -21,7 +21,7 @@
 	import A2UISurface from './a2ui/A2UISurface.svelte';
 
 	// eslint-disable-next-line @typescript-eslint/no-unused-vars
-	let { data, agentId = '' }: { data: unknown; agentId?: string } = $props();
+	let { data, agentId = '', shareToken }: { data: unknown; agentId?: string; shareToken?: string } = $props();
 
 	// Read content from tab manager (single source of truth)
 	let activeTab = $derived(tabManager.getActiveTab());
@@ -355,7 +355,7 @@
 					<!-- Code-review fix: `a2uiEnvelope` may be `undefined` to TS —
 					     `hasA2ui` proves it at runtime, but TS can't narrow a derived
 					     boolean back to `tabData` itself. -->
-					<A2UISurface envelope={a2uiEnvelope} persistedSurfaceId={tabData?.persistedSurfaceId} />
+					<A2UISurface envelope={a2uiEnvelope} persistedSurfaceId={tabData?.persistedSurfaceId} {shareToken} />
 				{:else if typeof tabData?.html === 'string' && tabData.html.length > 0}
 					<!-- FEAT-527 code-review fix: srcdoc content must NOT carry
 					     allow-same-origin — combined with allow-scripts it would let
