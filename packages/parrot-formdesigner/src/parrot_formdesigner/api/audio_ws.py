@@ -780,6 +780,8 @@ class AudioFormWSHandler:
                 ctx.closed = True
                 await ws.close()
             elif isinstance(item, (FormComplete, AnswersReady)):
+                if isinstance(item, AnswersReady):
+                    await self._clear_partial_mirror(ctx)
                 await self._release_session(ctx)
             return None
 
@@ -1161,6 +1163,17 @@ class AudioFormWSHandler:
                 http_session = None
             ctx.partial_session_id = str(http_session) if http_session else ctx.state.session_id
         return ctx.partial_session_id
+
+    async def _clear_partial_mirror(self, ctx: _ConnCtx) -> None:
+        """Client-submit mode: drop the ``/partial`` mirror after ``answers_ready`` (as server mode after submit)."""
+        store = getattr(self._session_store, "partial_store", None)
+        form = ctx.form
+        if store is None or form is None:
+            return
+        try:
+            await store.delete(str(form.form_uid), self._partial_session(ctx))
+        except Exception as exc:  # noqa: BLE001 — best effort, never fails the session
+            self.logger.warning("Partial cleanup after answers_ready failed: %s", type(exc).__name__)
 
     async def _mirror_partial(self, ctx: _ConnCtx, item: "AnswerAccepted | AnswerCleared") -> None:
         """AC16: keep ``/partial`` in step with the audio session (scalar answers only, never sensitive ones).

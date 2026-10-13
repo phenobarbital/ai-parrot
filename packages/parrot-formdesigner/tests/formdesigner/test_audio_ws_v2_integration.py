@@ -719,6 +719,19 @@ class TestAudioWsClientSubmit:
         assert env.stored == []
         assert _snapshot_keys(env) == [] and _active_keys(env) == []
 
+    async def test_answers_ready_clears_partial_mirror(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        sid = (await start(ws, env, submit_mode="client"))[0]["session_id"]
+        await _fill(ws, env)
+        uid = str(env.form.form_uid)
+        assert await env.partial_store.get(uid, sid) is not None  # mirrored while answering
+        await ws.send_json({"type": "review_confirm", "confirmed": True})
+        done = await until(ws, "answers_ready", "error")
+        assert done[-1]["type"] == "answers_ready"
+        assert await env.partial_store.get(uid, sid) is None  # cleared like server mode after submit
+
 
 async def _ping_ok(ws: Any) -> bool:
     if ws.closed:
