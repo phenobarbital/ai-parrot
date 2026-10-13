@@ -30,6 +30,7 @@ import contextlib
 import logging
 import os
 import re
+import signal
 import urllib.parse
 from collections import deque
 from pathlib import Path
@@ -72,9 +73,9 @@ _MAX_OPEN_DOCUMENTS = 20
 _MAX_RAW_DIAGNOSTICS = 2000
 
 #: Default bounded shutdown/terminate/kill timeouts (spec §2 "bounded process shutdown").
-_DEFAULT_SHUTDOWN_TIMEOUT_S = 5.0
-_DEFAULT_TERMINATE_TIMEOUT_S = 5.0
-_DEFAULT_KILL_TIMEOUT_S = 5.0
+_DEFAULT_SHUTDOWN_TIMEOUT_S = 2.0
+_DEFAULT_TERMINATE_TIMEOUT_S = 2.0
+_DEFAULT_KILL_TIMEOUT_S = 2.0
 
 
 def _path_to_file_uri(path: Path) -> str:
@@ -420,6 +421,7 @@ class PyrightSession:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
             )
         except FileNotFoundError as exc:
             raise LSPFailure(
@@ -456,6 +458,17 @@ class PyrightSession:
         if response.error is not None:
             raise LSPFailure("protocol_error", f"initialize failed: {response.error}")
         self._server_capabilities = response.result.get("capabilities") if isinstance(response.result, dict) else None
+        if isinstance(response.result, dict):
+            server_info = response.result.get("serverInfo", {})
+            reported_version = server_info.get("version") if isinstance(server_info, dict) else None
+            if reported_version is not None and reported_version != config.expected_server_version:
+                raise LSPFailure(
+                    "server_version_mismatch",
+                    f"initialize serverInfo.version {reported_version!r} "
+                    f"does not match expected {config.expected_server_version!r}",
+                )
+            if reported_version is None:
+                self.logger.warning("server did not report serverInfo.version in initialize response")
 
         await write_message(self._process.stdin, build_notification("initialized", {}))
         self._started = True
@@ -543,6 +556,7 @@ class PyrightSession:
             except LSPFailure as exc:
                 self._crashed = True
                 self._fail_all_pending(exc)
+                self._notification_event.set()
                 return
             await self._dispatch_message(message)
 
@@ -939,15 +953,23 @@ class PyrightSession:
         proc = self._process
         if proc is None or proc.returncode is not None:
             return
-        with contextlib.suppress(ProcessLookupError):
-            proc.terminate()
+        if hasattr(os, "killpg"):
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(proc.pid, signal.SIGTERM)
+        else:
+            with contextlib.suppress(ProcessLookupError):
+                proc.terminate()
         try:
             await asyncio.wait_for(proc.wait(), timeout=self._terminate_timeout_s)
             return
         except asyncio.TimeoutError:
             pass
-        with contextlib.suppress(ProcessLookupError):
-            proc.kill()
+        if hasattr(os, "killpg"):
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
         try:
             await asyncio.wait_for(proc.wait(), timeout=self._kill_timeout_s)
         except asyncio.TimeoutError:

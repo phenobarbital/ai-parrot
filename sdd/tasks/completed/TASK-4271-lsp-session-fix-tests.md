@@ -197,10 +197,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Added tests for all four fixes. `test_session_lifecycle.py`: 26 pass; rest of `tests/lsp`: 142 pass, 3 skipped.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude (sdd-start)
+**Date**: 2026-10-14
+**Notes**: `test_bedrock_mantle_seat.py` fails collection (`parrot.interfaces.file.session` import) — pre-existing environment issue, unrelated; excluded from the run. The process-group test asserts the server is its own session leader via `os.getsid`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `fake_server.py` also modified (not listed in Files) — added scenarios `server_info_mismatch` and `crash_after_handshake`, since the fixture could not otherwise emit `serverInfo` or crash after the handshake.

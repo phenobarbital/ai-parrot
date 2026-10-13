@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-14T00:50:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-13T23:02:20+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-657",
       "feature": "lsp-session-fixes",
       "spec": "sdd/specs/lsp-session-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependencies; single-file edit in session.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4270-lsp-session-source-fixes.md"
+      "started_at": "2026-10-13T22:58:48+00:00",
+      "completed_at": "2026-10-13T22:59:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4270-lsp-session-source-fixes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4271",
@@ -34,16 +35,19 @@
       "feature_id": "FEAT-657",
       "feature": "lsp-session-fixes",
       "spec": "sdd/specs/lsp-session-fixes.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-4270"],
+      "depends_on": [
+        "TASK-4270"
+      ],
       "parallel": true,
       "parallelism_notes": "depends on TASK-4270 source fixes in session.py; test file only, no overlap",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4271-lsp-session-fix-tests.md"
+      "started_at": "2026-10-13T23:01:15+00:00",
+      "completed_at": "2026-10-13T23:02:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4271-lsp-session-fix-tests.md",
+      "verification": "verified"
     }
   ]
 }

@@ -287,10 +287,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+All four fixes applied to `session.py`. Existing `test_session_lifecycle.py` passes (21); ruff clean. New tests are TASK-4271.
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude (sdd-start)
+**Date**: 2026-10-14
+**Notes**: `import re` anchor was line 32, not 33. The `create_subprocess_exec` block matches twice (`_verify_version` and `_spawn_process`), so the edit was disambiguated via `env=env`; only `_spawn_process` got `start_new_session=True`. A version mismatch raised in `_handshake` is reaped by `start()`'s existing `_cleanup_partial_startup`.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
