@@ -5,23 +5,29 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-14T01:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-13T23:12:09+00:00",
   "tasks": [
     {
       "id": "TASK-4282",
       "feature_id": "FEAT-662",
       "feature": "clients-openai-base-tech-debt",
-      "status": "pending",
+      "status": "done",
       "depends_on": [],
-      "file": "sdd/tasks/active/TASK-4282-openai-base-ruff-fixes.md"
+      "file": "sdd/tasks/completed/TASK-4282-openai-base-ruff-fixes.md",
+      "completed_at": "2026-10-13T23:12:07+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-4283",
       "feature_id": "FEAT-662",
       "feature": "clients-openai-base-tech-debt",
-      "status": "pending",
-      "depends_on": ["TASK-4282"],
-      "file": "sdd/tasks/active/TASK-4283-invoke-budget-exhausted-tests.md"
+      "status": "done",
+      "depends_on": [
+        "TASK-4282"
+      ],
+      "file": "sdd/tasks/completed/TASK-4283-invoke-budget-exhausted-tests.md",
+      "completed_at": "2026-10-13T23:12:09+00:00",
+      "verification": "verified"
     }
   ]
 }
