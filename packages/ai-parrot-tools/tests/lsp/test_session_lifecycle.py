@@ -9,14 +9,22 @@ provider.
 from __future__ import annotations
 
 import asyncio
+import logging
+import os
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
-from parrot_tools.lsp.models import LSPConfig, LSPFailure
+from parrot_tools.lsp.models import LSPConfig, LSPFailure, SourceState
 from parrot_tools.lsp.protocol import ParsedMessage
-from parrot_tools.lsp.session import PyrightSession
+from parrot_tools.lsp.session import (
+    _DEFAULT_KILL_TIMEOUT_S,
+    _DEFAULT_SHUTDOWN_TIMEOUT_S,
+    _DEFAULT_TERMINATE_TIMEOUT_S,
+    PyrightSession,
+)
 
 FAKE_SERVER = Path(__file__).parent / "fake_server.py"
 
@@ -416,3 +424,74 @@ class TestPinnedPythonAnalysisConfiguration:
         folders = session._workspace_folders(config)
 
         assert len(folders) == 1
+
+
+# ---------------------------------------------------------------------------
+# FEAT-657 session fixes
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultTimeouts:
+    def test_default_timeouts_are_2s(self) -> None:
+        assert _DEFAULT_SHUTDOWN_TIMEOUT_S == 2.0
+        assert _DEFAULT_TERMINATE_TIMEOUT_S == 2.0
+        assert _DEFAULT_KILL_TIMEOUT_S == 2.0
+
+
+class TestServerInfoVersionCheck:
+    @pytest.mark.asyncio
+    async def test_server_info_version_mismatch_raises(self, tmp_path: Path) -> None:
+        session = PyrightSession()
+        config = _make_config(tmp_path, scenario="server_info_mismatch")
+        with pytest.raises(LSPFailure) as excinfo:
+            await session.start(config, generation=1)
+        assert excinfo.value.code == "server_version_mismatch"
+        assert session._process is None
+
+    @pytest.mark.asyncio
+    async def test_absent_server_info_warns_and_starts(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        session = PyrightSession()
+        config = _make_config(tmp_path, scenario="happy_path")
+        with caplog.at_level(logging.WARNING):
+            await session.start(config, generation=1)
+        try:
+            assert session._started is True
+            assert any("serverInfo.version" in record.getMessage() for record in caplog.records)
+        finally:
+            await session.close()
+
+
+class TestCrashWakesDiagnostics:
+    @pytest.mark.asyncio
+    async def test_crashed_reader_wakes_blocked_diagnostics(self, tmp_path: Path) -> None:
+        session = PyrightSession()
+        config = _make_config(tmp_path, scenario="crash_after_handshake")
+        await session.start(config, generation=1)
+        try:
+            source = SourceState(path="a.py", sha256="0" * 64, document_version=1)
+            started = time.monotonic()
+            batch = await session.diagnostics([source], timeout_s=10.0)
+            elapsed = time.monotonic() - started
+            assert elapsed < 5.0
+            assert batch.complete is False
+            assert batch.missing_paths == ["a.py"]
+        finally:
+            await session.close()
+
+
+class TestProcessGroupSignaling:
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(not hasattr(os, "getsid"), reason="POSIX sessions required")
+    async def test_server_runs_in_its_own_session(self, tmp_path: Path) -> None:
+        session = PyrightSession()
+        config = _make_config(tmp_path, scenario="happy_path")
+        await session.start(config, generation=1)
+        try:
+            assert session._process is not None
+            pid = session._process.pid
+            assert os.getsid(pid) == pid
+            assert os.getsid(pid) != os.getsid(0)
+        finally:
+            await session.close()

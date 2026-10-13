@@ -200,6 +200,34 @@ def run_refuse_shutdown() -> None:
         # process only ever stops when the caller kills it.
 
 
+def run_server_info_mismatch() -> None:
+    stdin = sys.stdin.buffer
+    stdout = sys.stdout.buffer
+    request = _read_frame(stdin)
+    if request is None or request.get("method") != "initialize":
+        return
+    _respond(stdout, request, {"capabilities": {}, "serverInfo": {"name": "pyright", "version": "9.9.9"}})
+    while _read_frame(stdin) is not None:
+        pass
+
+
+def run_crash_after_handshake() -> None:
+    """Complete the handshake, stay silent for a moment, then emit a malformed frame."""
+    stdin = sys.stdin.buffer
+    stdout = sys.stdout.buffer
+    request = _read_frame(stdin)
+    if request is None or request.get("method") != "initialize":
+        return
+    _respond(stdout, request, {"capabilities": {}})
+    if _read_frame(stdin) is None:  # "initialized" notification
+        return
+    time.sleep(0.3)
+    stdout.write(b"Content-Length: not-a-number\r\n\r\n")
+    stdout.flush()
+    while _read_frame(stdin) is not None:
+        pass
+
+
 def run_early_eof() -> None:
     sys.stdout.buffer.close()
 
@@ -233,6 +261,8 @@ _SCENARIOS = {
     "delay_response": run_delay_response,
     "omit_response": run_omit_response,
     "refuse_shutdown": run_refuse_shutdown,
+    "server_info_mismatch": run_server_info_mismatch,
+    "crash_after_handshake": run_crash_after_handshake,
     "early_eof": run_early_eof,
     "malformed_header": run_malformed_header,
     "oversized_header": run_oversized_header,
