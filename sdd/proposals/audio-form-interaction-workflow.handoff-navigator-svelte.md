@@ -13,6 +13,8 @@
 
 A **Svelte 5 (runes) audio-first, hands-free renderer** for FormBuilder forms that talks to the ai-parrot audio-form WebSocket (protocol v2, additive over v1) and lets a user complete a whole form without touching the screen, while keeping the existing visual controls as cues and fallbacks.
 
+**FEAT-653 (typed post-processors)**: `start_session` must send `timezone: Intl.DateTimeFormat().resolvedOptions().timeZone` (also on resume) so relative spoken dates ("tomorrow", "next Friday") resolve in the user's zone. Spoken emails, phones, numbers, dates and times arrive already normalized; typed answers are stored as typed (a typed email that is not valid gets `answer_rejected` with `INVALID_EMAIL`). Full reference: `docs/audio-form-voice-modes.md` §7.6.
+
 Core pieces (names are suggestions; follow the repo's conventions):
 
 | Piece | Responsibility |
@@ -24,7 +26,7 @@ Core pieces (names are suggestions; follow the repo's conventions):
 | `VoiceQuestionCard` | Label, then hint after the pause (visual mirror of the narration), transcript in an `aria-live="polite"` region, confidence state |
 | `VoiceControlCue` | Mounts the regular FormBuilder control for the field by `render_mode` / `ui_cue{control, focus, highlight, submit_via}`; uploader/date/etc. send `answer_payload`; a select renders `VoiceOptionList` |
 | `VoiceOptionList` | Options with **ordinal badges that match what was narrated**; `answer_accepted.matched` highlights the option; `confirm_request.alternatives` shows a disambiguation strip |
-| `VoiceConfirmBar` | For `confirm_request` (`purpose: "stop"` → end-session prompt, not an answer): candidate text, "Sí / Repetir / Cambiar" by voice or buttons → `confirm_answer` |
+| `VoiceConfirmBar` | For `confirm_request` (`purpose: "stop"` → end-session prompt, not an answer): candidate text (FEAT-653: `value` when present, else `transcript`; the user can edit it and the edit is sent as `answer_text`), "Sí / Repetir / Cambiar" by voice or buttons → `confirm_answer` |
 | `VoiceReviewList` | `review_start.items`; per item play TTS or the recording (`audio_segment{kind: review}`), "Cambiar" button, **plausibility flag** (`flag{confidence, reason}`) with "Mantener / Cambiar"; Send button → `review_confirm{confirmed: true}` |
 | `VoiceCommandHint` | Shows the available voice commands for the current phase (repeat / back / skip / help / stop / send / "cambiar la N") and the `command_ack` toast |
 | `VoiceResumeBanner` | When a `session_id` exists in `localStorage` for this `form_uid`: offer resume → `start_session{resume_session_id}` |
@@ -57,8 +59,8 @@ Keyboard shortcuts (space = push-to-talk override, R = repeat, B = back, Esc = s
 | S→C | `session_started` | `session_id`, `total_questions`, `title`, `protocol_version`, `hands_free?{auto_record, silence_ms}`, `max_recording_seconds?`, `prefetch_count?` |
 | S→C | `audio_segment` | `key`, `mime`, `kind` (`question`\|`hint`\|`options`\|`system`\|`review`), `text` — **followed by one binary frame** with the bytes; buffer by `key` |
 | S→C | `question` | `index`, `field_id`, `label`, `required`, `field_type`, `voice_mode`, `render_mode`, `sensitive`, `description?`, `audio?` (base64, v1 or `prefetch: false` only), `options?[]`, `fallback_html?`, `hint?`, `section_uid?`, `ui_cue?{control, focus, highlight, submit_via}`, `answer_modes?[]`, `narration?{text, audio_keys[], segments{}}` — play `audio_keys` in order; `pause:<ms>` is a client timer |
-| S→C | `transcription` / `confirm_request` | `transcription{field_id, text, confidence?}`; `confirm_request{field_id, transcript, confidence?, matched?, alternatives?, purpose?}` — `purpose` is `"answer"` (default) or `"stop"` (confirming a spoken STOP: show a "¿Terminar?" prompt, reply `confirm_answer{confirmed}`; `field_id` may be `""`) |
-| S→C | `answer_accepted` / `answer_rejected` | `answer_accepted{field_id, source, value? (omitted when sensitive), matched?{value, label, method, score}, blob_ref?}`; `answer_rejected{field_id, error, code?}` |
+| S→C | `transcription` / `confirm_request` | `transcription{field_id, text, confidence?}`; `confirm_request{field_id, transcript, confidence?, matched?, alternatives?, purpose?, value?, refined_by?}` — FEAT-653: `value` is the normalized candidate (v2, never for sensitive; `refined_by` is `"rules"` or `"llm"`): show `value`, not `transcript`, as the editable candidate; `purpose` is `"answer"` (default) or `"stop"` (confirming a spoken STOP: show a "¿Terminar?" prompt, reply `confirm_answer{confirmed}`; `field_id` may be `""`) |
+| S→C | `answer_accepted` / `answer_rejected` | `answer_accepted{field_id, source, value? (omitted when sensitive), matched?{value, label, method, score}, blob_ref?}`; `answer_rejected{field_id, error, code?, value?}` — FEAT-653 `value` is the best-effort candidate of a rejected spoken value (prefill an editable input; omitted for sensitive) |
 | S→C | `command_ack` | `command`, `field_id?` — after a recognised voice command; the effect message follows (`question`, `review_start`, `session_ended`…) |
 | S→C | `plan_updated` | `order[]`, `hidden[]`, `cleared[]`, `required_changed{field_id: bool}`, `hidden_by_cap[]` |
 | S→C | `section_enter` | `section_uid`, `title?` |
@@ -79,7 +81,7 @@ Differences from the brainstorm design: `session_started` carries no `sections[]
 
 **Hands-free commands (en/es):** repeat, back, skip, next, help, stop; and in confirm/review phases yes, no, send, change ("cambiar N"). An exact option match beats a command; `meta.voice.commands: "off"` disables them.
 
-**Error codes** (`error.code` / `answer_rejected.code`): `EMPTY_AUDIO`, `UNSUPPORTED_AUDIO`, `AUDIO_DECODE_ERROR`, `TRANSCRIBER_UNAVAILABLE`, `TRANSCRIPTION_ERROR`, `NO_MATCH`, `EMPTY`, `REQUIRED`, `WRONG_FIELD`, `WRONG_PHASE`, `INVALID_FIELD`, `INVALID_OPTION`, `NO_PREVIOUS`, `COMMAND_NOT_AVAILABLE`, `SESSION_ACTIVE`, `RESUME_FORBIDDEN`, `RESUME_UNAVAILABLE`, `RESUME_STALE`, `RESUME_CONFLICT`, `PLAUSIBILITY_UNAVAILABLE`, `SUBMIT_FAILED`, plus the v1 codes. (`TOO_MANY_QUESTIONS` is not emitted: the planner caps questions and reports them in `plan_updated.hidden_by_cap`.)
+**Error codes** (`error.code` / `answer_rejected.code`): `EMPTY_AUDIO`, `UNSUPPORTED_AUDIO`, `AUDIO_DECODE_ERROR`, `TRANSCRIBER_UNAVAILABLE`, `TRANSCRIPTION_ERROR`, `NO_MATCH`, `INVALID_EMAIL`, `INVALID_VALUE`, `EMPTY`, `REQUIRED`, `WRONG_FIELD`, `WRONG_PHASE`, `INVALID_FIELD`, `INVALID_OPTION`, `NO_PREVIOUS`, `COMMAND_NOT_AVAILABLE`, `SESSION_ACTIVE`, `RESUME_FORBIDDEN`, `RESUME_UNAVAILABLE`, `RESUME_STALE`, `RESUME_CONFLICT`, `PLAUSIBILITY_UNAVAILABLE`, `SUBMIT_FAILED`, plus the v1 codes. (`TOO_MANY_QUESTIONS` is not emitted: the planner caps questions and reports them in `plan_updated.hidden_by_cap`.)
 
 **HTTP (cross-cutting LLM validation, also for the visual renderer):** `POST /api/v1/{tenant}/forms/{form_uid}/validate` with `llm_validation: true` returns an additive `plausibility{field_id: {plausible, confidence, reason}}` block so the HTML renderer can show "Revisa la respuesta N" **before** submitting; `POST …/data` returns and persists the same block. Low confidence never changes the HTTP status.
 

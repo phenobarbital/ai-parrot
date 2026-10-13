@@ -32,9 +32,35 @@ templates:
   command_ack_next: "Siguiente pregunta."
   command_ack_send: "Enviando tu formulario."
   command_ack_change: "¿Qué respuesta quieres cambiar?"
+  invalid_email: "Eso no parece un correo electrónico válido. Dilo de nuevo o escríbelo."
+  invalid_value: "No pude entender ese valor. Dilo de nuevo o escríbelo."
 lexicon:
   ordinals: {primero: 1, primera: 1, segundo: 2, segunda: 2, tercero: 3, tercera: 3, cuarto: 4, cuarta: 4, quinto: 5, quinta: 5, sexto: 6, sexta: 6, "séptimo": 7, "séptima": 7, octavo: 8, octava: 8, noveno: 9, novena: 9, "décimo": 10, "décima": 10, "último": -1, "última": -1}
   cardinals: {uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10}
+  spoken:
+    units: {cero: 0, uno: 1, un: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12, trece: 13, catorce: 14, quince: 15, dieciseis: 16, diecisiete: 17, dieciocho: 18, diecinueve: 19, veinte: 20, veintiuno: 21, veintiun: 21, veintiuna: 21, veintidos: 22, veintitres: 23, veinticuatro: 24, veinticinco: 25, veintiseis: 26, veintisiete: 27, veintiocho: 28, veintinueve: 29}
+    tens: {treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90}
+    scales: {cien: 100, ciento: 100, doscientos: 200, doscientas: 200, trescientos: 300, trescientas: 300, cuatrocientos: 400, cuatrocientas: 400, quinientos: 500, quinientas: 500, seiscientos: 600, seiscientas: 600, setecientos: 700, setecientas: 700, ochocientos: 800, ochocientas: 800, novecientos: 900, novecientas: 900, mil: 1000, millon: 1000000, millones: 1000000}
+    number_joiners: ["y"]
+    decimal_words: ["punto", "coma"]
+    minus_words: ["menos"]
+    decimal_separator: ","
+    digit_aliases: {}
+    repeat_words: {doble: 2, triple: 3}
+    plus_words: ["más"]
+    email_symbols: {arroba: "@", punto: ".", "guion bajo": "_", "guión bajo": "_", guion: "-", "guión": "-", más: "+"}
+    months: {enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, setiembre: 9, octubre: 10, noviembre: 11, diciembre: 12}
+    weekdays: {lunes: 0, martes: 1, "miércoles": 2, jueves: 3, viernes: 4, "sábado": 5, domingo: 6}
+    relative_days: {hoy: 0, "mañana": 1, ayer: -1, "pasado mañana": 2}
+    this_words: ["este", "esta"]
+    next_words: ["próximo", "próxima", "siguiente", "que viene"]
+    last_words: ["pasado", "pasada"]
+    am_words: ["de la mañana", "am"]
+    pm_words: ["de la tarde", "de la noche", "pm"]
+    noon_words: ["mediodía"]
+    midnight_words: ["medianoche"]
+    half_words: ["y media"]
+    date_order: DMY
   "yes": ["sí", "si", "claro", "ok", "vale", "correcto", "verdadero", "de acuerdo"]
   "no": ["no", "incorrecto", "falso"]
   all: ["todas", "todos", "todo"]

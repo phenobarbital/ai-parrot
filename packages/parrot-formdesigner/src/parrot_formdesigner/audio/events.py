@@ -38,6 +38,7 @@ __all__ = [
     "BlobStored",
     "SnapshotSaved",
     "PlausibilityDone",
+    "ValueRefined",
     "SubmitDone",
     "IOFailed",
     "ClientInbound",
@@ -75,6 +76,7 @@ __all__ = [
     "RunPlausibility",
     "Submit",
     "Replan",
+    "RefineValue",
     "IORequest",
     "Outbound",
     "is_io_request",
@@ -104,6 +106,7 @@ class StartSession(_Inbound):
     tts_mime_format: str | None = None
     auto_advance: bool | None = None
     enumerate_options: bool | None = None
+    timezone: str | None = None  # FEAT-653: client IANA timezone (validated by the adapter)
 
 
 class AnswerText(_Inbound):
@@ -204,6 +207,17 @@ class PlausibilityDone(_Inbound):
     report: PlausibilityReport
 
 
+class ValueRefined(_Inbound):
+    """Adapter → engine: result of a RefineValue request (FEAT-653)."""
+
+    type: Literal["_value_refined"]
+    field_id: str
+    request_id: str
+    status: Literal["ok", "failed", "unavailable"]
+    value: str | None = None
+    confidence: float | None = None
+
+
 class SubmitDone(_Inbound):
     type: Literal["_submit_done"]
     outcome: dict[str, Any]  # dumped services.submission_pipeline.SubmitOutcome (TASK-4222)
@@ -269,6 +283,7 @@ InboundEvent = Annotated[
         PlausibilityDone,
         SubmitDone,
         IOFailed,
+        ValueRefined,
     ],
     Field(discriminator="type"),
 ]
@@ -339,6 +354,8 @@ class ConfirmRequest(_Wire):
     matched: OptionMatch | None = None
     alternatives: list[OptionMatch] | None = None
     purpose: Literal["answer", "stop"] = "answer"  # "stop": confirming a spoken STOP, not an answer (additive)
+    value: Any = None  # FEAT-653: normalized candidate (v2 only; omitted for sensitive fields)
+    refined_by: Literal["rules", "llm"] | None = None
 
 
 class AnswerAccepted(_Wire):
@@ -355,6 +372,7 @@ class AnswerRejected(_Wire):
     field_id: str
     error: str
     code: str | None = None
+    value: Any = None  # FEAT-653: best-effort candidate of a rejected spoken value (v2 only; never for sensitive)
 
 
 class CommandAck(_Wire):
@@ -488,6 +506,19 @@ class RunPlausibility(_IORequest):
     fields: set[str] | None = None  # None = every eligible field; never contains sensitive ones (S8)
 
 
+class RefineValue(_IORequest):
+    """Engine → adapter: ask the LLM post-processor to correct one spoken value (FEAT-653)."""
+
+    type: Literal["_refine_value"] = "_refine_value"
+    field_id: str
+    request_id: str
+    transcript: str
+    candidate: Any = None
+    field_type: str
+    label: str
+    today: str  # ISO date in the client timezone
+
+
 class Submit(_IORequest):
     type: Literal["_submit"] = "_submit"
     data: dict[str, Any]
@@ -522,7 +553,9 @@ WireMessage = Union[
     Error,
     Pong,
 ]
-IORequest = Union[Synthesize, Transcribe, StoreBlob, DeleteBlob, SaveSnapshot, RunPlausibility, Submit, Replan]
+IORequest = Union[
+    Synthesize, Transcribe, StoreBlob, DeleteBlob, SaveSnapshot, RunPlausibility, Submit, Replan, RefineValue
+]
 Outbound = Union[WireMessage, IORequest]
 
 

@@ -37,6 +37,8 @@ EXPECTED_KEYS = {
     "command_ack_next",
     "command_ack_send",
     "command_ack_change",
+    "invalid_email",
+    "invalid_value",
 }
 COMMAND_KEYS = {"repeat", "back", "skip", "help", "stop", "next", "send", "change", "yes", "no"}
 

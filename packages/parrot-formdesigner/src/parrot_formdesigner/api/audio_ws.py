@@ -34,6 +34,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
+from zoneinfo import ZoneInfo
 
 from aiohttp import WSMsgType, web
 from pydantic import ValidationError
@@ -54,6 +55,7 @@ from ..audio.events import (
     PlanReady,
     PlausibilityDone,
     Question,
+    RefineValue,
     Replan,
     RunPlausibility,
     SaveSnapshot,
@@ -66,6 +68,7 @@ from ..audio.events import (
     Transcribe,
     TranscriptReady,
     UnknownMessageType,
+    ValueRefined,
     is_io_request,
     parse_inbound,
 )
@@ -82,6 +85,7 @@ from ..audio.narration.lexicon import load_lexicon
 from ..audio.recordings import delete_recording, store_recording
 from ..audio.segments import _SYNTH_LOCK, AudioSegmentCache
 from ..audio.session_store import AudioSnapshot, ResumeUnavailable, SnapshotConflict
+from ..audio.value_refiner import LLMValueRefiner, ValueRefiner
 from ..core.llm_validation import LLMValidationConfig, PlausibilityReport
 from ..core.voice import resolve_voice_config
 from ..core.voice_answer import unwrap_voice
@@ -89,6 +93,7 @@ from ..renderers.audio import (
     AudioFormRenderer,
     synthesize_with_fallback,
 )
+from ..core.types import FieldType
 from ..services.auth_context import AuthContext
 from ..services.plausibility import AnswerPlausibilityChecker, PlausibilityBlocked
 from ..services.submission_pipeline import SubmissionPipeline, ValidationFailed
@@ -297,6 +302,7 @@ class AudioFormWSHandler:
         self._session_store = session_store
         self._llm_client_getter = llm_client_getter
         self._checkers: dict[str, AnswerPlausibilityChecker] = {}  # session_id → per-form checker
+        self._refiners: dict[str, Optional[ValueRefiner]] = {}  # session_id → LLM post-processor (FEAT-653)
         self._max_msg_size = max_msg_size
         self._auto_synthesize = auto_synthesize
         # Process-wide registry of working auto-mode VoiceSynthesizers, keyed by the effective synthesis config
@@ -396,6 +402,7 @@ class AudioFormWSHandler:
                 except Exception as exc:  # noqa: BLE001
                     self.logger.warning("Active marker release failed: %s", type(exc).__name__)
             self._checkers.pop(ctx.state.session_id, None)
+            self._refiners.pop(ctx.state.session_id, None)
             self.logger.debug("AudioFormWSHandler: session %s closed", ctx.state.session_id)
 
         return ws
@@ -592,6 +599,12 @@ class AudioFormWSHandler:
             await self._send_error(ws, "INVALID_MESSAGE", "Invalid 'start_session' message")
             return
         assert isinstance(start, StartSession)
+        if start.timezone:
+            try:
+                ZoneInfo(start.timezone)
+            except Exception:  # noqa: BLE001 — ZoneInfoNotFoundError / ValueError for malformed keys
+                self.logger.warning("start_session: ignoring invalid timezone %r", start.timezone)
+                start = start.model_copy(update={"timezone": None})
 
         # Build the per-session config from the start_session payload (FEAT-236),
         # falling back to defaults for any omitted key.
@@ -821,6 +834,8 @@ class AudioFormWSHandler:
 
         if isinstance(item, Submit):
             return await self._do_submit(ctx, item)
+        if isinstance(item, RefineValue):
+            return await self._do_refine(ctx, item)
 
         self.logger.warning("Unhandled outbound item: %s", type(item).__name__)
         return None
@@ -871,15 +886,22 @@ class AudioFormWSHandler:
                 wire.pop("value", None)  # v1: a sensitive value is never echoed
             elif isinstance(wire.get("value"), list):
                 wire["value"] = ",".join(str(v) for v in wire["value"])
+            elif isinstance(wire.get("value"), (int, float)) and not isinstance(wire.get("value"), bool):
+                wire["value"] = str(wire["value"])  # v1 always carried a string; numbers are v2-only (FEAT-653)
         elif mtype == "confirm_request":
-            wire.pop("matched", None)
-            wire.pop("alternatives", None)
+            for key in ("matched", "alternatives", "value", "refined_by"):
+                wire.pop(key, None)
+        elif mtype == "answer_rejected":
+            wire.pop("value", None)
         elif mtype == "form_complete":
             wire.pop("stored_in", None)
             wire.pop("plausibility_summary", None)
             answers = ctx.engine.state.answers if ctx.engine is not None else {}
             wire["answers"] = {
-                fid: {"value": value, "source": answers[fid].source if fid in answers else "text"}
+                fid: {
+                    "value": str(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else value,
+                    "source": answers[fid].source if fid in answers else "text",
+                }
                 for fid, value in (wire.get("answers") or {}).items()
             }
         return wire
@@ -1024,6 +1046,51 @@ class AudioFormWSHandler:
             checker = AnswerPlausibilityChecker(client, config=form.llm_validation or LLMValidationConfig())
             self._checkers[session_id] = checker
         return checker
+
+    def _refiner_for(self, session_id: str) -> Optional[ValueRefiner]:
+        """Per-session LLM post-processor from ``llm_client_getter``; None when no client is configured."""
+        if session_id not in self._refiners:
+            client = self._llm_client_getter() if self._llm_client_getter is not None else None
+            self._refiners[session_id] = LLMValueRefiner(client) if client is not None else None
+        return self._refiners[session_id]
+
+    async def _do_refine(self, ctx: _ConnCtx, item: RefineValue) -> "InboundEvent":
+        """Run the LLM post-processor under the form's timeout; never fails the turn."""
+        engine = ctx.engine
+        assert engine is not None
+        refiner = self._refiner_for(ctx.state.session_id)
+        if refiner is None:
+            return ValueRefined(
+                type="_value_refined", field_id=item.field_id, request_id=item.request_id, status="unavailable"
+            )
+        try:
+            result = await asyncio.wait_for(
+                refiner.refine(
+                    transcript=item.transcript,
+                    candidate=item.candidate,
+                    field_type=FieldType(item.field_type),
+                    label=item.label,
+                    locale=ctx.state.locale,
+                    today=item.today,
+                    timezone=ctx.state.timezone,
+                ),
+                timeout=engine.cfg.llm_refine_timeout_s,
+            )
+        except Exception as exc:  # noqa: BLE001 — TimeoutError included; fall back to the rules result
+            self.logger.warning("LLM value refine failed for %s: %s", item.field_id, type(exc).__name__)
+            result = None
+        if result is None:
+            return ValueRefined(
+                type="_value_refined", field_id=item.field_id, request_id=item.request_id, status="failed"
+            )
+        return ValueRefined(
+            type="_value_refined",
+            field_id=item.field_id,
+            request_id=item.request_id,
+            status="ok",
+            value=result.value,
+            confidence=result.confidence,
+        )
 
     async def _do_plausibility(self, ctx: _ConnCtx, item: RunPlausibility) -> "InboundEvent":
         """Run the plausibility batch; ``PlausibilityBlocked`` / failures become a ``blocked`` report."""

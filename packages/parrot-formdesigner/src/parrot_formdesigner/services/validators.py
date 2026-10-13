@@ -577,7 +577,18 @@ class FormValidator:
         """Whether `field` declares its dict answer as a VoiceAnswerEnvelope."""
         return field.answer_envelope == "voice" and field.field_type in (FieldType.TEXT, FieldType.TEXT_AREA)
 
-    _EVIDENCE_KEYS = frozenset({"source", "confidence", "audio_mime", "duration_ms", "language", "plausibility"})
+    _EVIDENCE_KEYS = frozenset(
+        {
+            "source",
+            "confidence",
+            "audio_mime",
+            "duration_ms",
+            "language",
+            "plausibility",
+            "normalized_by",
+            "llm_confidence",
+        }
+    )
 
     @classmethod
     def _scalar_view(cls, fields: list[FormField], data: dict[str, Any]) -> dict[str, Any]:

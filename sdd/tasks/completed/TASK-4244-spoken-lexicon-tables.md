@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-653 — Audio form voice post-processors
 **Spec**: `sdd/specs/audio-form-voice-postprocessors.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -340,10 +340,8 @@ folding, rejection templates).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (Claude Sonnet 5.5, sequential fallback loop)
+**Date**: 2026-10-12
+**Notes**: SpokenLexicon + en/es tables + invalid_email/invalid_value templates. Tests: test_audio_spoken_lexicon, narration lexicon/engine, audio_engine_turns pass; ruff clean.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Also edited tests/formdesigner/test_narration_lexicon.py (not listed): its hardcoded EXPECTED_KEYS had to include the two new templates the task mandates.

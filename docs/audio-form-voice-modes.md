@@ -29,6 +29,7 @@
 7. [WebSocket Protocol — Complete Message Reference](#7-websocket-protocol-complete-message-reference)
    - 7.1 [Client → Server messages](#71-client-server-messages)
    - 7.2 [Server → Client messages](#72-server-client-messages)
+   - 7.6 [Typed post-processors (FEAT-653)](#76-typed-post-processors-feat-653)
 8. [Flow Diagrams by VoiceMode](#8-flow-diagrams-by-voicemode)
    - 8.1 [VOICE — spoken or typed answer](#81-voice-spoken-or-typed-answer)
    - 8.2 [PROMPT\_SELECT — narrated + UI selection](#82-prompt_select-narrated-ui-selection)
@@ -405,6 +406,7 @@ All keys are optional; omitted keys use the model defaults.
 | `protocol_version` | int | `1` | `2` enables the additive v2 wire (section 7.3): `audio_segment` binary frames instead of base64 `audio`, strict inbound validation. |
 | `prefetch` | boolean | `true` | v2: push the next questions' audio segments ahead of time. `false` keeps base64 `audio` in `question`. |
 | `resume_session_id` | string \| null | `null` | v2: resume a saved session (answers, phase, cursor); replies `session_resumed`. Errors: `RESUME_FORBIDDEN`, `RESUME_UNAVAILABLE`, `RESUME_STALE`, `SESSION_ACTIVE`. |
+| `timezone` | string \| null | `null` | FEAT-653: client IANA timezone (e.g. `America/New_York`). Relative spoken dates ("tomorrow", "next Friday") resolve in it; absent or invalid (logged and ignored) → UTC, and relative dates are sent to confirmation. Send it on every start **and** on resume; it is never restored from a snapshot. |
 
 ---
 
@@ -707,6 +709,8 @@ Sent instead of `answer_accepted` when the STT `confidence` is below the
 The session is paused. No other answer is accepted until `confirm_answer` is sent.
 
 > For `sensitive` fields `transcript` is `"[hidden]"`.
+>
+> FEAT-653 (v2 only): `value` is the post-processed candidate (see §7.6) and `refined_by` is `"rules"` or `"llm"`. Show `value`, not `transcript`, as the editable candidate. Both are omitted for sensitive fields and for answers that were not post-processed.
 
 ---
 
@@ -741,6 +745,8 @@ The session does not advance — the same question is still active.
   "reason": "'invalid_dept' is not a valid option"
 }
 ```
+
+FEAT-653: for a spoken value that cannot be valid, `code` is `INVALID_EMAIL` or `INVALID_VALUE` and the optional `value` carries the best-effort candidate (v2 only, omitted for sensitive fields) so the client can prefill an editable input. See §7.6.
 
 ---
 
@@ -952,7 +958,7 @@ Reply to `start_session{resume_session_id}` instead of `session_started`'s first
 `yes_no`, `numeric`, `contains`, `fuzzy`, `llm`) and `blob_ref` (stored recording reference). `value` is omitted for
 sensitive fields.
 
-`confirm_request`: adds optional `matched` and `alternatives` (list of the same match shape), and `purpose`
+`confirm_request`: adds optional `matched` and `alternatives` (list of the same match shape), FEAT-653 `value` and `refined_by` (§7.6), and `purpose`
 (`"answer"` default, or `"stop"` when the server asks the user to confirm a spoken STOP; for `"stop"` answer with
 `confirm_answer{confirmed}` — yes ends the session, no resumes; `field_id` may be `""` during review).
 
@@ -1014,6 +1020,115 @@ The same check is available over HTTP (additive, for the visual renderer):
 With `on_error: "block"` and an LLM failure these endpoints answer `503` with
 `{"error": "...", "code": "PLAUSIBILITY_UNAVAILABLE"}` and a `Retry-After: 30` header. Low confidence never changes
 the HTTP status.
+
+### 7.6 Typed post-processors (FEAT-653)
+
+Every **spoken free-form answer** (a transcript that is neither a command nor an option match) goes through a
+**post-processor** chosen by the field type. It turns what was heard into the canonical value the submit gate
+(`FormValidator`) accepts, so nothing is stored as words and nothing invalid is stored.
+
+- **Spoken answers only.** Typed answers (`answer_text`, including a correction typed while confirming) are stored
+  exactly as typed. The one exception is EMAIL: a non-empty typed email that does not match the gate's
+  `EMAIL_PATTERN` is rejected with `INVALID_EMAIL`.
+- Each normalizer accepts both the written form Whisper usually produces ("0,4,12,523,573", "3/12", "john@gmail.com",
+  "$25") and the spoken-word form ("john at gmail dot com", "twenty five", "next Friday"). The spoken-token tables
+  live in the `en` / `es` narration YAML (`lexicon.spoken`). A phrase a locale's tables do not cover goes to
+  confirmation, never to a wrong value.
+- Option fields (SELECT, MULTI_SELECT, BOOLEAN, NPS, LIKERT) keep going through option matching, and TEXT, TEXT_AREA,
+  URL, MASKED, LOCATION and other types pass through unchanged.
+
+#### Canonical values
+
+| Field type | Canonical value | Goes to confirmation (`confirm_request.value`) when | Rejected (re-asked) when |
+|---|---|---|---|
+| `EMAIL` | lowercase `str` matching `EMAIL_PATTERN` | — | not exactly one `@`, or no pattern match (`INVALID_EMAIL`) |
+| `PHONE` | optional leading `+`, then digits only (leading zeros kept) | — | fewer than 7 digits, or no digits (`INVALID_VALUE`) |
+| `INTEGER` | `int` | — | no number, several numbers, non-integral |
+| `NUMBER` | `int` when integral, else `float` | — | no number, several numbers |
+| `DATE` | `"YYYY-MM-DD"` | relative phrase with no valid timezone (resolved in UTC); numeric date valid in both orders, e.g. `3/4` (candidate uses the locale order) | no parse, impossible date |
+| `TIME` | `"HH:MM"` (24 h) | hour 1–12 with no am/pm (candidate keeps the literal hour) | no parse, out of range |
+| `DATETIME` | `"YYYY-MM-DDTHH:MM"` (naive, client local time, like HTML `datetime-local`) | either part needs confirmation | either part rejected |
+
+Examples: phone `"0,4,12,523,573"` → `"0412523573"`; `"plus one 555 0100"` → `"+15550100"`; email
+`"john at gmail dot com"` → `"john@gmail.com"`; `"twenty five"` → `25`; with the client in `America/New_York`,
+`"next Friday"` said on Monday 2026-10-12 → `"2026-10-16"`.
+
+Weekday phrases (bare, `this <weekday>`, `next <weekday>`) all mean the nearest occurrence **after** today;
+`last <weekday>` the nearest one before. Numeric dates follow the locale order (`en` month/day, `es` day/month);
+ISO `YYYY-MM-DD` is accepted everywhere. A relative date is certain only when `start_session.timezone` is valid: with a missing or invalid timezone the
+server never guesses UTC — any relative phrase (today, tomorrow, yesterday, weekday names, next/this/last …, and
+their Spanish equivalents) yields a `confirm_request`; absolute dates and times are unaffected.
+
+#### Decision matrix
+
+| Candidate status | `confirm: "always"` | STT low¹ | LLM low² | Outcome |
+|---|---|---|---|---|
+| rejected | any | any | any | `answer_rejected` (`INVALID_EMAIL` for EMAIL, else `INVALID_VALUE`) with the candidate in `value`; the question stays active |
+| confirm | any | any | any | `confirm_request` with `value` — **even with `confirm: "never"`** |
+| accepted | yes | any | any | `confirm_request` |
+| accepted | no | yes | any | `confirm_request` (unchanged FEAT-649 rule) |
+| accepted | no | no | yes | `confirm_request` |
+| accepted | no | no | no | `answer_accepted` with the canonical value |
+
+¹ `confidence < stt_confirm_threshold` and `confirm` ≠ `"never"`. ² the candidate came from the LLM with
+`confidence < llm_refine_threshold`.
+
+Behaviour change to be aware of: with `confirm: "never"` a post-processed value that needs confirmation is still
+confirmed, and a rejected one is re-asked instead of being stored raw. "Yes" (`confirm_answer{confirmed: true}`)
+stores the candidate; a rejected value is **never** offered as a "yes". `raw_transcript` always keeps the words.
+
+#### Settings
+
+| Where | Key | Default | Meaning |
+|---|---|---|---|
+| field `meta.voice` | `normalize` | `true` | `false` stores the raw transcript for this field (no rules post-processor) |
+| field `meta.voice` | `llm_refine` | inherit | `true` / `false` overrides the form-level LLM setting for this field |
+| form `voice` | `llm_refine_values` | `false` | opt-in LLM post-processor for spoken answers of typed fields |
+| form `voice` | `llm_refine_threshold` | `0.8` | minimum LLM confidence to auto-accept (below it → `confirm_request`) |
+| form `voice` | `llm_refine_timeout_s` | `4.0` | per-answer LLM deadline (`0 < x <= 10`; larger values are rejected); on timeout the rules result is used. The wait blocks that session's message queue, so it is capped |
+
+The shipped defaults of `llm_refine_threshold`, `llm_refine_timeout_s` and `stt_confirm_threshold` are provisional
+until the calibration run over real field recordings (`scripts/calibrate_voice_postprocessors.py`) sets them.
+
+#### LLM post-processor (opt-in)
+
+When enabled for a field of a typed family (EMAIL, PHONE, NUMBER, INTEGER, DATE, TIME, DATETIME — never TEXT /
+TEXT_AREA, never a `sensitive` field), **every** spoken answer of that field runs through the rules first and then the
+LLM, which sees the field type and label, locale, timezone, today's date, the transcript and the rules candidate (never
+other fields' answers). The LLM's string is **re-normalized by the same rules**: only a value that comes out
+accepted/confirm becomes the candidate (`refined_by: "llm"`). The LLM **never turns a rules `confirm` or `rejected`
+into an accept**: when the rules said confirm/rejected, a usable LLM value yields at most a `confirm_request` carrying
+the refined value; when the rules said accepted, the outcome stays on the table above. It never overrides the
+STT-confidence rule or `confirm: "always"`. A failure, timeout or missing LLM client falls back to the
+rules result, so the turn is never lost. The client sees no extra message: the answer simply takes up to
+`llm_refine_timeout_s` longer.
+
+#### Wire changes (all additive; v1 clients are unaffected)
+
+- `start_session.timezone` (see §6).
+- `confirm_request.value`, `confirm_request.refined_by` — v2 only; omitted for sensitive fields and for answers that
+  were not post-processed.
+- `answer_rejected.value` — v2 only; omitted for sensitive fields.
+- Error codes `INVALID_EMAIL`, `INVALID_VALUE` (§10).
+
+#### v1 clients (legacy protocol)
+
+v1 clients never receive `value` / `refined_by` on `confirm_request`, so a v1 client confirms a normalized value
+**without seeing it** (it still sees the spoken transcript). This is accepted: v1 is the legacy protocol and
+`navigator-svelte` speaks v2. `answer_accepted.value` stays a **string** for v1 (numbers are sent as their decimal
+string, e.g. `"2500"`); v2 receives the typed number.
+
+#### Stored evidence
+
+Every non-sensitive spoken answer of a submission carries `normalized_by` (`"rules"`, `"llm"` or `null`) and, when the
+LLM produced it, `llm_confidence` in its voice evidence envelope, for all field types. The provenance survives
+`confirm_answer`, snapshot/resume and `wrap_voice`. Envelopes stored before FEAT-653 still validate.
+
+> **Rollback.** Snapshots and evidence envelopes written once these fields exist carry `normalized_by` /
+> `llm_confidence`, which models from before FEAT-653 (`extra="forbid"`) reject. There is no backward compatibility:
+> once voice data with these fields has been stored, do not downgrade below this version.
+
+---
 
 ---
 
@@ -2410,6 +2525,8 @@ function QuestionInput({
 | `UNSUPPORTED_AUDIO` | Binary frame container not recognised (not WebM/Ogg/MP4/WAV) | No | Use a supported recorder format or `answer_text` |
 | `AUDIO_DECODE_ERROR` | Audio could not be decoded | No | Record again or use `answer_text` |
 | `NO_MATCH` | Transcript matched no option of a select field | No | Answer again or pick the option |
+| `INVALID_EMAIL` | A spoken or typed email is not a valid address (FEAT-653) | No | Say it again or type it; `answer_rejected.value` holds the candidate |
+| `INVALID_VALUE` | A spoken phone, number, date or time could not be turned into a valid value (FEAT-653) | No | Say it again or type it; `answer_rejected.value` holds the candidate |
 | `EMPTY` | Empty transcript or text answer | No | Answer again |
 | `REQUIRED` | Required field cannot be skipped | No | Answer the question |
 | `INVALID_OPTION` | Selected value is not an option of the field | No | Use a listed option |

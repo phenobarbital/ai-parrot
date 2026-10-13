@@ -9,12 +9,16 @@ with ``*_Done`` / ``PlanReady`` / ``IOFailed`` events.
 from __future__ import annotations
 
 import logging
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 from ..core.llm_validation import LLMValidationConfig, PlausibilityReport, llm_validation_enabled
 from ..core.schema import FormField, FormSchema
 from ..core.types import FieldType
-from ..core.voice import VoiceFormConfig, field_voice_meta, is_sensitive
+from ..core.voice import FieldVoiceMeta, VoiceFormConfig, field_voice_meta, is_sensitive
 from ..core.voice_answer import wrap_voice
 from .commands import VoiceCommand, classify_command
 from .events import (
@@ -46,6 +50,7 @@ from .events import (
     Question,
     QuestionSkipped,
     RepeatQuestion,
+    RefineValue,
     Replan,
     ReviewConfirm,
     ReviewEdit,
@@ -67,6 +72,7 @@ from .events import (
     Transcribe,
     Transcription,
     TranscriptReady,
+    ValueRefined,
     ValidationErrors,
 )
 from .models import (
@@ -82,12 +88,23 @@ from .narration.engine import Narrator
 from .narration.lexicon import Lexicon, normalize
 from .option_matcher import match_option, match_review_item
 from .planner import PlanDelta, QuestionPlanner
+from .normalize import REFINABLE_TYPES, NormalizeContext, NormalizeResult, normalize_spoken, validate_typed
 from .session_store import AudioSnapshot
 
 _SENSITIVE_MASK = "[hidden]"
 _ANSWERING_PHASES = (Phase.ASKING, Phase.CONFIRMING)
 _SKIPPED_META_KEY = "_skipped"  # answer_meta entry carrying the skipped field ids (snapshot only)
 _REVIEW_FIELD = "_review"  # Transcribe.field_id used for spoken review turns
+
+
+@dataclass
+class _PendingRefine:
+    """An answer parked while the LLM post-processor runs (never snapshotted)."""
+
+    evidence: AudioAnswer
+    rules: NormalizeResult
+    rules_by: str | None
+    request_id: str
 
 
 class EngineError(Exception):
@@ -111,6 +128,7 @@ class AudioFormSession:
         lexicon: Lexicon,
         state: AudioSessionState,
         llm_cfg: LLMValidationConfig | None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.form = form
         self.manifest = manifest
@@ -119,6 +137,7 @@ class AudioFormSession:
         self.lexicon = lexicon
         self.state = state
         self.llm_cfg = llm_cfg
+        self._clock: Callable[[], datetime] = clock or (lambda: datetime.now(timezone.utc))
         self._llm = llm_cfg or LLMValidationConfig()  # effective config: field-level opt-in works without a form block
         self.planner = QuestionPlanner(form, manifest, cfg)  # adapter awaits planner.replan() on Replan
         self.logger = logging.getLogger(__name__)
@@ -130,6 +149,8 @@ class AudioFormSession:
         self._pl_unchecked: set[str] = set()  # fields whose last plausibility batch was blocked (on_error=block)
         self._stop_prev_phase: Phase | None = None  # set while a spoken STOP awaits yes/no confirmation
         self._resume_snap: AudioSnapshot | None = None
+        self._refining: _PendingRefine | None = None
+        self._refine_warned: set[str] = set()
         self._synthesized: set[str] = set()  # field_ids whose narration has already been requested
         self._started_emitted = False
         self._last_section: str | None = None
@@ -153,6 +174,7 @@ class AudioFormSession:
             "review_confirm": self.on_review_confirm,
             "review_edit": self.on_review_edit,
             "_plausibility_done": self.on_plausibility_done,
+            "_value_refined": self.on_value_refined,
         }
 
     def handle(self, event: InboundEvent) -> list[Outbound]:
@@ -173,6 +195,7 @@ class AudioFormSession:
         if ev.resume_session_id:
             return self._resume(ev)
         self.state.locale = ev.locale
+        self.state.timezone = ev.timezone
         self.state.protocol_version = ev.protocol_version
         self.state.phase = Phase.PLANNING
         return [Replan()]
@@ -423,21 +446,29 @@ class AudioFormSession:
                 evidence=evidence,
             )
 
-        # Free-form answer
+        # Free-form answer — FEAT-653 typed post-processors, then the decision matrix
         if not ev.text.strip():
             return out + [AnswerRejected(field_id=ev.field_id, error="Empty transcript", code="EMPTY")]
-        confidence = 1.0 if ev.confidence is None else ev.confidence
-        low = confidence < self.cfg.stt_confirm_threshold
-        if confirm_pref == "always" or (low and confirm_pref != "never"):
-            return out + self._request_confirm(evidence, ev.text, ev.text, None, [])
-        return out + self._accept(
-            ev.field_id,
-            ev.text,
-            source="speech",
-            confidence=ev.confidence,
-            raw=evidence.raw_transcript,
-            evidence=evidence,
-        )
+        result = normalize_spoken(field.field_type, ev.text, ctx=self._normalize_ctx()) if meta.normalize else None
+        candidate = result if result is not None else NormalizeResult.accepted(ev.text)
+        refined_by = "rules" if result is not None else None
+        if self._llm_refine_enabled(field, meta):
+            request_id = uuid.uuid4().hex
+            self._refining = _PendingRefine(
+                evidence=evidence, rules=candidate, rules_by=refined_by, request_id=request_id
+            )
+            return out + [
+                RefineValue(
+                    field_id=ev.field_id,
+                    request_id=request_id,
+                    transcript=ev.text,
+                    candidate=candidate.value,
+                    field_type=field.field_type.value,
+                    label=q.label,
+                    today=self._normalize_ctx().now.date().isoformat(),
+                )
+            ]
+        return out + self._gate(evidence, candidate, refined_by=refined_by, llm_confidence=None)
 
     def _request_confirm(
         self,
@@ -446,10 +477,15 @@ class AudioFormSession:
         transcript: str,
         matched: OptionMatch | None,
         alternatives: list[OptionMatch],
+        *,
+        refined_by: str | None = None,
+        llm_confidence: float | None = None,
     ) -> list[Outbound]:
         """Park the answer in ``state.pending`` and ask the client to confirm it."""
         sensitive = is_sensitive(self._fields[evidence.field_id])
-        self.state.pending = evidence.model_copy(update={"value": value, "matched": matched})
+        self.state.pending = evidence.model_copy(
+            update={"value": value, "matched": matched, "normalized_by": refined_by, "llm_confidence": llm_confidence}
+        )
         self.state.phase = Phase.CONFIRMING
         return [
             ConfirmRequest(
@@ -458,8 +494,55 @@ class AudioFormSession:
                 confidence=evidence.confidence,
                 matched=matched,
                 alternatives=alternatives or None,
+                value=None if (sensitive or refined_by is None) else value,
+                refined_by=refined_by,
             )
         ]
+
+    def _gate(
+        self,
+        evidence: AudioAnswer,
+        candidate: NormalizeResult,
+        *,
+        refined_by: str | None,
+        llm_confidence: float | None,
+    ) -> list[Outbound]:
+        """Single reject/confirm/accept decision: the §2 decision matrix, nothing else."""
+        field = self._fields[evidence.field_id]
+        meta = field_voice_meta(field, logger=self.logger)
+        sensitive = is_sensitive(field)
+        transcript = evidence.raw_transcript or ""
+        if candidate.status == "rejected":
+            is_email = field.field_type == FieldType.EMAIL
+            return [
+                AnswerRejected(
+                    field_id=evidence.field_id,
+                    error=self.narrator.render("invalid_email" if is_email else "invalid_value"),
+                    code="INVALID_EMAIL" if is_email else "INVALID_VALUE",
+                    value=None if sensitive else candidate.value,
+                )
+            ]
+        if candidate.status == "confirm":
+            return self._request_confirm(
+                evidence, candidate.value, transcript, None, [], refined_by=refined_by, llm_confidence=llm_confidence
+            )
+        confidence = 1.0 if evidence.confidence is None else evidence.confidence
+        stt_low = confidence < self.cfg.stt_confirm_threshold and meta.confirm != "never"
+        llm_low = refined_by == "llm" and (llm_confidence or 0.0) < self.cfg.llm_refine_threshold
+        if meta.confirm == "always" or stt_low or llm_low:
+            return self._request_confirm(
+                evidence, candidate.value, transcript, None, [], refined_by=refined_by, llm_confidence=llm_confidence
+            )
+        return self._accept(
+            evidence.field_id,
+            candidate.value,
+            source="speech",
+            confidence=evidence.confidence,
+            raw=evidence.raw_transcript,
+            evidence=evidence,
+            normalized_by=refined_by,
+            llm_confidence=llm_confidence,
+        )
 
     def _accept(
         self,
@@ -471,6 +554,8 @@ class AudioFormSession:
         raw: str | None = None,
         matched: OptionMatch | None = None,
         evidence: AudioAnswer | None = None,
+        normalized_by: str | None = None,
+        llm_confidence: float | None = None,
     ) -> list[Outbound]:
         """Single acceptance funnel: bump version, store, ack, StoreBlob for speech, then Replan."""
         prev = self.state.answers.get(field_id)
@@ -490,6 +575,8 @@ class AudioFormSession:
             source=source,
             confidence=confidence,
             raw_transcript=raw,
+            normalized_by=normalized_by,
+            llm_confidence=llm_confidence,
             matched=matched,
             version=version,
             **extra,
@@ -513,6 +600,68 @@ class AudioFormSession:
         self._last_audio = None
         return out + [self._save(), Replan()]
 
+    def _llm_refine_enabled(self, field: FormField, meta: FieldVoiceMeta) -> bool:
+        """meta.llm_refine if not None else cfg.llm_refine_values; False for sensitive fields and for any type
+        outside REFINABLE_TYPES = {EMAIL, PHONE, NUMBER, INTEGER, DATE, TIME, DATETIME}."""
+        wanted = meta.llm_refine if meta.llm_refine is not None else self.cfg.llm_refine_values
+        if not wanted or is_sensitive(field):
+            return False
+        if field.field_type not in REFINABLE_TYPES:
+            if meta.llm_refine and field.field_id not in self._refine_warned:
+                self._refine_warned.add(field.field_id)
+                self.logger.warning(
+                    "llm_refine ignored for field %s: type %s is not refinable", field.field_id, field.field_type.value
+                )
+            return False
+        return True
+
+    def on_value_refined(self, ev: ValueRefined) -> list[Outbound]:
+        """Drop when stale (no in-flight refine, field or request_id mismatch); else re-normalize and _gate."""
+        pending = self._refining
+        if pending is None or ev.request_id != pending.request_id or ev.field_id != pending.evidence.field_id:
+            return []
+        self._refining = None
+        if self.state.cursor != ev.field_id:
+            return []
+        field = self._fields[ev.field_id]
+        if ev.status == "ok" and ev.value is not None:
+            renorm = normalize_spoken(field.field_type, ev.value, ctx=self._normalize_ctx())
+            if renorm is not None and renorm.status != "rejected":
+                llm_conf = ev.confidence if ev.confidence is not None else 0.0
+                if pending.rules.status != "accepted" or pending.rules_by is None:
+                    # Product decision 2: the LLM never turns a rules confirm/rejected into an accept; it only
+                    # supplies the candidate value for a CONFIRM. A raw transcript (rules_by None, normalize off) is not a
+                    # rules accept either.
+                    return self._request_confirm(
+                        pending.evidence,
+                        renorm.value,
+                        pending.evidence.raw_transcript or "",
+                        None,
+                        [],
+                        refined_by="llm",
+                        llm_confidence=llm_conf,
+                    )
+                return self._gate(
+                    pending.evidence,
+                    renorm,
+                    refined_by="llm",
+                    llm_confidence=llm_conf,
+                )
+        return self._gate(pending.evidence, pending.rules, refined_by=pending.rules_by, llm_confidence=None)
+
+    def _normalize_ctx(self) -> NormalizeContext:
+        """now = clock() in ZoneInfo(state.timezone) when valid, else UTC with timezone_known=False."""
+        now = self._clock()
+        tz_name = self.state.timezone
+        if tz_name:
+            try:
+                return NormalizeContext(
+                    lexicon=self.lexicon, now=now.astimezone(ZoneInfo(tz_name)), timezone_known=True
+                )
+            except Exception:  # noqa: BLE001 — invalid/unknown zone: degrade, never fail the turn
+                self.logger.debug("invalid session timezone %r; using UTC", tz_name)
+        return NormalizeContext(lexicon=self.lexicon, now=now.astimezone(timezone.utc), timezone_known=False)
+
     def _is_empty(self, value: Any) -> bool:
         return (
             value is None
@@ -527,6 +676,9 @@ class AudioFormSession:
             return bad
         if self.planner.effective_required(ev.field_id) and not ev.value.strip():
             return [AnswerRejected(field_id=ev.field_id, error="This field is required", code="REQUIRED")]
+        code = validate_typed(self._fields[ev.field_id].field_type, ev.value)
+        if code is not None:
+            return [AnswerRejected(field_id=ev.field_id, error=self.narrator.render("invalid_email"), code=code)]
         return self._accept(ev.field_id, ev.value, source="text")
 
     def on_selection(self, ev: AnswerSelection) -> list[Outbound]:
@@ -595,6 +747,8 @@ class AudioFormSession:
                 raw=pending.raw_transcript,
                 matched=pending.matched,
                 evidence=pending,
+                normalized_by=pending.normalized_by,
+                llm_confidence=pending.llm_confidence,
             )
         self._last_audio = None
         self.state.phase = Phase.ASKING
@@ -1081,8 +1235,10 @@ class AudioFormSession:
         self.state.return_to_review = False
         self.state.submission_id = snap.submission_id
         self.state.locale = ev.locale
+        self.state.timezone = ev.timezone
         self.state.protocol_version = ev.protocol_version
         self.state.pending = None
+        self._refining = None
         self.state.plausibility = None
         self.state.cursor = None
         self.state.plan = []

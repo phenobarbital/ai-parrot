@@ -46,6 +46,12 @@ class FieldVoiceMeta(BaseModel):
     skip_in_review: bool = False
     commands: Literal["on", "off"] = "on"
     sensitive: bool = False
+    normalize: bool = True  # FEAT-653: typed rules post-processor for spoken answers of this field
+    llm_refine: bool | None = None  # FEAT-653: None → inherit VoiceFormConfig.llm_refine_values
+
+
+#: Hard ceiling for ``llm_refine_timeout_s``: the refine blocks the session's socket queue while it runs.
+LLM_REFINE_TIMEOUT_MAX_S: float = 10.0
 
 
 class VoiceFormConfig(BaseModel):
@@ -62,6 +68,9 @@ class VoiceFormConfig(BaseModel):
     store_recordings: bool = True
     resume_ttl_seconds: int = Field(default=3600, ge=1)
     llm_refine_options: bool = False
+    llm_refine_values: bool = False  # FEAT-653: LLM post-processor for spoken typed-family answers (opt-in)
+    llm_refine_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
+    llm_refine_timeout_s: float = Field(default=4.0, gt=0.0, le=LLM_REFINE_TIMEOUT_MAX_S)
     commands: Literal["on", "off"] = "on"
     hands_free: HandsFreeConfig = Field(default_factory=HandsFreeConfig)
     tts_backend: Literal["supertonic", "google"] = "supertonic"
@@ -101,6 +110,13 @@ def field_voice_meta(field: FormField, *, logger: logging.Logger | None = None) 
         return FieldVoiceMeta()
 
 
+def _cap_refine_timeout(cfg: VoiceFormConfig) -> VoiceFormConfig:
+    """Never hand out a refine timeout above the cap (also guards configs built without validation)."""
+    if cfg.llm_refine_timeout_s <= LLM_REFINE_TIMEOUT_MAX_S:
+        return cfg
+    return cfg.model_copy(update={"llm_refine_timeout_s": LLM_REFINE_TIMEOUT_MAX_S})
+
+
 def resolve_voice_config(form: FormSchema, session: AudioSessionConfig | None) -> VoiceFormConfig:
     """Return the effective voice config for a session.
 
@@ -110,8 +126,9 @@ def resolve_voice_config(form: FormSchema, session: AudioSessionConfig | None) -
     """
     base = form.voice or VoiceFormConfig()
     if session is None:
-        return base
+        return _cap_refine_timeout(base)
     overrides: dict[str, Any] = {
+        "llm_refine_timeout_s": min(base.llm_refine_timeout_s, LLM_REFINE_TIMEOUT_MAX_S),
         "stt_confirm_threshold": max(base.stt_confirm_threshold, session.stt_confirm_threshold),
         "enumerate_options": base.enumerate_options and session.enumerate_options,
     }
