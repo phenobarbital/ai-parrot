@@ -2438,7 +2438,9 @@ class JiraToolkit(AbstractToolkit):
                 )
                 continue
             try:
-                uploaded = await asyncio.to_thread(self.jira.add_attachment, issue=issue, attachment=str(path), filename=record.filename)
+                uploaded = await asyncio.to_thread(
+                    self.jira.add_attachment, issue=issue, attachment=str(path), filename=record.filename
+                )
             except JIRAError as exc:
                 status = getattr(exc, "status_code", None)
                 if status in (401, 403):
