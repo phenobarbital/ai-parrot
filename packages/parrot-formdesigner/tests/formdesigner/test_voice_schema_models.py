@@ -109,3 +109,35 @@ def test_session_started_wire_carries_barge_in():
     assert v2["hands_free"] == {"auto_record": True, "silence_ms": 1200, "barge_in": True}
     v1 = SessionStarted(session_id="s", total_questions=1, title="T").to_wire()
     assert "hands_free" not in v1
+
+
+def test_voice_form_config_option_pause_default():
+    import pytest
+    from pydantic import ValidationError
+
+    from parrot_formdesigner.core.voice import FieldVoiceMeta, VoiceFormConfig
+
+    assert VoiceFormConfig().option_pause_ms == 500
+    with pytest.raises(ValidationError):
+        VoiceFormConfig(option_pause_ms=-1)
+    assert FieldVoiceMeta(option_pause_ms=250).option_pause_ms == 250
+    assert FieldVoiceMeta().option_pause_ms is None
+    assert VoiceFormConfig(option_pause_ms=0).option_pause_ms == 0
+
+
+def test_field_voice_meta_accepts_option_pause_without_warning(caplog):
+    import logging
+
+    from parrot_formdesigner.core.options import FieldOption
+    from parrot_formdesigner.core.schema import FormField
+    from parrot_formdesigner.core.types import FieldType
+    from parrot_formdesigner.core.voice import field_voice_meta
+
+    field = FormField(
+        field_id="c", field_type=FieldType.SELECT, label="C",
+        options=[FieldOption(value="a", label="A")], meta={"voice": {"option_pause_ms": 250}},
+    )
+    with caplog.at_level(logging.WARNING):
+        meta = field_voice_meta(field)
+    assert meta.option_pause_ms == 250
+    assert not [r for r in caplog.records if "unknown" in r.getMessage().lower()]

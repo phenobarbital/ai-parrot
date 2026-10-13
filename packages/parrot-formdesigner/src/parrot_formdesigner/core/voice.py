@@ -54,6 +54,7 @@ class FieldVoiceMeta(BaseModel):
     skip_in_review: bool = False
     commands: Literal["on", "off"] = "on"
     sensitive: bool = False
+    option_pause_ms: int | None = Field(default=None, ge=0)  # per-field gap between enumerated options (ms)
 
 
 class VoiceFormConfig(BaseModel):
@@ -62,6 +63,7 @@ class VoiceFormConfig(BaseModel):
     enabled: bool = True
     max_questions: int | None = Field(default=10, ge=1)
     hint_pause_ms: int = Field(default=600, ge=0)
+    option_pause_ms: int = Field(default=500, ge=0)  # gap between enumerated options (ms); provisional, spec §8 Q-A
     enumerate_options: bool = True
     stt_confirm_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     option_match_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
