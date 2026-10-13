@@ -48,6 +48,18 @@ class TestAudioRouteRegistration:
         ]
         assert any("/audio/ws" in r for r in routes)
 
+    def test_routes_builds_store_with_split_ttls(self) -> None:
+        """The audio store is built with a 3600 s snapshot TTL and a 600 s marker TTL."""
+        from parrot_formdesigner.services.partial_saves import PartialSaveStore
+
+        app = web.Application()
+        setup_form_api(app, MagicMock(), transcriber=MagicMock(), partial_store=PartialSaveStore())
+        route = next(
+            r for r in app.router.routes() if r.resource is not None and "/audio/ws" in r.resource.canonical
+        )
+        store = route.handler.__self__._session_store
+        assert store.resume_ttl_seconds == 3600 and store.active_ttl_seconds == 600
+
     def test_ws_route_not_registered_without_voice(self) -> None:
         """WS route is NOT mounted when voice services are None."""
         app = web.Application()

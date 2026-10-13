@@ -86,17 +86,17 @@ def test_plan_question_hint_pause_and_description_fallback():
     assert "pause:100" in plan2.audio_keys and "the description" in plan2.text
 
 
-def test_plan_question_options_rules():
+_OPTS = [
+    {"value": "a", "label": "Alpha"},
+    {"value": "b", "label": "Beta"},
+    {"value": "c", "label": "G", "disabled": True},
+]
+
+
+def test_plan_question_single_segment_cases_unchanged():
     n = Narrator("en")
-    opts = [
-        {"value": "a", "label": "Alpha"},
-        {"value": "b", "label": "Beta"},
-        {"value": "c", "label": "G", "disabled": True},
-    ]
-    q = _q(field_type="select", options=opts)
+    q = _q(field_type="select", options=_OPTS)
     key = f"q:{q.field_uid}:options"
-    plan = n.plan_question(q, VoiceFormConfig(), FieldVoiceMeta())
-    assert "Alpha" in plan.segments[key] and "Beta" in plan.segments[key] and "G." not in plan.segments[key]
     assert (
         "2 options on screen"
         in n.plan_question(q, VoiceFormConfig(), FieldVoiceMeta(enumerate="count_only")).segments[key]
@@ -105,6 +105,52 @@ def test_plan_question_options_rules():
     assert "on screen" in n.plan_question(q, VoiceFormConfig(enumerate_options=False), FieldVoiceMeta()).segments[key]
     qb = _q(field_type="boolean")
     assert f"q:{qb.field_uid}:options" in n.plan_question(qb, VoiceFormConfig(), FieldVoiceMeta()).segments
+
+
+def test_plan_question_enumerated_per_option_keys():
+    n = Narrator("en")
+    q = _q(field_type="select", options=_OPTS)
+    u = q.field_uid
+    plan = n.plan_question(q, VoiceFormConfig(), FieldVoiceMeta())
+    assert plan.audio_keys == [f"q:{u}:label", f"q:{u}:options_intro", f"q:{u}:opt:1", "pause:500", f"q:{u}:opt:2"]
+    assert f"q:{u}:options" not in plan.segments
+    assert plan.segments[f"q:{u}:opt:1"] == n.render("option_item", ordinal=1, n=1, label="Alpha")
+    assert plan.segments[f"q:{u}:opt:2"] == n.render("option_item", ordinal=2, n=2, label="Beta")
+    assert "Alpha" in plan.segments[f"q:{u}:opt:1"] and "G" not in plan.segments[f"q:{u}:opt:2"]
+    old_options = " ".join(
+        [n.render("options_intro", count=2)]
+        + [n.render("option_item", ordinal=i, n=i, label=lb) for i, lb in enumerate(["Alpha", "Beta"], start=1)]
+    )
+    assert plan.text == f"{plan.segments[f'q:{u}:label']} {old_options}"
+    non_pause = [k for k in plan.audio_keys if not k.startswith("pause:")]
+    assert list(plan.segments) == non_pause
+
+
+def test_plan_question_option_pause_precedence():
+    n = Narrator("en")
+    q = _q(field_type="select", options=_OPTS)
+
+    def pauses(cfg, meta):
+        return [k for k in n.plan_question(q, cfg, meta).audio_keys if k.startswith("pause:")]
+
+    assert pauses(VoiceFormConfig(option_pause_ms=300), FieldVoiceMeta()) == ["pause:300"]
+    assert pauses(VoiceFormConfig(option_pause_ms=300), FieldVoiceMeta(option_pause_ms=50)) == ["pause:50"]
+    plan0 = n.plan_question(q, VoiceFormConfig(option_pause_ms=0), FieldVoiceMeta())
+    assert not [k for k in plan0.audio_keys if k.startswith("pause:")]
+    assert f"q:{q.field_uid}:opt:1" in plan0.audio_keys and f"q:{q.field_uid}:opt:2" in plan0.audio_keys
+    plan_override0 = n.plan_question(q, VoiceFormConfig(option_pause_ms=300), FieldVoiceMeta(option_pause_ms=0))
+    assert not [k for k in plan_override0.audio_keys if k.startswith("pause:")]
+
+
+def test_plan_question_hint_then_options_order():
+    n = Narrator("en")
+    q = _q(field_type="select", options=_OPTS, hint="pick one")
+    u = q.field_uid
+    plan = n.plan_question(q, VoiceFormConfig(), FieldVoiceMeta())
+    assert plan.audio_keys == [
+        f"q:{u}:label", "pause:600", f"q:{u}:hint",
+        f"q:{u}:options_intro", f"q:{u}:opt:1", "pause:500", f"q:{u}:opt:2",
+    ]
 
 
 def test_plan_review_hides_sensitive():

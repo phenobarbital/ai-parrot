@@ -34,6 +34,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
+from zoneinfo import ZoneInfo
 
 from aiohttp import WSMsgType, web
 from pydantic import ValidationError
@@ -47,6 +48,7 @@ from ..audio.events import (
     BlobStored,
     DeleteBlob,
     Error,
+    AnswersReady,
     FormComplete,
     InboundEvent,
     IOFailed,
@@ -54,6 +56,7 @@ from ..audio.events import (
     PlanReady,
     PlausibilityDone,
     Question,
+    RefineValue,
     Replan,
     RunPlausibility,
     SaveSnapshot,
@@ -66,6 +69,7 @@ from ..audio.events import (
     Transcribe,
     TranscriptReady,
     UnknownMessageType,
+    ValueRefined,
     is_io_request,
     parse_inbound,
 )
@@ -82,6 +86,7 @@ from ..audio.narration.lexicon import load_lexicon
 from ..audio.recordings import delete_recording, store_recording
 from ..audio.segments import _SYNTH_LOCK, AudioSegmentCache
 from ..audio.session_store import AudioSnapshot, ResumeUnavailable, SnapshotConflict
+from ..audio.value_refiner import LLMValueRefiner, ValueRefiner
 from ..core.llm_validation import LLMValidationConfig, PlausibilityReport
 from ..core.voice import resolve_voice_config
 from ..core.voice_answer import unwrap_voice
@@ -89,6 +94,7 @@ from ..renderers.audio import (
     AudioFormRenderer,
     synthesize_with_fallback,
 )
+from ..core.types import FieldType
 from ..services.auth_context import AuthContext
 from ..services.plausibility import AnswerPlausibilityChecker, PlausibilityBlocked
 from ..services.submission_pipeline import SubmissionPipeline, ValidationFailed
@@ -151,6 +157,18 @@ def _sniff_audio_suffix(data: bytes) -> Optional[str]:
 
 
 _AUDIO_MIME_BY_SUFFIX = {".webm": "audio/webm", ".ogg": "audio/ogg", ".mp4": "audio/mp4", ".wav": "audio/wav"}
+
+
+def _stt_language(locale: Optional[str]) -> str:
+    """Language hint for STT: the primary subtag of the session locale, ``en`` when missing.
+
+    Always pinned (English included): with auto-detect, faster-whisper reports
+    ``language_probability`` as the confidence, and a one-word answer ("one", "yes") scores
+    ~0.5, which scales an exact option match below ``stt_confirm_threshold`` (NO_MATCH).
+    """
+    primary = (locale or "").replace("_", "-").split("-", 1)[0].strip().lower()
+    return primary or "en"
+
 
 # Wire messages that only exist in protocol v2 — never sent to a v1 client.
 _V2_ONLY_TYPES = frozenset(
@@ -297,6 +315,7 @@ class AudioFormWSHandler:
         self._session_store = session_store
         self._llm_client_getter = llm_client_getter
         self._checkers: dict[str, AnswerPlausibilityChecker] = {}  # session_id → per-form checker
+        self._refiners: dict[str, Optional[ValueRefiner]] = {}  # session_id → LLM post-processor (FEAT-653)
         self._max_msg_size = max_msg_size
         self._auto_synthesize = auto_synthesize
         # Process-wide registry of working auto-mode VoiceSynthesizers, keyed by the effective synthesis config
@@ -396,6 +415,7 @@ class AudioFormWSHandler:
                 except Exception as exc:  # noqa: BLE001
                     self.logger.warning("Active marker release failed: %s", type(exc).__name__)
             self._checkers.pop(ctx.state.session_id, None)
+            self._refiners.pop(ctx.state.session_id, None)
             self.logger.debug("AudioFormWSHandler: session %s closed", ctx.state.session_id)
 
         return ws
@@ -592,6 +612,16 @@ class AudioFormWSHandler:
             await self._send_error(ws, "INVALID_MESSAGE", "Invalid 'start_session' message")
             return
         assert isinstance(start, StartSession)
+        if start.timezone:
+            try:
+                ZoneInfo(start.timezone)
+            except Exception:  # noqa: BLE001 — ZoneInfoNotFoundError / ValueError for malformed keys
+                self.logger.warning("start_session: ignoring invalid timezone %r", start.timezone)
+                start = start.model_copy(update={"timezone": None})
+        if start.submit_mode == "client" and start.protocol_version < 2:
+            # Rejected before anything is loaded, claimed or created, so there is nothing to unwind.
+            await self._send_error(ws, "INVALID_MESSAGE", "submit_mode client requires protocol v2")
+            return
 
         # Build the per-session config from the start_session payload (FEAT-236),
         # falling back to defaults for any omitted key.
@@ -670,15 +700,20 @@ class AudioFormWSHandler:
             if snap is None:
                 await self._send_error(ws, "RESUME_UNAVAILABLE", "Session resume is not available")
                 return
-            if not await store.claim_active(session.user_id, start.resume_session_id):
-                await self._send_error(ws, "SESSION_ACTIVE", "Another session is already active")
+            if not await store.claim_active(
+                session.user_id, start.resume_session_id, form_uid=form_uid, tenant=session.tenant
+            ):
+                await self._send_session_active(ws, store, session)
                 return
             engine = AudioFormSession.from_snapshot(snap, **deps)
             ctx.revision = snap.revision
         else:
-            if store is not None and not await store.claim_active(session.user_id, session.session_id):
-                await self._send_error(ws, "SESSION_ACTIVE", "Another session is already active")
+            if store is not None and not await store.claim_active(
+                session.user_id, session.session_id, form_uid=form_uid, tenant=session.tenant
+            ):
+                await self._send_session_active(ws, store, session)
                 return
+            ctx.revision = 0
             engine = AudioFormSession(**deps)
 
         ctx.form = form
@@ -694,6 +729,14 @@ class AudioFormWSHandler:
         ):
             # The marker was claimed before the engine validated user/tenant/version: give it back.
             await store.release_active(session.user_id, start.resume_session_id)
+        elif start.resume_session_id and any(isinstance(o, Error) and o.code == "INVALID_MESSAGE" for o in opening):
+            # Rejected client-mode resume (e.g. v1): give the marker back; the engine is dropped after the
+            # error is sent so the same connection can send a corrected start_session.
+            await store.release_active(session.user_id, start.resume_session_id)
+            await self._perform(ws, ctx, opening)
+            ctx.engine = None
+            ctx.revision = 0
+            return
         await self._perform(ws, ctx, opening)
 
     def _build_session_config(
@@ -765,7 +808,9 @@ class AudioFormWSHandler:
                 await self._release_session(ctx)
                 ctx.closed = True
                 await ws.close()
-            elif isinstance(item, FormComplete):
+            elif isinstance(item, (FormComplete, AnswersReady)):
+                if isinstance(item, AnswersReady):
+                    await self._clear_partial_mirror(ctx)
                 await self._release_session(ctx)
             return None
 
@@ -821,6 +866,8 @@ class AudioFormWSHandler:
 
         if isinstance(item, Submit):
             return await self._do_submit(ctx, item)
+        if isinstance(item, RefineValue):
+            return await self._do_refine(ctx, item)
 
         self.logger.warning("Unhandled outbound item: %s", type(item).__name__)
         return None
@@ -871,15 +918,22 @@ class AudioFormWSHandler:
                 wire.pop("value", None)  # v1: a sensitive value is never echoed
             elif isinstance(wire.get("value"), list):
                 wire["value"] = ",".join(str(v) for v in wire["value"])
+            elif isinstance(wire.get("value"), (int, float)) and not isinstance(wire.get("value"), bool):
+                wire["value"] = str(wire["value"])  # v1 always carried a string; numbers are v2-only (FEAT-653)
         elif mtype == "confirm_request":
-            wire.pop("matched", None)
-            wire.pop("alternatives", None)
+            for key in ("matched", "alternatives", "value", "refined_by"):
+                wire.pop(key, None)
+        elif mtype == "answer_rejected":
+            wire.pop("value", None)
         elif mtype == "form_complete":
             wire.pop("stored_in", None)
             wire.pop("plausibility_summary", None)
             answers = ctx.engine.state.answers if ctx.engine is not None else {}
             wire["answers"] = {
-                fid: {"value": value, "source": answers[fid].source if fid in answers else "text"}
+                fid: {
+                    "value": str(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else value,
+                    "source": answers[fid].source if fid in answers else "text",
+                }
                 for fid, value in (wire.get("answers") or {}).items()
             }
         return wire
@@ -899,16 +953,35 @@ class AudioFormWSHandler:
 
     @staticmethod
     def _segment_kind(key: str) -> str:
-        """Header ``kind`` for a narration segment key."""
+        """Header ``kind`` for a narration segment key.
+
+        ``review:*`` → review; ``*:hint`` → hint; ``*:options`` and ``*:options_intro`` → options;
+        ``q:<uid>:opt:<n>`` → option; other ``q:*`` → question; else system.
+        """
         if key.startswith("review:"):
             return "review"
         if key.endswith(":hint"):
             return "hint"
-        if key.endswith(":options"):
+        if key.endswith((":options", ":options_intro")):
             return "options"
+        parts = key.split(":")
+        if len(parts) == 4 and parts[0] == "q" and parts[2] == "opt":
+            return "option"
         if key.startswith("q:"):
             return "question"
         return "system"
+
+    @staticmethod
+    def _v1_group_uid(key: str) -> str | None:
+        """Field uid a narration key belongs to for v1 inline audio, or None (pause/sys/review keys)."""
+        parts = key.split(":")
+        if parts[0] != "q":
+            return None
+        if len(parts) == 3 and parts[2] in ("label", "hint", "options", "options_intro"):
+            return parts[1]
+        if len(parts) == 4 and parts[2] == "opt":
+            return parts[1]
+        return None
 
     async def _synth_items(self, ctx: _ConnCtx, items: dict[str, str]) -> dict[str, bytes]:
         """Synthesize ``items`` (key → text); failures degrade to missing keys (text-only)."""
@@ -942,9 +1015,9 @@ class AudioFormWSHandler:
         if ctx.inline_audio:
             groups: dict[str, list[str]] = {}
             for key in item.keys:
-                parts = key.split(":")
-                if len(parts) == 3 and parts[0] == "q" and parts[2] in ("label", "hint", "options"):
-                    groups.setdefault(parts[1], []).append(item.texts.get(key, ""))
+                uid = self._v1_group_uid(key)
+                if uid is not None:
+                    groups.setdefault(uid, []).append(item.texts.get(key, ""))
             sensitive = {str(q.field_uid) for q in engine.manifest.questions if q.sensitive}
             combined = {
                 f"v1:{uid}": " ".join(t for t in texts if t.strip())
@@ -984,7 +1057,7 @@ class AudioFormWSHandler:
                 tmp_path = Path(tmp.name)
             locale = ctx.state.locale
             try:
-                result = await self.transcriber.transcribe(tmp_path, language=locale if locale != "en" else None)
+                result = await self.transcriber.transcribe(tmp_path, language=_stt_language(locale))
             except Exception as exc:  # noqa: BLE001 — surface decode failures cleanly
                 # A malformed/truncated container (e.g. a partial recording) raises deep inside libav.
                 self.logger.warning(
@@ -1024,6 +1097,51 @@ class AudioFormWSHandler:
             checker = AnswerPlausibilityChecker(client, config=form.llm_validation or LLMValidationConfig())
             self._checkers[session_id] = checker
         return checker
+
+    def _refiner_for(self, session_id: str) -> Optional[ValueRefiner]:
+        """Per-session LLM post-processor from ``llm_client_getter``; None when no client is configured."""
+        if session_id not in self._refiners:
+            client = self._llm_client_getter() if self._llm_client_getter is not None else None
+            self._refiners[session_id] = LLMValueRefiner(client) if client is not None else None
+        return self._refiners[session_id]
+
+    async def _do_refine(self, ctx: _ConnCtx, item: RefineValue) -> "InboundEvent":
+        """Run the LLM post-processor under the form's timeout; never fails the turn."""
+        engine = ctx.engine
+        assert engine is not None
+        refiner = self._refiner_for(ctx.state.session_id)
+        if refiner is None:
+            return ValueRefined(
+                type="_value_refined", field_id=item.field_id, request_id=item.request_id, status="unavailable"
+            )
+        try:
+            result = await asyncio.wait_for(
+                refiner.refine(
+                    transcript=item.transcript,
+                    candidate=item.candidate,
+                    field_type=FieldType(item.field_type),
+                    label=item.label,
+                    locale=ctx.state.locale,
+                    today=item.today,
+                    timezone=ctx.state.timezone,
+                ),
+                timeout=engine.cfg.llm_refine_timeout_s,
+            )
+        except Exception as exc:  # noqa: BLE001 — TimeoutError included; fall back to the rules result
+            self.logger.warning("LLM value refine failed for %s: %s", item.field_id, type(exc).__name__)
+            result = None
+        if result is None:
+            return ValueRefined(
+                type="_value_refined", field_id=item.field_id, request_id=item.request_id, status="failed"
+            )
+        return ValueRefined(
+            type="_value_refined",
+            field_id=item.field_id,
+            request_id=item.request_id,
+            status="ok",
+            value=result.value,
+            confidence=result.confidence,
+        )
 
     async def _do_plausibility(self, ctx: _ConnCtx, item: RunPlausibility) -> "InboundEvent":
         """Run the plausibility batch; ``PlausibilityBlocked`` / failures become a ``blocked`` report."""
@@ -1067,12 +1185,9 @@ class AudioFormWSHandler:
         form = ctx.form
         assert form is not None
         state = ctx.state
-        data = dict(item.data)
-        # A visual-fallback REST answer arrives as the client's plain reference; the REST validator wants the
-        # ``{"answer", "blob_ref"}`` shape, so wrap scalars (a dict is already in the validator's shape).
-        for q in ctx.engine.manifest.questions if ctx.engine is not None else []:
-            if q.field_type == "rest" and q.field_id in data and not isinstance(data[q.field_id], dict):
-                data[q.field_id] = {"answer": data[q.field_id], "blob_ref": None}
+        if state.submit_mode == "client":
+            return await self._do_client_submit(ctx, item)
+        data = self._wrap_rest_scalars(ctx, dict(item.data))
         try:
             outcome = await self._pipeline_for().submit(
                 form,
@@ -1105,6 +1220,36 @@ class AudioFormWSHandler:
             },
         )
 
+    @staticmethod
+    def _wrap_rest_scalars(ctx: _ConnCtx, data: dict[str, Any]) -> dict[str, Any]:
+        """Wrap a visual-fallback REST answer's plain reference into ``{"answer", "blob_ref"}``."""
+        for q in ctx.engine.manifest.questions if ctx.engine is not None else []:
+            if q.field_type == "rest" and q.field_id in data and not isinstance(data[q.field_id], dict):
+                data[q.field_id] = {"answer": data[q.field_id], "blob_ref": None}
+        return data
+
+    async def _do_client_submit(self, ctx: _ConnCtx, item: Submit) -> "InboundEvent":
+        """Client-submit mode: validate only, persist nothing, hand the sanitized data back to the client."""
+        form = ctx.form
+        assert form is not None
+        state = ctx.state
+        data = self._wrap_rest_scalars(ctx, dict(item.data))
+        pipeline = self._pipeline_for()
+        try:
+            result, _ = await pipeline.validate(
+                form, data, locale=state.locale, auth_context=self._auth_context(ctx.user), llm_validation=False
+            )
+        except Exception as exc:  # noqa: BLE001 — surface and re-ask, like a failed submit (never logs answers)
+            self.logger.warning("Audio client validation failed: %s", type(exc).__name__)
+            return IOFailed(
+                type="_io_failed", request=item.type, code="SUBMIT_FAILED", detail="The form could not be validated."
+            )
+        if not result.is_valid:
+            return SubmitDone(type="_submit_done", outcome={"errors": result.errors})
+        client_data = pipeline.attach_verdicts(result.sanitized_data, state.plausibility)
+        summary = state.plausibility.model_dump(mode="json") if state.plausibility is not None else None
+        return SubmitDone(type="_submit_done", outcome={"client_data": client_data, "plausibility_summary": summary})
+
     # -------------------------------------------------------------------------
     # Snapshots
     # -------------------------------------------------------------------------
@@ -1120,6 +1265,17 @@ class AudioFormWSHandler:
                 http_session = None
             ctx.partial_session_id = str(http_session) if http_session else ctx.state.session_id
         return ctx.partial_session_id
+
+    async def _clear_partial_mirror(self, ctx: _ConnCtx) -> None:
+        """Client-submit mode: drop the ``/partial`` mirror after ``answers_ready`` (as server mode after submit)."""
+        store = getattr(self._session_store, "partial_store", None)
+        form = ctx.form
+        if store is None or form is None:
+            return
+        try:
+            await store.delete(str(form.form_uid), self._partial_session(ctx))
+        except Exception as exc:  # noqa: BLE001 — best effort, never fails the session
+            self.logger.warning("Partial cleanup after answers_ready failed: %s", type(exc).__name__)
 
     async def _mirror_partial(self, ctx: _ConnCtx, item: "AnswerAccepted | AnswerCleared") -> None:
         """AC16: keep ``/partial`` in step with the audio session (scalar answers only, never sensitive ones).
@@ -1361,6 +1517,9 @@ class AudioFormWSHandler:
         ws: web.WebSocketResponse,
         code: str,
         message: str,
+        *,
+        session_id: str | None = None,
+        form_uid: str | None = None,
     ) -> None:
         """Send an error message over the WebSocket.
 
@@ -1368,8 +1527,28 @@ class AudioFormWSHandler:
             ws: Active WebSocket.
             code: Machine-readable error code.
             message: Human-readable error description.
+            session_id: SESSION_ACTIVE only — the session holding the user's slot.
+            form_uid: SESSION_ACTIVE only — that session's form.
         """
+        payload: dict[str, Any] = {"type": "error", "code": code, "message": message}
+        if session_id is not None:
+            payload["session_id"] = session_id
+        if form_uid is not None:
+            payload["form_uid"] = form_uid
         try:
-            await ws.send_json({"type": "error", "code": code, "message": message})
+            await ws.send_json(payload)
         except Exception:
             pass
+
+    async def _send_session_active(
+        self, ws: web.WebSocketResponse, store: "AudioSessionStore", session: AudioSessionState
+    ) -> None:
+        """SESSION_ACTIVE with the holder's ids when it belongs to the same tenant; today's error otherwise."""
+        message = "Another session is already active"
+        holder = await store.active_holder(session.user_id)
+        if holder is not None and holder.form_uid is not None and holder.tenant == session.tenant:
+            await self._send_error(
+                ws, "SESSION_ACTIVE", message, session_id=holder.session_id, form_uid=holder.form_uid
+            )
+        else:
+            await self._send_error(ws, "SESSION_ACTIVE", message)

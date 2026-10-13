@@ -9,6 +9,7 @@ import pytest
 
 from parrot_formdesigner.audio.engine import AudioFormSession
 from parrot_formdesigner.audio.events import (
+    AnswersReady,
     AnswerText,
     AudioReceived,
     Error,
@@ -98,7 +99,7 @@ def _make(
     return AudioFormSession(**deps)
 
 
-def _start(s: AudioFormSession, *, resume: str | None = None, protocol: int = 2) -> list:
+def _start(s: AudioFormSession, *, resume: str | None = None, protocol: int = 2, submit_mode: str = "server") -> list:
     return s.handle(
         StartSession(
             type="start_session",
@@ -106,6 +107,7 @@ def _start(s: AudioFormSession, *, resume: str | None = None, protocol: int = 2)
             locale="es",
             protocol_version=protocol,
             resume_session_id=resume,
+            submit_mode=submit_mode,
         )
     )
 
@@ -418,3 +420,80 @@ class TestReviewAndResume:
         assert complete.answers["pw"] == "[hidden]"
         assert "s3cret" not in everything + repr(done) + repr(s.snapshot().model_dump())
         assert "s3cret" not in caplog.text
+
+
+class TestClientSubmitMode:
+    """FEAT-656 TASK-4266 — submit_mode="client" in the pure engine."""
+
+    def _to_submitting(self, s):
+        _answer_all_mode(s)
+        s.handle(PlausibilityDone(type="_plausibility_done", report=_report({})))
+        out = s.handle(ReviewConfirm(type="review_confirm", confirmed=True))
+        assert any(isinstance(o, Submit) for o in out)
+        return out
+
+    def test_client_mode_requires_v2(self):
+        s = _make()
+        out = _start(s, protocol=1, submit_mode="client")
+        assert len(out) == 1 and isinstance(out[0], Error) and out[0].code == "INVALID_MESSAGE"
+        assert s.state.phase == Phase.IDLE and s.state.submit_mode == "server"
+
+    def test_client_data_emits_answers_ready_and_completes(self):
+        s = _make()
+        self._to_submitting(s)
+        assert s.state.submit_mode == "client"
+        out = s.handle(
+            SubmitDone(type="_submit_done", outcome={"client_data": {"name": "Ana"}, "plausibility_summary": {"n": 1}})
+        )
+        assert len(out) == 1 and isinstance(out[0], AnswersReady)
+        assert out[0].data == {"name": "Ana"} and out[0].plausibility_summary == {"n": 1}
+        assert not any(isinstance(o, FormComplete) for o in out)
+        assert s.state.completed is True and s.state.phase == Phase.COMPLETE
+
+    def test_client_data_without_summary(self):
+        s = _make()
+        self._to_submitting(s)
+        out = s.handle(SubmitDone(type="_submit_done", outcome={"client_data": {}}))
+        assert isinstance(out[0], AnswersReady) and out[0].plausibility_summary is None
+
+    def test_errors_branch_unchanged_in_client_mode(self):
+        s = _make()
+        self._to_submitting(s)
+        out = s.handle(SubmitDone(type="_submit_done", outcome={"errors": {"name": ["bad"]}}))
+        assert not any(isinstance(o, AnswersReady) for o in out)
+        assert out[0].type == "validation_errors" and out[0].first_field_id == "name"
+        assert s.state.cursor == "name" and s.state.phase == Phase.ASKING and not s.state.completed
+
+    def test_resume_keeps_submit_mode(self):
+        s = _make()
+        _start(s, submit_mode="client")
+        _advance(s)
+        s.handle(AnswerText(type="answer_text", field_id="name", value="Ana"))
+        snap = s.snapshot()
+        assert snap.submit_mode == "client"
+        r = _make(s.form, snap=snap)
+        # the resuming start_session cannot flip the saved mode
+        out = _start(r, resume="sess", submit_mode="server")
+        assert any(isinstance(o, SessionResumed) for o in out)
+        assert r.state.submit_mode == "client"
+
+    def test_resume_client_snapshot_rejects_v1(self):
+        s = _make()
+        _start(s, submit_mode="client")
+        r = _make(s.form, snap=s.snapshot())
+        out = _start(r, resume="sess", protocol=1)
+        assert len(out) == 1 and out[0].code == "INVALID_MESSAGE"
+
+
+def _answer_all_mode(s):
+    """Like _answer_all but starts the session in client mode."""
+    _start(s, submit_mode="client")
+    out = _advance(s)
+    answers = {"name": "Ana", "color": "r", "agree": "yes", "pw": "s3cret"}
+    for _ in range(10):
+        q = next((o for o in out if getattr(o, "type", "") == "question"), None)
+        if q is None:
+            return out
+        s.handle(AnswerText(type="answer_text", field_id=q.field_id, value=answers[q.field_id]))
+        out = _advance(s)
+    raise AssertionError("did not terminate")

@@ -17,10 +17,18 @@ _logger = logging.getLogger(__name__)
 
 
 class HandsFreeConfig(BaseModel):
-    """Client hands-free behaviour: auto-open mic after TTS, end-of-speech silence."""
+    """Client hands-free behaviour: auto-open mic after TTS, end-of-speech silence, barge-in.
+
+    ``barge_in`` (default True) tells the client it MAY keep the microphone armed with VAD while
+    narration segments play and cancel playback on speech onset. It is a client policy and a
+    ceiling: the client must still disable it when echo cancellation is not effective or the
+    user opts out, and never enables it when the form says False. The server already accepts a
+    recording at any time during ASKING/CONFIRMING and never learns playback was interrupted.
+    """
 
     auto_record: bool = True
     silence_ms: int = Field(default=1200, ge=0)
+    barge_in: bool = True
 
 
 class UiCue(BaseModel):
@@ -46,6 +54,13 @@ class FieldVoiceMeta(BaseModel):
     skip_in_review: bool = False
     commands: Literal["on", "off"] = "on"
     sensitive: bool = False
+    normalize: bool = True  # FEAT-653: typed rules post-processor for spoken answers of this field
+    llm_refine: bool | None = None  # FEAT-653: None → inherit VoiceFormConfig.llm_refine_values
+    option_pause_ms: int | None = Field(default=None, ge=0)  # per-field gap between enumerated options (ms)
+
+
+#: Hard ceiling for ``llm_refine_timeout_s``: the refine blocks the session's socket queue while it runs.
+LLM_REFINE_TIMEOUT_MAX_S: float = 10.0
 
 
 class VoiceFormConfig(BaseModel):
@@ -54,6 +69,7 @@ class VoiceFormConfig(BaseModel):
     enabled: bool = True
     max_questions: int | None = Field(default=10, ge=1)
     hint_pause_ms: int = Field(default=600, ge=0)
+    option_pause_ms: int = Field(default=500, ge=0)  # gap between enumerated options (ms); provisional, spec §8 Q-A
     enumerate_options: bool = True
     stt_confirm_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
     option_match_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
@@ -62,6 +78,9 @@ class VoiceFormConfig(BaseModel):
     store_recordings: bool = True
     resume_ttl_seconds: int = Field(default=3600, ge=1)
     llm_refine_options: bool = False
+    llm_refine_values: bool = False  # FEAT-653: LLM post-processor for spoken typed-family answers (opt-in)
+    llm_refine_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
+    llm_refine_timeout_s: float = Field(default=4.0, gt=0.0, le=LLM_REFINE_TIMEOUT_MAX_S)
     commands: Literal["on", "off"] = "on"
     hands_free: HandsFreeConfig = Field(default_factory=HandsFreeConfig)
     tts_backend: Literal["supertonic", "google"] = "supertonic"
@@ -101,6 +120,13 @@ def field_voice_meta(field: FormField, *, logger: logging.Logger | None = None) 
         return FieldVoiceMeta()
 
 
+def _cap_refine_timeout(cfg: VoiceFormConfig) -> VoiceFormConfig:
+    """Never hand out a refine timeout above the cap (also guards configs built without validation)."""
+    if cfg.llm_refine_timeout_s <= LLM_REFINE_TIMEOUT_MAX_S:
+        return cfg
+    return cfg.model_copy(update={"llm_refine_timeout_s": LLM_REFINE_TIMEOUT_MAX_S})
+
+
 def resolve_voice_config(form: FormSchema, session: AudioSessionConfig | None) -> VoiceFormConfig:
     """Return the effective voice config for a session.
 
@@ -110,8 +136,9 @@ def resolve_voice_config(form: FormSchema, session: AudioSessionConfig | None) -
     """
     base = form.voice or VoiceFormConfig()
     if session is None:
-        return base
+        return _cap_refine_timeout(base)
     overrides: dict[str, Any] = {
+        "llm_refine_timeout_s": min(base.llm_refine_timeout_s, LLM_REFINE_TIMEOUT_MAX_S),
         "stt_confirm_threshold": max(base.stt_confirm_threshold, session.stt_confirm_threshold),
         "enumerate_options": base.enumerate_options and session.enumerate_options,
     }

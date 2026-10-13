@@ -69,3 +69,9 @@ class TestAudioModelDeltas:
         with pytest.raises(ValidationError):
             ReviewItemData(position=0, field_id="f", label="L", answer_text="a")
         assert ReviewItemData(position=1, field_id="f", label="L", answer_text="a").position == 1
+
+
+def test_session_state_submit_mode_default():
+    base = dict(session_id="s", form_uid="f", user_id="u")
+    assert AudioSessionState(**base).submit_mode == "server"
+    assert AudioSessionState(**base, submit_mode="client").submit_mode == "client"
