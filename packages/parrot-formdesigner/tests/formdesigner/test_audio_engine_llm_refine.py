@@ -39,17 +39,28 @@ def _refine(out: list) -> RefineValue:
     return next(o for o in out if isinstance(o, RefineValue))
 
 
-def test_refine_emitted_and_high_confidence_accepts() -> None:
+def test_refine_emitted_and_llm_never_upgrades_to_accept() -> None:
+    """Product decision 2: rules confirm/rejected + LLM -> at most a confirm carrying the refined value."""
     s = _build([_f("email", FieldType.EMAIL)], cfg=_cfg())
     out = s.handle(_tr("email", "john at gmail"))
     req = _refine(out)
     assert req.candidate == "john@gmail" and req.field_type == "email" and req.today == "2026-10-12"
     assert sum(isinstance(o, RefineValue) for o in out) == 1 and "email" not in s.state.answers
-    out = s.handle(_vr(req, value="john@gmail.com", confidence=0.95))
-    assert next(o for o in out if isinstance(o, AnswerAccepted)).value == "john@gmail.com"
+    out = s.handle(_vr(req, value="john@gmail.com", confidence=0.99))
+    assert not any(isinstance(o, AnswerAccepted) for o in out) and "email" not in s.state.answers
+    cr = next(o for o in out if isinstance(o, ConfirmRequest))
+    assert cr.value == "john@gmail.com" and cr.refined_by == "llm"
+    s.handle(ConfirmAnswer(type="confirm_answer", field_id="email", confirmed=True))
     ans = s.state.answers["email"]
-    assert ans.normalized_by == "llm" and ans.llm_confidence == 0.95
+    assert ans.value == "john@gmail.com" and ans.normalized_by == "llm" and ans.llm_confidence == 0.99
     assert ans.raw_transcript == "john at gmail"
+
+
+def test_rules_accepted_stays_accepted_with_high_confidence_llm() -> None:
+    s = _build([_f("n", FieldType.NUMBER)], cfg=_cfg())
+    req = _refine(s.handle(_tr("n", "twenty five")))
+    out = s.handle(_vr(req, value="25", confidence=0.95))
+    assert next(o for o in out if isinstance(o, AnswerAccepted)).value == 25
 
 
 def test_low_llm_confidence_confirms() -> None:
@@ -95,7 +106,7 @@ def test_stale_reply_ignored() -> None:
     stale = req.model_copy(update={"request_id": "other"})
     assert s.handle(_vr(stale, value="x@y.io", confidence=0.99)) == []
     # the real reply is still honoured, and a duplicate afterwards is dropped
-    assert any(isinstance(o, AnswerAccepted) for o in s.handle(_vr(req, value="x@y.io", confidence=0.99)))
+    assert any(isinstance(o, ConfirmRequest) for o in s.handle(_vr(req, value="x@y.io", confidence=0.99)))
     assert s.handle(_vr(req, value="z@y.io", confidence=0.99)) == []
 
 

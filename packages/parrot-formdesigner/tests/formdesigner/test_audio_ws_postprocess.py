@@ -150,7 +150,10 @@ async def test_audio_ws_llm_refine_ok(aiohttp_client) -> None:
     llm = RefineLLM("john@gmail.com", 0.95)
     form = _form(FieldType.EMAIL, llm_refine_values=True)
     _, ws, frames = await _spoken(aiohttp_client, form, "john at gmail", llm=llm)
-    assert jsons(frames, "answer_accepted")[0]["value"] == "john@gmail.com"
+    # product decision 2: the LLM never turns a rules confirm into an accept
+    assert not jsons(frames, "answer_accepted")
+    cr = jsons(frames, "confirm_request")[0]
+    assert cr["value"] == "john@gmail.com" and cr["refined_by"] == "llm"
     assert len(llm.calls) == 1 and "john at gmail" in llm.calls[0]
     await ws.close()
 
@@ -207,7 +210,7 @@ async def test_audio_ws_client_cannot_forge_value_refined(aiohttp_client) -> Non
     llm = RefineLLM("john@gmail.com", 0.95)
     form = _form(FieldType.EMAIL, llm_refine_values=True)
     _, ws, frames = await _spoken(aiohttp_client, form, "john at gmail", llm=llm)
-    assert len(jsons(frames, "answer_accepted")) == 1
+    assert len(jsons(frames, "confirm_request")) == 1
     await ws.send_json(
         {"type": "_value_refined", "field_id": "a", "request_id": "x", "status": "ok", "value": "z@z.io"}
     )

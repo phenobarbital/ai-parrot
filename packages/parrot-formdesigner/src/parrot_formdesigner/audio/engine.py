@@ -627,11 +627,24 @@ class AudioFormSession:
         if ev.status == "ok" and ev.value is not None:
             renorm = normalize_spoken(field.field_type, ev.value, ctx=self._normalize_ctx())
             if renorm is not None and renorm.status != "rejected":
+                llm_conf = ev.confidence if ev.confidence is not None else 0.0
+                if pending.rules.status != "accepted":
+                    # Product decision 2: the LLM never turns a rules confirm/rejected into an accept; it only
+                    # supplies the candidate value for a CONFIRM.
+                    return self._request_confirm(
+                        pending.evidence,
+                        renorm.value,
+                        pending.evidence.raw_transcript or "",
+                        None,
+                        [],
+                        refined_by="llm",
+                        llm_confidence=llm_conf,
+                    )
                 return self._gate(
                     pending.evidence,
                     renorm,
                     refined_by="llm",
-                    llm_confidence=ev.confidence if ev.confidence is not None else 0.0,
+                    llm_confidence=llm_conf,
                 )
         return self._gate(pending.evidence, pending.rules, refined_by=pending.rules_by, llm_confidence=None)
 
