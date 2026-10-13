@@ -133,6 +133,15 @@ def setup_pbac(
         )
         return _fail_open_or_closed(f"navigator-auth ABAC module not available: {exc}")
 
+    # Idempotent per app: a second call (e.g. BotManager.setup() via
+    # setup_dataplane_guard, then the host app) must not build a second PDP —
+    # that would append abac_middleware twice, register a duplicate
+    # on_startup load, and split Guardian/dataplane guard across two evaluators.
+    existing_pdp = app.get("abac") if hasattr(app, "get") else None
+    if isinstance(PDP, type) and isinstance(existing_pdp, PDP):
+        logger.debug("PBAC already initialized on this app; reusing the registered PDP.")
+        return existing_pdp, existing_pdp.evaluator, app.get("security")
+
     # Resolve and validate policy directory
     policy_path = Path(policy_dir)
     if not policy_path.exists() or not policy_path.is_dir():
