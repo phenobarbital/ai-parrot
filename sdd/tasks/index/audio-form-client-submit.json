@@ -56,7 +56,7 @@
       "feature_id": "FEAT-656",
       "feature": "audio-form-client-submit",
       "spec": "sdd/specs/audio-form-client-submit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -67,8 +67,9 @@
       "parallelism_notes": "uses state.submit_mode / AnswersReady from TASK-4265 and the engine's `client_data` outcome contract from TASK-4266 (audio/engine.py); also edits audio_ws.py which TASK-4266 does not touch.",
       "assigned_to": null,
       "started_at": "2026-10-13T01:37:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4267-adapter-client-submit-path.md"
+      "completed_at": "2026-10-13T01:43:34+00:00",
+      "file": "sdd/tasks/completed/TASK-4267-adapter-client-submit-path.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4268",
