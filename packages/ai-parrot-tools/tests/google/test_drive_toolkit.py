@@ -1,22 +1,43 @@
 """FEAT-608 TASK-3816 — GoogleDriveToolkit."""
 
+import importlib.util
 import sys
 from pathlib import Path
 
 import pytest
 
-sys.modules.pop("parrot.interfaces.file", None)
-from parrot.interfaces.file.gdrive import GoogleDriveFileManager  # noqa: E402
-from parrot_tools.google.drive import GoogleDriveToolkit  # noqa: E402
+from parrot.interfaces.file.gdrive import GoogleDriveFileManager
+from parrot_tools.google.drive import GoogleDriveToolkit
 
-FAKES_DIR = Path(__file__).parents[3] / "ai-parrot" / "tests" / "interfaces"
-# Temporary entry only: FAKES_DIR contains a ``jira/`` test package that would
-# otherwise shadow the PyPI ``jira`` library for every module collected later.
-sys.path.insert(0, str(FAKES_DIR))
-try:
-    from _gdrive_fakes import FakeDrive, FakeDriveClient, make_google_client  # noqa: E402
-finally:
-    sys.path.remove(str(FAKES_DIR))
+# `_gdrive_fakes` lives in another distribution's test tree. Load it by
+# absolute path instead of putting its directory on the import search path:
+# that directory also holds a `jira/` test package, and such an entry would
+# shadow the PyPI `jira` distribution for every module collected afterwards
+# (issue:265b7797ae9b).
+_FAKES_PATH = (
+    Path(__file__).parents[3] / "ai-parrot" / "tests" / "interfaces" / "_gdrive_fakes.py"
+)
+
+
+def _load_gdrive_fakes():
+    """Load ``_gdrive_fakes`` by file path under a private module name."""
+    name = "_gdrive_fakes_tools"
+    cached = sys.modules.get(name)
+    if cached is not None:
+        return cached
+    spec = importlib.util.spec_from_file_location(name, _FAKES_PATH)
+    if spec is None or spec.loader is None:  # pragma: no cover - defensive
+        raise ImportError(f"cannot load the Drive fakes from {_FAKES_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_fakes = _load_gdrive_fakes()
+FakeDrive = _fakes.FakeDrive
+FakeDriveClient = _fakes.FakeDriveClient
+make_google_client = _fakes.make_google_client
 
 
 def _manager_with_files() -> tuple[GoogleDriveFileManager, FakeDriveClient]:
