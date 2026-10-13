@@ -898,7 +898,10 @@ class AudioFormWSHandler:
             wire.pop("plausibility_summary", None)
             answers = ctx.engine.state.answers if ctx.engine is not None else {}
             wire["answers"] = {
-                fid: {"value": value, "source": answers[fid].source if fid in answers else "text"}
+                fid: {
+                    "value": str(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else value,
+                    "source": answers[fid].source if fid in answers else "text",
+                }
                 for fid, value in (wire.get("answers") or {}).items()
             }
         return wire

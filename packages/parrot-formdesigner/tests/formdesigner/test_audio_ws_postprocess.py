@@ -157,6 +157,9 @@ async def test_audio_ws_numeric_answer_accepted_is_string_in_v1_number_in_v2(
     frames = await until(ws, "answer_accepted", *STOP)
     got = jsons(frames, "answer_accepted")[0]["value"]
     assert got == v1 and isinstance(got, str)
+    await ws.send_json({"type": "submit"})
+    done = jsons(await until(ws, "form_complete", "error"), "form_complete")
+    assert done and done[0]["answers"]["a"]["value"] == v1
     await ws.close()
 
 

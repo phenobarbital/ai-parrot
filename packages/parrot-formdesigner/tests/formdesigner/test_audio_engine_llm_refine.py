@@ -139,3 +139,12 @@ def test_field_opt_out_and_opt_in() -> None:
 def test_default_config_never_refines() -> None:
     s = _build([_f("p", FieldType.PHONE)])
     assert not any(isinstance(o, RefineValue) for o in s.handle(_tr("p", "five five five oh one two three")))
+
+
+def test_llm_never_accepts_when_rules_normalizer_is_off() -> None:
+    """The raw transcript of a normalize=False field is not a rules accept: the LLM still only gets a confirm."""
+    s = _build([_f("d", FieldType.DATE, meta={"voice": {"normalize": False}})], tz=None, cfg=_cfg())
+    req = _refine(s.handle(_tr("d", "tomorrow")))
+    out = s.handle(_vr(req, value="2026-10-13", confidence=0.99))
+    assert not any(isinstance(o, AnswerAccepted) for o in out)
+    assert next(o for o in out if isinstance(o, ConfirmRequest)).refined_by == "llm"
