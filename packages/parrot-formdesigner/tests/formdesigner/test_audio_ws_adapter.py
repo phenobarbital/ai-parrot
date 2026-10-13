@@ -418,6 +418,8 @@ class TestClientSubmitAdapter:
         await h._process_text(ws, ctx, {"type": "review_confirm", "confirmed": True})
         assert "answers_ready" not in _types(ws)
         pipeline.submit.assert_not_called()
+        assert any(m["type"] == "error" and m["code"] == "SUBMIT_FAILED" for m in _msgs(ws))
+        assert not ctx.engine.state.completed
 
     async def test_client_mode_v1_rejected(self, synth, stt) -> None:
         h = _handler(_form("a"), synth, stt, pipeline=self._pipeline())

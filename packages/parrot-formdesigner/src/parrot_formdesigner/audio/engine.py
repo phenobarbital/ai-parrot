@@ -1106,7 +1106,7 @@ class AudioFormSession:
         ]
 
     def on_submit_done(self, ev: SubmitDone) -> list[Outbound]:
-        """FormComplete on success; ValidationErrors + re-ask first failing field otherwise.
+        """FormComplete on success (AnswersReady for ``client_data``); ValidationErrors + re-ask first failing field otherwise.
 
         ``ev.outcome`` is either a dumped ``SubmitOutcome`` (success: ``submission_id`` / ``stored_in``) or a dict
         carrying ``errors`` (``{field_id: [messages]}``) for a deterministic validation rejection.

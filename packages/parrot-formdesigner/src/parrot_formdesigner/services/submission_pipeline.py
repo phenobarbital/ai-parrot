@@ -322,7 +322,7 @@ class SubmissionPipeline:
             raise
 
     def attach_verdicts(self, data: dict[str, Any], report: PlausibilityReport | None) -> dict[str, Any]:
-        """Public (used by the audio adapter in client-submit mode): copy each verdict into its spoken envelope (``VoiceEvidenceEnvelope.plausibility``); scalars untouched."""
+        """Public (audio client-submit mode): copy each verdict into its spoken envelope (``VoiceEvidenceEnvelope.plausibility``); scalars untouched."""
         if report is None or not report.items:
             return data
         out = dict(data)

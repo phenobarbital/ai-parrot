@@ -1105,7 +1105,7 @@ class AudioFormWSHandler:
 
     @staticmethod
     def _wrap_rest_scalars(ctx: _ConnCtx, data: dict[str, Any]) -> dict[str, Any]:
-        """Wrap a visual-fallback REST answer's plain reference into the validator's ``{"answer", "blob_ref"}`` shape."""
+        """Wrap a visual-fallback REST answer's plain reference into ``{"answer", "blob_ref"}``."""
         for q in ctx.engine.manifest.questions if ctx.engine is not None else []:
             if q.field_type == "rest" and q.field_id in data and not isinstance(data[q.field_id], dict):
                 data[q.field_id] = {"answer": data[q.field_id], "blob_ref": None}

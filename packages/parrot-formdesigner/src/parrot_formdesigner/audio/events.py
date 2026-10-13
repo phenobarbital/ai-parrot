@@ -104,7 +104,7 @@ class StartSession(_Inbound):
     tts_mime_format: str | None = None
     auto_advance: bool | None = None
     enumerate_options: bool | None = None
-    submit_mode: Literal["server", "client"] = "server"  # "client": review_confirm replies answers_ready, nothing is persisted
+    submit_mode: Literal["server", "client"] = "server"  # "client": answers_ready, nothing persisted
 
 
 class AnswerText(_Inbound):
