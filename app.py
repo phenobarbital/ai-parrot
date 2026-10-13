@@ -332,8 +332,11 @@ class Main(AppHandler):
         auth.add_exclude_list('/.well-known/*')
 
         # PBAC setup — navigator-auth Rust evaluator bug is now fixed.
-        # setup_pbac() MUST be called BEFORE BotManager.setup(app) so that
-        # app['abac'] is registered before AgentRegistry.setup(app) reads it.
+        # BotManager.setup(app) above already ran setup_pbac() (via
+        # setup_dataplane_guard, using PARROT_PBAC_POLICY_DIR), so app['abac']
+        # is registered before AgentRegistry.setup(app) reads it on startup.
+        # setup_pbac() is idempotent per app: this call reuses that PDP and
+        # its evaluator (policy_dir/cache_ttl below only apply if it did not).
         policy_dir = self.app.get('policy_dir') or config.get('POLICY_DIR', fallback='policies')
         pdp, evaluator, guardian = setup_pbac(
             self.app,
