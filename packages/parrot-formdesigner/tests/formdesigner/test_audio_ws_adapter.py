@@ -164,6 +164,17 @@ class TestAdapterIO:
         assert ctx.engine.state.answers["a"].value == "alice"
         assert ctx.engine.state.answers["a"].audio_mime == "audio/webm"
 
+    @pytest.mark.parametrize(
+        ("locale", "expected"),
+        [(None, "en"), ("en", "en"), ("en-US", "en"), ("es", "es"), ("es_MX", "es"), ("", "en")],
+    )
+    async def test_transcribe_pins_stt_language_to_session_locale(self, synth, stt, locale, expected) -> None:
+        """English is pinned too: auto-detect on a one-word answer gives a low language_probability."""
+        h = _handler(_form("a", "b"), synth, stt)
+        ws, ctx = await _boot(h, start={} if locale is None else {"locale": locale})
+        await h._process_binary(ws, ctx, _WEBM)
+        assert stt.transcribe.call_args.kwargs["language"] == expected
+
     async def test_decode_error_maps_to_audio_decode_error(self, synth, stt) -> None:
         stt.transcribe.side_effect = RuntimeError("libav boom")
         h = _handler(_form("a"), synth, stt)

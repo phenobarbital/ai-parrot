@@ -158,6 +158,18 @@ def _sniff_audio_suffix(data: bytes) -> Optional[str]:
 
 _AUDIO_MIME_BY_SUFFIX = {".webm": "audio/webm", ".ogg": "audio/ogg", ".mp4": "audio/mp4", ".wav": "audio/wav"}
 
+
+def _stt_language(locale: Optional[str]) -> str:
+    """Language hint for STT: the primary subtag of the session locale, ``en`` when missing.
+
+    Always pinned (English included): with auto-detect, faster-whisper reports
+    ``language_probability`` as the confidence, and a one-word answer ("one", "yes") scores
+    ~0.5, which scales an exact option match below ``stt_confirm_threshold`` (NO_MATCH).
+    """
+    primary = (locale or "").replace("_", "-").split("-", 1)[0].strip().lower()
+    return primary or "en"
+
+
 # Wire messages that only exist in protocol v2 — never sent to a v1 client.
 _V2_ONLY_TYPES = frozenset(
     {
@@ -1045,7 +1057,7 @@ class AudioFormWSHandler:
                 tmp_path = Path(tmp.name)
             locale = ctx.state.locale
             try:
-                result = await self.transcriber.transcribe(tmp_path, language=locale if locale != "en" else None)
+                result = await self.transcriber.transcribe(tmp_path, language=_stt_language(locale))
             except Exception as exc:  # noqa: BLE001 — surface decode failures cleanly
                 # A malformed/truncated container (e.g. a partial recording) raises deep inside libav.
                 self.logger.warning(
