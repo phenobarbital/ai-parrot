@@ -446,10 +446,36 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: Claude Code session via /sdd-start (worktree `feat-FEAT-637-jiratoolkit-template-support`)
+**Date**: 2026-10-14
+**Notes**: Implemented as blueprinted: `_gdrive_fakes` loaded by absolute path under
+`_gdrive_fakes_tools`; the `sys.modules.pop` and every `sys.path` mention removed from
+`test_drive_toolkit.py`; root `conftest.py` stub group guarded behind a real-package
+probe (34 lines re-indented verbatim); `test_import_hygiene.py` added (3 tests).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+Evidence (clean worktree, `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-tools/src`):
+- baseline `pytest packages/ai-parrot-tools/tests --collect-only -p no:randomly -q`:
+  5840 collected, **6 errors** — all `'parrot.interfaces.file' is not a package`
+  (business_automation ×2, computer/test_agent, contracts ×3).
+- after: **5926 collected, 0 errors**.
+- the three Validation Commands pass (3, 7 and 10 tests); `tests/google` = 19 passed +
+  the 3 pre-existing `test_places.py` failures (explicitly out of scope).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**:
+1. **Index entry was missing.** The TASK-4137 entry added in `911016bac` was dropped when
+   the FEAT-637 branch (closing TASK-4113..4117) overwrote the per-spec index on merge, so
+   `/sdd-start` could not resolve the task. Restored as `in-progress` in commit
+   `4922353d2`; the feature-level `completed_at` was cleared then re-stamped on close.
+2. **The task text was partly stale.** `a9af60665` (`fix(tests): unblock ai-parrot-tools
+   test collection`) had already made the `jira` shadowing temporary
+   (`sys.path.insert` + `finally: remove`), so the five `jira` collection errors and the
+   five `shell_tool`/alpaca/zoom errors in the task's repro no longer reproduced on
+   `origin/dev`; only the `parrot.interfaces.file` stub defect remained. AC-1/AC-4 are
+   therefore satisfied trivially for those items. The by-path load is still done, so AC-2
+   (`grep -c 'sys.path'` == 0) holds literally.
+3. **AC-6 not fully met:** `ruff check conftest.py` reports `E402` at the
+   `import importlib as _importlib` line. It is pre-existing (same finding on
+   `origin/dev:conftest.py`, one line earlier); left untouched as out of scope — the
+   `/sdd-done` lint pass is the place to clear it. The other two files are ruff-clean.
+4. `test_parrot_interfaces_file_is_the_real_package` fails (by design) in an environment
+   where the real package truly cannot import and the conftest stub takes over.
