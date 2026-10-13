@@ -131,6 +131,35 @@ async def test_audio_ws_postprocess_v1_compat(aiohttp_client) -> None:
     await ws.close()
 
 
+@pytest.mark.parametrize(
+    "field_type,text,v1,v2",
+    [
+        (FieldType.NUMBER, "twenty five hundred", "2500", 2500),
+        (FieldType.NUMBER, "two and a half", "2.5", 2.5),
+        (FieldType.INTEGER, "twelve hundred", "1200", 1200),
+    ],
+)
+async def test_audio_ws_numeric_answer_accepted_is_string_in_v1_number_in_v2(
+    aiohttp_client, field_type: FieldType, text: str, v1: str, v2: Any
+) -> None:
+    """Product decision 5: v1 wire stays a string; the typed number is v2 only."""
+    _, ws, frames = await _spoken(aiohttp_client, _form(field_type), text)
+    got = jsons(frames, "answer_accepted")[0]["value"]
+    assert got == v2 and type(got) is type(v2)
+    await ws.close()
+    env = _Env(_form(field_type), RefineLLM())
+    client = await aiohttp_client(env.app)
+    ws = await connect(client, env)
+    await ws.send_json({"type": "start_session", "form_uid": str(env.form.form_uid)})
+    await until(ws, "question", "error")
+    env.transcripts.append((text, 0.95))
+    await ws.send_bytes(_WAV)
+    frames = await until(ws, "answer_accepted", *STOP)
+    got = jsons(frames, "answer_accepted")[0]["value"]
+    assert got == v1 and isinstance(got, str)
+    await ws.close()
+
+
 async def test_audio_ws_timezone_validation(aiohttp_client, caplog) -> None:
     """A valid zone makes "tomorrow" certain (accepted); an invalid one is dropped, so it needs confirmation."""
     _, ws, frames = await _spoken(aiohttp_client, _form(FieldType.DATE), "tomorrow", timezone="America/New_York")

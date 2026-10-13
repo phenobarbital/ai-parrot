@@ -886,6 +886,8 @@ class AudioFormWSHandler:
                 wire.pop("value", None)  # v1: a sensitive value is never echoed
             elif isinstance(wire.get("value"), list):
                 wire["value"] = ",".join(str(v) for v in wire["value"])
+            elif isinstance(wire.get("value"), (int, float)) and not isinstance(wire.get("value"), bool):
+                wire["value"] = str(wire["value"])  # v1 always carried a string; numbers are v2-only (FEAT-653)
         elif mtype == "confirm_request":
             for key in ("matched", "alternatives", "value", "refined_by"):
                 wire.pop(key, None)
