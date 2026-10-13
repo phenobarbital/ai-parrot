@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -53,6 +53,7 @@ class AudioSnapshot(BaseModel):
     answer_meta: dict[str, dict[str, Any]] = Field(default_factory=dict)  # field_id → evidence
     plausibility: PlausibilityReport | None = None  # discarded on resume (re-run at review)
     flagged: dict[str, int] = Field(default_factory=dict)
+    submit_mode: Literal["server", "client"] = "server"  # a resumed session keeps its mode (AC4)
     submission_id: str
     user_id: str
     tenant: str | None = None

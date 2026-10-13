@@ -101,3 +101,10 @@ async def test_partial_remove_keys(stores):
     assert isinstance(updated, PartialFormData)
     assert updated.data == {"b": 2}
     assert (await partial.get("f", "s")).data == {"b": 2}
+
+
+def test_snapshot_keeps_submit_mode():
+    assert _snap().submit_mode == "server"
+    snap = _snap(submit_mode="client")
+    again = AudioSnapshot.model_validate(snap.model_dump(mode="json"))
+    assert again.submit_mode == "client"

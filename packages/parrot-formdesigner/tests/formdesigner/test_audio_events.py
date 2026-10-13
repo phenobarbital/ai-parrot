@@ -81,3 +81,18 @@ class TestLegacyInboundIgnoresUnknownKeys:
             ev.parse_inbound(
                 {"type": "start_session", "form_uid": "u", "client": "old-app", "foo": 1}, protocol_version=2
             )
+
+
+def test_start_session_submit_mode_default_and_validation():
+    assert ev.StartSession(type="start_session", form_uid="f").submit_mode == "server"
+    assert ev.StartSession(type="start_session", form_uid="f", submit_mode="client").submit_mode == "client"
+    with pytest.raises(ValidationError):
+        ev.StartSession(type="start_session", form_uid="f", submit_mode="bogus")
+
+
+def test_answers_ready_wire_and_union_membership():
+    w = ev.AnswersReady(data={"qty": 1}).to_wire()
+    # absent optionals are omitted on the wire (_Wire.to_wire, v1 parity)
+    assert w == {"type": "answers_ready", "data": {"qty": 1}}
+    assert ev.AnswersReady(data={}, plausibility_summary={"flagged": 1}).to_wire()["plausibility_summary"] == {"flagged": 1}
+    assert ev.AnswersReady in typing.get_args(ev.WireMessage)
