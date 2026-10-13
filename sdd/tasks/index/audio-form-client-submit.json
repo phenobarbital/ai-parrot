@@ -16,7 +16,7 @@
       "feature_id": "FEAT-656",
       "feature": "audio-form-client-submit",
       "spec": "sdd/specs/audio-form-client-submit.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependencies: self-contained change to audio/events.py, audio/models.py, audio/session_store.py and their tests.",
       "assigned_to": null,
       "started_at": "2026-10-13T01:37:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4265-submit-mode-wire-state.md"
+      "completed_at": "2026-10-13T01:39:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4265-submit-mode-wire-state.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4266",
