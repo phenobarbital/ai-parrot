@@ -64,7 +64,7 @@ from .budget_scope import current_budget_scope, TOKEN_BUDGET_STATE_KEY
 quiet_http_loggers()
 
 # FEAT-550: per-call attempt context set by the public loops (TASK-3143) and read by _chat_completion.
-_BUDGET_CALL_CTX: ContextVar[dict[str, Any]] = ContextVar("parrot_openai_budget_call", default={})
+_BUDGET_CALL_CTX: ContextVar[dict[str, Any] | None] = ContextVar("parrot_openai_budget_call", default=None)
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -298,7 +298,7 @@ class OpenAIBaseClient(AbstractClient):
         scope = current_budget_scope()
         if scope is None or not scope.is_root:
             raise BudgetExhausted("child scope exhausted", report={"partial_text": partial_text})
-        ctx = _BUDGET_CALL_CTX.get()
+        ctx = (_BUDGET_CALL_CTX.get() or {})
         if not scope.owner_designated:
             scope.designate_owner(ctx.get("call_id") or str(uuid.uuid4()))
         if not await scope.ledger.claim_finalization(scope.owner_call_id):
@@ -338,7 +338,7 @@ class OpenAIBaseClient(AbstractClient):
         from openai import APIConnectionError, APIError, RateLimitError
 
         adapter = self.budget_adapter_factory()
-        ctx = _BUDGET_CALL_CTX.get()
+        ctx = (_BUDGET_CALL_CTX.get() or {})
         call_id, round_no, phase = (
             ctx.get("call_id") or str(uuid.uuid4()),
             ctx.get("round_number", 1),
@@ -693,7 +693,7 @@ class OpenAIBaseClient(AbstractClient):
                 on_round(round_number, round_usage, round_raw_usage, round_tool_names, round_duration_ms)
 
             round_t0 = time.perf_counter()
-            _BUDGET_CALL_CTX.set({**_BUDGET_CALL_CTX.get(), "round_number": round_number + 1, "phase": "work"})
+            _BUDGET_CALL_CTX.set({**(_BUDGET_CALL_CTX.get() or {}), "round_number": round_number + 1, "phase": "work"})
             try:
                 response = await call_completion(model=model_str, messages=messages, use_tools=use_tools, **args)
             except BudgetExhausted:
@@ -711,7 +711,7 @@ class OpenAIBaseClient(AbstractClient):
                     partial_text=partial_text,
                     stream=False,
                 )
-                _BUDGET_CALL_CTX.set({**_BUDGET_CALL_CTX.get(), "forced": True})
+                _BUDGET_CALL_CTX.set({**(_BUDGET_CALL_CTX.get() or {}), "forced": True})
                 result = response.choices[0].message
                 round_number += 1
                 round_duration_ms = (time.perf_counter() - round_t0) * 1000
@@ -885,7 +885,7 @@ class OpenAIBaseClient(AbstractClient):
                 stream=False,
             )
             _budget_forced = True
-            _BUDGET_CALL_CTX.set({**_BUDGET_CALL_CTX.get(), "forced": True})
+            _BUDGET_CALL_CTX.set({**(_BUDGET_CALL_CTX.get() or {}), "forced": True})
         except Exception as e:
             if self._should_use_fallback(model_str, e):
                 self.logger.warning(
@@ -965,7 +965,7 @@ class OpenAIBaseClient(AbstractClient):
         # Either the pre-loop call or a round inside the loop may have forced
         # finalization (spec §2.3) — the loop signals it via _BUDGET_CALL_CTX
         # rather than the shared 5-tuple return (other callers depend on it).
-        _budget_forced = _budget_forced or bool(_BUDGET_CALL_CTX.get().get("forced"))
+        _budget_forced = _budget_forced or bool((_BUDGET_CALL_CTX.get() or {}).get("forced"))
 
         messages.append({"role": "assistant", "content": result.content})
 
@@ -1712,4 +1712,4 @@ class OpenAIBaseClient(AbstractClient):
         except InvokeError:
             raise
         except Exception as exc:  # noqa: BLE001 — funnel errors are wrapped into InvokeError
-            raise self._handle_invoke_error(exc)
+            raise self._handle_invoke_error(exc) from exc
