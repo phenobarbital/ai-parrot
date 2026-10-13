@@ -346,6 +346,39 @@ async def _fill(ws: Any, env: _Env, *, agree: bool = True) -> list[Any]:
 
 
 class TestAudioWsV2Integration:
+    async def test_question_narration_v2_prefetch_includes_option_keys(self, aiohttp_client, voice_app: _Env) -> None:
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        frames = await start(ws, env)
+        await ws.send_json({"type": "answer_text", "field_id": "name", "value": "Ann"})
+        frames += await until(ws, "question")
+        q = jsons(frames, "question")[-1]
+        assert q["field_id"] == "color"
+        keys = q["narration"]["audio_keys"]
+        opt_keys = [k for k in keys if ":opt:" in k]
+        assert [k.rsplit(":", 1)[1] for k in opt_keys] == ["1", "2", "3"]  # Teal is disabled
+        assert any(k.endswith(":options_intro") for k in keys)
+        headers = {m["key"]: m["kind"] for m in jsons(frames, "audio_segment")}
+        assert all(headers.get(k) == "option" for k in opt_keys)
+        assert not [k for k in headers if k.startswith("pause:")]
+        await ws.close()
+
+    async def test_barge_in_flow_v2(self, aiohttp_client, voice_app: _Env) -> None:
+        """Barge-in end to end: a recording sent before 'playing' anything is accepted for the cursor field."""
+        env = voice_app
+        client = await aiohttp_client(env.app)
+        ws = await connect(client, env)
+        frames = await start(ws, env)
+        assert frames[0]["hands_free"]["barge_in"] is True
+        await ws.send_json({"type": "answer_text", "field_id": "name", "value": "Ann"})
+        await until(ws, "question")  # "color" question: client is (virtually) mid-playback
+        fr = await say(ws, env, "Green", 0.95, "question", "confirm_request", "answer_rejected", "error")
+        accepted = jsons(fr, "answer_accepted")
+        assert accepted and accepted[0]["field_id"] == "color"
+        assert jsons(fr, "question")[-1]["field_id"] != "color"
+        await ws.close()
+
     async def test_audio_ws_v1_client_still_works(self, aiohttp_client, voice_app: _Env) -> None:
         """AC1: a v1 client (no protocol_version, extra keys) sees the legacy wire and submits without review."""
         env = voice_app

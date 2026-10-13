@@ -899,16 +899,35 @@ class AudioFormWSHandler:
 
     @staticmethod
     def _segment_kind(key: str) -> str:
-        """Header ``kind`` for a narration segment key."""
+        """Header ``kind`` for a narration segment key.
+
+        ``review:*`` → review; ``*:hint`` → hint; ``*:options`` and ``*:options_intro`` → options;
+        ``q:<uid>:opt:<n>`` → option; other ``q:*`` → question; else system.
+        """
         if key.startswith("review:"):
             return "review"
         if key.endswith(":hint"):
             return "hint"
-        if key.endswith(":options"):
+        if key.endswith((":options", ":options_intro")):
             return "options"
+        parts = key.split(":")
+        if len(parts) == 4 and parts[0] == "q" and parts[2] == "opt":
+            return "option"
         if key.startswith("q:"):
             return "question"
         return "system"
+
+    @staticmethod
+    def _v1_group_uid(key: str) -> str | None:
+        """Field uid a narration key belongs to for v1 inline audio, or None (pause/sys/review keys)."""
+        parts = key.split(":")
+        if parts[0] != "q":
+            return None
+        if len(parts) == 3 and parts[2] in ("label", "hint", "options", "options_intro"):
+            return parts[1]
+        if len(parts) == 4 and parts[2] == "opt":
+            return parts[1]
+        return None
 
     async def _synth_items(self, ctx: _ConnCtx, items: dict[str, str]) -> dict[str, bytes]:
         """Synthesize ``items`` (key → text); failures degrade to missing keys (text-only)."""
@@ -942,9 +961,9 @@ class AudioFormWSHandler:
         if ctx.inline_audio:
             groups: dict[str, list[str]] = {}
             for key in item.keys:
-                parts = key.split(":")
-                if len(parts) == 3 and parts[0] == "q" and parts[2] in ("label", "hint", "options"):
-                    groups.setdefault(parts[1], []).append(item.texts.get(key, ""))
+                uid = self._v1_group_uid(key)
+                if uid is not None:
+                    groups.setdefault(uid, []).append(item.texts.get(key, ""))
             sensitive = {str(q.field_uid) for q in engine.manifest.questions if q.sensitive}
             combined = {
                 f"v1:{uid}": " ".join(t for t in texts if t.strip())

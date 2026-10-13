@@ -299,7 +299,7 @@ class AudioSegment(_Wire):  # header; the adapter sends the bytes as the next bi
     type: Literal["audio_segment"] = "audio_segment"
     key: str
     mime: str
-    kind: str  # "question" | "hint" | "options" | "system" | "review"
+    kind: str  # "question" | "hint" | "options" | "option" | "system" | "review"
     text: str
 
 
