@@ -32,6 +32,7 @@ from .events import (
     DeleteBlob,
     EndSession,
     Error,
+    AnswersReady,
     FormComplete,
     GoBack,
     InboundEvent,
@@ -172,8 +173,11 @@ class AudioFormSession:
             return [Error(code="ALREADY_STARTED", message="Session already started")]
         if ev.resume_session_id:
             return self._resume(ev)
+        if ev.submit_mode == "client" and ev.protocol_version < 2:
+            return [Error(code="INVALID_MESSAGE", message="submit_mode client requires protocol v2")]
         self.state.locale = ev.locale
         self.state.protocol_version = ev.protocol_version
+        self.state.submit_mode = ev.submit_mode
         self.state.phase = Phase.PLANNING
         return [Replan()]
 
@@ -1008,6 +1012,7 @@ class AudioFormSession:
             submission_id=self.state.submission_id,
             user_id=self.state.user_id,
             tenant=self.state.tenant,
+            submit_mode=self.state.submit_mode,
         )
 
     @classmethod
@@ -1050,6 +1055,8 @@ class AudioFormSession:
         snap = self._resume_snap
         if snap is None:
             return [Error(code="RESUME_FORBIDDEN", message="Session cannot be resumed")]
+        if "client" in (ev.submit_mode, snap.submit_mode) and ev.protocol_version < 2:
+            return [Error(code="INVALID_MESSAGE", message="submit_mode client requires protocol v2")]
         bad = self._check_resume(ev, snap.user_id, snap.tenant, snap.form_version)
         if bad:
             return bad
@@ -1082,6 +1089,7 @@ class AudioFormSession:
         self.state.submission_id = snap.submission_id
         self.state.locale = ev.locale
         self.state.protocol_version = ev.protocol_version
+        self.state.submit_mode = snap.submit_mode  # the saved mode wins; the resuming start_session cannot change it
         self.state.pending = None
         self.state.plausibility = None
         self.state.cursor = None
@@ -1105,6 +1113,11 @@ class AudioFormSession:
         """
         outcome = ev.outcome or {}
         errors = outcome.get("errors")
+        client_data = outcome.get("client_data")
+        if client_data is not None and not errors:
+            self.state.completed = True
+            self.state.phase = Phase.COMPLETE
+            return [AnswersReady(data=dict(client_data), plausibility_summary=outcome.get("plausibility_summary"))]
         if not errors:
             self.state.completed = True
             self.state.phase = Phase.COMPLETE
