@@ -77,3 +77,6 @@ ruff check packages/ai-parrot-tools/src/parrot_tools/lsp/snapshot.py
 ## Completion Note
 
 (filled by implementing agent)
+
+
+Completed: implemented as specified; tests in tests/lsp (33 passed).
