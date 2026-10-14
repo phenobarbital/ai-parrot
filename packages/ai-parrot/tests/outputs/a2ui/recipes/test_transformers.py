@@ -12,7 +12,6 @@ from parrot.outputs.a2ui.recipes import infographic_transformer
 from parrot.outputs.a2ui.recipes.models import TransformStep
 from parrot.outputs.a2ui.recipes.transformers import TransformerRegistry, validate_inputs
 
-
 _BUILTINS = {
     "day_totals",
     "division_breakdown",
@@ -85,9 +84,7 @@ def test_unknown_transformer_lists_available():
 
 
 def test_decorator_registers_on_global_registry():
-    @infographic_transformer(
-        "test_decorator_transform", requires_columns={"snap": ["a"]}
-    )
+    @infographic_transformer("test_decorator_transform", requires_columns={"snap": ["a"]})
     def _fn(inputs, params):
         return {"a": inputs["snap"]}
 
@@ -124,9 +121,7 @@ def test_gate_missing_columns_fail_fast():
 def test_gate_empty_dataset_fail_fast():
     from parrot.outputs.a2ui.recipes.transformers import transformer_registry
 
-    transformer_registry.register(
-        "gate_empty", lambda inputs, params: {}, requires_columns={"snap": []}
-    )
+    transformer_registry.register("gate_empty", lambda inputs, params: {}, requires_columns={"snap": []})
     step = _make_step("gate_empty", ["snap"])
     df = pd.DataFrame(columns=["division"])
 
@@ -202,9 +197,7 @@ def test_package_import_does_not_load_library_until_first_access():
         "transformer_registry.get('day_totals')\n"
         f"assert {library_module!r} in sys.modules\n"
     )
-    result = subprocess.run(
-        [sys.executable, "-c", probe], capture_output=True, text=True, timeout=60
-    )
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=60)
 
     assert result.returncode == 0, result.stderr
 

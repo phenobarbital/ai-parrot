@@ -162,9 +162,7 @@ class TransformerRegistry:
             return self._transformers[name]
         except KeyError as exc:
             available = sorted(self._transformers)
-            raise KeyError(
-                f"Unknown transformer {name!r}; registered transformers: {available!r}"
-            ) from exc
+            raise KeyError(f"Unknown transformer {name!r}; registered transformers: {available!r}") from exc
 
     def manifest(self, name: str) -> TransformerManifest:
         """Return the :class:`TransformerManifest` for a registered transformer.
