@@ -14,13 +14,12 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-import asyncpg
-from navconfig import config
-from pgvector.asyncpg import register_vector
+from pydantic import BaseModel
 
-from parrot.conf import default_dsn
+if TYPE_CHECKING:
+    import asyncpg
 
 logger = logging.getLogger(__name__)
 
@@ -57,18 +56,77 @@ PG_SCHEMA_VERSION = "1"
 # navconfig-backed settings
 # ---------------------------------------------------------------------------
 
-#: asyncpg DSN for the backend. Defaults to ``parrot.conf.default_dsn`` (the
-#: local Postgres carrying the vector/btree_gist/pg_trgm extensions) —
-#: exact pattern of ``CREW_RESULT_STORAGE_PG_DSN`` (``conf.py:302``).
-#: ``None`` when neither an explicit override nor the default DB config is
-#: present (``conf.py:76``) — live tests skip in that case.
-GRAPHINDEX_PG_DSN: Optional[str] = config.get("GRAPHINDEX_PG_DSN", fallback=default_dsn)
+#: Default Postgres schema name housing all GraphIndex tables.
+DEFAULT_PG_SCHEMA = "graphindex"
 
-#: Postgres schema name housing all GraphIndex tables.
-GRAPHINDEX_PG_SCHEMA: str = config.get("GRAPHINDEX_PG_SCHEMA", fallback="graphindex")
+#: Default pgvector embedding column dimension (deployment-fixed).
+DEFAULT_EMBEDDING_DIM = 1536
 
-#: pgvector embedding column dimension (deployment-fixed).
-GRAPHINDEX_EMBEDDING_DIM: int = int(config.get("GRAPHINDEX_EMBEDDING_DIM", fallback=1536))
+#: Default ANN index kind (see the OQ3 spike note below).
+DEFAULT_ANN_INDEX_KIND = "ivfflat"
+
+
+class PgSettings(BaseModel):
+    """Resolved GraphIndex Postgres settings."""
+
+    dsn: Optional[str] = None
+    schema_name: str = DEFAULT_PG_SCHEMA
+    embedding_dim: int = DEFAULT_EMBEDDING_DIM
+    ann_index_kind: str = DEFAULT_ANN_INDEX_KIND
+
+
+def resolve_pg_settings(*, dsn: Optional[str] = None, schema: Optional[str] = None) -> PgSettings:
+    """Resolve ``GRAPHINDEX_PG_*`` settings at call time.
+
+    Precedence (via ``resolve_setting``): explicit argument, environment,
+    navconfig, default. No framework default DSN is applied here; a caller
+    that owns one passes it explicitly as ``dsn``.
+
+    Args:
+        dsn: Explicit DSN override.
+        schema: Explicit schema-name override.
+
+    Returns:
+        The resolved settings.
+
+    Raises:
+        ValueError: When the resolved schema name is not a safe identifier.
+    """
+    from parrot.knowledge.wiki.project import resolve_setting
+
+    schema_name = str(resolve_setting("GRAPHINDEX_PG_SCHEMA", explicit=schema, default=DEFAULT_PG_SCHEMA))
+    validate_schema_name(schema_name)
+    return PgSettings(
+        dsn=resolve_setting("GRAPHINDEX_PG_DSN", explicit=dsn),
+        schema_name=schema_name,
+        embedding_dim=int(resolve_setting("GRAPHINDEX_EMBEDDING_DIM", default=DEFAULT_EMBEDDING_DIM)),
+        ann_index_kind=str(resolve_setting("GRAPHINDEX_ANN_INDEX_KIND", default=DEFAULT_ANN_INDEX_KIND)),
+    )
+
+
+_LAZY_SETTING_FIELDS = {
+    "GRAPHINDEX_PG_DSN": "dsn",
+    "GRAPHINDEX_PG_SCHEMA": "schema_name",
+    "GRAPHINDEX_EMBEDDING_DIM": "embedding_dim",
+    "GRAPHINDEX_ANN_INDEX_KIND": "ann_index_kind",
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily resolve GRAPHINDEX_PG_DSN / _SCHEMA / _EMBEDDING_DIM / _ANN_INDEX_KIND (PEP 562)."""
+    field = _LAZY_SETTING_FIELDS.get(name)
+    if field is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value = getattr(resolve_pg_settings(), field)
+    if name == "GRAPHINDEX_PG_DSN" and value is None:
+        # The public module attribute keeps its historical framework default
+        # (the local Postgres from parrot.conf), imported only on access so
+        # that importing this module stays free of parrot.conf.
+        from parrot.conf import default_dsn
+
+        value = default_dsn
+    return value
+
 
 #: Namespace-prefix -> Postgres FTS regconfig map (D7). Declarative config,
 #: never hardcoded in SQL strings. Longest-prefix match, default ``simple``.
@@ -86,9 +144,6 @@ GRAPHINDEX_FTS_REGCONFIG: dict[str, str] = {
 #: spike before trusting this at a materially different corpus size,
 #: dimension, or once the deployment target runs pgvector >=0.8 (iterative
 #: scan changes hnsw's filtered-query economics).
-GRAPHINDEX_ANN_INDEX_KIND: str = config.get("GRAPHINDEX_ANN_INDEX_KIND", fallback="ivfflat")
-
-
 def validate_embedding_dim(vector: list[float], *, dim: Optional[int] = None) -> None:
     """Reject a vector whose length does not match the configured dimension.
 
@@ -99,7 +154,7 @@ def validate_embedding_dim(vector: list[float], *, dim: Optional[int] = None) ->
     Raises:
         ValueError: When ``len(vector) != dim``.
     """
-    expected = dim if dim is not None else GRAPHINDEX_EMBEDDING_DIM
+    expected = dim if dim is not None else resolve_pg_settings().embedding_dim
     if len(vector) != expected:
         raise ValueError(
             f"Embedding dimension mismatch: expected {expected}, got {len(vector)} "
@@ -224,7 +279,7 @@ CREATE TABLE IF NOT EXISTS {schema}.embeddings (
     concept_id   text NOT NULL,
     version_id   bigint NOT NULL REFERENCES {schema}.node_versions ON DELETE CASCADE,
     model        text NOT NULL DEFAULT '',
-    embedding    vector({GRAPHINDEX_EMBEDDING_DIM}) NOT NULL,
+    embedding    vector({resolve_pg_settings().embedding_dim}) NOT NULL,
     PRIMARY KEY (version_id, model)
 );
 
@@ -340,7 +395,7 @@ async def _migrate(conn: asyncpg.Connection, schema: str) -> None:
             await conn.execute(f"ALTER TABLE {schema}.{table} ADD COLUMN IF NOT EXISTS {column} {ddl_type}")
 
 
-async def ensure_schema(pool: asyncpg.Pool, schema: str = GRAPHINDEX_PG_SCHEMA) -> None:
+async def ensure_schema(pool: asyncpg.Pool, schema: str = DEFAULT_PG_SCHEMA) -> None:
     """Idempotently create/migrate the ``graphindex.*`` schema.
 
     Safe to call on every store initialization: a second call against an
@@ -381,8 +436,8 @@ async def ensure_schema(pool: asyncpg.Pool, schema: str = GRAPHINDEX_PG_SCHEMA) 
 async def ensure_ann_index(
     pool: asyncpg.Pool,
     *,
-    schema: str = GRAPHINDEX_PG_SCHEMA,
-    kind: str = GRAPHINDEX_ANN_INDEX_KIND,
+    schema: str = DEFAULT_PG_SCHEMA,
+    kind: Optional[str] = None,
 ) -> None:
     """Idempotently create the ANN index on ``graphindex.embeddings.embedding``.
 
@@ -402,6 +457,7 @@ async def ensure_ann_index(
         ValueError: For an unknown ``kind`` or an unsafe ``schema`` name.
     """
     validate_schema_name(schema)
+    kind = kind if kind is not None else resolve_pg_settings().ann_index_kind
     index_name = f"embeddings_{kind}_idx"
     if kind == "hnsw":
         ddl = (
@@ -424,7 +480,7 @@ async def ensure_ann_index(
 async def create_pg_pool(
     dsn: Optional[str] = None,
     *,
-    schema: str = GRAPHINDEX_PG_SCHEMA,
+    schema: str = DEFAULT_PG_SCHEMA,
     min_size: int = 1,
     max_size: int = 10,
     **kwargs: Any,
@@ -436,7 +492,7 @@ async def create_pg_pool(
 
     Args:
         dsn: asyncpg-compatible DSN. Defaults to ``GRAPHINDEX_PG_DSN``
-            (itself defaulting to ``parrot.conf.default_dsn``).
+            (resolved at call time from env/navconfig).
         schema: Schema to set as the connection's search_path.
         min_size: Minimum pool size.
         max_size: Maximum pool size.
@@ -447,17 +503,19 @@ async def create_pg_pool(
 
     Raises:
         ValueError: When no DSN is resolved (no override and
-            ``default_dsn`` is ``None``), or ``schema`` is not a safe SQL
+            ``GRAPHINDEX_PG_DSN`` is set), or ``schema`` is not a safe SQL
             identifier.
     """
     validate_schema_name(schema)
-    resolved_dsn = dsn or GRAPHINDEX_PG_DSN
+    resolved_dsn = resolve_pg_settings(dsn=dsn).dsn
     if not resolved_dsn:
         raise ValueError(
             "No Postgres DSN resolved for the GraphIndex backend. Set "
-            "GRAPHINDEX_PG_DSN or configure the default database (DBUSER/"
-            "DBHOST/DBNAME) so parrot.conf.default_dsn resolves."
+            "GRAPHINDEX_PG_DSN (environment or navconfig), or pass dsn= explicitly."
         )
+
+    import asyncpg
+    from pgvector.asyncpg import register_vector
 
     # Bootstrap extensions BEFORE the pool exists (code-review finding):
     # with the default min_size=1, asyncpg.create_pool() eagerly opens a
