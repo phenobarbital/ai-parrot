@@ -16,7 +16,7 @@
       "feature_id": "FEAT-668",
       "feature": "a2ui-lazy-imports",
       "spec": "sdd/specs/a2ui-lazy-imports.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "independent: touches only recipes/transformers.py, recipes/__init__.py and test_transformers.py; no symbol from other FEAT-668 tasks",
       "assigned_to": null,
       "started_at": "2026-10-14T00:01:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4289-lazy-transformer-builtins.md"
+      "completed_at": "2026-10-14T00:08:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4289-lazy-transformer-builtins.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4290",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-668",
       "feature": "a2ui-lazy-imports",
       "spec": "sdd/specs/a2ui-lazy-imports.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "independent: single-file edit of outputs/a2ui/artifacts.py; no overlap with TASK-4289/4291/4292",
       "assigned_to": null,
       "started_at": "2026-10-14T00:01:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4290-light-artifacts-import.md"
+      "completed_at": "2026-10-14T00:08:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4290-light-artifacts-import.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4291",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-668",
       "feature": "a2ui-lazy-imports",
       "spec": "sdd/specs/a2ui-lazy-imports.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -60,8 +62,9 @@
       "parallelism_notes": "independent: single-file edit of tools/infographic_recipes/__init__.py; runner/freeze/loader untouched",
       "assigned_to": null,
       "started_at": "2026-10-14T00:01:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4291-lazy-infographic-recipes-package.md"
+      "completed_at": "2026-10-14T00:08:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4291-lazy-infographic-recipes-package.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4292",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-668",
       "feature": "a2ui-lazy-imports",
       "spec": "sdd/specs/a2ui-lazy-imports.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -78,8 +81,9 @@
       "parallelism_notes": "independent: edits only ai-parrot-server handlers/{infographic_recipes,ui_surfaces,infographic,a2ui}.py + a2a/server.py; imports unchanged names from runner/infographic_toolkit/catalog",
       "assigned_to": null,
       "started_at": "2026-10-14T00:01:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4292-server-handlers-defer-heavy-imports.md"
+      "completed_at": "2026-10-14T00:08:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4292-server-handlers-defer-heavy-imports.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4293",
