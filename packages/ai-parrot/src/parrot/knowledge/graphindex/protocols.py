@@ -2,6 +2,7 @@
 
 Runtime imports are stdlib-only. Framework classes satisfy these Protocols structurally; they never inherit.
 """
+
 from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable

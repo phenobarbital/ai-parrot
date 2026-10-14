@@ -1,4 +1,5 @@
 """Structural conformance of concrete providers/backends (FEAT-540 M2/M7)."""
+
 import subprocess
 import sys
 
