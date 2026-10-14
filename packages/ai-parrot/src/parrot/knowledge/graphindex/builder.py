@@ -22,6 +22,7 @@ import hashlib
 import logging
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pathspec
 
@@ -31,7 +32,6 @@ from parrot.knowledge.graphindex.communities import (
     CommunitiesResult,
     detect_communities,
 )
-from parrot.knowledge.graphindex.embed import GraphIndexEmbedder
 from parrot.knowledge.graphindex.extractors.code import CodeExtractor
 from parrot.knowledge.graphindex.extractors.loader import (
     PLAIN_TEXT_EXTENSIONS,
@@ -41,6 +41,7 @@ from parrot.knowledge.graphindex.extractors.loader import (
 from parrot.knowledge.graphindex.extractors.skill import SkillExtractor
 from parrot.knowledge.graphindex.inter_community import compute_inter_community_graph
 from parrot.knowledge.graphindex.persist import GraphIndexPersistence
+from parrot.knowledge.graphindex.protocols import EmbeddingPersistence, IncrementalPersistence
 from parrot.knowledge.graphindex.resolve import ResolutionConfig, resolve_cross_domain
 from parrot.knowledge.graphindex.schema import (
     BuildResult,
@@ -52,7 +53,9 @@ from parrot.knowledge.graphindex.schema import (
 )
 from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
 from parrot.knowledge.ontology.schema import TenantContext
-from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
+
+if TYPE_CHECKING:
+    from parrot.knowledge.graphindex.protocols import Embedder, PageIndexer
 
 logger = logging.getLogger(__name__)
 
@@ -116,11 +119,11 @@ class GraphIndexBuilder:
     def __init__(
         self,
         persistence: GraphIndexPersistence,
-        embedder: GraphIndexEmbedder,
+        embedder: "Embedder",
         output_dir: Path | None = None,
         ignore_file: Path | None = None,
         resolution_config: ResolutionConfig | None = None,
-        pageindex_toolkit: PageIndexToolkit | None = None,
+        pageindex_toolkit: "PageIndexer | None" = None,
         signal_config: SignalRelevanceConfig | None = None,
         detect_communities_enabled: bool = False,
         community_resolution: float = 1.0,
@@ -250,6 +253,13 @@ class GraphIndexBuilder:
             logger.error("Persistence stage failed: %s", exc)
             errors.append(f"Persistence failed: {exc}")
             persist_result = {"nodes_persisted": 0, "edges_persisted": 0}
+
+        if isinstance(self.persistence, EmbeddingPersistence) and hasattr(self.embedder, "vectors"):
+            try:
+                await self.persistence.upsert_embeddings(ctx, self.embedder.vectors())
+            except Exception as exc:
+                logger.error("Embedding persistence failed: %s", exc)
+                errors.append(f"Embedding persistence failed: {exc}")
 
         # Stage 6: Analytics + Report
         report_path: Path | None = None
@@ -396,6 +406,13 @@ class GraphIndexBuilder:
             errors.append(f"Replace failed: {exc}")
             replace_result = {"nodes_replaced": 0, "edges_replaced": 0}
 
+        if isinstance(self.persistence, EmbeddingPersistence) and hasattr(self.embedder, "vectors"):
+            try:
+                await self.persistence.upsert_embeddings(ctx, self.embedder.vectors())
+            except Exception as exc:
+                logger.error("Embedding persistence failed for document %s: %s", uri, exc)
+                errors.append(f"Embedding persistence failed: {exc}")
+
         return IngestResult(
             tenant_id=ctx.tenant_id,
             document_uri=uri,
@@ -502,7 +519,7 @@ class GraphIndexBuilder:
                         mtime = os.stat(f).st_mtime
                         source = f.read_text(encoding="utf-8", errors="replace")
                         # Incremental staleness check (FEAT-240): skip unchanged files
-                        if hasattr(self.persistence, "is_stale"):
+                        if isinstance(self.persistence, IncrementalPersistence):
                             sha1 = hashlib.sha1(
                                 source.encode("utf-8", errors="replace")
                             ).hexdigest()

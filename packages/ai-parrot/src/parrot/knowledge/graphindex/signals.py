@@ -37,7 +37,7 @@ from parrot.knowledge.graphindex.schema import (
 )
 
 if TYPE_CHECKING:
-    from parrot.knowledge.graphindex.embed import GraphIndexEmbedder
+    from parrot.knowledge.graphindex.protocols import Embedder
 
 
 logger = logging.getLogger(__name__)
@@ -392,7 +392,7 @@ def _type_affinity_signal(
 
 
 def _embedding_signal(
-    embedder: Optional["GraphIndexEmbedder"],
+    embedder: Optional["Embedder"],
     node_id_a: str,
     node_id_b: str,
 ) -> tuple[float, bool]:
@@ -463,7 +463,7 @@ def signal_relevance(
     node_a: str,
     node_b: str,
     config: Optional[SignalRelevanceConfig] = None,
-    embedder: Optional["GraphIndexEmbedder"] = None,
+    embedder: Optional["Embedder"] = None,
 ) -> SignalRelevance:
     """Pairwise five-signal relevance over an assembled GraphIndex.
 
@@ -525,7 +525,7 @@ def compute_pairwise_signals(
     nodes: list[UniversalNode],
     node_a: str,
     node_b: str,
-    embedder: Optional["GraphIndexEmbedder"] = None,
+    embedder: Optional["Embedder"] = None,
 ) -> dict[str, float]:
     """Raw five signals without combination. Cheap building block."""
     cfg = SignalRelevanceConfig()
@@ -554,7 +554,7 @@ def relevance_neighborhood(
     top_k: int = 10,
     config: Optional[SignalRelevanceConfig] = None,
     candidate_pool: Optional[Iterable[str]] = None,
-    embedder: Optional["GraphIndexEmbedder"] = None,
+    embedder: Optional["Embedder"] = None,
 ) -> list[SignalRelevance]:
     """Top-K nodes most relevant to ``node_id`` by combined score."""
     if top_k <= 0:

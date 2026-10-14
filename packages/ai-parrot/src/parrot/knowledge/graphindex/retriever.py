@@ -36,7 +36,7 @@ from parrot.knowledge.graphindex.signals import relevance_neighborhood
 
 if TYPE_CHECKING:
     from parrot.knowledge.graphindex.communities import CommunitiesResult
-    from parrot.knowledge.graphindex.embed import GraphIndexEmbedder
+    from parrot.knowledge.graphindex.protocols import Embedder
     from parrot.knowledge.graphindex.schema import UniversalNode
     from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
     from parrot.knowledge.pageindex.hybrid_search import HybridPageIndexSearch
@@ -187,7 +187,7 @@ class GraphExpandedRetriever:
         self,
         graph: rustworkx.PyDiGraph,
         nodes: list["UniversalNode"],
-        embedder: Optional["GraphIndexEmbedder"] = None,
+        embedder: Optional["Embedder"] = None,
         hybrid_search: Optional["HybridPageIndexSearch"] = None,
         signal_config: Optional["SignalRelevanceConfig"] = None,
         communities: Optional["CommunitiesResult"] = None,
