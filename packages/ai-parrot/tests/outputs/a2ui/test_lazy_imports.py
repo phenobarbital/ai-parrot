@@ -110,4 +110,4 @@ def test_infographic_recipes_lazy_attrs_resolve() -> None:
         assert getattr(recipes, name) is not None
 
     with pytest.raises(AttributeError):
-        getattr(recipes, "does_not_exist")
+        _ = recipes.does_not_exist
