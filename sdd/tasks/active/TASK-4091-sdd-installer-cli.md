@@ -74,6 +74,12 @@ delta for reviewers.
   (TASK-4080) calls lazily to report whether installed SDD files are current. Nothing else in
   this task changes for TASK-4080's benefit; TASK-4080 must tolerate `parrot.sdd.installer`
   being absent.
+- **Q1 residual — `spec_tools` scenarios (TASK-4334, 2026-10-15).** The wheel-only test's
+  per-helper `Scenario` set must cover every `parrot sdd run spec_tools <sub>` invocation the
+  installed markdown carries (`init-run`, `render-brief`, `stamp-run`, `validate-suggestions`,
+  `check-path`, `existing-feature-id`, `commit-intake`): the fixture repo needs
+  `sdd/templates/design_research.{prompt.md,schema.json}` (shipped by TASK-4090) and a `$DR`
+  directory holding the six brief inputs plus a `suggestions.json` of the sample shape.
 - **C3 — wheel-only foreign-repo test (proposal rev 0.3 wording).** New
   `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` (explicit
   `pytestmark = pytest.mark.integration`, skipped unless `uv` is on PATH). It:
