@@ -28,6 +28,7 @@ class _SchemaTool(AbstractTool):
         super().__init__(name=self.name, description=self.description)
         self._service = service
 
+
 class WikiSchemaLookupTool(_SchemaTool):
     """Look up one table in the schema plane: DDL, columns, relations, annotations, age and staleness."""
 

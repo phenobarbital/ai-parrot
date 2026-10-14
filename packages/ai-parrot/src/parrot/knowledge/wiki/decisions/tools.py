@@ -69,7 +69,11 @@ class WikiDecisionsForSymbolTool(AbstractTool):
         result = await op_decisions_for_symbol(
             None,
             DecisionsForSymbolInput(
-                symbol=symbol, include_history=include_history, limit=limit, budget_tokens=budget_tokens, namespace=namespace
+                symbol=symbol,
+                include_history=include_history,
+                limit=limit,
+                budget_tokens=budget_tokens,
+                namespace=namespace,
             ),
             service_factory=self._service_factory,
         )
@@ -104,7 +108,11 @@ class WikiDecisionWhyTool(AbstractTool):
         result = await op_decision_why(
             None,
             DecisionWhyInput(
-                question=question, include_history=include_history, limit=limit, budget_tokens=budget_tokens, namespace=namespace
+                question=question,
+                include_history=include_history,
+                limit=limit,
+                budget_tokens=budget_tokens,
+                namespace=namespace,
             ),
             service_factory=self._service_factory,
         )

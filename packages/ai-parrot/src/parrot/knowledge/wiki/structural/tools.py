@@ -74,7 +74,9 @@ class WikiSymbolLookupTool(AbstractTool):
     ) -> ToolResult:
         result = await op_symbol_lookup(
             None,
-            SymbolLookupInput(query=query, kind=kind, language=language, path_prefix=path_prefix, limit=limit, namespace=namespace),
+            SymbolLookupInput(
+                query=query, kind=kind, language=language, path_prefix=path_prefix, limit=limit, namespace=namespace
+            ),
             service_factory=self._service_factory,
         )
         if result.is_error:

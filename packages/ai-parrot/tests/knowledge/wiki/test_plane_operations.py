@@ -82,7 +82,11 @@ async def test_structural_operation_matches_tool(seeded, tmp_path) -> None:
 
 async def test_decision_operation_matches_tool(adr_store, tmp_path) -> None:
     """The lifted decision operation preserves its rendered ToolResult."""
-    tool = next(tool for tool in create_decision_tools(adr_store, tmp_path, WikiProjectConfig()) if tool.name == "wiki_decision_why")
+    tool = next(
+        tool
+        for tool in create_decision_tools(adr_store, tmp_path, WikiProjectConfig())
+        if tool.name == "wiki_decision_why"
+    )
     tool_result = await tool._execute("why")
     operation_result = await op_decision_why(
         adr_store,
