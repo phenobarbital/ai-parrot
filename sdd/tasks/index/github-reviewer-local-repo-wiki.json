@@ -73,7 +73,7 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,8 +84,9 @@
       "parallelism_notes": "Consumes --storage-dir added by TASK-4335 in cli.py and BuildOutcome created by TASK-4337 in repo_cache.py.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4338-repo-wiki-build-runner.md"
+      "completed_at": "2026-10-14T23:15:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4338-repo-wiki-build-runner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4339",
