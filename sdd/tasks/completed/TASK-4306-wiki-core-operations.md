@@ -234,10 +234,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: wiki/operations.py holds OperationResult, the moved helpers/input models and the eight op_* functions; wiki/tools.py re-exports them so old imports keep working; 11 parity tests. Coder noted op_query returns an unknown-namespace message as plain text (is_error unset) to match the old tool, and that WikiProjectConfig is a TYPE_CHECKING-only import to keep operations.py free of parrot.tools. Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres and has pre-existing reds. With GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings show no failure absent from the clean origin/dev baseline.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
