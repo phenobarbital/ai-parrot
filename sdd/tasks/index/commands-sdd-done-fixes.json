@@ -16,7 +16,7 @@
       "feature_id": "FEAT-671",
       "feature": "commands-sdd-done-fixes",
       "spec": "sdd/specs/commands-sdd-done-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,9 +24,10 @@
       "parallelism_notes": "No dependencies. Owns ledger/service.py and CREATES tests/knowledge/wiki/test_ledger_export_snapshot.py; TASK-4296 later modifies both the exported keyword and that test file.",
       "assigned_to": null,
       "started_at": "2026-10-14T20:21:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4295-reconciling-export-service.md",
-      "discovered_from": "issue:62038221413a"
+      "completed_at": "2026-10-14T20:23:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4295-reconciling-export-service.md",
+      "discovered_from": "issue:62038221413a",
+      "verification": "verified"
     },
     {
       "id": "TASK-4296",
