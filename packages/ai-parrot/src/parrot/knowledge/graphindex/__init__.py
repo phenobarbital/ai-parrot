@@ -28,38 +28,6 @@ from parrot.knowledge.graphindex.schema import (
     BuildResult,
     IngestResult,
 )
-from parrot.knowledge.graphindex.signals import (
-    SignalRelevance,
-    SignalRelevanceConfig,
-    compute_pairwise_signals,
-    relevance_neighborhood,
-    signal_relevance,
-)
-from parrot.knowledge.graphindex.communities import (
-    Community,
-    CommunitiesResult,
-    cohesion_for_community,
-    derive_community_label,
-    detect_communities,
-)
-from parrot.knowledge.graphindex.export_html import (
-    GraphExportPayload,
-    build_export_payload,
-    community_color,
-    export_graph,
-    write_graph_html,
-    write_graph_json,
-)
-from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
-from parrot.knowledge.graphindex.projection import (
-    project_graph_sidecars,
-    project_node_sidecar,
-    project_report_frontmatter,
-    node_to_frontmatter_dict,
-)
-from parrot.knowledge.graphindex.sqlite_reader import SQLiteGraphReader
-from parrot.knowledge.graphindex.extractors.odoo_code import OdooCodeExtractor
-
 __all__ = [
     "Provenance",
     "NodeKind",
@@ -130,6 +98,29 @@ _LAZY_ATTRS = {
     "GraphMemoryMixin": "parrot.knowledge.graphindex.mixin",
     "GroundingEvaluator": "parrot.knowledge.graphindex.grounding",
     "GroundingResult": "parrot.knowledge.graphindex.grounding",
+    "SignalRelevance": "parrot.knowledge.graphindex.signals",
+    "SignalRelevanceConfig": "parrot.knowledge.graphindex.signals",
+    "compute_pairwise_signals": "parrot.knowledge.graphindex.signals",
+    "relevance_neighborhood": "parrot.knowledge.graphindex.signals",
+    "signal_relevance": "parrot.knowledge.graphindex.signals",
+    "Community": "parrot.knowledge.graphindex.communities",
+    "CommunitiesResult": "parrot.knowledge.graphindex.communities",
+    "cohesion_for_community": "parrot.knowledge.graphindex.communities",
+    "derive_community_label": "parrot.knowledge.graphindex.communities",
+    "detect_communities": "parrot.knowledge.graphindex.communities",
+    "GraphExportPayload": "parrot.knowledge.graphindex.export_html",
+    "build_export_payload": "parrot.knowledge.graphindex.export_html",
+    "community_color": "parrot.knowledge.graphindex.export_html",
+    "export_graph": "parrot.knowledge.graphindex.export_html",
+    "write_graph_html": "parrot.knowledge.graphindex.export_html",
+    "write_graph_json": "parrot.knowledge.graphindex.export_html",
+    "OdooCodeExtractor": "parrot.knowledge.graphindex.extractors.odoo_code",
+    "SQLitePersistence": "parrot.knowledge.graphindex.persist_sqlite",
+    "project_graph_sidecars": "parrot.knowledge.graphindex.projection",
+    "project_node_sidecar": "parrot.knowledge.graphindex.projection",
+    "project_report_frontmatter": "parrot.knowledge.graphindex.projection",
+    "node_to_frontmatter_dict": "parrot.knowledge.graphindex.projection",
+    "SQLiteGraphReader": "parrot.knowledge.graphindex.sqlite_reader",
 }
 
 
@@ -140,5 +131,12 @@ def __getattr__(name: str):
         import importlib
 
         module = importlib.import_module(module_path)
-        return getattr(module, name)
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """Expose lazy exports to ``dir()``."""
+    return sorted(set(globals()) | set(__all__))
