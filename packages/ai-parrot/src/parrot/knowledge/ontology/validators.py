@@ -3,6 +3,7 @@
 Ensures that dynamic AQL from the intent resolver is read-only,
 depth-limited, and does not access system collections or execute JavaScript.
 """
+
 from __future__ import annotations
 
 import re
@@ -29,9 +30,7 @@ _JS_PATTERN = re.compile(
 )
 
 # Traversal depth pattern: matches "1..N" or "..N" in traversal syntax
-_TRAVERSAL_DEPTH_PATTERN = re.compile(
-    r"\b(\d+)\.\.(\d+)\b"
-)
+_TRAVERSAL_DEPTH_PATTERN = re.compile(r"\b(\d+)\.\.(\d+)\b")
 
 
 async def validate_aql(
@@ -61,6 +60,7 @@ async def validate_aql(
     if max_depth is None:
         try:
             from parrot.conf import ONTOLOGY_MAX_TRAVERSAL_DEPTH
+
             max_depth = ONTOLOGY_MAX_TRAVERSAL_DEPTH
         except (ImportError, AttributeError):
             max_depth = 4
@@ -71,16 +71,14 @@ async def validate_aql(
     match = _MUTATION_PATTERN.search(aql)
     if match:
         raise AQLValidationError(
-            f"AQL contains mutation keyword '{match.group()}'. "
-            f"Only read-only queries are allowed for dynamic AQL."
+            f"AQL contains mutation keyword '{match.group()}'. " f"Only read-only queries are allowed for dynamic AQL."
         )
 
     # 2. No system collections
     match = _SYSTEM_COLLECTIONS.search(aql)
     if match:
         raise AQLValidationError(
-            f"AQL accesses system collection '{match.group()}'. "
-            f"System collections are not allowed in dynamic AQL."
+            f"AQL accesses system collection '{match.group()}'. " f"System collections are not allowed in dynamic AQL."
         )
 
     # 3. No JavaScript execution

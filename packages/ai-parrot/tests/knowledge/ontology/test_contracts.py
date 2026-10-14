@@ -1,4 +1,5 @@
 """Ontology contracts and validator dispatch tests (FEAT-540 M8)."""
+
 from typing import cast
 
 import pytest

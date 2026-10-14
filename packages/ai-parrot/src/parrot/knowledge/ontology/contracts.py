@@ -1,4 +1,5 @@
 """Backend-neutral ontology graph-store contracts (FEAT-540 M8)."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
