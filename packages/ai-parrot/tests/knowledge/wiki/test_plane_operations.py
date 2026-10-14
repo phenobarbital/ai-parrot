@@ -20,6 +20,19 @@ from parrot.knowledge.wiki.structural.operations import CodeOutlineInput, op_cod
 from parrot.knowledge.wiki.structural.tools import create_structural_tools
 from parrot.knowledge.wiki.symbols import SymbolKind, SymbolRecord
 
+# Fixtures live in the decisions/ and schema/ conftests, which do not apply to this directory.
+from tests.knowledge.wiki.decisions.conftest import adr_store  # noqa: F401
+from tests.knowledge.wiki.schema.conftest import plane_dir, sales_metadata  # noqa: F401
+
+
+def _without_age(payload: object) -> object:
+    """Drop every clock-derived ``age_days`` field, recursively, before comparing payloads."""
+    if isinstance(payload, dict):
+        return {k: _without_age(v) for k, v in payload.items() if k != "age_days"}
+    if isinstance(payload, list):
+        return [_without_age(v) for v in payload]
+    return payload
+
 
 @pytest.fixture
 async def seeded(tmp_path):
@@ -111,4 +124,5 @@ async def test_schema_operation_matches_tool(plane_dir, sales_metadata) -> None:
         annotation_store=service.store,
     )
     assert operation_result.is_error is False
-    assert operation_result.data == tool_result.result
+    # age_days is derived from the clock at call time, so two separate lookups never match exactly.
+    assert _without_age(operation_result.data) == _without_age(tool_result.result)

@@ -49,6 +49,8 @@ class WikiSchemaLookupTool(_SchemaTool):
             return ToolResult(success=False, status="error", result=None, error=result.text)
         assert result.data is not None
         status = result.data.pop("status", None)
+        if status is None:
+            return ToolResult(result=result.data)
         return ToolResult(result=result.data, status=status)
 
 
