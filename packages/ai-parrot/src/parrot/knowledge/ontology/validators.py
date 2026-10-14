@@ -6,8 +6,9 @@ depth-limited, and does not access system collections or execute JavaScript.
 from __future__ import annotations
 
 import re
+from collections.abc import Awaitable, Callable
 
-from .exceptions import AQLValidationError
+from .exceptions import AQLValidationError, QueryValidationError
 
 # Mutation keywords that indicate a write operation
 _MUTATION_PATTERN = re.compile(
@@ -100,3 +101,46 @@ async def validate_aql(
             )
 
     return aql
+
+
+_VALIDATORS: dict[str, Callable[[str, int | None], Awaitable[str]]] = {}
+
+
+def register_query_validator(
+    dialect: str,
+    validator: Callable[[str, int | None], Awaitable[str]],
+) -> None:
+    """Register a dynamic-query validator for a query dialect.
+
+    Args:
+        dialect: Query dialect name.
+        validator: Async function that validates query text and returns it.
+    """
+    _VALIDATORS[dialect] = validator
+
+
+async def validate_query(
+    dialect: str,
+    text: str,
+    max_depth: int | None = None,
+) -> str:
+    """Validate dynamic query text using its registered dialect validator.
+
+    Args:
+        dialect: Query dialect name.
+        text: Dynamic query text to validate.
+        max_depth: Optional maximum traversal depth.
+
+    Returns:
+        The validated query text.
+
+    Raises:
+        QueryValidationError: If no validator is registered for ``dialect``.
+    """
+    validator = _VALIDATORS.get(dialect)
+    if validator is None:
+        raise QueryValidationError(f"No query validator registered for dialect {dialect!r}")
+    return await validator(text, max_depth)
+
+
+register_query_validator("aql", validate_aql)
