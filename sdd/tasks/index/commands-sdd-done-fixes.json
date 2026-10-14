@@ -36,7 +36,7 @@
       "feature_id": "FEAT-671",
       "feature": "commands-sdd-done-fixes",
       "spec": "sdd/specs/commands-sdd-done-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -45,7 +45,7 @@
       "parallel": true,
       "parallelism_notes": "Depends on TASK-4295: calls export_snapshot(reconcile=...) it adds (ledger/service.py) and appends a test to tests/knowledge/wiki/test_ledger_export_snapshot.py which TASK-4295 creates (same-file edit, serialized).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T20:26:08+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4296-cli-no-reconcile-flag.md",
       "discovered_from": "issue:62038221413a"
