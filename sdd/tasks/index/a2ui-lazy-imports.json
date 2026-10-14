@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-14T00:00:15+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-14T00:15:18+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-668",
       "feature": "a2ui-lazy-imports",
       "spec": "sdd/specs/a2ui-lazy-imports.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -105,8 +105,9 @@
       "parallelism_notes": "tests assert the combined effect: needs lazy transformer_registry built-ins from TASK-4289 (transformers.py), light artifacts.py from TASK-4290, lazy tools/infographic_recipes/__init__.py from TASK-4291, deferred handler imports from TASK-4292",
       "assigned_to": null,
       "started_at": "2026-10-14T00:01:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4293-a2ui-import-isolation-tests.md"
+      "completed_at": "2026-10-14T00:15:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4293-a2ui-import-isolation-tests.md",
+      "verification": "partial"
     }
   ]
 }
