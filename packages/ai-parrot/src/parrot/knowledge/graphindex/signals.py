@@ -19,12 +19,11 @@ All sub-scores live in ``[0, 1]``. The combined score therefore lives
 in ``[0, 1]`` whenever the configured weights sum to 1.0 (enforced by
 :class:`SignalRelevanceConfig`).
 """
+
 from __future__ import annotations
 
 import logging
-import math
 from typing import TYPE_CHECKING, Iterable, Optional
-from weakref import WeakValueDictionary
 
 import numpy as np
 import rustworkx
@@ -111,9 +110,7 @@ class SignalRelevanceConfig(BaseModel):
         }
     )
 
-    type_affinity: dict[tuple[NodeKind, NodeKind], float] = Field(
-        default_factory=_default_type_affinity
-    )
+    type_affinity: dict[tuple[NodeKind, NodeKind], float] = Field(default_factory=_default_type_affinity)
 
     adamic_adar_cap: float = Field(4.0, gt=0.0)
 
@@ -121,17 +118,9 @@ class SignalRelevanceConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_weights_sum_to_one(self) -> "SignalRelevanceConfig":
-        total = (
-            self.w_direct
-            + self.w_source_overlap
-            + self.w_adamic_adar
-            + self.w_type_affinity
-            + self.w_embedding
-        )
+        total = self.w_direct + self.w_source_overlap + self.w_adamic_adar + self.w_type_affinity + self.w_embedding
         if abs(total - 1.0) > 1e-6:
-            raise ValueError(
-                f"SignalRelevanceConfig weights must sum to 1.0; got {total:.6f}"
-            )
+            raise ValueError(f"SignalRelevanceConfig weights must sum to 1.0; got {total:.6f}")
         return self
 
 
@@ -485,23 +474,23 @@ def signal_relevance(
     idx_b = _node_index(graph, node_b)
 
     direct, direct_edges = _direct_signal(
-        graph, idx_a, idx_b, cfg.edge_kind_weights,
+        graph,
+        idx_a,
+        idx_b,
+        cfg.edge_kind_weights,
     )
     source_overlap, shared_sources = _source_overlap_signal(payload_a, payload_b)
     adamic_adar, aa_neighbours = _adamic_adar_signal(
-        graph, node_a, node_b, cfg.adamic_adar_cap,
+        graph,
+        node_a,
+        node_b,
+        cfg.adamic_adar_cap,
     )
     type_affinity = _type_affinity_signal(payload_a, payload_b, cfg.type_affinity)
     embedding, embedding_available = _embedding_signal(embedder, node_a, node_b)
 
     w = _effective_weights(cfg, embedding_available)
-    combined = (
-        w[0] * direct
-        + w[1] * source_overlap
-        + w[2] * adamic_adar
-        + w[3] * type_affinity
-        + w[4] * embedding
-    )
+    combined = w[0] * direct + w[1] * source_overlap + w[2] * adamic_adar + w[3] * type_affinity + w[4] * embedding
     combined = max(0.0, min(1.0, combined))
 
     return SignalRelevance(

@@ -182,12 +182,8 @@ class GraphIndexBuilder:
             for name, outcome in zip(("code", "loader", "skill"), outcomes)
         ]
 
-        all_nodes: list[UniversalNode] = (
-            code_result[0] + loader_result[0] + skill_result[0]
-        )
-        all_edges: list[UniversalEdge] = (
-            code_result[1] + loader_result[1] + skill_result[1]
-        )
+        all_nodes: list[UniversalNode] = code_result[0] + loader_result[0] + skill_result[0]
+        all_edges: list[UniversalEdge] = code_result[1] + loader_result[1] + skill_result[1]
         logger.info("Stage 1 complete: %d nodes, %d edges", len(all_nodes), len(all_edges))
 
         # Stage 2: Embed
@@ -210,9 +206,7 @@ class GraphIndexBuilder:
 
         # Stage 4: Cross-domain resolution
         try:
-            inferred_edges = await resolve_cross_domain(
-                all_nodes, self.embedder, self.resolution_config
-            )
+            inferred_edges = await resolve_cross_domain(all_nodes, self.embedder, self.resolution_config)
             assembler.add_edges(inferred_edges)
             all_edges = all_edges + inferred_edges
             logger.info("Stage 4 complete: %d inferred edges", len(inferred_edges))
@@ -273,12 +267,11 @@ class GraphIndexBuilder:
             # rather than inside compute_analytics().
             if self.last_community_result is not None:
                 analytics.inter_community = compute_inter_community_graph(
-                    assembler.graph, self.last_community_result,
+                    assembler.graph,
+                    self.last_community_result,
                 )
             if self.output_dir is not None:
-                report_path = generate_report(
-                    analytics, self.output_dir, tenant_id=ctx.tenant_id
-                )
+                report_path = generate_report(analytics, self.output_dir, tenant_id=ctx.tenant_id)
                 logger.info("Stage 6 complete: report written to %s", report_path)
             else:
                 logger.info("Stage 6 complete: no output_dir, report generation skipped")
@@ -340,9 +333,7 @@ class GraphIndexBuilder:
                 logger.error("HTML export stage failed: %s", exc)
                 errors.append(f"HTML export failed: {exc}")
 
-        inferred_count = sum(
-            1 for e in all_edges if e.provenance == Provenance.INFERRED
-        )
+        inferred_count = sum(1 for e in all_edges if e.provenance == Provenance.INFERRED)
         return BuildResult(
             tenant_id=ctx.tenant_id,
             node_count=persist_result.get("nodes_persisted", len(all_nodes)),
@@ -397,9 +388,7 @@ class GraphIndexBuilder:
 
         # Atomic replace via persistence
         try:
-            replace_result = await self.persistence.replace_document_slice(
-                ctx, uri, nodes, edges
-            )
+            replace_result = await self.persistence.replace_document_slice(ctx, uri, nodes, edges)
             logger.info("Ingested document %s: %s", uri, replace_result)
         except Exception as exc:
             logger.error("Replace slice failed for document %s: %s", uri, exc)
@@ -439,9 +428,7 @@ class GraphIndexBuilder:
                 ``output_dir`` — there is nowhere to write the report.
         """
         if self.output_dir is None:
-            raise ValueError(
-                "regenerate_report() requires output_dir to be set on the builder."
-            )
+            raise ValueError("regenerate_report() requires output_dir to be set on the builder.")
         # Build an in-memory assembler from the persisted graph state.
         # For now, generate an empty analytics result (full reload from ArangoDB
         # is planned for a future task — this satisfies the explicit call contract).
@@ -488,9 +475,7 @@ class GraphIndexBuilder:
             return False
         return self._ignore_spec.match_file(path)
 
-    async def _extract_code(
-        self, sources: SourceConfig
-    ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
+    async def _extract_code(self, sources: SourceConfig) -> tuple[list[UniversalNode], list[UniversalEdge]]:
         """Extract nodes and edges from all configured code paths.
 
         Args:
@@ -520,9 +505,7 @@ class GraphIndexBuilder:
                         source = f.read_text(encoding="utf-8", errors="replace")
                         # Incremental staleness check (FEAT-240): skip unchanged files
                         if isinstance(self.persistence, IncrementalPersistence):
-                            sha1 = hashlib.sha1(
-                                source.encode("utf-8", errors="replace")
-                            ).hexdigest()
+                            sha1 = hashlib.sha1(source.encode("utf-8", errors="replace")).hexdigest()
                             if not await self.persistence.is_stale(
                                 sources.ctx if hasattr(sources, "ctx") else None,
                                 str(f),
@@ -540,9 +523,7 @@ class GraphIndexBuilder:
                 logger.error("Code extraction failed for %s: %s", path_str, exc)
         return nodes, edges
 
-    async def _extract_loaders(
-        self, sources: SourceConfig
-    ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
+    async def _extract_loaders(self, sources: SourceConfig) -> tuple[list[UniversalNode], list[UniversalEdge]]:
         """Extract nodes and edges from loader sources.
 
         Args:
@@ -569,9 +550,7 @@ class GraphIndexBuilder:
                 logger.warning("Failed to extract loader source %s: %s", uri, exc)
         return nodes, edges
 
-    async def _extract_skills(
-        self, sources: SourceConfig
-    ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
+    async def _extract_skills(self, sources: SourceConfig) -> tuple[list[UniversalNode], list[UniversalEdge]]:
         """Extract nodes and edges from skill paths.
 
         Args:
@@ -609,9 +588,7 @@ class GraphIndexBuilder:
 
     # Incremental extraction helpers — single URI/file
 
-    async def _extract_code_for_uri(
-        self, uri: str
-    ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
+    async def _extract_code_for_uri(self, uri: str) -> tuple[list[UniversalNode], list[UniversalEdge]]:
         """Extract code nodes for a single URI (incremental).
 
         Args:
@@ -634,9 +611,7 @@ class GraphIndexBuilder:
             logger.warning("Code extraction for %s failed: %s", uri, exc)
             return [], []
 
-    async def _extract_loader_for_uri(
-        self, uri: str
-    ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
+    async def _extract_loader_for_uri(self, uri: str) -> tuple[list[UniversalNode], list[UniversalEdge]]:
         """Extract loader nodes for a single URI (incremental).
 
         Args:
@@ -709,8 +684,7 @@ class GraphIndexBuilder:
             from parrot_loaders.factory import get_loader_class
         except ImportError:
             logger.warning(
-                "No loader for %s: ai-parrot-loaders is not installed "
-                "(only %s are readable without it)",
+                "No loader for %s: ai-parrot-loaders is not installed " "(only %s are readable without it)",
                 uri,
                 ", ".join(sorted(PLAIN_TEXT_EXTENSIONS)),
             )
@@ -721,9 +695,7 @@ class GraphIndexBuilder:
             logger.warning("Could not build a loader for %s: %s", uri, exc)
             return None
 
-    async def _extract_skill_for_uri(
-        self, uri: str
-    ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
+    async def _extract_skill_for_uri(self, uri: str) -> tuple[list[UniversalNode], list[UniversalEdge]]:
         """Extract skill nodes for a single URI (incremental).
 
         Args:
