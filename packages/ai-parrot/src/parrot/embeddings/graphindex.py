@@ -52,9 +52,7 @@ class GraphIndexEmbedder:
     # Public interface
     # ------------------------------------------------------------------
 
-    async def embed_nodes(
-        self, nodes: list[UniversalNode], batch_size: int = 64
-    ) -> list[UniversalNode]:
+    async def embed_nodes(self, nodes: list[UniversalNode], batch_size: int = 64) -> list[UniversalNode]:
         """Batch-embed nodes and populate ``embedding_ref``.
 
         Processes nodes in batches.  If embedding fails for a batch, all
@@ -112,9 +110,7 @@ class GraphIndexEmbedder:
 
         return nodes
 
-    async def search_similar(
-        self, query_text: str, top_k: int = 10
-    ) -> list[tuple[str, float]]:
+    async def search_similar(self, query_text: str, top_k: int = 10) -> list[tuple[str, float]]:
         """Search for similar nodes by text query using FAISS.
 
         Args:
