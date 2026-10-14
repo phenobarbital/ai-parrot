@@ -13,7 +13,7 @@ tags: [github-reviewer, wikitoolkit, code-review, gittoolkit, knowledge-graph]
 **Feature ID**: FEAT-672
 **Date**: 2026-10-15
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next
 
 ---
