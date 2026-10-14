@@ -28,6 +28,7 @@ from parrot.knowledge.graphindex.schema import (
     BuildResult,
     IngestResult,
 )
+
 __all__ = [
     "Provenance",
     "NodeKind",
