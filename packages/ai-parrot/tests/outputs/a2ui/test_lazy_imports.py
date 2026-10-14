@@ -53,7 +53,7 @@ def _loaded_after_import(module: str) -> list[str]:
     body = (
         "import importlib, json\n"
         f"importlib.import_module({module!r})\n"
-        f"print(json.dumps(sorted(set(sys.modules) & {sorted(FORBIDDEN)!r})))\n"
+        f"print(json.dumps(sorted(set(sys.modules) & set({sorted(FORBIDDEN)!r}))))\n"
     )
     result = _run_probe(body)
     assert result.returncode == 0, result.stderr
