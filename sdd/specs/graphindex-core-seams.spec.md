@@ -284,7 +284,7 @@ calls, not entry points).
 | `wiki/cli.py:4011,4108,4561,4623`, `flows/dev_loop/graph_memory.py:142` | modifies | `create_graph_persistence("sqlite", db_dir=…)` |
 | `parrot_tools/graphindex/toolkit.py:306,1326` | modifies | `isinstance(persistence, TemporalGraphPersistence / HybridRetrievalPersistence)` |
 | `contracts/temporal.py:361-375` | modifies | typed `TemporalGraphPersistence`; unsupported backend → `CapabilityUnavailable` |
-| `retrieval/pin.py:416` | modifies | explicit SQLite-only boundary: `isinstance` guard + clear error (S9) |
+| `retrieval/pin.py:416` | modifies | consumes the `SourceCoherencePersistence.file_hashes` capability (§8 Q4); non-capable backend → `CapabilityUnavailable` (S9) |
 | `OntologyGraphStore` (`graph_store.py:53`) | renames + modifies | `ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore)`; `execute_traversal` (`:271`) → private `_execute_aql`; typed ops added using the existing AQL verbatim |
 | `authorization.py:257,339`, `entity_resolver.py:384,427`, `mixin.py:337-381` | modifies | typed operations / `execute_query(dialect=…)`; constructor types → `OntologyTraversalStore` |
 | `TraversalPattern` (`schema.py:261-290`), `ResolvedIntent` (`schema.py:547-571`), `IntentDecision` (`intent.py:42`) | modifies | `query_templates: dict[str, str]`; `query` + `dialect` fields (hard cut of `aql`) |
@@ -440,6 +440,12 @@ class EmbeddingPersistence(Protocol):                   # postgres :1331 (S8: du
 @runtime_checkable
 class HybridRetrievalPersistence(Protocol):             # postgres :1484
     async def hybrid_retrieve(self, ctx: Any, query: str, *, top_k: int = 10, **options: Any) -> list[Any]: ...
+
+@runtime_checkable
+class SourceCoherencePersistence(Protocol):             # §8 Q4 (owner, 2026-10-14) — replaces pin.py's private _db_path read
+    async def file_hashes(self, ctx: Any) -> list[tuple[str, str]]:
+        """Every ``(source_uri, sha1)`` from the backend's ``files`` plane, sorted by ``source_uri``.
+        sqlite: ``files`` table (persist_sqlite.py:41); postgres: ``{schema}.files`` (pg_schema.py:256)."""
 
 
 # parrot/knowledge/graphindex/backends.py  (NEW — the only composition root, S3)
@@ -822,8 +828,10 @@ def create_proxy_mcp_server(remote: Any, *, transport: Literal["auto", "framewor
   `create_graph_persistence`; `GraphPublisher` and `GraphIndexBuilder` are
   typed to `GraphPersistence`; capability use is `isinstance` (toolkit,
   temporal contracts) and raises `CapabilityUnavailable` with the backend
-  name otherwise; `pin.py` guards `isinstance(persistence, SQLitePersistence)`
-  and rejects other backends before opening anything (S9). `ArangoPersistence`
+  name otherwise; `pin.py` reads through the
+  `SourceCoherencePersistence.file_hashes(ctx)` capability
+  (§8 Q4) implemented by SQLite and Postgres; a backend without it raises
+  `CapabilityUnavailable` before any git call (S9). `ArangoPersistence`
   takes a `GraphDocumentStore` (M8), never the typed traversal contract (S6).
   Wiki (FEAT-670 S1/S8 absorbed): backends are `WikiBackendSpec` rows with a
   `kind`; the three `Literal`s and `SourceCollectionManager.backend` become
@@ -973,7 +981,7 @@ def create_proxy_mcp_server(remote: Any, *, transport: Literal["auto", "framewor
 | `test_persistence_for_project` | M7 | `backend: sqlite` ⇒ `db_dir=graph_path(root)`; `postgres` ⇒ DSN via `resolve_setting`; a spec without `project_options` ⇒ `ValueError` naming the backend; `runtime.py` and the four `cli.py` sites call it |
 | `test_registry_dispatch` | M7 | unknown backend → `ValueError` listing names; missing option named; missing driver → `lazy_import` message with the extra; factories imported lazily |
 | `test_no_hasattr_capability_probes` | M7 | toolkit/temporal paths use `isinstance`; unsupported backend → `CapabilityUnavailable(backend)` |
-| `test_pin_sqlite_only_boundary` | M7 | `check_pin_coherence` rejects a non-SQLite backend before opening anything |
+| `test_pin_source_coherence_capability` | M7 | `check_pin_coherence` reads `file_hashes(ctx)` (SQLite + Postgres implement it, sorted by `source_uri`); a backend without the capability raises `CapabilityUnavailable` before any git call |
 | `test_wiki_backend_registry_validation` | M7 | `backend="helixdb"` unregistered → validation error at open naming known backends; registered satellite name accepted in `WikiConfig`, `WikiProjectConfig`, `WikiEnvOverlay`, `SourceCollectionManager`; `click.Choice` for `--backend` lists `wiki_backend_names()` |
 | `test_wiki_backend_kind` | M7 | `is_built()`/`storage_path()` for a `kind="server"` spec never fall through to the `pages/` probe; an `is_built` hook is honoured; `is_server_backend("arangodb")` is True; no `== "arangodb"` meaning "server-hosted" remains (AST assertion over the five audited files) |
 | `test_namespace_dispatch_backend_neutral` | M7 | a namespace with `database` + explicit `backend: <registered-server-backend>` is not coerced to `arangodb`; `database` without explicit backend still is; `open_namespace_store` passes `spec.resolve_options(cfg)`, never `arango_params`, to a non-Arango backend |
@@ -1592,28 +1600,32 @@ overlap on `wiki/store.py` / `project.py` / ingest — reconcile at merge time.
       answered by M8's dialect-keyed `query_templates`; its ledger hard cut stays
       with FEAT-670.
 
-**Still open:**
+**Answered 2026-10-14 (owner):**
 
-- [ ] **Q1 — `TenantContext.arango_db` / `pgvector_schema` and the Arango-shaped
+- [x] **Q1 — `TenantContext.arango_db` / `pgvector_schema` and the Arango-shaped
       ontology schema** (`EntityDef.collection`, `RelationDef.edge_collection`,
       `SearchViewDef`): rename to neutral names with backend-provided handles
       (codex S4), or keep them and let non-Arango backends reinterpret them?
       This spec keeps them; a rename is a cross-cutting hard cut better taken
-      with FEAT-670's data-model mapping. — *Owner: Jesus Lara*: Agree.
-- [ ] **Q2 — Dynamic query generation for non-AQL dialects**: fail closed
+      with FEAT-670's data-model mapping. — *Resolved by owner 2026-10-14*: agree — fields kept in this feature.
+- [x] **Q2 — Dynamic query generation for non-AQL dialects**: fail closed
       (this spec) until a dialect registers a validator — should FEAT-670 ship
       a HelixDB validator, or should dynamic generation be AQL-only for good?
-      — *Owner: Jesus Lara (decide in FEAT-670)*: maybe we need to write a validator for ArangoDB first.
-- [ ] **Q3 — `legal` tools**: they stay explicitly Arango-bound
+      — *Resolved by owner 2026-10-14*: validator for ArangoDB first — M8 registers the existing AQL
+      validator (`validators.py:36`) through `register_query_validator("aql", …)` as the reference
+      implementation and covers it with the dispatch tests; other dialects stay fail-closed until they
+      ship one (FEAT-670 decides HelixDB's).
+- [x] **Q3 — `legal` tools**: they stay explicitly Arango-bound
       (`execute_query(dialect="aql")`); should a later feature express their
       eight inline statements as ontology `TraversalPattern`s so they become
-      portable? — *Owner: Jesus Lara* *(does not block this spec)*: later follow-up
-- [ ] **Q4 — `pin.py` L0 coherence** is SQLite-only by design (S9). Should
+      portable? — *Resolved by owner 2026-10-14*: later follow-up; Arango-bound in this feature.
+- [x] **Q4 — `pin.py` L0 coherence** is SQLite-only by design (S9). Should
       source-coherence become a `GraphPersistence` capability
       (`files_sample(ctx, n)`) so Postgres/HelixDB planes can be pinned? —
-      *Owner: FEAT-670 / retrieval owner* *(does not block this spec)*: yes, become a `GraphPersistence` capability
-- [ ] **Q5 — Extras forwarding** (`ai-parrot[wiki]` → `parrot-graphindex[all]`)
-      — FEAT-541 decision; this spec does not touch extras. — *Owner: Jesus Lara*: agree
+      *Resolved by owner 2026-10-14*: yes — `SourceCoherencePersistence.file_hashes(ctx)` capability in
+      this feature (§2, M7), implemented by SQLite and Postgres; `pin.py` consumes it.
+- [x] **Q5 — Extras forwarding** (`ai-parrot[wiki]` → `parrot-graphindex[all]`)
+      — *Resolved by owner 2026-10-14*: agree — FEAT-541 decision; this spec does not touch extras.
 
 ---
 
@@ -1636,7 +1648,7 @@ overlap on `wiki/store.py` / `project.py` / ingest — reconcile at merge time.
 | S6 | Keep GraphIndex persistence over a document/edge adapter, not the typed contract (architecture) | CONFIRM | `GraphIndexPersistence` uses `ensure_collection`, `query_documents`, `edges_incident`, soft deletes — split into `GraphDocumentStore` vs `OntologyTraversalStore` | §2 contracts, §3 M7/M8, §7 risk |
 | S7 | Reconcile the LLM Protocol with callers using `completion` (api) | CONFIRM (scoped) | verified `intent.py:176`; the ontology resolver is framework-side and stays on `AbstractClient` — not folded into `LLMCaller`; the "distinguish `ProviderNotAvailable` from extraction failures" half is adopted | §3 M2, §6 Does-NOT-exist |
 | S8 | Move durable embedding writes behind persistence capabilities (architecture) | CONFIRM | verified `embed.py:193` stub vs `persist_postgres.py:1331`; `EmbeddingPersistence` capability, `pgvector_dsn` removed from the embedder | §2, §3 M2/M7, §4 `test_embedder_no_pgvector_stub` |
-| S9 | `pin.py` private SQLite path → explicit boundary or capability (risk) | CONFIRM | explicit SQLite-only guard now; capability deferred | §3 M7, §8 Q4 |
+| S9 | `pin.py` private SQLite path → explicit boundary or capability (risk) | CONFIRM | capability chosen by the owner (§8 Q4): `SourceCoherencePersistence.file_hashes` | §2, §3 M7, §8 Q4 |
 | S10 | Source-collection manager as an injected backend adapter (architecture) | CONFIRM | verified 25 `backend ==` branches in `sources.py` and selection in `toolkit.py:139-161`; `SourceManifestBackend` + registry | §2, §3 M7 |
 | S11 | Build transport descriptors from one operation registry with fingerprints and duplicate checks (api) | CONFIRM | `OperationDescriptor.schema_fingerprint`, duplicate-name validation, per-mount golden manifests | §2, §3 M5 |
 | S12 | Contract and import tests that verify behaviour, not counts (testing) | CONFIRM | conformance matrix, reopen tests, typed-projection and dynamic-rejection tests, blocked-package probes reusing `tests/test_minimal_install.py` | §4 |
@@ -1675,4 +1687,5 @@ then they must not be claimed.
 | 0.2 | 2026-09-10 | Jesus Lara (with Claude) | Identified the auth gateway and refreshed import measurements against `24ff50f03`. |
 | 0.3 | 2026-10-14 | Codex | Re-verified against `048479633`: corrected provider, config, Postgres, SQL and MCP contracts; expanded relocation/compatibility gates; recorded the pending-task refresh. (Review form, not template form.) |
 | 0.4 | 2026-10-14 | Jesus Lara (with Claude) | Rewritten in template form carrying the v0.3 findings with re-verified anchors; **scope widened** to a graph-database-agnostic persistence seam (M7: `GraphPersistence` + capabilities + registry, wiki backend registry, source backend) and a backend-neutral ontology contract (M8: `GraphDocumentStore` / `OntologyTraversalStore`, typed traversals, dialect-keyed patterns, fail-closed dynamic queries); codex design research folded (§9); TASK-3256…3268 superseded (§10); FEAT-670 (helixdb) now depends on this feature. |
+| 0.6 | 2026-10-14 | Jesus Lara (with Claude) | Approved; §8 Q1–Q5 answered by the owner. Q4 adds the `SourceCoherencePersistence.file_hashes` capability (SQLite + Postgres) consumed by `pin.py`; Q2 makes the AQL validator the explicitly registered reference validator. Tasks re-decomposed (§10). |
 | 0.5 | 2026-10-14 | Jesus Lara (with Claude) | Absorbed FEAT-670 v0.2's seam-level decisions (its codex S1/S4/S5/S8): `WikiBackendSpec` with `kind`/`resolve_options`/`is_built` hook and `is_server_backend()`; registry-driven `is_built`/`storage_path`/namespace coercion/`open_namespace_store`/CLI choices + `"arangodb"` literal audit; explicit backend precedence rule for `GraphIndexLoader`/`build_graph_memory_toolkit`; `persistence_for_project` + `GraphBackendSpec.project_options`; `GraphPersistence` semantics extended with canonical `edge_key`, in-transaction `seq`, incident-edge pre-images and the revert-conflict rule; conformance suite exported for consumers; M8 dialect-registry note resolving FEAT-670's Q1. |
