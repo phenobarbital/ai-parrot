@@ -33,7 +33,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,8 +43,9 @@
       "parallelism_notes": "uses run_import_probe from TASK-4300 (tests/knowledge/_support/import_probe.py)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4301-ontology-stores-graphindex-lazy-roots.md"
+      "completed_at": "2026-10-14T22:39:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4301-ontology-stores-graphindex-lazy-roots.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4302",
@@ -72,7 +73,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -82,8 +83,9 @@
       "parallelism_notes": "satisfies Embedder from TASK-4302 (graphindex/protocols.py); edits factory.py:285 before TASK-4321's dispatch edit",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4303-graphindex-embedder-adapter.md"
+      "completed_at": "2026-10-14T22:39:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4303-graphindex-embedder-adapter.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4304",

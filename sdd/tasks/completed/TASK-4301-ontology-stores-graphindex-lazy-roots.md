@@ -249,10 +249,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: Lazy PEP 562 roots for ontology, stores and graphindex packages + test_lazy_package_roots.py; no review corrections (coder-review recorded). Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres and has pre-existing reds, so it is not recorded as green. With GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings show no failure that is not also on clean origin/dev (3 tests/embeddings reds are pre-existing).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
