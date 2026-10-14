@@ -290,17 +290,7 @@ if [ -z "$SKIP_REASON" ]; then
 fi
 if command -v codex >/dev/null 2>&1; then
   CODEX_VERSION="$(codex --version 2>/dev/null | awk '{print $2}')"
-  PROBE_OUTPUT="$(cat "$DR/probe.txt" 2>/dev/null || echo "")"
-  python -c "
-import json, sys
-json.dump({
-    'model': sys.argv[1],
-    'codex_cli_version': sys.argv[2],
-    'reasoning_effort': 'high',
-    'timeout_s': 600,
-    'probe_output': sys.argv[3],
-}, open(sys.argv[4], 'w'), indent=2)
-" "$MODEL" "$CODEX_VERSION" "$PROBE_OUTPUT" "$DR/run.json"
+  python -m scripts.sdd.spec_tools init-run "$DR" --model "$MODEL" --codex-version "$CODEX_VERSION" --probe-file "$DR/probe.txt"
 fi
 ```
 
@@ -326,22 +316,7 @@ In intake mode, sources come from `synthesis.json` (FEAT-577):
 
 ```bash
 if [ -z "$SKIP_REASON" ]; then
-  python - "$DR" <<'PY' || SKIP_REASON="brief rendering failed"
-import sys
-from pathlib import Path
-
-dr = Path(sys.argv[1])
-template = Path("sdd/templates/design_research.prompt.md").read_text(encoding="utf-8")
-names = [
-    "problem_statement", "constraints_and_goals", "recommended_option_or_scope",
-    "code_context_paths", "open_questions", "question",
-]
-for name in names:
-    value = (dr / f"{name}.txt").read_text(encoding="utf-8").strip()
-    template = template.replace("{{" + name + "}}", value)
-assert "{{" not in template, "unfilled placeholder remains"
-(dr / "brief.md").write_text(template, encoding="utf-8")
-PY
+  python -m scripts.sdd.spec_tools render-brief "$DR" || SKIP_REASON="brief rendering failed"
 fi
 ```
 FORBIDDEN in the brief: anything you have written for this spec, your
@@ -363,14 +338,7 @@ if [ -z "$SKIP_REASON" ]; then
   [ "$rc" -ne 0 ] && [ -z "$SKIP_REASON" ] && SKIP_REASON="codex exited $rc (see $DR/codex.log)"
   ENDED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
   if [ -f "$DR/run.json" ]; then
-    python -c "
-import json, sys
-d = json.load(open(sys.argv[1]))
-d['started_at'] = sys.argv[2]
-d['ended_at'] = sys.argv[3]
-d['exit_code'] = int(sys.argv[4])
-json.dump(d, open(sys.argv[1], 'w'), indent=2)
-" "$DR/run.json" "$STARTED_AT" "$ENDED_AT" "$rc"
+    python -m scripts.sdd.spec_tools stamp-run "$DR" --started-at "$STARTED_AT" --ended-at "$ENDED_AT" --exit-code "$rc"
   fi
 fi
 ```
@@ -382,23 +350,14 @@ concurrency is provided for you.
 #### 3b.4 Validate and triage
 ```bash
 if [ -z "$SKIP_REASON" ]; then
-  python -c "
-import json, sys, jsonschema
-s = json.load(open('sdd/templates/design_research.schema.json'))
-d = json.load(open('$DR/suggestions.json'))
-jsonschema.Draft202012Validator(s).validate(d)
-print(len(d['suggestions']), 'suggestions')" || SKIP_REASON="suggestions.json failed schema validation"
+  python -m scripts.sdd.spec_tools validate-suggestions "$DR" || SKIP_REASON="suggestions.json failed schema validation"
 fi
 ```
 For each suggestion (when not skipped), for every `affected_paths` entry:
 1. **Containment check first**: resolve the path against `$REPO_ROOT` and confirm it
    stays inside it —
    ```bash
-   python -c "
-import os, sys
-p = os.path.realpath(sys.argv[1])
-root = os.path.realpath('$REPO_ROOT')
-sys.exit(0 if p == root or p.startswith(root + os.sep) else 1)" "<path>" \
+   python -m scripts.sdd.spec_tools check-path "<path>" --root "$REPO_ROOT" \
      || REASON="REJECT — path outside repository: <path>"
    ```
    A path that fails containment is `REJECT — path outside repository: <path>` and is
@@ -543,11 +502,7 @@ stay with the thinking model — eligibility never delegates a design choice.
      `formfield-content-type` (FEAT-488 → FEAT-489), and cost a full run.
 
      ```bash
-     EXISTING=$(python -c "
-     from pathlib import Path
-     from scripts.sdd.reserve_ids import existing_feature_id
-     found = existing_feature_id(Path('.'), '<feature-name>')
-     print(found[0] if found else '')")
+     EXISTING=$(python -m scripts.sdd.spec_tools existing-feature-id "<feature-name>")
      ```
 
      If `$EXISTING` is non-empty, **use it verbatim as this spec's Feature
@@ -667,14 +622,7 @@ fi
 # Intake mode promotion (FEAT-577)
 if [ -d "$STAGE" ]; then
   # Set feat_id and phase: committed in intake.json BEFORE staging
-  python -c "
-import json, sys
-d = json.load(open(sys.argv[1]))
-d['feat_id'] = sys.argv[2]
-d['phase'] = 'committed'
-d['updated_at'] = __import__('datetime').datetime.utcnow().isoformat() + '+00:00'
-json.dump(d, open(sys.argv[1], 'w'), indent=2)
-" "$STAGE/intake.json" "$FEAT_ID"
+  python -m scripts.sdd.spec_tools commit-intake "$STAGE/intake.json" --feat-id "$FEAT_ID"
   
   INTAKE_PROMOTED="sdd/state/$FEAT_ID/intake"
   if [ -e "$INTAKE_PROMOTED" ]; then
