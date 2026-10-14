@@ -35,6 +35,7 @@ Spec §3 M2 + codex S8. `graphindex/embed.py:15-20` imports `EmbeddingRegistry`,
 | `packages/ai-parrot/src/parrot/embeddings/graphindex.py` | CREATE | GraphIndexEmbedder adapter + attach_hot_index |
 | `packages/ai-parrot/src/parrot/knowledge/graphindex/embed.py` | MODIFY | lazy re-export |
 | `packages/ai-parrot/src/parrot/knowledge/graphindex/factory.py` | MODIFY | use attach_hot_index |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/loader.py` | MODIFY | drop the `pgvector_dsn=` kwarg passed to GraphIndexEmbedder (checklist: fix any caller passing it) |
 | `packages/ai-parrot/tests/knowledge/graphindex/test_embedder_adapter.py` | CREATE | adapter tests |
 
 ---
@@ -80,6 +81,10 @@ from parrot.knowledge.graphindex.protocols import Embedder  # TASK-4302
     },
     {
       "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/factory.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/loader.py",
       "action": "MODIFY"
     },
     {
