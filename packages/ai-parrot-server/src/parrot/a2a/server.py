@@ -2005,7 +2005,7 @@ class A2AServer:
             config = TaskPushNotificationConfig.from_dict(payload)
             created = await store.create(config)
         except (KeyError, ValueError) as e:
-            raise _A2ARpcError("InvalidParams", str(e), code=-32602)
+            raise _A2ARpcError("InvalidParams", str(e), code=-32602) from e
         return created.to_dict(version)
 
     async def _rpc_push_get(self, params: Dict[str, Any], version: str) -> Dict[str, Any]:
