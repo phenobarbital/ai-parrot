@@ -91,6 +91,8 @@ agents using GraphIndex memory and the ontology toolkit, ops running the shared 
   `httpx.AsyncClient` pooling. Sync consumers (`CatalogStore`, `SourceCollectionManager`
   CLI paths) reuse the existing `_run_async` bridge pattern (`wiki/sources.py:1224`).
 - **No hidden behaviour change for `sqlite`/`memory`/`arangodb`/`postgres`** backends.
+  ArangoDB is **not** being retired: HelixDB is an additional supported backend, so no
+  deprecation warnings, doc redirects or removals touch the ArangoDB code or `docker/arango`.
 - **Secrets from env only** (`HELIXDB_URL`, `HELIXDB_API_KEY`), resolved via the existing
   `_env_credential()` chain (os.environ → navconfig → default), like `ARANGODB_*`.
 
@@ -116,9 +118,9 @@ plane's existing selection seam:
 
 Plus infra: `docker/helixdb/{Dockerfile,docker-compose.yml,README.md}` on
 `ghcr.io/helixdb/helixdb:v0.0.12` with `HELIX_DATA_DIR` volume persistence and
-`/readyz` healthcheck; Makefile targets `docker-helixdb` (compose up, disk persistence)
-and `helixdb-embedded-smoke` (opens an embedded `Disk` plane under `.parrot/helix/` and
-runs the bootstrap); `ai-parrot[helixdb]` extra (`helix-db==0.3.4`) and
+`/readyz` healthcheck and an image tag read from `${HELIXDB_IMAGE_TAG:-v0.0.12}`; one
+Makefile target `docker-helixdb` (compose up, disk persistence — no embedded target, see
+open question #2); `ai-parrot[helixdb]` extra (`helix-db==0.3.4`) and
 `ai-parrot[helixdb-embedded]` (`+ helix-db-embedded==0.3.3`); `HELIXDB_URL`,
 `HELIXDB_API_KEY`, `HELIXDB_MODE` settings.
 
@@ -138,9 +140,10 @@ runs the bootstrap); `ai-parrot[helixdb]` extra (`helix-db==0.3.4`) and
   single-property, top-level only), queried with `text_search_nodes(label, prop, q, k)`
   and projected with `$score`. Whole-index searches are capped at 800 hits; per-document
   admission is ~64 MiB analysis / ~16k unique terms, far above `body_max_chars` (16,000).
-- `embeddings` blob table becomes a **vector index** on `Page.embedding` with a declared
-  dimension and cosine metric; `search_vector()` maps to `vector_search_nodes(...)` with
-  `$distance`. Dimension must be known at index creation (open question #1).
+- `embeddings` blob table becomes **lazy per-dimension vector indexes**: the first vector
+  of length *d* written for a label creates the property `embedding_<d>` and a cosine
+  index on it; `search_vector()` picks the index matching the query vector's length and
+  maps to `vector_search_nodes(...)` with `$distance` (open question #1, resolved).
 - Index DDL is asynchronous: bootstrap issues `create_index_if_not_exists` /
   `create_text_index_nodes` / `create_vector_index_nodes` and polls
   `get_index_operation` until active (replaces `_migrate()` on open).
@@ -152,8 +155,8 @@ runs the bootstrap); `ai-parrot[helixdb]` extra (`helix-db==0.3.4`) and
 - Read-after-write is safe: default search consistency is `strong` (committed but
   unpublished index work is included).
 - Tenancy: GraphIndex's one-file-per-tenant becomes one HelixDB `database` per tenant
-  (`Disk(root, tenant)` / server path), or a `tenant_id`-partitioned index (open
-  question #8).
+  (server `gi_<tenant>`, embedded `Disk(root, tenant)`); no `tenant_id` query filters
+  (open question #7, resolved).
 
 ✅ **Pros:**
 - One backend implementation serves local (server or embedded) and shared deployments;
@@ -315,8 +318,8 @@ embedded wheel is used only for tests, so the single-writer limitation never rea
 multi-process local workflow.
 
 Option C is kept as the fallback shape for PageIndex and BookStore (the user chose
-projection for those two), and Option D is recorded so the spec can revisit it if
-`/v2/cypher` turns out to be in the published image.
+projection for those two). Option D is recorded for history only: the user ruled Cypher
+out of scope (open question #3), so the ontology port uses typed traversals.
 
 ---
 
@@ -329,8 +332,8 @@ projection for those two), and Option D is recorded so the spec can revisit it i
   `helix_credentials_env` (default `"HELIXDB"` → `HELIXDB_URL`, `HELIXDB_API_KEY`) and
   `helix_mode` (`"server"` default; `"embedded"` opens `Disk(<storage_dir>/helix, <database>)`).
 - `make docker-helixdb` starts `docker/helixdb/` (persistent `HELIX_DATA_DIR` volume,
-  `127.0.0.1:6969`, readiness-gated). `make helixdb-embedded-smoke` opens an embedded
-  disk plane and runs the bootstrap so a developer can validate the native wheel.
+  `127.0.0.1:6969`, readiness-gated, image `${HELIXDB_IMAGE_TAG:-v0.0.12}`). There is no
+  Makefile entry for embedded mode; embedded is a test fixture.
 - `pip install ai-parrot[helixdb]` (server client) / `ai-parrot[helixdb-embedded]`
   (adds the native runtime). Selecting `helixdb` without the extra fails with the
   `lazy_import` message naming the extra — never a silent fallback (same rule as
@@ -389,8 +392,9 @@ projection for those two), and Option D is recorded so the spec can revisit it i
    calls `text_search_nodes`/`vector_search_nodes` instead of `bm25s`/numpy when a
    projection handle is injected; BookStore `CatalogStore.upsert/upsert_relations/
    upsert_communities` mirror into `Book` nodes and `search()` delegates.
-8. **Tests**: unit tier on embedded `InMemory` (skipped when `helixdb_uniffi` is not
-   importable); a parity suite runs the existing CAS/attrs/symbols tests against
+8. **Tests**: unit tier on embedded `InMemory` — CI installs `helix-db-embedded`, so
+   these run on every PR (local runs without the wheel skip with a clear reason); a
+   parity suite runs the existing CAS/attrs/symbols tests against
    `helixdb`; a live tier gated by `HELIXDB_URL` reachability (clone of the ArangoDB
    `skipif`) exercises the docker server; the GraphIndex commit-protocol tests run
    against `HelixPersistence`.
@@ -412,12 +416,15 @@ projection for those two), and Option D is recorded so the spec can revisit it i
 - **Embedded single writer**: a second embedded writer on the same `Disk` source is an
   error; `helix_mode=embedded` is refused when a `wiki.lock` (`project.py:76`) holder
   exists, with a message pointing to server mode.
-- **Dimension mismatch**: vectors of a different dimension than the index are rejected
-  by HelixDB; `upsert_embedding` validates length first and raises a clear error.
+- **New vector dimension**: a vector whose length has no index yet triggers the lazy
+  creation of `embedding_<d>` + its index inside the same write path (bootstrap helper,
+  receipt-polled); a query vector whose length matches no index returns an empty result
+  with a logged warning rather than an error.
 - **Read-only planes** (federated namespaces): `embedded_reader` / server client with
   `_assert_writable()` raising `PermissionError` as today.
-- **Server upgrades**: image tag is pinned; README documents the index-storage-version
-  one-way upgrade and the backup step.
+- **Server upgrades**: the compose file reads `${HELIXDB_IMAGE_TAG:-v0.0.12}`; the README
+  documents the one-way index-storage-version upgrade and the manual `HELIX_DATA_DIR`
+  volume backup to run before changing the tag.
 
 ---
 
@@ -463,8 +470,9 @@ projection for those two), and Option D is recorded so the spec can revisit it i
 | `parrot/knowledge/bookstore/catalog.py`, `library.py`, `helix_projection.py` (new) | modifies / adds | optional projection + delegation |
 | `packages/ai-parrot/pyproject.toml` | modifies | extras `helixdb`, `helixdb-embedded`; markers unchanged (`live`) |
 | `ruff.toml:155-163` | modifies | per-file `TID251` ignore for `parrot/knowledge/helix/client.py` |
-| `docker/helixdb/` (new), `Makefile` | adds | compose stack + `docker-helixdb` / `helixdb-embedded-smoke` targets |
-| CI | depends on | install `helix-db-embedded` for the unit tier (27 MB) or accept skips |
+| `docker/helixdb/` (new), `Makefile` | adds | compose stack (`HELIXDB_IMAGE_TAG`, `HELIX_DATA_DIR` volume, `/readyz`) + `docker-helixdb` target; README with the backup-before-upgrade procedure |
+| CI | modifies | installs `helix-db-embedded` (27 MB) so the HelixDB unit tier runs on every PR |
+| `docker/arango/`, `ArangoDBWikiStore`, `GraphIndexPersistence` | unchanged | ArangoDB remains a fully supported peer backend; no deprecation |
 | `docs/wiki/cheatsheet.md`, `docs/wiki/*.md` | modifies | backend docs |
 
 Breaking changes: `LedgerStore.ledger_transaction()` no longer yields
@@ -767,12 +775,14 @@ from helixdb import AsyncClient, Disk, InMemory, IndexSpec, Predicate, VectorDis
 
 ## Open Questions
 
-- [ ] **Vector index dimension strategy** — `upsert_embedding(vector, model)` is dimension-agnostic today; HelixDB fixes the dimension at index creation. One index per `(label, dimension)` derived lazily from the first vector, or a configured `helix_vector_dimension` with a hard error on mismatch? — *Owner: Jesus Lara*
-- [ ] **Makefile "embedded" target semantics** — an embedded database has no network endpoint; assumed as `helixdb-embedded-smoke` (opens `Disk(.parrot/helix, <wiki>)`, runs bootstrap + one round-trip). Confirm or redefine. — *Owner: Jesus Lara*
-- [ ] **Cypher availability** — does `ghcr.io/helixdb/helixdb:v0.0.12` or `helix-db-embedded` 0.3.3 accept `/v2/cypher`? If yes, Option D becomes viable for the ontology AQL port; if no, typed traversals are mandatory. Verify with a curl against the running container in M0. — *Owner: implementer (M0)*
-- [ ] **Multi-process embedded `Disk` behaviour** — what exactly happens when a second process opens a writer (fencing error vs corruption)? Needed to word the `helix_mode=embedded` guard; a 30-minute spike in M0. — *Owner: implementer (M0)*
-- [ ] **`LedgerStore.ledger_transaction()` reshaping** — accept the hard cut to a backend-neutral accumulator (10 call sites in `ledger/`)? Alternative: keep the ledger SQLite-only in this feature. — *Owner: Jesus Lara*
-- [ ] **CI native wheel** — install `helix-db-embedded` (27 MB) in the unit tier so HelixDB tests run, or accept `skipif(helixdb_uniffi missing)`? — *Owner: Jesus Lara*
-- [ ] **Tenancy mapping for GraphIndex** — one HelixDB `database` per tenant (mirrors `<tenant>.db`) vs one database with `tenant_id`-partitioned indexes (HelixDB requires the property to be literally named `tenant_id` for text indexes). — *Owner: Jesus Lara*
-- [ ] **ArangoDB retirement** — once `helixdb` server mode is proven for the shared wiki, is `docker/arango` + `ArangoDBWikiStore` deprecated, or do both stay supported? Affects docs and the fieldsync/issues wikis on dev ArangoDB. — *Owner: Jesus Lara*
-- [ ] **Server image pin and upgrade policy** — `v0.0.12` pinned in `docker/helixdb/`; who owns bumping it, and is a pre-upgrade `HELIX_DATA_DIR` backup step enforced in the Makefile target? — *Owner: Jesus Lara*
+All resolved on 2026-10-14 (review round after the brainstorm was committed).
+
+- [x] **Vector index dimension strategy** — `upsert_embedding(vector, model)` is dimension-agnostic today; HelixDB fixes the dimension at index creation. — *Owner: Jesus Lara*: lazy per-dimension index. The first vector written for a label creates the property `embedding_<dim>` and its cosine vector index; a later vector of another length creates a sibling property/index; `search_vector()` selects the index matching the query vector's length. No new config field.
+- [x] **Makefile "embedded" target semantics** — *Owner: Jesus Lara*: dropped. Only `make docker-helixdb` (server) is added; embedded stays a test fixture with no Makefile entry.
+- [x] **Cypher availability** — *Owner: Jesus Lara*: out of scope, never probed. Typed traversal methods on `OntologyGraphStore` are mandatory; ArangoDB keeps AQL inside them, HelixDB uses the DSL. Option D is recorded for history only.
+- [x] **Multi-process embedded `Disk` behaviour** — *Owner: implementer (M0)*: keep a 30-minute spike in M0 whose only output is the observed error class when a second process opens a writer, used to word the `helix_mode=embedded` guard message and the docs. No design decision depends on it.
+- [x] **`LedgerStore.ledger_transaction()` reshaping** — *Owner: Jesus Lara*: hard cut. `ledger_transaction()` yields a backend-neutral `LedgerTxn` accumulator (`upsert_pages`, `add_edges`, `set_state`); the SQLite implementation wraps the connection, the HelixDB one collects a single `write_batch`. All 10 call sites in `wiki/ledger/` are updated in-feature, no shim.
+- [x] **CI native wheel** — *Owner: Jesus Lara*: install `helix-db-embedded` in CI (test extras / uv dev group); unit tests run on embedded `InMemory` on every PR. Live server tests stay gated on `HELIXDB_URL` reachability.
+- [x] **Tenancy mapping for GraphIndex** — *Owner: Jesus Lara*: one HelixDB database per tenant — server database `gi_<tenant>`, embedded `Disk(root, tenant)`. Mirrors `<tenant>.db` and ArangoDB's `db_<tenant>`; no `tenant_id` filters in queries.
+- [x] **ArangoDB retirement** — *Owner: Jesus Lara*: there is no retirement. HelixDB is an additional supported backend; `ArangoDBWikiStore`, `GraphIndexPersistence` (ArangoDB) and `docker/arango` stay first-class, with no deprecation warnings or doc pointers away from them.
+- [x] **Server image pin and upgrade policy** — *Owner: Jesus Lara*: compose reads `${HELIXDB_IMAGE_TAG:-v0.0.12}`; the `docker/helixdb/README.md` documents the one-way index-storage-version upgrade and a manual `HELIX_DATA_DIR` volume backup (`docker run --rm -v helixdb-data:/data … tar`) to run before changing the tag. Bumping the default tag is a reviewed manual change; no Makefile backup target.
