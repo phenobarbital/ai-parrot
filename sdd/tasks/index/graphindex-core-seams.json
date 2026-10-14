@@ -362,7 +362,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -370,8 +370,9 @@
       "parallelism_notes": "no dependencies — creates graphindex/models.py consumed by TASK-4318",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4317-graph-document-models.md"
+      "completed_at": "2026-10-14T23:32:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4317-graph-document-models.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4318",
@@ -572,7 +573,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -580,8 +581,9 @@
       "parallelism_notes": "no dependencies — creates ontology/contracts.py consumed by TASK-4328 and TASK-4320",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4327-ontology-contracts.md"
+      "completed_at": "2026-10-14T23:32:39+00:00",
+      "file": "sdd/tasks/completed/TASK-4327-ontology-contracts.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4328",

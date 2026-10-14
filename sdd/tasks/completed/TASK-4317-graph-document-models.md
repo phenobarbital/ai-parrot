@@ -204,10 +204,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker orchestrator (claude sonnet), after both MCP seats failed
+**Date**: 2026-10-15
+**Notes**: Both nova attempts (glm, then minimax) failed in ~7s with 401 'security token included in the request has expired' - provider credentials, not a code defect, so no model feedback was filed. The orchestrator implemented it directly as a standard task: graphindex/models.py (GraphDocument, DocumentLoader verbatim from spec 2), extractors/loader.py retyped to GraphDocument and no longer imports parrot.stores, test_graph_document.py (4 tests; incl. a fresh-interpreter probe that parrot.stores.models is not loaded). ruff --fix dropped a pre-existing unused Provenance import; a pre-existing ASYNC240 in PlainTextLoader._load is left as style debt. SPEC DISCREPANCY for the owner: the DocumentLoader Protocol declares `async def load()`, but LoaderExtractor.extract actually calls `loader._load(source)`; the Protocol was written verbatim and `loader: object` was left unchanged rather than claim a Protocol the code does not call. Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres and has pre-existing reds. With GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings show no failure absent from the clean origin/dev baseline.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: loader param left as `object` (see Notes)
