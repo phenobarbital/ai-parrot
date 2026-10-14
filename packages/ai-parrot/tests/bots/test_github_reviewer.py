@@ -10,11 +10,14 @@ from __future__ import annotations
 import asyncio
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from parrot import conf
+from parrot.bots import github_reviewer
 from parrot.bots.github_reviewer import (
     Discrepancy,
     GitHubReviewer,
@@ -54,6 +57,14 @@ class _MinimalReviewer:
         )
         self._reviewed_shas: Dict[Any, str] = {}
         self._no_ticket_notified: set = set()
+        self._wiki_cache = None
+        self._wiki_warmup_task = None
+        self._wiki_toolkits_attached = False
+        self._wiki_store = None
+        self._wiki_branch = None
+        self._wiki_built_at = None
+        self._wiki_context_available = False
+        self._llm = None
 
     # Bind the real helpers we want to test.
     _extract_ticket_key = GitHubReviewer._extract_ticket_key
@@ -66,6 +77,11 @@ class _MinimalReviewer:
     _ask_llm_for_review = GitHubReviewer._ask_llm_for_review
     review_pull_request = GitHubReviewer.review_pull_request
     handle_hook_event = GitHubReviewer.handle_hook_event
+    _build_wiki_cache = GitHubReviewer._build_wiki_cache
+    _schedule_wiki_warmup = GitHubReviewer._schedule_wiki_warmup
+    _shutdown_wiki_warmup = GitHubReviewer._shutdown_wiki_warmup
+    _refresh_wiki_context = GitHubReviewer._refresh_wiki_context
+    _attach_wiki_toolkits = GitHubReviewer._attach_wiki_toolkits
     # Class-level constants needed by some helpers.
     _WEEKLY_LLM_SYSTEM_PROMPT = GitHubReviewer._WEEKLY_LLM_SYSTEM_PROMPT
 
@@ -90,6 +106,86 @@ def _wire_reviewer(**overrides: Any) -> _MinimalReviewer:
     r.jira_toolkit = MagicMock()
     r._wrapper = None
     return r
+
+
+class TestWikiLifecycle:
+    """Focused lifecycle coverage for the optional reviewer wiki plane."""
+
+    async def test_wiki_cache_disabled_by_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Disabled configuration creates neither cache nor warm-up task."""
+        reviewer = _wire_reviewer()
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_WIKI_ENABLED", False)
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_CACHE_DIR", str(tmp_path))
+
+        assert reviewer._build_wiki_cache() is None
+        await reviewer._schedule_wiki_warmup()
+        assert reviewer._wiki_warmup_task is None
+
+    async def test_warmup_task_is_owned_and_cancelled(self) -> None:
+        """Warm-up is named, retained and cancelled by its lifecycle helper."""
+        reviewer = _wire_reviewer()
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def refresh(repository: str) -> None:
+            started.set()
+            await release.wait()
+
+        reviewer._wiki_cache = MagicMock()
+        reviewer._refresh_wiki_context = refresh
+        await reviewer._schedule_wiki_warmup()
+        task = reviewer._wiki_warmup_task
+        assert task is not None
+        assert task.get_name() == "github-reviewer-wiki-warmup:owner/repo"
+        await started.wait()
+
+        await reviewer._shutdown_wiki_warmup()
+        assert reviewer._wiki_warmup_task is None
+        assert task.cancelled()
+
+    async def test_enrichment_ignores_foreign_payload_repository(self) -> None:
+        """A different payload repository cannot select another cache entry."""
+        reviewer = _wire_reviewer()
+        reviewer._wiki_cache = MagicMock()
+        reviewer._wiki_cache.ensure_fresh = AsyncMock()
+
+        assert await reviewer._refresh_wiki_context("other/repository") is None
+        reviewer._wiki_cache.ensure_fresh.assert_not_awaited()
+
+    def test_toolkits_attached_once(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A completed plane registers the two wiki toolkits only once."""
+        reviewer = _wire_reviewer()
+        paths = MagicMock(slug="owner-repo", plane_dir=tmp_path / "plane")
+        reviewer._wiki_cache = MagicMock()
+        reviewer._wiki_cache.paths_for.return_value = paths
+        reviewer._attach_toolkit = MagicMock()
+        structural = MagicMock()
+        wiki = MagicMock()
+        monkeypatch.setattr(github_reviewer, "create_wiki_store", MagicMock(return_value=MagicMock()))
+        monkeypatch.setattr(github_reviewer, "CodeStructuralToolkit", MagicMock(return_value=structural))
+        monkeypatch.setattr(github_reviewer, "LLMWikiToolkit", MagicMock(return_value=wiki))
+
+        reviewer._attach_wiki_toolkits(tmp_path / "clone")
+        reviewer._attach_wiki_toolkits(tmp_path / "clone")
+
+        assert reviewer._attach_toolkit.call_count == 2
+        assert reviewer._wiki_toolkits_attached is True
+
+    def test_llm_wiki_toolkit_confines_sources(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The LLM wiki surface is explicitly confined to the cache plane."""
+        reviewer = _wire_reviewer()
+        paths = MagicMock(slug="owner-repo", plane_dir=tmp_path / "plane")
+        reviewer._wiki_cache = MagicMock()
+        reviewer._wiki_cache.paths_for.return_value = paths
+        reviewer._attach_toolkit = MagicMock()
+        toolkit_factory = MagicMock()
+        monkeypatch.setattr(github_reviewer, "create_wiki_store", MagicMock(return_value=MagicMock()))
+        monkeypatch.setattr(github_reviewer, "CodeStructuralToolkit", MagicMock())
+        monkeypatch.setattr(github_reviewer, "LLMWikiToolkit", toolkit_factory)
+
+        reviewer._attach_wiki_toolkits(tmp_path / "clone")
+
+        assert toolkit_factory.call_args.kwargs["confine_sources"] is True
 
 
 class TestExtractTicketKey:
