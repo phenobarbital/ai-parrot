@@ -71,6 +71,8 @@ by configuration, with every existing backend untouched.
 - **G7** Infra: `docker/helixdb/` (compose, `HELIXDB_IMAGE_TAG`, `HELIX_DATA_DIR` volume, `/readyz`, backup-before-upgrade README), `make docker-helixdb`, extras `ai-parrot[helixdb]` / `ai-parrot[helixdb-embedded]`, CI installs the embedded wheel.
 - **G8** The local multi-process workflow (post-commit hook + MCP server + parallel sessions) is served by the **server** mode; embedded mode is for tests and single-process tools only.
 - **G9** `httpx` is confined to one module (`parrot/knowledge/helix/client.py`) under a per-file `TID251` exemption and used only through `helixdb.AsyncClient`.
+- **G10** Ontology traversal patterns can be declared **backend-neutrally**: `TraversalPattern.traversal_spec` (start, hops, conditions, ordering, projection) compiles to AQL on ArangoDB and to the DSL op-tree on HelixDB through a per-dialect compiler registry; `query_template` stays the ArangoDB-only escape hatch (resolved §8 Q1, option a).
+- **G11** `wikitoolkit migrate --to <backend>` copies a plane between any two registered wiki backends (pages, edges, attrs, symbols, meta, embeddings, sources; schema columns; GraphIndex graph + commit history) with batching, a resumable checkpoint and a verification report, for planes whose canonical sources are gone (resolved §8 Q2).
 
 ### Non-Goals (explicitly out of scope)
 
@@ -84,7 +86,8 @@ by configuration, with every existing backend untouched.
   This feature only registers implementations. The AQL call-site migration in `ontology/{authorization,
   entity_resolver,mixin}.py` and `parrot_tools/{legal,procedures,contracts}` is FEAT-540 M8 work, not ours.
 - Waiting for FEAT-633 — reconcile `wiki/store.py` / `project.py` overlaps at merge time.
-- Changing `SQLiteWikiStore`, `SQLitePersistence` or any existing backend's behaviour.
+- Changing the behaviour of `SQLiteWikiStore`, `SQLitePersistence` or any existing backend. M12 adds **additive bulk-transfer methods** (`dump_attrs` / `dump_meta` / `dump_symbols` / `dump_embeddings`, `dump_columns`, `export_commits` / `import_commits`) to the SQLite classes; no existing method changes.
+- Rewriting the bundled ontology YAML patterns (`ontology/defaults/*.yaml`, nine `query_template`s) as `traversal_spec`s — they stay AQL and therefore ArangoDB-only; the spec vocabulary is proven on the M8 fixture ontology. Converting a shipped ontology is a follow-up for its owner.
 
 ---
 
@@ -110,7 +113,7 @@ Every plane then gets a backend class that speaks only to that package:
 | Ledger | `wiki/ledger/helix_store.py: HelixLedgerStore(HelixWikiStore)` + `LedgerTxn` / `LedgerReader` protocols (**this feature owns the ledger hard cut**) | `BaseWikiStore` | `LedgerService.from_root/from_dir` dispatch on `WikiProjectConfig.backend` (ledger-local, FEAT-540 does not touch the ledger) |
 | Schema overlay | `wiki/schema/helix_store.py: HelixSchemaStore(HelixWikiStore)` | `BaseWikiStore` | `SchemaPlaneService.from_root/from_dir` dispatch (plane-local) |
 | GraphIndex | `graphindex/persist_helix.py: HelixPersistence` | `GraphPersistence` + `IncrementalPersistence` (FEAT-540 `graphindex/protocols.py`) | `register_graph_backend(GraphBackendSpec(name="helixdb", factory="parrot.knowledge.graphindex.persist_helix:create_helix_persistence", required_options=("settings",), capabilities=("incremental",), extra="helixdb"))`; every dispatch site already calls `create_graph_persistence` / `persistence_for_project` (FEAT-540 M7) |
-| Ontology | `ontology/helix_graph_store.py: HelixOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore)` with `dialect = "helix"` | FEAT-540 `ontology/contracts.py` | `register_ontology_backend("helixdb", …)`; typed traversals implemented with the DSL; `execute_pattern` serves `TraversalPattern.query_templates["helix"]` and raises `TraversalPatternUnavailable` otherwise; **no** `register_query_validator("helix", …)` in this feature ⇒ LLM-dynamic queries fail closed on HelixDB (FEAT-540 M8 rule) |
+| Ontology | `ontology/helix_graph_store.py: HelixOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore)` with `dialect = "helix"` | FEAT-540 `ontology/contracts.py` | `register_ontology_backend("helixdb", …)`; typed traversals implemented with the DSL; `execute_pattern` serves `TraversalPattern.query_templates["helix"]` (declared explicitly, or materialised from `traversal_spec` by the `helix` compiler — see "Backend-neutral traversal spec" below) and raises `TraversalPatternUnavailable` otherwise; **no** `register_query_validator("helix", …)` in this feature ⇒ LLM-dynamic queries fail closed on HelixDB (FEAT-540 M8 rule) |
 | PageIndex | `pageindex/helix_projection.py: PageIndexHelixProjection` | — (projection, not a backend) | `PageIndexToolkit.__init__`, `HybridPageIndexSearch` (unchanged by FEAT-540) |
 | BookStore | `bookstore/helix_projection.py: BookstoreHelixProjection` | — (projection) | `Library._catalogs`, `Library.search` (unchanged by FEAT-540) |
 
@@ -143,6 +146,29 @@ Every plane then gets a backend class that speaks only to that package:
   (`schema_<wiki_name>`), per ontology tenant (`ont_<tenant>`).
 - **Meta**: a `Meta` node per key mirrors SQLite's `meta` table, including
   `schema_version = "3"` so lint parity holds.
+- **Backend-neutral traversal spec (resolved Q1, option a)**: `TraversalPattern.traversal_spec`
+  (`ontology/traversal_spec.py: TraversalSpec` — start by `$param` ids or a filtered collection scan,
+  ordered `hops` over logical edge collections with direction / depth range / edge- and vertex-conditions,
+  final `where`, `exclude_start`, `order_by`, `limit ≤ 800`, `returns` vertex | fields | ids | count) is
+  compiled per dialect by a registry (`register_traversal_compiler`): the built-in `"aql"` compiler lives
+  in core and the `"helix"` compiler ships with `parrot.knowledge.helix`. A `model_validator` on
+  `TraversalPattern` **materialises** the compiled text into `query_templates[<dialect>]` for every
+  registered dialect that has no explicit entry, so FEAT-540's `execute_pattern` (plain dialect lookup)
+  needs no change; explicit `query_templates` / `query_template` entries always win. `$name` strings are
+  bind parameters (`@name` in AQL, `define_params` in the DSL), logical collection names resolve through
+  `collection_binds` (`@@name` / HelixDB labels); the vocabulary admits no raw expressions, so compiled
+  AQL always passes FEAT-540's `validate_query("aql", …)`.
+- **Migration (resolved Q2)**: `wikitoolkit migrate --to <backend>` (`wiki/migrate.py`) copies one plane
+  through the backend contracts only — reads via a new **bulk-read surface** on `BaseWikiStore`
+  (`dump_attrs` / `dump_meta` / `dump_symbols` / `dump_embeddings`, next to today's `dump_pages` /
+  `dump_edges`), `SchemaStore.dump_columns`, `SourceManifestBackend.list_sources` and a
+  `GraphHistoryTransfer` capability (`export_commits` / `import_commits`) on GraphIndex backends; writes
+  via the ordinary write surface (`upsert_pages`, `add_edges`, `upsert_attrs`, `upsert_symbols`,
+  `upsert_embedding`, `set_meta`, `upsert_columns`, `persist_graph`, `import_commits`). Any registered
+  backend can be source or target (so `--to sqlite` is the rollback path); SQLite and HelixDB implement
+  the bulk-read surface natively, ArangoDB / Postgres inherit the base defaults (attrs derivable; meta,
+  symbols, embeddings reported `unsupported`). The ledger is never copied (`wikitoolkit ledger rebuild`
+  replays the canonical event log); PageIndex / BookStore are re-projected.
 
 **Deployment modes:**
 
@@ -188,6 +214,10 @@ in CI runs the embedded unit tier on every PR (resolved Q6).
  HybridPageIndexSearch            CatalogStore.search / Library
 
  docker/helixdb/ (server, HELIXDB_IMAGE_TAG, HELIX_DATA_DIR)  ◄── HELIXDB_URL ── every process
+
+ ontology/traversal_spec.py (TraversalSpec + "aql" compiler) ◄── helix/traversal.py ("helix" compiler)
+        │ TraversalPattern validator materialises query_templates[<dialect>]
+ wiki/migrate.py (wikitoolkit migrate --to <backend>) ── BaseWikiStore.dump_* · SchemaStore.dump_columns · GraphHistoryTransfer
 ```
 
 ### Integration Points
@@ -203,7 +233,9 @@ in CI runs the embedded unit tier on every PR (resolved Q6).
 | `create_graph_persistence("helixdb", settings=…)` / `persistence_for_project(config, root)` (FEAT-540 M7) | uses | `build_graph_memory_toolkit(backend="helixdb", …)`, `GraphIndexLoader(backend="helixdb", helix_settings=…)`, `wiki/runtime.py`, `wiki/cli.py`, `flows/dev_loop/graph_memory.py` already go through them; `persistence_for_project` maps `WikiProjectConfig.backend == "helixdb"` → `gi_<wiki_name>` settings |
 | `GraphPublisher` (`publish.py:37`) | uses | typed `GraphPersistence` (FEAT-540); `HelixPersistence` satisfies it structurally |
 | `GraphDocumentStore` / `OntologyTraversalStore` (FEAT-540 `ontology/contracts.py`) | implements | `HelixOntologyGraphStore`; `create_ontology_graph_store("helixdb", settings_factory=…)` via `register_ontology_backend`; `GraphIndexLoader`, `parrot_tools/graphindex/flowtask.py` and the `legal` tools already construct stores through FEAT-540's factory / explicit Arango class |
-| `TraversalPattern.query_templates` (FEAT-540 M8) | uses | ontologies that must run on HelixDB declare a `"helix"` template (DSL op-tree JSON); patterns without one raise `TraversalPatternUnavailable` |
+| `TraversalPattern` (`ontology/schema.py:261-296`; FEAT-540 M8 adds `query_templates`) | modifies (additive) | `traversal_spec: TraversalSpec \| None`; `query_template` becomes optional (at least one of `query_template` / `query_templates` / `traversal_spec` is required); a `model_validator` materialises compiled templates per registered dialect. Ontologies may still declare an explicit `"helix"` template (DSL op-tree JSON); patterns with neither raise `TraversalPatternUnavailable` |
+| `BaseWikiStore` (`wiki/store.py:553`), `SQLiteWikiStore` (`:948`), `SchemaStore` (`schema/store.py:48`), `SQLitePersistence` (`persist_sqlite.py:138`) | extends (additive) | bulk-transfer surface for M12: `dump_attrs` / `dump_meta` / `dump_symbols` / `dump_embeddings` (base defaults + SQLite / Helix natives), `dump_columns`, `export_commits` / `import_commits` |
+| `wiki/cli.py` `wiki` group (`:1448`; `export` command `:3851-3861`) | extends | one new `migrate` command after `export`; `--to` / `--from` choices come from FEAT-540's `wiki_backend_names()` |
 | `PageIndexToolkit.__init__` (`pageindex/toolkit.py:114-133`), `HybridPageIndexSearch` (`hybrid_search.py:163-263`) | extends | optional `helix_projection` injection; `_bm25_rank` / `_vec_rank` delegate when present |
 | `Library` (`bookstore/library.py:230`), `CatalogStore` (`catalog.py:163`) | extends | optional projection; `search()` delegates when present |
 | `packages/ai-parrot/pyproject.toml:287`, root `pyproject.toml` dev group, `ruff.toml:163`, `.github/workflows/ci.yml:27` | modifies | extras, dev wheel, TID251 per-file ignore, CI unchanged command now installs the wheel via the dev group |
@@ -266,6 +298,10 @@ from parrot.knowledge.wiki.helix_sources import HelixSourceBackend          # im
 from parrot.knowledge.graphindex.persist_helix import HelixPersistence, create_helix_persistence  # implements FEAT-540 GraphPersistence + IncrementalPersistence
 # ontology
 from parrot.knowledge.ontology.helix_graph_store import HelixOntologyGraphStore  # implements FEAT-540 GraphDocumentStore + OntologyTraversalStore (dialect "helix")
+from parrot.knowledge.ontology.traversal_spec import TraversalSpec, CompiledTraversal, compile_traversal_spec, register_traversal_compiler, traversal_compiler_dialects, TraversalSpecUnsupported  # backend-neutral patterns (Q1 a)
+from parrot.knowledge.helix.traversal import compile_helix_traversal      # "helix" compiler, registered on import of parrot.knowledge.helix
+# migration
+from parrot.knowledge.wiki.migrate import migrate_wiki_plane, migrate_schema_plane, migrate_graphindex, verify_copy, MigrationReport, MigrationCheckpoint, GraphHistoryTransfer  # wikitoolkit migrate (Q2)
 # selection/resolution APIs are FEAT-540's: create_wiki_store, create_source_backend, create_graph_persistence,
 # persistence_for_project, create_ontology_graph_store — this feature adds NO resolver/factory module of its own
 # projections
@@ -288,10 +324,11 @@ from parrot.knowledge.bookstore.helix_projection import BookstoreHelixProjection
 | M5: Ledger hard cut + HelixLedgerStore | no | — | `LedgerTxn` protocol shape is fixed here, but rewriting `index.py` replay/compact logic over it needs judgement |
 | M6: HelixSchemaStore | yes | `Column` node + `COLUMN_OF` edge; same method surface as `SchemaStore` (§6) | — |
 | M7: HelixPersistence | no | — | commit-protocol revert ordering over batches is the one algorithmic piece; keep with thinking model (the contract itself is FEAT-540's) |
-| M8: HelixOntologyGraphStore | partly | both FEAT-540 contracts and the typed-op semantics are fixed by FEAT-540 M8; the DSL bodies are mechanical | the `"helix"` `query_templates` format (DSL op-tree JSON) is decided here by the thinking model |
+| M8: HelixOntologyGraphStore + traversal spec | partly | both FEAT-540 contracts and the typed-op semantics are fixed by FEAT-540 M8; the DSL bodies are mechanical | the `TraversalSpec` vocabulary and both compilers (`aql`, `helix`) are decided here by the thinking model; the AQL compiler is security-relevant (authorization patterns) |
 | M9: PageIndex projection | yes | `TreeNode` + `CHILD_OF`; delegation points `_bm25_rank` / `_vec_rank` (§3 M9) | — |
 | M10: BookStore projection | yes | `Book` + `RELATES_TO` + `BookCommunity`; `search()` delegation (§3 M10) | — |
 | M11: parity + live test suites, docs | yes | test file list and skip gates fixed in §4 | — |
+| M12: `wikitoolkit migrate` | yes | part order, checkpoint / report shapes, refusals and exit codes are fixed in §3 M12; the copy loops are mechanical over the bulk-read and write surfaces | — |
 
 ### Module 1: HelixDB client, settings, bootstrap, DSL helpers, extras
 
@@ -603,8 +640,8 @@ from parrot.knowledge.bookstore.helix_projection import BookstoreHelixProjection
 
 ### Module 8: `HelixOntologyGraphStore`
 
-- **Path**: `ontology/helix_graph_store.py` (new); registration row via M4. **No** edits to `ontology/graph_store.py`, `authorization.py`, `entity_resolver.py`, `mixin.py`, `graphindex/loader.py`, `parrot_tools/graphindex/flowtask.py`, `parrot_tools/legal/*` — FEAT-540 M8 renames `OntologyGraphStore` → `ArangoOntologyGraphStore`, defines `GraphDocumentStore` / `OntologyTraversalStore`, removes `execute_traversal`, migrates every caller and ships `create_ontology_graph_store`.
-- **Responsibility**: implement **both** FEAT-540 contracts on HelixDB (`ont_<tenant>` database per tenant): the document/edge surface (`initialize_tenant`, `ensure_collection`, `upsert_nodes`, `create_edges`, `get_all_nodes`, `soft_delete_nodes`, `get_document`, `upsert_document`, `insert_document`, `remove_document`, `query_documents`, `get_all_edges`, `edges_incident`, `remove_edge_by_triple`) and the typed traversal surface (`is_reachable`, `get_document_by_id`, `find_by_field`, `search_by_name`, `execute_pattern`, `execute_query`) with the DSL. `dialect = "helix"`. `search_views` (ArangoSearch) are skipped with a logged warning per FEAT-540's rule. **Resolves this spec's former §8 Q1**: template-driven patterns run on HelixDB when the ontology YAML declares `query_templates["helix"]` (a DSL op-tree JSON document with `$param` placeholders bound from `params`/`collection_binds`); patterns with only an AQL template raise FEAT-540's `TraversalPatternUnavailable`; `execute_query` with `dialect != "helix"` raises `QueryDialectMismatch`; this feature registers **no** query validator, so LLM-dynamic generation fails closed on HelixDB (`vector_only` degradation) until a `helix` validator exists (follow-up).
+- **Path**: `ontology/helix_graph_store.py` (new), `ontology/traversal_spec.py` (new), `helix/traversal.py` (new), `ontology/schema.py:286-296` (additive: `traversal_spec`, optional `query_template`, materialising validator — lands **after** FEAT-540 M8's `query_templates` edit of the same lines), fixture `tests/knowledge/ontology/fixtures/portable.ontology.yaml`; registration row via M4. **No** edits to `ontology/graph_store.py`, `authorization.py`, `entity_resolver.py`, `mixin.py`, `graphindex/loader.py`, `parrot_tools/graphindex/flowtask.py`, `parrot_tools/legal/*` — FEAT-540 M8 renames `OntologyGraphStore` → `ArangoOntologyGraphStore`, defines `GraphDocumentStore` / `OntologyTraversalStore`, removes `execute_traversal`, migrates every caller and ships `create_ontology_graph_store`.
+- **Responsibility**: implement **both** FEAT-540 contracts on HelixDB (`ont_<tenant>` database per tenant): the document/edge surface (`initialize_tenant`, `ensure_collection`, `upsert_nodes`, `create_edges`, `get_all_nodes`, `soft_delete_nodes`, `get_document`, `upsert_document`, `insert_document`, `remove_document`, `query_documents`, `get_all_edges`, `edges_incident`, `remove_edge_by_triple`) and the typed traversal surface (`is_reachable`, `get_document_by_id`, `find_by_field`, `search_by_name`, `execute_pattern`, `execute_query`) with the DSL. `dialect = "helix"`. `search_views` (ArangoSearch) are skipped with a logged warning per FEAT-540's rule. **Resolves §8 Q1 (option a)**: a pattern runs on HelixDB when `query_templates["helix"]` exists — declared explicitly (a DSL op-tree JSON document with `$param` placeholders bound from `params`/`collection_binds`) or **materialised from `traversal_spec`** by the `helix` compiler (at ontology load by the `TraversalPattern` validator, or lazily inside `execute_pattern` when the compiler registered after the ontology loaded); AQL-only patterns raise FEAT-540's `TraversalPatternUnavailable`; `execute_query` with `dialect != "helix"` raises `QueryDialectMismatch`; this feature registers **no** query validator, so LLM-dynamic generation fails closed on HelixDB (`vector_only` degradation) until a `helix` validator exists (follow-up).
 - **Depends on**: FEAT-540 M8; M1; M7 only for shared label helpers (soft edge)
 - **Interface Skeleton**:
   ```python
@@ -621,12 +658,107 @@ from parrot.knowledge.bookstore.helix_projection import BookstoreHelixProjection
       async def search_by_name(self, ctx, collection, needle, *, field="name", filters=None, limit=10) -> list[dict]:
           """text_search on the label's search_text then case-insensitive contains filter + shortest-name-first sort (parity with the AQL LIKE)."""
       async def execute_pattern(self, ctx, pattern, params, collection_binds=None) -> list[dict]:
-          """query_templates["helix"] → QueryRequest with bound params; TraversalPatternUnavailable when absent."""
+          """query_templates["helix"] (explicit or materialised) → else compile_traversal_spec(pattern.traversal_spec, "helix") →
+          QueryRequest with bound params; TraversalPatternUnavailable when neither exists."""
       async def execute_query(self, ctx, query: DynamicQuery) -> list[dict]:
           """dialect must be "helix"; text is a DSL op-tree JSON document (never AQL)."""
 
   def create_helix_ontology_store(*, settings_factory: Callable[[TenantContext], HelixSettings], **_: Any) -> HelixOntologyGraphStore:
       """register_ontology_backend("helixdb", …) target."""
+  ```
+- **Backend-neutral traversal spec (M8a — §8 Q1, option a)**:
+  ```python
+  # ontology/traversal_spec.py (new) — imports nothing from ontology/schema.py (schema.py imports it)
+  Direction = Literal["outbound", "inbound", "any"]
+  ConditionOp = Literal["eq", "neq", "in", "not_in", "gt", "gte", "lt", "lte", "contains", "is_null", "not_null"]
+
+  class ParamRef(BaseModel):
+      """A bind parameter. YAML strings starting with `$` become ParamRef (never literals)."""
+      name: str
+
+  class Condition(BaseModel):
+      field: str                                   # property on the hop target / edge; `_id` and `_key` are backend-neutral aliases
+      op: ConditionOp = "eq"
+      value: Any = None                            # literal or "$param" (→ ParamRef); for in / not_in a list or a list-valued param
+
+  class StartSpec(BaseModel):
+      """Exactly one of `ids` (a `$param` holding one id or a list) or `collection` + `match`."""
+      ids: ParamRef | None = None
+      collection: str | None = None                # logical name resolved through collection_binds
+      match: list[Condition] = Field(default_factory=list)
+
+  class HopSpec(BaseModel):
+      edge_collection: str                         # logical edge name (collection_binds → `@@name` / HelixDB label)
+      direction: Direction = "outbound"
+      min_depth: int = Field(default=1, ge=0, le=10)
+      max_depth: int = Field(default=1, ge=1, le=10)
+      edge_where: list[Condition] = Field(default_factory=list)
+      where: list[Condition] = Field(default_factory=list)   # on the vertex reached by this hop
+
+  class OrderSpec(BaseModel):
+      field: str
+      desc: bool = False
+
+  class ReturnSpec(BaseModel):
+      kind: Literal["vertex", "fields", "ids", "count"] = "vertex"
+      fields: list[str] = Field(default_factory=list)
+      distinct: bool = True
+
+  class TraversalSpec(BaseModel):
+      """Backend-neutral declaration of a traversal pattern, compiled per dialect."""
+      start: StartSpec
+      hops: list[HopSpec] = Field(default_factory=list)      # each hop's frontier feeds the next
+      where: list[Condition] = Field(default_factory=list)   # on the final frontier
+      exclude_start: bool = False                            # `teammate._id != @user_id`
+      order_by: list[OrderSpec] = Field(default_factory=list)
+      limit: int | None = Field(default=None, ge=1, le=800)  # HelixDB whole-index cap
+      returns: ReturnSpec = Field(default_factory=ReturnSpec)
+      model_config = ConfigDict(extra="forbid")
+
+  class CompiledTraversal(BaseModel):
+      dialect: str
+      text: str                                    # AQL, or the DSL op-tree JSON — the same `str` that `query_templates` holds
+      params: tuple[str, ...]                      # bind names the text references (checked against `params` at execute time)
+      collections: tuple[str, ...]                 # logical names to resolve via collection_binds
+
+  class TraversalSpecUnsupported(OntologyError): ...   # no compiler registered for the dialect
+
+  def register_traversal_compiler(dialect: str, compiler: Callable[[TraversalSpec], CompiledTraversal]) -> None: ...
+  def traversal_compiler_dialects() -> tuple[str, ...]: ...
+  def compile_traversal_spec(spec: TraversalSpec, dialect: str) -> CompiledTraversal:
+      """Dispatch to the registered compiler; TraversalSpecUnsupported otherwise."""
+  def compile_aql(spec: TraversalSpec) -> CompiledTraversal:
+      """Built-in, registered at import: nested `FOR v[, e] IN min..max <DIR> <frontier> @@edge` blocks, one `FILTER` per
+      condition over `@param` binds (values are never interpolated), `SORT`, `LIMIT`, `RETURN DISTINCT v | {fields} | v._id | COUNT`;
+      the output passes validate_query("aql", …)."""
+
+  # helix/traversal.py (new) — registered by parrot/knowledge/helix/__init__.py
+  def compile_helix_traversal(spec: TraversalSpec) -> CompiledTraversal:
+      """DSL op-tree: n_where(Predicate.eq(key, $ids)) | n_with_label(collection) + where → repeat(out_e / in_e / both(edge))
+      bounded by max_depth with edge / vertex predicates → where → dedup → order_by → limit → value_map / project / count;
+      params declared with define_params."""
+
+  # ontology/schema.py (modifies :286-296 — additive, after FEAT-540 M8's `query_templates`)
+  class TraversalPattern(BaseModel):
+      query_template: str | None = None            # was required; AQL escape hatch (implicit "aql" entry)
+      traversal_spec: TraversalSpec | None = None  # NEW — backend-neutral form
+      @model_validator(mode="after")
+      def _materialise_templates(self) -> "TraversalPattern":
+          """Requires at least one of query_template / query_templates / traversal_spec; for every
+          traversal_compiler_dialects() entry missing from query_templates stores compile_traversal_spec(...).text.
+          Explicit entries are never overwritten."""
+  ```
+  YAML form (fixture `tests/knowledge/ontology/fixtures/portable.ontology.yaml`, mirrors `base.ontology.yaml:138` `find_team`):
+  ```yaml
+  find_team:
+    description: Teammates of the current user
+    trigger_intents: [what is my team working on]
+    traversal_spec:
+      start: {ids: $user_id}
+      hops:
+        - {edge_collection: member_of_team, direction: outbound}
+        - {edge_collection: member_of_team, direction: inbound}
+      exclude_start: true
   ```
 
 ### Module 9: PageIndex projection
@@ -704,6 +836,70 @@ from parrot.knowledge.bookstore.helix_projection import BookstoreHelixProjection
   #   test_async_only_usage (unit) — AST scan: no `helixdb.Client(` / `Client.embedded(` outside tests; `httpx` imported only via helix/client.py
   ```
 
+### Module 12: `wikitoolkit migrate` — cross-backend plane copy (§8 Q2)
+
+- **Path**: `wiki/migrate.py` (new); `wiki/cli.py` (one `migrate` command after `export`, `:3851-3861` shape); `wiki/store.py` (`BaseWikiStore` bulk-read defaults after `dump_edges :649`; `SQLiteWikiStore` natives after `:2465`); `wiki/helix_store.py` (natives, M3 file); `wiki/schema/store.py` (`dump_columns` after `columns_for :126`) + `schema/helix_store.py`; `graphindex/persist_sqlite.py` (`export_commits` / `import_commits` after `get_commit :785`) + `graphindex/persist_helix.py`; `docs/wiki/helixdb.md` (migration section), `docs/wiki/cheatsheet.md`; tests `tests/knowledge/wiki/test_migrate.py`, `tests/knowledge/wiki/test_dump_surface.py`.
+- **Responsibility**: copy one plane between two registered backends through the contracts only, resumably, and prove the copy. Parts in order: wiki = `pages → edges → attrs → symbols → meta → embeddings → sources`; schema = the wiki parts + `columns`; graphindex = `graph` (`load_graph` → `persist_graph`) + `commits` (`export_commits` → `import_commits`; `commit_id`, `seq`, `reverted_at` and items preserved; requires both backends to satisfy `GraphHistoryTransfer`, else the part is `unsupported`). Refusals (exit 2, before any write): non-empty target without `--replace`; `--plane ledger` (→ `wikitoolkit ledger rebuild`); `--plane pageindex|bookstore` (→ `reproject`); `--resume` whose checkpoint fingerprint no longer matches the source `stats()`; `--to` equal to `--from` on the same location. `--allow-partial` turns an `unsupported` part (base-class `NotImplementedError`) into a warning instead of `ok=False`. The report is printed (text or `--json`), optionally written to `--report`, and the exit code is 0 only when `ok`. The command never edits `wiki.json`; it prints the `backend:` switch to make.
+- **Depends on**: M3, M4, M6, M7 (natives on the HelixDB classes); FEAT-540 M7 registries for backend names and factories.
+- **Interface Skeleton**:
+  ```python
+  # wiki/store.py (BaseWikiStore — additive, after dump_edges :649)
+  async def dump_attrs(self) -> list[dict[str, Any]]:
+      """Default: dump_pages() ids → get_attrs(); rows {"concept_id", "key", "value"} ordered by (concept_id, key)."""
+  async def dump_meta(self) -> dict[str, str]:                 # default: raise NotImplementedError("meta is not enumerable on this backend")
+  async def dump_symbols(self) -> list[SymbolRecord]:          # default: raise NotImplementedError
+  async def dump_embeddings(self) -> list[dict[str, Any]]:     # default: raise NotImplementedError; rows {"concept_id", "vector", "model"}
+  # SQLiteWikiStore (after :2465) and HelixWikiStore implement all four natively, key-ordered.
+
+  # wiki/schema/store.py (SchemaStore — after columns_for :126) and schema/helix_store.py
+  async def dump_columns(self) -> list[ColumnRecord]: ...      # ordered by (table_id, ordinal)
+
+  # wiki/migrate.py (new)
+  @runtime_checkable
+  class GraphHistoryTransfer(Protocol):                         # implemented by persist_sqlite.py (after get_commit :785) and persist_helix.py;
+      async def export_commits(self, ctx: Any, *, after_seq: int = 0, limit: int = 500) -> list[dict[str, Any]]:   # capability "history"
+          """Raw rows: the graph_commits row (incl. seq, payload, committed_at, reverted_at) + items [{item_type, item_key, prior}]."""
+      async def import_commits(self, ctx: Any, commits: list[dict[str, Any]], *, replace: bool = False) -> int:
+          """Insert raw rows preserving commit_id / seq; refuses a non-empty commit table unless replace=True."""
+
+  class MigrationPart(str, Enum):
+      PAGES = "pages"; EDGES = "edges"; ATTRS = "attrs"; SYMBOLS = "symbols"; META = "meta"; EMBEDDINGS = "embeddings"
+      SOURCES = "sources"; COLUMNS = "columns"; GRAPH = "graph"; COMMITS = "commits"
+
+  class MigrationCheckpoint(BaseModel):
+      """<root>/.parrot/migrate/<plane>.<from>-<to>.json — written after every batch."""
+      plane: str; source_backend: str; target_backend: str; started_at: datetime; batch_size: int
+      fingerprint: str                        # sha256 of the source stats() JSON — --resume is refused when it changed
+      written: dict[str, int] = Field(default_factory=dict)   # part → rows written so far (key-ordered reads ⇒ resume = skip N)
+
+  class PartReport(BaseModel):
+      part: str; status: Literal["copied", "skipped", "unsupported", "failed"]
+      source_count: int; written: int; target_count: int; detail: str = ""
+
+  class MigrationReport(BaseModel):
+      plane: str; source: str; target: str; dry_run: bool; duration_s: float
+      parts: list[PartReport]
+      sample_hash_mismatches: list[str]       # concept_ids whose page_hashes() differ
+      target_lint: dict[str, Any]             # broken_edges / missing_bodies / index_drift of the target
+      ok: bool
+
+  async def migrate_wiki_plane(source: BaseWikiStore, target: BaseWikiStore, *, batch_size: int = 500,
+                               checkpoint: MigrationCheckpoint | None = None, replace: bool = False, allow_partial: bool = False,
+                               sample: int = 50, dry_run: bool = False,
+                               sources: tuple[SourceManifestBackend, SourceManifestBackend] | None = None) -> MigrationReport: ...
+  async def migrate_schema_plane(source: SchemaStore, target: SchemaStore, **same_kwargs: Any) -> MigrationReport: ...   # wiki parts + columns
+  async def migrate_graphindex(source: GraphPersistence, target: GraphPersistence, ctx: TenantContext, *,
+                               with_history: bool = True, **same_kwargs: Any) -> MigrationReport: ...
+  async def verify_copy(source: BaseWikiStore, target: BaseWikiStore, *, sample: int) -> tuple[list[str], dict[str, Any]]:
+      """stats() parity per part, page_hashes() on `sample` evenly spaced concept_ids, target broken_edges / missing_bodies / index_drift."""
+
+  # wiki/cli.py (after `export`, same decorator shape as cli.py:3851-3861: @wiki.command("migrate") @path_option @remote_cli.remote_aware(proxied=False))
+  # --to <name> (required; choices = wiki_backend_names())  --from <name> (default: the configured backend)  --plane [wiki|schema|graphindex|all] (default wiki)
+  # --tenant <id> (graphindex)  --batch-size 500  --resume  --replace  --dry-run  --allow-partial  --sample 50  --json  --report PATH
+  def migrate(path_, to, from_, plane, tenant, batch_size, resume, replace, dry_run, allow_partial, sample, as_json, report) -> None: ...
+  ```
+- **Migration note**: rebuild from canonical sources (AC23) stays the recommended path whenever the sources exist; `migrate` is for curated / learned pages, agent-written GraphIndex memory with commit history, and rollback (`--to sqlite`).
+
 ---
 
 ## 4. Test Specification
@@ -739,6 +935,17 @@ from parrot.knowledge.bookstore.helix_projection import BookstoreHelixProjection
 | `test_ledger_reader_protocol` | M5 | `LedgerService` reads go through `ledger_read()`; no `_read()` / `aiosqlite` in `ledger/service.py`, `index.py`, `sdd_ingest.py` |
 | `test_helix_backend_kind_server` | M4 | the `"helixdb"` `WikiBackendSpec` has `kind="server"`: `is_built()` is True in server mode and checks `storage_dir/helix/<database>` in embedded mode; a namespace with `database` + `backend: helixdb` opens through `open_namespace_store` with `resolve_helix_params` options and is not coerced (FEAT-540 behaviour, exercised with the helix row) |
 | `test_execute_pattern_helix_dialect` | M8 | a pattern with `query_templates["helix"]` runs on `HelixOntologyGraphStore`; an AQL-only pattern raises `TraversalPatternUnavailable`; `execute_query(DynamicQuery(dialect="aql"))` raises `QueryDialectMismatch`; dynamic generation degrades to `vector_only` (no `helix` validator registered) |
+| `test_traversal_spec_vocabulary` | M8 | `TraversalSpec` parses the YAML forms (ids param, scan + match, hops with depth / edge / vertex conditions, `exclude_start`, order / limit / returns); `extra="forbid"`; `$x` → `ParamRef`; `limit > 800` and `max_depth > 10` rejected; `start` with both `ids` and `collection` rejected |
+| `test_traversal_spec_compile_aql_golden` | M8 | the fixture patterns (`find_team`-shaped, `authoritative_doc_for_topic`-shaped) compile to golden AQL with `@param` / `@@collection` binds and pass `validate_query("aql", …)`; unknown dialect → `TraversalSpecUnsupported` |
+| `test_traversal_spec_compile_helix` | M8 | the same fixtures compile to a DSL op-tree whose `define_params` names equal `CompiledTraversal.params`; executed on `HelixOntologyGraphStore` (InMemory) they return the expected ids |
+| `test_traversal_pattern_materialises_templates` | M8 | a `TraversalPattern(traversal_spec=…)` gets `query_templates["aql"]` (and `["helix"]` once `parrot.knowledge.helix` is imported); an explicit `query_templates["helix"]` is never overwritten; a pattern with none of `query_template` / `query_templates` / `traversal_spec` fails validation; the bundled `ontology/defaults/*.yaml` still load |
+| `test_traversal_spec_parity_aql_vs_helix` | M8 (`live`) | the fixture ontology seeded on ArangoDB (`ARANGO_*` gate) and on HelixDB (`HELIXDB_URL` gate) returns equal id sets for every fixture pattern through `execute_pattern` |
+| `test_dump_bulk_surface_parity` | M12 | `dump_attrs` / `dump_meta` / `dump_symbols` / `dump_embeddings` / `dump_columns` on `sqlite` and `helix-memory` return equal, key-ordered rows for the same fixture plane; the base-class defaults raise `NotImplementedError` for meta / symbols / embeddings and derive attrs |
+| `test_migrate_wiki_plane_sqlite_to_helix_memory` | M12 | every part copied; `MigrationReport.ok`; `stats()` equal; sampled `page_hashes` equal; target `broken_edges()` / `missing_bodies()` empty |
+| `test_migrate_checkpoint_resume` | M12 | a failure injected mid-`pages` leaves a checkpoint; `--resume` skips the written rows (no duplicates), finishes and is `ok`; a changed source fingerprint is refused |
+| `test_migrate_refusals` | M12 | non-empty target without `--replace` ⇒ exit 2 before any write; `--plane ledger` ⇒ exit 2 naming `wikitoolkit ledger rebuild`; `--plane pageindex` ⇒ exit 2 naming `reproject`; an `unsupported` part on a base-default source ⇒ `ok=False` unless `--allow-partial` |
+| `test_migrate_graphindex_with_history` | M12 | `load_graph` → `persist_graph`, `export_commits` → `import_commits`; `list_commits` / `get_commit` on the target equal the source (ids, `seq`, items, `reverted_at`); `revert_commit` of a copied commit works on the target |
+| `test_migrate_report_detects_mismatch` | M12 | a target page mutated between copy and verify ⇒ `sample_hash_mismatches` non-empty, `ok=False`, exit 1 |
 | `wiki_store_matrix` parametrised suites | M11 | CAS, attrs, symbols, replace-slice, read-only writes, close/reopen, bootstrap failure on `sqlite` / `helix-memory` / `helix-live` |
 | `test_native_wheel_imports` / `test_async_only_usage` | M11 | compatibility gate (S10) |
 
@@ -751,6 +958,7 @@ from parrot.knowledge.bookstore.helix_projection import BookstoreHelixProjection
 | `test_compose_readyz` (`live`) | `docker compose up` → `/readyz` 200 within `start_period` |
 | `test_sdk_speaks_to_pinned_image` (`live`) | compatibility gate: `helix-db==0.3.4` DSL request accepted by `ghcr.io/helixdb/helixdb:${HELIXDB_IMAGE_TAG}` (S10) |
 | `test_rebuild_from_canonical_sources` (`live`) | `wikitoolkit build --backend helixdb` then `wikitoolkit lint` + `stats` counts equal the SQLite plane built from the same tree (S11 confirmed part) |
+| `test_migrate_live_roundtrip` (`live`) | `wikitoolkit migrate --to helixdb` on a SQLite plane built from `tests/fixtures`, then `--to sqlite --replace` back into a temp dir; both reports `ok`; `wikitoolkit stats` equal across the three planes (S11 escalated part, resolved) |
 
 ### Test Data / Fixtures
 ```python
@@ -782,7 +990,7 @@ def helix_live_settings():
 - [ ] **AC4** `HelixPersistence` passes FEAT-540's backend conformance suite on `helix-memory` (and `helix-live` when reachable); `graph_backend_spec("helixdb")` exists with `capabilities=("incremental",)`; `build_graph_memory_toolkit(backend="helixdb", settings_factory=…)`, `GraphIndexLoader(backend="helixdb", helix_settings=…)` and `persistence_for_project` (config `backend: helixdb`) all resolve through `create_graph_persistence`; this feature adds no persistence resolver or dispatch branch (M7).
 - [ ] **AC5** `ledger_transaction()` yields a `LedgerTxn` on both stores; `grep -rn "aiosqlite.Connection" packages/ai-parrot/src/parrot/knowledge/wiki/ledger/index.py sdd_ingest.py` is empty; `wikitoolkit ledger` commands pass on both backends (M5).
 - [ ] **AC6** `HelixSchemaStore` passes the schema-plane column tests; `SchemaPlaneService` dispatches by backend (M6).
-- [ ] **AC7** `HelixOntologyGraphStore` is an instance of both FEAT-540 contracts (`GraphDocumentStore`, `OntologyTraversalStore`), declares `dialect == "helix"`, is registered as `create_ontology_graph_store("helixdb", …)`, runs `query_templates["helix"]` patterns, raises `TraversalPatternUnavailable` / `QueryDialectMismatch` as specified, and registers no query validator; the AQL call-site migration is verified by FEAT-540's own criteria, not re-tested here (M8).
+- [ ] **AC7** `HelixOntologyGraphStore` is an instance of both FEAT-540 contracts (`GraphDocumentStore`, `OntologyTraversalStore`), declares `dialect == "helix"`, is registered as `create_ontology_graph_store("helixdb", …)`, runs `query_templates["helix"]` patterns (explicit or materialised from `traversal_spec`), raises `TraversalPatternUnavailable` / `QueryDialectMismatch` as specified, and registers no query validator; the AQL call-site migration is verified by FEAT-540's own criteria, not re-tested here (M8).
 - [ ] **AC8** With a projection configured, `HybridPageIndexSearch` BM25 and vector legs return the same top-k set as the `bm25s`/numpy path on the fixture tree; without one, behaviour is byte-identical to today (M9).
 - [ ] **AC9** `CatalogStore.search()` delegates to HelixDB when projected and is unchanged otherwise; relations and communities are mirrored (M10).
 - [ ] **AC10** Vector indexes are created lazily per dimension; a query vector with no matching index returns `[]` with a warning, never an exception (M1/M3).
@@ -798,8 +1006,11 @@ def helix_live_settings():
 - [ ] **AC20** *(moved to FEAT-540 M6/M7 — codex S4)* the explicit-backend precedence rule is FEAT-540's; this feature only verifies that `backend="helixdb"` + `helix_settings` is accepted and that `helix_settings` without `backend` raises the FEAT-540 `ValueError` (S4).
 - [ ] **AC21** `HelixPersistence` honours FEAT-540's `GraphPersistence` contract (which absorbed S5): `edge_key` identity, `seq` allocated inside the commit batch, incident-edge pre-images, revert-conflict refusal; `test_commit_seq_and_edge_key_atomic` passes on `helix-live` (S5).
 - [ ] **AC22** PageIndex projection is generation-based with legacy fallback on mismatch; BookStore projection lives in `Library`, `CatalogStore` is unmodified, projection failure never fails the canonical write (S6, S7).
-- [ ] **AC23** `docs/wiki/helixdb.md` documents the migration path per plane: wiki/graphindex = rebuild from canonical sources (`wikitoolkit build --backend helixdb`), ledger = `wikitoolkit ledger rebuild` event-log replay, pageindex/bookstore = `reproject`; `test_rebuild_from_canonical_sources` passes (S11 confirmed part).
+- [ ] **AC23** `docs/wiki/helixdb.md` documents the migration path per plane: wiki/graphindex = rebuild from canonical sources (`wikitoolkit build --backend helixdb`) **or** `wikitoolkit migrate --to helixdb` when the sources are gone, ledger = `wikitoolkit ledger rebuild` event-log replay, pageindex/bookstore = `reproject`, rollback = `wikitoolkit migrate --to sqlite`; `test_rebuild_from_canonical_sources` passes (S11).
 - [ ] **AC24** The compatibility gate (`test_native_wheel_imports`, `test_async_only_usage`, live `test_sdk_speaks_to_pinned_image`) exists and is green (S10).
+- [ ] **AC25** `TraversalPattern` accepts `traversal_spec` (and an absent `query_template`) and materialises `query_templates[d]` for every registered compiler dialect without overwriting explicit entries; the built-in `aql` compiler's output for the fixture patterns matches the golden AQL and passes `validate_query("aql", …)`; the `helix` compiler is registered on `import parrot.knowledge.helix`; the live parity test returns equal id sets on ArangoDB and HelixDB; `ontology/graph_store.py` (ArangoDB) is **not** edited (AC16 holds) and the bundled `ontology/defaults/*.yaml` load unchanged (M8, Q1 option a).
+- [ ] **AC26** `wikitoolkit migrate --to <backend> [--from <backend>] [--plane wiki|schema|graphindex|all] [--tenant ID] [--batch-size N] [--resume] [--replace] [--dry-run] [--allow-partial] [--sample N] [--json] [--report PATH]` exists; it refuses a non-empty target without `--replace` (exit 2, no write), refuses `--plane ledger` / `pageindex` / `bookstore` naming the documented alternative (exit 2), writes a checkpoint under `<root>/.parrot/migrate/` after every batch, resumes without duplicates, refuses a stale checkpoint, and ends with a `MigrationReport` (per-part source / written / target counts, sampled hash parity, target lint) — exit 0 only when `ok` (M12, Q2).
+- [ ] **AC27** The bulk-transfer surface is additive: `BaseWikiStore.dump_attrs` / `dump_meta` / `dump_symbols` / `dump_embeddings`, `SchemaStore.dump_columns` and `SQLitePersistence.export_commits` / `import_commits` exist with SQLite and HelixDB natives; `GraphHistoryTransfer` is a `runtime_checkable` Protocol and `graph_backend_spec("helixdb").capabilities` includes `"history"`; every pre-existing `SQLiteWikiStore` / `SQLitePersistence` / `SchemaStore` test passes unchanged (M12).
 
 ---
 
@@ -835,6 +1046,11 @@ from parrot.knowledge.pageindex.embedding_store import NodeEmbeddingStore  # ver
 from parrot.knowledge.bookstore.catalog import CatalogStore  # verified: bookstore/catalog.py:163
 from parrot.knowledge.bookstore.models import BookCard, BookRelation, BookCommunity  # used by catalog.py:286,484,665 (row mappers)
 from parrot._imports import lazy_import  # verified: parrot/_imports.py:110
+from parrot.knowledge.wiki.ledger.log import LedgerLog  # verified: wiki/ledger/log.py:10 (append :21, iter_events :83 — the ledger's canonical event log; why `--plane ledger` is refused)
+from parrot.knowledge.wiki.export import export_okf_bundle  # verified: wiki/export.py:130 (built on dump_pages / dump_edges — the precedent for the bulk-read surface)
+from parrot.knowledge.ontology.validators import validate_query  # FEAT-540 M8 dispatch form; today the AQL validator lives at ontology/validators.py:36
+# ontology YAML patterns — verified: ontology/defaults/base.ontology.yaml:116 `traversal_patterns:` (`find_manager` :117, `find_department` :128, `find_team` :138; `query_template:` at :124,134,144),
+#   knowledge.ontology.yaml (2), domains/legal.ontology.yaml (2), domains/field_services.ontology.yaml (2); loaded as TraversalPattern(**row.definition) at ontology/tenant.py:363
 # ── Provided by FEAT-540 v0.5 (NOT on dev yet — verify after FEAT-540 merges; /sdd-task must re-anchor) ──
 from parrot.knowledge.graphindex.protocols import GraphPersistence, IncrementalPersistence, EmbeddingPersistence, CapabilityUnavailable  # FEAT-540 M7
 from parrot.knowledge.graphindex.backends import GraphBackendSpec, register_graph_backend, create_graph_persistence, graph_backend_spec  # FEAT-540 M7
@@ -894,6 +1110,12 @@ def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]          
 # graphindex/publish.py — class GraphPublisher :37; __init__(persistence: Any, ctx: TenantContext) :47
 # ontology/graph_store.py — class OntologyGraphStore :53; __init__(arango_client=None) :69; initialize_tenant :91; execute_traversal(ctx, aql, bind_vars=None, collection_binds=None) :271; upsert_nodes :311; create_edges :411; get_all_nodes :488; soft_delete_nodes :517; ensure_collection :570; get_document :598; upsert_document :622; insert_document :650; remove_document :669; query_documents :697; get_all_edges :738; edges_incident :764; remove_edge_by_triple :791
 # ontology callers of execute_traversal — authorization.py:257,339; entity_resolver.py:384,427; mixin.py:337,359,379
+# ontology/schema.py — class TraversalPattern :261; fields :286-294 (description, trigger_intents, query_template: str, post_action, post_query, entity_extraction, authorization, tool_call); model_config extra="forbid" :296
+# wiki/store.py — BaseWikiStore abstract dump_pages :646 / dump_edges :649; SQLiteWikiStore.dump_pages :2451 (full rows incl. body, ORDER BY concept_id) / dump_edges :2465; list_pages(category=None, limit=100, origin=None) :624;
+#   arango_store.py dump_pages :1246 / dump_edges :1259 / get_meta :569 / upsert_symbols :889 / upsert_embedding :1009; postgres_store.py dump_pages :776 / dump_edges :798 / get_meta :187 / upsert_symbols :947 / upsert_embedding :528 (no bulk reads for meta / symbols / embeddings anywhere today)
+# wiki/schema/store.py — upsert_columns(columns) :120; columns_for(table_id) :126; find_columns :135
+# graphindex/persist_sqlite.py — get_commit :785 returns the `graph_commits` row + decoded payload + `items` [{item_type, item_key, prior}] (:802-815); list_commits :817 (summary columns only — no bulk export today)
+# wiki/cli.py — @click.group(name="wiki") :1448; `export` command :3851-3861 (`@wiki.command()` + `@path_option` + `@remote_cli.remote_aware(proxied=False)`, `def export(path_, output)`); `ledger rebuild` :3456
 # pageindex/hybrid_search.py — class HybridPageIndexSearch :73 (__init__ … use_vec_rank=False :83); mark_dirty :119; _rebuild_bm25 :163; _bm25_rank(query, top_k) :177; _vec_rank(query, top_k) :199; _rrf_fuse :277; search :288
 # pageindex/toolkit.py — JSONTreeStore :114; NodeContentStore :115; NodeEmbeddingStore :133
 # bookstore/catalog.py — class CatalogStore :163; __init__(db_path) :171; supports_fts :269; upsert :300; remove :357; search(query, top_k=8) :409; upsert_relations :496; upsert_communities :680; set_card_community :730
@@ -940,6 +1162,8 @@ class AsyncClient:
 | `HelixOntologyGraphStore` | `AuthorizationChecker`, `EntityResolver`, `OntologyRAGMixin`, `ArangoPersistence`-style composition, `GraphIndexLoader`, `parrot_tools` | implements FEAT-540's `GraphDocumentStore` + `OntologyTraversalStore`; `register_ontology_backend("helixdb", …)` → `create_ontology_graph_store` | `authorization.py:55`, `entity_resolver.py:116`, `mixin.py:120` (constructor kwargs typed by FEAT-540 M8); `loader.py:305`, `flowtask.py:220` (today's constructions) |
 | `PageIndexHelixProjection` | `HybridPageIndexSearch._bm25_rank/_vec_rank` | delegation when set | `pageindex/hybrid_search.py:177,199` |
 | `BookstoreHelixProjection` | `CatalogStore.search` / `Library` | delegation when set | `bookstore/catalog.py:409`; `library.py:230` |
+| `TraversalSpec` + compilers | `TraversalPattern` validator → `query_templates[d]`; `HelixOntologyGraphStore.execute_pattern` lazy compile | `register_traversal_compiler` registry (`aql` built-in; `helix` on `import parrot.knowledge.helix`) | `ontology/schema.py:286-296`, `ontology/tenant.py:363` |
+| `wikitoolkit migrate` | `create_wiki_store` (source / target), `create_source_backend`, `SchemaPlaneService`, `create_graph_persistence` | `wiki/migrate.py` over the bulk-read + write surfaces | `wiki/cli.py:3851` (`export` precedent), `wiki/store.py:646-649`, `persist_sqlite.py:785` |
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~HelixQL `.hx` files, `helix compile` / `helix deploy`~~ — legacy workflow; v3 sends JSON operation trees to `POST /v2/query`.
@@ -958,10 +1182,13 @@ class AsyncClient:
 - ~~`WikiNamespaceConfig.backend` Literal containing `"helixdb"`~~ — today free-form for satellite backends; this feature makes `"helixdb"` built-in.
 - ~~`OntologyGraphStore.neighbours / find_entities / path_between`~~ — never created; the typed surface is FEAT-540's `is_reachable / get_document_by_id / find_by_field / search_by_name / execute_pattern / execute_query`.
 - ~~`tests/knowledge/helix/`~~ — created by M11.
+- ~~`ontology/traversal_spec.py`, `TraversalSpec`, `CompiledTraversal`, `register_traversal_compiler`, `TraversalSpecUnsupported`, `TraversalPattern.traversal_spec`, `helix/traversal.py`~~ — created by M8 (Q1, option a). Today `query_template: str` is required (`schema.py:288`) and there is no compiler of any kind.
+- ~~`wiki/migrate.py`, `wikitoolkit migrate`, `MigrationReport`, `MigrationCheckpoint`, `GraphHistoryTransfer`, `BaseWikiStore.dump_attrs` / `dump_meta` / `dump_symbols` / `dump_embeddings`, `SchemaStore.dump_columns`, `SQLitePersistence.export_commits` / `import_commits`, `<root>/.parrot/migrate/`~~ — created by M12 (Q2). Today only `dump_pages` / `dump_edges` exist (`store.py:646,649`) and `export_okf_bundle` is the sole bulk reader.
+- ~~A `--plane ledger` copy~~ — deliberately refused; the ledger's canonical source is `events.jsonl` (`LedgerLog`, `ledger/log.py:10`).
 
 ### Edit Sites (Blueprint Anchors)
 
-Verified against: `246f1bb6d` (dev, 2026-10-14)
+Verified against: `246f1bb6d` (dev, 2026-10-14); the v0.4 rows (M8a, M12) against `43d64cd14` with raw `grep -n -F`
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
@@ -1022,6 +1249,17 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
 | `packages/ai-parrot/src/parrot/knowledge/bookstore/library.py` | MODIFY | `    async def search_book(self, book_id: str, query: str, top_k: int = 8) -> list[dict[str, Any]]:` | `library.py:351` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/bookstore/library.py` | MODIFY | `    async def search(` | `library.py:411` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/bookstore/catalog.py` | — | **not modified** (S7: projection lives in `Library`) | — | — |
+| `packages/ai-parrot/src/parrot/knowledge/ontology/traversal_spec.py` | CREATE | — | — | — |
+| `packages/ai-parrot/src/parrot/knowledge/helix/traversal.py` | CREATE | — | — | — |
+| `packages/ai-parrot/src/parrot/knowledge/ontology/schema.py` | MODIFY | `    query_template: str` (FEAT-540 M8 adds `query_templates` next to it first) | `schema.py:288` | 1 |
+| `packages/ai-parrot/tests/knowledge/ontology/fixtures/portable.ontology.yaml` | CREATE | — | — | — |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/migrate.py` | CREATE | — | — | — |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` | MODIFY | `def export(path_: str \| None, output: str) -> None:` (the `migrate` command follows this function) | `cli.py:3861` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` | MODIFY | `    async def dump_edges(self) -> list[dict[str, Any]]: ...` (abstract; the bulk-read defaults follow it) | `store.py:649` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` | MODIFY | `        """Return every edge row (bulk export path)."""` (SQLite `dump_edges`; the natives follow its method) | `store.py:2466` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/schema/store.py` | MODIFY | `    async def columns_for(self, table_id: str) -> list[ColumnRecord]:` | `schema/store.py:126` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/persist_sqlite.py` | MODIFY | `    async def get_commit(` | `persist_sqlite.py:785` | 1 |
+| `packages/ai-parrot/tests/knowledge/ontology/test_traversal_spec.py`, `tests/knowledge/wiki/test_migrate.py`, `tests/knowledge/wiki/test_dump_surface.py` | CREATE | — | — | — |
 | `packages/ai-parrot/tests/knowledge/helix/…` and the per-plane `test_helix_*.py` files listed in M11 | CREATE | — | — | — |
 
 - `/sdd-task` MUST re-run `grep -c` for every row it uses, and MUST run only after FEAT-540 has merged to `dev`: the `(unverified — created by FEAT-540)` rows become verifiable then, and FEAT-633 may move the remaining lines.
@@ -1040,6 +1278,8 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
 - **Errors**: map every `HelixError` at the client wrapper; backends raise `HelixUnavailable` / `HelixWriteRejected` / `PermissionError` (read-only) only. Hook paths (`wikitoolkit upsert --changed`) treat `HelixUnavailable` like `WikiStoreBusy`: log, exit 0.
 - **Implement the contracts, do not redefine them**: `HelixPersistence` and `HelixOntologyGraphStore` satisfy FEAT-540's Protocols/ABCs exactly (same signatures, same semantics); any gap found while implementing is a FEAT-540 amendment (ledger issue against `spec:FEAT-540`), never a local deviation.
 - **Projections are opt-in**: `PageIndexToolkit` / `Library` build a projection only when settings resolve AND the plane config enables it; absent projection ⇒ byte-identical legacy behaviour.
+- **Traversal spec compiles at load, never at query time on ArangoDB**: the `TraversalPattern` validator imports `parrot.knowledge.ontology.traversal_spec` lazily (no import cycle — that module imports nothing from `schema.py`), compiles for `traversal_compiler_dialects()` and fills only missing `query_templates` keys. `HelixOntologyGraphStore.execute_pattern` compiles on demand when the pattern loaded before `parrot.knowledge.helix` registered its compiler. The compiler output is a plain string, so it is also what debug tooling prints.
+- **Migrate copies through contracts only**: no backend-specific SQL / AQL / DSL inside `wiki/migrate.py`; every read is a `dump_*` / `list_sources` / `load_graph` / `export_commits` call and every write a public write-surface call. Target emptiness = `stats()["pages"] == 0 and stats()["edges"] == 0` (plus `list_commits(limit=1) == []` for GraphIndex). Batches are `--batch-size` rows (default 500) in key order; the checkpoint records rows written per part and the source `stats()` fingerprint. Bodies are bounded by `body_max_chars`, but a `dump_*` call loads one whole part into memory; the docs state the expected footprint (≈ the plane's size on disk).
 - **Tests**: embedded `InMemory` with a per-test database name; `pytest.importorskip("helixdb_uniffi")` at module top; live tests `pytest.mark.live` + reachability skip.
 - Conventions: Google docstrings, strict typing, `self.logger`, Pydantic v2, 120 cols; `aiohttp` for the readiness probe (never `httpx` outside `helix/client.py`).
 
@@ -1058,9 +1298,11 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
 - **Ledger hard cut**: `wikitoolkit ledger` is used by `/sdd-done` and `/sdd-fix`; the SQLite `LedgerTxn` must be behaviour-identical (same `_write(operation)` + busy-timeout semantics) — covered by `test_ledger_txn_sqlite_and_helix_parity`.
 - **Ontology authorization**: M8 changes a security-sensitive module; the typed methods must reproduce the AQL filters exactly (tenant scoping, soft-delete flags). Adversarial review (`/sdd-codereview`) is mandatory for M8 tasks.
 - **PageIndex ranking parity** is set-equality on top-k, not order equality: HelixDB's BM25 analyzer differs from `bm25s` tokenisation (stopwords="en"); AC8 is deliberately set-based.
-- **Switching a backend is not a migration** (design-research S11): the OKF export (`wiki/export.py:130`) is a pages/edges projection, not full fidelity (attrs, symbols, meta, embeddings, source state are not exported). Pointing `backend: helixdb` at an existing project opens an **empty** plane; the documented path is a canonical-source rebuild per plane (AC23). A cross-backend copy tool is §8 Q2.
+- **Switching a backend is not a migration** (design-research S11): the OKF export (`wiki/export.py:130`) is a pages/edges projection, not full fidelity (attrs, symbols, meta, embeddings, source state are not exported). Pointing `backend: helixdb` at an existing project opens an **empty** plane; the documented paths are a canonical-source rebuild per plane (AC23) or `wikitoolkit migrate --to helixdb` (M12, Q2 resolved) when the sources are gone; `--to sqlite` is the rollback.
 - **Cross-client edge races** (S5): HelixDB has no unique edge index. Within one request the find-or-add helper is atomic; across two HTTP clients a duplicate `edge_key` is possible. `GraphPublisher` writes are already serialised per tenant in-process; cross-process duplicates are detected by `index_drift` / `broken_edges` lint and repaired by `rebuild_index` (dedupe by `edge_key`).
-- **Template-driven ontology traversals** (S3, resolved by FEAT-540 M8): `TraversalPattern.query_templates` is keyed by dialect; an ontology meant to run on HelixDB ships a `"helix"` template (DSL op-tree JSON) next to its AQL one; patterns without it raise `TraversalPatternUnavailable`. The legal/procedures/contracts ontologies are Arango-only today and stay so until someone authors their `helix` templates (not in scope).
+- **Template-driven ontology traversals** (S3; §8 Q1 resolved as option a): a pattern is portable when it is declared as `traversal_spec`; FEAT-540's dialect-keyed `query_templates` remains the explicit override and `query_template` the AQL escape hatch. The bundled base / legal / procedures / contracts ontologies keep their AQL (non-goal) and therefore raise `TraversalPatternUnavailable` on HelixDB until their owners convert them. The AQL compiler is **security-relevant**: authorization-bearing patterns may be compiled from a spec, so the compiler emits only `FOR / FILTER / SORT / LIMIT / RETURN` over bind variables (no string interpolation of user values), its goldens are reviewed, and the M8 tasks stay under mandatory adversarial review.
+- **Compiler registration order**: the `helix` compiler registers on `import parrot.knowledge.helix`; ontologies loaded before that import carry only `query_templates["aql"]` — `HelixOntologyGraphStore.execute_pattern` therefore compiles `traversal_spec` on demand (never silently unavailable).
+- **Migration is additive on the SQLite classes**: `dump_*`, `dump_columns`, `export_commits` / `import_commits` are new read / bulk-import methods; `import_commits` writes raw commit rows and is the only path that inserts a commit without `apply_update` — it refuses a non-empty commit table unless the migration runs with `--replace`.
 
 ### Configuration References (navconfig / env)
 | Key | Default | Used by |
@@ -1095,11 +1337,12 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
   - M5 → M3 (subclasses `HelixWikiStore`), M4 (`LedgerService` dispatch on `WikiProjectConfig.backend`).
   - M6 → M3, M4.
   - M7 → M1 (and FEAT-540 M7 merged).
-  - M8 → M1 (and FEAT-540 M8 merged); M7 only for shared label helpers (soft edge — may be dropped at task time).
+  - M8 → M1 (and FEAT-540 M8 merged); M7 only for shared label helpers (soft edge — may be dropped at task time). M8a (`traversal_spec.py` + `schema.py` edit) has no HelixDB dependency and can be the first M8 task.
+  - M12 → M3 (`HelixWikiStore` natives), M4 (`wiki_backend_names()` choices), M6 (`HelixSchemaStore.dump_columns`), M7 (`HelixPersistence` history transfer); independent of M8–M10.
   - M9 → M1. M10 → M1.
   - M11 → all.
-  Concurrent after M1: {M2, M3, M7, M8, M9, M10}; after M3+M4: {M5, M6}.
-- **Shared files** (tasks serialized): `wiki/project.py` (M4 fields + `resolve_helix_params`), the four registry tables (`wiki/store.py`, `wiki/sources_backend.py`, `graphindex/backends.py`, `ontology/contracts.py` — M4 rows only). `wiki/cli.py`, `graphindex/{factory,loader}.py` are **not** touched. M4 is a single **exclusive** task.
+  Concurrent after M1: {M2, M3, M7, M8, M9, M10}; after M3+M4: {M5, M6}; after M3+M4+M6+M7: M12; M11 last.
+- **Shared files** (tasks serialized): `wiki/project.py` (M4 fields + `resolve_helix_params`), the four registry tables (`wiki/store.py`, `wiki/sources_backend.py`, `graphindex/backends.py`, `ontology/contracts.py` — M4 rows only). `graphindex/{factory,loader}.py` are **not** touched; `wiki/cli.py` gains exactly one command (`migrate`, M12) and `ontology/schema.py` one additive edit (M8a) — both are files FEAT-540 also edits, so those tasks run after the FEAT-540 merge like everything else. M4 is a single **exclusive** task.
 - **Exclusive resources**: root `pyproject.toml` / `uv.lock` (M1 adds dev-group wheels — `uv lock` once, `parallel: false`); `ruff.toml` (M1); `Makefile` (M2).
 - **Cross-feature dependencies**: **FEAT-540 `graphindex-core-seams` v0.5 must be merged to `dev` first** (hard dependency; its tasks are re-decomposed from v0.5). Merge-time checks: FEAT-633 (`parrot-installer`, TASK-4092/4093), FEAT-481 (`fireflies-wiki-knowledgebase-agent`, wiki ingest).
 
@@ -1120,12 +1363,12 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
 - [x] Server image pin and upgrade policy — *Resolved in brainstorm*: compose reads `${HELIXDB_IMAGE_TAG:-v0.0.12}`; the README documents the one-way index-storage-version upgrade and a manual `HELIX_DATA_DIR` volume backup to run before changing the tag. Bumping the default tag is a reviewed manual change; no Makefile backup target. → M2, AC12.
 - [x] Target version — *Resolved at spec time*: 1.3.0 (next minor).
 - [x] Seam ownership — *Resolved by owner 2026-10-14 (v0.3)*: FEAT-540 owns the backend-neutral contracts and registries; this feature registers implementations only; FEAT-540 must merge first. The generic parts of this spec's codex S1/S4/S5/S8 were moved into FEAT-540 v0.5.
-- [x] **Q1 — Template-driven ontology traversals on HelixDB** — *Resolved by FEAT-540 M8 (v0.5)*: `TraversalPattern.query_templates: dict[str, str]` keyed by dialect (`query_template` stays the implicit `"aql"` entry); `OntologyTraversalStore.execute_pattern` picks `self.dialect`'s template and raises `TraversalPatternUnavailable` otherwise; `execute_query(DynamicQuery)` is the dialect-bound escape hatch. This is option (b) made additive: AQL-only patterns stay Arango-only without a new `traversal_spec` abstraction; a backend-neutral spec can still be added later as another dialect. → M8.
+- [x] **Q1 — Template-driven ontology traversals on HelixDB** — *Resolved by owner 2026-10-14 (v0.4)*: **option (a)** — a validated, backend-neutral `TraversalPattern.traversal_spec` (`ontology/traversal_spec.py`) compiled to AQL on ArangoDB and to the DSL on HelixDB through a per-dialect compiler registry; `query_template` stays the ArangoDB-only escape hatch and FEAT-540's dialect-keyed `query_templates` the explicit override. Built on top of FEAT-540 M8 without changing it: the compiled text is materialised into `query_templates[<dialect>]` by a `TraversalPattern` validator, so `execute_pattern`'s dialect lookup is untouched. → §2 "Backend-neutral traversal spec", M8 (M8a), AC25, G10.
+- [x] **Q2 — Cross-backend copy tool** — *Resolved by owner 2026-10-14 (v0.4)*: **yes, ship it** — `wikitoolkit migrate --to <backend>` (M12) copies pages, edges, attrs, symbols, meta, embeddings and sources (wiki), columns (schema) and graph + commit history (GraphIndex) with batching, a resumable checkpoint and a verification report; rebuild-from-canonical-sources (AC23) stays the recommended path when the sources exist; the ledger is refused (event-log replay), PageIndex / BookStore re-project. → §2 "Migration", M12, AC26, AC27, G11.
 
 ### Unresolved
 
-- [ ] ~~**Q1 — Template-driven ontology traversals on HelixDB** (escalated from design research S3).~~ *(resolved above)* `TraversalPattern.query_template` (`ontology/schema.py:288`) and `ResolvedIntent.aql` (`ontology/intent.py:42`) are open-ended AQL strings declared per ontology YAML and executed at `mixin.py:337/359/379`. Options: (a) add a validated, backend-neutral `traversal_spec` (start label/key, edge labels, direction, depth, filters, projection) to `TraversalPattern`, compiled to AQL on ArangoDB and to the DSL on HelixDB, with `query_template` kept as an ArangoDB-only escape hatch; (b) template patterns stay ArangoDB-only in this feature (`UnsupportedTraversal` on HelixDB) and a follow-up spec designs the traversal spec. M8's skeleton is written for (b) with (a) as an additive extension. — *Owner: Jesus Lara*
-- [ ] **Q2 — Cross-backend copy tool** (escalated from design research S11). Rebuild-from-canonical-sources is documented (AC23). Should this feature also ship `wikitoolkit migrate --to helixdb` that copies pages, edges, attrs, symbols, meta and embeddings with counts, checkpoints and a verification report, for planes whose sources are no longer available (e.g. curated/learned pages, agent-written GraphIndex memory with commit history)? — *Owner: Jesus Lara*
+- none — every question above is resolved; `/sdd-task` may proceed once FEAT-540 has merged.
 
 ---
 
@@ -1139,7 +1382,7 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
 |---|---|---|---|---|
 | S1 | Centralize backend opening behind a capability-aware resolver (architecture) | CONFIRM → **moved to FEAT-540 M7 (v0.5)** | Verified: `is_built()` (`project.py:785-788`) handles only sqlite/arangodb then falls through; `"arangodb"` literal checks: cli 15, toolkit 3, sync 4, federation 4, sources 20 | FEAT-540 `WikiBackendSpec.kind` / `is_server_backend()`; here §3 M4 row + AC19 |
 | S2 | Replace the ledger connection leak with a repository transaction protocol (architecture) | CONFIRM | Verified: `LedgerService` uses `store._read()` at `:178,309,467`; `LedgerIndex.apply_event/_read_issue` typed `aiosqlite.Connection` (`index.py:103,126,136`) | §3 M5 (`LedgerReader`, `ledger_read()`, retyped index methods), AC5, `test_ledger_reader_protocol` |
-| S3 | Constrain ontology traversal before removing raw AQL (architecture) | ESCALATE → **resolved by FEAT-540 M8** | Verified: `TraversalPattern.query_template` (`schema.py:288`) and `ResolvedIntent.aql` (`intent.py:42,150,212,220`) are open-ended AQL; FEAT-540 keys templates by dialect and binds dynamic queries to a dialect | §8 Q1 (resolved); M8 `execute_pattern` / `TraversalPatternUnavailable` |
+| S3 | Constrain ontology traversal before removing raw AQL (architecture) | ESCALATE → **CONFIRM** (owner, v0.4: option a) | Verified: `TraversalPattern.query_template` (`schema.py:288`) and `ResolvedIntent.aql` (`intent.py:42,150,212,220`) are open-ended AQL; FEAT-540 keys templates by dialect and binds dynamic queries to a dialect | §8 Q1 (resolved: `traversal_spec`); M8a `ontology/traversal_spec.py` + `helix/traversal.py`, AC25 |
 | S4 | Make GraphIndex backend selection explicit and mutually exclusive (api) | CONFIRM → **moved to FEAT-540 M6/M7 (v0.5)** | Verified: `loader.py:290-313` picks sqlite when `_sqlite_dir` else arango; factory documents only sqlite/postgres | FEAT-540 precedence rule + registry; here AC20 |
 | S5 | Specify atomic commit ordering, edge identity, revert conflict semantics (risk) | CONFIRM → **contract moved to FEAT-540 `GraphPersistence` (v0.5)** | Verified: SQLite edge PK `(source_id, target_id, kind)` (`persist_sqlite.py:73`), revert conflict by `rowid` (`:898-908`); HelixDB has no unique edge index | FEAT-540 §2 semantics + conformance suite; here §3 M7 (`seq` on Meta, batch shape), §7 risk, AC21 |
 | S6 | Generation-based PageIndex projection or durable outbox (risk) | CONFIRM | Verified: `splice_subtree` → `reindex_node_ids` (`tree_ops.py:89-141`) before `_save_node_markdown` / `_persist` (`toolkit.py:851-980,237`) | §3 M9 redesigned (generation per `_persist`, fallback on mismatch), AC22 |
@@ -1147,10 +1390,10 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
 | S8 | Add generic backend connection settings and fix namespace dispatch (api) | CONFIRM → **dispatch/coercion fix moved to FEAT-540 M7 (v0.5)** | Verified: only `arango_*` fields (`project.py:616-627`); validator coerces `database` → arangodb (`:267`); federation passes `arango_params` to extra factories (`federation.py:425`) | FEAT-540 `WikiBackendSpec.resolve_options` + validator rule; here §2 `HelixSettings`, §3 M4 fields, AC19 |
 | S9 | Build a backend contract matrix rather than only live-server smoke tests (testing) | CONFIRM | Existing suites are per-backend copies (`test_store_cas.py`, `test_postgres_store_cas.py`, `test_arango_store_cas.py`) | §3 M11 (`wiki_store_matrix`), §4 |
 | S10 | Add a compatibility gate for the SDK, embedded wheel and pinned image (testing) | CONFIRM | SDK 0.3.4, wheel 0.3.3 and image v0.0.12 are independently versioned (release notes show image/SDK cadences differ) | §3 M11 `test_compat_gate.py`, AC24 |
-| S11 | Define migration and rollback before exposing a backend switch (risk) | CONFIRM (docs + rebuild) / ESCALATE (copy tool) | Verified: `export_okf_bundle` (`export.py:130`) exports pages/edges only; ledger canonical = event log (`ledger/log.py`); GraphIndex commits carry pre-images | §7 risk, AC23, `test_rebuild_from_canonical_sources`; copy tool → §8 Q2 |
+| S11 | Define migration and rollback before exposing a backend switch (risk) | CONFIRM (docs + rebuild) / ESCALATE → **CONFIRM** (copy tool; owner, v0.4) | Verified: `export_okf_bundle` (`export.py:130`) exports pages/edges only; ledger canonical = event log (`ledger/log.py`); GraphIndex commits carry pre-images | §7 risk, AC23, `test_rebuild_from_canonical_sources`; copy tool → M12 `wikitoolkit migrate`, AC26 / AC27 |
 | S12 | Preserve existing search filtering and score semantics explicitly (testing) | CONFIRM | Verified: archive exclusion (`store.py:2328-2362`), cosine score in [-1,1] (`store.py:2381`), Postgres `1 - distance` (`postgres_store.py:700-714`) | §3 M3 `search_fts` / `search_vector` contracts, AC18, `test_search_fts_archive_default_and_score_scale` |
 
-Summary: **10** confirmed (S1/S4/S5/S8 realised in FEAT-540 v0.5) · **0** rejected · **2** escalated (S3 → Q1, now resolved by FEAT-540 M8; S11 copy-tool → Q2).
+Summary: **12** confirmed (S1/S4/S5/S8 realised in FEAT-540 v0.5; the escalated parts of S3 and S11 confirmed by the owner in v0.4 — §8 Q1 option a, §8 Q2 yes) · **0** rejected · **0** open.
 
 ---
 
@@ -1161,3 +1404,4 @@ Summary: **10** confirmed (S1/S4/S5/S8 realised in FEAT-540 v0.5) · **0** rejec
 | 0.1 | 2026-10-14 | Jesus Lara (with Claude) | Initial draft from the accepted brainstorm (FEAT-670 reserved) |
 | 0.2 | 2026-10-14 | Jesus Lara (with Claude) | Design research folded in: 10 confirmed (M3/M4/M5/M7/M9/M10/M11 contracts, AC18–AC24), 2 escalated (§8 Q1, Q2) |
 | 0.3 | 2026-10-14 | Jesus Lara (with Claude) | **Follows FEAT-540 v0.5** (owner decision): hard cross-feature dependency; every backend is a registered implementation of a FEAT-540 contract; removed this feature's own resolver/factory modules, `Literal`/`click.Choice` edits, AQL call-site migration and `UnsupportedTraversal`; codex S1/S4/S5/S8 generic parts moved into FEAT-540; Q1 resolved via `TraversalPattern.query_templates`; M4/M7/M8, AC2/4/7/16/19/20/21, §6 and worktree strategy rewritten accordingly |
+| 0.4 | 2026-10-14 | Jesus Lara (with Claude) | §8 Q1 → **option (a)**: backend-neutral `TraversalPattern.traversal_spec` + per-dialect compilers materialised into `query_templates` (M8a, AC25, G10); §8 Q2 → **ship** `wikitoolkit migrate --to <backend>` with the bulk-read surface, resumable checkpoint and verification report (new M12, AC26–AC27, G11); S3 / S11 closed; no open questions |
