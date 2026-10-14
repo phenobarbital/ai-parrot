@@ -56,7 +56,6 @@ from parrot.a2a.models import (
     A2A_ERROR_CODES,
 )
 from parrot.outputs.a2ui.catalog.base import DEFAULT_CATALOG_ID
-from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID
 from parrot.outputs.a2ui.runtime.adapters import ConversationMemorySurfaceStore, ToolManagerExecutor
 from parrot.outputs.a2ui.runtime.dispatch import A2UIRuntime
 from parrot.outputs.a2ui.runtime.models import A2UICallContext
@@ -176,6 +175,7 @@ class A2AServer:
         self.base_path = base_path.rstrip("/")
         self.version = version
         self.capabilities = capabilities or AgentCapabilities(streaming=True)
+        from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID  # noqa: PLC0415 — lazy on purpose (FEAT-668)
         register_a2ui_extension(self.capabilities, [DEFAULT_CATALOG_ID, BASIC_CATALOG_ID])
         self.extra_skills = extra_skills or []
         self.tags = tags or []

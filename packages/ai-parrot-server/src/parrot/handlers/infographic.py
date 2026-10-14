@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 from datetime import datetime, timezone
 
 from aiohttp import web
@@ -44,8 +44,10 @@ from ..helpers.infographics import (
     register_template,
     register_theme,
 )
-from ..tools.infographic_toolkit import InfographicToolkit, InfographicValidationError
 from ..conf import INFOGRAPHIC_RENDER_TEMPLATE_DIRS
+
+if TYPE_CHECKING:
+    from ..tools.infographic_toolkit import InfographicToolkit
 
 # Keys consumed or reserved by the handler itself.  They must NOT be
 # forwarded as ``**kwargs`` into ``bot.get_infographic`` because doing so
@@ -390,6 +392,7 @@ class InfographicTalk(AgentTalk):
                 "configured; proceeding WITHOUT persistence."
             )
 
+        from ..tools.infographic_toolkit import InfographicValidationError  # noqa: PLC0415 — lazy on purpose (FEAT-668)
         try:
             outcome = await render_deterministic(
                 parsed,
@@ -532,6 +535,7 @@ class InfographicTalk(AgentTalk):
             # the render flow never reads toolkit._artifact_store — persistence
             # goes through the SAME store passed explicitly to render_deterministic
             # — so this is safe despite InfographicToolkit's non-Optional param.
+            from ..tools.infographic_toolkit import InfographicToolkit  # noqa: PLC0415 — lazy on purpose (FEAT-668)
             toolkit = InfographicToolkit(
                 artifact_store=app.get("artifact_store"),  # type: ignore[arg-type]
                 template_dirs=template_dirs,
@@ -617,6 +621,7 @@ class InfographicTalk(AgentTalk):
         exception is captured into the job record — it must never escape
         and die silently (this coroutine has no caller awaiting it).
         """
+        from ..tools.infographic_toolkit import InfographicValidationError  # noqa: PLC0415 — lazy on purpose (FEAT-668)
         try:
             await job_store.set_running(job_id)
             toolkit = self._get_render_toolkit()

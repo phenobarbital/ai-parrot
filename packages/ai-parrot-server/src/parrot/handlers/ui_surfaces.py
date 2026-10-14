@@ -20,7 +20,7 @@ import json
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 from navigator.views import BaseView
@@ -46,8 +46,10 @@ from parrot.outputs.a2ui.catalog.base import CatalogValidationError
 from parrot.outputs.a2ui.linked import has_data_sources
 from parrot.outputs.a2ui.linked.service import LinkedGuardRequired, LinkedSurfaceService, SnapshotError
 from parrot.storage.artifacts import ArtifactStore
-from parrot.tools.infographic_recipes.runner import RecipeRunException, RecipeRunner
 from pydantic import BaseModel, Field, ValidationError
+
+if TYPE_CHECKING:
+    from parrot.tools.infographic_recipes.runner import RecipeRunner
 
 __all__ = [
     "MintShareRequest",
@@ -674,6 +676,7 @@ class UISurfacesHandler(BaseView):
                 status=500,
             )
 
+        from parrot.tools.infographic_recipes.runner import RecipeRunException  # noqa: PLC0415 — lazy on purpose (FEAT-668)
         try:
             artifact = await runner.run(
                 record.recipe_name,
