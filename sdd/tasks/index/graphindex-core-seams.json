@@ -94,7 +94,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -105,8 +105,9 @@
       "parallelism_notes": "imports Embedder/PageIndexer/IncrementalPersistence/EmbeddingPersistence from TASK-4302; uses GraphIndexEmbedder.vectors() from TASK-4303",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4304-retype-builder-retriever-signals.md"
+      "completed_at": "2026-10-14T23:13:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4304-retype-builder-retriever-signals.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4305",
@@ -115,7 +116,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -125,8 +126,9 @@
       "parallelism_notes": "imports LLMCaller from TASK-4302 (graphindex/protocols.py)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4305-llmcaller-wiki-consumers.md"
+      "completed_at": "2026-10-14T23:13:34+00:00",
+      "file": "sdd/tasks/completed/TASK-4305-llmcaller-wiki-consumers.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4306",
