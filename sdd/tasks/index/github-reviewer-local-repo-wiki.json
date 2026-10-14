@@ -156,7 +156,7 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -164,8 +164,9 @@
       "parallelism_notes": "Independent docs/github-reviewer.md writer; documents the approved spec without importing or testing a feature-created symbol. Existing reviewer tests are a smoke check only, so no implementation edge is needed.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4342-reviewer-wiki-documentation.md"
+      "completed_at": "2026-10-14T23:09:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4342-reviewer-wiki-documentation.md",
+      "verification": "verified"
     }
   ]
 }
