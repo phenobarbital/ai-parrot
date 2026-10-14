@@ -135,6 +135,7 @@ GRAPHINDEX_FTS_REGCONFIG: dict[str, str] = {
     "sym:": "simple",
 }
 
+
 #: ANN index type for ``graphindex.embeddings``. Default ``"ivfflat"`` —
 #: TASK-2770's OQ3 spike (``artifacts/logs/feat-520-oq3-spike.md``)
 #: measured ivfflat beating hnsw on BOTH build time (~0.8s vs ~22.8s) and

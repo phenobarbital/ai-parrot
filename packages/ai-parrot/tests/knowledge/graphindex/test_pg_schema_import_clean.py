@@ -1,4 +1,5 @@
 """pg_schema imports clean; settings lazy (FEAT-540 M4)."""
+
 from __future__ import annotations
 
 import asyncio
