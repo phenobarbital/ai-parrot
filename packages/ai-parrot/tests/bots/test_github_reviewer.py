@@ -220,7 +220,9 @@ class TestWikiPromptContext:
         assert context is not None
         assert github_reviewer.estimate_tokens(context) <= conf.GITHUB_REVIEW_WIKI_CONTEXT_TOKENS
 
-    async def test_wiki_context_carries_base_branch_label(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_wiki_context_carries_base_branch_label(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """The header states both the snapshot branch and absence caveat."""
         reviewer = self._ready_reviewer()
         search = MagicMock()
