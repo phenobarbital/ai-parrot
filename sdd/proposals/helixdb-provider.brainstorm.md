@@ -16,7 +16,7 @@ tags: [helixdb, graph-database, wiki, graphindex, vector-search, bm25]
 
 **Date**: 2026-10-14
 **Author**: Jesus Lara (with Claude)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A
 
 ---
