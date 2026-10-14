@@ -39,6 +39,15 @@ tags: [graphindex, wiki, ontology, graph-store, import-seams, mcp]
 >
 > The 13 tasks of the September decomposition (TASK-3256…3268, all
 > `pending`, no worktree) are **superseded** by this revision — see §10.
+>
+> **v0.5 (2026-10-14)** absorbs the seam-level design decisions the FEAT-670
+> spec (`sdd/specs/helixdb-provider.spec.md`, v0.3) had taken before the
+> ownership decision — its codex S1/S4/S5/S8: server-backend capability on the
+> wiki registry (`WikiBackendSpec.kind`), explicit backend precedence in the
+> loader/factory, `edge_key` / in-transaction `seq` / incident-edge pre-images in
+> the persistence contract, backend-neutral namespace dispatch, and the
+> project-config → persistence bridge (`persistence_for_project`). FEAT-670
+> now only registers implementations in the seams defined here.
 
 ---
 
@@ -384,13 +393,25 @@ class CapabilityUnavailable(RuntimeError):
 class GraphPersistence(Protocol):
     """Base contract every GraphIndex backend satisfies (persist_sqlite.py:263-987 is the reference).
 
-    Semantics (S2): ``apply_update`` is atomic — all items land or none; it returns a
-    ``CommitReceipt`` whose ``seq`` is strictly monotonic per tenant; ``revert_commit``
-    restores the captured pre-images and is itself a new commit; ``replace_document_slice``
-    is atomic per ``document_uri`` and idempotent on identical input; ``load_graph`` returns
-    the CURRENT graph (no soft-deleted items); a missing tenant store is created lazily by
-    the first write and reads as empty, never as an error; backend errors propagate as the
-    driver's exception — a backend never swallows them into an empty result.
+    Semantics (S2, plus FEAT-670 S5 absorbed in v0.5):
+    - ``apply_update`` is atomic — all items land or none — and allocates ``CommitReceipt.seq``
+      INSIDE the same transaction/batch, strictly monotonic per tenant (SQLite: rowid/seq table,
+      Postgres: sequence, Arango: ``_next_seq`` doc, persist.py:473; HelixDB: Meta counter);
+    - edge identity is ``edge_key(source_id, target_id, kind)`` (the ``_edge_key`` helper every
+      backend already has: persist.py:65, persist_sqlite.py:133, persist_postgres.py:162) —
+      ``protocols.py`` exports one canonical ``edge_key()`` and a backend never duplicates an edge
+      with the same key inside one commit;
+    - pre-images captured by a commit include the node state AND the incident edges removed with a
+      node, so ``revert_commit`` restores both; revert is itself a new commit;
+    - revert conflict rule: a later commit (higher ``seq``) touching any item key of the commit being
+      reverted ⇒ ``revert_commit`` is refused with the conflicting commit id (persist_sqlite.py:856-987
+      is the reference behaviour);
+    - ``replace_document_slice`` is atomic per ``document_uri`` and idempotent on identical input;
+    - ``load_graph`` returns the CURRENT graph (no soft-deleted items);
+    - a missing tenant store is created lazily by the first write and reads as empty, never as an error;
+    - backend errors propagate as the driver's exception — a backend never swallows them into an
+      empty result.
+    The conformance suite (§4) asserts every bullet against every registered backend.
     """
     async def persist_graph(self, ctx: Any, nodes: list[Any], edges: list[Any]) -> dict[str, Any]: ...
     async def replace_document_slice(self, ctx: Any, document_uri: str, nodes: list[Any],
@@ -431,6 +452,8 @@ class GraphBackendSpec(BaseModel):
     required_options: tuple[str, ...] = ()
     capabilities: tuple[str, ...] = ()  # "incremental" | "temporal" | "embeddings" | "hybrid"
     extra: str | None = None          # pip extra named in the ImportError message
+    project_options: str | None = None  # "module:callable(config, root, tenant_id) -> dict" — how a WikiProjectConfig
+                                        # selecting this backend maps to factory options (used by persistence_for_project)
 
 def register_graph_backend(spec: GraphBackendSpec) -> None:
     """Register or replace a backend. Built-ins: sqlite, null, postgres, arangodb."""
@@ -449,6 +472,23 @@ async def create_graph_persistence(backend: str, **options: Any) -> GraphPersist
     Raises ``ValueError`` for an unknown backend or a missing required option
     (named), and the ``lazy_import`` ImportError naming the extra when a driver is absent.
     """
+
+# parrot/knowledge/wiki/runtime.py  (NEW function — the project-config → persistence bridge, FEAT-670 S1/S4 absorbed)
+async def persistence_for_project(config: WikiProjectConfig, root: Path, *, tenant_id: str | None = None) -> GraphPersistence:
+    """``create_graph_persistence(config.backend, **spec.project_options(config, root, tenant))``.
+
+    sqlite → ``db_dir=config.graph_path(root)`` (project.py:721); postgres → DSN/schema via ``resolve_setting``;
+    arangodb → ``resolve_arango_params(config)`` + tenant; a backend without ``project_options`` raises
+    ``ValueError`` naming it. Replaces the direct constructions at wiki/runtime.py:91 and wiki/cli.py:4011,
+    4108, 4561, 4623 (flows/dev_loop/graph_memory.py:142 keeps ``create_graph_persistence("sqlite", …)`` — it has
+    no project config).
+    """
+
+# Explicit backend precedence (FEAT-670 S4 absorbed; applies to GraphIndexLoader.__init__ loader.py:130 and
+# build_graph_memory_toolkit factory.py:197): an explicit ``backend=`` wins; legacy ``sqlite_dir`` alone ⇒ "sqlite",
+# ``arango_params``/host kwargs alone ⇒ "arangodb", ``db_dir`` alone ⇒ "sqlite"; CONFLICTING legacy arguments
+# (e.g. ``sqlite_dir`` + ``backend="postgres"``, or ``sqlite_dir`` + ``arango_params``) raise ``ValueError`` at
+# construction — never a silent pick. ``persist_enabled=False`` ⇒ backend "null".
 
 
 # parrot/knowledge/ontology/contracts.py  (NEW — M8)
@@ -511,9 +551,27 @@ def resolve_setting(key: str, *, default: Any = None, explicit: Any = None,
     never reads ``wiki.json``. Secrets are never echoed in errors or logs.
     """
 
-# parrot/knowledge/wiki/store.py  (MODIFIED — M7)
-def wiki_backend_names() -> tuple[str, ...]: ...        # built-ins + register_wiki_backend()
+# parrot/knowledge/wiki/store.py  (MODIFIED — M7; FEAT-670 S1/S8 absorbed)
+class WikiBackendSpec(BaseModel):
+    """One wiki backend. Built-ins: sqlite (local), memory (local), arangodb (server), postgres (server)."""
+    name: str
+    kind: Literal["local", "server"]       # local ⇒ has a storage_dir plane; server ⇒ is_built() is deferred to initialize()
+    factory: str                            # "module:callable(*, storage_dir=None, wiki_name='', **options) -> BaseWikiStore" (lazy)
+    resolve_options: str | None = None      # "module:callable(config_or_namespace) -> dict" — connection options from config/env
+    is_built: str | None = None             # optional "module:callable(config, root) -> bool" override (e.g. embedded modes)
+    extra: str | None = None
+
+def register_wiki_backend(name: str, factory: Callable[..., BaseWikiStore], *, kind: str = "server",
+                          resolve_options: Callable[[Any], dict[str, Any]] | None = None) -> None: ...   # store.py:539, extended
+def wiki_backend_names() -> tuple[str, ...]: ...        # built-ins + registered
+def wiki_backend_spec(name: str) -> WikiBackendSpec: ...  # ValueError naming the known backends
 def resolve_wiki_backend(name: str) -> Callable[..., BaseWikiStore]: ...   # one dispatch for create_wiki_store + federation
+def is_server_backend(name: str) -> bool: ...           # replaces every `== "arangodb"` that means "server-hosted"
+# Consumers (M7): WikiProjectConfig.is_built() (project.py:774) and storage_path() (:785-787) branch on spec.kind, never on a
+# name; WikiNamespaceConfig's validator (project.py:263-267) coerces `database` entries to "arangodb" ONLY when `backend`
+# was not explicitly set (`"backend" not in model_fields_set`); open_namespace_store (federation.py:418-425) passes
+# spec.resolve_options(cfg) — never `arango_params` to a non-Arango backend; wiki/cli.py:670,1520 and entity_cli.py
+# derive click.Choice from wiki_backend_names() at command-definition time (lazy callable).
 
 # parrot/knowledge/wiki/sources_backend.py  (NEW — M7, S10)
 class SourceManifestBackend(Protocol):
@@ -727,9 +785,11 @@ def create_proxy_mcp_server(remote: Any, *, transport: Literal["auto", "framewor
   `parrot.stores.models.Document` ↔ `GraphDocument` preserving `page_content`
   and `metadata` only. `GraphIndexLoader` keeps its constructor, `load()`
   behaviour and old import path (lazy); its persistence selection goes through
-  `create_graph_persistence` (M7) and its navconfig block through
-  `resolve_setting` (M4). The ebook helper import (`extractors/loader.py:198`)
-  stays an explicitly lazy optional adapter seam inventoried for FEAT-541.
+  `create_graph_persistence` (M7) with the explicit-backend precedence rule
+  (§2; conflicting legacy kwargs raise `ValueError`), and its navconfig block
+  through `resolve_setting` (M4). The ebook helper import
+  (`extractors/loader.py:198`) stays an explicitly lazy optional adapter seam
+  inventoried for FEAT-541.
 - **Depends on**: M2, M4, M7 (all three edit the old loader — sequence after them).
 - **Interface Skeleton**: `GraphDocument`, `DocumentLoader` as in §2; `parrot/loaders/graphindex.py: class GraphIndexLoader(AbstractLoader)` (unchanged signature, `loader.py:130`); `def to_graph_document(doc: Document) -> GraphDocument` / `def from_graph_document(doc: GraphDocument) -> Document` in the same module.
 
@@ -743,9 +803,13 @@ def create_proxy_mcp_server(remote: Any, *, transport: Literal["auto", "framewor
   `parrot_tools/graphindex/flowtask.py:27,220`, `contracts/temporal.py:361-375`,
   `retrieval/pin.py:416`; wiki side: `wiki/store.py` (`wiki_backend_names`,
   `resolve_wiki_backend`, `_BUILTIN_BACKENDS`), `wiki/models.py:114`,
-  `wiki/project.py:605,1063`, `wiki/sources.py:148,1303-1425`,
+  `wiki/project.py:605,1063` (Literals), `:263-267` (namespace coercion), `:774-788`
+  (`is_built`/`storage_path`), `wiki/sources.py:148,184,1303-1425`,
   `wiki/sources_backend.py` (new), `wiki/arango_sources.py` (new),
-  `wiki/federation.py:418`, `wiki/toolkit.py:139-161`
+  `wiki/federation.py:418-425`, `wiki/toolkit.py:139-161`, `wiki/cli.py:670,1520`
+  (choices), `wiki/entity_cli.py:258,374,454` (help text), plus the `"arangodb"`
+  literal audit (`cli.py` 15, `toolkit.py` 3, `sync.py` 4, `federation.py` 4,
+  `sources.py` 20 occurrences)
 - **Responsibility**: declare the base and capability Protocols with the
   semantics in §2 (S2) and ship a **conformance suite** every backend runs
   (apply/revert/seq monotonicity, slice atomicity + idempotence, missing-store
@@ -761,13 +825,26 @@ def create_proxy_mcp_server(remote: Any, *, transport: Literal["auto", "framewor
   name otherwise; `pin.py` guards `isinstance(persistence, SQLitePersistence)`
   and rejects other backends before opening anything (S9). `ArangoPersistence`
   takes a `GraphDocumentStore` (M8), never the typed traversal contract (S6).
-  Wiki: the three `Literal`s and `SourceCollectionManager.backend` become
+  Wiki (FEAT-670 S1/S8 absorbed): backends are `WikiBackendSpec` rows with a
+  `kind`; the three `Literal`s and `SourceCollectionManager.backend` become
   `str` validated at open time by `wiki_backend_names()`; `create_wiki_store`
-  and `federation.py:418` share `resolve_wiki_backend`; the eleven Arango
-  source operations move verbatim into `ArangoSourceBackend`, `SQLite`/`JSON`
-  implementations wrap the existing in-class code, and `SourceCollectionManager`
-  holds one `SourceManifestBackend` instead of 25 `backend ==` branches
-  (S10); `LLMWikiToolkit` selects through `create_source_backend`.
+  and `federation.py:418` share `resolve_wiki_backend`; `is_built()` and
+  `storage_path()` (`project.py:774-788`) branch on `spec.kind` (server ⇒ `True`
+  / no local plane, optional `is_built` hook for embedded modes), never on a
+  name; the namespace validator (`project.py:263-267`) coerces `database`
+  entries to `arangodb` only when `backend` was not explicitly set;
+  `open_namespace_store` passes `spec.resolve_options(cfg)` instead of
+  `arango_params` (`federation.py:425`); `click.Choice` lists (`cli.py:670,1520`)
+  and the `entity_cli.py` help strings derive from `wiki_backend_names()`; every
+  `"arangodb"` literal is classified — "server-hosted" ⇒ `is_server_backend()`,
+  "needs Arango params" ⇒ stays inside the Arango spec's `resolve_options`. The
+  eleven Arango source operations move verbatim into `ArangoSourceBackend`,
+  `SQLite`/`JSON` implementations wrap the existing in-class code, and
+  `SourceCollectionManager` holds one `SourceManifestBackend` instead of 25
+  `backend ==` branches (S10); `LLMWikiToolkit` selects through
+  `create_source_backend`. GraphIndex: `persistence_for_project` (§2) is the
+  only bridge from a project config to a backend; `GraphBackendSpec.project_options`
+  tells it how.
 - **Depends on**: M1 (ceilings), M4 (`resolve_setting` for Postgres/Arango
   options). M8 for the `GraphDocumentStore` type (annotation only — may land
   behind `TYPE_CHECKING` first).
@@ -817,7 +894,13 @@ def create_proxy_mcp_server(remote: Any, *, transport: Literal["auto", "framewor
   inline statements — explicitly Arango-bound by construction, no longer
   hidden behind a generic name. `search_views` (`schema.py:331,444`) are an
   Arango capability: a non-Arango store's `initialize_tenant` logs and skips
-  them. `TenantContext.arango_db` is kept (§8 Q1).
+  them. `TenantContext.arango_db` is kept (§8 Q1). Dialect names are the
+  ontology registry's backend names (`"aql"` for `arangodb`); a backend
+  registers its dialect with `register_ontology_backend` and, optionally, a
+  validator with `register_query_validator`. This design resolves FEAT-670's
+  former §8 Q1 (template-driven traversals on HelixDB) without a new
+  `traversal_spec` abstraction: the HelixDB store ships `query_templates["helix"]`
+  entries for the ontologies it serves.
 - **Depends on**: M1 (lazy ontology root). M7 consumes its `GraphDocumentStore`.
 - **Interface Skeleton**: as in §2 (`GraphDocumentStore`, `OntologyTraversalStore`, `DynamicQuery`, `register_ontology_backend`, `create_ontology_graph_store`, `validate_query`, `register_query_validator`, the three new exceptions), plus:
   ```python
@@ -885,11 +968,15 @@ def create_proxy_mcp_server(remote: Any, *, transport: Literal["auto", "framewor
 | `test_bundle_lifecycle` | M5 | `abuild_wiki_tools`/`close_bundle` close owned stores on shutdown, error and cancellation; stdout stays clean JSON-RPC |
 | `test_graph_document_roundtrip` / `test_extractor_with_plain_loader` | M6 | content/metadata preserved; extractors run on a `DocumentLoader` double |
 | `test_graphindex_loader_relocated` | M6 | old import path resolves lazily; constructor and `load()` unchanged |
-| `test_persistence_conformance[backend]` | M7 | shared suite: apply/revert, monotonic `seq`, slice atomicity + idempotence, missing store reads empty, error propagation — for `sqlite`, `null`, a fake adapter; live `postgres`/`arangodb` under their `skipif` gates |
+| `test_persistence_conformance[backend]` | M7 | shared suite: apply/revert, `seq` allocated in-transaction and strictly monotonic, `edge_key` identity (no duplicate edge per commit), incident-edge pre-images restored on revert, revert-conflict refusal, slice atomicity + idempotence, missing store reads empty, error propagation — for `sqlite`, `null`, a fake adapter; live `postgres`/`arangodb` under their `skipif` gates; exported as a reusable `persistence_conformance_cases` fixture so FEAT-670 parametrises it with its own backends |
+| `test_loader_backend_precedence` | M6/M7 | explicit `backend=` wins; `sqlite_dir` alone ⇒ sqlite; `arango_params` alone ⇒ arangodb; `persist_enabled=False` ⇒ null; conflicting legacy kwargs ⇒ `ValueError` on `GraphIndexLoader` and `build_graph_memory_toolkit` |
+| `test_persistence_for_project` | M7 | `backend: sqlite` ⇒ `db_dir=graph_path(root)`; `postgres` ⇒ DSN via `resolve_setting`; a spec without `project_options` ⇒ `ValueError` naming the backend; `runtime.py` and the four `cli.py` sites call it |
 | `test_registry_dispatch` | M7 | unknown backend → `ValueError` listing names; missing option named; missing driver → `lazy_import` message with the extra; factories imported lazily |
 | `test_no_hasattr_capability_probes` | M7 | toolkit/temporal paths use `isinstance`; unsupported backend → `CapabilityUnavailable(backend)` |
 | `test_pin_sqlite_only_boundary` | M7 | `check_pin_coherence` rejects a non-SQLite backend before opening anything |
-| `test_wiki_backend_registry_validation` | M7 | `backend="helixdb"` unregistered → validation error at open naming known backends; registered satellite name accepted in `WikiConfig`, `WikiProjectConfig`, `WikiEnvOverlay`, `SourceCollectionManager` |
+| `test_wiki_backend_registry_validation` | M7 | `backend="helixdb"` unregistered → validation error at open naming known backends; registered satellite name accepted in `WikiConfig`, `WikiProjectConfig`, `WikiEnvOverlay`, `SourceCollectionManager`; `click.Choice` for `--backend` lists `wiki_backend_names()` |
+| `test_wiki_backend_kind` | M7 | `is_built()`/`storage_path()` for a `kind="server"` spec never fall through to the `pages/` probe; an `is_built` hook is honoured; `is_server_backend("arangodb")` is True; no `== "arangodb"` meaning "server-hosted" remains (AST assertion over the five audited files) |
+| `test_namespace_dispatch_backend_neutral` | M7 | a namespace with `database` + explicit `backend: <registered-server-backend>` is not coerced to `arangodb`; `database` without explicit backend still is; `open_namespace_store` passes `spec.resolve_options(cfg)`, never `arango_params`, to a non-Arango backend |
 | `test_source_backend_parity[sqlite,json,arangodb-fake]` | M7 | the eleven operations behave identically; `SourceCollectionManager` has no `backend ==` branch left (AST assertion) |
 | `test_typed_traversals_arango_aql_verbatim` | M8 | each typed op issues exactly the AQL text and binds the current call sites issue (captured from `dev`) |
 | `test_authorization_entity_resolver_typed` | M8 | `AuthorizationChecker`/`EntityResolver` run on an `OntologyTraversalStore` fake with no AQL in core |
@@ -969,7 +1056,13 @@ def captured_aql():
 - [ ] No `hasattr(persistence, …)` capability probe remains in `parrot_tools/graphindex`
       or `knowledge/contracts`; unsupported capabilities raise `CapabilityUnavailable`.
 - [ ] Wiki backend names validate against the registry in all four former
-      `Literal` sites; `parrot_tools.legal`'s `ontology_legal` registration keeps working.
+      `Literal` sites and the CLI choices; `parrot_tools.legal`'s `ontology_legal`
+      registration keeps working; `is_built()`/`storage_path()`/namespace coercion/
+      `open_namespace_store` are driven by `WikiBackendSpec.kind`/`resolve_options`,
+      and no `== "arangodb"` meaning "server-hosted" survives the audit.
+- [ ] `GraphIndexLoader` and `build_graph_memory_toolkit` apply the explicit-backend
+      precedence rule and raise on conflicting legacy arguments; `persistence_for_project`
+      is the only project-config → persistence bridge.
 - [ ] `SourceCollectionManager` delegates to a `SourceManifestBackend`; parity
       across sqlite/json/arangodb-fake; no `backend ==` branch left.
 - [ ] `execute_traversal` no longer exists; core ontology code contains no AQL
@@ -1178,6 +1271,8 @@ class OntologyGraphStore:                                                   # :5
 | `execute_pattern` | `TraversalPattern` from ontology YAML | `pattern_for()` | `procedures/retrieval.py:311`, `contracts/retrieval.py:681`, `boe/queries.py:72,176` |
 | `validate_query` | `OntologyIntentResolver` dynamic path | dispatch by dialect | `intent.py:222` |
 | `resolve_wiki_backend` | `create_wiki_store`, `open_namespace_store` | one dispatch | `store.py:2665`, `federation.py:418` |
+| `WikiBackendSpec.kind` / `resolve_options` | `is_built`, `storage_path`, namespace validator, `open_namespace_store`, CLI choices | attribute lookups replacing name checks | `project.py:774,785-787,263-267`, `federation.py:425`, `cli.py:670,1520` |
+| `persistence_for_project` | `wiki/runtime.py`, `wiki/cli.py` graph commands | replaces direct construction | `runtime.py:91`, `cli.py:4011,4108,4561,4623` |
 | `SourceManifestBackend` | `SourceCollectionManager`, `LLMWikiToolkit` | composition | `sources.py:148`, `toolkit.py:139-161` |
 | `resolve_setting` | navconfig (lazy) | pattern already in `_navconfig` | `project.py:792` |
 | `OperationDescriptor` | `WikiToolBundle`, SDK stdio server | `to_framework_tools` / `to_sdk_server` | `mcp_server.py:93,373,408` |
@@ -1196,7 +1291,8 @@ class OntologyGraphStore:                                                   # :5
 - ~~`resolve_setting()`~~ — readers today: `_navconfig`/`_env_credential` (`project.py:792,822`), `_env_setting` (`cli.py:576`, `llm_resolve.py:11`), inline navconfig (`loader.py:337`), import-time constants in `pg_schema.py`.
 - ~~`parrot/knowledge/common/sql_dialects.py`~~ — created by M4; today the map lives in `parrot/tools/sql_dialects.py:27`.
 - ~~`parrot_tools.wiki`~~ — no such package (`parrot_tools/graphindex/` only has `__init__`, `flowtask`, `toolkit`).
-- ~~`wiki/operations.py`, `wiki/transport.py`, `wiki/sources_backend.py`, `wiki/arango_sources.py`, `OperationDescriptor`, `SourceManifestBackend`, `wiki_backend_names`, `resolve_wiki_backend`, `create_source_backend`~~ — created by this spec.
+- ~~`wiki/operations.py`, `wiki/transport.py`, `wiki/sources_backend.py`, `wiki/arango_sources.py`, `OperationDescriptor`, `SourceManifestBackend`, `WikiBackendSpec`, `wiki_backend_names`, `wiki_backend_spec`, `resolve_wiki_backend`, `is_server_backend`, `create_source_backend`, `persistence_for_project`, `GraphBackendSpec.project_options`~~ — created by this spec.
+- ~~`SERVER_BACKENDS`, `graphindex_persistence_for`, `ontology_graph_store_for`, `UnsupportedTraversal`~~ — names FEAT-670 v0.2 proposed for the same seams; superseded by `WikiBackendSpec.kind`/`is_server_backend`, `persistence_for_project`, `create_ontology_graph_store`, `TraversalPatternUnavailable` (FEAT-670 v0.3 follows this spec).
 - ~~`create_wiki_mcp_server(..., transport=)`~~ — no selector today; `StdioMCPServer` is imported inside the function (`mcp_server.py:389`).
 - ~~A fixed six-tool MCP manifest~~ — the surface depends on configuration and mounted planes (`mcp_server.py:105-320`).
 - ~~`mcp` SDK 1.29 as a new requirement~~ — `mcp>=1.28.1,<2` is already declared (`pyproject.toml:436`).
@@ -1281,6 +1377,13 @@ Verified against: `246f1bb6d` (2026-10-14). `/sdd-task` MUST re-run `grep -c` fo
 | `packages/ai-parrot/src/parrot/knowledge/wiki/sources.py` | MODIFY | `    async def _arango_query(self, aql: str, bind_vars: dict[str, Any]) -> list[Any]:` | `:1303` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/sources_backend.py` · `arango_sources.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/federation.py` | MODIFY | `        factory = wiki_store._EXTRA_BACKENDS.get(cfg.backend)` | `:418` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/federation.py` | MODIFY | `            arango_params=resolve_arango_params(_arango_config_for(cfg)),` | `:425` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/project.py` | MODIFY | `    def is_built(self, root: Path) -> bool:` | `:774` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/project.py` | MODIFY | `            object.__setattr__(self, "backend", "arangodb")` | `:267` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/sources.py` | MODIFY | `        if backend not in ("sqlite", "json", "arangodb"):` | `:184` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` | MODIFY | `        type=click.Choice(["sqlite", "memory", "arangodb"]),` | `:670` | 1 (8-space indent; the 4-space twin is `:1520`) |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` | MODIFY | `    type=click.Choice(["sqlite", "memory", "arangodb"]),` | `:1520` | 1 (4-space indent) |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/entity_cli.py` | MODIFY | `help="Backend (default: sqlite / WIKI_STORE_BACKEND)."` | `:258`, `:374`, `:454` | **3** — one per command option block; the task quotes the preceding `"--backend",` line and the command name |
 | `packages/ai-parrot/src/parrot/knowledge/ontology/contracts.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/knowledge/ontology/graph_store.py` | MODIFY | `class OntologyGraphStore:` | `:53` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/ontology/schema.py` | MODIFY | `    query_template: str` | `:288` | 1 |
@@ -1377,9 +1480,15 @@ Verified against: `246f1bb6d` (2026-10-14). `/sdd-task` MUST re-run `grep -c` fo
   compare behaviour, not storage layout.
 - **Concurrent work on the same files**: FEAT-633 `parrot-installer`
   (TASK-4092/4093, `wiki/store.py:1107-1497`, `project.py:38-110` — 28 pending),
-  FEAT-481 fireflies (16 in-progress, wiki ingest), FEAT-670 helixdb (spec in
-  progress; depends on M7/M8 and must not start before they merge). Re-check at
+  FEAT-481 fireflies (16 in-progress, wiki ingest). FEAT-670 helixdb (spec v0.3)
+  **depends on this feature** and registers implementations in M7/M8's seams; it
+  must not start before this merges. The ledger plane (`LedgerTxn`/`LedgerReader`
+  hard cut) is FEAT-670's and is deliberately outside this spec. Re-check at
   worktree creation.
+- **Contract gaps found by a consumer are amendments here**: if FEAT-670 (or
+  FEAT-541) needs a capability or option the contracts lack, it files a ledger
+  issue against `spec:FEAT-540` and the contract is amended — consumers never
+  add private branches around a seam.
 - **Golden files drift**: manifests and `captured_aql` are regenerated only by
   an explicit `--update-golden` flag, never silently.
 
@@ -1475,7 +1584,13 @@ overlap on `wiki/store.py` / `project.py` / ingest — reconcile at merge time.
       persistence contract + registry **and** ontology typed traversals inside
       FEAT-540; HelixDB (FEAT-670) consumes them.
 - [x] Task handling — *Resolved by owner 2026-10-14*: TASK-3256…3268 are
-      superseded; `/sdd-task` re-decomposes from v0.4 with new IDs (§10).
+      superseded; `/sdd-task` re-decomposes from v0.5 with new IDs (§10).
+- [x] Seam ownership vs FEAT-670 — *Resolved by owner 2026-10-14*: this spec owns
+      the contracts and registries; FEAT-670 v0.3 follows it. Its codex S1/S4/S5/S8
+      (server-backend kind, explicit precedence, `edge_key`/`seq`/incident-edge
+      pre-images, namespace dispatch) are absorbed in §2/M7; its former Q1 is
+      answered by M8's dialect-keyed `query_templates`; its ledger hard cut stays
+      with FEAT-670.
 
 **Still open:**
 
@@ -1560,3 +1675,4 @@ then they must not be claimed.
 | 0.2 | 2026-09-10 | Jesus Lara (with Claude) | Identified the auth gateway and refreshed import measurements against `24ff50f03`. |
 | 0.3 | 2026-10-14 | Codex | Re-verified against `048479633`: corrected provider, config, Postgres, SQL and MCP contracts; expanded relocation/compatibility gates; recorded the pending-task refresh. (Review form, not template form.) |
 | 0.4 | 2026-10-14 | Jesus Lara (with Claude) | Rewritten in template form carrying the v0.3 findings with re-verified anchors; **scope widened** to a graph-database-agnostic persistence seam (M7: `GraphPersistence` + capabilities + registry, wiki backend registry, source backend) and a backend-neutral ontology contract (M8: `GraphDocumentStore` / `OntologyTraversalStore`, typed traversals, dialect-keyed patterns, fail-closed dynamic queries); codex design research folded (§9); TASK-3256…3268 superseded (§10); FEAT-670 (helixdb) now depends on this feature. |
+| 0.5 | 2026-10-14 | Jesus Lara (with Claude) | Absorbed FEAT-670 v0.2's seam-level decisions (its codex S1/S4/S5/S8): `WikiBackendSpec` with `kind`/`resolve_options`/`is_built` hook and `is_server_backend()`; registry-driven `is_built`/`storage_path`/namespace coercion/`open_namespace_store`/CLI choices + `"arangodb"` literal audit; explicit backend precedence rule for `GraphIndexLoader`/`build_graph_memory_toolkit`; `persistence_for_project` + `GraphBackendSpec.project_options`; `GraphPersistence` semantics extended with canonical `edge_key`, in-transaction `seq`, incident-edge pre-images and the revert-conflict rule; conformance suite exported for consumers; M8 dialect-registry note resolving FEAT-670's Q1. |

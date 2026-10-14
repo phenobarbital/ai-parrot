@@ -14,6 +14,18 @@ tags: [helixdb, graph-database, wiki, graphindex, vector-search, bm25]
 **Status**: draft
 **Target version**: 1.3.0
 **Source brainstorm**: `sdd/proposals/helixdb-provider.brainstorm.md` (accepted 2026-10-14; Option A; 9 resolved questions)
+**Depends on**: **FEAT-540 `graphindex-core-seams` v0.5** (M7 graph-persistence contract + registry, M8 ontology contracts, wiki/source backend registries) — must be merged to `dev` before this feature's worktree is created
+
+> **v0.3 (2026-10-14, owner decision)**: FEAT-540 is the **owner of the graph-database-agnostic seams**.
+> This feature no longer adds `"helixdb"` branches, `Literal` values or resolver/factory modules of its
+> own: every HelixDB backend is a **registered implementation** of a FEAT-540 contract
+> (`GraphPersistence` + capabilities, `GraphDocumentStore` + `OntologyTraversalStore`, `BaseWikiStore`,
+> `SourceManifestBackend`) plugged in through FEAT-540's registries (`register_graph_backend`,
+> `register_ontology_backend`, `register_wiki_backend`, `register_source_backend`,
+> `register_query_validator`). The design decisions this spec had already taken that belong to the
+> seam itself (codex S1/S4/S5/S8 of §9: server-backend capability, explicit backend precedence,
+> `edge_key`/`seq`/incident-edge pre-images, namespace dispatch) were **absorbed into FEAT-540 v0.5**
+> and are referenced here, not re-specified. The brainstorm's "ignore FEAT-540" constraint is reversed.
 
 ---
 
@@ -68,7 +80,10 @@ by configuration, with every existing backend untouched.
 - A satellite distribution `ai-parrot-helixdb` (brainstorm Option B, rejected by the user).
 - Full relocation of PageIndex / BookStore into HelixDB (brainstorm Option C "full relocation" variant) — projection only.
 - Helix Cloud, S3/object-storage sources, `ObjectStorage` embedded source — not wired (server + Disk + InMemory only).
-- Waiting for FEAT-540 / FEAT-633 — the user chose to proceed now and reconcile at merge time.
+- Defining the backend-neutral contracts, registries or selection seams — **FEAT-540 owns them** (its M7/M8).
+  This feature only registers implementations. The AQL call-site migration in `ontology/{authorization,
+  entity_resolver,mixin}.py` and `parrot_tools/{legal,procedures,contracts}` is FEAT-540 M8 work, not ours.
+- Waiting for FEAT-633 — reconcile `wiki/store.py` / `project.py` overlaps at merge time.
 - Changing `SQLiteWikiStore`, `SQLitePersistence` or any existing backend's behaviour.
 
 ---
@@ -88,15 +103,16 @@ lookup, find-or-add edge, lazy vector index by dimension, text search projection
 
 Every plane then gets a backend class that speaks only to that package:
 
-| Plane | Backend | Seam that gains `"helixdb"` |
-|---|---|---|
-| Wiki | `wiki/helix_store.py: HelixWikiStore(BaseWikiStore)` | `create_wiki_store()`, `WikiConfig.storage_backend`, `WikiProjectConfig.backend`, `WikiNamespaceConfig.backend`, CLI `--backend`, `WIKI_STORE_BACKEND`, `SourceCollectionManager(backend=…)` |
-| Ledger | `wiki/ledger/helix_store.py: HelixLedgerStore` + `LedgerTxn` protocol | `LedgerService.from_root/from_dir` |
-| Schema overlay | `wiki/schema/helix_store.py: HelixSchemaStore` | `SchemaPlaneService.from_root/from_dir` |
-| GraphIndex | `graphindex/persist_helix.py: HelixPersistence` | `build_graph_memory_toolkit(backend=…)`, `GraphIndexLoader._make_persistence()`, `wiki/runtime.py`, `wiki/cli.py` (4 sites), `flows/dev_loop/graph_memory.py` |
-| Ontology | `ontology/helix_graph_store.py: HelixOntologyGraphStore` | `GraphIndexLoader`, `parrot_tools/graphindex/flowtask.py`, `parrot_tools/legal/{wiki_store,boe/sync}.py` |
-| PageIndex | `pageindex/helix_projection.py: PageIndexHelixProjection` | `PageIndexToolkit.__init__`, `HybridPageIndexSearch` |
-| BookStore | `bookstore/helix_projection.py: BookstoreHelixProjection` | `Library._catalogs`, `CatalogStore.search` |
+| Plane | Backend | FEAT-540 contract it implements | FEAT-540 seam it registers in |
+|---|---|---|---|
+| Wiki | `wiki/helix_store.py: HelixWikiStore(BaseWikiStore)` | `BaseWikiStore` (`wiki/store.py:553`) | `WikiBackendSpec(name="helixdb", kind="server", factory="parrot.knowledge.wiki.helix_store:helix_wiki_store_factory", resolve_options=…)` in the built-in table of `wiki/store.py`; names flow to `WikiConfig`/`WikiProjectConfig`/`WikiEnvOverlay`/`WikiNamespaceConfig`, CLI `--backend` choices, `WIKI_STORE_BACKEND`, `federation.open_namespace_store` automatically |
+| Wiki sources | `wiki/helix_sources.py: HelixSourceBackend` | `SourceManifestBackend` (FEAT-540 `wiki/sources_backend.py`) | `register_source_backend("helixdb", …)` |
+| Ledger | `wiki/ledger/helix_store.py: HelixLedgerStore(HelixWikiStore)` + `LedgerTxn` / `LedgerReader` protocols (**this feature owns the ledger hard cut**) | `BaseWikiStore` | `LedgerService.from_root/from_dir` dispatch on `WikiProjectConfig.backend` (ledger-local, FEAT-540 does not touch the ledger) |
+| Schema overlay | `wiki/schema/helix_store.py: HelixSchemaStore(HelixWikiStore)` | `BaseWikiStore` | `SchemaPlaneService.from_root/from_dir` dispatch (plane-local) |
+| GraphIndex | `graphindex/persist_helix.py: HelixPersistence` | `GraphPersistence` + `IncrementalPersistence` (FEAT-540 `graphindex/protocols.py`) | `register_graph_backend(GraphBackendSpec(name="helixdb", factory="parrot.knowledge.graphindex.persist_helix:create_helix_persistence", required_options=("settings",), capabilities=("incremental",), extra="helixdb"))`; every dispatch site already calls `create_graph_persistence` / `persistence_for_project` (FEAT-540 M7) |
+| Ontology | `ontology/helix_graph_store.py: HelixOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore)` with `dialect = "helix"` | FEAT-540 `ontology/contracts.py` | `register_ontology_backend("helixdb", …)`; typed traversals implemented with the DSL; `execute_pattern` serves `TraversalPattern.query_templates["helix"]` and raises `TraversalPatternUnavailable` otherwise; **no** `register_query_validator("helix", …)` in this feature ⇒ LLM-dynamic queries fail closed on HelixDB (FEAT-540 M8 rule) |
+| PageIndex | `pageindex/helix_projection.py: PageIndexHelixProjection` | — (projection, not a backend) | `PageIndexToolkit.__init__`, `HybridPageIndexSearch` (unchanged by FEAT-540) |
+| BookStore | `bookstore/helix_projection.py: BookstoreHelixProjection` | — (projection) | `Library._catalogs`, `Library.search` (unchanged by FEAT-540) |
 
 **Data-model mapping (normative):**
 
@@ -159,9 +175,10 @@ in CI runs the embedded unit tier on every PR (resolved Q6).
    wiki/helix_store.py   │  graphindex/persist_helix.py   │  ontology/helix_graph_store.py
    HelixWikiStore ───────┘  HelixPersistence ─────────────┘  HelixOntologyGraphStore
         │  ▲                        ▲                                 ▲
-        │  │ composes               │ duck-typed                      │ typed traversals
- ledger/helix_store.py       GraphPublisher / factory /         authorization.py
- HelixLedgerStore (LedgerTxn) loader / runtime / cli            entity_resolver.py  mixin.py
+        │  │ composes               │ GraphPersistence (FEAT-540)     │ GraphDocumentStore +
+ ledger/helix_store.py       register_graph_backend →          │ OntologyTraversalStore (FEAT-540)
+ HelixLedgerStore (LedgerTxn) create_graph_persistence /        register_ontology_backend →
+                             persistence_for_project            create_ontology_graph_store
  schema/helix_store.py
  HelixSchemaStore
         │
@@ -177,20 +194,16 @@ in CI runs the embedded unit tier on every PR (resolved Q6).
 
 | Existing Component | Integration Type | Notes |
 |---|---|---|
-| `create_wiki_store()` (`wiki/store.py:2665`) | extends | new `backend == "helixdb"` branch before `_EXTRA_BACKENDS`, lazy import of `helix_store` |
-| `WikiConfig.storage_backend` (`wiki/models.py:114`), `WikiProjectConfig.backend` (`project.py:605`) | modifies | Literals gain `"helixdb"`; new fields `helix_database`, `helix_credentials_env`, `helix_mode` next to the `arango_*` fields |
-| `WikiNamespaceConfig` (`project.py:186`) | modifies | `"helixdb"` becomes a built-in `database`-kind backend (doc at `:205-210`); `open_namespace_store` (`federation.py:362`) dispatches it |
-| `wiki/cli.py` `--backend` choices (`:670`, `:1520`), `entity_cli.py` | modifies | `click.Choice` lists gain `"helixdb"` |
-| `SourceCollectionManager` (`wiki/sources.py:148`, `:184`) | extends | fourth backend `"helixdb"` (`Source` nodes), mirroring the `arangodb` async branch via `_run_async` |
-| `LedgerStore` (`ledger/store.py:24`), `LedgerService` (`ledger/service.py:140,164`), `ledger/index.py`, `ledger/sdd_ingest.py` | modifies (hard cut) | `ledger_transaction()` yields `LedgerTxn`; 9 call sites rewritten; service dispatches on `WikiProjectConfig.backend` |
+| `wiki/store.py` built-in `WikiBackendSpec` table (FEAT-540 M7, replaces the `create_wiki_store` branches at `:2707-2741`) | extends | one `"helixdb"` entry: `kind="server"`, lazy factory path, `resolve_options=resolve_helix_params`; `create_wiki_store`, `open_namespace_store`, `is_built()`, `storage_path()`, CLI choices and the four former `Literal`s all read the registry — **no per-site edit** |
+| `WikiProjectConfig` (`project.py:561`) | modifies | new fields `helix_database`, `helix_credentials_env`, `helix_mode` next to the `arango_*` fields (`:616-627`); `resolve_helix_params()` after `resolve_arango_params` (`:851`) built on FEAT-540's `resolve_setting()` |
+| `SourceManifestBackend` registry (FEAT-540 `wiki/sources_backend.py`) | extends | `register_source_backend("helixdb", HelixSourceBackend)`; `SourceCollectionManager` and `LLMWikiToolkit` select through `create_source_backend` — no branch added |
+| `LedgerStore` (`ledger/store.py:24`), `LedgerService` (`ledger/service.py:140,164`), `ledger/index.py`, `ledger/sdd_ingest.py` | modifies (hard cut) | `ledger_transaction()` yields `LedgerTxn`; 9 call sites rewritten; service dispatches on `WikiProjectConfig.backend` (ledger is outside FEAT-540's scope) |
 | `SchemaStore` (`schema/store.py:48`), `SchemaPlaneService` (`schema/service.py:66,82`) | extends | `HelixSchemaStore`; service dispatch |
-| `build_graph_memory_toolkit` (`graphindex/factory.py:197`) | extends | `backend == "helixdb"` branch (lazy import) with `helix_url` / `helix_source` kwargs |
-| `GraphIndexLoader._make_persistence` (`loader.py:288`) | extends | `helix_params` constructor kwarg → `HelixPersistence` |
-| `wiki/runtime.py:91`, `wiki/cli.py:4011,4108,4561,4623`, `flows/dev_loop/graph_memory.py:142` | modifies | one shared resolver `graphindex_persistence_for(config, root)` replaces direct `SQLitePersistence(...)` |
-| `GraphPublisher` (`publish.py:37`) | uses | duck-typed persistence, unchanged |
-| `OntologyGraphStore` (`ontology/graph_store.py:53`) | modifies | typed traversal methods added; `execute_traversal()` demoted to a private ArangoDB helper |
-| `ontology/authorization.py:257,339`, `entity_resolver.py:384,427`, `mixin.py:337,359,379` | modifies | call the typed methods |
-| `parrot_tools/graphindex/flowtask.py:220`, `parrot_tools/legal/wiki_store.py`, `parrot_tools/legal/boe/sync.py` | modifies | graph-store factory `ontology_graph_store_for(backend, …)` |
+| `graphindex/backends.py` registry (FEAT-540 M7) | extends | `register_graph_backend(GraphBackendSpec(name="helixdb", …))` at import of `parrot.knowledge.helix` **and** as a lazy built-in entry (extra-guarded) so `backend="helixdb"` resolves without importing the package first |
+| `create_graph_persistence("helixdb", settings=…)` / `persistence_for_project(config, root)` (FEAT-540 M7) | uses | `build_graph_memory_toolkit(backend="helixdb", …)`, `GraphIndexLoader(backend="helixdb", helix_settings=…)`, `wiki/runtime.py`, `wiki/cli.py`, `flows/dev_loop/graph_memory.py` already go through them; `persistence_for_project` maps `WikiProjectConfig.backend == "helixdb"` → `gi_<wiki_name>` settings |
+| `GraphPublisher` (`publish.py:37`) | uses | typed `GraphPersistence` (FEAT-540); `HelixPersistence` satisfies it structurally |
+| `GraphDocumentStore` / `OntologyTraversalStore` (FEAT-540 `ontology/contracts.py`) | implements | `HelixOntologyGraphStore`; `create_ontology_graph_store("helixdb", settings_factory=…)` via `register_ontology_backend`; `GraphIndexLoader`, `parrot_tools/graphindex/flowtask.py` and the `legal` tools already construct stores through FEAT-540's factory / explicit Arango class |
+| `TraversalPattern.query_templates` (FEAT-540 M8) | uses | ontologies that must run on HelixDB declare a `"helix"` template (DSL op-tree JSON); patterns without one raise `TraversalPatternUnavailable` |
 | `PageIndexToolkit.__init__` (`pageindex/toolkit.py:114-133`), `HybridPageIndexSearch` (`hybrid_search.py:163-263`) | extends | optional `helix_projection` injection; `_bm25_rank` / `_vec_rank` delegate when present |
 | `Library` (`bookstore/library.py:230`), `CatalogStore` (`catalog.py:163`) | extends | optional projection; `search()` delegates when present |
 | `packages/ai-parrot/pyproject.toml:287`, root `pyproject.toml` dev group, `ruff.toml:163`, `.github/workflows/ci.yml:27` | modifies | extras, dev wheel, TID251 per-file ignore, CI unchanged command now installs the wheel via the dev group |
@@ -247,13 +260,14 @@ from parrot.knowledge.wiki.helix_store import HelixWikiStore
 from parrot.knowledge.wiki.ledger.store import LedgerTxn               # protocol (hard cut)
 from parrot.knowledge.wiki.ledger.helix_store import HelixLedgerStore
 from parrot.knowledge.wiki.schema.helix_store import HelixSchemaStore
+# wiki sources
+from parrot.knowledge.wiki.helix_sources import HelixSourceBackend          # implements FEAT-540 SourceManifestBackend
 # graphindex
-from parrot.knowledge.graphindex.persist_helix import HelixPersistence
-from parrot.knowledge.graphindex.persistence_resolver import graphindex_persistence_for
+from parrot.knowledge.graphindex.persist_helix import HelixPersistence, create_helix_persistence  # implements FEAT-540 GraphPersistence + IncrementalPersistence
 # ontology
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore   # + typed traversal methods
-from parrot.knowledge.ontology.helix_graph_store import HelixOntologyGraphStore
-from parrot.knowledge.ontology.factory import ontology_graph_store_for
+from parrot.knowledge.ontology.helix_graph_store import HelixOntologyGraphStore  # implements FEAT-540 GraphDocumentStore + OntologyTraversalStore (dialect "helix")
+# selection/resolution APIs are FEAT-540's: create_wiki_store, create_source_backend, create_graph_persistence,
+# persistence_for_project, create_ontology_graph_store — this feature adds NO resolver/factory module of its own
 # projections
 from parrot.knowledge.pageindex.helix_projection import PageIndexHelixProjection
 from parrot.knowledge.bookstore.helix_projection import BookstoreHelixProjection
@@ -270,11 +284,11 @@ from parrot.knowledge.bookstore.helix_projection import BookstoreHelixProjection
 | M1: helix client, settings, bootstrap, extras | no | — | the DSL helper layer (find-or-add edge, lazy vector index, receipt polling) is the design every other module depends on; thinking model owns it |
 | M2: docker/helixdb + Makefile + docs + spike | yes | compose shape fixed in §2 (image tag var, volume, port, healthcheck, uid 65532); Makefile target shape = `docker-dev` precedent; README sections fixed in §7 | — |
 | M3: HelixWikiStore + sources backend | yes | `BaseWikiStore` contract verbatim; label map and batch shapes in §2; parity tests are the existing CAS/attrs/symbols suites | — |
-| M4: config / CLI selection surface | yes | exact Literal values, field names and defaults in §3 M4 skeleton; `click.Choice` lists | — |
+| M4: config + registrations (exclusive) | yes | `helix_*` field names/defaults, `resolve_helix_params`, and the five registry entries are fixed in §3 M4 | — |
 | M5: Ledger hard cut + HelixLedgerStore | no | — | `LedgerTxn` protocol shape is fixed here, but rewriting `index.py` replay/compact logic over it needs judgement |
 | M6: HelixSchemaStore | yes | `Column` node + `COLUMN_OF` edge; same method surface as `SchemaStore` (§6) | — |
-| M7: HelixPersistence + resolver | no | — | commit-protocol revert ordering over batches is the one algorithmic piece; keep with thinking model |
-| M8: Ontology typed traversals + Helix store | no | — | touches authorization (security-sensitive); traversal method semantics must be derived from the existing AQL |
+| M7: HelixPersistence | no | — | commit-protocol revert ordering over batches is the one algorithmic piece; keep with thinking model (the contract itself is FEAT-540's) |
+| M8: HelixOntologyGraphStore | partly | both FEAT-540 contracts and the typed-op semantics are fixed by FEAT-540 M8; the DSL bodies are mechanical | the `"helix"` `query_templates` format (DSL op-tree JSON) is decided here by the thinking model |
 | M9: PageIndex projection | yes | `TreeNode` + `CHILD_OF`; delegation points `_bm25_rank` / `_vec_rank` (§3 M9) | — |
 | M10: BookStore projection | yes | `Book` + `RELATES_TO` + `BookCommunity`; `search()` delegation (§3 M10) | — |
 | M11: parity + live test suites, docs | yes | test file list and skip gates fixed in §4 | — |
@@ -435,50 +449,48 @@ from parrot.knowledge.bookstore.helix_projection import BookstoreHelixProjection
       async def search_symbols_fts(self, query: str, limit: int = 20) -> list[SymbolRecord]: ...
       async def page_hashes(self, concept_ids: list[str]) -> dict[str, Optional[str]]: ...
 
-  # wiki/store.py (modifies :2730 — new branch before `if backend in _EXTRA_BACKENDS:` at :2741)
-  #   if backend == "helixdb":  (lazy import of helix_store; kwargs: helix_settings | database, credentials_env, mode, read_only)
+  def helix_wiki_store_factory(*, storage_dir: Path | None = None, wiki_name: str = "", **kwargs: Any) -> HelixWikiStore:
+      """Factory the FEAT-540 built-in WikiBackendSpec points at (lazy module path); kwargs: settings | database, credentials_env, mode, read_only."""
 
-  # wiki/sources.py (modifies :148 and :184)
-  #   backend: Literal["sqlite", "json", "arangodb", "helixdb"]; helix branch stores SourceManifestEntry as `Source` nodes,
-  #   reusing `_run_async` (verified: wiki/sources.py:1224) exactly like `_arango_*` (verified: :1289-1395)
+  # wiki/helix_sources.py (new) — implements FEAT-540's SourceManifestBackend (wiki/sources_backend.py): the eleven operations
+  #   (upsert, upsert_many, list_sources, get_source, remove_source, find_id_by_uri, find_by_external_id, find_by_uris,
+  #   find_by_ids, find_by_external_ids, list_by_external_prefix) over `Source` nodes in the wiki database; registered as
+  #   register_source_backend("helixdb", HelixSourceBackend). SourceCollectionManager keeps its sync `_run_async` bridge
+  #   (FEAT-540 M7) — no helix branch inside the manager.
+  class HelixSourceBackend:   # satisfies SourceManifestBackend structurally
+      def __init__(self, settings: HelixSettings) -> None: ...
   ```
 
-### Module 4: Configuration and CLI selection surface (exclusive)
+### Module 4: Configuration fields + registrations (exclusive)
 
-- **Path**: `wiki/models.py` (`:114`), `wiki/project.py` (`:186-230`, `:605`, `:616-627`, new `resolve_helix_params` after `:851`), `wiki/cli.py` (`:670`, `:1520`, backend resolution around `:614-626`), `wiki/entity_cli.py` (help strings `:207,258,374,454`), `wiki/federation.py` (`:418` dispatch comment)
-- **Responsibility**: every place a backend name is validated or chosen accepts `"helixdb"` and exposes the new `helix_*` settings. One task, exclusive (three Literals + two Choice lists + one resolver).
-- **Depends on**: M1 (settings model), M3 (store class)
+- **Path**: `wiki/project.py` (`:616-627` new `helix_*` fields; new `resolve_helix_params` after `:851`); `wiki/store.py` (one `WikiBackendSpec` row in FEAT-540's built-in table); `graphindex/backends.py` (one built-in `GraphBackendSpec` row); `ontology/contracts.py` or `ontology/backends.py` (one `register_ontology_backend` built-in row); `wiki/sources_backend.py` (one built-in source-backend row); `parrot/knowledge/helix/__init__.py` (idempotent explicit registrations for programmatic use); `docs/wiki/helixdb.md`
+- **Responsibility**: expose the `helix_*` settings and make `"helixdb"` a known name in every FEAT-540 registry. **Nothing else**: `Literal`s, `click.Choice` lists, `is_built()`, `storage_path()`, the namespace `database` coercion, `open_namespace_store` dispatch and the `"arangodb"` literal audit are FEAT-540 M7 (`WikiBackendSpec.kind`, `is_server_backend()`, registry-driven choices). One exclusive task because the five registry rows and `project.py` are shared files.
+- **Depends on**: FEAT-540 M7/M8 merged; M1 (settings model), M3 (store class), M7 (persistence class), M8 (ontology class)
 - **Interface Skeleton**:
   ```python
-  # wiki/models.py (modifies :114)
-  storage_backend: Literal["sqlite", "memory", "arangodb", "helixdb"] = Field(default="sqlite", ...)
-
-  # wiki/project.py (modifies :605; adds after :627)
-  backend: Literal["sqlite", "memory", "arangodb", "helixdb"] = Field(default="sqlite")
+  # wiki/project.py (adds after :627)
   helix_database: str | None = Field(default=None, description="HelixDB database (default wiki_<wiki_name>)")
   helix_credentials_env: str = Field(default="HELIXDB", description="Env prefix → HELIXDB_URL / HELIXDB_API_KEY / HELIXDB_MODE")
   helix_mode: Literal["server", "embedded"] = Field(default="server")
 
   def resolve_helix_params(config: WikiProjectConfig, *, root: Path | None = None) -> HelixSettings:
-      """Mirror of resolve_arango_params (verified: wiki/project.py:851) for the helixdb backend."""
+      """Mirror of resolve_arango_params (verified: wiki/project.py:851), every key read through FEAT-540's
+      resolve_setting(key, project_defaults=…) (os.environ → navconfig → project defaults → default)."""
 
-  SERVER_BACKENDS: frozenset[str] = frozenset({"arangodb", "helixdb"})   # design-research S1/S8: one capability set, not per-site string checks
-  class WikiProjectConfig:
-      @property
-      def is_server_backend(self) -> bool: ...
-      def is_built(self, root: Path) -> bool:
-          """(modifies :774-788) helixdb+server → True (deferred to initialize(), like arangodb);
-          helixdb+embedded → (storage_dir/'helix'/<database>).exists(); never the `pages/` fallthrough."""
-
-  # wiki/project.py WikiNamespaceConfig (modifies :186-230 docstring + the validator at :267 that forces backend="arangodb"
-  #   when `database` is set): only force arangodb when backend is unset; "helixdb" + database is a built-in server backend.
-  # wiki/federation.py open_namespace_store (modifies :396-430): pass `arango_params` ONLY to arangodb; pass `helix_settings`
-  #   (resolve_helix_params(_helix_config_for(cfg))) to helixdb; never hand arango kwargs to another backend.
-  # wiki/cli.py (modifies :670 and :1520): click.Choice(["sqlite", "memory", "arangodb", "helixdb"])
-  # wiki/cli.py backend resolution (:614-626): `--backend helixdb` resolves via resolve_helix_params, same precedence as arangodb
-  # Audit (S1): every `== "arangodb"` site in wiki/cli.py (15), wiki/toolkit.py (3), wiki/sync.py (4), wiki/federation.py (4),
-  #   wiki/sources.py (20) is reviewed; sites that mean "server-hosted backend" switch to SERVER_BACKENDS / is_server_backend,
-  #   sites that mean "needs ArangoDB params" stay literal. The task lists each site with its classification.
+  # wiki/store.py — FEAT-540 built-in table gains ONE row (lazy; the module is imported only when selected):
+  #   WikiBackendSpec(name="helixdb", kind="server", factory="parrot.knowledge.wiki.helix_store:helix_wiki_store_factory",
+  #                   resolve_options="parrot.knowledge.wiki.project:resolve_helix_params", extra="helixdb")
+  #   kind="server" ⇒ is_built() returns True (deferred to initialize()), storage_path() has no local plane, namespaces with
+  #   `database` + backend="helixdb" are built-in server entries (no coercion), open_namespace_store passes resolve_options(cfg).
+  #   helix_mode="embedded" is a settings property, not a different backend kind: is_built() for embedded additionally checks
+  #   (storage_dir/"helix"/<database>).exists() through WikiBackendSpec.is_built hook (FEAT-540 provides the hook; this row sets it).
+  # graphindex/backends.py — ONE built-in row:
+  #   GraphBackendSpec(name="helixdb", factory="parrot.knowledge.graphindex.persist_helix:create_helix_persistence",
+  #                    required_options=("settings_factory",), capabilities=("incremental",), extra="helixdb")
+  # ontology backends — ONE built-in row: "helixdb" → "parrot.knowledge.ontology.helix_graph_store:create_helix_ontology_store"
+  # wiki/sources_backend.py — ONE built-in row: "helixdb" → "parrot.knowledge.wiki.helix_sources:HelixSourceBackend"
+  # parrot/knowledge/helix/__init__.py — `register_all()` repeating the four registrations idempotently (for tests / programmatic use).
+  # CLI: `--backend helixdb` and WIKI_STORE_BACKEND=helixdb work because FEAT-540 derives click.Choice from wiki_backend_names().
   ```
 
 ### Module 5: Ledger hard cut — `LedgerTxn` + `HelixLedgerStore`
@@ -551,14 +563,14 @@ from parrot.knowledge.bookstore.helix_projection import BookstoreHelixProjection
   # wiki/schema/service.py (modifies :66 and :82): backend dispatch → HelixSchemaStore(database=f"schema_{wiki_name}")
   ```
 
-### Module 7: `HelixPersistence` (GraphIndex) + persistence resolver
+### Module 7: `HelixPersistence` (GraphIndex)
 
-- **Path**: `graphindex/persist_helix.py` (new); `graphindex/persistence_resolver.py` (new); `graphindex/factory.py` (`:197-261`); `graphindex/loader.py` (`:151-190` ctor, `:288-293`); `wiki/runtime.py` (`:91`); `wiki/cli.py` (`:4011`, `:4108`, `:4561`, `:4623`); `flows/dev_loop/graph_memory.py` (`:142`)
-- **Responsibility**: the GraphIndex plane on HelixDB with the full commit protocol; one resolver so the five direct `SQLitePersistence(...)` sites choose by config.
-- **Depends on**: M1, M4 (config fields)
+- **Path**: `graphindex/persist_helix.py` (new); registration row via M4. **No** `persistence_resolver.py`, no `factory.py` / `loader.py` / `runtime.py` / `cli.py` / `graph_memory.py` edits — FEAT-540 M7 already routes every site through `create_graph_persistence` / `persistence_for_project`, applies the explicit-backend precedence rule (its §3 M6/M7, codex S4 of this spec) and types `GraphPublisher`/`GraphIndexBuilder` to `GraphPersistence`.
+- **Responsibility**: the GraphIndex plane on HelixDB implementing FEAT-540's `GraphPersistence` **semantics** (atomic `apply_update`, strictly monotonic `seq` per tenant, `edge_key` identity, pre-images incl. incident edges, revert-conflict refusal, missing store reads empty, driver errors propagate) and `IncrementalPersistence.is_stale`; passes FEAT-540's backend **conformance suite** on `helix-memory` and `helix-live`.
+- **Depends on**: FEAT-540 M7; M1
 - **Interface Skeleton**:
   ```python
-  # graphindex/persist_helix.py (new) — mirrors SQLitePersistence (verified: graphindex/persist_sqlite.py:138-856)
+  # graphindex/persist_helix.py (new) — satisfies GraphPersistence + IncrementalPersistence (FEAT-540 graphindex/protocols.py) structurally
   GRAPHINDEX_PLANE = PlaneSchema(plane="graphindex", schema_version="1", labels=[GNode(unique node_id, eq kind/source_uri/parent_id, text search_text),
                                  GFile(unique source_uri), GCommit(unique commit_id, eq run_id/agent_id, range seq), GCommitItem(eq item_type/item_key)], edge_labels=["*"])
   class HelixPersistence:
@@ -567,74 +579,54 @@ from parrot.knowledge.bookstore.helix_projection import BookstoreHelixProjection
       async def close(self) -> None: ...
       async def persist_graph(self, ctx: TenantContext, nodes: list[UniversalNode], edges: list[UniversalEdge]) -> dict[str, Any]: ...
       async def replace_document_slice(self, ctx: TenantContext, document_uri: str, nodes: list[UniversalNode], edges: list[UniversalEdge]) -> dict[str, Any]:
-          """ONE write batch: drop GNode/edges with source_uri == document_uri, then add."""
+          """ONE write batch: drop GNode/edges with source_uri == document_uri, then add. Idempotent on identical input (FEAT-540 semantics)."""
       async def is_stale(self, ctx: TenantContext, source_uri: str, mtime: float, sha1: str) -> bool: ...
       async def load_graph(self, ctx: TenantContext) -> tuple[list[UniversalNode], list[UniversalEdge]]: ...
       async def apply_update(self, ctx: TenantContext, update: GraphUpdate) -> CommitReceipt:
-          """Graph change + GCommit + GCommitItems in ONE atomic batch (design-research S5):
-          - edge identity: every edge carries `edge_key = f"{source_id}|{target_id}|{kind}"` (equality index; HelixDB has no
-            unique EDGE index) and find-or-add runs inside the same batch, so one request never duplicates;
-          - commit sequence: `seq` is read-increment-written on the Meta node `gi_commit_seq` inside the same batch
-            (HelixDB serialises write transactions, so the allocation is atomic per tenant database);
-          - pre-images: GCommitItem records node pre-images AND the incident edges dropped with a removed node,
-            so revert can restore them."""
+          """Graph change + GCommit + GCommitItems in ONE atomic batch, honouring FEAT-540's contract (which absorbed this
+          spec's codex S5): edge identity = FEAT-540 `edge_key(source_id, target_id, kind)` stored as an equality-indexed
+          property (HelixDB has no unique EDGE index) with find-or-add inside the same batch; `seq` read-increment-written on
+          the Meta node `gi_commit_seq` inside the same batch (HelixDB serialises write transactions); pre-images record node
+          state AND the incident edges dropped with a removed node."""
       async def get_commit(self, ctx: TenantContext, commit_id: str) -> Optional[dict[str, Any]]: ...
-      async def list_commits(self, ctx: TenantContext, *, run_id: str | None = None, agent_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]: ...
-      async def revert_commit(self, ctx: TenantContext, commit_id: str) -> dict[str, Any]:
-          """Replay items in reverse order inside ONE batch; conflict rule = persist_sqlite.py:856-908 with `seq` in place of
-          rowid: a later commit (higher seq) touching any of this commit's item keys ⇒ revert refused."""
+      async def list_commits(self, ctx: TenantContext, *, limit: int = 50, **filters: Any) -> list[dict[str, Any]]: ...
+      async def revert_commit(self, ctx: TenantContext, commit_id: str, *, agent_id: str, run_id: str | None = None) -> CommitReceipt:
+          """Replay items in reverse order inside ONE batch; conflict rule per FEAT-540 (a later commit touching any of this
+          commit's item keys ⇒ revert refused), `seq` in place of SQLite's rowid."""
 
-  # graphindex/persistence_resolver.py (new)
-  def graphindex_persistence_for(config: WikiProjectConfig, root: Path) -> Any:
-      """config.backend == "helixdb" → HelixPersistence(…gi_<tenant>…) else SQLitePersistence(config.graph_path(root))  # graph_path verified: wiki/project.py:721"""
-
-  # graphindex/factory.py (modifies :253 `elif backend == "postgres":` — adds `elif backend == "helixdb":` + kwargs helix_settings: HelixSettings | None)
-  # graphindex/loader.py (modifies ctor :151 + :290 — design-research S4: explicit, mutually exclusive selection):
-  #   new kwargs `backend: Literal["sqlite", "arangodb", "helixdb"] | None = None`, `helix_settings: Optional[HelixSettings] = None`.
-  #   Precedence: explicit `backend` wins; legacy `sqlite_dir` alone ⇒ "sqlite"; `arango_params` alone ⇒ "arangodb";
-  #   conflicting legacy arguments (e.g. sqlite_dir + backend="helixdb", or sqlite_dir + arango_params) raise ValueError at
-  #   construction — never a silent pick. `build_graph_memory_toolkit` applies the same rule (db_dir ⇒ sqlite unless backend given).
-  # wiki/runtime.py:91, wiki/cli.py:4011/4108/4561/4623, flows/dev_loop/graph_memory.py:142 → graphindex_persistence_for(...)
+  async def create_helix_persistence(*, settings_factory: Callable[[TenantContext], HelixSettings], **_: Any) -> HelixPersistence:
+      """GraphBackendSpec factory target; raises HelixExtraMissing (lazy_import, extra="helixdb") when the SDK is absent."""
+  # persistence_for_project (FEAT-540 wiki/runtime.py) maps WikiProjectConfig.backend == "helixdb" to
+  #   settings_factory=lambda ctx: resolve_helix_params(config, root=root).with_database(f"gi_{ctx.tenant_id}") — this feature
+  #   contributes that mapping as part of the M4 registration row (`GraphBackendSpec.project_options` hook, FEAT-540).
   ```
 
-### Module 8: Ontology typed traversals + `HelixOntologyGraphStore`
+### Module 8: `HelixOntologyGraphStore`
 
-- **Path**: `ontology/graph_store.py` (`:53-271+`); `ontology/helix_graph_store.py` (new); `ontology/factory.py` (new); `ontology/authorization.py` (`:257`, `:339`); `ontology/entity_resolver.py` (`:384`, `:427`); `ontology/mixin.py` (`:337`, `:359`, `:379`); `graphindex/loader.py` (`:313`); `packages/ai-parrot-tools/src/parrot_tools/graphindex/flowtask.py` (`:220`); `parrot_tools/legal/wiki_store.py`; `parrot_tools/legal/boe/sync.py`
-- **Responsibility**: remove raw AQL from callers behind typed traversal methods (resolved Q3), implement them on ArangoDB (AQL inside) and HelixDB (DSL), and give callers a factory.
-- **Scope caveat (design-research S3, escalated as §8 Q1)**: the eight call sites do not only run fixed queries — `mixin.py:337/359/379` execute `ResolvedIntent.aql` (`ontology/intent.py:42,150,212,220`), which is the ontology YAML's `TraversalPattern.query_template` (`ontology/schema.py:261-288`): arbitrary AQL with bind variables declared per ontology. Named methods cannot absorb an open-ended template. Until Q1 is answered, M8's contract is: typed methods cover the fixed queries (`authorization.py:257/339`, `entity_resolver.py:384/427`); template-driven intents keep a scoped `execute_pattern(ctx, pattern, binds)` that ArangoDB implements with AQL and `HelixOntologyGraphStore` implements **only** for patterns that also declare a `traversal_spec`, raising `UnsupportedTraversal` otherwise. The decision between "validated `TraversalSpec` in ontology YAML" and "template patterns stay Arango-only" is the user's (Q1).
-- **Depends on**: M1, M7 (shared `GNode`-style helpers), M4
+- **Path**: `ontology/helix_graph_store.py` (new); registration row via M4. **No** edits to `ontology/graph_store.py`, `authorization.py`, `entity_resolver.py`, `mixin.py`, `graphindex/loader.py`, `parrot_tools/graphindex/flowtask.py`, `parrot_tools/legal/*` — FEAT-540 M8 renames `OntologyGraphStore` → `ArangoOntologyGraphStore`, defines `GraphDocumentStore` / `OntologyTraversalStore`, removes `execute_traversal`, migrates every caller and ships `create_ontology_graph_store`.
+- **Responsibility**: implement **both** FEAT-540 contracts on HelixDB (`ont_<tenant>` database per tenant): the document/edge surface (`initialize_tenant`, `ensure_collection`, `upsert_nodes`, `create_edges`, `get_all_nodes`, `soft_delete_nodes`, `get_document`, `upsert_document`, `insert_document`, `remove_document`, `query_documents`, `get_all_edges`, `edges_incident`, `remove_edge_by_triple`) and the typed traversal surface (`is_reachable`, `get_document_by_id`, `find_by_field`, `search_by_name`, `execute_pattern`, `execute_query`) with the DSL. `dialect = "helix"`. `search_views` (ArangoSearch) are skipped with a logged warning per FEAT-540's rule. **Resolves this spec's former §8 Q1**: template-driven patterns run on HelixDB when the ontology YAML declares `query_templates["helix"]` (a DSL op-tree JSON document with `$param` placeholders bound from `params`/`collection_binds`); patterns with only an AQL template raise FEAT-540's `TraversalPatternUnavailable`; `execute_query` with `dialect != "helix"` raises `QueryDialectMismatch`; this feature registers **no** query validator, so LLM-dynamic generation fails closed on HelixDB (`vector_only` degradation) until a `helix` validator exists (follow-up).
+- **Depends on**: FEAT-540 M8; M1; M7 only for shared label helpers (soft edge)
 - **Interface Skeleton**:
   ```python
-  # ontology/graph_store.py (modifies — adds to OntologyGraphStore, verified: ontology/graph_store.py:53)
-  class OntologyGraphStore:
-      async def _execute_aql(self, ctx: TenantContext, aql: str, bind_vars=None, collection_binds=None) -> list[dict[str, Any]]:
-          """Renamed from execute_traversal (verified :271); private, ArangoDB-only."""
-      # typed surface — exact semantics derived task-time from the AQL at the 8 call sites:
-      async def neighbours(self, ctx: TenantContext, *, start_key: str, start_collection: str, edge_collections: Sequence[str],
-                           direction: Literal["out", "in", "any"] = "any", min_depth: int = 1, max_depth: int = 1,
-                           vertex_filter: Mapping[str, Any] | None = None, limit: int = 100) -> list[dict[str, Any]]:
-          """authorization.py:257/:339 and mixin.py:337/:359/:379 traversals."""
-      async def find_entities(self, ctx: TenantContext, *, collection: str, filters: Mapping[str, Any],
-                              text: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
-          """entity_resolver.py:384/:427 lookups (ArangoSearch view on Arango; BM25 text index on Helix)."""
-      async def path_between(self, ctx: TenantContext, *, src_key: str, dst_key: str, edge_collections: Sequence[str], max_depth: int = 4) -> list[dict[str, Any]]: ...
-      async def execute_pattern(self, ctx: TenantContext, pattern: TraversalPattern, binds: Mapping[str, Any]) -> list[dict[str, Any]]:
-          """Template-driven intents (mixin.py:337/359/379 via ResolvedIntent.aql). ArangoDB: runs pattern.query_template.
-          TraversalPattern verified: ontology/schema.py:261 (query_template :288)."""
-
-  class UnsupportedTraversal(NotImplementedError):
-      """Raised by HelixOntologyGraphStore.execute_pattern for a pattern without a backend-neutral traversal_spec (pending §8 Q1)."""
-
   # ontology/helix_graph_store.py (new)
-  class HelixOntologyGraphStore:
-      """Same public surface as OntologyGraphStore (initialize_tenant :91, upsert_nodes :311, create_edges :411, get_all_nodes :488,
-      soft_delete_nodes :517, ensure_collection :570, get_document :598, upsert_document :622, insert_document :650,
-      remove_document :669, query_documents :697, get_all_edges :738, edges_incident :764, remove_edge_by_triple :791)
-      + the typed surface above; one database per tenant (`ont_<tenant>`)."""
+  class HelixOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):   # FEAT-540 ontology/contracts.py
+      dialect: ClassVar[str] = "helix"
       def __init__(self, settings_factory: Callable[[TenantContext], HelixSettings]) -> None: ...
+      # GraphDocumentStore surface — signatures identical to ArangoOntologyGraphStore (graph_store.py:91-791)
+      # OntologyTraversalStore surface — signatures from FEAT-540 §2:
+      async def is_reachable(self, ctx, start_id, target_id, *, edge_collection, max_depth, direction="outbound") -> bool:
+          """repeat(out_e(edge_collection)).until(dst == target_id) bounded by max_depth; mirrors authorization.py:247-251 AQL."""
+      async def get_document_by_id(self, ctx, doc_id) -> dict | None: ...
+      async def find_by_field(self, ctx, collection, field, value, *, filters=None, limit=2) -> list[dict]: ...
+      async def search_by_name(self, ctx, collection, needle, *, field="name", filters=None, limit=10) -> list[dict]:
+          """text_search on the label's search_text then case-insensitive contains filter + shortest-name-first sort (parity with the AQL LIKE)."""
+      async def execute_pattern(self, ctx, pattern, params, collection_binds=None) -> list[dict]:
+          """query_templates["helix"] → QueryRequest with bound params; TraversalPatternUnavailable when absent."""
+      async def execute_query(self, ctx, query: DynamicQuery) -> list[dict]:
+          """dialect must be "helix"; text is a DSL op-tree JSON document (never AQL)."""
 
-  # ontology/factory.py (new)
-  def ontology_graph_store_for(backend: Literal["arangodb", "helixdb"], **kwargs: Any) -> OntologyGraphStore | HelixOntologyGraphStore: ...
+  def create_helix_ontology_store(*, settings_factory: Callable[[TenantContext], HelixSettings], **_: Any) -> HelixOntologyGraphStore:
+      """register_ontology_backend("helixdb", …) target."""
   ```
 
 ### Module 9: PageIndex projection
@@ -728,28 +720,25 @@ from parrot.knowledge.bookstore.helix_projection import BookstoreHelixProjection
 | `test_helix_store_parity_pages_edges_fts` | M3 | the `SQLiteWikiStore` behavioural cases (upsert/replace slice/delete/neighbors/dump/stats/lint) on `HelixWikiStore` |
 | `test_helix_store_cas` | M3 | clone of `tests/knowledge/wiki/test_store_cas.py` cases |
 | `test_helix_store_attrs` / `test_helix_symbols` | M3 | clones of `test_store_attrs.py` / `test_postgres_symbols.py` cases |
-| `test_helix_sources_manager` | M3 | `SourceCollectionManager(backend="helixdb")` add/list/stale/mark_ingested |
-| `test_create_wiki_store_helixdb_dispatch` | M3/M4 | `create_wiki_store(backend="helixdb")` returns `HelixWikiStore`; unknown still raises |
-| `test_config_literals_accept_helixdb` | M4 | `WikiConfig`, `WikiProjectConfig`, `WikiNamespaceConfig`, CLI `click.Choice` |
+| `test_helix_sources_backend` | M3 | `HelixSourceBackend` passes FEAT-540's `test_source_backend_parity` cases; `SourceCollectionManager(backend="helixdb")` resolves it through `create_source_backend` |
+| `test_create_wiki_store_helixdb_dispatch` | M3/M4 | `create_wiki_store(backend="helixdb")` returns `HelixWikiStore` through the FEAT-540 built-in row; unknown names still raise naming `wiki_backend_names()` |
+| `test_registry_accepts_helixdb` | M4 | `"helixdb"` validates in `WikiConfig`, `WikiProjectConfig`, `WikiEnvOverlay`, `WikiNamespaceConfig` (registry-validated `str`, FEAT-540) and appears in CLI `--backend` choices; `graph_backend_names()`, ontology and source registries list it; without the extra the lazy factory raises `HelixExtraMissing` |
 | `test_ledger_txn_sqlite_and_helix_parity` | M5 | ingest → claim → close → compact on both stores through `LedgerTxn` |
 | `test_ledger_transaction_yields_txn_not_connection` | M5 | hard cut: yielded object has no `.execute` |
 | `test_helix_schema_store_columns` | M6 | `upsert_columns` / `columns_for` / `find_columns` / `replace_schema_slice` parity |
-| `test_persist_helix_parity` | M7 | clone of `test_persist_sqlite.py` cases |
-| `test_commit_protocol_helix` | M7 | clone of `test_persist_commit_protocol.py` (apply/get/list/revert, conflict detection) |
-| `test_graphindex_persistence_resolver` | M7 | sqlite vs helixdb by config; the five call sites use the resolver |
-| `test_typed_traversals_replace_aql` | M8 | no `execute_traversal(` string remains outside `graph_store.py`; `FakeGraphStore` implements the typed surface |
-| `test_helix_ontology_store_surface` | M8 | every `OntologyGraphStore` public method exists on `HelixOntologyGraphStore` and behaves on InMemory |
+| `test_persistence_conformance[helix-memory]` | M7 | FEAT-540's shared conformance suite (apply/revert, monotonic `seq`, slice atomicity + idempotence, missing store reads empty, error propagation, `edge_key` identity, incident-edge pre-images, revert conflict) parametrised with the `helix-memory` fixture; `helix-live` under the reachability gate |
+| `test_graph_backend_registration` | M7 | `graph_backend_spec("helixdb")` declares `capabilities=("incremental",)`; `create_graph_persistence("helixdb", settings_factory=…)` returns `HelixPersistence`; `isinstance(p, GraphPersistence) and isinstance(p, IncrementalPersistence)`; `persistence_for_project` with `backend: helixdb` yields `gi_<wiki_name>` settings |
+| `test_helix_ontology_store_contracts` | M8 | `isinstance(HelixOntologyGraphStore(...), GraphDocumentStore)` and `OntologyTraversalStore`; every typed op behaves on InMemory; FEAT-540's `test_authorization_entity_resolver_typed` fake is replaced by the real Helix store for one run |
 | `test_pageindex_projection_ranks` | M9 | `bm25_rank` / `vector_rank` order vs the `bm25s`/numpy baseline on a fixture tree (top-k set equality) |
 | `test_hybrid_search_delegates_when_projected` | M9 | `_bm25_rank` / `_vec_rank` call the projection; without it the legacy path runs |
 | `test_bookstore_projection_search` | M10 | `Library`-owned projection: card upsert → BM25 search; relations → edges; communities → membership; projection failure ⇒ `projection_stale` + SQLite fallback; `reproject` clears it |
 | `test_pageindex_generation_fallback` | M9 | generation mismatch ⇒ `bm25_rank` returns `None` and `HybridPageIndexSearch` uses the legacy leg; a splice + `_persist` re-projects the whole tree |
 | `test_extras_and_ruff_exemption` | M1 | `helixdb` / `helixdb-embedded` extras present; only `knowledge/helix/client.py` imports `httpx`-dependent `helixdb.async_client` |
 | `test_search_fts_archive_default_and_score_scale` | M3 | `category=None` excludes `archive`; explicit category filters; `search_vector` score ∈ [-1,1] = `1 - $distance`; zero vector ⇒ `[]` |
-| `test_loader_backend_precedence` | M7 | explicit `backend` wins; `sqlite_dir` alone ⇒ sqlite; conflicting legacy args ⇒ `ValueError` |
 | `test_commit_seq_and_edge_key_atomic` | M7 | concurrent `apply_update` via two clients ⇒ distinct `seq`, no duplicate `edge_key`; node removal records incident edges; revert restores them |
 | `test_ledger_reader_protocol` | M5 | `LedgerService` reads go through `ledger_read()`; no `_read()` / `aiosqlite` in `ledger/service.py`, `index.py`, `sdd_ingest.py` |
-| `test_is_built_and_server_backends` | M4 | `is_built()` for helixdb server/embedded; `SERVER_BACKENDS` sites in cli/toolkit/sync/federation/sources classified; namespace `database` + `backend: helixdb` is not coerced to arangodb |
-| `test_execute_pattern_unsupported` | M8 | `HelixOntologyGraphStore.execute_pattern` raises `UnsupportedTraversal` for a template-only pattern; ArangoDB store runs it |
+| `test_helix_backend_kind_server` | M4 | the `"helixdb"` `WikiBackendSpec` has `kind="server"`: `is_built()` is True in server mode and checks `storage_dir/helix/<database>` in embedded mode; a namespace with `database` + `backend: helixdb` opens through `open_namespace_store` with `resolve_helix_params` options and is not coerced (FEAT-540 behaviour, exercised with the helix row) |
+| `test_execute_pattern_helix_dialect` | M8 | a pattern with `query_templates["helix"]` runs on `HelixOntologyGraphStore`; an AQL-only pattern raises `TraversalPatternUnavailable`; `execute_query(DynamicQuery(dialect="aql"))` raises `QueryDialectMismatch`; dynamic generation degrades to `vector_only` (no `helix` validator registered) |
 | `wiki_store_matrix` parametrised suites | M11 | CAS, attrs, symbols, replace-slice, read-only writes, close/reopen, bootstrap failure on `sqlite` / `helix-memory` / `helix-live` |
 | `test_native_wheel_imports` / `test_async_only_usage` | M11 | compatibility gate (S10) |
 
@@ -788,12 +777,12 @@ def helix_live_settings():
 ## 5. Acceptance Criteria
 
 - [ ] **AC1** `create_wiki_store(storage_dir, backend="helixdb", …)` returns a `HelixWikiStore`; every `BaseWikiStore` abstract method and the attrs/meta/symbols/CAS surface pass the parity suites on embedded `InMemory` (M3, M11).
-- [ ] **AC2** `backend: helixdb` is accepted by `WikiConfig.storage_backend`, `WikiProjectConfig.backend`, `WikiNamespaceConfig`, `wikitoolkit build --backend helixdb`, `WIKI_STORE_BACKEND=helixdb`, and `SourceCollectionManager(backend="helixdb")`; unknown names still raise `ValueError` (M4).
+- [ ] **AC2** `backend: helixdb` is accepted by `WikiConfig.storage_backend`, `WikiProjectConfig.backend`, `WikiEnvOverlay`, `WikiNamespaceConfig`, `wikitoolkit build --backend helixdb`, `WIKI_STORE_BACKEND=helixdb` and `SourceCollectionManager(backend="helixdb")` **solely through the FEAT-540 registries** (one `WikiBackendSpec` row + one source-backend row); `grep -rn '"helixdb"' packages/ai-parrot/src/parrot/knowledge/wiki/{models,cli,entity_cli,federation,sources,toolkit,sync}.py` returns nothing; unknown names still raise `ValueError` naming `wiki_backend_names()` (M4).
 - [ ] **AC3** Selecting `helixdb` without the extra raises an error naming `ai-parrot[helixdb]` (or `[helixdb-embedded]` for embedded mode) — never a silent fallback (M1).
-- [ ] **AC4** `HelixPersistence` passes clones of `test_persist_sqlite.py` and `test_persist_commit_protocol.py`; `build_graph_memory_toolkit(backend="helixdb")` and `GraphIndexLoader(helix_settings=…)` work; the five direct `SQLitePersistence(...)` call sites go through `graphindex_persistence_for` (M7).
+- [ ] **AC4** `HelixPersistence` passes FEAT-540's backend conformance suite on `helix-memory` (and `helix-live` when reachable); `graph_backend_spec("helixdb")` exists with `capabilities=("incremental",)`; `build_graph_memory_toolkit(backend="helixdb", settings_factory=…)`, `GraphIndexLoader(backend="helixdb", helix_settings=…)` and `persistence_for_project` (config `backend: helixdb`) all resolve through `create_graph_persistence`; this feature adds no persistence resolver or dispatch branch (M7).
 - [ ] **AC5** `ledger_transaction()` yields a `LedgerTxn` on both stores; `grep -rn "aiosqlite.Connection" packages/ai-parrot/src/parrot/knowledge/wiki/ledger/index.py sdd_ingest.py` is empty; `wikitoolkit ledger` commands pass on both backends (M5).
 - [ ] **AC6** `HelixSchemaStore` passes the schema-plane column tests; `SchemaPlaneService` dispatches by backend (M6).
-- [ ] **AC7** No caller outside `ontology/graph_store.py` references `execute_traversal`; the eight former call sites use typed methods; `HelixOntologyGraphStore` exposes every public method of `OntologyGraphStore`; `parrot_tools` callers use `ontology_graph_store_for` (M8).
+- [ ] **AC7** `HelixOntologyGraphStore` is an instance of both FEAT-540 contracts (`GraphDocumentStore`, `OntologyTraversalStore`), declares `dialect == "helix"`, is registered as `create_ontology_graph_store("helixdb", …)`, runs `query_templates["helix"]` patterns, raises `TraversalPatternUnavailable` / `QueryDialectMismatch` as specified, and registers no query validator; the AQL call-site migration is verified by FEAT-540's own criteria, not re-tested here (M8).
 - [ ] **AC8** With a projection configured, `HybridPageIndexSearch` BM25 and vector legs return the same top-k set as the `bm25s`/numpy path on the fixture tree; without one, behaviour is byte-identical to today (M9).
 - [ ] **AC9** `CatalogStore.search()` delegates to HelixDB when projected and is unchanged otherwise; relations and communities are mirrored (M10).
 - [ ] **AC10** Vector indexes are created lazily per dimension; a query vector with no matching index returns `[]` with a warning, never an exception (M1/M3).
@@ -802,12 +791,12 @@ def helix_live_settings():
 - [ ] **AC13** `sdd/state/FEAT-670/spike-embedded-two-writers.md` records the observed error class, and `helix_mode=embedded` is refused while `wiki.lock` is held, with a message pointing to server mode (M2/M3).
 - [ ] **AC14** Extras `helixdb` and `helixdb-embedded` exist; root `dev` group installs both wheels; `ruff check` passes with `TID251` exempted **only** for `parrot/knowledge/helix/client.py`; no sync `helixdb.Client` is used anywhere (M1).
 - [ ] **AC15** CI (`uv sync --all-packages`) runs the embedded unit tier; live tests are `-m live` and skip without `HELIXDB_URL` (M11).
-- [ ] **AC16** No file under `wiki/arango_store.py`, `graphindex/persist.py`, `docker/arango/` changes except the typed-traversal additions in `ontology/graph_store.py`; no deprecation warning mentions ArangoDB (Q8).
+- [ ] **AC16** No file under `wiki/arango_store.py`, `graphindex/persist_arango.py` (FEAT-540's name for the ArangoDB persistence), `ontology/graph_store.py` or `docker/arango/` changes; no deprecation warning mentions ArangoDB (Q8).
 - [ ] **AC17** `ruff check --fix` and the feature's merge-tier selection pass; docs updated (`docs/wiki/helixdb.md`, cheatsheet).
 - [ ] **AC18** `search_fts(category=None)` excludes `archive`; `search_vector` scores are `1 - $distance` in [-1, 1]; zero vectors return `[]` (S12).
-- [ ] **AC19** `WikiProjectConfig.is_built()` never falls through to the `pages/` probe for `helixdb`; a namespace with `database` + `backend: helixdb` is not coerced to `arangodb`; `open_namespace_store` never passes `arango_params` to a non-ArangoDB backend (S1, S8).
-- [ ] **AC20** `GraphIndexLoader` / `build_graph_memory_toolkit` apply the explicit-backend precedence rule and raise on conflicting legacy arguments (S4).
-- [ ] **AC21** `HelixPersistence` edges carry `edge_key`; `seq` is allocated inside the commit batch; node removal records incident edges and `revert_commit` restores them; `test_commit_seq_and_edge_key_atomic` passes on `helix-live` (S5).
+- [ ] **AC19** With the `"helixdb"` `WikiBackendSpec(kind="server")` row in place, FEAT-540's `is_built()` / namespace / `open_namespace_store` behaviour holds for HelixDB: no `pages/` fall-through, no coercion to `arangodb`, `resolve_helix_params` options passed — exercised by `test_helix_backend_kind_server` (S1, S8 — generic parts absorbed into FEAT-540 M7).
+- [ ] **AC20** *(moved to FEAT-540 M6/M7 — codex S4)* the explicit-backend precedence rule is FEAT-540's; this feature only verifies that `backend="helixdb"` + `helix_settings` is accepted and that `helix_settings` without `backend` raises the FEAT-540 `ValueError` (S4).
+- [ ] **AC21** `HelixPersistence` honours FEAT-540's `GraphPersistence` contract (which absorbed S5): `edge_key` identity, `seq` allocated inside the commit batch, incident-edge pre-images, revert-conflict refusal; `test_commit_seq_and_edge_key_atomic` passes on `helix-live` (S5).
 - [ ] **AC22** PageIndex projection is generation-based with legacy fallback on mismatch; BookStore projection lives in `Library`, `CatalogStore` is unmodified, projection failure never fails the canonical write (S6, S7).
 - [ ] **AC23** `docs/wiki/helixdb.md` documents the migration path per plane: wiki/graphindex = rebuild from canonical sources (`wikitoolkit build --backend helixdb`), ledger = `wikitoolkit ledger rebuild` event-log replay, pageindex/bookstore = `reproject`; `test_rebuild_from_canonical_sources` passes (S11 confirmed part).
 - [ ] **AC24** The compatibility gate (`test_native_wheel_imports`, `test_async_only_usage`, live `test_sdk_speaks_to_pinned_image`) exists and is green (S10).
@@ -846,6 +835,17 @@ from parrot.knowledge.pageindex.embedding_store import NodeEmbeddingStore  # ver
 from parrot.knowledge.bookstore.catalog import CatalogStore  # verified: bookstore/catalog.py:163
 from parrot.knowledge.bookstore.models import BookCard, BookRelation, BookCommunity  # used by catalog.py:286,484,665 (row mappers)
 from parrot._imports import lazy_import  # verified: parrot/_imports.py:110
+# ── Provided by FEAT-540 v0.5 (NOT on dev yet — verify after FEAT-540 merges; /sdd-task must re-anchor) ──
+from parrot.knowledge.graphindex.protocols import GraphPersistence, IncrementalPersistence, EmbeddingPersistence, CapabilityUnavailable  # FEAT-540 M7
+from parrot.knowledge.graphindex.backends import GraphBackendSpec, register_graph_backend, create_graph_persistence, graph_backend_spec  # FEAT-540 M7
+from parrot.knowledge.wiki.runtime import persistence_for_project                                     # FEAT-540 M7
+from parrot.knowledge.wiki.store import WikiBackendSpec, wiki_backend_names, resolve_wiki_backend       # FEAT-540 M7 (register_wiki_backend exists today: store.py:539)
+from parrot.knowledge.wiki.sources_backend import SourceManifestBackend, register_source_backend, create_source_backend  # FEAT-540 M7
+from parrot.knowledge.wiki.project import resolve_setting                                            # FEAT-540 M4
+from parrot.knowledge.ontology.contracts import GraphDocumentStore, OntologyTraversalStore, DynamicQuery, register_ontology_backend, create_ontology_graph_store  # FEAT-540 M8
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore                            # FEAT-540 M8 (today: OntologyGraphStore, graph_store.py:53)
+from parrot.knowledge.ontology.exceptions import TraversalPatternUnavailable, QueryDialectMismatch, QueryValidationError  # FEAT-540 M8
+from parrot.knowledge.ontology.schema import TraversalPattern   # gains query_templates: dict[str, str] in FEAT-540 M8 (today schema.py:261)
 # external (after the extra is installed) — verified against the unpacked helix_db-0.3.4 wheel:
 from helixdb import AsyncClient, Disk, InMemory, HelixError, IndexSpec, Predicate, BatchCondition, VectorDistanceMetric, NodeRef, g, read_batch, write_batch, define_params, QueryRequest
 # embedded runtime (only inside AsyncClient.embedded): import helixdb_uniffi  — verified: helixdb/client.py:281 (_native_helixdb)
@@ -929,17 +929,15 @@ class AsyncClient:
 ### Integration Points
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
-| `HelixWikiStore` | `create_wiki_store()` | new `backend == "helixdb"` branch | `wiki/store.py:2730-2741` |
-| `HelixWikiStore` | `open_namespace_store()` | built-in database-kind backend | `wiki/federation.py:362,418` |
-| `resolve_helix_params` | `_env_credential` | env chain | `wiki/project.py:822,851` |
+| `HelixWikiStore` | `create_wiki_store()` / `open_namespace_store()` | one `WikiBackendSpec(name="helixdb", kind="server")` row in FEAT-540's built-in table (lazy factory path) | `wiki/store.py:2665` (today's branches; table lands with FEAT-540 M7), `wiki/federation.py:362,418` |
+| `HelixSourceBackend` | `SourceCollectionManager`, `LLMWikiToolkit` | `register_source_backend("helixdb", …)` → `create_source_backend` (FEAT-540 M7) | `wiki/sources.py:148`, `wiki/toolkit.py:139-161` (today's selection sites) |
+| `resolve_helix_params` | FEAT-540 `resolve_setting()` (mirrors `resolve_arango_params`) | settings chain | `wiki/project.py:822,851` (today's readers) |
 | `HelixLedgerStore` | `LedgerService.from_root/from_dir` | backend dispatch | `wiki/ledger/service.py:140,164` |
 | `LedgerTxn` | `ledger/index.py`, `ledger/sdd_ingest.py` | `async with store.ledger_transaction(...)` | `index.py:276,359,440,477,511,548`; `sdd_ingest.py:99,195` |
 | `HelixSchemaStore` | `SchemaPlaneService` | backend dispatch | `wiki/schema/service.py:66,82` |
-| `HelixPersistence` | `GraphPublisher(persistence, ctx)` | duck-typed | `graphindex/publish.py:47` |
-| `graphindex_persistence_for` | runtime / cli / dev_loop sites | replaces direct ctor | `wiki/runtime.py:91`; `wiki/cli.py:4011,4108,4561,4623`; `flows/dev_loop/graph_memory.py:142` |
-| `HelixPersistence` | `build_graph_memory_toolkit`, `GraphIndexLoader` | `backend="helixdb"` / `helix_settings=` | `graphindex/factory.py:253`; `loader.py:290` |
-| typed traversals | `authorization`, `entity_resolver`, `mixin` | method calls replacing `execute_traversal` | `authorization.py:257,339`; `entity_resolver.py:384,427`; `mixin.py:337,359,379` |
-| `ontology_graph_store_for` | `GraphIndexLoader`, `parrot_tools` callers | factory | `graphindex/loader.py:313`; `parrot_tools/graphindex/flowtask.py:220` |
+| `HelixPersistence` | `GraphPublisher(persistence: GraphPersistence, ctx)` | satisfies FEAT-540's `GraphPersistence` + `IncrementalPersistence` structurally | `graphindex/publish.py:47` (typed by FEAT-540 M7) |
+| `HelixPersistence` | `create_graph_persistence("helixdb", …)`, `persistence_for_project`, `build_graph_memory_toolkit(backend="helixdb")`, `GraphIndexLoader(backend="helixdb")` | one `GraphBackendSpec` row (+ `project_options`) in FEAT-540's registry | `graphindex/factory.py:249-261`, `loader.py:288-313`, `wiki/runtime.py:91`, `wiki/cli.py:4011,4108,4561,4623` (today's dispatch sites; rewired by FEAT-540 M7) |
+| `HelixOntologyGraphStore` | `AuthorizationChecker`, `EntityResolver`, `OntologyRAGMixin`, `ArangoPersistence`-style composition, `GraphIndexLoader`, `parrot_tools` | implements FEAT-540's `GraphDocumentStore` + `OntologyTraversalStore`; `register_ontology_backend("helixdb", …)` → `create_ontology_graph_store` | `authorization.py:55`, `entity_resolver.py:116`, `mixin.py:120` (constructor kwargs typed by FEAT-540 M8); `loader.py:305`, `flowtask.py:220` (today's constructions) |
 | `PageIndexHelixProjection` | `HybridPageIndexSearch._bm25_rank/_vec_rank` | delegation when set | `pageindex/hybrid_search.py:177,199` |
 | `BookstoreHelixProjection` | `CatalogStore.search` / `Library` | delegation when set | `bookstore/catalog.py:409`; `library.py:230` |
 
@@ -949,14 +947,16 @@ class AsyncClient:
 - ~~`AsyncClient.graph()`~~ — native graph algorithms exist only on the sync `Client.graph()`; not used here.
 - ~~`AsyncClient.cypher()`, `/v2/cypher` in this feature~~ — out of scope (Q3).
 - ~~`SearchConsistency` on Python 0.3.4 requests~~ — not available in this SDK version.
-- ~~`parrot.knowledge.helix`, `HelixWikiStore`, `HelixPersistence`, `HelixOntologyGraphStore`, `HelixLedgerStore`, `HelixSchemaStore`, `PageIndexHelixProjection`, `BookstoreHelixProjection`, `LedgerTxn`, `graphindex_persistence_for`, `ontology_graph_store_for`, `resolve_helix_params`, `HELIXDB_*` settings~~ — all created by this feature.
-- ~~A `BasePersistence` ABC for GraphIndex backends~~ — duck-typed (`GraphPublisher.__init__(persistence: Any)`).
+- ~~`parrot.knowledge.helix`, `HelixWikiStore`, `HelixSourceBackend`, `HelixPersistence`, `HelixOntologyGraphStore`, `HelixLedgerStore`, `HelixSchemaStore`, `PageIndexHelixProjection`, `BookstoreHelixProjection`, `LedgerTxn`, `LedgerReader`, `resolve_helix_params`, `HELIXDB_*` settings~~ — all created by this feature.
+- ~~`graphindex_persistence_for`, `persistence_resolver.py`, `ontology_graph_store_for`, `ontology/factory.py`, `UnsupportedTraversal`, `SERVER_BACKENDS`, `is_server_backend` (as this feature's symbols)~~ — **dropped in v0.3**: FEAT-540 provides `create_graph_persistence` / `persistence_for_project`, `create_ontology_graph_store`, `TraversalPatternUnavailable`, `WikiBackendSpec.kind` / `is_server_backend()`.
+- ~~`GraphPersistence`, `GraphBackendSpec`, `GraphDocumentStore`, `OntologyTraversalStore`, `WikiBackendSpec`, `SourceManifestBackend`, `TraversalPattern.query_templates` on today's `dev`~~ — FEAT-540 creates them; until it merges they do not exist (that is why FEAT-540 is a hard cross-feature dependency).
+- ~~A `BasePersistence` ABC for GraphIndex backends on today's `dev`~~ — duck-typed (`GraphPublisher.__init__(persistence: Any)`); FEAT-540 M7 replaces that with the `GraphPersistence` Protocol.
 - ~~`BaseWikiStore.close()` / `initialize()` abstract methods~~ — only concrete backends define them; consumers never call them generically.
 - ~~A SQLite-backed PageIndex (`pageindex/*.db`)~~ — PageIndex is JSON + markdown + `.npy`.
 - ~~A HelixDB driver in `asyncdb`~~ — none; the provider uses `helix-db` directly.
 - ~~`docker/helixdb/`, Makefile `docker-helixdb`, extras `helixdb` / `helixdb-embedded`, a `helixdb-embedded` Makefile target~~ — the first three are created; the embedded target is deliberately **not** created (Q2).
 - ~~`WikiNamespaceConfig.backend` Literal containing `"helixdb"`~~ — today free-form for satellite backends; this feature makes `"helixdb"` built-in.
-- ~~`OntologyGraphStore.neighbours / find_entities / path_between`~~ — added by M8; today only `execute_traversal(aql)` exists.
+- ~~`OntologyGraphStore.neighbours / find_entities / path_between`~~ — never created; the typed surface is FEAT-540's `is_reachable / get_document_by_id / find_by_field / search_by_name / execute_pattern / execute_query`.
 - ~~`tests/knowledge/helix/`~~ — created by M11.
 
 ### Edit Sites (Blueprint Anchors)
@@ -983,24 +983,12 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
 | `docs/wiki/helixdb.md` | CREATE | — | — | — |
 | `sdd/state/FEAT-670/spike-embedded-two-writers.md` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/helix_store.py` | CREATE | — | — | — |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` | MODIFY | `    if backend in _EXTRA_BACKENDS:` | `store.py:2741` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/sources.py` | MODIFY | `        backend: Literal["sqlite", "json", "arangodb"] = "sqlite",` | `sources.py:148` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/sources.py` | MODIFY | `        if backend not in ("sqlite", "json", "arangodb"):` | `sources.py:184` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/models.py` | MODIFY | `    storage_backend: Literal["sqlite", "memory", "arangodb"] = Field(` | `models.py:114` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/project.py` | MODIFY | `    backend: Literal["sqlite", "memory", "arangodb"] = Field(default="sqlite")` | `project.py:605` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/helix_sources.py` | CREATE | — | — | — |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` | MODIFY | built-in `WikiBackendSpec` table (FEAT-540 M7) — one `"helixdb"` row after the `"postgres"` row | (unverified — created by FEAT-540; check before use) | — |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/sources_backend.py` | MODIFY | built-in source-backend table (FEAT-540 M7) — one `"helixdb"` row | (unverified — created by FEAT-540; check before use) | — |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/project.py` | MODIFY | `    arango_text_analyzer: str = Field(` | `project.py:624` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/project.py` | MODIFY | `def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:` | `project.py:851` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/project.py` | MODIFY | `    def is_built(self, root: Path) -> bool:` | `project.py:774` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/project.py` | MODIFY | `            object.__setattr__(self, "backend", "arangodb")` | `project.py:267` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/federation.py` | MODIFY | `            arango_params=resolve_arango_params(_arango_config_for(cfg)),` | `federation.py:425` (within :396-430) | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/toolkit.py`, `wiki/sync.py` | MODIFY | `"arangodb"` string checks (3 and 4 sites) — classify per S1; multi-occurrence, task quotes context | (counts verified; lines task-time) | 3 / 4 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` | MODIFY | `        type=click.Choice(["sqlite", "memory", "arangodb"]),` (inside `_store_options`, after `"backend_opt",`) | `cli.py:670` | 2 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` | MODIFY | `    type=click.Choice(["sqlite", "memory", "arangodb"]),` (top-level `build` option, after `"--backend",`) | `cli.py:1520` | 2 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` | MODIFY | `        persistence = SQLitePersistence(config.graph_path(root))` (3 sites: `:4011`, `:4561` nested at deeper indent, `:4623`) | `cli.py:4011,4561,4623` | 3 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` | MODIFY | `GraphPublisher(SQLitePersistence(config.graph_path(root)), ctx)` | `cli.py:4108` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/entity_cli.py` | MODIFY | `help="Backend (default: sqlite / WIKI_STORE_BACKEND)."` | `entity_cli.py:258,374,454` | 3 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/runtime.py` | MODIFY | `        persistence = SQLitePersistence(config.graph_path(root))` | `runtime.py:91` | 1 |
-| `packages/ai-parrot/src/parrot/flows/dev_loop/graph_memory.py` | MODIFY | `        persistence = SQLitePersistence(Path(db_dir))` | `graph_memory.py:142` | 1 |
+| ~~`wiki/models.py:114`, `project.py:605,267,774`, `federation.py:425`, `cli.py:670,1520,4011,4108,4561,4623`, `entity_cli.py`, `runtime.py:91`, `graph_memory.py:142`, `toolkit.py`/`sync.py` literals~~ | — | **owned by FEAT-540 M7** (registry-validated names, `kind`-driven `is_built`/dispatch, registry-driven choices, `persistence_for_project`); not touched here | — | — |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/store.py` | MODIFY | `    async def ledger_transaction(self, operation: str) -> AsyncIterator[aiosqlite.Connection]:` | `ledger/store.py:54` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/helix_store.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/index.py` | MODIFY | `        async with self.store.ledger_transaction("ledger.sync") as new_conn:` | `index.py:276` | 1 |
@@ -1020,18 +1008,10 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
 | `packages/ai-parrot/src/parrot/knowledge/wiki/schema/service.py` | MODIFY | `        store = SchemaStore(` (in `from_root`, followed by a multi-line call) | `schema/service.py:66` | 2 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/schema/service.py` | MODIFY | `        store = SchemaStore(plane_dir / "schema.db", wiki_name="schema", read_only=read_only)` | `schema/service.py:82` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/graphindex/persist_helix.py` | CREATE | — | — | — |
-| `packages/ai-parrot/src/parrot/knowledge/graphindex/persistence_resolver.py` | CREATE | — | — | — |
-| `packages/ai-parrot/src/parrot/knowledge/graphindex/factory.py` | MODIFY | `    elif backend == "postgres":` | `factory.py:253` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/graphindex/loader.py` | MODIFY | `        if self._sqlite_dir is not None:` | `loader.py:290` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/ontology/graph_store.py` | MODIFY | `    async def execute_traversal(` | `graph_store.py:271` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/backends.py` | MODIFY | built-in `GraphBackendSpec` table (FEAT-540 M7) — one `"helixdb"` row | (unverified — created by FEAT-540; check before use) | — |
 | `packages/ai-parrot/src/parrot/knowledge/ontology/helix_graph_store.py` | CREATE | — | — | — |
-| `packages/ai-parrot/src/parrot/knowledge/ontology/factory.py` | CREATE | — | — | — |
-| `packages/ai-parrot/src/parrot/knowledge/ontology/authorization.py` | MODIFY | `                results = await self._graph_store.execute_traversal(` | `authorization.py:257,339` | 2 |
-| `packages/ai-parrot/src/parrot/knowledge/ontology/entity_resolver.py` | MODIFY | `        return await self._graph_store.execute_traversal(` | `entity_resolver.py:384,427` | 2 |
-| `packages/ai-parrot/src/parrot/knowledge/ontology/mixin.py` | MODIFY | `primary_result = await self._ont_graph_store.execute_traversal(` / `secondary_result = …` / `single_result = …` | `mixin.py:337,359,379` | 1 each |
-| `packages/ai-parrot-tools/src/parrot_tools/graphindex/flowtask.py` | MODIFY | `        return GraphIndexPersistence(graph_store=store)` | `flowtask.py:220` | 1 |
-| `packages/ai-parrot-tools/src/parrot_tools/legal/wiki_store.py` | MODIFY | `OntologyGraphStore(` | (unverified line — check before use) | ≥1 |
-| `packages/ai-parrot-tools/src/parrot_tools/legal/boe/sync.py` | MODIFY | `OntologyGraphStore(` | (unverified line — check before use) | ≥1 |
+| `packages/ai-parrot/src/parrot/knowledge/ontology/contracts.py` | MODIFY | built-in ontology-backend table (FEAT-540 M8) — one `"helixdb"` row | (unverified — created by FEAT-540; check before use) | — |
+| ~~`graphindex/factory.py:253`, `loader.py:290`, `ontology/graph_store.py:271`, `authorization.py`, `entity_resolver.py`, `mixin.py`, `parrot_tools/graphindex/flowtask.py:220`, `parrot_tools/legal/*`~~ | — | **owned by FEAT-540 M7/M8** (registry dispatch, precedence rule, typed traversals, caller migration); not touched here | — | — |
 | `packages/ai-parrot/src/parrot/knowledge/pageindex/helix_projection.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/knowledge/pageindex/hybrid_search.py` | MODIFY | `    def _bm25_rank(self, query: str, top_k: int) -> list[str]:` | `hybrid_search.py:177` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/pageindex/hybrid_search.py` | MODIFY | `    def _vec_rank(self, query: str, top_k: int) -> list[str]:` | `hybrid_search.py:199` | 1 |
@@ -1044,27 +1024,27 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
 | `packages/ai-parrot/src/parrot/knowledge/bookstore/catalog.py` | — | **not modified** (S7: projection lives in `Library`) | — | — |
 | `packages/ai-parrot/tests/knowledge/helix/…` and the per-plane `test_helix_*.py` files listed in M11 | CREATE | — | — | — |
 
-- `/sdd-task` MUST re-run `grep -c` for every row it uses; FEAT-540 and FEAT-633 may move these lines before task time.
+- `/sdd-task` MUST re-run `grep -c` for every row it uses, and MUST run only after FEAT-540 has merged to `dev`: the `(unverified — created by FEAT-540)` rows become verifiable then, and FEAT-633 may move the remaining lines.
 
 ---
 
 ## 7. Implementation Notes & Constraints
 
 ### Patterns to Follow
-- **Lazy optional import**: `create_wiki_store` imports `helix_store` inside the branch exactly like `arangodb` (`wiki/store.py:2719`) and `postgres` (`:2730`); `factory.py` likewise (`:254-259`). `parrot.knowledge.helix.client` guards `import helixdb` with `lazy_import("helixdb", package_name="helix-db", extra="helixdb")` and `helixdb_uniffi` with `extra="helixdb-embedded"`.
-- **Env resolution**: `resolve_helix_params` copies `resolve_arango_params` (`project.py:851`): prefix from `helix_credentials_env`, each key through `_env_credential` (os.environ → navconfig → default). Never read `.env` directly.
+- **Register, never branch**: every selection seam is a FEAT-540 registry with lazy `module:callable` factory paths; this feature adds rows, never `if backend == "helixdb"` branches. `parrot.knowledge.helix.client` guards `import helixdb` with `lazy_import("helixdb", package_name="helix-db", extra="helixdb")` and `helixdb_uniffi` with `extra="helixdb-embedded"`, so an unselected backend costs no import.
+- **Env resolution**: `resolve_helix_params` mirrors `resolve_arango_params` (`project.py:851`) on top of FEAT-540's `resolve_setting()` (explicit → os.environ → navconfig → project defaults → default). Never read `.env` directly.
 - **Server precedent**: `ArangoDBWikiStore` (`wiki/arango_store.py:137`) is the model for `initialize()` / `close()` / `read_only` / symbols surface; `PostgresWikiStore` (`postgres_store.py:127`) for DSN defaults and lazy-import error text.
 - **Sync bridges**: `SourceCollectionManager._run_async` (`sources.py:1224`) and the `_arango_*` branch (`:1289-1395`) are the template for the `_helix_*` branch and for the BookStore projection driven from the synchronous `CatalogStore`.
 - **One batch per public write**; never two round-trips for a logical write. Reads project only the columns consumers expect (match `SQLiteWikiStore` row dicts key-for-key).
 - **Bootstrap, not migration**: `ensure_plane` runs lazily on first use per store instance and is idempotent; never on import.
 - **Errors**: map every `HelixError` at the client wrapper; backends raise `HelixUnavailable` / `HelixWriteRejected` / `PermissionError` (read-only) only. Hook paths (`wikitoolkit upsert --changed`) treat `HelixUnavailable` like `WikiStoreBusy`: log, exit 0.
-- **Typed traversals first**: derive each method's semantics from the AQL it replaces (cite the call site in the task), keep the AQL inside `OntologyGraphStore`, never a string query in a caller.
+- **Implement the contracts, do not redefine them**: `HelixPersistence` and `HelixOntologyGraphStore` satisfy FEAT-540's Protocols/ABCs exactly (same signatures, same semantics); any gap found while implementing is a FEAT-540 amendment (ledger issue against `spec:FEAT-540`), never a local deviation.
 - **Projections are opt-in**: `PageIndexToolkit` / `Library` build a projection only when settings resolve AND the plane config enables it; absent projection ⇒ byte-identical legacy behaviour.
 - **Tests**: embedded `InMemory` with a per-test database name; `pytest.importorskip("helixdb_uniffi")` at module top; live tests `pytest.mark.live` + reachability skip.
 - Conventions: Google docstrings, strict typing, `self.logger`, Pydantic v2, 120 cols; `aiohttp` for the readiness probe (never `httpx` outside `helix/client.py`).
 
 ### Known Risks / Gotchas
-- **FEAT-540 / FEAT-633 overlap** (user decision: proceed): TASK-3266/3267 touch `graphindex/loader.py` and `ontology/graph_store.py`; TASK-4092/4093 touch `wiki/store.py:1107-1497` and `project.py:38-110`. Every `/sdd-task` blueprint re-greps its anchor; merge conflicts are expected and resolved at merge time, not avoided.
+- **FEAT-540 is a hard dependency** (v0.3): the registries, contracts, `persistence_for_project`, `resolve_setting`, `ArangoOntologyGraphStore` and `TraversalPattern.query_templates` do not exist on `dev` until FEAT-540 merges. Creating this worktree earlier would re-implement FEAT-540 by accident. FEAT-633 (TASK-4092/4093, `wiki/store.py:1107-1497`, `project.py:38-110`) still overlaps `project.py`; merge-time reconciliation.
 - **No upsert in HelixDB**: forgetting the conditional entry produces duplicate nodes; the unique equality index then blocks the write with `unique violation` — treat as a bug, never retry blindly ("Do not retry a write automatically unless the full request is safe to replay", HelixDB docs).
 - **Multigraph edges**: every `add_e` without the find-first helper duplicates edges; lint `broken_edges`/`index_drift` must count duplicates.
 - **Async index DDL**: a search right after `create_*_index*` returns nothing until the backfill is active; `ensure_plane` must poll receipts (`get_index_operation`) and the bootstrap timeout (`index_ready_timeout_s`) must be generous on the first build of a large plane.
@@ -1080,7 +1060,7 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
 - **PageIndex ranking parity** is set-equality on top-k, not order equality: HelixDB's BM25 analyzer differs from `bm25s` tokenisation (stopwords="en"); AC8 is deliberately set-based.
 - **Switching a backend is not a migration** (design-research S11): the OKF export (`wiki/export.py:130`) is a pages/edges projection, not full fidelity (attrs, symbols, meta, embeddings, source state are not exported). Pointing `backend: helixdb` at an existing project opens an **empty** plane; the documented path is a canonical-source rebuild per plane (AC23). A cross-backend copy tool is §8 Q2.
 - **Cross-client edge races** (S5): HelixDB has no unique edge index. Within one request the find-or-add helper is atomic; across two HTTP clients a duplicate `edge_key` is possible. `GraphPublisher` writes are already serialised per tenant in-process; cross-process duplicates are detected by `index_drift` / `broken_edges` lint and repaired by `rebuild_index` (dedupe by `edge_key`).
-- **Template-driven ontology traversals** (S3): `TraversalPattern.query_template` is open-ended AQL declared in ontology YAML; `HelixOntologyGraphStore` cannot run it. Until §8 Q1 is decided, such patterns are ArangoDB-only and raise `UnsupportedTraversal` on HelixDB.
+- **Template-driven ontology traversals** (S3, resolved by FEAT-540 M8): `TraversalPattern.query_templates` is keyed by dialect; an ontology meant to run on HelixDB ships a `"helix"` template (DSL op-tree JSON) next to its AQL one; patterns without it raise `TraversalPatternUnavailable`. The legal/procedures/contracts ontologies are Arango-only today and stay so until someone authors their `helix` templates (not in scope).
 
 ### Configuration References (navconfig / env)
 | Key | Default | Used by |
@@ -1111,17 +1091,17 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
   - M1 → (nothing). Everything imports `parrot.knowledge.helix`.
   - M2 → M1 only for the README smoke command; otherwise independent (docker/Makefile/docs/spike).
   - M3 → M1 (`HelixClient`, `ensure_plane`, DSL helpers).
-  - M4 → M1 (`HelixSettings`), M3 (`HelixWikiStore` for the `create_wiki_store` branch and CLI resolution).
+  - M4 → M1 (`HelixSettings`), M3, M7, M8 (it registers their factories; the rows may be added with lazy paths before the classes exist, so M4 can also be split: fields first, rows last).
   - M5 → M3 (subclasses `HelixWikiStore`), M4 (`LedgerService` dispatch on `WikiProjectConfig.backend`).
   - M6 → M3, M4.
-  - M7 → M1, M4 (`graphindex_persistence_for` reads `WikiProjectConfig.backend`).
-  - M8 → M1; M7 only for shared label helpers (soft edge — may be dropped at task time).
+  - M7 → M1 (and FEAT-540 M7 merged).
+  - M8 → M1 (and FEAT-540 M8 merged); M7 only for shared label helpers (soft edge — may be dropped at task time).
   - M9 → M1. M10 → M1.
   - M11 → all.
   Concurrent after M1: {M2, M3, M7, M8, M9, M10}; after M3+M4: {M5, M6}.
-- **Shared files** (tasks serialized): `wiki/project.py` (M4 fields + `resolve_helix_params`), `wiki/cli.py` (M4 choices + M7 resolver sites), `graphindex/loader.py` (M7 `helix_settings` + M8 `ontology_graph_store_for`), `graphindex/factory.py` (M7 only), `wiki/store.py` (M3 branch only). M4 is a single **exclusive** task.
+- **Shared files** (tasks serialized): `wiki/project.py` (M4 fields + `resolve_helix_params`), the four registry tables (`wiki/store.py`, `wiki/sources_backend.py`, `graphindex/backends.py`, `ontology/contracts.py` — M4 rows only). `wiki/cli.py`, `graphindex/{factory,loader}.py` are **not** touched. M4 is a single **exclusive** task.
 - **Exclusive resources**: root `pyproject.toml` / `uv.lock` (M1 adds dev-group wheels — `uv lock` once, `parallel: false`); `ruff.toml` (M1); `Makefile` (M2).
-- **Cross-feature dependencies**: none required (user decision). Merge-time checks: FEAT-540 (`graphindex-core-seams`, TASK-3256..3268), FEAT-633 (`parrot-installer`, TASK-4092/4093), FEAT-481 (`fireflies-wiki-knowledgebase-agent`, wiki ingest).
+- **Cross-feature dependencies**: **FEAT-540 `graphindex-core-seams` v0.5 must be merged to `dev` first** (hard dependency; its tasks are re-decomposed from v0.5). Merge-time checks: FEAT-633 (`parrot-installer`, TASK-4092/4093), FEAT-481 (`fireflies-wiki-knowledgebase-agent`, wiki ingest).
 
 ---
 
@@ -1139,10 +1119,12 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
 - [x] ArangoDB retirement — *Resolved in brainstorm*: there is no retirement. HelixDB is an additional supported backend; `ArangoDBWikiStore`, `GraphIndexPersistence` (ArangoDB) and `docker/arango` stay first-class, with no deprecation warnings or doc pointers away from them. → Non-Goals, AC16.
 - [x] Server image pin and upgrade policy — *Resolved in brainstorm*: compose reads `${HELIXDB_IMAGE_TAG:-v0.0.12}`; the README documents the one-way index-storage-version upgrade and a manual `HELIX_DATA_DIR` volume backup to run before changing the tag. Bumping the default tag is a reviewed manual change; no Makefile backup target. → M2, AC12.
 - [x] Target version — *Resolved at spec time*: 1.3.0 (next minor).
+- [x] Seam ownership — *Resolved by owner 2026-10-14 (v0.3)*: FEAT-540 owns the backend-neutral contracts and registries; this feature registers implementations only; FEAT-540 must merge first. The generic parts of this spec's codex S1/S4/S5/S8 were moved into FEAT-540 v0.5.
+- [x] **Q1 — Template-driven ontology traversals on HelixDB** — *Resolved by FEAT-540 M8 (v0.5)*: `TraversalPattern.query_templates: dict[str, str]` keyed by dialect (`query_template` stays the implicit `"aql"` entry); `OntologyTraversalStore.execute_pattern` picks `self.dialect`'s template and raises `TraversalPatternUnavailable` otherwise; `execute_query(DynamicQuery)` is the dialect-bound escape hatch. This is option (b) made additive: AQL-only patterns stay Arango-only without a new `traversal_spec` abstraction; a backend-neutral spec can still be added later as another dialect. → M8.
 
 ### Unresolved
 
-- [ ] **Q1 — Template-driven ontology traversals on HelixDB** (escalated from design research S3). `TraversalPattern.query_template` (`ontology/schema.py:288`) and `ResolvedIntent.aql` (`ontology/intent.py:42`) are open-ended AQL strings declared per ontology YAML and executed at `mixin.py:337/359/379`. Options: (a) add a validated, backend-neutral `traversal_spec` (start label/key, edge labels, direction, depth, filters, projection) to `TraversalPattern`, compiled to AQL on ArangoDB and to the DSL on HelixDB, with `query_template` kept as an ArangoDB-only escape hatch; (b) template patterns stay ArangoDB-only in this feature (`UnsupportedTraversal` on HelixDB) and a follow-up spec designs the traversal spec. M8's skeleton is written for (b) with (a) as an additive extension. — *Owner: Jesus Lara*
+- [ ] ~~**Q1 — Template-driven ontology traversals on HelixDB** (escalated from design research S3).~~ *(resolved above)* `TraversalPattern.query_template` (`ontology/schema.py:288`) and `ResolvedIntent.aql` (`ontology/intent.py:42`) are open-ended AQL strings declared per ontology YAML and executed at `mixin.py:337/359/379`. Options: (a) add a validated, backend-neutral `traversal_spec` (start label/key, edge labels, direction, depth, filters, projection) to `TraversalPattern`, compiled to AQL on ArangoDB and to the DSL on HelixDB, with `query_template` kept as an ArangoDB-only escape hatch; (b) template patterns stay ArangoDB-only in this feature (`UnsupportedTraversal` on HelixDB) and a follow-up spec designs the traversal spec. M8's skeleton is written for (b) with (a) as an additive extension. — *Owner: Jesus Lara*
 - [ ] **Q2 — Cross-backend copy tool** (escalated from design research S11). Rebuild-from-canonical-sources is documented (AC23). Should this feature also ship `wikitoolkit migrate --to helixdb` that copies pages, edges, attrs, symbols, meta and embeddings with counts, checkpoints and a verification report, for planes whose sources are no longer available (e.g. curated/learned pages, agent-written GraphIndex memory with commit history)? — *Owner: Jesus Lara*
 
 ---
@@ -1155,20 +1137,20 @@ Verified against: `246f1bb6d` (dev, 2026-10-14)
 
 | # | Suggestion (kind) | Disposition | Reason | Landed in |
 |---|---|---|---|---|
-| S1 | Centralize backend opening behind a capability-aware resolver (architecture) | CONFIRM | Verified: `is_built()` (`project.py:785-788`) handles only sqlite/arangodb then falls through; `"arangodb"` literal checks: cli 15, toolkit 3, sync 4, federation 4, sources 20 | §3 M4 (`SERVER_BACKENDS`, `is_server_backend`, `is_built`), AC19 |
+| S1 | Centralize backend opening behind a capability-aware resolver (architecture) | CONFIRM → **moved to FEAT-540 M7 (v0.5)** | Verified: `is_built()` (`project.py:785-788`) handles only sqlite/arangodb then falls through; `"arangodb"` literal checks: cli 15, toolkit 3, sync 4, federation 4, sources 20 | FEAT-540 `WikiBackendSpec.kind` / `is_server_backend()`; here §3 M4 row + AC19 |
 | S2 | Replace the ledger connection leak with a repository transaction protocol (architecture) | CONFIRM | Verified: `LedgerService` uses `store._read()` at `:178,309,467`; `LedgerIndex.apply_event/_read_issue` typed `aiosqlite.Connection` (`index.py:103,126,136`) | §3 M5 (`LedgerReader`, `ledger_read()`, retyped index methods), AC5, `test_ledger_reader_protocol` |
-| S3 | Constrain ontology traversal before removing raw AQL (architecture) | ESCALATE | Verified: `TraversalPattern.query_template` (`schema.py:288`) and `ResolvedIntent.aql` (`intent.py:42,150,212,220`) are open-ended AQL; named methods cannot absorb them — the YAML-contract decision is the user's | §8 Q1; M8 scope caveat + `execute_pattern` / `UnsupportedTraversal` |
-| S4 | Make GraphIndex backend selection explicit and mutually exclusive (api) | CONFIRM | Verified: `loader.py:290-313` picks sqlite when `_sqlite_dir` else arango; factory documents only sqlite/postgres | §3 M7 precedence rule, AC20, `test_loader_backend_precedence` |
-| S5 | Specify atomic commit ordering, edge identity, revert conflict semantics (risk) | CONFIRM | Verified: SQLite edge PK `(source_id, target_id, kind)` (`persist_sqlite.py:73`), revert conflict by `rowid` (`:898-908`); HelixDB has no unique edge index | §3 M7 (`edge_key`, `seq` on Meta, pre-images incl. incident edges), §7 risk, AC21 |
+| S3 | Constrain ontology traversal before removing raw AQL (architecture) | ESCALATE → **resolved by FEAT-540 M8** | Verified: `TraversalPattern.query_template` (`schema.py:288`) and `ResolvedIntent.aql` (`intent.py:42,150,212,220`) are open-ended AQL; FEAT-540 keys templates by dialect and binds dynamic queries to a dialect | §8 Q1 (resolved); M8 `execute_pattern` / `TraversalPatternUnavailable` |
+| S4 | Make GraphIndex backend selection explicit and mutually exclusive (api) | CONFIRM → **moved to FEAT-540 M6/M7 (v0.5)** | Verified: `loader.py:290-313` picks sqlite when `_sqlite_dir` else arango; factory documents only sqlite/postgres | FEAT-540 precedence rule + registry; here AC20 |
+| S5 | Specify atomic commit ordering, edge identity, revert conflict semantics (risk) | CONFIRM → **contract moved to FEAT-540 `GraphPersistence` (v0.5)** | Verified: SQLite edge PK `(source_id, target_id, kind)` (`persist_sqlite.py:73`), revert conflict by `rowid` (`:898-908`); HelixDB has no unique edge index | FEAT-540 §2 semantics + conformance suite; here §3 M7 (`seq` on Meta, batch shape), §7 risk, AC21 |
 | S6 | Generation-based PageIndex projection or durable outbox (risk) | CONFIRM | Verified: `splice_subtree` → `reindex_node_ids` (`tree_ops.py:89-141`) before `_save_node_markdown` / `_persist` (`toolkit.py:851-980,237`) | §3 M9 redesigned (generation per `_persist`, fallback on mismatch), AC22 |
 | S7 | Put BookStore's async Helix adapter below the async Library boundary (api) | CONFIRM | Verified: `CatalogStore` is sync with short-lived `sqlite3` connections (`catalog.py:9-19,183`); `Library.search` is async (`library.py:411`) | §3 M10 redesigned (projection owned by `Library`; `catalog.py` unmodified; stale-fallback policy), AC22 |
-| S8 | Add generic backend connection settings and fix namespace dispatch (api) | CONFIRM | Verified: only `arango_*` fields (`project.py:616-627`); validator coerces `database` → arangodb (`:267`); federation passes `arango_params` to extra factories (`federation.py:425`) | §3 M4 (validator + `open_namespace_store` dispatch), §2 `HelixSettings`, AC19 |
+| S8 | Add generic backend connection settings and fix namespace dispatch (api) | CONFIRM → **dispatch/coercion fix moved to FEAT-540 M7 (v0.5)** | Verified: only `arango_*` fields (`project.py:616-627`); validator coerces `database` → arangodb (`:267`); federation passes `arango_params` to extra factories (`federation.py:425`) | FEAT-540 `WikiBackendSpec.resolve_options` + validator rule; here §2 `HelixSettings`, §3 M4 fields, AC19 |
 | S9 | Build a backend contract matrix rather than only live-server smoke tests (testing) | CONFIRM | Existing suites are per-backend copies (`test_store_cas.py`, `test_postgres_store_cas.py`, `test_arango_store_cas.py`) | §3 M11 (`wiki_store_matrix`), §4 |
 | S10 | Add a compatibility gate for the SDK, embedded wheel and pinned image (testing) | CONFIRM | SDK 0.3.4, wheel 0.3.3 and image v0.0.12 are independently versioned (release notes show image/SDK cadences differ) | §3 M11 `test_compat_gate.py`, AC24 |
 | S11 | Define migration and rollback before exposing a backend switch (risk) | CONFIRM (docs + rebuild) / ESCALATE (copy tool) | Verified: `export_okf_bundle` (`export.py:130`) exports pages/edges only; ledger canonical = event log (`ledger/log.py`); GraphIndex commits carry pre-images | §7 risk, AC23, `test_rebuild_from_canonical_sources`; copy tool → §8 Q2 |
 | S12 | Preserve existing search filtering and score semantics explicitly (testing) | CONFIRM | Verified: archive exclusion (`store.py:2328-2362`), cosine score in [-1,1] (`store.py:2381`), Postgres `1 - distance` (`postgres_store.py:700-714`) | §3 M3 `search_fts` / `search_vector` contracts, AC18, `test_search_fts_archive_default_and_score_scale` |
 
-Summary: **10** confirmed · **0** rejected · **2** escalated (S3 → Q1, S11 copy-tool → Q2).
+Summary: **10** confirmed (S1/S4/S5/S8 realised in FEAT-540 v0.5) · **0** rejected · **2** escalated (S3 → Q1, now resolved by FEAT-540 M8; S11 copy-tool → Q2).
 
 ---
 
@@ -1178,3 +1160,4 @@ Summary: **10** confirmed · **0** rejected · **2** escalated (S3 → Q1, S11 c
 |---|---|---|---|
 | 0.1 | 2026-10-14 | Jesus Lara (with Claude) | Initial draft from the accepted brainstorm (FEAT-670 reserved) |
 | 0.2 | 2026-10-14 | Jesus Lara (with Claude) | Design research folded in: 10 confirmed (M3/M4/M5/M7/M9/M10/M11 contracts, AC18–AC24), 2 escalated (§8 Q1, Q2) |
+| 0.3 | 2026-10-14 | Jesus Lara (with Claude) | **Follows FEAT-540 v0.5** (owner decision): hard cross-feature dependency; every backend is a registered implementation of a FEAT-540 contract; removed this feature's own resolver/factory modules, `Literal`/`click.Choice` edits, AQL call-site migration and `UnsupportedTraversal`; codex S1/S4/S5/S8 generic parts moved into FEAT-540; Q1 resolved via `TraversalPattern.query_templates`; M4/M7/M8, AC2/4/7/16/19/20/21, §6 and worktree strategy rewritten accordingly |
