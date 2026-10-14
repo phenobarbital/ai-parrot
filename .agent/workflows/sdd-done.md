@@ -310,6 +310,12 @@ throwaway worktree at `origin/<BASE_BRANCH>` and commit/push it directly to
 `base_branch` when it changed — never from an active worktree, never on the
 feature branch. Bounded retry on a rejected push; never fails `/sdd-done`.
 
+The export **reconciles** against the committed snapshot (FEAT-671): rows for
+issues this checkout's ledger has never seen are carried forward unchanged and
+local state wins for issues it knows, so a run from a machine whose event log
+is behind never drops other people's issues. `wikitoolkit ledger export
+--no-reconcile` is the explicit, destructive opt-out — `/sdd-done` never uses it.
+
 ```bash
 if [[ "$TYPE" != "hotfix" ]]; then
     git fetch origin "$BASE_BRANCH" >/dev/null 2>&1

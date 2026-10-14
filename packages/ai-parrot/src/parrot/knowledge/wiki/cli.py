@@ -3419,12 +3419,18 @@ def ledger_blockers(feature_id: str) -> None:
 
 @ledger.command("export")
 @click.option("--dest", default="sdd/ledger/issues.jsonl", help="Export destination.")
+@click.option(
+    "--no-reconcile",
+    is_flag=True,
+    default=False,
+    help="Rebuild from this machine's ledger only; drops issues it has never seen (destructive).",
+)
 @remote_cli.remote_aware(proxied=False)
-def ledger_export(dest: str) -> None:
+def ledger_export(dest: str, no_reconcile: bool) -> None:
     """Export the ledger snapshot."""
     service = LedgerService.from_root()
     dest_path = Path(dest)
-    changed = _run(service.export_snapshot(dest_path))
+    changed = _run(service.export_snapshot(dest_path, reconcile=not no_reconcile))
     if changed:
         click.echo(f"Exported {dest_path} (changed)")
     else:

@@ -18,7 +18,7 @@ tags: [graphindex, wiki, ontology, graph-store, import-seams, mcp]
 **Date**: 2026-09-09
 **Revised**: 2026-10-14 against `dev` @ `246f1bb6d` (`packages/` identical to `origin/dev` @ `048479633`)
 **Author**: Jesus Lara (with Claude); 2026-10-14 current-code review by Codex (v0.3), design-research cross-check by Codex (§9)
-**Status**: review
+**Status**: approved
 **Target version**: 1.1.0
 
 > **Phase 1 of 2: cut framework seams inside the existing workspace.**
@@ -1599,21 +1599,21 @@ overlap on `wiki/store.py` / `project.py` / ingest — reconcile at merge time.
       `SearchViewDef`): rename to neutral names with backend-provided handles
       (codex S4), or keep them and let non-Arango backends reinterpret them?
       This spec keeps them; a rename is a cross-cutting hard cut better taken
-      with FEAT-670's data-model mapping. — *Owner: Jesus Lara*
+      with FEAT-670's data-model mapping. — *Owner: Jesus Lara*: Agree.
 - [ ] **Q2 — Dynamic query generation for non-AQL dialects**: fail closed
       (this spec) until a dialect registers a validator — should FEAT-670 ship
       a HelixDB validator, or should dynamic generation be AQL-only for good?
-      — *Owner: Jesus Lara (decide in FEAT-670)*
+      — *Owner: Jesus Lara (decide in FEAT-670)*: maybe we need to write a validator for ArangoDB first.
 - [ ] **Q3 — `legal` tools**: they stay explicitly Arango-bound
       (`execute_query(dialect="aql")`); should a later feature express their
       eight inline statements as ontology `TraversalPattern`s so they become
-      portable? — *Owner: Jesus Lara* *(does not block this spec)*
+      portable? — *Owner: Jesus Lara* *(does not block this spec)*: later follow-up
 - [ ] **Q4 — `pin.py` L0 coherence** is SQLite-only by design (S9). Should
       source-coherence become a `GraphPersistence` capability
       (`files_sample(ctx, n)`) so Postgres/HelixDB planes can be pinned? —
-      *Owner: FEAT-670 / retrieval owner* *(does not block this spec)*
+      *Owner: FEAT-670 / retrieval owner* *(does not block this spec)*: yes, become a `GraphPersistence` capability
 - [ ] **Q5 — Extras forwarding** (`ai-parrot[wiki]` → `parrot-graphindex[all]`)
-      — FEAT-541 decision; this spec does not touch extras. — *Owner: Jesus Lara*
+      — FEAT-541 decision; this spec does not touch extras. — *Owner: Jesus Lara*: agree
 
 ---
 
