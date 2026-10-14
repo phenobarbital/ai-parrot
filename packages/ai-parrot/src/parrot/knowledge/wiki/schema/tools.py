@@ -3,42 +3,22 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
-from pydantic import BaseModel, Field
-
+from parrot.knowledge.wiki.schema.operations import (
+    SchemaLookupInput,
+    SchemaNeighborsInput,
+    SchemaSearchInput,
+    SchemaSourcesInput,
+    op_schema_lookup,
+    op_schema_neighbors,
+    op_schema_search,
+    op_schema_sources,
+)
 from parrot.knowledge.wiki.project import WikiProjectConfig
-from parrot.knowledge.wiki.schema.models import LookupResult
 from parrot.knowledge.wiki.schema.service import SchemaPlaneService
 from parrot.knowledge.wiki.store import BaseWikiStore
 from parrot.tools.abstract import AbstractTool, ToolResult
-
-
-class SchemaLookupInput(BaseModel):
-    """Arguments for ``wiki_schema_lookup``."""
-
-    ref: str = Field(
-        ...,
-        description="table:<origin>/<schema>.<table>, bare <origin>:<schema>.<table>, or <schema>.<table>",
-    )
-
-
-class SchemaSearchInput(BaseModel):
-    """Arguments for ``wiki_schema_search``."""
-
-    query: str = Field(..., description="Words to match in table names, column names and comments")
-    limit: int = Field(default=20, ge=1, le=100)
-
-
-class SchemaNeighborsInput(BaseModel):
-    """Arguments for ``wiki_schema_neighbors``."""
-
-    ref: str = Field(..., description="Table reference (same forms as lookup)")
-    depth: int = Field(default=1, ge=1, le=4)
-
-
-class SchemaSourcesInput(BaseModel):
-    """Arguments for ``wiki_schema_sources``."""
 
 
 class _SchemaTool(AbstractTool):
@@ -47,23 +27,6 @@ class _SchemaTool(AbstractTool):
     def __init__(self, service: SchemaPlaneService) -> None:
         super().__init__(name=self.name, description=self.description)
         self._service = service
-
-    async def _guard(self, coro: Any) -> ToolResult:
-        """Run a service operation and normalize expected lookup errors."""
-        try:
-            return ToolResult(result=await coro)
-        except (KeyError, ValueError) as exc:
-            return ToolResult(success=False, status="error", result=None, error=str(exc))
-
-
-def _lookup_text(result: LookupResult) -> str:
-    """Render a compact lookup response containing DDL and its columns."""
-    columns = ["| Column | Type | Nullable |", "| --- | --- | --- |"]
-    columns.extend(
-        f"| {column.name} | {column.data_type} | {'yes' if column.nullable else 'no'} |" for column in result.columns
-    )
-    return f"## DDL\n\n{result.ddl}\n\n## Columns\n\n" + "\n".join(columns)
-
 
 class WikiSchemaLookupTool(_SchemaTool):
     """Look up one table in the schema plane: DDL, columns, relations, annotations, age and staleness."""
@@ -78,15 +41,14 @@ class WikiSchemaLookupTool(_SchemaTool):
 
     async def _execute(self, ref: str) -> ToolResult:
         """Look up one table reference without database introspection."""
-        result = await self._guard(self._service.lookup(ref, annotation_store=self._annotation_store))
-        if isinstance(result.result, list):
-            result.status = "ambiguous"
-            result.result = {"candidates": result.result}
-        elif result.success and isinstance(result.result, LookupResult):
-            payload = result.result.model_dump(mode="json")
-            payload["text"] = _lookup_text(result.result)
-            result.result = payload
-        return result
+        result = await op_schema_lookup(
+            None, SchemaLookupInput(ref=ref), service=self._service, annotation_store=self._annotation_store
+        )
+        if result.is_error:
+            return ToolResult(success=False, status="error", result=None, error=result.text)
+        assert result.data is not None
+        status = result.data.pop("status", None)
+        return ToolResult(result=result.data, status=status)
 
 
 class WikiSchemaSearchTool(_SchemaTool):
@@ -98,7 +60,11 @@ class WikiSchemaSearchTool(_SchemaTool):
 
     async def _execute(self, query: str, limit: int = 20) -> ToolResult:
         """Search stored schema records."""
-        return await self._guard(self._service.search(query, limit=limit))
+        result = await op_schema_search(None, SchemaSearchInput(query=query, limit=limit), service=self._service)
+        if result.is_error:
+            return ToolResult(success=False, status="error", result=None, error=result.text)
+        assert result.data is not None
+        return ToolResult(result=result.data["result"])
 
 
 class WikiSchemaNeighborsTool(_SchemaTool):
@@ -110,7 +76,11 @@ class WikiSchemaNeighborsTool(_SchemaTool):
 
     async def _execute(self, ref: str, depth: int = 1) -> ToolResult:
         """Return foreign-key paths from a table."""
-        return await self._guard(self._service.neighbors(ref, depth=depth))
+        result = await op_schema_neighbors(None, SchemaNeighborsInput(ref=ref, depth=depth), service=self._service)
+        if result.is_error:
+            return ToolResult(success=False, status="error", result=None, error=result.text)
+        assert result.data is not None
+        return ToolResult(result=result.data["result"])
 
 
 class WikiSchemaSourcesTool(_SchemaTool):
@@ -122,7 +92,11 @@ class WikiSchemaSourcesTool(_SchemaTool):
 
     async def _execute(self) -> ToolResult:
         """List configured schema sources without resolving their DSNs."""
-        return await self._guard(self._service.sources())
+        result = await op_schema_sources(None, SchemaSourcesInput(), service=self._service)
+        if result.is_error:
+            return ToolResult(success=False, status="error", result=None, error=result.text)
+        assert result.data is not None
+        return ToolResult(result=result.data["result"])
 
 
 def create_schema_tools(

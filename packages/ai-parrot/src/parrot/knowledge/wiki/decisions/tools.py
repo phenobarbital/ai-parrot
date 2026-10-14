@@ -11,20 +11,24 @@ CLI action, never something an agent does on its own (spec §2, AC11).
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from pathlib import Path
 
-from pydantic import BaseModel, Field
-
-from parrot.knowledge.wiki.context import truncate_to_tokens
-from parrot.knowledge.wiki.decisions.models import ADR_INVALID_ARGUMENT, DecisionDossier, DecisionError
-from parrot.knowledge.wiki.decisions.render import DEFAULT_BUDGET_TOKENS, render_dossier_text
+from parrot.knowledge.wiki.decisions.models import ADR_INVALID_ARGUMENT, DecisionError
+from parrot.knowledge.wiki.decisions.operations import (
+    DecisionGenerateInput,
+    DecisionWhyInput,
+    DecisionsForSymbolInput,
+    op_decision_generate,
+    op_decision_why,
+    op_decisions_for_symbol,
+)
+from parrot.knowledge.wiki.decisions.render import DEFAULT_BUDGET_TOKENS
 from parrot.knowledge.wiki.decisions.service import DecisionService
 from parrot.knowledge.wiki.project import WikiProjectConfig
-from parrot.knowledge.wiki.store import BaseWikiStore, estimate_tokens
+from parrot.knowledge.wiki.store import BaseWikiStore
 from parrot.knowledge.wiki.structural.service import StructuralService
-from parrot.knowledge.wiki.tools import _scoped_store, _unknown_namespace_error
+from parrot.knowledge.wiki.operations import _scoped_store, _unknown_namespace_error
 from parrot.tools.abstract import AbstractTool, ToolResult
 
 #: Same wording as ``structural.tools._NAMESPACE_DESC``, minus 'all' — ADR
@@ -35,66 +39,6 @@ _NAMESPACE_DESC = (
 )
 
 ServiceFactory = Callable[[str | None], DecisionService]
-
-
-class DecisionsForSymbolInput(BaseModel):
-    """Arguments for ``wiki_decisions_for_symbol`` / ``decision_for_symbol``."""
-
-    symbol: str = Field(..., description="A sym:<rel>#<qualname> id, or an exact symbol name")
-    include_history: bool = Field(default=False, description="Include rejected/deprecated/superseded records")
-    limit: int = Field(default=10, ge=1, le=50, description="Maximum hits across both groups")
-    budget_tokens: int = Field(default=DEFAULT_BUDGET_TOKENS, ge=256, description="Estimated output budget")
-    namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
-
-
-class DecisionWhyInput(BaseModel):
-    """Arguments for ``wiki_decision_why`` / ``decision_why``."""
-
-    question: str = Field(..., description="Natural-language question, optionally naming a symbol")
-    include_history: bool = Field(default=False, description="Include rejected/deprecated/superseded records")
-    limit: int = Field(default=10, ge=1, le=50, description="Maximum hits across both groups")
-    budget_tokens: int = Field(default=DEFAULT_BUDGET_TOKENS, ge=256, description="Estimated output budget")
-    namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
-
-
-class DecisionGenerateInput(BaseModel):
-    """Arguments for ``wiki_decision_generate``."""
-
-    target: str = Field(..., description="One sym: id or one repository-relative file path")
-
-
-def _dossier_result(dossier: DecisionDossier, budget_tokens: int) -> ToolResult:
-    """Render a dossier as a ToolResult, labels intact.
-
-    The text body always carries the origin/status/freshness labels and the
-    candidate group heading, so a model reading only the text cannot mistake
-    a candidate for documented history (AC3, AC9).
-
-    The machine-readable JSON tail is reserved its own token budget and is
-    NEVER passed through ``truncate_to_tokens`` itself — truncating the
-    combined text+JSON blob as one string can cut the JSON mid-object,
-    corrupting it into something that no longer parses (AC9: adapters must
-    preserve service semantics under output budgets). Only the human-
-    readable prose is subject to character-level truncation; the JSON tail
-    is always appended whole.
-    """
-    tail = json.dumps(dossier.model_dump(mode="json"))
-    text_budget = budget_tokens - estimate_tokens(tail)
-    if text_budget <= 0:
-        # The JSON tail alone already meets or exceeds the budget; there is
-        # no room left for prose, but the tail must still be emitted whole.
-        body, body_truncated = "", True
-    else:
-        body, body_truncated = truncate_to_tokens(render_dossier_text(dossier), text_budget)
-    text = f"{body}\n\n{tail}"
-    return ToolResult(
-        result=text, metadata={"status": dossier.status, "truncated": dossier.truncated or body_truncated}
-    )
-
-
-def _error_result(exc: DecisionError) -> ToolResult:
-    """Render a DecisionError as a failed ToolResult with its stable code."""
-    return ToolResult(success=False, status="error", result=None, error=f"{exc.code}: {exc.message}")
 
 
 class WikiDecisionsForSymbolTool(AbstractTool):
@@ -122,19 +66,16 @@ class WikiDecisionsForSymbolTool(AbstractTool):
         budget_tokens: int = DEFAULT_BUDGET_TOKENS,
         namespace: str | None = None,
     ) -> ToolResult:
-        try:
-            service = self._service_factory(namespace)
-        except ValueError as exc:
-            return ToolResult(success=False, status="error", result=None, error=str(exc))
-        except DecisionError as exc:
-            return _error_result(exc)
-        try:
-            dossier = await service.for_symbol(
-                symbol, include_history=include_history, limit=limit, budget_tokens=budget_tokens
-            )
-        except DecisionError as exc:
-            return _error_result(exc)
-        return _dossier_result(dossier, budget_tokens)
+        result = await op_decisions_for_symbol(
+            None,
+            DecisionsForSymbolInput(
+                symbol=symbol, include_history=include_history, limit=limit, budget_tokens=budget_tokens, namespace=namespace
+            ),
+            service_factory=self._service_factory,
+        )
+        if result.is_error:
+            return ToolResult(success=False, status="error", result=None, error=result.text)
+        return ToolResult(result=result.text, metadata=result.data)
 
 
 class WikiDecisionWhyTool(AbstractTool):
@@ -160,19 +101,16 @@ class WikiDecisionWhyTool(AbstractTool):
         budget_tokens: int = DEFAULT_BUDGET_TOKENS,
         namespace: str | None = None,
     ) -> ToolResult:
-        try:
-            service = self._service_factory(namespace)
-        except ValueError as exc:
-            return ToolResult(success=False, status="error", result=None, error=str(exc))
-        except DecisionError as exc:
-            return _error_result(exc)
-        try:
-            dossier = await service.why(
-                question, include_history=include_history, limit=limit, budget_tokens=budget_tokens
-            )
-        except DecisionError as exc:
-            return _error_result(exc)
-        return _dossier_result(dossier, budget_tokens)
+        result = await op_decision_why(
+            None,
+            DecisionWhyInput(
+                question=question, include_history=include_history, limit=limit, budget_tokens=budget_tokens, namespace=namespace
+            ),
+            service_factory=self._service_factory,
+        )
+        if result.is_error:
+            return ToolResult(success=False, status="error", result=None, error=result.text)
+        return ToolResult(result=result.text, metadata=result.data)
 
 
 class WikiDecisionGenerateTool(AbstractTool):
@@ -196,15 +134,12 @@ class WikiDecisionGenerateTool(AbstractTool):
         self._service_factory = service_factory
 
     async def _execute(self, target: str) -> ToolResult:
-        try:
-            service = self._service_factory(None)
-        except (ValueError, DecisionError) as exc:
-            return ToolResult(success=False, status="error", result=None, error=str(exc))
-        try:
-            result = await service.generate(target)
-        except DecisionError as exc:
-            return _error_result(exc)
-        return ToolResult(result=result.model_dump(mode="json"))
+        result = await op_decision_generate(
+            None, DecisionGenerateInput(target=target), service_factory=self._service_factory
+        )
+        if result.is_error:
+            return ToolResult(success=False, status="error", result=None, error=result.text)
+        return ToolResult(result=result.data)
 
 
 def create_decision_tools(
