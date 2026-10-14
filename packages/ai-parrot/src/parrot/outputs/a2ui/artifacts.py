@@ -26,7 +26,6 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from parrot.models.outputs import OutputMode
-from parrot.outputs.a2ui.adapters.structured import SCHEMA_VERSION, root_component
 
 __all__ = ["DeepLink", "RenderedArtifact", "attach_structured_artifact"]
 
@@ -140,6 +139,11 @@ def attach_structured_artifact(response: Any, output_mode: Any) -> str | None:
     try:
         envelope = getattr(response, "a2ui_envelope", None)
         if envelope is not None:
+            from parrot.outputs.a2ui.adapters.structured import (  # noqa: PLC0415 — lazy on purpose (FEAT-668)
+                SCHEMA_VERSION,
+                root_component,
+            )
+
             surface_id = envelope["createSurface"]["surfaceId"]
             entry: dict[str, Any] = {
                 "type": art_type,
