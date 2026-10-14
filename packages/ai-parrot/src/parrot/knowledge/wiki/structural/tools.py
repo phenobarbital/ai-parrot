@@ -8,26 +8,23 @@ with a `StdioMCPServer` alongside the other wiki tools (resolved names
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal
 
-from pydantic import BaseModel, Field
-
-from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, truncate_to_tokens
 from parrot.knowledge.wiki.federation import FederatedWikiStore
+from parrot.knowledge.wiki.operations import _scoped_store, _unknown_namespace_error
 from parrot.knowledge.wiki.project import WikiProjectConfig
 from parrot.knowledge.wiki.store import BaseWikiStore
-from parrot.knowledge.wiki.structural.service import (
-    BlastRadiusOutput,
-    CodeOutlineOutput,
-    StructuralService,
-    SymbolHit,
-    SymbolLookupOutput,
+from parrot.knowledge.wiki.structural.operations import (
+    BlastRadiusInput,
+    CodeOutlineInput,
+    SymbolLookupInput,
+    op_blast_radius,
+    op_code_outline,
+    op_symbol_lookup,
 )
+from parrot.knowledge.wiki.structural.service import StructuralService
 from parrot.knowledge.wiki.symbols import SymbolKind
-from parrot.knowledge.wiki.tools import _scoped_store, _unknown_namespace_error
 from parrot.tools.abstract import AbstractTool, ToolResult
 
 #: Shared description of the optional ``namespace`` argument — same
@@ -46,61 +43,6 @@ _NAMESPACE_DESC = (
 #: pre-formatted since the factory alone doesn't have the base store
 #: handy at the tool's call site.
 ServiceFactory = Callable[[str | None], StructuralService]
-
-
-class SymbolLookupInput(BaseModel):
-    """Arguments for ``wiki_symbol_lookup`` / ``code_symbol_lookup``."""
-
-    query: str = Field(..., description="Symbol name or qualname to look up")
-    kind: SymbolKind | None = Field(default=None, description="Exact symbol kind filter")
-    language: str | None = Field(default=None, description="Exact scanner-name filter (e.g. 'python')")
-    path_prefix: str | None = Field(default=None, description="rel_path must start with this prefix")
-    limit: int = Field(default=20, le=100, description="Maximum results")
-    namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
-
-
-class CodeOutlineInput(BaseModel):
-    """Arguments for ``wiki_code_outline`` / ``code_outline``."""
-
-    target: str = Field(..., description="A file:<rel>, sym:<rel>#<qualname>, or bare relative path")
-    depth: int = Field(default=2, ge=1, le=4, description="Maximum symbol nesting depth")
-    include_source: bool = Field(default=False, description="Include a capped source excerpt (sym: targets only)")
-    namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
-
-
-class BlastRadiusInput(BaseModel):
-    """Arguments for ``wiki_blast_radius`` / ``code_blast_radius``."""
-
-    symbol: str = Field(..., description="A sym: id or an exact qualname")
-    relations: list[Literal["calls", "extends", "implements", "uses", "references", "contains"]] | None = Field(
-        default=None,
-        description="Edge relations to follow (default: calls, extends, implements, uses)",
-    )
-    depth: int = Field(default=2, ge=1, le=5, description="Maximum BFS depth")
-    include_inferred: bool = Field(
-        default=True, description="Follow provenance='inferred' edges (globally-unique-name resolutions)"
-    )
-    include_tests: bool = Field(default=True, description="Include symbols under a tests/ path")
-    namespace: str | None = Field(default=None, description=_NAMESPACE_DESC)
-
-
-def _hit_line(hit: SymbolHit) -> str:
-    """Render one ``SymbolHit`` as a compact single line.
-
-    Format: ``[sym:<rel>#<q>] — <kind> L<start>-<end>: <doc>``.
-    """
-    doc = hit.doc.strip()
-    suffix = f": {doc}" if doc else ""
-    stale = " (stale)" if hit.stale else ""
-    return f"[{hit.symbol_id}] — {hit.kind.value} L{hit.start_line}-{hit.end_line}{suffix}{stale}"
-
-
-def _render_text(lines: list[str], model: BaseModel, budget_tokens: int) -> str:
-    """Compact stub-line body + a JSON tail of ``model``, capped at ``budget_tokens``."""
-    body = "\n".join(lines) if lines else "(no results)"
-    tail = json.dumps(model.model_dump(mode="json"))
-    text, _truncated = truncate_to_tokens(f"{body}\n\n{tail}", budget_tokens)
-    return text
 
 
 class WikiSymbolLookupTool(AbstractTool):
@@ -130,17 +72,16 @@ class WikiSymbolLookupTool(AbstractTool):
         limit: int = 20,
         namespace: str | None = None,
     ) -> ToolResult:
-        try:
-            service = self._service_factory(namespace)
-        except ValueError as exc:
-            return ToolResult(success=False, status="error", result=None, error=str(exc))
-        output: SymbolLookupOutput = await service.lookup(
-            query, kind=kind, language=language, path_prefix=path_prefix, limit=limit
+        result = await op_symbol_lookup(
+            None,
+            SymbolLookupInput(
+                query=query, kind=kind, language=language, path_prefix=path_prefix, limit=limit, namespace=namespace
+            ),
+            service_factory=self._service_factory,
         )
-        lines = [_hit_line(hit) for hit in output.hits]
-        payload = output.model_dump(mode="json")
-        payload["text"] = _render_text(lines, output, DEFAULT_BUDGET_TOKENS)
-        return ToolResult(result=payload)
+        if result.is_error:
+            return ToolResult(success=False, status="error", result=None, error=result.text)
+        return ToolResult(result=result.data)
 
 
 class WikiCodeOutlineTool(AbstractTool):
@@ -167,15 +108,14 @@ class WikiCodeOutlineTool(AbstractTool):
         include_source: bool = False,
         namespace: str | None = None,
     ) -> ToolResult:
-        try:
-            service = self._service_factory(namespace)
-        except ValueError as exc:
-            return ToolResult(success=False, status="error", result=None, error=str(exc))
-        output: CodeOutlineOutput = await service.outline(target, depth=depth, include_source=include_source)
-        lines = [_hit_line(hit) for hit in output.symbols]
-        payload = output.model_dump(mode="json")
-        payload["text"] = _render_text(lines, output, DEFAULT_BUDGET_TOKENS)
-        return ToolResult(result=payload)
+        result = await op_code_outline(
+            None,
+            CodeOutlineInput(target=target, depth=depth, include_source=include_source, namespace=namespace),
+            service_factory=self._service_factory,
+        )
+        if result.is_error:
+            return ToolResult(success=False, status="error", result=None, error=result.text)
+        return ToolResult(result=result.data)
 
 
 class WikiBlastRadiusTool(AbstractTool):
@@ -204,23 +144,21 @@ class WikiBlastRadiusTool(AbstractTool):
         include_tests: bool = True,
         namespace: str | None = None,
     ) -> ToolResult:
-        try:
-            service = self._service_factory(namespace)
-        except ValueError as exc:
-            return ToolResult(success=False, status="error", result=None, error=str(exc))
-        output: BlastRadiusOutput = await service.blast_radius(
-            symbol,
-            relations=relations,
-            depth=depth,
-            include_inferred=include_inferred,
-            include_tests=include_tests,
+        result = await op_blast_radius(
+            None,
+            BlastRadiusInput(
+                symbol=symbol,
+                relations=relations,
+                depth=depth,
+                include_inferred=include_inferred,
+                include_tests=include_tests,
+                namespace=namespace,
+            ),
+            service_factory=self._service_factory,
         )
-        lines = [_hit_line(imp.symbol) for imp in output.impacted]
-        if output.files:
-            lines.append(f"files: {', '.join(output.files)}")
-        payload = output.model_dump(mode="json")
-        payload["text"] = _render_text(lines, output, DEFAULT_BUDGET_TOKENS)
-        return ToolResult(result=payload)
+        if result.is_error:
+            return ToolResult(success=False, status="error", result=None, error=result.text)
+        return ToolResult(result=result.data)
 
 
 def create_structural_tools(
