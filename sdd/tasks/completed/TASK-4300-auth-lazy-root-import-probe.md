@@ -306,10 +306,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra (seat gpt-5.6-terra), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: Lazy PEP 562 parrot.auth root (importing parrot.auth.exceptions loads 96 modules, no pbac/conf) + import-probe harness + ceiling/lazy-root tests. Review fix f3a15a6ce: the probe ran `python -I`, which ignores PYTHONPATH, so in a worktree it measured the main checkout (1093 modules); it now prepends the source root of the checkout under test. feedback_id coder-feedback:189e55c1b12508dd8de44133; review coder-review:6c4176c36443f5a67af4421a. Verification is `partial`: the engine merge-tier run (7c1e5a52:chunk0:merge) exited failed, so it is NOT recorded as green. Causes were environmental or pre-existing: no Postgres reachable from the sandbox, and 9 tests/auth failures that also fail on origin/dev. With GRAPHINDEX_PG_DSN pointed at the local docker-postgres-1, tests/knowledge gives 45 failed + 4 errors on the feature branch and the identical set on a clean origin/dev worktree (3979 vs 3963 passed, the +16 being the new tests). No regression introduced.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

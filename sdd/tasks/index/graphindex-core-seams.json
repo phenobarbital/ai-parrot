@@ -14,7 +14,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "no dependencies — first task; creates the import_probe harness every ceiling test reuses",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4300-auth-lazy-root-import-probe.md"
+      "completed_at": "2026-10-14T22:30:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4300-auth-lazy-root-import-probe.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4301",
@@ -52,7 +53,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -60,8 +61,9 @@
       "parallelism_notes": "no dependencies — creates graphindex/protocols.py, the contract module M2/M7 consumers import",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4302-graphindex-protocols.md"
+      "completed_at": "2026-10-14T22:30:49+00:00",
+      "file": "sdd/tasks/completed/TASK-4302-graphindex-protocols.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4303",

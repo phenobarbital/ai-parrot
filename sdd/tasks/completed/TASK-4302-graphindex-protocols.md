@@ -252,10 +252,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: graphindex/protocols.py (edge_key, ProviderNotAvailable, CapabilityUnavailable, runtime_checkable Protocols) + test_protocols.py: 12 passed, no review corrections (coder-review:2c699693803be4b740fa11b4). Verification is `partial`: the engine merge-tier run (7c1e5a52:chunk0:merge) exited failed, so it is NOT recorded as green. Causes were environmental or pre-existing: no Postgres reachable from the sandbox, and 9 tests/auth failures that also fail on origin/dev. With GRAPHINDEX_PG_DSN pointed at the local docker-postgres-1, tests/knowledge gives 45 failed + 4 errors on the feature branch and the identical set on a clean origin/dev worktree (3979 vs 3963 passed, the +16 being the new tests). No regression introduced.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
