@@ -7,22 +7,44 @@ tool-selection time — equal standing with Grep/Read instead of competing
 via a Bash-invoked CLI.
 """
 
-import asyncio
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Union
 
-from pydantic import BaseModel, Field
 
-from parrot.knowledge.wiki.actor import current_actor, scoped_actor
-from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
-from parrot.knowledge.wiki.project import WikiProjectConfig, wiki_write_lock
-from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, WikiStoreBusy
-from parrot.knowledge.wiki.symbols import SymbolRecord
+from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper  # noqa: F401 -- tests patch tools.WikiBookkeeper
+from parrot.knowledge.wiki.project import WikiProjectConfig
+from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord
 from parrot.tools.abstract import AbstractTool, ToolResult
+from parrot.knowledge.wiki.ledger.operations import (  # noqa: F401 -- re-exported: the ledger schemas moved
+    LedgerClaimInput,
+    LedgerCloseInput,
+    LedgerContextInput,
+    LedgerOpenInput,
+    LedgerReadyInput,
+    op_ledger_claim,
+    op_ledger_close,
+    op_ledger_context,
+    op_ledger_open,
+    op_ledger_ready,
+)
 from parrot.knowledge.wiki.operations import (  # noqa: F401 -- re-exported for structural/decisions tools and the CLI
+    HASHES_MAX_IDS,
+    INGEST_MAX_BYTES,
+    INGEST_MAX_SLICES,
+    SYNC_PULL_MAX,
+    IngestBatchInput,
+    IngestBatchReport,
+    PageHashesInput,
+    SourceSlicePayload,
+    SyncPagesInput,
+    _INGEST_LOCK,
+    op_ingest_batch,
+    op_page_hashes,
+    op_sync_pull,
+    op_sync_push,
+    op_vault_ingest,
     _LEDGER_KIND_PREFIXES,
     _NAMESPACE_DESC,
     _QUERY_FETCH_LIMIT,
@@ -278,84 +300,8 @@ class VaultIngestTool(AbstractTool):
         force: bool = False,
         **kwargs,
     ) -> ToolResult:
-        # Lazy imports: cli pulls click + scanners; keep the MCP server's
-        # module import light and stdout-clean.
-        from parrot.knowledge.wiki.cli import (
-            _ingest_files,
-            _open_sources,
-            _prune_removed,
-        )
-        from parrot.knowledge.wiki.project import (
-            resolve_vault_dir,
-            wiki_write_lock,
-        )
-        from parrot.knowledge.wiki.vault_scan import scan_vault
-
-        vault = resolve_vault_dir(self._root, self._config, override=vault_path)
-        if vault is None:
-            return ToolResult(
-                success=False,
-                status="error",
-                result=None,
-                error=(
-                    "No Obsidian vault found: pass vault_path, set "
-                    "'vault_dir' in .parrot/wiki.json, or run inside a "
-                    "vault (.obsidian/ directory)."
-                ),
-            )
-
-        storage = self._config.storage_path(self._root)
-        with wiki_write_lock(storage) as acquired:
-            if not acquired:
-                return ToolResult(
-                    success=False,
-                    status="error",
-                    result=None,
-                    error=("Another wiki writer (build/upsert) is in progress " "— retry once it finishes."),
-                )
-            scan, stats = await asyncio.to_thread(
-                scan_vault,
-                vault,
-                self._config.body_max_chars,
-                self._config.max_file_kb * 1024,
-            )
-            sources = _open_sources(self._root, self._config, store=self._store)
-            counts = await _ingest_files(self._store, sources, vault, scan, force=force)
-            await self._store.upsert_pages(scan.dir_records)
-            await self._store.add_edges(scan.dir_edges)
-            # scope="root": this plane may also hold the repo's own
-            # codebase pages — prune only what lives under the vault
-            # (FEAT-450, D4.4).
-            removed = await _prune_removed(self._store, sources, vault, scan, scope="root")
-            store_stats = await self._store.stats()
-
-        try:
-            WikiBookkeeper().log_operation(
-                storage,
-                "VAULT_INGEST",
-                f"vault: {vault}, notes: {stats.notes}, tags: {stats.tags}, "
-                f"ingested: {counts.get('written', 0)}, removed: {removed}, "
-                f"by: {current_actor()}",
-            )
-        except OSError as exc:
-            self.logger.warning("Failed to log VAULT_INGEST to wiki audit trail: %s", exc)
-
-        return ToolResult(
-            result={
-                "vault": str(vault),
-                "notes": stats.notes,
-                "tags": stats.tags,
-                "wikilink_edges": stats.wikilink_edges,
-                "embed_edges": stats.embed_edges,
-                "unresolved_links": len(stats.unresolved_links),
-                "ingested": counts.get("written", 0),
-                "unchanged": counts.get("unchanged", 0),
-                "removed": removed,
-                "skipped": len(scan.skipped),
-                "pages_total": store_stats.get("pages", 0),
-                "edges_total": store_stats.get("edges", 0),
-            }
-        )
+        params = VaultIngestInput(vault_path=vault_path, force=force)
+        return _to_tool_result(await op_vault_ingest(self._store, params, root=self._root, config=self._config))
 
 
 # ------------------------------------------------------------------
@@ -364,53 +310,6 @@ class VaultIngestTool(AbstractTool):
 
 if TYPE_CHECKING:
     from parrot.knowledge.wiki.ledger.service import LedgerService
-
-
-# The ledger tool schemas mirror the `wikitoolkit ledger` CLI options one for
-# one — same choices, same required fields — so an agent filing through MCP
-# cannot persist a kind or severity the CLI would have rejected.
-
-
-class LedgerOpenInput(BaseModel):
-    title: str = Field(..., description="One-line issue title")
-    body: str = Field(..., description="What is wrong, where (file + symbol), why it matters, suggested fix")
-    kind: IssueKind = Field(default="bug", description="Issue kind: bug|tech_debt|feature_gap|vulnerability")
-    severity: IssueSeverity = Field(default="minor", description="Issue severity: critical|major|minor|low")
-    discovered_from: str = Field(
-        ..., min_length=1, description="Source: spec:<FEAT-ID>, task:<TASK-ID> or review:<TASK-ID>"
-    )
-    about: list[str] | None = Field(
-        default=None, description="Affected symbols/files, repo-relative, e.g. sym:pkg/mod.py#Func"
-    )
-
-
-class LedgerReadyInput(BaseModel):
-    kind: IssueKind | None = Field(
-        default=None, description="Filter by issue kind: bug|tech_debt|feature_gap|vulnerability"
-    )
-
-
-class LedgerClaimInput(BaseModel):
-    issue_id: str = Field(..., description="Issue ID to claim")
-    actor: str | None = Field(
-        default=None, description="Actor claiming the issue, e.g. agent:sdd-fix (default: the request actor)"
-    )
-
-
-class LedgerCloseInput(BaseModel):
-    issue_id: str = Field(..., description="Issue ID to close")
-    reason: str = Field(..., description="Reason for closing")
-    actor: str | None = Field(
-        default=None, description="Actor closing the issue, e.g. agent:sdd-fix (default: the request actor)"
-    )
-    resolved_by: str | None = Field(
-        default=None, description="Evidence that resolved the issue, e.g. commit:<sha> or task:TASK-<NNN> (FEAT-572 S4)"
-    )
-
-
-class LedgerContextInput(BaseModel):
-    file_paths: list[str] = Field(..., description="File paths to scope context to")
-    max_tokens: int = Field(default=3000, description="Maximum tokens in response")
 
 
 class LedgerOpenTool(AbstractTool):
@@ -433,19 +332,10 @@ class LedgerOpenTool(AbstractTool):
         severity: IssueSeverity = "minor",
         about: list[str] | None = None,
     ) -> ToolResult:
-        try:
-            issue_id = await self._ledger_service.open_issue(
-                title=title,
-                body=body,
-                kind=kind,
-                severity=severity,
-                discovered_from=discovered_from,
-                about=about,
-                actor=current_actor(),
-            )
-            return ToolResult(result={"issue_id": issue_id})
-        except Exception as exc:
-            return ToolResult(success=False, status="error", result=None, error=str(exc))
+        params = LedgerOpenInput.model_construct(
+            title=title, body=body, discovered_from=discovered_from, kind=kind, severity=severity, about=about
+        )
+        return _to_tool_result(await op_ledger_open(self._ledger_service, params))
 
 
 class LedgerReadyTool(AbstractTool):
@@ -460,13 +350,7 @@ class LedgerReadyTool(AbstractTool):
         self._ledger_service = ledger_service
 
     async def _execute(self, kind: IssueKind | None = None) -> ToolResult:
-        try:
-            # IssueKind is a typing.Literal: the schema already validated the
-            # value, and calling the Literal would raise TypeError.
-            issues = await self._ledger_service.ready_work(kind)
-            return ToolResult(result={"issues": issues})
-        except Exception as exc:
-            return ToolResult(success=False, status="error", result=None, error=str(exc))
+        return _to_tool_result(await op_ledger_ready(self._ledger_service, LedgerReadyInput.model_construct(kind=kind)))
 
 
 class LedgerClaimTool(AbstractTool):
@@ -481,11 +365,8 @@ class LedgerClaimTool(AbstractTool):
         self._ledger_service = ledger_service
 
     async def _execute(self, issue_id: str, actor: str | None = None) -> ToolResult:
-        try:
-            success = await self._ledger_service.claim(issue_id, scoped_actor() or actor or current_actor())
-            return ToolResult(result={"success": success})
-        except Exception as exc:
-            return ToolResult(success=False, status="error", result=None, error=str(exc))
+        params = LedgerClaimInput.model_construct(issue_id=issue_id, actor=actor)
+        return _to_tool_result(await op_ledger_claim(self._ledger_service, params))
 
 
 class LedgerCloseTool(AbstractTool):
@@ -503,14 +384,10 @@ class LedgerCloseTool(AbstractTool):
         self, issue_id: str, reason: str, resolved_by: str | None = None, actor: str | None = None
     ) -> ToolResult:
         """Close a ledger issue, carrying the evidence reference and actor through."""
-        try:
-            kwargs = {"resolved_by": resolved_by} if resolved_by is not None else {}
-            success = await self._ledger_service.close_issue(
-                issue_id, reason, scoped_actor() or actor or current_actor(), **kwargs
-            )
-            return ToolResult(result={"success": success})
-        except Exception as exc:
-            return ToolResult(success=False, status="error", result=None, error=str(exc))
+        params = LedgerCloseInput.model_construct(
+            issue_id=issue_id, reason=reason, resolved_by=resolved_by, actor=actor
+        )
+        return _to_tool_result(await op_ledger_close(self._ledger_service, params))
 
 
 class LedgerContextTool(AbstractTool):
@@ -525,66 +402,8 @@ class LedgerContextTool(AbstractTool):
         self._ledger_service = ledger_service
 
     async def _execute(self, file_paths: list[str], max_tokens: int = 3000) -> ToolResult:
-        try:
-            context = await self._ledger_service.get_context(file_paths, max_tokens)
-            return ToolResult(result={"context": context})
-        except Exception as exc:
-            return ToolResult(success=False, status="error", result=None, error=str(exc))
-
-
-INGEST_MAX_SLICES = 200
-INGEST_MAX_BYTES = 1_048_576
-_INGEST_LOCK = asyncio.Lock()
-HASHES_MAX_IDS = 2000
-
-
-class SourceSlicePayload(BaseModel):
-    """One `replace_source_slice` unit crossing the wire (FEAT-569)."""
-
-    source_id: str
-    pages: list[WikiPageRecord] = Field(default_factory=list)
-    edges: list[tuple[str, str, str]] = Field(default_factory=list)
-    symbols: list[SymbolRecord] = Field(default_factory=list)
-
-
-class IngestBatchInput(BaseModel):
-    """Arguments of `wiki_ingest_batch`."""
-
-    slices: list[SourceSlicePayload] = Field(default_factory=list)
-    deleted_source_ids: list[str] = Field(default_factory=list)
-    batch_id: str | None = None
-
-
-class PageHashesInput(BaseModel):
-    """Arguments of `wiki_page_hashes`."""
-
-    concept_ids: list[str] = Field(default_factory=list)
-
-
-class IngestBatchReport(BaseModel):
-    """Outcome of one `wiki_ingest_batch` call."""
-
-    slices_applied: int = 0
-    slices_deleted: int = 0
-    pages_written: int = 0
-    edges_written: int = 0
-    symbols_written: int = 0
-    symbols_dropped: int = 0
-    rejected: list[str] = Field(default_factory=list)
-
-
-SYNC_PULL_MAX = 2000
-
-
-class SyncPagesInput(BaseModel):
-    """Authored knowledge crossing the wire (push payload / pull result)."""
-
-    pages: list[WikiPageRecord] = Field(default_factory=list)
-    edges: list[tuple[str, str, str, str]] = Field(default_factory=list)
-    since: str | None = None
-    skip_asserted_by: str | None = None
-    limit: int = Field(default=500, ge=1, le=SYNC_PULL_MAX)
-    cursor: str | None = None
+        params = LedgerContextInput.model_construct(file_paths=file_paths, max_tokens=max_tokens)
+        return _to_tool_result(await op_ledger_context(self._ledger_service, params))
 
 
 class WikiPageHashesTool(AbstractTool):
@@ -601,11 +420,9 @@ class WikiPageHashesTool(AbstractTool):
         self._store = store
 
     async def _execute(self, concept_ids: list[str]) -> ToolResult:
-        if len(concept_ids) > HASHES_MAX_IDS:
-            return ToolResult(
-                success=False, status="error", result=None, error=f"at most {HASHES_MAX_IDS} ids per call"
-            )
-        return ToolResult(result={"hashes": await self._store.page_hashes(concept_ids)})
+        return _to_tool_result(
+            await op_page_hashes(self._store, PageHashesInput.model_construct(concept_ids=concept_ids))
+        )
 
 
 class WikiIngestBatchTool(AbstractTool):
@@ -631,55 +448,14 @@ class WikiIngestBatchTool(AbstractTool):
         deleted_source_ids: list[str] | None = None,
         batch_id: str | None = None,
     ) -> ToolResult:
-        slices = [
-            s if isinstance(s, SourceSlicePayload) else SourceSlicePayload.model_validate(s) for s in slices or []
-        ]
-        deleted_source_ids = deleted_source_ids or []
-        # Validate everything BEFORE taking the lock or writing anything.
-        if len(slices) > INGEST_MAX_SLICES or len(deleted_source_ids) > INGEST_MAX_SLICES:
-            return self._error(f"at most {INGEST_MAX_SLICES} slices per call")
-        if len(json.dumps([s.model_dump(mode="json") for s in slices]).encode()) > INGEST_MAX_BYTES:
-            return self._error("payload too large (max 1 MiB)")
-        report = IngestBatchReport()
-        try:
-            # In-process callers queue on an asyncio lock; the cross-process flock
-            # (which polls with time.sleep) is entered/left in a worker thread so
-            # it can never stall the serving event loop.
-            async with _INGEST_LOCK:
-                cm = wiki_write_lock(self._config.storage_path(self._root), timeout=self._config.sqlite_busy_timeout)
-                acquired = await asyncio.to_thread(cm.__enter__)
-                try:
-                    if not acquired:
-                        return self._error("busy: wiki writer lock is held by another process")
-                    await self._apply(slices, deleted_source_ids, batch_id, report)
-                finally:
-                    await asyncio.to_thread(cm.__exit__, None, None, None)
-        except WikiStoreBusy as exc:
-            return self._error(f"busy: {exc}")
-        return ToolResult(result=report.model_dump())
-
-    async def _apply(
-        self,
-        slices: list[SourceSlicePayload],
-        deleted_source_ids: list[str],
-        batch_id: str | None,
-        report: IngestBatchReport,
-    ) -> None:
-        """Write the validated slices and deletions; the caller holds the writer lock."""
-        for s in slices:
-            result = await self._store.replace_source_slice(s.source_id, s.pages, s.edges)
-            report.pages_written += int(result.get("pages_written", 0))
-            report.edges_written += int(result.get("edges_written", 0))
-            count = await self._store.upsert_symbols(s.symbols, source_id=s.source_id)
-            report.symbols_written += count
-            if s.symbols and count == 0:
-                report.symbols_dropped += len(s.symbols)
-            report.slices_applied += 1
-            self.logger.info("ingest_batch %s applied %s", batch_id, s.source_id)
-        for sid in deleted_source_ids:
-            await self._store.replace_source_slice(sid, [], [])
-            report.slices_deleted += 1
-            self.logger.info("ingest_batch %s deleted %s", batch_id, sid)
+        params = IngestBatchInput(
+            slices=[
+                s if isinstance(s, SourceSlicePayload) else SourceSlicePayload.model_validate(s) for s in slices or []
+            ],
+            deleted_source_ids=deleted_source_ids or [],
+            batch_id=batch_id,
+        )
+        return _to_tool_result(await op_ingest_batch(self._store, params, root=self._root, config=self._config))
 
 
 class WikiSyncPushTool(AbstractTool):
@@ -699,42 +475,11 @@ class WikiSyncPushTool(AbstractTool):
         **_unused: Any,
     ) -> ToolResult:
         """Merge a client memory slice into the server wiki plane."""
-        from parrot.knowledge.wiki.sync import SyncReport, _merge_body, _record_from
-
-        pages = [page if isinstance(page, WikiPageRecord) else WikiPageRecord.model_validate(page) for page in pages]
-        # Apply last-writer-wins directly against the server store. A staging
-        # store is not used: it would re-stamp ``updated_at`` with "now" and
-        # defeat the comparison against the caller's own timestamps.
-        report = SyncReport(direction="push", env=self._wiki_name, dry_run=False)
-        concept_ids: set[str] = set()
-        for record in pages:
-            if record.origin != "memory":
-                continue
-            page = record.model_dump()
-            concept_id = record.concept_id
-            concept_ids.add(concept_id)
-            existing = await self._store.get_page(concept_id, include_body=True)
-            if existing is None:
-                report.created += 1
-                report.details.append(f"created: {concept_id}")
-                await self._store.upsert_pages([_record_from(page, record.body)])
-                continue
-            if (record.updated_at or "") <= (existing.get("updated_at") or ""):
-                report.skipped_older += 1
-                report.details.append(f"skipped_older: {concept_id}")
-                continue
-            report.updated += 1
-            report.details.append(f"updated: {concept_id}")
-            merged_body = _merge_body(record.body, existing.get("body", ""))
-            await self._store.upsert_pages([_record_from(page, merged_body)])
-        to_write = [
-            (edge[0], edge[1], edge[2], "asserted")
-            for edge in (edges or [])
-            if edge[0] in concept_ids or edge[1] in concept_ids
-        ]
-        if to_write:
-            await self._store.add_edges(to_write)
-        return ToolResult(result=report.model_dump())
+        params = SyncPagesInput(
+            pages=[page if isinstance(page, WikiPageRecord) else WikiPageRecord.model_validate(page) for page in pages],
+            edges=edges or [],
+        )
+        return _to_tool_result(await op_sync_push(self._store, params, wiki_name=self._wiki_name))
 
 
 class WikiSyncPullTool(AbstractTool):
@@ -756,43 +501,11 @@ class WikiSyncPullTool(AbstractTool):
         **_unused: Any,
     ) -> ToolResult:
         """Return a deterministic page of server-authored memory records."""
-        from parrot.knowledge.wiki.sync import _synced_memory_pages
-
-        limit = max(1, min(limit, SYNC_PULL_MAX))
-        pages = await _synced_memory_pages(self._store)
-        pages = [
-            page
-            for page in pages
-            if (since is None or (page.get("updated_at") or "") > since)
-            and (skip_asserted_by is None or page.get("asserted_by") != skip_asserted_by)
-        ]
-        pages.sort(key=lambda page: (page.get("updated_at") or "", page["concept_id"]))
-        if cursor is not None:
-            cursor_updated_at, _, cursor_concept_id = cursor.partition("|")
-            pages = [
-                page
-                for page in pages
-                if (page.get("updated_at") or "", page["concept_id"]) > (cursor_updated_at, cursor_concept_id)
-            ]
-
-        selected = pages[:limit]
-        concept_ids = {page["concept_id"] for page in selected}
-        edges = [
-            (edge["src"], edge["dst"], edge["rel"], "asserted")
-            for edge in await self._store.dump_edges()
-            if edge["src"] in concept_ids or edge["dst"] in concept_ids
-        ]
-        next_cursor = None
-        if len(pages) > limit:
-            last = selected[-1]
-            next_cursor = f"{last.get('updated_at') or ''}|{last['concept_id']}"
-        return ToolResult(
-            result={
-                "pages": [WikiPageRecord.model_validate(page).model_dump(mode="json") for page in selected],
-                "edges": edges,
-                "next_cursor": next_cursor,
-            }
+        # model_construct: the op clamps ``limit`` itself (the original tool never rejected out-of-range values).
+        params = SyncPagesInput.model_construct(
+            pages=[], edges=[], since=since, skip_asserted_by=skip_asserted_by, limit=limit, cursor=cursor
         )
+        return _to_tool_result(await op_sync_pull(self._store, params))
 
 
 def create_bulk_tools(store: BaseWikiStore, root: Path, config: WikiProjectConfig) -> list[AbstractTool]:

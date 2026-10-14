@@ -7,7 +7,9 @@ that map an :class:`OperationResult` onto a ``ToolResult``. This module must sta
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import json
 import logging
 from datetime import UTC, date as _date, datetime
 from pathlib import Path
@@ -21,7 +23,8 @@ from parrot.knowledge.wiki.actor import current_actor
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS, pack_results
 from parrot.knowledge.wiki.decisions.models import ADR_CATEGORY, ADR_MANAGED_PAGE
-from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, estimate_tokens
+from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, WikiStoreBusy, estimate_tokens
+from parrot.knowledge.wiki.symbols import SymbolRecord
 
 if TYPE_CHECKING:
     from parrot.knowledge.wiki.project import WikiProjectConfig
@@ -614,4 +617,297 @@ async def op_standup(store: BaseWikiStore, params: dict[str, Any], **context: An
             "written_file": doc.written_file,
             "diagnostics": list(doc.diagnostics),
         },
+    )
+
+
+# ------------------------------------------------------------------
+# Bulk / sync / vault operations (FEAT-540 M3)
+# ------------------------------------------------------------------
+
+INGEST_MAX_SLICES = 200
+INGEST_MAX_BYTES = 1_048_576
+_INGEST_LOCK = asyncio.Lock()
+HASHES_MAX_IDS = 2000
+SYNC_PULL_MAX = 2000
+
+
+class SourceSlicePayload(BaseModel):
+    """One `replace_source_slice` unit crossing the wire (FEAT-569)."""
+
+    source_id: str
+    pages: list[WikiPageRecord] = Field(default_factory=list)
+    edges: list[tuple[str, str, str]] = Field(default_factory=list)
+    symbols: list[SymbolRecord] = Field(default_factory=list)
+
+
+class IngestBatchInput(BaseModel):
+    """Arguments of `wiki_ingest_batch`."""
+
+    slices: list[SourceSlicePayload] = Field(default_factory=list)
+    deleted_source_ids: list[str] = Field(default_factory=list)
+    batch_id: str | None = None
+
+
+class PageHashesInput(BaseModel):
+    """Arguments of `wiki_page_hashes`."""
+
+    concept_ids: list[str] = Field(default_factory=list)
+
+
+class IngestBatchReport(BaseModel):
+    """Outcome of one `wiki_ingest_batch` call."""
+
+    slices_applied: int = 0
+    slices_deleted: int = 0
+    pages_written: int = 0
+    edges_written: int = 0
+    symbols_written: int = 0
+    symbols_dropped: int = 0
+    rejected: list[str] = Field(default_factory=list)
+
+
+class SyncPagesInput(BaseModel):
+    """Authored knowledge crossing the wire (push payload / pull result)."""
+
+    pages: list[WikiPageRecord] = Field(default_factory=list)
+    edges: list[tuple[str, str, str, str]] = Field(default_factory=list)
+    since: str | None = None
+    skip_asserted_by: str | None = None
+    limit: int = Field(default=500, ge=1, le=SYNC_PULL_MAX)
+    cursor: str | None = None
+
+
+async def op_page_hashes(store: BaseWikiStore, params: PageHashesInput, **context: Any) -> OperationResult:
+    """wiki_page_hashes — stored content hashes for up to :data:`HASHES_MAX_IDS` page ids."""
+    if len(params.concept_ids) > HASHES_MAX_IDS:
+        return _error(f"at most {HASHES_MAX_IDS} ids per call")
+    return OperationResult(data={"hashes": await store.page_hashes(params.concept_ids)})
+
+
+async def _apply_ingest(
+    store: BaseWikiStore,
+    slices: list[SourceSlicePayload],
+    deleted_source_ids: list[str],
+    batch_id: str | None,
+    report: IngestBatchReport,
+) -> None:
+    """Write the validated slices and deletions; the caller holds the writer lock."""
+    for s in slices:
+        result = await store.replace_source_slice(s.source_id, s.pages, s.edges)
+        report.pages_written += int(result.get("pages_written", 0))
+        report.edges_written += int(result.get("edges_written", 0))
+        count = await store.upsert_symbols(s.symbols, source_id=s.source_id)
+        report.symbols_written += count
+        if s.symbols and count == 0:
+            report.symbols_dropped += len(s.symbols)
+        report.slices_applied += 1
+        logger.info("ingest_batch %s applied %s", batch_id, s.source_id)
+    for sid in deleted_source_ids:
+        await store.replace_source_slice(sid, [], [])
+        report.slices_deleted += 1
+        logger.info("ingest_batch %s deleted %s", batch_id, sid)
+
+
+async def op_ingest_batch(store: BaseWikiStore, params: IngestBatchInput, **context: Any) -> OperationResult:
+    """wiki_ingest_batch — apply source slices pushed by the CLI in remote mode.
+
+    Args:
+        store: The wiki store receiving the slices.
+        params: The slices, deletions and batch id.
+        **context: ``root`` (``Path``) and ``config`` (:class:`WikiProjectConfig`).
+
+    Returns:
+        ``data`` carries the :class:`IngestBatchReport`; an error result when a limit is exceeded
+        or the writer lock is busy (nothing is written in that case).
+    """
+    # Lazy: ``project`` transitively loads the tool framework, which this module must not import.
+    from parrot.knowledge.wiki.project import wiki_write_lock
+
+    root: Path = context["root"]
+    config: WikiProjectConfig = context["config"]
+    slices = params.slices
+    deleted_source_ids = params.deleted_source_ids
+    # Validate everything BEFORE taking the lock or writing anything.
+    if len(slices) > INGEST_MAX_SLICES or len(deleted_source_ids) > INGEST_MAX_SLICES:
+        return _error(f"at most {INGEST_MAX_SLICES} slices per call")
+    if len(json.dumps([s.model_dump(mode="json") for s in slices]).encode()) > INGEST_MAX_BYTES:
+        return _error("payload too large (max 1 MiB)")
+    report = IngestBatchReport()
+    try:
+        # In-process callers queue on an asyncio lock; the cross-process flock
+        # (which polls with time.sleep) is entered/left in a worker thread so
+        # it can never stall the serving event loop.
+        async with _INGEST_LOCK:
+            cm = wiki_write_lock(config.storage_path(root), timeout=config.sqlite_busy_timeout)
+            acquired = await asyncio.to_thread(cm.__enter__)
+            try:
+                if not acquired:
+                    return _error("busy: wiki writer lock is held by another process")
+                await _apply_ingest(store, slices, deleted_source_ids, params.batch_id, report)
+            finally:
+                await asyncio.to_thread(cm.__exit__, None, None, None)
+    except WikiStoreBusy as exc:
+        return _error(f"busy: {exc}")
+    return OperationResult(data=report.model_dump())
+
+
+async def op_sync_push(store: BaseWikiStore, params: SyncPagesInput, **context: Any) -> OperationResult:
+    """wiki_sync_push — merge a client memory slice into the server plane (last-writer-wins).
+
+    Args:
+        store: The server wiki store.
+        params: The pushed pages and edges.
+        **context: ``wiki_name`` (``str``) — recorded as the report ``env``.
+    """
+    from parrot.knowledge.wiki.sync import SyncReport, _merge_body, _record_from
+
+    wiki_name: str = context["wiki_name"]
+    # Apply last-writer-wins directly against the server store. A staging
+    # store is not used: it would re-stamp ``updated_at`` with "now" and
+    # defeat the comparison against the caller's own timestamps.
+    report = SyncReport(direction="push", env=wiki_name, dry_run=False)
+    concept_ids: set[str] = set()
+    for record in params.pages:
+        if record.origin != "memory":
+            continue
+        page = record.model_dump()
+        concept_id = record.concept_id
+        concept_ids.add(concept_id)
+        existing = await store.get_page(concept_id, include_body=True)
+        if existing is None:
+            report.created += 1
+            report.details.append(f"created: {concept_id}")
+            await store.upsert_pages([_record_from(page, record.body)])
+            continue
+        if (record.updated_at or "") <= (existing.get("updated_at") or ""):
+            report.skipped_older += 1
+            report.details.append(f"skipped_older: {concept_id}")
+            continue
+        report.updated += 1
+        report.details.append(f"updated: {concept_id}")
+        merged_body = _merge_body(record.body, existing.get("body", ""))
+        await store.upsert_pages([_record_from(page, merged_body)])
+    to_write = [
+        (edge[0], edge[1], edge[2], "asserted")
+        for edge in params.edges
+        if edge[0] in concept_ids or edge[1] in concept_ids
+    ]
+    if to_write:
+        await store.add_edges(to_write)
+    return OperationResult(data=report.model_dump())
+
+
+async def op_sync_pull(store: BaseWikiStore, params: SyncPagesInput, **context: Any) -> OperationResult:
+    """wiki_sync_pull — a deterministic page of server-authored memory records."""
+    from parrot.knowledge.wiki.sync import _synced_memory_pages
+
+    since = params.since
+    skip_asserted_by = params.skip_asserted_by
+    limit = max(1, min(params.limit, SYNC_PULL_MAX))
+    pages = await _synced_memory_pages(store)
+    pages = [
+        page
+        for page in pages
+        if (since is None or (page.get("updated_at") or "") > since)
+        and (skip_asserted_by is None or page.get("asserted_by") != skip_asserted_by)
+    ]
+    pages.sort(key=lambda page: (page.get("updated_at") or "", page["concept_id"]))
+    if params.cursor is not None:
+        cursor_updated_at, _, cursor_concept_id = params.cursor.partition("|")
+        pages = [
+            page
+            for page in pages
+            if (page.get("updated_at") or "", page["concept_id"]) > (cursor_updated_at, cursor_concept_id)
+        ]
+
+    selected = pages[:limit]
+    concept_ids = {page["concept_id"] for page in selected}
+    edges = [
+        (edge["src"], edge["dst"], edge["rel"], "asserted")
+        for edge in await store.dump_edges()
+        if edge["src"] in concept_ids or edge["dst"] in concept_ids
+    ]
+    next_cursor = None
+    if len(pages) > limit:
+        last = selected[-1]
+        next_cursor = f"{last.get('updated_at') or ''}|{last['concept_id']}"
+    return OperationResult(
+        data={
+            "pages": [WikiPageRecord.model_validate(page).model_dump(mode="json") for page in selected],
+            "edges": edges,
+            "next_cursor": next_cursor,
+        }
+    )
+
+
+async def op_vault_ingest(store: BaseWikiStore, params: VaultIngestInput, **context: Any) -> OperationResult:
+    """vault_ingest — (re)build the wiki retrieval plane from an Obsidian vault.
+
+    Args:
+        store: The wiki store receiving the notes.
+        params: Optional vault path override and ``force`` flag.
+        **context: ``root`` (``Path``) and ``config`` (:class:`WikiProjectConfig`).
+    """
+    # Lazy imports: cli pulls click + scanners; keep the MCP server's
+    # module import light and stdout-clean.
+    from parrot.knowledge.wiki.cli import _ingest_files, _open_sources, _prune_removed
+    from parrot.knowledge.wiki.project import resolve_vault_dir, wiki_write_lock
+    from parrot.knowledge.wiki.vault_scan import scan_vault
+
+    root: Path = context["root"]
+    config: WikiProjectConfig = context["config"]
+    vault = resolve_vault_dir(root, config, override=params.vault_path)
+    if vault is None:
+        return _error(
+            "No Obsidian vault found: pass vault_path, set "
+            "'vault_dir' in .parrot/wiki.json, or run inside a "
+            "vault (.obsidian/ directory)."
+        )
+
+    storage = config.storage_path(root)
+    with wiki_write_lock(storage) as acquired:
+        if not acquired:
+            return _error("Another wiki writer (build/upsert) is in progress — retry once it finishes.")
+        scan, stats = await asyncio.to_thread(
+            scan_vault,
+            vault,
+            config.body_max_chars,
+            config.max_file_kb * 1024,
+        )
+        sources = _open_sources(root, config, store=store)
+        counts = await _ingest_files(store, sources, vault, scan, force=params.force)
+        await store.upsert_pages(scan.dir_records)
+        await store.add_edges(scan.dir_edges)
+        # scope="root": this plane may also hold the repo's own
+        # codebase pages — prune only what lives under the vault
+        # (FEAT-450, D4.4).
+        removed = await _prune_removed(store, sources, vault, scan, scope="root")
+        store_stats = await store.stats()
+
+    try:
+        WikiBookkeeper().log_operation(
+            storage,
+            "VAULT_INGEST",
+            f"vault: {vault}, notes: {stats.notes}, tags: {stats.tags}, "
+            f"ingested: {counts.get('written', 0)}, removed: {removed}, "
+            f"by: {current_actor()}",
+        )
+    except OSError as exc:
+        logger.warning("Failed to log VAULT_INGEST to wiki audit trail: %s", exc)
+
+    return OperationResult(
+        data={
+            "vault": str(vault),
+            "notes": stats.notes,
+            "tags": stats.tags,
+            "wikilink_edges": stats.wikilink_edges,
+            "embed_edges": stats.embed_edges,
+            "unresolved_links": len(stats.unresolved_links),
+            "ingested": counts.get("written", 0),
+            "unchanged": counts.get("unchanged", 0),
+            "removed": removed,
+            "skipped": len(scan.skipped),
+            "pages_total": store_stats.get("pages", 0),
+            "edges_total": store_stats.get("edges", 0),
+        }
     )
