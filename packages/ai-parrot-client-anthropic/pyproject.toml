@@ -14,7 +14,7 @@ authors = [
 ]
 dependencies = [
     "ai-parrot>=1.2.2",
-    "anthropic[aiohttp,aws]>=0.109.0,<1.0.0",
+    "anthropic[aiohttp,aws]>=1.0.0,<2.0.0",
     "claude-agent-sdk>=0.1.68",
     # NOT declared here: `ai-parrot-client-amazon` — AnthropicClient's
     # `backend="bedrock"` mode lazily imports

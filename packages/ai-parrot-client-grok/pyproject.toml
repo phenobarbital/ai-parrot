@@ -14,7 +14,7 @@ authors = [
 ]
 dependencies = [
     "ai-parrot>=1.2.2",
-    "xai-sdk>=1.12.0",
+    "xai-sdk>=1.19.0",
 ]
 
 [project.entry-points."parrot.clients"]

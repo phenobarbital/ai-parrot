@@ -227,6 +227,11 @@ class GrokClient(AbstractClient):
         _lc_t0_grok2 = _lc_time_grok2.perf_counter()
 
         # 3. Initialize Chat
+        chat_kwargs: Dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
         if response_format is not None:
             chat_kwargs["response_format"] = response_format
 
