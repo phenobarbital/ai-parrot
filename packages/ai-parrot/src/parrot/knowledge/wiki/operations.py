@@ -271,7 +271,6 @@ class WikiStandupInput(BaseModel):
     use_llm: bool = Field(default=False, description="Allow a model call to summarise the plate.")
 
 
-
 def _error(message: str) -> OperationResult:
     """Build a failed :class:`OperationResult` carrying ``message``."""
     return OperationResult(text=message, is_error=True)
@@ -544,9 +543,7 @@ async def op_lint(store: BaseWikiStore, params: WikiLintInput, **context: Any) -
         config=_StorageDirConfig(storage_dir) if storage_dir is not None else None,
         router=FindingRouter(store, report_dir=report_dir),
     ).run(
-        LintOptions(
-            rules=params.rules, skip=params.skip or [], fix=params.fix, llm=params.llm, report_dir=report_dir
-        )
+        LintOptions(rules=params.rules, skip=params.skip or [], fix=params.fix, llm=params.llm, report_dir=report_dir)
     )
     return OperationResult(
         text="",
