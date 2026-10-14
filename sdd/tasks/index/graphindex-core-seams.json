@@ -156,7 +156,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -166,8 +166,9 @@
       "parallelism_notes": "imports _scoped_store/_unknown_namespace_error/OperationResult from TASK-4306 (wiki/operations.py)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4307-wiki-plane-operations.md"
+      "completed_at": "2026-10-14T23:51:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4307-wiki-plane-operations.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4308",
@@ -176,7 +177,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -186,8 +187,9 @@
       "parallelism_notes": "extends wiki/operations.py and edits wiki/tools.py after TASK-4306 (same files)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4308-wiki-ledger-bulk-vault-operations.md"
+      "completed_at": "2026-10-14T23:51:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4308-wiki-ledger-bulk-vault-operations.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4309",
