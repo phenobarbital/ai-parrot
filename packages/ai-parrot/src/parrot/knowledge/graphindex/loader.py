@@ -22,6 +22,7 @@ As with :class:`PageIndexLoader`, two views are offered: ``load()`` returns one
 :meth:`build_graph` / the :pyattr:`nodes`, :pyattr:`edges`, :pyattr:`build_result`
 attributes expose the native artifacts.
 """
+
 from __future__ import annotations
 
 import tempfile
@@ -88,9 +89,7 @@ class _CapturingPersistence:
     async def replace_document_slice(self, ctx, document_uri, nodes, edges):  # noqa: ANN001
         self.nodes = list(nodes)
         self.edges = list(edges)
-        return await self._inner.replace_document_slice(
-            ctx, document_uri, nodes, edges
-        )
+        return await self._inner.replace_document_slice(ctx, document_uri, nodes, edges)
 
 
 class GraphIndexLoader(AbstractLoader):
@@ -124,7 +123,14 @@ class GraphIndexLoader(AbstractLoader):
     """
 
     extensions: List[str] = [
-        '.pdf', '.md', '.markdown', '.txt', '.text', '.html', '.htm', '.docx',
+        ".pdf",
+        ".md",
+        ".markdown",
+        ".txt",
+        ".text",
+        ".html",
+        ".htm",
+        ".docx",
     ]
 
     def __init__(
@@ -152,7 +158,7 @@ class GraphIndexLoader(AbstractLoader):
         **kwargs: Any,
     ) -> None:
         super().__init__(source, **kwargs)
-        self.doctype = 'graphindex_node'
+        self.doctype = "graphindex_node"
         self.tenant_id = tenant_id
         self.detect_communities = detect_communities
         self._output_dir = Path(output_dir) if output_dir is not None else None
@@ -173,7 +179,6 @@ class GraphIndexLoader(AbstractLoader):
         self.embedder = GraphIndexEmbedder(
             model_name=embedding_model,
             dimension=embedding_dim,
-            pgvector_dsn=pgvector_dsn,
         )
 
         # Resolve ArangoDB credentials → persistence enabled iff explicit.
@@ -188,11 +193,7 @@ class GraphIndexLoader(AbstractLoader):
         )
         self.persist_enabled = self._arango_params is not None
         self._sqlite_dir = Path(sqlite_dir) if sqlite_dir is not None else None
-        self.arango_db = (
-            arango_database
-            or (self._arango_params or {}).get("database")
-            or f"db_{tenant_id}"
-        )
+        self.arango_db = arango_database or (self._arango_params or {}).get("database") or f"db_{tenant_id}"
 
         # The GraphIndex meta-ontology defines the ``gi_*`` vertex/edge
         # collections; using it as the tenant ontology means
@@ -252,9 +253,7 @@ class GraphIndexLoader(AbstractLoader):
         files = self._resolve_files(source)
         inner = await self._make_persistence()
         capture = _CapturingPersistence(inner)
-        output_dir = self._output_dir or Path(
-            tempfile.mkdtemp(prefix="graphindex_")
-        )
+        output_dir = self._output_dir or Path(tempfile.mkdtemp(prefix="graphindex_"))
         self.builder = GraphIndexBuilder(
             persistence=capture,
             embedder=self.embedder,
@@ -290,6 +289,7 @@ class GraphIndexLoader(AbstractLoader):
         if self._sqlite_dir is not None:
             # FEAT-240: SQLite backend takes priority over null persistence
             from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
+
             return SQLitePersistence(db_dir=self._sqlite_dir)
         if not self.persist_enabled:
             return _NullPersistence()
@@ -328,9 +328,7 @@ class GraphIndexLoader(AbstractLoader):
         ``arango`` dict or any discrete credential. Missing fields fall back to
         ``ARANGODB_*`` environment variables.
         """
-        explicit = arango is not None or any(
-            v is not None for v in (host, user, password, database)
-        )
+        explicit = arango is not None or any(v is not None for v in (host, user, password, database))
         if not explicit:
             return None
 
@@ -345,27 +343,15 @@ class GraphIndexLoader(AbstractLoader):
         base = dict(arango) if isinstance(arango, dict) else {}
         return {
             "host": base.get("host") or host or _cfg("ARANGODB_HOST", "127.0.0.1"),
-            "port": int(
-                base.get("port") or port or _cfg("ARANGODB_PORT", 8529)
-            ),
-            "protocol": base.get("protocol")
-            or protocol
-            or _cfg("ARANGODB_PROTOCOL", "http"),
-            "username": base.get("username")
-            or user
-            or _cfg("ARANGODB_USERNAME", "root"),
+            "port": int(base.get("port") or port or _cfg("ARANGODB_PORT", 8529)),
+            "protocol": base.get("protocol") or protocol or _cfg("ARANGODB_PROTOCOL", "http"),
+            "username": base.get("username") or user or _cfg("ARANGODB_USERNAME", "root"),
             "password": (
                 base.get("password")
                 if base.get("password") is not None
-                else (
-                    password
-                    if password is not None
-                    else _cfg("ARANGODB_PASSWORD", "")
-                )
+                else (password if password is not None else _cfg("ARANGODB_PASSWORD", ""))
             ),
-            "database": base.get("database")
-            or database
-            or _cfg("ARANGODB_DATABASE", f"db_{self.tenant_id}"),
+            "database": base.get("database") or database or _cfg("ARANGODB_DATABASE", f"db_{self.tenant_id}"),
         }
 
     def _resolve_files(self, source: Optional[Any]) -> List[Path]:
@@ -400,9 +386,8 @@ class GraphIndexLoader(AbstractLoader):
         """Convert a :class:`UniversalNode` into a canonical :class:`Document`."""
         domain_tags = node.domain_tags or {}
         metadata = self.create_metadata(
-            path=node.source_uri
-            or f"graphindex://{self.tenant_id}/{node.node_id}",
-            doctype='graphindex_node',
+            path=node.source_uri or f"graphindex://{self.tenant_id}/{node.node_id}",
+            doctype="graphindex_node",
             source_type=self._source_type,
             title=node.title,
             node_id=node.node_id,

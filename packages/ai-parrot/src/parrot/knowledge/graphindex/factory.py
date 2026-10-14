@@ -276,15 +276,16 @@ async def build_graph_memory_toolkit(
             skipped_edges,
         )
 
+    from parrot.embeddings.graphindex import attach_hot_index
+
     embedder = embedder or HashingGraphEmbedder(dimension=dimension)
     if nodes:
         await embedder.embed_nodes(nodes)
 
     toolkit = GraphIndexToolkit(
         graph=assembler.graph,
-        faiss_index=embedder.index,
+        **attach_hot_index(embedder),
         node_map=dict(assembler._node_index_map),
-        node_id_list=list(embedder._node_id_map),
         client=client,
         assembler=assembler,
         embedder=embedder,
