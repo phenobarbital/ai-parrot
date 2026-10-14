@@ -5,7 +5,7 @@
 **Status**: pending
 **Priority**: high
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-4070, TASK-4086, TASK-4087, TASK-4088, TASK-4299
+**Depends-on**: TASK-4070, TASK-4086, TASK-4087, TASK-4088, TASK-4299, TASK-4334
 **Assigned-to**: unassigned
 
 ---
@@ -69,7 +69,13 @@ this list is the audit trail.
   multi-line) and `:590` (parse_taxonomy) (+ twin `.agent/workflows/sdd-spec.md`) — to
   `parrot sdd run sdd_meta parse|taxonomy|resolve-flow …`, e.g.
   `META=$(parrot sdd run sdd_meta parse "<spec-path>")`. Six invocations in total.
-- **Q1 residual (inline python) — inventoried, NOT rewritten here.** The remaining inline
+- **Q1 residual (inline python) — RETIRED by TASK-4334 (2026-10-15).** TASK-4334, now a
+  dependency of this task, replaced every block listed below with a single-line
+  `python -m scripts.sdd.spec_tools <sub> …` invocation, so rule 5a rewrites them once
+  `spec_tools` is in `MOVED` (20 names). The Completion Note reports the
+  `test_shipped_commands_have_no_inline_python` result (its `sdd_meta` allowance must be
+  exercised zero times after rule 6) instead of a residual list. Historical text follows.
+  The remaining inline
   `python -c` blocks in shipped files still need a `python` on PATH in a foreign repo:
   `.claude/commands/sdd-spec.md:290`, `:362`, `:381` (imports `jsonschema`), `:393`, `:666`
   (stdlib `json`/`sys`/`os` index and JSON manipulation — no helper exists for them) and
@@ -173,9 +179,8 @@ this list is the audit trail.
   `regen_core_paths`, `calibrate_rlimit_as`, `profile_execution`, `tag_yaml_fixtures` (verified
   2026-10-14: zero references in the shipped set). The substitution table matches the 19 moved
   names only, by construction; the extended regression test proves nothing else is left.
-- Rewriting the residual inline `python -c` blocks (`sdd-spec.md:290,362,381,393,542,666` +
-  twin) into new helpers — inventoried in the Completion Note with `file:line` for the
-  follow-up ledger item (see Amendments, "Q1 residual (inline python)").
+- Creating helpers for the former inline `python -c` blocks — TASK-4334 did (`spec_tools`);
+  this task only rewrites their `python -m scripts.sdd.spec_tools` invocations via rule 5a.
 - Giving `sdd_meta` its CLI (`parse` / `taxonomy` / `resolve-flow`) — TASK-4299; this task only
   consumes it.
 - Python sources that embed `scripts.sdd.*` strings
@@ -355,7 +360,7 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:  # line 30
   before writing rule-6 invocations.
 - ~~`existing_feature_id` reachable from `reserve_ids`' CLI~~ — it is a Python function
   (`scripts/sdd/reserve_ids.py:420`) only; the CLI (`:629-633`) is frozen by TASK-4085. The
-  `sdd-spec.md:542` block stays inline (residual list).
+  `sdd-spec.md:542` block was rewritten by TASK-4334 to `spec_tools existing-feature-id` (rule 5a applies).
 - ~~scanner kinds `org-data`, `claude-md-ref`, `branch-literal` on `dev` today~~ — added to
   `parrot.sdd.audit.KINDS` by TASK-4070 (C11a). Verify the strings before filtering on them.
 - ~~`scripts/sdd/close_task.py` / `heal_orphans.py` in the repo~~ — the Python ports are
@@ -679,12 +684,13 @@ list preserves parity automatically — never hand-edit one side.
    and the C11b / C6 / C9 / C10 text edits (Scope), driven by
    `python -m parrot.sdd.audit <shipped files>` until the three new kinds report zero — *why*:
    these are prose edits the mechanical script cannot make; the scanner is the oracle.
-   Then inventory every remaining inline `python -c` block in a shipped file (`file:line`) for
-   the Completion Note — *why*: the follow-up ledger item needs the exact list.
+   Then run `pytest tests/sdd_scripts/test_command_contracts.py::test_shipped_commands_have_no_inline_python -q`
+   and confirm its `sdd_meta` allowance is no longer exercised — *why*: TASK-4334 banned inline
+   Python in shipped commands; rule 6 retires the last allowed cases.
 6. Apply the four test edits, create `test_no_repo_script_refs.py`, run the Validation
    Commands — *why*: parity + contract tests prove twins and pins are intact.
 
-### Substitution table (old → new; 19 names `N` only; order matters — 5a before 5b)
+### Substitution table (old → new; 20 names `N` only; order matters — 5a before 5b)
 
 | # | Old (regex, `[ \t]` = same line) | New |
 |---|---|---|
@@ -709,7 +715,7 @@ from pathlib import Path
 MOVED = (
     "sdd_meta id_ledger reserve_ids check_id_collisions ensure_worktree finalize_task check_task_state "
     "check_task_graph worktree_status close_task heal_orphans doc_taxonomy backfill_taxonomy migrate_index "
-    "select_tests insight install_hooks prune_intake review_checkpoint"  # review_checkpoint: C12 (TASK-4086)
+    "select_tests insight install_hooks prune_intake spec_tools review_checkpoint"  # review_checkpoint: C12 (TASK-4086); spec_tools: TASK-4334
 ).split()
 N = "|".join(MOVED)
 RULES = [  # Q1: invocations become `parrot sdd run <N>`; prose/import references keep the dotted module name

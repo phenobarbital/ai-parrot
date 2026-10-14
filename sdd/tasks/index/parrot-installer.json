@@ -413,10 +413,11 @@
       "priority": "medium",
       "effort": "M",
       "depends_on": [
-        "TASK-4085"
+        "TASK-4085",
+        "TASK-4334"
       ],
       "parallel": true,
-      "parallelism_notes": "imports parrot.sdd.scripts.sdd_meta re-export created by TASK-4085 (parrot/sdd/scripts/sdd_meta.py)",
+      "parallelism_notes": "imports parrot.sdd.scripts.sdd_meta re-export created by TASK-4085 (parrot/sdd/scripts/sdd_meta.py); git-mv's scripts/sdd/spec_tools.py from TASK-4334 (20th module)",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -437,10 +438,11 @@
         "TASK-4086",
         "TASK-4087",
         "TASK-4088",
-        "TASK-4299"
+        "TASK-4299",
+        "TASK-4334"
       ],
       "parallel": true,
-      "parallelism_notes": "needs every helper module to exist (TASK-4086 task-state, TASK-4087 shell ports, TASK-4088 taxonomy/misc) and the assumption inventory from TASK-4070 (parrot/sdd/audit.py); needs sdd/config.json field names from TASK-4299 (C6) and audit kinds org-data/claude-md-ref/branch-literal from TASK-4070 (C11a)",
+      "parallelism_notes": "needs every helper module to exist (TASK-4086 task-state, TASK-4087 shell ports, TASK-4088 taxonomy/misc) and the assumption inventory from TASK-4070 (parrot/sdd/audit.py); needs sdd/config.json field names from TASK-4299 (C6) and audit kinds org-data/claude-md-ref/branch-literal from TASK-4070 (C11a); TASK-4334 first: it edits the same sdd-spec/sdd-task twins and its spec_tools invocations are rewritten by rule 5a",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -618,6 +620,24 @@
       ],
       "parallelism_notes": "creates parrot/sdd/config.py (package root from TASK-4070 via TASK-4085) and edits sdd_meta.py after TASK-4298; TASK-4089 and TASK-4091 depend on it",
       "file": "sdd/tasks/active/TASK-4299-sdd-repo-config.md"
+    },
+    {
+      "id": "TASK-4334",
+      "slug": "sdd-spec-tools-helper",
+      "title": "Q1 residual — spec_tools helper replaces inline python -c blocks in shipped /sdd-spec and /sdd-task",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "parallel": true,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "effort": "M",
+      "depends_on": [],
+      "parallelism_notes": "creates scripts/sdd/spec_tools.py and edits the sdd-spec/sdd-task command twins; no dependency — TASK-4088 (moves spec_tools) and TASK-4089 (rewrites its invocations, shares the twin files) depend on it; discovered_from issue:cac5c029bd88",
+      "file": "sdd/tasks/active/TASK-4334-sdd-spec-tools-helper.md"
     }
   ],
   "amended_at": "2026-10-14T20:36:42+00:00",
