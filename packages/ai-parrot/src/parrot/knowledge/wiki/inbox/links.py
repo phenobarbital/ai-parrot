@@ -3,7 +3,7 @@
 import logging
 import re
 
-from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
+from parrot.knowledge.graphindex.protocols import LLMCaller
 from parrot.knowledge.wiki.inbox.models import (
     RELATIONS,
     LinkCandidate,
@@ -33,7 +33,7 @@ class LinkProposer:
         self,
         store: BaseWikiStore,
         search: WikiCombinedSearch,
-        adapter: PageIndexLLMAdapter | None,
+        adapter: LLMCaller | None,
         *,
         max_candidates: int = 20,
         top_k: int = 15,

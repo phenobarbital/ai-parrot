@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import unicodedata
 
-from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
+from parrot.knowledge.graphindex.protocols import LLMCaller
 from parrot.knowledge.wiki.charter import Taxonomy
 from parrot.knowledge.wiki.documents import AcquiredDocument, DocumentMetadata
 from parrot.knowledge.wiki.inbox.models import InboxClassification, ResolvedClassification
@@ -114,7 +114,7 @@ def build_classification_prompt(
 class InboxClassifier:
     """Run and validate one structured classification call."""
 
-    def __init__(self, adapter: PageIndexLLMAdapter, taxonomy: Taxonomy, *, max_chars: int = 24_000) -> None:
+    def __init__(self, adapter: LLMCaller, taxonomy: Taxonomy, *, max_chars: int = 24_000) -> None:
         """Bind the adapter, taxonomy and text budget.
 
         Args:
