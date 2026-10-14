@@ -7,12 +7,8 @@ or ``parrot.clients`` (spec G8 one-way import rule) — the runner that performs
 dataset I/O lives in ``parrot.tools.infographic_recipes`` instead.
 """
 
-# Import side effect ONLY: registers the 8 built-in transformers (day_totals,
-# division_breakdown, variance_analysis, top_movers, narrative_facts,
-# groupby_aggregate, pivot, latest_vs_baseline) on `transformer_registry`.
-# Nothing from this module is re-exported — transformers are looked up by
-# name via the registry, never imported directly (spec G1).
-from parrot.outputs.a2ui.recipes import library as _library  # noqa: F401
+# Built-in transformers (recipes.library) register lazily on the first
+# transformer_registry access — not at package import (FEAT-668).
 from parrot.outputs.a2ui.recipes.migrate import (
     MigrationReport,
     migrate_layout,

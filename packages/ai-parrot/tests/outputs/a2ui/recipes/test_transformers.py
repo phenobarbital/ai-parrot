@@ -1,12 +1,27 @@
 """Registry + fail-fast gate tests for FEAT-324 Module 2
 (`parrot.outputs.a2ui.recipes.transformers`)."""
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
 from parrot.outputs.a2ui.recipes import infographic_transformer
 from parrot.outputs.a2ui.recipes.models import TransformStep
 from parrot.outputs.a2ui.recipes.transformers import TransformerRegistry, validate_inputs
+
+_BUILTINS = {
+    "day_totals",
+    "division_breakdown",
+    "variance_analysis",
+    "top_movers",
+    "narrative_facts",
+    "groupby_aggregate",
+    "pivot",
+    "latest_vs_baseline",
+}
 
 
 def test_register_and_manifest():
@@ -69,9 +84,7 @@ def test_unknown_transformer_lists_available():
 
 
 def test_decorator_registers_on_global_registry():
-    @infographic_transformer(
-        "test_decorator_transform", requires_columns={"snap": ["a"]}
-    )
+    @infographic_transformer("test_decorator_transform", requires_columns={"snap": ["a"]})
     def _fn(inputs, params):
         return {"a": inputs["snap"]}
 
@@ -108,9 +121,7 @@ def test_gate_missing_columns_fail_fast():
 def test_gate_empty_dataset_fail_fast():
     from parrot.outputs.a2ui.recipes.transformers import transformer_registry
 
-    transformer_registry.register(
-        "gate_empty", lambda inputs, params: {}, requires_columns={"snap": []}
-    )
+    transformer_registry.register("gate_empty", lambda inputs, params: {}, requires_columns={"snap": []})
     step = _make_step("gate_empty", ["snap"])
     df = pd.DataFrame(columns=["division"])
 
@@ -159,3 +170,41 @@ def test_gate_collects_all_problems():
 
     # missing col_a on "a", plus empty + missing col_b on "b" == 3 errors
     assert len(errors) == 3
+
+
+def test_bare_registry_has_no_builtins():
+    """A registry built without builtins_module never imports anything."""
+    assert TransformerRegistry().list() == []
+
+
+def test_singleton_list_contains_all_builtins():
+    """The process-wide registry loads every built-in on first access."""
+    from parrot.outputs.a2ui.recipes.transformers import transformer_registry
+
+    assert _BUILTINS <= {manifest.name for manifest in transformer_registry.list()}
+
+
+def test_package_import_does_not_load_library_until_first_access():
+    """The recipes package leaves the transformer library unloaded until needed."""
+    src_dir = Path(__file__).resolve().parents[4] / "src"
+    library_module = "parrot.outputs.a2ui.recipes.library"
+    probe = (
+        "import sys\n"
+        f"sys.path.insert(0, {str(src_dir)!r})\n"
+        "import parrot.outputs.a2ui.recipes\n"
+        f"assert {library_module!r} not in sys.modules\n"
+        "from parrot.outputs.a2ui.recipes.transformers import transformer_registry\n"
+        "transformer_registry.get('day_totals')\n"
+        f"assert {library_module!r} in sys.modules\n"
+    )
+    result = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=60)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_register_collision_with_builtin_raises():
+    """An external transformer cannot replace a lazily registered built-in."""
+    from parrot.outputs.a2ui.recipes.transformers import transformer_registry
+
+    with pytest.raises(ValueError, match="already registered"):
+        transformer_registry.register("day_totals", lambda inputs, params: {})
