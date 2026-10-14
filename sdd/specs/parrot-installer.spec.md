@@ -957,9 +957,11 @@ Anchors go stale between spec time and task time — `/sdd-task` MUST re-run the
   import `sdd_meta` are covered by the `sdd_meta` CLI (TASK-4299) and rewritten to
   `parrot sdd run sdd_meta …` (TASK-4089). Other inline blocks in `sdd-spec.md` (stdlib
   JSON/index edits, one `jsonschema` import, one `reserve_ids.existing_feature_id`) still
-  need a `python` on PATH in a foreign repo. TASK-4089 inventories them; ledger item
-  `issue:cac5c029bd88` (`feature_gap`, minor) tracks the follow-up port. C3's
-  wheel-only test enumerates `parrot sdd run` invocations only, so it does not cover them.
+  needed a `python` on PATH in a foreign repo. **Resolved 2026-10-15 by TASK-4334**
+  (`scripts/sdd/spec_tools.py`, promoted from ledger `issue:cac5c029bd88`, now closed): the
+  seven blocks call `python -m scripts.sdd.spec_tools <sub> …` on one line, TASK-4088 moves the
+  helper and TASK-4089 rule 5a rewrites the invocations like any other helper, so C3's
+  wheel-only test covers them through their `spec_tools` scenarios (TASK-4091).
 - **C6/C11 change ai-parrot's own command files** *[rev 0.2]*: byte-equality means the
   placeholders and the "base branch in `sdd/config.json`" wording land in `.claude/` too;
   ai-parrot's `sdd/config.json` must be committed in the same change or the monorepo's
