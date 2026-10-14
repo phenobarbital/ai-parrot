@@ -48,6 +48,35 @@ def _write_snapshot_if_changed(dest: Path, new_content: str) -> bool:
     return True
 
 
+def _read_snapshot_rows(dest: Path) -> list[dict[str, Any]]:
+    """Blocking half of the reconciliation pre-pass — run via ``asyncio.to_thread``.
+
+    Returns the JSON rows already in ``dest`` (``[]`` when the file is missing). A line that
+    is not a JSON object carrying a string ``issue_id`` is logged at WARNING with its 1-based
+    line number and skipped — it is not a valid issue row and cannot be reconciled.
+    """
+    if not dest.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    skipped: list[int] = []
+    with dest.open(encoding="utf-8") as handle:
+        for lineno, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                skipped.append(lineno)
+                continue
+            if not isinstance(row, dict) or not isinstance(row.get("issue_id"), str):
+                skipped.append(lineno)
+                continue
+            rows.append(row)
+    if skipped:
+        logger.warning("Ledger snapshot %s: skipped %d malformed line(s) at %s", dest, len(skipped), skipped)
+    return rows
+
+
 def _scan_log_for_audit(log: LedgerLog, cursor_offset: int) -> tuple[dict[str, int], int, int, int]:
     """Blocking half of :meth:`LedgerService.audit` — run via ``asyncio.to_thread``.
 
@@ -421,20 +450,28 @@ class LedgerService:
         """
         return await asyncio.to_thread(self._feature_index_status_sync, set(feature_ids))
 
-    async def export_snapshot(self, dest: Path) -> bool:
-        """Write ``sdd/ledger/issues.jsonl`` deterministically.
+    async def export_snapshot(self, dest: Path, *, reconcile: bool = True) -> bool:
+        """Write ``sdd/ledger/issues.jsonl`` deterministically, reconciling against ``dest``.
 
-        One JSON object per issue with status ``open``, ``claimed``, or
-        closed/superseded but not yet compacted — keys sorted, rows sorted
-        by ``issue_id``, no volatile fields, so regenerating from the same
-        ledger state is byte-identical. Insights are excluded.
+        One JSON object per issue with status ``open``, ``claimed``, or closed/superseded but
+        not yet compacted — keys sorted, rows sorted by ``issue_id``, no volatile fields, so
+        regenerating from the same ledger state and the same ``dest`` is byte-identical.
+        Insights are excluded.
+
+        Local state is authoritative for every issue this ledger has recorded. With
+        ``reconcile=True`` (default) every row already in ``dest`` whose ``issue_id`` is
+        unknown to this ledger is carried forward unchanged, so an export from a machine whose
+        event log is behind never drops another machine's issues (FEAT-671).
+        ``reconcile=False`` rebuilds the snapshot from the local view only — destructive,
+        explicit opt-in.
 
         Args:
             dest: Destination path (created, with parents, if missing).
+            reconcile: Carry forward rows for issues unknown to this ledger.
 
         Returns:
-            ``True`` if the written content differs from what was already
-            on disk (or the file did not exist yet).
+            ``True`` if the written content differs from what was already on disk (or the
+            file did not exist yet).
         """
         await self._sync_best_effort()
         issues = await self._all_issues()
@@ -444,6 +481,15 @@ class LedgerService:
             for issue_id, state in issues
             if state.get("status") in ("open", "claimed") or not state.get("compacted", False)
         ]
+        if reconcile:
+            known = {issue_id for issue_id, _ in issues}
+            existing = await asyncio.to_thread(_read_snapshot_rows, dest)
+            carried = [row for row in existing if row["issue_id"] not in known]
+            if carried:
+                logger.info(
+                    "Ledger snapshot %s: carried forward %d issue(s) unknown to this ledger", dest, len(carried)
+                )
+            rows.extend(carried)
         rows.sort(key=lambda row: row["issue_id"])
         new_content = "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
 
