@@ -7,17 +7,83 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+---
+
+## [1.2.2] — 2026-10-14 — Voice-driven form filling, scheduler manager, wikitoolkit HTTP MCP
+
+Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.2`, `ai-parrot-server` to `1.3.1`,
+the other core-line packages to `1.2.2`, satellites to `0.4.2`). Satellites are re-pinned to `ai-parrot>=1.2.2`.
+
 ### Rollback
 
 - **Do not downgrade below the audio-form voice post-processors (FEAT-653) once voice data exists.** Session
   snapshots and `VoiceEvidenceEnvelope`s now carry `normalized_by` / `llm_confidence`; older models declare
   `extra="forbid"` and reject them. No backward compatibility is provided.
 
+### Security
+
+- **Path traversal in the lexicon locale loader** (CWE-22): a crafted locale value could escape the lexicon
+  directory; the loader now validates against traversal.
+- **QuerySlug fetch-path authorization (FEAT-667).** Fail-closed slug authorization on the QuerySlugSource
+  fetch path.
+- **Tools hardening (PA-series).** Restricted `WeasyPrint` `url_fetcher` for PDF export; egress-guarded
+  resolver for HTTP sessions tools open themselves; confined screenshot destination and file name; per-tenant
+  built-in tool allow-list (`tenant_builtin_tools`); confined scraping/wiki/document_converter paths behind
+  host switches; no `trust_env` on guarded sessions.
+- **Studio hardening.** Per-tenant built-in/toolkit allow-lists enforced when a stored agent calls a tool;
+  host param hook receives the canonical slug; wiki assign route forwards host-forced constructor switches.
+
+### Added
+
+- **Voice-driven form filling (FEAT-649, FEAT-653, FEAT-654, FEAT-655, FEAT-656).** A complete audio-form
+  stack: protocol v2 events, voice evidence envelopes, narration engine (en/es lexicon), deterministic option
+  matcher + LLM refiner, answer plausibility checker, spoken value normalizers (number, phone, email, date,
+  time) with a calibration harness, WebSocket adapter rewrite, barge-in support with per-option narration
+  segments, active-session resume with split TTLs, client-submit mode, and DB migrations 009/010.
+- **Scheduler manager (FEAT-644).** `AgentSchedulerManager` with agent and crew resolvers, Redis-backed
+  coordination with namespaced prefixes, schedule state preserved across updates and lifecycle transitions,
+  and target-name-based callbacks.
+- **Teams and Telegram knowledge upload (FEAT-647).** Users can upload documents to the agent's knowledge
+  base through Teams and Telegram; `PageIndex` tree freshness check.
+- **Wikitoolkit HTTP MCP server (FEAT-569).** Remote wiki access: push/sync build/upsert/ingest, bulk ingest
+  tools, actor ContextVar, bearer auth, ArangoDB symbol plane, and `parrot claude install --remote` for Codex.
+- **Eval answer-accuracy metrics (FEAT-652).** LLM-as-judge scoring with rubrics, judge cache, baseline
+  store, and per-tag regression gating.
+- **Products-found for every planogram type (FEAT-648).** `products_found` on endcap and every
+  product-detecting type, with reporting docs and per-slot presence.
+- **A2UI lazy imports (FEAT-668).** PEP 562 deferred imports across `parrot.tools` and server handlers,
+  cutting cold-start time; import-isolation tests.
+- **Studio enhancements.** Per-request LLM-client credentials and `key_source`; catalogue decoration hook
+  with available/abstract flags; tenant-partitioned export store; host `TOOL_CALL` guardrails; host
+  toolkit-parameter hook; shared Redis conversation backend with TTL for Studio bots and the assistant;
+  model-param validation (Claude 5 unsupported params, Google anyOf/enum handling).
+
 ### Changed
 
-- **Audio forms (FEAT-653):** the LLM value refiner can no longer turn a rules `confirm`/`rejected` into an accepted
-  answer (at most a confirm with the refined value); `llm_refine_timeout_s` is capped at 10 s; relative dates/times
-  never auto-accept without a valid session timezone; v1 `answer_accepted.value` stays a string for numeric fields.
+- **Audio forms (FEAT-653):** the LLM value refiner can no longer turn a rules `confirm`/`rejected` into an
+  accepted answer (at most a confirm with the refined value); `llm_refine_timeout_s` is capped at 10 s;
+  relative dates/times never auto-accept without a valid session timezone; v1 `answer_accepted.value` stays a
+  string for numeric fields.
+
+### Fixed
+
+- **Planogram.** ProductCounter and GraphicPanelDisplay resolve their own layout profile (FEAT-651);
+  reference images skipped for types that do not use them.
+- **LSP.** Session source fixes and tests (FEAT-657); toolkit logging, canonical-root URI, and pyrightconfig
+  extends-chain follow (FEAT-658).
+- **SDD infra.** Bound `_run_subprocess` output in bytes (FEAT-663); AttemptRecord metrics populated from
+  trace, dead `result_limit` error code removed (FEAT-661); boundary-safe E2E bridge node-ID lookup
+  (FEAT-660); dead cap-escalation plumbing removed, ScopePlan dict fields frozen (FEAT-659); `ruff` B039/B904
+  in `openai_base.py` (FEAT-662).
+- **Transport JSON-2.** Wider create fallback detection; `get_views` mapping added (FEAT-664). Canvas
+  `InfographicCanvas` passes `shareToken` to `A2UISurface` (FEAT-666).
+- **Formdesigner.** Organization resolved from the authenticated user; PBAC setup is idempotent per app.
+- **Google client.** `anyOf` union values and optional-argument enum flattening preserved correctly.
+- **Studio.** Assistant keeps its conversation ID when the instance is missing on the worker; ending a test
+  session deletes its shared history; test/ask passes `user_id`/`session_id`.
+- **Jiratoolkit.** Import hygiene (FEAT-637 TASK-4137): test import-time side effects no longer shadow
+  `jira` / `parrot.interfaces.file`.
+- **STT language** pinned to the session locale, English by default.
 
 ---
 
