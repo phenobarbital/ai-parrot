@@ -3,6 +3,7 @@
 The subprocess layer (``_run_subprocess``) is mocked so the tests stay
 hermetic — no real ``git``/``gh`` invocation, no network.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -12,7 +13,6 @@ from unittest.mock import patch
 import pytest
 
 from parrot_tools.gittoolkit import GitToolkit, GitToolkitError
-
 
 TOKEN = "ghp_supersecrettoken123"
 
@@ -59,8 +59,10 @@ async def test_clone_repo_private_uses_token_in_url(tmp_path):
     tk = _toolkit()
     rec = _Recorder(rc=0)
     dest = str(tmp_path / "r")
-    with patch.object(GitToolkit, "_gh_available", return_value=False), \
-            patch.object(GitToolkit, "_run_subprocess", new=rec):
+    with (
+        patch.object(GitToolkit, "_gh_available", return_value=False),
+        patch.object(GitToolkit, "_run_subprocess", new=rec),
+    ):
         res = await tk.clone_repo("owner/name", dest, private=True)
     url_arg = rec.calls[0][-2]
     assert url_arg == f"https://x-access-token:{TOKEN}@github.com/owner/name.git"
@@ -75,8 +77,10 @@ async def test_clone_repo_private_scrubs_token_on_error(tmp_path):
     leaky = f"fatal: could not read https://x-access-token:{TOKEN}@github.com/owner/name.git"
     rec = _Recorder(rc=128, err=leaky)
     dest = str(tmp_path / "r")
-    with patch.object(GitToolkit, "_gh_available", return_value=False), \
-            patch.object(GitToolkit, "_run_subprocess", new=rec):
+    with (
+        patch.object(GitToolkit, "_gh_available", return_value=False),
+        patch.object(GitToolkit, "_run_subprocess", new=rec),
+    ):
         with pytest.raises(GitToolkitError) as ei:
             await tk.clone_repo("owner/name", dest, private=True)
     msg = str(ei.value)
@@ -88,8 +92,10 @@ async def test_clone_repo_private_prefers_gh_when_available(tmp_path):
     tk = _toolkit()
     rec = _Recorder(rc=0)
     dest = str(tmp_path / "r")
-    with patch.object(GitToolkit, "_gh_available", return_value=True), \
-            patch.object(GitToolkit, "_run_subprocess", new=rec):
+    with (
+        patch.object(GitToolkit, "_gh_available", return_value=True),
+        patch.object(GitToolkit, "_run_subprocess", new=rec),
+    ):
         await tk.clone_repo("owner/name", dest, private=True)
     assert rec.calls[0][:3] == ["gh", "repo", "clone"]
     # gh path never embeds a token in argv.
@@ -101,8 +107,10 @@ async def test_clone_repo_prefer_gh_false_uses_token_url(tmp_path: Path) -> None
     tk = _toolkit()
     rec = _Recorder(rc=0)
     dest = str(tmp_path / "r")
-    with patch.object(GitToolkit, "_gh_available", return_value=True), \
-            patch.object(GitToolkit, "_run_subprocess", new=rec):
+    with (
+        patch.object(GitToolkit, "_gh_available", return_value=True),
+        patch.object(GitToolkit, "_run_subprocess", new=rec),
+    ):
         await tk.clone_repo("owner/name", dest, private=True, prefer_gh=False)
     assert rec.calls[0][:2] == ["git", "clone"]
     assert rec.calls[0][-2] == f"https://x-access-token:{TOKEN}@github.com/owner/name.git"
@@ -147,6 +155,7 @@ async def test_clone_repo_idempotent_propagates_timeout(tmp_path: Path) -> None:
 
 async def test_run_subprocess_timeout_reaps_child() -> None:
     """A timed-out child is terminated and reaped."""
+
     class _Process:
         returncode = None
 
