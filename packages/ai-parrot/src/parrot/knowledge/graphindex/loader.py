@@ -173,7 +173,6 @@ class GraphIndexLoader(AbstractLoader):
         self.embedder = GraphIndexEmbedder(
             model_name=embedding_model,
             dimension=embedding_dim,
-            pgvector_dsn=pgvector_dsn,
         )
 
         # Resolve ArangoDB credentials → persistence enabled iff explicit.
