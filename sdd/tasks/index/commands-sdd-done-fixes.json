@@ -57,7 +57,7 @@
       "feature_id": "FEAT-671",
       "feature": "commands-sdd-done-fixes",
       "spec": "sdd/specs/commands-sdd-done-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -65,9 +65,10 @@
       "parallelism_notes": "Docs only (.claude/commands/sdd-done.md, .agent/workflows/sdd-done.md, docs/wiki/cheatsheet.md): shares no file with TASK-4295/4296 and imports nothing; the --no-reconcile flag name it documents is fixed by spec §3 M2, not by TASK-4296's output.",
       "assigned_to": null,
       "started_at": "2026-10-14T20:25:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4297-sdd-done-docs-reconcile.md",
-      "discovered_from": "issue:62038221413a"
+      "completed_at": "2026-10-14T20:25:34+00:00",
+      "file": "sdd/tasks/completed/TASK-4297-sdd-done-docs-reconcile.md",
+      "discovered_from": "issue:62038221413a",
+      "verification": "verified"
     }
   ]
 }
