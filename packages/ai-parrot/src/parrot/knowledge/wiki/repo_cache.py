@@ -1,4 +1,5 @@
 """Repository cache data contracts and asynchronous process locking."""
+
 from __future__ import annotations
 
 import asyncio

@@ -1,4 +1,5 @@
 """Hermetic behavioral tests for the repository cache lock (FEAT-672)."""
+
 from __future__ import annotations
 
 import asyncio
@@ -25,9 +26,7 @@ def _hold_lock(path: str, ready, release) -> None:
 
 
 def test_models(tmp_path: Path) -> None:
-    paths = RepoCachePaths(
-        slug="a", repository="o/r", clone_dir=tmp_path, plane_dir=tmp_path, lock_path=tmp_path / "l"
-    )
+    paths = RepoCachePaths(slug="a", repository="o/r", clone_dir=tmp_path, plane_dir=tmp_path, lock_path=tmp_path / "l")
     assert paths.slug == "a"
     out = BuildOutcome(ok=True, returncode=0, timed_out=False, duration_s=0.1, stderr_tail="")
     assert out.ok
