@@ -18,7 +18,7 @@ import os
 import re
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -819,8 +819,44 @@ def _navconfig() -> Any | None:
     return nav_config
 
 
+def resolve_setting(
+    key: str,
+    *,
+    default: Any = None,
+    explicit: Any = None,
+    project_defaults: Mapping[str, Any] | None = None,
+) -> Any:
+    """Resolve a setting from explicit, environment, navconfig, project, and default values.
+
+    ``None`` means that a source does not provide the setting. Falsey values
+    such as ``False``, ``0``, and ``""`` are preserved. navconfig remains an
+    optional, lazy dependency; failures there are handled by :func:`_navconfig`.
+
+    Args:
+        key: Setting name to resolve.
+        default: Value returned when no source provides ``key``.
+        explicit: Explicit caller-supplied value.
+        project_defaults: Optional defaults already read by the caller.
+
+    Returns:
+        The first non-``None`` value in precedence order.
+    """
+    if explicit is not None:
+        return explicit
+    if key in os.environ:
+        return os.environ[key]
+    nav_config = _navconfig()
+    if nav_config is not None:
+        value = nav_config.get(key)
+        if value is not None:
+            return value
+    if project_defaults is not None and project_defaults.get(key) is not None:
+        return project_defaults[key]
+    return default
+
+
 def _env_credential(key: str, default: Any) -> Any:
-    """Resolve one credential key: ``os.environ``, then navconfig, then default.
+    """Resolve one credential key through :func:`resolve_setting`.
 
     ``os.environ`` wins so an explicit ``export`` (or a test's
     ``monkeypatch.setenv`` / ``delenv``) always overrides what the env
@@ -834,18 +870,7 @@ def _env_credential(key: str, default: Any) -> Any:
     Returns:
         The resolved value, or ``default``.
     """
-    value = os.environ.get(key)
-    if value is not None:
-        return value
-    nav_config = _navconfig()
-    if nav_config is not None:
-        # navconfig's `get` may return None for a missing key even with a
-        # fallback argument, so coalesce explicitly (same guard as
-        # graphindex/loader.py).
-        value = nav_config.get(key)
-        if value is not None:
-            return value
-    return default
+    return resolve_setting(key, default=default)
 
 
 def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
@@ -859,7 +884,8 @@ def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
 
     Each variable resolves through :func:`_env_credential`:
     ``os.environ`` first, then navconfig (which is what loads
-    ``env/.env``), then the built-in default.
+    ``env/.env``), then the built-in default. The host is required so a
+    missing setting never silently selects loopback.
 
     Args:
         config: Project config carrying the ArangoDB backend settings.
@@ -871,8 +897,11 @@ def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
         field a ``str`` except the ``int`` port.
     """
     prefix = config.arango_credentials_env
+    host = _env_credential(f"{prefix}_HOST", None)
+    if host is None:
+        raise ValueError(f"Missing required ArangoDB setting: {prefix}_HOST")
     return {
-        "host": str(_env_credential(f"{prefix}_HOST", "127.0.0.1")),
+        "host": str(host),
         "port": int(_env_credential(f"{prefix}_PORT", 8529)),
         "protocol": str(_env_credential(f"{prefix}_PROTOCOL", "http")),
         "username": str(_env_credential(f"{prefix}_USERNAME", "root")),

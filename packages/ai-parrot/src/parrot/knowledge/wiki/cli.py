@@ -580,14 +580,9 @@ def _env_setting(name: str) -> str | None:
     legacy ``parrot llmwiki`` behaviour) and falls back to ``os.environ``
     when navconfig is unavailable.
     """
-    try:
-        from navconfig import config as _nav
+    from parrot.knowledge.wiki.project import resolve_setting
 
-        value = _nav.get(name, fallback=None)
-    except Exception:  # noqa: BLE001 — navconfig optional; env is enough
-        import os
-
-        value = os.environ.get(name)
+    value = resolve_setting(name)
     return value or None
 
 
@@ -6024,7 +6019,13 @@ def claude_hook() -> None:
 
 def main() -> None:
     """Console-script entry point for ``wikitoolkit``."""
-    wiki()
+    from parrot.knowledge.graphindex.protocols import ProviderNotAvailable
+
+    try:
+        wiki()
+    except ProviderNotAvailable as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(2)
 
 
 if __name__ == "__main__":
