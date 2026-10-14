@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from click.testing import CliRunner
 
+from parrot.knowledge.wiki.cli import wiki
 from parrot.knowledge.wiki.ledger.index import LedgerIndex
 from parrot.knowledge.wiki.ledger.log import LedgerLog
 from parrot.knowledge.wiki.ledger.service import LedgerService
@@ -162,3 +164,22 @@ async def test_export_skips_malformed_snapshot_lines(
     ]
     assert len(warnings) == 1
     assert "[2, 3]" in warnings[0]
+
+
+def test_cli_export_no_reconcile_flag(service: LedgerService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`ledger export` keeps unknown rows by default and drops them with --no-reconcile."""
+    monkeypatch.setattr("parrot.knowledge.wiki.remote_cli.remote_or_none", lambda path_=None: (None, None, None))
+    monkeypatch.setattr(LedgerService, "from_root", classmethod(lambda cls, root=None: service))
+    dest = tmp_path / "snap" / "issues.jsonl"
+    _write_rows(dest, [_foreign_row("issue:aaa")])
+    runner = CliRunner()
+
+    result = runner.invoke(wiki, ["ledger", "export", "--dest", str(dest)])
+    assert result.exit_code == 0, result.output
+    assert f"Exported {dest} (unchanged)" in result.output  # the foreign row is carried forward byte-for-byte
+    assert [row["issue_id"] for row in _read_rows(dest)] == ["issue:aaa"]
+
+    result = runner.invoke(wiki, ["ledger", "export", "--dest", str(dest), "--no-reconcile"])
+    assert result.exit_code == 0, result.output
+    assert f"Exported {dest} (changed)" in result.output
+    assert _read_rows(dest) == []
