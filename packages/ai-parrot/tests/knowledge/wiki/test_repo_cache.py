@@ -28,6 +28,7 @@ class FakeGit:
 
     async def clone_repo(self, repository: str, dest_dir: str, branch, **kwargs) -> dict[str, object]:
         self.clone_calls += 1
+        self.clone_kwargs = kwargs
         if self.clone_fails:
             raise RuntimeError("clone failed")
         path = Path(dest_dir)
@@ -302,3 +303,21 @@ async def test_ensure_fresh_coalesces_overlapping_builds(tmp_path: Path) -> None
     assert await first is not None
     assert await second is not None
     assert runner.calls == 1
+
+
+async def test_clone_is_authenticated_for_private_repositories(tmp_path: Path) -> None:
+    """Clones request the token path (private=True) without preferring gh."""
+    git = FakeGit()
+    cache = _cache(tmp_path, git)
+    paths = cache.paths_for("owner/name")
+    await cache._ensure_clone(paths)
+    assert git.clone_kwargs["private"] is True
+    assert git.clone_kwargs["prefer_gh"] is False
+
+
+def test_paths_for_accepts_dot_github_names(tmp_path: Path) -> None:
+    """Names merely containing '.git' (e.g. .github) are legitimate."""
+    cache = _cache(tmp_path)
+    assert cache.paths_for("org/.github").slug == "org-.github"
+    with pytest.raises(ValueError):
+        cache.paths_for("org/name.git")

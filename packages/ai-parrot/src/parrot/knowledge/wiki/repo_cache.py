@@ -62,7 +62,7 @@ async def repo_lock(lock_path: Path, *, timeout: float) -> AsyncIterator[bool]:
         ``True`` when the lock is held by this caller, ``False`` on timeout.
     """
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    handle = open(lock_path, "a+")  # noqa: SIM115 - closed in finally
+    handle = open(lock_path, "a+")  # noqa: SIM115,ASYNC230 - closed in finally
     acquired = False
     try:
         if fcntl is None:  # pragma: no cover - non-POSIX platform
@@ -145,7 +145,7 @@ class RepoWikiCache:
             len(parts) != 2
             or not all(parts)
             or any(part in {".", ".."} for part in parts)
-            or any("\\" in part or ":" in part or ".git" in part.lower() for part in parts)
+            or any("\\" in part or ":" in part or part.lower().endswith(".git") for part in parts)
             or "://" in repository
             or repository.startswith("git@")
         ):
@@ -229,6 +229,7 @@ class RepoWikiCache:
                         depth=self.clone_depth,
                         timeout=self.build_runner.timeout,
                         prefer_gh=False,
+                        private=True,
                     )
                     if not await self._clone_matches(paths):
                         raise RuntimeError("new clone identity or branch does not match")
@@ -237,9 +238,10 @@ class RepoWikiCache:
             except asyncio.CancelledError:
                 raise
             except Exception:
+                # Spec M2: a mismatch or failed `pull --ff-only` re-clones exactly once.
                 if not recovering or attempt:
                     raise
-                self._remove_entry(paths)
+                await asyncio.to_thread(self._remove_entry, paths)
         raise RuntimeError("unreachable clone recovery")
 
     async def _clone_matches(self, paths: RepoCachePaths) -> bool:
