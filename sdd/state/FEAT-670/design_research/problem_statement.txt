@@ -1,0 +1,35 @@
+AI-Parrot keeps **five local knowledge planes on SQLite** and **two shared planes on
+ArangoDB**, each with its own hand-rolled graph/FTS/vector emulation:
+
+| Plane | Today | Shape |
+|---|---|---|
+| LLM Wiki retrieval plane | `SQLiteWikiStore` (`wiki.db`, FTS5, `embeddings` blob table) / `ArangoDBWikiStore` / `PostgresWikiStore` | pages + edges + symbols + attrs + meta behind `BaseWikiStore` |
+| GraphIndex graph memory | `SQLitePersistence` (`<tenant>.db`, `nodes_fts`) / `GraphIndexPersistence` (ArangoDB) / `PostgresPersistence` | nodes + edges + files + commit protocol (`apply_update` / `revert_commit`) |
+| SDD work ledger | `LedgerStore(SQLiteWikiStore)` (`ledger.db`) | wiki plane + `ledger_state` + composable `aiosqlite` transactions |
+| SQL schema overlay | `SchemaStore(SQLiteWikiStore)` (`schema.db`) | wiki plane + `columns` table |
+| BookStore catalog | `CatalogStore` (sync `sqlite3`, `books_fts`) | cards + relations + judgements + communities |
+| PageIndex | `JSONTreeStore` + `NodeContentStore` (.md) + `NodeEmbeddingStore` (.npy) — **not SQLite** | tree + bodies + embedding matrix; hybrid search = `bm25s` + numpy + LLM walk |
+| Ontology graph | `OntologyGraphStore` (ArangoDB, raw AQL) | per-tenant vertex/edge collections + ArangoSearch views |
+
+Graph traversal on the SQLite planes is emulated with `edges` tables and in-memory
+`rustworkx` rebuilds (`sqlite_reader.py`, `communities.py`), BM25 with FTS5, vectors
+with brute-force numpy over blob columns. The company-wide shared variant needs a
+separate ArangoDB deployment (`docker/arango/`) with a second code path (AQL) per
+plane.
+
+**HelixDB** (Apache 2.0, Rust, [github.com/HelixDB/helix-db](https://github.com/HelixDB/helix-db))
+is a labeled-property-graph database with native vector (HNSW-style, cosine /
+euclidean / manhattan) and BM25 text indexes in one transactional engine, usable
+**embedded in-process** (`helix-db-embedded`, InMemory / Disk / S3) or as a **server**
+(`ghcr.io/helixdb/helixdb:v0.0.12`, `POST /v2/query`). Since the v3 generation there
+is **no compile/deploy step**: queries are JSON operation trees built by the Python
+DSL at runtime, so one backend implementation can serve both the local and the shared
+deployment. The goal of this feature is a `helixdb` backend for every plane above —
+local (replacing SQLite) and shared (replacing ArangoDB) — selected by configuration,
+with the existing backends untouched.
+
+**Who is affected**: developers running `wikitoolkit` / the MCP server locally,
+agents using GraphIndex memory and the ontology toolkit, ops running the shared wiki
+(`docker/arango` today), and CI (new native wheel).
+
+---
