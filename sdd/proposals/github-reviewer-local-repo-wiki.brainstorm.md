@@ -12,7 +12,7 @@ tags: [github-reviewer, wikitoolkit, code-review, gittoolkit, knowledge-graph]
 
 **Date**: 2026-10-15
 **Author**: Jesus Lara
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A
 
 ---
@@ -583,10 +583,10 @@ from parrot.conf import GITHUB_REVIEW_REPOSITORY                          # conf
 - [x] Wiki write surface on third-party code — *Owner: Jesus Lara*: full `LLMWikiToolkit`, unrestricted (no `confine_sources`). **Recorded risk**: the reviewed repository is untrusted content, and the unrestricted surface includes ingest/export and page-write tools; if the plane is ever shared with the main ai-parrot wiki, a prompt-injected write becomes cross-repo. The spec should at minimum keep the reviewed repo's plane in its own isolated `storage_dir` (which the storage decision already does) and state this threat model explicitly.
 - [x] Concurrency — *Owner: Jesus Lara*: one `asyncio.Lock` per repository; deliveries queue rather than skip.
 - [ ] Exact setting names and defaults (cache dir, plane dir, enable flag, build timeout) — *Owner: Jesus Lara*
-- [ ] Retention / GC: nothing in v1 reclaims clones or planes. Acceptable, or does the spec need a size cap or a prune-on-start? — *Owner: Jesus Lara*
-- [ ] Recovery from a corrupted cache entry (not-a-clone, failed `pull --ff-only` after a force-push): automatic re-clone, or fail and alert? — *Owner: Jesus Lara*
-- [ ] Clone depth: full history, or shallow? Shallow is cheaper but weakens git-based file discovery, and the standup/decisions planes want history. — *Owner: Jesus Lara*
+- [x] Retention / GC — *Owner: Jesus Lara*: a **size cap with LRU eviction** over the cache (clone + plane evicted together, least-recently-reviewed first). Not deferred to the operator.
+- [x] Corrupted cache entry — *Owner: Jesus Lara*: **automatic re-clone once** (remove that repo's cache entry and clone again); if the re-clone also fails, degrade to the diff-only review.
+- [x] Clone depth — *Owner: Jesus Lara*: configurable setting, **default = full history**. Shallow stays available for very large repositories but is not the default, because it weakens git-based file discovery and the history-dependent planes.
 - [ ] Prompt wording for the base-branch caveat, so the LLM never reports a symbol *added by the PR* as nonexistent. Needs an acceptance criterion. — *Owner: Jesus Lara*
-- [ ] Subprocess output handling: the `wikitoolkit` CLI prints the navconfig banner on **stdout** before its own output, so stdout must not be parsed as structured data — exit code plus stderr only. Confirm `build` has no machine-readable output worth capturing (it writes `wiki_stats.json` to the plane). — *Owner: Jesus Lara*
-- [ ] Should the warm-up be retried (backoff) after a transient failure, or is once-per-process correct? — *Owner: Jesus Lara*
-- [ ] Multi-repo deployments: several `GitHubReviewer` subclasses in one process must share cache entries and locks keyed by repo slug — confirm the cache layout supports it from day one (it also keeps Option D viable later). — *Owner: Jesus Lara*
+- [x] Subprocess output handling — *Owner: Claude*: exit code + stderr only; stdout is never parsed (the navconfig banner precedes any output). Machine-readable build results are read from `wiki_stats.json` in the plane, not from stdout.
+- [x] Warm-up retry — *Owner: Claude*: no separate backoff loop. The per-PR-event refresh already retries the same clone+build pair, so a transient warm-up failure self-heals on the next delivery.
+- [x] Multi-repo deployments — *Owner: Claude*: cache entries and locks are keyed by the repository slug (`owner-repo`), never by agent instance, so two subclasses watching one repository share one clone, one plane and one lock.
