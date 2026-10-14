@@ -40,6 +40,7 @@ from pydantic import ValidationError
 from parrot.auth.permission import build_principal_context
 from parrot.outputs.a2ui.recipes.models import InfographicRecipe
 from parrot.outputs.a2ui.recipes.store import AbstractRecipeStore, RecipeNotFoundError
+
 if TYPE_CHECKING:
     from parrot.tools.infographic_recipes.runner import RecipeRunner
 
@@ -115,6 +116,7 @@ def register_recipe_routes(
         if dataset_manager is None:
             raise ValueError("register_recipe_routes requires either recipe_runner or dataset_manager")
         from parrot.tools.infographic_recipes.runner import RecipeRunner  # noqa: PLC0415 — lazy on purpose (FEAT-668)
+
         recipe_runner = RecipeRunner(recipe_store, dataset_manager, artifact_store=artifact_store)
 
     app["recipe_store"] = recipe_store
@@ -288,7 +290,10 @@ class RecipeHandler(BaseView):
         # rather than None if it somehow doesn't).
         pctx = build_principal_context(owner or "_anon", channel="rest")
 
-        from parrot.tools.infographic_recipes.runner import RecipeRunException  # noqa: PLC0415 — lazy on purpose (FEAT-668)
+        from parrot.tools.infographic_recipes.runner import (
+            RecipeRunException,
+        )  # noqa: PLC0415 — lazy on purpose (FEAT-668)
+
         try:
             artifact = await runner.run(name, params=params, pctx=pctx, recipe_owner=owner)
         except RecipeRunException as exc:

@@ -176,6 +176,7 @@ class A2AServer:
         self.version = version
         self.capabilities = capabilities or AgentCapabilities(streaming=True)
         from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID  # noqa: PLC0415 — lazy on purpose (FEAT-668)
+
         register_a2ui_extension(self.capabilities, [DEFAULT_CATALOG_ID, BASIC_CATALOG_ID])
         self.extra_skills = extra_skills or []
         self.tags = tags or []

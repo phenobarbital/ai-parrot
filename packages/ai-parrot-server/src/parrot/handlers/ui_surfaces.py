@@ -676,7 +676,10 @@ class UISurfacesHandler(BaseView):
                 status=500,
             )
 
-        from parrot.tools.infographic_recipes.runner import RecipeRunException  # noqa: PLC0415 — lazy on purpose (FEAT-668)
+        from parrot.tools.infographic_recipes.runner import (
+            RecipeRunException,
+        )  # noqa: PLC0415 — lazy on purpose (FEAT-668)
+
         try:
             artifact = await runner.run(
                 record.recipe_name,

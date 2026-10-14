@@ -10,6 +10,7 @@ Routes (registered by BotManager in TASK-651):
     GET  /api/v1/agents/infographic/themes/{name}       — get theme
     POST /api/v1/agents/infographic/themes              — register theme
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -53,20 +54,22 @@ if TYPE_CHECKING:
 # forwarded as ``**kwargs`` into ``bot.get_infographic`` because doing so
 # either duplicates a named argument (TypeError) or leaks registration-only
 # fields (``scope``) into the generation path.
-_GENERATE_RESERVED_KEYS = frozenset({
-    "query",
-    "question",
-    "template",
-    "theme",
-    "accept",
-    "ctx",
-    "user_id",
-    "session_id",
-    "use_vector_context",
-    "use_conversation_history",
-    "agent_name",
-    "scope",
-})
+_GENERATE_RESERVED_KEYS = frozenset(
+    {
+        "query",
+        "question",
+        "template",
+        "theme",
+        "accept",
+        "ctx",
+        "user_id",
+        "session_id",
+        "use_vector_context",
+        "use_conversation_history",
+        "agent_name",
+        "scope",
+    }
+)
 
 
 @is_authenticated()
@@ -141,19 +144,21 @@ class InfographicTalk(AgentTalk):
             if not job_id:
                 return self.error("Missing job_id in URL.", status=400)
             return await self._get_render_job_status(job_id)
-        return self.json_response({
-            "message": "InfographicTalk — get_infographic HTTP handler",
-            "version": "1.0",
-            "endpoints": {
-                "generate": "POST /api/v1/agents/infographic/{agent_id}",
-                "list_templates": "GET /api/v1/agents/infographic/templates",
-                "get_template": "GET /api/v1/agents/infographic/templates/{name}",
-                "register_template": "POST /api/v1/agents/infographic/templates",
-                "list_themes": "GET /api/v1/agents/infographic/themes",
-                "get_theme": "GET /api/v1/agents/infographic/themes/{name}",
-                "register_theme": "POST /api/v1/agents/infographic/themes",
-            },
-        })
+        return self.json_response(
+            {
+                "message": "InfographicTalk — get_infographic HTTP handler",
+                "version": "1.0",
+                "endpoints": {
+                    "generate": "POST /api/v1/agents/infographic/{agent_id}",
+                    "list_templates": "GET /api/v1/agents/infographic/templates",
+                    "get_template": "GET /api/v1/agents/infographic/templates/{name}",
+                    "register_template": "POST /api/v1/agents/infographic/templates",
+                    "list_themes": "GET /api/v1/agents/infographic/themes",
+                    "get_theme": "GET /api/v1/agents/infographic/themes/{name}",
+                    "register_theme": "POST /api/v1/agents/infographic/themes",
+                },
+            }
+        )
 
     # ── Internal dispatchers ───────────────────────────────────────────
 
@@ -173,9 +178,7 @@ class InfographicTalk(AgentTalk):
         if not agent_id:
             return self.error("Missing agent_id in URL.", status=400)
 
-        pbac_denied = await self._check_pbac_agent_access(
-            agent_id=agent_id, action="agent:chat"
-        )
+        pbac_denied = await self._check_pbac_agent_access(agent_id=agent_id, action="agent:chat")
         if pbac_denied is not None:
             return pbac_denied
 
@@ -184,9 +187,7 @@ class InfographicTalk(AgentTalk):
         except Exception:
             return self.error("Invalid JSON body.", status=400)
         if not isinstance(data, dict):
-            return self.error(
-                "Request body must be a JSON object.", status=400
-            )
+            return self.error("Request body must be a JSON object.", status=400)
 
         query = data.pop("query", None)
         if not query or (isinstance(query, str) and not query.strip()):
@@ -209,9 +210,7 @@ class InfographicTalk(AgentTalk):
         # handler or by ``get_infographic``'s named parameters is excluded to
         # avoid duplicate-keyword TypeErrors and to prevent registration-only
         # fields (e.g. ``scope``) from leaking into generation calls.
-        extra_kwargs = {
-            k: v for k, v in data.items() if k not in _GENERATE_RESERVED_KEYS
-        }
+        extra_kwargs = {k: v for k, v in data.items() if k not in _GENERATE_RESERVED_KEYS}
 
         try:
             ai_message = await agent.get_infographic(
@@ -235,15 +234,16 @@ class InfographicTalk(AgentTalk):
 
         # --- FEAT-103: Auto-save infographic artifact (fire-and-forget) ---
         self._auto_save_infographic_artifact(
-            ai_message, agent_id, user_id, session_id, template, theme,
+            ai_message,
+            agent_id,
+            user_id,
+            session_id,
+            template,
+            theme,
         )
 
         if accept == "text/html":
-            html = (
-                getattr(ai_message, "content", None)
-                or getattr(ai_message, "output", None)
-                or ""
-            )
+            html = getattr(ai_message, "content", None) or getattr(ai_message, "output", None) or ""
             if not isinstance(html, str):
                 html = str(html)
             # Explicit UTF-8 encoding — infographics routinely carry Unicode
@@ -255,9 +255,7 @@ class InfographicTalk(AgentTalk):
             )
 
         # JSON path
-        structured = getattr(ai_message, "structured_output", None) or getattr(
-            ai_message, "output", None
-        )
+        structured = getattr(ai_message, "structured_output", None) or getattr(ai_message, "output", None)
         if hasattr(structured, "model_dump"):
             payload = structured.model_dump()
         elif isinstance(structured, dict):
@@ -284,10 +282,7 @@ class InfographicTalk(AgentTalk):
         if artifact_store is None:
             return
 
-        structured = (
-            getattr(ai_message, "structured_output", None)
-            or getattr(ai_message, "output", None)
-        )
+        structured = getattr(ai_message, "structured_output", None) or getattr(ai_message, "output", None)
         if structured is None:
             return
 
@@ -304,6 +299,7 @@ class InfographicTalk(AgentTalk):
                 ArtifactType,
                 ArtifactCreator,
             )
+
             now = datetime.now(timezone.utc)
             artifact_id = f"infog-{uuid.uuid4().hex[:8]}"
             artifact = Artifact(
@@ -324,9 +320,7 @@ class InfographicTalk(AgentTalk):
                 )
             )
         except Exception as exc:
-            self.logger.warning(
-                "Auto-save infographic artifact failed: %s", exc
-            )
+            self.logger.warning("Auto-save infographic artifact failed: %s", exc)
 
     # ── Deterministic render (FEAT-327) ──────────────────────────────────
 
@@ -368,9 +362,7 @@ class InfographicTalk(AgentTalk):
         except RenderBodyTooLargeError as exc:
             return self.json_response({"error": str(exc)}, status=413)
         except ValidationError as exc:
-            return self.json_response(
-                {"error": "Invalid RenderRequest", "details": exc.errors()}, status=400
-            )
+            return self.json_response({"error": "Invalid RenderRequest", "details": exc.errors()}, status=400)
 
         try:
             get_template(parsed.template)
@@ -393,6 +385,7 @@ class InfographicTalk(AgentTalk):
             )
 
         from ..tools.infographic_toolkit import InfographicValidationError  # noqa: PLC0415 — lazy on purpose (FEAT-668)
+
         try:
             outcome = await render_deterministic(
                 parsed,
@@ -405,13 +398,9 @@ class InfographicTalk(AgentTalk):
             )
         except InfographicValidationError as exc:
             if exc.code in ("sections_unmet", "payload_shape_mismatch"):
-                return self.json_response(
-                    {"error": exc.code, "detail": exc.detail}, status=422
-                )
+                return self.json_response({"error": exc.code, "detail": exc.detail}, status=422)
             self.logger.error("Render failed: %s — %s", exc.code, exc.detail)
-            return self.json_response(
-                {"error": exc.code, "detail": exc.detail}, status=500
-            )
+            return self.json_response({"error": exc.code, "detail": exc.detail}, status=500)
         except RenderPayloadError as exc:
             return self.json_response(
                 {"error": "Payload assembly failed", "part": exc.part_name, "detail": str(exc)},
@@ -520,9 +509,7 @@ class InfographicTalk(AgentTalk):
         app = self.request.app
         toolkit = app.get("infographic_render_toolkit")
         if toolkit is None:
-            template_dirs = app.get("infographic_render_template_dirs") or (
-                INFOGRAPHIC_RENDER_TEMPLATE_DIRS or None
-            )
+            template_dirs = app.get("infographic_render_template_dirs") or (INFOGRAPHIC_RENDER_TEMPLATE_DIRS or None)
             if not template_dirs:
                 self.logger.warning(
                     "Building the render-endpoint InfographicToolkit with NO "
@@ -536,6 +523,7 @@ class InfographicTalk(AgentTalk):
             # goes through the SAME store passed explicitly to render_deterministic
             # — so this is safe despite InfographicToolkit's non-Optional param.
             from ..tools.infographic_toolkit import InfographicToolkit  # noqa: PLC0415 — lazy on purpose (FEAT-668)
+
             toolkit = InfographicToolkit(
                 artifact_store=app.get("artifact_store"),  # type: ignore[arg-type]
                 template_dirs=template_dirs,
@@ -622,6 +610,7 @@ class InfographicTalk(AgentTalk):
         and die silently (this coroutine has no caller awaiting it).
         """
         from ..tools.infographic_toolkit import InfographicValidationError  # noqa: PLC0415 — lazy on purpose (FEAT-668)
+
         try:
             await job_store.set_running(job_id)
             toolkit = self._get_render_toolkit()
@@ -673,9 +662,7 @@ class InfographicTalk(AgentTalk):
             return self.error(f"Unknown or expired job '{job_id}'.", status=404)
         return self.json_response(job.model_dump())
 
-    async def _handle_templates_get(
-        self, name: Optional[str]
-    ) -> web.Response:
+    async def _handle_templates_get(self, name: Optional[str]) -> web.Response:
         """Handle GET requests for templates.
 
         Args:
@@ -687,18 +674,14 @@ class InfographicTalk(AgentTalk):
         qs = self.query_parameters(self.request)
         if name is None:
             detailed = qs.get("detailed", "").lower() == "true"
-            return self.json_response(
-                {"templates": list_templates(detailed=detailed)}
-            )
+            return self.json_response({"templates": list_templates(detailed=detailed)})
         try:
             tpl = get_template(name)
         except KeyError as exc:
             return self.error(str(exc), status=404)
         return self.json_response({"template": tpl.model_dump()})
 
-    async def _handle_themes_get(
-        self, name: Optional[str]
-    ) -> web.Response:
+    async def _handle_themes_get(self, name: Optional[str]) -> web.Response:
         """Handle GET requests for themes.
 
         Args:
@@ -710,9 +693,7 @@ class InfographicTalk(AgentTalk):
         qs = self.query_parameters(self.request)
         if name is None:
             detailed = qs.get("detailed", "").lower() == "true"
-            return self.json_response(
-                {"themes": list_themes(detailed=detailed)}
-            )
+            return self.json_response({"themes": list_themes(detailed=detailed)})
         try:
             theme = get_theme(name)
         except KeyError as exc:
@@ -729,9 +710,7 @@ class InfographicTalk(AgentTalk):
             201 JSON response on success, 400 on validation error,
             403 on session scope or PBAC denial.
         """
-        pbac_denied = await self._check_pbac_agent_access(
-            agent_id="*", action="agent:configure"
-        )
+        pbac_denied = await self._check_pbac_agent_access(agent_id="*", action="agent:configure")
         if pbac_denied is not None:
             return pbac_denied
 
@@ -740,9 +719,7 @@ class InfographicTalk(AgentTalk):
         except Exception:
             return self.error("Invalid JSON body.", status=400)
         if not isinstance(data, dict):
-            return self.error(
-                "Request body must be a JSON object.", status=400
-            )
+            return self.error("Request body must be a JSON object.", status=400)
 
         scope = (data.get("scope") or "global").lower()
         if scope == "session":
@@ -779,9 +756,7 @@ class InfographicTalk(AgentTalk):
             201 JSON response on success, 400 on validation error,
             403 on session scope or PBAC denial.
         """
-        pbac_denied = await self._check_pbac_agent_access(
-            agent_id="*", action="agent:configure"
-        )
+        pbac_denied = await self._check_pbac_agent_access(agent_id="*", action="agent:configure")
         if pbac_denied is not None:
             return pbac_denied
 
@@ -790,9 +765,7 @@ class InfographicTalk(AgentTalk):
         except Exception:
             return self.error("Invalid JSON body.", status=400)
         if not isinstance(data, dict):
-            return self.error(
-                "Request body must be a JSON object.", status=400
-            )
+            return self.error("Request body must be a JSON object.", status=400)
 
         scope = (data.get("scope") or "global").lower()
         if scope == "session":

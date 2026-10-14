@@ -239,6 +239,7 @@ class A2UIHandler(AgentTalk):
         """GET .../a2ui/capabilities — the same document published on the Agent Card."""
         from parrot.outputs.a2ui.catalog.basic import BASIC_CATALOG_ID  # noqa: PLC0415 — lazy on purpose (FEAT-668)
         from parrot.outputs.a2ui.catalog.export import agent_capabilities  # noqa: PLC0415 — lazy on purpose (FEAT-668)
+
         return self.json_response(agent_capabilities([DEFAULT_CATALOG_ID, BASIC_CATALOG_ID]), status=200)
 
     def _ui_surfaces_store(self) -> PgUISurfaceStore:
