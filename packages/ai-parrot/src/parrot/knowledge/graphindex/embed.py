@@ -2,7 +2,7 @@
 
 from typing import Any
 
-__all__ = ["GraphIndexEmbedder"]
+__all__ = ["GraphIndexEmbedder"]  # noqa: F822 - resolved lazily by __getattr__ below
 
 
 def __getattr__(name: str) -> Any:
