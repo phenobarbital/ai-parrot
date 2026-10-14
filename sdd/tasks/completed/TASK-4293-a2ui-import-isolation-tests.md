@@ -262,3 +262,8 @@ The two files above are the test specification.
 **Notes**:
 
 **Deviations from spec**: none
+
+
+## Completion Note
+
+Delivered by gpt-5.6-terra (codex), merged by the engine. Orchestrator fixed a probe bug in the blueprint (`set & list` TypeError). Core: 10 passed. Server: 6 passed + 1 strict xfail: `parrot.handlers.infographic` still loads `outputs.a2ui.builders` via `handlers/infographic_render.py:45` -> `parrot.tools.infographic_toolkit` (not a spec §6 edit site). Filed as issue:fe724f9eeca3. done-with-issues.
