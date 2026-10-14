@@ -264,4 +264,4 @@ The feature criteria below apply to this task’s declared scope; cross-module p
 
 ## Completion Note
 
-Pending implementation; the finalizer records evidence after validation.
+Implemented by gpt-5.6-terra (codex); merged with 2 failing tests in test_github_reviewer.py. Orchestrator fixed: (a) token-budget loop returned None for multi-byte text because truncate_to_tokens is a chars/4 heuristic -> added proportional char-cut fallback; (b) test expectation for diff-only prompt had one newline too few vs unchanged production prompt. Final: 83 passed.
