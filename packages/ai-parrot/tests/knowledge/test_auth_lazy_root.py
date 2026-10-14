@@ -1,4 +1,5 @@
 """parrot.auth lazy root keeps every export (FEAT-540 M1)."""
+
 from __future__ import annotations
 
 import parrot.auth as auth

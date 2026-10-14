@@ -28,7 +28,6 @@ Example:
 
 from typing import Any
 
-
 _LAZY_ATTRS: dict[str, str] = {
     "UserContext": "parrot.auth.context",
     "PermissionContext": "parrot.auth.permission",

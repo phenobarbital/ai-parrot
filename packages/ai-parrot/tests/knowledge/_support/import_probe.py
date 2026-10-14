@@ -1,4 +1,5 @@
 """Fresh-interpreter import probe for the FEAT-540 import ceilings."""
+
 from __future__ import annotations
 
 import json
@@ -6,7 +7,6 @@ import subprocess
 import sys
 
 from pydantic import BaseModel
-
 
 FORBIDDEN: tuple[str, ...] = (
     "navconfig",
