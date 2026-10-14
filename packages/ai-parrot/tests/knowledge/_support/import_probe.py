@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -20,8 +21,11 @@ FORBIDDEN: tuple[str, ...] = (
     "asyncpg",
 )
 
+_SRC_ROOT = Path(__file__).resolve().parents[3] / "src"
+
 _PROBE = (
     "import importlib, json, sys\n"
+    "sys.path.insert(0, sys.argv[2])\n"
     "err = None\n"
     "try:\n"
     "    importlib.import_module(sys.argv[1])\n"
@@ -59,7 +63,7 @@ def run_import_probe(module: str, *, forbidden: tuple[str, ...] = FORBIDDEN) -> 
         Import metadata, forbidden-prefix matches, and any import failure.
     """
     proc = subprocess.run(
-        [sys.executable, "-I", "-c", _PROBE, module],
+        [sys.executable, "-I", "-c", _PROBE, module, str(_SRC_ROOT)],
         capture_output=True,
         text=True,
         timeout=300,
