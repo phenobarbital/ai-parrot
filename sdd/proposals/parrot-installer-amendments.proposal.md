@@ -124,8 +124,10 @@ All facts were verified on `dev` at `2ed09515e`, 2026-10-14.
      policy in `WORK_KIND_FLOW` (`:35-38`), in `parse()`'s default
      `FlowMeta(type="feature", base_branch="dev")` (`:152`) and in the
      `_hotfix_implies_main` validator (`:106`), which requires `base_branch == "main"`
-     for hotfixes. **`sdd_meta.resolve_flow` does not exist**; the API is
-     `parse()` / `emit()` / `FlowMeta`. TASK-4085 re-exports this module as
+     for hotfixes. `resolve_flow()` also exists (`:263`) and has an independent
+     `"dev"` fallback (`:310`); it must participate in config-driven resolution.
+     The API includes `resolve_flow()` / `parse()` / `emit()` / `FlowMeta`.
+     TASK-4085 re-exports this module as
      `parrot.sdd.scripts.sdd_meta` (`scripts/sdd/sdd_meta.py` is already a wrapper).
 6. **ai-parrot's code rulebook ships everywhere.** TASK-4090 ships `codebase-conventions.md`
    (aiohttp only, navigator-api, uv) as an always-loaded rule to all three hosts
@@ -179,13 +181,24 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
   where `parrot` always imports.
 - **Change**: an integration test that:
   1. builds the wheel;
-  2. creates a managed layout (a temporary `PARROT_HOME`) containing only that wheel;
+  2. creates a managed layout (a temporary `PARROT_HOME`) with ai-parrot installed
+     from that wheel and its declared runtime dependencies, without an editable install;
   3. creates an unrelated, non-Python git repo;
   4. runs `parrot sdd install`;
-  5. runs **every helper invocation in the installed markdown, exactly as written**,
-     with only `$PARROT_HOME/bin` on PATH and no repo `PYTHONPATH`.
+  5. runs **every helper invocation in the installed markdown using its documented
+     command and flags**, substituting fixture values for placeholders and supplying
+     each invocation's required state (including a local bare `origin`, committed
+     ledger, task files and evidence where needed). Each scenario uses isolated state;
+  6. sets PATH to `$PARROT_HOME/bin` plus a fixture directory exposing an explicit
+     allowlist of required system tools (`git`, and shell utilities such as `bash` or
+     `jq` where an invocation requires them). Project/test venv bins are excluded;
+     `PYTHONPATH`, `PYTHONHOME`, `VIRTUAL_ENV`, `PARROT_VENV` and project-root override
+     variables are unset. Assert that `parrot` and its helper interpreter resolve to
+     the temporary managed installation. The helper implementations are not mocked.
 - **Amends**: TASK-4091 (test) and TASK-4094 (release smoke test).
-- **Done when**: it passes on Linux in CI. **It fails until Q1 is resolved, by design.**
+- **Done when**: it passes on Linux in CI after Q1 is implemented, covers every
+  documented helper invocation with fixture inputs, and proves that system prerequisites
+  remain available while ai-parrot is loaded exclusively from the built wheel.
 
 ### C4 — Upgrades that keep local edits ⚖️
 - **Problem**: §2.2-3. Today every upgrade needs `--force`, and `--force` also
@@ -238,19 +251,23 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
     ai-parrot's behaviour is unchanged.
   - Validation keeps today's lane rules: features never base on the hotfix branch, and
     hotfixes always base on it.
-  - The real branch-policy API takes its defaults from the config. It is **not**
-    `sdd_meta.resolve_flow`, which does not exist (§2.2-5 correction): it is
-    `parse()` / `FlowMeta` in `parrot/knowledge/wiki/ledger/sdd_meta.py`, whose
-    `"dev"` / `"main"` literals (`WORK_KIND_FLOW` `:35-38`, `parse()` `:152`) and
-    `_hotfix_implies_main` validator (`:106`) must read `base_branch` / `hotfix_base`
+  - The branch-policy API in `parrot/knowledge/wiki/ledger/sdd_meta.py` takes its
+    defaults from the config: `resolve_flow()` (`:263`), `parse()` and `FlowMeta`,
+    including `WORK_KIND_FLOW` (`:35-38`), `parse()`'s default (`:152`),
+    `resolve_flow()`'s independent `"dev"` fallback (`:310`) and the
+    `_hotfix_implies_main` validator (`:106`). Use `base_branch` / `hotfix_base`
     from the config, with today's values as the fallback when no config exists.
+    Preserve resolution precedence: explicit overrides, document frontmatter,
+    work-kind mapping, then configured defaults; apply lane validation to the result.
 - **Amends**: a new M6 task, after TASK-4085 (which moves `sdd_meta`) and before
   TASK-4089 (the markdown rewrite). It depends on C8.
 - **⚖️ Adds**: a configuration FEAT-633 doesn't have.
   **Decision note (Jesus Lara, 2026-10-14)**: approved with the reduced field set above
   and without `CONFIG.md`.
 - **Done when**: a foreign repo using `main` plus `develop` can run the flow by editing
-  only `sdd/config.json`.
+  only `sdd/config.json`. Tests cover `resolve_flow()` with no document and no work
+  kind, an unknown work kind, mapped work kinds, frontmatter and explicit overrides;
+  configured defaults apply on fallback, and absent config preserves current defaults.
 
 ### C8 — One source for branch policy in core
 - **Problem**: §2.2-5. After C6, hardcoded copies would silently ignore the config.
@@ -365,12 +382,18 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
     - GitHub and PyPI are reachable.
     - `git` is present.
 
-    After installing, the script runs `parrot self doctor`. A failure triggers
+    After installing, the script runs `parrot self doctor --runtime-only` against
+    the newly installed managed runtime (without launcher redirection to a project
+    venv). This scope checks only managed uv, Python, runtime entry points and PATH;
+    it excludes repository readiness, host configuration and optional-component checks.
+    A runtime failure triggers
     TASK-4074's existing rollback, which removes only what this run created, and prints
     doctor's suggested fixes.
 - **Amends**: TASK-4074, TASK-4075 and TASK-4095.
 - **Done when**: tests show that each failed gate exits before any write, and that a
-  failed post-install doctor run rolls back.
+  failed post-install runtime check rolls back. A successful runtime install must
+  remain installed when the invoking repo has unauthenticated `gh`, an uncommitted
+  ledger or outdated SDD assets; cover these cases in bootstrap tests for both scripts.
 
 ### C15 — SDD readiness checks in `parrot self doctor`
 - **Problem**: §2.2-12.
@@ -386,10 +409,16 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
   - the host CLI (`claude` / `codex` / `agy`) is present for each installed host
     (informational).
 
-  These checks run when an `sdd/` tree exists, or with `--sdd`.
+  These checks run when an `sdd/` tree exists, or with `--sdd`, except in the new
+  `--runtime-only` scope used by bootstrap (C14). `--runtime-only` and `--sdd` are
+  mutually exclusive. The normal doctor command retains runtime/host/component
+  diagnostics and adds applicable SDD checks. Exit 1 only when a non-informational
+  check in the selected scope fails; informational host-CLI checks do not fail it.
 - **Amends**: TASK-4080, and TASK-4091 for the status hook.
 - **Done when**: a fixture repo missing each prerequisite gets the matching check
-  failing, with its fix.
+  failing, with its fix. Tests prove `--runtime-only` excludes repository, host and
+  optional-component failures, normal/`--sdd` checks still report readiness failures,
+  and mutually exclusive scope flags are rejected.
 
 ### Q1 resolution — `parrot sdd run <helper>` ⚖️
 - **Problem**: §2.2-2. `python -m parrot.sdd.scripts.<name>` runs whatever `python` is
@@ -413,7 +442,8 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
 - **Amends**: spec M6, TASK-4089, TASK-4091 (the `run` subcommand). Decide before
   TASK-4089 starts.
 - **Done when**: C3's wheel-only test runs every helper invocation in the installed
-  markdown with only `$PARROT_HOME/bin` on PATH.
+  markdown with C3's fixture inputs and allowlisted system tools, while resolving
+  `parrot` and the helper interpreter exclusively from the managed installation.
 
 ### What's untouched (non-goals)
 - FEAT-633's core design: the launcher, managed venv, `parrot self`, `--portable`, the
@@ -449,7 +479,7 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
 | ai-parrot rulebook ships to every host (C10) | high | TASK-4090 manifest rows for `codebase-conventions.md` |
 | Org-data counts (C11) | high | grep over all SDD files on `dev` |
 | `review_checkpoint` can move to core (C12) | high | Imports verified 2026-10-14: only `parrot.flows.dev_loop.sdd_coder.*`; it is also the only non-moved helper shipped files reference |
-| `sdd_meta.resolve_flow` does not exist; policy lives in `parse()`/`FlowMeta`/`KNOWN_BRANCHES` | high | `knowledge/wiki/ledger/sdd_meta.py:30,35-38,106,152` |
+| Branch policy includes `resolve_flow()` and its independent fallback, plus `parse()`/`FlowMeta`/`KNOWN_BRANCHES` | high | `knowledge/wiki/ledger/sdd_meta.py:30,35-38,106,152,263,310` |
 | Size estimates (S/M) | medium | Judgement |
 
 ---
@@ -459,11 +489,11 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
 ### Resolved (during this review)
 - [x] Is FEAT-583 still a live spec? — *Resolved by Arturo Martinez*: No. It is superseded by FEAT-633 (commit `2ed09515e`).
 - [x] Which FEAT-583 and review ideas carry over? — *Resolved by Arturo Martinez*: C2–C6, C8, and C9–C15. C1 and the host mapping part of C9 are already covered by FEAT-633's tasks.
-- [x] Does the install script need its own dependency checks (C14 comment)? — *Resolved by Arturo Martinez*: the full check list lives in `parrot self doctor` (C15). The script keeps a minimal pre-install gate and runs doctor after installing.
+- [x] Does the install script need its own dependency checks (C14 comment)? — *Resolved by Arturo Martinez*: the full check list lives in `parrot self doctor` (C15). The script keeps a minimal pre-install gate. Review refinement: after installing it runs `doctor --runtime-only`; repository readiness failures do not trigger runtime rollback.
 
 ### Resolved (review with Jesus Lara, 2026-10-14)
 - [x] ⚖️ Approve C4, the installed-hash record that reverses "no hash manifest"? — *Resolved by Jesus Lara*: **Yes.** The spec non-goal rejected FEAT-583's packaging manifest and symlinks, not an install receipt; without a receipt TASK-4091's conflict rule (lines 210-211) cannot tell an untouched older file from an edited one, so every upgrade needs `--force` and `--force` overwrites edits. The receipt also stores the writing ai-parrot version. TASK-4091 line 51 (receipt out of scope) is amended.
-- [x] ⚖️ Approve C6, the repo config? — *Resolved by Jesus Lara*: **Yes, reduced.** One committed `sdd/config.json` read directly by the shipped commands; **no generated `sdd/CONFIG.md`** (a second file only adds drift). v1 fields: `base_branch`, `staging_branch`, `hotfix_base`, `issue_tracker`, `jira_host`, `reviewer`, `test_command`; `sync_down` dropped. Correction recorded: the function to parameterize is `parse()` / `FlowMeta` in `parrot/knowledge/wiki/ledger/sdd_meta.py` (`"dev"`/`"main"` at `:35-38`, `:152`; `_hotfix_implies_main` at `:106`), **not** `sdd_meta.resolve_flow`, which does not exist.
+- [x] ⚖️ Approve C6, the repo config? — *Resolved by Jesus Lara*: **Yes, reduced.** One committed `sdd/config.json` read directly by the shipped commands; **no generated `sdd/CONFIG.md`** (a second file only adds drift). v1 fields: `base_branch`, `staging_branch`, `hotfix_base`, `issue_tracker`, `jira_host`, `reviewer`, `test_command`; `sync_down` dropped. Review correction: parameterize `resolve_flow()` / `parse()` / `FlowMeta` in `parrot/knowledge/wiki/ledger/sdd_meta.py`, including `WORK_KIND_FLOW` (`:35-38`), `parse()`'s default (`:152`), `_hotfix_implies_main` (`:106`) and `resolve_flow()`'s independent fallback (`:310`). Preserve override/frontmatter precedence and test configured fallback resolution.
 - [x] ⚖️ Approve C10, a conventions seed instead of shipping `codebase-conventions.md`? — *Resolved by Jesus Lara*: **Yes.** TASK-4090 lines 267-270 ship ai-parrot's rulebook (aiohttp only, no `requests`/`httpx`, uv) to all three hosts; in a Node or Django repo it is simply wrong. The dev-loop seats keep `flows/_rules_data/` (FEAT-553). `worktree-management.md` ships only after C11 removes its `.venv`/Bubblewrap/ai-parrot paths.
 - [x] ⚖️ Approve C12, moving or guarding monorepo-only helpers in shipped files? — *Resolved by Jesus Lara*: **Yes.** Verified scope is smaller than drafted: `scripts.sdd.review_checkpoint` (`sdd-worker.md:588,607`) is the **only** non-moved helper any shipped file references; `lint_new` and `token_audit` appear in no packaged file and `codex_hook` only in the unpackaged `.codex/hooks.json`. `review_checkpoint` imports only `parrot.flows.dev_loop.sdd_coder.*` (core), so it moves via TASK-4086.
 - [x] **Q1** — How do installed commands call helpers when ai-parrot is only in the global managed venv? — *Resolved by Jesus Lara*: **`parrot sdd run <helper> [args…]`**, added to the `parrot sdd` group (folds into TASK-4091). It inherits M1's venv resolution, so it works wherever `parrot` works, including inside ai-parrot's own venv. The `parrot-python` shim is rejected: it would pin the managed venv and run the wrong code inside ai-parrot. Spec M6's "single form" and TASK-4089's rewrite target (regex table, lines 550-575) change to `parrot sdd run <name>`; `python -m` remains valid for direct use. Decide-before: TASK-4089. See §3 "Q1 resolution".
@@ -549,7 +579,9 @@ the markers. What should happen in other repos?
    - The pre-install gate stops on an unsupported platform or missing tools before
      anything is written (C14b).
    - uv, Python 3.12 and ai-parrot install into `~/.parrot`, and PATH is set (FEAT-633 M2).
-   - The bootstrap finishes by running `parrot self doctor`; a failure rolls back (C14b).
+   - The bootstrap finishes by running `parrot self doctor --runtime-only` against
+     the new managed runtime; a runtime failure rolls back (C14b). Repository
+     readiness is checked separately and does not roll back the runtime.
 3. **Previews, then installs, in any repo.**
    `parrot sdd install --host claude|codex|google --dry-run` shows the plan (C5). The
    real install then:
@@ -578,7 +610,7 @@ the markers. What should happen in other repos?
 | Monorepo-only helpers | Shipped references fail elsewhere | Moved or guarded (C12) |
 | Upgrades | Need `--force`, which overwrites edits | Untouched files upgrade, edits are kept (C4) |
 | Preview | None | `--dry-run` (C5) |
-| Diagnostics | Runtime and host configs | Plus SDD readiness (C15), run automatically after install (C14) |
+| Diagnostics | Runtime and host configs | Plus SDD readiness (C15); bootstrap gates only runtime health with `--runtime-only` (C14) |
 | Install safety | Checksums, rollback | Plus a pre-install gate and explained commands (C14) |
 | Install docs | Four documents, one verified | One canonical verified guide (C13) |
 | Agent prompts | Three copies, parity test failing | One copy (C2) |
@@ -619,9 +651,17 @@ FEAT-633 code was exercised, because none exists yet.
 and `CLAUDE.md` references over the packaged file set; `test_subagent_parity.py`
 re-run. Three corrections resulted (§2.2-5, §2.2-8, confidence map).
 
+**Follow-up code review, 2026-10-14**, on `dev` at `e8e1ca8b2`: verified
+`sdd_meta.resolve_flow()` and its fallback, TASK-4080's doctor exit contract,
+TASK-4074's rollback contract, and helpers' `git` subprocess requirements.
+Corrected C6's resolver scope, separated bootstrap runtime checks from repository
+readiness in C14/C15, and made C3's wheel test retain explicit system prerequisites
+with fixture inputs. This corrects the earlier claim that `resolve_flow()` was absent.
+
 ## 8. Provenance
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-14 | Arturo Martinez + Claude | Initial amendment proposal for FEAT-633 |
-| 0.2 | 2026-10-14 | Jesus Lara + Claude | All ⚖️ items, Q1 and C7 resolved; C6 reduced (no `CONFIG.md`, `test_command` added); corrections: `sdd_meta.resolve_flow` does not exist, `KNOWN_BRANCHES` third copy, `lint_new`/`token_audit` not referenced by shipped files; Q1 resolution section added |
+| 0.2 | 2026-10-14 | Jesus Lara + Claude | All ⚖️ items, Q1 and C7 resolved; C6 reduced (no `CONFIG.md`, `test_command` added); branch-policy inventory updated (resolver omission corrected in 0.3), `KNOWN_BRANCHES` third copy, `lint_new`/`token_audit` not referenced by shipped files; Q1 resolution section added |
+| 0.3 | 2026-10-14 | Codex, requested by Jesus Lara | C14/C15 scope bootstrap doctor to runtime health; C6 includes existing `resolve_flow()` and fallback tests; C3 retains allowlisted system tools and supplies fixture arguments/state; repeated claims reconciled |
