@@ -852,7 +852,7 @@ Verified against: `83517df71`
 - [x] Multi-repo deployments — *Resolved*: cache entries and locks keyed by repository slug, never by agent instance (§3 M2).
 - [x] How to place the plane outside the clone — *Resolved by owner after S1*: add `--storage-dir` to `wikitoolkit build` rather than seeding a config into the clone (§3 M1, AC-1).
 - [x] **Q1** — Partial plane after a failed build — *Owner: Jesus Lara*: marker written before the build plus a `--force` rebuild on the next run after an incomplete one. Generation-swap rejected — it would copy ~538 MB per delivery to guard against a rare crash (§3 M3, AC-16, §7).
-- [x] **Q2** — Programmatic `build_wiki()` — *Owner: Jesus Lara*: closed for now. `--storage-dir` removes the blocking motivation; the remaining reasons (testing without a subprocess, PATH coupling) do not justify a wikitoolkit-core refactor until a second in-process caller exists. Filed in the work ledger instead of staying open here.
+- [x] **Q2** — Programmatic `build_wiki()` — *Owner: Jesus Lara*: closed for now. `--storage-dir` removes the blocking motivation; the remaining reasons (testing without a subprocess, PATH coupling) do not justify a wikitoolkit-core refactor until a second in-process caller exists. Filed in the work ledger as `issue:e59c328aacc1` instead of staying open here.
 - [x] **Q3** — Cache cap — *Owner: Jesus Lara*: 5 GiB stays the default (~4 repositories at the measured ~1.2 GB each). The anti-thrash guard in `_evict_if_needed` (never evict the entry just refreshed; warn instead of evicting when one entry alone exceeds the cap) is what makes a tight cap safe (§3 M2, AC-10).
 
 ---
