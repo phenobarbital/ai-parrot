@@ -18,6 +18,9 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 DEFAULT_LOCALE = "en"
 _PUNCT_RE = re.compile(r"[^\w\s]", flags=re.UNICODE)
 _SPACE_RE = re.compile(r"\s+")
+# Shape whitelist for locale tags used as path components (CWE-22 barrier):
+# 2-3 letter primary subtag, then `-`/`_`-separated alphanumeric subtags of 1-8 chars.
+_LOCALE_RE = re.compile(r"^[A-Za-z]{2,3}([-_][A-Za-z0-9]{1,8})*$")
 
 
 class SpokenLexicon(BaseModel):
@@ -67,10 +70,16 @@ class Lexicon(BaseModel):
 
 
 def locale_chain(locale: str) -> list[str]:
-    """Fallback chain: ``es-MX`` → ``es`` → ``en`` (deduplicated, order kept)."""
+    """Fallback chain: ``es-MX`` → ``es`` → ``en`` (deduplicated, order kept).
+
+    Candidates that do not match ``_LOCALE_RE`` are dropped — the chain feeds
+    filesystem paths (``<templates>/<candidate>/narration.yaml``), so this is
+    the path-injection barrier for every consumer. ``DEFAULT_LOCALE`` is always
+    present: a malformed locale yields ``["en"]``.
+    """
     chain: list[str] = []
     for candidate in (locale, locale.replace("_", "-").split("-")[0], DEFAULT_LOCALE):
-        if candidate and candidate not in chain:
+        if candidate and candidate not in chain and _LOCALE_RE.fullmatch(candidate):
             chain.append(candidate)
     return chain
 

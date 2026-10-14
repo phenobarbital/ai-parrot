@@ -56,6 +56,20 @@ def test_unknown_key_raises():
         Narrator("en").render("nope")
 
 
+def test_narrator_traversal_locale_falls_back_to_en():
+    """A traversal-shaped locale is filtered by locale_chain and loads the ``en`` templates."""
+    n = Narrator("../../x")
+    assert n._templates
+    assert n.render("no_match")
+
+
+def test_narrator_guard_raises_on_escaping_candidate(monkeypatch):
+    """Defense in depth: a candidate escaping the templates root fails closed."""
+    monkeypatch.setattr("parrot_formdesigner.audio.narration.engine.locale_chain", lambda loc: ["../escape"])
+    with pytest.raises(ValueError, match="outside templates"):
+        Narrator("en")
+
+
 def test_strict_undefined_raises(tmp_path):
     d = tmp_path / "en"
     d.mkdir()
