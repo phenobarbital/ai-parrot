@@ -71,6 +71,7 @@ class _MinimalReviewer:
     _clamp = GitHubReviewer._clamp
     _fetch_ticket = GitHubReviewer._fetch_ticket
     _notify_missing_ticket = GitHubReviewer._notify_missing_ticket
+    _build_wiki_context = GitHubReviewer._build_wiki_context
     _ask_llm_for_review = GitHubReviewer._ask_llm_for_review
     review_pull_request = GitHubReviewer.review_pull_request
     handle_hook_event = GitHubReviewer.handle_hook_event
@@ -183,6 +184,100 @@ class TestWikiLifecycle:
         reviewer._attach_wiki_toolkits(tmp_path / "clone")
 
         assert toolkit_factory.call_args.kwargs["confine_sources"] is True
+
+
+class TestWikiPromptContext:
+    """Coverage for bounded local-wiki prompt enrichment."""
+
+    @staticmethod
+    def _ready_reviewer() -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer._wiki_context_available = True
+        reviewer._wiki_store = MagicMock()
+        reviewer._wiki_branch = "release/\u03b2"
+        reviewer._wiki_built_at = datetime(2026, 10, 15, 12, 30, tzinfo=timezone.utc)
+        return reviewer
+
+    async def test_wiki_context_respects_token_budget(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The completed context block never exceeds its configured budget."""
+        reviewer = self._ready_reviewer()
+        result = {
+            "concept_id": "file:src/\u03c0.py",
+            "title": "\u03c0 module",
+            "summary": "\u00e9" * 500,
+            "score": 1.0,
+        }
+        search = MagicMock()
+        search.search = AsyncMock(return_value=[result])
+        monkeypatch.setattr(github_reviewer, "WikiCombinedSearch", MagicMock(return_value=search))
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_WIKI_CONTEXT_TOKENS", 100)
+
+        context = await reviewer._build_wiki_context(
+            {"pr_title": "A\u00f1adir \u03c0 support"},
+            "diff --git a/src/\u03c0.py b/src/\u03c0.py\n",
+        )
+
+        assert context is not None
+        assert github_reviewer.estimate_tokens(context) <= conf.GITHUB_REVIEW_WIKI_CONTEXT_TOKENS
+
+    async def test_wiki_context_carries_base_branch_label(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The header states both the snapshot branch and absence caveat."""
+        reviewer = self._ready_reviewer()
+        search = MagicMock()
+        search.search = AsyncMock(
+            return_value=[{"concept_id": "file:src/widget.py", "title": "Widget", "summary": "Widget helpers."}]
+        )
+        monkeypatch.setattr(github_reviewer, "WikiCombinedSearch", MagicMock(return_value=search))
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_WIKI_CONTEXT_TOKENS", 4000)
+
+        context = await reviewer._build_wiki_context(
+            {"pr_title": "Add widget"},
+            "diff --git a/src/widget.py b/src/widget.py\n",
+        )
+
+        assert context is not None
+        assert "SNAPSHOT OF BRANCH release/\u03b2" in context
+        assert "A symbol introduced by this PR is EXPECTED to be absent" in context
+
+    async def test_review_prompt_unchanged_without_context(self, tmp_path: Path) -> None:
+        """Absent enrichment preserves the established question byte-for-byte."""
+        reviewer = _wire_reviewer()
+        reviewer.max_review_tool_calls = 5
+        captured_questions: list[str] = []
+        expected = PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="Looks good.", approve=True)
+
+        async def ask(**kwargs: Any) -> MagicMock:
+            captured_questions.append(kwargs["question"])
+            return _make_fake_response(expected)
+
+        reviewer.ask = ask
+        await reviewer._ask_llm_for_review(
+            payload={"repository": "owner/repo", "pr_number": 7, "pr_title": "Add widget", "pr_body": "Fixes NAV-1"},
+            ticket_key="NAV-1",
+            ticket={
+                "fields": {
+                    "summary": "Widget work",
+                    "description": "Implement the widget.",
+                    "customfield_10100": "AC: widget works",
+                }
+            },
+            diff_text="diff --git a/src/widget.py b/src/widget.py\n+widget\n",
+            diff_truncated=False,
+            diff_available=True,
+        )
+
+        assert captured_questions == [
+            "Review pull request owner/repo#7 against Jira ticket NAV-1.\n\n"
+            "PR title: Add widget\n"
+            "PR body:\nFixes NAV-1\n\n"
+            "=== Jira ticket NAV-1 ===\n"
+            "Summary: Widget work\n\n"
+            "Description:\nImplement the widget.\n\n"
+            "Acceptance Criteria:\nAC: widget works\n\n"
+            "=== PR diff (truncated=False) ===\n"
+            "diff --git a/src/widget.py b/src/widget.py\n+widget\n\n"
+            "Compare them and return a PRReviewResult JSON object."
+        ]
 
 
 class TestExtractTicketKey:

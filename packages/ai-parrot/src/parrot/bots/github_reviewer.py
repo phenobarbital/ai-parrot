@@ -58,10 +58,12 @@ from pydantic import BaseModel, Field
 from parrot import conf
 from parrot.bots import Agent
 from parrot.core.hooks.github_webhook import GitHubWebhookHook
+from parrot.knowledge.wiki.context import pack_results, truncate_to_tokens
 from parrot.knowledge.wiki.models import WikiConfig
 from parrot.knowledge.wiki.project import WikiProjectConfig
 from parrot.knowledge.wiki.repo_cache import RepoWikiCache
-from parrot.knowledge.wiki.store import create_wiki_store
+from parrot.knowledge.wiki.search import WikiCombinedSearch
+from parrot.knowledge.wiki.store import create_wiki_store, estimate_tokens
 from parrot.knowledge.wiki.structural.toolkit import CodeStructuralToolkit
 from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
 
@@ -78,6 +80,13 @@ from parrot_tools.gittoolkit import (
 from parrot_tools.jiratoolkit import JiraToolkit
 
 ChatId = Union[int, str]
+
+_WIKI_CONTEXT_HEADER = (
+    "=== Codebase context (knowledge graph) ===\n"
+    "SNAPSHOT OF BRANCH {branch} AT {built_at} — it does NOT contain this "
+    "PR's changes. A symbol introduced by this PR is EXPECTED to be absent "
+    "here; never report such a symbol as nonexistent on that basis."
+)
 
 
 def _flatten_adf(node: Any) -> str:
@@ -1165,6 +1174,70 @@ class GitHubReviewer(Agent):
             return value
         return value[: self.max_ticket_bytes] + "\n[... truncated ...]"
 
+    async def _build_wiki_context(self, payload: Dict[str, Any], diff_text: str) -> Optional[str]:
+        """Return token-bounded local-wiki context for a pull request.
+
+        The reviewer only searches the store attached after a successful
+        refresh of its own repository. Failures are deliberately contained so
+        the existing diff-only review path remains available.
+        """
+        if (
+            not self._wiki_context_available
+            or self._wiki_store is None
+            or not self._wiki_branch
+            or self._wiki_built_at is None
+        ):
+            return None
+
+        budget_tokens = conf.GITHUB_REVIEW_WIKI_CONTEXT_TOKENS
+        header = _WIKI_CONTEXT_HEADER.format(
+            branch=self._wiki_branch,
+            built_at=self._wiki_built_at.isoformat(),
+        )
+        if budget_tokens <= 0 or estimate_tokens(header) > budget_tokens:
+            return None
+
+        title = payload.get("pr_title")
+        title_text = title if isinstance(title, str) else ""
+        changed_paths: list[str] = []
+        for _old_path, new_path in re.findall(r"^diff --git a/(.+?) b/(.+?)$", diff_text, flags=re.MULTILINE):
+            if new_path not in changed_paths:
+                changed_paths.append(new_path)
+        query_parts = [part for part in (title_text, *changed_paths) if part]
+        if not query_parts:
+            return None
+        query = "PR title: " + title_text + "\nChanged paths:\n" + "\n".join(changed_paths)
+
+        try:
+            search = WikiCombinedSearch(None, None, store=self._wiki_store)
+            results = await search.search(query, mode="combined", top_k=10)
+            if not results:
+                return None
+
+            separator = "\n\n"
+            body_budget = budget_tokens - estimate_tokens(header) - estimate_tokens(separator)
+            if body_budget <= 0:
+                return None
+            packed = pack_results(results, budget_tokens=body_budget)
+            if not packed.text or not packed.results_packed:
+                return None
+
+            body, _ = truncate_to_tokens(packed.text, body_budget)
+            context = f"{header}{separator}{body}"
+            while estimate_tokens(context) > budget_tokens:
+                next_budget = estimate_tokens(body) - (estimate_tokens(context) - budget_tokens)
+                if next_budget <= 0:
+                    return None
+                shortened, _ = truncate_to_tokens(body, next_budget)
+                if shortened == body:
+                    return None
+                body = shortened
+                context = f"{header}{separator}{body}"
+            return context
+        except Exception as exc:  # noqa: BLE001 - context enrichment is optional
+            self.logger.warning("GitHubReviewer: wiki context unavailable: %s", exc, exc_info=True)
+            return None
+
     async def _ask_llm_for_review(
         self,
         *,
@@ -1192,6 +1265,8 @@ class GitHubReviewer(Agent):
             )
             header = "=== PR diff (unavailable) ==="
 
+        wiki_context = await self._build_wiki_context(payload, diff_text)
+        wiki_block = f"{wiki_context}\n\n" if wiki_context else ""
         question = (
             f"Review pull request {payload.get('repository')}#"
             f"{payload.get('pr_number')} against Jira ticket {ticket_key}.\n\n"
@@ -1203,6 +1278,7 @@ class GitHubReviewer(Agent):
             f"Acceptance Criteria:\n{acceptance_criteria}\n\n"
             f"{header}\n"
             f"{diff_block}\n\n"
+            f"{wiki_block}"
             "Compare them and return a PRReviewResult JSON object."
         )
 
