@@ -91,7 +91,9 @@ expressed with `--path` alone. The feature therefore adds one additive flag,
 `wikitoolkit build --storage-dir <abs>`: a run-scoped override that is **never
 written back** to the scanned repository's `.parrot/wiki.json` and suppresses
 the env-overlay auto-generation for that run. That single flag is the whole
-wikitoolkit-core surface this feature touches.
+wikitoolkit-core surface this feature touches. The build also always runs
+`--no-export --no-graph`: the reviewer reads the SQLite plane only, and the
+OKF bundle alone is 72,732 files on ai-parrot.
 
 Serialization is two-layered because the deployment is gunicorn with multiple
 workers: an in-process `asyncio.Lock` coalesces concurrent coroutines, and an
@@ -304,10 +306,18 @@ class RepoWikiCache:
           ``pull --ff-only``, removes the entry and re-clones EXACTLY ONCE.
           """
 
-      def _evict_if_needed(self) -> list[str]:
+      def _evict_if_needed(self, *, keep: Optional[str] = None) -> list[str]:
           """Drop least-recently-used (clone, plane, lock) triples until the
-          cache total is within ``max_bytes``. Never evicts an entry whose
-          lock is currently held. Returns the evicted slugs."""
+          cache total is within ``max_bytes``. Returns the evicted slugs.
+
+          Never evicts (a) an entry whose lock is currently held, or (b)
+          ``keep`` — the slug being refreshed right now — so a cache that is
+          already at the cap cannot evict the very entry it just rebuilt.
+          When a SINGLE entry exceeds ``max_bytes`` on its own, logs a
+          warning naming the slug and its size and evicts nothing: thrashing
+          (evict → re-clone → evict) is worse than exceeding the cap, and the
+          operator needs to see that the cap is mis-sized. Measured
+          reference: ai-parrot is ~620 MB of clone + ~538 MB of wiki.db."""
   ```
 
 ### Module 3: `WikiBuildRunner`
@@ -326,8 +336,24 @@ class RepoWikiCache:
       def __init__(self, *, executable: str = "wikitoolkit", timeout: float = 900.0,
                    logger: Optional[logging.Logger] = None) -> None: ...
 
-      async def run(self, clone_dir: Path, plane_dir: Path, *, quiet: bool = True) -> BuildOutcome:
-          """Spawn `wikitoolkit build --path <clone> --storage-dir <plane> [-q]`.
+      async def run(self, clone_dir: Path, plane_dir: Path, *, quiet: bool = True,
+                    force: bool = False) -> BuildOutcome:
+          """Spawn the build subprocess.
+
+          Argv:
+              wikitoolkit build --path <clone> --storage-dir <plane>
+                                --no-export --no-graph [-q] [--force]
+
+          ``--no-export --no-graph`` are NOT optional: the reviewer reads the
+          SQLite retrieval plane only, and ``is_built()`` probes nothing but
+          ``wiki.db`` (verified: project.py:785). On ai-parrot the OKF bundle
+          is 72,732 files / ~251 MB and graph.html/json another ~32 MB, none
+          of which any reviewer tool reads — skipping them removes ~570 MB
+          per repository and the IO of writing 72k files per build.
+
+          ``force`` re-ingests every file (see §8 Q1): it is passed when the
+          previous build for this plane did not complete, because the
+          incremental manifest of a half-written plane cannot be trusted.
 
           stdout is captured but NEVER parsed — the navconfig banner precedes
           any output. Success/failure is the exit code; stderr's tail is kept
@@ -336,14 +362,28 @@ class RepoWikiCache:
           runner has no timeout — verified: gittoolkit.py:1576).
           """
 
-      def mark_last_good(self, plane_dir: Path) -> None:
-          """Write LAST_GOOD_FILENAME (utc timestamp + build duration) after a
-          successful build."""
+      def mark_build_started(self, plane_dir: Path) -> None:
+          """Record that a build is in flight, BEFORE spawning it.
+
+          A marker left in the ``started`` state (process killed, machine
+          rebooted) is what makes the next run pass ``force=True``."""
+
+      def mark_last_good(self, plane_dir: Path, outcome: BuildOutcome) -> None:
+          """Flip LAST_GOOD_FILENAME to ``complete`` (utc timestamp + duration)
+          after a successful build."""
 
       def last_good(self, plane_dir: Path) -> Optional[datetime]:
-          """Read the marker; None when the plane was never completely built.
-          A plane without a current marker is treated as unusable, because a
-          build that dies mid-ingest leaves the SQLite plane partially written."""
+          """Completion time of the last COMPLETE build, else None.
+
+          A plane with no marker, or one still in the ``started`` state, is
+          treated as unusable: a build that dies mid-ingest leaves the SQLite
+          plane partially written."""
+
+      def needs_force(self, plane_dir: Path) -> bool:
+          """True when the previous build for this plane never completed, so
+          the next one must re-ingest everything instead of trusting the
+          hash/mtime manifest (verified: unchanged files are skipped unless
+          ``force`` — cli.py:770)."""
   ```
 
 ### Module 4: GitToolkit clone hardening
@@ -497,8 +537,12 @@ class RepoWikiCache:
 | `test_ensure_clone_validates_origin_and_branch` | M2 | A cache dir pointing at another remote is detected |
 | `test_ensure_clone_reclones_once_on_corruption` | M2 | Not-a-clone and failed `pull --ff-only` both re-clone exactly once, then give up |
 | `test_evict_lru_respects_size_cap` | M2 | Oldest-used entries dropped until under cap; locked entries skipped |
+| `test_evict_never_drops_entry_being_refreshed` | M2 | `keep=` slug survives even when the cache is over cap |
+| `test_single_oversized_entry_warns_without_evicting` | M2 | One entry larger than the cap logs a warning and evicts nothing (no thrash) |
 | `test_ensure_fresh_returns_none_on_any_failure` | M2 | Clone error, build error and timeout all return `None` without raising |
-| `test_build_runner_argv` | M3 | Exact argv incl. `--path`, `--storage-dir`, `-q` |
+| `test_build_runner_argv` | M3 | Exact argv incl. `--path`, `--storage-dir`, `--no-export`, `--no-graph`, `-q` |
+| `test_build_runner_omits_export_and_graph` | M3 | No OKF bundle and no `graph.html` land in the plane after a run |
+| `test_needs_force_after_incomplete_build` | M3 | A marker left in `started` ⇒ `needs_force()` is True and the next argv carries `--force` |
 | `test_build_runner_never_parses_stdout` | M3 | A navconfig banner on stdout does not affect the outcome |
 | `test_build_runner_timeout_kills_child` | M3 | Hung child is terminated, killed and reaped; `timed_out=True` |
 | `test_last_good_marker_roundtrip` | M3 | Marker written only after success; absent marker ⇒ plane unusable |
@@ -563,7 +607,9 @@ Test locations: `packages/ai-parrot/tests/knowledge/wiki/test_repo_cache.py`,
 - [ ] **AC-7** Enrichment never acts on a repository other than `self.repository`, whatever the payload says.
 - [ ] **AC-8** The injected context block never exceeds `GITHUB_REVIEW_WIKI_CONTEXT_TOKENS` and always carries the base-branch snapshot caveat.
 - [ ] **AC-9** Clone failure, build failure, build timeout, missing `wikitoolkit` binary, and a plane without a last-good marker each degrade to the diff-only review, with one log line and no exception escaping.
-- [ ] **AC-10** Cache total stays within `GITHUB_REVIEW_CACHE_MAX_BYTES` via LRU eviction; a locked entry is never evicted.
+- [ ] **AC-10** Cache total stays within `GITHUB_REVIEW_CACHE_MAX_BYTES` via LRU eviction; neither a locked entry nor the entry being refreshed is ever evicted, and a single over-cap entry is warned about rather than thrashed.
+- [ ] **AC-15** The build subprocess always passes `--no-export --no-graph`; no OKF bundle or `graph.html` is produced for a reviewed repository.
+- [ ] **AC-16** A build that does not complete leaves its marker in the `started` state, the plane is not attached, and the next build for that plane runs with `--force`.
 - [ ] **AC-11** Two concurrent deliveries for one repository, in one process and across two processes, produce one build and no lock error.
 - [ ] **AC-12** `LLMWikiToolkit` is constructed with `confine_sources=True`; `CodeStructuralToolkit` with an explicit `root=`.
 - [ ] **AC-13** `ruff check` clean on changed files; new unit + integration tests pass.
@@ -739,8 +785,12 @@ Verified against: `83517df71`
 
 - **The plane can be left partially written.** The build ingests incrementally
   inside the writer lock, so a crash mid-build leaves a half-updated SQLite
-  plane. Mitigation: the last-good marker (M3) — a plane without a current
-  marker is not attached. A full generation-swap publish is §8 Q1.
+  plane. Mitigation (§8 Q1, resolved): a marker written *before* the build and
+  flipped to `complete` after it — an unfinished marker both keeps the plane
+  from being attached and forces the next build to run with `--force`, so the
+  untrustworthy incremental manifest is discarded instead of being extended.
+  A generation-swap publish was rejected: it would copy ~538 MB per webhook
+  delivery to protect against a rare crash.
 - **`gh` present but unauthenticated** silently breaks private clones because
   `gh` never sees the toolkit's PAT / App token (`gittoolkit.py:1627`).
   Mitigation: the reviewer always passes `prefer_gh=False` (M4).
@@ -765,7 +815,11 @@ Verified against: `83517df71`
   `confine_sources=True` (owner decision) plus a plane isolated per repository;
   the reviewer's plane is never the ai-parrot wiki plane.
 - **Disk**: clones plus planes grow with the number of watched repositories;
-  LRU eviction (AC-10) is the only reclaim path.
+  LRU eviction (AC-10) is the only reclaim path. Measured on ai-parrot: a full
+  clone is ~620 MB (388 MB pack + 233 MB checkout) and the lean plane ~538 MB,
+  so ~1.2 GB per repository — the 5 GiB default holds roughly four. A
+  deployment watching more must raise `GITHUB_REVIEW_CACHE_MAX_BYTES` or it
+  will re-clone on every rotation.
 - **PATH coupling**: the server process must resolve the `wikitoolkit` console
   script. A missing binary disables enrichment for the process lifetime (logged
   once, AC-9).
@@ -797,9 +851,9 @@ Verified against: `83517df71`
 - [x] Warm-up retry — *Resolved*: no backoff loop; the per-event refresh is the retry (§3 M5).
 - [x] Multi-repo deployments — *Resolved*: cache entries and locks keyed by repository slug, never by agent instance (§3 M2).
 - [x] How to place the plane outside the clone — *Resolved by owner after S1*: add `--storage-dir` to `wikitoolkit build` rather than seeding a config into the clone (§3 M1, AC-1).
-- [ ] **Q1** — Should a failed build publish nothing at all (build into `<plane>.next`, swap on success) instead of relying on the last-good marker? Cheaper now, safer later; revisit if a partial plane is ever observed. — *Owner: Jesus Lara*
-- [ ] **Q2** — Once `--storage-dir` exists, is the deferred programmatic `build_wiki()` (brainstorm Option C) still wanted as its own feature, or does the flag remove the motivation? — *Owner: Jesus Lara*
-- [ ] **Q3** — Default for `GITHUB_REVIEW_CACHE_MAX_BYTES` is 5 GiB; confirm it suits the deployment's disk before release. — *Owner: Jesus Lara*
+- [x] **Q1** — Partial plane after a failed build — *Owner: Jesus Lara*: marker written before the build plus a `--force` rebuild on the next run after an incomplete one. Generation-swap rejected — it would copy ~538 MB per delivery to guard against a rare crash (§3 M3, AC-16, §7).
+- [x] **Q2** — Programmatic `build_wiki()` — *Owner: Jesus Lara*: closed for now. `--storage-dir` removes the blocking motivation; the remaining reasons (testing without a subprocess, PATH coupling) do not justify a wikitoolkit-core refactor until a second in-process caller exists. Filed in the work ledger instead of staying open here.
+- [x] **Q3** — Cache cap — *Owner: Jesus Lara*: 5 GiB stays the default (~4 repositories at the measured ~1.2 GB each). The anti-thrash guard in `_evict_if_needed` (never evict the entry just refreshed; warn instead of evicting when one entry alone exceeds the cap) is what makes a tight cap safe (§3 M2, AC-10).
 
 ---
 
@@ -818,7 +872,7 @@ Verified against: `83517df71`
 | S3 | Validate the cached clone's remote and branch (risk) | CONFIRM | Verified at `gittoolkit.py:1619` and `:1671` — any `.git` dir is trusted and `pull` never checks out. | §3 M2, AC-4 |
 | S4 | Do not let incidental `gh` break private auth (risk) | CONFIRM | Verified at `gittoolkit.py:1627`: `gh` is preferred whenever present and never sees the toolkit's token. | §3 M4, §7 |
 | S5 | Cancellable subprocess timeouts (risk) | CONFIRM | Verified at `gittoolkit.py:1576`: `communicate()` with no timeout; `wait_for` alone would orphan the child. | §3 M3, M4, AC-6 |
-| S6 | Preserve a last-known-good plane (architecture) | CONFIRM (reduced) | Real: the build writes in place under the lock. Adopted as a last-good marker; generation-swap deferred to §8 Q1. | §3 M3, §7, §8 Q1 |
+| S6 | Preserve a last-known-good plane (architecture) | CONFIRM (reduced) | Real: the build writes in place under the lock. Adopted as a before/after marker plus a forced rebuild after an incomplete build; generation-swap rejected on cost (~538 MB copied per delivery). | §3 M3, AC-16, §7 |
 | S7 | Treat the full wiki surface as a mutation capability (risk) | CONFIRM (owner variant) | Independent second flag on a deliberate owner decision; owner kept the full surface but enabled `confine_sources=True`. | §3 M5, AC-12, §7 |
 | S8 | Canonicalize repository identity (api) | CONFIRM | Verified at `github_reviewer.py:809`: `payload.get("repository") or self.repository`. | §3 M5, AC-7 |
 | S9 | Resolve the dev-vs-main branch contract (api) | CONFIRM | Verified at `github_reviewer.py:601` and `gittoolkit.py:961`: both default to `"main"`. | §3 M2, M5, AC-3 |
@@ -863,3 +917,4 @@ decisions already resolved in the brainstorm; both answers are folded in above.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-15 | Jesus Lara | Initial draft from the accepted brainstorm; 12 codex design-research suggestions folded in (§9) |
+| 0.2 | 2026-10-15 | Jesus Lara | Resolved §8 Q1–Q3; lean build (`--no-export --no-graph`), before/after build marker + forced rebuild, eviction anti-thrash guard; AC-15/AC-16 added |
