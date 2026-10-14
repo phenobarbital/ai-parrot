@@ -95,7 +95,7 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -107,8 +107,9 @@
       "parallelism_notes": "Consumes timeout/prefer_gh from TASK-4336, RepoCachePaths/BuildOutcome/repo_lock from TASK-4337, and WikiBuildRunner from TASK-4338. Serializes repo_cache.py and test_repo_cache.py writers after TASK-4337.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4339-repo-wiki-cache-lifecycle.md"
+      "completed_at": "2026-10-14T23:24:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4339-repo-wiki-cache-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4340",

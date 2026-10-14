@@ -256,4 +256,4 @@ The feature criteria below apply to this task’s declared scope; cross-module p
 
 ## Completion Note
 
-Pending implementation; the finalizer records evidence after validation.
+Implemented by gpt-5.6-terra (codex). test_repo_cache.py + test_repo_build.py: 20 passed. Residual lint: 2 (ASYNC230 blocking open in lock helpers, intentional).
