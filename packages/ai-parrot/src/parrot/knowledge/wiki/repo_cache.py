@@ -158,7 +158,10 @@ class RepoWikiCache:
         clone_dir = (repos_root / slug).resolve()
         plane_dir = (planes_root / slug).resolve()
         lock_path = (locks_root / f"{slug}.lock").resolve()
-        if not all(path.is_relative_to(root) for path, root in ((clone_dir, repos_root), (plane_dir, planes_root), (lock_path, locks_root))):
+        if not all(
+            path.is_relative_to(root)
+            for path, root in ((clone_dir, repos_root), (plane_dir, planes_root), (lock_path, locks_root))
+        ):
             raise ValueError("repository resolves outside the cache")
         return RepoCachePaths(
             slug=slug,

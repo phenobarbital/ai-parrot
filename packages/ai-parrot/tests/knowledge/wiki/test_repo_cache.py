@@ -72,7 +72,9 @@ class FakeBuildRunner:
         )
         if not self.fail:
             (plane_dir / "wiki.db").write_bytes(b"db")
-        return BuildOutcome(ok=not self.fail, returncode=0 if not self.fail else 1, timed_out=False, duration_s=0.0, stderr_tail="")
+        return BuildOutcome(
+            ok=not self.fail, returncode=0 if not self.fail else 1, timed_out=False, duration_s=0.0, stderr_tail=""
+        )
 
     def last_good(self, plane_dir: Path) -> object:
         marker = plane_dir / ".last_good_build.json"
