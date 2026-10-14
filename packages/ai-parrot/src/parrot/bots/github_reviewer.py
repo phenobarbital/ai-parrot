@@ -1229,8 +1229,12 @@ class GitHubReviewer(Agent):
                 if next_budget <= 0:
                     return None
                 shortened, _ = truncate_to_tokens(body, next_budget)
-                if shortened == body:
-                    return None
+                if shortened == body or estimate_tokens(shortened) >= estimate_tokens(body):
+                    # truncate_to_tokens is heuristic (chars/4) and can under-cut
+                    # multi-byte text; fall back to a proportional character cut.
+                    shortened = body[: max(0, int(len(body) * next_budget / max(estimate_tokens(body), 1)) - 1)]
+                    if not shortened or shortened == body:
+                        return None
                 body = shortened
                 context = f"{header}{separator}{body}"
             return context

@@ -277,7 +277,7 @@ class TestWikiPromptContext:
             "Description:\nImplement the widget.\n\n"
             "Acceptance Criteria:\nAC: widget works\n\n"
             "=== PR diff (truncated=False) ===\n"
-            "diff --git a/src/widget.py b/src/widget.py\n+widget\n\n"
+            "diff --git a/src/widget.py b/src/widget.py\n+widget\n\n\n"
             "Compare them and return a PRReviewResult JSON object."
         ]
 
