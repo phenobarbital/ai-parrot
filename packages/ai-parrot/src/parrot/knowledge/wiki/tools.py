@@ -384,7 +384,9 @@ class LedgerCloseTool(AbstractTool):
         self, issue_id: str, reason: str, resolved_by: str | None = None, actor: str | None = None
     ) -> ToolResult:
         """Close a ledger issue, carrying the evidence reference and actor through."""
-        params = LedgerCloseInput.model_construct(issue_id=issue_id, reason=reason, resolved_by=resolved_by, actor=actor)
+        params = LedgerCloseInput.model_construct(
+            issue_id=issue_id, reason=reason, resolved_by=resolved_by, actor=actor
+        )
         return _to_tool_result(await op_ledger_close(self._ledger_service, params))
 
 
@@ -418,7 +420,9 @@ class WikiPageHashesTool(AbstractTool):
         self._store = store
 
     async def _execute(self, concept_ids: list[str]) -> ToolResult:
-        return _to_tool_result(await op_page_hashes(self._store, PageHashesInput.model_construct(concept_ids=concept_ids)))
+        return _to_tool_result(
+            await op_page_hashes(self._store, PageHashesInput.model_construct(concept_ids=concept_ids))
+        )
 
 
 class WikiIngestBatchTool(AbstractTool):
@@ -472,9 +476,7 @@ class WikiSyncPushTool(AbstractTool):
     ) -> ToolResult:
         """Merge a client memory slice into the server wiki plane."""
         params = SyncPagesInput(
-            pages=[
-                page if isinstance(page, WikiPageRecord) else WikiPageRecord.model_validate(page) for page in pages
-            ],
+            pages=[page if isinstance(page, WikiPageRecord) else WikiPageRecord.model_validate(page) for page in pages],
             edges=edges or [],
         )
         return _to_tool_result(await op_sync_push(self._store, params, wiki_name=self._wiki_name))

@@ -81,7 +81,12 @@ def plane(tmp_path):
 
 def _mem(concept_id: str, body: str, updated_at: str) -> WikiPageRecord:
     return WikiPageRecord(
-        concept_id=concept_id, title=concept_id, body=body, origin="memory", asserted_by="human:a", updated_at=updated_at
+        concept_id=concept_id,
+        title=concept_id,
+        body=body,
+        origin="memory",
+        asserted_by="human:a",
+        updated_at=updated_at,
     )
 
 
