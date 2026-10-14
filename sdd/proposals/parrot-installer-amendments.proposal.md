@@ -5,7 +5,7 @@ title: FEAT-633 amendments — portability safeguards carried over from FEAT-583
 slug: parrot-installer-amendments
 type: feature
 mode: enrichment
-status: discussion
+status: accepted
 source: Review of FEAT-583 (portable-sdd-flow) against FEAT-633 (parrot-installer), 2026-09-25 → 2026-10-14
 overall_confidence: high
 base_branch: dev
@@ -46,10 +46,12 @@ its spec:
 
 - **Already covered by FEAT-633 tasks:** C1 and most of C9 (§2.1). They are not
   re-proposed here.
-- **13 amendments remain.** Four of them change an approved FEAT-633 decision and need
-  Jesus's sign-off: **C4, C6, C10, C12**, marked ⚖️.
-- **One new open question.** How installed commands call helpers in a global-only
-  install (**Q1**). C3's test will expose it.
+- **13 amendments remain.** Four of them change an approved FEAT-633 decision and were
+  marked ⚖️: **C4, C6, C10, C12**. All four were approved by Jesus Lara on 2026-10-14
+  (§5), C6 with a reduced scope.
+- **One new open question**, now resolved. How installed commands call helpers in a
+  global-only install (**Q1**): through `parrot sdd run <helper>` (§3, Q1 resolution).
+  C3's test proves it.
 
 | # | Amendment | Amends | ⚖️ | Effort |
 |---|---|---|---|---|
@@ -66,6 +68,7 @@ its spec:
 | C13 | One install guide, kept true by CI | TASK-4095 | — | M |
 | C14 | Explain every install command and gate the install | TASK-4074, 4075, 4095 | — | S |
 | C15 | SDD readiness checks in `parrot self doctor` | TASK-4080, TASK-4091 | — | S |
+| Q1 | `parrot sdd run <helper>` replaces `python -m parrot.sdd.scripts.<name>` | spec M6, TASK-4089, TASK-4091 | ⚖️ | S |
 
 ---
 
@@ -94,7 +97,8 @@ All facts were verified on `dev` at `2ed09515e`, 2026-10-14.
 
 1. **The prompt-parity test is failing on `dev`.**
    `packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py::test_prompt_parity[sdd-worker]`
-   fails. `.claude/agents/sdd-worker.md` lists `Monitor, TaskStop` in its `tools:` line;
+   fails (re-run 2026-10-14 on `a6e51614b`: 1 failed, 9 passed, 1 skipped).
+   `.claude/agents/sdd-worker.md` lists `Monitor, TaskStop` in its `tools:` line;
    `_subagent_data/sdd-worker.md:26` does not. FEAT-633 adds a third copy under `_assets/`,
    and TASK-4090 records that no sync tool for `_subagent_data/` exists.
 2. **Helpers can't be found in a global-only install.**
@@ -114,6 +118,15 @@ All facts were verified on `dev` at `2ed09515e`, 2026-10-14.
      (`flows/dev_loop/nodes/base.py:44`) and `_parse_flow_frontmatter`, defined twice
      (`nodes/research.py:159` and `nodes/feature_handoff.py:69`, with an `or "dev"`
      fallback at `:391`).
+   - **Correction (review 2026-10-14).** There is a third copy, and it is the one core
+     already treats as authoritative: `KNOWN_BRANCHES` in
+     `parrot/knowledge/wiki/ledger/sdd_meta.py:30`. The same module hardcodes the
+     policy in `WORK_KIND_FLOW` (`:35-38`), in `parse()`'s default
+     `FlowMeta(type="feature", base_branch="dev")` (`:152`) and in the
+     `_hotfix_implies_main` validator (`:106`), which requires `base_branch == "main"`
+     for hotfixes. **`sdd_meta.resolve_flow` does not exist**; the API is
+     `parse()` / `emit()` / `FlowMeta`. TASK-4085 re-exports this module as
+     `parrot.sdd.scripts.sdd_meta` (`scripts/sdd/sdd_meta.py` is already a wrapper).
 6. **ai-parrot's code rulebook ships everywhere.** TASK-4090 ships `codebase-conventions.md`
    (aiohttp only, navigator-api, uv) as an always-loaded rule to all three hosts
    (`.claude/rules/` and `.agent/rules/`).
@@ -122,9 +135,14 @@ All facts were verified on `dev` at `2ed09515e`, 2026-10-14.
      keys 102 times in 10 files, and the `agy` reviewer ban 3 times.
    - TASK-4070's six finding kinds detect none of these.
 8. **Shipped references to monorepo-only helpers.** TASK-4089 keeps them on purpose
-   (`scripts.sdd.review_checkpoint` at `.claude/agents/sdd-worker.md:588,607`, plus
-   `lint_new`, `token_audit` and `codex_hook`), and its new test allows them. Those
-   lines fail outside this monorepo.
+   (`scripts.sdd.review_checkpoint` at `.claude/agents/sdd-worker.md:588,607`), and
+   its new test allows them. Those lines fail outside this monorepo.
+   **Correction (review 2026-10-14).** The earlier draft also listed `lint_new`,
+   `token_audit` and `codex_hook`. A grep over `.claude/`, `.agent/`, `.agents/` and
+   `sdd/templates/` finds **no** reference to `lint_new` or `token_audit` in any file
+   TASK-4090 packages; `codex_hook` appears only in `.codex/hooks.json:9`, which is not
+   packaged. `review_checkpoint` is therefore the only non-moved helper a shipped file
+   references.
 9. **One unpackaged skill.** Shipped files reference the `second-opinion` skill 5 times,
    but it isn't among TASK-4090's sources.
 10. **Four install documents, one verified.** FEAT-586's CI-verified
@@ -182,9 +200,15 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
     - file differs → it was edited, so skip and warn (unless `--force`);
     - file not in the record → it isn't ours, so skip.
   - `parrot sdd status` reports each file as missing, current, outdated or edited.
-- **Amends**: TASK-4091.
+  - The record also stores the ai-parrot version that wrote it, so `status` can name
+    the release an outdated file came from.
+- **Amends**: TASK-4091, including its line 51, which today lists an install receipt as
+  out of scope.
 - **⚖️ Reverses**: the "no hash manifest" non-goal (spec §1, TASK-4091 line 210).
   **Why it's worth it**: without a record, the installer can't upgrade safely.
+  **Decision note (Jesus Lara, 2026-10-14)**: the spec non-goal rejected FEAT-583's
+  *packaging* manifest and symlinks, not an install receipt. The receipt is a different
+  mechanism and the non-goal wording in spec revision 0.2 should say so.
 - **Done when**: tests cover upgrading an untouched file, keeping an edited file, and
   `--force`.
 
@@ -199,30 +223,44 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
 ### C6 — One repo config, read by the commands ⚖️
 - **Problem**: §2.2-5. Commands are hardwired to ai-parrot's branches and Jira.
 - **Change**:
-  - Add a committed `sdd/config.json`, owned by the team and validated with Pydantic:
-    `base_branch`, `staging_branch` (optional), `hotfix_base`, `sync_down`
-    (`action | manual | none`), `issue_tracker` (`jira | none`), `jira_host` (optional),
-    `reviewer` (`codex | none`).
-  - The installer renders it into a committed `sdd/CONFIG.md`.
-  - Shipped commands say "the base branch in `sdd/CONFIG.md`" instead of literals.
-    Command files therefore stay byte-identical across repos and FEAT-633's sync rule
-    holds; only `CONFIG.md` differs.
+  - Add a committed `sdd/config.json`, owned by the team and validated with Pydantic.
+    v1 fields: `base_branch`, `staging_branch` (optional), `hotfix_base`,
+    `issue_tracker` (`jira | none`), `jira_host` (optional), `reviewer`
+    (`codex | none`, used by C9) and `test_command` (used by C7 option C).
+    `sync_down` is dropped from v1: the Action is ai-parrot's, and nothing shipped
+    reads the value.
+  - **No rendered `sdd/CONFIG.md`** (decision 2026-10-14). The shipped commands are
+    markdown read by an LLM, which reads `sdd/config.json` directly; a second generated
+    file would only add something to drift. Shipped commands say "the base branch in
+    `sdd/config.json`" instead of literals. Command files therefore stay byte-identical
+    across repos and FEAT-633's sync rule holds; only `config.json` differs.
   - ai-parrot's own `sdd/config.json` sets `dev`/`staging`/`main` and Jira, so
     ai-parrot's behaviour is unchanged.
   - Validation keeps today's lane rules: features never base on the hotfix branch, and
     hotfixes always base on it.
-  - `sdd_meta.resolve_flow` takes its defaults from the config.
+  - The real branch-policy API takes its defaults from the config. It is **not**
+    `sdd_meta.resolve_flow`, which does not exist (§2.2-5 correction): it is
+    `parse()` / `FlowMeta` in `parrot/knowledge/wiki/ledger/sdd_meta.py`, whose
+    `"dev"` / `"main"` literals (`WORK_KIND_FLOW` `:35-38`, `parse()` `:152`) and
+    `_hotfix_implies_main` validator (`:106`) must read `base_branch` / `hotfix_base`
+    from the config, with today's values as the fallback when no config exists.
 - **Amends**: a new M6 task, after TASK-4085 (which moves `sdd_meta`) and before
   TASK-4089 (the markdown rewrite). It depends on C8.
 - **⚖️ Adds**: a configuration FEAT-633 doesn't have.
+  **Decision note (Jesus Lara, 2026-10-14)**: approved with the reduced field set above
+  and without `CONFIG.md`.
 - **Done when**: a foreign repo using `main` plus `develop` can run the flow by editing
   only `sdd/config.json`.
 
 ### C8 — One source for branch policy in core
 - **Problem**: §2.2-5. After C6, hardcoded copies would silently ignore the config.
 - **Change**:
-  - Replace `_LONG_LIVED_BRANCHES` and both `_parse_flow_frontmatter` copies with
-    `sdd_meta` functions, using FEAT-583's `read_declared_base_branch(path) -> str | None`.
+  - Replace `_LONG_LIVED_BRANCHES`, both `_parse_flow_frontmatter` copies **and**
+    `KNOWN_BRANCHES` in `knowledge/wiki/ledger/sdd_meta.py:30` (§2.2-5 correction) with
+    one set of `sdd_meta` functions, using FEAT-583's
+    `read_declared_base_branch(path) -> str | None`. The surviving definition lives in
+    `knowledge/wiki/ledger/sdd_meta.py`, since TASK-4085 already makes it the module
+    `parrot.sdd.scripts.sdd_meta` re-exports.
   - Keep the distinction the two callers rely on: `None` when no branch is declared,
     versus a `"dev"` default.
 - **Amends**: a new task that is a prerequisite of C6, or fold it into TASK-4085.
@@ -246,7 +284,12 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
   - `worktree-management.md` keeps shipping, since it is SDD guidance, once C11 removes
     its ai-parrot paths.
 - **Amends**: TASK-4090 (manifest) and TASK-4091 (seed handling).
-- **⚖️ Reverses**: the "2 rules" packaged in spec M6.
+- **⚖️ Reverses**: the "2 rules" packaged in spec M6 (TASK-4090 manifest rows at
+  lines 267-270 ship `codebase-conventions.md` to claude and to codex/google).
+  **Decision note (Jesus Lara, 2026-10-14)**: approved. The dev-loop coder seats keep
+  using `flows/_rules_data/` (FEAT-553), which is untouched. `worktree-management.md`
+  today cites the shared `.venv`, Bubblewrap and ai-parrot paths, so it ships only
+  after C11's rewrite.
 - **Done when**: no shipped file mandates a language, framework or package manager.
 
 ### C11 — Publication safety: no org or repo data ships
@@ -275,13 +318,21 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
 - **Change**:
   - Every helper a shipped file references either moves into `parrot.sdd.scripts`, or
     its step is guarded ("ai-parrot only — skip when unavailable").
-  - `review_checkpoint` can move now: it imports only core `sdd_coder`, which is in core.
-  - `codex_hook` stays repo-only and out of shipped files.
+  - `review_checkpoint` can move now: it imports only
+    `parrot.flows.dev_loop.sdd_coder.{checkpoint,evidence,optimization_models,telemetry}`,
+    all in core (verified 2026-10-14).
+  - `codex_hook` stays repo-only; it is referenced only by `.codex/hooks.json`, which is
+    not packaged.
+  - **Scope after the §2.2-8 correction**: `review_checkpoint` is the only non-moved
+    helper any shipped file references, so C12 is one module move plus the extended
+    test. `lint_new` and `token_audit` need no guard.
   - Extend TASK-4089's `test_no_repo_script_refs` to fail on **any** `scripts.sdd.*` or
     `scripts/sdd/*` reference in shipped files. Historical `sdd/specs/` and `sdd/tasks/`
     are excluded.
 - **Amends**: TASK-4089, plus a TASK-4086 entry for `review_checkpoint`.
-- **⚖️ Reverses**: TASK-4089's "references to non-moved helpers stay untouched".
+- **⚖️ Reverses**: TASK-4089's "references to non-moved helpers stay untouched"
+  (lines 54-56, 218, 725, 742).
+  **Decision note (Jesus Lara, 2026-10-14)**: approved; cost is one module.
 - **Done when**: the extended test passes.
 
 ### C13 — One install guide, kept true by CI
@@ -340,12 +391,38 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
 - **Done when**: a fixture repo missing each prerequisite gets the matching check
   failing, with its fix.
 
+### Q1 resolution — `parrot sdd run <helper>` ⚖️
+- **Problem**: §2.2-2. `python -m parrot.sdd.scripts.<name>` runs whatever `python` is
+  first on PATH; in a repo whose venv lacks ai-parrot, that import fails.
+- **Decision (Jesus Lara, 2026-10-14)**: add `parrot sdd run <helper> [args…]` to the
+  `parrot sdd` click group. Everything that enters through `parrot` inherits M1's venv
+  resolution (`PARROT_VENV` → project venv → `VIRTUAL_ENV` → managed), so the helper
+  runs in the same venv the launcher picked for `parrot` itself. The `parrot-python`
+  shim was rejected: it would pin the managed venv and, inside ai-parrot, run the wrong
+  code.
+- **Change**:
+  - `parrot sdd run <name> [args…]` sets `sys.argv` and calls
+    `runpy.run_module(f"parrot.sdd.scripts.{name}", run_name="__main__")`; unknown
+    names fail with the list of available helpers.
+  - TASK-4089's rewrite target becomes `parrot sdd run <name>` instead of
+    `python -m parrot.sdd.scripts.<name>` (its regex table, lines 550-575, and every
+    assertion that greps for the `python -m` form).
+  - Spec M6's "single form `python -m parrot.sdd.scripts.<name>`" becomes the single
+    form `parrot sdd run <name>`. `python -m` keeps working for direct use; it is no
+    longer what shipped markdown says.
+- **Amends**: spec M6, TASK-4089, TASK-4091 (the `run` subcommand). Decide before
+  TASK-4089 starts.
+- **Done when**: C3's wheel-only test runs every helper invocation in the installed
+  markdown with only `$PARROT_HOME/bin` on PATH.
+
 ### What's untouched (non-goals)
 - FEAT-633's core design: the launcher, managed venv, `parrot self`, `--portable`, the
   store gate and the wheel matrix.
 - No satellite package, no `sdd` binary, no symlinks: FEAT-583's rejected shape stays
   rejected.
-- C7 (test-selection policy) is a discussion item, not an amendment.
+- C7 (test-selection policy): option C for v1 (§5, §6). Shipped commands run the
+  repo's `test_command` from `sdd/config.json` outside ai-parrot; FEAT-620's policy
+  stays ai-parrot code.
 - FEAT-586's project-mode install is unchanged.
 
 ### Integration risks
@@ -354,9 +431,10 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
   loses its branch policy.
 - **C2 touches how the dev-loop loads prompts**, and shrinks TASK-4089's twin list.
   Coordinate the two.
-- **C3 fails until Q1 is resolved.** Settle Q1 before TASK-4091 starts.
-- **New tasks need IDs** (C6, C8, and Q1 if accepted). Reserve them with `reserve_ids`
-  and append to FEAT-633's index; never rewrite it.
+- **Q1 changes TASK-4089's rewrite target.** Fold it into TASK-4089 and spec M6 before
+  that task starts; C3 depends on it.
+- **New tasks need IDs** (C6, C8; Q1's `run` subcommand folds into TASK-4091). Reserve
+  them with `reserve_ids` and append to FEAT-633's index; never rewrite it.
 
 ---
 
@@ -370,7 +448,8 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
 | Upgrades can't tell edits apart (C4) | high | TASK-4091 line 210 conflict rule |
 | ai-parrot rulebook ships to every host (C10) | high | TASK-4090 manifest rows for `codebase-conventions.md` |
 | Org-data counts (C11) | high | grep over all SDD files on `dev` |
-| `review_checkpoint` can move to core (C12) | medium | Imports only core `sdd_coder`; not test-verified |
+| `review_checkpoint` can move to core (C12) | high | Imports verified 2026-10-14: only `parrot.flows.dev_loop.sdd_coder.*`; it is also the only non-moved helper shipped files reference |
+| `sdd_meta.resolve_flow` does not exist; policy lives in `parse()`/`FlowMeta`/`KNOWN_BRANCHES` | high | `knowledge/wiki/ledger/sdd_meta.py:30,35-38,106,152` |
 | Size estimates (S/M) | medium | Judgement |
 
 ---
@@ -382,29 +461,36 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
 - [x] Which FEAT-583 and review ideas carry over? — *Resolved by Arturo Martinez*: C2–C6, C8, and C9–C15. C1 and the host mapping part of C9 are already covered by FEAT-633's tasks.
 - [x] Does the install script need its own dependency checks (C14 comment)? — *Resolved by Arturo Martinez*: the full check list lives in `parrot self doctor` (C15). The script keeps a minimal pre-install gate and runs doctor after installing.
 
-### Unresolved (need a decision before FEAT-633 implementation)
-- [ ] ⚖️ Approve C4, the installed-hash record that reverses "no hash manifest"? — *Owner: Jesus Lara*
-- [ ] ⚖️ Approve C6, the repo config (`sdd/config.json` plus a generated `sdd/CONFIG.md`)? — *Owner: Jesus Lara*
-- [ ] ⚖️ Approve C10, a conventions seed instead of shipping `codebase-conventions.md`? — *Owner: Jesus Lara*
-- [ ] ⚖️ Approve C12, moving or guarding monorepo-only helpers in shipped files? — *Owner: Jesus Lara*
-- [ ] **Q1** — How do installed commands call helpers when ai-parrot is only in the global managed venv? Recommended: a launcher-fronted `parrot sdd run <helper> [args]`. Alternative: a `parrot-python` shim in `~/.parrot/bin`. Both reverse FEAT-633's "single form `python -m parrot.sdd.scripts.<name>`". This blocks C3. — *Owner: Jesus Lara + Arturo Martinez*
-- [ ] **C7** — Should test selection carry repo-specific policy in other repos, and where does ai-parrot's own policy live? See §6. — *Owner: Jesus Lara + Arturo Martinez*
+### Resolved (review with Jesus Lara, 2026-10-14)
+- [x] ⚖️ Approve C4, the installed-hash record that reverses "no hash manifest"? — *Resolved by Jesus Lara*: **Yes.** The spec non-goal rejected FEAT-583's packaging manifest and symlinks, not an install receipt; without a receipt TASK-4091's conflict rule (lines 210-211) cannot tell an untouched older file from an edited one, so every upgrade needs `--force` and `--force` overwrites edits. The receipt also stores the writing ai-parrot version. TASK-4091 line 51 (receipt out of scope) is amended.
+- [x] ⚖️ Approve C6, the repo config? — *Resolved by Jesus Lara*: **Yes, reduced.** One committed `sdd/config.json` read directly by the shipped commands; **no generated `sdd/CONFIG.md`** (a second file only adds drift). v1 fields: `base_branch`, `staging_branch`, `hotfix_base`, `issue_tracker`, `jira_host`, `reviewer`, `test_command`; `sync_down` dropped. Correction recorded: the function to parameterize is `parse()` / `FlowMeta` in `parrot/knowledge/wiki/ledger/sdd_meta.py` (`"dev"`/`"main"` at `:35-38`, `:152`; `_hotfix_implies_main` at `:106`), **not** `sdd_meta.resolve_flow`, which does not exist.
+- [x] ⚖️ Approve C10, a conventions seed instead of shipping `codebase-conventions.md`? — *Resolved by Jesus Lara*: **Yes.** TASK-4090 lines 267-270 ship ai-parrot's rulebook (aiohttp only, no `requests`/`httpx`, uv) to all three hosts; in a Node or Django repo it is simply wrong. The dev-loop seats keep `flows/_rules_data/` (FEAT-553). `worktree-management.md` ships only after C11 removes its `.venv`/Bubblewrap/ai-parrot paths.
+- [x] ⚖️ Approve C12, moving or guarding monorepo-only helpers in shipped files? — *Resolved by Jesus Lara*: **Yes.** Verified scope is smaller than drafted: `scripts.sdd.review_checkpoint` (`sdd-worker.md:588,607`) is the **only** non-moved helper any shipped file references; `lint_new` and `token_audit` appear in no packaged file and `codex_hook` only in the unpackaged `.codex/hooks.json`. `review_checkpoint` imports only `parrot.flows.dev_loop.sdd_coder.*` (core), so it moves via TASK-4086.
+- [x] **Q1** — How do installed commands call helpers when ai-parrot is only in the global managed venv? — *Resolved by Jesus Lara*: **`parrot sdd run <helper> [args…]`**, added to the `parrot sdd` group (folds into TASK-4091). It inherits M1's venv resolution, so it works wherever `parrot` works, including inside ai-parrot's own venv. The `parrot-python` shim is rejected: it would pin the managed venv and run the wrong code inside ai-parrot. Spec M6's "single form" and TASK-4089's rewrite target (regex table, lines 550-575) change to `parrot sdd run <name>`; `python -m` remains valid for direct use. Decide-before: TASK-4089. See §3 "Q1 resolution".
+- [x] **C7** — Should test selection carry repo-specific policy in other repos? — *Resolved by Jesus Lara*: **Option C for v1.** The policy is `CORE_PATHS` in `parrot/flows/dev_loop/test_scope/policy.py`, written by `scripts/sdd/regen_core_paths.py` into that source file; it is a list of ai-parrot module names with no meaning elsewhere. Option A needs C6 plus retargeting the generator with no evidence yet that a foreign repo gains from escalation; option B can report green with zero tests selected. Shipped commands run `test_command` from `sdd/config.json` outside ai-parrot. The §6 evidence step (two throwaway repos) still runs, as input for revisiting option A in v1.1.
+
+### Unresolved
+- None. The amendments are ready to fold into FEAT-633 spec revision 0.2 (§6 step 2).
 
 ---
 
 ## 6. Recommended Next Step
 
-1. **Arturo and Jesus decide the ⚖️ items, Q1 and C7** in one session, using the
-   protocol below.
+1. ~~Arturo and Jesus decide the ⚖️ items, Q1 and C7~~ — **done 2026-10-14** (§5).
+   The protocol below is kept for the record; only its evidence step still runs.
 2. **Fold the accepted amendments into FEAT-633**:
    - a spec revision 0.2 (§3 M3/M6, §4, §5, Revision History);
    - amend TASK-4070, 4074, 4075, 4080, 4086, 4089, 4090, 4091, 4094 and 4095;
-   - reserve IDs for the new tasks (C6, C8, and Q1 if accepted);
+   - reserve IDs for the new tasks (C6, C8); Q1 and C7 option C fold into TASK-4091,
+     TASK-4089 and spec M6;
    - drop TASK-4095's FEAT-583 stamping step, which is already done.
 3. **Then start implementing FEAT-633.** Spikes S1–S6 can start now, because none of
    these amendments touch them.
 
 ### Protocol for deciding C7 (test-selection policy)
+
+> **Outcome (2026-10-14)**: option C for v1, decided by Jesus Lara (§5). Step 1 (evidence)
+> still runs as input for v1.1; steps 2-3 are no longer needed.
 
 **The question.** `select_tests` and `check_task_graph` ship through `parrot.sdd.scripts`,
 but their policy is ai-parrot's: `CORE_PATHS` (generated by FEAT-620), the xdist list and
@@ -468,15 +554,14 @@ the markers. What should happen in other repos?
    `parrot sdd install --host claude|codex|google --dry-run` shows the plan (C5). The
    real install then:
    - deploys that host's commands, agents, skills and templates (FEAT-633's manifest);
-   - seeds `sdd/config.json`, renders `sdd/CONFIG.md` (C6) and seeds `sdd/CONVENTIONS.md`
-     (C10);
+   - seeds `sdd/config.json` (C6) and `sdd/CONVENTIONS.md` (C10);
    - seeds the ID ledger and the worktree ignore (TASK-4091).
 4. **Sets the branches and tracker in `sdd/config.json`.** The commands follow it.
    ai-parrot's rulebook and org data never arrive (C10, C11).
 5. **Checks readiness with `parrot self doctor`** (C15): `origin`, base branch, ledger,
    `gh`/`jq`, host CLIs.
-6. **Uses the `/sdd-*` commands.** Helpers run through the launcher (Q1), proven by the
-   wheel-only test (C3). Monorepo-only steps are moved or skipped (C12).
+6. **Uses the `/sdd-*` commands.** Helpers run through `parrot sdd run <helper>` (Q1),
+   proven by the wheel-only test (C3). Monorepo-only steps are moved or skipped (C12).
 7. **Upgrades by running `parrot sdd install` again.** Untouched files upgrade and edited
    ones are kept; `parrot sdd status` shows current, outdated or edited (C4).
 
@@ -485,7 +570,7 @@ the markers. What should happen in other repos?
 | Concern | FEAT-633 today | After amendments |
 |---|---|---|
 | Platforms | Linux, macOS, Windows (pending spike S1) | Same |
-| Helpers in a foreign repo | `python -m …` fails in a global-only install | Run through the launcher (Q1), proven by C3 |
+| Helpers in a foreign repo | `python -m …` fails in a global-only install | `parrot sdd run <helper>` (Q1), proven by C3 |
 | Codex/Google SDD files | Packaged (77 entries with `hosts`) | Same |
 | Repo branches and tracker | ai-parrot's literals | Per-repo config (C6, C8) |
 | Org and ai-parrot text | Ships verbatim in the public wheel | Scanned, made generic, blocked by CI (C11) |
@@ -497,10 +582,11 @@ the markers. What should happen in other repos?
 | Install safety | Checksums, rollback | Plus a pre-install gate and explained commands (C14) |
 | Install docs | Four documents, one verified | One canonical verified guide (C13) |
 | Agent prompts | Three copies, parity test failing | One copy (C2) |
-| Test selection elsewhere | ai-parrot's policy applies | Pending C7 |
+| Test selection elsewhere | ai-parrot's policy applies | The repo's `test_command` (C7, option C); policy-driven selection revisited in v1.1 |
 
 ### Still open after these amendments
-- **The decisions**: C7, and Q1 (which blocks C3).
+- **C7 option A** (repo-supplied test-selection policy): deferred to v1.1, pending the
+  §6 evidence step.
 - **Spike S1**: whether ai-parrot core installs without a compiler on macOS and Windows.
   The whole global install depends on it.
 - **Install size**: adopters install the full ai-parrot core, which is heavier than
@@ -526,8 +612,16 @@ Sources, all on `dev` at `2ed09515e`, 2026-10-14:
 **Not done**: no codex second opinion (it isn't available on this machine), and no
 FEAT-633 code was exercised, because none exists yet.
 
+**Review 2026-10-14 (Jesus Lara with Claude)**, on `dev` at `a6e51614b`: re-read spec
+§1 non-goals, M1, M2, M6; TASK-4070, 4074, 4080, 4085, 4086, 4089, 4090, 4091;
+`knowledge/wiki/ledger/sdd_meta.py`; `scripts/sdd/review_checkpoint.py` imports;
+`flows/dev_loop/test_scope/policy.py` and `regen_core_paths.py`; grep of helper, Jira
+and `CLAUDE.md` references over the packaged file set; `test_subagent_parity.py`
+re-run. Three corrections resulted (§2.2-5, §2.2-8, confidence map).
+
 ## 8. Provenance
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-14 | Arturo Martinez + Claude | Initial amendment proposal for FEAT-633 |
+| 0.2 | 2026-10-14 | Jesus Lara + Claude | All ⚖️ items, Q1 and C7 resolved; C6 reduced (no `CONFIG.md`, `test_command` added); corrections: `sdd_meta.resolve_flow` does not exist, `KNOWN_BRANCHES` third copy, `lint_new`/`token_audit` not referenced by shipped files; Q1 resolution section added |
