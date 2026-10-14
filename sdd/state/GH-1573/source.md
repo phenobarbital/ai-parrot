@@ -5,7 +5,7 @@ url: https://github.com/phenobarbital/ai-parrot/issues/1573
 fetched_at: 2026-10-05T01:15:00Z
 labels: [bug]
 state: open
-summary_oneline: Scheduler on aiohttp: listeners never wired, every worker fires every job, redis jobstore cannot pickle jobs
+summary_oneline: "Scheduler on aiohttp: listeners never wired, every worker fires every job, redis jobstore cannot pickle jobs"
 ---
 
 # scheduler: listeners disabled on the aiohttp path; duplicate firing with multiple workers; redis jobstore cannot pickle jobs

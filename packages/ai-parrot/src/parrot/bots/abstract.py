@@ -1195,7 +1195,7 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
     def get_supported_models(self) -> List[str]:
         return self._llm.get_supported_models()
 
-    def _get_default_attr(self, key, default: Any = None, **kwargs):
+    def _get_default_attr(self, key, default: Any = None, /, **kwargs):
         if key in kwargs:
             return kwargs.get(key)
         return getattr(self, key) if hasattr(self, key) else default

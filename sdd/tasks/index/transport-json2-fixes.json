@@ -1,0 +1,35 @@
+{
+  "feature": "transport-json2-fixes",
+  "feature_id": "FEAT-664",
+  "spec": "sdd/specs/transport-json2-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-14T01:32:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4285",
+      "feature_id": "FEAT-664",
+      "feature": "transport-json2-fixes",
+      "title": "Widen JSON-2 create fallback detection",
+      "file": "sdd/tasks/active/TASK-4285-json2-create-fallback.md",
+      "status": "pending",
+      "priority": "high",
+      "estimated_effort": "S",
+      "depends_on": [],
+      "assigned_to": null
+    },
+    {
+      "id": "TASK-4286",
+      "feature_id": "FEAT-664",
+      "feature": "transport-json2-fixes",
+      "title": "Add get_views mapping to JSON-2 transport",
+      "file": "sdd/tasks/active/TASK-4286-json2-get-views-mapping.md",
+      "status": "pending",
+      "priority": "medium",
+      "estimated_effort": "S",
+      "depends_on": [],
+      "assigned_to": null
+    }
+  ]
+}

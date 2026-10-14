@@ -2,7 +2,7 @@
 id: F001
 query_id: Q001
 type: wiki_query
-intent: Orient: locate JiraToolkit, its create/comment tools and tests in the knowledge graph.
+intent: "Orient: locate JiraToolkit, its create/comment tools and tests in the knowledge graph."
 executed_at: 2026-10-07T22:55:00Z
 duration_ms: 1500
 parent_id: null

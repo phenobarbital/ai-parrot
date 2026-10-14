@@ -88,9 +88,11 @@ def load_locale_document(locale: str, *, templates_dir: Path | None = None) -> t
     Raises:
         FileNotFoundError: when even ``en`` is missing.
     """
-    base = templates_dir or TEMPLATES_DIR
+    base = (templates_dir or TEMPLATES_DIR).resolve()
     for candidate in locale_chain(locale):
-        path = base / candidate / "narration.yaml"
+        path = (base / candidate / "narration.yaml").resolve()
+        if not path.is_relative_to(base):
+            raise ValueError(f"Locale {locale!r} resolves outside templates directory")
         if path.is_file():
             with path.open(encoding="utf-8") as fh:
                 return candidate, yaml.safe_load(fh) or {}

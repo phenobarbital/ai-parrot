@@ -1,0 +1,23 @@
+{
+  "feature": "canvas-InfographicCanvas-fixes",
+  "feature_id": "FEAT-666",
+  "spec": "sdd/specs/canvas-InfographicCanvas-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-14T01:32:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4287",
+      "feature_id": "FEAT-666",
+      "feature": "canvas-InfographicCanvas-fixes",
+      "title": "Pass shareToken from InfographicCanvas to A2UISurface",
+      "file": "sdd/tasks/active/TASK-4287-infographic-share-token.md",
+      "status": "pending",
+      "priority": "high",
+      "estimated_effort": "S",
+      "depends_on": [],
+      "assigned_to": null
+    }
+  ]
+}

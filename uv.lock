@@ -774,6 +774,9 @@ wiki-languages = [
 wiki-structural = [
     { name = "ast-grep-py" },
 ]
+wikitoolkit-server = [
+    { name = "ai-parrot-server" },
+]
 xai = [
     { name = "ai-parrot-client-grok" },
 ]
@@ -829,6 +832,7 @@ requires-dist = [
     { name = "ai-parrot-integrations", extras = ["messaging"], marker = "extra == 'messaging'", editable = "packages/ai-parrot-integrations" },
     { name = "ai-parrot-loaders", extras = ["documents"], marker = "extra == 'wiki'", editable = "packages/ai-parrot-loaders" },
     { name = "ai-parrot-openlit-bridge", marker = "extra == 'observability-openlit'", editable = "packages/ai-parrot-openlit-bridge" },
+    { name = "ai-parrot-server", marker = "extra == 'wikitoolkit-server'", editable = "packages/ai-parrot-server" },
     { name = "ai-parrot-server", extras = ["all"], marker = "extra == 'all'", editable = "packages/ai-parrot-server" },
     { name = "ai-parrot-server", extras = ["all"], marker = "extra == 'server'", editable = "packages/ai-parrot-server" },
     { name = "ai-parrot-visualizations", extras = ["all"], marker = "extra == 'visualizations'", editable = "packages/ai-parrot-visualizations" },
@@ -1084,7 +1088,7 @@ requires-dist = [
     { name = "zeep", extras = ["async"], marker = "extra == 'agents-lite'", specifier = "==4.3.3" },
     { name = "zeep", extras = ["async"], marker = "extra == 'mcp'", specifier = "==4.3.3" },
 ]
-provides-extras = ["notify-all", "db", "bigquery", "pdf", "ocr", "audio", "finance", "flowtask", "graphindex", "graphindex-postgres", "wiki-languages", "wiki-structural", "leiden", "wiki", "bookstore", "manuals", "scheduler", "server", "reddit", "jira", "retrieval", "tokenizer", "msgraph", "gdrive", "agents", "charts", "agents-lite", "mcp", "images", "anthropic", "bedrock", "bedrock-native", "claude-agent", "codex-agent", "openai", "google", "groq", "zai", "grok", "gemma4", "hf", "nvidia", "moonshot", "openrouter", "local", "vllm", "meta", "jev", "llms", "integrations", "grpc", "eda", "security", "needle", "xai", "deploy", "docling", "filesystem-transport", "filesystem-transport-full", "messaging", "otel", "observability", "observability-openlit", "observability-traceloop", "observability-prometheus", "dev", "remote-tools", "visualizations", "rust", "all", "all-fast"]
+provides-extras = ["notify-all", "db", "bigquery", "pdf", "ocr", "audio", "finance", "flowtask", "graphindex", "graphindex-postgres", "wiki-languages", "wiki-structural", "leiden", "wiki", "bookstore", "manuals", "scheduler", "wikitoolkit-server", "server", "reddit", "jira", "retrieval", "tokenizer", "msgraph", "gdrive", "agents", "charts", "agents-lite", "mcp", "images", "anthropic", "bedrock", "bedrock-native", "claude-agent", "codex-agent", "openai", "google", "groq", "zai", "grok", "gemma4", "hf", "nvidia", "moonshot", "openrouter", "local", "vllm", "meta", "jev", "llms", "integrations", "grpc", "eda", "security", "needle", "xai", "deploy", "docling", "filesystem-transport", "filesystem-transport-full", "messaging", "otel", "observability", "observability-openlit", "observability-traceloop", "observability-prometheus", "dev", "remote-tools", "visualizations", "rust", "all", "all-fast"]
 
 [[package]]
 name = "ai-parrot-advisors"
@@ -1108,7 +1112,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-amazon"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-amazon" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1123,7 +1127,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-anthropic"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-anthropic" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1140,7 +1144,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-gemma4"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-gemma4" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1155,7 +1159,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-google"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-google" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1170,7 +1174,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-grok"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-grok" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1185,7 +1189,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-groq"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-groq" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1200,7 +1204,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-hf"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-hf" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1215,7 +1219,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-jev"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-jev" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1226,7 +1230,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-local"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-local" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1237,7 +1241,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-meta"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-meta" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1248,7 +1252,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-moonshot"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-moonshot" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1259,7 +1263,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-nvidia"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-nvidia" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1270,7 +1274,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-openai"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-openai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1296,7 +1300,7 @@ provides-extras = ["bridge"]
 
 [[package]]
 name = "ai-parrot-client-openrouter"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-openrouter" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1307,7 +1311,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-vllm"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-vllm" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1322,7 +1326,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-zai"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-client-zai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1786,7 +1790,7 @@ provides-extras = ["youtube", "audio", "pdf", "images", "web", "ebook", "documen
 
 [[package]]
 name = "ai-parrot-openlit-bridge"
-version = "0.4.0"
+version = "0.4.1"
 source = { editable = "packages/ai-parrot-openlit-bridge" }
 dependencies = [
     { name = "aiohttp" },
@@ -1898,12 +1902,14 @@ dependencies = [
 
 [package.optional-dependencies]
 all = [
+    { name = "ai-parrot", extra = ["docling"] },
     { name = "ai-parrot-loaders" },
     { name = "aiogoogle" },
     { name = "aioimaplib" },
     { name = "alpaca-py" },
     { name = "altair" },
     { name = "arxiv" },
+    { name = "async-notify", extra = ["all"] },
     { name = "autoviz" },
     { name = "azure-identity" },
     { name = "beautifulsoup4" },
@@ -1927,6 +1933,7 @@ all = [
     { name = "markitdown" },
     { name = "mediawikiapi" },
     { name = "microsoft-kiota-authentication-azure" },
+    { name = "msal" },
     { name = "msgraph-sdk" },
     { name = "numpy" },
     { name = "odfpy" },
@@ -1934,17 +1941,25 @@ all = [
     { name = "pandas" },
     { name = "pandas-datareader" },
     { name = "playwright" },
+    { name = "praw" },
+    { name = "prophet" },
     { name = "psycopg-binary" },
     { name = "pulumi" },
+    { name = "pyarrow" },
     { name = "pyowm" },
     { name = "python-docx" },
+    { name = "python-pptx" },
     { name = "pyyaml" },
     { name = "querysource" },
+    { name = "rank-bm25" },
     { name = "rapidfuzz" },
+    { name = "scipy" },
     { name = "sdmx1" },
     { name = "selenium" },
     { name = "slack-sdk" },
+    { name = "statsmodels" },
     { name = "ta-lib" },
+    { name = "textblob" },
     { name = "trafilatura" },
     { name = "undetected-chromedriver" },
     { name = "vl-convert-python" },
@@ -1965,6 +1980,9 @@ arxiv = [
 aws = [
     { name = "boto3" },
 ]
+bm25 = [
+    { name = "rank-bm25" },
+]
 business-automation = [
     { name = "ai-parrot-loaders" },
     { name = "pandas" },
@@ -1983,6 +2001,9 @@ db = [
 docker = [
     { name = "docker" },
 ]
+document-converter = [
+    { name = "ai-parrot", extra = ["docling"] },
+]
 excel = [
     { name = "odfpy" },
     { name = "openpyxl" },
@@ -1996,12 +2017,16 @@ finance = [
 flowtask = [
     { name = "flowtask" },
 ]
+forecasting = [
+    { name = "prophet" },
+]
 git = [
     { name = "gitpython" },
 ]
 google = [
     { name = "aiogoogle" },
     { name = "google-api-python-client" },
+    { name = "textblob" },
 ]
 hooba = [
     { name = "ai-parrot-loaders" },
@@ -2026,6 +2051,12 @@ messaging = [
     { name = "aioimaplib" },
     { name = "gmqtt" },
 ]
+msteams = [
+    { name = "azure-identity" },
+    { name = "microsoft-kiota-authentication-azure" },
+    { name = "msal" },
+    { name = "msgraph-sdk" },
+]
 msword = [
     { name = "beautifulsoup4" },
     { name = "jinja2" },
@@ -2033,6 +2064,9 @@ msword = [
     { name = "markdown" },
     { name = "markdownify" },
     { name = "python-docx" },
+]
+notification = [
+    { name = "async-notify", extra = ["all"] },
 ]
 office365 = [
     { name = "azure-identity" },
@@ -2046,8 +2080,17 @@ pdf = [
     { name = "python-docx" },
     { name = "weasyprint" },
 ]
+powerbi = [
+    { name = "pyarrow" },
+]
+powerpoint = [
+    { name = "python-pptx" },
+]
 pulumi = [
     { name = "pulumi" },
+]
+reddit = [
+    { name = "praw" },
 ]
 research = [
     { name = "arxiv" },
@@ -2074,9 +2117,77 @@ sitesearch = [
     { name = "beautifulsoup4" },
     { name = "html2text" },
     { name = "markitdown" },
+    { name = "textblob" },
 ]
 slack = [
     { name = "slack-sdk" },
+]
+stats = [
+    { name = "scipy" },
+    { name = "statsmodels" },
+]
+studio = [
+    { name = "ai-parrot", extra = ["docling"] },
+    { name = "ai-parrot-loaders" },
+    { name = "aiogoogle" },
+    { name = "aioimaplib" },
+    { name = "alpaca-py" },
+    { name = "altair" },
+    { name = "arxiv" },
+    { name = "async-notify", extra = ["all"] },
+    { name = "autoviz" },
+    { name = "azure-identity" },
+    { name = "beautifulsoup4" },
+    { name = "biopython" },
+    { name = "feedparser" },
+    { name = "flowtask" },
+    { name = "fpdf" },
+    { name = "gmqtt" },
+    { name = "google-api-python-client" },
+    { name = "habanero" },
+    { name = "html2text" },
+    { name = "jinja2" },
+    { name = "jira" },
+    { name = "mammoth" },
+    { name = "markdown" },
+    { name = "markdownify" },
+    { name = "markitdown" },
+    { name = "mediawikiapi" },
+    { name = "microsoft-kiota-authentication-azure" },
+    { name = "msal" },
+    { name = "msgraph-sdk" },
+    { name = "numpy" },
+    { name = "odfpy" },
+    { name = "openpyxl" },
+    { name = "pandas" },
+    { name = "pandas-datareader" },
+    { name = "playwright" },
+    { name = "praw" },
+    { name = "prophet" },
+    { name = "psycopg-binary" },
+    { name = "pyarrow" },
+    { name = "pyowm" },
+    { name = "python-docx" },
+    { name = "python-pptx" },
+    { name = "pyyaml" },
+    { name = "querysource" },
+    { name = "rank-bm25" },
+    { name = "rapidfuzz" },
+    { name = "scipy" },
+    { name = "sdmx1" },
+    { name = "selenium" },
+    { name = "slack-sdk" },
+    { name = "statsmodels" },
+    { name = "ta-lib" },
+    { name = "textblob" },
+    { name = "trafilatura" },
+    { name = "undetected-chromedriver" },
+    { name = "vl-convert-python" },
+    { name = "wbgapi" },
+    { name = "weasyprint" },
+    { name = "webdriver-manager" },
+    { name = "wikipedia" },
+    { name = "yfinance" },
 ]
 weather = [
     { name = "pyowm" },
@@ -2094,9 +2205,12 @@ workday = [
 [package.metadata]
 requires-dist = [
     { name = "ai-parrot", editable = "packages/ai-parrot" },
+    { name = "ai-parrot", extras = ["docling"], marker = "extra == 'document-converter'", editable = "packages/ai-parrot" },
     { name = "ai-parrot-loaders", marker = "extra == 'business-automation'", editable = "packages/ai-parrot-loaders" },
-    { name = "ai-parrot-tools", extras = ["analysis", "arxiv", "aws", "business-automation", "charts", "codeinterpreter", "db", "docker", "excel", "finance", "flowtask", "git", "google", "hooba", "jira", "kubernetes", "messaging", "msword", "office365", "pdf", "pulumi", "research", "rss", "sandbox", "scraping", "security", "sitesearch", "slack", "weather", "wikipedia"], marker = "extra == 'all'", editable = "packages/ai-parrot-tools" },
+    { name = "ai-parrot-tools", extras = ["analysis", "arxiv", "aws", "bm25", "business-automation", "charts", "codeinterpreter", "db", "docker", "document-converter", "excel", "finance", "flowtask", "forecasting", "git", "google", "hooba", "jira", "kubernetes", "messaging", "msteams", "msword", "notification", "office365", "pdf", "powerbi", "powerpoint", "pulumi", "reddit", "research", "rss", "sandbox", "scraping", "security", "sitesearch", "slack", "stats", "weather", "wikipedia"], marker = "extra == 'all'", editable = "packages/ai-parrot-tools" },
+    { name = "ai-parrot-tools", extras = ["analysis", "arxiv", "bm25", "business-automation", "charts", "db", "document-converter", "excel", "finance", "flowtask", "forecasting", "google", "hooba", "jira", "messaging", "msteams", "msword", "notification", "office365", "pdf", "powerbi", "powerpoint", "reddit", "research", "rss", "scraping", "sitesearch", "slack", "stats", "weather", "wikipedia"], marker = "extra == 'studio'", editable = "packages/ai-parrot-tools" },
     { name = "ai-parrot-tools", extras = ["business-automation", "excel", "scraping"], marker = "extra == 'hooba'", editable = "packages/ai-parrot-tools" },
+    { name = "ai-parrot-tools", extras = ["office365"], marker = "extra == 'msteams'", editable = "packages/ai-parrot-tools" },
     { name = "aiogoogle", marker = "extra == 'google'", specifier = ">=5.17" },
     { name = "aiohttp", marker = "extra == 'workday'", specifier = ">=3.9" },
     { name = "aioimaplib", marker = "extra == 'messaging'", specifier = ">=1.1" },
@@ -2104,6 +2218,7 @@ requires-dist = [
     { name = "altair", marker = "extra == 'charts'", specifier = ">=5.0" },
     { name = "arxiv", marker = "extra == 'arxiv'", specifier = ">=3.0.0" },
     { name = "arxiv", marker = "extra == 'research'", specifier = ">=3.0.0" },
+    { name = "async-notify", extras = ["all"], marker = "extra == 'notification'", specifier = ">=1.6.0" },
     { name = "autoviz", marker = "extra == 'analysis'", specifier = ">=0.1" },
     { name = "azure-identity", marker = "extra == 'office365'", specifier = ">=1.18" },
     { name = "beautifulsoup4", marker = "extra == 'msword'", specifier = ">=4.12" },
@@ -2133,6 +2248,7 @@ requires-dist = [
     { name = "markitdown", marker = "extra == 'sitesearch'", specifier = ">=0.1.2" },
     { name = "mediawikiapi", marker = "extra == 'wikipedia'", specifier = ">=1.2" },
     { name = "microsoft-kiota-authentication-azure", marker = "extra == 'office365'", specifier = ">=1.2" },
+    { name = "msal", marker = "extra == 'msteams'", specifier = ">=1.30.0" },
     { name = "msgraph-sdk", marker = "extra == 'office365'", specifier = ">=1.8" },
     { name = "numpy", marker = "extra == 'analysis'", specifier = ">=1.26" },
     { name = "odfpy", marker = "extra == 'excel'", specifier = ">=1.4" },
@@ -2142,21 +2258,30 @@ requires-dist = [
     { name = "pandas", marker = "extra == 'workday'", specifier = ">=2.0" },
     { name = "pandas-datareader", marker = "extra == 'finance'", specifier = ">=0.10.0" },
     { name = "playwright", marker = "extra == 'scraping'", specifier = ">=1.52" },
+    { name = "praw", marker = "extra == 'reddit'", specifier = ">=7.8.1" },
+    { name = "prophet", marker = "extra == 'forecasting'", specifier = "==1.2.1" },
     { name = "psycopg-binary", marker = "extra == 'db'", specifier = ">=3.2" },
     { name = "pulumi", marker = "extra == 'pulumi'", specifier = ">=3.0" },
+    { name = "pyarrow", marker = "extra == 'powerbi'", specifier = ">=25.0" },
     { name = "pygithub", specifier = ">=2.1" },
     { name = "pyowm", marker = "extra == 'weather'", specifier = ">=3.3" },
     { name = "python-docx", marker = "extra == 'msword'", specifier = ">=1.2.0" },
     { name = "python-docx", marker = "extra == 'pdf'", specifier = ">=1.2.0" },
+    { name = "python-pptx", marker = "extra == 'powerpoint'", specifier = ">=1.0.2" },
     { name = "pyyaml", marker = "extra == 'hooba'", specifier = ">=6.0" },
     { name = "pyyaml", marker = "extra == 'kubernetes'", specifier = ">=6.0" },
     { name = "querysource", marker = "extra == 'db'", specifier = ">=5.1.2" },
+    { name = "rank-bm25", marker = "extra == 'bm25'", specifier = ">=0.2.2" },
     { name = "rapidfuzz", marker = "extra == 'scraping'", specifier = ">=3.0" },
     { name = "rustworkx", specifier = ">=0.15" },
+    { name = "scipy", marker = "extra == 'stats'", specifier = ">=1.11" },
     { name = "sdmx1", marker = "extra == 'research'", specifier = ">=2.27" },
     { name = "selenium", marker = "extra == 'scraping'", specifier = ">=4.35" },
     { name = "slack-sdk", marker = "extra == 'slack'", specifier = ">=3.0" },
+    { name = "statsmodels", marker = "extra == 'stats'", specifier = ">=0.14" },
     { name = "ta-lib", marker = "extra == 'finance'", specifier = ">=0.4.32" },
+    { name = "textblob", marker = "extra == 'google'", specifier = ">=0.17" },
+    { name = "textblob", marker = "extra == 'sitesearch'", specifier = ">=0.17" },
     { name = "trafilatura", marker = "extra == 'rss'", specifier = ">=1.12" },
     { name = "undetected-chromedriver", marker = "extra == 'scraping'", specifier = ">=3.5" },
     { name = "vl-convert-python", marker = "extra == 'charts'", specifier = ">=1.0" },
@@ -2167,7 +2292,7 @@ requires-dist = [
     { name = "yfinance", marker = "extra == 'finance'", specifier = ">=0.2.54" },
     { name = "zeep", extras = ["async"], marker = "extra == 'workday'", specifier = ">=4.3.3" },
 ]
-provides-extras = ["pdf", "msword", "jira", "slack", "aws", "docker", "git", "analysis", "charts", "excel", "sandbox", "codeinterpreter", "pulumi", "kubernetes", "sitesearch", "office365", "scraping", "rss", "finance", "db", "flowtask", "google", "arxiv", "wikipedia", "weather", "messaging", "security", "workday", "research", "business-automation", "hooba", "all"]
+provides-extras = ["pdf", "msword", "jira", "slack", "aws", "docker", "git", "analysis", "charts", "excel", "sandbox", "codeinterpreter", "pulumi", "kubernetes", "sitesearch", "office365", "scraping", "rss", "finance", "db", "flowtask", "google", "arxiv", "wikipedia", "weather", "messaging", "security", "workday", "research", "business-automation", "powerpoint", "reddit", "stats", "forecasting", "bm25", "notification", "powerbi", "msteams", "document-converter", "hooba", "all", "studio"]
 
 [[package]]
 name = "ai-parrot-visualizations"
@@ -9477,7 +9602,7 @@ wheels = [
 
 [[package]]
 name = "navrules"
-version = "1.2.0"
+version = "1.2.1"
 source = { editable = "packages/navrules" }
 
 [package.optional-dependencies]

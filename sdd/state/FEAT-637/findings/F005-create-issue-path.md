@@ -2,7 +2,7 @@
 id: F005
 query_id: Q005
 type: read
-intent: Read the create-issue path: CreateIssueInput + jira_create_issue + description formatting.
+intent: "Read the create-issue path: CreateIssueInput + jira_create_issue + description formatting."
 executed_at: 2026-10-07T22:55:00Z
 duration_ms: 3000
 parent_id: null

@@ -123,6 +123,49 @@ class TestAuthorizingDataSource:
         result = await source.fetch()
         assert len(result) == 1
 
+    @pytest.mark.asyncio
+    async def test_denied_slug_raises_no_fetch(
+        self,
+        mock_guard: MagicMock,
+        pctx: PermissionContext,
+    ) -> None:
+        """A denied QuerySlugSource fails closed on the fetch path (issue:176ec55ba7c3).
+
+        Only the ai-parrot guard is involved — no in-process QuerySource PBAC —
+        which is exactly the degraded mode the guard must cover (FEAT-598 AC14/AC18).
+        """
+        from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
+
+        mock_guard.authorize_source = AsyncMock(
+            side_effect=AuthorizationRequired(tool_name="dataplane_authz", message="denied")
+        )
+        inner = QuerySlugSource(slug="s", tenant="t")
+        inner.fetch = AsyncMock(return_value=pd.DataFrame({"x": [1]}))
+        source = AuthorizingDataSource(inner, mock_guard, lambda: pctx)
+        with pytest.raises(AuthorizationRequired):
+            await source.fetch()
+        inner.fetch.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_allowed_slug_fetches(
+        self,
+        mock_guard: MagicMock,
+        pctx: PermissionContext,
+    ) -> None:
+        """An allowed QuerySlugSource fetches, and the guard saw the slug identity."""
+        from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
+
+        inner = QuerySlugSource(slug="s", tenant="t")
+        inner.fetch = AsyncMock(return_value=pd.DataFrame({"x": [1]}))
+        source = AuthorizingDataSource(inner, mock_guard, lambda: pctx)
+        result = await source.fetch()
+        inner.fetch.assert_called_once()
+        assert len(result) == 1
+        mock_guard.authorize_source.assert_called_once()
+        resources = mock_guard.authorize_source.call_args.args[1]
+        assert resources.source_type == "query_slug"
+        assert resources.source_id == "t:s"
+
     def test_describe_delegates(
         self, mock_inner: MagicMock, mock_guard: MagicMock
     ) -> None:
