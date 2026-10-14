@@ -109,14 +109,22 @@ class Narrator:
     """Render narration templates for one locale (sandboxed Jinja2, StrictUndefined)."""
 
     def __init__(self, locale: str, *, templates_dir: Path | None = None) -> None:
-        """Load ``<locale>/narration.yaml`` with fallback ``es-MX → es → en``."""
+        """Load ``<locale>/narration.yaml`` with fallback ``es-MX → es → en``.
+
+        Raises:
+            ValueError: when a locale candidate resolves outside the templates
+                directory (mirrors ``lexicon.load_locale_document``).
+        """
         self.logger = logging.getLogger(__name__)
         self.locale = locale
         self._dir = templates_dir or _TEMPLATES_DIR
         self._env = ImmutableSandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
         self._templates: dict[str, str] = {}
+        base = self._dir.resolve()
         for loc in reversed(locale_chain(locale)):  # en first, most specific last wins
-            path = self._dir / loc / "narration.yaml"
+            path = (base / loc / "narration.yaml").resolve()
+            if not path.is_relative_to(base):
+                raise ValueError(f"Locale {locale!r} resolves outside templates directory")
             if not path.is_file():
                 continue
             data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
