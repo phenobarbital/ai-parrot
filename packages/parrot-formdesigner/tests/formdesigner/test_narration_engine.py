@@ -162,8 +162,13 @@ def test_plan_question_hint_then_options_order():
     u = q.field_uid
     plan = n.plan_question(q, VoiceFormConfig(), FieldVoiceMeta())
     assert plan.audio_keys == [
-        f"q:{u}:label", "pause:600", f"q:{u}:hint",
-        f"q:{u}:options_intro", f"q:{u}:opt:1", "pause:500", f"q:{u}:opt:2",
+        f"q:{u}:label",
+        "pause:600",
+        f"q:{u}:hint",
+        f"q:{u}:options_intro",
+        f"q:{u}:opt:1",
+        "pause:500",
+        f"q:{u}:opt:2",
     ]
 
 
