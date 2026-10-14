@@ -33,6 +33,33 @@ This task is EXCLUSIVE on `release.yml` and serialized after TASK-4090 (which al
 
 ---
 
+## Amendments — spec rev 0.2 (2026-10-14)
+
+Folded in from `sdd/proposals/parrot-installer-amendments.proposal.md` (§3 C3, §5 resolved by
+Jesus Lara). Every section below already reflects this delta; this list is the audit trail.
+
+- **C3 — wheel-only foreign-repo SDD smoke in the release.** Besides `smoke-core` (TASK-4068's
+  clean-install matrix), `release.yml` gains a Linux-only `smoke-sdd-foreign` job that proves the
+  RELEASED core wheel can drive the SDD flow in a repo that is not ai-parrot: it installs the
+  linux x86_64 wheel **with its declared runtime dependencies** (no editable install) into a
+  fresh venv, then runs TASK-4091's `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py`
+  against that wheel. That test `git init`s a temp non-Python repo, runs `parrot sdd install
+  --host claude`, and executes every `parrot sdd run <name>` invocation found in the installed
+  markdown **with fixture inputs and state** (placeholders substituted, a local bare `origin`,
+  committed ledger, task files and evidence as each invocation needs) — not just `--help` — with
+  PATH set to the venv's `bin/` plus a fixture dir exposing an explicit allowlist of system tools
+  (`git`, `bash`, `jq` where an invocation requires them) and `PYTHONPATH`/`PYTHONHOME`/
+  `VIRTUAL_ENV`/`PARROT_VENV`/project-root overrides unset. This task does not re-implement that
+  harness: the job reuses the module via `PARROT_WHEEL_PATH` (TASK-4091's test honours it to skip
+  its own build step — interface requirement recorded there).
+- **Guarded, not blocked.** `parrot sdd run` is implemented by TASK-4091 and the shipped markdown
+  rewritten by TASK-4089; this task must not wait on them (M8 "can land first, MUST land first if
+  S1 fails"). The job therefore self-skips with a printed notice while `parrot sdd --help` fails
+  in the fresh venv or the test module is absent, and becomes a hard gate automatically once they
+  land. `deploy` needs it either way.
+
+---
+
 ## Scope
 
 - Rewrite `build-core`'s matrix as one leg per platform: linux x86_64, linux aarch64, windows
@@ -43,6 +70,13 @@ This task is EXCLUSIVE on `release.yml` and serialized after TASK-4090 (which al
 - Make artifact names unique per leg (`core-dist-<platform>-<arch>`).
 - Add a `smoke-core` job that calls `.github/workflows/install-matrix.yml` (TASK-4068) via
   `workflow_call` with the built core wheels, and add it to `deploy.needs`.
+- Add a `smoke-sdd-foreign` job (ubuntu-latest, `needs: [build-core]`): download
+  `core-dist-linux-x86_64`, create a fresh venv, `pip install <wheel>` (runtime dependencies
+  resolved from PyPI — never `-e`, never the checkout), then — guarded by `parrot sdd --help`
+  succeeding and the test module existing — run
+  `PARROT_WHEEL_PATH=<wheel> pytest packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py`
+  with the venv's `python`, from the checkout (the test needs its fixtures) but with
+  `PYTHONPATH` unset so `parrot` imports from the wheel. Add it to `deploy.needs`.
 - `packages/ai-parrot/pyproject.toml` `[tool.cibuildwheel]`: `build = "cp3{11,12,13}-*"`; drop
   `*-manylinux_aarch64` from `skip`; linux archs native 64-bit; add a `[tool.cibuildwheel.macos]`
   table with `archs = ["arm64"]`.
@@ -55,6 +89,11 @@ This task is EXCLUSIVE on `release.yml` and serialized after TASK-4090 (which al
 - Relaxing `requires-python` to allow 3.14; macOS x86_64 (Intel) wheels (runner retired — see
   `release.yml:422-428`); code signing.
 - `[project.scripts]` (TASK-4072) and package-data (TASK-4090) in the same pyproject.
+- Writing or changing `test_wheel_only_foreign_repo.py`, its fixtures, the system-tool allowlist
+  or the fixture inputs (TASK-4091 owns them); `parrot sdd run` (TASK-4091); the markdown rewrite
+  (TASK-4089). This job only RUNS that test against the released wheel. If the module lacks the
+  `PARROT_WHEEL_PATH` hook when this task is implemented, keep the guard (skip with notice) and
+  record it in the Completion Note — do not edit the test here.
 
 ---
 
@@ -62,9 +101,9 @@ This task is EXCLUSIVE on `release.yml` and serialized after TASK-4090 (which al
 
 | File | Action | Description |
 |---|---|---|
-| `.github/workflows/release.yml` | MODIFY | core matrix (linux x86_64/aarch64, windows AMD64, macOS arm64; cp311–313), smoke gate job, `deploy.needs` |
+| `.github/workflows/release.yml` | MODIFY | core matrix (linux x86_64/aarch64, windows AMD64, macOS arm64; cp311–313), `smoke-core` gate job, `smoke-sdd-foreign` wheel-only SDD job (C3), `deploy.needs` |
 | `packages/ai-parrot/pyproject.toml` | MODIFY | `[tool.cibuildwheel]`: drop cp314, allow manylinux aarch64, macOS arm64 archs |
-| `packages/ai-parrot/tests/docs/test_release_matrix.py` | CREATE | parse release.yml + pyproject and assert the matrix contract |
+| `packages/ai-parrot/tests/docs/test_release_matrix.py` | CREATE | parse release.yml + pyproject and assert the matrix contract, incl. both smoke gates |
 
 ---
 
@@ -130,6 +169,10 @@ archs = ["AMD64"]                                                      # line 10
   TASK-4068 (dependency); do not create or edit them here.
 - ~~`packages/ai-parrot/tests/docs/test_release_matrix.py`~~ — new here.
 - ~~a smoke/verification job in `release.yml`~~ — none today; `deploy` trusts build success.
+- ~~`smoke-sdd-foreign` job~~ — new here (C3).
+- ~~`parrot sdd` / `parrot sdd run`, `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py`,
+  the `PARROT_WHEEL_PATH` hook~~ — TASK-4091 (and TASK-4089 for the rewritten markdown); this job
+  guards on their presence and never creates them.
 
 ---
 
@@ -192,6 +235,18 @@ archs = ["AMD64"]                                                      # line 10
 - Reusable-workflow calls are a job with `uses:` + `with:` (no `runs-on`/`steps`); the called
   workflow sees this run's artifacts, so pass the artifact-name pattern (`core-dist-*`), not files.
 - PyYAML parses the top-level `on:` key as boolean `True` — the test must not depend on `on`.
+- **`smoke-sdd-foreign` isolation (C3)**: the fresh venv is created with the runner's
+  `python3.12 -m venv`, the wheel is installed with `pip install <wheel>` so PyPI resolves the
+  declared runtime dependencies (never `-e`, never `pip install .`), and the pytest step runs
+  `env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV -u PARROT_VENV <venv>/bin/python -m pytest …`
+  — *why*: the whole point is that `parrot` loads from the wheel, not the checkout; the test
+  itself builds the restricted PATH (venv `bin/` + allowlisted `git`/`bash`/`jq`) per scenario.
+  `pytest` must be installed into that venv too (`pip install <wheel> pytest`).
+- **Guard shape**: one `id: probe` step runs `<venv>/bin/parrot sdd --help` and
+  `test -f packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py`, writing `ready=true|false`
+  to `$GITHUB_OUTPUT`; the pytest step has `if: steps.probe.outputs.ready == 'true'`, and a
+  final step prints `::notice::smoke-sdd-foreign skipped — parrot sdd / wheel-only test not in this
+  release yet` when not ready. The job itself still succeeds, so `deploy.needs` is satisfied.
 
 ### References in Codebase
 - `.github/workflows/release.yml:13-82` — `build-core`.
@@ -208,8 +263,9 @@ archs = ["AMD64"]                                                      # line 10
 3. Repoint setup-python to `"3.12"`, merge the two cibuildwheel steps into one, fix the sdist
    condition and artifact name — *why*: the old steps keyed on `matrix.python-version`.
 4. Add `smoke-core` calling `install-matrix.yml` and add it to `deploy.needs` — *why*: codex S11.
-5. Update `[tool.cibuildwheel]` in pyproject — *why*: cp314 vs `<3.14`; aarch64 skip removal.
-6. Create the test — *why*: lock the matrix contract against regressions.
+5. Add `smoke-sdd-foreign` (guarded wheel-only SDD run) and add it to `deploy.needs` — *why*: C3.
+6. Update `[tool.cibuildwheel]` in pyproject — *why*: cp314 vs `<3.14`; aarch64 skip removal.
+7. Create the test — *why*: lock the matrix contract (both gates) against regressions.
 
 ### `.github/workflows/release.yml` (MODIFY)
 ```yaml
@@ -256,12 +312,48 @@ archs = ["AMD64"]                                                      # line 10
     #          artifact pattern `core-dist-*`); if install-matrix.yml has no workflow_call trigger,
     #          STOP and report — bounded by NOT-in-scope (TASK-4068 owns that file)
 
+  # C3 — the RELEASED wheel drives the SDD flow in a foreign repo; guarded until TASK-4089/4091 land
+  smoke-sdd-foreign:
+    needs: [build-core]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6          # the test module + its fixtures live in the checkout
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - uses: actions/download-artifact@v8
+        with: { name: core-dist-linux-x86_64, path: dist }
+      - name: Install the released wheel with its runtime dependencies into a fresh venv
+        run: |
+          python -m venv "$RUNNER_TEMP/wheelvenv"
+          "$RUNNER_TEMP/wheelvenv/bin/pip" install dist/ai_parrot-*-cp312-*.whl pytest   # never -e, never the checkout
+      - name: Probe for parrot sdd + the wheel-only test
+        id: probe
+        run: |
+          if "$RUNNER_TEMP/wheelvenv/bin/parrot" sdd --help >/dev/null 2>&1 \
+             && test -f packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"; else echo "ready=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Run the SDD flow from the wheel in a foreign repo (fixture inputs, allowlisted tools)
+        if: steps.probe.outputs.ready == 'true'
+        env:
+          PARROT_WHEEL_PATH: ${{ github.workspace }}/dist   # FILL IN: exact file glob → path, per TASK-4091's hook contract
+        run: |
+          env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV -u PARROT_VENV \
+            "$RUNNER_TEMP/wheelvenv/bin/python" -m pytest packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py -q
+      - name: Not in this release yet
+        if: steps.probe.outputs.ready != 'true'
+        run: echo "::notice::smoke-sdd-foreign skipped — parrot sdd / wheel-only test not in this release yet"
+
 # occurrences: 1 (verified: grep -c '    needs: \[build-core, build-tools' .github/workflows/release.yml)
-# REPLACE — :532: insert `smoke-core` right after `build-core` in the needs list:
-    needs: [build-core, smoke-core, build-tools, build-loaders, build-embeddings, build-pipelines, build-visualizations, build-integrations, build-formdesigner, build-server, build-advisors, build-navrules, build-parrot-codec, build-clients]
+# REPLACE — :532: insert `smoke-core` and `smoke-sdd-foreign` right after `build-core` in the needs list:
+    needs: [build-core, smoke-core, smoke-sdd-foreign, build-tools, build-loaders, build-embeddings, build-pipelines, build-visualizations, build-integrations, build-formdesigner, build-server, build-advisors, build-navrules, build-parrot-codec, build-clients]
 ```
 **Why this shape**: four legs × three interpreters = every target wheel exactly once; the smoke
-gate sits between build and deploy (codex S11). Do not touch `deploy`'s `if:` or publish step.
+gates sit between build and deploy (codex S11; C3). `smoke-sdd-foreign` reuses TASK-4091's test
+rather than re-implementing fixture inputs and the tool allowlist, and skips with a notice while
+those tasks are not in the release, so M8 never waits on M6. Do not touch `deploy`'s `if:` or
+publish step. FILL IN: the `actions/checkout`, `setup-python` and `download-artifact` major
+versions must match what the rest of `release.yml` already uses (re-grep; `download-artifact@v8`
+is verified at :541).
 
 ### `packages/ai-parrot/pyproject.toml` (MODIFY)
 ```toml
@@ -347,6 +439,17 @@ def test_deploy_needs_smoke_gate() -> None:
     assert "smoke-core" in jobs["deploy"]["needs"]
     assert jobs["smoke-core"]["uses"].endswith("install-matrix.yml")
     assert "build-core" in jobs["smoke-core"]["needs"]
+
+
+def test_deploy_needs_sdd_foreign_smoke() -> None:
+    """C3: the wheel-only foreign-repo SDD job gates deploy, installs from the wheel (never -e) and is guarded."""
+    jobs = _jobs()
+    job = jobs["smoke-sdd-foreign"]
+    assert "smoke-sdd-foreign" in jobs["deploy"]["needs"] and "build-core" in job["needs"]
+    runs = "\n".join(step.get("run", "") for step in job["steps"])
+    assert "pip install dist/" in runs and " -e " not in runs and "pip install ." not in runs
+    assert "test_wheel_only_foreign_repo.py" in runs and "-u PYTHONPATH" in runs
+    assert any(step.get("if", "").startswith("steps.probe.outputs.ready") for step in job["steps"])
 ```
 **Why**: parses the real files (no string greps for structure) so a re-indent cannot fool it; the
 cp314 check is conditional on the ceiling so a future relaxation only needs pyproject edits.
@@ -355,6 +458,7 @@ cp314 check is conditional on the ceiling so a future relaxation only needs pypr
 - [ ] `release.yml::build-core` — `ubuntu-24.04-arm` availability; QEMU fallback otherwise.
 - [ ] `release.yml::build-core` — `MACOSX_DEPLOYMENT_TARGET` value for the macOS leg.
 - [ ] `release.yml::smoke-core` — `with:` inputs per TASK-4068's `workflow_call` declaration.
+- [ ] `release.yml::smoke-sdd-foreign` — `PARROT_WHEEL_PATH` value shape per TASK-4091's hook (file vs dir); action major versions re-grepped.
 - [ ] Verify via `workflow_dispatch` on the feature branch that all four legs + smoke pass (release
       verification needs a tag — spec Worktree Strategy: PR-CI / dispatch only).
 
@@ -368,6 +472,13 @@ cp314 check is conditional on the ceiling so a future relaxation only needs pypr
 - [ ] `*-manylinux_aarch64` is no longer skipped; `[tool.cibuildwheel.macos] archs = ["arm64"]`.
 - [ ] The sdist is built once (linux x86_64 leg); artifact names are unique per leg.
 - [ ] `smoke-core` runs TASK-4068's install matrix against the built wheels and `deploy` needs it (codex S11).
+- [ ] **C3**: `smoke-sdd-foreign` installs the released linux x86_64 wheel with its runtime
+      dependencies into a fresh venv (never editable, never the checkout), probes for `parrot sdd`
+      and the wheel-only test, and — when present — runs
+      `test_wheel_only_foreign_repo.py` with `PYTHONPATH`/`PYTHONHOME`/`VIRTUAL_ENV`/`PARROT_VENV`
+      unset so every `parrot sdd run <name>` invocation executes with fixture inputs and the
+      allowlisted system tools from the wheel alone; otherwise it prints a `::notice::` and
+      succeeds. `deploy` needs it.
 - [ ] `test_release_matrix.py` passes; `yaml.safe_load` of release.yml succeeds.
 
 ---
@@ -389,6 +500,7 @@ def test_core_matrix_covers_all_platforms(): ...
 def test_no_cp314_while_requires_python_excludes_it(): ...
 def test_aarch64_not_skipped_and_macos_declared(): ...
 def test_deploy_needs_smoke_gate(): ...
+def test_deploy_needs_sdd_foreign_smoke(): ...   # C3: wheel install (never -e), PYTHONPATH unset, probe guard, deploy.needs
 ```
 
 ---

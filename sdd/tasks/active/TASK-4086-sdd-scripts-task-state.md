@@ -1,4 +1,4 @@
-# TASK-4086: SDD helpers move B1: task-state helpers into parrot.sdd.scripts
+# TASK-4086: SDD helpers move B1: task-state + review_checkpoint helpers into parrot.sdd.scripts
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md`
@@ -18,7 +18,8 @@ This task implements part of spec §3 Module 6, which says the doc-referenced he
 "`scripts/sdd/` wrappers keep the monorepo's existing invocations working".
 
 This is move **B1**, the task-state helpers: `finalize_task`, `check_task_state`,
-`check_task_graph` and `worktree_status`. They are used by `/sdd-start`, `/sdd-done`,
+`check_task_graph` and `worktree_status`, plus — since spec rev 0.2 (C12) —
+`review_checkpoint`. They are used by `/sdd-start`, `/sdd-done`,
 `/sdd-task`, `/sdd-next`, `/sdd-status` and the `sdd-worker` orchestrator. TASK-4085 has
 already created `parrot/sdd/scripts/` (with `__init__.py`) and the
 `parrot.sdd.scripts.sdd_meta` re-export used below. The mechanics are the same as
@@ -43,14 +44,34 @@ Two of these modules need more than an import rewrite:
 
 ---
 
-## Scope
+## Amendments — spec rev 0.2 (2026-10-14)
 
-- `git mv` `finalize_task.py`, `check_task_state.py`, `check_task_graph.py` and
-  `worktree_status.py` into `packages/ai-parrot/src/parrot/sdd/scripts/`.
+Folded from `sdd/proposals/parrot-installer-amendments.proposal.md` (§3 C12, §5; decided by
+Jesus Lara on 2026-10-14). Already applied to the sections below; this list is the audit trail.
+
+- **C12 — no shipped reference to a monorepo-only helper.** `scripts/sdd/review_checkpoint.py`
+  joins this move. It is the only non-moved helper any shipped file references
+  (`.claude/agents/sdd-worker.md:588,607` — rewritten by TASK-4089 to
+  `parrot sdd run review_checkpoint …`). Verified 2026-10-14 on `a6e51614b`: 145 lines; imports
+  are stdlib (`argparse`, `asyncio`, `json`, `os`, `pathlib`) plus
+  `parrot.flows.dev_loop.sdd_coder.checkpoint` (:19-27), `.evidence.ExecutionEvidenceStore`
+  (:28), `.optimization_models.ReviewCheckpoint` (:29), `.telemetry.resolve_durable_root`
+  (:30) — all core; **no `from scripts.sdd` import**, so the moved file is byte-identical to
+  the original (the two `scripts.sdd` strings at :32 (comment) and :89
+  (`prog="python -m scripts.sdd.review_checkpoint"`) are text, left unchanged — same rule as
+  `finalize_task.py:598`). No test under `packages/ai-parrot/tests/` or `tests/` imports
+  `scripts.sdd.review_checkpoint` (the `test_review_checkpoint.py` suite imports
+  `parrot.flows.dev_loop.sdd_coder.checkpoint` directly; `test_worker_prompt_orchestrator.py:187,197`
+  only assert the substrings `review_checkpoint prepare` / `validate` in the worker prompt).
+  Same mechanics as the other four: `git mv`, alias shim, `--help` + identity tests.
+
+- `git mv` `finalize_task.py`, `check_task_state.py`, `check_task_graph.py`,
+  `worktree_status.py` and `review_checkpoint.py` (C12) into
+  `packages/ai-parrot/src/parrot/sdd/scripts/`.
 - Rewrite the `worktree_status` import (and the comment line above it) to use
   `parrot.sdd.scripts.sdd_meta`.
 - Make the `check_task_graph` `_KERNEL_DIR` path package-relative.
-- Recreate the four `scripts/sdd/<name>.py` files as alias shims.
+- Recreate the five `scripts/sdd/<name>.py` files as alias shims.
 - Add `packages/ai-parrot/tests/sdd/test_scripts_task_state.py`.
 
 **NOT in scope**:
@@ -59,9 +80,10 @@ Two of these modules need more than an import rewrite:
   a follow-up).
 - Docstring/usage strings that mention `scripts/sdd/...` or `python -m scripts.sdd...`,
   including `finalize_task.py:598`
-  `prog="python -m scripts.sdd.finalize_task"` and the remediation hint at
-  `check_task_state.py:196-197`. Those strings are user-visible CLI output, and TASK-4089
-  owns reference rewrites. Leave them byte-identical.
+  `prog="python -m scripts.sdd.finalize_task"`, `review_checkpoint.py:89`
+  `prog="python -m scripts.sdd.review_checkpoint"` (and its comment at :32), and the
+  remediation hint at `check_task_state.py:196-197`. Those strings are user-visible CLI
+  output, and TASK-4089 owns reference rewrites. Leave them byte-identical.
 - Making `finalize_task`'s module-level `parrot.flows.dev_loop.sdd_coder.*` imports
   lazy. Today they take about 2.4 s and pull in navconfig, which `os.chdir`s on import.
   That behaviour already exists. Record it; do not change it.
@@ -77,10 +99,12 @@ Two of these modules need more than an import rewrite:
 | `packages/ai-parrot/src/parrot/sdd/scripts/check_task_state.py` | CREATE | `git mv` of `scripts/sdd/check_task_state.py` (no line changes) |
 | `packages/ai-parrot/src/parrot/sdd/scripts/check_task_graph.py` | CREATE | `git mv` + package-relative `_KERNEL_DIR` |
 | `packages/ai-parrot/src/parrot/sdd/scripts/worktree_status.py` | CREATE | `git mv` + `sdd_meta` import rewrite |
+| `packages/ai-parrot/src/parrot/sdd/scripts/review_checkpoint.py` | CREATE | `git mv` of `scripts/sdd/review_checkpoint.py` (no line changes — C12) |
 | `scripts/sdd/finalize_task.py` | MODIFY | Becomes alias shim |
 | `scripts/sdd/check_task_state.py` | MODIFY | Becomes alias shim |
 | `scripts/sdd/check_task_graph.py` | MODIFY | Becomes alias shim |
 | `scripts/sdd/worktree_status.py` | MODIFY | Becomes alias shim (`main()` takes no argv) |
+| `scripts/sdd/review_checkpoint.py` | MODIFY | Becomes alias shim (C12) |
 | `packages/ai-parrot/tests/sdd/test_scripts_task_state.py` | CREATE | Importability, `-m --help`, shim identity, kernel path |
 
 ---
@@ -95,7 +119,12 @@ from parrot.sdd.scripts.sdd_meta import WORKTREE_ROOT  # created by TASK-4085 (r
 from parrot.flows.dev_loop.sdd_coder.fidelity import check_fidelity, parse_task_files                    # finalize_task.py:49
 from parrot.flows.dev_loop.sdd_coder.optimization_models import EvidenceRef, TaskCompletionEvidence      # finalize_task.py:50
 from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root                                # finalize_task.py:51
-# third-party in all four modules: pydantic only — core dep ("pydantic==2.12.5")
+# review_checkpoint's existing parrot imports (unchanged, all core ai-parrot — C12):
+from parrot.flows.dev_loop.sdd_coder.checkpoint import (...)                                              # review_checkpoint.py:19-27
+from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore                               # review_checkpoint.py:28
+from parrot.flows.dev_loop.sdd_coder.optimization_models import ReviewCheckpoint                          # review_checkpoint.py:29
+from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root                                # review_checkpoint.py:30
+# third-party in all five modules: pydantic only — core dep ("pydantic==2.12.5")
 ```
 
 ### Existing Signatures to Use
@@ -132,6 +161,11 @@ def main() -> int:                                             # :614 — NO arg
     repo_root_proc = _git("rev-parse", "--show-toplevel", cwd=Path.cwd())   # :640 — git discovery, fine
 if __name__ == "__main__": sys.exit(main())                    # :717-718
 
+# scripts/sdd/review_checkpoint.py (145 lines) — C12
+def main(argv: list[str] | None = None) -> int:                # :84 — prog="python -m scripts.sdd.review_checkpoint" (:89)
+#   No scripts.sdd import (the strings at :32 comment / :89 prog are text). No __file__.
+#   No test imports scripts.sdd.review_checkpoint (verified 2026-10-14: grep over packages/ai-parrot/tests + tests).
+
 # Existing tests that must keep passing through the shim (verified to exist):
 #   tests/sdd_scripts/test_check_task_state.py   (from scripts.sdd.check_task_state import find_violations, main :6)
 #   tests/sdd_scripts/test_check_task_graph.py   (from scripts.sdd.check_task_graph import check_graph, main, … :6)
@@ -165,10 +199,12 @@ if __name__ == "__main__": sys.exit(main())                    # :717-718
     {"path": "packages/ai-parrot/src/parrot/sdd/scripts/check_task_state.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/src/parrot/sdd/scripts/check_task_graph.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/src/parrot/sdd/scripts/worktree_status.py", "action": "CREATE"},
+    {"path": "packages/ai-parrot/src/parrot/sdd/scripts/review_checkpoint.py", "action": "CREATE"},
     {"path": "scripts/sdd/finalize_task.py", "action": "MODIFY"},
     {"path": "scripts/sdd/check_task_state.py", "action": "MODIFY"},
     {"path": "scripts/sdd/check_task_graph.py", "action": "MODIFY"},
     {"path": "scripts/sdd/worktree_status.py", "action": "MODIFY"},
+    {"path": "scripts/sdd/review_checkpoint.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/sdd/test_scripts_task_state.py", "action": "CREATE"}
   ],
   "contract_symbols": [
@@ -180,6 +216,7 @@ if __name__ == "__main__": sys.exit(main())                    # :717-718
     "sym:scripts/sdd/check_task_graph.py#_load_contract",
     "sym:scripts/sdd/worktree_status.py#main",
     "sym:scripts/sdd/worktree_status.py#_git",
+    "sym:scripts/sdd/review_checkpoint.py#main",
     "sym:packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/fidelity.py#check_fidelity",
     "sym:packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/fidelity.py#parse_task_files",
     "sym:packages/ai-parrot/src/parrot/flows/dev_loop/sdd_coder/telemetry.py#resolve_durable_root"
@@ -225,11 +262,11 @@ sys.modules[__name__] = _impl
 
 ### Steps (in order)
 1. Run `git mv` once per file:
-   `git mv scripts/sdd/{finalize_task,check_task_state,check_task_graph,worktree_status}.py packages/ai-parrot/src/parrot/sdd/scripts/`.
+   `git mv scripts/sdd/{finalize_task,check_task_state,check_task_graph,worktree_status,review_checkpoint}.py packages/ai-parrot/src/parrot/sdd/scripts/`.
    *Why*: this keeps history.
 2. Apply the `check_task_graph` and `worktree_status` edits below. *Why*: the package
    must not depend on the repository layout or on the repo-local `scripts` package.
-3. Commit the renames on their own, then write the four shims. *Why*: rename detection
+3. Commit the renames on their own, then write the five shims. *Why*: rename detection
    stays at about 100%.
 4. Write the test file and run every Validation Command. *Why*: the shim must keep the
    private-name monkeypatching in `test_worktree_status.py` and the close_task fixture in
@@ -254,6 +291,12 @@ sys.modules[__name__] = _impl
 # REPLACE — `_KERNEL_DIR = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"` (verified: scripts/sdd/check_task_graph.py:59)
 # parrot/sdd/scripts/check_task_graph.py -> parents[2] is the `parrot` package dir (package-relative, wheel-safe).
 _KERNEL_DIR = Path(__file__).resolve().parents[2] / "flows" / "dev_loop"
+```
+
+### `packages/ai-parrot/src/parrot/sdd/scripts/review_checkpoint.py` (CREATE)
+```python
+# git mv scripts/sdd/review_checkpoint.py packages/ai-parrot/src/parrot/sdd/scripts/review_checkpoint.py
+# No line changes (C12). Deliberately untouched: :32 comment and :89 prog string (text, owned by TASK-4089's rule set).
 ```
 
 ### `packages/ai-parrot/src/parrot/sdd/scripts/worktree_status.py` (CREATE)
@@ -328,6 +371,20 @@ if __name__ == "__main__":
 sys.modules[__name__] = _impl
 ```
 
+### `scripts/sdd/review_checkpoint.py` (MODIFY)
+```python
+# occurrences: 1 (verified: grep -c '^def main(argv: list\[str\] | None = None) -> int:' scripts/sdd/review_checkpoint.py)
+# REPLACE — whole file (original moved by git mv); original entry `def main(argv: list[str] | None = None) -> int:` (:84)
+"""Compatibility shim — moved to ``parrot.sdd.scripts.review_checkpoint`` (FEAT-633)."""
+import sys
+
+from parrot.sdd.scripts import review_checkpoint as _impl
+
+if __name__ == "__main__":
+    raise SystemExit(_impl.main())
+sys.modules[__name__] = _impl
+```
+
 ### `packages/ai-parrot/tests/sdd/test_scripts_task_state.py` (CREATE)
 See **Test Specification**. That block is the starting file.
 
@@ -343,8 +400,9 @@ See **Test Specification**. That block is the starting file.
 ## Acceptance Criteria
 
 - [ ] AC-1: `python -m parrot.sdd.scripts.<name> --help` exits 0 from a non-repo cwd
-  for `finalize_task`, `check_task_state`, `check_task_graph` and `worktree_status`.
-- [ ] AC-2: `scripts.sdd.<name> is parrot.sdd.scripts.<name>` for all four.
+  for `finalize_task`, `check_task_state`, `check_task_graph`, `worktree_status` and
+  `review_checkpoint`.
+- [ ] AC-2: `scripts.sdd.<name> is parrot.sdd.scripts.<name>` for all five.
 - [ ] AC-3: `parrot.sdd.scripts.check_task_graph._KERNEL_DIR` is
   `<parrot package dir>/flows/dev_loop`, exists, and contains `test_scope/contract.py`.
   `_load_contract()` succeeds.
@@ -354,7 +412,9 @@ See **Test Specification**. That block is the starting file.
 - [ ] AC-6: `ruff check packages/ai-parrot/src/parrot/sdd/scripts scripts/sdd packages/ai-parrot/tests/sdd`
   is clean.
 - [ ] Spec §5: "`scripts/sdd/` wrappers keep the monorepo's existing invocations working"
-  (for these four).
+  (for these five).
+- [ ] AC-7 (C12): `git diff -M` shows `scripts/sdd/review_checkpoint.py` →
+  `parrot/sdd/scripts/review_checkpoint.py` as a 100% rename.
 
 ---
 
@@ -369,6 +429,10 @@ editable-installed against the main checkout).
 - `pytest tests/sdd_scripts/test_worktree_status.py -q`
 - `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_finalize_task.py -q`
 - `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_optimization_workflow_contracts.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_review_checkpoint.py -q` (C12 — imports
+  the core module directly; proves the move broke nothing it depends on)
+Also, outside the pytest contract: `python -m parrot.sdd.scripts.review_checkpoint --help` must exit 0 from a
+non-repo cwd (with `PYTHONPATH=packages/ai-parrot/src`).
 
 ---
 
@@ -389,7 +453,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SRC = REPO_ROOT / "packages" / "ai-parrot" / "src"
-MOVED = ("finalize_task", "check_task_state", "check_task_graph", "worktree_status")
+MOVED = ("finalize_task", "check_task_state", "check_task_graph", "worktree_status", "review_checkpoint")
 
 
 def _env() -> dict[str, str]:
@@ -453,6 +517,7 @@ When you pick up this task:
 7. **Verify** that all acceptance criteria are met by running the Validation Commands.
 8. **Commit the code**. Stage only the files this task lists (never `git add .` / `-A`).
 9. **Close the task** with `scripts/sdd/close_task.sh TASK-4086 parrot-installer verified`.
+   The Completion Note must confirm `review_checkpoint` moved byte-identical (C12).
    It moves this file to `sdd/tasks/completed/` and marks it `"done"` in the index. Never
    move or copy the file by hand.
 10. **Fill in the Completion Note** below, then commit the staged SDD state.

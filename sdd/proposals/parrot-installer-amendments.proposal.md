@@ -617,6 +617,11 @@ the markers. What should happen in other repos?
 | Test selection elsewhere | ai-parrot's policy applies | The repo's `test_command` (C7, option C); policy-driven selection revisited in v1.1 |
 
 ### Still open after these amendments
+- **Q1 residual (found while folding into the spec, 2026-10-14)**: six inline
+  `python -c "from scripts.sdd.sdd_meta import …"` one-liners get a `sdd_meta` CLI
+  (TASK-4299) and are rewritten by TASK-4089; the other inline `python -c` blocks in
+  `sdd-spec.md` (stdlib JSON edits, `jsonschema`, `reserve_ids.existing_feature_id`) still
+  need a system `python` in a foreign repo — ledger `issue:cac5c029bd88`.
 - **C7 option A** (repo-supplied test-selection policy): deferred to v1.1, pending the
   §6 evidence step.
 - **Spike S1**: whether ai-parrot core installs without a compiler on macOS and Windows.

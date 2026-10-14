@@ -4,7 +4,7 @@
 **Spec**: `sdd/specs/parrot-installer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: M (2-4h)
+**Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4072
 **Assigned-to**: unassigned
 
@@ -29,11 +29,46 @@ only what *this run* created.
 
 ---
 
+## Amendments — spec rev 0.2 (2026-10-14)
+
+Folded in from `sdd/proposals/parrot-installer-amendments.proposal.md` (§3 C14, §5 resolved by
+Jesus Lara). Every section below already reflects these deltas; this list is the audit trail.
+
+- **C14b — pre-install gate.** Global mode evaluates a `preflight` gate BEFORE any write and
+  before the pinned-uv download: supported platform (the TASK-4094 wheel matrix: linux
+  x86_64/aarch64, macOS arm64), a download tool (`curl` or `wget`), a checksum tool (`sha256sum`
+  or `shasum`), `git`, a writable `PARROT_HOME` (nearest existing ancestor) with at least
+  `MIN_FREE_KB` free, and GitHub + PyPI reachable (HEAD request; skipped under `--dry-run`). Each
+  failed gate exits non-zero naming the condition and a fix, with nothing written.
+- **C14b — post-install runtime check.** After the base runtime is in place the script runs
+  `parrot self doctor --runtime-only` (TASK-4080) against the NEW managed runtime — pinned to it
+  with `PARROT_VENV="$PARROT_HOME/venv"` so the launcher never redirects to a project venv. That
+  scope checks only managed uv, Python, the runtime entry points and PATH; repository readiness,
+  host configuration and optional-component checks are excluded. Only a RUNTIME failure triggers
+  the EXISTING rollback (only what this run created); doctor's own suggested fixes stay on stdout.
+  A successful runtime install stays installed when the invoking repo has unauthenticated `gh`,
+  an uncommitted ledger or outdated SDD assets. Under `--dry-run` the call is only announced.
+- **C14a — self-describing one-liner.** Global mode prints, first, a `print_plan` paragraph:
+  what is downloaded (uv `0.11.28`, URL, `.sha256`), where it writes (`PARROT_HOME/{bin,venv,python}`
+  + the PATH block), that the user's own uv is never touched, and the non-piped alternative. The
+  docs side of C14a is TASK-4095.
+- Tests: each failed gate exits before any write (fake `uname`, a PATH without `curl`/`wget`, a
+  read-only `PARROT_HOME` parent); a failing `--runtime-only` check rolls back; and a fake
+  `parrot` whose `self doctor --runtime-only` exits 0 while a plain `self doctor` exits 1 (repo
+  readiness failures) leaves the runtime installed — all fully offline with fake
+  `curl`/`uv`/`parrot` on PATH.
+
+---
+
 ## Scope
 
 - Add flags `--global`, `--version <X>`, `--with <comma list>` to the arg loop; keep every
   existing flag working unchanged; `--dry-run` stays total (no network, no file writes).
 - Take the `--global` branch BEFORE the system-Python guard; project mode is untouched.
+- In global mode, before anything else: print the C14a plan paragraph (`print_plan`), then run the
+  C14b `preflight` gate (platform, download tool, checksum tool, `git`, writable `PARROT_HOME`
+  with `MIN_FREE_KB` free, GitHub/PyPI reachable — network skipped under `--dry-run`); any failed
+  gate exits non-zero with the condition and a fix BEFORE any directory is created.
 - In global mode: honour `PARROT_HOME` (default `$HOME/.parrot`); download pinned uv `0.11.28`
   from `https://github.com/astral-sh/uv/releases/download/0.11.28/uv-<target>.tar.gz` plus its
   `.sha256`, verify with `sha256sum` or `shasum -a 256`, and extract the `uv` binary to
@@ -47,14 +82,23 @@ only what *this run* created.
   created write-then-rename (`ln -s` to a temp name + `mv -f`).
 - Add `$PARROT_HOME/bin` to PATH via a marker block (`# >>> parrot >>>` … `# <<< parrot <<<`) in
   `~/.zshrc` / `~/.bashrc` / `~/.profile` chosen from `$SHELL`; idempotent.
-- After install, run `$PARROT_HOME/bin/parrot self add <c>` for each `--with` component.
+- After the base runtime is installed (shims + PATH block), run
+  `PARROT_VENV="$PARROT_HOME/venv" "$PARROT_HOME/bin/parrot" self doctor --runtime-only` through
+  `run`; a non-zero exit aborts, which fires the rollback trap (doctor's suggested fixes are
+  already on stdout). Never the plain `self doctor`: repository/host/component failures must not
+  roll back a healthy runtime. Only announced under `--dry-run`.
+- Then run `$PARROT_HOME/bin/parrot self add <c>` for each `--with` component.
 - Install an `EXIT` trap that, on failure, removes ONLY paths this run created.
-- Extend `test_install_posix.py` with dry-run and arg-parsing tests for the new mode.
+- Extend `test_install_posix.py` with dry-run and arg-parsing tests for the new mode, the
+  gate-exits-before-write tests, and the offline post-install-doctor rollback test.
 
 **NOT in scope**:
 - `install-parrot.ps1` (TASK-4075); CI wiring and `scripts/install/SHA256SUMS` (TASK-4076);
   user docs (TASK-4095).
-- `parrot self add|update|…` itself (TASK-4079/TASK-4080) — this script only *calls* it.
+- `parrot self add|update|doctor|…` itself (TASK-4079/TASK-4080) — this script only *calls*
+  them; the SDD readiness checks inside doctor (C15) are TASK-4080's.
+- The full dependency check list — it lives once, in `parrot self doctor` (proposal C14/C15
+  decision); this script keeps only the pre-install gate above.
 - Any change to project-mode behavior, the Python guard logic, or `--system-deps`.
 - A `--purge` / uninstall path (spec §7: out of scope for v1; `parrot self uninstall` owns it).
 
@@ -64,8 +108,8 @@ only what *this run* created.
 
 | File | Action | Description |
 |---|---|---|
-| `scripts/install/install-parrot.sh` | MODIFY | `--global` mode, new flags, pinned-uv bootstrap, shims, PATH block, rollback |
-| `packages/ai-parrot/tests/docs/test_install_posix.py` | MODIFY | dry-run + arg-parsing tests for `--global` |
+| `scripts/install/install-parrot.sh` | MODIFY | `--global` mode, new flags, C14a plan paragraph, C14b preflight gate, pinned-uv bootstrap, shims, PATH block, post-install doctor, rollback |
+| `packages/ai-parrot/tests/docs/test_install_posix.py` | MODIFY | dry-run + arg-parsing tests for `--global`; gate-before-write tests; offline doctor-rollback test |
 
 ---
 
@@ -122,8 +166,14 @@ bookstore = ...            # line 206
 - ~~any uv-download code in `install-parrot.sh`~~ — the script uses `python -m venv` + pip only (spec §6).
 - ~~`--global`, `--version`, `--with`, `PARROT_HOME` handling in the script~~ — all new here.
 - ~~a root-level `install.sh`~~ — never create one (spec Non-Goals).
-- ~~`parrot self` command~~ — delivered by TASK-4080; this script calls it but must not depend on
-  it in `--dry-run` (it is only announced there).
+- ~~`parrot self` command (`self add`, `self doctor`, `self doctor --runtime-only`)~~ — delivered
+  by TASK-4080 (`--runtime-only` is a rev-0.2 addition there: managed uv, Python, runtime entry
+  points and PATH only; mutually exclusive with `--sdd`); this script calls them but must not
+  depend on them in `--dry-run` (they are only announced there).
+- ~~`preflight`, `print_plan`, `post_install_doctor`, `MIN_FREE_KB`, `SUPPORTED_PLATFORMS` in the
+  script~~ — new here (proposal C14a/C14b).
+- ~~any reachability (HEAD) check of GitHub/PyPI in either installer~~ — new here; must be skipped
+  under `--dry-run` so the dry-run tests stay offline.
 - ~~`$PARROT_HOME/bin` existing before this feature~~ — `~/.parrot` exists on dev machines with
   data, but never with `bin/` or `venv/` from FEAT-586.
 - ~~`PARROT_VENV` / `PARROT_PROJECT` being set by this script~~ — launcher env vars (TASK-4071);
@@ -180,6 +230,34 @@ run "download pinned uv $UV_VERSION ($UV_TARGET)" fetch "$UV_URL" "$DL_DIR/$UV_A
   uv supplies Python so OS packages are not needed.
 - Network/checksum failure must abort BEFORE any shim or PATH change (download+verify are the first
   side effects after directory creation).
+- **Gate before write (C14b)**: `preflight` runs before `trap rollback EXIT` and before
+  `mkdir_tracked` — *why*: a failed gate must leave the filesystem untouched, so there is nothing
+  to roll back. Gate order: platform → tools (`curl`/`wget`, `sha256sum`/`shasum`, `git`) →
+  `PARROT_HOME` writable + free space → network (GitHub `https://github.com`, PyPI
+  `https://pypi.org/simple/`, HEAD via `curl -fsI` / `wget -q --spider`; skipped under `--dry-run`
+  with a printed notice). The writability check uses the nearest EXISTING ancestor of
+  `PARROT_HOME` (`-w`) and never creates it (the dry-run test asserts `HOME` stays absent).
+  Free space: `df -Pk <ancestor> | awk 'NR==2{print $4}'` ≥ `MIN_FREE_KB=2097152` (2 GiB — the
+  managed CPython + venv + wheel cache; name the constant, docs cite it).
+- **Every gate failure** prints `preflight: <condition> — fix: <fix>` to stderr and exits 1;
+  gates never call `run` (they have no side effects) so they print nothing under `--dry-run`
+  except the pass/skip summary line per gate.
+- **Post-install runtime check (C14b)**: `run "verify the managed runtime (parrot self doctor
+  --runtime-only)" env PARROT_VENV="$PARROT_HOME/venv" "$PARROT_HOME/bin/parrot" self doctor
+  --runtime-only` sits after the PATH block and before `--with` components — *why*: a broken
+  base runtime must roll back before components are added; doctor prints its own `fix` per
+  failed check (TASK-4080), the trap then removes what this run created. `PARROT_VENV` pins the
+  launcher (TASK-4071 resolution order: `PARROT_VENV` first) to the venv just built, so a project
+  `.venv` in the invoking directory is never what gets checked. `--runtime-only` is mandatory:
+  the plain scope adds repository readiness (`gh` auth, committed ledger, SDD asset currency —
+  C15), host-config and component checks, none of which may roll back a healthy runtime. Under
+  `--dry-run` `run` only announces it. Rollback's stderr line must say that the runtime check
+  failed and that its suggested fixes are above.
+- **Plan paragraph (C14a)**: `print_plan` is the FIRST output of global mode (before the gate),
+  on stdout, one paragraph: uv version + URL + `.sha256` verification, `PARROT_HOME/{bin,venv,python}`
+  + the profile PATH block, "your own uv is never used or modified", and the non-piped alternative
+  (download `install-parrot.sh` + `SHA256SUMS` from the raw URL, verify, inspect, run). Printed
+  under `--dry-run` too (the tests assert on it).
 - Rollback: record each path in `CREATED=()` only when this run created it (test `-e` first);
   the `EXIT` trap removes them in reverse order only when the exit status is non-zero. Never
   `rm -rf "$PARROT_HOME"` unless `$PARROT_HOME` itself was created by this run.
@@ -209,14 +287,20 @@ run "download pinned uv $UV_VERSION ($UV_TARGET)" fetch "$UV_URL" "$DL_DIR/$UV_A
    call it at its old location — *why*: both modes need `ALL_EXTRAS` and global mode exits before
    the original block runs.
 5. Insert the global-mode functions + dispatch immediately before the Python guard comment —
-   *why*: codex S10, a clean machine never reaches the guard in global mode.
-6. Extend the POSIX test file — *why*: spec §4 `test_install_sh_global_dry_run`.
+   *why*: codex S10, a clean machine never reaches the guard in global mode. `print_plan` and
+   `preflight` are the first two things `global_install` does (C14a/C14b).
+6. Add the post-install `parrot self doctor` step after the PATH block — *why*: C14b, a broken
+   base runtime rolls back before components are added.
+7. Extend the POSIX test file — *why*: spec §4 `test_install_sh_global_dry_run`, plus the C14b
+   gate-before-write and doctor-rollback tests.
 
 ### `scripts/install/install-parrot.sh` (MODIFY)
 ```bash
 # occurrences: 1 (verified: grep -c 'DRY_RUN=0' scripts/install/install-parrot.sh)
 # AFTER — `DRY_RUN=0` (verified: scripts/install/install-parrot.sh:37)
 GLOBAL=0; PARROT_VERSION=""; WITH_COMPONENTS=""; PYTHON_SET=0; UV_VERSION="0.11.28"; CREATED=()
+MIN_FREE_KB=2097152   # C14b gate: 2 GiB free under PARROT_HOME (managed CPython + venv + wheel cache)
+RAW_BASE="https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install"   # C14a non-piped alternative
 # (also, per Steps 2-4: `--python)` arm sets PYTHON_SET=1 [anchor `      PYTHON="$2"`, :71, 1 occ];
 #  new arms --global / --version / --with inserted ABOVE `    --with-wiki)` [:74, 1 occ];
 #  header help lines above `#   -h, --help ...` [:23, 1 occ]; `sed -n '2,29p'` [:40, 1 occ] widened;
@@ -227,6 +311,32 @@ GLOBAL=0; PARROT_VERSION=""; WITH_COMPONENTS=""; PYTHON_SET=0; UV_VERSION="0.11.
 # REPLACE — `# Python guard — refuse anything outside >=3.11,<3.14 (AC10). Runs BEFORE any`
 # (verified: scripts/install/install-parrot.sh:102) with this block followed by the original line.
 resolve_extras() { :; }  # FILL IN: old lines 149-177 verbatim — bounded by test_posix_script_dry_run
+print_plan() {  # C14a — first output of global mode; no side effects; printed under --dry-run too
+  cat <<EOF
+This installer will download uv $UV_VERSION from $1 and verify it against $1.sha256,
+create $PARROT_HOME/{bin,venv,python} (a uv-managed Python $PYTHON and a venv with $2),
+and add $PARROT_HOME/bin to PATH via a marker block in your shell profile.
+A uv already on your PATH is never used or modified. Existing $PARROT_HOME data is never touched.
+Prefer not to pipe a download into bash? Fetch $RAW_BASE/install-parrot.sh and
+$RAW_BASE/SHA256SUMS, run 'sha256sum -c --ignore-missing SHA256SUMS', read the script, then run it.
+EOF
+}
+gate_fail() { echo "preflight: $1 — fix: $2" >&2; exit 1; }   # C14b — nothing has been written yet
+preflight() {  # C14b — read-only checks, in order; never calls run(); never creates PARROT_HOME
+  local anc free
+  uv_target >/dev/null || gate_fail "unsupported platform $(uname -s)-$(uname -m)" "use a project install (no --global) on this machine; supported: linux x86_64/aarch64, macOS arm64"
+  command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || gate_fail "no download tool" "install curl or wget"
+  command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1 || gate_fail "no checksum tool" "install coreutils (sha256sum) or perl (shasum)"
+  command -v git >/dev/null 2>&1 || gate_fail "git not found" "install git (the SDD flow and parrot self doctor need it)"
+  anc="$PARROT_HOME"; while [ ! -e "$anc" ]; do anc="$(dirname "$anc")"; done   # nearest existing ancestor
+  [ -w "$anc" ] || gate_fail "$anc is not writable" "set PARROT_HOME to a writable directory"
+  free="$(df -Pk "$anc" | awk 'NR==2{print $4}')"
+  [ "${free:-0}" -ge "$MIN_FREE_KB" ] || gate_fail "only ${free}KB free under $anc (need $MIN_FREE_KB)" "free disk space or set PARROT_HOME elsewhere"
+  if [ "$DRY_RUN" -eq 1 ]; then echo "preflight: network checks skipped (--dry-run)"; return 0; fi
+  # FILL IN: HEAD https://github.com and https://pypi.org/simple/ via `curl -fsI` or `wget -q --spider`;
+  #          failure → gate_fail "<host> unreachable" "check your network/proxy" — bounded by AC "gate before write"
+  echo "preflight: ok"
+}
 uv_target() {
   case "$(uname -s)-$(uname -m)" in
     Linux-x86_64) echo x86_64-unknown-linux-gnu ;;  Linux-aarch64|Linux-arm64) echo aarch64-unknown-linux-gnu ;;
@@ -251,7 +361,7 @@ install_shim() {  # write-then-rename: never a half-written shim
 }
 rollback() {
   local rc=$? i; [ "$rc" -eq 0 ] && return 0
-  echo "global install failed (exit $rc); removing only what this run created" >&2
+  echo "global install failed (exit $rc); removing only what this run created (if 'parrot self doctor --runtime-only' failed, its suggested fixes are printed above)" >&2
   for ((i=${#CREATED[@]}-1; i>=0; i--)); do rm -rf -- "${CREATED[$i]}"; done
   return "$rc"  # FILL IN: strip the PATH block only if THIS run added it — bounded by AC rollback
 }
@@ -270,6 +380,8 @@ global_install() {
   url="https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$asset"
   spec="ai-parrot[$ALL_EXTRAS]"; [ -z "$PARROT_VERSION" ] || spec="$spec==$PARROT_VERSION"
   dl="${TMPDIR:-/tmp}/parrot-uv.$$"
+  print_plan "$url" "$spec"    # C14a — before anything else
+  preflight                    # C14b — exits 1 on any failed gate; nothing written yet
   if [ "$DRY_RUN" -eq 0 ]; then trap rollback EXIT; mkdir_tracked "$PARROT_HOME"; mkdir_tracked "$PARROT_HOME/bin"; fi
   run "create a scratch download dir" mkdir -p "$dl"
   run "download pinned uv $UV_VERSION ($target)" fetch "$url" "$dl/$asset"
@@ -288,6 +400,9 @@ global_install() {
   run "install $spec into the managed venv" "$uv" pip install --python "$PARROT_HOME/venv/bin/python" "$spec"
   for s in parrot wikitoolkit bookstore; do run "expose $s" install_shim "$PARROT_HOME/venv/bin/$s" "$PARROT_HOME/bin/$s"; done
   run "add $PARROT_HOME/bin to PATH" add_path_block
+  # C14b — runtime scope only, pinned to the venv just built; a non-zero exit under set -e fires the rollback trap
+  run "verify the managed runtime (parrot self doctor --runtime-only)" \
+    env PARROT_VENV="$PARROT_HOME/venv" "$PARROT_HOME/bin/parrot" self doctor --runtime-only
   if [ -n "$WITH_COMPONENTS" ]; then  # guard: empty "${arr[@]}" + set -u breaks macOS bash 3.2
     IFS=',' read -ra _comps <<< "$WITH_COMPONENTS"
     for c in "${_comps[@]}"; do run "add component $c" "$PARROT_HOME/bin/parrot" self add "$c"; done
@@ -299,7 +414,10 @@ if [ "$GLOBAL" -eq 1 ]; then global_install; echo "Done."; exit 0; fi
 # Python guard — refuse anything outside >=3.11,<3.14 (AC10). Runs BEFORE any
 ```
 **Why this shape**: the dispatch sits above the guard (codex S10) and calls only functions that
-route side effects through `run`, so `--dry-run` writes nothing and needs no network. Do NOT
+route side effects through `run`, so `--dry-run` writes nothing and needs no network; `print_plan`
+and `preflight` are deliberately read-only and run before the trap, so a failed gate leaves no
+trace (C14). The post-install doctor call is the last step of the base install, so its failure
+rolls back the base runtime but never runs with half-added components. Do NOT
 change the project-mode path, the guard, or `run()`'s output format (`→ why: cmd`) — existing
 tests and CI grep it. Note `--with` component failures after a successful base install should
 not roll back the base runtime: FILL IN whether `self add` failures are warnings (recommended:
@@ -353,9 +471,92 @@ def test_global_rejects_project_only_flags(tmp_path: Path) -> None:
     result = _run_global(tmp_path, "--venv", str(tmp_path / "v"))
     assert result.returncode != 0
     # FILL IN: assert the refusal message — bounded by the message chosen in global_install
+
+
+def test_global_dry_run_prints_plan_and_gate(tmp_path: Path) -> None:
+    """C14a/C14b: the plan paragraph and the gate summary precede any `→` announcement."""
+    result = _run_global(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "0.11.28" in result.stdout and ".sha256" in result.stdout and "SHA256SUMS" in result.stdout
+    assert "never used or modified" in result.stdout
+    assert result.stdout.index("preflight: network checks skipped") < result.stdout.index("→")
+
+
+def _fake_bin(tmp: Path, *, drop: tuple[str, ...] = (), scripts: dict[str, str] | None = None) -> str:
+    """Build a PATH dir of symlinks to the real tools minus `drop`, plus fake `scripts` (name → body)."""
+    # FILL IN: symlink every tool the script needs (bash, uname, df, awk, dirname, tar, mkdir, rm, ln, mv,
+    #          grep, printf, cat, sha256sum) from shutil.which(); write each fake script 0o755 — bounded by
+    #          the gate tests below, which must stay offline and never touch the real HOME
+
+
+def test_gate_unsupported_platform_exits_before_write(tmp_path: Path) -> None:
+    """C14b: a fake `uname` reporting Linux-mips fails the platform gate; nothing is written."""
+    path = _fake_bin(tmp_path, scripts={"uname": '#!/bin/sh\ncase "$1" in -s) echo Linux;; -m) echo mips;; esac\n'})
+    env = {"HOME": str(tmp_path / "home"), "PARROT_HOME": str(tmp_path / "home" / ".parrot"), "PATH": path}
+    result = subprocess.run(["bash", str(SCRIPT), "--global"], capture_output=True, text=True, check=False, env=env)
+    assert result.returncode == 1
+    assert "preflight: unsupported platform" in result.stderr and "fix:" in result.stderr
+    assert not (tmp_path / "home").exists()
+
+
+def test_gate_missing_download_tool_exits_before_write(tmp_path: Path) -> None:
+    """C14b: a PATH without curl/wget fails the tool gate before any write (and before network)."""
+    path = _fake_bin(tmp_path, drop=("curl", "wget"))
+    env = {"HOME": str(tmp_path / "home"), "PARROT_HOME": str(tmp_path / "home" / ".parrot"), "PATH": path}
+    result = subprocess.run(["bash", str(SCRIPT), "--global"], capture_output=True, text=True, check=False, env=env)
+    assert result.returncode == 1 and "no download tool" in result.stderr
+    assert not (tmp_path / "home").exists()
+
+
+def test_gate_unwritable_home_exits_before_write(tmp_path: Path) -> None:
+    """C14b: PARROT_HOME under a read-only parent fails the writability gate."""
+    ro = tmp_path / "ro"; ro.mkdir(); ro.chmod(0o555)
+    env = {**os.environ, "HOME": str(tmp_path / "home"), "PARROT_HOME": str(ro / ".parrot")}
+    result = subprocess.run(["bash", str(SCRIPT), "--global"], capture_output=True, text=True, check=False, env=env)
+    assert result.returncode == 1 and "not writable" in result.stderr
+    assert not (ro / ".parrot").exists()
+    # FILL IN: skip when running as root (root ignores 0o555) — bounded by CI running unprivileged
+
+
+def _run_offline_install(tmp_path: Path, *, fake_parrot: str) -> subprocess.CompletedProcess[str]:
+    """C14b harness: a real non-dry-run `--global` with fakes — never touches the network or the real HOME."""
+    # FILL IN: build a fixture tarball uv-x86_64-unknown-linux-gnu/uv (fake uv: `venv <dir>` creates
+    #          <dir>/bin/{python,wikitoolkit,bookstore} stubs and writes `fake_parrot` as <dir>/bin/parrot;
+    #          `pip install` is a no-op) + its .sha256; fake `curl` copies the fixture for the tarball /
+    #          .sha256 URLs and exits 0 for `-I` (HEAD); fake `uname` reports Linux-x86_64; run the script
+    #          with HOME/PARROT_HOME under tmp and PATH from _fake_bin — bounded by the two tests below
+
+
+_PARROT_RUNTIME_BROKEN = "#!/bin/sh\necho 'uv: missing — fix: rerun the bootstrap'; exit 1\n"
+_PARROT_REPO_NOT_READY = (
+    "#!/bin/sh\n"
+    'case "$*" in *--runtime-only*) echo "runtime: ok"; exit 0;; esac\n'
+    "echo 'gh: not authenticated — fix: gh auth login'; echo 'ledger: uncommitted'; exit 1\n"
+)
+
+
+def test_post_install_runtime_failure_rolls_back(tmp_path: Path) -> None:
+    """C14b: a failing `parrot self doctor --runtime-only` removes what the run created."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_RUNTIME_BROKEN)
+    assert result.returncode != 0
+    assert "self doctor --runtime-only" in result.stdout and "suggested fixes are printed above" in result.stderr
+    assert not (tmp_path / "home" / ".parrot").exists()
+    rc_file = tmp_path / "home" / ".bashrc"
+    assert not rc_file.exists() or "# >>> parrot >>>" not in rc_file.read_text(encoding="utf-8")
+
+
+def test_post_install_repo_readiness_failures_keep_runtime(tmp_path: Path) -> None:
+    """C14b: unauthenticated gh / uncommitted ledger / outdated SDD assets never roll back a healthy runtime."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY)
+    assert result.returncode == 0, result.stderr
+    assert "--runtime-only" in result.stdout and "gh: not authenticated" not in result.stdout
+    home = tmp_path / "home" / ".parrot"
+    assert (home / "bin" / "parrot").exists() and (home / "venv").exists()
+    assert "# >>> parrot >>>" in (tmp_path / "home" / ".bashrc").read_text(encoding="utf-8")
 ```
-**Why**: covers spec §4 `test_install_sh_global_dry_run` and the codex S10 guard-bypass; all run
-in dry-run so CI needs no network.
+**Why**: covers spec §4 `test_install_sh_global_dry_run` and the codex S10 guard-bypass; the first
+block runs in dry-run so CI needs no network, and the C14b tests stay offline by faking the few
+binaries the gate and the install consult (`uname`, `curl`, `uv`, `parrot`) — never the real HOME.
 
 ### FILL IN checklist
 - [ ] `install-parrot.sh::usage` — new `sed -n '2,N p'` end line; bounded by `--help` printing all options.
@@ -365,6 +566,10 @@ in dry-run so CI needs no network.
 - [ ] `install-parrot.sh::rollback` — strip the PATH block only if this run added it; bounded by AC rollback.
 - [ ] `--with` failure semantics (warn vs fail, without rolling back the base runtime).
 - [ ] `test_global_rejects_project_only_flags` — assert the exact refusal message.
+- [ ] `install-parrot.sh::preflight` — the GitHub/PyPI HEAD checks (curl `-fsI` / wget `--spider`); bounded by "skipped under --dry-run".
+- [ ] `test_install_posix.py::_fake_bin` — the symlink/fake-script PATH builder; bounded by the gate tests staying offline.
+- [ ] `test_install_posix.py::_run_offline_install` — the fixture tarball + fake `curl`/`uv`/`parrot`; bounded by the two C14b outcomes (runtime failure rolls back; readiness failures keep the runtime).
+- [ ] `test_gate_unwritable_home_exits_before_write` — root skip guard.
 
 ---
 
@@ -383,8 +588,24 @@ in dry-run so CI needs no network.
       (wikis.json, library/, skills/, brains/, parrot.db) is untouched.
 - [ ] PATH marker block added once (idempotent re-run); download/checksum failure aborts before
       any PATH change.
+- [ ] **C14a**: `--global` (also under `--dry-run`) prints, before any `→` line, what is downloaded
+      (uv `0.11.28`, URL, `.sha256`), where it writes (`PARROT_HOME/{bin,venv,python}` + the PATH
+      block), that the user's own uv is never used or modified, and the non-piped alternative
+      (raw-URL `install-parrot.sh` + `SHA256SUMS`, verify, inspect, run).
+- [ ] **C14b gate before write**: in `--global` mode an unsupported platform, a missing download or
+      checksum tool, a missing `git`, an unwritable `PARROT_HOME` ancestor, less than `MIN_FREE_KB`
+      free, or an unreachable GitHub/PyPI each exit 1 with `preflight: <condition> — fix: <fix>` on
+      stderr BEFORE any directory is created; `--dry-run` skips only the network gates and says so.
+- [ ] **C14b post-install runtime check**: after shims + PATH block the script runs
+      `PARROT_VENV="$PARROT_HOME/venv" "$PARROT_HOME/bin/parrot" self doctor --runtime-only`
+      (never the plain scope); a non-zero exit triggers the existing rollback (only this run's
+      paths, PATH block included) and stderr says doctor's fixes are above; `--dry-run` only
+      announces the call.
+- [ ] **C14b readiness never rolls back**: with a `parrot` whose `--runtime-only` passes while the
+      plain `self doctor` fails (unauthenticated `gh`, uncommitted ledger, outdated SDD assets),
+      the run exits 0 and `bin/`, `venv/` and the PATH block remain.
 - [ ] Project mode (no `--global`) behaves exactly as before; existing tests still pass.
-- [ ] `bash -n scripts/install/install-parrot.sh` passes; all tests pass.
+- [ ] `bash -n scripts/install/install-parrot.sh` passes; all tests pass, offline.
 
 ---
 
@@ -405,6 +626,12 @@ def test_global_dry_run_bypasses_python_guard(tmp_path): ...   # rc 0, no "unsup
 def test_global_dry_run_writes_nothing(tmp_path): ...          # sandboxed HOME stays absent
 def test_global_flags_parse(tmp_path): ...                     # ==<version>, one self add per component
 def test_global_rejects_project_only_flags(tmp_path): ...      # --venv + --global refused
+def test_global_dry_run_prints_plan_and_gate(tmp_path): ...    # C14a paragraph + gate summary precede "→"
+def test_gate_unsupported_platform_exits_before_write(tmp_path): ...   # C14b: fake uname → exit 1, nothing written
+def test_gate_missing_download_tool_exits_before_write(tmp_path): ... # C14b: PATH without curl/wget
+def test_gate_unwritable_home_exits_before_write(tmp_path): ...       # C14b: read-only PARROT_HOME parent
+def test_post_install_runtime_failure_rolls_back(tmp_path): ...       # C14b: offline fakes; --runtime-only exit 1 → rollback
+def test_post_install_repo_readiness_failures_keep_runtime(tmp_path): ...  # C14b: --runtime-only ok, plain doctor fails → stays
 ```
 
 ---

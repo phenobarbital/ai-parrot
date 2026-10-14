@@ -25,9 +25,12 @@ of a one-off grep. Three consumers use it:
    `sdd/state/FEAT-633/spikes/S5-sdd-assumptions.md`.
 2. **TASK-4089** (markdown rewrite) uses the report's "Helper reference map" as its
    rewrite list. Every `scripts/sdd/<name>` / `scripts.sdd.<name>` becomes
-   `python -m parrot.sdd.scripts.<name>`.
+   `parrot sdd run <name>` (rev 0.2 Q1).
 3. **TASK-4091** (`parrot sdd install`) imports `scan_paths` + `missing_tools` at install
    time to warn about tooling the target machine lacks (`jq`, `gh`, `tmux`, …).
+4. **TASK-4090** (asset packaging, C11c) runs the scanner over `parrot/sdd/_assets/` in CI
+   with `--fail-on org-data,claude-md-ref,branch-literal`, so no organisation data,
+   `CLAUDE.md` reference or hardcoded flow branch ever reaches the public wheel.
 
 The task also creates the `parrot.sdd` package root (`__init__.py`, docstring only) that
 TASK-4085/4088 build `parrot.sdd.scripts` under, and the `packages/ai-parrot/tests/sdd/`
@@ -55,6 +58,30 @@ External-tool sample (files containing the token, same asset set): `jq` 9, `gh` 
 `packages/ai-parrot` 8, `.claude/worktrees` 9. Example: `sdd-done.md:172` uses
 `TASK_FILES=$(jq -r '.tasks[].file' …)`.
 
+Publication-safety sample (C11, verified 2026-10-14 over the TASK-4090 asset set): 11 files
+contain `trocglobal.atlassian.net` or a real `NAV-<n>` ticket key; 14 files reference
+`CLAUDE.md`. None of the original six kinds detects any of these.
+
+---
+
+## Amendments — spec rev 0.2 (2026-10-14)
+
+Folded in from `sdd/proposals/parrot-installer-amendments.proposal.md` (§3 C11a, §5;
+decisions by Jesus Lara, 2026-10-14). Every section below is already edited to match.
+
+- **C11a — three publication-safety finding kinds.** `KINDS` grows from six to **nine**:
+  `org-data` (Atlassian hosts other than the placeholder `your-org.atlassian.net`; real
+  ticket keys other than the placeholder `PROJ-<n>` and SDD's own `FEAT-`/`TASK-` ids),
+  `claude-md-ref` (any `CLAUDE.md` reference, with or without a section anchor) and
+  `branch-literal` (`dev` / `staging` / `main` used as a flow base in a git or SDD operator
+  position). Each has fixed regexes, documented false-positive exclusions and test fixtures
+  for the placeholders.
+- **`--fail-on <kind,…>`** on the CLI: exit 1 when any finding of a listed kind exists (CI
+  gate for TASK-4090). Default behaviour (report only, exit 0) is unchanged.
+- The S5 report's Summary table gains the three rows automatically; its "Conclusions" adds a
+  fourth bullet: the org-data / `CLAUDE.md` / branch-literal lines TASK-4089 must rewrite with
+  placeholders (`https://your-org.atlassian.net`, `PROJ-123`) and `sdd/config.json` wording.
+
 ---
 
 ## Scope
@@ -65,8 +92,10 @@ External-tool sample (files containing the token, same asset set): `jq` 9, `gh` 
 - Implement `parrot/sdd/audit.py`. It is **stdlib-only** and contains:
   - the frozen dataclass `AssumptionFinding`;
   - `scan_text`, `scan_paths`, `missing_tools` and `main`;
-  - six finding kinds: `repo-script`, `venv-path`, `uv-run`, `external-tool`,
-    `posix-shell`, `monorepo-path`;
+  - nine finding kinds: `repo-script`, `venv-path`, `uv-run`, `external-tool`,
+    `posix-shell`, `monorepo-path`, and (C11a) `org-data`, `claude-md-ref`, `branch-literal`;
+  - a `--fail-on <kind,…>` CLI option that exits 1 when any finding of a listed kind exists
+    (TASK-4090's CI gate);
   - a markdown report renderer that includes a per-asset "Helper reference map" and a
     "Rewrite list".
 - Generate and commit `sdd/state/FEAT-633/spikes/S5-sdd-assumptions.md` by running the
@@ -81,8 +110,10 @@ External-tool sample (files containing the token, same asset set): `jq` 9, `gh` 
   functions that task calls.
 - `parrot/sdd/cli.py`, `installer.py`, `scripts/`, `_assets/` (other M6 tasks).
 - `pyproject.toml` package-data. `[tool.setuptools.packages.find] include = ["parrot*"]`
-  (`packages/ai-parrot/pyproject.toml:951-954`) already picks up the new `parrot.sdd`
-  package.
+  (`packages/ai-parrot/pyproject.toml:960-963`, re-verified 2026-10-14) already picks up the
+  new `parrot.sdd` package.
+- Fixing the org-data / `CLAUDE.md` / branch-literal findings in the markdown (TASK-4089) and
+  gating CI on them (TASK-4090). This task only detects and reports them.
 
 ---
 
@@ -111,8 +142,14 @@ from pathlib import Path
 
 ### Existing Signatures to Use
 ```python
-# packages/ai-parrot/pyproject.toml:951-954 — package discovery already covers parrot.sdd
+# packages/ai-parrot/pyproject.toml:960-963 (re-verified 2026-10-14) — package discovery already covers parrot.sdd
 # [tool.setuptools.packages.find] where = ["src"]; include = ["parrot*"]; namespaces = true
+
+# Publication-safety samples (C11a, verified 2026-10-14 by grep over the TASK-4090 asset set):
+#   .claude/commands/sdd-done.md, sdd-fromjira.md, sdd-proposal.md, sdd-tojira.md, sdd/templates/proposal.md,
+#   .claude/agents/sdd-autopilot.md …   → `trocglobal.atlassian.net` / `NAV-<n>` (11 files)
+#   .claude/skills/second-opinion/SKILL.md:8  "live in `CLAUDE.md` § Adversarial Second Opinion" (claude-md-ref)
+#   14 files in the asset set reference `CLAUDE.md`
 
 # Importing `parrot` is cheap: verified 2026-10-05 that `import parrot` loads only
 # ['parrot', 'parrot.version'].
@@ -148,6 +185,9 @@ from pathlib import Path
 - ~~`parrot.sdd.scripts`~~ — TASK-4085 creates it; do NOT create it here.
 - ~~`parrot.sdd.installer` / `parrot.sdd.cli`~~ — later M6 tasks.
 - ~~a `jq`/`gh` Python binding~~ — tool presence is checked only with `shutil.which`.
+- ~~`ORG_HOST_RE`, `TICKET_KEY_RE`, `TICKET_KEY_ALLOW`, `CLAUDE_MD_RE`, `BRANCH_LITERAL_RE`, `--fail-on`~~ —
+  new in this task (C11a). No placeholder convention exists in the repo today; `your-org.atlassian.net`
+  and `PROJ-<n>` are fixed here and reused by TASK-4089's rewrite.
 
 ---
 
@@ -246,8 +286,30 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-KINDS: tuple[str, ...] = ("repo-script", "venv-path", "uv-run", "external-tool", "posix-shell", "monorepo-path")
+KINDS: tuple[str, ...] = (
+    "repo-script", "venv-path", "uv-run", "external-tool", "posix-shell", "monorepo-path",
+    "org-data", "claude-md-ref", "branch-literal",            # C11a — publication safety
+)
 EXTERNAL_TOOLS: tuple[str, ...] = ("jq", "gh", "tmux", "codex", "git-lfs", "agy", "black", "pylint")
+#: Placeholders shipped files MUST use instead of real organisation data (TASK-4089 rewrites to these).
+PLACEHOLDER_ATLASSIAN_HOST = "your-org.atlassian.net"
+PLACEHOLDER_TICKET_PREFIX = "PROJ"
+# org-data (a): any *.atlassian.net host that is not the placeholder.
+ORG_HOST_RE = re.compile(r"(?<![\w-])(?!your-org\.atlassian\.net\b)[a-z0-9][a-z0-9-]*\.atlassian\.net\b")
+# org-data (b): a Jira-style ticket key. Allow-listed prefixes are SDD's own ids and common non-ticket tokens.
+TICKET_KEY_ALLOW: tuple[str, ...] = (PLACEHOLDER_TICKET_PREFIX, "FEAT", "TASK", "AC", "SHA", "UTF", "ISO", "RFC", "PEP", "CVE")
+TICKET_KEY_RE = re.compile(r"(?<![\w-])(?!(?:" + "|".join(TICKET_KEY_ALLOW) + r")-)[A-Z][A-Z0-9]{1,9}-\d+\b")
+# claude-md-ref: any reference to CLAUDE.md, with or without a section anchor (`CLAUDE.md § …`, `CLAUDE.md#…`).
+CLAUDE_MD_RE = re.compile(r"\bCLAUDE\.md\b")
+# branch-literal: dev|staging|main ONLY in an operator position — git ref (`origin/dev`), git verb
+# (`checkout dev`, `checkout -b x dev`, `pull origin dev`, `merge dev`, `rebase dev`, `push origin dev`),
+# an SDD flag (`--base dev`, `--base-branch=dev`) or frontmatter (`base_branch: dev`). Prose words
+# ("the main checkout", "dev-loop", "staging area") never match because they lack the operator prefix.
+BRANCH_LITERAL_RE = re.compile(
+    r"(?:\borigin/|--base(?:-branch)?[ =]|\bbase_branch:\s*|\b(?:checkout|switch)\s+(?:-b\s+\S+\s+)?"
+    r"|\bpull\s+origin\s+|\bpush\s+(?:-u\s+)?origin\s+|\bmerge\s+(?:--no-ff\s+)?|\brebase\s+(?:-i\s+)?)"
+    r"(?P<branch>dev|staging|main)\b(?![-_/])"
+)
 DEFAULT_GLOBS: tuple[str, ...] = (
     ".claude/commands/sdd-*.md",
     ".claude/agents/sdd-*.md",
@@ -261,12 +323,20 @@ REPO_SCRIPT_RE = re.compile(r"scripts[./]sdd[./](?P<name>[A-Za-z_][A-Za-z0-9_]*)
 EXTERNAL_TOOL_RE = re.compile(
     r"(?:^\s*|`|\$\(|\|\s*|&&\s*|;\s*)(?P<tool>" + "|".join(map(re.escape, EXTERNAL_TOOLS)) + r")\s+[-\w'\"./]"
 )
-# FILL IN: final regexes for the four remaining kinds — bounded by the kind definitions below and test_audit.py
+# FILL IN: final regexes for the four remaining original kinds — bounded by the kind definitions below and test_audit.py
 #   venv-path:     .venv/bin, `source .venv/bin/activate`
 #   uv-run:        `uv run`
 #   posix-shell:   `source ` at command position, `$(...)`, `/tmp/`, heredocs, `set -euo pipefail`, `#!/usr/bin/env bash`
 #   monorepo-path: `packages/ai-parrot...`, `.claude/worktrees/`
-_KIND_PATTERNS: dict[str, re.Pattern[str]] = {"repo-script": REPO_SCRIPT_RE, "external-tool": EXTERNAL_TOOL_RE}
+# The three C11a kinds are FIXED above; `org-data` is the union of ORG_HOST_RE and TICKET_KEY_RE (one finding per line).
+_ORG_DATA_RE = re.compile("|".join((ORG_HOST_RE.pattern, TICKET_KEY_RE.pattern)))
+_KIND_PATTERNS: dict[str, re.Pattern[str]] = {
+    "repo-script": REPO_SCRIPT_RE,
+    "external-tool": EXTERNAL_TOOL_RE,
+    "org-data": _ORG_DATA_RE,
+    "claude-md-ref": CLAUDE_MD_RE,
+    "branch-literal": BRANCH_LITERAL_RE,
+}
 
 
 @dataclass(frozen=True)
@@ -315,14 +385,25 @@ def render_report(findings: Sequence[AssumptionFinding], *, scanned: Sequence[st
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """CLI: scan PATHs (default: DEFAULT_GLOBS under --root) and write the report. 0 ok, 2 nothing to scan."""
+    """CLI: scan PATHs (default: DEFAULT_GLOBS under --root) and write the report.
+
+    Exit codes: 0 ok; 1 a finding of a ``--fail-on`` kind exists (C11c CI gate); 2 nothing to scan.
+    A PATH that is a directory is scanned recursively (every regular file, sorted).
+    """
     parser = argparse.ArgumentParser(prog="python -m parrot.sdd.audit", description=__doc__.splitlines()[0])
     parser.add_argument("paths", nargs="*", type=Path)
     parser.add_argument("--root", type=Path, default=Path.cwd())
     parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument(
+        "--fail-on", default="", metavar="KIND[,KIND...]",
+        help="exit 1 when any finding of these kinds exists (e.g. org-data,claude-md-ref,branch-literal)",
+    )
     args = parser.parse_args(argv)
-    # FILL IN: expand DEFAULT_GLOBS relative to --root (sorted), relativize paths to --root, scan, render,
-    #          write to --output or sys.stdout; sys.stderr.write + return 2 when no file matched — bounded by AC-3
+    # FILL IN: expand DEFAULT_GLOBS relative to --root (sorted) when no PATH given; expand directory PATHs
+    #          (rglob, files only, sorted); relativize paths to --root; scan; render; write to --output or
+    #          sys.stdout; sys.stderr.write + return 2 when no file matched; parse --fail-on (comma list,
+    #          each must be in KINDS else argparse error), write one "<path>:<line>: [<kind>] <snippet>" line
+    #          per matching finding to stderr and return 1 — bounded by AC-3 and AC-8
     raise NotImplementedError
 
 
@@ -330,9 +411,12 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 **Why this shape**: names and signatures are fixed by this task's brief and consumed by
-TASK-4089/4091. Keep `_KIND_PATTERNS` covering all six `KINDS`; the FILL IN adds the four
-missing entries. `missing_tools` re-derives tool names from snippets because the
-dataclass fields are fixed (no extra `tool` field).
+TASK-4089/4090/4091. Keep `_KIND_PATTERNS` covering all nine `KINDS`; the FILL IN adds the
+four original entries still missing (the three C11a patterns are fixed above). `missing_tools`
+re-derives tool names from snippets because the dataclass fields are fixed (no extra `tool`
+field). The C11a regexes are deliberately narrow: a false positive here blocks CI for
+TASK-4090, so `branch-literal` requires an operator prefix and `org-data` allow-lists SDD's
+own ids and common `WORD-<n>` tokens (`SHA-256`, `UTF-8`, `ISO-8601`, `AC-1`).
 
 ### `packages/ai-parrot/tests/sdd/__init__.py` (CREATE)
 ```python
@@ -360,7 +444,7 @@ See **Test Specification** below. That block is the starting file.
 <generated rows — must match the TASK-4070 Context table>
 
 ## Rewrite list (drives TASK-4089)
-<generated: `scripts/sdd/<name>` / `scripts.sdd.<name>` → `python -m parrot.sdd.scripts.<name>`>
+<generated: `scripts/sdd/<name>` / `scripts.sdd.<name>` → `parrot sdd run <name>`>
 
 ## Findings by file
 <generated: ### <path> then `L<n> [kind] snippet` bullets>
@@ -370,7 +454,10 @@ See **Test Specification** below. That block is the starting file.
 
 ## Conclusions
 <hand-written: (1) helpers not in the 18-module move list, if any; (2) external tools TASK-4091 must
-warn about; (3) POSIX-only constructs that cannot be made portable and must be documented as POSIX-first>
+warn about; (3) POSIX-only constructs that cannot be made portable and must be documented as POSIX-first;
+(4) C11a: the org-data / claude-md-ref / branch-literal lines TASK-4089 must rewrite — placeholders
+`https://your-org.atlassian.net` and `PROJ-123`, no `CLAUDE.md` references, branch names read from
+`sdd/config.json` (TASK-4299) instead of literals>
 ```
 **Why**: S5's deliverable (spec §3 M0) is a committed report. The angle-bracket lines
 are generator output, not literal text.
@@ -383,8 +470,8 @@ are generator output, not literal text.
 - [ ] `audit.py::helper_map`: bounded by the pre-seeded reference map.
 - [ ] `audit.py::render_report`: section layout per the S5 block. Bounded by byte-stable
   output.
-- [ ] `audit.py::main`: glob expansion and exit codes. Bounded by AC-3.
-- [ ] The S5 report's "Conclusions": hand-written, three bullets as outlined.
+- [ ] `audit.py::main`: glob/directory expansion, `--fail-on` and exit codes. Bounded by AC-3 and AC-8.
+- [ ] The S5 report's "Conclusions": hand-written, four bullets as outlined.
 
 ---
 
@@ -393,8 +480,17 @@ are generator output, not literal text.
 - [ ] AC-1: `import parrot.sdd.audit` loads no third-party module and no `parrot.*`
   module other than `parrot`, `parrot.version`, `parrot.sdd`, `parrot.sdd.audit`
   (enforced by a test).
-- [ ] AC-2: `scan_text` emits each of the six kinds on a representative line and emits
+- [ ] AC-2: `scan_text` emits each of the nine kinds on a representative line and emits
   nothing on a plain prose line.
+- [ ] AC-7 (C11a): `org-data` does NOT fire on `https://your-org.atlassian.net`, `PROJ-123`,
+  `FEAT-633`, `TASK-4070`, `SHA-256`, `UTF-8`, `ISO-8601`, `AC-1`; it DOES fire on
+  `trocglobal.atlassian.net` and `NAV-1234`. `branch-literal` does NOT fire on "the main
+  checkout", "dev-loop", "staging area", `origin/<base_branch>`; it DOES fire on
+  `origin/dev`, `--base dev`, `base_branch: main`, `git checkout staging`.
+  `claude-md-ref` fires on `CLAUDE.md` with and without a section anchor.
+- [ ] AC-8 (C11c): `python -m parrot.sdd.audit <dir> --fail-on org-data` exits 1 and names
+  the offending `<path>:<line>` on stderr when a finding of that kind exists, exits 0 when
+  none does; an unknown kind in `--fail-on` is an argparse error (exit 2).
 - [ ] AC-3: `python -m parrot.sdd.audit --root <empty dir>` exits 2. Over the repo it
   exits 0 and the report contains no absolute path.
 - [ ] AC-4: The Helper reference map generated over the real assets matches the Context
@@ -406,7 +502,7 @@ are generator output, not literal text.
   the scanner, and has a filled "Conclusions" section.
 - [ ] `ruff check packages/ai-parrot/src/parrot/sdd packages/ai-parrot/tests/sdd` is clean.
 - [ ] Supports spec §5 bullet "`parrot sdd install` deploys the flow … every helper
-  referenced by installed markdown resolves as `python -m parrot.sdd.scripts.<name>`"
+  referenced by installed markdown is invoked as `parrot sdd run <name>`" (rev 0.2)
   (the inventory side).
 
 ---
@@ -449,6 +545,14 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
         ("TASK_FILES=$(jq -r '.tasks[].file' idx.json)", "external-tool"),
         ("TASK_FILES=$(jq -r '.tasks[].file' idx.json)", "posix-shell"),
         ("cd .claude/worktrees/feat-FEAT-1-x", "monorepo-path"),
+        ("Open https://trocglobal.atlassian.net/browse/NAV-1234 first", "org-data"),      # C11a
+        ("Resolves NAV-1234 and NAV-77", "org-data"),                                      # C11a
+        ("See CLAUDE.md § Adversarial Second Opinion", "claude-md-ref"),                   # C11a
+        ("Follow CLAUDE.md throughout.", "claude-md-ref"),                                 # C11a
+        ("git fetch origin && git rebase origin/dev", "branch-literal"),                   # C11a
+        ("python -m scripts.sdd.reserve_ids --base-branch dev --count 1", "branch-literal"),  # C11a
+        ("base_branch: main", "branch-literal"),                                           # C11a
+        ("git checkout staging", "branch-literal"),                                        # C11a
     ],
 )
 def test_scan_text_kinds(line: str, kind: str) -> None:
@@ -457,6 +561,34 @@ def test_scan_text_kinds(line: str, kind: str) -> None:
 
 def test_scan_text_prose_is_clean() -> None:
     assert scan_text("Ask codex for a second opinion about the design.", "x.md") == []
+
+
+@pytest.mark.parametrize(
+    ("line", "kind"),
+    [
+        ("Tracker: https://your-org.atlassian.net/browse/PROJ-123", "org-data"),   # placeholders
+        ("FEAT-633 decomposes into TASK-4070 … TASK-4095", "org-data"),            # SDD's own ids
+        ("checksum SHA-256, encoding UTF-8, dates ISO-8601, criterion AC-1", "org-data"),
+        ("the main checkout, the dev-loop and the staging area", "branch-literal"),  # prose words
+        ("git fetch origin/<base_branch>; --base <base_branch>", "branch-literal"),  # placeholders
+        ("development on the dev branch is described in the handbook", "branch-literal"),
+    ],
+)
+def test_c11a_kinds_skip_placeholders_and_prose(line: str, kind: str) -> None:
+    assert kind not in {f.kind for f in scan_text(line, "x.md")}
+
+
+def test_main_fail_on_exits_1_and_names_the_line(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    (tmp_path / "a.md").write_text("ok line\nticket NAV-1 here\n", encoding="utf-8")
+    assert audit.main([str(tmp_path), "--root", str(tmp_path), "--fail-on", "org-data"]) == 1
+    assert "a.md:2: [org-data]" in capsys.readouterr().err
+    assert audit.main([str(tmp_path), "--root", str(tmp_path), "--fail-on", "claude-md-ref"]) == 0
+
+
+def test_main_fail_on_rejects_unknown_kind(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as exc:
+        audit.main([str(tmp_path), "--root", str(tmp_path), "--fail-on", "no-such-kind"])
+    assert exc.value.code == 2
 
 
 def test_missing_tools_uses_which(monkeypatch: pytest.MonkeyPatch) -> None:
