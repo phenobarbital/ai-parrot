@@ -1573,14 +1573,43 @@ class GitToolkit(AbstractToolkit):
         return redacted
 
     @staticmethod
-    async def _run_subprocess(argv: List[str]) -> tuple[int, str, str]:
-        """Run ``argv`` asynchronously; return ``(returncode, stdout, stderr)``."""
+    async def _run_subprocess(
+        argv: List[str], timeout: Optional[float] = None
+    ) -> tuple[int, str, str]:
+        """Run ``argv`` asynchronously; return ``(returncode, stdout, stderr)``.
+
+        A timed-out or cancelled subprocess is terminated, given a bounded
+        grace period, killed if necessary, and reaped before this method
+        returns or re-raises cancellation.
+        """
         proc = await asyncio.create_subprocess_exec(
             *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        out, err = await proc.communicate()
+
+        async def _stop_and_reap() -> None:
+            """Stop the child and drain its pipes before returning."""
+            if proc.returncode is None:
+                proc.terminate()
+            try:
+                await asyncio.wait_for(proc.communicate(), timeout=1.0)
+            except asyncio.TimeoutError:
+                if proc.returncode is None:
+                    proc.kill()
+                await proc.communicate()
+
+        try:
+            if timeout is None:
+                out, err = await proc.communicate()
+            else:
+                out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except asyncio.TimeoutError:
+            await _stop_and_reap()
+            return -9, "", f"<timed out after {timeout}s>"
+        except asyncio.CancelledError:
+            await asyncio.shield(_stop_and_reap())
+            raise
         return (
             proc.returncode if proc.returncode is not None else -1,
             out.decode(errors="replace"),
@@ -1595,6 +1624,8 @@ class GitToolkit(AbstractToolkit):
         *,
         private: bool = False,
         depth: Optional[int] = None,
+        timeout: Optional[float] = None,
+        prefer_gh: bool = True,
     ) -> Dict[str, Any]:
         """Clone ``repository`` to ``dest_dir``.
 
@@ -1609,6 +1640,8 @@ class GitToolkit(AbstractToolkit):
             branch: Optional branch to clone (``--branch``).
             private: When True, authenticate the clone (``gh`` or token-in-URL).
             depth: Optional shallow-clone depth (``--depth``).
+            timeout: Optional subprocess timeout in seconds.
+            prefer_gh: Whether to prefer ``gh repo clone`` for private clones.
 
         Returns:
             ``{"path", "repository", "branch", "updated"}``. Never contains a
@@ -1619,13 +1652,15 @@ class GitToolkit(AbstractToolkit):
         """
         if os.path.isdir(os.path.join(dest_dir, ".git")):
             # Already a clone → fast-forward instead of re-cloning (idempotent).
-            return await self.pull_repo(dest_dir, branch)
+            if timeout is None:
+                return await self.pull_repo(dest_dir, branch)
+            return await self.pull_repo(dest_dir, branch, timeout=timeout)
 
         slug = self._clone_slug(repository)
         display = self._display_slug(slug)
         token: Optional[str] = None
 
-        if private and self._gh_available():
+        if private and prefer_gh and self._gh_available():
             argv = ["gh", "repo", "clone", display, dest_dir]
             if branch:
                 argv += ["--", "--branch", branch]
@@ -1638,7 +1673,10 @@ class GitToolkit(AbstractToolkit):
                 argv += ["--depth", str(depth)]
             argv += [url, dest_dir]
 
-        rc, _out, err = await self._run_subprocess(argv)
+        if timeout is None:
+            rc, _out, err = await self._run_subprocess(argv)
+        else:
+            rc, _out, err = await self._run_subprocess(argv, timeout=timeout)
         if rc != 0:
             raise GitToolkitError(
                 f"clone of {display!r} failed: {self._scrub(err, token)}"
@@ -1654,6 +1692,8 @@ class GitToolkit(AbstractToolkit):
         self,
         repo_path: str,
         branch: Optional[str] = None,
+        *,
+        timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Fast-forward an existing clone at ``repo_path`` to ``branch``.
 
@@ -1661,6 +1701,7 @@ class GitToolkit(AbstractToolkit):
             repo_path: Path to an existing git clone.
             branch: Optional branch to pull (``origin <branch>``); defaults to
                 the clone's current upstream.
+            timeout: Optional subprocess timeout in seconds.
 
         Returns:
             ``{"path", "branch", "updated"}``. Never contains a token.
@@ -1673,7 +1714,10 @@ class GitToolkit(AbstractToolkit):
         argv = ["git", "-C", repo_path, "pull", "--ff-only"]
         if branch:
             argv += ["origin", branch]
-        rc, _out, err = await self._run_subprocess(argv)
+        if timeout is None:
+            rc, _out, err = await self._run_subprocess(argv)
+        else:
+            rc, _out, err = await self._run_subprocess(argv, timeout=timeout)
         if rc != 0:
             raise GitToolkitError(
                 f"pull of {repo_path!r} failed: {self._scrub(err)}"

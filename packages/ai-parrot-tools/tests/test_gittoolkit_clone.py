@@ -5,6 +5,8 @@ hermetic — no real ``git``/``gh`` invocation, no network.
 """
 from __future__ import annotations
 
+import asyncio
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -26,8 +28,9 @@ class _Recorder:
         self.rc, self.out, self.err = rc, out, err
         self.calls: list[list[str]] = []
 
-    async def __call__(self, argv):
+    async def __call__(self, argv, timeout=None):
         self.calls.append(list(argv))
+        self.timeout = timeout
         return self.rc, self.out, self.err
 
 
@@ -93,6 +96,28 @@ async def test_clone_repo_private_prefers_gh_when_available(tmp_path):
     assert TOKEN not in " ".join(rec.calls[0])
 
 
+async def test_clone_repo_prefer_gh_false_uses_token_url(tmp_path: Path) -> None:
+    """With ``gh`` present, ``prefer_gh=False`` uses authenticated git."""
+    tk = _toolkit()
+    rec = _Recorder(rc=0)
+    dest = str(tmp_path / "r")
+    with patch.object(GitToolkit, "_gh_available", return_value=True), \
+            patch.object(GitToolkit, "_run_subprocess", new=rec):
+        await tk.clone_repo("owner/name", dest, private=True, prefer_gh=False)
+    assert rec.calls[0][:2] == ["git", "clone"]
+    assert rec.calls[0][-2] == f"https://x-access-token:{TOKEN}@github.com/owner/name.git"
+
+
+async def test_clone_repo_timeout_propagates(tmp_path: Path) -> None:
+    """The clone timeout reaches the subprocess runner."""
+    tk = _toolkit()
+    rec = _Recorder(rc=0)
+    dest = str(tmp_path / "r")
+    with patch.object(GitToolkit, "_run_subprocess", new=rec):
+        await tk.clone_repo("owner/name", dest, timeout=3.5)
+    assert rec.timeout == 3.5
+
+
 # ── clone_repo: idempotent → pull_repo ─────────────────────────────────
 
 
@@ -107,6 +132,40 @@ async def test_clone_repo_idempotent_pulls(tmp_path):
     assert rec.calls[0][:4] == ["git", "-C", str(dest), "pull"]
     assert "--ff-only" in rec.calls[0]
     assert res["updated"] is True
+
+
+async def test_clone_repo_idempotent_propagates_timeout(tmp_path: Path) -> None:
+    """An idempotent clone forwards its timeout to pull."""
+    tk = _toolkit()
+    dest = tmp_path / "r"
+    (dest / ".git").mkdir(parents=True)
+    rec = _Recorder(rc=0)
+    with patch.object(GitToolkit, "_run_subprocess", new=rec):
+        await tk.clone_repo("owner/name", str(dest), timeout=4.0)
+    assert rec.timeout == 4.0
+
+
+async def test_run_subprocess_timeout_reaps_child() -> None:
+    """A timed-out child is terminated and reaped."""
+    class _Process:
+        returncode = None
+
+        async def communicate(self):
+            if self.returncode is None:
+                await asyncio.sleep(10)
+            return b"", b""
+
+        def terminate(self):
+            self.returncode = -15
+
+        def kill(self):
+            self.returncode = -9
+
+    proc = _Process()
+    with patch("parrot_tools.gittoolkit.asyncio.create_subprocess_exec", return_value=proc):
+        result = await GitToolkit._run_subprocess(["git", "clone"], timeout=0.001)
+    assert result == (-9, "", "<timed out after 0.001s>")
+    assert proc.returncode == -15
 
 
 # ── pull_repo ──────────────────────────────────────────────────────────
