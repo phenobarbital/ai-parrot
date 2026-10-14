@@ -1,0 +1,6 @@
+- TenantContext carries ArangoDB-named fields (arango_db, pgvector_schema) and the ontology schema carries ArangoSearch view definitions (SearchViewDef) and ArangoDB collection names; should a backend-neutral contract rename or reinterpret them, and who owns that change?
+- The intent resolver lets the LLM generate dynamic AQL validated by a regex-based AQL validator; how should dynamic query generation behave for a backend whose query language has no validator?
+- parrot_tools legal tools construct the ontology store directly against ArangoDB with inline AQL; should they stay explicitly ArangoDB-bound or be migrated to typed operations?
+- parrot/knowledge/retrieval/pin.py reads the SQLite files table directly through the persistence's private db path; is that an acceptable SQLite-only consumer?
+- The GraphIndex ArangoDB backend composes the ontology graph store; should the two contracts stay layered that way?
+- Should the ontology traversal patterns declared in ontology YAML (query_template) carry one template per query dialect, or be expressed in a neutral form?
