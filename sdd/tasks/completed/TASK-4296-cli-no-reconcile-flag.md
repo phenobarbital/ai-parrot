@@ -255,8 +255,16 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude Opus 5.5 (`/sdd-fix issue:62038221413a`, FEAT-671 worktree)
+**Date**: 2026-10-14
+**Notes**: Added the `--no-reconcile` flag to `ledger export` (`reconcile=not no_reconcile`), echo
+format unchanged. `test_cli_export_no_reconcile_flag` is a sync test patching
+`remote_cli.remote_or_none` and `LedgerService.from_root`; 14/14 green with `test_cli_remote.py`.
+Manual check on the real ledger (worktree code, `PYTHONPATH=packages/ai-parrot/src`): committed
+snapshot 279 rows → reconciling export 286 rows, 0 dropped / 7 added; `--no-reconcile` → 102 rows
+(184 dropped), i.e. the old behaviour is now opt-in only.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: the CLI test asserts `(unchanged)` on the first (reconciling) run instead
+of the task's AC-1 `(changed)`: with no local issues the carried-forward row reproduces the file
+byte-for-byte, which is the stronger guarantee; the `--no-reconcile` run asserts `(changed)` as
+specified.

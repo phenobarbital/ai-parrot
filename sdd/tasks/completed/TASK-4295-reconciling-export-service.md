@@ -417,8 +417,16 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: Claude Opus 5.5 (`/sdd-fix issue:62038221413a`, FEAT-671 worktree)
+**Date**: 2026-10-14
+**Notes**: Added module-level `_read_snapshot_rows()` and the keyword-only `reconcile: bool = True`
+parameter on `LedgerService.export_snapshot()`. Rows already in `dest` whose `issue_id` is absent
+from `_all_issues()` are carried forward unchanged; local state wins for known ids; a locally
+closed-and-compacted issue still disappears. Carried count logged at INFO, malformed snapshot lines
+skipped with one WARNING naming their line numbers. Seven tests in
+`tests/knowledge/wiki/test_ledger_export_snapshot.py`; 12/12 green together with
+`test_ledger_from_dir.py` + `test_ledger_list_issues.py` (`PYTHONPATH=packages/ai-parrot/src`).
+Environment note: the worktree needed the main checkout's git-ignored compiled Cython `.so`
+files copied in before `parrot.utils.types` could import.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
