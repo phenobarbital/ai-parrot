@@ -5,6 +5,7 @@ Avoids instantiating the full ``Agent`` MRO (which requires the Cython
 static helpers directly. End-to-end review flow is covered by integration
 tests.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,12 +50,8 @@ class _MinimalReviewer:
         self.jira_project = jira_project
         self.max_ticket_bytes = max_ticket_bytes
         self._ac_field_id = ac_field_id
-        self._jira_fields = ",".join(
-            sorted({"summary", "description", "status", ac_field_id})
-        )
-        self._ticket_key_regex = re.compile(
-            rf"\b{re.escape(jira_project)}-\d+\b"
-        )
+        self._jira_fields = ",".join(sorted({"summary", "description", "status", ac_field_id}))
+        self._ticket_key_regex = re.compile(rf"\b{re.escape(jira_project)}-\d+\b")
         self._reviewed_shas: Dict[Any, str] = {}
         self._no_ticket_notified: set = set()
         self._wiki_cache = None
@@ -313,9 +310,7 @@ class TestFlattenAdf:
                             "content": [
                                 {
                                     "type": "paragraph",
-                                    "content": [
-                                        {"type": "text", "text": "one"}
-                                    ],
+                                    "content": [{"type": "text", "text": "one"}],
                                 }
                             ],
                         },
@@ -324,9 +319,7 @@ class TestFlattenAdf:
                             "content": [
                                 {
                                     "type": "paragraph",
-                                    "content": [
-                                        {"type": "text", "text": "two"}
-                                    ],
+                                    "content": [{"type": "text", "text": "two"}],
                                 }
                             ],
                         },
@@ -484,8 +477,7 @@ class TestReviewPullRequestDedup:
         async def fake_fetch_diff(repo, pr):
             return ("diff text", False, True)
 
-        async def fake_ask(*, payload, ticket_key, ticket, diff_text,
-                           diff_truncated, diff_available):
+        async def fake_ask(*, payload, ticket_key, ticket, diff_text, diff_truncated, diff_available):
             return PRReviewResult(
                 jira_key=ticket_key,
                 discrepancies=[],
@@ -554,9 +546,7 @@ class TestReviewPullRequestDedup:
 
         r.ask = fake_ask  # type: ignore[assignment]
         r._ac_field_id = "customfield_10100"
-        r._fetch_ticket = AsyncMock(
-            return_value={"fields": {"summary": "S", "description": "D"}}
-        )
+        r._fetch_ticket = AsyncMock(return_value={"fields": {"summary": "S", "description": "D"}})
         r._fetch_diff = AsyncMock(return_value=("diff text", False, True))
 
         out = await r.review_pull_request(
@@ -614,9 +604,7 @@ class TestFetchTicketFields:
 class TestNoTicketComment:
     def test_format_includes_project_and_author(self):
         r = _MinimalReviewer(jira_project="NAV")
-        body = r._format_no_ticket_comment(
-            {"author": "octocat", "pr_title": "x", "pr_body": ""}
-        )
+        body = r._format_no_ticket_comment({"author": "octocat", "pr_title": "x", "pr_body": ""})
         assert "@octocat" in body
         assert "NAV-<number>" in body
         assert "NAV-123" in body
@@ -755,10 +743,7 @@ class TestSetupWebhookRoute:
         h2 = GitHubReviewer.setup_webhook_route(app)
         assert h1 is h2
         # Only one route, not duplicated.
-        routes = [
-            r for r in app.router.routes()
-            if r.resource.canonical == "/api/v1/hooks/github"
-        ]
+        routes = [r for r in app.router.routes() if r.resource.canonical == "/api/v1/hooks/github"]
         assert len(routes) == 1
 
     def test_custom_url_is_respected(self):
@@ -912,9 +897,7 @@ class TestBuildWeeklySummary:
         r = _minimal_reviewer()
         contributors = [_cs("alice", [(W_CURR, 5, 100, 20)])]
         code_freq = [_cf(W_CURR, 100, 20)]
-        summary = r._build_weekly_summary(
-            contributors, code_freq, threshold_weeks=3, now=NOW
-        )
+        summary = r._build_weekly_summary(contributors, code_freq, threshold_weeks=3, now=NOW)
         assert summary.period_start == W_CURR
         assert summary.period_end == W_CURR + timedelta(days=7)
         assert summary.total_commits == 5
@@ -930,9 +913,7 @@ class TestBuildWeeklySummary:
         ]
         contributors = [_cs("charlie", weeks_data)]
         code_freq = [_cf(W_CURR, 0, 0)]
-        summary = r._build_weekly_summary(
-            contributors, code_freq, threshold_weeks=3, now=NOW
-        )
+        summary = r._build_weekly_summary(contributors, code_freq, threshold_weeks=3, now=NOW)
         assert len(summary.contributors_silent) == 1
         assert summary.contributors_silent[0].login == "charlie"
         assert summary.contributors_silent[0].weeks_silent >= 3
@@ -948,9 +929,7 @@ class TestBuildWeeklySummary:
         ]
         contributors = [_cs("bob", weeks_data)]
         code_freq = [_cf(W_CURR, 0, 0)]
-        summary = r._build_weekly_summary(
-            contributors, code_freq, threshold_weeks=3, now=NOW
-        )
+        summary = r._build_weekly_summary(contributors, code_freq, threshold_weeks=3, now=NOW)
         assert len(summary.contributors_silent) == 0
 
     def test_excludes_anonymous_contributors(self):
@@ -959,30 +938,19 @@ class TestBuildWeeklySummary:
         anon = ContributorStats(
             login=None,
             total_commits=5,
-            weeks=[
-                ContributorWeek(
-                    week_start=W_CURR, commits=5, additions=100, deletions=10
-                )
-            ],
+            weeks=[ContributorWeek(week_start=W_CURR, commits=5, additions=100, deletions=10)],
         )
         code_freq = [_cf(W_CURR, 100, 10)]
-        summary = r._build_weekly_summary(
-            [anon], code_freq, threshold_weeks=3, now=NOW
-        )
+        summary = r._build_weekly_summary([anon], code_freq, threshold_weeks=3, now=NOW)
         assert summary.contributors_active == []
         assert summary.contributors_silent == []
 
     def test_top_n_truncates_active_list(self):
         """Active list is capped at top_n; silent list is uncapped."""
         r = _minimal_reviewer()
-        contributors = [
-            _cs(f"u{i}", [(W_CURR, 30 - i, 100, 10)])
-            for i in range(15)
-        ]
+        contributors = [_cs(f"u{i}", [(W_CURR, 30 - i, 100, 10)]) for i in range(15)]
         code_freq = [_cf(W_CURR, 500, 100)]
-        summary = r._build_weekly_summary(
-            contributors, code_freq, threshold_weeks=3, top_n=10, now=NOW
-        )
+        summary = r._build_weekly_summary(contributors, code_freq, threshold_weeks=3, top_n=10, now=NOW)
         assert len(summary.contributors_active) == 10
 
     def test_delta_from_code_freq(self):
@@ -993,9 +961,7 @@ class TestBuildWeeklySummary:
             _cf(W_CURR, 100, 20),
             _cf(W_PREV, 300, 80),
         ]
-        summary = r._build_weekly_summary(
-            contributors, code_freq, threshold_weeks=3, now=NOW
-        )
+        summary = r._build_weekly_summary(contributors, code_freq, threshold_weeks=3, now=NOW)
         assert summary.prev_total_additions == 300
         assert summary.prev_total_deletions == 80
 
@@ -1008,9 +974,7 @@ class TestBuildWeeklySummary:
             _cs("charlie", [(W_CURR, 7, 100, 20)]),
         ]
         code_freq = [_cf(W_CURR, 350, 80)]
-        summary = r._build_weekly_summary(
-            contributors, code_freq, threshold_weeks=3, now=NOW
-        )
+        summary = r._build_weekly_summary(contributors, code_freq, threshold_weeks=3, now=NOW)
         logins = [c.login for c in summary.contributors_active]
         assert logins == ["bob", "charlie", "alice"]
 
@@ -1511,8 +1475,8 @@ class TestReviewToolCallingLoop:
         args = call_args[0][1:]
         message = fmt % args
         assert "hit tool-call cap" in message
-        assert "42" in message           # pr_number
-        assert "count=5" in message      # count
+        assert "42" in message  # pr_number
+        assert "count=5" in message  # count
         # tool names must appear somewhere in the message
         assert "get_file_content_at_ref" in message or "compare_pr_versions" in message
 
@@ -1549,9 +1513,9 @@ class TestReviewToolCallingLoop:
         # Verify tools were extended.
         registered_names = [getattr(t, "name", None) for t in r.tools]
         for expected_name in new_tool_names:
-            assert expected_name in registered_names, (
-                f"Expected tool '{expected_name}' in r.tools, got: {registered_names}"
-            )
+            assert (
+                expected_name in registered_names
+            ), f"Expected tool '{expected_name}' in r.tools, got: {registered_names}"
 
 
 # ---------------------------------------------------------------------------
@@ -1581,43 +1545,24 @@ class TestIntegrationToolAssistedReview:
             "summary": "Refactor login handler",
             "description": "The login handler must validate email format.",
             "status": {"name": "In Progress"},
-            "customfield_10100": (
-                "AC #1: validate email format\n"
-                "AC #2: return 400 on invalid email"
-            ),
+            "customfield_10100": ("AC #1: validate email format\n" "AC #2: return 400 on invalid email"),
         }
     }
 
-    def _build_integration_reviewer(
-        self, max_tool_calls: int = 3
-    ) -> Any:
+    def _build_integration_reviewer(self, max_tool_calls: int = 3) -> Any:
         """Build a reviewer stub wired for integration-style tests."""
         r = _wire_reviewer_with_tool_cap(max_tool_calls=max_tool_calls)
         r._reviewed_shas = {}
         r._no_ticket_notified = set()
         # Bind review_pull_request and _ask_llm_for_review onto stub.
-        r.review_pull_request = GitHubReviewer.review_pull_request.__get__(
-            r, type(r)
-        )
-        r._ask_llm_for_review = GitHubReviewer._ask_llm_for_review.__get__(
-            r, type(r)
-        )
-        r._extract_ticket_key = GitHubReviewer._extract_ticket_key.__get__(
-            r, type(r)
-        )
+        r.review_pull_request = GitHubReviewer.review_pull_request.__get__(r, type(r))
+        r._ask_llm_for_review = GitHubReviewer._ask_llm_for_review.__get__(r, type(r))
+        r._extract_ticket_key = GitHubReviewer._extract_ticket_key.__get__(r, type(r))
         r._clamp = GitHubReviewer._clamp.__get__(r, type(r))
-        r._format_review_body = GitHubReviewer._format_review_body.__get__(
-            r, type(r)
-        )
-        r._notify_telegram_alert = GitHubReviewer._notify_telegram_alert.__get__(
-            r, type(r)
-        )
-        r._notify_missing_ticket = GitHubReviewer._notify_missing_ticket.__get__(
-            r, type(r)
-        )
-        r._get_telegram_bot = GitHubReviewer._get_telegram_bot.__get__(
-            r, type(r)
-        )
+        r._format_review_body = GitHubReviewer._format_review_body.__get__(r, type(r))
+        r._notify_telegram_alert = GitHubReviewer._notify_telegram_alert.__get__(r, type(r))
+        r._notify_missing_ticket = GitHubReviewer._notify_missing_ticket.__get__(r, type(r))
+        r._get_telegram_bot = GitHubReviewer._get_telegram_bot.__get__(r, type(r))
         r._fetch_ticket = GitHubReviewer._fetch_ticket.__get__(r, type(r))
         r._fetch_diff = GitHubReviewer._fetch_diff.__get__(r, type(r))
         r._ac_field_id = "customfield_10100"
@@ -1637,9 +1582,7 @@ class TestIntegrationToolAssistedReview:
         # Mock diff fetch.
         async def fake_fetch_diff(repo, pr_number):
             return (
-                "diff --git a/login.py b/login.py\n"
-                "+def login(email):\n"
-                "+    return 200\n",
+                "diff --git a/login.py b/login.py\n" "+def login(email):\n" "+    return 200\n",
                 False,
                 True,
             )
@@ -1660,9 +1603,7 @@ class TestIntegrationToolAssistedReview:
             summary="The login handler does not validate email format.",
             approve=False,
         )
-        fake_response = _make_fake_response(
-            expected_result, tool_calls=[tool_call]
-        )
+        fake_response = _make_fake_response(expected_result, tool_calls=[tool_call])
 
         async def fake_ask(**kwargs):
             return fake_response

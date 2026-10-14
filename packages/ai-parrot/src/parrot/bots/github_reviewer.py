@@ -622,11 +622,7 @@ class GitHubReviewer(Agent):
 
     async def _refresh_wiki_context(self, repository: str) -> Optional[Path]:
         """Refresh this reviewer's wiki plane, never one selected by a payload."""
-        if (
-            self._wiki_cache is None
-            or not isinstance(repository, str)
-            or repository.lower() != self._repository_lc
-        ):
+        if self._wiki_cache is None or not isinstance(repository, str) or repository.lower() != self._repository_lc:
             return None
         try:
             paths = await self._wiki_cache.ensure_fresh(self.repository)
