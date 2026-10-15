@@ -79,10 +79,7 @@ class GraphPublisher:
         for node in update.nodes:
             if node.assertion is None:
                 node.assertion = meta
-                if (
-                    node.provenance == Provenance.EXTRACTED
-                    and node.source_uri.startswith("agent://")
-                ):
+                if node.provenance == Provenance.EXTRACTED and node.source_uri.startswith("agent://"):
                     node.provenance = Provenance.ASSERTED
         for edge in update.edges:
             if edge.assertion is None:
@@ -136,9 +133,7 @@ class GraphPublisher:
         Returns:
             Commit summary dicts.
         """
-        return await self.persistence.list_commits(
-            self.ctx, run_id=run_id, agent_id=agent_id, limit=limit
-        )
+        return await self.persistence.list_commits(self.ctx, run_id=run_id, agent_id=agent_id, limit=limit)
 
     async def revert_commit(self, commit_id: str) -> dict[str, Any]:
         """Revert a commit by restoring its captured pre-images.

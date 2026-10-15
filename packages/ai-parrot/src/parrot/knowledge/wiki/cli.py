@@ -4554,6 +4554,7 @@ def audit(
                 from parrot.knowledge.graphindex.factory import (
                     make_stub_tenant_context,
                 )
+
                 persistence = _run(persistence_for_project(config, root))
                 ctx = make_stub_tenant_context(config.wiki_name)
                 graph_commits = _run(persistence.list_commits(ctx, limit=limit))

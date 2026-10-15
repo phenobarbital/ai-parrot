@@ -42,9 +42,7 @@ async def test_persistence_for_project_bad_project_options(tmp_path: Path, monke
     monkeypatch.setattr(config, "backend", "bogus_proj", raising=False)
     snapshot = dict(_REGISTRY)
     try:
-        register_graph_backend(
-            GraphBackendSpec(name="bogus_proj", factory="x:y", project_options="not-a-path")
-        )
+        register_graph_backend(GraphBackendSpec(name="bogus_proj", factory="x:y", project_options="not-a-path"))
         with pytest.raises(ValueError, match="project_options"):
             await persistence_for_project(config, tmp_path)
     finally:
@@ -82,10 +80,6 @@ def test_no_direct_sqlite_persistence_construction() -> None:
         if path.name in ALLOWED:
             continue
         for node in ast.walk(ast.parse(path.read_text())):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id == "SQLitePersistence"
-            ):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "SQLitePersistence":
                 offenders.append(f"{path}:{node.lineno}")
     assert not offenders, offenders

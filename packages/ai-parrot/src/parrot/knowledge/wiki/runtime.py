@@ -22,7 +22,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["WikiRuntimeError", "persistence_for_project", "build_triage_adapters", "build_novelty_scorer", "build_ingest_runtime"]
+__all__ = [
+    "WikiRuntimeError",
+    "persistence_for_project",
+    "build_triage_adapters",
+    "build_novelty_scorer",
+    "build_ingest_runtime",
+]
 
 
 async def persistence_for_project(
@@ -66,7 +72,9 @@ async def persistence_for_project(
         if spec.project_options:
             module_path, _, attr = spec.project_options.partition(":")
             if not module_path or not attr:
-                raise ValueError(f"graph backend {spec.name!r} has an invalid project_options path {spec.project_options!r}")
+                raise ValueError(
+                    f"graph backend {spec.name!r} has an invalid project_options path {spec.project_options!r}"
+                )
             mapper = getattr(importlib.import_module(module_path), attr)
             backend = spec.name
             options = dict(mapper(config, root, tenant))
