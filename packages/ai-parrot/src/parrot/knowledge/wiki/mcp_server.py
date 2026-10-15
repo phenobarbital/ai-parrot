@@ -32,7 +32,7 @@ from parrot.knowledge.wiki.transport import OperationDescriptor, build_operation
 if TYPE_CHECKING:
     # Import only for the annotation below — the real (runtime) import is
     # deferred inside create_wiki_mcp_server() itself, see its docstring.
-    from parrot.mcp.local_server import StdioMCPServer
+    pass
 
 # Captured now, before create_wiki_mcp_server()/main() below ever import
 # parrot.mcp.* (lazily, on purpose) — parrot.mcp's package __init__ pulls
@@ -464,9 +464,7 @@ def to_sdk_server(descriptors: list[OperationDescriptor], *, name: str) -> Any:
     return server
 
 
-def create_wiki_mcp_server(
-    root: Path, *, transport: Literal["auto", "framework", "sdk"] = "auto"
-) -> Any:
+def create_wiki_mcp_server(root: Path, *, transport: Literal["auto", "framework", "sdk"] = "auto") -> Any:
     """Build the wiki stdio MCP server on the selected transport.
 
     Args:
@@ -488,9 +486,7 @@ def create_wiki_mcp_server(
             from parrot.mcp.local_server import StdioMCPServer
             from parrot.mcp.server_base import LocalServerConfig
 
-        server = StdioMCPServer(
-            LocalServerConfig(name="wikitoolkit", version="1.0.0", description=bundle.description)
-        )
+        server = StdioMCPServer(LocalServerConfig(name="wikitoolkit", version="1.0.0", description=bundle.description))
         server.register_tools(to_framework_tools(bundle.descriptors))
         server.register_tools([tool for tool in bundle.vault_tools if tool.name != "vault_ingest"])
         server.wiki_bundle = bundle
@@ -503,9 +499,7 @@ def create_wiki_mcp_server(
         return server
 
 
-def create_proxy_mcp_server(
-    remote: Any, *, transport: Literal["auto", "framework", "sdk"] = "auto"
-) -> Any:
+def create_proxy_mcp_server(remote: Any, *, transport: Literal["auto", "framework", "sdk"] = "auto") -> Any:
     """Build a stdio server that forwards MCP requests to a remote wiki."""
     from parrot.knowledge.wiki.cli import _authoring_identity
     from parrot.knowledge.wiki.remote import RemoteWikiClient, RemoteWikiError
@@ -549,9 +543,7 @@ def create_proxy_mcp_server(
                 result = await (await client_ready()).call_tool(tool_name, arguments)
             except RemoteWikiError as exc:
                 client = None
-                return types.CallToolResult(
-                    content=[types.TextContent(type="text", text=str(exc))], isError=True
-                )
+                return types.CallToolResult(content=[types.TextContent(type="text", text=str(exc))], isError=True)
             content = [
                 types.TextContent(type="text", text=item.get("text", ""))
                 for item in result.get("content", [])

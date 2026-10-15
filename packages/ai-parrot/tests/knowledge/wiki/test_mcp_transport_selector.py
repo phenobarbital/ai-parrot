@@ -38,9 +38,7 @@ class _BlockedFrameworkFinder(importlib.abc.MetaPathFinder):
 
     prefixes = ("parrot.mcp", "parrot.tools", "parrot_tools")
 
-    def find_spec(
-        self, fullname: str, path: list[str] | None = None, target: Any | None = None
-    ) -> None:
+    def find_spec(self, fullname: str, path: list[str] | None = None, target: Any | None = None) -> None:
         """Raise a deterministic import error for framework-only prefixes."""
         if fullname.startswith(self.prefixes):
             raise ImportError(f"blocked framework import: {fullname}")
