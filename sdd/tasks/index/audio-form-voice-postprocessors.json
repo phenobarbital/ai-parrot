@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-12T17:44:58+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-15T14:37:27+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -269,7 +269,7 @@
       "feature_id": "FEAT-653",
       "feature": "audio-form-voice-postprocessors",
       "spec": "sdd/specs/audio-form-voice-postprocessors.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -280,8 +280,9 @@
       "parallelism_notes": "Exclusive: real LLM calls under a request budget, the local faster-whisper model and the private corpus (blocked on spec §8 Q8); changes core/voice.py/audio/models.py defaults other tasks' tests import. Runs TASK-4255's script; after TASK-4253 so every module under test has landed.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4256-calibration-run-defaults.md"
+      "completed_at": "2026-10-15T14:37:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4256-calibration-run-defaults.md",
+      "verification": "partial"
     }
   ]
 }
