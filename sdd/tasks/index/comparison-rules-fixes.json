@@ -20,12 +20,12 @@
       "feature_id": "FEAT-685",
       "feature": "comparison-rules-fixes",
       "spec": "sdd/specs/comparison-rules-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "depends_on": [],
       "parallel": true,
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "claude",
+      "started_at": "2026-10-15T18:27:07+00:00",
       "completed_at": null
     },
     {
@@ -39,12 +39,12 @@
       "feature_id": "FEAT-685",
       "feature": "comparison-rules-fixes",
       "spec": "sdd/specs/comparison-rules-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "depends_on": [],
       "parallel": true,
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "claude",
+      "started_at": "2026-10-15T18:27:07+00:00",
       "completed_at": null
     }
   ]
