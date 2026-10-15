@@ -12,6 +12,7 @@ module can be loaded even when Selenium is not installed.
 import asyncio
 import logging
 from functools import partial
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .abstract import AbstractDriver
@@ -274,8 +275,46 @@ class SeleniumDriver(AbstractDriver):
         self, path: str, full_page: bool = False
     ) -> bytes:
         """Take a screenshot and save to *path*."""
+        if full_page:
+            self.logger.debug(
+                "Selenium does not support full-page screenshots; capturing the viewport instead."
+            )
         png_bytes = await self._run(self._driver.get_screenshot_as_png)
         await self._run(self._driver.save_screenshot, path)
+        return png_bytes
+
+    async def type_text(
+        self,
+        text: str,
+        selector: Optional[str] = None,
+        delay_ms: int = 0,
+        clear_first: bool = False,
+        timeout: int = 10,
+    ) -> None:
+        """Type keystrokes into a selected or currently focused element."""
+        if selector is not None:
+            await self._wait_for_element(selector, timeout)
+            element = await self._run(self._find_element, selector)
+            if clear_first:
+                await self._run(element.clear)
+        else:
+            element = await self._run(lambda: self._driver.switch_to.active_element)
+
+        if delay_ms <= 0:
+            await self._run(element.send_keys, text)
+            return
+
+        for index, character in enumerate(text):
+            await self._run(element.send_keys, character)
+            if index < len(text) - 1:
+                await asyncio.sleep(delay_ms / 1000)
+
+    async def screenshot_element(self, selector: str, path: str, timeout: int = 10) -> bytes:
+        """Capture a PNG of a selected element and save it to *path*."""
+        await self._wait_for_element(selector, timeout)
+        element = await self._run(self._find_element, selector)
+        png_bytes = await self._run(lambda: element.screenshot_as_png)
+        await self._run(Path(path).write_bytes, png_bytes)
         return png_bytes
 
     # ── Waiting ──────────────────────────────────────────────────

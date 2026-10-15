@@ -148,6 +148,29 @@ class PageDriver(AbstractDriver):
         """Take a screenshot and save it to *path*."""
         return await self._page.screenshot(path=path, full_page=full_page)
 
+    async def type_text(
+        self,
+        text: str,
+        selector: Optional[str] = None,
+        delay_ms: int = 0,
+        clear_first: bool = False,
+        timeout: int = 10,
+    ) -> None:
+        """Type keystrokes into a selected or currently focused element."""
+        if selector is None:
+            await self._page.keyboard.type(text, delay=delay_ms)
+            return
+
+        locator = self._page.locator(self._resolve_selector(selector))
+        if clear_first:
+            await locator.fill("")
+        await locator.press_sequentially(text, delay=delay_ms, timeout=timeout * 1000)
+
+    async def screenshot_element(self, selector: str, path: str, timeout: int = 10) -> bytes:
+        """Capture a PNG of a selected element and save it to *path*."""
+        locator = self._page.locator(self._resolve_selector(selector))
+        return await locator.screenshot(path=path, timeout=timeout * 1000)
+
     # ── Waiting ──────────────────────────────────────────────────────
 
     async def wait_for_selector(
