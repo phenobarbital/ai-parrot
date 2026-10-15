@@ -12,6 +12,7 @@ Resolves user queries into graph traversal intents using two paths:
     single-source sub-strategy within the broader intent routing framework.
     It will not be removed in the foreseeable future.
 """
+
 from __future__ import annotations
 
 import json as _json
@@ -22,7 +23,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict
 
 from .schema import MergedOntology, ResolvedIntent
-from .validators import validate_aql
+from .exceptions import QueryValidationError
+from .validators import validate_query
 
 logger = logging.getLogger("Parrot.Ontology.Intent")
 
@@ -33,13 +35,13 @@ class IntentDecision(BaseModel):
     Args:
         action: Whether graph traversal is needed.
         pattern: Known pattern name, "dynamic", or None.
-        aql: Dynamic AQL query (only when pattern="dynamic").
+        query: Dynamic query text (only when pattern="dynamic").
         suggested_post_action: Post-action hint from LLM.
     """
 
     action: Literal["graph_query", "vector_only"]
     pattern: str | None = None
-    aql: str | None = None
+    query: str | None = None
     suggested_post_action: str | None = None
 
     model_config = ConfigDict(extra="ignore")
@@ -71,6 +73,7 @@ class OntologyIntentResolver:
     Args:
         ontology: The merged ontology for this tenant.
         llm_client: LLM client for the LLM path (optional — fast path works without it).
+        dialect: Query dialect of dynamic queries (default ``aql``).
     """
 
     #: Soft-deprecated: use IntentRouterMixin for new code.
@@ -80,6 +83,7 @@ class OntologyIntentResolver:
         self,
         ontology: MergedOntology,
         llm_client: Any = None,
+        dialect: str = "aql",
     ) -> None:
         warnings.warn(
             "OntologyIntentResolver is soft-deprecated. "
@@ -92,6 +96,7 @@ class OntologyIntentResolver:
         )
         self.ontology = ontology
         self.llm = llm_client
+        self._dialect = dialect
         self._schema_prompt = ontology.build_schema_prompt()
 
     async def resolve(
@@ -147,7 +152,8 @@ class OntologyIntentResolver:
                     return ResolvedIntent(
                         action="graph_query",
                         pattern=pattern_name,
-                        aql=pattern.query_template,
+                        query=self._pattern_query(pattern),
+                        dialect=self._dialect,
                         params={"user_id": user_context.get("user_id")},
                         collection_binds=self._build_collection_binds(),
                         post_action=pattern.post_action,
@@ -173,9 +179,7 @@ class OntologyIntentResolver:
         prompt = self._build_intent_prompt()
 
         try:
-            response = await self.llm.completion(
-                f"{prompt}\n\nUser query: {query}"
-            )
+            response = await self.llm.completion(f"{prompt}\n\nUser query: {query}")
             output = getattr(response, "output", str(response))
 
             # Parse structured output
@@ -202,14 +206,13 @@ class OntologyIntentResolver:
             if decision.action == "graph_query":
                 if decision.pattern and decision.pattern != "dynamic":
                     # LLM selected a known pattern
-                    pattern = self.ontology.traversal_patterns.get(
-                        decision.pattern
-                    )
+                    pattern = self.ontology.traversal_patterns.get(decision.pattern)
                     if pattern:
                         return ResolvedIntent(
                             action="graph_query",
                             pattern=decision.pattern,
-                            aql=pattern.query_template,
+                            query=self._pattern_query(pattern),
+                            dialect=self._dialect,
                             params={"user_id": user_context.get("user_id")},
                             collection_binds=self._build_collection_binds(),
                             post_action=pattern.post_action,
@@ -217,13 +220,18 @@ class OntologyIntentResolver:
                             source="llm",
                         )
 
-                elif decision.aql:
-                    # LLM generated dynamic AQL — must validate
-                    validated = await validate_aql(decision.aql)
+                elif decision.query:
+                    # LLM generated a dynamic query — must validate
+                    try:
+                        validated = await validate_query(self._dialect, decision.query)
+                    except QueryValidationError as exc:
+                        logger.warning("Dynamic %s query rejected (vector_only): %s", self._dialect, exc)
+                        return None
                     return ResolvedIntent(
                         action="graph_query",
                         pattern="dynamic",
-                        aql=validated,
+                        query=validated,
+                        dialect=self._dialect,
                         params={"user_id": user_context.get("user_id")},
                         collection_binds=self._build_collection_binds(),
                         post_action=decision.suggested_post_action or "none",
@@ -234,6 +242,17 @@ class OntologyIntentResolver:
             logger.warning("LLM intent resolution failed: %s", e)
 
         return None
+
+    def _pattern_query(self, pattern: Any) -> str:
+        """Pick the pattern template for the resolver dialect.
+
+        Args:
+            pattern: A ``TraversalPattern``.
+
+        Returns:
+            The dialect-specific template, else the implicit ``query_template``.
+        """
+        return (pattern.query_templates or {}).get(self._dialect) or pattern.query_template
 
     def _build_collection_binds(self) -> dict[str, str]:
         """Build @@collection bind variables from the ontology.
@@ -269,9 +288,10 @@ class OntologyIntentResolver:
             "- If you can match the query to a known traversal pattern, use that "
             "pattern name.\n"
             "- If the query needs graph traversal but doesn't match a known pattern, "
-            "generate a read-only AQL query using the available collections.\n\n"
+            "generate a read-only "
+            f"{self._dialect.upper()} query using the available collections.\n\n"
             'Respond with a JSON object: {"action": "graph_query" or "vector_only", '
             '"pattern": "<pattern_name>" or "dynamic" or null, '
-            '"aql": "<AQL query>" or null, '
+            f'"query": "<{self._dialect.upper()} query>" or null, '
             '"suggested_post_action": "vector_search" or "tool_call" or "none" or null}'
         )
