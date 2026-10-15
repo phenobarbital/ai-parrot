@@ -132,9 +132,7 @@ class GraphIndexLoader(AbstractLoader):
         self.graph_store: Any = None
         self.builder: Optional[GraphIndexBuilder] = None
 
-    async def load(
-        self, source: Optional[Any] = None, split_documents: bool = False, **kwargs: Any
-    ) -> List[Document]:
+    async def load(self, source: Optional[Any] = None, split_documents: bool = False, **kwargs: Any) -> List[Document]:
         """Run the pipeline and return one document per graph node."""
         del split_documents, kwargs
         await self.build_graph(source)
@@ -244,7 +242,9 @@ class GraphIndexLoader(AbstractLoader):
         """Expand a source into an ordered, de-duplicated file list."""
         src = source if source is not None else self.path
         if src is None:
-            raise ValueError("No source provided and self.path is not set. Pass a source to load() or set it during initialization.")
+            raise ValueError(
+                "No source provided and self.path is not set. Pass a source to load() or set it during initialization."
+            )
         items = list(src) if isinstance(src, list) else [src]
         files: List[Path] = []
         for item in items:
