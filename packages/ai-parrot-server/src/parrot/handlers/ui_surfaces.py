@@ -756,7 +756,7 @@ class UISurfacesHandler(BaseView):
         """``POST /api/v1/ui/surfaces/{surface_id}/sources/{key}/data`` — guarded one-source fetch (FEAT-636).
 
         Returns ``{"status", "key", "rows", "truncated", "snapshot_at", "warnings"}``; never persists.
-        Identity: owner/scope access → the caller's pctx; access granted ONLY by a share token → the owner's pctx.
+        Identity: any authenticated caller → their own pctx; an ANONYMOUS share-token viewer → the owner's pctx.
         """
         surface_id = self.request.match_info.get("surface_id")
         key = self.request.match_info.get("key")
@@ -779,8 +779,11 @@ class UISurfacesHandler(BaseView):
         except ValidationError as exc:
             return self._error(f"Invalid request: {exc.errors()[0]['msg']}", status=400)
 
-        share_only = bool(token) and record.user_id != user_id and not (scope and scope_grants(record, scope))
-        pctx = build_principal_context(record.user_id if share_only else user_id, channel="ui_surfaces")
+        # Owner pctx ONLY for an anonymous share viewer (FEAT-636 AC8 / §3 M5:
+        # "share-token access (no session user)"). An authenticated caller
+        # always runs under their OWN pctx, however access was granted, so a
+        # share token can never lend them the owner's PBAC (issue:ca055067b827).
+        pctx = build_principal_context(user_id or record.user_id, channel="ui_surfaces")
         try:
             outcome = await self._linked_service().fetch_source(record.envelope, key, params=req.params, pctx=pctx)
         except LinkedGuardRequired:
