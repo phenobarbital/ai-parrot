@@ -20,12 +20,18 @@ class FakeService:
         self.targets = set(targets)
         self.requests = []
         self.stopped = False
+        self.rejection = None
+        self.pre_authorized = []
 
     def available_targets(self):
         return self.targets
 
     def max_bytes(self, platform_cap_mb=None):
         return 10 * 1024 * 1024
+
+    async def pre_authorize(self, identity, target, filename, declared_size=None):
+        self.pre_authorized.append((identity, target, filename, declared_size))
+        return self.rejection
 
     async def submit(self, request, notify):
         self.requests.append(request)
@@ -161,3 +167,23 @@ async def test_shutdown_calls_service(wrapper):
     svc = FakeService()
     await TelegramKnowledgeUpload(wrapper, service=svc).shutdown()
     assert svc.stopped
+
+
+async def test_denied_user_never_downloads(wrapper):
+    svc = FakeService()
+    svc.rejection = UploadOutcome(
+        job_id="j0",
+        status=UploadStatus.DENIED,
+        target=UploadTargetKind.BOOKSTORE,
+        filename="book.pdf",
+        message="You are not allowed to upload knowledge.",
+    )
+    adapter = TelegramKnowledgeUpload(wrapper, service=svc)
+    msg = _message(document=_doc())
+    await adapter.handle(msg, UploadTargetKind.BOOKSTORE, msg.document, "")
+    wrapper.bot.get_file.assert_not_called()
+    wrapper.bot.download_file.assert_not_called()
+    assert svc.requests == []
+    assert msg.answer.call_args.args[0] == "You are not allowed to upload knowledge."
+    identity, _, filename, declared_size = svc.pre_authorized[0]
+    assert identity.nav_user_id == "u1" and filename == "book.pdf" and declared_size == 100
