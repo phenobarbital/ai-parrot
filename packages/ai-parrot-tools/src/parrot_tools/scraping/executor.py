@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
-from parrot.utils.jsonld_extractors import EXTRACTOR_REGISTRY, JsonLdItem, walk_jsonld
+from parrot.utils.jsonld_extractors import JsonLdItem, walk_jsonld
 
 from .advanced_actions import exec_conditional, exec_loop
 from .drivers.abstract import AbstractDriver
@@ -451,7 +451,11 @@ async def _action_click(driver: AbstractDriver, action: Any, default_timeout: in
 
     Handles the ``:-soup-contains`` text filter by falling back to a JS
     dispatch when a CSS text-contains pseudo-class is present, preserving
-    the CSS specificity prefix.
+    the CSS specificity prefix. The JS runs as one ``driver.evaluate`` IIFE
+    so it behaves the same on every driver.
+
+    Raises:
+        RuntimeError: when no element matching the CSS prefix contains the text.
     """
     selector = action.selector
     selector_type = getattr(action, "selector_type", "css")
@@ -487,9 +491,13 @@ async def _action_click(driver: AbstractDriver, action: Any, default_timeout: in
     if js_text_filter is not None:
         # CSS prefix + JS text match — preserves specificity. Uses
         # dispatchEvent so React's synthetic-event system catches it.
-        script = (
-            "const els = document.querySelectorAll(arguments[0]);"
-            " const needle = arguments[1].toLowerCase();"
+        # Values are embedded with json.dumps in a self-contained IIFE run via
+        # driver.evaluate: ``arguments[N]`` only exists under Selenium's
+        # execute_script, Playwright's page.evaluate never binds it.
+        expr = (
+            "(() => {"
+            f" const els = document.querySelectorAll({json.dumps(selector)});"
+            f" const needle = {json.dumps(js_text_filter.lower())};"
             " for (const el of els) {"
             "   if ((el.textContent || '').toLowerCase().includes(needle)) {"
             "     el.scrollIntoView({block:'center'});"
@@ -499,8 +507,9 @@ async def _action_click(driver: AbstractDriver, action: Any, default_timeout: in
             "   }"
             " }"
             " return false;"
+            "})()"
         )
-        hit = await driver.execute_script(script, selector, js_text_filter)
+        hit = await driver.evaluate(expr)
         if not hit:
             raise RuntimeError(f"No element matching CSS {selector!r} contained text " f"{js_text_filter!r}")
         return True
@@ -543,8 +552,10 @@ async def _action_scroll(driver: AbstractDriver, action: Any) -> bool:
         return True
 
     if direction == "bottom":
-        height_script = "return Math.max(document.body.scrollHeight," " document.documentElement.scrollHeight);"
-        height = int(await driver.execute_script(height_script) or 0)
+        # Bare expression via evaluate: a top-level ``return`` is an illegal
+        # statement under Playwright/Page's ``page.evaluate``.
+        height_expr = "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
+        height = int(await driver.evaluate(height_expr) or 0)
         if height <= 0:
             return True
         chunks = 6
@@ -552,7 +563,7 @@ async def _action_scroll(driver: AbstractDriver, action: Any) -> bool:
             y = min(height * i // chunks, height)
             await driver.execute_script(f"window.scrollTo(0, {y});")
             await asyncio.sleep(0.4)
-            new_height = int(await driver.execute_script(height_script) or 0)
+            new_height = int(await driver.evaluate(height_expr) or 0)
             height = max(height, new_height)
         return True
 

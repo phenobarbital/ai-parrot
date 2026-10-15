@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-682 — Scraping Executor Fixes
 **Spec**: `sdd/specs/scraping-executor-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4358
@@ -187,4 +187,8 @@ async def test_scroll_bottom_uses_evaluate(mock_driver):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented in 4001ff70d (via /sdd-fix, issue:9cbd2cf9f9f9). `_action_scroll` bottom branch now
+reads the height with `driver.evaluate("Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)")`
+(both reads); chunked `window.scrollTo` calls unchanged. Added `TestScrollBottom` (2 tests) — both fail
+against the old code. Validation: `test_executor.py` + `test_executor_driver_parity.py` → 49 passed; ruff clean.
+Note: FEAT-682's PR #1675 was already open when this task was added; this commit lands on the same branch.

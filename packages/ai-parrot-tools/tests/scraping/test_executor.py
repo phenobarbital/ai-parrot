@@ -1,11 +1,13 @@
 """Tests for Step Executor — TASK-051."""
 import asyncio
+import json
 import time
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 from parrot.tools.scraping.executor import (
+    _action_click,
     _apply_selectors,
     _dispatch_step,
     _get_current_url,
@@ -506,3 +508,102 @@ class TestAdvancedActionDispatch:
         )
         await execute_plan_steps(mock_driver, plan)
         assert mock_driver.click.call_count == 6
+
+
+# ── FEAT-682: click text-contains runs through driver.evaluate ────────
+
+
+class TestClickTextContains:
+    """Text-contains click must be driver-neutral (one ``driver.evaluate`` IIFE)."""
+
+    @staticmethod
+    def _action(selector, selector_type="css"):
+        return MagicMock(selector=selector, selector_type=selector_type, timeout=None)
+
+    @pytest.mark.asyncio
+    async def test_click_text_contains_uses_evaluate(self, mock_driver):
+        """CSS prefix and needle are JSON-embedded; execute_script/click are not used."""
+        mock_driver.evaluate = AsyncMock(return_value=True)
+        hit = await _action_click(mock_driver, self._action("button:-soup-contains('Next')"), 10)
+        assert hit is True
+        mock_driver.evaluate.assert_awaited_once()
+        expr = mock_driver.evaluate.await_args.args[0]
+        assert len(mock_driver.evaluate.await_args.args) == 1
+        assert json.dumps("button") in expr
+        assert json.dumps("next") in expr
+        mock_driver.execute_script.assert_not_awaited()
+        mock_driver.click.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_click_text_contains_no_arguments_binding(self, mock_driver):
+        """The expression is self-contained: no Selenium-only ``arguments[N]``."""
+        mock_driver.evaluate = AsyncMock(return_value=True)
+        await _action_click(mock_driver, self._action('a.more:contains("Load More")'), 10)
+        expr = mock_driver.evaluate.await_args.args[0]
+        assert "arguments[" not in expr
+        assert expr.startswith("(() => {") and expr.endswith("})()")
+
+    @pytest.mark.asyncio
+    async def test_click_text_contains_quotes_escaped(self, mock_driver):
+        """Quotes in the CSS prefix are JSON-escaped, not spliced raw."""
+        mock_driver.evaluate = AsyncMock(return_value=True)
+        await _action_click(mock_driver, self._action("a[title=\"x\"]:-soup-contains('Go')"), 10)
+        expr = mock_driver.evaluate.await_args.args[0]
+        assert json.dumps('a[title="x"]') in expr
+
+    @pytest.mark.asyncio
+    async def test_click_text_contains_miss_raises(self, mock_driver):
+        """No element containing the text raises RuntimeError; no fallback click."""
+        mock_driver.evaluate = AsyncMock(return_value=False)
+        with pytest.raises(RuntimeError, match="contained text"):
+            await _action_click(mock_driver, self._action("button:-soup-contains('Nope')"), 10)
+        mock_driver.click.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_click_text_contains_miss_recorded_as_step_error(self, mock_driver):
+        """Through the dispatcher, a miss fails the step instead of crashing the plan."""
+        mock_driver.evaluate = AsyncMock(return_value=False)
+        plan = ScrapingPlan(
+            url="https://example.com",
+            objective="click miss",
+            steps=[{"action": "click", "selector": "button:-soup-contains('Nope')"}],
+        )
+        result = await execute_plan_steps(mock_driver, plan=plan, config=DriverConfig(delay_between_actions=0))
+        assert len(result.metadata["step_errors"]) == 1
+        mock_driver.click.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_click_plain_selector_unchanged(self, mock_driver):
+        """A plain CSS selector still goes through driver.click."""
+        assert await _action_click(mock_driver, self._action("#btn"), 10) is True
+        mock_driver.click.assert_awaited_once_with("#btn", 10)
+        mock_driver.evaluate.assert_not_awaited()
+
+
+class TestScrollBottom:
+    """FEAT-682 / issue:9cbd2cf9f9f9: scroll-bottom reads the page height via driver.evaluate."""
+
+    @pytest.mark.asyncio
+    async def test_scroll_bottom_uses_evaluate(self, mock_driver):
+        """Height comes from a bare evaluate expression; chunked scrollTo calls stay on execute_script."""
+        mock_driver.evaluate = AsyncMock(return_value=1200)
+        step = ScrapingStep.from_dict({"action": "scroll", "direction": "bottom"})
+        with patch("parrot_tools.scraping.executor.asyncio.sleep", new=AsyncMock()):
+            assert await _dispatch_step(mock_driver, step, "", 10, {}) is True
+        assert mock_driver.evaluate.await_count == 7
+        expr = mock_driver.evaluate.await_args_list[0].args[0]
+        assert "scrollHeight" in expr
+        assert "return" not in expr
+        scripts = [c.args[0] for c in mock_driver.execute_script.await_args_list]
+        assert scripts[-1] == "window.scrollTo(0, 1200);"
+        assert len(scripts) == 6
+        assert not any(s.lstrip().startswith("return") for s in scripts)
+
+    @pytest.mark.asyncio
+    async def test_scroll_bottom_zero_height_short_circuits(self, mock_driver):
+        """A zero height ends the action after a single evaluate, with no scrolling."""
+        mock_driver.evaluate = AsyncMock(return_value=0)
+        step = ScrapingStep.from_dict({"action": "scroll", "direction": "bottom"})
+        assert await _dispatch_step(mock_driver, step, "", 10, {}) is True
+        mock_driver.evaluate.assert_awaited_once()
+        mock_driver.execute_script.assert_not_awaited()
