@@ -17,7 +17,6 @@ from parrot.knowledge.wiki.schema.store import SchemaStore
 from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
 from parrot.knowledge.wiki.transport import build_operation_descriptors
 
-
 GOLDEN = Path(__file__).parent / "golden" / "mcp_manifests"
 CONFIGS = [
     "minimal_local",
@@ -111,9 +110,7 @@ def _manifest_for_transport(bundle: Any, transport: str) -> list[dict[str, Any]]
 
 @pytest.mark.parametrize("config", CONFIGS)
 @pytest.mark.parametrize("transport", ["framework", "sdk"])
-def test_manifest_matches_golden(
-    config: str, transport: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_manifest_matches_golden(config: str, transport: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Both MCP transports retain the configuration-specific manifest."""
     root = tmp_path / config
     root.mkdir()
