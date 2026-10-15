@@ -197,10 +197,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra (attempt e7c4979d), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: transport=auto|framework|sdk added to create_wiki_mcp_server/create_proxy_mcp_server; to_framework_tools and to_sdk_server added (lazy imports); WikiToolBundle gained descriptors. Review fix 8742a6e1e: the delivered framework path registered DescriptorTool adapters instead of bundle.tools/vault_tools, breaking test_env_call_sites::test_mcp_server_uses_effective_config and test_namespaces_e2e (no `_store`; vault_ingest filtered) — restored the original registration ("framework path unchanged"). feedback_id coder-feedback:7b206cc895d325e886640107; review coder-review:ee86f27d8d41f5ebe70701cc. Selector tests need PYTHONPATH to include packages/ai-parrot-tools/src. Verification `partial`: merge-tier run = 589 passed / 7 skipped in the wiki set; the engine reported `failed` only because of pre-existing failures (Postgres/Redis unreachable, dev_loop, edge-kind enum tests, bookstore, test_mcp_server*), verified identical on a clean checkout of c57431a06 for the wiki/graphindex/bookstore/subagent-parity samples.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

@@ -31,11 +31,10 @@ from typing import TYPE_CHECKING, Optional
 from parrot.knowledge.graphindex.schema import (
     EdgeKind,
     NodeKind,
-    Provenance,
     UniversalEdge,
     UniversalNode,
 )
-from parrot.stores.models import Document
+from parrot.knowledge.graphindex.models import GraphDocument
 
 if TYPE_CHECKING:
     from parrot.knowledge.pageindex.toolkit import PageIndexToolkit
@@ -57,7 +56,12 @@ HIERARCHICAL_LOADERS: set[str] = {
 
 # Extensions :class:`PlainTextLoader` can read on its own, with no backend.
 PLAIN_TEXT_EXTENSIONS: set[str] = {
-    ".md", ".markdown", ".txt", ".text", ".rst", ".mdx",
+    ".md",
+    ".markdown",
+    ".txt",
+    ".text",
+    ".rst",
+    ".mdx",
 }
 
 
@@ -65,7 +69,7 @@ class PlainTextLoader:
     """Read a text-like file straight off disk, with no loader backend.
 
     ``LoaderExtractor`` only needs an object exposing
-    ``async _load(source) -> list[Document]``. For Markdown and plain text
+    ``async _load(source) -> list[GraphDocument]``. For Markdown and plain text
     that is a file read, so GraphIndex can ingest a documentation or
     knowledge corpus without ai-parrot-loaders (and its markitdown/OCR
     dependency chain) being installed. Richer formats — PDF, DOCX, HTML —
@@ -85,8 +89,8 @@ class PlainTextLoader:
         self.source = source
         self.encoding = encoding
 
-    async def _load(self, source: str | Path, **kwargs: object) -> list[Document]:
-        """Return the file's contents as a single :class:`Document`.
+    async def _load(self, source: str | Path, **kwargs: object) -> list[GraphDocument]:
+        """Return the file's contents as a single :class:`GraphDocument`.
 
         Args:
             source: Path to the file to read.
@@ -100,7 +104,7 @@ class PlainTextLoader:
         if not text.strip():
             return []
         return [
-            Document(
+            GraphDocument(
                 page_content=text,
                 metadata={
                     "source": str(path),
@@ -170,14 +174,12 @@ class LoaderExtractor:
     # Public interface
     # ------------------------------------------------------------------
 
-    async def extract(
-        self, loader: object, source: str
-    ) -> tuple[list[UniversalNode], list[UniversalEdge]]:
+    async def extract(self, loader: object, source: str) -> tuple[list[UniversalNode], list[UniversalEdge]]:
         """Run loader, detect content type, and extract nodes/edges.
 
         Args:
             loader: Any ai-parrot-loaders loader instance.  Must implement
-                ``_load(source) -> List[Document]`` (each with
+                ``_load(source) -> List[GraphDocument]`` (each with
                 ``page_content`` and ``metadata`` attributes).
             source: Source URI (file path, URL, etc.).
 
@@ -216,21 +218,20 @@ class LoaderExtractor:
             if tree_name in await self.toolkit.list_trees():
                 await self.toolkit.delete_tree(tree_name)
             await self.toolkit.create_tree(tree_name, doc_name=source_uri)
-            await self.toolkit.insert_ebook(
-                tree_name, [section.model_dump() for section in sections]
-            )
+            await self.toolkit.insert_ebook(tree_name, [section.model_dump() for section in sections])
             tree = await self.toolkit.get_tree(tree_name)
         else:
             tree = ebook_tree(sections)
         root = UniversalNode(
-            node_id=tree_name, kind=NodeKind.DOCUMENT, title=source_uri,
-            source_uri=source_uri, domain_tags={"hierarchical": True},
+            node_id=tree_name,
+            kind=NodeKind.DOCUMENT,
+            title=source_uri,
+            source_uri=source_uri,
+            domain_tags={"hierarchical": True},
         )
         nodes: list[UniversalNode] = [root]
         edges: list[UniversalEdge] = []
-        self._walk_persisted_tree(
-            tree["structure"], source_uri, tree_name, tree_name, nodes, edges
-        )
+        self._walk_persisted_tree(tree["structure"], source_uri, tree_name, tree_name, nodes, edges)
         if self.toolkit is None:
             for node in nodes:
                 node.content_ref = None
@@ -274,19 +275,17 @@ class LoaderExtractor:
         Returns:
             Tuple of ``(nodes, edges)``.
         """
-        full_text = "\n\n".join(
-            getattr(doc, "page_content", "") for doc in documents
-        )
+        full_text = "\n\n".join(getattr(doc, "page_content", "") for doc in documents)
 
         if self.toolkit is not None:
             try:
                 return await self._extract_via_toolkit(
-                    full_text=full_text, source_uri=source_uri,
+                    full_text=full_text,
+                    source_uri=source_uri,
                 )
             except Exception as exc:
                 logger.warning(
-                    "PageIndexToolkit ingest failed for %s: %s — "
-                    "falling back to flat extraction",
+                    "PageIndexToolkit ingest failed for %s: %s — " "falling back to flat extraction",
                     source_uri,
                     exc,
                 )
@@ -294,7 +293,9 @@ class LoaderExtractor:
 
         # Legacy path: in-memory md_to_tree, no sidecar persistence.
         return await self._extract_via_md_to_tree(
-            full_text=full_text, source_uri=source_uri, documents=documents,
+            full_text=full_text,
+            source_uri=source_uri,
+            documents=documents,
         )
 
     async def _extract_via_toolkit(
@@ -389,11 +390,7 @@ class LoaderExtractor:
             node_id_raw = pi_node.get("node_id") or title
             section_id = _make_node_id(source_uri, str(node_id_raw))
 
-            summary = (
-                pi_node.get("summary")
-                or pi_node.get("prefix_summary")
-                or ""
-            )
+            summary = pi_node.get("summary") or pi_node.get("prefix_summary") or ""
 
             domain_tags: dict = {
                 "page_index_id": str(node_id_raw),
@@ -449,9 +446,7 @@ class LoaderExtractor:
         try:
             from parrot.knowledge.pageindex import md_to_tree
 
-            tree = await md_to_tree(
-                full_text, self.llm_adapter, doc_name=source_uri
-            )
+            tree = await md_to_tree(full_text, self.llm_adapter, doc_name=source_uri)
             page_index_nodes = tree.get("structure") or tree.get("nodes") or []
         except Exception as exc:
             logger.warning(
@@ -475,9 +470,7 @@ class LoaderExtractor:
         )
         nodes.append(root_node)
 
-        self._convert_page_index_nodes(
-            page_index_nodes, source_uri, root_id, nodes, edges
-        )
+        self._convert_page_index_nodes(page_index_nodes, source_uri, root_id, nodes, edges)
 
         return nodes, edges
 
@@ -504,10 +497,9 @@ class LoaderExtractor:
             section_id = _make_node_id(source_uri, str(node_id_raw))
 
             summary = (
-                getattr(pi_node, "summary", None) or pi_node.get("summary")
-                or self._fallback_summary(
-                    getattr(pi_node, "text", None) or pi_node.get("text", "")
-                )
+                getattr(pi_node, "summary", None)
+                or pi_node.get("summary")
+                or self._fallback_summary(getattr(pi_node, "text", None) or pi_node.get("text", ""))
             )
 
             start = getattr(pi_node, "start_index", None) or pi_node.get("start_index")
@@ -536,9 +528,7 @@ class LoaderExtractor:
             )
 
             # Recurse into child sections
-            children = (
-                getattr(pi_node, "nodes", None) or pi_node.get("nodes") or []
-            )
+            children = getattr(pi_node, "nodes", None) or pi_node.get("nodes") or []
             if children:
                 self._convert_page_index_nodes(children, source_uri, section_id, nodes, edges)
 
@@ -568,9 +558,7 @@ class LoaderExtractor:
         Returns:
             Tuple containing a single Document node and no edges.
         """
-        full_text = "\n\n".join(
-            getattr(doc, "page_content", "") for doc in documents
-        )
+        full_text = "\n\n".join(getattr(doc, "page_content", "") for doc in documents)
         return [self._build_flat_node(full_text, source_uri)], []
 
     def _fallback_summary(self, text: str) -> str:
@@ -582,4 +570,4 @@ class LoaderExtractor:
         Returns:
             Truncated text up to ``summary_length`` characters.
         """
-        return text[:self.summary_length].strip()
+        return text[: self.summary_length].strip()

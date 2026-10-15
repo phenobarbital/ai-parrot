@@ -214,10 +214,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet (attempt 8f920949), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: store.py gains WikiBackendSpec, built-in spec table (sqlite/memory/arangodb/postgres), wiki_backend_names/wiki_backend_spec/resolve_wiki_backend/is_server_backend; register_wiki_backend(name, factory, *, kind='server', resolve_options=None) stays backward compatible with the 2-arg form (parrot_tools.legal unaffected); create_wiki_store dispatches through the table; federation.open_namespace_store uses a backend's resolve_options for non-Arango backends. WikiBackendSpec.factory/resolve_options typed Any (callable or lazy "module:attr") instead of the blueprint's str. 7 new tests in test_wiki_backend_spec.py. Verification `partial`: tests/knowledge/wiki without Postgres = 1008 passed; the 53 failures + 38 errors are Postgres ConnectionRefused (unreachable here) plus 10 non-Postgres failures (standup assets, ingest model detection, hook_startup, installer_mcp, mcp_server*, vault) that fail identically on a clean checkout of c57431a06 (pre-existing). Residual ruff (zip strict=, ASYNC240) is pre-existing style debt.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none beyond the Any typing noted.

@@ -30,7 +30,7 @@ import numpy as np
 
 from parrot.knowledge.graphindex.assemble import GraphAssembler
 from parrot.knowledge.graphindex.publish import GraphPublisher
-from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
+from parrot.knowledge.graphindex.backends import create_graph_persistence
 from parrot.knowledge.graphindex.schema import UniversalNode
 from parrot.knowledge.ontology.schema import MergedOntology, TenantContext
 
@@ -194,6 +194,41 @@ class HashingGraphEmbedder:
         return results
 
 
+def _backend_options(
+    backend: str,
+    *,
+    db_dir: Optional[Path | str],
+    dsn: Optional[str],
+    schema: str,
+    backend_explicit: bool,
+) -> dict[str, Any]:
+    """Map the toolkit builder arguments to ``create_graph_persistence`` options.
+
+    Precedence: an explicit ``backend`` wins; ``db_dir`` alone implies sqlite;
+    ``db_dir`` with an explicit non-sqlite backend is a conflict.
+
+    Args:
+        backend: Resolved backend name.
+        db_dir: SQLite directory, if given.
+        dsn: Postgres DSN, if given.
+        schema: Postgres schema name.
+        backend_explicit: Whether the caller named the backend.
+
+    Returns:
+        The option mapping for the registry factory.
+
+    Raises:
+        ValueError: ``db_dir`` conflicts with an explicit non-sqlite backend.
+    """
+    if db_dir is not None and backend_explicit and backend != "sqlite":
+        raise ValueError(f"build_graph_memory_toolkit: db_dir conflicts with backend={backend!r}")
+    if backend == "sqlite":
+        return {"db_dir": Path(db_dir) if db_dir is not None else None}
+    if backend == "postgres":
+        return {"dsn": dsn, "schema": schema}
+    return {}
+
+
 async def build_graph_memory_toolkit(
     db_dir: Optional[Path | str] = None,
     tenant_id: str = "default",
@@ -202,7 +237,7 @@ async def build_graph_memory_toolkit(
     embedder: Optional[Any] = None,
     client: Optional[Any] = None,
     dimension: int = DEFAULT_DIMENSION,
-    backend: str = "sqlite",
+    backend: Optional[str] = None,
     dsn: Optional[str] = None,
     schema: str = "graphindex",
 ) -> "GraphIndexToolkit":
@@ -226,7 +261,8 @@ async def build_graph_memory_toolkit(
             offline :class:`HashingGraphEmbedder`.
         client: Optional ``AbstractClient`` for ``explain()``.
         dimension: Vector dimension for the default embedder.
-        backend: ``"sqlite"`` (default, per-tenant SQLite file) or
+        backend: Registered backend name (``"sqlite"`` when omitted and
+            ``db_dir`` is given). Explicit ``"sqlite"`` (per-tenant SQLite file) or
             ``"postgres"`` (FEAT-520 — shared ``graphindex.*`` schema;
             unlocks the toolkit's temporal/hybrid tools, see
             ``parrot_tools.graphindex.toolkit``).
@@ -238,65 +274,65 @@ async def build_graph_memory_toolkit(
         A write-enabled, persistence-backed ``GraphIndexToolkit``.
 
     Raises:
-        ValueError: For an unknown ``backend``, or a missing ``db_dir``
-            when ``backend="sqlite"``.
+        ValueError: For an unknown ``backend``, a missing ``db_dir`` on the
+            sqlite backend, or ``db_dir`` combined with an explicit non-sqlite backend.
     """
     # Lazy import — keeps ai-parrot core free of a hard dependency on
     # the ai-parrot-tools distribution (same seam as ToolInterface).
     from parrot_tools.graphindex.toolkit import GraphIndexToolkit
 
+    backend_explicit = backend is not None
+    backend = backend or "sqlite"
     ctx = make_stub_tenant_context(tenant_id)
-    if backend == "sqlite":
-        if db_dir is None:
-            raise ValueError("build_graph_memory_toolkit: db_dir is required for backend='sqlite'")
-        persistence = SQLitePersistence(Path(db_dir))
-    elif backend == "postgres":
-        # Lazy import — keeps the sqlite-only path free of an asyncpg/
-        # pgvector dependency (FEAT-520, same lazy-import seam as the
-        # GraphIndexToolkit import above).
-        from parrot.knowledge.graphindex.persist_postgres import PostgresPersistence
+    persistence = await create_graph_persistence(
+        backend,
+        **_backend_options(backend, db_dir=db_dir, dsn=dsn, schema=schema, backend_explicit=backend_explicit),
+    )
+    # Ownership: on success the toolkit keeps writing through ``persistence`` (via
+    # the publisher), so it stays open; it is closed only if a later step raises.
+    try:
+        publisher = GraphPublisher(persistence, ctx)
 
-        persistence = PostgresPersistence(dsn, schema=schema)
-    else:
-        raise ValueError(f"build_graph_memory_toolkit: unknown backend {backend!r} — expected 'sqlite' or 'postgres'")
-    publisher = GraphPublisher(persistence, ctx)
+        nodes, edges = await persistence.load_graph(ctx)
 
-    nodes, edges = await persistence.load_graph(ctx)
+        assembler = GraphAssembler(tenant_id=tenant_id)
+        for node in nodes:
+            assembler.add_node(node)
+        skipped_edges = 0
+        for edge in edges:
+            if assembler.add_edge(edge) is None:
+                skipped_edges += 1
+        if skipped_edges:
+            logger.warning(
+                "build_graph_memory_toolkit: %d edges skipped (missing endpoints)",
+                skipped_edges,
+            )
 
-    assembler = GraphAssembler(tenant_id=tenant_id)
-    for node in nodes:
-        assembler.add_node(node)
-    skipped_edges = 0
-    for edge in edges:
-        if assembler.add_edge(edge) is None:
-            skipped_edges += 1
-    if skipped_edges:
-        logger.warning(
-            "build_graph_memory_toolkit: %d edges skipped (missing endpoints)",
-            skipped_edges,
+        from parrot.embeddings.graphindex import attach_hot_index
+
+        embedder = embedder or HashingGraphEmbedder(dimension=dimension)
+        if nodes:
+            await embedder.embed_nodes(nodes)
+
+        toolkit = GraphIndexToolkit(
+            graph=assembler.graph,
+            **attach_hot_index(embedder),
+            node_map=dict(assembler._node_index_map),
+            client=client,
+            assembler=assembler,
+            embedder=embedder,
+            nodes=nodes,
+            publisher=publisher,
+            agent_id=agent_id,
+            run_id=run_id,
         )
-
-    embedder = embedder or HashingGraphEmbedder(dimension=dimension)
-    if nodes:
-        await embedder.embed_nodes(nodes)
-
-    toolkit = GraphIndexToolkit(
-        graph=assembler.graph,
-        faiss_index=embedder.index,
-        node_map=dict(assembler._node_index_map),
-        node_id_list=list(embedder._node_id_map),
-        client=client,
-        assembler=assembler,
-        embedder=embedder,
-        nodes=nodes,
-        publisher=publisher,
-        agent_id=agent_id,
-        run_id=run_id,
-    )
-    logger.info(
-        "build_graph_memory_toolkit: tenant %r — %d nodes, %d edges loaded",
-        tenant_id,
-        len(nodes),
-        len(edges),
-    )
-    return toolkit
+        logger.info(
+            "build_graph_memory_toolkit: tenant %r — %d nodes, %d edges loaded",
+            tenant_id,
+            len(nodes),
+            len(edges),
+        )
+        return toolkit
+    except BaseException:
+        await persistence.close()
+        raise

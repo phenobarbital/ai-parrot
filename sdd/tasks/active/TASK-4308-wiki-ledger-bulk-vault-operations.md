@@ -203,10 +203,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: wiki/ledger/operations.py (Ledger*Input + op_ledger_*), bulk/sync/vault ops appended to wiki/operations.py, tools.py delegating and re-exporting; 7 parity tests. Deviations reported by the coder: tools.py line numbers in the task were stale (located by symbol); wiki_write_lock imported lazily so operations.py stays free of parrot.tools; tools build params with model_construct to keep old no-new-validation behaviour. No review corrections. Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres and has pre-existing reds. With GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings (4286 passed) show no failure absent from the clean origin/dev baseline.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: see Notes (stale line numbers, lazy import, model_construct)

@@ -221,10 +221,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra (attempt 43ba8e2f), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: GraphIndexLoader moved to parrot/loaders/graphindex.py (framework loader, 283 lines); graphindex/loader.py is now a lazy backward-compatible re-export via module __getattr__ (ruff F822 on `__all__` is a false positive for that lazy export). The previous direct SQLitePersistence( construction in the loader is gone — `grep SQLitePersistence(` outside persist_sqlite.py/backends.py is now empty, closing the TASK-4321 gap. New test_loader_precedence.py; test_loader.py updated. Verification `partial`: graphindex+ontology+loaders = 1123 passed excluding Postgres-dependent tests; 4 failures (edge-kind enum tests) pre-existing on clean c57431a06; 4 test_pg_schema errors and hybrid_retrieve failures are Postgres-unreachable. No review corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

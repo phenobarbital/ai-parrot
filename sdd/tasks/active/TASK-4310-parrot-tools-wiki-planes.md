@@ -291,10 +291,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: Moved the structural, decisions and schema plane tools/toolkits into parrot_tools.wiki.{structural,decisions,schema}; the six core modules are PEP 562 lazy shims. The coder audited the old modules' exports with ast and grepped importers before shimming (the lesson from TASK-4309), and added test_parrot_tools_wiki_planes.py (22 passed with the existing file). No review corrections. Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres and has pre-existing reds. With GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings (4294 passed in the chunk run) showed no failure absent from the clean origin/dev baseline other than TASK-4313's own two test failures, fixed in 8640f08f5 (test-only, 3 consecutive green runs); ai-parrot-tools wiki tests 22 passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

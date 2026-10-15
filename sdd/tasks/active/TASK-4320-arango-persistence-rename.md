@@ -39,6 +39,8 @@ Spec §3 M7 + S6. `GraphIndexPersistence(graph_store: OntologyGraphStore)` (pers
 | `packages/ai-parrot/tests/knowledge/graphindex/test_persist_commit_protocol.py` | MODIFY | rename |
 | `packages/ai-parrot/tests/knowledge/graphindex/test_meta_ontology.py` | MODIFY | rename |
 | `packages/ai-parrot/tests/knowledge/graphindex/test_communities.py` | MODIFY | rename |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/communities.py` | MODIFY | docstring reference to the renamed module |
+| `packages/ai-parrot/tests/knowledge/graphindex/test_loader.py` | MODIFY | monkeypatch target renamed to ArangoPersistence |
 
 ---
 
@@ -104,6 +106,14 @@ from parrot.knowledge.graphindex.protocols import edge_key  # TASK-4302
     },
     {
       "path": "packages/ai-parrot/tests/knowledge/graphindex/test_communities.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/communities.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/knowledge/graphindex/test_loader.py",
       "action": "MODIFY"
     }
   ],
@@ -270,10 +280,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: graphindex/persist.py renamed to persist_arango.py (git mv); GraphIndexPersistence -> ArangoPersistence(store) with graph_store renamed to store, no-op async close(), shared protocols.edge_key; async factory create_arango_persistence(*, graph_store=None, arango_params=None, tenant_ctx=None) (only exercised with a mock store - no live ArangoDB); the string reference in backends.py (TASK-4319) now resolves; builder.py uses a TYPE_CHECKING GraphPersistence annotation; loader.py and flowtask.py use ArangoPersistence; the four tests renamed per the task. The fidelity gate flagged communities.py (docstring path) and test_loader.py (monkeypatch target 'GraphIndexPersistence' -> 'ArangoPersistence', which would otherwise break the test): both are consequences of the rename, so the task file list was amended (a repeat of the TASK-4303 spec gap: callers of a renamed symbol were not listed). Leftover docstring/comment mentions of GraphIndexPersistence remain in persist_postgres.py, persist_sqlite.py, publish.py, graph_store.py and test_builder.py (left, out of scope). Pre-existing failures confirmed against clean origin/dev: test_meta_ontology [calls]/[implements] edge-kind collections, and in packages/ai-parrot-tools/tests/graphindex 33 errors (uvloop 'no current event loop' in a fixture) + 1 failure (pyproject extra deps) - identical set. Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres; with GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings (4319 passed) show no failure absent from the baseline. No live Arango/Postgres persistence conformance was run. No review corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: communities.py and test_loader.py edited (rename callers); file list amended

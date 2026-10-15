@@ -255,10 +255,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet (attempt a87e7710), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: build_graph_memory_toolkit now dispatches through create_graph_persistence (backend defaults None; db_dir alone => sqlite; db_dir + non-sqlite backend raises ValueError); GraphPublisher takes GraphPersistence (TYPE_CHECKING import); wiki/runtime.py persistence_for_project(config, root, *, tenant_id=None) used by build_novelty_scorer and the 4 wiki/cli.py sites (fallback to the sqlite plane when a backend has no project_options); dev_loop/graph_memory.py uses create_graph_persistence("sqlite", ...). OPEN: graphindex/loader.py:293 `_make_persistence` still constructs SQLitePersistence directly (not in this task's file list) so the "no direct SQLitePersistence( outside backends/persist_sqlite/tests" criterion is not fully met; the AST test exempts loader.py — to be migrated by a later task. Residual ruff B905 at factory.py:191 left as style debt. review coder-review:fce8cebe3e2f407a6ac07008, no corrections. Verification `partial` (same pre-existing failure set as TASK-4315).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: loader.py not migrated (out of declared scope).

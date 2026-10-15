@@ -47,6 +47,25 @@ Spec §7 hard cuts. TASK-4328 left `OntologyGraphStore` and `execute_traversal` 
 | `packages/ai-parrot/tests/knowledge/graphindex/test_loader.py` | MODIFY | migrate |
 | `packages/ai-parrot/tests/knowledge/graphindex/test_persist.py` | MODIFY | migrate |
 | `packages/ai-parrot/tests/knowledge/graphindex/test_persist_commit_protocol.py` | MODIFY | migrate |
+| `packages/ai-parrot-tools/src/parrot_tools/contracts/retrieval.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot-tools/src/parrot_tools/legal/boe/datasource.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot-tools/src/parrot_tools/legal/boe/queries.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot-tools/src/parrot_tools/legal/boe/sync.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot-tools/src/parrot_tools/legal/ids.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot-tools/src/parrot_tools/legal/librarian/suppression.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot-tools/tests/legal/conftest.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/contracts/graph_loader.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/__init__.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/assemble.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/persist_arango.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/ontology/concept_catalog/reconcile.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/ontology/concept_catalog/worker.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/ontology/contracts.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/ontology/refresh.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/arango_store.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/tests/knowledge/ontology/test_arango_store_typed.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/tests/knowledge/test_degradation_chain.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/tests/knowledge/test_ontology_mixin.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
 
 ---
 
@@ -359,10 +378,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet retry (attempt 2, 4ada4a9f) after codex gpt-5.6-terra attempt 1 (cbb58e29) returned empty_delivery; consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: deleted the temporary `OntologyGraphStore` alias and the `execute_traversal` monkey-patch from ontology/graph_store.py and ontology/__init__.py; renamed all callers to ArangoOntologyGraphStore; execute_traversal mocks in tests now mock execute_pattern (side effects take (ctx, pattern, params, collection_binds)); test_arango_store_typed now asserts execute_traversal is absent. `\bOntologyGraphStore\b|\bexecute_traversal\b` has no remaining hits under packages/*/src and packages/*/tests (docs/architecture/09-ontologic-rag.md still names them — left for TASK-4333). 19 unlisted caller files were edited (spec gap: callers of a deleted alias were not listed); the task file was amended to declare them before merge. Verification `partial`: full `pytest tests/knowledge` (excluding Postgres-only tests) on this branch = 3957 passed with the identical 44 failures + 4 errors as a clean run on c57431a06 (3886 passed) — i.e. no regressions, 71 more passing tests; ai-parrot-tools legal/contracts/procedures 431 passed / 1 failed (live BOE federation test, same before/after); ruff F821/F401/F811 clean. Review corrections: test_mcp_transport_selector.py (TASK-4315's test) failed to collect in a directory-wide run because another test put `tests/` on sys.path under a non-canonical path; fixed in 458027b3f. No live Arango.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: 19 caller files added to scope.

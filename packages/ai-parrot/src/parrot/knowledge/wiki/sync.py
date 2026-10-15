@@ -30,7 +30,7 @@ from parrot.knowledge.wiki.project import (
     resolve_arango_params,
     sqlite_policy_from_config,
 )
-from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, create_wiki_store
+from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, create_wiki_store, is_server_backend
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ async def _open_remote(root: Path, target_env: str) -> tuple[BaseWikiStore, Wiki
     config = effective.config
     try:
         store = _open_plane(root, config)
-        if config.backend == "arangodb":
+        if is_server_backend(config.backend):
             await store.initialize()
     except Exception as exc:  # re-raised below as a typed, clean error
         host = resolve_arango_params(config).get("host") if config.backend == "arangodb" else None

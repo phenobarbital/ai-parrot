@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
 
-from parrot.bots.database.models import Completeness, TableMetadata
+from parrot.knowledge.wiki.schema.table_metadata import Completeness, TableMetadata
 from parrot.knowledge.wiki.context import split_namespaced_id
 from parrot.knowledge.wiki.project import find_shared_root, load_effective_config, sqlite_policy_from_config
 from parrot.knowledge.wiki.schema.ids import (

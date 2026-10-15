@@ -213,10 +213,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra (attempt 857a5921), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: retrieval/pin.py pin capability, typed temporal in contracts/temporal.py, isinstance dispatch in parrot_tools graphindex toolkit, new test_pin_capability.py. Validation run directly: tests/knowledge/retrieval + tests/knowledge/contracts = 639 passed, 56 skipped; ai-parrot-tools test_toolkit_temporal.py 3 passed, 2 failed (test_temporal_tools_present_on_postgres, test_graph_diff_tool_smoke) with ConnectionRefusedError — Postgres is unreachable in this sandbox (environmental). Verification therefore `partial`. No review corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

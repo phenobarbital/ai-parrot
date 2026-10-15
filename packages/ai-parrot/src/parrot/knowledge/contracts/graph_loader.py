@@ -184,7 +184,7 @@ class ContractGraphLoader:
 
     Args:
         catalog: The tenant-bound authoritative catalog.
-        graph_store: An ``OntologyGraphStore``-shaped object.
+        graph_store: An ``ArangoOntologyGraphStore``-shaped object.
         tenant_manager: A **dedicated** ``TenantOntologyManager`` configured
             with the contracts ontology directory. The generic manager
             caches by tenant only (not by tenant+domain), so sharing one

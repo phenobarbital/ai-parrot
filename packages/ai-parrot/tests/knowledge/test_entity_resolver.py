@@ -2,6 +2,7 @@
 
 Covers FEAT-158 Module 2 acceptance criteria.
 """
+
 from datetime import datetime, timezone
 
 import pytest
@@ -20,7 +21,6 @@ from parrot.knowledge.ontology.schema import (
     TraversalPattern,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -28,9 +28,10 @@ from parrot.knowledge.ontology.schema import (
 
 @pytest.fixture
 def graph_store():
-    """Mocked OntologyGraphStore."""
+    """Mocked typed ontology traversal store."""
     gs = MagicMock()
-    gs.execute_traversal = AsyncMock()
+    gs.find_by_field = AsyncMock()
+    gs.search_by_name = AsyncMock()
     return gs
 
 
@@ -83,12 +84,8 @@ class TestEntityResolver:
     @pytest.mark.asyncio
     async def test_exact_match_no_llm(self, resolver, graph_store):
         """Unambiguous name resolves to a single _id without LLM call."""
-        graph_store.execute_traversal.return_value = [
-            {"_id": "Employee/123", "name": "Jesús Lara"}
-        ]
-        pattern = _pattern_with_rule(
-            EntityExtractionRule(type="Employee", resolver="fuzzy_name_match")
-        )
+        graph_store.search_by_name.return_value = [{"_id": "Employee/123", "name": "Jesús Lara"}]
+        pattern = _pattern_with_rule(EntityExtractionRule(type="Employee", resolver="fuzzy_name_match"))
         out = await resolver.extract_and_resolve(
             pattern,
             "el equipo de Jesús",
@@ -100,7 +97,7 @@ class TestEntityResolver:
     @pytest.mark.asyncio
     async def test_ambiguous_raises(self, resolver, graph_store):
         """Multiple matches with ambiguity_strategy=ask_user raise EntityAmbiguityError."""
-        graph_store.execute_traversal.return_value = [
+        graph_store.search_by_name.return_value = [
             {"_id": "Employee/1", "name": "Jesús Lara"},
             {"_id": "Employee/2", "name": "Jesús Pérez"},
         ]
@@ -126,7 +123,7 @@ class TestEntityResolver:
     @pytest.mark.asyncio
     async def test_use_context_picks_same_dept(self, resolver, graph_store):
         """use_context picks the candidate in the requesting user's department."""
-        graph_store.execute_traversal.return_value = [
+        graph_store.search_by_name.return_value = [
             {"_id": "Employee/1", "name": "Jesús Lara", "department": "Engineering"},
             {"_id": "Employee/2", "name": "Jesús Pérez", "department": "Sales"},
         ]
@@ -148,7 +145,7 @@ class TestEntityResolver:
     @pytest.mark.asyncio
     async def test_not_found_required_raises(self, resolver, graph_store):
         """required=True and no match raises EntityNotFoundError."""
-        graph_store.execute_traversal.return_value = []
+        graph_store.search_by_name.return_value = []
         pattern = _pattern_with_rule(
             EntityExtractionRule(
                 type="Employee",
@@ -168,7 +165,7 @@ class TestEntityResolver:
     @pytest.mark.asyncio
     async def test_not_found_optional_silent(self, resolver, graph_store):
         """required=False and no match returns empty dict without raising."""
-        graph_store.execute_traversal.return_value = []
+        graph_store.search_by_name.return_value = []
         pattern = _pattern_with_rule(
             EntityExtractionRule(
                 type="Employee",
@@ -187,7 +184,7 @@ class TestEntityResolver:
     @pytest.mark.asyncio
     async def test_pick_first_takes_first_candidate(self, resolver, graph_store):
         """pick_first returns the first candidate from the sorted list."""
-        graph_store.execute_traversal.return_value = [
+        graph_store.search_by_name.return_value = [
             {"_id": "Employee/1", "name": "Jesús A"},
             {"_id": "Employee/2", "name": "Jesús B"},
         ]
@@ -212,8 +209,8 @@ class TestEntityResolver:
 
     @pytest.mark.asyncio
     async def test_scope_same_department_filters(self, resolver, graph_store):
-        """scope=same_department adds a department filter to the AQL call."""
-        graph_store.execute_traversal.return_value = [
+        """scope=same_department passes a department filter to the typed lookup."""
+        graph_store.search_by_name.return_value = [
             {"_id": "Employee/1", "name": "Jesús Lara", "department": "Engineering"},
         ]
         pattern = _pattern_with_rule(
@@ -230,15 +227,14 @@ class TestEntityResolver:
             tenant_id="t1",
         )
         assert out == {"target": "Employee/1"}
-        # Verify department was bound in the AQL call
-        call_kwargs = graph_store.execute_traversal.call_args
-        bind_vars = call_kwargs.kwargs.get("bind_vars") or call_kwargs.args[2] if len(call_kwargs.args) > 2 else {}
-        assert "user_department" in bind_vars or "Engineering" in str(call_kwargs)
+        # Verify the typed lookup received the department filter.
+        call_kwargs = graph_store.search_by_name.call_args
+        assert call_kwargs.kwargs["filters"] == {"department": "Engineering"}
 
     @pytest.mark.asyncio
     async def test_scope_same_department_no_user_dept_skips_filter(self, resolver, graph_store):
         """scope=same_department without user department gracefully skips filter."""
-        graph_store.execute_traversal.return_value = [
+        graph_store.search_by_name.return_value = [
             {"_id": "Employee/1", "name": "Jesús Lara"},
         ]
         pattern = _pattern_with_rule(
@@ -291,7 +287,7 @@ class TestEntityResolver:
     @pytest.mark.asyncio
     async def test_use_context_still_ambiguous_raises(self, resolver, graph_store):
         """use_context with two same-dept candidates still raises EntityAmbiguityError."""
-        graph_store.execute_traversal.return_value = [
+        graph_store.search_by_name.return_value = [
             {"_id": "Employee/1", "name": "Jesús Lara", "department": "Engineering"},
             {"_id": "Employee/2", "name": "Jesús Pérez", "department": "Engineering"},
         ]
@@ -317,7 +313,7 @@ class TestEntityResolver:
     @pytest.mark.asyncio
     async def test_fail_strategy_raises_on_ambiguity(self, resolver, graph_store):
         """ambiguity_strategy=fail raises EntityAmbiguityError on multiple candidates."""
-        graph_store.execute_traversal.return_value = [
+        graph_store.search_by_name.return_value = [
             {"_id": "Employee/1", "name": "Jesús Lara"},
             {"_id": "Employee/2", "name": "Jesús Pérez"},
         ]

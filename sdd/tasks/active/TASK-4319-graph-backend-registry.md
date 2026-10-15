@@ -306,10 +306,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: graphindex/backends.py (GraphBackendSpec, register_graph_backend, create_graph_persistence, NullPersistence; built-ins sqlite, null, postgres, arangodb - the arangodb factory is a string reference to TASK-4320's module, never imported here); persist_sqlite.py gained close() and file_hashes(ctx) and delegates _edge_key to protocols.edge_key; persist_postgres.py gained file_hashes(ctx); persistence_conformance.py + test_graph_backends.py. GAPS for the owner: the conformance suite runs only on SQLite and null (no 'fake' adapter was named in the blueprint; Postgres and Arango conformance are NOT wired - cases are importable for TASK-4320/later wiring and Postgres needs GRAPHINDEX_PG_DSN). DOC DRIFT: the persistence protocol docstring describes a CommitReceipt `seq` and a keyword `agent_id` on revert_commit, but the code has neither; the coder asserted actual behaviour (commit ids distinct and listed; revert result has no 'error' key). postgres `dsn` is not a required factory option (may come from GRAPHINDEX_PG_DSN; the factory raises ValueError when neither is present). No review corrections. Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres and has pre-existing reds. With GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings (4319 passed) show no failure absent from the clean origin/dev baseline; ai-parrot-tools wiki tests 22 passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: no fake adapter in conformance; Postgres/Arango conformance not wired (see Notes)

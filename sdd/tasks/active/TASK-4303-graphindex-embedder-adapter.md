@@ -35,6 +35,7 @@ Spec §3 M2 + codex S8. `graphindex/embed.py:15-20` imports `EmbeddingRegistry`,
 | `packages/ai-parrot/src/parrot/embeddings/graphindex.py` | CREATE | GraphIndexEmbedder adapter + attach_hot_index |
 | `packages/ai-parrot/src/parrot/knowledge/graphindex/embed.py` | MODIFY | lazy re-export |
 | `packages/ai-parrot/src/parrot/knowledge/graphindex/factory.py` | MODIFY | use attach_hot_index |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/loader.py` | MODIFY | drop the `pgvector_dsn=` kwarg passed to GraphIndexEmbedder (checklist: fix any caller passing it) |
 | `packages/ai-parrot/tests/knowledge/graphindex/test_embedder_adapter.py` | CREATE | adapter tests |
 
 ---
@@ -80,6 +81,10 @@ from parrot.knowledge.graphindex.protocols import Embedder  # TASK-4302
     },
     {
       "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/factory.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/loader.py",
       "action": "MODIFY"
     },
     {
@@ -272,10 +277,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: GraphIndexEmbedder moved to parrot/embeddings/graphindex.py with vectors() + attach_hot_index; embed.py is a lazy re-export; factory uses attach_hot_index. Deviation: graphindex/loader.py edited (drops the removed pgvector_dsn kwarg) - mandated by the task's own checklist but missing from its file list, so the list was amended (commit 08da4a2bf) after a fidelity_violation. The loader's own pgvector_dsn parameter is now unused: decide in a later task. Orchestrator added `noqa: F822` (false positive for the PEP 562 re-export). The faiss-absence test asserts only that the adapter module is not loaded, since parrot's package-root chain still loads faiss. Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres and has pre-existing reds, so it is not recorded as green. With GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings show no failure that is not also on clean origin/dev (3 tests/embeddings reds are pre-existing).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: loader.py added to file list (see Notes)

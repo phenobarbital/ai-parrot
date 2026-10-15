@@ -296,10 +296,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet (attempt 109f5eb6), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: ontology schema/intent/mixin made dialect-aware: TraversalPattern.query_templates: dict[str,str] added (default empty); ResolvedIntent.aql -> query + dialect; IntentDecision.aql -> query; OntologyIntentResolver(dialect="aql") validates dynamic queries via validate_query (QueryValidationError/unregistered dialect -> None -> vector_only fallback); pattern intents use query_templates[dialect] then query_template; mixin depends on OntologyTraversalStore (TYPE_CHECKING) and routes through _run_graph_query -> execute_pattern / execute_query(DynamicQuery). Tests updated (intent, schema, schema_extensions, mixin, degradation_chain: bind_vars now positional args[2]). The execute_pattern getattr in ArangoOntologyGraphStore (TASK-4328) now resolves to a real field. Remaining `aql=` call sites in authorization.py/entity_resolver.py belong to TASK-4330; parrot_tools callers to TASK-4331. Verification `partial`: per-file 13/31/29/23/10/4 passed; test_ontology_intent_demotion 2 failures ("no current event loop") identical on clean baseline. No review corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

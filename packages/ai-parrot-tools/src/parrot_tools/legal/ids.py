@@ -100,7 +100,7 @@ def article_key(boe_id: str, article: str) -> str:
     grammar does not allow. ``article`` is run through
     ``_sanitize_key_component`` so the composite key is always a valid
     ``_key`` value once it is written as a vertex's ``_key`` (see
-    ``OntologyGraphStore.upsert_nodes``).
+    ``ArangoOntologyGraphStore.upsert_nodes``).
 
     Args:
         boe_id: The canonical BOE identifier of the parent norm, e.g.

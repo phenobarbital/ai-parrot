@@ -264,10 +264,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: Plane operations for the decision, schema and structural wiki tools (decisions/, schema/, structural/ operations.py) with tools delegating to them + test_plane_operations.py. The baseline comparison found 4 new reds in this delivery; fixed in 2054e1a2b: (1) schema lookup adapter passed status=None to ToolResult, breaking 2 pre-existing schema tests; (2) its own test file used fixtures (adr_store, plane_dir, sales_metadata) not visible from its directory and compared a clock-derived age_days exactly. feedback_ids coder-feedback:707e72d157ce7bf10ba52613 (refactor-passes-none-to-defaulted-field) and coder-feedback:274e224f5aa1ed7272f6c58a (untested-test-fixtures-and-clock-equality); review coder-review:038762137cf135656869f2a7. Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres and has pre-existing reds. With GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings (4286 passed) show no failure absent from the clean origin/dev baseline.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

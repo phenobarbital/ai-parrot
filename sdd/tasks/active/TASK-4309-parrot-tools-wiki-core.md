@@ -336,10 +336,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: Moved the wiki AbstractTool wrappers and LLMWikiToolkit into packages/ai-parrot-tools (parrot_tools.wiki: tools/ledger/bulk/toolkit) with lazy compatibility shims at parrot.knowledge.wiki.{tools,toolkit}; new test in packages/ai-parrot-tools/tests/wiki (3 passed). Review fix 1fb7eef13: the tools shim dropped ~52 re-exports that tests and remote_cli import, so two test modules failed at collection and aborted the whole run; restored. feedback coder-feedback:921a90cad89e852b174ca715 (compat-shim-drops-existing-reexports); review recorded. NOTE for the owner: running ai-parrot/tests and ai-parrot-tools/tests in ONE pytest invocation collides on the tests/ package name; run them separately. Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres and has pre-existing reds. With GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings (4293 passed) show no failure absent from the clean origin/dev baseline.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

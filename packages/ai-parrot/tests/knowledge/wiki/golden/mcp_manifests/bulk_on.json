@@ -1,0 +1,1475 @@
+[
+  {
+    "description": "Find every symbol that transitively depends on (calls/extends/implements) a given symbol \u2014 the 'blast radius' of changing it. Use before editing a widely-used function or class.",
+    "mount": "structural",
+    "name": "wiki_blast_radius",
+    "schema": {
+      "description": "Arguments for ``wiki_blast_radius`` / ``code_blast_radius``.",
+      "properties": {
+        "depth": {
+          "default": 2,
+          "description": "Maximum BFS depth",
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Depth",
+          "type": "integer"
+        },
+        "include_inferred": {
+          "default": true,
+          "description": "Follow provenance='inferred' edges (globally-unique-name resolutions)",
+          "title": "Include Inferred",
+          "type": "boolean"
+        },
+        "include_tests": {
+          "default": true,
+          "description": "Include symbols under a tests/ path",
+          "title": "Include Tests",
+          "type": "boolean"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, 'all' to broadcast, 'local' for this repo's own wiki. Omit for the default routing (broadcast when namespaces are configured).",
+          "title": "Namespace"
+        },
+        "relations": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "calls",
+                  "extends",
+                  "implements",
+                  "uses",
+                  "references",
+                  "contains"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Edge relations to follow (default: calls, extends, implements, uses)",
+          "title": "Relations"
+        },
+        "symbol": {
+          "description": "A sym: id or an exact qualname",
+          "title": "Symbol",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol"
+      ],
+      "title": "BlastRadiusInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get the symbol outline of a file \u2014 every top-level (and nested, depth-bounded) class/function/method, with line ranges. Use before reading a whole file to see its shape first.",
+    "mount": "structural",
+    "name": "wiki_code_outline",
+    "schema": {
+      "description": "Arguments for ``wiki_code_outline`` / ``code_outline``.",
+      "properties": {
+        "depth": {
+          "default": 2,
+          "description": "Maximum symbol nesting depth",
+          "maximum": 4,
+          "minimum": 1,
+          "title": "Depth",
+          "type": "integer"
+        },
+        "include_source": {
+          "default": false,
+          "description": "Include a capped source excerpt (sym: targets only)",
+          "title": "Include Source",
+          "type": "boolean"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, 'all' to broadcast, 'local' for this repo's own wiki. Omit for the default routing (broadcast when namespaces are configured).",
+          "title": "Namespace"
+        },
+        "target": {
+          "description": "A file:<rel>, sym:<rel>#<qualname>, or bare relative path",
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "title": "CodeOutlineInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Answer a 'why' question about the codebase with cited decision excerpts and supporting code. Documented decisions rank above inferred candidates, which are returned in their own labeled group.",
+    "mount": "decisions",
+    "name": "wiki_decision_why",
+    "schema": {
+      "description": "Arguments for ``wiki_decision_why`` / ``decision_why``.",
+      "properties": {
+        "budget_tokens": {
+          "default": 3000,
+          "description": "Estimated output budget",
+          "minimum": 256,
+          "title": "Budget Tokens",
+          "type": "integer"
+        },
+        "include_history": {
+          "default": false,
+          "description": "Include rejected/deprecated/superseded records",
+          "title": "Include History",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum hits across both groups",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, or 'local' for this repo's own wiki. 'all' is not supported for decisions.",
+          "title": "Namespace"
+        },
+        "question": {
+          "description": "Natural-language question, optionally naming a symbol",
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "DecisionWhyInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Find architectural decisions (ADRs) that apply to a function, class or method, with source citations. Documented decisions and inferred candidates are returned as separate, explicitly labeled groups \u2014 a candidate is a hypothesis, not accepted history.",
+    "mount": "decisions",
+    "name": "wiki_decisions_for_symbol",
+    "schema": {
+      "description": "Arguments for ``wiki_decisions_for_symbol`` / ``decision_for_symbol``.",
+      "properties": {
+        "budget_tokens": {
+          "default": 3000,
+          "description": "Estimated output budget",
+          "minimum": 256,
+          "title": "Budget Tokens",
+          "type": "integer"
+        },
+        "include_history": {
+          "default": false,
+          "description": "Include rejected/deprecated/superseded records",
+          "title": "Include History",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum hits across both groups",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, or 'local' for this repo's own wiki. 'all' is not supported for decisions.",
+          "title": "Namespace"
+        },
+        "symbol": {
+          "description": "A sym:<rel>#<qualname> id, or an exact symbol name",
+          "title": "Symbol",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol"
+      ],
+      "title": "DecisionsForSymbolInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Apply source slices pushed by `wikitoolkit build/upsert/ingest` in remote mode.\n\n    At most 200 slices and 1 MiB per call. For the CLI build push, not for agents.\n    ",
+    "mount": "bulk",
+    "name": "wiki_ingest_batch",
+    "schema": {
+      "$defs": {
+        "SourceSlicePayload": {
+          "description": "One `replace_source_slice` unit crossing the wire (FEAT-569).",
+          "properties": {
+            "edges": {
+              "items": {
+                "maxItems": 3,
+                "minItems": 3,
+                "prefixItems": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ],
+                "type": "array"
+              },
+              "title": "Edges",
+              "type": "array"
+            },
+            "pages": {
+              "items": {
+                "$ref": "#/$defs/WikiPageRecord"
+              },
+              "title": "Pages",
+              "type": "array"
+            },
+            "source_id": {
+              "title": "Source Id",
+              "type": "string"
+            },
+            "symbols": {
+              "items": {
+                "$ref": "#/$defs/SymbolRecord"
+              },
+              "title": "Symbols",
+              "type": "array"
+            }
+          },
+          "required": [
+            "source_id"
+          ],
+          "title": "SourceSlicePayload",
+          "type": "object"
+        },
+        "SymbolKind": {
+          "description": "Kind of a symbol extracted from a source file.\n\nMirrors the design's \u00a74.4 symbol table across the five supported\nlanguages (Python, TypeScript/JavaScript, PHP, Rust, Perl), plus Svelte\nsingle-file components (FEAT-609).",
+          "enum": [
+            "module",
+            "class",
+            "interface",
+            "trait",
+            "enum",
+            "struct",
+            "impl",
+            "function",
+            "method",
+            "const",
+            "type",
+            "package",
+            "role",
+            "field",
+            "attribute",
+            "mod",
+            "component"
+          ],
+          "title": "SymbolKind",
+          "type": "string"
+        },
+        "SymbolRecord": {
+          "description": "A single extracted symbol (class, function, method, ...).\n\nAttributes:\n    rel_path: POSIX path relative to the repository root.\n    language: Scanner name that produced this record (``python``,\n        ``javascript``, ``php``, ``rust``, ``perl``).\n    kind: Symbol kind.\n    name: Local identifier as written in the source.\n    qualname: Fully-qualified name, e.g. ``\"UserService.get_user\"``\n        or ``\"App\\Models\\User::getFullName\"``.\n    parent: Container qualname, or ``None`` for top-level symbols.\n    signature: Parameters (and return type) as written in the source.\n    doc: First line of the symbol's documentation/docstring.\n    exported: Whether the symbol is exported/public (``export``,\n        ``pub``, ``public``).\n    is_async: Whether the symbol is declared ``async``.\n    start_line: 1-based inclusive start line.\n    end_line: 1-based inclusive end line.\n    start_byte: Byte offset of the symbol's first byte in the file.\n    end_byte: Byte offset just past the symbol's last byte.\n    node_kind: The tree-sitter/ast-grep node kind that produced this\n        record, or ``\"\"`` when derived from Python's stdlib ``ast``.\n    decorators: Decorator/attribute strings attached to the symbol.\n    content_hash: SHA-1 hex digest of the symbol's source text.\n    depth: Nesting depth \u2014 ``1`` for top-level, ``2`` for direct\n        members, etc.\n    namespace: Runtime-only provenance (never persisted, excluded from\n        ``model_dump``) set by ``FederatedWikiStore`` on rows read\n        from a foreign namespace (FEAT-609).",
+          "properties": {
+            "content_hash": {
+              "title": "Content Hash",
+              "type": "string"
+            },
+            "decorators": {
+              "items": {
+                "type": "string"
+              },
+              "title": "Decorators",
+              "type": "array"
+            },
+            "depth": {
+              "default": 1,
+              "title": "Depth",
+              "type": "integer"
+            },
+            "doc": {
+              "default": "",
+              "title": "Doc",
+              "type": "string"
+            },
+            "end_byte": {
+              "title": "End Byte",
+              "type": "integer"
+            },
+            "end_line": {
+              "title": "End Line",
+              "type": "integer"
+            },
+            "exported": {
+              "default": false,
+              "title": "Exported",
+              "type": "boolean"
+            },
+            "is_async": {
+              "default": false,
+              "title": "Is Async",
+              "type": "boolean"
+            },
+            "kind": {
+              "$ref": "#/$defs/SymbolKind"
+            },
+            "language": {
+              "title": "Language",
+              "type": "string"
+            },
+            "name": {
+              "title": "Name",
+              "type": "string"
+            },
+            "namespace": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Namespace"
+            },
+            "node_kind": {
+              "default": "",
+              "title": "Node Kind",
+              "type": "string"
+            },
+            "parent": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Parent"
+            },
+            "qualname": {
+              "title": "Qualname",
+              "type": "string"
+            },
+            "rel_path": {
+              "title": "Rel Path",
+              "type": "string"
+            },
+            "signature": {
+              "default": "",
+              "title": "Signature",
+              "type": "string"
+            },
+            "start_byte": {
+              "title": "Start Byte",
+              "type": "integer"
+            },
+            "start_line": {
+              "title": "Start Line",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "rel_path",
+            "language",
+            "kind",
+            "name",
+            "qualname",
+            "start_line",
+            "end_line",
+            "start_byte",
+            "end_byte",
+            "content_hash"
+          ],
+          "title": "SymbolRecord",
+          "type": "object"
+        },
+        "WikiPageRecord": {
+          "description": "A single wiki page row in the retrieval plane.\n\nAttributes:\n    concept_id: Stable page identity (primary key, link target).\n    node_id: Volatile PageIndex node id (secondary lookup only).\n    title: Page title.\n    category: Open-string category (e.g. ``\"summary\"``, ``\"entity\"``).\n    summary: Short summary used for stubs and FTS.\n    body: Full markdown body (lives in the DB \u2014 no sidecar reads).\n    source_id: Originating source id (``sources.source_id``).\n    token_count: Estimated token cost of the body.\n    origin: How the page came to exist \u2014 ``\"ingest\"`` (derived from\n        a source), ``\"authored\"`` (written by an agent tool), or\n        ``\"memory\"`` (saved via the ``remember`` authoring surface).\n    asserted_by: Identity of the writer for authored/memory pages,\n        e.g. ``\"agent:<id>\"`` or ``\"human:<user>\"``.\n    updated_at: ISO-8601 UTC last-modified stamp (FEAT-461). On\n        write, ``None`` means \"stamp now\" \u2014 both backends already\n        persist this column and fill it in unconditionally when the\n        caller does not supply one. On read, it is always populated\n        from the DB. A caller-supplied value is preserved verbatim\n        on upsert (never overwritten with \"now\"), which is what lets\n        sync (TASK-2466) replicate a record without making it look\n        newer than its source. Legacy/defensive ``None`` sorts\n        oldest in any last-write-wins comparison.\n    content_hash: SHA-1 hex digest of the page's source content\n        (FEAT-498) \u2014 same digest family as\n        ``SourceCollectionManager._compute_hash`` for ``file:``\n        pages, and :func:`parrot.knowledge.wiki.symbols.sha1_of_text`\n        of the node text for ``sym:`` pages. ``None`` for pages that\n        predate the freshness plane or are not backed by scanned\n        source (e.g. ``dir:`` pages).\n    attrs: Entity attributes persisted to ``page_attrs`` in the same\n        transaction as the page (FEAT-627). On upsert the page's\n        previous attrs are replaced; an empty mapping clears them.",
+          "properties": {
+            "asserted_by": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Asserted By"
+            },
+            "attrs": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "title": "Attrs",
+              "type": "object"
+            },
+            "body": {
+              "default": "",
+              "title": "Body",
+              "type": "string"
+            },
+            "category": {
+              "default": "concept",
+              "title": "Category",
+              "type": "string"
+            },
+            "concept_id": {
+              "minLength": 1,
+              "title": "Concept Id",
+              "type": "string"
+            },
+            "content_hash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Content Hash"
+            },
+            "node_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Node Id"
+            },
+            "origin": {
+              "default": "ingest",
+              "title": "Origin",
+              "type": "string"
+            },
+            "source_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Id"
+            },
+            "summary": {
+              "default": "",
+              "title": "Summary",
+              "type": "string"
+            },
+            "title": {
+              "default": "",
+              "title": "Title",
+              "type": "string"
+            },
+            "token_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Token Count",
+              "type": "integer"
+            },
+            "updated_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Updated At"
+            }
+          },
+          "required": [
+            "concept_id"
+          ],
+          "title": "WikiPageRecord",
+          "type": "object"
+        }
+      },
+      "description": "Arguments of `wiki_ingest_batch`.",
+      "properties": {
+        "batch_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch Id"
+        },
+        "deleted_source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Deleted Source Ids",
+          "type": "array"
+        },
+        "slices": {
+          "items": {
+            "$ref": "#/$defs/SourceSlicePayload"
+          },
+          "title": "Slices",
+          "type": "array"
+        }
+      },
+      "title": "IngestBatchInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Lint the wiki knowledge graph: broken links, duplicate slugs, stale memories, ADR conflicts; fix=true applies safe fixes.",
+    "mount": "core",
+    "name": "wiki_lint",
+    "schema": {
+      "description": "Arguments for wiki_lint.",
+      "properties": {
+        "fix": {
+          "default": false,
+          "description": "Apply safe, idempotent fixes (never deletes).",
+          "title": "Fix",
+          "type": "boolean"
+        },
+        "llm": {
+          "default": false,
+          "description": "Run the opt-in LLM contradiction pass.",
+          "title": "Llm",
+          "type": "boolean"
+        },
+        "rules": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rule ids or packs to run (default: all deterministic).",
+          "title": "Rules"
+        },
+        "skip": {
+          "description": "Rule ids to skip.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Skip",
+          "type": "array"
+        }
+      },
+      "title": "WikiLintInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Append a dated note to an existing wiki page.",
+    "mount": "core",
+    "name": "wiki_note",
+    "schema": {
+      "properties": {
+        "page_id": {
+          "description": "Page to append note to",
+          "title": "Page Id",
+          "type": "string"
+        },
+        "text": {
+          "description": "Note text",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "text"
+      ],
+      "title": "WikiNoteInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Read a full wiki page by ID \u2014 file summaries, API outlines, content. Use IDs returned by wiki_query, including namespaced ones (ns::file:a.py).",
+    "mount": "core",
+    "name": "wiki_page",
+    "schema": {
+      "properties": {
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, 'all' to broadcast, 'local' for this repo's own wiki. Omit for the default routing (broadcast when namespaces are configured).",
+          "title": "Namespace"
+        },
+        "page_id": {
+          "description": "Page ID from wiki_query results; may carry a namespace prefix (ns::file:a.py)",
+          "title": "Page Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "title": "WikiPageInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Return stored content hashes for up to 2000 page ids.\n\n    Delta oracle for the `wikitoolkit` CLI build push; not meant for agents.\n    ",
+    "mount": "bulk",
+    "name": "wiki_page_hashes",
+    "schema": {
+      "description": "Arguments of `wiki_page_hashes`.",
+      "properties": {
+        "concept_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Concept Ids",
+          "type": "array"
+        }
+      },
+      "title": "PageHashesInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Search the codebase knowledge graph for files, modules, symbols, or concepts. Returns ranked page stubs with IDs for drill-down. Use BEFORE grep/find/Read on large repos. When federated namespaces are configured this searches all of them and foreign page IDs come back prefixed (ns::file:a.py); pass `namespace` to search just one.",
+    "mount": "core",
+    "name": "wiki_query",
+    "schema": {
+      "properties": {
+        "budget_tokens": {
+          "default": 1200,
+          "description": "Token budget for results",
+          "title": "Budget Tokens",
+          "type": "integer"
+        },
+        "include_symbols": {
+          "default": false,
+          "description": "Include sym: (function/class/method) stubs in results (FEAT-498). Off by default \u2014 use wiki_symbol_lookup for symbol-specific search; set True to see symbols mixed in with files/concepts here.",
+          "title": "Include Symbols",
+          "type": "boolean"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, 'all' to broadcast, 'local' for this repo's own wiki. Omit for the default routing (broadcast when namespaces are configured).",
+          "title": "Namespace"
+        },
+        "question": {
+          "description": "Search question for the knowledge graph",
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "WikiQueryInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Follow typed edges (contains, references) from a wiki page to discover connected files and modules. Accepts namespaced page IDs (ns::dir:pkg) and returns neighbours from the same plane.",
+    "mount": "core",
+    "name": "wiki_related",
+    "schema": {
+      "properties": {
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, 'all' to broadcast, 'local' for this repo's own wiki. Omit for the default routing (broadcast when namespaces are configured).",
+          "title": "Namespace"
+        },
+        "page_id": {
+          "description": "Page ID to find related pages for; may carry a namespace prefix (ns::dir:pkg)",
+          "title": "Page Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "title": "WikiRelatedInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Save durable knowledge to the knowledge graph \u2014 decisions, gotchas, cross-file relationships. Survives across sessions.",
+    "mount": "core",
+    "name": "wiki_remember",
+    "schema": {
+      "properties": {
+        "about": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Target symbol or file ids",
+          "title": "About"
+        },
+        "category": {
+          "default": "note",
+          "description": "note|decision|lesson|concept",
+          "title": "Category",
+          "type": "string"
+        },
+        "derived_from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Originating task, review, or spec id",
+          "title": "Derived From"
+        },
+        "fact": {
+          "description": "Knowledge to save",
+          "title": "Fact",
+          "type": "string"
+        },
+        "link_page_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Page to link to",
+          "title": "Link Page Id"
+        },
+        "rel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "references",
+          "description": "Relation type",
+          "title": "Rel"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Short title",
+          "title": "Title"
+        }
+      },
+      "required": [
+        "fact"
+      ],
+      "title": "WikiRememberInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Render a daily, weekly or monthly wiki brief. Read-only unless writes are explicitly enabled.",
+    "mount": "core",
+    "name": "wiki_standup",
+    "schema": {
+      "description": "Explicit brief options; persistence and model calls are opt-in over MCP.",
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Anchor date (YYYY-MM-DD); default today.",
+          "title": "Date"
+        },
+        "horizon_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Meeting horizon in days (1-90).",
+          "title": "Horizon Days"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "enum": [
+                "en",
+                "es"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Brief language.",
+          "title": "Language"
+        },
+        "period": {
+          "default": "day",
+          "description": "Brief period.",
+          "enum": [
+            "day",
+            "week",
+            "month"
+          ],
+          "title": "Period",
+          "type": "string"
+        },
+        "store": {
+          "default": false,
+          "description": "Persist the brief as a wiki page on the local plane.",
+          "title": "Store",
+          "type": "boolean"
+        },
+        "team": {
+          "default": false,
+          "description": "Include team items, not only yours.",
+          "title": "Team",
+          "type": "boolean"
+        },
+        "use_llm": {
+          "default": false,
+          "description": "Allow a model call to summarise the plate.",
+          "title": "Use Llm",
+          "type": "boolean"
+        },
+        "write_file": {
+          "default": false,
+          "description": "Also write the brief Markdown file.",
+          "title": "Write File",
+          "type": "boolean"
+        }
+      },
+      "title": "WikiStandupInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Check knowledge graph health: page count, staleness, last build time.",
+    "mount": "core",
+    "name": "wiki_status",
+    "schema": {
+      "properties": {},
+      "title": "WikiStatusInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Find a symbol (function/class/method) by name or qualname across the codebase. Returns ranked hits with file/line locations. Use before grep when you know the symbol's name but not where it lives.",
+    "mount": "structural",
+    "name": "wiki_symbol_lookup",
+    "schema": {
+      "$defs": {
+        "SymbolKind": {
+          "description": "Kind of a symbol extracted from a source file.\n\nMirrors the design's \u00a74.4 symbol table across the five supported\nlanguages (Python, TypeScript/JavaScript, PHP, Rust, Perl), plus Svelte\nsingle-file components (FEAT-609).",
+          "enum": [
+            "module",
+            "class",
+            "interface",
+            "trait",
+            "enum",
+            "struct",
+            "impl",
+            "function",
+            "method",
+            "const",
+            "type",
+            "package",
+            "role",
+            "field",
+            "attribute",
+            "mod",
+            "component"
+          ],
+          "title": "SymbolKind",
+          "type": "string"
+        }
+      },
+      "description": "Arguments for ``wiki_symbol_lookup`` / ``code_symbol_lookup``.",
+      "properties": {
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SymbolKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Exact symbol kind filter"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Exact scanner-name filter (e.g. 'python')",
+          "title": "Language"
+        },
+        "limit": {
+          "default": 20,
+          "description": "Maximum results",
+          "maximum": 100,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, 'all' to broadcast, 'local' for this repo's own wiki. Omit for the default routing (broadcast when namespaces are configured).",
+          "title": "Namespace"
+        },
+        "path_prefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "rel_path must start with this prefix",
+          "title": "Path Prefix"
+        },
+        "query": {
+          "description": "Symbol name or qualname to look up",
+          "title": "Query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "SymbolLookupInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Return remote sync data used by `wikitoolkit sync` in remote mode; not for agents.",
+    "mount": "bulk",
+    "name": "wiki_sync_pull",
+    "schema": {
+      "$defs": {
+        "WikiPageRecord": {
+          "description": "A single wiki page row in the retrieval plane.\n\nAttributes:\n    concept_id: Stable page identity (primary key, link target).\n    node_id: Volatile PageIndex node id (secondary lookup only).\n    title: Page title.\n    category: Open-string category (e.g. ``\"summary\"``, ``\"entity\"``).\n    summary: Short summary used for stubs and FTS.\n    body: Full markdown body (lives in the DB \u2014 no sidecar reads).\n    source_id: Originating source id (``sources.source_id``).\n    token_count: Estimated token cost of the body.\n    origin: How the page came to exist \u2014 ``\"ingest\"`` (derived from\n        a source), ``\"authored\"`` (written by an agent tool), or\n        ``\"memory\"`` (saved via the ``remember`` authoring surface).\n    asserted_by: Identity of the writer for authored/memory pages,\n        e.g. ``\"agent:<id>\"`` or ``\"human:<user>\"``.\n    updated_at: ISO-8601 UTC last-modified stamp (FEAT-461). On\n        write, ``None`` means \"stamp now\" \u2014 both backends already\n        persist this column and fill it in unconditionally when the\n        caller does not supply one. On read, it is always populated\n        from the DB. A caller-supplied value is preserved verbatim\n        on upsert (never overwritten with \"now\"), which is what lets\n        sync (TASK-2466) replicate a record without making it look\n        newer than its source. Legacy/defensive ``None`` sorts\n        oldest in any last-write-wins comparison.\n    content_hash: SHA-1 hex digest of the page's source content\n        (FEAT-498) \u2014 same digest family as\n        ``SourceCollectionManager._compute_hash`` for ``file:``\n        pages, and :func:`parrot.knowledge.wiki.symbols.sha1_of_text`\n        of the node text for ``sym:`` pages. ``None`` for pages that\n        predate the freshness plane or are not backed by scanned\n        source (e.g. ``dir:`` pages).\n    attrs: Entity attributes persisted to ``page_attrs`` in the same\n        transaction as the page (FEAT-627). On upsert the page's\n        previous attrs are replaced; an empty mapping clears them.",
+          "properties": {
+            "asserted_by": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Asserted By"
+            },
+            "attrs": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "title": "Attrs",
+              "type": "object"
+            },
+            "body": {
+              "default": "",
+              "title": "Body",
+              "type": "string"
+            },
+            "category": {
+              "default": "concept",
+              "title": "Category",
+              "type": "string"
+            },
+            "concept_id": {
+              "minLength": 1,
+              "title": "Concept Id",
+              "type": "string"
+            },
+            "content_hash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Content Hash"
+            },
+            "node_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Node Id"
+            },
+            "origin": {
+              "default": "ingest",
+              "title": "Origin",
+              "type": "string"
+            },
+            "source_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Id"
+            },
+            "summary": {
+              "default": "",
+              "title": "Summary",
+              "type": "string"
+            },
+            "title": {
+              "default": "",
+              "title": "Title",
+              "type": "string"
+            },
+            "token_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Token Count",
+              "type": "integer"
+            },
+            "updated_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Updated At"
+            }
+          },
+          "required": [
+            "concept_id"
+          ],
+          "title": "WikiPageRecord",
+          "type": "object"
+        }
+      },
+      "description": "Authored knowledge crossing the wire (push payload / pull result).",
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        },
+        "edges": {
+          "items": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Edges",
+          "type": "array"
+        },
+        "limit": {
+          "default": 500,
+          "maximum": 2000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "pages": {
+          "items": {
+            "$ref": "#/$defs/WikiPageRecord"
+          },
+          "title": "Pages",
+          "type": "array"
+        },
+        "since": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Since"
+        },
+        "skip_asserted_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skip Asserted By"
+        }
+      },
+      "title": "SyncPagesInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Merge remote sync data used by `wikitoolkit sync` in remote mode; not for agents.",
+    "mount": "bulk",
+    "name": "wiki_sync_push",
+    "schema": {
+      "$defs": {
+        "WikiPageRecord": {
+          "description": "A single wiki page row in the retrieval plane.\n\nAttributes:\n    concept_id: Stable page identity (primary key, link target).\n    node_id: Volatile PageIndex node id (secondary lookup only).\n    title: Page title.\n    category: Open-string category (e.g. ``\"summary\"``, ``\"entity\"``).\n    summary: Short summary used for stubs and FTS.\n    body: Full markdown body (lives in the DB \u2014 no sidecar reads).\n    source_id: Originating source id (``sources.source_id``).\n    token_count: Estimated token cost of the body.\n    origin: How the page came to exist \u2014 ``\"ingest\"`` (derived from\n        a source), ``\"authored\"`` (written by an agent tool), or\n        ``\"memory\"`` (saved via the ``remember`` authoring surface).\n    asserted_by: Identity of the writer for authored/memory pages,\n        e.g. ``\"agent:<id>\"`` or ``\"human:<user>\"``.\n    updated_at: ISO-8601 UTC last-modified stamp (FEAT-461). On\n        write, ``None`` means \"stamp now\" \u2014 both backends already\n        persist this column and fill it in unconditionally when the\n        caller does not supply one. On read, it is always populated\n        from the DB. A caller-supplied value is preserved verbatim\n        on upsert (never overwritten with \"now\"), which is what lets\n        sync (TASK-2466) replicate a record without making it look\n        newer than its source. Legacy/defensive ``None`` sorts\n        oldest in any last-write-wins comparison.\n    content_hash: SHA-1 hex digest of the page's source content\n        (FEAT-498) \u2014 same digest family as\n        ``SourceCollectionManager._compute_hash`` for ``file:``\n        pages, and :func:`parrot.knowledge.wiki.symbols.sha1_of_text`\n        of the node text for ``sym:`` pages. ``None`` for pages that\n        predate the freshness plane or are not backed by scanned\n        source (e.g. ``dir:`` pages).\n    attrs: Entity attributes persisted to ``page_attrs`` in the same\n        transaction as the page (FEAT-627). On upsert the page's\n        previous attrs are replaced; an empty mapping clears them.",
+          "properties": {
+            "asserted_by": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Asserted By"
+            },
+            "attrs": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "title": "Attrs",
+              "type": "object"
+            },
+            "body": {
+              "default": "",
+              "title": "Body",
+              "type": "string"
+            },
+            "category": {
+              "default": "concept",
+              "title": "Category",
+              "type": "string"
+            },
+            "concept_id": {
+              "minLength": 1,
+              "title": "Concept Id",
+              "type": "string"
+            },
+            "content_hash": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Content Hash"
+            },
+            "node_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Node Id"
+            },
+            "origin": {
+              "default": "ingest",
+              "title": "Origin",
+              "type": "string"
+            },
+            "source_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Source Id"
+            },
+            "summary": {
+              "default": "",
+              "title": "Summary",
+              "type": "string"
+            },
+            "title": {
+              "default": "",
+              "title": "Title",
+              "type": "string"
+            },
+            "token_count": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Token Count",
+              "type": "integer"
+            },
+            "updated_at": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Updated At"
+            }
+          },
+          "required": [
+            "concept_id"
+          ],
+          "title": "WikiPageRecord",
+          "type": "object"
+        }
+      },
+      "description": "Authored knowledge crossing the wire (push payload / pull result).",
+      "properties": {
+        "cursor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cursor"
+        },
+        "edges": {
+          "items": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Edges",
+          "type": "array"
+        },
+        "limit": {
+          "default": 500,
+          "maximum": 2000,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "pages": {
+          "items": {
+            "$ref": "#/$defs/WikiPageRecord"
+          },
+          "title": "Pages",
+          "type": "array"
+        },
+        "since": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Since"
+        },
+        "skip_asserted_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skip Asserted By"
+        }
+      },
+      "title": "SyncPagesInput",
+      "type": "object"
+    }
+  }
+]

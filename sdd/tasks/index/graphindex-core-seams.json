@@ -21,7 +21,7 @@
       "parallel": true,
       "parallelism_notes": "no dependencies — first task; creates the import_probe harness every ceiling test reuses",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4300-auth-lazy-root-import-probe.md"
     },
@@ -41,7 +41,7 @@
       "parallel": true,
       "parallelism_notes": "uses run_import_probe from TASK-4300 (tests/knowledge/_support/import_probe.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4301-ontology-stores-graphindex-lazy-roots.md"
     },
@@ -59,7 +59,7 @@
       "parallel": true,
       "parallelism_notes": "no dependencies — creates graphindex/protocols.py, the contract module M2/M7 consumers import",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4302-graphindex-protocols.md"
     },
@@ -79,7 +79,7 @@
       "parallel": true,
       "parallelism_notes": "satisfies Embedder from TASK-4302 (graphindex/protocols.py); edits factory.py:285 before TASK-4321's dispatch edit",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4303-graphindex-embedder-adapter.md"
     },
@@ -100,7 +100,7 @@
       "parallel": true,
       "parallelism_notes": "imports Embedder/PageIndexer/IncrementalPersistence/EmbeddingPersistence from TASK-4302; uses GraphIndexEmbedder.vectors() from TASK-4303",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4304-retype-builder-retriever-signals.md"
     },
@@ -120,7 +120,7 @@
       "parallel": true,
       "parallelism_notes": "imports LLMCaller from TASK-4302 (graphindex/protocols.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4305-llmcaller-wiki-consumers.md"
     },
@@ -138,7 +138,7 @@
       "parallel": true,
       "parallelism_notes": "no dependencies — first edit of wiki/tools.py (chain: TASK-4306 → TASK-4308 → TASK-4309)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4306-wiki-core-operations.md"
     },
@@ -158,7 +158,7 @@
       "parallel": true,
       "parallelism_notes": "imports _scoped_store/_unknown_namespace_error/OperationResult from TASK-4306 (wiki/operations.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4307-wiki-plane-operations.md"
     },
@@ -178,7 +178,7 @@
       "parallel": true,
       "parallelism_notes": "extends wiki/operations.py and edits wiki/tools.py after TASK-4306 (same files)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4308-wiki-ledger-bulk-vault-operations.md"
     },
@@ -198,7 +198,7 @@
       "parallel": true,
       "parallelism_notes": "moves the tool classes that delegate to ops from TASK-4306/4308; edits wiki/tools.py after TASK-4308 (same file)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4309-parrot-tools-wiki-core.md"
     },
@@ -219,7 +219,7 @@
       "parallel": true,
       "parallelism_notes": "moves wrappers delegating to TASK-4307 ops; creates modules referenced by parrot_tools/wiki/__init__.py (TASK-4309) and tests under tests/wiki (TASK-4309)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4310-parrot-tools-wiki-planes.md"
     },
@@ -239,7 +239,7 @@
       "parallel": true,
       "parallelism_notes": "imports ProviderNotAvailable from TASK-4302 (graphindex/protocols.py) for the CLI exit-2 handler; first edit of wiki/cli.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4311-resolve-setting.md"
     },
@@ -259,7 +259,7 @@
       "parallel": true,
       "parallelism_notes": "uses resolve_setting from TASK-4311 (wiki/project.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4312-pg-schema-lazy-settings.md"
     },
@@ -279,7 +279,7 @@
       "parallel": true,
       "parallelism_notes": "edits wiki/cli.py after TASK-4311 (same file)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4313-sql-dialect-map-relocation.md"
     },
@@ -301,7 +301,7 @@
       "parallel": true,
       "parallelism_notes": "builds descriptors from ops in TASK-4306 (wiki/operations.py), TASK-4307 (plane operations) and TASK-4308 (ledger operations)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4314-wiki-transport-descriptors.md"
     },
@@ -312,7 +312,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -323,9 +323,10 @@
       "parallel": true,
       "parallelism_notes": "adapts descriptors from TASK-4314 (wiki/transport.py); framework tools from parrot_tools.wiki (TASK-4309, TASK-4310)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4315-wiki-mcp-transport-selector.md"
+      "started_at": "2026-10-14T22:00:06+00:00",
+      "completed_at": "2026-10-15T11:47:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4315-wiki-mcp-transport-selector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4316",
@@ -334,7 +335,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -343,9 +344,10 @@
       "parallel": false,
       "parallelism_notes": "exclusive: regenerates golden files under tests/knowledge/wiki/golden/ against a clean tree; needs both transports from TASK-4315",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4316-wiki-mcp-golden-manifests.md"
+      "started_at": "2026-10-14T22:00:06+00:00",
+      "completed_at": "2026-10-15T11:55:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4316-wiki-mcp-golden-manifests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4317",
@@ -361,7 +363,7 @@
       "parallel": true,
       "parallelism_notes": "no dependencies — creates graphindex/models.py consumed by TASK-4318",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4317-graph-document-models.md"
     },
@@ -386,7 +388,7 @@
       "parallel": true,
       "parallelism_notes": "needs GraphDocument (TASK-4317), resolve_setting (TASK-4311), create_graph_persistence (TASK-4319), ArangoPersistence import fix in graphindex/loader.py (TASK-4320, same file), GraphIndexEmbedder adapter (TASK-4303), create_ontology_graph_store (TASK-4328)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4318-graphindex-loader-relocation.md"
     },
@@ -407,7 +409,7 @@
       "parallel": true,
       "parallelism_notes": "implements Protocols from TASK-4302 (graphindex/protocols.py); postgres spec uses resolve_pg_settings from TASK-4312 (pg_schema.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4319-graph-backend-registry.md"
     },
@@ -428,7 +430,7 @@
       "parallel": true,
       "parallelism_notes": "edits builder.py:43 after TASK-4304 (same file); types its store to GraphDocumentStore from TASK-4327 (ontology/contracts.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4320-arango-persistence-rename.md"
     },
@@ -439,7 +441,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -450,9 +452,10 @@
       "parallel": true,
       "parallelism_notes": "calls create_graph_persistence from TASK-4319 (backends.py); edits factory.py after TASK-4303 and wiki/cli.py after TASK-4313 (same files)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4321-persistence-dispatch-sites.md"
+      "started_at": "2026-10-14T22:00:06+00:00",
+      "completed_at": "2026-10-15T11:48:00+00:00",
+      "file": "sdd/tasks/completed/TASK-4321-persistence-dispatch-sites.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4322",
@@ -470,7 +473,7 @@
       "parallel": true,
       "parallelism_notes": "needs SourceCoherencePersistence implementations (file_hashes) from TASK-4319 (persist_sqlite.py / persist_postgres.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4322-capability-consumers.md"
     },
@@ -490,7 +493,7 @@
       "parallel": true,
       "parallelism_notes": "postgres row resolves its DSN through resolve_pg_settings from TASK-4312 (pg_schema.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4323-wiki-backend-registry.md"
     },
@@ -511,7 +514,7 @@
       "parallel": true,
       "parallelism_notes": "edits wiki/project.py after TASK-4311 (same file); uses wiki_backend_names/wiki_backend_spec from TASK-4323 (store.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4324-wiki-config-registry-consumers.md"
     },
@@ -533,7 +536,7 @@
       "parallel": true,
       "parallelism_notes": "edits wiki/cli.py after TASK-4321 (same file); uses is_server_backend/wiki_backend_names from TASK-4323; edits parrot_tools/wiki/toolkit.py after TASK-4326 (same file)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4325-wiki-cli-choices-literal-audit.md"
     },
@@ -553,7 +556,7 @@
       "parallel": true,
       "parallelism_notes": "edits parrot_tools/wiki/toolkit.py created by TASK-4309 (LLMWikiToolkit source selection)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4326-source-manifest-backends.md"
     },
@@ -571,7 +574,7 @@
       "parallel": true,
       "parallelism_notes": "no dependencies — creates ontology/contracts.py consumed by TASK-4328 and TASK-4320",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4327-ontology-contracts.md"
     },
@@ -592,7 +595,7 @@
       "parallel": true,
       "parallelism_notes": "implements contracts from TASK-4327 (ontology/contracts.py); edits ontology/__init__.py after TASK-4301 (same file)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4328-arango-ontology-store-typed.md"
     },
@@ -613,7 +616,7 @@
       "parallel": true,
       "parallelism_notes": "calls execute_pattern/execute_query on ArangoOntologyGraphStore (TASK-4328); validate_query from TASK-4327",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4329-intent-schema-mixin-dialect.md"
     },
@@ -624,7 +627,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -633,9 +636,10 @@
       "parallel": true,
       "parallelism_notes": "calls is_reachable/get_document_by_id/find_by_field/search_by_name from TASK-4328 (graph_store.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4330-authorization-entity-resolver-typed.md"
+      "started_at": "2026-10-14T22:00:06+00:00",
+      "completed_at": "2026-10-15T12:58:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4330-authorization-entity-resolver-typed.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4331",
@@ -644,7 +648,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -654,9 +658,10 @@
       "parallel": false,
       "parallelism_notes": "exclusive: edits packages/ai-parrot-tools/tests/legal/conftest.py loaded by every legal test; needs execute_pattern/execute_query (TASK-4328) and TraversalPattern.query_templates (TASK-4329)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4331-parrot-tools-ontology-callers.md"
+      "started_at": "2026-10-14T22:00:06+00:00",
+      "completed_at": "2026-10-15T12:49:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4331-parrot-tools-ontology-callers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4332",
@@ -679,7 +684,7 @@
       "parallel": false,
       "parallelism_notes": "exclusive: edits tests/knowledge/fixtures/concept_authority/conftest.py; removes aliases added by TASK-4328 after every caller migrated (TASK-4329, TASK-4330, TASK-4331, loader TASK-4318, persistence TASK-4320)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4332-ontology-alias-removal.md"
     },
@@ -708,7 +713,7 @@
       "parallel": true,
       "parallelism_notes": "gate over the leaves: lazy roots TASK-4301, LLMCaller TASK-4305, parrot_tools.wiki TASK-4310, pg_schema TASK-4312, transport TASK-4315/4316, capabilities TASK-4322, config TASK-4324, CLI TASK-4325, ontology cut TASK-4332; edits test_import_ceilings.py created by TASK-4300 (via TASK-4301)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-14T22:00:06+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4333-integration-gate-feat541-handoff.md"
     }

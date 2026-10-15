@@ -193,10 +193,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet (attempt 213844c5), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: OntologyGraphStore -> ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore), dialect "aql"; execute_traversal -> _execute_aql; typed ops is_reachable/get_document_by_id/find_by_field/search_by_name/execute_pattern/execute_query (QueryDialectMismatch unless dialect is aql; TraversalPatternUnavailable without a template). Temporary aliases OntologyGraphStore/execute_traversal remain at the end of graph_store.py for TASK-4332 to delete. Deviations to carry forward: typed-op AQL/bind shapes are not byte-identical to the callers' current AQL (@@edge_collection, filter_<i> binds; get_document_by_id returns the whole document) — callers keep their own AQL until TASK-4329/4330/4331 migrate; TraversalPattern has no `query_templates` field yet (execute_pattern reads it via getattr, falling back to query_template) — the schema field must land with the consumer migration; nothing run against a live ArangoDB (fake client capturing AQL). Verification `partial`: 80 passed, 1 xfailed, 3 xpassed in the targeted ontology tests; ruff F821/F401 clean. No review corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: query_templates read via getattr (field not yet on TraversalPattern); typed-op bind names differ from caller AQL.

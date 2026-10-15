@@ -28,6 +28,7 @@ from typing import Any, Optional, Sequence
 from parrot.knowledge.contracts.catalog import ContractCatalogStore
 from parrot.knowledge.contracts.models import ContractCard, Obligation
 from parrot.knowledge.contracts.standards import find_standards
+from parrot.knowledge.ontology.schema import TraversalPattern
 from pydantic import BaseModel, Field
 
 __all__ = (
@@ -248,7 +249,7 @@ class ContractRetrieval:
 
     Args:
         catalog: The tenant-bound catalog (SQL is always available).
-        graph_store: Optional ``OntologyGraphStore`` for YAML patterns.
+        graph_store: Optional ``ArangoOntologyGraphStore`` for YAML patterns.
         tenant_context: Optional ``TenantContext`` for graph reads.
         ontology: Optional merged ontology supplying the allowlisted AQL.
         authorization: Optional ``AuthorizationChecker``; the local
@@ -678,8 +679,8 @@ class ContractRetrieval:
 
     # -- graph execution (allowlisted YAML patterns only) ------------------
 
-    def aql_for(self, pattern: str) -> str:
-        """Return the allowlisted AQL of a YAML pattern.
+    def pattern_for(self, pattern: str) -> TraversalPattern:
+        """Return the allowlisted traversal pattern declared in YAML.
 
         Raises:
             AuthorizationDenied: For any pattern outside the allowlist.
@@ -692,7 +693,7 @@ class ContractRetrieval:
         declared = self.ontology.traversal_patterns.get(pattern)
         if declared is None:
             raise AuthorizationDenied(f"{pattern!r} is not declared in the ontology")
-        return declared.query_template
+        return declared
 
     async def execute_graph(
         self,
@@ -715,12 +716,12 @@ class ContractRetrieval:
         self.authorize(context, pattern=plan.pattern)
         if self.graph_store is None:
             raise RuntimeError("no graph store configured; SQL retrieval remains available")
-        aql = self.aql_for(plan.pattern)
-        rows = await self.graph_store.execute_traversal(
+        pattern = self.pattern_for(plan.pattern)
+        rows = await self.graph_store.execute_pattern(
             self.tenant_context,
-            aql,
-            bind_vars=dict(plan.binds),
-            collection_binds=collection_binds or {},
+            pattern,
+            dict(plan.binds),
+            collection_binds or {},
         )
         return await self._validate_projection(rows or [])
 

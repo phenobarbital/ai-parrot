@@ -4,7 +4,7 @@ Runs Leiden (default) or Louvain modularity-maximisation over the
 assembled ``rustworkx.PyDiGraph``, computes per-community cohesion +
 global modularity, and writes a stable ``community_id`` onto every
 node's ``domain_tags`` so the assignment round-trips through
-:func:`parrot.knowledge.graphindex.persist._node_to_doc` to ArangoDB
+:func:`parrot.knowledge.graphindex.persist_arango._node_to_doc` to ArangoDB
 with zero persist-layer changes.
 
 Louvain runs via networkx (rustworkx 0.17 has no community detection).
