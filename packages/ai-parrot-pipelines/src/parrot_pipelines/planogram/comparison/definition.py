@@ -511,7 +511,11 @@ def validate_bindings(definition: SlotsDefinition, planogram_config: Dict[str, A
                 raise SlotsDefinitionError(
                     f"rule {binding.rule_id}: appearance attribute {attribute!r} has no expected values"
                 )
-            invalid_values = [value for value in expected_values if not isinstance(value, str) or value not in APPEARANCE_VALUES[attribute]]
+            invalid_values = [
+                value
+                for value in expected_values
+                if not isinstance(value, str) or value not in APPEARANCE_VALUES[attribute]
+            ]
             if invalid_values:
                 raise SlotsDefinitionError(
                     f"rule {binding.rule_id}: appearance attribute {attribute!r} has invalid value "
