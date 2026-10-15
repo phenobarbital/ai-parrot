@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -111,7 +111,7 @@ class WikiConfig(BaseModel):
             "the WikiStore plane is the retrieval backend."
         ),
     )
-    storage_backend: Literal["sqlite", "memory", "arangodb"] = Field(
+    storage_backend: str = Field(
         default="sqlite",
         description=(
             "Retrieval-plane backend: 'sqlite' (single-file wiki.db, "
@@ -129,6 +129,17 @@ class WikiConfig(BaseModel):
             "ingestion (`wikitoolkit ingest`)."
         ),
     )
+
+    @field_validator("storage_backend")
+    @classmethod
+    def validate_storage_backend(cls, v: str) -> str:
+        """Check the backend name against the wiki backend registry."""
+        from parrot.knowledge.wiki.store import wiki_backend_names  # lazy: avoid import cycle
+
+        names = wiki_backend_names()
+        if v not in names:
+            raise ValueError(f"Unknown wiki storage backend {v!r} — expected one of {', '.join(map(repr, names))}")
+        return v
 
     @field_validator("search_weights")
     @classmethod
