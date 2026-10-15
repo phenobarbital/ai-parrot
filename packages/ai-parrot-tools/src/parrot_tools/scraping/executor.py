@@ -971,8 +971,6 @@ async def _action_screenshot(
         image_bytes = await driver.screenshot(full_path, full_page=action.full_page)
 
     key = getattr(action, "name", None) or "screenshot"
-    if key == "screenshot":
-        key = "screenshot"
     key = _first_free_screenshot_key(step_extracted, key)
     payload: Dict[str, Any] = {"path": full_path}
     if action.return_base64:
@@ -990,15 +988,15 @@ async def _action_screenshot(
 
 
 def _first_free_screenshot_path(path: Path, reserved_paths: set[Path]) -> Path:
-    """Return *path* or its first numbered sibling that is not reserved or on disk."""
-    if path not in reserved_paths and not path.exists():
+    """Return *path* or its first numbered sibling not already used in this run."""
+    if path not in reserved_paths:
         return path
     suffix = path.suffix
     stem = path.stem
     number = 2
     while True:
         candidate = path.with_name(f"{stem}_{number}{suffix}")
-        if candidate not in reserved_paths and not candidate.exists():
+        if candidate not in reserved_paths:
             return candidate
         number += 1
 

@@ -136,9 +136,8 @@ async def test_screenshot_base64_cap(spy_driver: AsyncMock, tmp_path: Path, size
 
 
 async def test_screenshot_key_and_path_collisions_use_first_free_suffix(spy_driver: AsyncMock, tmp_path: Path) -> None:
-    """Repeated captures retain all artifacts without replacing a file or key."""
+    """Repeated captures in one run keep distinct keys and paths; pre-existing files are overwritten as before."""
     (tmp_path / "same.png").write_bytes(b"old")
-    (tmp_path / "same_2.png").write_bytes(b"old")
     result = await execute_plan_steps(
         spy_driver,
         plan=_plan(
@@ -148,10 +147,8 @@ async def test_screenshot_key_and_path_collisions_use_first_free_suffix(spy_driv
         config=DriverConfig(delay_between_actions=0),
     )
 
-    assert result.extracted_data["capture"]["path"] == str(tmp_path / "same_3.png")
-    assert result.extracted_data["capture_2"]["path"] == str(tmp_path / "same_4.png")
-    assert (tmp_path / "same.png").read_bytes() == b"old"
-    assert (tmp_path / "same_2.png").read_bytes() == b"old"
+    assert result.extracted_data["capture"]["path"] == str(tmp_path / "same.png")
+    assert result.extracted_data["capture_2"]["path"] == str(tmp_path / "same_2.png")
 
 
 async def test_screenshot_custom_name_key_and_failed_capture(spy_driver: AsyncMock, tmp_path: Path) -> None:
