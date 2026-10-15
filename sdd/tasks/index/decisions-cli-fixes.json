@@ -14,13 +14,13 @@
       "feature_id": "FEAT-675",
       "feature": "decisions-cli-fixes",
       "spec": "sdd/specs/decisions-cli-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-15T12:16:00+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4349-decisions-cli-ns-write-e2e.md"
     }
