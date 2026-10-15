@@ -23,11 +23,22 @@ def _load_sdk_types() -> Any:
     """Import the SDK instead of this repository's ``tests/mcp`` package."""
     test_root = str(Path(__file__).resolve().parents[2])
     original_path = sys.path[:]
+    shadowed = {}
     try:
-        sys.path[:] = [entry for entry in sys.path if entry != test_root]
+        sys.path[:] = [entry for entry in sys.path if str(Path(entry or ".").resolve()) != test_root]
+        # A whole-directory run may already have imported this repository's
+        # ``tests/mcp`` package under the name ``mcp``; set it aside so the
+        # real SDK resolves, then restore it afterwards.
+        for name in [n for n in sys.modules if n == "mcp" or n.startswith("mcp.")]:
+            module_file = str(getattr(sys.modules[name], "__file__", "") or "")
+            if module_file.startswith(test_root):
+                shadowed[name] = sys.modules.pop(name)
         return importlib.import_module("mcp.types")
     finally:
         sys.path[:] = original_path
+        for name in [n for n in shadowed if n in sys.modules]:
+            sys.modules.pop(name)
+        sys.modules.update(shadowed)
 
 
 types = _load_sdk_types()
