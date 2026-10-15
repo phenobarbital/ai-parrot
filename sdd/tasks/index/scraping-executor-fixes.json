@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-15T17:45:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-15T15:36:17+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-682",
       "feature": "scraping-executor-fixes",
       "spec": "sdd/specs/scraping-executor-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -25,8 +25,9 @@
       "discovered_from": "issue:c10c1e94f4b3",
       "assigned_to": null,
       "started_at": "2026-10-15T15:35:01+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4358-click-text-contains-via-evaluate.md"
+      "completed_at": "2026-10-15T15:36:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4358-click-text-contains-via-evaluate.md",
+      "verification": "verified"
     }
   ]
 }
