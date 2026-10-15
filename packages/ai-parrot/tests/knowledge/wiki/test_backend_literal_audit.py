@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-
 _REPO_ROOT = Path(__file__).parents[5]
 _AUDITED_FILES = {
     "packages/ai-parrot/src/parrot/knowledge/wiki/cli.py": {
