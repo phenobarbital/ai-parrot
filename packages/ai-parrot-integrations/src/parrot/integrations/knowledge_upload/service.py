@@ -105,29 +105,44 @@ class KnowledgeUploadService:
         )
         return None
 
+    async def pre_authorize(
+        self,
+        identity: UploaderIdentity,
+        target: UploadTargetKind,
+        filename: str,
+        declared_size: int | None = None,
+    ) -> UploadOutcome | None:
+        """Reject an upload before any bytes are fetched.
+
+        Adapters call this before downloading so unauthorized users cannot make the bot
+        fetch and buffer files. ``submit()`` repeats every check on the real bytes.
+
+        Args:
+            identity: Who is uploading, as seen by the platform adapter.
+            target: Requested ingest target.
+            filename: Platform-reported filename.
+            declared_size: Platform-reported size in bytes, when known.
+
+        Returns:
+            The audited rejection outcome, or ``None`` when the download may proceed.
+        """
+        job_id = uuid.uuid4().hex[:12]
+        rejection = self._validate(job_id, identity, target, filename, declared_size or 0)
+        if rejection is not None:
+            return rejection
+        if await self.authorize(identity) is None:
+            return self._denied_outcome(job_id, target, filename)
+        return None
+
     async def submit(self, request: UploadRequest, notify: Notify) -> UploadOutcome:
         """Validate and schedule a job, or return an immediate rejected outcome."""
         job_id = uuid.uuid4().hex[:12]
-        target = self._targets.get(request.target)
-        if target is None:
-            return self._invalid_outcome(job_id, request, "This upload target is unavailable.")
-        try:
-            suffix = Path(safe_filename(request.filename)).suffix.casefold()
-        except ValueError:
-            return self._invalid_outcome(job_id, request, "The filename is invalid.")
-        if suffix not in {extension.casefold() for extension in self.config.allowed_extensions}:
-            return self._invalid_outcome(job_id, request, "This file type is not supported.")
-        if len(request.data) > self.max_bytes():
-            return self._invalid_outcome(job_id, request, "This file is too large.")
+        rejection = self._validate(job_id, request.identity, request.target, request.filename, len(request.data))
+        if rejection is not None:
+            return rejection
         profile = await self.authorize(request.identity)
         if profile is None:
-            return UploadOutcome(
-                job_id=job_id,
-                status=UploadStatus.DENIED,
-                target=request.target,
-                filename=request.filename,
-                message="You are not allowed to upload knowledge.",
-            )
+            return self._denied_outcome(job_id, request.target, request.filename)
 
         task = asyncio.create_task(self._run_job(job_id, request, profile, notify))
         self._jobs.add(task)
@@ -178,22 +193,62 @@ class KnowledgeUploadService:
             task.cancel()
         await asyncio.gather(*self._jobs, return_exceptions=True)
 
-    def _invalid_outcome(self, job_id: str, request: UploadRequest, message: str) -> UploadOutcome:
+    def _validate(
+        self,
+        job_id: str,
+        identity: UploaderIdentity,
+        target: UploadTargetKind,
+        filename: str,
+        size: int,
+    ) -> UploadOutcome | None:
+        """Run the identity-independent checks, returning an audited rejection or ``None``."""
+        if target not in self._targets:
+            return self._invalid_outcome(job_id, identity, target, filename, size, "This upload target is unavailable.")
+        try:
+            suffix = Path(safe_filename(filename)).suffix.casefold()
+        except ValueError:
+            return self._invalid_outcome(job_id, identity, target, filename, size, "The filename is invalid.")
+        if suffix not in {extension.casefold() for extension in self.config.allowed_extensions}:
+            return self._invalid_outcome(job_id, identity, target, filename, size, "This file type is not supported.")
+        if size > self.max_bytes():
+            return self._invalid_outcome(job_id, identity, target, filename, size, "This file is too large.")
+        return None
+
+    @staticmethod
+    def _denied_outcome(job_id: str, target: UploadTargetKind, filename: str) -> UploadOutcome:
+        """Create the user-facing denial (``authorize()`` already audited it)."""
+        return UploadOutcome(
+            job_id=job_id,
+            status=UploadStatus.DENIED,
+            target=target,
+            filename=filename,
+            message="You are not allowed to upload knowledge.",
+        )
+
+    def _invalid_outcome(
+        self,
+        job_id: str,
+        identity: UploaderIdentity,
+        target: UploadTargetKind,
+        filename: str,
+        size: int,
+        message: str,
+    ) -> UploadOutcome:
         """Create and audit an invalid submission result."""
         outcome = UploadOutcome(
             job_id=job_id,
             status=UploadStatus.INVALID,
-            target=request.target,
-            filename=request.filename,
+            target=target,
+            filename=filename,
             message=message,
         )
         self._audit(
-            platform=request.identity.platform,
-            username=request.identity.platform_user_id,
-            target=request.target.value,
-            filename=request.filename,
+            platform=identity.platform,
+            username=identity.platform_user_id,
+            target=target.value,
+            filename=filename,
             sha256="",
-            size=len(request.data),
+            size=size,
             status=outcome.status,
             triage_action=None,
             duration=0.0,

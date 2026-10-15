@@ -122,7 +122,7 @@ class TeamsKnowledgeUpload:
         return getattr(member, "email", None) or getattr(member, "user_principal_name", None)
 
     async def handle(self, turn_context: TurnContext, target: UploadTargetKind) -> None:
-        """Validate, download, submit, and arrange a proactive completion notice."""
+        """Validate, pre-authorize, download, submit, and arrange a proactive completion notice."""
         text = self.wrapper._remove_mentions(turn_context.activity, turn_context.activity.text or "").strip()
         parts = text.split(maxsplit=1)
         args_text = parts[1] if len(parts) > 1 else ""
@@ -148,6 +148,17 @@ class TeamsKnowledgeUpload:
             await self.wrapper.send_text("Your identity could not be verified.", turn_context)
             return
 
+        identity = UploaderIdentity(
+            platform="msteams",
+            platform_user_id=turn_context.activity.from_property.id,
+            email=email,
+        )
+        # Authorize before fetching any bytes (issue:3cf4d0630516).
+        rejection = await service.pre_authorize(identity, target, filename)
+        if rejection is not None:
+            await self.wrapper.send_text(rejection.message, turn_context)
+            return
+
         max_bytes = service.max_bytes()
         data = await self.download(turn_context, attachment, max_bytes)
         if data is None:
@@ -157,11 +168,6 @@ class TeamsKnowledgeUpload:
             )
             return
 
-        identity = UploaderIdentity(
-            platform="msteams",
-            platform_user_id=turn_context.activity.from_property.id,
-            email=email,
-        )
         request = UploadRequest(
             target=target,
             identity=identity,

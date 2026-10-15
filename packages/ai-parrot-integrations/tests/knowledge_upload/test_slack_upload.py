@@ -66,6 +66,7 @@ def _make_service(targets=None):
     service = MagicMock()
     service.available_targets.return_value = targets
     service.max_bytes.return_value = 4
+    service.pre_authorize = AsyncMock(return_value=None)
     service.submit = AsyncMock(
         return_value=UploadOutcome(
             job_id="job-1",
@@ -245,3 +246,30 @@ async def test_socket_file_without_text_reaches_interceptor():
         {"event_id": "E2", "event": {"type": "message", "channel": "C1", "user": "U1", "text": "", "files": [{}]}}
     )
     wrapper._safe_answer.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_denied_user_never_downloads():
+    """An uploader rejected by pre_authorize is never downloaded or submitted."""
+    wrapper = _make_wrapper()
+    service = _make_service()
+    service.pre_authorize = AsyncMock(
+        return_value=UploadOutcome(
+            job_id="j0",
+            status=UploadStatus.DENIED,
+            target=UploadTargetKind.BOOKSTORE,
+            filename="book.pdf",
+            message="You are not allowed to upload knowledge.",
+        )
+    )
+    adapter = SlackKnowledgeUpload(wrapper, service)
+    adapter._download = AsyncMock()
+
+    await adapter._process("C1", "U1", None, UploadTargetKind.BOOKSTORE, {}, {"name": "book.pdf", "size": 3})
+
+    adapter._download.assert_not_called()
+    service.submit.assert_not_called()
+    assert wrapper.post_message.await_args.args[1] == "You are not allowed to upload knowledge."
+    identity, target, filename, declared_size = service.pre_authorize.await_args.args
+    assert identity.email == "user@example.com"
+    assert (target, filename, declared_size) == (UploadTargetKind.BOOKSTORE, "book.pdf", 3)
