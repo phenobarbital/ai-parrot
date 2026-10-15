@@ -159,14 +159,6 @@ print("OK")
 """
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "parrot/knowledge/wiki/schema/models.py:9 imports parrot.bots.database.models eagerly, which pulls "
-        "parrot.conf (parrot/bots/abstract.py:25) when wiki.cli is imported; owner: schema-plane tree (FEAT-600), "
-        "tracked in handoff-541.md"
-    ),
-)
 def test_blocker_default_cli_entry_and_plain_ops() -> None:
     """Importing the default CLI entry and running a plain op must not touch forbidden prefixes."""
     proc = subprocess.run(

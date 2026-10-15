@@ -9,7 +9,7 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError
 
-from parrot.bots.database.models import Completeness, TableMetadata
+from parrot.knowledge.wiki.schema.table_metadata import Completeness, TableMetadata
 from parrot.knowledge.common.sql_dialects import _SQLGLOT_DIALECT_MAP
 from parrot.knowledge.wiki.repo_scan import file_concept_id
 from parrot.knowledge.wiki.schema.models import TableRecord

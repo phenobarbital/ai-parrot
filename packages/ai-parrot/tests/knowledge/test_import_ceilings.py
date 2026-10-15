@@ -22,14 +22,6 @@ CEILINGS = [
         "parrot.knowledge.wiki.cli",
         850,
         id="wiki.cli",
-        marks=pytest.mark.xfail(
-            strict=False,
-            reason=(
-                "parrot/knowledge/wiki/schema/models.py:9 imports parrot.bots.database.models eagerly "
-                "(via wiki.cli -> federation -> project -> schema.models), loading navconfig/parrot.conf/pandas; "
-                "owner: schema-plane tree (FEAT-600), tracked in handoff-541.md"
-            ),
-        ),
     ),
 ]
 
