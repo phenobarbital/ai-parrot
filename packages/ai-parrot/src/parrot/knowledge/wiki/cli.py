@@ -584,9 +584,11 @@ def _run(coro: Any) -> Any:
 def _env_setting(name: str) -> str | None:
     """Read a wiki env setting (``WIKI_STORE`` / ``WIKI_STORE_BACKEND``).
 
-    Prefers navconfig (so values in ``.env`` are honoured, matching the
-    legacy ``parrot llmwiki`` behaviour) and falls back to ``os.environ``
-    when navconfig is unavailable.
+    Resolved through ``resolve_setting`` with the spec'd precedence
+    (FEAT-540 M4): process environment first, then navconfig (so values in
+    ``.env`` are still honoured when the variable is not exported), then
+    ``None``. Note this is environment-first, unlike the legacy
+    ``parrot llmwiki`` navconfig-first lookup.
     """
     from parrot.knowledge.wiki.project import resolve_setting
 

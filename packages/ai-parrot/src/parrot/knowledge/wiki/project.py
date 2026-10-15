@@ -226,10 +226,9 @@ class WikiNamespaceConfig(BaseModel):
             "Backend for a `store`/`database` entry. Built-in values: "
             "'sqlite', 'memory', 'arangodb'. Also accepts a name "
             "registered via wiki/store.py's register_wiki_backend "
-            "(FEAT-449 M7) — not validated against the registry here "
-            "(core must not import a satellite package at validation "
-            "time); an unknown name surfaces as a ValueError when the "
-            "namespace is actually opened."
+            "(FEAT-449 M7). Validated against the wiki backend registry "
+            "when the config is loaded; an unknown name raises a "
+            "ValueError listing the registered backends."
         ),
     )
     database: str | None = Field(default=None, description="ArangoDB database name")

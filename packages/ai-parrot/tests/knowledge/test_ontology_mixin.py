@@ -788,3 +788,24 @@ class TestOntologyProcessStates:
         assert result.context is not None
         assert result.context.source == "ontology"
         assert result.tool_result == {"issues": [{"key": "TROC-1"}]}
+
+
+class TestGraphDialectForwarding:
+    @pytest.mark.asyncio
+    async def test_resolver_receives_graph_store_dialect(self, mock_tenant_mgr, mock_graph_store, mock_cache, user_context):
+        from unittest.mock import MagicMock
+        import parrot.knowledge.ontology.mixin as mixin_mod
+
+        mock_graph_store.dialect = "cypher"
+        captured = {}
+        real = mixin_mod.OntologyIntentResolver
+
+        def _spy(*args, **kwargs):
+            captured.update(kwargs)
+            return real(*args, **kwargs)
+
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
+                patch.object(mixin_mod, "OntologyIntentResolver", side_effect=_spy):
+            mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
+            await mixin.ontology_process("What is my department?", user_context, "test")
+        assert captured["dialect"] == "cypher"

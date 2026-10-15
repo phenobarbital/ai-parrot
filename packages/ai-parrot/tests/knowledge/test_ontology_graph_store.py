@@ -465,3 +465,10 @@ class TestUpsertAqlShape:
         with pytest.raises(ValueError):
             await store.upsert_nodes(tenant_ctx, "employees", nodes=[{"x": 1}], key_field="x } REMOVE")
         mock_db.execute_query.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_refusal_names_field_and_ontology(self, store, tenant_ctx, mock_db):
+        with pytest.raises(ValueError) as exc:
+            await store.upsert_nodes(tenant_ctx, "employees", nodes=[{"x": 1}], key_field="employee-id")
+        msg = str(exc.value)
+        assert "employee-id" in msg and "employees" in msg and tenant_ctx.tenant_id in msg

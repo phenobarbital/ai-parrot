@@ -83,7 +83,7 @@ _EXPORTS: dict[str, str] = {
     "create_bulk_tools": "parrot_tools.wiki.bulk",
 }
 
-__all__ = [*list(_EXPORTS), *[name for name in globals() if not name.startswith("__")]]
+__all__ = [*list(_EXPORTS), *[name for name in globals() if not name.startswith("_")]]
 
 
 def __getattr__(name: str) -> Any:

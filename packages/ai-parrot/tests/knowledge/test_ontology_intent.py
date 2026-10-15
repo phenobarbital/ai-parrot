@@ -215,3 +215,36 @@ class TestCollectionBinds:
         assert "Employee" in resolver._schema_prompt
         assert "belongs_to" in resolver._schema_prompt
         assert "find_dept" in resolver._schema_prompt
+
+
+class TestLegacyAqlKey:
+    """An LLM answering with the pre-dialect ``aql`` key must not silently degrade."""
+
+    @staticmethod
+    def _llm():
+        mock_llm = AsyncMock()
+        mock_llm.completion.return_value = MagicMock(
+            output=json.dumps(
+                {
+                    "action": "graph_query",
+                    "pattern": "dynamic",
+                    "aql": "FOR v IN 1..2 OUTBOUND @user_id assigned_to RETURN v.name",
+                }
+            )
+        )
+        return mock_llm
+
+    @pytest.mark.asyncio
+    async def test_legacy_aql_key_is_aliased_for_aql_dialect(self, ontology, user_context):
+        resolver = OntologyIntentResolver(ontology, llm_client=self._llm())
+        result = await resolver.resolve("Show me all projects connected to my team", user_context)
+        assert result is not None and result.source == "llm_dynamic"
+        assert "OUTBOUND" in result.query
+
+    @pytest.mark.asyncio
+    async def test_legacy_aql_key_ignored_with_warning_for_other_dialects(self, ontology, user_context, caplog):
+        resolver = OntologyIntentResolver(ontology, llm_client=self._llm(), dialect="cypher")
+        with caplog.at_level("WARNING"):
+            result = await resolver.resolve("Show me all projects connected to my team", user_context)
+        assert result is None or result.source != "llm_dynamic"
+        assert "legacy 'aql' key" in caplog.text

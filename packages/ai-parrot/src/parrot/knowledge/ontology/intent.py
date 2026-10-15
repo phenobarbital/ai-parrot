@@ -198,6 +198,16 @@ class OntologyIntentResolver:
             else:
                 parsed = output
 
+            if isinstance(parsed, dict) and not parsed.get("query") and parsed.get("aql"):
+                if self._dialect == "aql":
+                    # Legacy answer key (pre dialect-neutral prompt): alias of ``query``.
+                    parsed = {**parsed, "query": parsed["aql"]}
+                else:
+                    logger.warning(
+                        "LLM answered with the legacy 'aql' key but the resolver dialect is %r; ignoring it",
+                        self._dialect,
+                    )
+
             decision = IntentDecision.model_validate(parsed)
 
             if decision.action == "vector_only":

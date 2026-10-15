@@ -9,7 +9,7 @@ whole batch in one audited, revertible transaction.
 The publisher is duck-typed over its ``persistence`` dependency — any
 backend exposing ``apply_update`` / ``get_commit`` / ``list_commits`` /
 ``revert_commit`` works (``SQLitePersistence`` today; the ArangoDB
-``GraphIndexPersistence`` can implement the same protocol later).
+``ArangoPersistence`` can implement the same protocol later).
 """
 
 from __future__ import annotations
