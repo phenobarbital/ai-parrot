@@ -85,4 +85,16 @@ The task modifies tests only; the validation command above is the test.
 Implement exactly the scope above, run the validation command, commit only the two files.
 
 ## Completion Note
-*(Agent fills this in when done)*
+**Completed by**: Claude (sdd-fix lane), 2026-10-15
+**Commit**: acb0a1a7f
+
+Root cause: two stale test doubles, no production bug. (1) Both studio modules patched
+`byok.load_master_keys`/`get_active_key_id`, removed by FEAT-099 (BYOK now goes through
+`parrot.security.vault_utils.get_vault_keyring()`); `test_byok.py` errored on all 10 tests and
+`test_integration.py` had been masked with `raising=False` (a silent no-op). Fixtures now patch
+`get_vault_keyring` on `byok` and `vault_utils` with a real `KeyRing(MASTER_KEYS, MASTER_KEY_ID)`;
+the 503 test patches it with a `RuntimeError` raiser. (2) `_FakeAskBot` predated commit 3ee6e37fc
+(test/ask uses `bot.name` and `ask(question=, user_id=, session_id=)`) — added `name` + `**kwargs`.
+
+Validation: test_integration.py + test_byok.py + unit/test_byok_context.py +
+unit/test_mcp_restore_integrity.py → 21 passed. `ruff check` clean. Resolves ledger issue:d5a7c625fbe7.
