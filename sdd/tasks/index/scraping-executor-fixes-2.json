@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-15T20:05:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-15T18:00:30+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-684",
       "feature": "scraping-executor-fixes-2",
       "spec": "sdd/specs/scraping-executor-fixes-2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -25,8 +25,9 @@
       "discovered_from": "issue:28c2e9573ce2",
       "assigned_to": null,
       "started_at": "2026-10-15T20:08:00Z",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4364-executor-xpath-escape-clear-first-submit.md"
+      "completed_at": "2026-10-15T18:00:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4364-executor-xpath-escape-clear-first-submit.md",
+      "verification": "verified"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-684 — Scraping Executor Fixes 2
 **Spec**: `sdd/specs/scraping-executor-fixes-2.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -119,3 +119,15 @@ async def test_submit_strips_soup_pseudos(spy_driver): ...
 
 ## Completion Note
 
+Implemented in fba265018 (via /sdd-fix, issue:28c2e9573ce2).
+- `_xpath_literal()` added; `_resolve_locator` and `_action_click`'s text branch build
+  `//*[contains(text(), <literal>)]` — `'v'`, `"v"`, or `concat(...)` for mixed quotes, so
+  interpolated text can never close the literal (quote-free output unchanged: `'Menu'`).
+- `_action_type`: `selector=None` + `clear_first` runs `_CLEAR_FOCUSED_JS` (clears
+  `document.activeElement` value / contenteditable text, fires `input`) via `driver.evaluate`
+  before `type_text`. Done in the executor, not the drivers, so it is uniform.
+- `_action_submit`: non-XPath (`/`, `./`) target and `wait_after_submit` go through
+  `_strip_soup_only_pseudos`; a target that strips to empty raises `RuntimeError` (step error).
+- 12 new tests in `test_executor_action_gaps.py`; 10 of them fail against the pre-fix
+  executor (the other 2 are no-regression guards). Validation: all `tests/scraping/*executor*`
+  → 95 passed; ruff clean.
