@@ -44,6 +44,22 @@ Before running a coroutine job, a Redis-coordinated worker atomically writes
 that same due time. The fire-lock TTL is controlled by
 `SCHEDULER_FIRE_LOCK_TTL`.
 
+The claim key only deduplicates when every worker computes the same due time,
+so triggers are built deterministically:
+
+- `interval` schedules are anchored at the UTC epoch (`INTERVAL_ANCHOR` in
+  `parrot.scheduler.coordination`). Fires land on `1970-01-01T00:00Z + n *
+  interval` on every worker and across restarts — e.g. a 5-minute interval
+  fires at `:00`, `:05`, `:10`, … rather than five minutes after the worker
+  started. This applies to `db`, `redis` and `code` (`@schedule`) jobs.
+- `cron`, `crontab`, `daily`, `weekly` and `monthly` triggers are already
+  deterministic.
+- A `once` schedule without `run_date` fires at its definition's `created_at`
+  for `db` and `redis` schedules, so every worker shares one due time. A
+  `code` (`@schedule`) `once` job without `run_date` has no shared row and
+  still fires at each process's start; give it an explicit `run_date` in a
+  multi-worker deployment.
+
 If Redis cannot answer the claim, the scheduler does not run the job
 uncoordinated. Database schedules record `last_status = "lock_unavailable"`
 in their run-state column. Decorator schedules are skipped because they have

@@ -1046,6 +1046,26 @@ class BasicAgent(Chatbot, NotificationMixin):
             self.logger.error("Failed to add MCP server %s: %s", getattr(config, "name", "unknown"), exc, exc_info=True)
             return []
 
+    async def setup_mcp_servers(self, configurations: Optional[List[MCPServerConfig]] = None) -> None:
+        """
+        Add several MCP servers at once.
+
+        Called by the agent registry with the ``mcp_servers`` section of an
+        agent definition. A server that fails to register is logged and
+        skipped; the remaining servers are still added.
+
+        Args:
+            configurations: List of MCPServerConfig objects (``None`` is a no-op).
+        """
+        for config in configurations or []:
+            try:
+                tools = await self.add_mcp_server(config)
+                self.logger.info("Added MCP server '%s' with tools: %s", getattr(config, "name", "unknown"), tools)
+            except Exception as exc:
+                self.logger.error(
+                    "Failed to add MCP server '%s': %s", getattr(config, "name", "unknown"), exc, exc_info=True
+                )
+
     async def add_mcp_server_url(
         self,
         name: str,

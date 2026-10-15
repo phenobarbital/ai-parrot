@@ -8,7 +8,7 @@ import socket
 import sys
 import uuid
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Awaitable, Callable, Optional, Protocol, Set, runtime_checkable
 
 import redis.asyncio as aioredis
@@ -28,6 +28,14 @@ DEFAULT_RUN_NOW_TTL = 3600
 
 CURRENT_RUN_TIME: ContextVar[Optional[datetime]] = ContextVar("scheduler_current_run_time", default=None)
 # Scheduled run time of the fire being executed; set by CoordinatedAsyncIOExecutor (FEAT-644, aa813ccc1927).
+
+INTERVAL_ANCHOR = datetime(1970, 1, 1, tzinfo=timezone.utc)
+"""Shared ``start_date`` for every ``interval`` trigger (FEAT-676, ledger aa813ccc1927).
+
+The fire claim key embeds the scheduled due time, so all workers must compute identical due times. Anchoring
+interval triggers at a fixed epoch makes each fire ``INTERVAL_ANCHOR + n * interval`` on every worker, regardless
+of when the worker built the trigger.
+"""
 
 
 def manager_prefix(registered_name: str) -> str:

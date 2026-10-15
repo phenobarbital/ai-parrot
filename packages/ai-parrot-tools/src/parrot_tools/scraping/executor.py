@@ -12,16 +12,18 @@ no Selenium-specific imports live in this module.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import re as _re
 import time
 from dataclasses import asdict
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
-from parrot.utils.jsonld_extractors import EXTRACTOR_REGISTRY, JsonLdItem, walk_jsonld
+from parrot.utils.jsonld_extractors import JsonLdItem, walk_jsonld
 
 from .advanced_actions import exec_conditional, exec_loop
 from .drivers.abstract import AbstractDriver
@@ -55,6 +57,8 @@ logger = logging.getLogger(__name__)
 # Default settings when no DriverConfig is provided.
 _DEFAULT_DELAY = 1.0
 _DEFAULT_TIMEOUT = 10
+MAX_SCREENSHOT_BASE64_BYTES: int = 2 * 1024 * 1024
+"""Maximum raw PNG bytes included as base64 in extracted data."""
 
 
 async def execute_plan_steps(
@@ -298,6 +302,8 @@ async def _dispatch_step(
         return await _action_click(driver, action, timeout)
     elif action_type == "fill":
         return await _action_fill(driver, action, timeout)
+    elif action_type == "type":
+        return await _action_type(driver, action, timeout)
     elif action_type == "scroll":
         return await _action_scroll(driver, action)
     elif action_type == "evaluate":
@@ -314,8 +320,12 @@ async def _dispatch_step(
         return await _action_get_text(driver, action)
     elif action_type == "get_html":
         return await _action_get_html(driver, action)
+    elif action_type == "hover":
+        return await _action_hover(driver, action, timeout)
+    elif action_type == "submit":
+        return await _action_submit(driver, action, timeout)
     elif action_type == "screenshot":
-        return await _action_screenshot(driver, action)
+        return await _action_screenshot(driver, action, step, step_extracted)
     elif action_type == "press_key":
         return await _action_press_key(driver, action)
     elif action_type == "select":
@@ -451,7 +461,11 @@ async def _action_click(driver: AbstractDriver, action: Any, default_timeout: in
 
     Handles the ``:-soup-contains`` text filter by falling back to a JS
     dispatch when a CSS text-contains pseudo-class is present, preserving
-    the CSS specificity prefix.
+    the CSS specificity prefix. The JS runs as one ``driver.evaluate`` IIFE
+    so it behaves the same on every driver.
+
+    Raises:
+        RuntimeError: when no element matching the CSS prefix contains the text.
     """
     selector = action.selector
     selector_type = getattr(action, "selector_type", "css")
@@ -487,9 +501,13 @@ async def _action_click(driver: AbstractDriver, action: Any, default_timeout: in
     if js_text_filter is not None:
         # CSS prefix + JS text match — preserves specificity. Uses
         # dispatchEvent so React's synthetic-event system catches it.
-        script = (
-            "const els = document.querySelectorAll(arguments[0]);"
-            " const needle = arguments[1].toLowerCase();"
+        # Values are embedded with json.dumps in a self-contained IIFE run via
+        # driver.evaluate: ``arguments[N]`` only exists under Selenium's
+        # execute_script, Playwright's page.evaluate never binds it.
+        expr = (
+            "(() => {"
+            f" const els = document.querySelectorAll({json.dumps(selector)});"
+            f" const needle = {json.dumps(js_text_filter.lower())};"
             " for (const el of els) {"
             "   if ((el.textContent || '').toLowerCase().includes(needle)) {"
             "     el.scrollIntoView({block:'center'});"
@@ -499,16 +517,15 @@ async def _action_click(driver: AbstractDriver, action: Any, default_timeout: in
             "   }"
             " }"
             " return false;"
+            "})()"
         )
-        hit = await driver.execute_script(script, selector, js_text_filter)
+        hit = await driver.evaluate(expr)
         if not hit:
             raise RuntimeError(f"No element matching CSS {selector!r} contained text " f"{js_text_filter!r}")
         return True
 
-    if selector_type == "xpath":
-        locator = selector
-    elif selector_type == "text":
-        locator = f"//*[contains(text(), '{selector}')]"
+    if selector_type == "text":
+        locator = _resolve_locator(selector, "text")
     else:
         locator = selector
 
@@ -528,6 +545,138 @@ async def _action_fill(driver: AbstractDriver, action: Any, default_timeout: int
     return True
 
 
+async def _action_type(driver: AbstractDriver, action: Any, default_timeout: int) -> bool:
+    """Forward all typing fields to the driver's typing capability.
+
+    With ``selector=None`` the text is typed into the currently focused element.
+    Drivers only honour ``clear_first`` for a selected element, so the focused
+    element is cleared here with one ``driver.evaluate`` IIFE.
+    """
+    if action.selector is None and action.clear_first:
+        await driver.evaluate(_CLEAR_FOCUSED_JS)
+    await driver.type_text(
+        action.text,
+        selector=action.selector,
+        delay_ms=action.delay,
+        clear_first=action.clear_first,
+        timeout=action.timeout or default_timeout,
+    )
+    return True
+
+
+# Clears ``document.activeElement`` (inputs/textareas via ``value``,
+# contenteditable via ``textContent``) and fires a bubbling ``input`` event.
+# No leading whitespace: Selenium's evaluate() prefixes ``return ``.
+_CLEAR_FOCUSED_JS = (
+    "(() => {"
+    " const el = document.activeElement;"
+    " if (!el || el === document.body) return false;"
+    " if ('value' in el) { el.value = ''; }"
+    " else if (el.isContentEditable) { el.textContent = ''; }"
+    " else return false;"
+    " el.dispatchEvent(new Event('input', {bubbles: true}));"
+    " return true;"
+    "})()"
+)
+
+
+def _xpath_literal(value: str) -> str:
+    """Quote *value* as an XPath 1.0 string literal.
+
+    XPath 1.0 has no escape syntax, so a value holding both quote kinds is
+    built with ``concat()`` — interpolated text can never close the literal.
+
+    Args:
+        value: Raw text to embed in an XPath expression.
+
+    Returns:
+        An XPath string literal (or ``concat(...)`` expression) equal to *value*.
+    """
+    if "'" not in value:
+        return f"'{value}'"
+    if '"' not in value:
+        return f'"{value}"'
+    parts = value.split("'")
+    return "concat(" + ', "\'", '.join(f"'{part}'" for part in parts) + ")"
+
+
+def _resolve_locator(selector: str, selector_type: str = "css") -> str:
+    """Map CSS, XPath, or text DSL selectors to a driver locator."""
+    if selector_type == "xpath":
+        return selector
+    if selector_type == "text":
+        return f"//*[contains(text(), {_xpath_literal(selector)})]"
+    return _strip_soup_only_pseudos(selector)
+
+
+async def _action_hover(driver: AbstractDriver, action: Any, default_timeout: int) -> bool:
+    """Hover over the resolved selector using the action or default timeout."""
+    timeout = action.timeout or default_timeout
+    selector_type = getattr(action, "selector_type", "css")
+    await driver.hover(_resolve_locator(action.selector, selector_type), timeout)
+    return True
+
+
+async def _action_submit(driver: AbstractDriver, action: Any, default_timeout: int) -> bool:
+    """Submit a form or click a control, optionally waiting for a follow-up selector.
+
+    BeautifulSoup-only pseudos (``:contains`` / ``:-soup-contains`` / ``:has``)
+    are stripped from CSS selectors, as ``querySelector`` rejects them.
+
+    Raises:
+        RuntimeError: when the selector is empty after stripping or matches nothing.
+    """
+    timeout = action.timeout or default_timeout
+    selector = action.selector
+    if not _is_xpath(selector):
+        stripped = _strip_soup_only_pseudos(selector)
+        if stripped != selector:
+            logger.warning("submit selector %r contains BS4-only pseudo-classes; stripped to %r.", selector, stripped)
+        if not stripped.strip():
+            raise RuntimeError(f"submit selector {selector!r} reduced to empty after stripping BS4-only pseudos")
+        selector = stripped
+    expression = f"""
+(() => {{
+    const selector = {json.dumps(selector)};
+    let element;
+    if (selector.startsWith("/") || selector.startsWith("./")) {{
+        element = document.evaluate(
+            selector, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+        ).singleNodeValue;
+    }} else {{
+        element = document.querySelector(selector);
+    }}
+    if (!element) return "missing";
+    if (element.tagName && element.tagName.toLowerCase() === "form") {{
+        if (typeof element.requestSubmit === "function") {{
+            element.requestSubmit();
+        }} else {{
+            element.submit();
+        }}
+        return "form";
+    }}
+    return "click";
+}})()
+"""
+    # strip: Selenium's evaluate() prefixes `return `, and a leading newline would trigger ASI.
+    outcome = await driver.evaluate(expression.strip())
+    if outcome == "missing":
+        raise RuntimeError(f"No element matching selector {selector!r}")
+    if outcome == "click":
+        await driver.click(selector, timeout)
+    wait_after = getattr(action, "wait_after_submit", None)
+    if wait_after and not _is_xpath(wait_after):
+        wait_after = _strip_soup_only_pseudos(wait_after)
+    if wait_after:
+        await driver.wait_for_selector(wait_after, action.wait_timeout)
+    return True
+
+
+def _is_xpath(selector: str) -> bool:
+    """Return True when *selector* is XPath, using the submit JS's own rule."""
+    return selector.startswith(("/", "./"))
+
+
 async def _action_scroll(driver: AbstractDriver, action: Any) -> bool:
     """Scroll the page.
 
@@ -543,8 +692,10 @@ async def _action_scroll(driver: AbstractDriver, action: Any) -> bool:
         return True
 
     if direction == "bottom":
-        height_script = "return Math.max(document.body.scrollHeight," " document.documentElement.scrollHeight);"
-        height = int(await driver.execute_script(height_script) or 0)
+        # Bare expression via evaluate: a top-level ``return`` is an illegal
+        # statement under Playwright/Page's ``page.evaluate``.
+        height_expr = "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
+        height = int(await driver.evaluate(height_expr) or 0)
         if height <= 0:
             return True
         chunks = 6
@@ -552,7 +703,7 @@ async def _action_scroll(driver: AbstractDriver, action: Any) -> bool:
             y = min(height * i // chunks, height)
             await driver.execute_script(f"window.scrollTo(0, {y});")
             await asyncio.sleep(0.4)
-            new_height = int(await driver.execute_script(height_script) or 0)
+            new_height = int(await driver.evaluate(height_expr) or 0)
             height = max(height, new_height)
         return True
 
@@ -866,18 +1017,73 @@ def _apply_field(row: Any, spec: Any) -> Any:
     return extract(matches[0])
 
 
-async def _action_screenshot(driver: AbstractDriver, action: Any) -> bool:
-    """Take a screenshot."""
+async def _action_screenshot(
+    driver: AbstractDriver,
+    action: Any,
+    step: ScrapingStep,
+    step_extracted: Dict[str, Any],
+) -> bool:
+    """Capture a page or element and report its path and bounded optional base64."""
     output_path = getattr(action, "output_path", None) or "."
     filename = action.get_filename() if hasattr(action, "get_filename") else f"screenshot_{int(time.time())}.png"
-    confined = confined_file(output_path if output_path != "." else "", filename)  # the JOINED path, name included
+    confined = confined_file(output_path if output_path != "." else "", filename)
     if confined is not None:
         confined.parent.mkdir(parents=True, exist_ok=True)
-    full_path = str(confined) if confined is not None else f"{output_path}/{filename}"
+    path = confined if confined is not None else Path(output_path) / filename
+    reserved_paths = {
+        Path(payload["path"])
+        for payload in step_extracted.values()
+        if isinstance(payload, dict) and isinstance(payload.get("path"), str)
+    }
+    path = _first_free_screenshot_path(path, reserved_paths)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    full_path = str(path)
 
-    await driver.screenshot(full_path)
+    timeout = action.timeout or _DEFAULT_TIMEOUT
+    if action.selector:
+        image_bytes = await driver.screenshot_element(action.selector, full_path, timeout)
+    else:
+        image_bytes = await driver.screenshot(full_path, full_page=action.full_page)
+
+    key = getattr(action, "name", None) or "screenshot"
+    key = _first_free_screenshot_key(step_extracted, key)
+    payload: Dict[str, Any] = {"path": full_path}
+    if action.return_base64:
+        if len(image_bytes) <= MAX_SCREENSHOT_BASE64_BYTES:
+            payload["base64"] = base64.b64encode(image_bytes).decode("ascii")
+        else:
+            payload["base64_omitted"] = True
+            payload["size_bytes"] = len(image_bytes)
+            logger.warning(
+                "Screenshot base64 omitted because image exceeds %d bytes: %s", MAX_SCREENSHOT_BASE64_BYTES, full_path
+            )
+    step_extracted[key] = payload
     logger.info("Screenshot saved: %s", full_path)
     return True
+
+
+def _first_free_screenshot_path(path: Path, reserved_paths: set[Path]) -> Path:
+    """Return *path* or its first numbered sibling not already used in this run."""
+    if path not in reserved_paths:
+        return path
+    suffix = path.suffix
+    stem = path.stem
+    number = 2
+    while True:
+        candidate = path.with_name(f"{stem}_{number}{suffix}")
+        if candidate not in reserved_paths:
+            return candidate
+        number += 1
+
+
+def _first_free_screenshot_key(extracted: Dict[str, Any], key: str) -> str:
+    """Return *key* or its first free numeric suffix in extracted data."""
+    if key not in extracted:
+        return key
+    number = 2
+    while f"{key}_{number}" in extracted:
+        number += 1
+    return f"{key}_{number}"
 
 
 async def _action_press_key(driver: AbstractDriver, action: Any) -> bool:

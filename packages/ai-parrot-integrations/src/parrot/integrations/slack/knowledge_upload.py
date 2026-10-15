@@ -160,7 +160,7 @@ class SlackKnowledgeUpload:
         args: Dict[str, Any],
         file_info: Dict[str, Any],
     ) -> None:
-        """Download, submit, and relay the upload outcome without exposing internals."""
+        """Pre-authorize, download, submit, and relay the upload outcome without exposing internals."""
         max_bytes = self.service.max_bytes()
 
         async def notify(outcome: UploadOutcome) -> None:
@@ -168,6 +168,14 @@ class SlackKnowledgeUpload:
 
         if file_info.get("size") is not None and file_info["size"] > max_bytes:
             await self.wrapper.post_message(channel, "This file is too large.", thread_ts=thread_ts)
+            return
+        filename = file_info.get("name") or "document"
+        email = await self._email(user)
+        identity = UploaderIdentity(platform="slack", platform_user_id=user, email=email)
+        # Authorize before fetching any bytes (issue:3cf4d0630516).
+        rejection = await self.service.pre_authorize(identity, target, filename, file_info.get("size"))
+        if rejection is not None:
+            await self.wrapper.post_message(channel, rejection.message, thread_ts=thread_ts)
             return
         try:
             data = await self._download(file_info, max_bytes)
@@ -178,12 +186,10 @@ class SlackKnowledgeUpload:
             self.logger.warning("Slack knowledge upload download failed", exc_info=True)
             await self.wrapper.post_message(channel, "The file could not be downloaded.", thread_ts=thread_ts)
             return
-        email = await self._email(user)
-        identity = UploaderIdentity(platform="slack", platform_user_id=user, email=email)
         request = UploadRequest(
             target=target,
             identity=identity,
-            filename=file_info.get("name") or "document",
+            filename=filename,
             data=data,
             **args,
         )

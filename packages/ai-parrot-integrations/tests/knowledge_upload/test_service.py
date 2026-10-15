@@ -208,3 +208,41 @@ async def test_from_config_drops_unavailable_target(
         service = await KnowledgeUploadService.from_config(KnowledgeUploadConfig(enabled=True))
     assert not service.available_targets()
     assert "missing charter" in caplog.text
+
+
+async def test_pre_authorize_allows(tmp_path: Path, userinfo: AsyncMock) -> None:
+    """An allow-listed uploader with a valid file may proceed to download."""
+    service = _service(tmp_path, userinfo)
+    identity = _request().identity
+    assert await service.pre_authorize(identity, UploadTargetKind.BOOKSTORE, "a.md", 10) is None
+    assert not service._jobs
+
+
+async def test_pre_authorize_denies_unlisted_user(
+    tmp_path: Path, userinfo: AsyncMock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A user outside the allow-list is denied (and audited once) without any bytes."""
+    config = KnowledgeUploadConfig(enabled=True, allowed_usernames=["other"])
+    service = KnowledgeUploadService(config, {UploadTargetKind.BOOKSTORE: FakeTarget(tmp_path)}, userinfo)
+    with caplog.at_level(logging.INFO, logger="parrot.integrations.knowledge_upload.audit"):
+        outcome = await service.pre_authorize(_request().identity, UploadTargetKind.BOOKSTORE, "a.md")
+    records = [record for record in caplog.records if record.name.endswith("knowledge_upload.audit")]
+    assert outcome is not None and outcome.status == UploadStatus.DENIED
+    assert outcome.message == "You are not allowed to upload knowledge."
+    assert [record.status for record in records] == [UploadStatus.DENIED.value]
+    assert not service._jobs
+
+
+async def test_pre_authorize_rejects_invalid_before_lookup(tmp_path: Path, userinfo: AsyncMock) -> None:
+    """Bad target, extension or declared size are rejected before any identity lookup."""
+    service = _service(tmp_path, userinfo)
+    identity = _request().identity
+    cases = [
+        (UploadTargetKind.WIKI, "a.md", None),
+        (UploadTargetKind.BOOKSTORE, "a.exe", None),
+        (UploadTargetKind.BOOKSTORE, "a.md", 2 * 1024 * 1024),
+    ]
+    for target, filename, size in cases:
+        outcome = await service.pre_authorize(identity, target, filename, size)
+        assert outcome is not None and outcome.status == UploadStatus.INVALID
+    userinfo.get_profile.assert_not_called()

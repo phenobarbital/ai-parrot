@@ -9,9 +9,13 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from parrot_pipelines.planogram.contracts import APPEARANCE_VALUES
+
 logger = logging.getLogger(__name__)
 
-RuleKind = Literal["illumination", "text_requirements", "visual_features", "zone_present", "fact_tag_present"]
+RuleKind = Literal[
+    "illumination", "text_requirements", "visual_features", "zone_present", "fact_tag_present", "appearance"
+]
 ZoneKind = Literal[
     "header",
     "backlit",
@@ -444,6 +448,7 @@ def validate_bindings(definition: SlotsDefinition, planogram_config: Dict[str, A
         SlotsDefinitionError: malformed binding, duplicate ``rule_id``, dangling ``target_id``, ambiguous
             ``target_id`` (present in more than one of facing / zone / shelf namespaces), a
             ``fact_tag_present`` rule that does not target a facing, a mandatory ``fact_tag_present`` rule,
+            an ``appearance`` rule that targets a facing or has an unknown attribute or value,
             a shelf with no facings that ends up with no mandatory bound rule, or a required zone without a
             mandatory ``zone_present`` binding targeting that zone.
     """
@@ -486,6 +491,54 @@ def validate_bindings(definition: SlotsDefinition, planogram_config: Dict[str, A
             raise SlotsDefinitionError(
                 f"rule {binding.rule_id}: fact_tag_present is informative and cannot be mandatory"
             )
+
+    for binding in bindings:
+        if binding.kind != "appearance":
+            continue
+        if binding.target_id in namespaces["facing"]:
+            raise SlotsDefinitionError(f"rule {binding.rule_id}: appearance must target a zone or shelf")
+        if not binding.params:
+            raise SlotsDefinitionError(f"rule {binding.rule_id}: appearance needs at least one attribute")
+        for attribute, expected in binding.params.items():
+            if attribute not in APPEARANCE_VALUES:
+                allowed_attributes = ", ".join(sorted(APPEARANCE_VALUES))
+                raise SlotsDefinitionError(
+                    f"rule {binding.rule_id}: unknown appearance attribute {attribute!r}; "
+                    f"expected one of {allowed_attributes}"
+                )
+            expected_values = expected if isinstance(expected, list) else [expected]
+            if not expected_values:
+                raise SlotsDefinitionError(
+                    f"rule {binding.rule_id}: appearance attribute {attribute!r} has no expected values"
+                )
+            invalid_values = [
+                value
+                for value in expected_values
+                if not isinstance(value, str) or value not in APPEARANCE_VALUES[attribute]
+            ]
+            if invalid_values:
+                raise SlotsDefinitionError(
+                    f"rule {binding.rule_id}: appearance attribute {attribute!r} has invalid value "
+                    f"{invalid_values[0]!r}"
+                )
+
+    for binding in bindings:
+        if binding.kind != "visual_features" or "checklist" not in binding.params:
+            continue
+        checklist = binding.params["checklist"]
+        if not isinstance(checklist, list) or not checklist:
+            raise SlotsDefinitionError(f"rule {binding.rule_id}: checklist must be a non-empty list")
+        for item in checklist:
+            if not isinstance(item, dict):
+                raise SlotsDefinitionError(f"rule {binding.rule_id}: checklist entries must be objects")
+            feature = item.get("feature")
+            if not isinstance(feature, str) or not feature.strip():
+                raise SlotsDefinitionError(f"rule {binding.rule_id}: checklist entry needs a non-empty feature")
+            min_count = item.get("min_count", 1)
+            if isinstance(min_count, bool) or not isinstance(min_count, int) or min_count < 1:
+                raise SlotsDefinitionError(
+                    f"rule {binding.rule_id}: checklist feature {feature!r} needs an integer min_count >= 1"
+                )
 
     mandatory_targets = {b.target_id for b in bindings if b.mandatory}
     for shelf in definition.shelves:

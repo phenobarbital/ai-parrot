@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Literal, Optional, Tuple, Union
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from parrot.models.compliance import ComplianceResult
 from parrot.models.detections import DetectionBox
@@ -93,13 +93,87 @@ class ReferenceImage(BaseModel):
     brand: Optional[str] = None
 
 
+AppearanceColor = Literal[
+    "white",
+    "black",
+    "grey",
+    "silver",
+    "blue",
+    "red",
+    "green",
+    "yellow",
+    "orange",
+    "purple",
+    "brown",
+    "multicolor",
+    "unknown",
+]
+AppearanceFinish = Literal["matte", "glossy", "unknown"]
+
+#: Values meaning "could not determine": valid model answers, never valid expectations.
+APPEARANCE_UNDETERMINED: FrozenSet[str] = frozenset({"unknown", "not_visible"})
+
+_COLOURS: FrozenSet[str] = frozenset(
+    {"white", "black", "grey", "silver", "blue", "red", "green", "yellow", "orange", "purple", "brown", "multicolor"}
+)
+
+#: Attribute name -> values an ``appearance`` rule may expect.
+APPEARANCE_VALUES: Dict[str, FrozenSet[str]] = {
+    "background_color": _COLOURS,
+    "border_color": _COLOURS | {"none"},
+    "finish": frozenset({"matte", "glossy"}),
+    "base_surface_color": _COLOURS,
+}
+
+
+#: Attribute name -> every value a model ANSWER may carry (expectations plus the undetermined ones).
+_APPEARANCE_ANSWERS: Dict[str, FrozenSet[str]] = {
+    "background_color": APPEARANCE_VALUES["background_color"] | {"unknown"},
+    "border_color": APPEARANCE_VALUES["border_color"] | {"unknown"},
+    "finish": APPEARANCE_VALUES["finish"] | {"unknown"},
+    "base_surface_color": APPEARANCE_VALUES["base_surface_color"] | {"unknown", "not_visible"},
+}
+_APPEARANCE_SPELLINGS: Dict[str, str] = {"gray": "grey", "multicolour": "multicolor", "multi_color": "multicolor"}
+
+
+# The class docstring is the JSON-schema description sent to the model, so the coercion rationale lives here:
+# an answer outside the vocabulary becomes ``unknown`` instead of failing validation, because this model is part
+# of the zone evidence answer and a rejected colour would discard that zone's illumination and visual evidence
+# with it. ``unknown`` never votes, so the appearance rule just leaves that attribute unassessed.
+class ZoneAppearance(BaseModel):
+    """Closed-vocabulary appearance of one observed zone crop, as the model reads it."""
+
+    background_color: AppearanceColor = "unknown"
+    border_color: Union[AppearanceColor, Literal["none"]] = "unknown"
+    finish: AppearanceFinish = "unknown"
+    base_surface_color: Union[AppearanceColor, Literal["not_visible"]] = "unknown"
+
+    @field_validator("background_color", "border_color", "finish", "base_surface_color", mode="before")
+    @classmethod
+    def _coerce_out_of_vocabulary(cls, value: Any, info: ValidationInfo) -> str:
+        """Normalise case/spacing and well-known spellings; map anything else outside the vocabulary to unknown.
+
+        Args:
+            value: Raw value from the model answer.
+            info: Pydantic validation info (carries the field name).
+
+        Returns:
+            A value of the field's closed vocabulary.
+        """
+        if not isinstance(value, str):
+            return "unknown"
+        normalised = value.strip().lower().replace("-", "_").replace(" ", "_")
+        normalised = _APPEARANCE_SPELLINGS.get(normalised, normalised)
+        return normalised if normalised in _APPEARANCE_ANSWERS[info.field_name] else "unknown"
+
+
 class RuleObservation(BaseModel):
     """Neutral crop-tied observation, not an expected-rule verdict."""
 
     image_id: str
     target_id: str  # observed zone/shape id, or "<image_id>:zone-region:<zone_id>" for an inspected region
-    kind: Literal["illumination", "visual_features", "zone_present"]
-    value: str | bool | List[str] | None = None
+    kind: Literal["illumination", "visual_features", "zone_present", "appearance", "visual_checklist"]
+    value: str | bool | List[str] | Dict[str, str] | Dict[str, int] | None = None
     assessed: bool = False
     source: ObservationSource
     evidence: List[str] = Field(default_factory=list)
