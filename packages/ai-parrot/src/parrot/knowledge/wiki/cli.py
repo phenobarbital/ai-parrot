@@ -43,7 +43,7 @@ from typing import TYPE_CHECKING, Any, Optional, cast
 import click
 from pydantic import ValidationError
 
-from parrot.tools.sql_dialects import _SQLGLOT_DIALECT_MAP
+from parrot.knowledge.common.sql_dialects import _SQLGLOT_DIALECT_MAP
 
 if TYPE_CHECKING:
     from parrot.knowledge.wiki.schema.service import SchemaPlaneService
