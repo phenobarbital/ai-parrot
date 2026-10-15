@@ -356,7 +356,7 @@ def score_shelves(
             for b in shelf_bindings
         }
         texts = [outcomes[b.rule_id] for b in shelf_bindings if b.kind == "text_requirements"]
-        visuals = [outcomes[b.rule_id] for b in shelf_bindings if b.kind == "visual_features"]
+        visuals = [outcomes[b.rule_id] for b in shelf_bindings if b.kind in ("visual_features", "appearance")]
         illumination = [outcomes[b.rule_id] for b in shelf_bindings if b.kind == "illumination"]
 
         facings = by_shelf.get(shelf.shelf_id, [])
