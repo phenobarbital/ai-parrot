@@ -16,13 +16,13 @@
       "feature_id": "FEAT-674",
       "feature": "planogram-fact-tag-e2e-test",
       "spec": "sdd/specs/planogram-fact-tag-e2e-test.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
-      "assigned_to": null,
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-15T12:14:34+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4348-fact-tag-e2e-test.md"
     }
