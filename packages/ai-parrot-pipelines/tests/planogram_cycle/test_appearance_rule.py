@@ -71,7 +71,9 @@ def _evaluate(
     selectors: list[ZoneSelector] | None = None,
 ) -> RuleOutcome:
     """Evaluate appearance observations against the synthetic base-zone definition."""
-    perceptions = [_perception(image_id, [(shape_id, box) for shape_id, box, _ in fragments]) for image_id, fragments in images]
+    perceptions = [
+        _perception(image_id, [(shape_id, box) for shape_id, box, _ in fragments]) for image_id, fragments in images
+    ]
     identifications = [
         IdentificationResult(
             image_id=image_id,
@@ -95,16 +97,30 @@ def _evaluate(
         bindings=[binding],
         layout=SimpleNamespace(zone_selectors=selectors or []),
     )
-    return evaluate_rules(perceptions, identifications, [], context)[
-        binding.rule_id
-    ]
+    return evaluate_rules(perceptions, identifications, [], context)[binding.rule_id]
 
 
 def test_appearance_all_match_passes() -> None:
     """Every determined configured attribute may pass together."""
     outcome = _evaluate(
         _binding(background_color=["white"], border_color=["blue"], finish=["matte"], base_surface_color=["blue"]),
-        [("img0", [("zone0", (0, 0, 100, 100), {"background_color": "white", "border_color": "blue", "finish": "matte", "base_surface_color": "blue"})])],
+        [
+            (
+                "img0",
+                [
+                    (
+                        "zone0",
+                        (0, 0, 100, 100),
+                        {
+                            "background_color": "white",
+                            "border_color": "blue",
+                            "finish": "matte",
+                            "base_surface_color": "blue",
+                        },
+                    )
+                ],
+            )
+        ],
     )
     assert (outcome.assessed, outcome.passed, outcome.score, outcome.detail) == (True, True, 1.0, None)
 
