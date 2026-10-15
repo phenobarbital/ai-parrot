@@ -487,8 +487,11 @@ def create_wiki_mcp_server(root: Path, *, transport: Literal["auto", "framework"
             from parrot.mcp.server_base import LocalServerConfig
 
         server = StdioMCPServer(LocalServerConfig(name="wikitoolkit", version="1.0.0", description=bundle.description))
-        server.register_tools(to_framework_tools(bundle.descriptors))
-        server.register_tools([tool for tool in bundle.vault_tools if tool.name != "vault_ingest"])
+        # Framework path is unchanged: the original wrapper tools keep their
+        # store handles; descriptors feed only the SDK transport.
+        server.register_tools(bundle.tools)
+        if bundle.vault_tools:
+            server.register_tools(bundle.vault_tools)
         server.wiki_bundle = bundle
         return server
     except ImportError:
