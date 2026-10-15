@@ -1,0 +1,30 @@
+{
+  "feature": "planogram-fact-tag-e2e-test",
+  "feature_id": "FEAT-674",
+  "spec": "sdd/specs/planogram-fact-tag-e2e-test.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-15T12:13:50+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4348",
+      "slug": "fact-tag-e2e-test",
+      "title": "Fact-tag end-to-end compare test",
+      "feature_id": "FEAT-674",
+      "feature": "planogram-fact-tag-e2e-test",
+      "spec": "sdd/specs/planogram-fact-tag-e2e-test.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4348-fact-tag-e2e-test.md"
+    }
+  ]
+}
