@@ -344,10 +344,8 @@ See the CREATE block above. Spec §4 rows covered: `test_normalize_issue_id`, `t
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (seat gpt-5.6-terra, codex, 1 attempt, 64s)
+**Date**: 2026-10-16
+**Notes**: Added normalize_issue_id, LedgerService.get_issue/issue_history and list_issues(severity=) in ledger/service.py plus test_ledger_service_reads.py. Merge-tier run reported outcome=failed (15 failed/4 errors in untouched mcp-server/installer/bookstore tests; the 521 task-scope tests passed). The same suites fail on the unmodified main checkout (13 failed/4 errors; the worktree also lacks the Cython parrot.utils.types .so), so treated as pre-existing environment failures, NOT a green run. No review defects; no feedback recorded.
 
 **Deviations from spec**: new test file placed under `packages/ai-parrot/tests/knowledge/wiki/` (see Files table note).
