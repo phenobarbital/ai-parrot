@@ -265,4 +265,16 @@ Cover every M1 row in spec §4. Parameterize Playwright-style tests over both ad
 
 ## Completion Note
 
-Pending implementation; finalization owns this section.
+
+- Task: TASK-4355
+- Feature: browsing-executor-action-gaps
+- Implementation SHA: cda336c2c368d977beaa554d6e92debd8c6f1191
+- Closed at (UTC): 2026-10-15T17:19:47+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 130.6s · Tokens: n/a |
+| validation_note | Merge-tier run exit 1: 15 failures identical to origin/dev baseline (chromedriver read-only FS, obscura/playwright env, legacy MagicMock-await toolkit tests); no new test failed. |
