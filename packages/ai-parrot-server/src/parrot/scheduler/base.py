@@ -8,6 +8,7 @@ import inspect
 import json
 import logging
 import uuid
+from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, Optional, Protocol, Sequence, Set, runtime_checkable
 
@@ -41,6 +42,7 @@ from parrot.notifications import NotificationMixin
 from . import jobs
 from .coordination import (
     CURRENT_RUN_TIME,
+    INTERVAL_ANCHOR,
     CoordinatedAsyncIOExecutor,
     FireCoordinationError,
     FireCoordinator,
@@ -357,13 +359,30 @@ class SchedulerManager:
         aliases.update(getattr(self.scheduler, "_jobstores", {}) or {})
         return aliases
 
-    def _create_trigger(self, schedule_type: str, config: Dict[str, Any]) -> Any:
-        """Create an APScheduler trigger from a normalized schedule configuration."""
+    def _create_trigger(self, schedule_type: str, config: Dict[str, Any], *, anchor: Optional[datetime] = None) -> Any:
+        """Create an APScheduler trigger from a normalized schedule configuration.
+
+        Fire times must be identical on every worker because the cross-worker claim key embeds them
+        (FEAT-676, ledger aa813ccc1927): ``interval`` triggers start at :data:`INTERVAL_ANCHOR`, and a
+        ``once`` schedule without ``run_date`` fires at ``anchor`` (the persisted definition's
+        ``created_at``) before falling back to ``utcnow()``.
+
+        Args:
+            schedule_type: Schedule type name or alias.
+            config: Raw schedule configuration; sanitized here.
+            anchor: Shared instant for a ``once`` schedule that has no ``run_date``.
+
+        Returns:
+            The APScheduler trigger.
+
+        Raises:
+            SchedulerConfigError: If the schedule type or configuration is invalid.
+        """
         schedule_type = normalize_schedule_type(schedule_type)
         config = sanitize_schedule_config(schedule_type, config)
 
         if schedule_type == ScheduleType.ONCE.value:
-            return DateTrigger(run_date=config.get("run_date", utcnow()))
+            return DateTrigger(run_date=config.get("run_date") or anchor or utcnow())
         if schedule_type == ScheduleType.DAILY.value:
             return CronTrigger(hour=config["hour"], minute=config["minute"])
         if schedule_type == ScheduleType.WEEKLY.value:
@@ -371,7 +390,7 @@ class SchedulerManager:
         if schedule_type == ScheduleType.MONTHLY.value:
             return CronTrigger(day=config["day"], hour=config["hour"], minute=config["minute"])
         if schedule_type == ScheduleType.INTERVAL.value:
-            return IntervalTrigger(**config)
+            return IntervalTrigger(**config, start_date=INTERVAL_ANCHOR, timezone="UTC")
         if schedule_type == ScheduleType.CRON.value:
             return CronTrigger(**config)
         if schedule_type == ScheduleType.CRONTAB.value:
@@ -472,7 +491,7 @@ class SchedulerManager:
             created_email=created_email,
         )
         resolver.build_call(target, definition, FireContext.for_fire(schedule_id, utcnow()))
-        trigger = self._create_trigger(schedule_type, schedule_config)
+        trigger = self._create_trigger(schedule_type, schedule_config, anchor=definition.created_at)
 
         if backend == "redis":
             self.scheduler.add_job(
@@ -669,7 +688,7 @@ class SchedulerManager:
         if source == "db" and values["misfire_grace_time"] is None:
             values["misfire_grace_time"] = 300
         updated = JobDefinition(**values)
-        trigger = self._create_trigger(updated.schedule_type, updated.schedule_config)
+        trigger = self._create_trigger(updated.schedule_type, updated.schedule_config, anchor=updated.created_at)
         enabled = bool(updates.get("enabled", getattr(stored, "enabled", True)))
         if source == "redis":
             enabled = bool(updates.get("enabled", getattr(stored, "next_run_time", None) is not None))
@@ -757,7 +776,9 @@ class SchedulerManager:
                 definition = row.to_definition()
                 job = self.scheduler.add_job(
                     jobs.run_db_schedule,
-                    trigger=self._create_trigger(definition.schedule_type, definition.schedule_config),
+                    trigger=self._create_trigger(
+                        definition.schedule_type, definition.schedule_config, anchor=definition.created_at
+                    ),
                     id=definition.schedule_id,
                     name=f"{definition.target_name}_{definition.schedule_type}",
                     kwargs=self._db_job_kwargs(definition),
@@ -998,7 +1019,9 @@ class SchedulerManager:
                 self.scheduler.reschedule_job(
                     schedule_id,
                     jobstore=getattr(job, "_jobstore_alias", "default"),
-                    trigger=self._create_trigger(definition.schedule_type, definition.schedule_config),
+                    trigger=self._create_trigger(
+                        definition.schedule_type, definition.schedule_config, anchor=definition.created_at
+                    ),
                 )
             return jobs.SKIPPED
         fire = FireContext.for_fire(schedule_id, CURRENT_RUN_TIME.get() or utcnow(), run_now=run_now)
