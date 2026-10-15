@@ -494,9 +494,10 @@ def create_wiki_mcp_server(root: Path, *, transport: Literal["auto", "framework"
             server.register_tools(bundle.vault_tools)
         server.wiki_bundle = bundle
         return server
-    except ImportError:
+    except ImportError as exc:
         if transport != "auto":
             raise
+        logging.getLogger(__name__).warning("framework MCP transport unavailable (%s); falling back to the SDK", exc)
         server = to_sdk_server(bundle.descriptors, name="wikitoolkit")
         server.wiki_bundle = bundle
         return server
@@ -620,9 +621,10 @@ def create_proxy_mcp_server(remote: Any, *, transport: Literal["auto", "framewor
             remote,
             actor,
         )
-    except ImportError:
+    except ImportError as exc:
         if transport != "auto":
             raise
+        logging.getLogger(__name__).warning("framework MCP transport unavailable (%s); falling back to the SDK", exc)
         return make_sdk_proxy()
 
 
@@ -636,7 +638,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--transport", choices=("auto", "framework", "sdk"), default="auto")
-    args = parser.parse_args()
+    args, _unknown = parser.parse_known_args()
 
     root = find_project_root(Path(_INVOCATION_CWD))
     if root is None:

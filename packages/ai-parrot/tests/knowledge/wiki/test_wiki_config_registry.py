@@ -60,3 +60,19 @@ def test_namespace_database_default_coerced_to_arangodb():
 
 def test_namespace_database_explicit_backend_survives(satellite):
     assert WikiNamespaceConfig(database="db", backend=satellite).backend == satellite
+
+
+def test_database_namespace_with_local_default_backend_is_coerced_to_arangodb() -> None:
+    """The CLI always passes ``backend='sqlite'``; a database source must still resolve to ArangoDB."""
+    from parrot.knowledge.wiki.project import WikiNamespaceConfig
+
+    assert WikiNamespaceConfig(database="mydb", backend="sqlite").backend == "arangodb"
+    assert WikiNamespaceConfig(database="mydb").backend == "arangodb"
+    assert WikiNamespaceConfig(path="x", backend="sqlite").backend == "sqlite"
+
+
+async def test_null_persistence_list_commits_accepts_publisher_filters() -> None:
+    """GraphPublisher forwards run_id/agent_id; the null backend must accept them."""
+    from parrot.knowledge.graphindex.backends import NullPersistence
+
+    assert await NullPersistence().list_commits(None, run_id="r", agent_id="a", limit=3) == []

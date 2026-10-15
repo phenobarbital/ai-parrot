@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ("GraphIndexLoader",)
+__all__ = ("GraphIndexLoader",)  # noqa: F822 -- resolved lazily by __getattr__
 
 
 def __getattr__(name: str) -> Any:

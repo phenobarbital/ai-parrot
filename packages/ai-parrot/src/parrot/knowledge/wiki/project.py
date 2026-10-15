@@ -260,10 +260,12 @@ class WikiNamespaceConfig(BaseModel):
             raise ValueError(
                 "Exactly one of path / store / database / vault must be set " f"(got: {', '.join(present) or 'none'})"
             )
-        if self.database and "backend" not in self.model_fields_set:
+        if self.database and ("backend" not in self.model_fields_set or self.backend in ("sqlite", "memory")):
             # A `database` entry is ArangoDB by construction — UNLESS the
             # caller explicitly named a non-built-in (satellite-registered,
-            # FEAT-449 M7) backend, which survives untouched.
+            # FEAT-449 M7) backend, which survives untouched. A local kind
+            # (sqlite/memory, e.g. the CLI default) cannot open a `database`
+            # source, so it is coerced as well.
             object.__setattr__(self, "backend", "arangodb")
         return self
 

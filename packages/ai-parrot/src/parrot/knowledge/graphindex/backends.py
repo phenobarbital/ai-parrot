@@ -158,7 +158,14 @@ class NullPersistence:
         """Return ``None`` — nothing is recorded."""
         return None
 
-    async def list_commits(self, ctx: Any, *, limit: int = 50) -> list[dict[str, Any]]:
+    async def list_commits(
+        self,
+        ctx: Any,
+        *,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
         """Return an empty history."""
         return []
 
