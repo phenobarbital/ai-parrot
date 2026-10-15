@@ -38,7 +38,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, cast, get_args
 
 import click
 from pydantic import ValidationError
@@ -124,9 +124,9 @@ from parrot.knowledge.wiki.runtime import (
     build_triage_adapters,
     persistence_for_project,
 )
-from parrot.knowledge.wiki.ledger.service import LedgerService
+from parrot.knowledge.wiki.ledger.service import LedgerService, normalize_issue_id
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
-from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
+from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity, IssueStatus
 from parrot.knowledge.wiki.schema.models import SchemaSourceConfig
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
@@ -3293,6 +3293,125 @@ def ledger_ready(kind: str | None) -> None:
             click.echo("No ready issues.")
     except WikiStoreBusy as exc:
         click.echo(f"Ledger index is busy ({exc.operation}); no ready issues available (index_pending)")
+
+
+@ledger.command("list")
+@click.option(
+    "--status",
+    "statuses",
+    multiple=True,
+    type=click.Choice(["open", "claimed", "closed", "superseded", "all"]),
+    help="Repeatable; default open+claimed.",
+)
+@click.option("--kind", type=click.Choice(["bug", "tech_debt", "feature_gap", "vulnerability"]), default=None)
+@click.option("--severity", type=click.Choice(["critical", "major", "minor", "low"]), default=None)
+@click.option("--about", "about_prefix", default=None, help="Keep issues whose about starts with this prefix.")
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@remote_cli.remote_aware(proxied=True, tool="ledger_list")
+def ledger_list(
+    statuses: tuple[str, ...], kind: str | None, severity: str | None, about_prefix: str | None, as_json: bool
+) -> None:
+    """List ledger issues by status, kind, severity or about prefix."""
+    want_all = "all" in statuses
+    explicit = [status for status in statuses if status != "all"]
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {
+            "statuses": explicit or None,
+            "all_statuses": want_all,
+            "kind": kind,
+            "severity": severity,
+            "about_prefix": about_prefix,
+        }
+        if as_json:
+            click.echo(json.dumps(remote_cli.call_remote(remote, "ledger_list", arguments), indent=2, default=str))
+        else:
+            click.echo(remote_cli.call_remote_text(remote, "ledger_list", arguments))
+        return
+    service = LedgerService.from_root()
+    try:
+        resolved = get_args(IssueStatus) if want_all else (tuple(explicit) or ("open", "claimed"))
+        issues = _run(
+            service.list_issues(
+                resolved,
+                kind=cast(IssueKind, kind) if kind else None,
+                severity=cast(IssueSeverity, severity) if severity else None,
+                about_prefix=about_prefix,
+            )
+        )
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); no issues available (index_pending)")
+        return
+    if as_json:
+        click.echo(json.dumps({"issues": issues}, indent=2, default=str))
+        return
+    for issue in issues:
+        claimed = f" — claimed by {issue['claimed_by']}" if issue["status"] == "claimed" else ""
+        click.echo(f"{issue['issue_id']} [{issue['severity']}] {issue['status']} {issue['title']} ({issue['kind']}){claimed}")
+    if not issues:
+        click.echo("No matching issues.")
+
+
+@ledger.command("show")
+@click.argument("issue_id")
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@click.option("--no-history", is_flag=True, help="Omit the event history.")
+@remote_cli.remote_aware(proxied=True, tool="ledger_show")
+def ledger_show(issue_id: str, as_json: bool, no_history: bool) -> None:
+    """Show one ledger issue in full: state, body and event history."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {"issue_id": issue_id, "include_history": not no_history}
+        if as_json:
+            click.echo(json.dumps(remote_cli.call_remote(remote, "ledger_show", arguments), indent=2, default=str))
+        else:
+            click.echo(remote_cli.call_remote_text(remote, "ledger_show", arguments))
+        return
+    service = LedgerService.from_root()
+    try:
+        issue = _run(service.get_issue(issue_id))
+        if issue is None:
+            raise click.ClickException(f"Issue {normalize_issue_id(issue_id)} not found")
+        history = [] if no_history else _run(service.issue_history(issue_id))
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); issue unavailable (index_pending)")
+        return
+    if as_json:
+        payload: dict[str, Any] = {"issue": issue}
+        if not no_history:
+            payload["history"] = history
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    header_fields = (
+        ("id", issue.get("issue_id")),
+        ("title", issue.get("title")),
+        ("status", issue.get("status")),
+        ("kind", issue.get("kind")),
+        ("severity", issue.get("severity")),
+        ("acknowledged", issue.get("acknowledged")),
+        ("discovered_from", issue.get("discovered_from")),
+        ("about", ", ".join(issue.get("about") or [])),
+        ("claimed_by", issue.get("claimed_by")),
+        ("closed_by", issue.get("closed_by")),
+        ("closed_reason", issue.get("closed_reason")),
+        ("resolved_by", issue.get("resolved_by")),
+    )
+    for key, value in header_fields:
+        if value is None or value == "" or value is False:
+            continue
+        click.echo(f"{key}: {value}")
+    click.echo()
+    click.echo(str(issue.get("body") or ""), nl=False)
+    if not no_history:
+        click.echo()
+        click.echo("History:")
+        for event in history:
+            click.echo(f"{event['ts']} {event['actor']} {event['kind']}", nl=False)
+            payload = event.get("payload") or {}
+            detail = next((payload[key] for key in ("reason", "claimed_by", "unclaimed_by", "resolved_by") if payload.get(key)), None)
+            if detail is not None:
+                click.echo(f" {detail}", nl=False)
+            click.echo()
 
 
 @ledger.command("claim")
