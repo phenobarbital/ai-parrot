@@ -52,12 +52,21 @@ class ArangoSourceBackend:
     def _doc_to_entry(doc: dict[str, Any]) -> SourceManifestEntry:
         """Convert a ``wiki_sources`` document into a manifest entry."""
         return SourceManifestEntry(
-            source_id=doc["source_id"], source_uri=doc["source_uri"], file_hash=doc["file_hash"],
-            mtime=doc["mtime"], ingested_at=doc["ingested_at"], pages_generated=doc.get("pages_generated") or [],
-            status=doc.get("status", "ingested"), destination=doc.get("destination"),
-            decision_source=doc.get("decision_source"), charter_version=doc.get("charter_version"),
-            composite_score=doc.get("composite_score"), doc_metadata=doc.get("doc_metadata"),
-            content_type=doc.get("content_type"), loader=doc.get("loader"), external_id=doc.get("external_id"),
+            source_id=doc["source_id"],
+            source_uri=doc["source_uri"],
+            file_hash=doc["file_hash"],
+            mtime=doc["mtime"],
+            ingested_at=doc["ingested_at"],
+            pages_generated=doc.get("pages_generated") or [],
+            status=doc.get("status", "ingested"),
+            destination=doc.get("destination"),
+            decision_source=doc.get("decision_source"),
+            charter_version=doc.get("charter_version"),
+            composite_score=doc.get("composite_score"),
+            doc_metadata=doc.get("doc_metadata"),
+            content_type=doc.get("content_type"),
+            loader=doc.get("loader"),
+            external_id=doc.get("external_id"),
         )
 
     @staticmethod
@@ -67,63 +76,101 @@ class ArangoSourceBackend:
 
     async def upsert(self, entry: SourceManifestEntry) -> None:
         """Insert or update one source entry."""
-        await self._execute("UPSERT {_key: @key} INSERT @doc UPDATE @doc IN @@collection", {
-            "key": entry.source_id, "doc": self._entry_to_doc(entry), "@collection": _ARANGO_SOURCES_COLLECTION,
-        })
+        await self._execute(
+            "UPSERT {_key: @key} INSERT @doc UPDATE @doc IN @@collection",
+            {
+                "key": entry.source_id,
+                "doc": self._entry_to_doc(entry),
+                "@collection": _ARANGO_SOURCES_COLLECTION,
+            },
+        )
 
     async def upsert_many(self, entries: list[SourceManifestEntry]) -> None:
         """Insert or update source entries in one statement."""
         if entries:
-            await self._execute("FOR doc IN @docs UPSERT {_key: doc._key} INSERT doc UPDATE doc IN @@collection", {
-                "docs": [self._entry_to_doc(entry) for entry in entries], "@collection": _ARANGO_SOURCES_COLLECTION,
-            })
+            await self._execute(
+                "FOR doc IN @docs UPSERT {_key: doc._key} INSERT doc UPDATE doc IN @@collection",
+                {
+                    "docs": [self._entry_to_doc(entry) for entry in entries],
+                    "@collection": _ARANGO_SOURCES_COLLECTION,
+                },
+            )
 
     async def list_sources(self) -> list[SourceManifestEntry]:
         """Return all source entries."""
-        return [self._doc_to_entry(row) for row in await self._query("FOR doc IN @@collection RETURN doc", {"@collection": _ARANGO_SOURCES_COLLECTION})]
+        return [
+            self._doc_to_entry(row)
+            for row in await self._query(
+                "FOR doc IN @@collection RETURN doc", {"@collection": _ARANGO_SOURCES_COLLECTION}
+            )
+        ]
 
     async def get_source(self, source_id: str) -> SourceManifestEntry | None:
         """Return one source entry by id."""
-        rows = await self._query("FOR doc IN @@collection FILTER doc._key == @key LIMIT 1 RETURN doc", {"@collection": _ARANGO_SOURCES_COLLECTION, "key": source_id})
+        rows = await self._query(
+            "FOR doc IN @@collection FILTER doc._key == @key LIMIT 1 RETURN doc",
+            {"@collection": _ARANGO_SOURCES_COLLECTION, "key": source_id},
+        )
         return self._doc_to_entry(rows[0]) if rows else None
 
     async def remove_source(self, source_id: str) -> bool:
         """Remove one source entry."""
-        rows = await self._query("FOR doc IN @@collection FILTER doc._key == @key REMOVE doc IN @@collection RETURN OLD", {"@collection": _ARANGO_SOURCES_COLLECTION, "key": source_id})
+        rows = await self._query(
+            "FOR doc IN @@collection FILTER doc._key == @key REMOVE doc IN @@collection RETURN OLD",
+            {"@collection": _ARANGO_SOURCES_COLLECTION, "key": source_id},
+        )
         return bool(rows)
 
     async def find_id_by_uri(self, source_uri: str) -> str | None:
         """Find a source id by URI."""
-        rows = await self._query("FOR doc IN @@collection FILTER doc.source_uri == @uri LIMIT 1 RETURN doc.source_id", {"@collection": _ARANGO_SOURCES_COLLECTION, "uri": source_uri})
+        rows = await self._query(
+            "FOR doc IN @@collection FILTER doc.source_uri == @uri LIMIT 1 RETURN doc.source_id",
+            {"@collection": _ARANGO_SOURCES_COLLECTION, "uri": source_uri},
+        )
         return rows[0] if rows else None
 
     async def find_by_external_id(self, external_id: str) -> SourceManifestEntry | None:
         """Find one source entry by external identity."""
-        rows = await self._query("FOR doc IN @@collection FILTER doc.external_id == @external_id LIMIT 1 RETURN doc", {"@collection": _ARANGO_SOURCES_COLLECTION, "external_id": external_id})
+        rows = await self._query(
+            "FOR doc IN @@collection FILTER doc.external_id == @external_id LIMIT 1 RETURN doc",
+            {"@collection": _ARANGO_SOURCES_COLLECTION, "external_id": external_id},
+        )
         return self._doc_to_entry(rows[0]) if rows else None
 
     async def find_by_uris(self, uris: list[str]) -> dict[str, SourceManifestEntry]:
         """Find tracked entries by URI."""
         if not uris:
             return {}
-        rows = await self._query("FOR doc IN @@collection FILTER doc.source_uri IN @uris RETURN doc", {"@collection": _ARANGO_SOURCES_COLLECTION, "uris": list(set(uris))})
+        rows = await self._query(
+            "FOR doc IN @@collection FILTER doc.source_uri IN @uris RETURN doc",
+            {"@collection": _ARANGO_SOURCES_COLLECTION, "uris": list(set(uris))},
+        )
         return {entry.source_uri: entry for entry in map(self._doc_to_entry, rows)}
 
     async def find_by_ids(self, source_ids: list[str]) -> dict[str, SourceManifestEntry]:
         """Find tracked entries by source id."""
         if not source_ids:
             return {}
-        rows = await self._query("FOR doc IN @@collection FILTER doc._key IN @keys RETURN doc", {"@collection": _ARANGO_SOURCES_COLLECTION, "keys": list(set(source_ids))})
+        rows = await self._query(
+            "FOR doc IN @@collection FILTER doc._key IN @keys RETURN doc",
+            {"@collection": _ARANGO_SOURCES_COLLECTION, "keys": list(set(source_ids))},
+        )
         return {entry.source_id: entry for entry in map(self._doc_to_entry, rows)}
 
     async def find_by_external_ids(self, external_ids: list[str]) -> dict[str, SourceManifestEntry]:
         """Find tracked entries by external identity."""
         if not external_ids:
             return {}
-        rows = await self._query("FOR doc IN @@collection FILTER doc.external_id IN @ids RETURN doc", {"@collection": _ARANGO_SOURCES_COLLECTION, "ids": list(set(external_ids))})
+        rows = await self._query(
+            "FOR doc IN @@collection FILTER doc.external_id IN @ids RETURN doc",
+            {"@collection": _ARANGO_SOURCES_COLLECTION, "ids": list(set(external_ids))},
+        )
         return {entry.external_id: entry for entry in map(self._doc_to_entry, rows) if entry.external_id is not None}
 
     async def list_by_external_prefix(self, prefix: str) -> list[SourceManifestEntry]:
         """List source entries with a matching external-id prefix."""
-        rows = await self._query("FOR doc IN @@collection FILTER doc.external_id != null FILTER STARTS_WITH(doc.external_id, @prefix) RETURN doc", {"@collection": _ARANGO_SOURCES_COLLECTION, "prefix": prefix})
+        rows = await self._query(
+            "FOR doc IN @@collection FILTER doc.external_id != null FILTER STARTS_WITH(doc.external_id, @prefix) RETURN doc",
+            {"@collection": _ARANGO_SOURCES_COLLECTION, "prefix": prefix},
+        )
         return [self._doc_to_entry(row) for row in rows]

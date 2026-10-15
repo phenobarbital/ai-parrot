@@ -98,6 +98,8 @@ def test_source_manager_has_no_backend_equality_branch() -> None:
     assert not any(
         isinstance(node, ast.Compare)
         and any(isinstance(operator, ast.Eq) for operator in node.ops)
-        and any(isinstance(value, ast.Attribute) and value.attr == "backend" for value in [node.left, *node.comparators])
+        and any(
+            isinstance(value, ast.Attribute) and value.attr == "backend" for value in [node.left, *node.comparators]
+        )
         for node in ast.walk(tree)
     )
