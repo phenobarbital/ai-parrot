@@ -68,7 +68,7 @@
     },
     "output": {
       "proposal_path": "sdd/proposals/gemini-upgrade.proposal.md",
-      "commit_sha": "e683a3f7f"
+      "commit_sha": "ca140336e"
     }
   },
   "resume_hint": {
