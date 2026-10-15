@@ -46,9 +46,7 @@ def test_same_object() -> None:
 def test_render_import_does_not_load_tools_package() -> None:
     """The schema renderer reaches the dialect map without booting ``parrot.tools``."""
     source_root = Path(__file__).resolve().parents[3] / "src"
-    environment = os.environ | {
-        "PYTHONPATH": os.pathsep.join((str(source_root), os.environ.get("PYTHONPATH", "")))
-    }
+    environment = os.environ | {"PYTHONPATH": os.pathsep.join((str(source_root), os.environ.get("PYTHONPATH", "")))}
     result = subprocess.run(
         [
             sys.executable,
