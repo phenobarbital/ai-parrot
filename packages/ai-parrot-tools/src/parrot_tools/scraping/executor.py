@@ -597,7 +597,7 @@ def _xpath_literal(value: str) -> str:
     if '"' not in value:
         return f'"{value}"'
     parts = value.split("'")
-    return "concat(" + ", \"'\", ".join(f"'{part}'" for part in parts) + ")"
+    return "concat(" + ', "\'", '.join(f"'{part}'" for part in parts) + ")"
 
 
 def _resolve_locator(selector: str, selector_type: str = "css") -> str:
