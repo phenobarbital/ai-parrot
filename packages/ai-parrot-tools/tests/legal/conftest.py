@@ -66,7 +66,7 @@ class FakeGraphStore:
     ``article_in_force`` depend on: ``initialize_tenant``,
     ``get_all_nodes`` (``_active`` filtering), ``upsert_nodes``
     (inserted/updated/unchanged counting), ``soft_delete_nodes``,
-    ``create_edges``, and ``execute_traversal`` (simulating the
+    ``create_edges``, and ``execute_pattern`` (simulating the
     ``article_in_force`` AQL's version selection over ``versions[]``).
 
     Nodes are keyed by their declared ``key_field`` value (e.g.
@@ -154,11 +154,11 @@ class FakeGraphStore:
             store[(edge.get("_from"), edge.get("_to"))] = edge
         return len(edges)
 
-    async def execute_traversal(
+    async def execute_pattern(
         self,
         ctx: TenantContext,
-        aql: str,
-        bind_vars: dict[str, Any] | None = None,
+        pattern: Any,
+        params: dict[str, Any],
         collection_binds: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         """Simulate the article_in_force / search_articles AQL semantics.
@@ -179,7 +179,8 @@ class FakeGraphStore:
         landed only in a superseded wording — this fake does not
         pre-filter for that, by design).
         """
-        bind_vars = bind_vars or {}
+        aql = pattern.query_template
+        bind_vars = params
         self.last_traversal = (aql, bind_vars, collection_binds)
         if "legal_articulos_view" in aql:
             return self._search_articles_rows(bind_vars)
@@ -202,7 +203,7 @@ class FakeGraphStore:
         return []
 
     def _search_articles_rows(self, bind_vars: dict[str, Any]) -> list[dict[str, Any]]:
-        """Fake ``search_articles`` row production — see execute_traversal."""
+        """Fake ``search_articles`` row production — see execute_pattern."""
         query = (bind_vars.get("query") or "").lower()
         as_of = bind_vars.get("as_of")
         limit = bind_vars.get("limit", 20)

@@ -14,7 +14,7 @@ from typing import Any
 
 from parrot.knowledge.ontology.cache import OntologyCache
 from parrot.knowledge.ontology.discovery import DiscoveryStats, RelationDiscovery
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.refresh import OntologyRefreshPipeline, RefreshReport
 from parrot.knowledge.ontology.schema import TenantContext
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
@@ -59,7 +59,7 @@ async def sync_boe(tenant_id: str, since: date | None = None) -> RefreshReport:
         ``OntologyRefreshPipeline.run(tenant_id, domain="legal")``.
     """
     tenant_manager = TenantOntologyManager()
-    graph_store = OntologyGraphStore()
+    graph_store = ArangoOntologyGraphStore()
     discovery = RelationDiscovery()
     cache = OntologyCache()
     datasource_factory = DataSourceFactory()
@@ -105,7 +105,7 @@ async def sync_boe(tenant_id: str, since: date | None = None) -> RefreshReport:
 
 async def _sync_provenance_edges(
     ctx: TenantContext,
-    graph_store: OntologyGraphStore,
+    graph_store: ArangoOntologyGraphStore,
     boe_source: Any,
 ) -> tuple[dict[str, DiscoveryStats], list[str]]:
     """Create `modifica`/`deroga` edges from the datasource's parsed relations.

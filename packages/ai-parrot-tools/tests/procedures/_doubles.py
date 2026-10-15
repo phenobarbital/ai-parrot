@@ -64,16 +64,16 @@ class FakeGraphStore:
     rows_by_aql: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
 
-    async def execute_traversal(
+    async def execute_pattern(
         self,
         ctx: Any,
-        aql: str,
-        bind_vars: Optional[dict[str, Any]] = None,
+        pattern: FakePattern,
+        params: Optional[dict[str, Any]] = None,
         collection_binds: Optional[dict[str, str]] = None,
     ) -> list[dict[str, Any]]:
-        """Record and return rows configured for ``aql``."""
-        self.calls.append((aql, dict(bind_vars or {})))
-        return list(self.rows_by_aql.get(aql, []))
+        """Record and return rows configured for the pattern's AQL template."""
+        self.calls.append((pattern.query_template, dict(params or {})))
+        return list(self.rows_by_aql.get(pattern.query_template, []))
 
 
 class FakeCatalog:

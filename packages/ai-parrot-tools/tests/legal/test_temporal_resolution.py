@@ -2,7 +2,7 @@
 
 Boundary behaviour (inclusive valid_from / exclusive valid_to) is asserted
 end-to-end against a real graph in TASK-2376; here it is asserted at the
-binding level against a stubbed execute_traversal — no live ArangoDB.
+binding level against a stubbed execute_pattern — no live ArangoDB.
 """
 
 import inspect
@@ -17,14 +17,14 @@ from parrot_tools.legal.boe.queries import article_in_force
 
 
 class FakeStore:
-    """Stubs execute_traversal; asserts the wrapper binds correctly."""
+    """Stubs execute_pattern; asserts the wrapper binds correctly."""
 
     def __init__(self, rows):
         self.rows = rows
         self.last = None
 
-    async def execute_traversal(self, ctx, aql, bind_vars=None, collection_binds=None):
-        self.last = (aql, bind_vars, collection_binds)
+    async def execute_pattern(self, ctx, pattern, params, collection_binds=None):
+        self.last = (pattern, params, collection_binds)
         return self.rows
 
 
@@ -75,8 +75,8 @@ class TestTemporalResolution:
     async def test_uses_pattern_from_ontology_not_inline_aql(self, legal_ctx):
         store = FakeStore([])
         await article_in_force(store, legal_ctx, "k", date(2020, 1, 1))
-        aql, _, _ = store.last
-        assert aql == legal_ctx.ontology.traversal_patterns["article_in_force"].query_template
+        pattern, _, _ = store.last
+        assert pattern is legal_ctx.ontology.traversal_patterns["article_in_force"]
 
     def test_no_python_date_comparison(self):
         """Version selection must live in AQL, not Python (spec goal G4)."""
@@ -106,7 +106,7 @@ class TestTemporalResolution:
     async def test_boundary_valid_to_exclusive_selects_next(self, legal_ctx):
         """as_of == valid_to selects the NEXT version (exclusive upper bound).
 
-        execute_traversal is a fake here: the AQL's own FILTER clauses
+        execute_pattern is a fake here: the AQL's own FILTER clauses
         (v.valid_from <= @as_of AND (v.valid_to == null OR v.valid_to >
         @as_of)) enforce this in TASK-2371/2376; this test only asserts
         that the wrapper deserialises whatever row the store returns

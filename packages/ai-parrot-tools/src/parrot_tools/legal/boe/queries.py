@@ -5,7 +5,7 @@ The resolution *logic* — which wording was in force on a given date, and
 the lexical-candidate BM25 search — lives entirely in the AQL
 ``query_template``s declared in ``legal.ontology.yaml`` (TASK-2371,
 TASK-2494). This module is pure ergonomics: binding, calling
-``OntologyGraphStore.execute_traversal``, and deserialising the result. It
+``OntologyGraphStore.execute_pattern``, and deserialising the result. It
 does not re-implement version selection in Python — that would duplicate
 the pattern and violate spec goal G4 (declarative-first temporal
 resolution). ``search_articles`` additionally applies a Python-side
@@ -69,11 +69,11 @@ async def article_in_force(
             "merged ontology — is legal.ontology.yaml loaded for this tenant?"
         ) from exc
 
-    rows = await store.execute_traversal(
+    rows = await store.execute_pattern(
         ctx,
-        pattern.query_template,
-        bind_vars={"articulo_key": articulo_key, "as_of": as_of.isoformat()},
-        collection_binds={"@articulo": "articulo"},
+        pattern,
+        {"articulo_key": articulo_key, "as_of": as_of.isoformat()},
+        {"@articulo": "articulo"},
     )
     if not rows:
         return None
@@ -140,7 +140,7 @@ async def search_articles(
 
     Reads the ``search_articles`` AQL template from
     ``ctx.ontology.traversal_patterns`` (never inlined here), executes it
-    via ``store.execute_traversal`` (no ``collection_binds`` — the view
+    via ``store.execute_pattern`` (no ``collection_binds`` — the view
     name is a literal in the template, never a bind var), then applies
     the token-containment guard in Python to drop any hit whose lexical
     match lives only in a superseded wording (the AQL's temporal FILTER
@@ -173,10 +173,10 @@ async def search_articles(
             "merged ontology — is legal.ontology.yaml loaded for this tenant?"
         ) from exc
 
-    rows = await store.execute_traversal(
+    rows = await store.execute_pattern(
         ctx,
-        pattern.query_template,
-        bind_vars={"query": query, "as_of": as_of.isoformat(), "limit": limit},
+        pattern,
+        {"query": query, "as_of": as_of.isoformat(), "limit": limit},
     )
 
     hits: list[ArticleHit] = []
