@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-678 — fixgroup-fa16a91bd3ea
 **Spec**: `sdd/specs/fixgroup-fa16a91bd3ea.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -103,3 +103,19 @@ def create_bulk_tools(store: BaseWikiStore, root: Path, config: WikiProjectConfi
 - `pytest packages/ai-parrot/tests/knowledge/wiki/test_sync_tools.py packages/ai-parrot/tests/knowledge/wiki/test_sync_push_chunking.py packages/ai-parrot/tests/knowledge/wiki/test_cli_remote_push.py -q`
 
 ## Completion Note
+Completed 2026-10-15 (sdd-fix lane, ledger issue:086be5c7371d). Implementing commit b61cbee2c.
+
+- Server: `WikiSyncPushTool` validates `SYNC_PUSH_MAX_PAGES` (200) and
+  `SYNC_PUSH_MAX_BYTES` (1 MiB) before any write and returns a clear
+  "chunk the push" error; when built by `create_bulk_tools` (root/config set)
+  it applies under `_INGEST_LOCK` + `wiki_write_lock`, held lock → `busy:` error.
+  Direct construction `WikiSyncPushTool(store, name)` keeps working, unlocked.
+- Client: `sync_push_remote` chunks by count and byte budget (1 MiB − 8 KiB
+  headroom); each edge rides with the chunk of its first memory endpoint;
+  a page that alone exceeds the budget is reported in `rejected` (CLI prints
+  `rejected=<n>`); created/updated/skipped_older are summed over chunks.
+- Known limit: an edge owned by a rejected page is dropped with it.
+- Tests: 3 new server tests (count cap, size cap, writer lock) + 3 client
+  chunking tests; wiki remote/bulk/surface suites 28 passed, 1 skipped; ruff clean.
+- Worktree note: tests needed the main checkout's Cython `.so` files symlinked
+  (untracked, git-ignored) into the worktree.
