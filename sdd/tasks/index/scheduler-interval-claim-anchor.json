@@ -16,13 +16,13 @@
       "feature_id": "FEAT-676",
       "feature": "scheduler-interval-claim-anchor",
       "spec": "sdd/specs/scheduler-interval-claim-anchor.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-15T12:15:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4350-deterministic-trigger-anchor.md"
     }
