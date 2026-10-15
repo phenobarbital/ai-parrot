@@ -16,14 +16,15 @@
       "feature_id": "FEAT-673",
       "feature": "fixgroup-78be66fdfe17",
       "spec": "sdd/specs/fixgroup-78be66fdfe17.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task in this feature",
       "assigned_to": "agent:sdd-fix",
-      "file": "sdd/tasks/active/TASK-4347-knowledge-upload-pre-authorize.md"
+      "file": "sdd/tasks/active/TASK-4347-knowledge-upload-pre-authorize.md",
+      "started_at": "2026-10-15T12:11:59.549306+00:00"
     }
   ]
 }
