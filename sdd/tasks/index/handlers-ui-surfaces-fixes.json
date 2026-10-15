@@ -1,0 +1,26 @@
+{
+  "feature": "handlers-ui-surfaces-fixes",
+  "feature_id": "FEAT-691",
+  "spec": "sdd/specs/handlers-ui-surfaces-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-15T23:43:51+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4402",
+      "feature_id": "FEAT-691",
+      "feature": "handlers-ui-surfaces-fixes",
+      "spec": "sdd/specs/handlers-ui-surfaces-fixes.spec.md",
+      "slug": "source-data-viewer-pctx",
+      "title": "Viewer pctx for authenticated share-token holders in _source_data",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-4402-source-data-viewer-pctx.md"
+    }
+  ]
+}
