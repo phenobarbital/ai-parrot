@@ -126,48 +126,77 @@ def _operation_invoke(tool: Any) -> Callable[[BaseModel], Awaitable[OperationRes
     name = tool.name
 
     if name == "wiki_query":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_query(tool._store, params)
+
     elif name == "wiki_page":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_page(tool._store, params)
+
     elif name == "wiki_related":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_related(tool._store, params)
+
     elif name == "wiki_remember":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_remember(tool._store, params, storage_dir=tool._storage_dir)
+
     elif name == "wiki_note":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_note(tool._store, params, storage_dir=tool._storage_dir)
+
     elif name == "wiki_status":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_status(tool._store, params)
+
     elif name == "wiki_lint":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_lint(tool._store, params, storage_dir=tool._storage_dir)
+
     elif name == "wiki_standup":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_standup(tool._store, params.model_dump(), root=tool._root, config=tool._config)
+
     elif name == "wiki_symbol_lookup":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_symbol_lookup(None, params, service_factory=tool._service_factory)
+
     elif name == "wiki_code_outline":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_code_outline(None, params, service_factory=tool._service_factory)
+
     elif name == "wiki_blast_radius":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_blast_radius(None, params, service_factory=tool._service_factory)
+
     elif name == "wiki_decisions_for_symbol":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_decisions_for_symbol(None, params, service_factory=tool._service_factory)
+
     elif name == "wiki_decision_why":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_decision_why(None, params, service_factory=tool._service_factory)
+
     elif name == "wiki_decision_generate":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_decision_generate(None, params, service_factory=tool._service_factory)
+
     elif name == "wiki_schema_lookup":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_schema_lookup(
                 None,
@@ -175,45 +204,72 @@ def _operation_invoke(tool: Any) -> Callable[[BaseModel], Awaitable[OperationRes
                 service=tool._service,
                 annotation_store=tool._annotation_store,
             )
+
     elif name == "wiki_schema_search":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_schema_search(None, params, service=tool._service)
+
     elif name == "wiki_schema_neighbors":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_schema_neighbors(None, params, service=tool._service)
+
     elif name == "wiki_schema_sources":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_schema_sources(None, params, service=tool._service)
+
     elif name == "ledger_open":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_ledger_open(tool._ledger_service, params)
+
     elif name == "ledger_ready":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_ledger_ready(tool._ledger_service, params)
+
     elif name == "ledger_claim":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_ledger_claim(tool._ledger_service, params)
+
     elif name == "ledger_close":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_ledger_close(tool._ledger_service, params)
+
     elif name == "ledger_context":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_ledger_context(tool._ledger_service, params)
+
     elif name == "wiki_page_hashes":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_page_hashes(tool._store, params)
+
     elif name == "wiki_ingest_batch":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_ingest_batch(tool._store, params, root=tool._root, config=tool._config)
+
     elif name == "wiki_sync_push":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_sync_push(tool._store, params, wiki_name=tool._wiki_name)
+
     elif name == "wiki_sync_pull":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_sync_pull(tool._store, params)
+
     elif name == "vault_ingest":
+
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_vault_ingest(tool._store, params, root=tool._root, config=tool._config)
+
     else:
         raise ValueError(f"Unsupported wiki operation: {name}")
     return invoke
