@@ -63,6 +63,7 @@ def test_appearance_cannot_target_a_facing():
                         "shelf_id": "shelf-1",
                         "slot": 1,
                         "product": "SKU-1",
+                        "descriptors": {"display_name": "Sku One"},
                     }
                 ],
             }

@@ -35,7 +35,7 @@
       "feature_id": "FEAT-683",
       "feature": "planogram-appearance-rule",
       "spec": "sdd/specs/planogram-appearance-rule.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "imports ZoneAppearance and APPEARANCE_UNDETERMINED from TASK-4359 (contracts.py); builds bindings with model_construct so it does not need TASK-4361; runs concurrently with TASK-4361/TASK-4362",
       "assigned_to": null,
       "started_at": "2026-10-15T16:45:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4360-appearance-evidence.md"
+      "completed_at": "2026-10-15T16:55:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4360-appearance-evidence.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4361",
@@ -55,7 +56,7 @@
       "feature_id": "FEAT-683",
       "feature": "planogram-appearance-rule",
       "spec": "sdd/specs/planogram-appearance-rule.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -65,8 +66,9 @@
       "parallelism_notes": "imports APPEARANCE_VALUES from TASK-4359 (contracts.py) for the definition.py validation loop",
       "assigned_to": null,
       "started_at": "2026-10-15T16:45:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4361-appearance-binding-validation.md"
+      "completed_at": "2026-10-15T16:55:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4361-appearance-binding-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4362",
