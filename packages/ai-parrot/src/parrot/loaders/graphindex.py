@@ -7,6 +7,7 @@ continues to expose framework ``Document`` objects to callers.
 
 from __future__ import annotations
 
+import inspect
 import tempfile
 from pathlib import Path
 from typing import Any, List, Optional, Union
@@ -55,6 +56,37 @@ class _CapturingPersistence:
         self.nodes = list(nodes)
         self.edges = list(edges)
         return await self._inner.replace_document_slice(ctx, document_uri, nodes, edges)
+
+    def __getattr__(self, name: str) -> Any:
+        """Delegate non-callable attributes to the wrapped persistence."""
+        if name.startswith("__") or name == "_inner":
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+
+def _make_forwarder(name: str) -> Any:
+    async def _forward(self: Any, *args: Any, **kwargs: Any) -> Any:
+        return await getattr(self._inner, name)(*args, **kwargs)
+
+    _forward.__name__ = name
+    return _forward
+
+
+def capture_persistence(inner: Any) -> _CapturingPersistence:
+    """Wrap ``inner`` so every public method it exposes is forwarded.
+
+    Protocol ``isinstance`` checks (``IncrementalPersistence``,
+    ``EmbeddingPersistence``, ...) look methods up on the type, so forwarders
+    are generated on a per-inner subclass rather than via ``__getattr__``.
+    """
+    namespace: dict[str, Any] = {}
+    for name in dir(inner):
+        if name.startswith("_") or name in _CapturingPersistence.__dict__:
+            continue
+        if callable(getattr(type(inner), name, None)) and inspect.iscoroutinefunction(getattr(inner, name)):
+            namespace[name] = _make_forwarder(name)
+    cls = type("_CapturingPersistence", (_CapturingPersistence,), namespace)
+    return cls(inner)
 
 
 class GraphIndexLoader(AbstractLoader):
@@ -130,6 +162,7 @@ class GraphIndexLoader(AbstractLoader):
         self.nodes: List[UniversalNode] = []
         self.edges: List[UniversalEdge] = []
         self.graph_store: Any = None
+        self._arango_db: Any = None
         self.builder: Optional[GraphIndexBuilder] = None
 
     async def load(self, source: Optional[Any] = None, split_documents: bool = False, **kwargs: Any) -> List[Document]:
@@ -141,8 +174,35 @@ class GraphIndexLoader(AbstractLoader):
     async def build_graph(self, source: Optional[Any] = None) -> BuildResult:
         """Run the GraphIndex pipeline and expose its resulting artifacts."""
         files = self._resolve_files(source)
-        inner = await self._make_persistence()
-        capture = _CapturingPersistence(inner)
+        try:
+            inner = await self._make_persistence()
+        except BaseException:
+            await self._close_arango_db()
+            raise
+        try:
+            return await self._build_with(inner, files)
+        finally:
+            try:
+                await inner.close()
+            except Exception as exc:  # pragma: no cover - defensive
+                self.logger.warning("persistence close failed: %s", exc)
+            await self._close_arango_db()
+
+    async def _close_arango_db(self) -> None:
+        """Close the ArangoDB client opened by ``_make_persistence`` (the loader owns it)."""
+        db, self._arango_db = self._arango_db, None
+        if db is None:
+            return
+        try:
+            result = db.close()
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:  # pragma: no cover - defensive
+            self.logger.warning("ArangoDB client close failed: %s", exc)
+
+    async def _build_with(self, inner: Any, files: Any) -> BuildResult:
+        """Run the builder over ``inner`` wrapped with node/edge capture."""
+        capture = capture_persistence(inner)
         output_dir = self._output_dir or Path(tempfile.mkdtemp(prefix="graphindex_"))
         self.builder = GraphIndexBuilder(
             persistence=capture,
@@ -178,6 +238,7 @@ class GraphIndexLoader(AbstractLoader):
             except Exception as exc:  # pragma: no cover - requires a live server
                 self.logger.error("ArangoDB connection failed: %s", exc)
                 raise
+            self._arango_db = db
             self.graph_store = create_ontology_graph_store("arangodb", arango_client=db)
             try:
                 await self.graph_store.initialize_tenant(self.ctx)

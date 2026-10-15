@@ -4043,6 +4043,7 @@ def _sync_memory_to_graph(
         click.echo(f"[graph sync skipped: graphindex unavailable — {exc}]")
         return None
 
+    persistence = None
     try:
         ctx = make_stub_tenant_context(config.wiki_name)
         persistence = _run(persistence_for_project(config, root))
@@ -4094,6 +4095,9 @@ def _sync_memory_to_graph(
     except Exception as exc:  # noqa: BLE001 — sync must never block the save
         click.echo(f"[graph sync failed: {exc}]")
         return None
+    finally:
+        if persistence is not None:
+            _run(persistence.close())
 
 
 def _extract_into_graph(
@@ -4133,6 +4137,7 @@ def _extract_into_graph(
     if not spec:
         click.echo("[extract skipped: set WIKI_EXTRACT_LLM (e.g." " 'anthropic:claude-haiku-4-5') to enable]")
         return None
+    persistence = None
     try:
         from parrot.clients.factory import LLMFactory
         from parrot.knowledge.graphindex.extractors.llm import LLMGraphExtractor
@@ -4141,7 +4146,8 @@ def _extract_into_graph(
 
         client = LLMFactory.create(spec, model_args={"temperature": 0.0})
         ctx = make_stub_tenant_context(config.wiki_name)
-        publisher = GraphPublisher(_run(persistence_for_project(config, root)), ctx)
+        persistence = _run(persistence_for_project(config, root))
+        publisher = GraphPublisher(persistence, ctx)
         extractor = LLMGraphExtractor(client, publisher)
         result = _run(
             extractor.extract_and_publish(
@@ -4160,6 +4166,9 @@ def _extract_into_graph(
     except Exception as exc:  # noqa: BLE001 — extraction is best-effort
         click.echo(f"[extract failed: {exc}]")
         return None
+    finally:
+        if persistence is not None:
+            _run(persistence.close())
 
 
 @wiki.command()
@@ -4586,6 +4595,7 @@ def audit(
     if root is not None and config is not None:
         graph_db = config.graph_path(root) / f"{config.wiki_name}.db"
         if graph_db.exists():
+            persistence = None
             try:
                 from parrot.knowledge.graphindex.factory import (
                     make_stub_tenant_context,
@@ -4596,6 +4606,9 @@ def audit(
                 graph_commits = _run(persistence.list_commits(ctx, limit=limit))
             except Exception as exc:  # noqa: BLE001
                 click.echo(f"[graph audit unavailable: {exc}]")
+            finally:
+                if persistence is not None:
+                    _run(persistence.close())
 
     if as_json:
         click.echo(
@@ -4653,8 +4666,11 @@ def ground(
 
     async def _ground() -> dict[str, Any]:
         persistence = await persistence_for_project(config, root)
-        ctx = make_stub_tenant_context(config.wiki_name)
-        nodes, edges = await persistence.load_graph(ctx)
+        try:
+            ctx = make_stub_tenant_context(config.wiki_name)
+            nodes, edges = await persistence.load_graph(ctx)
+        finally:
+            await persistence.close()
         assembler = GraphAssembler(tenant_id=config.wiki_name)
         for node in nodes:
             assembler.add_node(node)
