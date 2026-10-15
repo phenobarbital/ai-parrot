@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-15T12:13:50+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-15T12:15:27+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,15 +16,16 @@
       "feature_id": "FEAT-674",
       "feature": "planogram-fact-tag-e2e-test",
       "spec": "sdd/specs/planogram-fact-tag-e2e-test.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "assigned_to": "agent:sdd-fix",
       "started_at": "2026-10-15T12:14:34+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4348-fact-tag-e2e-test.md"
+      "completed_at": "2026-10-15T12:15:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4348-fact-tag-e2e-test.md",
+      "verification": "verified"
     }
   ]
 }
