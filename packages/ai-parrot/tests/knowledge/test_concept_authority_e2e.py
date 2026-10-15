@@ -13,7 +13,7 @@ Commissions scenario
 - Concepts: commissions, sales-commissions (is_a commissions), bonuses, pto
 
 Pipeline under test: OntologyRAGMixin.ontology_process with mocked:
-    - OntologyGraphStore.execute_traversal
+    - ArangoOntologyGraphStore.execute_pattern
     - PgVectorStore.similarity_search
     - TenantOntologyManager
     - EntityResolver (hybrid_concept_match)
@@ -28,7 +28,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from parrot.knowledge.ontology.cache import OntologyCache
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.mixin import OntologyRAGMixin
 from parrot.knowledge.ontology.schema import (
     ContextEnvelope,
@@ -228,17 +228,16 @@ def mock_cache() -> AsyncMock:
 def mock_graph_store() -> AsyncMock:
     """Graph store mock with authority-level-based traversal results."""
 
-    def _traversal_side_effect(**kwargs: Any) -> list[dict]:
-        bind_vars = kwargs.get("bind_vars", {})
-        level = bind_vars.get("authority_level", "")
+    def _traversal_side_effect(ctx: Any, pattern: Any, params: dict, collection_binds: Any = None) -> list[dict]:
+        level = params.get("authority_level", "")
         if level == "primary":
             return [SALES_COMMISSIONS_POLICY]
         if level == "secondary":
             return [COMMISSIONS_FAQ, COMMISSIONS_MEMO]
         return []
 
-    store = AsyncMock(spec=OntologyGraphStore)
-    store.execute_traversal.side_effect = _traversal_side_effect
+    store = AsyncMock(spec=ArangoOntologyGraphStore)
+    store.execute_pattern.side_effect = _traversal_side_effect
     return store
 
 
@@ -311,16 +310,16 @@ class TestConceptAuthorityE2E:
         mock_cache: AsyncMock,
     ) -> None:
         """No primary result → secondary traversal returns FAQ + memo."""
-        def _empty_primary_traversal(**kwargs: Any) -> list[dict]:
-            level = kwargs.get("bind_vars", {}).get("authority_level", "")
+        def _empty_primary_traversal(ctx: Any, pattern: Any, params: dict, collection_binds: Any = None) -> list[dict]:
+            level = params.get("authority_level", "")
             if level == "primary":
                 return []
             if level == "secondary":
                 return [COMMISSIONS_FAQ, COMMISSIONS_MEMO]
             return []
 
-        graph_store = AsyncMock(spec=OntologyGraphStore)
-        graph_store.execute_traversal.side_effect = _empty_primary_traversal
+        graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
+        graph_store.execute_pattern.side_effect = _empty_primary_traversal
 
         with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
              patch(
@@ -356,8 +355,8 @@ class TestConceptAuthorityE2E:
         mock_vector_store: AsyncMock,
     ) -> None:
         """Both graph levels empty → filtered vector search succeeds."""
-        graph_store = AsyncMock(spec=OntologyGraphStore)
-        graph_store.execute_traversal.return_value = []  # Both levels empty
+        graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
+        graph_store.execute_pattern.return_value = []  # Both levels empty
 
         with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
              patch(
@@ -390,8 +389,8 @@ class TestConceptAuthorityE2E:
         mock_cache: AsyncMock,
     ) -> None:
         """Graph empty + filtered vector empty → plain vector fallback."""
-        graph_store = AsyncMock(spec=OntologyGraphStore)
-        graph_store.execute_traversal.return_value = []
+        graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
+        graph_store.execute_pattern.return_value = []
 
         async def _filtered_empty_plain_hit(query: str = "", **kwargs: Any) -> list[dict]:
             if kwargs.get("metadata_filters"):
@@ -431,8 +430,8 @@ class TestConceptAuthorityE2E:
         mock_cache: AsyncMock,
     ) -> None:
         """All levels return empty → source="vector_only"."""
-        graph_store = AsyncMock(spec=OntologyGraphStore)
-        graph_store.execute_traversal.return_value = []
+        graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
+        graph_store.execute_pattern.return_value = []
 
         vector_store = AsyncMock()
         vector_store.similarity_search = AsyncMock(return_value=[])
@@ -467,12 +466,12 @@ class TestConceptAuthorityE2E:
         mock_vector_store: AsyncMock,
     ) -> None:
         """Query about PTO (different concept) → graph empty → filtered vector hit."""
-        def _pto_traversal(**kwargs: Any) -> list[dict]:
+        def _pto_traversal(ctx: Any, pattern: Any, params: dict, collection_binds: Any = None) -> list[dict]:
             # No primary/secondary results for PTO (no authority doc configured)
             return []
 
-        graph_store = AsyncMock(spec=OntologyGraphStore)
-        graph_store.execute_traversal.side_effect = _pto_traversal
+        graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
+        graph_store.execute_pattern.side_effect = _pto_traversal
 
         with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
              patch(
@@ -504,14 +503,14 @@ class TestConceptAuthorityE2E:
         mock_cache: AsyncMock,
     ) -> None:
         """Query about bonuses → primary traversal returns bonus-policy."""
-        def _bonus_traversal(**kwargs: Any) -> list[dict]:
-            level = kwargs.get("bind_vars", {}).get("authority_level", "")
+        def _bonus_traversal(ctx: Any, pattern: Any, params: dict, collection_binds: Any = None) -> list[dict]:
+            level = params.get("authority_level", "")
             if level == "primary":
                 return [BONUS_POLICY]
             return []
 
-        graph_store = AsyncMock(spec=OntologyGraphStore)
-        graph_store.execute_traversal.side_effect = _bonus_traversal
+        graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
+        graph_store.execute_pattern.side_effect = _bonus_traversal
 
         with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
              patch(
@@ -544,8 +543,8 @@ class TestConceptAuthorityE2E:
     ) -> None:
         """find_department pattern (non-authority) → single traversal → source=ontology."""
         dept_row = {"name": "Engineering", "dept_id": "ENG"}
-        graph_store = AsyncMock(spec=OntologyGraphStore)
-        graph_store.execute_traversal.return_value = [dept_row]
+        graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
+        graph_store.execute_pattern.return_value = [dept_row]
 
         with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, graph_store, mock_cache)
@@ -559,6 +558,6 @@ class TestConceptAuthorityE2E:
         assert result.context.source == "ontology"
         assert result.context.graph_context == [dept_row]
         # Exactly one traversal — no authority_level in bind_vars
-        assert graph_store.execute_traversal.call_count == 1
-        call_kwargs = graph_store.execute_traversal.call_args.kwargs
-        assert "authority_level" not in call_kwargs.get("bind_vars", {})
+        assert graph_store.execute_pattern.call_count == 1
+        call_params = graph_store.execute_pattern.call_args.args[2]
+        assert "authority_level" not in call_params

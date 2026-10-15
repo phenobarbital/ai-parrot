@@ -2,7 +2,7 @@
 
 Runs the FULL protocol (publish → load → history → revert → conflict)
 against an in-memory ``FakeGraphStore`` that implements the
-``OntologyGraphStore`` helper surface over Python dicts — real
+``ArangoOntologyGraphStore`` helper surface over Python dicts — real
 end-to-end coverage of the persistence logic without AQL emulation or a
 live ArangoDB (the ``asyncdb`` driver is not available in CI).
 """
@@ -59,7 +59,7 @@ class _FakeUpsertResult:
 
 
 class FakeGraphStore:
-    """In-memory double implementing the OntologyGraphStore surface used
+    """In-memory double implementing the ArangoOntologyGraphStore surface used
     by ArangoPersistence (documents keyed per collection)."""
 
     def __init__(self) -> None:

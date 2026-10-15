@@ -6,7 +6,7 @@ import pytest
 
 from parrot.knowledge.ontology.cache import OntologyCache
 from parrot.knowledge.ontology.discovery import DiscoveryResult, DiscoveryStats, RelationDiscovery
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore, UpsertResult
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore, UpsertResult
 from parrot.knowledge.ontology.refresh import DiffResult, OntologyRefreshPipeline, RefreshReport
 from parrot.knowledge.ontology.schema import (
     DiscoveryConfig,
@@ -84,7 +84,7 @@ def mock_tenant_mgr(tenant_ctx):
 
 @pytest.fixture
 def mock_graph_store():
-    store = AsyncMock(spec=OntologyGraphStore)
+    store = AsyncMock(spec=ArangoOntologyGraphStore)
     store.get_all_nodes.return_value = [
         {"employee_id": "E1", "name": "Alice", "department": "ENG", "_active": True},
         {"employee_id": "E2", "name": "Bob", "department": "SALES", "_active": True},

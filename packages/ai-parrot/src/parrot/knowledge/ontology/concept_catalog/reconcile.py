@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from parrot.knowledge.ontology.concept_catalog import _EMPTY_ONTOLOGY
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.schema import TenantContext
 
 logger = logging.getLogger("Parrot.Ontology.ConceptCatalog.Reconciler")
@@ -76,7 +76,7 @@ class ConceptCatalogReconciler:
 
     Args:
         pg_pool: asyncpg connection pool.
-        graph_store: OntologyGraphStore instance.
+        graph_store: ArangoOntologyGraphStore instance.
         outbox_drain_interval: Seconds to wait before flagging an in-flight row.
             Rows updated within ``outbox_drain_interval × 10`` seconds are
             excluded from forward-scan results.
@@ -88,7 +88,7 @@ class ConceptCatalogReconciler:
     def __init__(
         self,
         pg_pool: Any,
-        graph_store: OntologyGraphStore,
+        graph_store: ArangoOntologyGraphStore,
         outbox_drain_interval: int = _DEFAULT_DRAIN_INTERVAL_SECONDS,
     ) -> None:
         self._pool = pg_pool

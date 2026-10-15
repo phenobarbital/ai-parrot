@@ -249,7 +249,7 @@ class ContractRetrieval:
 
     Args:
         catalog: The tenant-bound catalog (SQL is always available).
-        graph_store: Optional ``OntologyGraphStore`` for YAML patterns.
+        graph_store: Optional ``ArangoOntologyGraphStore`` for YAML patterns.
         tenant_context: Optional ``TenantContext`` for graph reads.
         ontology: Optional merged ontology supplying the allowlisted AQL.
         authorization: Optional ``AuthorizationChecker``; the local

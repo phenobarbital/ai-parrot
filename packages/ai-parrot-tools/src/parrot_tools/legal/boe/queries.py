@@ -5,7 +5,7 @@ The resolution *logic* — which wording was in force on a given date, and
 the lexical-candidate BM25 search — lives entirely in the AQL
 ``query_template``s declared in ``legal.ontology.yaml`` (TASK-2371,
 TASK-2494). This module is pure ergonomics: binding, calling
-``OntologyGraphStore.execute_pattern``, and deserialising the result. It
+``ArangoOntologyGraphStore.execute_pattern``, and deserialising the result. It
 does not re-implement version selection in Python — that would duplicate
 the pattern and violate spec goal G4 (declarative-first temporal
 resolution). ``search_articles`` additionally applies a Python-side
@@ -20,7 +20,7 @@ import re
 import unicodedata
 from datetime import date
 
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.schema import TenantContext
 
 from .models import ArticleHit, ArticleVersion
@@ -30,7 +30,7 @@ _SEARCH_PATTERN_NAME = "search_articles"
 
 
 async def article_in_force(
-    store: OntologyGraphStore,
+    store: ArangoOntologyGraphStore,
     ctx: TenantContext,
     articulo_key: str,
     as_of: date,
@@ -43,7 +43,7 @@ async def article_in_force(
     deserialises the single matching version.
 
     Args:
-        store: The OntologyGraphStore to execute the traversal against.
+        store: The ArangoOntologyGraphStore to execute the traversal against.
         ctx: Tenant context carrying the merged ontology and its
             traversal patterns.
         articulo_key: The composite articulo key (``{boe_id}:{numero}``)
@@ -130,7 +130,7 @@ def passes_token_guard(query: str, text: str | None) -> bool:
 
 
 async def search_articles(
-    store: OntologyGraphStore,
+    store: ArangoOntologyGraphStore,
     ctx: TenantContext,
     query: str,
     as_of: date,
@@ -149,7 +149,7 @@ async def search_articles(
     happened to match at the SEARCH stage).
 
     Args:
-        store: The OntologyGraphStore to execute the traversal against.
+        store: The ArangoOntologyGraphStore to execute the traversal against.
         ctx: Tenant context carrying the merged ontology and its
             traversal patterns.
         query: The user's lexical query.

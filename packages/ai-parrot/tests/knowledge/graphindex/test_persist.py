@@ -60,7 +60,7 @@ def make_edge(
 
 
 def make_graph_store() -> MagicMock:
-    """Create a mock OntologyGraphStore."""
+    """Create a mock ArangoOntologyGraphStore."""
     store = MagicMock()
     # UpsertResult-like object
     upsert_result = MagicMock()

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore, UpsertResult
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore, UpsertResult
 from parrot.knowledge.ontology.schema import (
     DiscoveryConfig,
     EntityDef,
@@ -75,9 +75,9 @@ def tenant_ctx() -> TenantContext:
 
 
 @pytest.fixture
-def store(mock_db) -> OntologyGraphStore:
+def store(mock_db) -> ArangoOntologyGraphStore:
     """Create a graph store with mocked client."""
-    return OntologyGraphStore(arango_client=mock_db)
+    return ArangoOntologyGraphStore(arango_client=mock_db)
 
 
 class TestInitializeTenant:
@@ -121,12 +121,12 @@ class TestInitializeTenant:
 
     @pytest.mark.asyncio
     async def test_no_client_raises(self, tenant_ctx):
-        store = OntologyGraphStore(arango_client=None)
+        store = ArangoOntologyGraphStore(arango_client=None)
         with pytest.raises(RuntimeError, match="requires an ArangoDB client"):
             await store.initialize_tenant(tenant_ctx)
 
 
-class TestExecuteTraversal:
+class TestExecuteAql:
 
     @pytest.mark.asyncio
     async def test_returns_results(self, store, tenant_ctx, mock_db):
@@ -134,7 +134,7 @@ class TestExecuteTraversal:
             {"name": "Alice", "dept": "eng"},
             {"name": "Bob", "dept": "sales"},
         ]
-        results = await store.execute_traversal(
+        results = await store._execute_aql(
             tenant_ctx,
             aql="FOR v IN 1..1 OUTBOUND @uid belongs_to_dept RETURN v",
             bind_vars={"uid": "employees/emp_001"},
@@ -145,7 +145,7 @@ class TestExecuteTraversal:
     @pytest.mark.asyncio
     async def test_merges_collection_binds(self, store, tenant_ctx, mock_db):
         mock_db.execute_query.return_value = []
-        await store.execute_traversal(
+        await store._execute_aql(
             tenant_ctx,
             aql="FOR v IN @@col RETURN v",
             bind_vars={"limit": 10},
@@ -158,7 +158,7 @@ class TestExecuteTraversal:
     @pytest.mark.asyncio
     async def test_empty_result(self, store, tenant_ctx, mock_db):
         mock_db.execute_query.return_value = None
-        results = await store.execute_traversal(
+        results = await store._execute_aql(
             tenant_ctx,
             aql="FOR v IN c RETURN v",
         )

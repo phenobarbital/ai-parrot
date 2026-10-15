@@ -70,7 +70,7 @@ def _node_to_doc(node: UniversalNode) -> dict[str, Any]:
         node: The node to convert.
 
     Returns:
-        A dict suitable for ``OntologyGraphStore.upsert_nodes``.
+        A dict suitable for ``ArangoOntologyGraphStore.upsert_nodes``.
     """
     return {
         "_key": node.node_id,
@@ -108,7 +108,7 @@ def _edge_to_doc(
             the nodes being persisted in the same call.
 
     Returns:
-        A dict suitable for ``OntologyGraphStore.create_edges``, with
+        A dict suitable for ``ArangoOntologyGraphStore.create_edges``, with
         ``_from`` and ``_to`` as fully-qualified ArangoDB IDs.
     """
     src_kind = node_kind_map.get(edge.source_id, "")
@@ -201,7 +201,7 @@ class ArangoPersistence:
     soft-delete-then-upsert sequence in ``replace_document_slice``.
 
     Args:
-        store: An initialised ``GraphDocumentStore`` (the ArangoDB ``OntologyGraphStore``).
+        store: An initialised ``GraphDocumentStore`` (the ArangoDB ``ArangoOntologyGraphStore``).
     """
 
     _tenant_locks: dict[str, asyncio.Lock]
@@ -848,7 +848,7 @@ async def create_arango_persistence(
 
     Args:
         graph_store: An existing document store to wrap. When omitted, an
-            ``OntologyGraphStore`` is created (lazily importing the driver).
+            ``ArangoOntologyGraphStore`` is created (lazily importing the driver).
         arango_params: Optional connection parameters; when given and no
             store is supplied, an asyncdb ArangoDB client is built from them.
         tenant_ctx: Accepted for registry-signature parity; unused (the
@@ -858,7 +858,7 @@ async def create_arango_persistence(
         A ready ``ArangoPersistence``.
     """
     if graph_store is None:
-        from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+        from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 
         client: Any = None
         if arango_params:
@@ -866,5 +866,5 @@ async def create_arango_persistence(
 
             client = AsyncDB("arangodb", params=arango_params)
             await client.connection()
-        graph_store = OntologyGraphStore(arango_client=client)
+        graph_store = ArangoOntologyGraphStore(arango_client=client)
     return ArangoPersistence(graph_store)

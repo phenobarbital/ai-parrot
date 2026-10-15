@@ -7,7 +7,7 @@ import pytest
 
 from parrot.knowledge.ontology.contracts import DynamicQuery, GraphDocumentStore, OntologyTraversalStore
 from parrot.knowledge.ontology.exceptions import QueryDialectMismatch, TraversalPatternUnavailable
-from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore, OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 
 
 class _Client:
@@ -33,13 +33,12 @@ def _store(rows: Any = None) -> tuple[ArangoOntologyGraphStore, _Client]:
     return ArangoOntologyGraphStore(client), client
 
 
-def test_contracts_and_aliases() -> None:
+def test_contracts_and_dialect() -> None:
     store, _ = _store()
     assert isinstance(store, GraphDocumentStore)
     assert isinstance(store, OntologyTraversalStore)
     assert store.dialect == "aql"
-    assert OntologyGraphStore is ArangoOntologyGraphStore
-    assert ArangoOntologyGraphStore.execute_traversal is ArangoOntologyGraphStore._execute_aql
+    assert not hasattr(ArangoOntologyGraphStore, "execute_traversal")
 
 
 @pytest.mark.asyncio

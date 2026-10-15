@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 
 from .cache import OntologyCache
 from .discovery import DiscoveryStats, RelationDiscovery
-from .graph_store import OntologyGraphStore, UpsertResult
+from .graph_store import ArangoOntologyGraphStore, UpsertResult
 from .tenant import TenantOntologyManager
 
 logger = logging.getLogger("Parrot.Ontology.Refresh")
@@ -65,7 +65,7 @@ class OntologyRefreshPipeline:
 
     Args:
         tenant_manager: TenantOntologyManager instance.
-        graph_store: OntologyGraphStore instance.
+        graph_store: ArangoOntologyGraphStore instance.
         discovery: RelationDiscovery instance.
         datasource_factory: DataSourceFactory instance.
         cache: OntologyCache instance.
@@ -76,7 +76,7 @@ class OntologyRefreshPipeline:
     def __init__(
         self,
         tenant_manager: TenantOntologyManager,
-        graph_store: OntologyGraphStore,
+        graph_store: ArangoOntologyGraphStore,
         discovery: RelationDiscovery,
         datasource_factory: Any,
         cache: OntologyCache,

@@ -199,8 +199,8 @@ def create_ontology_graph_store(backend: str, **options: Any) -> GraphDocumentSt
     if factory is not None:
         return factory(**options)
     if backend == "arangodb":
-        from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+        from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 
-        return OntologyGraphStore(**options)
+        return ArangoOntologyGraphStore(**options)
     known = ", ".join(repr(name) for name in (*_ONTOLOGY_BACKENDS, "arangodb"))
     raise ValueError(f"Unknown ontology graph backend {backend!r} — expected one of {known}")

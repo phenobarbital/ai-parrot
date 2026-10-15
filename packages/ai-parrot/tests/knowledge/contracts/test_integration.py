@@ -21,7 +21,7 @@ from parrot.knowledge.contracts.graph_loader import ContractGraphLoader
 from parrot.knowledge.contracts.library import ContractLibrary
 from parrot.knowledge.contracts.models import Citation
 from parrot.knowledge.contracts.temporal import ContractTemporalPublisher
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.parser import OntologyParser
 from parrot.knowledge.ontology.merger import OntologyMerger
 from parrot.knowledge.ontology.schema import TenantContext
@@ -295,7 +295,7 @@ async def test_temporal_publication_and_recovery_through_the_library(pg_pool, te
 
 
 class ArangoAdapter:
-    """Adds the ``execute_query`` surface ``OntologyGraphStore`` expects.
+    """Adds the ``execute_query`` surface ``ArangoOntologyGraphStore`` expects.
 
     The installed ``asyncdb`` ArangoDB driver exposes ``query(sentence,
     bind_vars=...) -> [rows, error]``; the ontology store calls
@@ -324,14 +324,14 @@ class ArangoAdapter:
 
 @pytest.fixture()
 async def arango_store(arango_params):
-    """A real :class:`OntologyGraphStore` over a throwaway database."""
+    """A real :class:`ArangoOntologyGraphStore` over a throwaway database."""
     from asyncdb import AsyncDB
 
     database = f"contracts_it_{uuid.uuid4().hex[:8]}"
     db = AsyncDB("arangodb", params=arango_params)
     async with await db.connection() as connection:
         adapter = ArangoAdapter(connection)
-        store = OntologyGraphStore(arango_client=adapter)
+        store = ArangoOntologyGraphStore(arango_client=adapter)
         try:
             yield store, database, adapter
         finally:
@@ -355,14 +355,14 @@ def contracts_context(database: str) -> TenantContext:
     )
 
 
-#: Historical note: ``OntologyGraphStore.upsert_nodes`` used to build
+#: Historical note: ``ArangoOntologyGraphStore.upsert_nodes`` used to build
 #: ``UPSERT { @key_field: doc[@key_field] }``, which ArangoDB refuses (ERR
 #: 1501, "expecting object literal with literal attribute names in example"),
 #: so no node reached a real graph through that API. It now uses a computed
 #: attribute name (``{ [@key_field]: ... }``); the regression test below
 #: pins the fixed behaviour against a live server.
 UPSERT_NODES_DEFECT = (
-    "OntologyGraphStore.upsert_nodes must reach a real ArangoDB "
+    "ArangoOntologyGraphStore.upsert_nodes must reach a real ArangoDB "
     "(regression of the ERR 1501 bind-parameter attribute-name defect)"
 )
 
@@ -617,7 +617,9 @@ async def test_all_ten_patterns_execute_against_a_real_graph(arango_store):
             token.strip("@,()").rstrip(",") for token in template.replace(",", " ").split() if token.startswith("@@")
         }
         collection_binds = {f"@{key}": collections[key] for key in needed if key in collections}
-        return await store.execute_traversal(ctx, template, bind_vars=values, collection_binds=collection_binds)
+        return await store.execute_pattern(
+            ctx, ctx.ontology.traversal_patterns[name], values, collection_binds
+        )
 
     executed: dict[str, list[Any]] = {}
     for name, values in binds.items():
@@ -626,8 +628,8 @@ async def test_all_ten_patterns_execute_against_a_real_graph(arango_store):
             token.strip("@,()").rstrip(",") for token in template.replace(",", " ").split() if token.startswith("@@")
         }
         collection_binds = {f"@{key}": collections[key] for key in needed if key in collections}
-        executed[name] = await store.execute_traversal(
-            ctx, template, bind_vars=values, collection_binds=collection_binds
+        executed[name] = await store.execute_pattern(
+            ctx, ctx.ontology.traversal_patterns[name], values, collection_binds
         )
 
     if not executed["search_contracts"]:
@@ -713,10 +715,10 @@ async def test_inactive_endpoints_are_filtered_by_every_pattern(arango_store):
             {"@contract": "contract", "@owned_by": "owned_by", "@reports_to": "reports_to"},
         ),
     ):
-        rows = await store.execute_traversal(
+        rows = await store.execute_pattern(
             ctx,
-            ctx.ontology.traversal_patterns[name].query_template,
-            bind_vars=values,
-            collection_binds=binds_map,
+            ctx.ontology.traversal_patterns[name],
+            values,
+            binds_map,
         )
         assert rows == [], f"{name} returned an inactive contract"

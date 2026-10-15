@@ -22,7 +22,7 @@ import yaml
 from parrot.auth.exceptions import AuthorizationRequired
 from parrot.auth.permission import PermissionContext, UserSession
 from parrot.knowledge.ontology.cache import OntologyCache
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.mixin import OntologyRAGMixin
 from parrot.knowledge.ontology.schema import (
     AuthorizationRule,
@@ -200,8 +200,8 @@ def cache() -> AsyncMock:
 @pytest.fixture
 def graph_store_with_team() -> AsyncMock:
     """Graph store returning a seeded team (Jesús Lara's reports)."""
-    store = AsyncMock(spec=OntologyGraphStore)
-    store.execute_traversal.return_value = [
+    store = AsyncMock(spec=ArangoOntologyGraphStore)
+    store.execute_pattern.return_value = [
         {"employee_id": "E002", "name": "Bob Jones", "jira_account_id": "acct:bob"},
         {"employee_id": "E003", "name": "Carol Chen", "jira_account_id": "acct:carol"},
     ]
@@ -285,7 +285,7 @@ class TestE2ETeamWorkInProgress:
     ) -> None:
         """Two Jesús employees → ambiguity_strategy=ask_user → state="ambiguous"."""
         ontology = _make_ontology(pattern)
-        gs = AsyncMock(spec=OntologyGraphStore)
+        gs = AsyncMock(spec=ArangoOntologyGraphStore)
         mixin = _make_mixin(ontology, gs, cache, _make_tool_manager(spy))
 
         ambiguous_candidates = [
@@ -345,7 +345,7 @@ class TestE2ETeamWorkInProgress:
             tool_call=pattern.tool_call,
         )
         ontology = _make_ontology(restricted_pattern)
-        gs = AsyncMock(spec=OntologyGraphStore)
+        gs = AsyncMock(spec=ArangoOntologyGraphStore)
         mixin = _make_mixin(ontology, gs, cache, _make_tool_manager(spy))
 
         with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
@@ -436,7 +436,7 @@ class TestE2ETeamWorkInProgress:
     ) -> None:
         """Two queries with different target employees get distinct cache keys.
 
-        Verifies that graph_store.execute_traversal is called a second time —
+        Verifies that graph_store.execute_pattern is called a second time —
         the second call cannot reuse the first call's cached result because
         resolved_entities differ.
         """
@@ -477,7 +477,7 @@ class TestE2ETeamWorkInProgress:
                 user_context={"user_id": "alice", "roles": ["hr_manager"]},
                 tenant_id="acme",
             )
-            traversal_count_after_first = graph_store_with_team.execute_traversal.call_count
+            traversal_count_after_first = graph_store_with_team.execute_pattern.call_count
 
             # Second query: resolves a different employee
             cache.get.return_value = None  # Cache miss also for second query
@@ -489,7 +489,7 @@ class TestE2ETeamWorkInProgress:
                 user_context={"user_id": "alice", "roles": ["hr_manager"]},
                 tenant_id="acme",
             )
-            traversal_count_after_second = graph_store_with_team.execute_traversal.call_count
+            traversal_count_after_second = graph_store_with_team.execute_pattern.call_count
 
         # Each query should produce a distinct cache key
         assert len(seen_keys) == 2

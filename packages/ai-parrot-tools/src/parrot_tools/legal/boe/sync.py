@@ -30,7 +30,7 @@ async def sync_boe(tenant_id: str, since: date | None = None) -> RefreshReport:
     runs it against the ``"legal"`` domain. After the pipeline's node sync
     completes, also bridges the ``modifica``/``deroga`` provenance edges
     parsed by ``BOEDataSource`` directly into
-    ``OntologyGraphStore.create_edges`` — see
+    ``ArangoOntologyGraphStore.create_edges`` — see
     ``_sync_provenance_edges``'s docstring for why the generic pipeline
     cannot create them on its own.
 
@@ -114,9 +114,9 @@ async def _sync_provenance_edges(
         ctx: Resolved TenantContext for the "legal" domain, used to map
             each relation's declared ``from``/``to`` entity to its
             collection name (building the ``_from``/``_to`` document IDs
-            ``OntologyGraphStore.create_edges`` requires) and its
+            ``ArangoOntologyGraphStore.create_edges`` requires) and its
             ``edge_collection``.
-        graph_store: The OntologyGraphStore to write edges to.
+        graph_store: The ArangoOntologyGraphStore to write edges to.
         boe_source: A ``BOEDataSource`` instance (same one used for node
             extraction, so its per-instance parse cache is reused —
             avoids re-fetching each configured norm).

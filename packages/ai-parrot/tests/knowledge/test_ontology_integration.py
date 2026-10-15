@@ -13,7 +13,7 @@ import pytest
 
 from parrot.knowledge.ontology.cache import OntologyCache
 from parrot.knowledge.ontology.discovery import DiscoveryResult, DiscoveryStats, RelationDiscovery
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore, UpsertResult
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore, UpsertResult
 from parrot.knowledge.ontology.intent import OntologyIntentResolver
 from parrot.knowledge.ontology.merger import OntologyMerger
 from parrot.knowledge.ontology.mixin import OntologyRAGMixin
@@ -98,8 +98,8 @@ def sample_portals() -> list[dict]:
 
 @pytest.fixture
 def mock_graph_store():
-    store = AsyncMock(spec=OntologyGraphStore)
-    store.execute_traversal.return_value = [
+    store = AsyncMock(spec=ArangoOntologyGraphStore)
+    store.execute_pattern.return_value = [
         {"name": "Navigator", "url": "https://epson.navigator.com"},
     ]
     store.get_all_nodes.return_value = []
@@ -210,7 +210,7 @@ class TestIntentToContext:
             assert result.context.intent.pattern == "find_portal"
             assert result.context.intent.source == "fast_path"
             assert result.context.graph_context is not None
-            mock_graph_store.execute_traversal.assert_called_once()
+            mock_graph_store.execute_pattern.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_fast_path_department_query(self, merged_ontology, user_context):
@@ -353,8 +353,8 @@ class TestGracefulDegradation:
                 ontology=merged_ontology,
             )
 
-            graph_store = AsyncMock(spec=OntologyGraphStore)
-            graph_store.execute_traversal.side_effect = ConnectionError(
+            graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
+            graph_store.execute_pattern.side_effect = ConnectionError(
                 "ArangoDB connection refused"
             )
 
@@ -403,7 +403,7 @@ class TestAllOntologyTests:
         """Smoke test: verify all ontology modules import cleanly."""
         from parrot.knowledge.ontology import (
             OntologyCache,
-            OntologyGraphStore,
+            ArangoOntologyGraphStore,
             OntologyIntentResolver,
             OntologyRAGMixin,
             TenantOntologyManager,

@@ -1,7 +1,7 @@
 """Concept Catalog Sync Worker (FEAT-159 TASK-1089).
 
 Drains ``ontology_concept_outbox`` rows using ``SELECT … FOR UPDATE SKIP LOCKED``,
-materialises concept/is_a data to ArangoDB via ``OntologyGraphStore``, and
+materialises concept/is_a data to ArangoDB via ``ArangoOntologyGraphStore``, and
 publishes cache-invalidation messages to Redis pub/sub.
 """
 from __future__ import annotations
@@ -10,7 +10,7 @@ import logging
 from typing import Any
 
 from parrot.knowledge.ontology.concept_catalog import _EMPTY_ONTOLOGY
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.schema import TenantContext
 
 
@@ -26,7 +26,7 @@ class ConceptCatalogSyncWorker:
 
     Args:
         pg_pool: asyncpg connection pool.
-        graph_store: OntologyGraphStore instance for ArangoDB I/O.
+        graph_store: ArangoOntologyGraphStore instance for ArangoDB I/O.
         redis_client: aioredis (or compatible) client for pub/sub publish.
     """
 
@@ -43,7 +43,7 @@ class ConceptCatalogSyncWorker:
     def __init__(
         self,
         pg_pool: Any,
-        graph_store: OntologyGraphStore,
+        graph_store: ArangoOntologyGraphStore,
         redis_client: Any,
     ) -> None:
         self._pool = pg_pool
