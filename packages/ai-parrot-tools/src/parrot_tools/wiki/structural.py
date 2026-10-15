@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from parrot.knowledge.wiki.federation import FederatedWikiStore
+from parrot.knowledge.wiki.federation import FederatedWikiStore  # noqa: F401 -- shim re-export
 from parrot.knowledge.wiki.operations import (
-    _scoped_store,
-    _unknown_namespace_error,
+    _scoped_store,  # noqa: F401 -- re-exported through the compatibility shim
+    _unknown_namespace_error,  # noqa: F401
 )
 from parrot.knowledge.wiki.project import (
     WikiProjectConfig,
@@ -26,6 +26,7 @@ from parrot.knowledge.wiki.structural.operations import (
     op_code_outline,
     op_symbol_lookup,
 )
+from parrot.knowledge.wiki.structural.factory import make_structural_service_factory
 from parrot.knowledge.wiki.structural.service import StructuralService
 from parrot.knowledge.wiki.symbols import SymbolKind
 from parrot.tools.abstract import (
@@ -193,22 +194,7 @@ def create_structural_tools(
         ``[WikiSymbolLookupTool, WikiCodeOutlineTool, WikiBlastRadiusTool]``,
         all three sharing one ``service_factory``.
     """
-    # A store scoped to ONE foreign namespace (``--ns <name>``) serves that plane as
-    # its "local" one; it must never be read-repaired from this checkout.
-    scoped_foreign = isinstance(store, FederatedWikiStore) and getattr(store, "_qualify_local", False)
-    local_service = StructuralService(store, root, config, read_repair=read_repair and not scoped_foreign)
-
-    def service_factory(namespace: str | None) -> StructuralService:
-        try:
-            scoped = _scoped_store(store, namespace)
-        except KeyError:
-            raise ValueError(_unknown_namespace_error(store, str(namespace))) from None
-        if scoped is store:
-            return local_service
-        # A foreign/federated namespace: read-repair is local-root-only
-        # (Module 7's own contract) and is now explicitly off (FEAT-609 M5),
-        # so a foreign plane is never written.
-        return StructuralService(scoped, root, config, read_repair=False)
+    service_factory = make_structural_service_factory(store, root, config, read_repair=read_repair)
 
     return [
         WikiSymbolLookupTool(service_factory),

@@ -27,11 +27,14 @@ interpreter), `tests/knowledge/test_graph_tree_imports.py` (AST scan + `sys.meta
   `op_note`, `op_status`, `op_lint`, `op_standup`, bulk/sync ops) returning `OperationResult`, with plain
   Pydantic inputs (`WikiQueryInput`, ...).
 * `wiki/transport.py` defines `OperationDescriptor` (name, description, input model, schema fingerprint, mount,
-  `invoke`) and `build_operation_descriptors(bundle)`. `_MOUNTS` assigns each operation to a mount
-  (`core`, `structural`, `decisions`, `schema`, `ledger`, `bulk`, `vault`).
+  `invoke`) and `build_operation_descriptors(context)`. Descriptors are built from the `_SPECS` operations
+  registry (name, mount, description, input model) and a framework-free `WikiOperationContext` (stores,
+  services, namespace-aware service factories); no `AbstractTool` is involved. Mounts are `core`, `structural`,
+  `decisions`, `schema`, `ledger`, `bulk`, `vault`.
 * `wiki/mcp_server.py` consumes descriptors: `create_wiki_mcp_server(root, transport="auto"|"framework"|"sdk")`
   and `create_proxy_mcp_server(remote, transport=...)`. The `sdk` transport needs no framework; the `framework`
-  transport lazily imports `parrot_tools.wiki` / `parrot.tools.abstract` only when selected.
+  transport lazily builds the `parrot_tools.wiki` wrappers (`WikiToolBundle.tools`, from the same context) only when
+  selected. `auto` falls back to the SDK only when `parrot.mcp` cannot be imported.
 * CLI: `wiki/cli.py` (`@click.group(name="wiki")`, function `wiki`, console script `main`) registers heavy
   command trees lazily through `wiki/lazy_commands.py` (`LazyGroup`, `LazyAdrGroup`).
 
