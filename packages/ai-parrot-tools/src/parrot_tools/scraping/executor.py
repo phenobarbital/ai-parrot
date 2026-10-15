@@ -539,7 +539,10 @@ async def _action_fill(driver: AbstractDriver, action: Any, default_timeout: int
 
 
 async def _action_type(driver: AbstractDriver, action: Any, default_timeout: int) -> bool:
-    """Forward all typing fields to the driver's typing capability."""
+    """Forward all typing fields to the driver's typing capability.
+
+    With ``selector=None`` the text is typed into the currently focused element.
+    """
     await driver.type_text(
         action.text,
         selector=action.selector,
