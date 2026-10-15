@@ -390,7 +390,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -405,8 +405,9 @@
       "parallelism_notes": "needs GraphDocument (TASK-4317), resolve_setting (TASK-4311), create_graph_persistence (TASK-4319), ArangoPersistence import fix in graphindex/loader.py (TASK-4320, same file), GraphIndexEmbedder adapter (TASK-4303), create_ontology_graph_store (TASK-4328)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4318-graphindex-loader-relocation.md"
+      "completed_at": "2026-10-15T12:37:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4318-graphindex-loader-relocation.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4319",
@@ -631,7 +632,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -642,8 +643,9 @@
       "parallelism_notes": "calls execute_pattern/execute_query on ArangoOntologyGraphStore (TASK-4328); validate_query from TASK-4327",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4329-intent-schema-mixin-dialect.md"
+      "completed_at": "2026-10-15T12:37:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4329-intent-schema-mixin-dialect.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4330",
