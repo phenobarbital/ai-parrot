@@ -12,11 +12,13 @@ no Selenium-specific imports live in this module.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import re as _re
 import time
 from dataclasses import asdict
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from urllib.parse import urljoin
 
@@ -55,6 +57,8 @@ logger = logging.getLogger(__name__)
 # Default settings when no DriverConfig is provided.
 _DEFAULT_DELAY = 1.0
 _DEFAULT_TIMEOUT = 10
+MAX_SCREENSHOT_BASE64_BYTES: int = 2 * 1024 * 1024
+"""Maximum raw PNG bytes included as base64 in extracted data."""
 
 
 async def execute_plan_steps(
@@ -298,6 +302,8 @@ async def _dispatch_step(
         return await _action_click(driver, action, timeout)
     elif action_type == "fill":
         return await _action_fill(driver, action, timeout)
+    elif action_type == "type":
+        return await _action_type(driver, action, timeout)
     elif action_type == "scroll":
         return await _action_scroll(driver, action)
     elif action_type == "evaluate":
@@ -319,7 +325,7 @@ async def _dispatch_step(
     elif action_type == "submit":
         return await _action_submit(driver, action, timeout)
     elif action_type == "screenshot":
-        return await _action_screenshot(driver, action)
+        return await _action_screenshot(driver, action, step, step_extracted)
     elif action_type == "press_key":
         return await _action_press_key(driver, action)
     elif action_type == "select":
@@ -529,6 +535,18 @@ async def _action_fill(driver: AbstractDriver, action: Any, default_timeout: int
     await driver.fill(selector, value, timeout)
     if getattr(action, "press_enter", False):
         await driver.press_key("Enter")
+    return True
+
+
+async def _action_type(driver: AbstractDriver, action: Any, default_timeout: int) -> bool:
+    """Forward all typing fields to the driver's typing capability."""
+    await driver.type_text(
+        action.text,
+        selector=action.selector,
+        delay_ms=action.delay,
+        clear_first=action.clear_first,
+        timeout=action.timeout or default_timeout,
+    )
     return True
 
 
@@ -924,18 +942,73 @@ def _apply_field(row: Any, spec: Any) -> Any:
     return extract(matches[0])
 
 
-async def _action_screenshot(driver: AbstractDriver, action: Any) -> bool:
-    """Take a screenshot."""
+async def _action_screenshot(
+    driver: AbstractDriver,
+    action: Any,
+    step: ScrapingStep,
+    step_extracted: Dict[str, Any],
+) -> bool:
+    """Capture a page or element and report its path and bounded optional base64."""
     output_path = getattr(action, "output_path", None) or "."
     filename = action.get_filename() if hasattr(action, "get_filename") else f"screenshot_{int(time.time())}.png"
-    confined = confined_file(output_path if output_path != "." else "", filename)  # the JOINED path, name included
+    confined = confined_file(output_path if output_path != "." else "", filename)
     if confined is not None:
         confined.parent.mkdir(parents=True, exist_ok=True)
-    full_path = str(confined) if confined is not None else f"{output_path}/{filename}"
+    path = confined if confined is not None else Path(output_path) / filename
+    reserved_paths = {
+        Path(payload["path"])
+        for payload in step_extracted.values()
+        if isinstance(payload, dict) and isinstance(payload.get("path"), str)
+    }
+    path = _first_free_screenshot_path(path, reserved_paths)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    full_path = str(path)
 
-    await driver.screenshot(full_path)
+    timeout = action.timeout or _DEFAULT_TIMEOUT
+    if action.selector:
+        image_bytes = await driver.screenshot_element(action.selector, full_path, timeout)
+    else:
+        image_bytes = await driver.screenshot(full_path, full_page=action.full_page)
+
+    key = getattr(action, "name", None) or "screenshot"
+    if key == "screenshot":
+        key = "screenshot"
+    key = _first_free_screenshot_key(step_extracted, key)
+    payload: Dict[str, Any] = {"path": full_path}
+    if action.return_base64:
+        if len(image_bytes) <= MAX_SCREENSHOT_BASE64_BYTES:
+            payload["base64"] = base64.b64encode(image_bytes).decode("ascii")
+        else:
+            payload["base64_omitted"] = True
+            payload["size_bytes"] = len(image_bytes)
+            logger.warning("Screenshot base64 omitted because image exceeds %d bytes: %s", MAX_SCREENSHOT_BASE64_BYTES, full_path)
+    step_extracted[key] = payload
     logger.info("Screenshot saved: %s", full_path)
     return True
+
+
+def _first_free_screenshot_path(path: Path, reserved_paths: set[Path]) -> Path:
+    """Return *path* or its first numbered sibling that is not reserved or on disk."""
+    if path not in reserved_paths and not path.exists():
+        return path
+    suffix = path.suffix
+    stem = path.stem
+    number = 2
+    while True:
+        candidate = path.with_name(f"{stem}_{number}{suffix}")
+        if candidate not in reserved_paths and not candidate.exists():
+            return candidate
+        number += 1
+
+
+def _first_free_screenshot_key(extracted: Dict[str, Any], key: str) -> str:
+    """Return *key* or its first free numeric suffix in extracted data."""
+    if key not in extracted:
+        return key
+    number = 2
+    while f"{key}_{number}" in extracted:
+        number += 1
+    return f"{key}_{number}"
 
 
 async def _action_press_key(driver: AbstractDriver, action: Any) -> bool:
