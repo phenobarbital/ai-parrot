@@ -64,6 +64,8 @@ _SOURCES_UPSERT_SQL = (
     "  external_id=excluded.external_id"
 )
 
+_ARANGO_SOURCES_COLLECTION = "wiki_sources"
+
 #: Max bind parameters per sqlite ``IN (...)`` clause. SQLite's own
 #: ``SQLITE_MAX_VARIABLE_NUMBER`` defaults to 999 on older builds, so the
 #: bulk readers chunk below that rather than assuming a modern limit.
