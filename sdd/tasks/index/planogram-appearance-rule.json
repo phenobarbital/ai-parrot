@@ -16,14 +16,14 @@
       "feature_id": "FEAT-683",
       "feature": "planogram-appearance-rule",
       "spec": "sdd/specs/planogram-appearance-rule.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root: creates ZoneAppearance, APPEARANCE_VALUES and APPEARANCE_UNDETERMINED in contracts.py; touches no file another task modifies",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-15T16:45:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4359-appearance-vocabulary.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-683",
       "feature": "planogram-appearance-rule",
       "spec": "sdd/specs/planogram-appearance-rule.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "imports ZoneAppearance and APPEARANCE_UNDETERMINED from TASK-4359 (contracts.py); builds bindings with model_construct so it does not need TASK-4361; runs concurrently with TASK-4361/TASK-4362",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-15T16:45:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4360-appearance-evidence.md"
     },
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-683",
       "feature": "planogram-appearance-rule",
       "spec": "sdd/specs/planogram-appearance-rule.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -63,7 +63,7 @@
       "parallel": true,
       "parallelism_notes": "imports APPEARANCE_VALUES from TASK-4359 (contracts.py) for the definition.py validation loop",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-15T16:45:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4361-appearance-binding-validation.md"
     },
@@ -74,7 +74,7 @@
       "feature_id": "FEAT-683",
       "feature": "planogram-appearance-rule",
       "spec": "sdd/specs/planogram-appearance-rule.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -84,7 +84,7 @@
       "parallel": true,
       "parallelism_notes": "imports APPEARANCE_UNDETERMINED from TASK-4359 (contracts.py); its tests build RuleBinding(kind='appearance') which validates only after TASK-4361 extends RuleKind (definition.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-15T16:45:55+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4362-appearance-rule-evaluation.md"
     }
