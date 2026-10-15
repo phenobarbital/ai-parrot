@@ -108,11 +108,7 @@ class GraphIndexComponent:
         output_dir = Path(self.config.get("output_dir", f"/tmp/graphindex/{tenant_id}"))
         model_name = self.config.get("model_name", "sentence-transformers/all-MiniLM-L6-v2")
         embedding_dimension = int(self.config.get("embedding_dimension", 384))
-        ignore_file = (
-            Path(self.config["ignore_file"])
-            if self.config.get("ignore_file")
-            else None
-        )
+        ignore_file = Path(self.config["ignore_file"]) if self.config.get("ignore_file") else None
 
         # Build embedder and persistence stubs — in production these are
         # injected via the DI container or pipeline config.
@@ -126,9 +122,7 @@ class GraphIndexComponent:
             ignore_file=ignore_file,
         )
 
-        self.logger.info(
-            "GraphIndexComponent initialised for tenant '%s'", tenant_id
-        )
+        self.logger.info("GraphIndexComponent initialised for tenant '%s'", tenant_id)
         return self
 
     async def __aexit__(

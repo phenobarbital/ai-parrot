@@ -84,11 +84,7 @@ def _node_to_doc(node: UniversalNode) -> dict[str, Any]:
         "domain_tags": node.domain_tags,
         "parent_id": node.parent_id,
         "provenance": node.provenance.value,
-        "assertion": (
-            node.assertion.model_dump(exclude_none=True)
-            if node.assertion is not None
-            else None
-        ),
+        "assertion": (node.assertion.model_dump(exclude_none=True) if node.assertion is not None else None),
     }
 
 
@@ -120,12 +116,8 @@ def _edge_to_doc(
     src_collection = kind_to_collection.get(src_kind, "")
     tgt_collection = kind_to_collection.get(tgt_kind, "")
 
-    from_ref = (
-        f"{src_collection}/{edge.source_id}" if src_collection else edge.source_id
-    )
-    to_ref = (
-        f"{tgt_collection}/{edge.target_id}" if tgt_collection else edge.target_id
-    )
+    from_ref = f"{src_collection}/{edge.source_id}" if src_collection else edge.source_id
+    to_ref = f"{tgt_collection}/{edge.target_id}" if tgt_collection else edge.target_id
 
     return {
         "_from": from_ref,
@@ -135,11 +127,7 @@ def _edge_to_doc(
         "kind": edge.kind.value,
         "provenance": edge.provenance.value,
         "confidence": edge.confidence,
-        "assertion": (
-            edge.assertion.model_dump(exclude_none=True)
-            if edge.assertion is not None
-            else None
-        ),
+        "assertion": (edge.assertion.model_dump(exclude_none=True) if edge.assertion is not None else None),
     }
 
 
@@ -301,9 +289,7 @@ class ArangoPersistence:
                             if key:
                                 old_keys_by_collection[collection].append(str(key))
                 except Exception as exc:
-                    logger.warning(
-                        "Could not retrieve existing nodes from %s: %s", collection, exc
-                    )
+                    logger.warning("Could not retrieve existing nodes from %s: %s", collection, exc)
 
             # 2. Soft-delete old nodes
             for collection, keys in old_keys_by_collection.items():
@@ -317,9 +303,7 @@ class ArangoPersistence:
                             document_uri,
                         )
                     except Exception as exc:
-                        logger.error(
-                            "Failed to soft-delete nodes from %s: %s", collection, exc
-                        )
+                        logger.error("Failed to soft-delete nodes from %s: %s", collection, exc)
 
             # 3. Upsert new nodes and edges
             node_kind_map: dict[str, str] = {n.node_id: n.kind.value for n in nodes}
@@ -335,9 +319,7 @@ class ArangoPersistence:
     # Private helpers
     # ------------------------------------------------------------------
 
-    async def _upsert_nodes(
-        self, ctx: TenantContext, nodes: list[UniversalNode]
-    ) -> int:
+    async def _upsert_nodes(self, ctx: TenantContext, nodes: list[UniversalNode]) -> int:
         """Route nodes to per-kind vertex collections and upsert.
 
         Args:
@@ -361,9 +343,7 @@ class ArangoPersistence:
             if not docs:
                 continue
             try:
-                result = await self.store.upsert_nodes(
-                    ctx, collection, docs, key_field="node_id"
-                )
+                result = await self.store.upsert_nodes(ctx, collection, docs, key_field="node_id")
                 count = result.inserted + result.updated
                 total += count
                 logger.debug(
@@ -401,9 +381,7 @@ class ArangoPersistence:
             if not collection:
                 logger.warning("Unknown edge kind '%s'", edge.kind)
                 continue
-            by_collection[collection].append(
-                _edge_to_doc(edge, KIND_TO_COLLECTION, node_kind_map)
-            )
+            by_collection[collection].append(_edge_to_doc(edge, KIND_TO_COLLECTION, node_kind_map))
 
         total = 0
         for collection, docs in by_collection.items():
@@ -476,9 +454,7 @@ class ArangoPersistence:
         the revert-conflict check needs. Monotonicity is guaranteed only
         under the per-tenant lock (single-writer expectation).
         """
-        rows = await self.store.query_documents(
-            ctx, COMMITS_COLLECTION, sort_desc="seq", limit=1
-        )
+        rows = await self.store.query_documents(ctx, COMMITS_COLLECTION, sort_desc="seq", limit=1)
         if not rows:
             return 1
         return int(rows[0].get("seq") or 0) + 1
@@ -555,20 +531,18 @@ class ArangoPersistence:
             for node in update.nodes:
                 collection = KIND_TO_COLLECTION.get(node.kind.value)
                 if collection is None:
-                    warnings.append(
-                        f"node {node.node_id!r}: unknown kind {node.kind.value!r}"
-                    )
+                    warnings.append(f"node {node.node_id!r}: unknown kind {node.kind.value!r}")
                     continue
-                prior = await self.store.get_document(
-                    ctx, collection, node.node_id
+                prior = await self.store.get_document(ctx, collection, node.node_id)
+                items.append(
+                    {
+                        "commit_id": commit_id,
+                        "item_type": "node",
+                        "item_key": node.node_id,
+                        "collection": collection,
+                        "prior": prior,
+                    }
                 )
-                items.append({
-                    "commit_id": commit_id,
-                    "item_type": "node",
-                    "item_key": node.node_id,
-                    "collection": collection,
-                    "prior": prior,
-                })
 
             # --- node pre-images (removals) + implicit incident edges -
             implicit_removed: list[tuple[str, str, str]] = []
@@ -576,31 +550,29 @@ class ArangoPersistence:
             for node_id in update.removed_nodes:
                 collection, prior = await self._find_node_doc(ctx, node_id)
                 removed_node_collections[node_id] = collection
-                items.append({
-                    "commit_id": commit_id,
-                    "item_type": "node_removed",
-                    "item_key": node_id,
-                    "collection": collection,
-                    "prior": prior,
-                })
+                items.append(
+                    {
+                        "commit_id": commit_id,
+                        "item_type": "node_removed",
+                        "item_key": node_id,
+                        "collection": collection,
+                        "prior": prior,
+                    }
+                )
                 for edge_collection in EDGE_KIND_TO_COLLECTION.values():
-                    for doc in await self.store.edges_incident(
-                        ctx, edge_collection, node_id
-                    ):
-                        implicit_removed.append((
-                            doc.get("source_id"),
-                            doc.get("target_id"),
-                            doc.get("kind"),
-                        ))
+                    for doc in await self.store.edges_incident(ctx, edge_collection, node_id):
+                        implicit_removed.append(
+                            (
+                                doc.get("source_id"),
+                                doc.get("target_id"),
+                                doc.get("kind"),
+                            )
+                        )
 
-            removed_edge_set = {
-                tuple(t) for t in update.removed_edges
-            } | set(implicit_removed)
+            removed_edge_set = {tuple(t) for t in update.removed_edges} | set(implicit_removed)
 
             # --- edge pre-images (upserts + removals) -----------------
-            edge_triples = [
-                (e.source_id, e.target_id, e.kind.value) for e in update.edges
-            ] + sorted(removed_edge_set)
+            edge_triples = [(e.source_id, e.target_id, e.kind.value) for e in update.edges] + sorted(removed_edge_set)
             seen_edge_items: set[str] = set()
             for src, tgt, kind in edge_triples:
                 item_key = edge_key(src, tgt, kind)
@@ -617,36 +589,36 @@ class ArangoPersistence:
                     filters={"source_id": src, "target_id": tgt, "kind": kind},
                     limit=1,
                 )
-                items.append({
-                    "commit_id": commit_id,
-                    "item_type": (
-                        "edge_removed"
-                        if (src, tgt, kind) in removed_edge_set
-                        else "edge"
-                    ),
-                    "item_key": item_key,
-                    "collection": collection,
-                    "prior": rows[0] if rows else None,
-                })
+                items.append(
+                    {
+                        "commit_id": commit_id,
+                        "item_type": ("edge_removed" if (src, tgt, kind) in removed_edge_set else "edge"),
+                        "item_key": item_key,
+                        "collection": collection,
+                        "prior": rows[0] if rows else None,
+                    }
+                )
 
             # --- record commit + items BEFORE mutating ----------------
-            await self.store.upsert_document(ctx, COMMITS_COLLECTION, {
-                "_key": commit_id,
-                "commit_id": commit_id,
-                "seq": seq,
-                "op": update.op,
-                "agent_id": update.agent_id,
-                "run_id": update.run_id,
-                "asserted_by": update.asserted_by,
-                "reason": update.reason,
-                "committed_at": committed_at,
-                "payload": update.model_dump(mode="json"),
-                "reverted_at": None,
-            })
+            await self.store.upsert_document(
+                ctx,
+                COMMITS_COLLECTION,
+                {
+                    "_key": commit_id,
+                    "commit_id": commit_id,
+                    "seq": seq,
+                    "op": update.op,
+                    "agent_id": update.agent_id,
+                    "run_id": update.run_id,
+                    "asserted_by": update.asserted_by,
+                    "reason": update.reason,
+                    "committed_at": committed_at,
+                    "payload": update.model_dump(mode="json"),
+                    "reverted_at": None,
+                },
+            )
             for item in items:
-                await self.store.insert_document(
-                    ctx, COMMIT_ITEMS_COLLECTION, item
-                )
+                await self.store.insert_document(ctx, COMMIT_ITEMS_COLLECTION, item)
 
             # --- apply writes -----------------------------------------
             if update.nodes:
@@ -656,12 +628,8 @@ class ArangoPersistence:
                 # NOT part of this update (the common agent case:
                 # link_nodes between pre-existing nodes) so _from/_to
                 # get fully-qualified collection-prefixed ids.
-                node_kind_map = {
-                    n.node_id: n.kind.value for n in update.nodes
-                }
-                endpoints = {
-                    e.source_id for e in update.edges
-                } | {e.target_id for e in update.edges}
+                node_kind_map = {n.node_id: n.kind.value for n in update.nodes}
+                endpoints = {e.source_id for e in update.edges} | {e.target_id for e in update.edges}
                 for node_id in endpoints - set(node_kind_map):
                     _collection, doc = await self._find_node_doc(ctx, node_id)
                     if doc is not None and doc.get("kind"):
@@ -670,9 +638,7 @@ class ArangoPersistence:
             for src, tgt, kind in sorted(removed_edge_set):
                 collection = EDGE_KIND_TO_COLLECTION.get(kind)
                 if collection is not None:
-                    await self.store.remove_edge_by_triple(
-                        ctx, collection, src, tgt, kind
-                    )
+                    await self.store.remove_edge_by_triple(ctx, collection, src, tgt, kind)
             removed_by_collection: dict[str, list[str]] = defaultdict(list)
             for node_id, collection in removed_node_collections.items():
                 if collection is not None:
@@ -681,8 +647,7 @@ class ArangoPersistence:
                 await self.store.soft_delete_nodes(ctx, collection, keys)
 
         logger.info(
-            "ArangoPersistence.apply_update: commit %s (%s) — %d nodes,"
-            " %d edges, %d removed",
+            "ArangoPersistence.apply_update: commit %s (%s) — %d nodes," " %d edges, %d removed",
             commit_id,
             update.op,
             len(update.nodes),
@@ -693,10 +658,7 @@ class ArangoPersistence:
             commit_id=commit_id,
             op=update.op,
             node_ids=[n.node_id for n in update.nodes] + list(update.removed_nodes),
-            edge_keys=[
-                (e.source_id, e.target_id, e.kind.value) for e in update.edges
-            ]
-            + sorted(removed_edge_set),
+            edge_keys=[(e.source_id, e.target_id, e.kind.value) for e in update.edges] + sorted(removed_edge_set),
             committed_at=committed_at,
             warnings=warnings,
         )
@@ -704,9 +666,7 @@ class ArangoPersistence:
     @staticmethod
     def _public_commit(doc: dict[str, Any]) -> dict[str, Any]:
         """Strip ArangoDB internals from a commit document."""
-        return {
-            k: v for k, v in doc.items() if not k.startswith("_")
-        }
+        return {k: v for k, v in doc.items() if not k.startswith("_")}
 
     async def get_commit(
         self,
@@ -723,15 +683,11 @@ class ArangoPersistence:
             A dict with the commit fields, ``payload``, and ``items``,
             or ``None`` when unknown.
         """
-        doc = await self.store.get_document(
-            ctx, COMMITS_COLLECTION, commit_id
-        )
+        doc = await self.store.get_document(ctx, COMMITS_COLLECTION, commit_id)
         if doc is None:
             return None
         commit = self._public_commit(doc)
-        item_rows = await self.store.query_documents(
-            ctx, COMMIT_ITEMS_COLLECTION, filters={"commit_id": commit_id}
-        )
+        item_rows = await self.store.query_documents(ctx, COMMIT_ITEMS_COLLECTION, filters={"commit_id": commit_id})
         commit["items"] = [
             {
                 "item_type": i.get("item_type"),
@@ -807,21 +763,15 @@ class ArangoPersistence:
             ``{"error": ...}`` on refusal/unknown commit.
         """
         async with self._tenant_locks[ctx.tenant_id]:
-            commit_doc = await self.store.get_document(
-                ctx, COMMITS_COLLECTION, commit_id
-            )
+            commit_doc = await self.store.get_document(ctx, COMMITS_COLLECTION, commit_id)
             if commit_doc is None:
                 return {"error": f"revert_commit: unknown commit {commit_id!r}"}
             if commit_doc.get("reverted_at"):
                 return {"error": f"revert_commit: {commit_id!r} already reverted"}
 
-            items = await self.store.query_documents(
-                ctx, COMMIT_ITEMS_COLLECTION, filters={"commit_id": commit_id}
-            )
+            items = await self.store.query_documents(ctx, COMMIT_ITEMS_COLLECTION, filters={"commit_id": commit_id})
             if not items:
-                return {
-                    "error": f"revert_commit: commit {commit_id!r} has no items"
-                }
+                return {"error": f"revert_commit: commit {commit_id!r} has no items"}
 
             # Refuse when a later (non-reverted) commit touched the same keys.
             this_seq = int(commit_doc.get("seq") or 0)
@@ -829,17 +779,13 @@ class ArangoPersistence:
             commit_cache: dict[str, Optional[dict[str, Any]]] = {}
             for item in items:
                 item_key = item.get("item_key")
-                others = await self.store.query_documents(
-                    ctx, COMMIT_ITEMS_COLLECTION, filters={"item_key": item_key}
-                )
+                others = await self.store.query_documents(ctx, COMMIT_ITEMS_COLLECTION, filters={"item_key": item_key})
                 for other in others:
                     other_id = other.get("commit_id")
                     if not other_id or other_id == commit_id:
                         continue
                     if other_id not in commit_cache:
-                        commit_cache[other_id] = await self.store.get_document(
-                            ctx, COMMITS_COLLECTION, other_id
-                        )
+                        commit_cache[other_id] = await self.store.get_document(ctx, COMMITS_COLLECTION, other_id)
                     other_commit = commit_cache[other_id]
                     if other_commit is None or other_commit.get("reverted_at"):
                         continue
@@ -861,32 +807,22 @@ class ArangoPersistence:
                     continue
                 if item.get("item_type") in ("node", "node_removed"):
                     if prior is None:
-                        if await self.store.remove_document(
-                            ctx, collection, item_key
-                        ):
+                        if await self.store.remove_document(ctx, collection, item_key):
                             deleted += 1
                     else:
-                        await self.store.upsert_document(
-                            ctx, collection, prior
-                        )
+                        await self.store.upsert_document(ctx, collection, prior)
                         restored += 1
                 else:  # edge / edge_removed
                     src, tgt, kind = item_key.split("|", 2)
                     if prior is None:
-                        if await self.store.remove_edge_by_triple(
-                            ctx, collection, src, tgt, kind
-                        ):
+                        if await self.store.remove_edge_by_triple(ctx, collection, src, tgt, kind):
                             deleted += 1
                     else:
-                        await self.store.upsert_document(
-                            ctx, collection, prior
-                        )
+                        await self.store.upsert_document(ctx, collection, prior)
                         restored += 1
 
             commit_doc["reverted_at"] = _now_iso()
-            await self.store.upsert_document(
-                ctx, COMMITS_COLLECTION, commit_doc
-            )
+            await self.store.upsert_document(ctx, COMMITS_COLLECTION, commit_doc)
 
         logger.info(
             "ArangoPersistence.revert_commit: %s — %d restored, %d deleted",

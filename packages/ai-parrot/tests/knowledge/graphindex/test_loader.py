@@ -10,6 +10,7 @@ fakes so the loader's wiring is exercised without models or a live database:
 * the credentials path is asserted to construct an ``OntologyGraphStore`` +
   ``ArangoPersistence`` against a mocked asyncdb client.
 """
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -26,7 +27,6 @@ from parrot.knowledge.graphindex.schema import (
 )
 from parrot.loaders.abstract import AbstractLoader
 from parrot.stores.models import Document
-
 
 _FAKE_NODES = [
     UniversalNode(
@@ -139,9 +139,7 @@ class TestLoad:
 
 class TestCredsPersistence:
     @pytest.mark.asyncio
-    async def test_creds_path_builds_real_persistence(
-        self, patched, monkeypatch, tmp_path
-    ):
+    async def test_creds_path_builds_real_persistence(self, patched, monkeypatch, tmp_path):
         # Mock asyncdb so no live server is touched.
         fake_db = MagicMock()
         fake_db.connection = AsyncMock()
@@ -153,9 +151,7 @@ class TestCredsPersistence:
         fake_store.initialize_tenant = AsyncMock()
         store_cls = MagicMock(return_value=fake_store)
         fake_persistence = MagicMock()
-        fake_persistence.persist_graph = AsyncMock(
-            return_value={"nodes_persisted": 2, "edges_persisted": 0}
-        )
+        fake_persistence.persist_graph = AsyncMock(return_value={"nodes_persisted": 2, "edges_persisted": 0})
         persistence_cls = MagicMock(return_value=fake_persistence)
         monkeypatch.setattr(loader_mod, "OntologyGraphStore", store_cls)
         monkeypatch.setattr(loader_mod, "ArangoPersistence", persistence_cls)

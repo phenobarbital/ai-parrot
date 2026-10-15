@@ -356,9 +356,7 @@ class TestArangoPersistence:
         # The calls should be serialized: start-end-start-end, not interleaved start-start
         for i in range(len(call_log) - 1):
             if call_log[i] == "upsert_start":
-                assert call_log[i + 1] == "upsert_end", (
-                    f"Interleaved calls detected: {call_log}"
-                )
+                assert call_log[i + 1] == "upsert_end", f"Interleaved calls detected: {call_log}"
 
     @pytest.mark.asyncio
     async def test_different_tenants_do_not_share_locks(self):
@@ -385,9 +383,7 @@ class TestArangoPersistence:
         """Nodes with unrecognised kind are logged and skipped gracefully."""
         # Create a node then patch KIND_TO_COLLECTION to not include its kind
         node = make_node("n1", NodeKind.DOCUMENT)
-        with patch(
-            "parrot.knowledge.graphindex.persist_arango.KIND_TO_COLLECTION", {}
-        ):
+        with patch("parrot.knowledge.graphindex.persist_arango.KIND_TO_COLLECTION", {}):
             persistence = ArangoPersistence(store=store)
             result = await persistence.persist_graph(ctx, [node], [])
             # Should not raise; upsert_nodes never called since mapping is empty
@@ -397,9 +393,7 @@ class TestArangoPersistence:
     async def test_unknown_edge_kind_skipped(self, store, ctx):
         """Edges with unrecognised kind are logged and skipped gracefully."""
         edge = make_edge("a", "b", EdgeKind.CONTAINS)
-        with patch(
-            "parrot.knowledge.graphindex.persist_arango.EDGE_KIND_TO_COLLECTION", {}
-        ):
+        with patch("parrot.knowledge.graphindex.persist_arango.EDGE_KIND_TO_COLLECTION", {}):
             persistence = ArangoPersistence(store=store)
             result = await persistence.persist_graph(ctx, [], [edge])
             assert result["edges_persisted"] == 0
