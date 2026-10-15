@@ -32,6 +32,16 @@ Spec §3 M5 / §4. Golden manifests (names, canonical schemas, descriptions, mou
 |---|---|---|
 | `packages/ai-parrot/tests/knowledge/wiki/test_mcp_manifest_golden.py` | CREATE | golden comparison |
 | `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/README.md` | CREATE | how goldens are regenerated; one JSON per configuration is written next to it |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/bulk_off.json` | CREATE | golden manifest (amended: the README's "one JSON per configuration" is a deliverable) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/bulk_on.json` | CREATE | golden manifest (amended: the README's "one JSON per configuration" is a deliverable) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/decisions.json` | CREATE | golden manifest (amended: the README's "one JSON per configuration" is a deliverable) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/federated.json` | CREATE | golden manifest (amended: the README's "one JSON per configuration" is a deliverable) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/ledger.json` | CREATE | golden manifest (amended: the README's "one JSON per configuration" is a deliverable) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/minimal_local.json` | CREATE | golden manifest (amended: the README's "one JSON per configuration" is a deliverable) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/remote_proxy.json` | CREATE | golden manifest (amended: the README's "one JSON per configuration" is a deliverable) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/schema_absent.json` | CREATE | golden manifest (amended: the README's "one JSON per configuration" is a deliverable) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/schema_present.json` | CREATE | golden manifest (amended: the README's "one JSON per configuration" is a deliverable) |
+| `packages/ai-parrot/tests/knowledge/wiki/golden/mcp_manifests/vault.json` | CREATE | golden manifest (amended: the README's "one JSON per configuration" is a deliverable) |
 
 ---
 
