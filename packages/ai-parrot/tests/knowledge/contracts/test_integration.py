@@ -617,9 +617,7 @@ async def test_all_ten_patterns_execute_against_a_real_graph(arango_store):
             token.strip("@,()").rstrip(",") for token in template.replace(",", " ").split() if token.startswith("@@")
         }
         collection_binds = {f"@{key}": collections[key] for key in needed if key in collections}
-        return await store.execute_pattern(
-            ctx, ctx.ontology.traversal_patterns[name], values, collection_binds
-        )
+        return await store.execute_pattern(ctx, ctx.ontology.traversal_patterns[name], values, collection_binds)
 
     executed: dict[str, list[Any]] = {}
     for name, values in binds.items():

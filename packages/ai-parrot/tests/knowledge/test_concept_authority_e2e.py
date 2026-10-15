@@ -20,6 +20,7 @@ Pipeline under test: OntologyRAGMixin.ontology_process with mocked:
 
 All 8 spec §4 scenarios are covered.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -159,11 +160,7 @@ def _make_commissions_ontology() -> MergedOntology:
             "authoritative_doc_for_topic": TraversalPattern(
                 description="Find authoritative document for concept topic",
                 trigger_intents=["what is the policy on", "authority doc for"],
-                query_template=(
-                    "FOR doc IN documents "
-                    "FILTER doc.authority == @authority_level "
-                    "RETURN doc"
-                ),
+                query_template=("FOR doc IN documents " "FILTER doc.authority == @authority_level " "RETURN doc"),
                 post_action="none",
                 entity_extraction={
                     "topic": EntityExtractionRule(
@@ -276,11 +273,13 @@ class TestConceptAuthorityE2E:
         mock_graph_store: AsyncMock,
     ) -> None:
         """Commissions query → primary traversal returns policy → source=graph:primary."""
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
+            ) as MockResolver,
+        ):
             MockResolver.return_value.extract_and_resolve = AsyncMock(
                 return_value=_COMMISSIONS_RESOLVED,
             )
@@ -310,6 +309,7 @@ class TestConceptAuthorityE2E:
         mock_cache: AsyncMock,
     ) -> None:
         """No primary result → secondary traversal returns FAQ + memo."""
+
         def _empty_primary_traversal(ctx: Any, pattern: Any, params: dict, collection_binds: Any = None) -> list[dict]:
             level = params.get("authority_level", "")
             if level == "primary":
@@ -321,11 +321,13 @@ class TestConceptAuthorityE2E:
         graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
         graph_store.execute_pattern.side_effect = _empty_primary_traversal
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
+            ) as MockResolver,
+        ):
             MockResolver.return_value.extract_and_resolve = AsyncMock(
                 return_value=_COMMISSIONS_RESOLVED,
             )
@@ -358,11 +360,13 @@ class TestConceptAuthorityE2E:
         graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
         graph_store.execute_pattern.return_value = []  # Both levels empty
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
+            ) as MockResolver,
+        ):
             MockResolver.return_value.extract_and_resolve = AsyncMock(
                 return_value=_COMMISSIONS_RESOLVED,
             )
@@ -400,11 +404,13 @@ class TestConceptAuthorityE2E:
         vector_store = AsyncMock()
         vector_store.similarity_search = AsyncMock(side_effect=_filtered_empty_plain_hit)
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
+            ) as MockResolver,
+        ):
             MockResolver.return_value.extract_and_resolve = AsyncMock(
                 return_value=_COMMISSIONS_RESOLVED,
             )
@@ -436,11 +442,13 @@ class TestConceptAuthorityE2E:
         vector_store = AsyncMock()
         vector_store.similarity_search = AsyncMock(return_value=[])
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
+            ) as MockResolver,
+        ):
             MockResolver.return_value.extract_and_resolve = AsyncMock(
                 return_value=_COMMISSIONS_RESOLVED,
             )
@@ -466,6 +474,7 @@ class TestConceptAuthorityE2E:
         mock_vector_store: AsyncMock,
     ) -> None:
         """Query about PTO (different concept) → graph empty → filtered vector hit."""
+
         def _pto_traversal(ctx: Any, pattern: Any, params: dict, collection_binds: Any = None) -> list[dict]:
             # No primary/secondary results for PTO (no authority doc configured)
             return []
@@ -473,11 +482,13 @@ class TestConceptAuthorityE2E:
         graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
         graph_store.execute_pattern.side_effect = _pto_traversal
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
+            ) as MockResolver,
+        ):
             MockResolver.return_value.extract_and_resolve = AsyncMock(
                 return_value=_PTO_RESOLVED,
             )
@@ -503,6 +514,7 @@ class TestConceptAuthorityE2E:
         mock_cache: AsyncMock,
     ) -> None:
         """Query about bonuses → primary traversal returns bonus-policy."""
+
         def _bonus_traversal(ctx: Any, pattern: Any, params: dict, collection_binds: Any = None) -> list[dict]:
             level = params.get("authority_level", "")
             if level == "primary":
@@ -512,11 +524,13 @@ class TestConceptAuthorityE2E:
         graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
         graph_store.execute_pattern.side_effect = _bonus_traversal
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
+            ) as MockResolver,
+        ):
             MockResolver.return_value.extract_and_resolve = AsyncMock(
                 return_value=_BONUSES_RESOLVED,
             )

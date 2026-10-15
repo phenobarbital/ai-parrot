@@ -1021,4 +1021,3 @@ class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
             },
         )
         return bool(list(result) if result else [])
-

@@ -5,6 +5,7 @@ intent resolution → enriched context → refresh pipeline.
 
 All external services (ArangoDB, LLM, Redis) are mocked.
 """
+
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -24,7 +25,6 @@ from parrot.knowledge.ontology.tenant import TenantOntologyManager
 from parrot.loaders.extractors import RecordsDataSource
 from parrot.loaders.extractors.factory import DataSourceFactory
 
-
 # ── Fixtures ──
 
 
@@ -37,10 +37,12 @@ def defaults_dir() -> Path:
 def merged_ontology(defaults_dir):
     """Merge base + field_services from package defaults."""
     merger = OntologyMerger()
-    return merger.merge([
-        defaults_dir / "base.ontology.yaml",
-        defaults_dir / "domains" / "field_services.ontology.yaml",
-    ])
+    return merger.merge(
+        [
+            defaults_dir / "base.ontology.yaml",
+            defaults_dir / "domains" / "field_services.ontology.yaml",
+        ]
+    )
 
 
 @pytest.fixture
@@ -56,15 +58,36 @@ def tenant_ctx(merged_ontology) -> TenantContext:
 @pytest.fixture
 def sample_employees() -> list[dict]:
     return [
-        {"employee_id": "E001", "name": "Alice Smith", "email": "alice@epson.com",
-         "job_title": "Field Engineer", "department": "ENG", "location": "NYC",
-         "manager_id": "E003", "project_code": "PROJ-001"},
-        {"employee_id": "E002", "name": "Bob Jones", "email": "bob@epson.com",
-         "job_title": "Sales Manager", "department": "SALES", "location": "LA",
-         "manager_id": "E003", "project_code": "PROJ-002"},
-        {"employee_id": "E003", "name": "Carol Chen", "email": "carol@epson.com",
-         "job_title": "VP Engineering", "department": "ENG", "location": "NYC",
-         "manager_id": None, "project_code": "PROJ-001"},
+        {
+            "employee_id": "E001",
+            "name": "Alice Smith",
+            "email": "alice@epson.com",
+            "job_title": "Field Engineer",
+            "department": "ENG",
+            "location": "NYC",
+            "manager_id": "E003",
+            "project_code": "PROJ-001",
+        },
+        {
+            "employee_id": "E002",
+            "name": "Bob Jones",
+            "email": "bob@epson.com",
+            "job_title": "Sales Manager",
+            "department": "SALES",
+            "location": "LA",
+            "manager_id": "E003",
+            "project_code": "PROJ-002",
+        },
+        {
+            "employee_id": "E003",
+            "name": "Carol Chen",
+            "email": "carol@epson.com",
+            "job_title": "VP Engineering",
+            "department": "ENG",
+            "location": "NYC",
+            "manager_id": None,
+            "project_code": "PROJ-001",
+        },
     ]
 
 
@@ -79,20 +102,26 @@ def sample_departments() -> list[dict]:
 @pytest.fixture
 def sample_projects() -> list[dict]:
     return [
-        {"project_id": "PROJ-001", "name": "EPSON Field Services",
-         "client": "EPSON", "portal_id": "PORTAL-001"},
-        {"project_id": "PROJ-002", "name": "EPSON Retail",
-         "client": "EPSON", "portal_id": "PORTAL-002"},
+        {"project_id": "PROJ-001", "name": "EPSON Field Services", "client": "EPSON", "portal_id": "PORTAL-001"},
+        {"project_id": "PROJ-002", "name": "EPSON Retail", "client": "EPSON", "portal_id": "PORTAL-002"},
     ]
 
 
 @pytest.fixture
 def sample_portals() -> list[dict]:
     return [
-        {"portal_id": "PORTAL-001", "name": "Navigator",
-         "url": "https://epson.navigator.com", "description": "EPSON field portal"},
-        {"portal_id": "PORTAL-002", "name": "Retail Hub",
-         "url": "https://retail.epson.com", "description": "EPSON retail portal"},
+        {
+            "portal_id": "PORTAL-001",
+            "name": "Navigator",
+            "url": "https://epson.navigator.com",
+            "description": "EPSON field portal",
+        },
+        {
+            "portal_id": "PORTAL-002",
+            "name": "Retail Hub",
+            "url": "https://retail.epson.com",
+            "description": "EPSON retail portal",
+        },
     ]
 
 
@@ -132,10 +161,12 @@ class TestYAMLToGraph:
     def test_default_yamls_load_and_merge(self, defaults_dir):
         """Load base + domain YAML → merge → valid MergedOntology."""
         merger = OntologyMerger()
-        merged = merger.merge([
-            defaults_dir / "base.ontology.yaml",
-            defaults_dir / "domains" / "field_services.ontology.yaml",
-        ])
+        merged = merger.merge(
+            [
+                defaults_dir / "base.ontology.yaml",
+                defaults_dir / "domains" / "field_services.ontology.yaml",
+            ]
+        )
 
         assert "Employee" in merged.entities
         assert "Department" in merged.entities
@@ -180,11 +211,9 @@ class TestYAMLToGraph:
 class TestIntentToContext:
 
     @pytest.mark.asyncio
-    async def test_fast_path_portal_query(
-        self, merged_ontology, mock_graph_store, mock_cache, user_context
-    ):
+    async def test_fast_path_portal_query(self, merged_ontology, mock_graph_store, mock_cache, user_context):
         """Query 'what is my portal?' → fast path → graph → enriched context."""
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             tenant_mgr = MagicMock(spec=TenantOntologyManager)
             tenant_mgr.resolve.return_value = TenantContext(
                 tenant_id="epson",
@@ -202,7 +231,9 @@ class TestIntentToContext:
             mixin._ont_tool_manager = None
 
             result = await mixin.ontology_process(
-                "what is my portal?", user_context, "epson",
+                "what is my portal?",
+                user_context,
+                "epson",
             )
 
             assert result.context.source == "ontology"
@@ -233,7 +264,8 @@ class TestIntentToContext:
         """Unrelated query → vector_only."""
         resolver = OntologyIntentResolver(merged_ontology)
         intent = await resolver.resolve(
-            "How do I change printer ink cartridges?", user_context,
+            "How do I change printer ink cartridges?",
+            user_context,
         )
         assert intent.action == "vector_only"
 
@@ -244,9 +276,7 @@ class TestIntentToContext:
 class TestRefreshPipeline:
 
     @pytest.mark.asyncio
-    async def test_refresh_with_records_source(
-        self, tenant_ctx, mock_graph_store, mock_cache, sample_employees
-    ):
+    async def test_refresh_with_records_source(self, tenant_ctx, mock_graph_store, mock_cache, sample_employees):
         """Extract → diff → upsert → rediscover → cache invalidation."""
         # Set source on Employee so the pipeline processes it
         tenant_ctx.ontology.entities["Employee"].source = "employees_csv"
@@ -295,11 +325,13 @@ class TestRefreshPipeline:
         ]
         new_data = [
             {"employee_id": "E001", "name": "Alice Updated"},  # update
-            {"employee_id": "E003", "name": "Carol"},           # add
+            {"employee_id": "E003", "name": "Carol"},  # add
             # E002 removed
         ]
         diff = OntologyRefreshPipeline._compute_diff(
-            new_data, existing, "employee_id",
+            new_data,
+            existing,
+            "employee_id",
         )
         assert len(diff.to_add) == 1
         assert diff.to_add[0]["employee_id"] == "E003"
@@ -317,7 +349,7 @@ class TestDisabledMode:
     @pytest.mark.asyncio
     async def test_disabled_returns_early(self, user_context):
         """ENABLE_ONTOLOGY_RAG=False → immediate return."""
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=False):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=False):
             mixin = OntologyRAGMixin.__new__(OntologyRAGMixin)
             mixin._ont_tenant_manager = MagicMock()
             mixin._ont_graph_store = AsyncMock()
@@ -327,7 +359,9 @@ class TestDisabledMode:
             mixin._ont_tool_manager = None
 
             result = await mixin.ontology_process(
-                "my department", user_context, "epson",
+                "my department",
+                user_context,
+                "epson",
             )
             assert result.state == "disabled"
             assert result.context is None
@@ -340,11 +374,9 @@ class TestDisabledMode:
 class TestGracefulDegradation:
 
     @pytest.mark.asyncio
-    async def test_arango_unavailable(
-        self, merged_ontology, mock_cache, user_context
-    ):
+    async def test_arango_unavailable(self, merged_ontology, mock_cache, user_context):
         """ArangoDB down → degrades to vector_only without error."""
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             tenant_mgr = MagicMock(spec=TenantOntologyManager)
             tenant_mgr.resolve.return_value = TenantContext(
                 tenant_id="epson",
@@ -354,9 +386,7 @@ class TestGracefulDegradation:
             )
 
             graph_store = AsyncMock(spec=ArangoOntologyGraphStore)
-            graph_store.execute_pattern.side_effect = ConnectionError(
-                "ArangoDB connection refused"
-            )
+            graph_store.execute_pattern.side_effect = ConnectionError("ArangoDB connection refused")
 
             mixin = OntologyRAGMixin.__new__(OntologyRAGMixin)
             mixin._ont_tenant_manager = tenant_mgr
@@ -367,7 +397,9 @@ class TestGracefulDegradation:
             mixin._ont_tool_manager = None
 
             result = await mixin.ontology_process(
-                "my department", user_context, "epson",
+                "my department",
+                user_context,
+                "epson",
             )
             # Should NOT raise — graceful degradation
             assert result.context.source == "vector_only"
@@ -375,7 +407,7 @@ class TestGracefulDegradation:
     @pytest.mark.asyncio
     async def test_no_yaml_for_tenant(self, mock_cache, user_context):
         """Missing YAML files → degrades to vector_only."""
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             tenant_mgr = MagicMock(spec=TenantOntologyManager)
             tenant_mgr.resolve.side_effect = FileNotFoundError("No YAML")
 
@@ -388,7 +420,9 @@ class TestGracefulDegradation:
             mixin._ont_tool_manager = None
 
             result = await mixin.ontology_process(
-                "my department", user_context, "unknown_tenant",
+                "my department",
+                user_context,
+                "unknown_tenant",
             )
             assert result.context.source == "vector_only"
 

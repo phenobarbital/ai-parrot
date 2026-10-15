@@ -32,6 +32,7 @@ Mocked via PgVectorStore.similarity_search side-effects:
 - with metadata_filters {"doc_type": [...]} → [filtered vector doc]
 - without filters                           → [plain vector doc]
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -51,7 +52,6 @@ from parrot.knowledge.ontology.schema import (
     TraversalPattern,
 )
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
-
 
 # ── Documents ────────────────────────────────────────────────────────────────
 

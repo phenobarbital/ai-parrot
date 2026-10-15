@@ -4,6 +4,7 @@ Drains ``ontology_concept_outbox`` rows using ``SELECT … FOR UPDATE SKIP LOCKE
 materialises concept/is_a data to ArangoDB via ``ArangoOntologyGraphStore``, and
 publishes cache-invalidation messages to Redis pub/sub.
 """
+
 from __future__ import annotations
 
 import logging
@@ -86,7 +87,8 @@ class ConceptCatalogSyncWorker:
                     if method_name is None:
                         self.logger.warning(
                             "Unknown outbox operation '%s' for row %s — skipping.",
-                            operation, row["id"],
+                            operation,
+                            row["id"],
                         )
                         continue
 
@@ -94,32 +96,36 @@ class ConceptCatalogSyncWorker:
                     try:
                         await handler(conn, row)
                         await conn.execute(
-                            "UPDATE ontology_concept_outbox "
-                            "SET processed_at = now() "
-                            "WHERE id = $1",
+                            "UPDATE ontology_concept_outbox " "SET processed_at = now() " "WHERE id = $1",
                             row["id"],
                         )
                         self.logger.debug(
                             "Outbox row %s (%s) processed successfully.",
-                            row["id"], operation,
+                            row["id"],
+                            operation,
                         )
                     except Exception as exc:
                         attempts: int = (row["attempts"] or 0) + 1
                         if attempts >= self.MAX_RETRIES:
                             self.logger.error(
                                 "DLQ: outbox row %s after %d attempts — %s",
-                                row["id"], attempts, exc,
+                                row["id"],
+                                attempts,
+                                exc,
                             )
                         else:
                             self.logger.warning(
                                 "Outbox row %s attempt %d/%d failed: %s",
-                                row["id"], attempts, self.MAX_RETRIES, exc,
+                                row["id"],
+                                attempts,
+                                self.MAX_RETRIES,
+                                exc,
                             )
                         await conn.execute(
-                            "UPDATE ontology_concept_outbox "
-                            "SET attempts = $1, last_error = $2 "
-                            "WHERE id = $3",
-                            attempts, str(exc), row["id"],
+                            "UPDATE ontology_concept_outbox " "SET attempts = $1, last_error = $2 " "WHERE id = $3",
+                            attempts,
+                            str(exc),
+                            row["id"],
                         )
 
         return len(rows)
@@ -166,9 +172,7 @@ class ConceptCatalogSyncWorker:
                 self.GRAPH_EDGE_COLLECTION,
                 [edge_doc],
             )
-            self.logger.info(
-                "Published is_a edge %s for tenant '%s'.", pg_edge_id, tenant_id
-            )
+            self.logger.info("Published is_a edge %s for tenant '%s'.", pg_edge_id, tenant_id)
         else:
             # Concept node
             pg_concept_id = str(payload.get("concept_id", ""))
@@ -191,7 +195,9 @@ class ConceptCatalogSyncWorker:
             )
             self.logger.info(
                 "Published concept %s ('%s') for tenant '%s'.",
-                pg_concept_id, payload.get("slug"), tenant_id,
+                pg_concept_id,
+                payload.get("slug"),
+                tenant_id,
             )
 
         # After any publish, also invalidate cache
@@ -219,20 +225,12 @@ class ConceptCatalogSyncWorker:
 
         if target_kind == "isa_edge":
             key = str(payload.get("isa_edge_id", ""))
-            await self._graph_store.soft_delete_nodes(
-                ctx, self.GRAPH_EDGE_COLLECTION, [key]
-            )
-            self.logger.info(
-                "Deprecated is_a edge %s for tenant '%s'.", key, tenant_id
-            )
+            await self._graph_store.soft_delete_nodes(ctx, self.GRAPH_EDGE_COLLECTION, [key])
+            self.logger.info("Deprecated is_a edge %s for tenant '%s'.", key, tenant_id)
         else:
             key = str(payload.get("concept_id", ""))
-            await self._graph_store.soft_delete_nodes(
-                ctx, self.GRAPH_NODE_COLLECTION, [key]
-            )
-            self.logger.info(
-                "Deprecated concept %s for tenant '%s'.", key, tenant_id
-            )
+            await self._graph_store.soft_delete_nodes(ctx, self.GRAPH_NODE_COLLECTION, [key])
+            self.logger.info("Deprecated concept %s for tenant '%s'.", key, tenant_id)
 
         # After deprecation, also invalidate cache
         await self._op_invalidate(conn, row)
@@ -252,6 +250,4 @@ class ConceptCatalogSyncWorker:
         channel = f"{self.INVALIDATION_CHANNEL_PREFIX}{tenant_id}"
         message = payload.get("concept_id") or payload.get("isa_edge_id") or "invalidate"
         await self._redis.publish(channel, str(message))
-        self.logger.debug(
-            "Published invalidation to channel '%s'.", channel
-        )
+        self.logger.debug("Published invalidation to channel '%s'.", channel)

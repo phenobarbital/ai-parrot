@@ -14,6 +14,7 @@ In-flight rows (``updated_at > now() - outbox_drain_interval × 10``) are
 excluded from forward-scan results to prevent false positives during outbox
 processing.
 """
+
 from __future__ import annotations
 
 import logging
@@ -93,12 +94,8 @@ class ConceptCatalogReconciler:
     ) -> None:
         self._pool = pg_pool
         self._graph_store = graph_store
-        self._drain_cutoff_delta = timedelta(
-            seconds=outbox_drain_interval * 10
-        )
-        self.logger = logging.getLogger(
-            "Parrot.Ontology.ConceptCatalog.Reconciler"
-        )
+        self._drain_cutoff_delta = timedelta(seconds=outbox_drain_interval * 10)
+        self.logger = logging.getLogger("Parrot.Ontology.ConceptCatalog.Reconciler")
 
     async def reconcile(self, tenant_id: str) -> ReconciliationReport:
         """Run a full reconciliation for *tenant_id*.
@@ -133,9 +130,7 @@ class ConceptCatalogReconciler:
                 report.orphan_edges_in_arango,
             )
         else:
-            self.logger.info(
-                "Reconciliation for tenant '%s': no drift detected.", tenant_id
-            )
+            self.logger.info("Reconciliation for tenant '%s': no drift detected.", tenant_id)
 
         return report
 
@@ -157,20 +152,13 @@ class ConceptCatalogReconciler:
             cutoff,
         )
 
-        arango_docs = await self._graph_store.get_all_nodes(
-            ctx, self.CONCEPT_COLLECTION
-        )
-        arango_pg_ids: set[str] = {
-            str(d["pg_concept_id"]) for d in arango_docs if d.get("pg_concept_id")
-        }
+        arango_docs = await self._graph_store.get_all_nodes(ctx, self.CONCEPT_COLLECTION)
+        arango_pg_ids: set[str] = {str(d["pg_concept_id"]) for d in arango_docs if d.get("pg_concept_id")}
 
         for row in pg_rows:
             pg_id = str(row["id"])
             if pg_id not in arango_pg_ids:
-                msg = (
-                    f"[MISSING_IN_ARANGO] concept id={pg_id} "
-                    f"slug='{row['slug']}' not found in ArangoDB."
-                )
+                msg = f"[MISSING_IN_ARANGO] concept id={pg_id} " f"slug='{row['slug']}' not found in ArangoDB."
                 report.missing_in_arango += 1
                 report.discrepancies.append(msg)
                 self.logger.warning(msg)
@@ -181,8 +169,7 @@ class ConceptCatalogReconciler:
         # The reverse scan must use the full approved-IDs set so that in-flight rows
         # are not false-positively reported as orphans.
         all_approved = await conn.fetch(
-            "SELECT id FROM ontology_concept "
-            "WHERE tenant_id = $1 AND state = 'approved'",
+            "SELECT id FROM ontology_concept " "WHERE tenant_id = $1 AND state = 'approved'",
             ctx.tenant_id,
         )
         pg_all_approved_ids: set[str] = {str(r["id"]) for r in all_approved}
@@ -190,10 +177,7 @@ class ConceptCatalogReconciler:
         for doc in arango_docs:
             pg_id = str(doc.get("pg_concept_id", ""))
             if pg_id and pg_id not in pg_all_approved_ids:
-                msg = (
-                    f"[ORPHAN_IN_ARANGO] ArangoDB concept pg_concept_id={pg_id} "
-                    f"has no approved PG row."
-                )
+                msg = f"[ORPHAN_IN_ARANGO] ArangoDB concept pg_concept_id={pg_id} " f"has no approved PG row."
                 report.orphans_in_arango += 1
                 report.discrepancies.append(msg)
                 self.logger.warning(msg)
@@ -215,31 +199,21 @@ class ConceptCatalogReconciler:
             cutoff,
         )
 
-        arango_edges = await self._graph_store.get_all_nodes(
-            ctx, self.ISA_COLLECTION
-        )
-        arango_edge_ids: set[str] = {
-            str(e["pg_isa_edge_id"])
-            for e in arango_edges
-            if e.get("pg_isa_edge_id")
-        }
+        arango_edges = await self._graph_store.get_all_nodes(ctx, self.ISA_COLLECTION)
+        arango_edge_ids: set[str] = {str(e["pg_isa_edge_id"]) for e in arango_edges if e.get("pg_isa_edge_id")}
 
         # Forward scan
         for row in pg_edges:
             pg_id = str(row["id"])
             if pg_id not in arango_edge_ids:
-                msg = (
-                    f"[MISSING_ISA_IN_ARANGO] isa edge id={pg_id} "
-                    f"not found in ArangoDB."
-                )
+                msg = f"[MISSING_ISA_IN_ARANGO] isa edge id={pg_id} " f"not found in ArangoDB."
                 report.missing_isa_in_arango += 1
                 report.discrepancies.append(msg)
                 self.logger.warning(msg)
 
         # Reverse scan (H2 fix: use ALL approved edge IDs, not just cutoff set)
         all_approved_edges = await conn.fetch(
-            "SELECT id FROM ontology_concept_isa "
-            "WHERE tenant_id = $1 AND state = 'approved'",
+            "SELECT id FROM ontology_concept_isa " "WHERE tenant_id = $1 AND state = 'approved'",
             ctx.tenant_id,
         )
         pg_all_edge_ids: set[str] = {str(r["id"]) for r in all_approved_edges}
@@ -247,10 +221,7 @@ class ConceptCatalogReconciler:
         for edge in arango_edges:
             pg_id = str(edge.get("pg_isa_edge_id", ""))
             if pg_id and pg_id not in pg_all_edge_ids:
-                msg = (
-                    f"[ORPHAN_ISA_IN_ARANGO] ArangoDB isa edge pg_isa_edge_id={pg_id} "
-                    f"has no approved PG row."
-                )
+                msg = f"[ORPHAN_ISA_IN_ARANGO] ArangoDB isa edge pg_isa_edge_id={pg_id} " f"has no approved PG row."
                 report.orphan_edges_in_arango += 1
                 report.discrepancies.append(msg)
                 self.logger.warning(msg)
