@@ -55,4 +55,4 @@ PYTHONPATH=packages/ai-parrot-tools/src:packages/ai-parrot/src pytest packages/a
 
 ## Completion Note
 
-(filled on completion)
+Implemented in commits f4f12ad9d (TASK-4285) and 519f3e82e (TASK-4286); code merged to dev via PR #1654 before SDD state was closed. Verified 2026-10-16: `pytest packages/ai-parrot-tools/tests/odoo/` -> 4 passed. State closed retroactively in this worktree.
