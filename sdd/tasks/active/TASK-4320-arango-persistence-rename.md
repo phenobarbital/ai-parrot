@@ -39,6 +39,8 @@ Spec §3 M7 + S6. `GraphIndexPersistence(graph_store: OntologyGraphStore)` (pers
 | `packages/ai-parrot/tests/knowledge/graphindex/test_persist_commit_protocol.py` | MODIFY | rename |
 | `packages/ai-parrot/tests/knowledge/graphindex/test_meta_ontology.py` | MODIFY | rename |
 | `packages/ai-parrot/tests/knowledge/graphindex/test_communities.py` | MODIFY | rename |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/communities.py` | MODIFY | docstring reference to the renamed module |
+| `packages/ai-parrot/tests/knowledge/graphindex/test_loader.py` | MODIFY | monkeypatch target renamed to ArangoPersistence |
 
 ---
 
@@ -104,6 +106,14 @@ from parrot.knowledge.graphindex.protocols import edge_key  # TASK-4302
     },
     {
       "path": "packages/ai-parrot/tests/knowledge/graphindex/test_communities.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/src/parrot/knowledge/graphindex/communities.py",
+      "action": "MODIFY"
+    },
+    {
+      "path": "packages/ai-parrot/tests/knowledge/graphindex/test_loader.py",
       "action": "MODIFY"
     }
   ],
