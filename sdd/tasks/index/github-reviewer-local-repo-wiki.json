@@ -183,15 +183,16 @@
       ],
       "parallel": true,
       "parallelism_notes": "Modifies gittoolkit.py and test_gittoolkit_clone.py after TASK-4336 (done), which last changed clone_repo/pull_repo/_run_subprocess there.",
-      "file": "sdd/tasks/active/TASK-4343-git-token-free-auth.md",
+      "file": "sdd/tasks/completed/TASK-4343-git-token-free-auth.md",
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-10-15T00:22:22+00:00",
-      "completed_at": null,
-      "discovered_from": "issue:93f2022d934a"
+      "completed_at": "2026-10-15T00:24:08+00:00",
+      "discovered_from": "issue:93f2022d934a",
+      "verification": "verified"
     },
     {
       "id": "TASK-4344",
