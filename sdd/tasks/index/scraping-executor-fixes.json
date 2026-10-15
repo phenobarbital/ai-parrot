@@ -16,7 +16,7 @@
       "feature_id": "FEAT-682",
       "feature": "scraping-executor-fixes",
       "spec": "sdd/specs/scraping-executor-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,7 +24,7 @@
       "parallelism_notes": "Single task; no dependencies. Touches only executor.py (_action_click) and test_executor.py.",
       "discovered_from": "issue:c10c1e94f4b3",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-15T15:35:01+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4358-click-text-contains-via-evaluate.md"
     }
