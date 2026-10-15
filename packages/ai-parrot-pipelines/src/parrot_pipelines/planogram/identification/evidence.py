@@ -10,12 +10,14 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from parrot_pipelines.planogram.contracts import (
+    APPEARANCE_UNDETERMINED,
     CycleContext,
     FixtureMembership,
     ObservationSource,
     PerceptionResult,
     RuleObservation,
     Shape,
+    ZoneAppearance,
 )
 from parrot_pipelines.planogram.identification.verify import crop_and_encode
 from parrot_pipelines.planogram.perception.bands import band_box, banded_zones, fixture_box
@@ -24,7 +26,7 @@ from parrot_pipelines.planogram.identification.vision import VisionError
 logger = logging.getLogger(__name__)
 
 EVIDENCE_STAGE: str = "evidence"
-EVIDENCE_PROMPT_VERSION: str = "evidence-v1"
+EVIDENCE_PROMPT_VERSION: str = "evidence-v2"
 ZONE_REGION_TARGET: str = "{image_id}:zone-region:{zone_id}"
 
 
@@ -33,6 +35,7 @@ class ZoneEvidenceAnswer(BaseModel):
 
     illumination: Literal["on", "off", "unknown"] = "unknown"
     visual_features: List[str] = Field(default_factory=list)
+    appearance: ZoneAppearance = Field(default_factory=ZoneAppearance)
     raw_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     evidence: List[str] = Field(default_factory=list)
 
@@ -45,7 +48,7 @@ class RegionPresenceAnswer(BaseModel):
     evidence: List[str] = Field(default_factory=list)
 
 
-def build_zone_prompt(ask_illumination: bool, ask_features: bool) -> str:
+def build_zone_prompt(ask_illumination: bool, ask_features: bool, ask_appearance: bool = False) -> str:
     """Build a neutral prompt about facts visibly present in a zone crop."""
     parts = ["Inspect this retail display-zone crop. Report only what is visibly present; do not infer intent."]
     if ask_illumination:
@@ -57,6 +60,13 @@ def build_zone_prompt(ask_illumination: bool, ask_features: bool) -> str:
         parts.append(
             "List short phrases for visible logos, graphics, text, screens, or products; use an empty list when none "
             "are visible."
+        )
+    if ask_appearance:
+        parts.append(
+            "For appearance, report the dominant background colour, the colour of any border or frame "
+            "(none when there is none), the surface finish (matte or glossy), and the colour of the floor or "
+            "platform the element stands on (not_visible when it is not in the crop); use unknown when a value "
+            "cannot be determined."
         )
     parts.append("Provide one concise evidence sentence.")
     return "\n".join(parts)
@@ -116,8 +126,9 @@ async def collect_rule_evidence(
     kinds = {binding.kind for binding in ctx.bindings}
     ask_illumination = "illumination" in kinds
     ask_features = "visual_features" in kinds
+    ask_appearance = "appearance" in kinds
     presence_zone_ids = {binding.target_id for binding in ctx.bindings if binding.kind == "zone_present"}
-    if not (ask_illumination or ask_features or presence_zone_ids):
+    if not (ask_illumination or ask_features or ask_appearance or presence_zone_ids):
         return []
 
     observations: List[RuleObservation] = []
@@ -125,8 +136,8 @@ async def collect_rule_evidence(
         (zone for zone in perception.zones if zone.membership != FixtureMembership.OFF_FIXTURE),
         key=lambda zone: (zone.box.y1, zone.box.x1),
     )
-    if ask_illumination or ask_features:
-        prompt = build_zone_prompt(ask_illumination, ask_features)
+    if ask_illumination or ask_features or ask_appearance:
+        prompt = build_zone_prompt(ask_illumination, ask_features, ask_appearance)
         for zone in zones:
             try:
                 png = await ctx.executor.run(
@@ -166,6 +177,19 @@ async def collect_rule_evidence(
                         kind="visual_features",
                         value=list(answer.visual_features),
                         assessed=True,
+                        source=ObservationSource.LLM,
+                        evidence=answer.evidence,
+                    )
+                )
+            if ask_appearance:
+                values = answer.appearance.model_dump()
+                observations.append(
+                    RuleObservation(
+                        image_id=perception.image_id,
+                        target_id=zone.shape_id,
+                        kind="appearance",
+                        value=values,
+                        assessed=any(value not in APPEARANCE_UNDETERMINED for value in values.values()),
                         source=ObservationSource.LLM,
                         evidence=answer.evidence,
                     )

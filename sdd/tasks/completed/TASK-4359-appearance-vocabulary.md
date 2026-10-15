@@ -278,10 +278,10 @@ See the CREATE block above; all four tests must pass.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 161s
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (coder gpt-5.6-terra)
+**Date**: 2026-10-15
+**Notes**: test_appearance_contracts 4 passed; planogram_cycle 273 passed. Merge-tier selector red only from tests needing untracked example images (FileNotFoundError), unrelated to this change.
 
 **Deviations from spec**: none

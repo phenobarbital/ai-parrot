@@ -314,10 +314,10 @@ See the CREATE block above.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 338s
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (coder gpt-5.6-terra)
+**Date**: 2026-10-15
+**Notes**: task tests pass; planogram_cycle suite green except pre-existing missing-examples errors.
 
 **Deviations from spec**: none

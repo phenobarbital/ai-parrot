@@ -14,6 +14,7 @@ from parrot_pipelines.planogram.comparison.registration import ImageRegistration
 from parrot_pipelines.planogram.comparison.tags import slot_above, tag_price, tag_text
 from parrot_pipelines.planogram.perception.bands import banded_zones
 from parrot_pipelines.planogram.contracts import (
+    APPEARANCE_UNDETERMINED,
     CycleContext,
     FixtureMembership,
     Identification,
@@ -417,6 +418,69 @@ def _rule_illumination(
     )
 
 
+def _rule_appearance(
+    binding: RuleBinding,
+    perceptions: Sequence[PerceptionResult],
+    observations: Sequence[RuleObservation],
+    definition: SlotsDefinition,
+    selectors: Sequence[object],
+) -> RuleOutcome:
+    """Evaluate closed-vocabulary zone appearance collected by the identification stage.
+
+    Each configured attribute is decided by an area-weighted majority per image; an undetermined value
+    never votes, and a tie or a disagreement across images leaves that attribute unassessed.
+    """
+    expected: Dict[str, List[str]] = {
+        attribute: [value] if isinstance(value, str) else list(value) for attribute, value in binding.params.items()
+    }
+    matched = _zone_matches(binding.target_id, perceptions, definition, selectors)
+    votes: Dict[str, Dict[str, List[Tuple[str, ObservationRef, int]]]] = {attribute: {} for attribute in expected}
+    refs: List[ObservationRef] = []
+    for image_id, _zone, shape, status in matched:
+        if status != "matched" or shape is None:
+            continue
+        area = (shape.box.x2 - shape.box.x1) * (shape.box.y2 - shape.box.y1)
+        for observation in _rule_observations(observations, image_id, [shape.shape_id], "appearance"):
+            if not isinstance(observation.value, dict):
+                continue
+            ref = _ref(image_id, observation.target_id, observation.source)
+            for attribute in expected:
+                value = observation.value.get(attribute)
+                if not isinstance(value, str) or value in APPEARANCE_UNDETERMINED:
+                    continue
+                votes[attribute].setdefault(image_id, []).append((value, ref, area))
+                refs.append(ref)
+
+    matched_count = 0
+    assessed_count = 0
+    details: List[str] = []
+    for attribute, accepted in expected.items():
+        states: List[Tuple[str, ObservationRef]] = []
+        for image_votes in votes[attribute].values():
+            states.extend(_majority_state(image_votes))
+        distinct = {state for state, _ in states}
+        if len(distinct) != 1:
+            details.append(f"{attribute}: not assessed")
+            continue
+        assessed_count += 1
+        state = next(iter(distinct))
+        if state in accepted:
+            matched_count += 1
+            continue
+        details.append(f"{attribute}: {state} (expected {'|'.join(accepted)})")
+
+    if not assessed_count:
+        return _unassessed(binding, "appearance not observed")
+    return RuleOutcome(
+        rule_id=binding.rule_id,
+        assessed=True,
+        passed=matched_count == assessed_count,
+        score=matched_count / len(expected),
+        detail="; ".join(details) if details else None,
+        observations=_dedupe_refs(refs),
+    )
+
+
 def _rule_text(
     binding: RuleBinding,
     perceptions: Sequence[PerceptionResult],
@@ -599,6 +663,8 @@ def evaluate_rules(
                 outcome = _rule_visual(
                     binding, perceptions, identifications, registrations, observations, definition, selectors
                 )
+            elif binding.kind == "appearance":
+                outcome = _rule_appearance(binding, perceptions, observations, definition, selectors)
             elif binding.kind == "fact_tag_present":
                 outcome = _rule_fact_tag(binding, perceptions, identifications, registrations)
             else:
