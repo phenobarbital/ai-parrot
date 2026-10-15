@@ -251,7 +251,9 @@ def test_cli_ledger_show_text_and_json(runner: CliRunner, mock_ledger_service: M
     """Text shows body and History lines; --json has issue+history; --no-history omits them."""
     service = mock_ledger_service
     issue = _issue()
-    history = [{"event_id": "e1", "kind": "issue.opened", "actor": "agent:x", "ts": "2026-10-16T00:00:00+00:00", "payload": {}}]
+    history = [
+        {"event_id": "e1", "kind": "issue.opened", "actor": "agent:x", "ts": "2026-10-16T00:00:00+00:00", "payload": {}}
+    ]
     service.get_issue = AsyncMock(return_value=issue)
     service.issue_history = AsyncMock(return_value=history)
 

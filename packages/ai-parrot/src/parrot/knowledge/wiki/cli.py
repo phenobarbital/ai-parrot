@@ -3347,7 +3347,9 @@ def ledger_list(
         return
     for issue in issues:
         claimed = f" — claimed by {issue['claimed_by']}" if issue["status"] == "claimed" else ""
-        click.echo(f"{issue['issue_id']} [{issue['severity']}] {issue['status']} {issue['title']} ({issue['kind']}){claimed}")
+        click.echo(
+            f"{issue['issue_id']} [{issue['severity']}] {issue['status']} {issue['title']} ({issue['kind']}){claimed}"
+        )
     if not issues:
         click.echo("No matching issues.")
 
@@ -3408,7 +3410,10 @@ def ledger_show(issue_id: str, as_json: bool, no_history: bool) -> None:
         for event in history:
             click.echo(f"{event['ts']} {event['actor']} {event['kind']}", nl=False)
             payload = event.get("payload") or {}
-            detail = next((payload[key] for key in ("reason", "claimed_by", "unclaimed_by", "resolved_by") if payload.get(key)), None)
+            detail = next(
+                (payload[key] for key in ("reason", "claimed_by", "unclaimed_by", "resolved_by") if payload.get(key)),
+                None,
+            )
             if detail is not None:
                 click.echo(f" {detail}", nl=False)
             click.echo()
