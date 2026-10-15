@@ -195,16 +195,23 @@ class RepoWikiCache:
                     outcome = await self.build_runner.run(paths.clone_dir, paths.plane_dir)
                     if not outcome.ok or not self._usable(paths):
                         self.logger.warning("wiki cache refresh failed for %s", paths.repository)
-                        await asyncio.to_thread(self._evict_if_needed, keep=paths.slug)
+                        await self._safe_evict(paths.slug)
                         return None
                     self._record_success(paths)
-                    await asyncio.to_thread(self._evict_if_needed, keep=paths.slug)
+                    await self._safe_evict(paths.slug)
                     return paths
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             self.logger.warning("wiki cache refresh unavailable for %s: %s", repository, exc)
             return None
+
+    async def _safe_evict(self, keep: str) -> None:
+        """Run eviction without letting its failure undo a finished refresh."""
+        try:
+            await asyncio.to_thread(self._evict_if_needed, keep=keep)
+        except Exception as exc:  # noqa: BLE001 - eviction is best-effort
+            self.logger.warning("wiki cache eviction failed: %s", exc)
 
     @asynccontextmanager
     async def read_lease(self, repository: str, *, timeout: float = 0.0) -> AsyncIterator[Optional[RepoCachePaths]]:
@@ -419,7 +426,17 @@ class RepoWikiCache:
         """Return regular-file sizes below ``root`` without following links."""
         if not root.exists():
             return 0
-        return sum(item.stat().st_size for item in root.rglob("*") if item.is_file() and not item.is_symlink())
+        total = 0
+        try:
+            for item in root.rglob("*"):
+                try:
+                    if item.is_file() and not item.is_symlink():
+                        total += item.stat().st_size
+                except OSError:
+                    continue
+        except OSError:
+            pass
+        return total
 
     @staticmethod
     def _lock_is_busy(path: Path) -> bool:

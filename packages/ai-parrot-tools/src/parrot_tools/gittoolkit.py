@@ -1466,6 +1466,9 @@ class GitToolkit(AbstractToolkit):
         ``token`` explicitly.
         """
         secrets = [token, self.github_token]
+        for raw in list(secrets):
+            if raw:
+                secrets.append(base64.b64encode(f"x-access-token:{raw}".encode()).decode())
         provider = getattr(self, "_token_provider", None)
         if provider is not None:
             secrets.append(getattr(provider, "_token", None))
@@ -1569,7 +1572,7 @@ class GitToolkit(AbstractToolkit):
         slug = self._clone_slug(repository)
         display = self._display_slug(slug)
         token: Optional[str] = None
-        env = None
+        env: Optional[Dict[str, str]] = None
 
         if private and prefer_gh and self._gh_available():
             argv = ["gh", "repo", "clone", display, dest_dir]
@@ -1577,7 +1580,6 @@ class GitToolkit(AbstractToolkit):
                 argv += ["--", "--branch", branch]
         else:
             url, _ = self._clone_url(slug, False)
-            env: Optional[Dict[str, str]] = None
             if private:
                 token = self._resolve_token()
                 env = self._auth_env(url, token)
@@ -1591,7 +1593,7 @@ class GitToolkit(AbstractToolkit):
         kwargs: Dict[str, Any] = {}
         if timeout is not None:
             kwargs["timeout"] = timeout
-        if token is not None and not argv[0] == "gh":
+        if env is not None:
             kwargs["env"] = env
         rc, _out, err = await self._run_subprocess(argv, **kwargs)
         if rc != 0:

@@ -152,7 +152,7 @@ class WikiBuildRunner:
     @staticmethod
     def _signal_group(process: asyncio.subprocess.Process, sig: int) -> None:
         """Signal the build's whole process group; fall back to the child alone."""
-        if process.returncode is not None:
+        if process.returncode is not None and not (hasattr(os, "killpg") and sig == signal.SIGKILL):
             return
         try:
             if hasattr(os, "killpg"):
@@ -175,7 +175,10 @@ class WikiBuildRunner:
             await asyncio.wait_for(asyncio.shield(communication), timeout=_TERMINATE_GRACE_SECONDS)
         except TimeoutError:
             self._signal_group(process, signal.SIGKILL)
-            await communication
+            try:
+                await asyncio.wait_for(asyncio.shield(communication), timeout=_TERMINATE_GRACE_SECONDS)
+            except TimeoutError:
+                communication.cancel()
 
     @staticmethod
     def _scrub_stderr(stderr: bytes | str) -> str:
