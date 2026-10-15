@@ -26,6 +26,7 @@ Complete M2 typing/screenshot behavior and remaining M3 unit/integration coverag
 | `packages/ai-parrot-tools/tests/scraping/test_executor_screenshot_gaps.py` | CREATE | Type/screenshot unit tests |
 | `packages/ai-parrot-tools/tests/scraping/test_browsing_action_sequence.py` | CREATE | Real-browser sequence test |
 | `packages/ai-parrot-tools/tests/scraping/fixtures/action_gaps.html` | CREATE | Local browser fixture |
+| `packages/ai-parrot-tools/tests/test_path_confinement_pa14.py` | MODIFY | Fake driver `screenshot` accepts `full_page` (regression from screenshot signature) |
 
 ## Codebase Contract (Anti-Hallucination)
 
@@ -277,4 +278,16 @@ Implement every remaining M2 test from spec §4: type_forwards_all_fields, type_
 
 ## Completion Note
 
-Pending implementation; finalization owns this section.
+
+- Task: TASK-4357
+- Feature: browsing-executor-action-gaps
+- Implementation SHA: 9de6e834691bea51ec368b13744745fc9a32cc2a
+- Closed at (UTC): 2026-10-15T17:34:03+00:00
+- Fix commits: 54162a3c0bebd23a79a933a07777dd88c710e2c2, 78d13543ba66da83ba4a9a299df565b3c7cf3f8b, 9de6e834691bea51ec368b13744745fc9a32cc2a
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 3 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 415.8s · Tokens: n/a |
+| validation_note | Merge-tier exit 1: 15 failures identical to origin/dev baseline (chromedriver RO fs, obscura/playwright env, legacy MagicMock-await toolkit tests); no new failures after review fixes. |

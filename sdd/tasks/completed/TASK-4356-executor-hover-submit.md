@@ -234,4 +234,16 @@ Implement spec tests test_hover_css_calls_driver_hover, test_hover_text_selector
 
 ## Completion Note
 
-Pending implementation; finalization owns this section.
+
+- Task: TASK-4356
+- Feature: browsing-executor-action-gaps
+- Implementation SHA: cda336c2c368d977beaa554d6e92debd8c6f1191
+- Closed at (UTC): 2026-10-15T17:19:52+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-luna · Backend: codex · Model: gpt-5.6-luna · Attempts: 1 · Duration: 88.2s · Tokens: n/a |
+| validation_note | Merge-tier run exit 1: 15 failures identical to origin/dev baseline (chromedriver read-only FS, obscura/playwright env, legacy MagicMock-await toolkit tests); no new test failed. |

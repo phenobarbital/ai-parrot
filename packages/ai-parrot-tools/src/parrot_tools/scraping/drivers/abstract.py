@@ -171,6 +171,29 @@ class AbstractDriver(ABC):
             Raw screenshot bytes.
         """
 
+    async def type_text(
+        self,
+        text: str,
+        selector: Optional[str] = None,
+        delay_ms: int = 0,
+        clear_first: bool = False,
+        timeout: int = 10,
+    ) -> None:
+        """Type keystrokes; optionally select and clear a target, with delay in milliseconds.
+
+        Raises:
+            NotImplementedError: The current driver does not support typing text.
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not support type_text")
+
+    async def screenshot_element(self, selector: str, path: str, timeout: int = 10) -> bytes:
+        """Save an element PNG to path and return its raw bytes; timeout is seconds.
+
+        Raises:
+            NotImplementedError: The current driver does not support element screenshots.
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not support screenshot_element")
+
     # ── Waiting ──────────────────────────────────────────────────
 
     @abstractmethod

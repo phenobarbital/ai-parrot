@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-15",
-  "completed_at": null,
+  "completed_at": "2026-10-15T17:50:00+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-681",
       "feature": "browsing-executor-action-gaps",
       "spec": "sdd/specs/browsing-executor-action-gaps.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent driver files and a new test module; no executor writes or shared-state mutations.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4355-driver-typing-element-screenshots.md"
+      "started_at": "2026-10-15T17:10:55+00:00",
+      "completed_at": "2026-10-15T17:19:47+00:00",
+      "file": "sdd/tasks/completed/TASK-4355-driver-typing-element-screenshots.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4356",
@@ -34,16 +35,17 @@
       "feature_id": "FEAT-681",
       "feature": "browsing-executor-action-gaps",
       "spec": "sdd/specs/browsing-executor-action-gaps.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Independent of TASK-4355: hover, evaluate, click and wait_for_selector already exist; owns executor.py and hover/submit tests in the first wave.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4356-executor-hover-submit.md"
+      "started_at": "2026-10-15T17:10:55+00:00",
+      "completed_at": "2026-10-15T17:19:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4356-executor-hover-submit.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4357",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-681",
       "feature": "browsing-executor-action-gaps",
       "spec": "sdd/specs/browsing-executor-action-gaps.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -62,9 +64,10 @@
       "parallel": true,
       "parallelism_notes": "Consumes AbstractDriver.type_text and screenshot_element from TASK-4355; depends on TASK-4356 for overlapping executor.py writes and the hover/submit handlers exercised by integration.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4357-executor-type-screenshot-artifacts.md"
+      "started_at": "2026-10-15T17:10:55+00:00",
+      "completed_at": "2026-10-15T17:34:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4357-executor-type-screenshot-artifacts.md",
+      "verification": "verified"
     }
   ]
 }
