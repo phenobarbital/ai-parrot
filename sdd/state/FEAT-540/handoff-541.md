@@ -29,16 +29,17 @@ passes. "Absent" = behaviour when the framework/satellite distribution is not in
 | `ontology/validators.py:62` | `parrot.conf.ONTOLOGY_MAX_TRAVERSAL_DEPTH` | FEAT-541 | explicit `max_depth` required |
 | `retrieval/pin.py` | none found (no `parrot.*` framework imports in the file) | FEAT-541 | n/a |
 
-## Eager imports found by the gates (NOT fixed here — need an owner)
+## Eager imports found by the gates — FIXED (issue:3c432c97c459)
 
-| Location | Eager import | Effect |
-|---|---|---|
-| `wiki/schema/models.py:9` | `parrot.bots.database.models.TableMetadata` | `import parrot.knowledge.wiki.cli` loads `parrot.bots` -> `parrot.conf`, navconfig, pandas, ...; fails `wiki.cli` ceiling (xfail) and the sys.meta_path blocker test (xfail) |
-| `wiki/schema/producers/ddl.py:12`, `render.py:13`, `service.py:11` | `parrot.bots.database.models` | same family (schema-plane, FEAT-600) |
-| `wiki/schema/producers/live.py:9-11` | `parrot.bots.database.toolkits.*` | legal Arango-bound / DB toolkits imported at module level |
+`TableMetadata`, `Completeness` and `MetadataSource` moved to the framework-free
+`parrot/knowledge/wiki/schema/table_metadata.py` (`parrot.bots.database.models` re-exports them, so import
+paths are unchanged). `wiki/schema/{models,render,service}.py` and `producers/ddl.py` import from it;
+`producers/live.py` now imports the BigQuery/Postgres/SQL toolkits function-locally inside `toolkit_for`
+(`SQLToolkit` is TYPE_CHECKING-only). `import parrot.knowledge.wiki.cli` no longer loads `parrot.bots` /
+`parrot.conf`; the `wiki.cli` ceiling row and `test_blocker_default_cli_entry_and_plain_ops` are no longer xfail.
 
-## Docs drift (not edited)
+## Docs drift — FIXED (issue:0203d753aded)
 
-`docs/architecture/09-ontologic-rag.md` still names the removed `OntologyGraphStore` / `execute_traversal`
-(lines ~48, 241, 249, 270). The current names are `ArangoOntologyGraphStore`, `GraphDocumentStore`,
-`OntologyTraversalStore`.
+`docs/architecture/09-ontologic-rag.md` now documents `ArangoOntologyGraphStore` and its typed operations
+(`is_reachable`, `get_document_by_id`, `find_by_field`, `search_by_name`, `execute_pattern`, `execute_query`,
+private `_execute_aql`) instead of the removed `OntologyGraphStore` / `execute_traversal`.
