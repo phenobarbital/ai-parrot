@@ -204,10 +204,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet (attempt 2aabb379), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: WikiConfig.storage_backend, WikiProjectConfig.backend and WikiEnvOverlay.backend are now `str` validated against wiki_backend_names() (lazy import); namespace validator coerces a `database` entry to arangodb only when `backend` was not explicitly set; is_built() branches on wiki_backend_spec(backend).kind with an optional spec.is_built hook. storage_path left unchanged (never branched on backend names). 8 tests in test_wiki_config_registry.py. Verification `partial`: tests/knowledge/wiki = 1020 passed; the only failures (53 failed + 38 errors) are Postgres ConnectionRefused (no DB here) and the pre-existing non-Postgres set verified against clean c57431a06. No review corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

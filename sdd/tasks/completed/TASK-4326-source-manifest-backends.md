@@ -223,10 +223,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra (attempt 6f8c51a8), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: new sources_backend.py (contract + registry) and arango_sources.py; sources.py delegates through create_source_backend; parrot_tools wiki toolkit selection; test_source_backends.py parity tests. Review fix 63fb78c8c: the delivery deleted `_ARANGO_SOURCES_COLLECTION` from sources.py while 11 arangodb-branch query sites still used it (engine lint F821 caught it; NameError at runtime) — constant restored. feedback_id coder-feedback:9b1a1fb93a7aadb0a076d4e1. Note: sources.py still carries its own arangodb query branches alongside the new delegate; consolidating them is left to a follow-up. Verification `partial`: tests/knowledge/wiki = 1020 passed, remaining failures Postgres-only (no DB) or pre-existing.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

@@ -524,7 +524,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -535,8 +535,9 @@
       "parallelism_notes": "edits wiki/project.py after TASK-4311 (same file); uses wiki_backend_names/wiki_backend_spec from TASK-4323 (store.py)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4324-wiki-config-registry-consumers.md"
+      "completed_at": "2026-10-15T12:22:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4324-wiki-config-registry-consumers.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4325",
@@ -567,7 +568,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -577,8 +578,9 @@
       "parallelism_notes": "edits parrot_tools/wiki/toolkit.py created by TASK-4309 (LLMWikiToolkit source selection)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4326-source-manifest-backends.md"
+      "completed_at": "2026-10-15T12:22:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4326-source-manifest-backends.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4327",
