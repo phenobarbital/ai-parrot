@@ -697,7 +697,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -712,8 +712,9 @@
       "parallelism_notes": "exclusive: edits tests/knowledge/fixtures/concept_authority/conftest.py; removes aliases added by TASK-4328 after every caller migrated (TASK-4329, TASK-4330, TASK-4331, loader TASK-4318, persistence TASK-4320)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4332-ontology-alias-removal.md"
+      "completed_at": "2026-10-15T13:31:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4332-ontology-alias-removal.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4333",
