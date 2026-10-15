@@ -597,7 +597,8 @@ async def _action_submit(driver: AbstractDriver, action: Any, default_timeout: i
     return "click";
 }})()
 """
-    outcome = await driver.evaluate(expression)
+    # strip: Selenium's evaluate() prefixes `return `, and a leading newline would trigger ASI.
+    outcome = await driver.evaluate(expression.strip())
     if outcome == "missing":
         raise RuntimeError(f"No element matching selector {selector!r}")
     if outcome == "click":

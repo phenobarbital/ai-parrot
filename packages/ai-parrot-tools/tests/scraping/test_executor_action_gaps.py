@@ -142,3 +142,18 @@ async def test_submit_selector_is_json_embedded(spy_driver: AsyncMock) -> None:
     spy_driver.execute_script.assert_not_awaited()
     assert "requestSubmit" in expression
     assert "document.evaluate" in expression
+
+
+async def test_submit_expression_has_no_leading_whitespace() -> None:
+    """Selenium prefixes ``return `` to the expression; a leading newline would make it a bare return."""
+    from unittest.mock import AsyncMock
+
+    from parrot_tools.scraping.executor import _action_submit
+
+    driver = AsyncMock()
+    driver.evaluate.return_value = "form"
+    action = type("A", (), {"selector": "#f", "timeout": 5, "wait_after_submit": None, "wait_timeout": 5})()
+    await _action_submit(driver, action, 10)
+    expression = driver.evaluate.call_args.args[0]
+    assert expression == expression.strip()
+    assert expression.startswith("(")
