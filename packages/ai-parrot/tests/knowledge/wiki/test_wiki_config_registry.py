@@ -1,4 +1,5 @@
 """Config validated by the wiki registry (FEAT-540 M7)."""
+
 import pytest
 from pydantic import ValidationError
 
