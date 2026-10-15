@@ -1,0 +1,739 @@
+{
+  "wiki": {
+    "arguments": [],
+    "options": [
+      "--verbose",
+      "-v"
+    ]
+  },
+  "wiki adr": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki adr export": {
+    "arguments": [
+      "decision_id"
+    ],
+    "options": [
+      "--ns",
+      "--path"
+    ]
+  },
+  "wiki adr generate": {
+    "arguments": [
+      "target"
+    ],
+    "options": [
+      "--json",
+      "--ns",
+      "--path"
+    ]
+  },
+  "wiki adr lookup": {
+    "arguments": [
+      "symbol"
+    ],
+    "options": [
+      "--budget",
+      "--include-history",
+      "--json",
+      "--limit",
+      "--ns",
+      "--path"
+    ]
+  },
+  "wiki adr review": {
+    "arguments": [
+      "decision_id"
+    ],
+    "options": [
+      "--action",
+      "--actor",
+      "--documented-id",
+      "--edit-file",
+      "--expected-revision",
+      "--json",
+      "--ns",
+      "--path",
+      "--reason"
+    ]
+  },
+  "wiki adr sync": {
+    "arguments": [
+      "paths"
+    ],
+    "options": [
+      "--json",
+      "--ns",
+      "--path"
+    ]
+  },
+  "wiki adr why": {
+    "arguments": [
+      "question"
+    ],
+    "options": [
+      "--budget",
+      "--include-history",
+      "--json",
+      "--limit",
+      "--ns",
+      "--path"
+    ]
+  },
+  "wiki audit": {
+    "arguments": [],
+    "options": [
+      "--backend",
+      "--json",
+      "--limit",
+      "--path",
+      "--store"
+    ]
+  },
+  "wiki build": {
+    "arguments": [],
+    "options": [
+      "--backend",
+      "--force",
+      "--graph-kinds",
+      "--name",
+      "--no-export",
+      "--no-git",
+      "--no-graph",
+      "--no-push",
+      "--no-vault",
+      "--path",
+      "--quiet",
+      "--vault",
+      "-q"
+    ]
+  },
+  "wiki claude": {
+    "arguments": [
+      "action"
+    ],
+    "options": [
+      "--path"
+    ]
+  },
+  "wiki claude-hook": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki codex": {
+    "arguments": [
+      "action"
+    ],
+    "options": [
+      "--path"
+    ]
+  },
+  "wiki communities": {
+    "arguments": [],
+    "options": [
+      "--graph-kinds",
+      "--inter",
+      "--json",
+      "--path"
+    ]
+  },
+  "wiki entity": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki entity add": {
+    "arguments": [
+      "title",
+      "type_"
+    ],
+    "options": [
+      "--backend",
+      "--body",
+      "--by",
+      "--date",
+      "--due",
+      "--json",
+      "--link",
+      "--owner",
+      "--path",
+      "--project",
+      "--rel",
+      "--status",
+      "--store"
+    ]
+  },
+  "wiki entity list": {
+    "arguments": [],
+    "options": [
+      "--backend",
+      "--json",
+      "--limit",
+      "--ns",
+      "--path",
+      "--project",
+      "--since",
+      "--status",
+      "--store",
+      "--type",
+      "--until"
+    ]
+  },
+  "wiki entity reindex": {
+    "arguments": [],
+    "options": [
+      "--backend",
+      "--category",
+      "--dry-run",
+      "--ns",
+      "--path",
+      "--store"
+    ]
+  },
+  "wiki export": {
+    "arguments": [],
+    "options": [
+      "--output",
+      "--path",
+      "-o"
+    ]
+  },
+  "wiki gemini": {
+    "arguments": [
+      "action"
+    ],
+    "options": [
+      "--path"
+    ]
+  },
+  "wiki google": {
+    "arguments": [
+      "action"
+    ],
+    "options": [
+      "--path"
+    ]
+  },
+  "wiki ground": {
+    "arguments": [
+      "claim"
+    ],
+    "options": [
+      "--json",
+      "--path"
+    ]
+  },
+  "wiki inbox": {
+    "arguments": [],
+    "options": [
+      "--archive",
+      "--charter",
+      "--dry-run",
+      "--force",
+      "--json",
+      "--lightweight-model",
+      "--limit",
+      "--model",
+      "--no-archive",
+      "--path"
+    ]
+  },
+  "wiki ingest": {
+    "arguments": [
+      "source"
+    ],
+    "options": [
+      "--audit-rate",
+      "--auto",
+      "--charter",
+      "--dry-run",
+      "--extract",
+      "--fetch-timeout",
+      "--interactive",
+      "--lightweight-model",
+      "--manifest",
+      "--model",
+      "--no-push",
+      "--no-recursive",
+      "--path",
+      "--recursive",
+      "--refresh",
+      "--review"
+    ]
+  },
+  "wiki ingest-jira": {
+    "arguments": [],
+    "options": [
+      "--backfill",
+      "--build",
+      "--concurrency",
+      "--dry-run",
+      "--enrich",
+      "--force",
+      "--issues-dir",
+      "--jql",
+      "--json",
+      "--no-build",
+      "--progress-every",
+      "--project",
+      "--quiet",
+      "--since",
+      "-q"
+    ]
+  },
+  "wiki ledger": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki ledger acknowledge": {
+    "arguments": [
+      "issue_id"
+    ],
+    "options": [
+      "--actor",
+      "--reason"
+    ]
+  },
+  "wiki ledger audit": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki ledger blockers": {
+    "arguments": [
+      "feature_id"
+    ],
+    "options": []
+  },
+  "wiki ledger claim": {
+    "arguments": [
+      "issue_id"
+    ],
+    "options": [
+      "--actor"
+    ]
+  },
+  "wiki ledger close": {
+    "arguments": [
+      "issue_id"
+    ],
+    "options": [
+      "--actor",
+      "--reason",
+      "--resolved-by"
+    ]
+  },
+  "wiki ledger compact": {
+    "arguments": [],
+    "options": [
+      "--older-than"
+    ]
+  },
+  "wiki ledger context": {
+    "arguments": [
+      "file_paths"
+    ],
+    "options": [
+      "--max-tokens"
+    ]
+  },
+  "wiki ledger export": {
+    "arguments": [],
+    "options": [
+      "--dest",
+      "--no-reconcile"
+    ]
+  },
+  "wiki ledger ingest-sdd": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki ledger open": {
+    "arguments": [],
+    "options": [
+      "--about",
+      "--body",
+      "--discovered-from",
+      "--kind",
+      "--severity",
+      "--title"
+    ]
+  },
+  "wiki ledger plan-fix": {
+    "arguments": [],
+    "options": [
+      "--json",
+      "--kind",
+      "--lane",
+      "--severity"
+    ]
+  },
+  "wiki ledger ready": {
+    "arguments": [],
+    "options": [
+      "--kind"
+    ]
+  },
+  "wiki ledger rebuild": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki ledger sync": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki ledger unclaim": {
+    "arguments": [
+      "issue_id"
+    ],
+    "options": [
+      "--actor",
+      "--reason"
+    ]
+  },
+  "wiki link": {
+    "arguments": [
+      "dst",
+      "src"
+    ],
+    "options": [
+      "--backend",
+      "--by",
+      "--json",
+      "--ns",
+      "--path",
+      "--rel",
+      "--store"
+    ]
+  },
+  "wiki lint": {
+    "arguments": [],
+    "options": [
+      "--export-dir",
+      "--fail-on",
+      "--fix",
+      "--json",
+      "--ledger",
+      "--llm",
+      "--llm-max-pairs",
+      "--llm-model",
+      "--no-ledger",
+      "--no-notes",
+      "--notes",
+      "--ns",
+      "--output",
+      "--path",
+      "--report",
+      "--rules",
+      "--skip"
+    ]
+  },
+  "wiki mcp": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki memories": {
+    "arguments": [],
+    "options": [
+      "--backend",
+      "--category",
+      "--json",
+      "--limit",
+      "--path",
+      "--store"
+    ]
+  },
+  "wiki note": {
+    "arguments": [
+      "page_id",
+      "text"
+    ],
+    "options": [
+      "--backend",
+      "--by",
+      "--json",
+      "--ns",
+      "--path",
+      "--store"
+    ]
+  },
+  "wiki ns": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki ns add": {
+    "arguments": [
+      "name"
+    ],
+    "options": [
+      "--backend",
+      "--credentials-env",
+      "--database",
+      "--description",
+      "--global",
+      "--path",
+      "--project",
+      "--store",
+      "--vault",
+      "--weight"
+    ]
+  },
+  "wiki ns list": {
+    "arguments": [],
+    "options": [
+      "--json",
+      "--path"
+    ]
+  },
+  "wiki ns remove": {
+    "arguments": [
+      "name"
+    ],
+    "options": [
+      "--global",
+      "--path"
+    ]
+  },
+  "wiki page": {
+    "arguments": [
+      "page_id"
+    ],
+    "options": [
+      "--backend",
+      "--json",
+      "--max-tokens",
+      "--ns",
+      "--path",
+      "--store"
+    ]
+  },
+  "wiki query": {
+    "arguments": [
+      "question"
+    ],
+    "options": [
+      "--backend",
+      "--body",
+      "--budget",
+      "--category",
+      "--json",
+      "--ns",
+      "--path",
+      "--store",
+      "--table",
+      "--top-k",
+      "-b",
+      "-n"
+    ]
+  },
+  "wiki related": {
+    "arguments": [
+      "page_id"
+    ],
+    "options": [
+      "--backend",
+      "--direction",
+      "--json",
+      "--ns",
+      "--path",
+      "--rel",
+      "--store"
+    ]
+  },
+  "wiki remember": {
+    "arguments": [
+      "text"
+    ],
+    "options": [
+      "--backend",
+      "--by",
+      "--category",
+      "--date",
+      "--due",
+      "--extract",
+      "--json",
+      "--link",
+      "--ns",
+      "--owner",
+      "--path",
+      "--project",
+      "--rel",
+      "--source",
+      "--status",
+      "--store",
+      "--title",
+      "--type"
+    ]
+  },
+  "wiki schema": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki schema add-source": {
+    "arguments": [
+      "alias"
+    ],
+    "options": [
+      "--dialect",
+      "--dsn-env",
+      "--schemas",
+      "--tables"
+    ]
+  },
+  "wiki schema diff": {
+    "arguments": [
+      "origin"
+    ],
+    "options": [
+      "--ledger"
+    ]
+  },
+  "wiki schema ingest-ddl": {
+    "arguments": [
+      "paths"
+    ],
+    "options": [
+      "--changed",
+      "--dialect",
+      "--json",
+      "--origin",
+      "--quiet"
+    ]
+  },
+  "wiki schema lookup": {
+    "arguments": [
+      "ref"
+    ],
+    "options": [
+      "--json"
+    ]
+  },
+  "wiki schema sources": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki schema sync": {
+    "arguments": [
+      "origin"
+    ],
+    "options": [
+      "--changed",
+      "--json",
+      "--tables"
+    ]
+  },
+  "wiki serve": {
+    "arguments": [],
+    "options": [
+      "--config",
+      "--host",
+      "--port",
+      "--ssl-cert",
+      "--ssl-key"
+    ]
+  },
+  "wiki standup": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki status": {
+    "arguments": [],
+    "options": [
+      "--json",
+      "--ns",
+      "--path"
+    ]
+  },
+  "wiki symbols": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki symbols blast": {
+    "arguments": [
+      "symbol"
+    ],
+    "options": [
+      "--depth",
+      "--inferred",
+      "--json",
+      "--no-inferred",
+      "--no-tests",
+      "--ns",
+      "--path",
+      "--rel",
+      "--tests"
+    ]
+  },
+  "wiki symbols lookup": {
+    "arguments": [
+      "query"
+    ],
+    "options": [
+      "--json",
+      "--kind",
+      "--language",
+      "--limit",
+      "--ns",
+      "--path",
+      "--path-prefix"
+    ]
+  },
+  "wiki symbols outline": {
+    "arguments": [
+      "target"
+    ],
+    "options": [
+      "--depth",
+      "--json",
+      "--ns",
+      "--path",
+      "--source"
+    ]
+  },
+  "wiki sync": {
+    "arguments": [],
+    "options": []
+  },
+  "wiki sync obsidian": {
+    "arguments": [],
+    "options": [
+      "--category",
+      "--dry-run",
+      "--no-prune",
+      "--ns",
+      "--path",
+      "--prune",
+      "--vault",
+      "--verbose",
+      "-v"
+    ]
+  },
+  "wiki sync pull": {
+    "arguments": [],
+    "options": [
+      "--all",
+      "--dry-run",
+      "--env",
+      "--path"
+    ]
+  },
+  "wiki sync push": {
+    "arguments": [],
+    "options": [
+      "--dry-run",
+      "--env",
+      "--path"
+    ]
+  },
+  "wiki upsert": {
+    "arguments": [
+      "paths"
+    ],
+    "options": [
+      "--changed",
+      "--no-push",
+      "--path",
+      "--quiet",
+      "-q"
+    ]
+  }
+}

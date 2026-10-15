@@ -1,0 +1,52 @@
+{
+  "parrot.auth.exceptions": {
+    "ceiling": 150,
+    "count": 101,
+    "error": null,
+    "loaded_forbidden": [],
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+    "revision": "0f6b76686ca279446eac4da1427921909bdba3e5"
+  },
+  "parrot.knowledge.graphindex": {
+    "ceiling": 800,
+    "count": 231,
+    "error": null,
+    "loaded_forbidden": [],
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+    "revision": "0f6b76686ca279446eac4da1427921909bdba3e5"
+  },
+  "parrot.knowledge.graphindex.builder": {
+    "ceiling": 1200,
+    "count": 743,
+    "error": null,
+    "loaded_forbidden": [],
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+    "revision": "0f6b76686ca279446eac4da1427921909bdba3e5"
+  },
+  "parrot.knowledge.ontology.schema": {
+    "ceiling": 240,
+    "count": 231,
+    "error": null,
+    "loaded_forbidden": [],
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+    "revision": "0f6b76686ca279446eac4da1427921909bdba3e5"
+  },
+  "parrot.knowledge.wiki.cli": {
+    "ceiling": 850,
+    "count": 2184,
+    "error": null,
+    "loaded_forbidden": [
+      "navconfig",
+      "parrot.conf",
+      "navigator_eventbus",
+      "asyncdb",
+      "pandas",
+      "faiss",
+      "pyarrow",
+      "redis",
+      "asyncpg"
+    ],
+    "python": "3.12.3 (main, Aug 31 2026, 10:18:26) [GCC 13.3.0]",
+    "revision": "0f6b76686ca279446eac4da1427921909bdba3e5"
+  }
+}
