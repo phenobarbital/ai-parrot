@@ -14,14 +14,15 @@
       "feature_id": "FEAT-680",
       "feature": "tests-test-basic-agent-new-fixes",
       "spec": "sdd/specs/tests-test-basic-agent-new-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single task.",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-4354-basic-agent-setup-mcp-servers.md"
+      "file": "sdd/tasks/active/TASK-4354-basic-agent-setup-mcp-servers.md",
+      "started_at": "2026-10-15T13:26:40Z"
     }
   ]
 }
