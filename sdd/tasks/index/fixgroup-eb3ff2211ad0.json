@@ -15,13 +15,14 @@
       "feature_id": "FEAT-686",
       "feature": "fixgroup-eb3ff2211ad0",
       "spec": "sdd/specs/fixgroup-eb3ff2211ad0.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-4367-obscura-safe-load-waits.md"
+      "file": "sdd/tasks/active/TASK-4367-obscura-safe-load-waits.md",
+      "started_at": "2026-10-15T23:17:58+00:00"
     }
   ]
 }
