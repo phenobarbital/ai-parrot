@@ -160,6 +160,11 @@ class OntologyRAGMixin:
     # Main pipeline
     # ------------------------------------------------------------------
 
+    def _graph_dialect(self) -> str:
+        """Return the query dialect of the configured graph store (default ``aql``)."""
+        dialect = getattr(self._ont_graph_store, "dialect", None)
+        return dialect if isinstance(dialect, str) and dialect else "aql"
+
     async def ontology_process(
         self,
         query: str,
@@ -226,6 +231,7 @@ class OntologyRAGMixin:
         resolver = OntologyIntentResolver(
             ontology=tenant_ctx.ontology,
             llm_client=self._ont_llm_client,
+            dialect=self._graph_dialect(),
         )
         try:
             intent = await resolver.resolve(query, merged_ctx)

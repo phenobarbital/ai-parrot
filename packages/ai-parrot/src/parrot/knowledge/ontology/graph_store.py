@@ -42,14 +42,20 @@ class UpsertResult(BaseModel):
 _ATTRIBUTE_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def _literal_attribute(name: str) -> str:
+def _literal_attribute(name: str, context: str = "") -> str:
     """Return ``name`` if it is a safe AQL attribute name, else raise.
+
+    Args:
+        name: Candidate attribute name.
+        context: Optional description of where the name comes from (tenant /
+            ontology / collection), appended to the error message.
 
     Raises:
         ValueError: When the name is not a plain identifier.
     """
     if not isinstance(name, str) or not _ATTRIBUTE_NAME.match(name):
-        raise ValueError(f"key_field {name!r} is not a plain attribute name")
+        where = f" ({context})" if context else ""
+        raise ValueError(f"key_field {name!r}{where} is not a plain attribute name")
     return name
 
 
@@ -542,7 +548,10 @@ class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
         # patterns like article_in_force's `FILTER a._key == @articulo_key`)
         # match — without this, ArangoDB would auto-generate `_key` on
         # insert instead of using the entity's declared identifier.
-        key_attr = _literal_attribute(key_field)
+        key_attr = _literal_attribute(
+            key_field,
+            f"ontology tenant {getattr(ctx, 'tenant_id', '?')!r}, collection {collection!r}",
+        )
         aql = f"""
         FOR doc IN @nodes
             UPSERT {{ {key_attr}: doc.{key_attr} }}
