@@ -27,6 +27,7 @@ class FakeService:
     def __init__(self) -> None:
         self.requests = []
         self.notify = None
+        self.rejection = None
 
     def available_targets(self) -> set[UploadTargetKind]:
         """Return the one configured fake target."""
@@ -35,6 +36,10 @@ class FakeService:
     def max_bytes(self) -> int:
         """Return a deliberately small limit for streaming tests."""
         return 4
+
+    async def pre_authorize(self, identity, target, filename, declared_size=None):
+        """Return the configured pre-download rejection, if any."""
+        return self.rejection
 
     async def submit(self, request, notify):
         """Record a request and acknowledge it."""
@@ -218,3 +223,31 @@ async def test_notify_uses_continue_conversation(wrapper):
     wrapper.adapter.continue_conversation.assert_awaited_once()
     assert wrapper.adapter.continue_conversation.await_args.args[0] == "reference"
     assert wrapper.adapter.continue_conversation.await_args.args[2] == "app-id"
+
+
+@pytest.mark.asyncio
+async def test_denied_user_never_downloads(wrapper):
+    """An uploader rejected by pre_authorize is never downloaded or submitted."""
+    service = FakeService()
+    service.rejection = UploadOutcome(
+        job_id="j0",
+        status=UploadStatus.DENIED,
+        target=UploadTargetKind.BOOKSTORE,
+        filename="book.pdf",
+        message="You are not allowed to upload knowledge.",
+    )
+    holder = TeamsKnowledgeUpload(wrapper, service)
+    attachment = SimpleNamespace(name="guide.pdf", content_type=FILE_DOWNLOAD_INFO, content={"downloadUrl": "url"})
+    download = AsyncMock(return_value=b"data")
+    with (
+        patch(
+            "parrot.integrations.msteams.commands.knowledge_upload.TeamsInfo.get_member",
+            new=AsyncMock(return_value=SimpleNamespace(email="person@example.test")),
+        ),
+        patch.object(holder, "download", new=download),
+    ):
+        await holder.handle(_context("/ingest_book", [attachment]), UploadTargetKind.BOOKSTORE)
+
+    download.assert_not_called()
+    assert service.requests == []
+    assert wrapper.send_text.await_args.args[0] == "You are not allowed to upload knowledge."

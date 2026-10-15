@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Action gaps fixture</title>
+  <style>
+    body { font-family: sans-serif; min-height: 1800px; margin: 2rem; }
+    #hover-target { display: inline-block; padding: 1rem; background: #dbeafe; }
+    #hover-menu { margin-top: 0.5rem; padding: 0.5rem; background: #dcfce7; }
+    #submit-result { margin-top: 1rem; min-height: 2rem; }
+  </style>
+</head>
+<body>
+  <div id="hover-target">Hover me</div>
+  <div id="hover-menu" hidden>Menu revealed</div>
+  <form id="search-form">
+    <label>Query <input id="query" name="query" type="text"></label>
+    <button type="submit">Submit</button>
+  </form>
+  <output id="submit-result" aria-live="polite"></output>
+  <script>
+    const target = document.querySelector('#hover-target');
+    const menu = document.querySelector('#hover-menu');
+    target.addEventListener('mouseenter', () => { menu.hidden = false; });
+    document.querySelector('#search-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      document.querySelector('#submit-result').textContent = `Submitted: ${document.querySelector('#query').value}`;
+    });
+  </script>
+</body>
+</html>

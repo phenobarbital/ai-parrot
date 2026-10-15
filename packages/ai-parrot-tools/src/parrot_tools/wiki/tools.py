@@ -461,14 +461,24 @@ class WikiIngestBatchTool(AbstractTool):
 
 
 class WikiSyncPushTool(AbstractTool):
-    """Merge remote sync data used by `wikitoolkit sync` in remote mode; not for agents."""
+    """Merge remote sync data used by `wikitoolkit sync` in remote mode; not for agents.
+
+    At most 200 pages and 1 MiB per call; the client chunks larger pushes.
+    """
 
     name = "wiki_sync_push"
     args_schema = SyncPagesInput
 
-    def __init__(self, store: BaseWikiStore, wiki_name: str):
+    def __init__(
+        self,
+        store: BaseWikiStore,
+        wiki_name: str,
+        root: Path | None = None,
+        config: WikiProjectConfig | None = None,
+    ):
         super().__init__()
         self._store, self._wiki_name = store, wiki_name
+        self._root, self._config = root, config
 
     async def _execute(
         self,
@@ -481,7 +491,9 @@ class WikiSyncPushTool(AbstractTool):
             pages=[page if isinstance(page, WikiPageRecord) else WikiPageRecord.model_validate(page) for page in pages],
             edges=edges or [],
         )
-        return _to_tool_result(await op_sync_push(self._store, params, wiki_name=self._wiki_name))
+        return _to_tool_result(await op_sync_push(
+            self._store, params, wiki_name=self._wiki_name, root=self._root, config=self._config,
+        ))
 
 
 class WikiSyncPullTool(AbstractTool):
@@ -515,7 +527,7 @@ def create_bulk_tools(store: BaseWikiStore, root: Path, config: WikiProjectConfi
     return [
         WikiPageHashesTool(store),
         WikiIngestBatchTool(store, root, config),
-        WikiSyncPushTool(store, config.wiki_name),
+        WikiSyncPushTool(store, config.wiki_name, root, config),
         WikiSyncPullTool(store),
     ]
 

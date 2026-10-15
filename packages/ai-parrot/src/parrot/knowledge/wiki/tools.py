@@ -20,6 +20,8 @@ from parrot.knowledge.wiki.operations import (  # noqa: F401 -- re-exported for 
     INGEST_MAX_BYTES,
     INGEST_MAX_SLICES,
     SYNC_PULL_MAX,
+    SYNC_PUSH_MAX_BYTES,
+    SYNC_PUSH_MAX_PAGES,
     IngestBatchInput,
     IngestBatchReport,
     PageHashesInput,

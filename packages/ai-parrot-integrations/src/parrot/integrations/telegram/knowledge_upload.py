@@ -119,7 +119,7 @@ class TelegramKnowledgeUpload:
         )
 
     async def handle(self, message: Message, target: UploadTargetKind, document: Any, args_text: str) -> None:
-        """Authorize, download into memory and submit; never touches the default document path."""
+        """Pre-authorize, download into memory and submit; never touches the default document path."""
         chat_id = message.chat.id
         if not self.wrapper._is_authorized(chat_id):
             await message.answer("⛔ You are not authorized to use this bot.")
@@ -142,6 +142,17 @@ class TelegramKnowledgeUpload:
         if document.file_size is not None and document.file_size > max_bytes:
             await message.answer(f"File is too large (limit {limit_mb:g} MB).")
             return
+        identity = UploaderIdentity(
+            platform="telegram",
+            platform_user_id=str(message.from_user.id),
+            nav_user_id=session.nav_user_id,
+            email=session.nav_email,
+        )
+        # Authorize before fetching any bytes (issue:3cf4d0630516).
+        rejection = await service.pre_authorize(identity, target, filename, document.file_size)
+        if rejection is not None:
+            await message.answer(rejection.message)
+            return
         buffer = io.BytesIO()
         file = await self.wrapper.bot.get_file(document.file_id)
         await self.wrapper.bot.download_file(file.file_path, buffer)
@@ -150,12 +161,6 @@ class TelegramKnowledgeUpload:
             await message.answer(f"File is too large (limit {limit_mb:g} MB).")
             return
         options = parse_ingest_args(args_text)
-        identity = UploaderIdentity(
-            platform="telegram",
-            platform_user_id=str(message.from_user.id),
-            nav_user_id=session.nav_user_id,
-            email=session.nav_email,
-        )
         request = UploadRequest(target=target, identity=identity, filename=filename, data=data, **options)
 
         async def notify(outcome: UploadOutcome) -> None:

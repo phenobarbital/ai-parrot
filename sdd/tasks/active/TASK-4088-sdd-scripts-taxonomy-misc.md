@@ -5,7 +5,7 @@
 **Status**: pending
 **Priority**: medium
 **Estimated effort**: M (2-4h)
-**Depends-on**: TASK-4085
+**Depends-on**: TASK-4085, TASK-4334
 **Assigned-to**: unassigned
 
 ---
@@ -54,6 +54,13 @@ uses `__file__`, and it does so to find a sibling package. That becomes package-
 - Add `packages/ai-parrot/tests/sdd/test_scripts_taxonomy_misc.py`.
 
 **Decided by the spec author (2026-10-05) — part of this task's scope, not a follow-up:**
+- **`spec_tools` moves too (TASK-4334, 2026-10-15)** — 20th module, created by TASK-4334 to
+  retire the Q1 residual (`/sdd-spec` design-research + intake helpers). Same mechanics as
+  `prune_intake`: `git mv` into `parrot/sdd/scripts/`, rewrite `prog="python -m scripts.sdd.spec_tools"`
+  and its one import `from scripts.sdd.reserve_ids import existing_feature_id` →
+  `from parrot.sdd.scripts.reserve_ids import existing_feature_id` (TASK-4085 owns that module),
+  alias shim left in `scripts/sdd/spec_tools.py`; `tests/sdd_scripts/test_spec_tools.py` keeps
+  importing the shim (same rule as the other suites). No `__file__`; `jsonschema` is a core dep.
 - **`prune_intake` moves too** (19th module; no `__file__` usage — verified; pydantic is a
   core dep). Same move + shim pattern as the rest of this task's modules.
 - **`install_hooks.render_block` retargets the rendered hook** to
@@ -98,6 +105,8 @@ uses `__file__`, and it does so to find a sibling package. That becomes package-
 | `scripts/sdd/insight.py` | MODIFY | Becomes alias shim with bare-interpreter fallback |
 | `scripts/sdd/install_hooks.py` | MODIFY | Becomes alias shim |
 | `scripts/sdd/prune_intake.py` | MODIFY | Becomes alias shim |
+| `packages/ai-parrot/src/parrot/sdd/scripts/spec_tools.py` | CREATE | `git mv` + `prog` + `reserve_ids` import rewrite (TASK-4334) |
+| `scripts/sdd/spec_tools.py` | MODIFY | Becomes alias shim (TASK-4334) |
 | `tests/sdd_scripts/test_install_hooks.py` | MODIFY | Update rendered-block content asserts to the new module path |
 | `packages/ai-parrot/tests/sdd/test_scripts_taxonomy_misc.py` | CREATE | Importability, `-m --help`, shim identity, kernel path, insight path-run |
 
@@ -197,6 +206,8 @@ if __name__ == "__main__": raise SystemExit(main())             # :148-149
     {"path": "scripts/sdd/install_hooks.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/src/parrot/sdd/scripts/prune_intake.py", "action": "CREATE"},
     {"path": "scripts/sdd/prune_intake.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/src/parrot/sdd/scripts/spec_tools.py", "action": "CREATE"},
+    {"path": "scripts/sdd/spec_tools.py", "action": "MODIFY"},
     {"path": "tests/sdd_scripts/test_install_hooks.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/sdd/test_scripts_taxonomy_misc.py", "action": "CREATE"}
   ],

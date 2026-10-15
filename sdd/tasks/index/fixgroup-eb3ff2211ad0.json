@@ -1,0 +1,27 @@
+{
+  "feature": "fixgroup-eb3ff2211ad0",
+  "feature_id": "FEAT-686",
+  "spec": "sdd/specs/fixgroup-eb3ff2211ad0.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "parallel_semantics": "exclusive",
+  "created_at": "2026-10-15T18:36:32+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4367",
+      "slug": "obscura-safe-load-waits",
+      "title": "Obscura-safe load waits and page reads in PlaywrightDriver",
+      "feature_id": "FEAT-686",
+      "feature": "fixgroup-eb3ff2211ad0",
+      "spec": "sdd/specs/fixgroup-eb3ff2211ad0.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-4367-obscura-safe-load-waits.md"
+    }
+  ]
+}

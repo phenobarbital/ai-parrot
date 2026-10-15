@@ -155,6 +155,27 @@ still apply when a unit has zero facings. Evidence quality reports source streng
 changes credit. A complete result can be noncompliant; uncertainty is inconclusive and never
 compliant.
 
+## Appearance rules
+
+`appearance` binds to a non-product zone and compares its closed-vocabulary visual attributes. The
+available attributes are `background_color`, `border_color`, `finish`, and `base_surface_color`; see
+[`contracts.py`](../../packages/ai-parrot-pipelines/src/parrot_pipelines/planogram/contracts.py) for
+their complete vocabulary. Configure attributes in `params`, for example:
+
+```json
+{"rule_id":"appearance:zone-base-1","kind":"appearance","target_id":"zone-base-1","mandatory":true,
+ "params":{"background_color":["white"],"border_color":["blue"],
+           "base_surface_color":["blue"],"finish":["matte"]}}
+```
+
+A scalar is also accepted as a one-item list. `unknown` and `not_visible` report that the model
+could not determine an attribute: they never fail a rule and cannot be configured as expectations.
+For each image, the evaluator selects the attribute value covering the most matched-zone area. A tie,
+or different winning values across images, leaves that attribute unassessed. The evidence prompt
+never contains configured values, so its observation remains neutral. Accept a list such as
+`["white", "grey"]` when lighting can shift colour. Keep `finish` in a separate non-mandatory
+binding until it has been measured on real photos.
+
 ## Informative rules
 
 `fact_tag_present` binds to one facing and must set `mandatory` to `false`. It passes when a fact

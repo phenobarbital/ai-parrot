@@ -1590,6 +1590,15 @@ def mcp() -> None:
     is_flag=True,
     help="Remote mode: scan locally but do not push to the remote server.",
 )
+@click.option(
+    "--storage-dir",
+    "storage_dir",
+    default=None,
+    help=(
+        "Absolute directory for the wiki plane. Overrides the repo's "
+        "storage_dir for THIS RUN ONLY and is never persisted."
+    ),
+)
 @remote_cli.remote_aware(proxied=True)
 def build(
     path_: str | None,
@@ -1603,6 +1612,7 @@ def build(
     graph_kinds: str,
     vault_mode: bool | None,
     no_push: bool,
+    storage_dir: str | None,
 ) -> None:
     """Generate (or refresh) the KB graph from the current repository.
 
@@ -1620,6 +1630,10 @@ def build(
     # config (never the environment-merged one) — an environment/overlay
     # value must never leak into the committed .parrot/wiki.json.
     base_config = load_project_config(root)
+    if storage_dir is not None:
+        if not Path(storage_dir).is_absolute():
+            raise click.ClickException("--storage-dir must be an absolute path")
+        config.storage_dir = storage_dir
     push_files: list[str] | None = None
     with wiki_write_lock(config.storage_path(root)) as _acquired:
         if not _acquired:
@@ -1755,9 +1769,10 @@ def build(
                     f"Could not connect to {config.backend} for wiki " f"{config.wiki_name!r}: {exc}"
                 ) from exc
             raise
-        save_project_config(root, base_config)
+        if storage_dir is None:
+            save_project_config(root, base_config)
 
-        if effective.overlay_path is None:
+        if storage_dir is None and effective.overlay_path is None:
             # Auto-generate the missing overlay for the active env, derived
             # from the (persisted) BASE config — so it stays consistent
             # with whatever `--name`/`--backend` just committed to
@@ -4751,6 +4766,7 @@ def sync_push_cmd(path_: str | None, target_env: str, dry_run: bool) -> None:
         click.echo(
             f"pushed: created={result.get('created', 0)} updated={result.get('updated', 0)} "
             f"skipped-older={result.get('skipped_older', 0)}"
+            + (f" rejected={len(result['rejected'])}" if result.get("rejected") else "")
         )
         return
 

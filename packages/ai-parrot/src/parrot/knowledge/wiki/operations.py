@@ -629,6 +629,8 @@ INGEST_MAX_BYTES = 1_048_576
 _INGEST_LOCK = asyncio.Lock()
 HASHES_MAX_IDS = 2000
 SYNC_PULL_MAX = 2000
+SYNC_PUSH_MAX_PAGES = 200
+SYNC_PUSH_MAX_BYTES = 1_048_576
 
 
 class SourceSlicePayload(BaseModel):
@@ -751,20 +753,14 @@ async def op_ingest_batch(store: BaseWikiStore, params: IngestBatchInput, **cont
     return OperationResult(data=report.model_dump())
 
 
-async def op_sync_push(store: BaseWikiStore, params: SyncPagesInput, **context: Any) -> OperationResult:
-    """wiki_sync_push — merge a client memory slice into the server plane (last-writer-wins).
-
-    Args:
-        store: The server wiki store.
-        params: The pushed pages and edges.
-        **context: ``wiki_name`` (``str``) — recorded as the report ``env``.
-    """
+async def _apply_sync_push(
+    store: BaseWikiStore,
+    params: SyncPagesInput,
+    wiki_name: str,
+) -> dict[str, Any]:
+    """Apply the validated pages and edges; the caller holds the writer lock when it has one."""
     from parrot.knowledge.wiki.sync import SyncReport, _merge_body, _record_from
 
-    wiki_name: str = context["wiki_name"]
-    # Apply last-writer-wins directly against the server store. A staging
-    # store is not used: it would re-stamp ``updated_at`` with "now" and
-    # defeat the comparison against the caller's own timestamps.
     report = SyncReport(direction="push", env=wiki_name, dry_run=False)
     concept_ids: set[str] = set()
     for record in params.pages:
@@ -794,7 +790,47 @@ async def op_sync_push(store: BaseWikiStore, params: SyncPagesInput, **context: 
     ]
     if to_write:
         await store.add_edges(to_write)
-    return OperationResult(data=report.model_dump())
+    return report.model_dump()
+
+
+async def op_sync_push(store: BaseWikiStore, params: SyncPagesInput, **context: Any) -> OperationResult:
+    """wiki_sync_push — merge a client memory slice into the server plane (last-writer-wins).
+
+    At most 200 pages and 1 MiB per call; the client chunks larger pushes.
+
+    Args:
+        store: The server wiki store.
+        params: The pushed pages and edges.
+        **context: ``wiki_name`` (``str``), optional ``root`` (``Path``) and
+            ``config`` (:class:`WikiProjectConfig`).
+    """
+    from parrot.knowledge.wiki.project import wiki_write_lock
+
+    wiki_name: str = context["wiki_name"]
+    root: Path | None = context.get("root")
+    config: WikiProjectConfig | None = context.get("config")
+
+    if len(params.pages) > SYNC_PUSH_MAX_PAGES:
+        return _error(f"at most {SYNC_PUSH_MAX_PAGES} pages per call; chunk the push")
+    payload = {"pages": [p.model_dump(mode="json") for p in params.pages], "edges": list(params.edges)}
+    if len(json.dumps(payload).encode()) > SYNC_PUSH_MAX_BYTES:
+        return _error("payload too large (max 1 MiB); chunk the push")
+
+    if root is None or config is None:
+        return OperationResult(data=await _apply_sync_push(store, params, wiki_name))
+    try:
+        async with _INGEST_LOCK:
+            cm = wiki_write_lock(config.storage_path(root), timeout=config.sqlite_busy_timeout)
+            acquired = await asyncio.to_thread(cm.__enter__)
+            try:
+                if not acquired:
+                    return _error("busy: wiki writer lock is held by another process")
+                data = await _apply_sync_push(store, params, wiki_name)
+            finally:
+                await asyncio.to_thread(cm.__exit__, None, None, None)
+    except WikiStoreBusy as exc:
+        return _error(f"busy: {exc}")
+    return OperationResult(data=data)
 
 
 async def op_sync_pull(store: BaseWikiStore, params: SyncPagesInput, **context: Any) -> OperationResult:

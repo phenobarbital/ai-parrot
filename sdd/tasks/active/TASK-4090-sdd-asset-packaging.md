@@ -884,6 +884,12 @@ publication findings, single-copy prompts). The last three tests import `parrot.
       both `load_subagent_definition` read `parrot/sdd/_assets/claude/agents/<name>.md`;
       `test_prompt_parity` no longer exists and the full `tests/flows/dev_loop` + `tests/flows/dev_flow`
       suites pass (C2).
+- [ ] Ledger `issue:ace18bef4e6e` ("sdd-worker prompt twins drifted: test_prompt_parity[sdd-worker]
+      fails on dev (and CI does not run it)") is closed with
+      `wikitoolkit ledger close issue:ace18bef4e6e --resolved-by task:TASK-4090 --reason "asset-sync CI
+      gate replaces test_prompt_parity"`. The drift itself was re-synced before this task (the `tools:`
+      line of the `_subagent_data/` copy). The issue stays open until this task's CI-gated
+      `check_asset_sync.py` replaces the parity test that CI never ran.
 - [ ] No new runtime dependency; `check_asset_sync.py` imports stdlib only.
 - [ ] `ruff check scripts/sdd/check_asset_sync.py tests/sdd_scripts/test_check_asset_sync.py packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py packages/ai-parrot/src/parrot/flows/dev_flow/_subagent_defs.py` passes.
 

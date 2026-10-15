@@ -332,36 +332,60 @@ class AnthropicClient(AbstractClient):
         """Request params ``model`` rejects (the Studio ``/catalog/model-params`` reports exactly these)."""
         return list(cls.SAMPLING_PARAMS) if cls._rejects_sampling_params(model) else []
 
+    _REJECTS_THINKING_DISABLED_PATTERN = re.compile(
+        r"^claude-(?:fable-|opus-5-5|sonnet-5-5)"
+    )
+
     @classmethod
     def _rejects_explicit_thinking_disabled(cls, model) -> bool:
         """Whether an explicit ``thinking={"type": "disabled"}`` returns a 400.
 
-        Only Fable 5 rejects it (Opus 4.7/4.8 still accept ``disabled``); for
-        Fable 5 the ``thinking`` param must be omitted entirely instead.
+        Fable 5/5.1, Opus 5.5, and Sonnet 5.5 always reject it.
+        Opus 5 and Haiku 5.5 reject it only at effort xhigh/max (not
+        guarded here — let the API error surface for that case).
+        Opus 4.7/4.8 still accept ``disabled``.
         """
-        return cls._model_str(model).startswith("claude-fable-5")
+        return bool(cls._REJECTS_THINKING_DISABLED_PATTERN.match(cls._model_str(model)))
 
     def _sanitize_payload_for_model(self, payload: dict) -> dict:
-        """Drop request params the target model rejects with a 400.
+        """Relocate or drop params the SDK / model rejects.
 
-        - Adaptive-only models (Fable 5, Opus 4.7/4.8): remove
-          ``temperature`` / ``top_p`` / ``top_k``.
-        - Fable 5: drop an explicit ``thinking={"type": "disabled"}`` (must be
-          omitted, not sent).
+        **SDK 1.x**: ``temperature`` / ``top_p`` / ``top_k`` are removed from
+        the ``messages.create()`` signature (``TypeError`` if passed as
+        kwargs).  They are always extracted from ``payload`` and, for models
+        that still accept them at the API level, forwarded via ``extra_body``
+        (merged into the JSON body as-is).
+
+        - Adaptive-only models (Fable 5/5.1, Opus 5.5/5/4.7/4.8, Sonnet 5.5/5,
+          Haiku 5.5): discard the sampling params entirely (API returns 400).
+        - Older models (Opus 4.6, Sonnet 4.6, Haiku 4.5, …): relay via
+          ``extra_body`` so the API still sees them.
+        - Fable 5/5.1: drop an explicit ``thinking={"type": "disabled"}``
+          (must be omitted, not sent).
 
         Applied just before every ``messages.create`` / ``messages.stream``
-        call so all payload-building paths are covered uniformly. Mutates and
+        call so all payload-building paths are covered uniformly.  Mutates and
         returns ``payload``.
         """
         model = payload.get("model", "")
-        if self._rejects_sampling_params(model):
-            for param in ("temperature", "top_p", "top_k"):
-                if payload.pop(param, None) is not None:
+        rejects = self._rejects_sampling_params(model)
+        sampling_overrides: dict = {}
+        for param in ("temperature", "top_p", "top_k"):
+            val = payload.pop(param, None)
+            if val is not None:
+                if rejects:
                     self.logger.debug(
-                        "AnthropicClient: dropped '%s' — %s is adaptive-only " "and rejects sampling params.",
+                        "AnthropicClient: dropped '%s' — %s is adaptive-only "
+                        "and rejects sampling params.",
                         param,
                         model,
                     )
+                else:
+                    sampling_overrides[param] = val
+        if sampling_overrides:
+            eb = payload.get("extra_body") or {}
+            eb.update(sampling_overrides)
+            payload["extra_body"] = eb
         thinking = payload.get("thinking")
         if (
             isinstance(thinking, dict)
@@ -370,7 +394,8 @@ class AnthropicClient(AbstractClient):
         ):
             payload.pop("thinking", None)
             self.logger.debug(
-                "AnthropicClient: dropped thinking={type:disabled} — %s " "requires the 'thinking' param omitted.",
+                "AnthropicClient: dropped thinking={type:disabled} — %s "
+                "requires the 'thinking' param omitted.",
                 model,
             )
         return payload
@@ -2058,7 +2083,7 @@ Provide your final answer with:
             if not self.client:
                 raise RuntimeError("AnthropicClient not initialised. Use async context manager.")
 
-            response = await self.client.messages.create(**kwargs)
+            response = await self._sdk_create(kwargs)
 
             # Extract text from response content blocks
             raw_text = ""
