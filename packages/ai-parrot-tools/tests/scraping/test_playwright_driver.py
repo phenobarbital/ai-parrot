@@ -3,6 +3,8 @@
 All Playwright API calls are mocked — no real browser is required.
 """
 
+import base64
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
@@ -712,6 +714,54 @@ class TestObscuraSafeWaitsAndReads:
         with pytest.raises(TimeoutError):
             await obscura_driver.get_text("h1")
         mock_page.evaluate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_screenshot_falls_back_to_cdp(self, obscura_driver, mock_page, mock_context, tmp_path):
+        """page.screenshot() goes through the utility world too; on Obscura a
+        non-timeout failure is retried as raw CDP Page.captureScreenshot."""
+        png = b"\x89PNG\r\n\x1a\n-fake"
+        mock_page.screenshot = AsyncMock(side_effect=RuntimeError("utilityScript.evaluate is not a function"))
+        session = AsyncMock()
+        session.send = AsyncMock(return_value={"data": base64.b64encode(png).decode()})
+        mock_context.new_cdp_session = AsyncMock(return_value=session)
+
+        out = tmp_path / "shot.png"
+        assert await obscura_driver.screenshot(str(out), full_page=True) == png
+        assert out.read_bytes() == png
+        mock_context.new_cdp_session.assert_awaited_once_with(mock_page)
+        session.send.assert_awaited_once_with(
+            "Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True}
+        )
+        session.detach.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_screenshot_cdp_detach_failure_does_not_mask_result(
+        self, obscura_driver, mock_page, mock_context, tmp_path
+    ):
+        png = b"bytes"
+        mock_page.screenshot = AsyncMock(side_effect=RuntimeError("broken"))
+        session = AsyncMock()
+        session.send = AsyncMock(return_value={"data": base64.b64encode(png).decode()})
+        session.detach = AsyncMock(side_effect=RuntimeError("already detached"))
+        mock_context.new_cdp_session = AsyncMock(return_value=session)
+
+        assert await obscura_driver.screenshot(str(tmp_path / "s.png")) == png
+
+    @pytest.mark.asyncio
+    async def test_screenshot_timeout_reraises(self, obscura_driver, mock_page, mock_context, tmp_path):
+        mock_page.screenshot = AsyncMock(side_effect=TimeoutError("slow"))
+        mock_context.new_cdp_session = AsyncMock()
+        with pytest.raises(TimeoutError):
+            await obscura_driver.screenshot(str(tmp_path / "s.png"))
+        mock_context.new_cdp_session.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_screenshot_playwright_engine_reraises(self, started_driver, mock_page, mock_context, tmp_path):
+        mock_page.screenshot = AsyncMock(side_effect=RuntimeError("boom"))
+        mock_context.new_cdp_session = AsyncMock()
+        with pytest.raises(RuntimeError):
+            await started_driver.screenshot(str(tmp_path / "s.png"))
+        mock_context.new_cdp_session.assert_not_called()
 
 
 # ── Lazy Import ──────────────────────────────────────────────────

@@ -6,9 +6,12 @@ interception, HAR recording, tracing, PDF export, and session persistence.
 """
 
 import asyncio
+import base64
 import logging
 import time
 from typing import Any, Callable, Dict, List, Optional, Sequence
+
+import aiofiles
 
 from .abstract import AbstractDriver
 from .playwright_config import PlaywrightConfig
@@ -267,8 +270,47 @@ class PlaywrightDriver(AbstractDriver):
         return [await el.inner_text() for el in elements]
 
     async def screenshot(self, path: str, full_page: bool = False) -> bytes:
-        """Take a screenshot and save to *path*."""
-        return await self._page.screenshot(path=path, full_page=full_page)
+        """Take a screenshot and save to *path*.
+
+        Playwright's ``page.screenshot()`` routes through its utility world,
+        which Obscura breaks after a renderer-initiated navigation, so a
+        non-timeout failure falls back to the raw CDP ``Page.captureScreenshot``
+        command (main-world only, unaffected by the broken utility script).
+        """
+        try:
+            return await self._page.screenshot(path=path, full_page=full_page)
+        except Exception as exc:
+            if not self._is_obscura or self._is_timeout(exc):
+                raise
+            self.logger.debug("screenshot() failed on Obscura (%s); using CDP", exc)
+            return await self._cdp_screenshot(path, full_page)
+
+    async def _cdp_screenshot(self, path: str, full_page: bool) -> bytes:
+        """Capture a PNG through raw CDP and write it to *path*.
+
+        Args:
+            path: Destination file for the PNG; falsy values skip the write.
+            full_page: Capture past the viewport (``captureBeyondViewport``).
+
+        Returns:
+            The raw PNG bytes.
+        """
+        session = await self._context.new_cdp_session(self._page)
+        try:
+            result = await session.send(
+                "Page.captureScreenshot",
+                {"format": "png", "captureBeyondViewport": full_page},
+            )
+        finally:
+            try:
+                await session.detach()
+            except Exception as exc:  # detaching must never mask the capture
+                self.logger.debug("CDP session detach failed: %s", exc)
+        data = base64.b64decode(result["data"])
+        if path:
+            async with aiofiles.open(path, "wb") as fh:
+                await fh.write(data)
+        return data
 
     async def type_text(
         self,
