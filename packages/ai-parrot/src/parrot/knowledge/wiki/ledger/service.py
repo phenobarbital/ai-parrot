@@ -20,6 +20,7 @@ from typing import Any
 
 from parrot.knowledge.wiki.ledger.events import (
     IssueKind,
+    IssueSeverity,
     IssueOpenedPayload,
     LedgerEvent,
     SEVERITY_ORDER,
@@ -104,6 +105,19 @@ def _scan_log_for_audit(log: LedgerLog, cursor_offset: int) -> tuple[dict[str, i
     log_path = Path(log.path)
     log_size = log_path.stat().st_size if log_path.exists() else 0
     return event_counts, total_events, applied_count, log_size
+
+
+def normalize_issue_id(raw: str) -> str:
+    """Return ``raw`` prefixed with ``issue:`` unless it already is; strips whitespace.
+
+    Args:
+        raw: An issue id as typed by a user or agent (``a9514c9232ad`` or ``issue:a9514c9232ad``).
+
+    Returns:
+        The canonical ``issue:<hex>`` id.
+    """
+    value = raw.strip()
+    return value if value.startswith("issue:") else f"issue:{value}"
 
 
 def _issue_dict(issue_id: str, state: dict[str, Any]) -> dict[str, Any]:
@@ -280,6 +294,7 @@ class LedgerService:
         statuses: Sequence[str] = ("open", "claimed"),
         *,
         kind: IssueKind | None = None,
+        severity: IssueSeverity | None = None,
         about_prefix: str | None = None,
     ) -> list[dict[str, Any]]:
         """List issues by status, optional kind and about-path prefix, severity first.
@@ -287,6 +302,7 @@ class LedgerService:
         Args:
             statuses: Issue statuses to include (default open and claimed).
             kind: Restrict to one issue kind when given.
+            severity: Restrict to one severity when given.
             about_prefix: Keep issues having any ``about`` entry starting with this prefix.
 
         Returns:
@@ -300,12 +316,58 @@ class LedgerService:
                 continue
             if kind is not None and state.get("kind") != kind:
                 continue
+            if severity is not None and state.get("severity") != severity:
+                continue
             row = _issue_dict(issue_id, state)
             if about_prefix is not None and not any(str(a).startswith(about_prefix) for a in row["about"]):
                 continue
             rows.append(row)
         rows.sort(key=lambda row: (SEVERITY_ORDER.get(row["severity"], len(SEVERITY_ORDER)), row["issue_id"]))
         return rows
+
+    async def get_issue(self, issue_id: str) -> dict[str, Any] | None:
+        """Return one issue's public dict plus its ``body``; ``None`` when unknown.
+
+        Args:
+            issue_id: Issue id, with or without the ``issue:`` prefix.
+
+        Returns:
+            The :func:`_issue_dict` shape with an added ``"body"`` key, or ``None``.
+        """
+        await self._sync_best_effort()
+        canonical = normalize_issue_id(issue_id)
+        state = await self._issue_state(canonical)
+        if state is None:
+            return None
+        row = _issue_dict(canonical, state)
+        row["body"] = state.get("body", "")
+        return row
+
+    async def issue_history(self, issue_id: str) -> list[dict[str, Any]]:
+        """Return the events whose ``subject`` is this issue, in log order.
+
+        Args:
+            issue_id: Issue id, with or without the ``issue:`` prefix.
+
+        Returns:
+            ``{"event_id", "kind", "actor", "ts", "payload"}`` dicts; ``[]`` for an unknown id.
+        """
+        canonical = normalize_issue_id(issue_id)
+
+        def _scan() -> list[dict[str, Any]]:
+            return [
+                {
+                    "event_id": event.event_id,
+                    "kind": event.kind,
+                    "actor": event.actor,
+                    "ts": event.ts,
+                    "payload": dict(event.payload),
+                }
+                for event, _offset in self.log.iter_events()
+                if event.subject == canonical
+            ]
+
+        return await asyncio.to_thread(_scan)
 
     async def claim(self, issue_id: str, actor: str) -> bool:
         """Delegate to :meth:`LedgerIndex.claim_issue`."""
