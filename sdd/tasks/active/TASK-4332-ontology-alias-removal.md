@@ -47,6 +47,25 @@ Spec §7 hard cuts. TASK-4328 left `OntologyGraphStore` and `execute_traversal` 
 | `packages/ai-parrot/tests/knowledge/graphindex/test_loader.py` | MODIFY | migrate |
 | `packages/ai-parrot/tests/knowledge/graphindex/test_persist.py` | MODIFY | migrate |
 | `packages/ai-parrot/tests/knowledge/graphindex/test_persist_commit_protocol.py` | MODIFY | migrate |
+| `packages/ai-parrot-tools/src/parrot_tools/contracts/retrieval.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot-tools/src/parrot_tools/legal/boe/datasource.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot-tools/src/parrot_tools/legal/boe/queries.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot-tools/src/parrot_tools/legal/boe/sync.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot-tools/src/parrot_tools/legal/ids.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot-tools/src/parrot_tools/legal/librarian/suppression.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot-tools/tests/legal/conftest.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/contracts/graph_loader.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/__init__.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/assemble.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/graphindex/persist_arango.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/ontology/concept_catalog/reconcile.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/ontology/concept_catalog/worker.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/ontology/contracts.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/ontology/refresh.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/arango_store.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/tests/knowledge/ontology/test_arango_store_typed.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/tests/knowledge/test_degradation_chain.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
+| `packages/ai-parrot/tests/knowledge/test_ontology_mixin.py` | MODIFY | rename OntologyGraphStore -> ArangoOntologyGraphStore (amended: caller of the deleted alias) |
 
 ---
 
