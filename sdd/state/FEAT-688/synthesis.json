@@ -1,5 +1,5 @@
 {
-  "feat_id": "FEAT-672",
+  "feat_id": "FEAT-688",
   "mode": "enrichment",
   "summary_oneline": "Raise the google-genai floor and refresh GoogleModel for Gemini 4.x (Argon), retiring deprecated ids",
   "overall_confidence": "medium",

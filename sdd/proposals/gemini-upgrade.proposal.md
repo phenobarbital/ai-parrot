@@ -1,33 +1,34 @@
 ---
-id: FEAT-672
+id: FEAT-688
 title: Raise the google-genai floor and refresh GoogleModel for Gemini 4.x (Argon)
 slug: gemini-upgrade
 type: feature
 mode: enrichment
-status: discussion
+status: accepted
 source:
   kind: inline
   jira_key: null
   jira_url: null
   fetched_at: 2026-10-15
   summary_oneline: "Subir google-genai e incorporar los modelos Gemini 4.x (Argon) en GoogleModel, retirando los deprecated"
-overall_confidence: medium
+overall_confidence: high
 base_branch: dev
 projects: [ai-parrot-client-google, ai-parrot-embeddings, ai-parrot-server, ai-parrot]
 tags: [google-genai, model-catalog, gemini, llm-clients, deprecation]
-research_state: sdd/state/FEAT-672/
+research_state: sdd/state/FEAT-688/
 created: 2026-10-15
 updated: 2026-10-15
 ---
 
-# FEAT-672 — Raise the google-genai floor and refresh GoogleModel for Gemini 4.x (Argon)
+# FEAT-688 — Raise the google-genai floor and refresh GoogleModel for Gemini 4.x (Argon)
 
 > **Mode**: enrichment
-> **Confidence**: medium
+> **Confidence**: high
 > **Source**: `inline`
-> **Audit**: [`sdd/state/FEAT-672/`](../state/FEAT-672/)
-> **FEAT-ID is PROVISIONAL** — taken from `.id_ledger.json` (`next_feature_id: 672`)
-> without reserving it. `/sdd-spec` allocates the real id via `reserve_ids.py`.
+> **Audit**: [`sdd/state/FEAT-688/`](../state/FEAT-688/)
+> **FEAT-ID reserved**: FEAT-688 via `reserve_ids.py`. This proposal was first drafted
+> under a provisional `FEAT-672`, which was meanwhile reserved upstream by
+> `github-reviewer-local-repo-wiki`. Spec: `sdd/specs/gemini-upgrade.spec.md`.
 
 ---
 
@@ -59,14 +60,14 @@ aliases (53 names, 34 distinct values), and it is published verbatim over HTTP b
 `handlers/google_generation.py`. The real shape of this work is therefore the same
 three-part footprint the two previous refreshes used — **enum + prefix whitelist +
 tests** — plus a dependency-floor realignment across two divergent pins. What is
-missing is not analysis but data: the external query for the actual Argon ids and
-the current SDK release could not run in this session.
+missing at proposal time was data, not analysis; it was later measured against the
+live Gemini API, PyPI and raw REST probes (F011) and folded into §3–§5.
 
 ---
 
 ## 2. Codebase Findings
 
-> All entries are grounded in `sdd/state/FEAT-672/findings/`. No fabricated paths.
+> All entries are grounded in `sdd/state/FEAT-688/findings/`. No fabricated paths.
 
 ### 2.1 Localization
 
@@ -170,15 +171,18 @@ pure-deletion policy. *Evidence*: F007
 
 ### What's New
 
-- **Gemini 4.x (Argon) members in `GoogleModel`** — ids pending (§5 U1).
-- **New prefix entries** in `_default_combined_call_prefixes`, and in
-  `_requires_thinking` / `_is_gemini3_model` if the family is thinking-only
-  or must be treated as "3.x-or-later" (§5 U3).
+- **`GoogleModel.GEMINI_4_ARGON = "gemini-4-argon"`** — the only 4.x id upstream
+  publishes (§5 U1).
+- **`"gemini-4-argon"` in `_default_combined_call_prefixes`**, and
+  `_is_gemini3_model` widened to `_is_modern_gemini_model` (3.x or 4.x). Argon is
+  **not** added to `_requires_thinking` (§5 U3).
 
 ### What Changes
 
-- **`models.py`::`GoogleModel`** — add the 4.x family; delete the deprecated members
-  outright (operator decision, §5 U2). *Evidence*: F001, F002
+- **`models.py`::`GoogleModel`** — add Argon; delete outright (operator decision, §5 U2)
+  the four ids no longer served: `gemini-3.7-pro`, `gemini-3.7-flash-thinking`,
+  `gemini-3.7-flash-lite`, `gemini-deep-research-preview-04-2026` (five member names).
+  *Evidence*: F001, F002, F011
 - **`client.py`::`_default_combined_call_prefixes`** — extend so 4.x takes the
   single-call path instead of the reformat round-trip. *Evidence*: F004
 - **`client.py`::`_is_gemini3_model` / `_requires_thinking`** — the generation gate
@@ -211,7 +215,7 @@ pure-deletion policy. *Evidence*: F007
 - **The three-part footprint** from `b4427bb66`: enum member + prefix-whitelist entry
   + test assertion. Nothing else was needed to add a model. *Evidence*: F007
 - **Floor raises, never ceilings** — all four existing pins are `>=`. *Evidence*: F003
-- **Literal fallbacks in core** — `conf.py:446-454` deliberately holds the string
+- **Literal fallbacks in core** — `conf.py:454-456` deliberately holds the string
   `"gemini-flash-latest"` rather than importing the enum; keep core enum-free.
   *Evidence*: F006
 
@@ -232,9 +236,12 @@ pure-deletion policy. *Evidence*: F007
   member's `.name` round-trips. *Evidence*: F002
 - **Public catalogue change**: `/models` output shifts. *Mitigation*: note it in the
   spec as an intended API change. *Evidence*: F006
-- **SDK floor vs `google-cloud-aiplatform`**: raising past a certain point drags a
-  newer aiplatform. *Mitigation*: resolve with `uv` before committing the pin.
-  *Evidence*: F003
+- **SDK floor**: `google-genai` 2.24.0 and 2.31.0 declare identical runtime
+  dependencies and none on `google-cloud-storage`/`google-cloud-aiplatform`, so the
+  floor raise cannot move storage. The exact number is fixed by measurement in the spec's
+  M3 (install → introspect → declare). *Evidence*: F003, F011
+- **Dead prefixes**: `gemini-3.7-pro` sits in `_default_combined_call_prefixes` and in
+  `_requires_thinking`; it must leave both gates in the same commit. *Evidence*: F004, F011
 
 ---
 
@@ -250,16 +257,15 @@ pure-deletion policy. *Evidence*: F007
 | C6 | The enum is published over HTTP and pinned by 3 test modules | F006 | high | direct read of handler and tests |
 | C7 | The precedent footprint is enum + whitelist + tests | F007 | high | two commits with diffstats |
 | C8 | 12 members are referenced by name; one is an alias | F010 | high | name-level grep across three `src/` trees |
-| C9 | A `gemini-4` id inherits the 1M compaction window | F009 | medium | single prefix entry read; depends on Argon's real window |
-| C10 | **Which ids to ADD is unknown** | F008 | low | external research unavailable this session |
-| C11 | **Which ids to RETIRE is unknown** | F008 | low | same |
-| C12 | **The target `google-genai` version is unknown** | F008 | low | same |
+| C9 | A `gemini-4` id inherits the 1M compaction window, and it is exact | F009, F011 | high | live `inputTokenLimit: 1048576` |
+| C10 | The id to add is `gemini-4-argon` (the only 4.x id served) | F011 | high | live `models.list`, 2026-10-15 |
+| C11 | The ids to retire are 3.7-pro / 3.7-flash-thinking / 3.7-flash-lite / gemini-deep-research-preview-04-2026 | F011 | high | live `models.list` diff against the 34 enum values |
+| C12 | The floor must be a version actually exercised; candidate 2.31.0, fallback 2.24.0 | F003, F011 | medium | PyPI metadata verified; exact number fixed by the spec's M3 procedure |
 
-Distribution: **8** high, **1** medium, **3** low.
+Distribution: **11** high, **1** medium, **0** low.
 
-The three `low` claims are exactly the ones the title of this feature promises, so
-overall confidence is capped at **medium** despite a high-confidence localization:
-we know precisely *where* and *how*, and not yet *what*.
+F008 (external research failed) is superseded by F011: the gap was closed by measuring
+against the live Gemini API, PyPI metadata and raw REST probes rather than by documentation.
 
 ---
 
@@ -273,7 +279,7 @@ we know precisely *where* and *how*, and not yet *what*.
   *Consequences accepted*: `/models` stops listing them, a retired id raises an opaque
   `ValueError`, Google keeps reporting `deprecated: []`, and any of the 12 names in
   F010 that is deleted must have its call site edited in the same commit.
-  *Resolves claims*: C11 (policy only — the list itself is still U1)
+  *Resolves claims*: C11 (policy)
 
 - [x] **U4 — Do the client defaults move to 4.x?** — *Resolved*: **no, stay on 3.x**.
   `_default_model`, `_fallback_model`, `_lightweight_model` and
@@ -284,45 +290,32 @@ we know precisely *where* and *how*, and not yet *what*.
   `GoogleModel`** this round. Vertex stays on 3.x pending availability confirmation.
   *Resolves claims*: C9 (scope bound)
 
-### Unresolved (defer to spec)
-
-- [ ] **U1 — What are the exact Gemini 4.x (Argon) model ids, which currently-listed
+- [x] **U1 — What are the exact Gemini 4.x (Argon) model ids, which currently-listed
   ids are deprecated, and what `google-genai` version is the new floor?**
-  *Owner*: operator · *Blocks claims*: C10, C11, C12
-  *Why it cannot be answered here*: `WebSearch` and `WebFetch` both failed in this
-  session (`claude-haiku-4-5@20251001` unavailable), and the catalogue already
-  contains `gemini-3.8-flash` and `gemini-deep-research-preview-04-2026` — i.e. it
-  is at or beyond the assistant's knowledge cutoff, so training data is not a
-  substitute. *Plausible sources*: Google's model docs page · `genai.list_models()`
-  against a live key · the SDK changelog.
+  *Resolved by measurement (F011)*: the only 4.x id is `gemini-4-argon`; the dead ids are
+  `gemini-3.7-pro`, `gemini-3.7-flash-thinking`, `gemini-3.7-flash-lite` and
+  `gemini-deep-research-preview-04-2026`. The floor is fixed procedurally in the spec (M3):
+  candidate `2.31.0`, fallback `2.24.0`, declared only once exercised.
+  *Resolves claims*: C10, C11, C12
 
-- [ ] **U3 — Does the 4.x family go into `_default_combined_call_prefixes`, and is any
-  4.x Pro thinking-only?** *Owner*: operator / spec · *Blocks claims*: C3
-  *Plausible answers*: a) mirror 3.x — Pro is thinking-only, all of them whitelisted ·
-  b) whitelist only after upstream evaluation, as the `_default_combined_call_prefixes`
-  docstring describes for 3.x · c) Argon changes the contract and needs a new gate.
+- [x] **U3 — Does the 4.x family go into `_default_combined_call_prefixes`, and is any
+  4.x model thinking-only?** *Resolved by REST probe (F011)*: Argon accepts `tools` +
+  `responseSchema` in one call → whitelisted. It accepts `thinkingBudget: 0` → **not**
+  thinking-only, so it stays out of `_requires_thinking`. `thinking_level` exists already
+  in the installed SDK but is not required.
+  *Resolves claims*: C3
+
+### Unresolved (carried into the spec §8)
+
+- Exact floor number (spec Q1), the ~28 live ids missing from the enum (Q2),
+  `VertexAIModel.GEMINI_3_7_PRO` (Q3), `IMAGEN_*` availability (Q4).
 
 ---
 
 ## 6. Recommended Next Step
 
-**`/sdd-spec FEAT-672`** — *Rationale*: localization is high-confidence (C1–C8), the
-footprint is a known shape executed twice before (C7), and three of the five design
-questions are already resolved. What remains is one operator data drop (U1) and one
-capability decision (U3), both of which belong in a spec rather than another
-exploration round. There is no architectural fork to brainstorm.
-
-**Do not start the spec before U1 is answered** — the task is defined by the model
-list, and a spec written without it would invent ids.
-
-### Alternatives
-
-- **`/sdd-task FEAT-672`** — only if U1 and U3 arrive together and the change really
-  is "add N members + N prefixes + N assertions". The `b4427bb66` precedent shows
-  that shape is a 3-file commit; the `f1dda8ffd` precedent shows it usually is not.
-- **`/sdd-brainstorm FEAT-672`** — only if U3 turns out to be option (c) and Argon
-  changes the capability contract, which would make the prefix-gate design itself
-  the subject.
+**`/sdd-task sdd/specs/gemini-upgrade.spec.md`** — the spec is approved; every design
+question that blocks implementation is resolved.
 
 ---
 
@@ -330,11 +323,11 @@ list, and a spec written without it would invent ids.
 
 | Artifact | Path |
 |----------|------|
-| State checkpoints | `sdd/state/FEAT-672/state.json` |
-| Source (raw) | `sdd/state/FEAT-672/source.md` |
-| Research plan | `sdd/state/FEAT-672/research_plan.json` |
-| Findings (digests) | `sdd/state/FEAT-672/findings/F001-*.md` … `F010-*.md` |
-| Synthesis (JSON) | `sdd/state/FEAT-672/synthesis.json` |
+| State checkpoints | `sdd/state/FEAT-688/state.json` |
+| Source (raw) | `sdd/state/FEAT-688/source.md` |
+| Research plan | `sdd/state/FEAT-688/research_plan.json` |
+| Findings (digests) | `sdd/state/FEAT-688/findings/F001-*.md` … `F010-*.md` |
+| Synthesis (JSON) | `sdd/state/FEAT-688/synthesis.json` |
 
 **Budget consumed**:
 - Files read: 9 / 40

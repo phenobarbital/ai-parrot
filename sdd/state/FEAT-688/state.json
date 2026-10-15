@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "feat_id": "FEAT-672",
-  "feat_id_provisional": true,
+  "feat_id": "FEAT-688",
+  "feat_id_provisional": false,
   "phase": "committed",
   "mode": "enrichment",
   "started_at": "2026-10-15T17:33:00Z",
@@ -13,7 +13,7 @@
     "kind": "inline",
     "jira_key": null,
     "summary_oneline": "Subir google-genai e incorporar los modelos Gemini 4.x (Argon) en GoogleModel, retirando los deprecated",
-    "path": "sdd/state/FEAT-672/source.md"
+    "path": "sdd/state/FEAT-688/source.md"
   },
   "budget": {
     "profile": "default",
@@ -73,7 +73,7 @@
   },
   "resume_hint": {
     "next_phase": "committed",
-    "next_action": "Answer U1 (Argon model ids + SDK floor) and U3 (prefix whitelist), then /sdd-spec FEAT-672"
+    "next_action": "Answer U1 (Argon model ids + SDK floor) and U3 (prefix whitelist), then /sdd-spec FEAT-688"
   },
   "errors": []
 }
