@@ -31,6 +31,7 @@ from parrot.knowledge.graphindex.schema import (
     UniversalEdge,
     UniversalNode,
 )
+from parrot.knowledge.graphindex.protocols import edge_key
 from parrot.knowledge.ontology.schema import TenantContext
 
 logger = logging.getLogger(__name__)
@@ -132,7 +133,7 @@ def _assertion_json(item: UniversalNode | UniversalEdge) -> str | None:
 
 def _edge_key(source_id: str, target_id: str, kind: str) -> str:
     """Compose the canonical ``item_key`` string for an edge."""
-    return f"{source_id}|{target_id}|{kind}"
+    return edge_key(source_id, target_id, kind)
 
 
 class SQLitePersistence:
@@ -460,6 +461,24 @@ class SQLitePersistence:
                 "nodes_replaced": old_node_count,
                 "edges_replaced": len(edges),
             }
+
+    async def close(self) -> None:
+        """No-op: connections are opened per call."""
+
+    async def file_hashes(self, ctx: TenantContext) -> list[tuple[str, str]]:
+        """Return every ``(source_uri, sha1)`` from the ``files`` table, sorted by ``source_uri``.
+
+        Args:
+            ctx: Tenant context.
+
+        Returns:
+            The sorted pairs; empty when the tenant database does not exist yet.
+        """
+        if not self._db_path(ctx).exists():
+            return []
+        async with self._connect(ctx) as conn:
+            async with conn.execute("SELECT source_uri, sha1 FROM files ORDER BY source_uri") as cur:
+                return [(row["source_uri"], row["sha1"]) for row in await cur.fetchall()]
 
     async def is_stale(
         self,
