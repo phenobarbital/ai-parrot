@@ -2,12 +2,12 @@
 
 Covers FEAT-158 Module 3 acceptance criteria.
 """
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from parrot.knowledge.ontology.authorization import AuthorizationChecker
 from parrot.knowledge.ontology.schema import AuthorizationRule, AuthorizationSpec
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -51,9 +51,7 @@ class TestAuthorizationChecker:
         assert reason is None
 
     @pytest.mark.asyncio
-    async def test_target_is_self_denies_when_different(
-        self, checker: AuthorizationChecker
-    ) -> None:
+    async def test_target_is_self_denies_when_different(self, checker: AuthorizationChecker) -> None:
         """target_is_self denies when user_id does not match any entity."""
         spec = AuthorizationSpec(rules=[AuthorizationRule(rule="target_is_self")])
         allowed, reason = await checker.check(
@@ -71,9 +69,7 @@ class TestAuthorizationChecker:
     ) -> None:
         """Management-chain traversal reaching the target allows access."""
         graph_store.is_reachable.return_value = True
-        spec = AuthorizationSpec(
-            rules=[AuthorizationRule(rule="target_in_management_chain")]
-        )
+        spec = AuthorizationSpec(rules=[AuthorizationRule(rule="target_in_management_chain")])
         allowed, _ = await checker.check(
             spec,
             user_context={"user_id": "Employee/mgr"},
@@ -88,9 +84,7 @@ class TestAuthorizationChecker:
     ) -> None:
         """An unreachable target at the depth-10 limit is denied."""
         graph_store.is_reachable.return_value = False
-        spec = AuthorizationSpec(
-            rules=[AuthorizationRule(rule="target_in_management_chain")]
-        )
+        spec = AuthorizationSpec(rules=[AuthorizationRule(rule="target_in_management_chain")])
         allowed, reason = await checker.check(
             spec,
             user_context={"user_id": "Employee/mgr"},
@@ -103,9 +97,7 @@ class TestAuthorizationChecker:
     @pytest.mark.asyncio
     async def test_has_role_allows(self, checker: AuthorizationChecker) -> None:
         """User with required role is granted access."""
-        spec = AuthorizationSpec(
-            rules=[AuthorizationRule(rule="has_role", role="hr_manager")]
-        )
+        spec = AuthorizationSpec(rules=[AuthorizationRule(rule="has_role", role="hr_manager")])
         allowed, _ = await checker.check(
             spec,
             user_context={"user_id": "u1", "roles": ["employee", "hr_manager"]},
@@ -115,13 +107,9 @@ class TestAuthorizationChecker:
         assert allowed
 
     @pytest.mark.asyncio
-    async def test_has_role_denies_when_role_missing(
-        self, checker: AuthorizationChecker
-    ) -> None:
+    async def test_has_role_denies_when_role_missing(self, checker: AuthorizationChecker) -> None:
         """User without required role is denied."""
-        spec = AuthorizationSpec(
-            rules=[AuthorizationRule(rule="has_role", role="hr_manager")]
-        )
+        spec = AuthorizationSpec(rules=[AuthorizationRule(rule="has_role", role="hr_manager")])
         allowed, _ = await checker.check(
             spec,
             user_context={"user_id": "u1", "roles": ["employee"]},
@@ -131,9 +119,7 @@ class TestAuthorizationChecker:
         assert not allowed
 
     @pytest.mark.asyncio
-    async def test_always_allows_unconditionally(
-        self, checker: AuthorizationChecker
-    ) -> None:
+    async def test_always_allows_unconditionally(self, checker: AuthorizationChecker) -> None:
         """always rule passes without any resolved entities or roles."""
         spec = AuthorizationSpec(rules=[AuthorizationRule(rule="always")])
         allowed, reason = await checker.check(
@@ -146,9 +132,7 @@ class TestAuthorizationChecker:
         assert reason is None
 
     @pytest.mark.asyncio
-    async def test_or_combine_second_rule_passes(
-        self, checker: AuthorizationChecker
-    ) -> None:
+    async def test_or_combine_second_rule_passes(self, checker: AuthorizationChecker) -> None:
         """First rule denies, second rule allows → overall allowed."""
         spec = AuthorizationSpec(
             rules=[
@@ -165,9 +149,7 @@ class TestAuthorizationChecker:
         assert allowed
 
     @pytest.mark.asyncio
-    async def test_default_deny_when_no_rules_match(
-        self, checker: AuthorizationChecker
-    ) -> None:
+    async def test_default_deny_when_no_rules_match(self, checker: AuthorizationChecker) -> None:
         """Default-deny behaviour: no matching rule → denied with reason."""
         spec = AuthorizationSpec(rules=[AuthorizationRule(rule="target_is_self")])
         allowed, reason = await checker.check(
@@ -180,9 +162,7 @@ class TestAuthorizationChecker:
         assert reason  # not None and not empty
 
     @pytest.mark.asyncio
-    async def test_default_deny_false_allows_unmatched(
-        self, checker: AuthorizationChecker
-    ) -> None:
+    async def test_default_deny_false_allows_unmatched(self, checker: AuthorizationChecker) -> None:
         """default_deny=False: unmatched rules → allowed."""
         spec = AuthorizationSpec(
             rules=[AuthorizationRule(rule="target_is_self")],
@@ -199,9 +179,7 @@ class TestAuthorizationChecker:
     @pytest.mark.asyncio
     async def test_missing_user_id_denies(self, checker: AuthorizationChecker) -> None:
         """All non-always rules deny when user_id is absent."""
-        spec = AuthorizationSpec(
-            rules=[AuthorizationRule(rule="target_is_self")]
-        )
+        spec = AuthorizationSpec(rules=[AuthorizationRule(rule="target_is_self")])
         allowed, reason = await checker.check(
             spec,
             user_context={},
@@ -212,14 +190,10 @@ class TestAuthorizationChecker:
         assert "user_id" in (reason or "").lower()
 
     @pytest.mark.asyncio
-    async def test_same_department_allows(
-        self, checker: AuthorizationChecker, graph_store: MagicMock
-    ) -> None:
+    async def test_same_department_allows(self, checker: AuthorizationChecker, graph_store: MagicMock) -> None:
         """same_department allows when entity's department matches user's."""
         graph_store.get_document_by_id.return_value = {"department": "Engineering"}
-        spec = AuthorizationSpec(
-            rules=[AuthorizationRule(rule="same_department")]
-        )
+        spec = AuthorizationSpec(rules=[AuthorizationRule(rule="same_department")])
         allowed, _ = await checker.check(
             spec,
             user_context={"user_id": "u1", "department": "Engineering"},
@@ -234,9 +208,7 @@ class TestAuthorizationChecker:
     ) -> None:
         """same_department denies when departments differ."""
         graph_store.get_document_by_id.return_value = {"department": "Sales"}
-        spec = AuthorizationSpec(
-            rules=[AuthorizationRule(rule="same_department")]
-        )
+        spec = AuthorizationSpec(rules=[AuthorizationRule(rule="same_department")])
         allowed, _ = await checker.check(
             spec,
             user_context={"user_id": "u1", "department": "Engineering"},

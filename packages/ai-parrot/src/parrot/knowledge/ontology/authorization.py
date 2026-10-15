@@ -31,6 +31,7 @@ Usage::
         tenant_id="acme",
     )
 """
+
 from __future__ import annotations
 
 import logging
@@ -123,9 +124,7 @@ class AuthorizationChecker:
 
         for rule in spec.rules:
             if rule.rule == "always":
-                self.logger.info(
-                    "auth check: allow rule=always user=%s", user_id
-                )
+                self.logger.info("auth check: allow rule=always user=%s", user_id)
                 return True, None
 
             if not user_id:
@@ -135,13 +134,9 @@ class AuthorizationChecker:
                 )
                 return False, "missing user_id in permission_context"
 
-            allowed = await self._evaluate_rule(
-                rule, user_id, user_context, resolved_entities, tenant_id
-            )
+            allowed = await self._evaluate_rule(rule, user_id, user_context, resolved_entities, tenant_id)
             if allowed:
-                self.logger.info(
-                    "auth check: allow rule=%s user=%s", rule.rule, user_id
-                )
+                self.logger.info("auth check: allow rule=%s user=%s", rule.rule, user_id)
                 return True, None
 
         # No rule matched
@@ -154,7 +149,8 @@ class AuthorizationChecker:
 
         self.logger.info(
             "auth check: deny (default_deny) user=%s resolved=%s",
-            user_id, resolved_entities,
+            user_id,
+            resolved_entities,
         )
         return False, "no authorization rule matched"
 
@@ -186,17 +182,13 @@ class AuthorizationChecker:
             return self._check_target_is_self(user_id, resolved_entities)
 
         if rule.rule == "target_in_management_chain":
-            return await self._check_management_chain(
-                user_id, resolved_entities, tenant_id
-            )
+            return await self._check_management_chain(user_id, resolved_entities, tenant_id)
 
         if rule.rule == "has_role":
             return self._check_has_role(rule.role or "", user_context)
 
         if rule.rule == "same_department":
-            return await self._check_same_department(
-                user_context, resolved_entities, tenant_id
-            )
+            return await self._check_same_department(user_context, resolved_entities, tenant_id)
 
         # "always" is handled in the outer loop before reaching here
         return False  # pragma: no cover
@@ -257,7 +249,9 @@ class AuthorizationChecker:
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
                     "management-chain traversal failed for user=%s target=%s: %s",
-                    user_id, target_id, exc,
+                    user_id,
+                    target_id,
+                    exc,
                 )
 
         return False
@@ -314,7 +308,8 @@ class AuthorizationChecker:
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
                     "same-department lookup failed for target=%s: %s",
-                    target_id, exc,
+                    target_id,
+                    exc,
                 )
 
         return False

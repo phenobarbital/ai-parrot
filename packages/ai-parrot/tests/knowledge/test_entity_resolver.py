@@ -2,6 +2,7 @@
 
 Covers FEAT-158 Module 2 acceptance criteria.
 """
+
 from datetime import datetime, timezone
 
 import pytest
@@ -19,7 +20,6 @@ from parrot.knowledge.ontology.schema import (
     PropertyDef,
     TraversalPattern,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -84,12 +84,8 @@ class TestEntityResolver:
     @pytest.mark.asyncio
     async def test_exact_match_no_llm(self, resolver, graph_store):
         """Unambiguous name resolves to a single _id without LLM call."""
-        graph_store.search_by_name.return_value = [
-            {"_id": "Employee/123", "name": "Jesús Lara"}
-        ]
-        pattern = _pattern_with_rule(
-            EntityExtractionRule(type="Employee", resolver="fuzzy_name_match")
-        )
+        graph_store.search_by_name.return_value = [{"_id": "Employee/123", "name": "Jesús Lara"}]
+        pattern = _pattern_with_rule(EntityExtractionRule(type="Employee", resolver="fuzzy_name_match"))
         out = await resolver.extract_and_resolve(
             pattern,
             "el equipo de Jesús",

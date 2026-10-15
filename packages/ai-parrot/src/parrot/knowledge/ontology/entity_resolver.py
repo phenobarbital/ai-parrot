@@ -15,6 +15,7 @@ raised so the Mixin can translate them to appropriate ``ContextEnvelope`` states
 **Default-deny on ambiguity**: when ``ambiguity_strategy=ask_user`` or ``fail``,
 multiple candidates always raise ``EntityAmbiguityError``.
 """
+
 from __future__ import annotations
 
 import json
@@ -59,8 +60,7 @@ class EntityAmbiguityError(Exception):
         candidates: list[dict[str, Any]],
     ) -> None:
         super().__init__(
-            f"Ambiguous entity for rule '{rule_name}': "
-            f"mention='{mention}', {len(candidates)} candidates"
+            f"Ambiguous entity for rule '{rule_name}': " f"mention='{mention}', {len(candidates)} candidates"
         )
         self.rule_name = rule_name
         self.mention = mention
@@ -80,9 +80,7 @@ class EntityNotFoundError(Exception):
         rule_name: str,
         mention: str | None,
     ) -> None:
-        super().__init__(
-            f"Entity not found for rule '{rule_name}': mention='{mention}'"
-        )
+        super().__init__(f"Entity not found for rule '{rule_name}': mention='{mention}'")
         self.rule_name = rule_name
         self.mention = mention
 
@@ -191,7 +189,8 @@ class EntityResolver:
                     raise EntityNotFoundError(rule_name=rule_name, mention=mention)
                 self.logger.debug(
                     "No candidates for optional rule '%s' (mention='%s'); skipping.",
-                    rule_name, mention,
+                    rule_name,
+                    mention,
                 )
                 continue
 
@@ -227,7 +226,7 @@ class EntityResolver:
             Extracted mention string, or ``None`` if nothing found.
         """
         residual = query
-        for trigger in (pattern.trigger_intents or []):
+        for trigger in pattern.trigger_intents or []:
             pattern_re = re.compile(re.escape(trigger), re.IGNORECASE)
             residual = pattern_re.sub("", residual).strip()
 
@@ -271,9 +270,7 @@ class EntityResolver:
             NotImplementedError: For ``hybrid_concept_match``.
         """
         if rule.resolver == "hybrid_concept_match":
-            concept_ids = await self._resolve_hybrid_concept_match(
-                rule, mention, user_context, tenant_id
-            )
+            concept_ids = await self._resolve_hybrid_concept_match(rule, mention, user_context, tenant_id)
             # Return list[str] as list of single-element dicts to match the
             # existing candidate contract ({_id: ...}), then let _pick handle it.
             # We override _pick for hybrid by returning the first ID directly
@@ -329,8 +326,7 @@ class EntityResolver:
                 return {"department": dept}
             else:
                 self.logger.debug(
-                    "scope=same_department but user_context has no 'department'; "
-                    "skipping scope filter."
+                    "scope=same_department but user_context has no 'department'; " "skipping scope filter."
                 )
         return {}
 
@@ -448,9 +444,7 @@ class EntityResolver:
                     return [candidate]
         except Exception as exc:
             self.logger.warning(
-                "LLM-assisted entity resolution failed for '%s': %s; "
-                "falling back to full shortlist.",
-                mention, exc
+                "LLM-assisted entity resolution failed for '%s': %s; " "falling back to full shortlist.", mention, exc
             )
 
         return candidates
@@ -554,7 +548,9 @@ class EntityResolver:
         if cache_key in self._hybrid_cache:
             self.logger.debug(
                 "hybrid_concept_match cache hit: mention='%s' version='%s' tenant='%s'",
-                mention, ontology_version, tenant_id,
+                mention,
+                ontology_version,
+                tenant_id,
             )
             return self._hybrid_cache[cache_key]
 
@@ -562,7 +558,9 @@ class EntityResolver:
         terms = self._split_mentions(mention)
         self.logger.debug(
             "hybrid_concept_match: mention='%s' → terms=%r tenant='%s'",
-            mention, terms, tenant_id,
+            mention,
+            terms,
+            tenant_id,
         )
 
         all_ids: list[str] = []
@@ -579,7 +577,8 @@ class EntityResolver:
         if len(all_ids) > 5:
             self.logger.debug(
                 "hybrid_concept_match: capping %d concepts to 5 for mention='%s'",
-                len(all_ids), mention,
+                len(all_ids),
+                mention,
             )
             all_ids = all_ids[:5]
 
@@ -653,16 +652,15 @@ class EntityResolver:
         if self._concept_instances:
             for concept in self._concept_instances:
                 label: str = self._get_concept_attr(concept, "label", "") or ""
-                synonyms: list[str] = list(
-                    self._get_concept_attr(concept, "synonyms", []) or []
-                )
+                synonyms: list[str] = list(self._get_concept_attr(concept, "synonyms", []) or [])
                 all_names = [label] + synonyms
                 if any(n.lower() == term_lower for n in all_names):
                     cid = str(self._get_concept_attr(concept, "concept_id", "") or "")
                     if cid:
                         self.logger.debug(
                             "hybrid_concept_match stage1 hit: term='%s' → concept_id='%s'",
-                            term, cid,
+                            term,
+                            cid,
                         )
                         return [cid]
 
@@ -685,7 +683,8 @@ class EntityResolver:
         except Exception as exc:
             self.logger.warning(
                 "hybrid_concept_match vector search failed for term='%s': %s",
-                term, exc,
+                term,
+                exc,
             )
             return []
 
@@ -703,9 +702,11 @@ class EntityResolver:
                 cid = results[0].metadata.get("concept_id", "")
                 if cid:
                     self.logger.debug(
-                        "hybrid_concept_match stage2 dominant: term='%s' → '%s' "
-                        "(score1=%.4f score2=%.4f)",
-                        term, cid, score1, score2,
+                        "hybrid_concept_match stage2 dominant: term='%s' → '%s' " "(score1=%.4f score2=%.4f)",
+                        term,
+                        cid,
+                        score1,
+                        score2,
                     )
                     return [cid]
         elif len(results) == 1:
@@ -751,11 +752,8 @@ class EntityResolver:
         prompt = (
             f"Given the search term '{term}', select the most relevant concept(s) "
             f"from the following list. Return ONLY a JSON array of concept_id strings, "
-            f"e.g. [\"id1\", \"id2\"]. Do not include any other text.\n\n"
-            + "\n".join(
-                f"- concept_id={c['concept_id']} label={c['label']}"
-                for c in candidate_info
-            )
+            f'e.g. ["id1", "id2"]. Do not include any other text.\n\n'
+            + "\n".join(f"- concept_id={c['concept_id']} label={c['label']}" for c in candidate_info)
         )
 
         try:
@@ -772,14 +770,15 @@ class EntityResolver:
                 if result:
                     self.logger.debug(
                         "hybrid_concept_match LLM tie-breaker: term='%s' → %r",
-                        term, result,
+                        term,
+                        result,
                     )
                     return result
         except Exception as exc:
             self.logger.warning(
-                "hybrid_concept_match LLM tie-breaker failed for term='%s': %s; "
-                "falling back to all candidates.",
-                term, exc,
+                "hybrid_concept_match LLM tie-breaker failed for term='%s': %s; " "falling back to all candidates.",
+                term,
+                exc,
             )
 
         # Fallback: return all candidate IDs
@@ -812,16 +811,12 @@ class EntityResolver:
         user_dept = user_context.get("department")
         user_mgr = user_context.get("manager_id")
 
-        dept_matches = [
-            c for c in candidates
-            if user_dept and c.get("department") == user_dept
-        ]
+        dept_matches = [c for c in candidates if user_dept and c.get("department") == user_dept]
         if len(dept_matches) == 1:
             return dept_matches[0]["_id"]
 
         mgr_matches = [
-            c for c in candidates
-            if user_mgr and (c.get("_id") == user_mgr or c.get("manager_id") == user_mgr)
+            c for c in candidates if user_mgr and (c.get("_id") == user_mgr or c.get("manager_id") == user_mgr)
         ]
         if len(mgr_matches) == 1:
             return mgr_matches[0]["_id"]
