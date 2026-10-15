@@ -10,7 +10,7 @@ tags: [planogram, compliance, rules, vision]
 **Feature ID**: FEAT-683
 **Date**: 2026-10-15
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: ai-parrot-pipelines 1.3.0
 
 ---
