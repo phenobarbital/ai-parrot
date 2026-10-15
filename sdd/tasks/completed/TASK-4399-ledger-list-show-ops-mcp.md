@@ -429,10 +429,6 @@ See the Tests block. Spec §4 rows covered: `test_op_ledger_list_all_statuses`, 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: added the golden surface/manifest updates that spec §6 missed (see Files table note).
+**Completed by**: sdd-worker (seat gpt-5.6-terra, codex, 1 attempt, 481s)
+**Date**: 2026-10-16
+**Notes**: Delivered per task contract; merged cleanly, no unexpected files. Verified with the task's validation commands run with PYTHONPATH covering ai-parrot and ai-parrot-tools sources (test_ledger_tools, test_mcp_server_ledger, test_cli_ledger: 59 passed; golden/manifest/remote/service-read suites: 43 passed). The engine merge-tier sweep is red only from pre-existing environment failures (missing Cython parrot.utils.types in worktree, unrelated mcp-server/installer tests failing on the base checkout too); it is not a green run. No review defects; no feedback recorded.
