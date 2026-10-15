@@ -59,10 +59,6 @@ class ArangoSourceBackend:
             ingested_at=doc["ingested_at"],
             pages_generated=doc.get("pages_generated") or [],
             status=doc.get("status", "ingested"),
-            destination=doc.get("destination"),
-            decision_source=doc.get("decision_source"),
-            charter_version=doc.get("charter_version"),
-            composite_score=doc.get("composite_score"),
             doc_metadata=doc.get("doc_metadata"),
             content_type=doc.get("content_type"),
             loader=doc.get("loader"),
@@ -71,8 +67,30 @@ class ArangoSourceBackend:
 
     @staticmethod
     def _entry_to_doc(entry: SourceManifestEntry) -> dict[str, Any]:
-        """Shape one entry as a ``wiki_sources`` document."""
-        return {"_key": entry.source_id, **entry.model_dump()}
+        """Shape one entry as a ``wiki_sources`` document.
+
+        Persists exactly the original 12 fields (the shape every pre-FEAT-540
+        ``wiki_sources`` document has), NOT ``entry.model_dump()``.  The
+        triage-decision fields (``destination``, ``decision_source``,
+        ``charter_version``, ``composite_score``) were never stored in
+        ArangoDB and are not needed to round-trip the document, so the M7
+        refactor must not silently widen the stored schema; ``_doc_to_entry``
+        accordingly does not read them back.
+        """
+        return {
+            "_key": entry.source_id,
+            "source_id": entry.source_id,
+            "source_uri": entry.source_uri,
+            "file_hash": entry.file_hash,
+            "mtime": entry.mtime,
+            "ingested_at": entry.ingested_at,
+            "pages_generated": entry.pages_generated,
+            "status": entry.status,
+            "doc_metadata": entry.doc_metadata,
+            "content_type": entry.content_type,
+            "loader": entry.loader,
+            "external_id": entry.external_id,
+        }
 
     async def upsert(self, entry: SourceManifestEntry) -> None:
         """Insert or update one source entry."""
