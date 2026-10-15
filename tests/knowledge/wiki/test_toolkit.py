@@ -325,8 +325,6 @@ class TestFederatedInjection:
         """The config-driven store construction is bypassed entirely."""
         from unittest.mock import patch
 
-        # FEAT-540 moved the toolkit; ``parrot.knowledge.wiki.toolkit`` is now a
-        # lazy re-export shim, so patch the module that binds the factory.
         import parrot_tools.wiki.toolkit as toolkit_module
         from parrot.knowledge.wiki.store import SQLiteWikiStore
 
