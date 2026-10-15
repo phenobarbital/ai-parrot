@@ -1,0 +1,27 @@
+{
+  "feature": "database-agent-fixes",
+  "feature_id": "FEAT-679",
+  "spec": "sdd/specs/database-agent-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-15T12:40:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4352",
+      "slug": "schema-plane-type-validation",
+      "title": "DatabaseAgent rejects unsupported schema_plane values",
+      "feature_id": "FEAT-679",
+      "feature": "database-agent-fixes",
+      "spec": "sdd/specs/database-agent-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Single task.",
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-4352-schema-plane-type-validation.md"
+    }
+  ]
+}
