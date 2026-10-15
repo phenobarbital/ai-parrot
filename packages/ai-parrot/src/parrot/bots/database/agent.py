@@ -164,6 +164,11 @@ class DatabaseAgent(BasicAgent):
 
         The schema-plane import remains lazy so importing ``bots.database``
         does not require the wiki package.
+
+        Raises:
+            TypeError: If ``schema_plane`` is neither ``None``, a ``str``/``Path``
+                plane directory, nor an object exposing the ``SchemaPlaneReader``
+                surface (``get_table``, ``put_table``, ``list_tables``).
         """
         if schema_plane is None:
             return None
@@ -171,6 +176,14 @@ class DatabaseAgent(BasicAgent):
             from parrot.knowledge.wiki.schema.service import SchemaPlaneService
 
             schema_plane = SchemaPlaneService.from_dir(Path(schema_plane), read_only=False)
+        # SchemaPlaneReader is not @runtime_checkable — duck-type its surface so an
+        # unsupported value (e.g. a SchemaPlaneConfig) fails here instead of being
+        # swallowed by CachePartition.get()'s best-effort plane lookup.
+        if not all(callable(getattr(schema_plane, name, None)) for name in ("get_table", "put_table", "list_tables")):
+            raise TypeError(
+                "schema_plane must be None, a str/Path plane directory, or a SchemaPlaneReader "
+                f"(e.g. SchemaPlaneService); got {type(schema_plane).__name__}"
+            )
         self.logger.info(
             "DatabaseAgent: schema plane enabled (%s)",
             getattr(schema_plane, "plane_dir", schema_plane),

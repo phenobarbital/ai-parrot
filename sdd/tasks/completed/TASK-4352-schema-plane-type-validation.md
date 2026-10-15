@@ -81,3 +81,16 @@ New parametrized test `test_unsupported_plane_raises_type_error` over a
 Implement exactly the scope above, run the validation command, commit only the two files.
 
 ## Completion Note
+**Completed by**: Claude (sdd-fix lane), 2026-10-15
+**Commit**: 7aacbe457
+
+The ledger issue had two halves. The docs half (wrong tier order, non-existent
+`DatabaseAgent(schema_plane=SchemaPlaneConfig(...))` example in
+`docs/wiki/schema-plane.md` §11) was already fixed on `dev` by 235e185b5 — no doc
+change needed. The code half was live: `_resolve_schema_plane` now raises `TypeError`
+unless the value is `None`, `str`/`Path`, or exposes callable `get_table`/`put_table`/
+`list_tables` (duck-typed; `SchemaPlaneReader` is not `@runtime_checkable`).
+
+Validation: `test_agent_schema_plane.py` → 5 passed (2 new); full
+`packages/ai-parrot/tests/bots/database` → 205 passed, 9 skipped. `ruff check` clean.
+Resolves ledger issue:ae4842999074.
