@@ -260,7 +260,7 @@ class WikiNamespaceConfig(BaseModel):
             raise ValueError(
                 "Exactly one of path / store / database / vault must be set " f"(got: {', '.join(present) or 'none'})"
             )
-        if self.database and self.backend in ("sqlite", "memory"):
+        if self.database and "backend" not in self.model_fields_set:
             # A `database` entry is ArangoDB by construction — UNLESS the
             # caller explicitly named a non-built-in (satellite-registered,
             # FEAT-449 M7) backend, which survives untouched.
@@ -558,6 +558,18 @@ class WikiRemoteConfig(BaseModel):
         return value.rstrip("/")
 
 
+def _check_backend_name(value: str | None) -> str | None:
+    """Validate a backend name against the wiki backend registry (``None`` passes through)."""
+    if value is None:
+        return None
+    from parrot.knowledge.wiki.store import wiki_backend_names  # lazy: avoid import cycle
+
+    names = wiki_backend_names()
+    if value not in names:
+        raise ValueError(f"Unknown wiki storage backend {value!r} — expected one of {', '.join(map(repr, names))}")
+    return value
+
+
 class WikiProjectConfig(BaseModel):
     """Repository-level wiki configuration (``.parrot/wiki.json``).
 
@@ -602,7 +614,7 @@ class WikiProjectConfig(BaseModel):
 
     wiki_name: str = Field(default="codebase")
     storage_dir: str = Field(default=f"{PARROT_DIR}/wiki")
-    backend: Literal["sqlite", "memory", "arangodb"] = Field(default="sqlite")
+    backend: str = Field(default="sqlite")
     include_suffixes: list[str] = Field(default_factory=list)
     exclude_dirs: list[str] = Field(default_factory=list)
     body_max_chars: int = Field(default=16_000, ge=1_000)
@@ -771,21 +783,35 @@ class WikiProjectConfig(BaseModel):
         path = Path(self.inbox.markdown_dir)
         return path if path.is_absolute() else root / path
 
+    @field_validator("backend")
+    @classmethod
+    def _validate_backend(cls, value: str) -> str:
+        """Check ``backend`` against the wiki backend registry."""
+        return _check_backend_name(value)  # type: ignore[return-value]
+
     def is_built(self, root: Path) -> bool:
         """Whether the retrieval plane exists for this repo.
 
-        ``sqlite``/``memory`` are on-disk backends, so this is a cheap
-        local file/directory probe. ``arangodb`` is server-hosted — there
-        is no local artifact to check, and probing the server here would
-        turn a synchronous config check into a network round-trip. The
-        real "is it built" signal for ``arangodb`` is deferred to the
-        store's own (idempotent) ``initialize()`` connection, which
-        creates the database/collections/view on first use if missing.
+        Driven by the registered backend's ``kind``: an optional
+        ``is_built`` hook (lazy ``"module:attr"`` path, called as
+        ``hook(config, root)``) wins; ``server`` backends are hosted
+        remotely so there is no local artifact to probe (their store's
+        idempotent ``initialize()`` creates the plane on first use);
+        ``local`` backends probe the sqlite file or the markdown bundle.
         """
+        from parrot.knowledge.wiki.store import wiki_backend_spec  # lazy: avoid import cycle
+
+        spec = wiki_backend_spec(self.backend)
+        if spec.is_built:
+            import importlib
+
+            module_name, _, attr = spec.is_built.partition(":")
+            hook = getattr(importlib.import_module(module_name), attr)
+            return bool(hook(self, root))
+        if spec.kind == "server":
+            return True
         if self.backend == "sqlite":
             return self.db_path(root).exists()
-        if self.backend == "arangodb":
-            return True
         return (self.storage_path(root) / "pages").exists()
 
 
@@ -1089,7 +1115,7 @@ class WikiEnvOverlay(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    backend: Literal["sqlite", "memory", "arangodb"] | None = None
+    backend: str | None = None
     storage_dir: str | None = None
     arango_database: str | None = None
     arango_credentials_env: str | None = None
@@ -1106,6 +1132,12 @@ class WikiEnvOverlay(BaseModel):
     remote: WikiRemoteConfig | None = None
     standup: StandupConfig | None = None
     inbox: InboxConfig | None = None
+
+    @field_validator("backend")
+    @classmethod
+    def _validate_backend(cls, value: str | None) -> str | None:
+        """Check ``backend`` against the wiki backend registry."""
+        return _check_backend_name(value)
 
     @field_validator("namespaces")
     @classmethod
