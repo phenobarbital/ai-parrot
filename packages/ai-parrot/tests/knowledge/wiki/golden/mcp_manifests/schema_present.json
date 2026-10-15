@@ -1,0 +1,1010 @@
+[
+  {
+    "description": "Claim an issue from the SDD ledger.",
+    "mount": "ledger",
+    "name": "ledger_claim",
+    "schema": {
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Actor claiming the issue, e.g. agent:sdd-fix (default: the request actor)",
+          "title": "Actor"
+        },
+        "issue_id": {
+          "description": "Issue ID to claim",
+          "title": "Issue Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issue_id"
+      ],
+      "title": "LedgerClaimInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Close an issue in the SDD ledger.",
+    "mount": "ledger",
+    "name": "ledger_close",
+    "schema": {
+      "properties": {
+        "actor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Actor closing the issue, e.g. agent:sdd-fix (default: the request actor)",
+          "title": "Actor"
+        },
+        "issue_id": {
+          "description": "Issue ID to close",
+          "title": "Issue Id",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Reason for closing",
+          "title": "Reason",
+          "type": "string"
+        },
+        "resolved_by": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Evidence that resolved the issue, e.g. commit:<sha> or task:TASK-<NNN> (FEAT-572 S4)",
+          "title": "Resolved By"
+        }
+      },
+      "required": [
+        "issue_id",
+        "reason"
+      ],
+      "title": "LedgerCloseInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get context from the SDD ledger for specific files.",
+    "mount": "ledger",
+    "name": "ledger_context",
+    "schema": {
+      "properties": {
+        "file_paths": {
+          "description": "File paths to scope context to",
+          "items": {
+            "type": "string"
+          },
+          "title": "File Paths",
+          "type": "array"
+        },
+        "max_tokens": {
+          "default": 3000,
+          "description": "Maximum tokens in response",
+          "title": "Max Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "file_paths"
+      ],
+      "title": "LedgerContextInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Open a new issue in the SDD work ledger.",
+    "mount": "ledger",
+    "name": "ledger_open",
+    "schema": {
+      "properties": {
+        "about": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Affected symbols/files, repo-relative, e.g. sym:pkg/mod.py#Func",
+          "title": "About"
+        },
+        "body": {
+          "description": "What is wrong, where (file + symbol), why it matters, suggested fix",
+          "title": "Body",
+          "type": "string"
+        },
+        "discovered_from": {
+          "description": "Source: spec:<FEAT-ID>, task:<TASK-ID> or review:<TASK-ID>",
+          "minLength": 1,
+          "title": "Discovered From",
+          "type": "string"
+        },
+        "kind": {
+          "default": "bug",
+          "description": "Issue kind: bug|tech_debt|feature_gap|vulnerability",
+          "enum": [
+            "bug",
+            "tech_debt",
+            "feature_gap",
+            "vulnerability"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "severity": {
+          "default": "minor",
+          "description": "Issue severity: critical|major|minor|low",
+          "enum": [
+            "critical",
+            "major",
+            "minor",
+            "low"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "title": {
+          "description": "One-line issue title",
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "body",
+        "discovered_from"
+      ],
+      "title": "LedgerOpenInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get ready (unclaimed) work from the SDD ledger.",
+    "mount": "ledger",
+    "name": "ledger_ready",
+    "schema": {
+      "properties": {
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "bug",
+                "tech_debt",
+                "feature_gap",
+                "vulnerability"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Filter by issue kind: bug|tech_debt|feature_gap|vulnerability",
+          "title": "Kind"
+        }
+      },
+      "title": "LedgerReadyInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Find every symbol that transitively depends on (calls/extends/implements) a given symbol \u2014 the 'blast radius' of changing it. Use before editing a widely-used function or class.",
+    "mount": "structural",
+    "name": "wiki_blast_radius",
+    "schema": {
+      "description": "Arguments for ``wiki_blast_radius`` / ``code_blast_radius``.",
+      "properties": {
+        "depth": {
+          "default": 2,
+          "description": "Maximum BFS depth",
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Depth",
+          "type": "integer"
+        },
+        "include_inferred": {
+          "default": true,
+          "description": "Follow provenance='inferred' edges (globally-unique-name resolutions)",
+          "title": "Include Inferred",
+          "type": "boolean"
+        },
+        "include_tests": {
+          "default": true,
+          "description": "Include symbols under a tests/ path",
+          "title": "Include Tests",
+          "type": "boolean"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, 'all' to broadcast, 'local' for this repo's own wiki. Omit for the default routing (broadcast when namespaces are configured).",
+          "title": "Namespace"
+        },
+        "relations": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "calls",
+                  "extends",
+                  "implements",
+                  "uses",
+                  "references",
+                  "contains"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Edge relations to follow (default: calls, extends, implements, uses)",
+          "title": "Relations"
+        },
+        "symbol": {
+          "description": "A sym: id or an exact qualname",
+          "title": "Symbol",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol"
+      ],
+      "title": "BlastRadiusInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Get the symbol outline of a file \u2014 every top-level (and nested, depth-bounded) class/function/method, with line ranges. Use before reading a whole file to see its shape first.",
+    "mount": "structural",
+    "name": "wiki_code_outline",
+    "schema": {
+      "description": "Arguments for ``wiki_code_outline`` / ``code_outline``.",
+      "properties": {
+        "depth": {
+          "default": 2,
+          "description": "Maximum symbol nesting depth",
+          "maximum": 4,
+          "minimum": 1,
+          "title": "Depth",
+          "type": "integer"
+        },
+        "include_source": {
+          "default": false,
+          "description": "Include a capped source excerpt (sym: targets only)",
+          "title": "Include Source",
+          "type": "boolean"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, 'all' to broadcast, 'local' for this repo's own wiki. Omit for the default routing (broadcast when namespaces are configured).",
+          "title": "Namespace"
+        },
+        "target": {
+          "description": "A file:<rel>, sym:<rel>#<qualname>, or bare relative path",
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "title": "CodeOutlineInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Answer a 'why' question about the codebase with cited decision excerpts and supporting code. Documented decisions rank above inferred candidates, which are returned in their own labeled group.",
+    "mount": "decisions",
+    "name": "wiki_decision_why",
+    "schema": {
+      "description": "Arguments for ``wiki_decision_why`` / ``decision_why``.",
+      "properties": {
+        "budget_tokens": {
+          "default": 3000,
+          "description": "Estimated output budget",
+          "minimum": 256,
+          "title": "Budget Tokens",
+          "type": "integer"
+        },
+        "include_history": {
+          "default": false,
+          "description": "Include rejected/deprecated/superseded records",
+          "title": "Include History",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum hits across both groups",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, or 'local' for this repo's own wiki. 'all' is not supported for decisions.",
+          "title": "Namespace"
+        },
+        "question": {
+          "description": "Natural-language question, optionally naming a symbol",
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "DecisionWhyInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Find architectural decisions (ADRs) that apply to a function, class or method, with source citations. Documented decisions and inferred candidates are returned as separate, explicitly labeled groups \u2014 a candidate is a hypothesis, not accepted history.",
+    "mount": "decisions",
+    "name": "wiki_decisions_for_symbol",
+    "schema": {
+      "description": "Arguments for ``wiki_decisions_for_symbol`` / ``decision_for_symbol``.",
+      "properties": {
+        "budget_tokens": {
+          "default": 3000,
+          "description": "Estimated output budget",
+          "minimum": 256,
+          "title": "Budget Tokens",
+          "type": "integer"
+        },
+        "include_history": {
+          "default": false,
+          "description": "Include rejected/deprecated/superseded records",
+          "title": "Include History",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": 10,
+          "description": "Maximum hits across both groups",
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, or 'local' for this repo's own wiki. 'all' is not supported for decisions.",
+          "title": "Namespace"
+        },
+        "symbol": {
+          "description": "A sym:<rel>#<qualname> id, or an exact symbol name",
+          "title": "Symbol",
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol"
+      ],
+      "title": "DecisionsForSymbolInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Lint the wiki knowledge graph: broken links, duplicate slugs, stale memories, ADR conflicts; fix=true applies safe fixes.",
+    "mount": "core",
+    "name": "wiki_lint",
+    "schema": {
+      "description": "Arguments for wiki_lint.",
+      "properties": {
+        "fix": {
+          "default": false,
+          "description": "Apply safe, idempotent fixes (never deletes).",
+          "title": "Fix",
+          "type": "boolean"
+        },
+        "llm": {
+          "default": false,
+          "description": "Run the opt-in LLM contradiction pass.",
+          "title": "Llm",
+          "type": "boolean"
+        },
+        "rules": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Rule ids or packs to run (default: all deterministic).",
+          "title": "Rules"
+        },
+        "skip": {
+          "description": "Rule ids to skip.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Skip",
+          "type": "array"
+        }
+      },
+      "title": "WikiLintInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Append a dated note to an existing wiki page.",
+    "mount": "core",
+    "name": "wiki_note",
+    "schema": {
+      "properties": {
+        "page_id": {
+          "description": "Page to append note to",
+          "title": "Page Id",
+          "type": "string"
+        },
+        "text": {
+          "description": "Note text",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id",
+        "text"
+      ],
+      "title": "WikiNoteInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Read a full wiki page by ID \u2014 file summaries, API outlines, content. Use IDs returned by wiki_query, including namespaced ones (ns::file:a.py).",
+    "mount": "core",
+    "name": "wiki_page",
+    "schema": {
+      "properties": {
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, 'all' to broadcast, 'local' for this repo's own wiki. Omit for the default routing (broadcast when namespaces are configured).",
+          "title": "Namespace"
+        },
+        "page_id": {
+          "description": "Page ID from wiki_query results; may carry a namespace prefix (ns::file:a.py)",
+          "title": "Page Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "title": "WikiPageInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Search the codebase knowledge graph for files, modules, symbols, or concepts. Returns ranked page stubs with IDs for drill-down. Use BEFORE grep/find/Read on large repos. When federated namespaces are configured this searches all of them and foreign page IDs come back prefixed (ns::file:a.py); pass `namespace` to search just one.",
+    "mount": "core",
+    "name": "wiki_query",
+    "schema": {
+      "properties": {
+        "budget_tokens": {
+          "default": 1200,
+          "description": "Token budget for results",
+          "title": "Budget Tokens",
+          "type": "integer"
+        },
+        "include_symbols": {
+          "default": false,
+          "description": "Include sym: (function/class/method) stubs in results (FEAT-498). Off by default \u2014 use wiki_symbol_lookup for symbol-specific search; set True to see symbols mixed in with files/concepts here.",
+          "title": "Include Symbols",
+          "type": "boolean"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, 'all' to broadcast, 'local' for this repo's own wiki. Omit for the default routing (broadcast when namespaces are configured).",
+          "title": "Namespace"
+        },
+        "question": {
+          "description": "Search question for the knowledge graph",
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "WikiQueryInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Follow typed edges (contains, references) from a wiki page to discover connected files and modules. Accepts namespaced page IDs (ns::dir:pkg) and returns neighbours from the same plane.",
+    "mount": "core",
+    "name": "wiki_related",
+    "schema": {
+      "properties": {
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, 'all' to broadcast, 'local' for this repo's own wiki. Omit for the default routing (broadcast when namespaces are configured).",
+          "title": "Namespace"
+        },
+        "page_id": {
+          "description": "Page ID to find related pages for; may carry a namespace prefix (ns::dir:pkg)",
+          "title": "Page Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "title": "WikiRelatedInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Save durable knowledge to the knowledge graph \u2014 decisions, gotchas, cross-file relationships. Survives across sessions.",
+    "mount": "core",
+    "name": "wiki_remember",
+    "schema": {
+      "properties": {
+        "about": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Target symbol or file ids",
+          "title": "About"
+        },
+        "category": {
+          "default": "note",
+          "description": "note|decision|lesson|concept",
+          "title": "Category",
+          "type": "string"
+        },
+        "derived_from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Originating task, review, or spec id",
+          "title": "Derived From"
+        },
+        "fact": {
+          "description": "Knowledge to save",
+          "title": "Fact",
+          "type": "string"
+        },
+        "link_page_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Page to link to",
+          "title": "Link Page Id"
+        },
+        "rel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "references",
+          "description": "Relation type",
+          "title": "Rel"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Short title",
+          "title": "Title"
+        }
+      },
+      "required": [
+        "fact"
+      ],
+      "title": "WikiRememberInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Look up one table in the schema plane: DDL, columns, relations, annotations, age and staleness.",
+    "mount": "schema",
+    "name": "wiki_schema_lookup",
+    "schema": {
+      "description": "Arguments for ``wiki_schema_lookup``.",
+      "properties": {
+        "ref": {
+          "description": "table:<origin>/<schema>.<table>, bare <origin>:<schema>.<table>, or <schema>.<table>",
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "title": "SchemaLookupInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Foreign-key join paths from a table, up to `depth` hops, each with the (src_column -> dst_column) pair.",
+    "mount": "schema",
+    "name": "wiki_schema_neighbors",
+    "schema": {
+      "description": "Arguments for ``wiki_schema_neighbors``.",
+      "properties": {
+        "depth": {
+          "default": 1,
+          "maximum": 4,
+          "minimum": 1,
+          "title": "Depth",
+          "type": "integer"
+        },
+        "ref": {
+          "description": "Table reference (same forms as lookup)",
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "title": "SchemaNeighborsInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Full-text search over table names, column names and comments in the schema plane.",
+    "mount": "schema",
+    "name": "wiki_schema_search",
+    "schema": {
+      "description": "Arguments for ``wiki_schema_search``.",
+      "properties": {
+        "limit": {
+          "default": 20,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "query": {
+          "description": "Words to match in table names, column names and comments",
+          "title": "Query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "SchemaSearchInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "List the declared SQL sources (alias, dialect, schemas). DSNs are never exposed \u2014 only env-var names.",
+    "mount": "schema",
+    "name": "wiki_schema_sources",
+    "schema": {
+      "description": "Arguments for ``wiki_schema_sources``.",
+      "properties": {},
+      "title": "SchemaSourcesInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Render a daily, weekly or monthly wiki brief. Read-only unless writes are explicitly enabled.",
+    "mount": "core",
+    "name": "wiki_standup",
+    "schema": {
+      "description": "Explicit brief options; persistence and model calls are opt-in over MCP.",
+      "properties": {
+        "date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Anchor date (YYYY-MM-DD); default today.",
+          "title": "Date"
+        },
+        "horizon_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Meeting horizon in days (1-90).",
+          "title": "Horizon Days"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "enum": [
+                "en",
+                "es"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Brief language.",
+          "title": "Language"
+        },
+        "period": {
+          "default": "day",
+          "description": "Brief period.",
+          "enum": [
+            "day",
+            "week",
+            "month"
+          ],
+          "title": "Period",
+          "type": "string"
+        },
+        "store": {
+          "default": false,
+          "description": "Persist the brief as a wiki page on the local plane.",
+          "title": "Store",
+          "type": "boolean"
+        },
+        "team": {
+          "default": false,
+          "description": "Include team items, not only yours.",
+          "title": "Team",
+          "type": "boolean"
+        },
+        "use_llm": {
+          "default": false,
+          "description": "Allow a model call to summarise the plate.",
+          "title": "Use Llm",
+          "type": "boolean"
+        },
+        "write_file": {
+          "default": false,
+          "description": "Also write the brief Markdown file.",
+          "title": "Write File",
+          "type": "boolean"
+        }
+      },
+      "title": "WikiStandupInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Check knowledge graph health: page count, staleness, last build time.",
+    "mount": "core",
+    "name": "wiki_status",
+    "schema": {
+      "properties": {},
+      "title": "WikiStatusInput",
+      "type": "object"
+    }
+  },
+  {
+    "description": "Find a symbol (function/class/method) by name or qualname across the codebase. Returns ranked hits with file/line locations. Use before grep when you know the symbol's name but not where it lives.",
+    "mount": "structural",
+    "name": "wiki_symbol_lookup",
+    "schema": {
+      "$defs": {
+        "SymbolKind": {
+          "description": "Kind of a symbol extracted from a source file.\n\nMirrors the design's \u00a74.4 symbol table across the five supported\nlanguages (Python, TypeScript/JavaScript, PHP, Rust, Perl), plus Svelte\nsingle-file components (FEAT-609).",
+          "enum": [
+            "module",
+            "class",
+            "interface",
+            "trait",
+            "enum",
+            "struct",
+            "impl",
+            "function",
+            "method",
+            "const",
+            "type",
+            "package",
+            "role",
+            "field",
+            "attribute",
+            "mod",
+            "component"
+          ],
+          "title": "SymbolKind",
+          "type": "string"
+        }
+      },
+      "description": "Arguments for ``wiki_symbol_lookup`` / ``code_symbol_lookup``.",
+      "properties": {
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SymbolKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Exact symbol kind filter"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Exact scanner-name filter (e.g. 'python')",
+          "title": "Language"
+        },
+        "limit": {
+          "default": 20,
+          "description": "Maximum results",
+          "maximum": 100,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Federated namespace to read: a namespace name, 'all' to broadcast, 'local' for this repo's own wiki. Omit for the default routing (broadcast when namespaces are configured).",
+          "title": "Namespace"
+        },
+        "path_prefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "rel_path must start with this prefix",
+          "title": "Path Prefix"
+        },
+        "query": {
+          "description": "Symbol name or qualname to look up",
+          "title": "Query",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "SymbolLookupInput",
+      "type": "object"
+    }
+  }
+]
