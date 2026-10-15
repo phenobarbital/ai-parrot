@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-675 — decisions-cli-fixes
 **Spec**: `sdd/specs/decisions-cli-fixes.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -86,4 +86,20 @@ pytest packages/ai-parrot/tests/knowledge/wiki/decisions/ -q
 ```
 
 ## Completion Note
-_(filled on completion)_
+Completed 2026-10-15 (sdd-fix lane, ledger issue:6500603d22d4). Implementing commit c87da7595.
+
+- Write-command `--ns` verified end-to-end with a real local sqlite plane plus a
+  second built project registered via `wikitoolkit ns add other --project`:
+  `sync`/`generate`/`review --ns other` exit 2 with `ADR_INVALID_ARGUMENT` and
+  mutate neither plane; `--ns nope` is refused; `--ns local` writes land only in
+  the local plane; `export --ns other` reads the foreign record.
+- Defect found and fixed in `_resolve_scoped_store`: a comma-list selector
+  (`--ns local,other`) was accepted by `why`/`lookup`/`export` as a broadcast
+  (export silently resolved a shared id to the LOCAL record). Now rejected with
+  `ADR_INVALID_ARGUMENT` for every `adr` command; the selector is also stripped.
+  The 3 multi-selector tests fail on pre-fix code and pass after.
+- Tests: `test_cli_namespace_writes.py` 9 passed; decisions suite 244 passed.
+  The only failures are `test_backend_parity.py` live Postgres/ArangoDB tests
+  (connection refused / env unset) — environmental, pre-existing.
+- Follow-up (out of scope, not verified): `decisions/tools.py` `service_factory`
+  may accept the same comma-list selector on the MCP surface.

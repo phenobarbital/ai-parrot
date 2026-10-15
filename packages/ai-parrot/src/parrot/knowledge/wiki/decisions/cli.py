@@ -71,12 +71,24 @@ def _resolve_scoped_store(
     Raises:
         DecisionError: ``ADR_INVALID_ARGUMENT`` when ``namespace == "all"``
             (unsupported for decisions in v1, for ANY command — spec §2
-            Module 6), when an unknown namespace is requested, or when
+            Module 6), when more than one namespace is selected (a
+            comma list), when an unknown namespace is requested, or when
             ``writable`` is set and the resolved scope has no local
             evidence root.
     """
+    if namespace is not None:
+        namespace = namespace.strip()
     if namespace == "all":
         raise DecisionError(ADR_INVALID_ARGUMENT, "namespace='all' is not supported for decisions")
+    if namespace and "," in namespace:
+        # `_federate` treats a comma list as a multi-namespace selector and
+        # would broadcast reads across planes (and an id present in several
+        # planes would silently resolve to the first one). Decisions target
+        # exactly one namespace per call (spec §2 Module 6).
+        raise DecisionError(
+            ADR_INVALID_ARGUMENT,
+            f"decisions target exactly one namespace per call; got {namespace!r}",
+        )
 
     # Deferred: `cli.py` imports this module to register the `adr` group,
     # and `structural.service` (imported by `_build_service` below) itself
