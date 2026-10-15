@@ -415,16 +415,18 @@ async def open_namespace_store(
         return store, storage_dir
     # kind == "database"
     if cfg.backend != "arangodb":
-        factory = wiki_store._EXTRA_BACKENDS.get(cfg.backend)
-        if factory is None:
-            raise ValueError(f"namespace {name!r}: unknown database backend {cfg.backend!r}")
-        store = factory(
-            storage_dir=None,
-            wiki_name=name,
-            database=cfg.database or "",
-            arango_params=resolve_arango_params(_arango_config_for(cfg)),
-            read_only=read_only,
-        )
+        spec = wiki_store.wiki_backend_spec(cfg.backend)  # ValueError names the backend list
+        factory = wiki_store.resolve_wiki_backend(cfg.backend)
+        resolver = wiki_store._lazy(spec.resolve_options) if spec.resolve_options else None
+        if resolver is not None:
+            options = dict(resolver(cfg))
+        else:
+            # Legacy two-argument `register_wiki_backend`: ArangoDB-style options.
+            options = {
+                "database": cfg.database or "",
+                "arango_params": resolve_arango_params(_arango_config_for(cfg)),
+            }
+        store = factory(storage_dir=None, wiki_name=name, read_only=read_only, **options)
         await _assert_plane_readable(store)
         return store, None
     store = await _open_arango(
