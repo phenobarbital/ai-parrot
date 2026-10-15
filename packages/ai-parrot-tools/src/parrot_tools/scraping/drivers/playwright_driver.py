@@ -5,11 +5,43 @@ full browser automation with Playwright-exclusive features such as request
 interception, HAR recording, tracing, PDF export, and session persistence.
 """
 
+import asyncio
+import base64
 import logging
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from pathlib import Path
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence
 
 from .abstract import AbstractDriver
 from .playwright_config import PlaywrightConfig
+
+# Obscura mode: `document.readyState` values that satisfy each lifecycle state.
+_READY_STATES: Dict[str, FrozenSet[str]] = {
+    "domcontentloaded": frozenset({"interactive", "complete"}),
+    "load": frozenset({"complete"}),
+}
+_READY_STATE_POLL_INTERVAL = 0.1
+
+# Obscura mode: main-world equivalents of `page.content()` / `locator.inner_text()`.
+_PAGE_SOURCE_JS = """() => {
+    const dt = document.doctype;
+    const head = dt ? `<!DOCTYPE ${dt.name}>` : "";
+    return head + (document.documentElement ? document.documentElement.outerHTML : "");
+}"""
+_INNER_TEXT_JS = """(sel) => {
+    let el;
+    if (sel.startsWith("xpath=")) {
+        el = document.evaluate(sel.slice(6), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null)
+            .singleNodeValue;
+    } else {
+        el = document.querySelector(sel);
+    }
+    return el ? el.innerText : null;
+}"""
+
+
+def _is_timeout_error(exc: BaseException) -> bool:
+    """Match Playwright's ``TimeoutError`` by name (playwright is imported lazily)."""
+    return isinstance(exc, TimeoutError) or type(exc).__name__ == "TimeoutError"
 
 
 class PlaywrightDriver(AbstractDriver):
@@ -220,13 +252,41 @@ class PlaywrightDriver(AbstractDriver):
     # ── Content Extraction ───────────────────────────────────────
 
     async def get_page_source(self) -> str:
-        """Return the full HTML of the current page."""
-        return await self._page.content()
+        """Return the full HTML of the current page.
+
+        In Obscura mode, falls back to a main-world ``evaluate`` read when
+        ``page.content()`` fails — Obscura breaks Playwright's utility world
+        after a renderer-initiated navigation (e.g. a form submit).
+        """
+        if not self._is_obscura:
+            return await self._page.content()
+        try:
+            return await self._page.content()
+        except Exception as exc:
+            if _is_timeout_error(exc):
+                raise
+            self.logger.debug("page.content() failed on Obscura (%s); reading via evaluate", exc)
+            return await self._page.evaluate(_PAGE_SOURCE_JS)
 
     async def get_text(self, selector: str, timeout: int = 10) -> str:
-        """Return the inner text of the first matching element."""
+        """Return the inner text of the first matching element.
+
+        In Obscura mode, falls back to a main-world ``evaluate`` read when the
+        locator fails with a non-timeout error (see :meth:`get_page_source`).
+        """
         sel = self._resolve_selector(selector)
-        return await self._page.locator(sel).inner_text(timeout=timeout * 1000)
+        if not self._is_obscura:
+            return await self._page.locator(sel).inner_text(timeout=timeout * 1000)
+        try:
+            return await self._page.locator(sel).inner_text(timeout=timeout * 1000)
+        except Exception as exc:
+            if _is_timeout_error(exc):
+                raise
+            self.logger.debug("locator.inner_text() failed on Obscura (%s); reading via evaluate", exc)
+            text = await self._page.evaluate(_INNER_TEXT_JS, sel)
+            if text is None:
+                raise LookupError(f"No element matches selector {selector!r}") from exc
+            return text
 
     async def get_attribute(self, selector: str, attribute: str, timeout: int = 10) -> Optional[str]:
         """Return the value of *attribute* on the matching element."""
@@ -242,8 +302,23 @@ class PlaywrightDriver(AbstractDriver):
         return [await el.inner_text() for el in elements]
 
     async def screenshot(self, path: str, full_page: bool = False) -> bytes:
-        """Take a screenshot and save to *path*."""
-        return await self._page.screenshot(path=path, full_page=full_page)
+        """Take a screenshot and save to *path*.
+
+        In Obscura mode, falls back to a raw CDP ``Page.captureScreenshot``
+        when Playwright's screenshot fails with a non-timeout error (see
+        :meth:`get_page_source`).
+        """
+        if not self._is_obscura:
+            return await self._page.screenshot(path=path, full_page=full_page)
+        try:
+            return await self._page.screenshot(path=path, full_page=full_page)
+        except Exception as exc:
+            if _is_timeout_error(exc):
+                raise
+            self.logger.debug("page.screenshot() failed on Obscura (%s); capturing via CDP", exc)
+            data = await self._cdp_screenshot(full_page)
+            await asyncio.to_thread(Path(path).write_bytes, data)
+            return data
 
     async def type_text(
         self,
@@ -277,10 +352,19 @@ class PlaywrightDriver(AbstractDriver):
 
     async def wait_for_navigation(self, timeout: int = 30) -> None:
         """Wait for a navigation event to complete."""
-        await self._page.wait_for_load_state("domcontentloaded", timeout=timeout * 1000)
+        await self.wait_for_load_state("domcontentloaded", timeout=timeout)
 
     async def wait_for_load_state(self, state: str = "load", timeout: int = 30) -> None:
-        """Wait until the page reaches the given load *state*."""
+        """Wait until the page reaches the given load *state*.
+
+        In Obscura mode, ``"load"`` and ``"domcontentloaded"`` are resolved by
+        polling ``document.readyState``: Obscura does not emit those lifecycle
+        events after a renderer-initiated navigation, so Playwright's own wait
+        would always time out.
+        """
+        if self._is_obscura and state in _READY_STATES:
+            await self._poll_ready_state(state, timeout)
+            return
         await self._page.wait_for_load_state(state, timeout=timeout * 1000)
 
     # ── Media / Scripts ──────────────────────────────────────────
@@ -432,6 +516,63 @@ class PlaywrightDriver(AbstractDriver):
         return list(self._responses)
 
     # ── Internal Helpers ─────────────────────────────────────────
+
+    @property
+    def _is_obscura(self) -> bool:
+        """Whether this driver is connected to an Obscura endpoint over CDP."""
+        return self.config.engine == "obscura"
+
+    async def _poll_ready_state(self, state: str, timeout: int) -> None:
+        """Poll ``document.readyState`` until it satisfies *state*.
+
+        Evaluate errors are tolerated while a navigation swaps the document.
+
+        Args:
+            state: ``"load"`` or ``"domcontentloaded"``.
+            timeout: Maximum wait time in seconds.
+
+        Raises:
+            TimeoutError: The page did not reach *state* within *timeout*.
+        """
+        accepted = _READY_STATES[state]
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        last: Optional[str] = None
+        while True:
+            try:
+                last = await self._page.evaluate("document.readyState")
+            except Exception as exc:  # document being replaced mid-navigation
+                last = f"<error: {exc}>"
+            if last in accepted:
+                return
+            if loop.time() >= deadline:
+                raise TimeoutError(
+                    f"Timeout {timeout}s waiting for load state {state!r} on Obscura "
+                    f"(last document.readyState: {last!r})"
+                )
+            await asyncio.sleep(_READY_STATE_POLL_INTERVAL)
+
+    async def _cdp_screenshot(self, full_page: bool) -> bytes:
+        """Capture a PNG through a raw CDP session, bypassing Playwright's injected scripts.
+
+        Args:
+            full_page: Capture beyond the viewport.
+
+        Returns:
+            The PNG bytes.
+        """
+        session = await self._context.new_cdp_session(self._page)
+        try:
+            result = await session.send(
+                "Page.captureScreenshot",
+                {"format": "png", "captureBeyondViewport": full_page},
+            )
+        finally:
+            try:
+                await session.detach()
+            except Exception as exc:  # detaching must never mask a successful capture
+                self.logger.debug("CDP session detach failed: %s", exc)
+        return base64.b64decode(result["data"])
 
     def _cdp_endpoint(self) -> str:
         """Resolve the Obscura CDP endpoint URL from the config.
