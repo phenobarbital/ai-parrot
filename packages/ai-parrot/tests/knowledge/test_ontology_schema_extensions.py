@@ -2,6 +2,7 @@
 AuthorizationSpec, ToolCallSpec, ContextEnvelope, and backward-compatible
 extensions to TraversalPattern and ResolvedIntent.
 """
+
 import pytest
 from pydantic import ValidationError
 
@@ -31,9 +32,7 @@ class TestEntityExtractionRule:
     def test_forbids_extra(self) -> None:
         """Extra fields are rejected by ConfigDict(extra='forbid')."""
         with pytest.raises(ValidationError):
-            EntityExtractionRule(
-                type="Employee", resolver="exact_id_match", bogus=1
-            )
+            EntityExtractionRule(type="Employee", resolver="exact_id_match", bogus=1)
 
     def test_all_resolvers_valid(self) -> None:
         """All four resolver literals are accepted."""
@@ -53,9 +52,7 @@ class TestEntityExtractionRule:
 
     def test_optional_not_required(self) -> None:
         """A rule with required=False is accepted."""
-        rule = EntityExtractionRule(
-            type="Employee", resolver="fuzzy_name_match", required=False
-        )
+        rule = EntityExtractionRule(type="Employee", resolver="fuzzy_name_match", required=False)
         assert rule.required is False
 
 
@@ -256,14 +253,8 @@ class TestTraversalPatternBackCompat:
             query_template="FOR e IN c RETURN e",
             post_action="tool_call",
             post_query=None,
-            entity_extraction={
-                "target": EntityExtractionRule(
-                    type="Employee", resolver="fuzzy_name_match"
-                )
-            },
-            authorization=AuthorizationSpec(
-                rules=[AuthorizationRule(rule="target_is_self")]
-            ),
+            entity_extraction={"target": EntityExtractionRule(type="Employee", resolver="fuzzy_name_match")},
+            authorization=AuthorizationSpec(rules=[AuthorizationRule(rule="target_is_self")]),
             tool_call=ToolCallSpec(
                 toolkit="JiraToolkit",
                 method="jira_search_issues",

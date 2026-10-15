@@ -4,6 +4,7 @@ Updated for FEAT-158: ontology_process now returns ContextEnvelope.
 Existing assertions migrated from result.X → result.context.X.
 New tests added for entity resolution, authorization, tool dispatch states.
 """
+
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -33,7 +34,6 @@ from parrot.knowledge.ontology.schema import (
 )
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
 from parrot.knowledge.ontology.tool_dispatcher import RenderError
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -133,10 +133,12 @@ class TestGraphQueryFlow:
 
     @pytest.mark.asyncio
     async def test_full_pipeline(self, mock_tenant_mgr, mock_graph_store, mock_cache, user_context):
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
             result = await mixin.ontology_process(
-                "What is my department?", user_context, "test",
+                "What is my department?",
+                user_context,
+                "test",
             )
             assert isinstance(result, ContextEnvelope)
             assert result.state == "ok"
@@ -150,10 +152,12 @@ class TestGraphQueryFlow:
 
     @pytest.mark.asyncio
     async def test_caches_result(self, mock_tenant_mgr, mock_graph_store, mock_cache, user_context):
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
             await mixin.ontology_process(
-                "my department", user_context, "test",
+                "my department",
+                user_context,
+                "test",
             )
             mock_cache.set.assert_called_once()
 
@@ -162,10 +166,12 @@ class TestGraphQueryFlow:
         cached_ctx = EnrichedContext(source="ontology", graph_context=[{"cached": True}])
         mock_cache.get.return_value = cached_ctx
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
             result = await mixin.ontology_process(
-                "my department", user_context, "test",
+                "my department",
+                user_context,
+                "test",
             )
             assert isinstance(result, ContextEnvelope)
             assert result.context.graph_context == [{"cached": True}]
@@ -176,10 +182,12 @@ class TestVectorOnlyFlow:
 
     @pytest.mark.asyncio
     async def test_no_keyword_match(self, mock_tenant_mgr, mock_graph_store, mock_cache, user_context):
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
             result = await mixin.ontology_process(
-                "How do I reset my password?", user_context, "test",
+                "How do I reset my password?",
+                user_context,
+                "test",
             )
             assert isinstance(result, ContextEnvelope)
             assert result.context.source == "vector_only"
@@ -190,10 +198,12 @@ class TestDisabledFlow:
 
     @pytest.mark.asyncio
     async def test_disabled_returns_early(self, mock_tenant_mgr, mock_graph_store, mock_cache, user_context):
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=False):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=False):
             mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
             result = await mixin.ontology_process(
-                "my department", user_context, "test",
+                "my department",
+                user_context,
+                "test",
             )
             assert isinstance(result, ContextEnvelope)
             assert result.state == "disabled"
@@ -206,20 +216,24 @@ class TestGracefulDegradation:
     @pytest.mark.asyncio
     async def test_graph_store_failure(self, mock_tenant_mgr, mock_graph_store, mock_cache, user_context):
         mock_graph_store.execute_pattern.side_effect = Exception("ArangoDB down")
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
             result = await mixin.ontology_process(
-                "my department", user_context, "test",
+                "my department",
+                user_context,
+                "test",
             )
             assert isinstance(result, ContextEnvelope)
             assert result.context.source == "vector_only"
 
     @pytest.mark.asyncio
     async def test_no_graph_store(self, mock_tenant_mgr, mock_cache, user_context):
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, None, mock_cache)
             result = await mixin.ontology_process(
-                "my department", user_context, "test",
+                "my department",
+                user_context,
+                "test",
             )
             assert isinstance(result, ContextEnvelope)
             assert result.context.source == "vector_only"
@@ -227,10 +241,12 @@ class TestGracefulDegradation:
     @pytest.mark.asyncio
     async def test_tenant_not_found(self, mock_tenant_mgr, mock_graph_store, mock_cache, user_context):
         mock_tenant_mgr.resolve.side_effect = FileNotFoundError("no YAML")
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
             result = await mixin.ontology_process(
-                "my department", user_context, "test",
+                "my department",
+                user_context,
+                "test",
             )
             assert isinstance(result, ContextEnvelope)
             assert result.context.source == "vector_only"
@@ -246,13 +262,17 @@ class TestPostActions:
         mock_vector_store = AsyncMock()
         mock_vector_store.search.return_value = [{"doc": "portal docs"}]
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(
-                mock_tenant_mgr, mock_graph_store, mock_cache,
+                mock_tenant_mgr,
+                mock_graph_store,
+                mock_cache,
                 vector_store=mock_vector_store,
             )
             result = await mixin.ontology_process(
-                "what is my portal?", user_context, "test",
+                "what is my portal?",
+                user_context,
+                "test",
             )
             assert isinstance(result, ContextEnvelope)
             assert result.context.source == "ontology"
@@ -269,8 +289,10 @@ class TestPostActions:
             post_action="tool_call",
         )
         tenant_ctx = TenantContext(
-            tenant_id="test", arango_db="test_ontology",
-            pgvector_schema="test", ontology=ontology,
+            tenant_id="test",
+            arango_db="test_ontology",
+            pgvector_schema="test",
+            ontology=ontology,
         )
         mock_tenant_mgr.resolve.return_value = tenant_ctx
 
@@ -279,10 +301,12 @@ class TestPostActions:
             {"name": "Workday"},
         ]
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
             result = await mixin.ontology_process(
-                "what are my tools?", user_context, "test",
+                "what are my tools?",
+                user_context,
+                "test",
             )
             assert isinstance(result, ContextEnvelope)
             assert result.context.tool_hint is not None
@@ -305,9 +329,12 @@ class TestHelpers:
         assert val is None
 
     def test_build_tool_hint(self):
-        hint = OntologyRAGMixin._build_tool_hint([
-            {"name": "Workday"}, {"name": "Jira"},
-        ])
+        hint = OntologyRAGMixin._build_tool_hint(
+            [
+                {"name": "Workday"},
+                {"name": "Jira"},
+            ]
+        )
         assert "Workday" in hint
         assert "Jira" in hint
 
@@ -360,33 +387,33 @@ class TestOntologyProcessStates:
     """New state-machine tests for ContextEnvelope returns."""
 
     @pytest.mark.asyncio
-    async def test_get_permission_context_default_empty(
-        self, mock_tenant_mgr, mock_graph_store, mock_cache
-    ) -> None:
+    async def test_get_permission_context_default_empty(self, mock_tenant_mgr, mock_graph_store, mock_cache) -> None:
         """_get_permission_context returns {} on the base mixin."""
         mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
         assert mixin._get_permission_context() == {}
 
     @pytest.mark.asyncio
-    async def test_ambiguity_returns_ambiguous_envelope(
-        self, mock_cache
-    ) -> None:
+    async def test_ambiguity_returns_ambiguous_envelope(self, mock_cache) -> None:
         """EntityAmbiguityError from resolver → state="ambiguous"."""
         ontology = _make_ontology_with_entity_extraction()
         tenant_ctx = TenantContext(
-            tenant_id="t1", arango_db="t1_ontology",
-            pgvector_schema="t1", ontology=ontology,
+            tenant_id="t1",
+            arango_db="t1_ontology",
+            pgvector_schema="t1",
+            ontology=ontology,
         )
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
 
         mock_gs = AsyncMock(spec=OntologyGraphStore)
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
+            ) as MockResolver,
+        ):
             instance = MockResolver.return_value
             instance.extract_and_resolve = AsyncMock(
                 side_effect=EntityAmbiguityError(
@@ -413,25 +440,27 @@ class TestOntologyProcessStates:
         assert len(result.clarification["candidates"]) == 2
 
     @pytest.mark.asyncio
-    async def test_entity_not_found_returns_envelope(
-        self, mock_cache
-    ) -> None:
+    async def test_entity_not_found_returns_envelope(self, mock_cache) -> None:
         """EntityNotFoundError from resolver → state="entity_not_found"."""
         ontology = _make_ontology_with_entity_extraction()
         tenant_ctx = TenantContext(
-            tenant_id="t1", arango_db="t1_ontology",
-            pgvector_schema="t1", ontology=ontology,
+            tenant_id="t1",
+            arango_db="t1_ontology",
+            pgvector_schema="t1",
+            ontology=ontology,
         )
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
 
         mock_gs = AsyncMock(spec=OntologyGraphStore)
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
+            ) as MockResolver,
+        ):
             instance = MockResolver.return_value
             instance.extract_and_resolve = AsyncMock(
                 side_effect=EntityNotFoundError(
@@ -450,38 +479,36 @@ class TestOntologyProcessStates:
         assert result.state == "entity_not_found"
 
     @pytest.mark.asyncio
-    async def test_denied_returns_denied_envelope(
-        self, mock_cache
-    ) -> None:
+    async def test_denied_returns_denied_envelope(self, mock_cache) -> None:
         """AuthorizationChecker denying → state="denied"."""
         auth_spec = AuthorizationSpec(rules=[AuthorizationRule(rule="has_role", role="hr_manager")])
         ontology = _make_ontology_with_entity_extraction(authorization_spec=auth_spec)
         tenant_ctx = TenantContext(
-            tenant_id="t1", arango_db="t1_ontology",
-            pgvector_schema="t1", ontology=ontology,
+            tenant_id="t1",
+            arango_db="t1_ontology",
+            pgvector_schema="t1",
+            ontology=ontology,
         )
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
 
         mock_gs = AsyncMock(spec=OntologyGraphStore)
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver, \
-             patch(
+            ) as MockResolver,
+            patch(
                 "parrot.knowledge.ontology.mixin.AuthorizationChecker",
                 autospec=True,
-             ) as MockChecker:
+            ) as MockChecker,
+        ):
             instance_resolver = MockResolver.return_value
-            instance_resolver.extract_and_resolve = AsyncMock(
-                return_value={"target_employee": "Employee/1"}
-            )
+            instance_resolver.extract_and_resolve = AsyncMock(return_value={"target_employee": "Employee/1"})
             instance_checker = MockChecker.return_value
-            instance_checker.check = AsyncMock(
-                return_value=(False, "no authorization rule matched")
-            )
+            instance_checker.check = AsyncMock(return_value=(False, "no authorization rule matched"))
             mixin = _make_mixin(mock_tm, mock_gs, mock_cache)
             result = await mixin.ontology_process(
                 "el equipo de Jesús",
@@ -494,9 +521,7 @@ class TestOntologyProcessStates:
         assert result.denial_reason is not None
 
     @pytest.mark.asyncio
-    async def test_auth_required_returns_auth_required_envelope(
-        self, mock_cache
-    ) -> None:
+    async def test_auth_required_returns_auth_required_envelope(self, mock_cache) -> None:
         """AuthorizationRequired from dispatcher → state="auth_required"."""
         tool_spec = ToolCallSpec(
             toolkit="JiraToolkit",
@@ -505,11 +530,14 @@ class TestOntologyProcessStates:
             result_binding="issues",
         )
         ontology = _make_ontology_with_entity_extraction(
-            post_action="tool_call", tool_call_spec=tool_spec,
+            post_action="tool_call",
+            tool_call_spec=tool_spec,
         )
         tenant_ctx = TenantContext(
-            tenant_id="t1", arango_db="t1_ontology",
-            pgvector_schema="t1", ontology=ontology,
+            tenant_id="t1",
+            arango_db="t1_ontology",
+            pgvector_schema="t1",
+            ontology=ontology,
         )
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
@@ -519,19 +547,19 @@ class TestOntologyProcessStates:
 
         mock_tool_mgr = MagicMock()
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver, \
-             patch(
+            ) as MockResolver,
+            patch(
                 "parrot.knowledge.ontology.mixin.ToolCallDispatcher",
                 autospec=True,
-             ) as MockDispatcher:
+            ) as MockDispatcher,
+        ):
             instance_resolver = MockResolver.return_value
-            instance_resolver.extract_and_resolve = AsyncMock(
-                return_value={"target_employee": "Employee/1"}
-            )
+            instance_resolver.extract_and_resolve = AsyncMock(return_value={"target_employee": "Employee/1"})
             instance_dispatcher = MockDispatcher.return_value
             instance_dispatcher.dispatch = AsyncMock(
                 side_effect=AuthorizationRequired(
@@ -556,9 +584,7 @@ class TestOntologyProcessStates:
         assert result.auth_prompt["provider"] == "jira"
 
     @pytest.mark.asyncio
-    async def test_render_error_returns_render_error_envelope(
-        self, mock_cache
-    ) -> None:
+    async def test_render_error_returns_render_error_envelope(self, mock_cache) -> None:
         """RenderError from dispatcher → state="render_error"."""
         tool_spec = ToolCallSpec(
             toolkit="JiraToolkit",
@@ -567,11 +593,14 @@ class TestOntologyProcessStates:
             result_binding="issues",
         )
         ontology = _make_ontology_with_entity_extraction(
-            post_action="tool_call", tool_call_spec=tool_spec,
+            post_action="tool_call",
+            tool_call_spec=tool_spec,
         )
         tenant_ctx = TenantContext(
-            tenant_id="t1", arango_db="t1_ontology",
-            pgvector_schema="t1", ontology=ontology,
+            tenant_id="t1",
+            arango_db="t1_ontology",
+            pgvector_schema="t1",
+            ontology=ontology,
         )
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
@@ -581,19 +610,19 @@ class TestOntologyProcessStates:
 
         mock_tool_mgr = MagicMock()
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver, \
-             patch(
+            ) as MockResolver,
+            patch(
                 "parrot.knowledge.ontology.mixin.ToolCallDispatcher",
                 autospec=True,
-             ) as MockDispatcher:
+            ) as MockDispatcher,
+        ):
             instance_resolver = MockResolver.return_value
-            instance_resolver.extract_and_resolve = AsyncMock(
-                return_value={"target_employee": "Employee/1"}
-            )
+            instance_resolver.extract_and_resolve = AsyncMock(return_value={"target_employee": "Employee/1"})
             instance_dispatcher = MockDispatcher.return_value
             instance_dispatcher.dispatch = AsyncMock(
                 side_effect=RenderError(field="jql", message="undefined 'ctx.unknown'")
@@ -610,9 +639,7 @@ class TestOntologyProcessStates:
         assert result.error is not None
 
     @pytest.mark.asyncio
-    async def test_tool_call_without_spec_uses_build_tool_hint(
-        self, mock_tenant_mgr, mock_cache, ontology
-    ) -> None:
+    async def test_tool_call_without_spec_uses_build_tool_hint(self, mock_tenant_mgr, mock_cache, ontology) -> None:
         """tool_call post-action with no ToolCallSpec falls back to _build_tool_hint."""
         # Add pattern with tool_call post-action but no tool_call spec
         ontology.traversal_patterns["find_tools"] = TraversalPattern(
@@ -623,15 +650,17 @@ class TestOntologyProcessStates:
             # tool_call=None (default) — backwards compat fallback
         )
         tenant_ctx = TenantContext(
-            tenant_id="test", arango_db="test_ontology",
-            pgvector_schema="test", ontology=ontology,
+            tenant_id="test",
+            arango_db="test_ontology",
+            pgvector_schema="test",
+            ontology=ontology,
         )
         mock_tenant_mgr.resolve.return_value = tenant_ctx
 
         mock_gs = AsyncMock()
         mock_gs.execute_pattern.return_value = [{"name": "Workday"}]
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
+        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, mock_gs, mock_cache)
             result = await mixin.ontology_process(
                 "what are my tools?",
@@ -647,14 +676,14 @@ class TestOntologyProcessStates:
         assert result.tool_result is None  # no ToolCallSpec → no tool_result
 
     @pytest.mark.asyncio
-    async def test_cache_key_includes_resolved_entities(
-        self, mock_cache
-    ) -> None:
+    async def test_cache_key_includes_resolved_entities(self, mock_cache) -> None:
         """Two queries with different resolved entities get distinct cache keys."""
         ontology = _make_ontology_with_entity_extraction()
         tenant_ctx = TenantContext(
-            tenant_id="t1", arango_db="t1_ontology",
-            pgvector_schema="t1", ontology=ontology,
+            tenant_id="t1",
+            arango_db="t1_ontology",
+            pgvector_schema="t1",
+            ontology=ontology,
         )
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
@@ -674,18 +703,18 @@ class TestOntologyProcessStates:
             seen_keys.append(key)
             return key
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
+            ) as MockResolver,
+        ):
             # First call resolves Employee/1
             mock_cache.get.return_value = None
             instance = MockResolver.return_value
-            instance.extract_and_resolve = AsyncMock(
-                return_value={"target_employee": "Employee/1"}
-            )
-            with patch.object(OntologyCache, 'build_key', staticmethod(fake_build_key)):
+            instance.extract_and_resolve = AsyncMock(return_value={"target_employee": "Employee/1"})
+            with patch.object(OntologyCache, "build_key", staticmethod(fake_build_key)):
                 mixin = _make_mixin(mock_tm, mock_gs, mock_cache)
                 await mixin.ontology_process(
                     "el equipo de Jesús",
@@ -694,10 +723,8 @@ class TestOntologyProcessStates:
                 )
 
             # Second call resolves Employee/2
-            instance.extract_and_resolve = AsyncMock(
-                return_value={"target_employee": "Employee/2"}
-            )
-            with patch.object(OntologyCache, 'build_key', staticmethod(fake_build_key)):
+            instance.extract_and_resolve = AsyncMock(return_value={"target_employee": "Employee/2"})
+            with patch.object(OntologyCache, "build_key", staticmethod(fake_build_key)):
                 await mixin.ontology_process(
                     "el equipo de Pérez",
                     user_context={"user_id": "alice"},
@@ -705,14 +732,10 @@ class TestOntologyProcessStates:
                 )
 
         assert len(seen_keys) == 2
-        assert seen_keys[0] != seen_keys[1], (
-            "Cache keys must differ when resolved_entities differ"
-        )
+        assert seen_keys[0] != seen_keys[1], "Cache keys must differ when resolved_entities differ"
 
     @pytest.mark.asyncio
-    async def test_happy_path_with_tool_dispatch(
-        self, mock_cache
-    ) -> None:
+    async def test_happy_path_with_tool_dispatch(self, mock_cache) -> None:
         """Full pipeline with entity resolution + tool dispatch returns ok+tool_result."""
         tool_spec = ToolCallSpec(
             toolkit="JiraToolkit",
@@ -721,11 +744,14 @@ class TestOntologyProcessStates:
             result_binding="issues",
         )
         ontology = _make_ontology_with_entity_extraction(
-            post_action="tool_call", tool_call_spec=tool_spec,
+            post_action="tool_call",
+            tool_call_spec=tool_spec,
         )
         tenant_ctx = TenantContext(
-            tenant_id="t1", arango_db="t1_ontology",
-            pgvector_schema="t1", ontology=ontology,
+            tenant_id="t1",
+            arango_db="t1_ontology",
+            pgvector_schema="t1",
+            ontology=ontology,
         )
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
@@ -735,23 +761,21 @@ class TestOntologyProcessStates:
 
         mock_tool_mgr = MagicMock()
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver, \
-             patch(
+            ) as MockResolver,
+            patch(
                 "parrot.knowledge.ontology.mixin.ToolCallDispatcher",
                 autospec=True,
-             ) as MockDispatcher:
+            ) as MockDispatcher,
+        ):
             instance_resolver = MockResolver.return_value
-            instance_resolver.extract_and_resolve = AsyncMock(
-                return_value={"target_employee": "Employee/1"}
-            )
+            instance_resolver.extract_and_resolve = AsyncMock(return_value={"target_employee": "Employee/1"})
             instance_dispatcher = MockDispatcher.return_value
-            instance_dispatcher.dispatch = AsyncMock(
-                return_value={"issues": [{"key": "TROC-1"}]}
-            )
+            instance_dispatcher.dispatch = AsyncMock(return_value={"issues": [{"key": "TROC-1"}]})
             mixin = _make_mixin(mock_tm, mock_gs, mock_cache, tool_manager=mock_tool_mgr)
             result = await mixin.ontology_process(
                 "el equipo de Jesús",

@@ -1,4 +1,5 @@
 """Tests for ontology dual-path intent resolver."""
+
 import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
@@ -129,16 +130,16 @@ class TestLLMPath:
     async def test_llm_selects_known_pattern(self, ontology, user_context):
         mock_llm = AsyncMock()
         mock_llm.completion.return_value = MagicMock(
-            output=json.dumps({
-                "action": "graph_query",
-                "pattern": "find_dept",
-            })
+            output=json.dumps(
+                {
+                    "action": "graph_query",
+                    "pattern": "find_dept",
+                }
+            )
         )
         resolver = OntologyIntentResolver(ontology, llm_client=mock_llm)
         # Query that doesn't match fast path keywords
-        result = await resolver.resolve(
-            "Tell me about the org structure I belong to", user_context
-        )
+        result = await resolver.resolve("Tell me about the org structure I belong to", user_context)
         assert result.action == "graph_query"
         assert result.pattern == "find_dept"
         assert result.source == "llm"
@@ -147,17 +148,17 @@ class TestLLMPath:
     async def test_llm_generates_dynamic_aql(self, ontology, user_context):
         mock_llm = AsyncMock()
         mock_llm.completion.return_value = MagicMock(
-            output=json.dumps({
-                "action": "graph_query",
-                "pattern": "dynamic",
-                "query": "FOR v IN 1..2 OUTBOUND @user_id assigned_to RETURN v.name",
-                "suggested_post_action": "none",
-            })
+            output=json.dumps(
+                {
+                    "action": "graph_query",
+                    "pattern": "dynamic",
+                    "query": "FOR v IN 1..2 OUTBOUND @user_id assigned_to RETURN v.name",
+                    "suggested_post_action": "none",
+                }
+            )
         )
         resolver = OntologyIntentResolver(ontology, llm_client=mock_llm)
-        result = await resolver.resolve(
-            "Show me all projects connected to my team", user_context
-        )
+        result = await resolver.resolve("Show me all projects connected to my team", user_context)
         assert result.action == "graph_query"
         assert result.pattern == "dynamic"
         assert result.source == "llm_dynamic"
@@ -166,13 +167,9 @@ class TestLLMPath:
     @pytest.mark.asyncio
     async def test_llm_vector_only(self, ontology, user_context):
         mock_llm = AsyncMock()
-        mock_llm.completion.return_value = MagicMock(
-            output=json.dumps({"action": "vector_only"})
-        )
+        mock_llm.completion.return_value = MagicMock(output=json.dumps({"action": "vector_only"}))
         resolver = OntologyIntentResolver(ontology, llm_client=mock_llm)
-        result = await resolver.resolve(
-            "How do I configure my email client?", user_context
-        )
+        result = await resolver.resolve("How do I configure my email client?", user_context)
         assert result.action == "vector_only"
 
     @pytest.mark.asyncio
@@ -180,9 +177,7 @@ class TestLLMPath:
         mock_llm = AsyncMock()
         mock_llm.completion.side_effect = Exception("LLM unavailable")
         resolver = OntologyIntentResolver(ontology, llm_client=mock_llm)
-        result = await resolver.resolve(
-            "Something complex about the org", user_context
-        )
+        result = await resolver.resolve("Something complex about the org", user_context)
         assert result.action == "vector_only"
 
     @pytest.mark.asyncio
@@ -190,11 +185,13 @@ class TestLLMPath:
         """Dynamic AQL with mutations should be rejected."""
         mock_llm = AsyncMock()
         mock_llm.completion.return_value = MagicMock(
-            output=json.dumps({
-                "action": "graph_query",
-                "pattern": "dynamic",
-                "query": "REMOVE { _key: '1' } IN employees",
-            })
+            output=json.dumps(
+                {
+                    "action": "graph_query",
+                    "pattern": "dynamic",
+                    "query": "REMOVE { _key: '1' } IN employees",
+                }
+            )
         )
         resolver = OntologyIntentResolver(ontology, llm_client=mock_llm)
         # Should fall through to vector_only because validation rejects the AQL

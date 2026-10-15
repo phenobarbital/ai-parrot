@@ -10,6 +10,7 @@ Covers:
 - Non-authority fallback to vector levels when graph empty
 - Bypass conditions (ambiguous, denied, entity_not_found) still short-circuit before chain
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -30,7 +31,6 @@ from parrot.knowledge.ontology.schema import (
     TraversalPattern,
 )
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
-
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -56,10 +56,7 @@ def _make_authority_ontology() -> MergedOntology:
             "authoritative_doc_for_topic": TraversalPattern(
                 description="Find authoritative document for topic",
                 trigger_intents=_AUTHORITY_PATTERN_TRIGGERS,
-                query_template=(
-                    "FOR doc IN documents FILTER doc.authority_level == @authority_level "
-                    "RETURN doc"
-                ),
+                query_template=("FOR doc IN documents FILTER doc.authority_level == @authority_level " "RETURN doc"),
                 post_action="none",
                 entity_extraction={
                     "topic": EntityExtractionRule(
@@ -183,14 +180,14 @@ class TestDegradationChain:
         # primary returns results, secondary should NOT be called
         mock_graph_store.execute_pattern.return_value = [policy_row]
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
-            MockResolver.return_value.extract_and_resolve = AsyncMock(
-                return_value={"topic": "documents/policy_1"}
-            )
+            ) as MockResolver,
+        ):
+            MockResolver.return_value.extract_and_resolve = AsyncMock(return_value={"topic": "documents/policy_1"})
             mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
             result = await mixin.ontology_process(
                 "what is the policy on commissions",
@@ -231,14 +228,14 @@ class TestDegradationChain:
 
         mock_graph_store.execute_pattern.side_effect = traversal_side_effect
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
-            MockResolver.return_value.extract_and_resolve = AsyncMock(
-                return_value={"topic": "documents/policy_1"}
-            )
+            ) as MockResolver,
+        ):
+            MockResolver.return_value.extract_and_resolve = AsyncMock(return_value={"topic": "documents/policy_1"})
             mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
             result = await mixin.ontology_process(
                 "what is the policy on commissions",
@@ -272,16 +269,18 @@ class TestDegradationChain:
             [filtered_doc],  # Level 3 filtered call
         ]
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
-            MockResolver.return_value.extract_and_resolve = AsyncMock(
-                return_value={"topic": "documents/policy_1"}
-            )
+            ) as MockResolver,
+        ):
+            MockResolver.return_value.extract_and_resolve = AsyncMock(return_value={"topic": "documents/policy_1"})
             mixin = _make_mixin(
-                mock_tenant_mgr, mock_graph_store, mock_cache,
+                mock_tenant_mgr,
+                mock_graph_store,
+                mock_cache,
                 vector_store=mock_vector_store,
             )
             result = await mixin.ontology_process(
@@ -316,20 +315,22 @@ class TestDegradationChain:
         plain_doc = {"doc_id": "some_doc", "content": "Some related content"}
         mock_vector_store = AsyncMock()
         mock_vector_store.similarity_search.side_effect = [
-            [],         # Level 3: filtered → empty
+            [],  # Level 3: filtered → empty
             [plain_doc],  # Level 4: plain → hit
         ]
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
-            MockResolver.return_value.extract_and_resolve = AsyncMock(
-                return_value={"topic": "documents/policy_1"}
-            )
+            ) as MockResolver,
+        ):
+            MockResolver.return_value.extract_and_resolve = AsyncMock(return_value={"topic": "documents/policy_1"})
             mixin = _make_mixin(
-                mock_tenant_mgr, mock_graph_store, mock_cache,
+                mock_tenant_mgr,
+                mock_graph_store,
+                mock_cache,
                 vector_store=mock_vector_store,
             )
             result = await mixin.ontology_process(
@@ -361,16 +362,18 @@ class TestDegradationChain:
         mock_vector_store = AsyncMock()
         mock_vector_store.similarity_search.return_value = []  # All vector levels empty
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
-            MockResolver.return_value.extract_and_resolve = AsyncMock(
-                return_value={"topic": "documents/policy_1"}
-            )
+            ) as MockResolver,
+        ):
+            MockResolver.return_value.extract_and_resolve = AsyncMock(return_value={"topic": "documents/policy_1"})
             mixin = _make_mixin(
-                mock_tenant_mgr, mock_graph_store, mock_cache,
+                mock_tenant_mgr,
+                mock_graph_store,
+                mock_cache,
                 vector_store=mock_vector_store,
             )
             result = await mixin.ontology_process(
@@ -397,16 +400,18 @@ class TestDegradationChain:
         mock_tenant_mgr.resolve.return_value = authority_tenant_ctx
         mock_graph_store.execute_pattern.return_value = []
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
-            MockResolver.return_value.extract_and_resolve = AsyncMock(
-                return_value={"topic": "documents/policy_1"}
-            )
+            ) as MockResolver,
+        ):
+            MockResolver.return_value.extract_and_resolve = AsyncMock(return_value={"topic": "documents/policy_1"})
             mixin = _make_mixin(
-                mock_tenant_mgr, mock_graph_store, mock_cache,
+                mock_tenant_mgr,
+                mock_graph_store,
+                mock_cache,
                 vector_store=None,  # no vector store
             )
             result = await mixin.ontology_process(
@@ -435,9 +440,7 @@ class TestNonAuthorityPatterns:
         """Non-authority pattern succeeds → source="ontology", no authority_level bind var."""
         mock_tenant_mgr = MagicMock(spec=TenantOntologyManager)
         mock_tenant_mgr.resolve.return_value = standard_tenant_ctx
-        mock_graph_store.execute_pattern.return_value = [
-            {"name": "Engineering", "dept_id": "ENG"}
-        ]
+        mock_graph_store.execute_pattern.return_value = [{"name": "Engineering", "dept_id": "ENG"}]
 
         with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
@@ -472,13 +475,15 @@ class TestNonAuthorityPatterns:
         plain_doc = {"doc_id": "doc1", "content": "Department info"}
         mock_vector_store = AsyncMock()
         mock_vector_store.similarity_search.side_effect = [
-            [],          # Level 3 filtered → empty
-            [plain_doc], # Level 4 plain → hit
+            [],  # Level 3 filtered → empty
+            [plain_doc],  # Level 4 plain → hit
         ]
 
         with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True):
             mixin = _make_mixin(
-                mock_tenant_mgr, mock_graph_store, mock_cache,
+                mock_tenant_mgr,
+                mock_graph_store,
+                mock_cache,
                 vector_store=mock_vector_store,
             )
             result = await mixin.ontology_process(
@@ -509,11 +514,13 @@ class TestBypassConditions:
         mock_tenant_mgr = MagicMock(spec=TenantOntologyManager)
         mock_tenant_mgr.resolve.return_value = authority_tenant_ctx
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
+            ) as MockResolver,
+        ):
             MockResolver.return_value.extract_and_resolve = AsyncMock(
                 side_effect=EntityAmbiguityError(
                     rule_name="topic",
@@ -548,11 +555,13 @@ class TestBypassConditions:
         mock_tenant_mgr = MagicMock(spec=TenantOntologyManager)
         mock_tenant_mgr.resolve.return_value = authority_tenant_ctx
 
-        with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
-             patch(
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
                 "parrot.knowledge.ontology.mixin.EntityResolver",
                 autospec=True,
-             ) as MockResolver:
+            ) as MockResolver,
+        ):
             MockResolver.return_value.extract_and_resolve = AsyncMock(
                 side_effect=EntityNotFoundError(rule_name="topic", mention="unknown_topic")
             )

@@ -12,6 +12,7 @@ Resolves user queries into graph traversal intents using two paths:
     single-source sub-strategy within the broader intent routing framework.
     It will not be removed in the foreseeable future.
 """
+
 from __future__ import annotations
 
 import json as _json
@@ -178,9 +179,7 @@ class OntologyIntentResolver:
         prompt = self._build_intent_prompt()
 
         try:
-            response = await self.llm.completion(
-                f"{prompt}\n\nUser query: {query}"
-            )
+            response = await self.llm.completion(f"{prompt}\n\nUser query: {query}")
             output = getattr(response, "output", str(response))
 
             # Parse structured output
@@ -207,15 +206,13 @@ class OntologyIntentResolver:
             if decision.action == "graph_query":
                 if decision.pattern and decision.pattern != "dynamic":
                     # LLM selected a known pattern
-                    pattern = self.ontology.traversal_patterns.get(
-                        decision.pattern
-                    )
+                    pattern = self.ontology.traversal_patterns.get(decision.pattern)
                     if pattern:
                         return ResolvedIntent(
                             action="graph_query",
                             pattern=decision.pattern,
                             query=self._pattern_query(pattern),
-                        dialect=self._dialect,
+                            dialect=self._dialect,
                             params={"user_id": user_context.get("user_id")},
                             collection_binds=self._build_collection_binds(),
                             post_action=pattern.post_action,

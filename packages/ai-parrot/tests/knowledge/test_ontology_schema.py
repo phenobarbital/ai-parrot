@@ -1,4 +1,5 @@
 """Tests for ontology Pydantic schema models."""
+
 from datetime import datetime, timezone
 
 import pytest
@@ -17,7 +18,6 @@ from parrot.knowledge.ontology.schema import (
     ResolvedIntent,
     EnrichedContext,
 )
-
 
 # ── PropertyDef ──
 
@@ -95,11 +95,13 @@ class TestRelationDef:
 
     def test_alias_from_to(self):
         """Test that 'from' and 'to' YAML keys work via aliases."""
-        r = RelationDef(**{
-            "from": "Employee",
-            "to": "Department",
-            "edge_collection": "belongs_to",
-        })
+        r = RelationDef(
+            **{
+                "from": "Employee",
+                "to": "Department",
+                "edge_collection": "belongs_to",
+            }
+        )
         assert r.from_entity == "Employee"
         assert r.to_entity == "Department"
 
@@ -115,8 +117,10 @@ class TestRelationDef:
     def test_rejects_extra(self):
         with pytest.raises(ValidationError):
             RelationDef(
-                from_entity="A", to_entity="B",
-                edge_collection="e", bogus="x",
+                from_entity="A",
+                to_entity="B",
+                edge_collection="e",
+                bogus="x",
             )
 
 
