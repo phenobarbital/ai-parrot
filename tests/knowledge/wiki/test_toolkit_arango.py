@@ -34,6 +34,12 @@ def mock_arango_driver():
     return db
 
 
+@pytest.fixture(autouse=True)
+def _set_arango_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """resolve_arango_params requires ARANGODB_HOST since FEAT-540."""
+    monkeypatch.setenv("ARANGODB_HOST", "127.0.0.1")
+
+
 @pytest.fixture
 def arango_wiki_config(tmp_path: Path) -> WikiConfig:
     return WikiConfig(
@@ -72,8 +78,8 @@ class TestLLMWikiToolkitArangoWiring:
             toolkit = LLMWikiToolkit(
                 MagicMock(), MagicMock(), MagicMock(), arango_wiki_config
             )
-        assert toolkit._sources._arango_store is toolkit._store
-        assert toolkit._sources._arango_db is None
+        assert toolkit._sources._backend._backend._arango_store is toolkit._store
+        assert toolkit._sources._backend._backend._arango_db is None
 
     @pytest.mark.asyncio
     async def test_sources_resolve_lazily_at_first_use(
@@ -87,7 +93,7 @@ class TestLLMWikiToolkitArangoWiring:
                 MagicMock(), MagicMock(), MagicMock(), arango_wiki_config
             )
             assert toolkit._store._initialized is False
-            db = await toolkit._sources._resolve_arango_db()
+            db = await toolkit._sources._backend._backend._resolve_arango_db()
             assert toolkit._store._initialized is True
             assert db is toolkit._store._db
 
