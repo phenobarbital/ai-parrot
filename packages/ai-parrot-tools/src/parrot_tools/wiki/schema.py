@@ -26,6 +26,7 @@ from typing import (
     Optional,
 )
 
+
 class _SchemaTool(AbstractTool):
     """Shared plumbing for read-only schema-plane tools."""
 
