@@ -260,7 +260,7 @@ async def test_an_output_name_with_path_components_cannot_leave_the_root(scrapin
     result = await _scrape(toolkit, _driver(written), [{"action": "screenshot", "output_path": ".", "output_name": name}])
     assert written == [] and result.metadata["step_errors"]
     assert not (plans / "x.png").exists() and not (tmp_path / "x.png").exists()
-    assert not [p for p in tmp_path.rglob("*.png")]
+    assert not list(tmp_path.rglob("*.png"))
 
 
 async def test_a_plain_output_name_still_lands_in_the_root(scraping):
