@@ -27,10 +27,19 @@ class _Recorder:
     def __init__(self, rc: int = 0, out: str = "", err: str = "") -> None:
         self.rc, self.out, self.err = rc, out, err
         self.calls: list[list[str]] = []
+        self.envs: list = []
+        self.env = None
+        self.replies: dict = {}
 
-    async def __call__(self, argv, timeout=None):
+    async def __call__(self, argv, timeout=None, env=None):
         self.calls.append(list(argv))
+        self.envs.append(env)
         self.timeout = timeout
+        if env is not None:
+            self.env = env
+        for marker, reply in self.replies.items():
+            if marker in argv:
+                return reply
         return self.rc, self.out, self.err
 
 
@@ -55,7 +64,7 @@ async def test_clone_repo_public(tmp_path):
 # ── clone_repo: private (token-in-URL, gh absent) ──────────────────────
 
 
-async def test_clone_repo_private_uses_token_in_url(tmp_path):
+async def test_clone_repo_private_keeps_token_out_of_argv(tmp_path):
     tk = _toolkit()
     rec = _Recorder(rc=0)
     dest = str(tmp_path / "r")
@@ -65,7 +74,11 @@ async def test_clone_repo_private_uses_token_in_url(tmp_path):
     ):
         res = await tk.clone_repo("owner/name", dest, private=True)
     url_arg = rec.calls[0][-2]
-    assert url_arg == f"https://x-access-token:{TOKEN}@github.com/owner/name.git"
+    assert url_arg == "https://github.com/owner/name.git"
+    assert TOKEN not in " ".join(rec.calls[0])
+    assert "AUTHORIZATION: basic" in rec.env["GIT_CONFIG_VALUE_0"]
+    assert rec.env["GIT_CONFIG_KEY_0"] == "http.https://github.com/.extraheader"
+    assert TOKEN not in rec.env["GIT_CONFIG_VALUE_0"]
     # The returned payload must never carry the token.
     assert TOKEN not in str(res)
     assert res["repository"] == "owner/name"
@@ -102,7 +115,7 @@ async def test_clone_repo_private_prefers_gh_when_available(tmp_path):
     assert TOKEN not in " ".join(rec.calls[0])
 
 
-async def test_clone_repo_prefer_gh_false_uses_token_url(tmp_path: Path) -> None:
+async def test_clone_repo_prefer_gh_false_uses_env_auth(tmp_path: Path) -> None:
     """With ``gh`` present, ``prefer_gh=False`` uses authenticated git."""
     tk = _toolkit()
     rec = _Recorder(rc=0)
@@ -113,7 +126,48 @@ async def test_clone_repo_prefer_gh_false_uses_token_url(tmp_path: Path) -> None
     ):
         await tk.clone_repo("owner/name", dest, private=True, prefer_gh=False)
     assert rec.calls[0][:2] == ["git", "clone"]
-    assert rec.calls[0][-2] == f"https://x-access-token:{TOKEN}@github.com/owner/name.git"
+    assert rec.calls[0][-2] == "https://github.com/owner/name.git"
+    assert rec.envs[0] is not None
+
+
+async def test_pull_repo_private_rewrites_tokenized_origin(tmp_path: Path) -> None:
+    """A pull on an old clone cleans its origin URL and authenticates via env."""
+    tk = _toolkit()
+    (tmp_path / ".git").mkdir()
+    rec = _Recorder(rc=0)
+    leaky = f"https://x-access-token:{TOKEN}@github.com/owner/name.git\n"
+    rec.replies["get-url"] = (0, leaky, "")
+    with patch.object(GitToolkit, "_run_subprocess", new=rec):
+        await tk.pull_repo(str(tmp_path), private=True)
+    clean = "https://github.com/owner/name.git"
+    set_calls = [c for c in rec.calls if "set-url" in c]
+    assert set_calls and set_calls[0][-1] == clean
+    assert rec.calls.index(set_calls[0]) < rec.calls.index(rec.calls[-1])
+    assert rec.calls[-1][-2:] == ["pull", "--ff-only"]
+    assert all(TOKEN not in " ".join(c) for c in rec.calls[1:])
+    assert rec.envs[-1] is not None
+
+
+async def test_pull_repo_private_error_is_scrubbed(tmp_path: Path) -> None:
+    tk = _toolkit()
+    (tmp_path / ".git").mkdir()
+    rec = _Recorder(rc=0)
+    rec.replies["get-url"] = (0, "https://github.com/owner/name.git\n", "")
+    rec.replies["--ff-only"] = (1, "", f"boom {TOKEN}")
+    with patch.object(GitToolkit, "_run_subprocess", new=rec):
+        with pytest.raises(GitToolkitError) as ei:
+            await tk.pull_repo(str(tmp_path), private=True)
+    assert TOKEN not in str(ei.value)
+
+
+async def test_public_pull_passes_no_env(tmp_path: Path) -> None:
+    tk = _toolkit()
+    (tmp_path / ".git").mkdir()
+    rec = _Recorder(rc=0)
+    with patch.object(GitToolkit, "_run_subprocess", new=rec):
+        await tk.pull_repo(str(tmp_path))
+    assert rec.envs == [None]
+    assert len(rec.calls) == 1
 
 
 async def test_clone_repo_timeout_propagates(tmp_path: Path) -> None:
