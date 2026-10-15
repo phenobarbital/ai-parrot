@@ -108,7 +108,14 @@ from parrot.knowledge.wiki.repo_scan import (
     scan_repository,
 )
 from parrot.knowledge.wiki.sources import SourceCollectionManager
-from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiStoreBusy, create_wiki_store
+from parrot.knowledge.wiki.store import (
+    BaseWikiStore,
+    SQLiteWikiStore,
+    WikiStoreBusy,
+    create_wiki_store,
+    is_server_backend,
+    wiki_backend_names,
+)
 from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
 from parrot.knowledge.wiki.runtime import (
     WikiRuntimeError,
@@ -663,7 +670,7 @@ def _store_options(func: Any) -> Any:
     func = click.option(
         "--backend",
         "backend_opt",
-        type=click.Choice(["sqlite", "memory", "arangodb"]),
+        type=_BackendChoice(),
         default=None,
         help="Backend for --store (default: sqlite / WIKI_STORE_BACKEND).",
     )(func)
@@ -675,6 +682,35 @@ def _store_options(func: Any) -> Any:
         "defaults to WIKI_STORE env or the project's own plane.",
     )(func)
     return func
+
+
+class _BackendChoice(click.ParamType):
+    """Validate a backend name against the live wiki backend registry."""
+
+    name = "backend"
+
+    def convert(
+        self,
+        value: object,
+        param: click.Parameter | None,
+        ctx: click.Context | None,
+    ) -> str:
+        """Validate one command-line backend value.
+
+        Args:
+            value: Raw command-line value.
+            param: Click parameter receiving the value.
+            ctx: Current Click context.
+
+        Returns:
+            The validated backend name.
+        """
+        backend = str(value)
+        names = wiki_backend_names()
+        if backend in names:
+            return backend
+        self.fail(f"{backend!r} is not one of {', '.join(names)}", param, ctx)
+        raise AssertionError("click.ParamType.fail always raises")
 
 
 def _render_results_table(rows: list[dict[str, Any]], question: str, show_body: bool) -> None:
@@ -1513,7 +1549,7 @@ def mcp() -> None:
 @click.option("--name", default=None, help="Wiki name (default: repo directory name).")
 @click.option(
     "--backend",
-    type=click.Choice(["sqlite", "memory", "arangodb"]),
+    type=_BackendChoice(),
     default=None,
     help="Retrieval-plane backend (default: sqlite).",
 )
@@ -1646,7 +1682,7 @@ def build(
 
         async def _pipeline() -> dict[str, Any]:
             store = _open_store(root, config)
-            if config.backend == "arangodb":
+            if is_server_backend(config.backend):
                 await store.initialize()
             sources = _open_sources(root, config, store=store)
             # FEAT-532 TASK-2909: attach Roblox DataModel/API enrichment
@@ -1712,9 +1748,9 @@ def build(
         try:
             counts = _run(_pipeline())
         except Exception as exc:  # surfaced as a clear CLI error
-            if config.backend == "arangodb":
+            if is_server_backend(config.backend):
                 raise click.ClickException(
-                    f"Could not connect to ArangoDB for wiki " f"{config.wiki_name!r}: {exc}"
+                    f"Could not connect to {config.backend} for wiki " f"{config.wiki_name!r}: {exc}"
                 ) from exc
             raise
         save_project_config(root, base_config)
@@ -1976,7 +2012,7 @@ def upsert(
 
         async def _pipeline() -> dict[str, Any]:
             store = _open_store(root, config)
-            if config.backend == "arangodb":
+            if is_server_backend(config.backend):
                 await store.initialize()
             sources = _open_sources(root, config, store=store)
             # FEAT-532 TASK-2909: same enrichment pass as `build` — a
@@ -2017,9 +2053,9 @@ def upsert(
                 )
             return
         except Exception as exc:  # surfaced as a clear CLI error
-            if config.backend == "arangodb":
+            if is_server_backend(config.backend):
                 raise click.ClickException(
-                    f"Could not connect to ArangoDB for wiki " f"{config.wiki_name!r}: {exc}"
+                    f"Could not connect to {config.backend} for wiki " f"{config.wiki_name!r}: {exc}"
                 ) from exc
             raise
         if not quiet:
@@ -2328,12 +2364,12 @@ def lint(
     if not config.is_built(root):
         raise click.ClickException(f"Wiki not built for {root} — run `wikitoolkit build`.")
     store = _open_store(root, config)
-    if config.backend == "arangodb":
+    if is_server_backend(config.backend):
         try:
             _run(store.initialize())
         except Exception as exc:
             raise click.ClickException(
-                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: " f"{exc}"
+                f"Could not connect to {config.backend} for wiki {config.wiki_name!r}: " f"{exc}"
             ) from exc
     sources = _open_sources(root, config, store=store)
     read_store = _federate(root, config, store, ns_opt)
@@ -2408,12 +2444,12 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         click.echo(f"Wiki not built for {root} — run `wikitoolkit build`.")
         return
     store = _open_store(root, config)
-    if config.backend == "arangodb":
+    if is_server_backend(config.backend):
         try:
             _run(store.initialize())
         except Exception as exc:  # surfaced as a clear CLI error
             raise click.ClickException(
-                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: " f"{exc}"
+                f"Could not connect to {config.backend} for wiki {config.wiki_name!r}: " f"{exc}"
             ) from exc
     # Source staleness is a property of the LOCAL plane — the manager
     # must see the real store, not the federation wrapping it.
