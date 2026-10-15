@@ -1,10 +1,10 @@
-"""Unit tests for parrot.knowledge.graphindex.persist."""
+"""Unit tests for parrot.knowledge.graphindex.persist_arango."""
 
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
-from parrot.knowledge.graphindex.persist import GraphIndexPersistence, _node_to_doc, _edge_to_doc
+from parrot.knowledge.graphindex.persist_arango import ArangoPersistence, _node_to_doc, _edge_to_doc
 from parrot.knowledge.graphindex.meta_ontology import KIND_TO_COLLECTION, EDGE_KIND_TO_COLLECTION
 from parrot.knowledge.graphindex.schema import (
     EdgeKind,
@@ -138,14 +138,14 @@ class TestEdgeToDoc:
         assert doc["_to"] == "unknown-tgt"
 
 
-class TestGraphIndexPersistence:
+class TestArangoPersistence:
     @pytest.fixture
     def store(self):
         return make_graph_store()
 
     @pytest.fixture
     def persistence(self, store):
-        return GraphIndexPersistence(graph_store=store)
+        return ArangoPersistence(store=store)
 
     @pytest.fixture
     def ctx(self):
@@ -248,7 +248,7 @@ class TestGraphIndexPersistence:
         existing_doc = {"_key": "old-node-1", "source_uri": "doc://test.txt", "node_id": "old-node-1"}
         store.get_all_nodes = AsyncMock(return_value=[existing_doc])
 
-        persistence = GraphIndexPersistence(graph_store=store)
+        persistence = ArangoPersistence(store=store)
         nodes = [make_node("new-node-1", NodeKind.DOCUMENT, source_uri="doc://test.txt")]
         await persistence.replace_document_slice(ctx, "doc://test.txt", nodes, [])
 
@@ -281,7 +281,7 @@ class TestGraphIndexPersistence:
         store.soft_delete_nodes = mock_soft_delete
         store.upsert_nodes = mock_upsert
 
-        persistence = GraphIndexPersistence(graph_store=store)
+        persistence = ArangoPersistence(store=store)
         nodes = [make_node("new-1", NodeKind.DOCUMENT, source_uri="doc://test.txt")]
         await persistence.replace_document_slice(ctx, "doc://test.txt", nodes, [])
 
@@ -302,7 +302,7 @@ class TestGraphIndexPersistence:
         store.upsert_nodes = AsyncMock(return_value=upsert_result)
         store.create_edges = AsyncMock(return_value=0)
 
-        persistence = GraphIndexPersistence(graph_store=store)
+        persistence = ArangoPersistence(store=store)
         nodes = [make_node("n1", NodeKind.DOCUMENT, source_uri="doc://test.txt")]
         result = await persistence.replace_document_slice(ctx, "doc://test.txt", nodes, [])
 
@@ -318,7 +318,7 @@ class TestGraphIndexPersistence:
         upsert_result.updated = 0
         store.upsert_nodes = AsyncMock(return_value=upsert_result)
 
-        persistence = GraphIndexPersistence(graph_store=store)
+        persistence = ArangoPersistence(store=store)
         nodes = [make_node("n1", NodeKind.DOCUMENT, source_uri="doc://fresh.txt")]
         await persistence.replace_document_slice(ctx, "doc://fresh.txt", nodes, [])
 
@@ -343,7 +343,7 @@ class TestGraphIndexPersistence:
 
         store.upsert_nodes = slow_upsert
 
-        persistence = GraphIndexPersistence(graph_store=store)
+        persistence = ArangoPersistence(store=store)
         nodes_a = [make_node("na", NodeKind.DOCUMENT, source_uri="doc://a.txt")]
         nodes_b = [make_node("nb", NodeKind.DOCUMENT, source_uri="doc://b.txt")]
 
@@ -364,7 +364,7 @@ class TestGraphIndexPersistence:
     async def test_different_tenants_do_not_share_locks(self):
         """Two different tenants should have independent locks."""
         store = make_graph_store()
-        persistence = GraphIndexPersistence(graph_store=store)
+        persistence = ArangoPersistence(store=store)
 
         ctx_a = make_ctx("tenant-alpha")
         ctx_b = make_ctx("tenant-beta")
@@ -386,9 +386,9 @@ class TestGraphIndexPersistence:
         # Create a node then patch KIND_TO_COLLECTION to not include its kind
         node = make_node("n1", NodeKind.DOCUMENT)
         with patch(
-            "parrot.knowledge.graphindex.persist.KIND_TO_COLLECTION", {}
+            "parrot.knowledge.graphindex.persist_arango.KIND_TO_COLLECTION", {}
         ):
-            persistence = GraphIndexPersistence(graph_store=store)
+            persistence = ArangoPersistence(store=store)
             result = await persistence.persist_graph(ctx, [node], [])
             # Should not raise; upsert_nodes never called since mapping is empty
             assert result["nodes_persisted"] == 0
@@ -398,8 +398,8 @@ class TestGraphIndexPersistence:
         """Edges with unrecognised kind are logged and skipped gracefully."""
         edge = make_edge("a", "b", EdgeKind.CONTAINS)
         with patch(
-            "parrot.knowledge.graphindex.persist.EDGE_KIND_TO_COLLECTION", {}
+            "parrot.knowledge.graphindex.persist_arango.EDGE_KIND_TO_COLLECTION", {}
         ):
-            persistence = GraphIndexPersistence(graph_store=store)
+            persistence = ArangoPersistence(store=store)
             result = await persistence.persist_graph(ctx, [], [edge])
             assert result["edges_persisted"] == 0

@@ -8,7 +8,7 @@ fakes so the loader's wiring is exercised without models or a live database:
   them), then returns a ``BuildResult``;
 * the no-credentials path is asserted to use the in-memory ``_NullPersistence``;
 * the credentials path is asserted to construct an ``OntologyGraphStore`` +
-  ``GraphIndexPersistence`` against a mocked asyncdb client.
+  ``ArangoPersistence`` against a mocked asyncdb client.
 """
 from unittest.mock import AsyncMock, MagicMock
 
@@ -158,7 +158,7 @@ class TestCredsPersistence:
         )
         persistence_cls = MagicMock(return_value=fake_persistence)
         monkeypatch.setattr(loader_mod, "OntologyGraphStore", store_cls)
-        monkeypatch.setattr(loader_mod, "GraphIndexPersistence", persistence_cls)
+        monkeypatch.setattr(loader_mod, "ArangoPersistence", persistence_cls)
 
         loader = GraphIndexLoader(
             tenant_id="t",

@@ -6,7 +6,7 @@
 2. Embedding — GraphIndexEmbedder (FAISS index construction)
 3. Graph assembly — GraphAssembler (rustworkx PyDiGraph)
 4. Cross-domain resolution — resolve_cross_domain (inferred edges)
-5. Persistence — GraphIndexPersistence (ArangoDB + pgvector)
+5. Persistence — GraphPersistence (ArangoDB + pgvector)
 6. Analytics + Report — compute_analytics + generate_report
 
 Entry points:
@@ -40,7 +40,6 @@ from parrot.knowledge.graphindex.extractors.loader import (
 )
 from parrot.knowledge.graphindex.extractors.skill import SkillExtractor
 from parrot.knowledge.graphindex.inter_community import compute_inter_community_graph
-from parrot.knowledge.graphindex.persist import GraphIndexPersistence
 from parrot.knowledge.graphindex.protocols import EmbeddingPersistence, IncrementalPersistence
 from parrot.knowledge.graphindex.resolve import ResolutionConfig, resolve_cross_domain
 from parrot.knowledge.graphindex.schema import (
@@ -55,7 +54,7 @@ from parrot.knowledge.graphindex.signals import SignalRelevanceConfig
 from parrot.knowledge.ontology.schema import TenantContext
 
 if TYPE_CHECKING:
-    from parrot.knowledge.graphindex.protocols import Embedder, PageIndexer
+    from parrot.knowledge.graphindex.protocols import Embedder, GraphPersistence, PageIndexer
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +67,7 @@ class GraphIndexBuilder:
     :meth:`ingest_document` flows.
 
     Args:
-        persistence: An initialised ``GraphIndexPersistence`` instance.
+        persistence: An initialised ``GraphPersistence`` instance.
         embedder: An initialised ``GraphIndexEmbedder`` instance.
         output_dir: Directory for generated reports and other artefacts.
         ignore_file: Optional path to a ``.graphindexignore`` file.
@@ -118,7 +117,7 @@ class GraphIndexBuilder:
 
     def __init__(
         self,
-        persistence: GraphIndexPersistence,
+        persistence: GraphPersistence,
         embedder: "Embedder",
         output_dir: Path | None = None,
         ignore_file: Path | None = None,
@@ -351,7 +350,7 @@ class GraphIndexBuilder:
 
         Re-runs extraction stages for the given document URI only.
         Replaces the document's slice in ArangoDB atomically via
-        ``GraphIndexPersistence.replace_document_slice``.
+        ``GraphPersistence.replace_document_slice``.
 
         Report is NOT regenerated automatically — call
         ``regenerate_report(ctx)`` explicitly if needed.

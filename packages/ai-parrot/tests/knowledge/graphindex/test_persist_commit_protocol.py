@@ -1,4 +1,4 @@
-"""Behavioral tests for the ArangoDB commit protocol on GraphIndexPersistence.
+"""Behavioral tests for the ArangoDB commit protocol on ArangoPersistence.
 
 Runs the FULL protocol (publish → load → history → revert → conflict)
 against an in-memory ``FakeGraphStore`` that implements the
@@ -12,10 +12,10 @@ from typing import Any, Optional
 
 import pytest
 
-from parrot.knowledge.graphindex.persist import (
+from parrot.knowledge.graphindex.persist_arango import (
     COMMIT_ITEMS_COLLECTION,
     COMMITS_COLLECTION,
-    GraphIndexPersistence,
+    ArangoPersistence,
     _edge_to_doc,
     _node_to_doc,
 )
@@ -60,7 +60,7 @@ class _FakeUpsertResult:
 
 class FakeGraphStore:
     """In-memory double implementing the OntologyGraphStore surface used
-    by GraphIndexPersistence (documents keyed per collection)."""
+    by ArangoPersistence (documents keyed per collection)."""
 
     def __init__(self) -> None:
         self.collections: dict[str, dict[str, dict[str, Any]]] = {}
@@ -205,7 +205,7 @@ def store():
 
 @pytest.fixture
 def persistence(store):
-    return GraphIndexPersistence(store)
+    return ArangoPersistence(store)
 
 
 @pytest.fixture
@@ -335,7 +335,7 @@ class TestPublishAndLoad:
             async def get_all_nodes(self, *a, **k):
                 raise RuntimeError("no connection")
 
-        persistence = GraphIndexPersistence(_BrokenStore())
+        persistence = ArangoPersistence(_BrokenStore())
         assert await persistence.load_graph(ctx) == ([], [])
 
 
@@ -471,7 +471,7 @@ class TestReceiptAndAudit:
         assert ("dup", "a", "references") in receipt.edge_keys
 
     async def test_unknown_kind_warns_in_receipt(self, publisher, monkeypatch):
-        import parrot.knowledge.graphindex.persist as persist_mod
+        import parrot.knowledge.graphindex.persist_arango as persist_mod
 
         monkeypatch.setattr(persist_mod, "KIND_TO_COLLECTION", {})
         receipt = await publisher.publish(make_update(nodes=[make_node("a")]))

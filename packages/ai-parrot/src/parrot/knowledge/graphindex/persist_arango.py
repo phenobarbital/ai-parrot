@@ -1,7 +1,7 @@
 """Persistence stage for GraphIndex.
 
 Writes assembled graph nodes and edges to ArangoDB via
-``OntologyGraphStore`` and embeddings to pgvector.  Supports atomic
+a ``GraphDocumentStore`` and embeddings to pgvector.  Supports atomic
 per-document replacement for incremental refresh via soft-delete-then-upsert.
 
 Also implements the **graph commit protocol** (``apply_update`` /
@@ -31,23 +31,24 @@ import logging
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
 from parrot.knowledge.ontology.schema import TenantContext
 from parrot.knowledge.graphindex.meta_ontology import (
     EDGE_KIND_TO_COLLECTION,
     KIND_TO_COLLECTION,
 )
+from parrot.knowledge.graphindex.protocols import edge_key
 from parrot.knowledge.graphindex.schema import (
     AssertionMeta,
     CommitReceipt,
-    EdgeKind,
     GraphUpdate,
-    NodeKind,
     UniversalEdge,
     UniversalNode,
 )
+
+if TYPE_CHECKING:
+    from parrot.knowledge.ontology.contracts import GraphDocumentStore
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +61,6 @@ COMMIT_ITEMS_COLLECTION = "gi_commit_items"
 def _now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
     return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S+00:00")
-
-
-def _edge_key(source_id: str, target_id: str, kind: str) -> str:
-    """Compose the canonical ``item_key`` string for an edge."""
-    return f"{source_id}|{target_id}|{kind}"
 
 
 def _node_to_doc(node: UniversalNode) -> dict[str, Any]:
@@ -174,7 +170,7 @@ def _doc_to_node(doc: dict[str, Any]) -> Optional[UniversalNode]:
         )
     except Exception as exc:  # noqa: BLE001 — skip-and-warn on unknown kinds
         logger.warning(
-            "GraphIndexPersistence: skipping unreadable node doc %r: %s",
+            "ArangoPersistence: skipping unreadable node doc %r: %s",
             doc.get("node_id", "?"),
             exc,
         )
@@ -202,7 +198,7 @@ def _doc_to_edge(doc: dict[str, Any]) -> Optional[UniversalEdge]:
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "GraphIndexPersistence: skipping unreadable edge doc (%r → %r): %s",
+            "ArangoPersistence: skipping unreadable edge doc (%r → %r): %s",
             doc.get("source_id", "?"),
             doc.get("target_id", "?"),
             exc,
@@ -210,23 +206,26 @@ def _doc_to_edge(doc: dict[str, Any]) -> Optional[UniversalEdge]:
         return None
 
 
-class GraphIndexPersistence:
+class ArangoPersistence:
     """Persists GraphIndex nodes, edges, and embeddings to ArangoDB + pgvector.
 
     Provides per-tenant locking to prevent race conditions during the
     soft-delete-then-upsert sequence in ``replace_document_slice``.
 
     Args:
-        graph_store: An initialised ``OntologyGraphStore`` instance.
+        store: An initialised ``GraphDocumentStore`` (the ArangoDB ``OntologyGraphStore``).
     """
 
     _tenant_locks: dict[str, asyncio.Lock]
 
-    def __init__(self, graph_store: OntologyGraphStore) -> None:
-        self.graph_store = graph_store
+    def __init__(self, store: "GraphDocumentStore") -> None:
+        self.store = store
         self._tenant_locks = defaultdict(asyncio.Lock)
         # Tenants whose commit-log collections have been ensured.
         self._commit_ready: set[str] = set()
+
+    async def close(self) -> None:
+        """No-op — the store owns its client."""
 
     # ------------------------------------------------------------------
     # Public interface
@@ -295,7 +294,7 @@ class GraphIndexPersistence:
 
             for collection in KIND_TO_COLLECTION.values():
                 try:
-                    existing = await self.graph_store.get_all_nodes(ctx, collection)
+                    existing = await self.store.get_all_nodes(ctx, collection)
                     for doc in existing:
                         if doc.get("source_uri") == document_uri:
                             key = doc.get("_key") or doc.get("node_id")
@@ -310,7 +309,7 @@ class GraphIndexPersistence:
             for collection, keys in old_keys_by_collection.items():
                 if keys:
                     try:
-                        await self.graph_store.soft_delete_nodes(ctx, collection, keys)
+                        await self.store.soft_delete_nodes(ctx, collection, keys)
                         logger.debug(
                             "Soft-deleted %d nodes from %s for document %s",
                             len(keys),
@@ -362,7 +361,7 @@ class GraphIndexPersistence:
             if not docs:
                 continue
             try:
-                result = await self.graph_store.upsert_nodes(
+                result = await self.store.upsert_nodes(
                     ctx, collection, docs, key_field="node_id"
                 )
                 count = result.inserted + result.updated
@@ -411,7 +410,7 @@ class GraphIndexPersistence:
             if not docs:
                 continue
             try:
-                count = await self.graph_store.create_edges(ctx, collection, docs)
+                count = await self.store.create_edges(ctx, collection, docs)
                 total += count
                 logger.debug("Created %d edges in %s", count, collection)
             except Exception as exc:
@@ -431,12 +430,12 @@ class GraphIndexPersistence:
         """
         if ctx.tenant_id in self._commit_ready:
             return
-        await self.graph_store.ensure_collection(ctx, COMMITS_COLLECTION)
-        await self.graph_store.ensure_collection(ctx, COMMIT_ITEMS_COLLECTION)
+        await self.store.ensure_collection(ctx, COMMITS_COLLECTION)
+        await self.store.ensure_collection(ctx, COMMIT_ITEMS_COLLECTION)
         for collection in KIND_TO_COLLECTION.values():
-            await self.graph_store.ensure_collection(ctx, collection)
+            await self.store.ensure_collection(ctx, collection)
         for collection in EDGE_KIND_TO_COLLECTION.values():
-            await self.graph_store.ensure_collection(ctx, collection, edge=True)
+            await self.store.ensure_collection(ctx, collection, edge=True)
         self._commit_ready.add(ctx.tenant_id)
 
     async def _find_node_doc(
@@ -462,10 +461,10 @@ class GraphIndexPersistence:
             collection = KIND_TO_COLLECTION.get(kind)
             if collection is None:
                 return None, None
-            doc = await self.graph_store.get_document(ctx, collection, node_id)
+            doc = await self.store.get_document(ctx, collection, node_id)
             return collection, doc
         for collection in KIND_TO_COLLECTION.values():
-            doc = await self.graph_store.get_document(ctx, collection, node_id)
+            doc = await self.store.get_document(ctx, collection, node_id)
             if doc is not None:
                 return collection, doc
         return None, None
@@ -477,7 +476,7 @@ class GraphIndexPersistence:
         the revert-conflict check needs. Monotonicity is guaranteed only
         under the per-tenant lock (single-writer expectation).
         """
-        rows = await self.graph_store.query_documents(
+        rows = await self.store.query_documents(
             ctx, COMMITS_COLLECTION, sort_desc="seq", limit=1
         )
         if not rows:
@@ -506,12 +505,12 @@ class GraphIndexPersistence:
         edges: list[UniversalEdge] = []
         try:
             for collection in KIND_TO_COLLECTION.values():
-                for doc in await self.graph_store.get_all_nodes(ctx, collection):
+                for doc in await self.store.get_all_nodes(ctx, collection):
                     node = _doc_to_node(doc)
                     if node is not None:
                         nodes.append(node)
             for collection in EDGE_KIND_TO_COLLECTION.values():
-                for doc in await self.graph_store.get_all_edges(ctx, collection):
+                for doc in await self.store.get_all_edges(ctx, collection):
                     edge = _doc_to_edge(doc)
                     if edge is not None:
                         edges.append(edge)
@@ -560,7 +559,7 @@ class GraphIndexPersistence:
                         f"node {node.node_id!r}: unknown kind {node.kind.value!r}"
                     )
                     continue
-                prior = await self.graph_store.get_document(
+                prior = await self.store.get_document(
                     ctx, collection, node.node_id
                 )
                 items.append({
@@ -585,7 +584,7 @@ class GraphIndexPersistence:
                     "prior": prior,
                 })
                 for edge_collection in EDGE_KIND_TO_COLLECTION.values():
-                    for doc in await self.graph_store.edges_incident(
+                    for doc in await self.store.edges_incident(
                         ctx, edge_collection, node_id
                     ):
                         implicit_removed.append((
@@ -604,7 +603,7 @@ class GraphIndexPersistence:
             ] + sorted(removed_edge_set)
             seen_edge_items: set[str] = set()
             for src, tgt, kind in edge_triples:
-                item_key = _edge_key(src, tgt, kind)
+                item_key = edge_key(src, tgt, kind)
                 if item_key in seen_edge_items:
                     continue
                 seen_edge_items.add(item_key)
@@ -612,7 +611,7 @@ class GraphIndexPersistence:
                 if collection is None:
                     warnings.append(f"edge {item_key!r}: unknown kind {kind!r}")
                     continue
-                rows = await self.graph_store.query_documents(
+                rows = await self.store.query_documents(
                     ctx,
                     collection,
                     filters={"source_id": src, "target_id": tgt, "kind": kind},
@@ -631,7 +630,7 @@ class GraphIndexPersistence:
                 })
 
             # --- record commit + items BEFORE mutating ----------------
-            await self.graph_store.upsert_document(ctx, COMMITS_COLLECTION, {
+            await self.store.upsert_document(ctx, COMMITS_COLLECTION, {
                 "_key": commit_id,
                 "commit_id": commit_id,
                 "seq": seq,
@@ -645,7 +644,7 @@ class GraphIndexPersistence:
                 "reverted_at": None,
             })
             for item in items:
-                await self.graph_store.insert_document(
+                await self.store.insert_document(
                     ctx, COMMIT_ITEMS_COLLECTION, item
                 )
 
@@ -671,7 +670,7 @@ class GraphIndexPersistence:
             for src, tgt, kind in sorted(removed_edge_set):
                 collection = EDGE_KIND_TO_COLLECTION.get(kind)
                 if collection is not None:
-                    await self.graph_store.remove_edge_by_triple(
+                    await self.store.remove_edge_by_triple(
                         ctx, collection, src, tgt, kind
                     )
             removed_by_collection: dict[str, list[str]] = defaultdict(list)
@@ -679,10 +678,10 @@ class GraphIndexPersistence:
                 if collection is not None:
                     removed_by_collection[collection].append(node_id)
             for collection, keys in removed_by_collection.items():
-                await self.graph_store.soft_delete_nodes(ctx, collection, keys)
+                await self.store.soft_delete_nodes(ctx, collection, keys)
 
         logger.info(
-            "GraphIndexPersistence.apply_update: commit %s (%s) — %d nodes,"
+            "ArangoPersistence.apply_update: commit %s (%s) — %d nodes,"
             " %d edges, %d removed",
             commit_id,
             update.op,
@@ -724,13 +723,13 @@ class GraphIndexPersistence:
             A dict with the commit fields, ``payload``, and ``items``,
             or ``None`` when unknown.
         """
-        doc = await self.graph_store.get_document(
+        doc = await self.store.get_document(
             ctx, COMMITS_COLLECTION, commit_id
         )
         if doc is None:
             return None
         commit = self._public_commit(doc)
-        item_rows = await self.graph_store.query_documents(
+        item_rows = await self.store.query_documents(
             ctx, COMMIT_ITEMS_COLLECTION, filters={"commit_id": commit_id}
         )
         commit["items"] = [
@@ -769,7 +768,7 @@ class GraphIndexPersistence:
         if agent_id is not None:
             filters["agent_id"] = agent_id
         try:
-            rows = await self.graph_store.query_documents(
+            rows = await self.store.query_documents(
                 ctx,
                 COMMITS_COLLECTION,
                 filters=filters,
@@ -808,7 +807,7 @@ class GraphIndexPersistence:
             ``{"error": ...}`` on refusal/unknown commit.
         """
         async with self._tenant_locks[ctx.tenant_id]:
-            commit_doc = await self.graph_store.get_document(
+            commit_doc = await self.store.get_document(
                 ctx, COMMITS_COLLECTION, commit_id
             )
             if commit_doc is None:
@@ -816,7 +815,7 @@ class GraphIndexPersistence:
             if commit_doc.get("reverted_at"):
                 return {"error": f"revert_commit: {commit_id!r} already reverted"}
 
-            items = await self.graph_store.query_documents(
+            items = await self.store.query_documents(
                 ctx, COMMIT_ITEMS_COLLECTION, filters={"commit_id": commit_id}
             )
             if not items:
@@ -830,7 +829,7 @@ class GraphIndexPersistence:
             commit_cache: dict[str, Optional[dict[str, Any]]] = {}
             for item in items:
                 item_key = item.get("item_key")
-                others = await self.graph_store.query_documents(
+                others = await self.store.query_documents(
                     ctx, COMMIT_ITEMS_COLLECTION, filters={"item_key": item_key}
                 )
                 for other in others:
@@ -838,7 +837,7 @@ class GraphIndexPersistence:
                     if not other_id or other_id == commit_id:
                         continue
                     if other_id not in commit_cache:
-                        commit_cache[other_id] = await self.graph_store.get_document(
+                        commit_cache[other_id] = await self.store.get_document(
                             ctx, COMMITS_COLLECTION, other_id
                         )
                     other_commit = commit_cache[other_id]
@@ -862,35 +861,35 @@ class GraphIndexPersistence:
                     continue
                 if item.get("item_type") in ("node", "node_removed"):
                     if prior is None:
-                        if await self.graph_store.remove_document(
+                        if await self.store.remove_document(
                             ctx, collection, item_key
                         ):
                             deleted += 1
                     else:
-                        await self.graph_store.upsert_document(
+                        await self.store.upsert_document(
                             ctx, collection, prior
                         )
                         restored += 1
                 else:  # edge / edge_removed
                     src, tgt, kind = item_key.split("|", 2)
                     if prior is None:
-                        if await self.graph_store.remove_edge_by_triple(
+                        if await self.store.remove_edge_by_triple(
                             ctx, collection, src, tgt, kind
                         ):
                             deleted += 1
                     else:
-                        await self.graph_store.upsert_document(
+                        await self.store.upsert_document(
                             ctx, collection, prior
                         )
                         restored += 1
 
             commit_doc["reverted_at"] = _now_iso()
-            await self.graph_store.upsert_document(
+            await self.store.upsert_document(
                 ctx, COMMITS_COLLECTION, commit_doc
             )
 
         logger.info(
-            "GraphIndexPersistence.revert_commit: %s — %d restored, %d deleted",
+            "ArangoPersistence.revert_commit: %s — %d restored, %d deleted",
             commit_id,
             restored,
             deleted,
@@ -901,3 +900,35 @@ class GraphIndexPersistence:
             "restored": restored,
             "deleted": deleted,
         }
+
+
+async def create_arango_persistence(
+    *,
+    graph_store: "GraphDocumentStore | None" = None,
+    arango_params: dict[str, Any] | None = None,
+    tenant_ctx: TenantContext | None = None,
+) -> ArangoPersistence:
+    """Build an :class:`ArangoPersistence` (graph backend registry target).
+
+    Args:
+        graph_store: An existing document store to wrap. When omitted, an
+            ``OntologyGraphStore`` is created (lazily importing the driver).
+        arango_params: Optional connection parameters; when given and no
+            store is supplied, an asyncdb ArangoDB client is built from them.
+        tenant_ctx: Accepted for registry-signature parity; unused (the
+            tenant context is passed per call).
+
+    Returns:
+        A ready ``ArangoPersistence``.
+    """
+    if graph_store is None:
+        from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+
+        client: Any = None
+        if arango_params:
+            from asyncdb import AsyncDB
+
+            client = AsyncDB("arangodb", params=arango_params)
+            await client.connection()
+        graph_store = OntologyGraphStore(arango_client=client)
+    return ArangoPersistence(graph_store)

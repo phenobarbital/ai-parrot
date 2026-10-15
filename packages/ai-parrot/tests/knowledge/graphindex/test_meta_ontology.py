@@ -149,14 +149,14 @@ class TestPersistenceRoutesMemoryKinds:
     async def test_upsert_routes_memory_kinds_without_warning(self, caplog):
         from unittest.mock import AsyncMock, MagicMock
 
-        from parrot.knowledge.graphindex.persist import GraphIndexPersistence
+        from parrot.knowledge.graphindex.persist_arango import ArangoPersistence
         from parrot.knowledge.graphindex.schema import Provenance, UniversalNode
 
         store = MagicMock()
         store.upsert_nodes = AsyncMock(
             return_value=MagicMock(inserted=1, updated=0)
         )
-        persistence = GraphIndexPersistence(graph_store=store)
+        persistence = ArangoPersistence(store=store)
         nodes = [
             UniversalNode(
                 node_id="run-1", kind=NodeKind.RUN, title="Run 1",
