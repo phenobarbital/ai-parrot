@@ -190,4 +190,4 @@ The feature criteria below apply to this task’s declared scope; cross-module p
 
 ## Completion Note
 
-Pending implementation; the finalizer records evidence after validation.
+Implemented by sonnet (native). test_repo_cache.py: 5 passed. Residual lint: ASYNC230 open() in repo_lock (intentional nonblocking flock handle).

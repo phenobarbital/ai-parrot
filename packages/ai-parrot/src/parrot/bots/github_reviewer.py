@@ -36,8 +36,10 @@ import html
 import json
 import logging as _stdlib_logging
 import re
+import shutil
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import (
     Any,
     Awaitable,
@@ -53,8 +55,17 @@ from typing import (
 from navconfig import config
 from pydantic import BaseModel, Field
 
+from parrot import conf
 from parrot.bots import Agent
 from parrot.core.hooks.github_webhook import GitHubWebhookHook
+from parrot.knowledge.wiki.context import pack_results, truncate_to_tokens
+from parrot.knowledge.wiki.models import WikiConfig
+from parrot.knowledge.wiki.project import WikiProjectConfig
+from parrot.knowledge.wiki.repo_cache import RepoWikiCache
+from parrot.knowledge.wiki.search import WikiCombinedSearch
+from parrot.knowledge.wiki.store import create_wiki_store, estimate_tokens
+from parrot.knowledge.wiki.structural.toolkit import CodeStructuralToolkit
+from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
 
 # FEAT-317: GitHubWebhookConfig/HookEvent moved to navigator_eventbus.hooks;
 # imported here via the parrot.core.hooks re-export facade.
@@ -69,6 +80,13 @@ from parrot_tools.gittoolkit import (
 from parrot_tools.jiratoolkit import JiraToolkit
 
 ChatId = Union[int, str]
+
+_WIKI_CONTEXT_HEADER = (
+    "=== Codebase context (knowledge graph) ===\n"
+    "SNAPSHOT OF BRANCH {branch} AT {built_at} — it does NOT contain this "
+    "PR's changes. A symbol introduced by this PR is EXPECTED to be absent "
+    "here; never report such a symbol as nonexistent on that basis."
+)
 
 
 def _flatten_adf(node: Any) -> str:
@@ -480,6 +498,13 @@ class GitHubReviewer(Agent):
 
         self.git_toolkit: Optional[GitToolkit] = None
         self.jira_toolkit: Optional[JiraToolkit] = None
+        self._wiki_cache: Optional[RepoWikiCache] = None
+        self._wiki_warmup_task: Optional[asyncio.Task[None]] = None
+        self._wiki_toolkits_attached = False
+        self._wiki_store: Any = None
+        self._wiki_branch: Optional[str] = None
+        self._wiki_built_at: Optional[datetime] = None
+        self._wiki_context_available = False
         self._wrapper = None  # Set by TelegramAgentWrapper after init
         # In-memory dedup: (repo_lc, pr_number) -> last reviewed head_sha.
         # Cheap and process-local; restart resets it (acceptable tradeoff —
@@ -516,6 +541,8 @@ class GitHubReviewer(Agent):
         await super().post_configure()
 
         self.git_toolkit = self._build_git_toolkit()
+        self._wiki_cache = self._build_wiki_cache()
+        await self._schedule_wiki_warmup()
         self.jira_toolkit = self._build_jira_toolkit()
 
         self._attach_toolkit(self.git_toolkit, "Git")
@@ -533,6 +560,123 @@ class GitHubReviewer(Agent):
 
         await self._attach_webhook_listener()
         await self._ensure_webhook_subscription()
+
+    async def shutdown(self, **kwargs: Any) -> None:
+        """Stop the owned wiki task before the inherited agent shutdown."""
+        try:
+            await self._shutdown_wiki_warmup()
+        finally:
+            await super().shutdown(**kwargs)
+
+    def _build_wiki_cache(self) -> Optional[RepoWikiCache]:
+        """Build the optional repository wiki cache from reviewer settings."""
+        if not conf.GITHUB_REVIEW_WIKI_ENABLED:
+            return None
+        if self.git_toolkit is None:
+            self.logger.warning("GitHubReviewer: wiki cache disabled because GitToolkit is unavailable.")
+            return None
+        if shutil.which("wikitoolkit") is None:
+            self.logger.warning("GitHubReviewer: wiki cache disabled because wikitoolkit is unavailable.")
+            return None
+        try:
+            cache_dir = Path(conf.GITHUB_REVIEW_CACHE_DIR).expanduser().resolve()
+            return RepoWikiCache(
+                self.git_toolkit,
+                cache_dir,
+                max_bytes=conf.GITHUB_REVIEW_CACHE_MAX_BYTES,
+                clone_branch=conf.GITHUB_REVIEW_CLONE_BRANCH,
+                clone_depth=conf.GITHUB_REVIEW_CLONE_DEPTH,
+                build_timeout=conf.GITHUB_REVIEW_BUILD_TIMEOUT,
+                logger=self.logger,
+            )
+        except Exception as exc:  # noqa: BLE001 - wiki enrichment must fail closed
+            self.logger.warning("GitHubReviewer: wiki cache unavailable: %s", exc, exc_info=True)
+            return None
+
+    async def _schedule_wiki_warmup(self) -> None:
+        """Create a named warm-up task and log unhandled failures."""
+        if self._wiki_cache is None or self._wiki_warmup_task is not None:
+            return
+
+        async def warmup() -> None:
+            await self._refresh_wiki_context(self.repository)
+
+        task = asyncio.create_task(warmup(), name=f"github-reviewer-wiki-warmup:{self._repository_lc}")
+        self._wiki_warmup_task = task
+
+        def log_failure(completed: asyncio.Task[None]) -> None:
+            if completed.cancelled():
+                return
+            try:
+                completed.result()
+            except Exception as exc:  # noqa: BLE001 - callback must consume task failures
+                self.logger.warning("GitHubReviewer: wiki warm-up failed: %s", exc, exc_info=True)
+
+        task.add_done_callback(log_failure)
+
+    async def _shutdown_wiki_warmup(self) -> None:
+        """Cancel and await the wiki warm-up task when it is still active."""
+        task = self._wiki_warmup_task
+        self._wiki_warmup_task = None
+        if task is None:
+            return
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception:  # noqa: BLE001 - callback already logged the failure
+            pass
+
+    async def _refresh_wiki_context(self, repository: str) -> Optional[Path]:
+        """Refresh this reviewer's wiki plane, never one selected by a payload."""
+        if self._wiki_cache is None or not isinstance(repository, str) or repository.lower() != self._repository_lc:
+            return None
+        try:
+            paths = await self._wiki_cache.ensure_fresh(self.repository)
+        except Exception as exc:  # noqa: BLE001 - diff-only review remains available
+            self._wiki_context_available = False
+            self.logger.warning("GitHubReviewer: wiki refresh unavailable for %s: %s", self.repository, exc)
+            return None
+        if paths is None:
+            self._wiki_context_available = False
+            return None
+        self._attach_wiki_toolkits(paths.clone_dir)
+        self._wiki_branch = await self._wiki_cache._git_output(
+            ["git", "-C", str(paths.clone_dir), "branch", "--show-current"]
+        )
+        self._wiki_built_at = self._wiki_cache.build_runner.last_good(paths.plane_dir)
+        self._wiki_context_available = self._wiki_toolkits_attached
+        return paths.clone_dir
+
+    def _attach_wiki_toolkits(self, clone_root: Path) -> None:
+        """Attach external-plane wiki toolkits once after a successful build."""
+        if self._wiki_toolkits_attached or self._wiki_cache is None:
+            return
+        try:
+            paths = self._wiki_cache.paths_for(self.repository)
+            project_config = WikiProjectConfig(
+                wiki_name=paths.slug,
+                storage_dir=str(paths.plane_dir),
+                backend="sqlite",
+            )
+            store = create_wiki_store(paths.plane_dir, wiki_name=paths.slug, backend="sqlite")
+            structural = CodeStructuralToolkit(root=clone_root, store=store, config=project_config)
+            wiki_config = WikiConfig(
+                wiki_name=paths.slug,
+                storage_dir=paths.plane_dir,
+                storage_backend="sqlite",
+            )
+            wiki = LLMWikiToolkit(None, None, None, wiki_config, store=store, confine_sources=True)
+            self._attach_toolkit(structural, "Wiki structural")
+            self._attach_toolkit(wiki, "Wiki")
+            self._wiki_store = store
+            self._wiki_toolkits_attached = True
+            if self._llm is not None and hasattr(self._llm, "tool_manager"):
+                self.sync_tools(self._llm)
+        except Exception as exc:  # noqa: BLE001 - wiki tools are strictly optional
+            self.logger.warning("GitHubReviewer: failed to attach wiki tools: %s", exc, exc_info=True)
 
     async def _attach_webhook_listener(self) -> None:
         """Hook ``self.handle_hook_event`` into the shared dispatcher."""
@@ -838,6 +982,8 @@ class GitHubReviewer(Agent):
                 outcome["comment"] = comment
             return outcome
 
+        await self._refresh_wiki_context(repo)
+
         ticket = await self._fetch_ticket(ticket_key)
         if ticket is None:
             return {
@@ -1028,6 +1174,74 @@ class GitHubReviewer(Agent):
             return value
         return value[: self.max_ticket_bytes] + "\n[... truncated ...]"
 
+    async def _build_wiki_context(self, payload: Dict[str, Any], diff_text: str) -> Optional[str]:
+        """Return token-bounded local-wiki context for a pull request.
+
+        The reviewer only searches the store attached after a successful
+        refresh of its own repository. Failures are deliberately contained so
+        the existing diff-only review path remains available.
+        """
+        if (
+            not self._wiki_context_available
+            or self._wiki_store is None
+            or not self._wiki_branch
+            or self._wiki_built_at is None
+        ):
+            return None
+
+        budget_tokens = conf.GITHUB_REVIEW_WIKI_CONTEXT_TOKENS
+        header = _WIKI_CONTEXT_HEADER.format(
+            branch=self._wiki_branch,
+            built_at=self._wiki_built_at.isoformat(),
+        )
+        if budget_tokens <= 0 or estimate_tokens(header) > budget_tokens:
+            return None
+
+        title = payload.get("pr_title")
+        title_text = title if isinstance(title, str) else ""
+        changed_paths: list[str] = []
+        for _old_path, new_path in re.findall(r"^diff --git a/(.+?) b/(.+?)$", diff_text, flags=re.MULTILINE):
+            if new_path not in changed_paths:
+                changed_paths.append(new_path)
+        query_parts = [part for part in (title_text, *changed_paths) if part]
+        if not query_parts:
+            return None
+        query = "PR title: " + title_text + "\nChanged paths:\n" + "\n".join(changed_paths)
+
+        try:
+            search = WikiCombinedSearch(None, None, store=self._wiki_store)
+            results = await search.search(query, mode="combined", top_k=10)
+            if not results:
+                return None
+
+            separator = "\n\n"
+            body_budget = budget_tokens - estimate_tokens(header) - estimate_tokens(separator)
+            if body_budget <= 0:
+                return None
+            packed = pack_results(results, budget_tokens=body_budget)
+            if not packed.text or not packed.results_packed:
+                return None
+
+            body, _ = truncate_to_tokens(packed.text, body_budget)
+            context = f"{header}{separator}{body}"
+            while estimate_tokens(context) > budget_tokens:
+                next_budget = estimate_tokens(body) - (estimate_tokens(context) - budget_tokens)
+                if next_budget <= 0:
+                    return None
+                shortened, _ = truncate_to_tokens(body, next_budget)
+                if shortened == body or estimate_tokens(shortened) >= estimate_tokens(body):
+                    # truncate_to_tokens is heuristic (chars/4) and can under-cut
+                    # multi-byte text; fall back to a proportional character cut.
+                    shortened = body[: max(0, int(len(body) * next_budget / max(estimate_tokens(body), 1)) - 1)]
+                    if not shortened or shortened == body:
+                        return None
+                body = shortened
+                context = f"{header}{separator}{body}"
+            return context
+        except Exception as exc:  # noqa: BLE001 - context enrichment is optional
+            self.logger.warning("GitHubReviewer: wiki context unavailable: %s", exc, exc_info=True)
+            return None
+
     async def _ask_llm_for_review(
         self,
         *,
@@ -1055,6 +1269,8 @@ class GitHubReviewer(Agent):
             )
             header = "=== PR diff (unavailable) ==="
 
+        wiki_context = await self._build_wiki_context(payload, diff_text)
+        wiki_block = f"{wiki_context}\n\n" if wiki_context else ""
         question = (
             f"Review pull request {payload.get('repository')}#"
             f"{payload.get('pr_number')} against Jira ticket {ticket_key}.\n\n"
@@ -1066,6 +1282,7 @@ class GitHubReviewer(Agent):
             f"Acceptance Criteria:\n{acceptance_criteria}\n\n"
             f"{header}\n"
             f"{diff_block}\n\n"
+            f"{wiki_block}"
             "Compare them and return a PRReviewResult JSON object."
         )
 

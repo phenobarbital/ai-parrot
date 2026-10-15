@@ -253,4 +253,4 @@ The feature criteria below apply to this task’s declared scope; cross-module p
 
 ## Completion Note
 
-Pending implementation; the finalizer records evidence after validation.
+Implemented by gpt-5.6-terra (codex), merged by orchestrator. test_cli_build_storage_dir.py: pass (with test_repo_cache, 9 passed).

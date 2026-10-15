@@ -788,6 +788,13 @@ GITHUB_REVIEW_SILENT_WEEKS_THRESHOLD: int = config.getint("GITHUB_REVIEW_SILENT_
 # Numbers always come from the structured summary; only the wording varies.
 # Falls back to the templated body on any LLM failure.
 GITHUB_REVIEW_USE_LLM_SUMMARY: bool = config.getboolean("GITHUB_REVIEW_USE_LLM_SUMMARY", fallback=False)
+GITHUB_REVIEW_WIKI_ENABLED: bool = config.getboolean("GITHUB_REVIEW_WIKI_ENABLED", fallback=False)
+GITHUB_REVIEW_CACHE_DIR: str = config.get("GITHUB_REVIEW_CACHE_DIR", fallback="~/.cache/parrot/github-reviewer")
+GITHUB_REVIEW_CLONE_BRANCH: str | None = config.get("GITHUB_REVIEW_CLONE_BRANCH", fallback=None)
+GITHUB_REVIEW_CLONE_DEPTH: int | None = config.getint("GITHUB_REVIEW_CLONE_DEPTH", fallback=None)
+GITHUB_REVIEW_CACHE_MAX_BYTES: int = config.getint("GITHUB_REVIEW_CACHE_MAX_BYTES", fallback=5 * 1024**3)
+GITHUB_REVIEW_BUILD_TIMEOUT: int = config.getint("GITHUB_REVIEW_BUILD_TIMEOUT", fallback=900)
+GITHUB_REVIEW_WIKI_CONTEXT_TOKENS: int = config.getint("GITHUB_REVIEW_WIKI_CONTEXT_TOKENS", fallback=4000)
 
 ## Vector Store Handler:
 VECTOR_HANDLER_MAX_FILE_SIZE = config.getint("VECTOR_HANDLER_MAX_FILE_SIZE", fallback=25 * 1024 * 1024)  # 25MB

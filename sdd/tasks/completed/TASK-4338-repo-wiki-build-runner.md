@@ -236,4 +236,4 @@ The feature criteria below apply to this task’s declared scope; cross-module p
 
 ## Completion Note
 
-Pending implementation; the finalizer records evidence after validation.
+Implemented by gpt-5.6-terra (codex). test_repo_build.py: 6 passed (requires absolute PYTHONPATH since the real-CLI test spawns wikitoolkit; with a relative one the subprocess imports the main checkout and lacks --storage-dir).

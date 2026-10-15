@@ -245,4 +245,4 @@ The feature criteria below apply to this task’s declared scope; cross-module p
 
 ## Completion Note
 
-Pending implementation; the finalizer records evidence after validation.
+Implemented by gpt-5.6-luna (codex). test_gittoolkit_clone.py: 12 passed. Note: engine black pass reformatted all of gittoolkit.py at line-length 120 (noisy diff, no behaviour change).

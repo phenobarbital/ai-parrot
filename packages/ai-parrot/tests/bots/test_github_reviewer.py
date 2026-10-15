@@ -5,16 +5,20 @@ Avoids instantiating the full ``Agent`` MRO (which requires the Cython
 static helpers directly. End-to-end review flow is covered by integration
 tests.
 """
+
 from __future__ import annotations
 
 import asyncio
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from parrot import conf
+from parrot.bots import github_reviewer
 from parrot.bots.github_reviewer import (
     Discrepancy,
     GitHubReviewer,
@@ -46,14 +50,18 @@ class _MinimalReviewer:
         self.jira_project = jira_project
         self.max_ticket_bytes = max_ticket_bytes
         self._ac_field_id = ac_field_id
-        self._jira_fields = ",".join(
-            sorted({"summary", "description", "status", ac_field_id})
-        )
-        self._ticket_key_regex = re.compile(
-            rf"\b{re.escape(jira_project)}-\d+\b"
-        )
+        self._jira_fields = ",".join(sorted({"summary", "description", "status", ac_field_id}))
+        self._ticket_key_regex = re.compile(rf"\b{re.escape(jira_project)}-\d+\b")
         self._reviewed_shas: Dict[Any, str] = {}
         self._no_ticket_notified: set = set()
+        self._wiki_cache = None
+        self._wiki_warmup_task = None
+        self._wiki_toolkits_attached = False
+        self._wiki_store = None
+        self._wiki_branch = None
+        self._wiki_built_at = None
+        self._wiki_context_available = False
+        self._llm = None
 
     # Bind the real helpers we want to test.
     _extract_ticket_key = GitHubReviewer._extract_ticket_key
@@ -63,9 +71,15 @@ class _MinimalReviewer:
     _clamp = GitHubReviewer._clamp
     _fetch_ticket = GitHubReviewer._fetch_ticket
     _notify_missing_ticket = GitHubReviewer._notify_missing_ticket
+    _build_wiki_context = GitHubReviewer._build_wiki_context
     _ask_llm_for_review = GitHubReviewer._ask_llm_for_review
     review_pull_request = GitHubReviewer.review_pull_request
     handle_hook_event = GitHubReviewer.handle_hook_event
+    _build_wiki_cache = GitHubReviewer._build_wiki_cache
+    _schedule_wiki_warmup = GitHubReviewer._schedule_wiki_warmup
+    _shutdown_wiki_warmup = GitHubReviewer._shutdown_wiki_warmup
+    _refresh_wiki_context = GitHubReviewer._refresh_wiki_context
+    _attach_wiki_toolkits = GitHubReviewer._attach_wiki_toolkits
     # Class-level constants needed by some helpers.
     _WEEKLY_LLM_SYSTEM_PROMPT = GitHubReviewer._WEEKLY_LLM_SYSTEM_PROMPT
 
@@ -90,6 +104,182 @@ def _wire_reviewer(**overrides: Any) -> _MinimalReviewer:
     r.jira_toolkit = MagicMock()
     r._wrapper = None
     return r
+
+
+class TestWikiLifecycle:
+    """Focused lifecycle coverage for the optional reviewer wiki plane."""
+
+    async def test_wiki_cache_disabled_by_default(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Disabled configuration creates neither cache nor warm-up task."""
+        reviewer = _wire_reviewer()
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_WIKI_ENABLED", False)
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_CACHE_DIR", str(tmp_path))
+
+        assert reviewer._build_wiki_cache() is None
+        await reviewer._schedule_wiki_warmup()
+        assert reviewer._wiki_warmup_task is None
+
+    async def test_warmup_task_is_owned_and_cancelled(self) -> None:
+        """Warm-up is named, retained and cancelled by its lifecycle helper."""
+        reviewer = _wire_reviewer()
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def refresh(repository: str) -> None:
+            started.set()
+            await release.wait()
+
+        reviewer._wiki_cache = MagicMock()
+        reviewer._refresh_wiki_context = refresh
+        await reviewer._schedule_wiki_warmup()
+        task = reviewer._wiki_warmup_task
+        assert task is not None
+        assert task.get_name() == "github-reviewer-wiki-warmup:owner/repo"
+        await started.wait()
+
+        await reviewer._shutdown_wiki_warmup()
+        assert reviewer._wiki_warmup_task is None
+        assert task.cancelled()
+
+    async def test_enrichment_ignores_foreign_payload_repository(self) -> None:
+        """A different payload repository cannot select another cache entry."""
+        reviewer = _wire_reviewer()
+        reviewer._wiki_cache = MagicMock()
+        reviewer._wiki_cache.ensure_fresh = AsyncMock()
+
+        assert await reviewer._refresh_wiki_context("other/repository") is None
+        reviewer._wiki_cache.ensure_fresh.assert_not_awaited()
+
+    def test_toolkits_attached_once(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A completed plane registers the two wiki toolkits only once."""
+        reviewer = _wire_reviewer()
+        paths = MagicMock(slug="owner-repo", plane_dir=tmp_path / "plane")
+        reviewer._wiki_cache = MagicMock()
+        reviewer._wiki_cache.paths_for.return_value = paths
+        reviewer._attach_toolkit = MagicMock()
+        structural = MagicMock()
+        wiki = MagicMock()
+        monkeypatch.setattr(github_reviewer, "create_wiki_store", MagicMock(return_value=MagicMock()))
+        monkeypatch.setattr(github_reviewer, "CodeStructuralToolkit", MagicMock(return_value=structural))
+        monkeypatch.setattr(github_reviewer, "LLMWikiToolkit", MagicMock(return_value=wiki))
+
+        reviewer._attach_wiki_toolkits(tmp_path / "clone")
+        reviewer._attach_wiki_toolkits(tmp_path / "clone")
+
+        assert reviewer._attach_toolkit.call_count == 2
+        assert reviewer._wiki_toolkits_attached is True
+
+    def test_llm_wiki_toolkit_confines_sources(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The LLM wiki surface is explicitly confined to the cache plane."""
+        reviewer = _wire_reviewer()
+        paths = MagicMock(slug="owner-repo", plane_dir=tmp_path / "plane")
+        reviewer._wiki_cache = MagicMock()
+        reviewer._wiki_cache.paths_for.return_value = paths
+        reviewer._attach_toolkit = MagicMock()
+        toolkit_factory = MagicMock()
+        monkeypatch.setattr(github_reviewer, "create_wiki_store", MagicMock(return_value=MagicMock()))
+        monkeypatch.setattr(github_reviewer, "CodeStructuralToolkit", MagicMock())
+        monkeypatch.setattr(github_reviewer, "LLMWikiToolkit", toolkit_factory)
+
+        reviewer._attach_wiki_toolkits(tmp_path / "clone")
+
+        assert toolkit_factory.call_args.kwargs["confine_sources"] is True
+
+
+class TestWikiPromptContext:
+    """Coverage for bounded local-wiki prompt enrichment."""
+
+    @staticmethod
+    def _ready_reviewer() -> _MinimalReviewer:
+        reviewer = _wire_reviewer()
+        reviewer._wiki_context_available = True
+        reviewer._wiki_store = MagicMock()
+        reviewer._wiki_branch = "release/\u03b2"
+        reviewer._wiki_built_at = datetime(2026, 10, 15, 12, 30, tzinfo=timezone.utc)
+        return reviewer
+
+    async def test_wiki_context_respects_token_budget(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The completed context block never exceeds its configured budget."""
+        reviewer = self._ready_reviewer()
+        result = {
+            "concept_id": "file:src/\u03c0.py",
+            "title": "\u03c0 module",
+            "summary": "\u00e9" * 500,
+            "score": 1.0,
+        }
+        search = MagicMock()
+        search.search = AsyncMock(return_value=[result])
+        monkeypatch.setattr(github_reviewer, "WikiCombinedSearch", MagicMock(return_value=search))
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_WIKI_CONTEXT_TOKENS", 100)
+
+        context = await reviewer._build_wiki_context(
+            {"pr_title": "A\u00f1adir \u03c0 support"},
+            "diff --git a/src/\u03c0.py b/src/\u03c0.py\n",
+        )
+
+        assert context is not None
+        assert github_reviewer.estimate_tokens(context) <= conf.GITHUB_REVIEW_WIKI_CONTEXT_TOKENS
+
+    async def test_wiki_context_carries_base_branch_label(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The header states both the snapshot branch and absence caveat."""
+        reviewer = self._ready_reviewer()
+        search = MagicMock()
+        search.search = AsyncMock(
+            return_value=[{"concept_id": "file:src/widget.py", "title": "Widget", "summary": "Widget helpers."}]
+        )
+        monkeypatch.setattr(github_reviewer, "WikiCombinedSearch", MagicMock(return_value=search))
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_WIKI_CONTEXT_TOKENS", 4000)
+
+        context = await reviewer._build_wiki_context(
+            {"pr_title": "Add widget"},
+            "diff --git a/src/widget.py b/src/widget.py\n",
+        )
+
+        assert context is not None
+        assert "SNAPSHOT OF BRANCH release/\u03b2" in context
+        assert "A symbol introduced by this PR is EXPECTED to be absent" in context
+
+    async def test_review_prompt_unchanged_without_context(self, tmp_path: Path) -> None:
+        """Absent enrichment preserves the established question byte-for-byte."""
+        reviewer = _wire_reviewer()
+        reviewer.max_review_tool_calls = 5
+        captured_questions: list[str] = []
+        expected = PRReviewResult(jira_key="NAV-1", discrepancies=[], summary="Looks good.", approve=True)
+
+        async def ask(**kwargs: Any) -> MagicMock:
+            captured_questions.append(kwargs["question"])
+            return _make_fake_response(expected)
+
+        reviewer.ask = ask
+        await reviewer._ask_llm_for_review(
+            payload={"repository": "owner/repo", "pr_number": 7, "pr_title": "Add widget", "pr_body": "Fixes NAV-1"},
+            ticket_key="NAV-1",
+            ticket={
+                "fields": {
+                    "summary": "Widget work",
+                    "description": "Implement the widget.",
+                    "customfield_10100": "AC: widget works",
+                }
+            },
+            diff_text="diff --git a/src/widget.py b/src/widget.py\n+widget\n",
+            diff_truncated=False,
+            diff_available=True,
+        )
+
+        assert captured_questions == [
+            "Review pull request owner/repo#7 against Jira ticket NAV-1.\n\n"
+            "PR title: Add widget\n"
+            "PR body:\nFixes NAV-1\n\n"
+            "=== Jira ticket NAV-1 ===\n"
+            "Summary: Widget work\n\n"
+            "Description:\nImplement the widget.\n\n"
+            "Acceptance Criteria:\nAC: widget works\n\n"
+            "=== PR diff (truncated=False) ===\n"
+            "diff --git a/src/widget.py b/src/widget.py\n+widget\n\n\n"
+            "Compare them and return a PRReviewResult JSON object."
+        ]
 
 
 class TestExtractTicketKey:
@@ -217,9 +407,7 @@ class TestFlattenAdf:
                             "content": [
                                 {
                                     "type": "paragraph",
-                                    "content": [
-                                        {"type": "text", "text": "one"}
-                                    ],
+                                    "content": [{"type": "text", "text": "one"}],
                                 }
                             ],
                         },
@@ -228,9 +416,7 @@ class TestFlattenAdf:
                             "content": [
                                 {
                                     "type": "paragraph",
-                                    "content": [
-                                        {"type": "text", "text": "two"}
-                                    ],
+                                    "content": [{"type": "text", "text": "two"}],
                                 }
                             ],
                         },
@@ -388,8 +574,7 @@ class TestReviewPullRequestDedup:
         async def fake_fetch_diff(repo, pr):
             return ("diff text", False, True)
 
-        async def fake_ask(*, payload, ticket_key, ticket, diff_text,
-                           diff_truncated, diff_available):
+        async def fake_ask(*, payload, ticket_key, ticket, diff_text, diff_truncated, diff_available):
             return PRReviewResult(
                 jira_key=ticket_key,
                 discrepancies=[],
@@ -458,9 +643,7 @@ class TestReviewPullRequestDedup:
 
         r.ask = fake_ask  # type: ignore[assignment]
         r._ac_field_id = "customfield_10100"
-        r._fetch_ticket = AsyncMock(
-            return_value={"fields": {"summary": "S", "description": "D"}}
-        )
+        r._fetch_ticket = AsyncMock(return_value={"fields": {"summary": "S", "description": "D"}})
         r._fetch_diff = AsyncMock(return_value=("diff text", False, True))
 
         out = await r.review_pull_request(
@@ -518,9 +701,7 @@ class TestFetchTicketFields:
 class TestNoTicketComment:
     def test_format_includes_project_and_author(self):
         r = _MinimalReviewer(jira_project="NAV")
-        body = r._format_no_ticket_comment(
-            {"author": "octocat", "pr_title": "x", "pr_body": ""}
-        )
+        body = r._format_no_ticket_comment({"author": "octocat", "pr_title": "x", "pr_body": ""})
         assert "@octocat" in body
         assert "NAV-<number>" in body
         assert "NAV-123" in body
@@ -659,10 +840,7 @@ class TestSetupWebhookRoute:
         h2 = GitHubReviewer.setup_webhook_route(app)
         assert h1 is h2
         # Only one route, not duplicated.
-        routes = [
-            r for r in app.router.routes()
-            if r.resource.canonical == "/api/v1/hooks/github"
-        ]
+        routes = [r for r in app.router.routes() if r.resource.canonical == "/api/v1/hooks/github"]
         assert len(routes) == 1
 
     def test_custom_url_is_respected(self):
@@ -816,9 +994,7 @@ class TestBuildWeeklySummary:
         r = _minimal_reviewer()
         contributors = [_cs("alice", [(W_CURR, 5, 100, 20)])]
         code_freq = [_cf(W_CURR, 100, 20)]
-        summary = r._build_weekly_summary(
-            contributors, code_freq, threshold_weeks=3, now=NOW
-        )
+        summary = r._build_weekly_summary(contributors, code_freq, threshold_weeks=3, now=NOW)
         assert summary.period_start == W_CURR
         assert summary.period_end == W_CURR + timedelta(days=7)
         assert summary.total_commits == 5
@@ -834,9 +1010,7 @@ class TestBuildWeeklySummary:
         ]
         contributors = [_cs("charlie", weeks_data)]
         code_freq = [_cf(W_CURR, 0, 0)]
-        summary = r._build_weekly_summary(
-            contributors, code_freq, threshold_weeks=3, now=NOW
-        )
+        summary = r._build_weekly_summary(contributors, code_freq, threshold_weeks=3, now=NOW)
         assert len(summary.contributors_silent) == 1
         assert summary.contributors_silent[0].login == "charlie"
         assert summary.contributors_silent[0].weeks_silent >= 3
@@ -852,9 +1026,7 @@ class TestBuildWeeklySummary:
         ]
         contributors = [_cs("bob", weeks_data)]
         code_freq = [_cf(W_CURR, 0, 0)]
-        summary = r._build_weekly_summary(
-            contributors, code_freq, threshold_weeks=3, now=NOW
-        )
+        summary = r._build_weekly_summary(contributors, code_freq, threshold_weeks=3, now=NOW)
         assert len(summary.contributors_silent) == 0
 
     def test_excludes_anonymous_contributors(self):
@@ -863,30 +1035,19 @@ class TestBuildWeeklySummary:
         anon = ContributorStats(
             login=None,
             total_commits=5,
-            weeks=[
-                ContributorWeek(
-                    week_start=W_CURR, commits=5, additions=100, deletions=10
-                )
-            ],
+            weeks=[ContributorWeek(week_start=W_CURR, commits=5, additions=100, deletions=10)],
         )
         code_freq = [_cf(W_CURR, 100, 10)]
-        summary = r._build_weekly_summary(
-            [anon], code_freq, threshold_weeks=3, now=NOW
-        )
+        summary = r._build_weekly_summary([anon], code_freq, threshold_weeks=3, now=NOW)
         assert summary.contributors_active == []
         assert summary.contributors_silent == []
 
     def test_top_n_truncates_active_list(self):
         """Active list is capped at top_n; silent list is uncapped."""
         r = _minimal_reviewer()
-        contributors = [
-            _cs(f"u{i}", [(W_CURR, 30 - i, 100, 10)])
-            for i in range(15)
-        ]
+        contributors = [_cs(f"u{i}", [(W_CURR, 30 - i, 100, 10)]) for i in range(15)]
         code_freq = [_cf(W_CURR, 500, 100)]
-        summary = r._build_weekly_summary(
-            contributors, code_freq, threshold_weeks=3, top_n=10, now=NOW
-        )
+        summary = r._build_weekly_summary(contributors, code_freq, threshold_weeks=3, top_n=10, now=NOW)
         assert len(summary.contributors_active) == 10
 
     def test_delta_from_code_freq(self):
@@ -897,9 +1058,7 @@ class TestBuildWeeklySummary:
             _cf(W_CURR, 100, 20),
             _cf(W_PREV, 300, 80),
         ]
-        summary = r._build_weekly_summary(
-            contributors, code_freq, threshold_weeks=3, now=NOW
-        )
+        summary = r._build_weekly_summary(contributors, code_freq, threshold_weeks=3, now=NOW)
         assert summary.prev_total_additions == 300
         assert summary.prev_total_deletions == 80
 
@@ -912,9 +1071,7 @@ class TestBuildWeeklySummary:
             _cs("charlie", [(W_CURR, 7, 100, 20)]),
         ]
         code_freq = [_cf(W_CURR, 350, 80)]
-        summary = r._build_weekly_summary(
-            contributors, code_freq, threshold_weeks=3, now=NOW
-        )
+        summary = r._build_weekly_summary(contributors, code_freq, threshold_weeks=3, now=NOW)
         logins = [c.login for c in summary.contributors_active]
         assert logins == ["bob", "charlie", "alice"]
 
@@ -1415,8 +1572,8 @@ class TestReviewToolCallingLoop:
         args = call_args[0][1:]
         message = fmt % args
         assert "hit tool-call cap" in message
-        assert "42" in message           # pr_number
-        assert "count=5" in message      # count
+        assert "42" in message  # pr_number
+        assert "count=5" in message  # count
         # tool names must appear somewhere in the message
         assert "get_file_content_at_ref" in message or "compare_pr_versions" in message
 
@@ -1453,9 +1610,9 @@ class TestReviewToolCallingLoop:
         # Verify tools were extended.
         registered_names = [getattr(t, "name", None) for t in r.tools]
         for expected_name in new_tool_names:
-            assert expected_name in registered_names, (
-                f"Expected tool '{expected_name}' in r.tools, got: {registered_names}"
-            )
+            assert (
+                expected_name in registered_names
+            ), f"Expected tool '{expected_name}' in r.tools, got: {registered_names}"
 
 
 # ---------------------------------------------------------------------------
@@ -1485,43 +1642,24 @@ class TestIntegrationToolAssistedReview:
             "summary": "Refactor login handler",
             "description": "The login handler must validate email format.",
             "status": {"name": "In Progress"},
-            "customfield_10100": (
-                "AC #1: validate email format\n"
-                "AC #2: return 400 on invalid email"
-            ),
+            "customfield_10100": ("AC #1: validate email format\n" "AC #2: return 400 on invalid email"),
         }
     }
 
-    def _build_integration_reviewer(
-        self, max_tool_calls: int = 3
-    ) -> Any:
+    def _build_integration_reviewer(self, max_tool_calls: int = 3) -> Any:
         """Build a reviewer stub wired for integration-style tests."""
         r = _wire_reviewer_with_tool_cap(max_tool_calls=max_tool_calls)
         r._reviewed_shas = {}
         r._no_ticket_notified = set()
         # Bind review_pull_request and _ask_llm_for_review onto stub.
-        r.review_pull_request = GitHubReviewer.review_pull_request.__get__(
-            r, type(r)
-        )
-        r._ask_llm_for_review = GitHubReviewer._ask_llm_for_review.__get__(
-            r, type(r)
-        )
-        r._extract_ticket_key = GitHubReviewer._extract_ticket_key.__get__(
-            r, type(r)
-        )
+        r.review_pull_request = GitHubReviewer.review_pull_request.__get__(r, type(r))
+        r._ask_llm_for_review = GitHubReviewer._ask_llm_for_review.__get__(r, type(r))
+        r._extract_ticket_key = GitHubReviewer._extract_ticket_key.__get__(r, type(r))
         r._clamp = GitHubReviewer._clamp.__get__(r, type(r))
-        r._format_review_body = GitHubReviewer._format_review_body.__get__(
-            r, type(r)
-        )
-        r._notify_telegram_alert = GitHubReviewer._notify_telegram_alert.__get__(
-            r, type(r)
-        )
-        r._notify_missing_ticket = GitHubReviewer._notify_missing_ticket.__get__(
-            r, type(r)
-        )
-        r._get_telegram_bot = GitHubReviewer._get_telegram_bot.__get__(
-            r, type(r)
-        )
+        r._format_review_body = GitHubReviewer._format_review_body.__get__(r, type(r))
+        r._notify_telegram_alert = GitHubReviewer._notify_telegram_alert.__get__(r, type(r))
+        r._notify_missing_ticket = GitHubReviewer._notify_missing_ticket.__get__(r, type(r))
+        r._get_telegram_bot = GitHubReviewer._get_telegram_bot.__get__(r, type(r))
         r._fetch_ticket = GitHubReviewer._fetch_ticket.__get__(r, type(r))
         r._fetch_diff = GitHubReviewer._fetch_diff.__get__(r, type(r))
         r._ac_field_id = "customfield_10100"
@@ -1541,9 +1679,7 @@ class TestIntegrationToolAssistedReview:
         # Mock diff fetch.
         async def fake_fetch_diff(repo, pr_number):
             return (
-                "diff --git a/login.py b/login.py\n"
-                "+def login(email):\n"
-                "+    return 200\n",
+                "diff --git a/login.py b/login.py\n" "+def login(email):\n" "+    return 200\n",
                 False,
                 True,
             )
@@ -1564,9 +1700,7 @@ class TestIntegrationToolAssistedReview:
             summary="The login handler does not validate email format.",
             approve=False,
         )
-        fake_response = _make_fake_response(
-            expected_result, tool_calls=[tool_call]
-        )
+        fake_response = _make_fake_response(expected_result, tool_calls=[tool_call])
 
         async def fake_ask(**kwargs):
             return fake_response

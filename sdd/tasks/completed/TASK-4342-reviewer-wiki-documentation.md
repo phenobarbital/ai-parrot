@@ -133,4 +133,4 @@ Manually check seven defaults, CLI non-persistence, layout and caveat against th
 
 ## Completion Note
 
-Pending implementation; the finalizer records evidence after validation.
+Implemented directly by orchestrator (nova seats failed with 401 expired token on both attempts, infra not code). Documentation only; existing smoke test test_github_reviewer.py: 75 passed.

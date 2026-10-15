@@ -116,6 +116,13 @@ set at least `GITHUB_TOKEN`, `GITHUB_REVIEW_REPOSITORY`,
 | `JIRA_INSTANCE` / `JIRA_USERNAME` / …    | Jira credentials (same vars consumed by `JiraSpecialist`)                  |
 | `JIRA_ACCEPTANCE_CRITERIA_FIELD`          | Custom field id for acceptance criteria (default `customfield_10100`)       |
 | `GITHUB_REVIEWER_DAILY_REPORT`         | Run-time of the daily stale-PR report, format `HH:MM` UTC (default `08:00`) |
+| `GITHUB_REVIEW_WIKI_ENABLED`           | Opt in to codebase context from a local clone and wiki; default `false`     |
+| `GITHUB_REVIEW_CACHE_DIR`              | Cache root; default `~/.cache/parrot/github-reviewer`                       |
+| `GITHUB_REVIEW_CLONE_BRANCH`           | Branch to track; default is the remote's default `HEAD` branch              |
+| `GITHUB_REVIEW_CLONE_DEPTH`            | Clone depth; default is full history                                        |
+| `GITHUB_REVIEW_CACHE_MAX_BYTES`        | Soft cache cap, default 5 GiB, enforced by LRU eviction                     |
+| `GITHUB_REVIEW_BUILD_TIMEOUT`          | Wiki build timeout in seconds; default `900`                                |
+| `GITHUB_REVIEW_WIKI_CONTEXT_TOKENS`    | Token budget of the injected context block; default `4000`                  |
 
 `integrations_bots.yaml` exposes the agent over Telegram:
 
@@ -143,6 +150,52 @@ hook.setup_routes(app)
 ```
 
 ---
+
+## Codebase context (local clone + wiki)
+
+When `GITHUB_REVIEW_WIKI_ENABLED=true` the reviewer keeps a local clone of each
+watched repository and a `wikitoolkit` graph built from it, and adds a
+token-budgeted context block to the review question. It is off by default.
+
+**Snapshot caveat.** The wiki describes the **base-branch snapshot**, not the
+pull request: PR heads are not checked out. A symbol added by the PR can
+therefore be absent from this context, and the block is labelled accordingly so
+the model does not report it as nonexistent.
+
+**Cache layout** (per repository slug `owner-repo`, lowercased, under
+`GITHUB_REVIEW_CACHE_DIR`):
+
+```
+<cache>/repos/<slug>/        git clone (tracks the remote default branch unless
+                             GITHUB_REVIEW_CLONE_BRANCH is set)
+<cache>/planes/<slug>/       wiki plane, built with `wikitoolkit build
+                             --storage-dir <plane>` (a run-scoped flag, never
+                             persisted into project settings); builds are lean
+<cache>/locks/<slug>.lock    cross-process lock (plus an in-process asyncio lock)
+```
+
+The reviewer's plane is always isolated from the ai-parrot wiki plane, and the
+full wiki tools exposed to the model are confined to the cloned sources.
+Private repositories use the same authentication as the rest of the toolkit
+(GitHub App or token); the token is scrubbed from logs. The `git` and
+`wikitoolkit` executables must be available locally.
+
+**Recovery.** A cache entry whose origin URL or branch does not match is
+re-cloned exactly once; a second failure degrades instead of looping. A marker
+is written before each build; if a build was interrupted the marker stays in
+`started` (incomplete) and the next run rebuilds with `--force`.
+
+**Eviction.** The cache is trimmed by least-recently-used order down to
+`GITHUB_REVIEW_CACHE_MAX_BYTES`. Locked entries and the entry being refreshed
+are never evicted; a single entry larger than the cap is warned about rather
+than thrashed. A full clone is roughly 620 MB and the plane roughly 538 MB, so
+the 5 GiB default holds about four ai-parrot-sized repositories. Raise the cap
+when watching more, or repositories are re-cloned on every rotation.
+
+**Degradation.** Clone failure, build failure, build timeout
+(`GITHUB_REVIEW_BUILD_TIMEOUT`), a missing `wikitoolkit` binary, or a plane
+without a last-good marker never block a review: one log line is emitted and the
+review falls back to the diff-only prompt.
 
 ## GitHub webhook setup
 

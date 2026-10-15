@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-14T22:57:37.830330+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-14T23:38:58+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Independent CLI writer: only cli.py and its new focused test file; consumes no feature-created symbols.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4335-wiki-build-storage-override.md"
+      "completed_at": "2026-10-14T23:07:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4335-wiki-build-storage-override.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4336",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "Independent GitToolkit writer: gittoolkit.py and test_gittoolkit_clone.py only; no dependency on the build runner because it consumes no runner symbol.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4336-git-clone-timeout-auth.md"
+      "completed_at": "2026-10-14T23:07:48+00:00",
+      "file": "sdd/tasks/completed/TASK-4336-git-clone-timeout-auth.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4337",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -60,8 +62,9 @@
       "parallelism_notes": "Independent foundation: creates repo_cache.py models and repo_lock plus test_repo_cache.py; imports no WikiBuildRunner or RepoWikiCache.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4337-repo-cache-models-lock.md"
+      "completed_at": "2026-10-14T23:07:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4337-repo-cache-models-lock.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4338",
@@ -70,7 +73,7 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -81,8 +84,9 @@
       "parallelism_notes": "Consumes --storage-dir added by TASK-4335 in cli.py and BuildOutcome created by TASK-4337 in repo_cache.py.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4338-repo-wiki-build-runner.md"
+      "completed_at": "2026-10-14T23:15:54+00:00",
+      "file": "sdd/tasks/completed/TASK-4338-repo-wiki-build-runner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4339",
@@ -91,7 +95,7 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -103,8 +107,9 @@
       "parallelism_notes": "Consumes timeout/prefer_gh from TASK-4336, RepoCachePaths/BuildOutcome/repo_lock from TASK-4337, and WikiBuildRunner from TASK-4338. Serializes repo_cache.py and test_repo_cache.py writers after TASK-4337.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4339-repo-wiki-cache-lifecycle.md"
+      "completed_at": "2026-10-14T23:24:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4339-repo-wiki-cache-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4340",
@@ -113,7 +118,7 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,8 +128,9 @@
       "parallelism_notes": "Consumes RepoWikiCache and its completed build-runner integration from TASK-4339; owns github_reviewer.py, conf.py and test_github_reviewer.py before the prompt task.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4340-reviewer-wiki-lifecycle.md"
+      "completed_at": "2026-10-14T23:31:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4340-reviewer-wiki-lifecycle.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4341",
@@ -133,7 +139,7 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -143,8 +149,9 @@
       "parallelism_notes": "Consumes the cache/store state and toolkit wiring from TASK-4340; also serializes shared writers of github_reviewer.py and test_github_reviewer.py after TASK-4340.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4341-reviewer-wiki-prompt-context.md"
+      "completed_at": "2026-10-14T23:38:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4341-reviewer-wiki-prompt-context.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4342",
@@ -153,7 +160,7 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [],
@@ -161,8 +168,9 @@
       "parallelism_notes": "Independent docs/github-reviewer.md writer; documents the approved spec without importing or testing a feature-created symbol. Existing reviewer tests are a smoke check only, so no implementation edge is needed.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4342-reviewer-wiki-documentation.md"
+      "completed_at": "2026-10-14T23:09:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4342-reviewer-wiki-documentation.md",
+      "verification": "verified"
     }
   ]
 }
