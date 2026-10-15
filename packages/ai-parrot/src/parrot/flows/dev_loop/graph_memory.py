@@ -35,11 +35,11 @@ from parrot.knowledge.graphindex import (
     GroundingEvaluator,
     NodeKind,
     Provenance,
-    SQLitePersistence,
     UniversalEdge,
     UniversalNode,
 )
 from parrot.knowledge.graphindex.assemble import GraphAssembler
+from parrot.knowledge.graphindex.backends import create_graph_persistence
 from parrot.knowledge.graphindex.factory import (
     DEFAULT_DIMENSION,
     HashingGraphEmbedder,
@@ -139,7 +139,7 @@ class DevLoopGraphMemory:
             return None
 
         ctx = make_stub_tenant_context(tenant_id)
-        persistence = SQLitePersistence(Path(db_dir))
+        persistence = await create_graph_persistence("sqlite", db_dir=Path(db_dir))
         publisher = GraphPublisher(persistence, ctx)
 
         nodes, edges = await persistence.load_graph(ctx)

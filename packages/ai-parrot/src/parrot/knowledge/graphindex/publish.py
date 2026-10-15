@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from parrot.knowledge.graphindex.schema import (
     AssertionMeta,
@@ -25,6 +25,9 @@ from parrot.knowledge.graphindex.schema import (
     Provenance,
 )
 from parrot.knowledge.ontology.schema import TenantContext
+
+if TYPE_CHECKING:  # pragma: no cover — typing only
+    from parrot.knowledge.graphindex.protocols import GraphPersistence
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +47,7 @@ class GraphPublisher:
         ctx: Tenant context identifying the target graph.
     """
 
-    def __init__(self, persistence: Any, ctx: TenantContext) -> None:
+    def __init__(self, persistence: "GraphPersistence", ctx: TenantContext) -> None:
         self.persistence = persistence
         self.ctx = ctx
         self.logger = logging.getLogger(__name__)
