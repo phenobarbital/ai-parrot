@@ -228,10 +228,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet (attempt 0e1ae940), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: ceilings activated in test_import_ceilings.py (xfail removed where the ceiling holds; probe evidence in artifacts/logs/FEAT-540-import-ceilings.json, committed with `git add -f`); test_graph_tree_imports.py (AST scan of wiki/**, graphindex/**, ontology/{contracts,schema,validators}.py + sys.meta_path blocker) finds no module-level/executable-branch violation; test_cli_surface.py + golden/cli_surface.json (click group is `wiki`, 73 command paths, UPDATE_GOLDEN=1 regenerates; baseline generated from the current group, not a pre-feature snapshot); docs/graphindex/core-seams.md (four seams, registries, FEAT-670 recipe); sdd/state/FEAT-540/handoff-541.md. The evidence JSON was added to the declared files (named in Scope). Two gates are marked xfail with precise reasons and NOT fixed (out of scope per the task): `test_import_ceilings[wiki.cli]` and `test_graph_tree_imports::test_blocker_default_cli_entry_and_plain_ops`, both caused by `wiki/schema/models.py:9` importing `parrot.bots.database.models` eagerly (chain wiki.cli:64 -> federation.py:46 -> project.py:31 -> schema/models.py:9 -> parrot/bots/__init__ -> navconfig/parrot.conf); related eager parrot.bots.database imports in schema/{render,service}.py and producers/{ddl,live}.py. Filed as issue:3c432c97c459 (major, tech_debt). Docs drift in docs/architecture/09-ontologic-rag.md filed as issue:0203d753aded (low). Verification `partial`: full `pytest tests/knowledge` (excluding Postgres-only) = 3964 passed, 2 xfailed, failure set identical to clean c57431a06 (44F/4E, all pre-existing or Postgres-unreachable). No live Arango/Postgres run anywhere in FEAT-540 (sandbox has no DB).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: two AC gates xfail (documented); evidence file declared.
