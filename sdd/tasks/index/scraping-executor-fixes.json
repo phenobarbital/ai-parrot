@@ -1,0 +1,32 @@
+{
+  "feature": "scraping-executor-fixes",
+  "feature_id": "FEAT-682",
+  "spec": "sdd/specs/scraping-executor-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-15T17:45:00Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4358",
+      "slug": "click-text-contains-via-evaluate",
+      "title": "Run the click text-contains path through driver.evaluate",
+      "feature_id": "FEAT-682",
+      "feature": "scraping-executor-fixes",
+      "spec": "sdd/specs/scraping-executor-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Single task; no dependencies. Touches only executor.py (_action_click) and test_executor.py.",
+      "discovered_from": "issue:c10c1e94f4b3",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4358-click-text-contains-via-evaluate.md"
+    }
+  ]
+}
