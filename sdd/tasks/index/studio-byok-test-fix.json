@@ -1,0 +1,29 @@
+{
+  "feature": "studio-byok-test-fix",
+  "feature_id": "FEAT-677",
+  "spec": "sdd/specs/studio-byok-test-fix.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-15T14:30:00Z",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4351",
+      "slug": "studio-byok-test-fixtures",
+      "title": "Update stale studio BYOK test fixtures to the vault KeyRing API",
+      "feature_id": "FEAT-677",
+      "feature": "studio-byok-test-fix",
+      "spec": "sdd/specs/studio-byok-test-fix.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Single task.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4351-studio-byok-test-fixtures.md"
+    }
+  ]
+}
