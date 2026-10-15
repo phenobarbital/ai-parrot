@@ -435,7 +435,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -446,8 +446,9 @@
       "parallelism_notes": "edits builder.py:43 after TASK-4304 (same file); types its store to GraphDocumentStore from TASK-4327 (ontology/contracts.py)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4320-arango-persistence-rename.md"
+      "completed_at": "2026-10-15T00:41:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4320-arango-persistence-rename.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4321",
