@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-08-31T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-09-03T15:01:13+00:00",
   "tasks": [
     {
       "id": "TASK-2660",
@@ -14,7 +14,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -22,8 +22,9 @@
       "parallelism_notes": "Foundation; creates the package + config + facade everything imports.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2660-scaffolding-config-agent-facade.md"
+      "completed_at": "2026-09-01T02:29:40+00:00",
+      "file": "sdd/tasks/completed/TASK-2660-scaffolding-config-agent-facade.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2661",
@@ -32,7 +33,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -42,8 +43,9 @@
       "parallelism_notes": "Shared contract; must be frozen before fan-out.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2661-frontmatter-schemas-and-validation.md"
+      "completed_at": "2026-09-01T02:34:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2661-frontmatter-schemas-and-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2662",
@@ -52,7 +54,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -63,8 +65,9 @@
       "parallelism_notes": "Shared vault I/O layer used by all renderers.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2662-vault-access-init-mirror-naming.md"
+      "completed_at": "2026-09-01T02:46:02+00:00",
+      "file": "sdd/tasks/completed/TASK-2662-vault-access-init-mirror-naming.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2663",
@@ -73,7 +76,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -83,8 +86,9 @@
       "parallelism_notes": "Own node file; depends only on scaffolding + FEAT-472.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2663-fetch-gate-and-scheduling.md"
+      "completed_at": "2026-09-01T02:53:17+00:00",
+      "file": "sdd/tasks/completed/TASK-2663-fetch-gate-and-scheduling.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2664",
@@ -93,7 +97,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -104,8 +108,9 @@
       "parallelism_notes": "Consumes fetch output; writes Raw/ using the vault layer.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2664-raw-bundle-provenance.md"
+      "completed_at": "2026-09-01T02:57:26+00:00",
+      "file": "sdd/tasks/completed/TASK-2664-raw-bundle-provenance.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2665",
@@ -114,7 +119,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -126,8 +131,9 @@
       "parallelism_notes": "Feeds destination routing + all compilers.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2665-classification.md"
+      "completed_at": "2026-09-01T03:00:37+00:00",
+      "file": "sdd/tasks/completed/TASK-2665-classification.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2666",
@@ -136,7 +142,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -148,8 +154,9 @@
       "parallelism_notes": "On the critical path; its output feeds project/entities/daily.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2666-meeting-source-page-renderer.md"
+      "completed_at": "2026-09-01T03:08:41+00:00",
+      "file": "sdd/tasks/completed/TASK-2666-meeting-source-page-renderer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2667",
@@ -158,7 +165,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -170,8 +177,9 @@
       "parallelism_notes": "Own node/renderer files; parallel with entities/concepts/daily once meeting page exists.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2667-project-reconciler-and-new-project.md"
+      "completed_at": "2026-09-01T03:13:56+00:00",
+      "file": "sdd/tasks/completed/TASK-2667-project-reconciler-and-new-project.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2668",
@@ -180,7 +188,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -192,8 +200,9 @@
       "parallelism_notes": "Separate node/renderer files; independent of project reconcile.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2668-entity-concept-resolvers.md"
+      "completed_at": "2026-09-01T03:53:25+00:00",
+      "file": "sdd/tasks/completed/TASK-2668-entity-concept-resolvers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2669",
@@ -202,7 +211,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -214,8 +223,9 @@
       "parallelism_notes": "Own node/renderer; runs before project update in the orchestrator.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2669-contradiction-protocol.md"
+      "completed_at": "2026-09-01T03:56:00+00:00",
+      "file": "sdd/tasks/completed/TASK-2669-contradiction-protocol.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2670",
@@ -224,7 +234,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -236,8 +246,9 @@
       "parallelism_notes": "Separate connective-tissue node files.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2670-daily-indexes-review-log.md"
+      "completed_at": "2026-09-01T04:01:24+00:00",
+      "file": "sdd/tasks/completed/TASK-2670-daily-indexes-review-log.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2671",
@@ -246,7 +257,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -257,8 +268,9 @@
       "parallelism_notes": "Independent plane; consumed by classify/entities matching + query intent.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2671-graphindex-rebuild-and-query.md"
+      "completed_at": "2026-09-01T04:07:15+00:00",
+      "file": "sdd/tasks/completed/TASK-2671-graphindex-rebuild-and-query.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2672",
@@ -267,7 +279,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -284,8 +296,9 @@
       "parallelism_notes": "Integrates all nodes; must run after the compilers exist.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2672-ingest-orchestrator.md"
+      "completed_at": "2026-09-01T04:35:48+00:00",
+      "file": "sdd/tasks/completed/TASK-2672-ingest-orchestrator.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2673",
@@ -294,7 +307,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -306,8 +319,9 @@
       "parallelism_notes": "Separate read-only workflow files; archive also called by the orchestrator.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2673-health-lint-archive-graph-workflows.md"
+      "completed_at": "2026-09-01T04:42:57+00:00",
+      "file": "sdd/tasks/completed/TASK-2673-health-lint-archive-graph-workflows.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2674",
@@ -316,7 +330,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "low",
       "effort": "M",
       "depends_on": [
@@ -326,8 +340,9 @@
       "parallelism_notes": "Isolated node; off by default.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2674-email-digests-disabled.md"
+      "completed_at": "2026-09-01T04:46:45+00:00",
+      "file": "sdd/tasks/completed/TASK-2674-email-digests-disabled.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-2675",
@@ -336,7 +351,7 @@
       "feature_id": "FEAT-481",
       "feature": "fireflies-wiki-knowledgebase-agent",
       "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -360,8 +375,28 @@
       "parallelism_notes": "Acceptance oracle; runs after everything exists.",
       "assigned_to": null,
       "started_at": "2026-09-01T02:08:10+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-2675-contract-conformance-suite.md"
+      "completed_at": "2026-09-01T04:53:32+00:00",
+      "file": "sdd/tasks/completed/TASK-2675-contract-conformance-suite.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-2784",
+      "slug": "failure-quarantine-rollback-reprocess",
+      "title": "Failure quarantine, rollback & reprocess (Module 17 fallback)",
+      "feature_id": "FEAT-481",
+      "feature": "fireflies-wiki-knowledgebase-agent",
+      "spec": "sdd/specs/fireflies-wiki-knowledgebase-agent.spec.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "Sole new task for this spec (Module 17); extends the already-implemented Modules 2/3/6/12. Nothing to parallelize — the other 16 tasks are done.",
+      "assigned_to": null,
+      "started_at": "2026-09-03T14:45:06+00:00",
+      "completed_at": "2026-09-03T15:01:13+00:00",
+      "file": "sdd/tasks/completed/TASK-2784-failure-quarantine-rollback-reprocess.md",
+      "verification": "verified"
     }
   ]
 }

@@ -281,6 +281,7 @@ class LLMWikiToolkit(AbstractToolkit):
         incremental: bool = False,
         extract_entities: bool = False,
         granularity: str = "standard",
+        extra_skip_patterns: list[str] | None = None,
     ) -> dict[str, Any]:
         """Ingest an Obsidian vault into the wiki (FEAT-392).
 
@@ -297,6 +298,12 @@ class LLMWikiToolkit(AbstractToolkit):
             extract_entities: Also run Phase-2 LLM entity extraction.
             granularity: Entity extraction granularity — ``minimal``,
                 ``standard``, ``fine`` or ``custom``.
+            extra_skip_patterns: Additional directory names to exclude
+                from vault traversal, on top of the loader's own
+                ``.obsidian``/``.trash``/``.git`` defaults — e.g. a
+                caller-enforced ``Private/`` boundary that must never be
+                read, indexed, or surfaced by any derived plane. ``None``
+                preserves the loader's exact prior default behavior.
 
         Returns:
             Dict with the phase reports: ``raw_ingest``, ``graph_bridge``
@@ -309,6 +316,8 @@ class LLMWikiToolkit(AbstractToolkit):
         if self.confine_sources:
             vault_path = str(self._confined_path(vault_path, effective_config.storage_dir / "sources"))
         loader = ObsidianVaultLoader(vault_path)
+        if extra_skip_patterns:
+            loader.vault.skip_patterns = loader.vault.skip_patterns | frozenset(extra_skip_patterns)
         if incremental:
             raw_report = await loader.incremental_update(self._pi, wiki_name, self._sources)
         else:
