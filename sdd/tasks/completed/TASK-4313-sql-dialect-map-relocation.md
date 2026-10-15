@@ -226,10 +226,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: SQL dialect map moved to parrot/knowledge/common/sql_dialects.py; parrot/tools/sql_dialects.py re-exports the same object; cli.py, schema/render.py and schema/producers/ddl.py repointed (import-only change, correct). Its own tests failed on delivery and were fixed in 8640f08f5: the probe over-asserted (render.py still imports parrot.bots, which boots parrot.tools transitively - out of this task's scope, so the probe now asserts parrot.tools.sql_dialects is not loaded); loaded_at clock comparison; render_ddl treats the target 'tsql' generically because it is not a key of the map (pre-existing behaviour, now documented in the test). feedback coder-feedback:966cf8ede4c391712d3dab9b (recurrence of untested-test-fixtures-and-clock-equality); review coder-review:0627ce2acaaa5f3b151e0dbf. NOTE for the owner: AC 'wiki schema modules no longer import parrot.tools' holds for the dialect map only; render.py's `from parrot.bots.database.models import TableMetadata` still loads parrot.tools via parrot.bots. Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres and has pre-existing reds. With GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings (4294 passed in the chunk run) showed no failure absent from the clean origin/dev baseline other than TASK-4313's own two test failures, fixed in 8640f08f5 (test-only, 3 consecutive green runs); ai-parrot-tools wiki tests 22 passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: AC 'no parrot.tools import' met for the dialect map only (see Notes)
