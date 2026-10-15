@@ -552,8 +552,10 @@ async def _action_scroll(driver: AbstractDriver, action: Any) -> bool:
         return True
 
     if direction == "bottom":
-        height_script = "return Math.max(document.body.scrollHeight," " document.documentElement.scrollHeight);"
-        height = int(await driver.execute_script(height_script) or 0)
+        # Bare expression via evaluate: a top-level ``return`` is an illegal
+        # statement under Playwright/Page's ``page.evaluate``.
+        height_expr = "Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
+        height = int(await driver.evaluate(height_expr) or 0)
         if height <= 0:
             return True
         chunks = 6
@@ -561,7 +563,7 @@ async def _action_scroll(driver: AbstractDriver, action: Any) -> bool:
             y = min(height * i // chunks, height)
             await driver.execute_script(f"window.scrollTo(0, {y});")
             await asyncio.sleep(0.4)
-            new_height = int(await driver.execute_script(height_script) or 0)
+            new_height = int(await driver.evaluate(height_expr) or 0)
             height = max(height, new_height)
         return True
 

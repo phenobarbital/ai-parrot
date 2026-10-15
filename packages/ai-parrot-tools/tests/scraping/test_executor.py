@@ -578,3 +578,32 @@ class TestClickTextContains:
         assert await _action_click(mock_driver, self._action("#btn"), 10) is True
         mock_driver.click.assert_awaited_once_with("#btn", 10)
         mock_driver.evaluate.assert_not_awaited()
+
+
+class TestScrollBottom:
+    """FEAT-682 / issue:9cbd2cf9f9f9: scroll-bottom reads the page height via driver.evaluate."""
+
+    @pytest.mark.asyncio
+    async def test_scroll_bottom_uses_evaluate(self, mock_driver):
+        """Height comes from a bare evaluate expression; chunked scrollTo calls stay on execute_script."""
+        mock_driver.evaluate = AsyncMock(return_value=1200)
+        step = ScrapingStep.from_dict({"action": "scroll", "direction": "bottom"})
+        with patch("parrot_tools.scraping.executor.asyncio.sleep", new=AsyncMock()):
+            assert await _dispatch_step(mock_driver, step, "", 10, {}) is True
+        assert mock_driver.evaluate.await_count == 7
+        expr = mock_driver.evaluate.await_args_list[0].args[0]
+        assert "scrollHeight" in expr
+        assert "return" not in expr
+        scripts = [c.args[0] for c in mock_driver.execute_script.await_args_list]
+        assert scripts[-1] == "window.scrollTo(0, 1200);"
+        assert len(scripts) == 6
+        assert not any(s.lstrip().startswith("return") for s in scripts)
+
+    @pytest.mark.asyncio
+    async def test_scroll_bottom_zero_height_short_circuits(self, mock_driver):
+        """A zero height ends the action after a single evaluate, with no scrolling."""
+        mock_driver.evaluate = AsyncMock(return_value=0)
+        step = ScrapingStep.from_dict({"action": "scroll", "direction": "bottom"})
+        assert await _dispatch_step(mock_driver, step, "", 10, {}) is True
+        mock_driver.evaluate.assert_awaited_once()
+        mock_driver.execute_script.assert_not_awaited()
