@@ -524,10 +524,8 @@ async def _action_click(driver: AbstractDriver, action: Any, default_timeout: in
             raise RuntimeError(f"No element matching CSS {selector!r} contained text " f"{js_text_filter!r}")
         return True
 
-    if selector_type == "xpath":
-        locator = selector
-    elif selector_type == "text":
-        locator = f"//*[contains(text(), '{selector}')]"
+    if selector_type == "text":
+        locator = _resolve_locator(selector, "text")
     else:
         locator = selector
 
@@ -551,7 +549,11 @@ async def _action_type(driver: AbstractDriver, action: Any, default_timeout: int
     """Forward all typing fields to the driver's typing capability.
 
     With ``selector=None`` the text is typed into the currently focused element.
+    Drivers only honour ``clear_first`` for a selected element, so the focused
+    element is cleared here with one ``driver.evaluate`` IIFE.
     """
+    if action.selector is None and action.clear_first:
+        await driver.evaluate(_CLEAR_FOCUSED_JS)
     await driver.type_text(
         action.text,
         selector=action.selector,
@@ -562,12 +564,48 @@ async def _action_type(driver: AbstractDriver, action: Any, default_timeout: int
     return True
 
 
+# Clears ``document.activeElement`` (inputs/textareas via ``value``,
+# contenteditable via ``textContent``) and fires a bubbling ``input`` event.
+# No leading whitespace: Selenium's evaluate() prefixes ``return ``.
+_CLEAR_FOCUSED_JS = (
+    "(() => {"
+    " const el = document.activeElement;"
+    " if (!el || el === document.body) return false;"
+    " if ('value' in el) { el.value = ''; }"
+    " else if (el.isContentEditable) { el.textContent = ''; }"
+    " else return false;"
+    " el.dispatchEvent(new Event('input', {bubbles: true}));"
+    " return true;"
+    "})()"
+)
+
+
+def _xpath_literal(value: str) -> str:
+    """Quote *value* as an XPath 1.0 string literal.
+
+    XPath 1.0 has no escape syntax, so a value holding both quote kinds is
+    built with ``concat()`` — interpolated text can never close the literal.
+
+    Args:
+        value: Raw text to embed in an XPath expression.
+
+    Returns:
+        An XPath string literal (or ``concat(...)`` expression) equal to *value*.
+    """
+    if "'" not in value:
+        return f"'{value}'"
+    if '"' not in value:
+        return f'"{value}"'
+    parts = value.split("'")
+    return "concat(" + ', "\'", '.join(f"'{part}'" for part in parts) + ")"
+
+
 def _resolve_locator(selector: str, selector_type: str = "css") -> str:
     """Map CSS, XPath, or text DSL selectors to a driver locator."""
     if selector_type == "xpath":
         return selector
     if selector_type == "text":
-        return f"//*[contains(text(), '{selector}')]"
+        return f"//*[contains(text(), {_xpath_literal(selector)})]"
     return _strip_soup_only_pseudos(selector)
 
 
@@ -580,9 +618,23 @@ async def _action_hover(driver: AbstractDriver, action: Any, default_timeout: in
 
 
 async def _action_submit(driver: AbstractDriver, action: Any, default_timeout: int) -> bool:
-    """Submit a form or click a control, optionally waiting for a follow-up selector."""
+    """Submit a form or click a control, optionally waiting for a follow-up selector.
+
+    BeautifulSoup-only pseudos (``:contains`` / ``:-soup-contains`` / ``:has``)
+    are stripped from CSS selectors, as ``querySelector`` rejects them.
+
+    Raises:
+        RuntimeError: when the selector is empty after stripping or matches nothing.
+    """
     timeout = action.timeout or default_timeout
     selector = action.selector
+    if not _is_xpath(selector):
+        stripped = _strip_soup_only_pseudos(selector)
+        if stripped != selector:
+            logger.warning("submit selector %r contains BS4-only pseudo-classes; stripped to %r.", selector, stripped)
+        if not stripped.strip():
+            raise RuntimeError(f"submit selector {selector!r} reduced to empty after stripping BS4-only pseudos")
+        selector = stripped
     expression = f"""
 (() => {{
     const selector = {json.dumps(selector)};
@@ -612,9 +664,17 @@ async def _action_submit(driver: AbstractDriver, action: Any, default_timeout: i
         raise RuntimeError(f"No element matching selector {selector!r}")
     if outcome == "click":
         await driver.click(selector, timeout)
-    if getattr(action, "wait_after_submit", None):
-        await driver.wait_for_selector(action.wait_after_submit, action.wait_timeout)
+    wait_after = getattr(action, "wait_after_submit", None)
+    if wait_after and not _is_xpath(wait_after):
+        wait_after = _strip_soup_only_pseudos(wait_after)
+    if wait_after:
+        await driver.wait_for_selector(wait_after, action.wait_timeout)
     return True
+
+
+def _is_xpath(selector: str) -> bool:
+    """Return True when *selector* is XPath, using the submit JS's own rule."""
+    return selector.startswith(("/", "./"))
 
 
 async def _action_scroll(driver: AbstractDriver, action: Any) -> bool:
