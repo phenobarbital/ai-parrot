@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-14T22:57:37.830330+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-15T00:27:35+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -252,15 +252,16 @@
       ],
       "parallel": true,
       "parallelism_notes": "Uses RepoWikiCache.read_lease from TASK-4345 (repo_cache.py); modifies github_reviewer.py/conf.py/tests after TASK-4341 (done; follows TASK-4340) and docs/github-reviewer.md after TASK-4342 (done).",
-      "file": "sdd/tasks/active/TASK-4346-reviewer-bounded-wiki-wait.md",
+      "file": "sdd/tasks/completed/TASK-4346-reviewer-bounded-wiki-wait.md",
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-10-15T00:22:22+00:00",
-      "completed_at": null,
-      "discovered_from": "issue:93f2022d934a"
+      "completed_at": "2026-10-15T00:27:35+00:00",
+      "discovered_from": "issue:93f2022d934a",
+      "verification": "verified"
     }
   ]
 }
