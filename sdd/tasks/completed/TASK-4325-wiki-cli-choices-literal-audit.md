@@ -210,10 +210,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra (attempt 2b282b3e), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: wiki cli.py/entity_cli.py/sync.py and the parrot_tools wiki toolkit no longer hardcode backend literals (choices derive from the backend registry); AST audit test test_backend_literal_audit.py. Verification `partial`: audit + wiki test_cli + ontology tests = 275 passed; the 2 failures (TestIngestModelResolutionDetectionFallback) are pre-existing on clean c57431a06; parrot-tools tests/wiki 22 passed; ruff F821/F401 clean. No review corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
