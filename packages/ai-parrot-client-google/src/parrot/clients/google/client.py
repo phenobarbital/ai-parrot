@@ -231,7 +231,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """Check if a model belongs to a modern Gemini generation (3.x or 4.x).
 
         Modern generations on Vertex AI require location='global' and preview
-        variants need api_version='v1beta1'. Renamed from ``_is_modern_gemini_model``
+        variants need api_version='v1beta1'. Renamed from ``_is_gemini3_model``
         when the 4.x family landed (FEAT-688).
         """
         model = GoogleGenAIClient._as_model_str(model)
