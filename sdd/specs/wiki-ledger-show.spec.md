@@ -10,7 +10,7 @@ tags: [wikitoolkit, ledger, cli, mcp]
 **Feature ID**: FEAT-689
 **Date**: 2026-10-16
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 Source: `sdd/proposals/wiki-ledger-show.proposal.md` (research state `sdd/state/wiki-ledger-show/`).
