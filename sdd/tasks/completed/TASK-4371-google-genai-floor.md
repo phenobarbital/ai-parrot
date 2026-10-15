@@ -212,10 +212,7 @@ No new tests. The floor is evidenced by the introspection output (AC-2), not by 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker
+**Date**: 2026-10-15
+**Notes**: Introspected google-genai 2.31.0 in an isolated venv (ALL OK); floor `>=2.31.0` declared in both pyprojects, rationale comment added, `uv lock --upgrade-package google-genai` moved 2.28.0 -> 2.31.0. The lock also carried incidental drift (workspace member 0.4.1->0.4.2 from dev, openai 3.3.1->3.31.0, navrules 1.2.2, httpx-aiohttp removed). Google test modules: all pass. Operator must `uv sync` in the main checkout after merge so the installed SDK (2.24.0) matches the floor.
+**Deviations from spec**: none

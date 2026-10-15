@@ -266,10 +266,7 @@ See the blueprint blocks for `test_google_models.py` and `test_llm_factory.py`.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (TASK-4369 via coder seat / native sonnet)
+**Date**: 2026-10-15
+**Notes**: Implemented per blueprint; merge-tier validation: remaining failures (bedrock factory, lyria, live_envelope, deep_research mock, folder_convention[google]) are pre-existing on origin/dev (verified); this task's tests pass in isolation (33 passed models/factory, 129 incl. google_client).
+**Deviations from spec**: none material (TASK-4370: predicate written as startswith(tuple) per ruff PIE810).

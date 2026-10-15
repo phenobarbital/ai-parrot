@@ -110,3 +110,18 @@ def test_explicit_backend_kwarg_wins():
     # Passing backend="direct" to a "bedrock" key should use direct
     client = LLMFactory.create("bedrock", backend="direct")
     assert client.backend == "direct"
+
+
+# ── FEAT-688 Google catalogue ────────────────────────────────────────────────
+
+
+def test_list_models_google_includes_argon():
+    """The Gemini 4 Argon id is published as an active Google model."""
+    models = LLMFactory.list_models("google")
+    assert "gemini-4-argon" in models["active"]
+    assert "gemini-3.7-pro" not in models["active"]
+
+
+def test_list_models_google_has_no_deprecations():
+    """Google retires by deletion (FEAT-688 U2) — no deprecation registry."""
+    assert LLMFactory.list_models("google")["deprecated"] == []

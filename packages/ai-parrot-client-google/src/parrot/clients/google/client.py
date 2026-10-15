@@ -118,7 +118,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     client_type: str = "google"
     client_name: str = "google"
     # env vars holding the server-side API key (read by ``has_server_credentials``; never returned to callers)
-    credential_env = ('GOOGLE_API_KEY',)
+    credential_env = ("GOOGLE_API_KEY",)
 
     # FEAT-523 folder-convention attributes (read by LLMFactory).
     provider_keys: tuple[str, ...] = ("google",)
@@ -146,9 +146,9 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
     # ``combined_call_prefixes``. Gemini 3.x models listed here have been
     # validated by upstream evaluation to accept both simultaneously.
     _default_combined_call_prefixes: tuple[str, ...] = (
+        "gemini-4-argon",
         "gemini-3.8-flash",
         "gemini-3.7-flash",
-        "gemini-3.7-pro",
         "gemini-3.6-flash",
         "gemini-3.5-flash",
         "gemini-3.5-flash-lite",
@@ -227,16 +227,17 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         self._echo_threshold: float = 0.85
 
     @staticmethod
-    def _is_gemini3_model(model: str) -> bool:
-        """Check if a model belongs to the Gemini 3.x family.
+    def _is_modern_gemini_model(model: str) -> bool:
+        """Check if a model belongs to a modern Gemini generation (3.x or 4.x).
 
-        Gemini 3.x models on Vertex AI require location='global'
-        and preview variants need api_version='v1beta1'.
+        Modern generations on Vertex AI require location='global' and preview
+        variants need api_version='v1beta1'. Renamed from ``_is_gemini3_model``
+        when the 4.x family landed (FEAT-688).
         """
         model = GoogleGenAIClient._as_model_str(model)
         if not model:
             return False
-        return model.startswith("gemini-3")
+        return model.startswith(("gemini-3", "gemini-4"))
 
     @staticmethod
     def _is_preview_model(model: str) -> bool:
@@ -278,7 +279,6 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
             return False
         return (
             model.startswith("gemini-2.5-pro")
-            or model.startswith("gemini-3.7-pro")
             or model.startswith("gemini-3.1-pro")
             or model.startswith("gemini-3-pro")
             or GoogleGenAIClient._is_computer_use_model(model)
@@ -398,7 +398,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """Whether ``model`` may receive tools + response_schema in a single call.
 
         Returns True when the normalised model identifier starts with any
-        prefix in ``prefixes``. Pattern matches ``_is_gemini3_model`` and
+        prefix in ``prefixes``. Pattern matches ``_is_modern_gemini_model`` and
         ``_requires_thinking`` for consistency.
 
         Args:
@@ -437,9 +437,10 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         (location, API version). This key is used to invalidate the cached
         client when switching between incompatible model families.
         """
-        if self._is_gemini3_model(model):
+        if self._is_modern_gemini_model(model):
+            generation = "gemini4" if GoogleGenAIClient._as_model_str(model).startswith("gemini-4") else "gemini3"
             suffix = "preview" if self._is_preview_model(model) else "stable"
-            return f"gemini3_{suffix}"
+            return f"{generation}_{suffix}"
         return "default"
 
     def _filter_get_client_hints(self, **hints: Any) -> dict:
@@ -658,7 +659,7 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         """
         resolved_model = model or self.model or self._default_model
         # Normalize GoogleModel enum → string so downstream helpers
-        # (_is_gemini3_model, _is_preview_model, …) that call .startswith()
+        # (_is_modern_gemini_model, _is_preview_model, …) that call .startswith()
         # on the value don't blow up with "'GoogleModel' object has no
         # attribute 'startswith'".
         if isinstance(resolved_model, GoogleModel):
@@ -667,8 +668,8 @@ class GoogleGenAIClient(AbstractClient, GoogleGeneration, GoogleAnalysis):
         if self.vertexai:
             location = self.vertex_location
 
-            # Gemini 3.x family requires location='global' on Vertex AI
-            if self._is_gemini3_model(resolved_model):
+            # Gemini 3.x/4.x families require location='global' on Vertex AI
+            if self._is_modern_gemini_model(resolved_model):
                 location = "global"
 
             self.logger.info(f"Initializing Vertex AI for project {self.vertex_project} in {location}")

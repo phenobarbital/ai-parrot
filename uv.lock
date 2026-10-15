@@ -959,8 +959,8 @@ requires-dist = [
     { name = "numexpr", specifier = "==2.10.2" },
     { name = "onnx", marker = "extra == 'dev'", specifier = ">=1.22" },
     { name = "onnxruntime", marker = "extra == 'security'", specifier = ">=1.16" },
-    { name = "openai", specifier = "==3.3.1" },
-    { name = "openai", marker = "extra == 'mcp'", specifier = "==3.3.1" },
+    { name = "openai", specifier = "==3.31.0" },
+    { name = "openai", marker = "extra == 'mcp'", specifier = "==3.31.0" },
     { name = "openapi-schema-validator", specifier = "==0.6.3" },
     { name = "openapi-spec-validator", specifier = ">=0.7.1" },
     { name = "opensearch-py", marker = "extra == 'agents'", specifier = "==3.1.0" },
@@ -1112,7 +1112,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-amazon"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-amazon" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1127,7 +1127,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-anthropic"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-anthropic" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1138,13 +1138,13 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "ai-parrot", editable = "packages/ai-parrot" },
-    { name = "anthropic", extras = ["aiohttp", "aws"], specifier = ">=0.109.0,<1.0.0" },
+    { name = "anthropic", extras = ["aiohttp", "aws"], specifier = ">=1.0.0,<2.0.0" },
     { name = "claude-agent-sdk", specifier = ">=0.1.68" },
 ]
 
 [[package]]
 name = "ai-parrot-client-gemma4"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-gemma4" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1159,7 +1159,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-google"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-google" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1169,12 +1169,12 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "ai-parrot", editable = "packages/ai-parrot" },
-    { name = "google-genai", specifier = ">=2.23.0" },
+    { name = "google-genai", specifier = ">=2.31.0" },
 ]
 
 [[package]]
 name = "ai-parrot-client-grok"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-grok" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1184,12 +1184,12 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "ai-parrot", editable = "packages/ai-parrot" },
-    { name = "xai-sdk", specifier = ">=1.12.0" },
+    { name = "xai-sdk", specifier = ">=1.19.0" },
 ]
 
 [[package]]
 name = "ai-parrot-client-groq"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-groq" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1204,7 +1204,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-hf"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-hf" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1219,7 +1219,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-jev"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-jev" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1230,7 +1230,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-local"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-local" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1241,7 +1241,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-meta"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-meta" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1252,7 +1252,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-moonshot"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-moonshot" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1263,7 +1263,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-nvidia"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-nvidia" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1274,7 +1274,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-openai"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-openai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1300,7 +1300,7 @@ provides-extras = ["bridge"]
 
 [[package]]
 name = "ai-parrot-client-openrouter"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-openrouter" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1311,7 +1311,7 @@ requires-dist = [{ name = "ai-parrot", editable = "packages/ai-parrot" }]
 
 [[package]]
 name = "ai-parrot-client-vllm"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-vllm" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1326,7 +1326,7 @@ requires-dist = [
 
 [[package]]
 name = "ai-parrot-client-zai"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-client-zai" }
 dependencies = [
     { name = "ai-parrot" },
@@ -1427,11 +1427,11 @@ requires-dist = [
     { name = "bm25s", extras = ["full"], marker = "extra == 'huggingface'", specifier = "==0.2.14" },
     { name = "einops", marker = "extra == 'huggingface'", specifier = ">=0.7.0" },
     { name = "google-cloud-bigquery", marker = "extra == 'bigquery'", specifier = ">=3.30.0" },
-    { name = "google-genai", marker = "extra == 'google'", specifier = ">=2.18.1" },
+    { name = "google-genai", marker = "extra == 'google'", specifier = ">=2.31.0" },
     { name = "lancedb", marker = "extra == 'lancedb'", specifier = "==0.38.0" },
     { name = "milvus-lite", marker = "extra == 'milvus'", specifier = ">=2.4.0" },
     { name = "onnxruntime", marker = "extra == 'multimodal'", specifier = ">=1.16" },
-    { name = "openai", marker = "extra == 'openai'", specifier = "==3.3.1" },
+    { name = "openai", marker = "extra == 'openai'", specifier = "==3.31.0" },
     { name = "peft", marker = "extra == 'huggingface'", specifier = ">=0.10.0" },
     { name = "pgvector", marker = "extra == 'pgvector'", specifier = "==0.4.1" },
     { name = "pillow", marker = "extra == 'multimodal'", specifier = ">=12.3.0" },
@@ -1583,7 +1583,7 @@ requires-dist = [
     { name = "microsoft-agents-authentication-msal", marker = "extra == 'msagentsdk'", specifier = "~=0.9.0" },
     { name = "microsoft-agents-hosting-aiohttp", marker = "extra == 'msagentsdk'", specifier = "~=0.9.0" },
     { name = "onnxruntime", marker = "extra == 'voice-supertonic'", specifier = ">=1.17" },
-    { name = "openai", marker = "extra == 'voice-openai'", specifier = ">=3.3.1" },
+    { name = "openai", marker = "extra == 'voice-openai'", specifier = ">=3.31.0" },
     { name = "parrot-formdesigner", marker = "extra == 'msteams'", editable = "packages/parrot-formdesigner" },
     { name = "pydub", marker = "extra == 'voice-tts'", specifier = ">=0.25" },
     { name = "python-olm", marker = "extra == 'matrix'", specifier = ">=3.2.16" },
@@ -1790,7 +1790,7 @@ provides-extras = ["youtube", "audio", "pdf", "images", "web", "ebook", "documen
 
 [[package]]
 name = "ai-parrot-openlit-bridge"
-version = "0.4.1"
+version = "0.4.2"
 source = { editable = "packages/ai-parrot-openlit-bridge" }
 dependencies = [
     { name = "aiohttp" },
@@ -3104,27 +3104,26 @@ wheels = [
 
 [[package]]
 name = "anthropic"
-version = "0.125.0"
+version = "1.15.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
-    { name = "distro" },
     { name = "docstring-parser" },
-    { name = "httpx" },
+    { name = "httpx2" },
     { name = "jiter" },
+    { name = "opentelemetry-api" },
     { name = "pydantic" },
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/62/f8/6f0560884b5363848347bd640b6c1d04abc25e7aa61787a232f790c6b60a/anthropic-0.125.0.tar.gz", hash = "sha256:e0cdd336580cb7411c1cdab69f80973e9bf4bff7f8e08141811d46307d45c682", size = 1112593, upload-time = "2026-08-19T22:00:42.837Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/10/37/5a2a4316df8babd28f096477a707cd75f240b4264c97fb128c32375105d6/anthropic-1.15.0.tar.gz", hash = "sha256:90caa9df83e2fc8bddb4ddeb83b7191bce255f635c03eae055deec521741df08", size = 1726101, upload-time = "2026-10-15T19:45:34.635Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2f/1a/b1bd30cda3790557e8791bec5922a6ec8fabb6fa8b008c76a39cf7be6152/anthropic-0.125.0-py3-none-any.whl", hash = "sha256:3486013602eca76d8b12540764e53654f02cf4951110bca86cf06e67428a9f21", size = 1184067, upload-time = "2026-08-19T22:00:44.596Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/65/54437e7edea49a3be9ef56f6b5965999bfdc52b9dadc9b448124ca51a594/anthropic-1.15.0-py3-none-any.whl", hash = "sha256:10189a7993c5c71a0a2d4bb80020ca6a2fd27679f51e627405da37251d15ff49", size = 2047755, upload-time = "2026-10-15T19:45:32.951Z" },
 ]
 
 [package.optional-dependencies]
 aiohttp = [
     { name = "aiohttp" },
-    { name = "httpx-aiohttp" },
 ]
 aws = [
     { name = "boto3" },
@@ -6480,7 +6479,7 @@ wheels = [
 
 [[package]]
 name = "google-genai"
-version = "2.28.0"
+version = "2.31.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -6494,9 +6493,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/59/16/4af15d65cb72ebc21a99c5e64f09072e97334c05a48d4cede19c347e6ad2/google_genai-2.28.0.tar.gz", hash = "sha256:970cb2eaf1951949851c3e0a5b70265cfea8a408fb7361c7c980a84d90672bf2", size = 707359, upload-time = "2026-10-02T17:58:14.454Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/69/6a3d3839ab56ec17d7923c8679b38955e286e0a9793df10ce6d13bc5f122/google_genai-2.31.0.tar.gz", hash = "sha256:71518537de2ba967a61960cba844691dca3dd4ff07726c01a6917d132213541e", size = 745679, upload-time = "2026-10-14T23:52:24.836Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ad/4b/47278c34757293ba8d9156090d38e1c45fac9a47c50176acff7f77ae9a66/google_genai-2.28.0-py3-none-any.whl", hash = "sha256:cdee15e2fbfea08ea61bce6e5bfbb3301db4bd13a52dccfa8c8d1167e37ca1cc", size = 1168554, upload-time = "2026-10-02T17:58:12.585Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/64/1e9ab799830101ccbdcb67376a3f12b59e51f57643862999fd31af6938a1/google_genai-2.31.0-py3-none-any.whl", hash = "sha256:c87b9d495a24b09dedb29b852a201bea69ecd0b3f6c2561dc68f4055451b1b90", size = 1208245, upload-time = "2026-10-14T23:52:22.766Z" },
 ]
 
 [[package]]
@@ -7010,19 +7009,6 @@ http2 = [
 ]
 socks = [
     { name = "socksio" },
-]
-
-[[package]]
-name = "httpx-aiohttp"
-version = "0.2.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "httpx" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/4c/87/3b2df9732a497403e5f4bbf2ec9f25427d53cec797e83070c503649863ef/httpx_aiohttp-0.2.0.tar.gz", hash = "sha256:d4796b981f04734f1d1db9b4d9326ea16bc994f126460b93b69036262cd4a9d8", size = 195714, upload-time = "2026-07-25T07:34:12.17Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/e2/74b6bad3a6d342aee12d8b8d825456c02d21d72319c924326d17444c5ff7/httpx_aiohttp-0.2.0-py3-none-any.whl", hash = "sha256:ccd6eb19ba18805476096e8ef0b369a6beda3955db145a538979eface2fce7ff", size = 9732, upload-time = "2026-07-25T07:34:10.939Z" },
 ]
 
 [[package]]
@@ -9602,7 +9588,7 @@ wheels = [
 
 [[package]]
 name = "navrules"
-version = "1.2.1"
+version = "1.2.2"
 source = { editable = "packages/navrules" }
 
 [package.optional-dependencies]
@@ -10032,7 +10018,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "3.3.1"
+version = "3.31.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -10042,9 +10028,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7d/9c/ba0c292b4032ede74c249ca314ad64eb1bb5a03a843f6e01facb02f80cd8/openai-3.3.1.tar.gz", hash = "sha256:6f22807de1a976c932cecda620e8172a8c3fdbaeed29c7f21564e0c2410edf56", size = 1282113, upload-time = "2026-08-19T16:31:35.006Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/73/99/d0c5b9e60eb131bfe5f6f818e9b25650b64004ff84512c0f7e00a246b826/openai-3.31.0.tar.gz", hash = "sha256:58110edba9acaf29cb2a675a1cbcccdd9f2fdb4932baed474dc847a7639e5d02", size = 2117207, upload-time = "2026-10-14T05:39:33.445Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6a/db/2b7a1b3de659bb82aef979116c74e809982b13e42c057759767552b5155f/openai-3.3.1-py3-none-any.whl", hash = "sha256:9652df7fdf8ee6f5bd58e0a12f2b1d414a18e0f06bb7a9a57c8643a5f5469bd3", size = 1690337, upload-time = "2026-08-19T16:31:32.812Z" },
+    { url = "https://files.pythonhosted.org/packages/69/22/66014c8fede0aa2b3381cf80c5102219b78657b3e61776cdab8f0b78675a/openai-3.31.0-py3-none-any.whl", hash = "sha256:e5839f6670483f368de40ce3422f524c1afaf12ff8660539f53489e200db8d78", size = 2235454, upload-time = "2026-10-14T05:39:31.197Z" },
 ]
 
 [[package]]
