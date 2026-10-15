@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
-from parrot.utils.jsonld_extractors import EXTRACTOR_REGISTRY, JsonLdItem, walk_jsonld
+from parrot.utils.jsonld_extractors import JsonLdItem, walk_jsonld
 
 from .advanced_actions import exec_conditional, exec_loop
 from .drivers.abstract import AbstractDriver
