@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-15T21:40:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-15T21:25:01+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -15,17 +15,19 @@
       "title": "Per-requirement text features for case-sensitive, regex and exact matching",
       "effort": "S",
       "parallelism_notes": "single task",
-      "file": "sdd/tasks/active/TASK-4368-text-requirements-case.md",
+      "file": "sdd/tasks/completed/TASK-4368-text-requirements-case.md",
       "discovered_from": "issue:301570815de5",
       "feature_id": "FEAT-687",
       "feature": "comparison-rules-fixes-2",
       "spec": "sdd/specs/comparison-rules-fixes-2.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "depends_on": [],
       "parallel": false,
       "assigned_to": "claude",
-      "started_at": "2026-10-15T21:22:59+00:00"
+      "started_at": "2026-10-15T21:22:59+00:00",
+      "completed_at": "2026-10-15T21:25:01+00:00",
+      "verification": "verified"
     }
   ]
 }
