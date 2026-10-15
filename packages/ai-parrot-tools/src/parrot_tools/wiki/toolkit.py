@@ -28,7 +28,12 @@ from parrot.knowledge.wiki.ingest import IngestReport, WikiIngestOrchestrator
 from parrot.knowledge.wiki.models import WikiConfig, WikiPageCategory
 from parrot.knowledge.wiki.search import WikiCombinedSearch
 from parrot.knowledge.wiki.sources import SourceCollectionManager
-from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, create_wiki_store, estimate_tokens
+from parrot.knowledge.wiki.store import (
+    BaseWikiStore,
+    WikiPageRecord,
+    create_wiki_store,
+    estimate_tokens,
+)
 from parrot.tools.server_params import ServerParam
 from parrot.tools.toolkit import AbstractToolkit
 
@@ -123,6 +128,8 @@ class LLMWikiToolkit(AbstractToolkit):
             # config-driven construction entirely.
             self._store = store
         elif config.storage_backend == "arangodb":
+            # This is intentionally Arango-specific: the constructor below
+            # requires Arango connection parameters, unlike generic servers.
             # Bypass the factory: ArangoDB connection params come from
             # ARANGODB_* env vars (never from WikiConfig, which carries
             # no arango-specific fields), resolved the same way
