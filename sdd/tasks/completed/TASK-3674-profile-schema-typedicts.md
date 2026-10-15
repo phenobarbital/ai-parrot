@@ -38,3 +38,23 @@ that breaks if `WorkflowEvent` drifts from the profiler's expectations.
 ## Validation Commands
 
 - `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_profile.py -v`
+
+## Completion Note
+
+**Completed**: 2026-10-16 — verified, no new code in this task's close.
+
+The implementation had already landed on `dev` in commit `7df515370`
+(`feat(FEAT-596): pin profile_execution.py event/transcript schema contract`,
+2026-09-23), but the index still showed TASK-3674 as `pending`. `/sdd-start`
+confirmed each acceptance criterion against that code instead of re-implementing it:
+
+- `ProfileEventRecord` and `ProfileTranscriptRow` TypedDicts present in
+  `scripts/sdd/profile_execution.py` with the required field names.
+- `test_event_schema_parity_with_workflow_event` and
+  `test_transcript_row_schema_documents_expected_fields` present in
+  `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_profile.py`.
+- `pytest .../test_execution_profile.py` → 5 passed (PYTHONPATH=packages/ai-parrot/src,
+  compiled `.so` copied into the worktree).
+- No `parrot.*` import in `profile_execution.py`.
+
+Only SDD state (index + this file) changed on this branch.
