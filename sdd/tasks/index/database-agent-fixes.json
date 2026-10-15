@@ -14,14 +14,15 @@
       "feature_id": "FEAT-679",
       "feature": "database-agent-fixes",
       "spec": "sdd/specs/database-agent-fixes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "Single task.",
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-4352-schema-plane-type-validation.md"
+      "file": "sdd/tasks/active/TASK-4352-schema-plane-type-validation.md",
+      "started_at": "2026-10-15T12:42:00+00:00"
     }
   ]
 }
