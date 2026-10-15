@@ -124,14 +124,16 @@ class _FakeDocumentDb:
 
 @pytest.fixture(autouse=True)
 def patch_vault_keys(monkeypatch):
+    """Point BYOK at a real in-memory vault ``KeyRing`` (FEAT-099 seam: ``get_vault_keyring``)."""
     try:
-        import navigator_session.vault.config as vault_config_module
+        from navigator_session.vault import KeyRing
     except ImportError:
         pytest.skip("navigator_session.vault not installed")
-    monkeypatch.setattr(vault_config_module, "load_master_keys", lambda: MASTER_KEYS)
-    monkeypatch.setattr(vault_config_module, "get_active_key_id", lambda: MASTER_KEY_ID)
-    monkeypatch.setattr(byok_module, "load_master_keys", lambda: MASTER_KEYS)
-    monkeypatch.setattr(byok_module, "get_active_key_id", lambda: MASTER_KEY_ID)
+    import parrot.security.vault_utils as vault_utils_module
+
+    keyring = KeyRing(MASTER_KEYS, MASTER_KEY_ID)
+    monkeypatch.setattr(vault_utils_module, "get_vault_keyring", lambda: keyring)
+    monkeypatch.setattr(byok_module, "get_vault_keyring", lambda: keyring)
 
 
 @pytest.fixture
@@ -225,8 +227,10 @@ class TestByok:
         assert (await _decode(response))["code"] == "invalid_provider"
 
     async def test_missing_master_keys_503(self, app, fake_db, monkeypatch):
-        monkeypatch.setattr(byok_module, "load_master_keys", None)
-        monkeypatch.setattr(byok_module, "get_active_key_id", None)
+        def _unconfigured():
+            raise RuntimeError("Vault keys are not configured")
+
+        monkeypatch.setattr(byok_module, "get_vault_keyring", _unconfigured)
 
         handler = _make_handler(
             app,
