@@ -642,6 +642,23 @@ class PostgresPersistence:
         )
         return {"nodes_replaced": len(old_ids), "edges_replaced": len(edges)}
 
+    async def file_hashes(self, ctx: TenantContext) -> list[tuple[str, str]]:
+        """Return every ``(source_uri, sha1)`` from ``{schema}.files``, sorted by ``source_uri``.
+
+        The v1 schema is not tenant-partitioned: ``files`` is keyed by ``source_uri`` alone, so ``ctx`` is
+        accepted for contract parity and not used to filter.
+
+        Args:
+            ctx: Tenant context (unused).
+
+        Returns:
+            The sorted pairs.
+        """
+        pool = await self._ensure_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(f"SELECT source_uri, sha1 FROM {self._schema}.files ORDER BY source_uri")
+        return [(row["source_uri"], row["sha1"]) for row in rows]
+
     async def is_stale(
         self,
         ctx: TenantContext,

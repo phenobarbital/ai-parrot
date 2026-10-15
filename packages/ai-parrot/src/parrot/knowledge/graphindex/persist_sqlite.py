@@ -31,6 +31,7 @@ from parrot.knowledge.graphindex.schema import (
     UniversalEdge,
     UniversalNode,
 )
+from parrot.knowledge.graphindex.protocols import edge_key
 from parrot.knowledge.ontology.schema import TenantContext
 
 logger = logging.getLogger(__name__)
@@ -132,7 +133,7 @@ def _assertion_json(item: UniversalNode | UniversalEdge) -> str | None:
 
 def _edge_key(source_id: str, target_id: str, kind: str) -> str:
     """Compose the canonical ``item_key`` string for an edge."""
-    return f"{source_id}|{target_id}|{kind}"
+    return edge_key(source_id, target_id, kind)
 
 
 class SQLitePersistence:
@@ -204,9 +205,7 @@ class SQLitePersistence:
                 existing = {row["name"] for row in await cur.fetchall()}
             for name, col_type in columns:
                 if name not in existing:
-                    await conn.execute(
-                        f"ALTER TABLE {table} ADD COLUMN {name} {col_type}"
-                    )
+                    await conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {col_type}")
 
     async def _upsert_files(
         self,
@@ -234,8 +233,7 @@ class SQLitePersistence:
             if n.source_uri.startswith("odoo-model://"):
                 continue
             await conn.execute(
-                "INSERT OR REPLACE INTO files (source_uri, mtime, sha1, indexed_at)"
-                " VALUES (?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO files (source_uri, mtime, sha1, indexed_at)" " VALUES (?, ?, ?, ?)",
                 (n.source_uri, mtime, sha1, indexed_at),
             )
 
@@ -251,8 +249,7 @@ class SQLitePersistence:
             nodes: Nodes to index.
         """
         await conn.executemany(
-            "INSERT OR REPLACE INTO nodes_fts(node_id, title, summary)"
-            " VALUES (?, ?, ?)",
+            "INSERT OR REPLACE INTO nodes_fts(node_id, title, summary)" " VALUES (?, ?, ?)",
             [(n.node_id, n.title, n.summary or "") for n in nodes],
         )
 
@@ -367,8 +364,7 @@ class SQLitePersistence:
         async with self._connect(ctx) as conn:
             # Count what we're replacing
             async with conn.execute(
-                "SELECT COUNT(*) FROM nodes WHERE source_uri = ?"
-                " AND source_uri NOT LIKE 'odoo-model://%'",
+                "SELECT COUNT(*) FROM nodes WHERE source_uri = ?" " AND source_uri NOT LIKE 'odoo-model://%'",
                 (document_uri,),
             ) as cur:
                 row = await cur.fetchone()
@@ -376,8 +372,7 @@ class SQLitePersistence:
 
             # Delete nodes (preserve canonical nodes)
             await conn.execute(
-                "DELETE FROM nodes WHERE source_uri = ?"
-                " AND source_uri NOT LIKE 'odoo-model://%'",
+                "DELETE FROM nodes WHERE source_uri = ?" " AND source_uri NOT LIKE 'odoo-model://%'",
                 (document_uri,),
             )
             # Delete edges stamped with the document_uri
@@ -422,15 +417,17 @@ class SQLitePersistence:
             node_uri_by_id = {n.node_id: n.source_uri for n in nodes}
             for e in edges:
                 src_uri = node_uri_by_id.get(e.source_id)
-                edge_rows.append((
-                    e.source_id,
-                    e.target_id,
-                    e.kind.value,
-                    e.provenance.value,
-                    e.confidence,
-                    src_uri,
-                    _assertion_json(e),
-                ))
+                edge_rows.append(
+                    (
+                        e.source_id,
+                        e.target_id,
+                        e.kind.value,
+                        e.provenance.value,
+                        e.confidence,
+                        src_uri,
+                        _assertion_json(e),
+                    )
+                )
 
             await conn.executemany(
                 "INSERT OR REPLACE INTO edges"
@@ -442,8 +439,7 @@ class SQLitePersistence:
 
             # Update FTS5 for the replaced nodes
             await conn.execute(
-                "DELETE FROM nodes_fts WHERE node_id IN"
-                " (SELECT node_id FROM nodes WHERE source_uri = ?)",
+                "DELETE FROM nodes_fts WHERE node_id IN" " (SELECT node_id FROM nodes WHERE source_uri = ?)",
                 (document_uri,),
             )
             await self._insert_nodes_fts(conn, nodes)
@@ -460,6 +456,24 @@ class SQLitePersistence:
                 "nodes_replaced": old_node_count,
                 "edges_replaced": len(edges),
             }
+
+    async def close(self) -> None:
+        """No-op: connections are opened per call."""
+
+    async def file_hashes(self, ctx: TenantContext) -> list[tuple[str, str]]:
+        """Return every ``(source_uri, sha1)`` from the ``files`` table, sorted by ``source_uri``.
+
+        Args:
+            ctx: Tenant context.
+
+        Returns:
+            The sorted pairs; empty when the tenant database does not exist yet.
+        """
+        if not self._db_path(ctx).exists():
+            return []
+        async with self._connect(ctx) as conn:
+            async with conn.execute("SELECT source_uri, sha1 FROM files ORDER BY source_uri") as cur:
+                return [(row["source_uri"], row["sha1"]) for row in await cur.fetchall()]
 
     async def is_stale(
         self,
@@ -635,9 +649,7 @@ class SQLitePersistence:
                 (node_id, "node_removed") for node_id in update.removed_nodes
             ]
             for node_id, item_type in node_keys:
-                async with conn.execute(
-                    "SELECT * FROM nodes WHERE node_id = ?", (node_id,)
-                ) as cur:
+                async with conn.execute("SELECT * FROM nodes WHERE node_id = ?", (node_id,)) as cur:
                     row = await cur.fetchone()
                 prior = orjson.dumps(dict(row)).decode() if row else None
                 await conn.execute(
@@ -650,32 +662,22 @@ class SQLitePersistence:
             implicit_removed: list[tuple[str, str, str]] = []
             for node_id in update.removed_nodes:
                 async with conn.execute(
-                    "SELECT source_id, target_id, kind FROM edges"
-                    " WHERE source_id = ? OR target_id = ?",
+                    "SELECT source_id, target_id, kind FROM edges" " WHERE source_id = ? OR target_id = ?",
                     (node_id, node_id),
                 ) as cur:
                     for row in await cur.fetchall():
-                        implicit_removed.append(
-                            (row["source_id"], row["target_id"], row["kind"])
-                        )
-            removed_edge_set = {
-                tuple(t) for t in update.removed_edges
-            } | set(implicit_removed)
+                        implicit_removed.append((row["source_id"], row["target_id"], row["kind"]))
+            removed_edge_set = {tuple(t) for t in update.removed_edges} | set(implicit_removed)
 
-            edge_triples = [
-                (e.source_id, e.target_id, e.kind.value) for e in update.edges
-            ] + sorted(removed_edge_set)
+            edge_triples = [(e.source_id, e.target_id, e.kind.value) for e in update.edges] + sorted(removed_edge_set)
             for src, tgt, kind in edge_triples:
                 async with conn.execute(
-                    "SELECT * FROM edges WHERE source_id = ? AND target_id = ?"
-                    " AND kind = ?",
+                    "SELECT * FROM edges WHERE source_id = ? AND target_id = ?" " AND kind = ?",
                     (src, tgt, kind),
                 ) as cur:
                     row = await cur.fetchone()
                 prior = orjson.dumps(dict(row)).decode() if row else None
-                item_type = (
-                    "edge_removed" if (src, tgt, kind) in removed_edge_set else "edge"
-                )
+                item_type = "edge_removed" if (src, tgt, kind) in removed_edge_set else "edge"
                 await conn.execute(
                     "INSERT OR REPLACE INTO graph_commit_items"
                     " (commit_id, item_type, item_key, prior) VALUES (?, ?, ?, ?)",
@@ -730,17 +732,12 @@ class SQLitePersistence:
                 )
             for src, tgt, kind in sorted(removed_edge_set):
                 await conn.execute(
-                    "DELETE FROM edges WHERE source_id = ? AND target_id = ?"
-                    " AND kind = ?",
+                    "DELETE FROM edges WHERE source_id = ? AND target_id = ?" " AND kind = ?",
                     (src, tgt, kind),
                 )
             for node_id in update.removed_nodes:
-                await conn.execute(
-                    "DELETE FROM nodes WHERE node_id = ?", (node_id,)
-                )
-                await conn.execute(
-                    "DELETE FROM nodes_fts WHERE node_id = ?", (node_id,)
-                )
+                await conn.execute("DELETE FROM nodes WHERE node_id = ?", (node_id,))
+                await conn.execute("DELETE FROM nodes_fts WHERE node_id = ?", (node_id,))
 
             # --- record the commit ------------------------------------
             await conn.execute(
@@ -762,8 +759,7 @@ class SQLitePersistence:
             await conn.commit()
 
         logger.info(
-            "SQLitePersistence.apply_update: commit %s (%s) — %d nodes,"
-            " %d edges, %d removed",
+            "SQLitePersistence.apply_update: commit %s (%s) — %d nodes," " %d edges, %d removed",
             commit_id,
             update.op,
             len(update.nodes),
@@ -774,10 +770,7 @@ class SQLitePersistence:
             commit_id=commit_id,
             op=update.op,
             node_ids=[n.node_id for n in update.nodes] + list(update.removed_nodes),
-            edge_keys=[
-                (e.source_id, e.target_id, e.kind.value) for e in update.edges
-            ]
-            + sorted(removed_edge_set),
+            edge_keys=[(e.source_id, e.target_id, e.kind.value) for e in update.edges] + sorted(removed_edge_set),
             committed_at=committed_at,
             warnings=warnings,
         )
@@ -798,17 +791,14 @@ class SQLitePersistence:
             ``items``, or ``None`` when unknown.
         """
         async with self._connect(ctx) as conn:
-            async with conn.execute(
-                "SELECT * FROM graph_commits WHERE commit_id = ?", (commit_id,)
-            ) as cur:
+            async with conn.execute("SELECT * FROM graph_commits WHERE commit_id = ?", (commit_id,)) as cur:
                 row = await cur.fetchone()
             if row is None:
                 return None
             commit = dict(row)
             commit["payload"] = orjson.loads(commit["payload"])
             async with conn.execute(
-                "SELECT item_type, item_key, prior FROM graph_commit_items"
-                " WHERE commit_id = ?",
+                "SELECT item_type, item_key, prior FROM graph_commit_items" " WHERE commit_id = ?",
                 (commit_id,),
             ) as cur:
                 commit["items"] = [dict(r) for r in await cur.fetchall()]
@@ -875,8 +865,7 @@ class SQLitePersistence:
         """
         async with self._connect(ctx) as conn:
             async with conn.execute(
-                "SELECT committed_at, reverted_at FROM graph_commits"
-                " WHERE commit_id = ?",
+                "SELECT committed_at, reverted_at FROM graph_commits" " WHERE commit_id = ?",
                 (commit_id,),
             ) as cur:
                 commit_row = await cur.fetchone()
@@ -886,8 +875,7 @@ class SQLitePersistence:
                 return {"error": f"revert_commit: {commit_id!r} already reverted"}
 
             async with conn.execute(
-                "SELECT item_type, item_key, prior FROM graph_commit_items"
-                " WHERE commit_id = ?",
+                "SELECT item_type, item_key, prior FROM graph_commit_items" " WHERE commit_id = ?",
                 (commit_id,),
             ) as cur:
                 items = [dict(r) for r in await cur.fetchall()]
@@ -940,8 +928,7 @@ class SQLitePersistence:
                             [prior[c] for c in columns],
                         )
                         await conn.execute(
-                            "INSERT OR REPLACE INTO nodes_fts"
-                            " (node_id, title, summary) VALUES (?, ?, ?)",
+                            "INSERT OR REPLACE INTO nodes_fts" " (node_id, title, summary) VALUES (?, ?, ?)",
                             (
                                 prior.get("node_id"),
                                 prior.get("title", ""),
@@ -953,8 +940,7 @@ class SQLitePersistence:
                     src, tgt, kind = item["item_key"].split("|", 2)
                     if prior is None:
                         await conn.execute(
-                            "DELETE FROM edges WHERE source_id = ?"
-                            " AND target_id = ? AND kind = ?",
+                            "DELETE FROM edges WHERE source_id = ?" " AND target_id = ? AND kind = ?",
                             (src, tgt, kind),
                         )
                         deleted += 1
