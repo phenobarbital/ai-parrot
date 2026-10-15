@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-15T12:11:42+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-15T12:13:52+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,15 +16,17 @@
       "feature_id": "FEAT-673",
       "feature": "fixgroup-78be66fdfe17",
       "spec": "sdd/specs/fixgroup-78be66fdfe17.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task in this feature",
       "assigned_to": "agent:sdd-fix",
-      "file": "sdd/tasks/active/TASK-4347-knowledge-upload-pre-authorize.md",
-      "started_at": "2026-10-15T12:11:59.549306+00:00"
+      "file": "sdd/tasks/completed/TASK-4347-knowledge-upload-pre-authorize.md",
+      "started_at": "2026-10-15T12:11:59.549306+00:00",
+      "completed_at": "2026-10-15T12:13:52+00:00",
+      "verification": "verified"
     }
   ]
 }

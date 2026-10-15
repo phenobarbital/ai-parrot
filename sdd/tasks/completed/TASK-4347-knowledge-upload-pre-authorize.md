@@ -79,4 +79,15 @@ must not audit it twice.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (Claude Code session)
+**Date**: 2026-10-15
+**Notes**: Added `KnowledgeUploadService.pre_authorize()` (target/extension/declared-size
+checks, then allow-list authorization; audited rejections, `None` = proceed) and a shared
+`_validate` helper used by `submit()`. Telegram, Teams and Slack adapters now build the
+`UploaderIdentity` and call `pre_authorize` before any download; Slack resolves the email
+before the download. 6 new tests (3 service, 1 per adapter); the
+`tests/knowledge_upload` suite has 73 passing tests. Ruff reports only the 7 ASYNC110
+findings that were already in `test_service.py`.
+
+**Deviations from spec**: none. The profile is still resolved again in `submit()`, which
+the spec lists as a non-goal.
