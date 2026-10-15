@@ -123,6 +123,7 @@ set at least `GITHUB_TOKEN`, `GITHUB_REVIEW_REPOSITORY`,
 | `GITHUB_REVIEW_CACHE_MAX_BYTES`        | Soft cache cap, default 5 GiB, enforced by LRU eviction                     |
 | `GITHUB_REVIEW_BUILD_TIMEOUT`          | Wiki build timeout in seconds; default `900`                                |
 | `GITHUB_REVIEW_WIKI_CONTEXT_TOKENS`    | Token budget of the injected context block; default `4000`                  |
+| `GITHUB_REVIEW_WIKI_WAIT`              | Max seconds a delivery waits for the wiki refresh before reviewing without fresh context; default `120` |
 
 `integrations_bots.yaml` exposes the agent over Telegram:
 
@@ -196,6 +197,17 @@ when watching more, or repositories are re-cloned on every rotation.
 (`GITHUB_REVIEW_BUILD_TIMEOUT`), a missing `wikitoolkit` binary, or a plane
 without a last-good marker never block a review: one log line is emitted and the
 review falls back to the diff-only prompt.
+
+A delivery waits at most `GITHUB_REVIEW_WIKI_WAIT` seconds for the refresh, which
+overlaps the Jira and diff fetches. A refresh still running after that is not
+cancelled: it is shared by later deliveries (one in-flight refresh per reviewer,
+the warm-up task included) and finishes for the next review. While a review
+runs, it holds a shared read lease on the repository entry, so a refresh or
+eviction cannot change the clone or plane underneath it; if the lease cannot be
+obtained, the prompt carries no wiki block (the wiki tools stay registered, a
+known limitation). Private clones and pulls authenticate through the git
+subprocess environment, so the token is never written to `.git/config`
+(requires git 2.31 or newer).
 
 ## GitHub webhook setup
 

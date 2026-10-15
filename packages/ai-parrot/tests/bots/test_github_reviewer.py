@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -56,6 +58,7 @@ class _MinimalReviewer:
         self._no_ticket_notified: set = set()
         self._wiki_cache = None
         self._wiki_warmup_task = None
+        self._wiki_refresh_task = None
         self._wiki_toolkits_attached = False
         self._wiki_store = None
         self._wiki_branch = None
@@ -79,6 +82,9 @@ class _MinimalReviewer:
     _schedule_wiki_warmup = GitHubReviewer._schedule_wiki_warmup
     _shutdown_wiki_warmup = GitHubReviewer._shutdown_wiki_warmup
     _refresh_wiki_context = GitHubReviewer._refresh_wiki_context
+    _start_wiki_refresh = GitHubReviewer._start_wiki_refresh
+    _await_wiki_refresh = GitHubReviewer._await_wiki_refresh
+    _wiki_review_lease = GitHubReviewer._wiki_review_lease
     _attach_wiki_toolkits = GitHubReviewer._attach_wiki_toolkits
     # Class-level constants needed by some helpers.
     _WEEKLY_LLM_SYSTEM_PROMPT = GitHubReviewer._WEEKLY_LLM_SYSTEM_PROMPT
@@ -280,6 +286,132 @@ class TestWikiPromptContext:
             "diff --git a/src/widget.py b/src/widget.py\n+widget\n\n\n"
             "Compare them and return a PRReviewResult JSON object."
         ]
+
+
+class TestWikiBoundedWait:
+    """Bounded delivery wait, shared refresh task and read lease."""
+
+    async def test_slow_refresh_does_not_block_review(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(conf, "GITHUB_REVIEW_WIKI_WAIT", 0.05)
+        reviewer = _wire_reviewer()
+        release = asyncio.Event()
+        reviewer._wiki_cache = MagicMock()
+
+        async def refresh(repository: str) -> None:
+            await release.wait()
+
+        reviewer._refresh_wiki_context = refresh
+        task = reviewer._start_wiki_refresh("owner/repo")
+        assert task is not None
+        started = time.monotonic()
+        assert await reviewer._await_wiki_refresh(task) is False
+        assert time.monotonic() - started < 2
+        assert not task.done() and not task.cancelled()
+        release.set()
+        await task
+
+    async def test_refresh_task_reused_across_deliveries(self) -> None:
+        reviewer = _wire_reviewer()
+        release = asyncio.Event()
+        calls = 0
+        reviewer._wiki_cache = MagicMock()
+
+        async def refresh(repository: str) -> None:
+            nonlocal calls
+            calls += 1
+            await release.wait()
+
+        reviewer._refresh_wiki_context = refresh
+        first = reviewer._start_wiki_refresh("owner/repo")
+        second = reviewer._start_wiki_refresh("Owner/Repo")
+        assert first is second
+        release.set()
+        await first
+        assert calls == 1
+        assert reviewer._start_wiki_refresh("other/repo") is None
+
+    async def test_warmup_task_is_first_refresh(self) -> None:
+        reviewer = _wire_reviewer()
+        release = asyncio.Event()
+        reviewer._wiki_cache = MagicMock()
+
+        async def refresh(repository: str) -> None:
+            await release.wait()
+
+        reviewer._refresh_wiki_context = refresh
+        await reviewer._schedule_wiki_warmup()
+        assert reviewer._start_wiki_refresh("owner/repo") is reviewer._wiki_warmup_task
+        await reviewer._shutdown_wiki_warmup()
+
+    async def test_review_runs_inside_read_lease(self) -> None:
+        events: list[str] = []
+
+        @asynccontextmanager
+        async def read_lease(repository: str, *, timeout: float = 0.0):
+            events.append("enter")
+            try:
+                yield MagicMock()
+            finally:
+                events.append("exit")
+
+        reviewer = _wire_reviewer()
+        reviewer._wiki_cache = MagicMock()
+        reviewer._wiki_cache.read_lease = read_lease
+        reviewer._wiki_context_available = True
+        reviewer._refresh_wiki_context = AsyncMock(return_value=None)
+
+        async def fake_ticket(key):
+            return {"fields": {"summary": "S"}}
+
+        async def fake_diff(repo, pr):
+            return ("d", False, True)
+
+        async def fake_ask(*, payload, ticket_key, ticket, diff_text, diff_truncated, diff_available, use_wiki=True):
+            events.append(f"ask:{use_wiki}")
+            return PRReviewResult(jira_key=ticket_key, discrepancies=[], summary="ok", approve=True)
+
+        reviewer._fetch_ticket = fake_ticket
+        reviewer._fetch_diff = fake_diff
+        reviewer._ask_llm_for_review = fake_ask
+        reviewer.git_toolkit.submit_pr_review = AsyncMock(return_value={"id": 1})
+        out = await reviewer.review_pull_request(
+            {"repository": "owner/repo", "pr_number": 3, "pr_body": "NAV-3", "pr_title": ""}
+        )
+        assert out["status"] == "reviewed"
+        assert events == ["enter", "ask:True", "exit"]
+
+    async def test_no_lease_means_no_wiki_block(self) -> None:
+        @asynccontextmanager
+        async def read_lease(repository: str, *, timeout: float = 0.0):
+            yield None
+
+        reviewer = _wire_reviewer()
+        reviewer._wiki_cache = MagicMock()
+        reviewer._wiki_cache.read_lease = read_lease
+        reviewer._wiki_context_available = True
+        reviewer._wiki_store = MagicMock()
+        reviewer._wiki_branch = "main"
+        reviewer._wiki_built_at = datetime(2026, 10, 15, tzinfo=timezone.utc)
+        async with reviewer._wiki_review_lease() as leased:
+            assert leased is False
+        assert await reviewer._build_wiki_context({"pr_title": "t"}, "diff --git a/x b/x\n", enabled=False) is None
+        reviewer._wiki_context_available = False
+        async with reviewer._wiki_review_lease() as leased:
+            assert leased is False
+
+    async def test_shutdown_cancels_inflight_refresh(self) -> None:
+        reviewer = _wire_reviewer()
+        reviewer._wiki_cache = MagicMock()
+
+        async def refresh(repository: str) -> None:
+            await asyncio.Event().wait()
+
+        reviewer._refresh_wiki_context = refresh
+        task = reviewer._start_wiki_refresh("owner/repo")
+        await asyncio.sleep(0)
+        await reviewer._shutdown_wiki_warmup()
+        assert task.cancelled()
+        assert reviewer._wiki_refresh_task is None
 
 
 class TestExtractTicketKey:
@@ -574,7 +706,7 @@ class TestReviewPullRequestDedup:
         async def fake_fetch_diff(repo, pr):
             return ("diff text", False, True)
 
-        async def fake_ask(*, payload, ticket_key, ticket, diff_text, diff_truncated, diff_available):
+        async def fake_ask(*, payload, ticket_key, ticket, diff_text, diff_truncated, diff_available, use_wiki=True):
             return PRReviewResult(
                 jira_key=ticket_key,
                 discrepancies=[],
