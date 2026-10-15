@@ -35,11 +35,11 @@ from parrot.knowledge.graphindex import (
     GroundingEvaluator,
     NodeKind,
     Provenance,
-    SQLitePersistence,
     UniversalEdge,
     UniversalNode,
 )
 from parrot.knowledge.graphindex.assemble import GraphAssembler
+from parrot.knowledge.graphindex.backends import create_graph_persistence
 from parrot.knowledge.graphindex.factory import (
     DEFAULT_DIMENSION,
     HashingGraphEmbedder,
@@ -139,7 +139,7 @@ class DevLoopGraphMemory:
             return None
 
         ctx = make_stub_tenant_context(tenant_id)
-        persistence = SQLitePersistence(Path(db_dir))
+        persistence = await create_graph_persistence("sqlite", db_dir=Path(db_dir))
         publisher = GraphPublisher(persistence, ctx)
 
         nodes, edges = await persistence.load_graph(ctx)
@@ -154,15 +154,16 @@ class DevLoopGraphMemory:
         if nodes:
             await embedder.embed_nodes(nodes)
 
-        retriever = GraphExpandedRetriever(
-            graph=assembler.graph, nodes=nodes, embedder=embedder
-        )
+        retriever = GraphExpandedRetriever(graph=assembler.graph, nodes=nodes, embedder=embedder)
         context_builder = GraphContextBuilder(retriever)
         grounding_evaluator = GroundingEvaluator(retriever)
 
         logger.info(
             "DevLoopGraphMemory.from_config: opened %r (tenant=%s, %d nodes, %d edges)",
-            db_dir, tenant_id, len(nodes), len(edges),
+            db_dir,
+            tenant_id,
+            len(nodes),
+            len(edges),
         )
         return cls(
             publisher=publisher,
@@ -175,9 +176,7 @@ class DevLoopGraphMemory:
     # Seam 2 — research context injection
     # ------------------------------------------------------------------
 
-    async def build_research_context(
-        self, brief: Union[WorkBrief, str]
-    ) -> Optional[str]:
+    async def build_research_context(self, brief: Union[WorkBrief, str]) -> Optional[str]:
         """Build budget-capped, citable context for a research dispatch.
 
         Args:
@@ -201,9 +200,7 @@ class DevLoopGraphMemory:
                 ContextBuildConfig(max_tokens=_DEFAULT_CONTEXT_TOKENS),
             )
         except Exception as exc:  # noqa: BLE001 - best-effort context
-            self.logger.warning(
-                "DevLoopGraphMemory.build_research_context failed: %s", exc
-            )
+            self.logger.warning("DevLoopGraphMemory.build_research_context failed: %s", exc)
             return None
         # `context.text` always carries a header template, even with zero
         # matches — `node_ids` is the real "found nothing" signal (same
@@ -265,9 +262,7 @@ class DevLoopGraphMemory:
             nodes: List[UniversalNode] = [run_node]
             edges: List[UniversalEdge] = []
 
-            verified = [
-                c for c in (report.criterion_results if report else []) if c.passed
-            ]
+            verified = [c for c in (report.criterion_results if report else []) if c.passed]
             for criterion in verified:
                 claim_node_id = f"claim:{run_id}:{criterion.name}"
                 nodes.append(
@@ -276,10 +271,7 @@ class DevLoopGraphMemory:
                         kind=NodeKind.CLAIM,
                         title=criterion.name,
                         source_uri=f"dev_loop://run/{run_id}/criterion/{criterion.name}",
-                        summary=(
-                            f"{criterion.kind} criterion verified "
-                            f"(exit={criterion.exit_code})"
-                        ),
+                        summary=(f"{criterion.kind} criterion verified " f"(exit={criterion.exit_code})"),
                         provenance=Provenance.ASSERTED,
                     )
                 )
@@ -319,7 +311,8 @@ class DevLoopGraphMemory:
         except Exception as exc:  # noqa: BLE001 - degrade-never-fail (persist_warning convention)
             self.logger.warning(
                 "DevLoopGraphMemory.publish_run_outcome failed for run %s: %s",
-                run_id, exc,
+                run_id,
+                exc,
             )
             return None
 
@@ -350,9 +343,9 @@ class DevLoopGraphMemory:
                 result = await self._grounding_evaluator.ground_claim(finding)
             except Exception as exc:  # noqa: BLE001 - never drop on infra error
                 self.logger.warning(
-                    "DevLoopGraphMemory.ground_findings: evaluation failed for "
-                    "%r, keeping finding: %s",
-                    finding, exc,
+                    "DevLoopGraphMemory.ground_findings: evaluation failed for " "%r, keeping finding: %s",
+                    finding,
+                    exc,
                 )
                 kept.append(finding)
                 continue

@@ -115,6 +115,7 @@ from parrot.knowledge.wiki.runtime import (
     build_ingest_runtime,
     build_novelty_scorer,
     build_triage_adapters,
+    persistence_for_project,
 )
 from parrot.knowledge.wiki.ledger.service import LedgerService
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
@@ -3993,7 +3994,6 @@ def _sync_memory_to_graph(
     """
     try:
         from parrot.knowledge.graphindex.factory import make_stub_tenant_context
-        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
         from parrot.knowledge.graphindex.publish import GraphPublisher
         from parrot.knowledge.graphindex.schema import (
             EdgeKind,
@@ -4009,7 +4009,7 @@ def _sync_memory_to_graph(
 
     try:
         ctx = make_stub_tenant_context(config.wiki_name)
-        persistence = SQLitePersistence(config.graph_path(root))
+        persistence = _run(persistence_for_project(config, root))
         publisher = GraphPublisher(persistence, ctx)
 
         nodes = [
@@ -4101,12 +4101,11 @@ def _extract_into_graph(
         from parrot.clients.factory import LLMFactory
         from parrot.knowledge.graphindex.extractors.llm import LLMGraphExtractor
         from parrot.knowledge.graphindex.factory import make_stub_tenant_context
-        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
         from parrot.knowledge.graphindex.publish import GraphPublisher
 
         client = LLMFactory.create(spec, model_args={"temperature": 0.0})
         ctx = make_stub_tenant_context(config.wiki_name)
-        publisher = GraphPublisher(SQLitePersistence(config.graph_path(root)), ctx)
+        publisher = GraphPublisher(_run(persistence_for_project(config, root)), ctx)
         extractor = LLMGraphExtractor(client, publisher)
         result = _run(
             extractor.extract_and_publish(
@@ -4555,11 +4554,8 @@ def audit(
                 from parrot.knowledge.graphindex.factory import (
                     make_stub_tenant_context,
                 )
-                from parrot.knowledge.graphindex.persist_sqlite import (
-                    SQLitePersistence,
-                )
 
-                persistence = SQLitePersistence(config.graph_path(root))
+                persistence = _run(persistence_for_project(config, root))
                 ctx = make_stub_tenant_context(config.wiki_name)
                 graph_commits = _run(persistence.list_commits(ctx, limit=limit))
             except Exception as exc:  # noqa: BLE001
@@ -4615,13 +4611,12 @@ def ground(
             make_stub_tenant_context,
         )
         from parrot.knowledge.graphindex.grounding import GroundingEvaluator
-        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
         from parrot.knowledge.graphindex.retriever import GraphExpandedRetriever
     except ImportError as exc:
         raise click.ClickException(f"graphindex unavailable: {exc}") from exc
 
     async def _ground() -> dict[str, Any]:
-        persistence = SQLitePersistence(config.graph_path(root))
+        persistence = await persistence_for_project(config, root)
         ctx = make_stub_tenant_context(config.wiki_name)
         nodes, edges = await persistence.load_graph(ctx)
         assembler = GraphAssembler(tenant_id=config.wiki_name)

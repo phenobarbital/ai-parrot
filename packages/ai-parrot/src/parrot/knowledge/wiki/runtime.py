@@ -16,12 +16,71 @@ from parrot.knowledge.wiki.sources import SourceCollectionManager
 from parrot.knowledge.wiki.store import BaseWikiStore
 
 if TYPE_CHECKING:
+    from parrot.knowledge.graphindex.protocols import GraphPersistence
     from parrot.knowledge.wiki.charter import Charter
     from parrot.knowledge.wiki.inbox.processor import InboxRuntime
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["WikiRuntimeError", "build_triage_adapters", "build_novelty_scorer", "build_ingest_runtime"]
+__all__ = [
+    "WikiRuntimeError",
+    "persistence_for_project",
+    "build_triage_adapters",
+    "build_novelty_scorer",
+    "build_ingest_runtime",
+]
+
+
+async def persistence_for_project(
+    config: WikiProjectConfig,
+    root: Path,
+    *,
+    tenant_id: str | None = None,
+) -> "GraphPersistence":
+    """Build the graph persistence for a wiki project through the backend registry.
+
+    A registered backend that declares ``project_options`` (``"module:callable"``
+    taking ``(config, root, tenant_id)`` and returning factory options) is used
+    when it matches ``config.backend``; every other project (``sqlite``,
+    ``memory``, or a backend without a project mapping) uses the SQLite graph
+    plane at ``config.graph_path(root)``.
+
+    Args:
+        config: Project configuration.
+        root: Project root directory.
+        tenant_id: Tenant identifier forwarded to ``project_options``; defaults to the wiki name.
+
+    Returns:
+        The constructed graph persistence.
+
+    Raises:
+        ValueError: When ``project_options`` is not a valid ``"module:callable"`` path.
+    """
+    import importlib
+
+    from parrot.knowledge.graphindex.backends import (
+        create_graph_persistence,
+        graph_backend_names,
+        graph_backend_spec,
+    )
+
+    tenant = tenant_id or config.wiki_name
+    backend = "sqlite"
+    options: dict[str, Any] | None = None
+    if config.backend in graph_backend_names():
+        spec = graph_backend_spec(config.backend)
+        if spec.project_options:
+            module_path, _, attr = spec.project_options.partition(":")
+            if not module_path or not attr:
+                raise ValueError(
+                    f"graph backend {spec.name!r} has an invalid project_options path {spec.project_options!r}"
+                )
+            mapper = getattr(importlib.import_module(module_path), attr)
+            backend = spec.name
+            options = dict(mapper(config, root, tenant))
+    if options is None:
+        options = {"db_dir": config.graph_path(root)}
+    return await create_graph_persistence(backend, **options)
 
 
 class WikiRuntimeError(RuntimeError):
@@ -79,7 +138,6 @@ async def build_novelty_scorer(root: Path, config: WikiProjectConfig, store: Bas
             make_stub_tenant_context,
         )
         from parrot.knowledge.graphindex.grounding import GroundingEvaluator
-        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
         from parrot.knowledge.graphindex.retriever import GraphExpandedRetriever
     except ImportError:
         return NoveltyScorer(
@@ -88,7 +146,7 @@ async def build_novelty_scorer(root: Path, config: WikiProjectConfig, store: Bas
         )
 
     async def _build_evaluator() -> Any:
-        persistence = SQLitePersistence(config.graph_path(root))
+        persistence = await persistence_for_project(config, root)
         ctx = make_stub_tenant_context(config.wiki_name)
         nodes, edges = await persistence.load_graph(ctx)
         assembler = GraphAssembler(tenant_id=config.wiki_name)
