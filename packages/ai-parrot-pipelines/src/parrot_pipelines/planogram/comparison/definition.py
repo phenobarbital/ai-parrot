@@ -522,6 +522,24 @@ def validate_bindings(definition: SlotsDefinition, planogram_config: Dict[str, A
                     f"{invalid_values[0]!r}"
                 )
 
+    for binding in bindings:
+        if binding.kind != "visual_features" or "checklist" not in binding.params:
+            continue
+        checklist = binding.params["checklist"]
+        if not isinstance(checklist, list) or not checklist:
+            raise SlotsDefinitionError(f"rule {binding.rule_id}: checklist must be a non-empty list")
+        for item in checklist:
+            if not isinstance(item, dict):
+                raise SlotsDefinitionError(f"rule {binding.rule_id}: checklist entries must be objects")
+            feature = item.get("feature")
+            if not isinstance(feature, str) or not feature.strip():
+                raise SlotsDefinitionError(f"rule {binding.rule_id}: checklist entry needs a non-empty feature")
+            min_count = item.get("min_count", 1)
+            if isinstance(min_count, bool) or not isinstance(min_count, int) or min_count < 1:
+                raise SlotsDefinitionError(
+                    f"rule {binding.rule_id}: checklist feature {feature!r} needs an integer min_count >= 1"
+                )
+
     mandatory_targets = {b.target_id for b in bindings if b.mandatory}
     for shelf in definition.shelves:
         if shelf.facings:

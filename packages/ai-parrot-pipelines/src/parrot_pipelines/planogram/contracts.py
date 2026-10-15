@@ -140,8 +140,8 @@ class RuleObservation(BaseModel):
 
     image_id: str
     target_id: str  # observed zone/shape id, or "<image_id>:zone-region:<zone_id>" for an inspected region
-    kind: Literal["illumination", "visual_features", "zone_present", "appearance"]
-    value: str | bool | List[str] | Dict[str, str] | None = None
+    kind: Literal["illumination", "visual_features", "zone_present", "appearance", "visual_checklist"]
+    value: str | bool | List[str] | Dict[str, str] | Dict[str, int] | None = None
     assessed: bool = False
     source: ObservationSource
     evidence: List[str] = Field(default_factory=list)
