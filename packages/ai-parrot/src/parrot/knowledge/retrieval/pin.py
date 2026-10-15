@@ -18,10 +18,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 
-import aiosqlite
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
+from parrot.knowledge.graphindex.protocols import CapabilityUnavailable, SourceCoherencePersistence
 from parrot.knowledge.ontology.schema import TenantContext
 from parrot.knowledge.retrieval.exceptions import IndexPinMismatchError, StalePinError
 
@@ -331,25 +330,6 @@ async def read_at_rev(repo_path: Path, rev: str, path: str) -> bytes:
     return stdout
 
 
-async def _read_files_table_sample(db_path: Path) -> list[tuple[str, str]]:
-    """Read every ``(source_uri, sha1)`` row from the ``files`` table.
-
-    Args:
-        db_path: Path to the tenant's SQLite database file.
-
-    Returns:
-        Rows sorted by ``source_uri`` — a stable order the deterministic
-        sampler in `check_pin_coherence` relies on.
-    """
-    async with aiosqlite.connect(str(db_path)) as conn:
-        conn.row_factory = aiosqlite.Row
-        async with conn.execute(
-            "SELECT source_uri, sha1 FROM files ORDER BY source_uri"
-        ) as cur:
-            rows = await cur.fetchall()
-    return [(row["source_uri"], row["sha1"]) for row in rows]
-
-
 def _select_deterministic_sample(
     rows: list[tuple[str, str]], sample: int
 ) -> list[tuple[str, str]]:
@@ -375,7 +355,7 @@ def _select_deterministic_sample(
 
 async def check_pin_coherence(
     pin: WorkspacePin,
-    persistence: SQLitePersistence,
+    persistence: SourceCoherencePersistence,
     ctx: TenantContext,
     repo: str,
     repo_path: Path,
@@ -394,8 +374,8 @@ async def check_pin_coherence(
 
     Args:
         pin: The `WorkspacePin` to corroborate.
-        persistence: The tenant's `SQLitePersistence` backend.
-        ctx: Tenant context, used to resolve the SQLite db path.
+        persistence: A backend exposing sorted source URI and SHA-1 pairs.
+        ctx: Tenant context passed to the persistence backend.
         repo: Which repo in `pin` this check is for.
         repo_path: Local filesystem path to that repo's working tree.
         sample: Maximum number of files to sample (bounded — never
@@ -410,11 +390,13 @@ async def check_pin_coherence(
         anything, mismatched.
 
     Raises:
-        IndexPinMismatchError: If a mismatch is found and
-            ``allow_stale=False``.
+        CapabilityUnavailable: If the persistence backend does not expose
+            source-coherence data.
+        IndexPinMismatchError: If a mismatch is found and ``allow_stale=False``.
     """
-    db_path = persistence._db_path(ctx)
-    all_rows = await _read_files_table_sample(db_path)
+    if not isinstance(persistence, SourceCoherencePersistence):
+        raise CapabilityUnavailable(type(persistence).__name__, "source_coherence")
+    all_rows = await persistence.file_hashes(ctx)
     sampled_rows = _select_deterministic_sample(all_rows, sample)
 
     rev = pin.rev_of(repo)

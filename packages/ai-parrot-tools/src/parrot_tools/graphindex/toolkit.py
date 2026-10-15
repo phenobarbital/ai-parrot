@@ -37,8 +37,8 @@ Tool surface:
 
   # TEMPORAL + HYBRID (FEAT-520 — Postgres-backed durable plane ONLY;
   # excluded from tool generation, not just error-returning, when the
-  # bound persistence lacks the surface — feature-detected via hasattr,
-  # never isinstance, spec D5)
+  # bound persistence lacks the surface — capability-checked with
+  # runtime-checkable protocols)
   graph_as_of, graph_concept_history, graph_diff, graph_hybrid_retrieve
 
 When a ``GraphPublisher`` is injected, every write tool ALSO persists
@@ -47,9 +47,8 @@ identity and run — the graph becomes durable cross-session memory
 ("the agent forgets, the graph does not"). Persistence failures never
 fail the tool call; they surface as ``persist_warning`` in the result.
 
-FEAT-520: when the injected ``publisher``'s bound persistence is
-Postgres-backed (``PostgresPersistence``, duck-typed via ``hasattr``,
-never ``isinstance`` — spec D5), four additional mono-purpose tools are
+FEAT-520: when the injected ``publisher``'s bound persistence implements
+the temporal capability, four additional mono-purpose tools are
 registered: ``graph_as_of``/``graph_concept_history``/``graph_diff``
 (temporal reads) and ``graph_hybrid_retrieve`` (one-pass graph+KNN+FTS
 retrieval). They are deliberately excluded from tool generation — not
@@ -75,6 +74,7 @@ import rustworkx
 
 from parrot.tools.toolkit import AbstractToolkit
 from parrot.utils.faiss_logging import quiet_faiss_loader
+from parrot.knowledge.graphindex.protocols import HybridRetrievalPersistence, TemporalGraphPersistence
 
 quiet_faiss_loader()  # silence faiss boot logs before the first import
 import faiss  # noqa: E402 — must follow quiet_faiss_loader()
@@ -91,8 +91,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_ANALYTICS_TOP_K = 10
 
 #: FEAT-520 — names of the temporal/hybrid tools, only registered when the
-#: bound persistence exposes the temporal surface (``hasattr(persistence,
-#: "as_of")`` — spec D5 duck-typing rule).
+#: bound persistence implements the temporal capability.
 _TEMPORAL_TOOL_NAMES = (
     "graph_as_of",
     "graph_concept_history",
@@ -294,16 +293,14 @@ class GraphIndexToolkit(AbstractToolkit):
     def _temporal_persistence(self) -> Optional[Any]:
         """Return the bound persistence IFF it exposes the temporal surface.
 
-        Duck-typed via ``hasattr`` (spec D5) — never ``isinstance``, so any
-        backend that grows ``as_of``/``history``/``diff`` later is picked
-        up automatically. Returns ``None`` when no publisher is configured
-        or the persistence is SQLite/ArangoDB-backed (no temporal API).
+        Returns ``None`` when no publisher is configured or the persistence
+        is SQLite/ArangoDB-backed (no temporal API).
 
         Returns:
             The persistence object, or ``None``.
         """
         persistence = getattr(self.publisher, "persistence", None)
-        if persistence is not None and hasattr(persistence, "as_of"):
+        if persistence is not None and isinstance(persistence, TemporalGraphPersistence):
             return persistence
         return None
 
@@ -1323,7 +1320,7 @@ class GraphIndexToolkit(AbstractToolkit):
             when unavailable or neither ``query`` nor ``seeds`` is given.
         """
         persistence = self._temporal_persistence()
-        if persistence is None or not hasattr(persistence, "hybrid_retrieve"):
+        if persistence is None or not isinstance(persistence, HybridRetrievalPersistence):
             return {"error": "graph_hybrid_retrieve: no hybrid-capable durable graph plane configured"}
         if not query and not seeds:
             return {"error": "graph_hybrid_retrieve: provide query and/or seeds"}
