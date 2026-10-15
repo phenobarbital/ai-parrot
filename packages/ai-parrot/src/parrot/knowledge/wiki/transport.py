@@ -23,13 +23,17 @@ from parrot.knowledge.wiki.ledger.operations import (
     LedgerClaimInput,
     LedgerCloseInput,
     LedgerContextInput,
+    LedgerListInput,
     LedgerOpenInput,
     LedgerReadyInput,
+    LedgerShowInput,
     op_ledger_claim,
     op_ledger_close,
     op_ledger_context,
+    op_ledger_list,
     op_ledger_open,
     op_ledger_ready,
+    op_ledger_show,
 )
 from parrot.knowledge.wiki.operations import (
     IngestBatchInput,
@@ -145,6 +149,12 @@ _SPECS: dict[str, _Spec] = {
     "ledger_claim": _Spec("ledger", LedgerClaimInput, "Claim an issue from the SDD ledger."),
     "ledger_close": _Spec("ledger", LedgerCloseInput, "Close an issue in the SDD ledger."),
     "ledger_context": _Spec("ledger", LedgerContextInput, "Get context from the SDD ledger for specific files."),
+    "ledger_list": _Spec(
+        "ledger", LedgerListInput, "List SDD ledger issues by status (or all), kind, severity or about prefix."
+    ),
+    "ledger_show": _Spec(
+        "ledger", LedgerShowInput, "Show one SDD ledger issue in full: state, body and event history."
+    ),
     "wiki_symbol_lookup": _Spec(
         "structural",
         SymbolLookupInput,
@@ -402,6 +412,16 @@ def _operation_invoke(name: str, ctx: WikiOperationContext) -> Callable[[BaseMod
 
         async def invoke(params: BaseModel) -> OperationResult:
             return await op_ledger_context(ledger, params)
+
+    elif name == "ledger_list":
+
+        async def invoke(params: BaseModel) -> OperationResult:
+            return await op_ledger_list(ledger, params)
+
+    elif name == "ledger_show":
+
+        async def invoke(params: BaseModel) -> OperationResult:
+            return await op_ledger_show(ledger, params)
 
     elif name == "wiki_page_hashes":
 

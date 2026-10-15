@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Union
 
 
 from parrot.knowledge.wiki.context import DEFAULT_BUDGET_TOKENS
-from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
+from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity, IssueStatus
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper  # noqa: F401 -- tests patch tools.WikiBookkeeper
 from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord
 from parrot.tools.abstract import AbstractTool, ToolResult
@@ -22,13 +22,17 @@ from parrot.knowledge.wiki.ledger.operations import (  # noqa: F401 -- re-export
     LedgerClaimInput,
     LedgerCloseInput,
     LedgerContextInput,
+    LedgerListInput,
     LedgerOpenInput,
     LedgerReadyInput,
+    LedgerShowInput,
     op_ledger_claim,
     op_ledger_close,
     op_ledger_context,
+    op_ledger_list,
     op_ledger_open,
     op_ledger_ready,
+    op_ledger_show,
 )
 from parrot.knowledge.wiki.operations import (  # noqa: F401 -- re-exported for structural/decisions tools and the CLI
     HASHES_MAX_IDS,
@@ -408,6 +412,49 @@ class LedgerContextTool(AbstractTool):
         return _to_tool_result(await op_ledger_context(self._ledger_service, params))
 
 
+class LedgerListTool(AbstractTool):
+    """List SDD ledger issues by status, kind, severity or about prefix."""
+
+    name = "ledger_list"
+    description = "List SDD ledger issues by status (or all), kind, severity or about prefix."
+    args_schema = LedgerListInput
+
+    def __init__(self, ledger_service: "LedgerService"):
+        super().__init__(name=self.name, description=self.description)
+        self._ledger_service = ledger_service
+
+    async def _execute(
+        self,
+        statuses: list[IssueStatus] | None = None,
+        all_statuses: bool = False,
+        kind: IssueKind | None = None,
+        severity: IssueSeverity | None = None,
+        about_prefix: str | None = None,
+    ) -> ToolResult:
+        """List ledger issues matching the filters."""
+        params = LedgerListInput.model_construct(
+            statuses=statuses, all_statuses=all_statuses, kind=kind, severity=severity, about_prefix=about_prefix
+        )
+        return _to_tool_result(await op_ledger_list(self._ledger_service, params))
+
+
+class LedgerShowTool(AbstractTool):
+    """Show one SDD ledger issue in full, including body and event history."""
+
+    name = "ledger_show"
+    description = "Show one SDD ledger issue in full: state, body and event history."
+    args_schema = LedgerShowInput
+
+    def __init__(self, ledger_service: "LedgerService"):
+        super().__init__(name=self.name, description=self.description)
+        self._ledger_service = ledger_service
+
+    async def _execute(self, issue_id: str, include_history: bool = True) -> ToolResult:
+        """Show one ledger issue."""
+        params = LedgerShowInput.model_construct(issue_id=issue_id, include_history=include_history)
+        return _to_tool_result(await op_ledger_show(self._ledger_service, params))
+
+
 class WikiPageHashesTool(AbstractTool):
     """Return stored content hashes for up to 2000 page ids.
 
@@ -579,6 +626,8 @@ def create_wiki_tools(
                 LedgerClaimTool(ledger_service),
                 LedgerCloseTool(ledger_service),
                 LedgerContextTool(ledger_service),
+                LedgerListTool(ledger_service),
+                LedgerShowTool(ledger_service),
             ]
         )
 

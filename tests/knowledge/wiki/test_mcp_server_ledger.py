@@ -40,6 +40,8 @@ class TestMcpServerLedgerMount:
         assert "ledger_claim" not in tool_names
         assert "ledger_close" not in tool_names
         assert "ledger_context" not in tool_names
+        assert "ledger_list" not in tool_names
+        assert "ledger_show" not in tool_names
 
     def test_create_wiki_tools_with_ledger_service(self, mock_root):
         """create_wiki_tools should include ledger tools when ledger service is provided."""
@@ -48,8 +50,8 @@ class TestMcpServerLedgerMount:
 
         tools = create_wiki_tools(mock_store, root=mock_root, ledger_service=mock_ledger_service)
 
-        # Should have the standard 7 wiki tools + 5 ledger tools
-        assert len(tools) == 12
+        # Should have the standard 7 wiki tools + 7 ledger tools
+        assert len(tools) == 14
 
         # Should have ledger tools
         tool_names = [tool.name for tool in tools]
@@ -58,6 +60,8 @@ class TestMcpServerLedgerMount:
         assert "ledger_claim" in tool_names
         assert "ledger_close" in tool_names
         assert "ledger_context" in tool_names
+        assert "ledger_list" in tool_names
+        assert "ledger_show" in tool_names
 
     @pytest.mark.asyncio
     async def test_ledger_stores_targets_correctly(self):
