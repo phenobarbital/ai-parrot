@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
+import signal
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -66,6 +68,7 @@ class WikiBuildRunner:
                 *argv,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
             )
         except OSError as exc:
             outcome = BuildOutcome(
@@ -146,25 +149,32 @@ class WikiBuildRunner:
         """Return whether the previous plane state is incomplete or corrupt."""
         return self.last_good(plane_dir) is None
 
+    @staticmethod
+    def _signal_group(process: asyncio.subprocess.Process, sig: int) -> None:
+        """Signal the build's whole process group; fall back to the child alone."""
+        if process.returncode is not None:
+            return
+        try:
+            if hasattr(os, "killpg"):
+                os.killpg(process.pid, sig)
+            elif sig == signal.SIGTERM:
+                process.terminate()
+            else:
+                process.kill()
+        except (ProcessLookupError, PermissionError):
+            pass
+
     async def _stop_and_reap(
         self,
         process: asyncio.subprocess.Process,
         communication: asyncio.Task[tuple[bytes, bytes]],
     ) -> None:
         """Terminate, then kill and reap a process whose communication is pending."""
-        if process.returncode is None:
-            try:
-                process.terminate()
-            except ProcessLookupError:
-                pass
+        self._signal_group(process, signal.SIGTERM)
         try:
             await asyncio.wait_for(asyncio.shield(communication), timeout=_TERMINATE_GRACE_SECONDS)
         except TimeoutError:
-            if process.returncode is None:
-                try:
-                    process.kill()
-                except ProcessLookupError:
-                    pass
+            self._signal_group(process, signal.SIGKILL)
             await communication
 
     @staticmethod

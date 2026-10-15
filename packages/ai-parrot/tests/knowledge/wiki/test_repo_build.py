@@ -102,6 +102,33 @@ async def test_build_runner_timeout_kills_child(tmp_path: Path) -> None:
         pytest.fail("timed-out wikitoolkit child survived")
 
 
+async def test_build_runner_timeout_kills_grandchildren(tmp_path: Path) -> None:
+    """A grandchild spawned by the build dies with its process group."""
+    import os
+
+    pid_file = tmp_path / "grandchild_pid"
+    executable = _fake_wikitoolkit(
+        tmp_path,
+        "import pathlib, subprocess, time\n"
+        "g = subprocess.Popen(['sleep', '60'])\n"
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(g.pid))\n"
+        "time.sleep(60)\n",
+    )
+    outcome = await WikiBuildRunner(executable=str(executable), timeout=0.5).run(
+        tmp_path / "clone", tmp_path / "plane"
+    )
+    assert outcome.timed_out
+    grandchild = int(pid_file.read_text())
+    for _ in range(500):
+        try:
+            os.kill(grandchild, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        pytest.fail("grandchild of the timed-out build survived")
+
+
 def test_last_good_marker_roundtrip(tmp_path: Path) -> None:
     """Only a successful outcome makes a plane usable."""
     runner = WikiBuildRunner()
