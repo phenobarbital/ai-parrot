@@ -12,12 +12,13 @@
       "feature_id": "FEAT-690",
       "feature": "gdrive-toolkit-upload-path-safety",
       "title": "GoogleDriveToolkit upload_file path confinement and conflict-behavior isolation",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "estimated_effort": "M",
       "depends_on": [],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-4401-gdrive-upload-path-safety.md"
+      "file": "sdd/tasks/active/TASK-4401-gdrive-upload-path-safety.md",
+      "started_at": "2026-10-16T23:55:00+00:00"
     }
   ]
 }
