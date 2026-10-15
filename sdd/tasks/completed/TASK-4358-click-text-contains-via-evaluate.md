@@ -190,4 +190,16 @@ async def test_click_text_contains_uses_evaluate(mock_driver):
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (Claude Opus 5.5)
+**Date**: 2026-10-15
+**Notes**: `_action_click` text-contains branch now builds a self-contained IIFE with the CSS
+prefix and lower-cased needle embedded via `json.dumps` and runs it with `driver.evaluate`
+(no `arguments[N]`, no extra positional args). Hit/miss behaviour and the RuntimeError are
+unchanged. Added `TestClickTextContains` (6 tests: evaluate-only, no `arguments[`, quote
+escaping, miss raises, miss recorded as step error via `execute_plan_steps`, plain selector
+unchanged). Validation: `test_executor.py` + `test_executor_driver_parity.py` → 47 passed.
+Code commit: 4a43d239a.
+
+Pre-existing, untouched: ruff F401 on the `EXTRACTOR_REGISTRY` import (executor.py:24).
+
+**Deviations from spec**: one extra test (`..._miss_recorded_as_step_error`) beyond spec §4.
