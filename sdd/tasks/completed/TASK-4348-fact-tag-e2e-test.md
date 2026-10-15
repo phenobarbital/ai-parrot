@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-674 — Planogram fact-tag end-to-end test
 **Spec**: `sdd/specs/planogram-fact-tag-e2e-test.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -85,4 +85,15 @@ See spec §4.
 Work in the feature worktree; touch only the listed file (and `rules.py` only for a bug the test exposes).
 
 ## Completion Note
-*(Agent fills this in when done)*
+Completed 2026-10-15 by agent:sdd-fix (verified). Commit ac92e9322.
+
+- Added `test_compare_observations_reports_fact_tags` to
+  `packages/ai-parrot-pipelines/tests/planogram_cycle/test_fact_tag_scoring.py`: two shelves x two
+  facings run through the real `compare_observations` (canonicalise -> register_image ->
+  evaluate_rules -> score_shelves -> summarize -> project_compliance), with and without four
+  `fact_tag_present` bindings. Asserts per-shelf `info_results` (pass with priced ON_FIXTURE tag,
+  fail "fact tag not observed" with no tag, pass with UNCERTAIN tag, fail with OFF_FIXTURE tag),
+  empty `rule_results`, zero penalties, and identical overall/shelf scores, coverage and statuses.
+- Added `test_uncertain_membership_tag_counts` (parametrized ON_FIXTURE/UNCERTAIN/OFF_FIXTURE).
+- No bug found in `comparison/rules.py`: UNCERTAIN tags are counted as FEAT-624 spec §2 requires.
+- Validation: `pytest test_fact_tag_scoring.py test_fact_tag_rule.py -q` -> 17 passed; ruff clean.
