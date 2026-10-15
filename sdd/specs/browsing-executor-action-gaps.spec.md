@@ -10,7 +10,7 @@ tags: [browsing, scraping, browser-actions, screenshot]
 **Feature ID**: FEAT-681
 **Date**: 2026-10-15
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -57,7 +57,7 @@ the `BrowserAction` DSL silently unusable from browsing (`run_site_action`,
 - Refactoring `_action_click`. Its text-contains path calls
   `driver.execute_script(script, selector, text)` with `arguments[0]`, which
   `page.evaluate(script, *args)` (Playwright/Page drivers) does not support. That is a
-  separate defect: file it in the ledger, do not fix it here.
+  separate defect, tracked as ledger `issue:c10c1e94f4b3` — do not fix it here.
 - Full-page screenshots on Selenium (`SeleniumDriver.screenshot` captures the viewport
   only; WebDriver has no portable full-page API).
 - New DSL actions or model field changes — the three models and `Screenshot` stay as is.
@@ -89,7 +89,7 @@ Behaviour per action:
 | `hover` | Resolve the locator from `selector` + `selector_type` (`css` → BS4-only pseudos stripped, `xpath` → as is, `text` → `//*[contains(text(), '<sel>')]`, same mapping `_action_click` uses) and `await driver.hover(locator, timeout)`. |
 | `type` | `await driver.type_text(action.text, selector=action.selector, delay_ms=action.delay, clear_first=action.clear_first, timeout=timeout)`. With `selector=None` it types into the focused element. |
 | `submit` | Run one `driver.evaluate()` IIFE (selector embedded with `json.dumps`, **not** passed as an argument — see §7) that resolves the selector (XPath via `document.evaluate` when it starts with `/` or `./`, else `querySelector`) and returns `"missing"`, `"form"` (element is a `<form>`: `requestSubmit()` when available, else `submit()`) or `"click"`. `"missing"` → raise `RuntimeError`; `"click"` → `await driver.click(selector, timeout)`. Then, if `wait_after_submit` is set, `await driver.wait_for_selector(wait_after_submit, action.wait_timeout)`. |
-| `screenshot` | Build the confined path as today. If `selector` is set → `driver.screenshot_element(selector, path, timeout)`; else `driver.screenshot(path, full_page=action.full_page)`. Record `{"path": <str>}` (plus `"base64": <str>` when `return_base64`) in `step_extracted` under the key `action.name` (when it is not the default `"screenshot"`) or `"screenshot"`; on key collision append `_2`, `_3`, … |
+| `screenshot` | Build the confined path as today. If `selector` is set → `driver.screenshot_element(selector, path, timeout)`; else `driver.screenshot(path, full_page=action.full_page)`. Record `{"path": <str>}` (plus `"base64": <str>` when `return_base64` and the PNG is at most `MAX_SCREENSHOT_BASE64_BYTES` = 2 MiB of raw bytes; above the cap the base64 is omitted, the entry gets `"base64_omitted": true, "size_bytes": <int>` and a warning is logged — the file on disk is unaffected) in `step_extracted` under the key `action.name` (when it is not the default `"screenshot"`) or `"screenshot"`; on key collision append `_2`, `_3`, … |
 
 ### Component Diagram
 ```
@@ -119,7 +119,8 @@ execute_plan_steps ──→ _dispatch_step ──┬─→ _action_hover    ─
 No model changes. Shape of a screenshot entry in `extracted_data`:
 ```python
 {"path": "/…/files/screenshots/page.png"}                       # default
-{"path": "/…/files/screenshots/page.png", "base64": "iVBORw0…"}  # return_base64=True
+{"path": "/…/files/screenshots/page.png", "base64": "iVBORw0…"}  # return_base64=True, PNG ≤ 2 MiB
+{"path": "/…/files/screenshots/page.png", "base64_omitted": True, "size_bytes": 3145728}  # return_base64=True, PNG > 2 MiB
 ```
 
 ### New Public Interfaces
@@ -200,6 +201,9 @@ class AbstractDriver(ABC):
 - **Interface Skeleton**:
   ```python
   # executor.py (modifies)
+  MAX_SCREENSHOT_BASE64_BYTES: int = 2 * 1024 * 1024
+  """Raw PNG size cap above which a screenshot's base64 is omitted from extracted_data."""
+
   def _resolve_locator(selector: str, selector_type: str = "css") -> str:
       """Map a DSL selector + selector_type to a driver locator.
 
@@ -226,7 +230,7 @@ class AbstractDriver(ABC):
       step: ScrapingStep,
       step_extracted: Dict[str, Any],
   ) -> bool:
-      """Capture page (full_page honoured) or element; record path (+ base64) in step_extracted."""
+      """Capture page (full_page honoured) or element; record path (+ base64 up to MAX_SCREENSHOT_BASE64_BYTES) in step_extracted."""
   ```
 
 ### Module 3: Tests
@@ -256,6 +260,7 @@ class AbstractDriver(ABC):
 | `test_screenshot_element_uses_screenshot_element` | M2 | `selector` set → `driver.screenshot_element(selector, path, timeout)`; `driver.screenshot` not called |
 | `test_screenshot_records_path` | M2 | `extracted_data["screenshot"]["path"]` is the confined path; no `base64` key |
 | `test_screenshot_return_base64` | M2 | `return_base64=True` → `base64` decodes to the driver's bytes |
+| `test_screenshot_base64_cap` | M2 | driver returns `MAX_SCREENSHOT_BASE64_BYTES + 1` bytes with `return_base64=True` → no `base64`, `base64_omitted is True`, `size_bytes` set, warning logged; exactly-at-cap bytes → `base64` present |
 | `test_screenshot_key_collision_suffix` | M2 | two screenshots → keys `screenshot`, `screenshot_2` |
 | `test_screenshot_custom_name_key` | M2 | `name="home"` → key `home` |
 | `test_every_action_map_entry_is_dispatched` | M2 | for every `ACTION_MAP` key, `_dispatch_step` source has an `action_type == "<key>"` branch |
@@ -293,7 +298,7 @@ def spy_driver():  # same shape as tests/scraping/test_stub_closure_regression.p
 - [ ] `submit` never passes arguments to `execute_script` (works under `page.evaluate`).
 - [ ] `screenshot` forwards `full_page` to `driver.screenshot`.
 - [ ] `screenshot` with `selector` captures only that element via `driver.screenshot_element`.
-- [ ] Every `screenshot` step adds `{"path": …}` to `extracted_data`; with `return_base64=True` it also adds `"base64"`.
+- [ ] Every `screenshot` step adds `{"path": …}` to `extracted_data`; with `return_base64=True` it also adds `"base64"` when the PNG is ≤ 2 MiB (`MAX_SCREENSHOT_BASE64_BYTES`); above the cap it adds `"base64_omitted": true` and `"size_bytes"` instead, and logs a warning.
 - [ ] The screenshot path is still confined by `confined_file` (no behaviour change to confinement).
 - [ ] `AbstractDriver` subclasses that do not implement the new methods still instantiate (methods are not abstract).
 - [ ] `PlaywrightDriver`, `PageDriver` and `SeleniumDriver` implement `type_text` and `screenshot_element`.
@@ -429,8 +434,9 @@ Verified against: `181922474`
   example (`test_stub_closure_regression.py:86-90`). Once hover is dispatched that test no longer
   exercises the else branch; it must switch to an opcode that is not in `ACTION_MAP`.
 - **Base64 payload size.** A full-page PNG can be several MB; with `return_base64=True` it travels
-  through `extracted_data` into the MCP response of `run_site_action`. Default stays `False`; the
-  model's field description and the browsing readme should say so (see §8 Q1).
+  through `extracted_data` into the MCP response of `run_site_action`. Mitigated by the 2 MiB raw cap
+  (`MAX_SCREENSHOT_BASE64_BYTES`, module constant in `executor.py`, ≈2.7 MB encoded) — above it only
+  the path is returned. Default stays `False`.
 - **`full_page` default flips effective behaviour.** Plans that relied on the accidental
   viewport-only capture will now get full-page images (the model default is `True`). Intentional:
   it aligns runtime with the declared contract.
@@ -445,8 +451,8 @@ None new. `Locator.press_sequentially` needs playwright ≥ 1.38; the venv has 1
 
 ## 8. Open Questions
 
-- [ ] Should `return_base64` be capped (e.g. refuse/skip base64 above N MB and return only the path) to protect MCP response size? — *Owner: Jesus Lara*
-- [ ] Should the out-of-scope `_action_click` text-contains `execute_script(script, *args)` incompatibility with Playwright be filed in the ledger now? — *Owner: Jesus Lara*
+- [x] Should `return_base64` be capped to protect MCP response size? — *Owner: Jesus Lara*: yes — 2 MiB of raw PNG bytes (`MAX_SCREENSHOT_BASE64_BYTES`); above it the base64 is omitted, `base64_omitted`/`size_bytes` are reported and only the path is returned (§2, §5, §7).
+- [x] Should the out-of-scope `_action_click` text-contains `execute_script(script, *args)` incompatibility with Playwright be filed in the ledger now? — *Owner: Jesus Lara*: yes — filed as ledger `issue:c10c1e94f4b3` (bug, major), not fixed in this feature.
 
 ---
 
@@ -479,3 +485,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-15 | Jesus Lara | Initial draft |
+| 0.2 | 2026-10-15 | Jesus Lara | base64 cap (2 MiB) decided; click bug filed as ledger issue:c10c1e94f4b3; status approved |
