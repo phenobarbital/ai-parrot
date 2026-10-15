@@ -16,9 +16,10 @@ from parrot.knowledge.ontology.schema import AuthorizationRule, AuthorizationSpe
 
 @pytest.fixture
 def graph_store():
-    """Mocked OntologyGraphStore."""
+    """Mocked typed ontology traversal store."""
     gs = MagicMock()
-    gs.execute_traversal = AsyncMock(return_value=[])
+    gs.is_reachable = AsyncMock(return_value=False)
+    gs.get_document_by_id = AsyncMock(return_value=None)
     return gs
 
 
@@ -68,8 +69,8 @@ class TestAuthorizationChecker:
     async def test_target_in_management_chain_depth_3(
         self, checker: AuthorizationChecker, graph_store: MagicMock
     ) -> None:
-        """Management-chain traversal returns a row → allowed."""
-        graph_store.execute_traversal.return_value = [{"_id": "Employee/sub3"}]
+        """Management-chain traversal reaching the target allows access."""
+        graph_store.is_reachable.return_value = True
         spec = AuthorizationSpec(
             rules=[AuthorizationRule(rule="target_in_management_chain")]
         )
@@ -85,8 +86,8 @@ class TestAuthorizationChecker:
     async def test_target_in_management_chain_depth_11_denies(
         self, checker: AuthorizationChecker, graph_store: MagicMock
     ) -> None:
-        """Traversal returns nothing (depth-10 limit) → denied."""
-        graph_store.execute_traversal.return_value = []
+        """An unreachable target at the depth-10 limit is denied."""
+        graph_store.is_reachable.return_value = False
         spec = AuthorizationSpec(
             rules=[AuthorizationRule(rule="target_in_management_chain")]
         )
@@ -215,7 +216,7 @@ class TestAuthorizationChecker:
         self, checker: AuthorizationChecker, graph_store: MagicMock
     ) -> None:
         """same_department allows when entity's department matches user's."""
-        graph_store.execute_traversal.return_value = ["Engineering"]
+        graph_store.get_document_by_id.return_value = {"department": "Engineering"}
         spec = AuthorizationSpec(
             rules=[AuthorizationRule(rule="same_department")]
         )
@@ -232,7 +233,7 @@ class TestAuthorizationChecker:
         self, checker: AuthorizationChecker, graph_store: MagicMock
     ) -> None:
         """same_department denies when departments differ."""
-        graph_store.execute_traversal.return_value = ["Sales"]
+        graph_store.get_document_by_id.return_value = {"department": "Sales"}
         spec = AuthorizationSpec(
             rules=[AuthorizationRule(rule="same_department")]
         )

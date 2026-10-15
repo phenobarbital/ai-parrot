@@ -14,7 +14,7 @@ will ALWAYS deny. That is the intended behavior for the paranoid default.
 Supported rules (five declarative types):
 - ``always``: unconditionally allow.
 - ``target_is_self``: allow if the requesting user equals any resolved entity.
-- ``target_in_management_chain``: AQL traversal (depth ≤ 10) along
+- ``target_in_management_chain``: typed traversal (depth ≤ 10) along
   ``reports_to`` edges from the requesting user. Allow if any resolved entity
   is found within depth 10.
 - ``has_role``: allow if ``rule.role`` is in ``user_context["roles"]``.
@@ -34,25 +34,53 @@ Usage::
 from __future__ import annotations
 
 import logging
-from typing import Any
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any
 
-from .graph_store import OntologyGraphStore
-from .schema import AuthorizationRule, AuthorizationSpec
+from .schema import AuthorizationRule, AuthorizationSpec, MergedOntology, TenantContext
+
+if TYPE_CHECKING:
+    from .contracts import OntologyTraversalStore
+
+
+def _tenant_context(tenant_id: str) -> TenantContext:
+    """Build the minimal tenant context required for authorization lookups.
+
+    Args:
+        tenant_id: Tenant identifier for the lookup.
+
+    Returns:
+        A tenant context with the authorization check's synthetic ontology.
+    """
+    return TenantContext(
+        tenant_id=tenant_id,
+        arango_db=f"{tenant_id}_ontology",
+        pgvector_schema=tenant_id,
+        ontology=MergedOntology(
+            name="auth_check",
+            version="1.0",
+            entities={},
+            relations={},
+            traversal_patterns={},
+            layers=[],
+            merge_timestamp=datetime.now(timezone.utc),
+        ),
+    )
 
 
 class AuthorizationChecker:
     """Evaluates declarative authorization rules against resolved entities.
 
     Args:
-        graph_store: ArangoDB wrapper used for management-chain and
-            same-department AQL traversals.
-        reports_to_collection: ArangoDB edge collection name for the
+        graph_store: Typed traversal store used for management-chain and
+            same-department lookups.
+        reports_to_collection: Edge collection name for the
             ``reports_to`` relation. Defaults to ``"reports_to"``.
     """
 
     def __init__(
         self,
-        graph_store: OntologyGraphStore,
+        graph_store: OntologyTraversalStore,
         reports_to_collection: str = "reports_to",
     ) -> None:
         self._graph_store = graph_store
@@ -85,7 +113,7 @@ class AuthorizationChecker:
                 non-``always`` rules.
             resolved_entities: Mapping from rule_name → graph ``_id`` produced
                 by the entity resolver.
-            tenant_id: Tenant identifier for scoping AQL traversals.
+            tenant_id: Tenant identifier for scoping graph traversals.
 
         Returns:
             ``(True, None)`` if access is granted.
@@ -206,14 +234,6 @@ class AuthorizationChecker:
         traversal results, the user manages that entity (directly or
         transitively).
 
-        AQL (depth ≤ 10):
-
-        .. code-block:: aql
-
-            FOR v IN 1..10 OUTBOUND @asker_id @@reports_to
-              FILTER v._id == @target_id
-              RETURN v._id
-
         Args:
             user_id: Requesting user's ``_id``.
             resolved_entities: Resolved entity ``_id``s to check.
@@ -222,45 +242,17 @@ class AuthorizationChecker:
         Returns:
             True if at least one resolved entity is in the management chain.
         """
-        from .schema import MergedOntology, TenantContext
-        from datetime import datetime, timezone
-
-        # Build a minimal TenantContext for the AQL call.
-        # The graph_store mock in tests does not use the ctx fields;
-        # in production the mixin supplies a real ctx.
-        mock_ontology = MergedOntology(
-            name="auth_check",
-            version="1.0",
-            entities={},
-            relations={},
-            traversal_patterns={},
-            layers=[],
-            merge_timestamp=datetime.now(timezone.utc),
-        )
-        ctx = TenantContext(
-            tenant_id=tenant_id,
-            arango_db=f"{tenant_id}_ontology",
-            pgvector_schema=tenant_id,
-            ontology=mock_ontology,
-        )
-
-        aql = (
-            "FOR v IN 1..10 OUTBOUND @asker_id @@reports_to "
-            "FILTER v._id == @target_id "
-            "RETURN v._id"
-        )
-        collection_binds = {"@reports_to": self._reports_to}
+        ctx = _tenant_context(tenant_id)
 
         for target_id in resolved_entities.values():
-            bind_vars = {"asker_id": user_id, "target_id": target_id}
             try:
-                results = await self._graph_store.execute_traversal(
-                    ctx=ctx,
-                    aql=aql,
-                    bind_vars=bind_vars,
-                    collection_binds=collection_binds,
-                )
-                if results:
+                if await self._graph_store.is_reachable(
+                    ctx,
+                    user_id,
+                    target_id,
+                    edge_collection=self._reports_to,
+                    max_depth=10,
+                ):
                     return True
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
@@ -312,36 +304,12 @@ class AuthorizationChecker:
         if not user_dept:
             return False
 
-        from .schema import MergedOntology, TenantContext
-        from datetime import datetime, timezone
-
-        mock_ontology = MergedOntology(
-            name="auth_check",
-            version="1.0",
-            entities={},
-            relations={},
-            traversal_patterns={},
-            layers=[],
-            merge_timestamp=datetime.now(timezone.utc),
-        )
-        ctx = TenantContext(
-            tenant_id=tenant_id,
-            arango_db=f"{tenant_id}_ontology",
-            pgvector_schema=tenant_id,
-            ontology=mock_ontology,
-        )
-
-        aql = "RETURN DOCUMENT(@target_id).department"
+        ctx = _tenant_context(tenant_id)
 
         for target_id in resolved_entities.values():
-            bind_vars = {"target_id": target_id}
             try:
-                results = await self._graph_store.execute_traversal(
-                    ctx=ctx,
-                    aql=aql,
-                    bind_vars=bind_vars,
-                )
-                if results and results[0] == user_dept:
+                document = await self._graph_store.get_document_by_id(ctx, target_id)
+                if document and document.get("department") == user_dept:
                     return True
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning(
