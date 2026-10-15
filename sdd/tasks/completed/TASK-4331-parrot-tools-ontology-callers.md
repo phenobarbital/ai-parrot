@@ -339,10 +339,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra (attempt 1d8637b5), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: parrot_tools consumers (procedures/retrieval.py, legal wiki/temporal paths, contracts) and their tests migrated to the typed ontology store API / `query` + `dialect` fields (15 files). All seven task validation files run directly: wiki_store 13, temporal_resolution 9, contracts/test_retrieval 41, contracts/test_authorization 18, procedures/test_retrieval 8, test_toolkit 6, test_end_to_end 2 — all passed; ruff F821/F401 clean on the changed sources. No live Arango. No review corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.

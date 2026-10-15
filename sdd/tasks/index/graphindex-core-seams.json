@@ -674,7 +674,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -685,8 +685,9 @@
       "parallelism_notes": "exclusive: edits packages/ai-parrot-tools/tests/legal/conftest.py loaded by every legal test; needs execute_pattern/execute_query (TASK-4328) and TraversalPattern.query_templates (TASK-4329)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4331-parrot-tools-ontology-callers.md"
+      "completed_at": "2026-10-15T12:49:36+00:00",
+      "file": "sdd/tasks/completed/TASK-4331-parrot-tools-ontology-callers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4332",
