@@ -981,7 +981,9 @@ async def _action_screenshot(
         else:
             payload["base64_omitted"] = True
             payload["size_bytes"] = len(image_bytes)
-            logger.warning("Screenshot base64 omitted because image exceeds %d bytes: %s", MAX_SCREENSHOT_BASE64_BYTES, full_path)
+            logger.warning(
+                "Screenshot base64 omitted because image exceeds %d bytes: %s", MAX_SCREENSHOT_BASE64_BYTES, full_path
+            )
     step_extracted[key] = payload
     logger.info("Screenshot saved: %s", full_path)
     return True

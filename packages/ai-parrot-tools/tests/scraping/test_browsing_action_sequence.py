@@ -26,9 +26,9 @@ async def test_browsing_sequence_hover_type_submit_screenshot(tmp_path: Path) ->
         try:
             await driver.start()
         except Exception as exc:
-            if exc.__class__.__module__.startswith("playwright") or "Connection closed while reading from the driver" in str(
-                exc
-            ):
+            if exc.__class__.__module__.startswith(
+                "playwright"
+            ) or "Connection closed while reading from the driver" in str(exc):
                 pytest.skip(f"Playwright browser tooling unavailable: {exc}")
             raise
 
@@ -64,7 +64,9 @@ async def test_browsing_sequence_hover_type_submit_screenshot(tmp_path: Path) ->
 
         assert await driver.evaluate("document.querySelector('#hover-menu').hidden") is False
         assert await driver.evaluate("document.querySelector('#query').value") == "browser proof"
-        assert await driver.evaluate("document.querySelector('#submit-result').textContent") == "Submitted: browser proof"
+        assert (
+            await driver.evaluate("document.querySelector('#submit-result').textContent") == "Submitted: browser proof"
+        )
         element_path = Path(result.extracted_data["element"]["path"])
         page_path = Path(result.extracted_data["full_page"]["path"])
         assert element_path.exists() and element_path.read_bytes().startswith(b"\x89PNG")

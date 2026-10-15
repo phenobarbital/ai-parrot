@@ -39,9 +39,7 @@ async def test_type_forwards_all_fields(spy_driver: AsyncMock) -> None:
         config=DriverConfig(delay_between_actions=0, default_timeout=23),
     )
 
-    spy_driver.type_text.assert_awaited_once_with(
-        "hello", selector="#q", delay_ms=7, clear_first=True, timeout=23
-    )
+    spy_driver.type_text.assert_awaited_once_with("hello", selector="#q", delay_ms=7, clear_first=True, timeout=23)
 
 
 async def test_type_without_selector_uses_default_timeout(spy_driver: AsyncMock) -> None:
@@ -52,9 +50,7 @@ async def test_type_without_selector_uses_default_timeout(spy_driver: AsyncMock)
         config=DriverConfig(delay_between_actions=0, default_timeout=19),
     )
 
-    spy_driver.type_text.assert_awaited_once_with(
-        "focused", selector=None, delay_ms=0, clear_first=False, timeout=19
-    )
+    spy_driver.type_text.assert_awaited_once_with("focused", selector=None, delay_ms=0, clear_first=False, timeout=19)
 
 
 async def test_screenshot_passes_full_page_and_records_path(spy_driver: AsyncMock, tmp_path: Path) -> None:
