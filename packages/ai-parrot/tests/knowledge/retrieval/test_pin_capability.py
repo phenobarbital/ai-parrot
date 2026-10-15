@@ -35,9 +35,7 @@ async def test_pin_source_coherence_capability_uses_sqlite_file_hashes(
     monkeypatch.setattr(persistence, "file_hashes", file_hashes)
     monkeypatch.setattr(pin_module, "read_at_rev", read_at_rev)
 
-    report = await check_pin_coherence(
-        _workspace_pin(), persistence, ctx, "repository", tmp_path
-    )
+    report = await check_pin_coherence(_workspace_pin(), persistence, ctx, "repository", tmp_path)
 
     assert report.coherent
     assert report.sampled_paths == ("source.py",)

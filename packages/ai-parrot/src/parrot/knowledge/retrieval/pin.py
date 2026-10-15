@@ -131,10 +131,7 @@ class WorkspacePin(BaseModel):
         try:
             return self.pins[repo]
         except KeyError as exc:
-            raise KeyError(
-                f"WorkspacePin has no pin for repo {repo!r}; "
-                f"pinned repos: {sorted(self.pins)}"
-            ) from exc
+            raise KeyError(f"WorkspacePin has no pin for repo {repo!r}; " f"pinned repos: {sorted(self.pins)}") from exc
 
     def is_stale(
         self,
@@ -330,9 +327,7 @@ async def read_at_rev(repo_path: Path, rev: str, path: str) -> bytes:
     return stdout
 
 
-def _select_deterministic_sample(
-    rows: list[tuple[str, str]], sample: int
-) -> list[tuple[str, str]]:
+def _select_deterministic_sample(rows: list[tuple[str, str]], sample: int) -> list[tuple[str, str]]:
     """Pick up to `sample` rows via a stable stride over sorted `rows`.
 
     Deterministic given the same input (spec §3.5.3: "Sampling must be
