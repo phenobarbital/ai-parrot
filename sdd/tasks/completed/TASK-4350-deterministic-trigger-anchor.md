@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-676 — Scheduler interval/once claim anchor
 **Spec**: `sdd/specs/scheduler-interval-claim-anchor.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -130,4 +130,18 @@ Follow `docs/sdd/WORKFLOW.md` "Implementing a task by hand".
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-fix subagent (Claude Opus 5.5)
+**Date**: 2026-10-15
+**Notes**: Added `INTERVAL_ANCHOR` (UTC epoch) to `coordination.py`; `_create_trigger()` in `base.py` now builds
+`IntervalTrigger(**config, start_date=INTERVAL_ANCHOR, timezone="UTC")` and takes keyword `anchor` used for `once`
+without `run_date`. Persisted call sites (add, update, DB load, fingerprint reschedule) pass
+`anchor=<definition>.created_at`; the code-job site does not (no shared row; documented). New
+`tests/scheduler/test_trigger_anchor.py` builds triggers independently on two `SchedulerManager`s at different instants
+and checks identical fire times and a single winning claim (dict SET-NX double offline + real Redis db 15 variant that
+skips when Redis is unreachable — it was unreachable locally, so that variant skipped). Reproduced the bug on raw
+`IntervalTrigger(minutes=5)` built 50 ms apart (next fire times differ). Scheduler suite: 312 passed, 13 skipped.
+Docs: `docs/scheduler/multi-worker.md` documents the anchoring rule.
+
+**Deviations from spec**: Added an offline claim test (`_SetNxRedis` double) in addition to the real-Redis one, since
+fakeredis is not installed and local Redis was down. Behaviour change: interval first fire aligns to the epoch grid
+instead of creation time + interval.
