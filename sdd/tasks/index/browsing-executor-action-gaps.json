@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-15",
-  "completed_at": null,
+  "completed_at": "2026-10-15T17:34:03+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -54,7 +54,7 @@
       "feature_id": "FEAT-681",
       "feature": "browsing-executor-action-gaps",
       "spec": "sdd/specs/browsing-executor-action-gaps.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -65,8 +65,9 @@
       "parallelism_notes": "Consumes AbstractDriver.type_text and screenshot_element from TASK-4355; depends on TASK-4356 for overlapping executor.py writes and the hover/submit handlers exercised by integration.",
       "assigned_to": null,
       "started_at": "2026-10-15T17:10:55+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4357-executor-type-screenshot-artifacts.md"
+      "completed_at": "2026-10-15T17:34:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4357-executor-type-screenshot-artifacts.md",
+      "verification": "verified"
     }
   ]
 }
