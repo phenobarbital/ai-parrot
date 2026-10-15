@@ -120,6 +120,13 @@ async def test_toolkit_upload_missing_local_file_raises(tmp_path):
     """Upload reports an absent local source before calling the manager."""
     manager, _ = _manager_with_files()
     with pytest.raises(FileNotFoundError):
+        await GoogleDriveToolkit(manager=manager, upload_root=tmp_path).upload_file("missing.txt", "missing.txt")
+
+
+async def test_toolkit_upload_absolute_path_rejected(tmp_path):
+    """Absolute paths are rejected as a path-confinement violation (FEAT-690)."""
+    manager, _ = _manager_with_files()
+    with pytest.raises(ValueError, match="must be relative"):
         await GoogleDriveToolkit(manager=manager).upload_file(str(tmp_path / "missing.txt"), "missing.txt")
 
 

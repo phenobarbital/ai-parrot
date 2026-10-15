@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 import logging
 from pathlib import Path
@@ -11,6 +12,51 @@ from parrot.conf import OUTPUT_DIR
 from parrot.interfaces.file.gdrive import ConflictBehavior, GoogleDriveFileManager, ShareRole, ShareScope
 from parrot.interfaces.google import GoogleClient
 from parrot.tools.toolkit import AbstractToolkit
+
+
+def _validate_local_source(source_path: str, upload_root: Path) -> Path:
+    """Resolve *source_path* within *upload_root*, rejecting escapes.
+
+    Args:
+        source_path: Relative path supplied by the model.
+        upload_root: Resolved directory that confines uploads.
+
+    Returns:
+        The fully resolved :class:`Path` that is guaranteed to live under
+        *upload_root* and to be a regular file.
+
+    Raises:
+        ValueError: If the path is empty, absolute, drive-qualified,
+            contains NUL bytes, or resolves outside *upload_root*.
+        FileNotFoundError: If the resolved path does not exist or is not a
+            regular file.
+    """
+    if not source_path or not source_path.strip():
+        raise ValueError("source_path is required and must not be blank")
+    if "\x00" in source_path:
+        raise ValueError("source_path must not contain a NUL byte")
+
+    normalized = source_path.replace("\\", "/").strip()
+    if normalized.startswith("/"):
+        raise ValueError(f"source_path must be relative, not absolute: {source_path!r}")
+    # Drive-qualified (e.g. "C:\...")
+    if len(normalized) >= 2 and normalized[1] == ":" and normalized[0].isalpha():
+        raise ValueError(f"source_path must not be drive-qualified: {source_path!r}")
+
+    resolved = (upload_root / normalized).resolve()
+
+    # Containment: catches ".." traversal AND symlinks pointing outside.
+    if not resolved.is_relative_to(upload_root):
+        raise ValueError(
+            f"source_path escapes the upload root: {source_path!r} "
+            f"resolves to {resolved} which is outside {upload_root}"
+        )
+
+    if not resolved.is_file():
+        raise FileNotFoundError(
+            f"source_path does not exist or is not a regular file: {resolved}"
+        )
+    return resolved
 
 
 class GoogleDriveToolkit(AbstractToolkit):
@@ -32,6 +78,7 @@ class GoogleDriveToolkit(AbstractToolkit):
         auth_mode: str = "service_account",
         scopes: Optional[Union[str, List[str]]] = None,
         download_dir: Optional[Union[str, Path]] = None,
+        upload_root: Optional[Union[str, Path]] = None,
         max_results: int = 50,
         **kwargs: Any,
     ) -> None:
@@ -48,6 +95,9 @@ class GoogleDriveToolkit(AbstractToolkit):
             auth_mode: Google authentication mode.
             scopes: Optional Google OAuth scopes.
             download_dir: Local destination directory for downloads.
+            upload_root: Local directory that confines ``upload_file`` sources.
+                Defaults to *download_dir* so only files the toolkit itself
+                downloaded (or the operator placed there) can be uploaded.
             max_results: Default maximum search results.
             **kwargs: Additional :class:`AbstractToolkit` configuration.
         """
@@ -66,7 +116,9 @@ class GoogleDriveToolkit(AbstractToolkit):
             "scopes": scopes,
         }
         self.download_dir = Path(download_dir) if download_dir else Path(OUTPUT_DIR) / "gdrive"
+        self.upload_root: Path = Path(upload_root).resolve() if upload_root else self.download_dir.resolve()
         self.max_results = max_results
+        self._upload_lock = asyncio.Lock()
 
     async def _open(self) -> None:
         """Build a manager and connect or adopt the configured Google client."""
@@ -181,26 +233,39 @@ class GoogleDriveToolkit(AbstractToolkit):
     ) -> Dict[str, Any]:
         """Upload a local file to Google Drive.
 
+        ``source_path`` is resolved relative to :attr:`upload_root` and must
+        not escape it (path traversal, symlinks pointing outside, absolute
+        paths, NUL bytes are all rejected).
+
         Args:
-            source_path: Existing local file path.
+            source_path: Relative path under *upload_root* to the local file.
             destination: Drive-relative destination path.
-            conflict_behavior: Optional per-upload conflict policy.
+            conflict_behavior: Optional per-upload conflict policy.  Applied
+                under a lock so concurrent calls with different policies do
+                not interfere.
 
         Returns:
             A mapping describing the uploaded Drive file.
 
         Raises:
-            FileNotFoundError: If ``source_path`` does not exist.
+            ValueError: If ``source_path`` escapes the upload root.
+            FileNotFoundError: If the resolved file does not exist.
         """
         await self._ensure_open()
-        source = Path(source_path)
-        previous_behavior = self._manager.conflict_behavior
-        if conflict_behavior is not None:
-            self._manager.conflict_behavior = conflict_behavior
-        try:
-            metadata = await self._manager.upload_file(source, destination)
-        finally:
-            self._manager.conflict_behavior = previous_behavior
+        source = _validate_local_source(source_path, self.upload_root)
+
+        # The manager reads self.conflict_behavior internally and its
+        # upload_file() signature does not accept it as a parameter.
+        # Serialize the mutate-restore under a lock so concurrent calls
+        # with different policies cannot interfere.
+        async with self._upload_lock:
+            previous_behavior = self._manager.conflict_behavior
+            if conflict_behavior is not None:
+                self._manager.conflict_behavior = conflict_behavior
+            try:
+                metadata = await self._manager.upload_file(source, destination)
+            finally:
+                self._manager.conflict_behavior = previous_behavior
         return {
             "uploaded": True,
             "name": metadata.name,
