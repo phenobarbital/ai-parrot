@@ -10,7 +10,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from parrot.knowledge.wiki.models import SourceManifestEntry
+from parrot.knowledge.wiki.arango_sources import ArangoSourceBackend
 from parrot.knowledge.wiki.sources import SourceCollectionManager
+from parrot.knowledge.wiki.sources_backend import AsyncSourceBackendBridge
 
 
 @pytest.fixture
@@ -40,13 +42,22 @@ def _entry(source_id: str = "src-abc123") -> SourceManifestEntry:
     )
 
 
+def _arango_backend(manager: SourceCollectionManager) -> ArangoSourceBackend:
+    """Unwrap the sync bridge to the async ArangoDB backend (FEAT-540 seam)."""
+    bridge = manager._backend
+    assert isinstance(bridge, AsyncSourceBackendBridge)
+    backend = bridge._backend
+    assert isinstance(backend, ArangoSourceBackend)
+    return backend
+
+
 class TestSourceCollectionManagerArangoInit:
     """Construction and validation of the ``arangodb`` backend."""
 
     def test_backend_accepted(self, tmp_path: Path, mock_arango_db):
         mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_db=mock_arango_db)
         assert mgr.backend == "arangodb"
-        assert mgr._arango_db is mock_arango_db
+        assert _arango_backend(mgr)._arango_db is mock_arango_db
 
     def test_arangodb_backend_requires_connection(self, tmp_path: Path):
         with pytest.raises(ValueError, match="requires either arango_db"):
@@ -208,20 +219,20 @@ class TestArangoQueryHelpers:
     @pytest.mark.asyncio
     async def test_arango_query_no_data_found_returns_empty(self, manager, mock_arango_db):
         mock_arango_db.query = AsyncMock(return_value=(None, "ArangoDB: No Data Found"))
-        result = await manager._arango_query("FOR doc IN @@collection RETURN doc", {})
+        result = await _arango_backend(manager)._query("FOR doc IN @@collection RETURN doc", {})
         assert result == []
 
     @pytest.mark.asyncio
     async def test_arango_query_raises_on_real_error(self, manager, mock_arango_db):
         mock_arango_db.query = AsyncMock(return_value=(None, "Connection refused"))
         with pytest.raises(RuntimeError):
-            await manager._arango_query("FOR doc IN @@collection RETURN doc", {})
+            await _arango_backend(manager)._query("FOR doc IN @@collection RETURN doc", {})
 
     @pytest.mark.asyncio
     async def test_arango_execute_raises_on_error(self, manager, mock_arango_db):
         mock_arango_db.execute = AsyncMock(return_value=(None, "Write failed"))
         with pytest.raises(RuntimeError):
-            await manager._arango_execute("REMOVE 'x' IN @@collection", {})
+            await _arango_backend(manager)._execute("REMOVE 'x' IN @@collection", {})
 
 
 class TestLazyArangoStoreConstruction:
@@ -234,8 +245,9 @@ class TestLazyArangoStoreConstruction:
     def test_arango_store_accepted(self, tmp_path: Path):
         fake_store = MagicMock()
         mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_store=fake_store)
-        assert mgr._arango_store is fake_store
-        assert mgr._arango_db is None
+        backend = _arango_backend(mgr)
+        assert backend._arango_store is fake_store
+        assert backend._arango_db is None
 
     @pytest.mark.asyncio
     async def test_resolve_arango_db_initializes_lazily(self, tmp_path: Path):
@@ -243,7 +255,7 @@ class TestLazyArangoStoreConstruction:
         fake_store.initialize = AsyncMock()
         fake_store._db = "the-connection"
         mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_store=fake_store)
-        db = await mgr._resolve_arango_db()
+        db = await _arango_backend(mgr)._resolve_arango_db()
         fake_store.initialize.assert_awaited_once()
         assert db == "the-connection"
 
@@ -255,20 +267,20 @@ class TestLazyArangoStoreConstruction:
         fake_store.initialize = AsyncMock()
         fake_store._db = fake_db
         mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_store=fake_store)
-        result = await mgr._arango_query("FOR doc IN @@collection RETURN doc", {})
+        result = await _arango_backend(mgr)._query("FOR doc IN @@collection RETURN doc", {})
         assert result == ["row"]
         fake_store.initialize.assert_awaited_once()
 
 
 class TestRunAsyncLoopAffinity:
-    """``_run_async`` must never drive the shared connection cross-loop.
+    """``AsyncSourceBackendBridge._run`` must never drive the shared connection cross-loop.
 
     Regression coverage for a FEAT-400 code-review finding: a naive
     ``asyncio.run(coro)`` bridge would spin up a brand-new event loop
     inside an ``asyncio.to_thread(...)`` worker and use it to drive the
     arango connection that is actually bound to the ORIGINAL loop
     (``aiohttp``/``arangoasync`` connections capture their creating
-    loop). ``_run_async`` must instead reschedule back onto the
+    loop). ``AsyncSourceBackendBridge._run`` must instead reschedule back onto the
     captured loop via ``run_coroutine_threadsafe`` — and must refuse
     (not deadlock) when called directly from that same loop's own
     thread without a ``to_thread`` offload.
@@ -277,11 +289,11 @@ class TestRunAsyncLoopAffinity:
     @pytest.mark.asyncio
     async def test_captures_running_loop_at_construction(self, tmp_path: Path):
         mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_db=MagicMock())
-        assert mgr._arango_loop is asyncio.get_running_loop()
+        assert mgr._backend._loop is asyncio.get_running_loop()
 
     def test_no_captured_loop_outside_any_running_loop(self, tmp_path: Path):
         mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_db=MagicMock())
-        assert mgr._arango_loop is None
+        assert mgr._backend._loop is None
 
     @pytest.mark.asyncio
     async def test_direct_call_on_same_loop_raises_instead_of_deadlocking(self, tmp_path: Path):

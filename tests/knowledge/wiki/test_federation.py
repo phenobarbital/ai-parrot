@@ -423,6 +423,7 @@ class TestResolveNamespaces:
         import parrot.knowledge.wiki.arango_store as arango_module
 
         monkeypatch.setattr(arango_module, "ArangoDBWikiStore", _HangingArango)
+        monkeypatch.setenv("ARANGODB_HOST", "arango.test")  # FEAT-540: no implicit loopback
         config = WikiProjectConfig(namespaces={"legal": WikiNamespaceConfig(database="wiki_legal")})
         handles, skipped = await resolve_namespaces(tmp_path, config, registry_path=tmp_path / "absent.json")
         assert not handles
@@ -565,6 +566,7 @@ class TestReviewRegressions:
         import parrot.knowledge.wiki.arango_store as arango_module
 
         monkeypatch.setattr(arango_module, "ArangoDBWikiStore", _FakeArango)
+        monkeypatch.setenv("ARANGODB_HOST", "arango.test")  # FEAT-540: no implicit loopback
         config = WikiProjectConfig(namespaces={"legal": WikiNamespaceConfig(database="wiki_typo")})
         handles, skipped = await resolve_namespaces(tmp_path, config, registry_path=tmp_path / "absent.json")
         assert not handles

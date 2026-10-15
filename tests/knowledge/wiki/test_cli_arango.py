@@ -32,6 +32,12 @@ def runner() -> CliRunner:
     return CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def arango_host_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """FEAT-540: ArangoDB has no implicit loopback host — provide one explicitly."""
+    monkeypatch.setenv("ARANGODB_HOST", "arango.test")
+
+
 @pytest.fixture
 def mock_arango_driver():
     """Mocked ``asyncdb`` ArangoDB driver instance (already connected).

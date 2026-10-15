@@ -35,7 +35,8 @@ def mock_arango_driver():
 
 
 @pytest.fixture
-def arango_wiki_config(tmp_path: Path) -> WikiConfig:
+def arango_wiki_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> WikiConfig:
+    monkeypatch.setenv("ARANGODB_HOST", "arango.test")  # FEAT-540: no implicit loopback
     return WikiConfig(
         wiki_name="test-wiki", storage_dir=tmp_path, storage_backend="arangodb"
     )
@@ -72,8 +73,9 @@ class TestLLMWikiToolkitArangoWiring:
             toolkit = LLMWikiToolkit(
                 MagicMock(), MagicMock(), MagicMock(), arango_wiki_config
             )
-        assert toolkit._sources._arango_store is toolkit._store
-        assert toolkit._sources._arango_db is None
+        backend = toolkit._sources._backend._backend  # sync bridge -> ArangoSourceBackend
+        assert backend._arango_store is toolkit._store
+        assert backend._arango_db is None
 
     @pytest.mark.asyncio
     async def test_sources_resolve_lazily_at_first_use(
@@ -87,7 +89,7 @@ class TestLLMWikiToolkitArangoWiring:
                 MagicMock(), MagicMock(), MagicMock(), arango_wiki_config
             )
             assert toolkit._store._initialized is False
-            db = await toolkit._sources._resolve_arango_db()
+            db = await toolkit._sources._backend._backend._resolve_arango_db()
             assert toolkit._store._initialized is True
             assert db is toolkit._store._db
 
