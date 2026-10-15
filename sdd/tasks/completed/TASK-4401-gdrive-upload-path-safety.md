@@ -3,7 +3,7 @@
 - **Feature**: gdrive-toolkit-upload-path-safety
 - **Feature ID**: FEAT-690
 - **Spec**: sdd/specs/gdrive-toolkit-upload-path-safety.spec.md
-- **Status**: pending
+- **Status**: done
 - **Priority**: high
 - **Estimated effort**: M
 - **Depends-on**: —
@@ -78,12 +78,12 @@ shared manager attribute, breaking concurrent calls.
 
 ## Acceptance Criteria
 
-- [ ] AC1: `upload_file("../../etc/passwd", "dest")` → ValueError
-- [ ] AC2: `upload_file("/etc/passwd", "dest")` → ValueError
-- [ ] AC3: `upload_file("subdir/file.txt", "dest")` succeeds when file exists under `upload_root`
-- [ ] AC4: Symlink pointing outside `upload_root` → ValueError
-- [ ] AC5: Concurrent uploads with different `conflict_behavior` do not interfere
-- [ ] AC6: No `upload_root` → default to `download_dir`, existing behaviour preserved
+- [x] AC1: `upload_file("../../etc/passwd", "dest")` → ValueError
+- [x] AC2: `upload_file("/etc/passwd", "dest")` → ValueError
+- [x] AC3: `upload_file("subdir/file.txt", "dest")` succeeds when file exists under `upload_root`
+- [x] AC4: Symlink pointing outside `upload_root` → ValueError
+- [x] AC5: Concurrent uploads with different `conflict_behavior` do not interfere
+- [x] AC6: No `upload_root` → default to `download_dir`, existing behaviour preserved
 
 ## Validation Commands
 
@@ -108,4 +108,20 @@ signature before deciding the conflict_behavior strategy.
 
 ## Completion Note
 
-*(filled after implementation)*
+**Implemented 2026-10-16. Verification: verified. All 25 tests pass (17 new + 8 existing).**
+
+M1 — Path confinement: Added `_validate_local_source()` module-level helper
+(same pattern as `SessionFileToolkit._validate_remote_path` from FEAT-643) that
+rejects empty, NUL-containing, absolute, drive-qualified, traversal, and
+symlink-escaping paths. Added `upload_root` parameter to `__init__`, defaulting
+to `download_dir.resolve()`.
+
+M2 — Conflict-behavior isolation: `GoogleDriveFileManager.upload_file` does NOT
+accept `conflict_behavior` as a keyword — it reads `self.conflict_behavior`
+internally. Wrapped the mutate-restore in an `asyncio.Lock` so concurrent calls
+serialize the policy swap. The lock is per-toolkit instance.
+
+Updated existing `test_toolkit_upload_missing_local_file_raises` to use a
+relative path within `upload_root` (the old test passed an absolute path, which
+is exactly the vulnerability being fixed). Added a separate test confirming
+absolute paths now raise `ValueError`.
