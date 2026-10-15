@@ -314,6 +314,10 @@ async def _dispatch_step(
         return await _action_get_text(driver, action)
     elif action_type == "get_html":
         return await _action_get_html(driver, action)
+    elif action_type == "hover":
+        return await _action_hover(driver, action, timeout)
+    elif action_type == "submit":
+        return await _action_submit(driver, action, timeout)
     elif action_type == "screenshot":
         return await _action_screenshot(driver, action)
     elif action_type == "press_key":
@@ -525,6 +529,60 @@ async def _action_fill(driver: AbstractDriver, action: Any, default_timeout: int
     await driver.fill(selector, value, timeout)
     if getattr(action, "press_enter", False):
         await driver.press_key("Enter")
+    return True
+
+
+def _resolve_locator(selector: str, selector_type: str = "css") -> str:
+    """Map CSS, XPath, or text DSL selectors to a driver locator."""
+    if selector_type == "xpath":
+        return selector
+    if selector_type == "text":
+        return f"//*[contains(text(), '{selector}')]"
+    return _strip_soup_only_pseudos(selector)
+
+
+async def _action_hover(driver: AbstractDriver, action: Any, default_timeout: int) -> bool:
+    """Hover over the resolved selector using the action or default timeout."""
+    timeout = action.timeout or default_timeout
+    selector_type = getattr(action, "selector_type", "css")
+    await driver.hover(_resolve_locator(action.selector, selector_type), timeout)
+    return True
+
+
+async def _action_submit(driver: AbstractDriver, action: Any, default_timeout: int) -> bool:
+    """Submit a form or click a control, optionally waiting for a follow-up selector."""
+    timeout = action.timeout or default_timeout
+    selector = action.selector
+    expression = f"""
+(() => {{
+    const selector = {json.dumps(selector)};
+    let element;
+    if (selector.startsWith("/") || selector.startsWith("./")) {{
+        element = document.evaluate(
+            selector, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+        ).singleNodeValue;
+    }} else {{
+        element = document.querySelector(selector);
+    }}
+    if (!element) return "missing";
+    if (element.tagName && element.tagName.toLowerCase() === "form") {{
+        if (typeof element.requestSubmit === "function") {{
+            element.requestSubmit();
+        }} else {{
+            element.submit();
+        }}
+        return "form";
+    }}
+    return "click";
+}})()
+"""
+    outcome = await driver.evaluate(expression)
+    if outcome == "missing":
+        raise RuntimeError(f"No element matching selector {selector!r}")
+    if outcome == "click":
+        await driver.click(selector, timeout)
+    if getattr(action, "wait_after_submit", None):
+        await driver.wait_for_selector(action.wait_after_submit, action.wait_timeout)
     return True
 
 
