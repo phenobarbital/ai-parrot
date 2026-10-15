@@ -327,7 +327,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -339,8 +339,9 @@
       "parallelism_notes": "adapts descriptors from TASK-4314 (wiki/transport.py); framework tools from parrot_tools.wiki (TASK-4309, TASK-4310)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4315-wiki-mcp-transport-selector.md"
+      "completed_at": "2026-10-15T11:47:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4315-wiki-mcp-transport-selector.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4316",
@@ -457,7 +458,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -469,8 +470,9 @@
       "parallelism_notes": "calls create_graph_persistence from TASK-4319 (backends.py); edits factory.py after TASK-4303 and wiki/cli.py after TASK-4313 (same files)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4321-persistence-dispatch-sites.md"
+      "completed_at": "2026-10-15T11:48:00+00:00",
+      "file": "sdd/tasks/completed/TASK-4321-persistence-dispatch-sites.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4322",
