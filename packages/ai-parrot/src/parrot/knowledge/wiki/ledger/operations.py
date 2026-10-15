@@ -10,12 +10,12 @@ would have rejected.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, get_args
 
 from pydantic import BaseModel, Field
 
 from parrot.knowledge.wiki.actor import current_actor, scoped_actor
-from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
+from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity, IssueStatus
 from parrot.knowledge.wiki.operations import OperationResult
 
 if TYPE_CHECKING:
@@ -64,6 +64,25 @@ class LedgerCloseInput(BaseModel):
 class LedgerContextInput(BaseModel):
     file_paths: list[str] = Field(..., description="File paths to scope context to")
     max_tokens: int = Field(default=3000, description="Maximum tokens in response")
+
+
+class LedgerListInput(BaseModel):
+    """Schema mirrors `wikitoolkit ledger list` options one for one."""
+
+    statuses: list[IssueStatus] | None = Field(default=None, description="Statuses to include (default open+claimed)")
+    all_statuses: bool = Field(default=False, description="Include every status; overrides statuses")
+    kind: IssueKind | None = Field(default=None, description="Filter by issue kind")
+    severity: IssueSeverity | None = Field(default=None, description="Filter by severity")
+    about_prefix: str | None = Field(
+        default=None, description="Keep issues with an about entry starting with this prefix"
+    )
+
+
+class LedgerShowInput(BaseModel):
+    """Schema mirrors `wikitoolkit ledger show` one for one."""
+
+    issue_id: str = Field(..., description="Issue id, with or without the issue: prefix")
+    include_history: bool = Field(default=True, description="Include the issue's event history")
 
 
 def _failed(exc: Exception) -> OperationResult:
@@ -125,5 +144,31 @@ async def op_ledger_context(service: LedgerService, params: LedgerContextInput, 
     try:
         text = await service.get_context(params.file_paths, params.max_tokens)
         return OperationResult(data={"context": text})
+    except Exception as exc:
+        return _failed(exc)
+
+
+async def op_ledger_list(service: LedgerService, params: LedgerListInput, **context: Any) -> OperationResult:
+    """ledger_list — list issues by status/kind/severity/about prefix → data={"issues": [...]}."""
+    try:
+        statuses = get_args(IssueStatus) if params.all_statuses else (params.statuses or ("open", "claimed"))
+        issues = await service.list_issues(
+            statuses, kind=params.kind, severity=params.severity, about_prefix=params.about_prefix
+        )
+        return OperationResult(data={"issues": issues})
+    except Exception as exc:
+        return _failed(exc)
+
+
+async def op_ledger_show(service: LedgerService, params: LedgerShowInput, **context: Any) -> OperationResult:
+    """ledger_show — one issue with body (+ history) → data={"issue":…, "history":[…]}; is_error when unknown."""
+    try:
+        issue = await service.get_issue(params.issue_id)
+        if issue is None:
+            from parrot.knowledge.wiki.ledger.service import normalize_issue_id
+
+            return OperationResult(text=f"Issue {normalize_issue_id(params.issue_id)} not found", is_error=True)
+        history = await service.issue_history(params.issue_id) if params.include_history else []
+        return OperationResult(data={"issue": issue, "history": history})
     except Exception as exc:
         return _failed(exc)

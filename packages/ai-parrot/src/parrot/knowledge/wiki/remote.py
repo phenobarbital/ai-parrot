@@ -25,6 +25,8 @@ READ_ONLY_TOOLS: frozenset[str] = frozenset(
         "wiki_page_hashes",
         "ledger_ready",
         "ledger_context",
+        "ledger_list",
+        "ledger_show",
         "wiki_sync_pull",
     }
 )
