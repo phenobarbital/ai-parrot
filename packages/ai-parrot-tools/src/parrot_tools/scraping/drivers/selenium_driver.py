@@ -61,9 +61,7 @@ class SeleniumDriver(AbstractDriver):
     async def _run(self, func: Any, *args: Any, **kwargs: Any) -> Any:
         """Run a blocking function in the default executor."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, partial(func, *args, **kwargs)
-        )
+        return await loop.run_in_executor(None, partial(func, *args, **kwargs))
 
     # ── Lifecycle ────────────────────────────────────────────────
 
@@ -159,14 +157,11 @@ class SeleniumDriver(AbstractDriver):
     def _scroll_into_view_and_click(self, element: Any) -> None:
         """Blocking: scroll element into view and click via JS."""
         self._driver.execute_script(
-            "arguments[0].scrollIntoView({block:'center'});"
-            " arguments[0].click();",
+            "arguments[0].scrollIntoView({block:'center'});" " arguments[0].click();",
             element,
         )
 
-    async def fill(
-        self, selector: str, value: str, timeout: int = 10
-    ) -> None:
+    async def fill(self, selector: str, value: str, timeout: int = 10) -> None:
         """Fill input matching *selector* with *value*."""
         await self._wait_for_element(selector, timeout)
         element = await self._run(self._find_element, selector)
@@ -255,30 +250,22 @@ class SeleniumDriver(AbstractDriver):
         element = await self._run(self._find_element, selector)
         return await self._run(lambda: element.text)
 
-    async def get_attribute(
-        self, selector: str, attribute: str, timeout: int = 10
-    ) -> Optional[str]:
+    async def get_attribute(self, selector: str, attribute: str, timeout: int = 10) -> Optional[str]:
         """Return the value of *attribute* on the matching element."""
         await self._wait_for_element(selector, timeout)
         element = await self._run(self._find_element, selector)
         return await self._run(element.get_attribute, attribute)
 
-    async def get_all_texts(
-        self, selector: str, timeout: int = 10
-    ) -> List[str]:
+    async def get_all_texts(self, selector: str, timeout: int = 10) -> List[str]:
         """Return inner text of every matching element."""
         await self._wait_for_element(selector, timeout)
         elements = await self._run(self._find_elements, selector)
         return [await self._run(lambda el=el: el.text) for el in elements]
 
-    async def screenshot(
-        self, path: str, full_page: bool = False
-    ) -> bytes:
+    async def screenshot(self, path: str, full_page: bool = False) -> bytes:
         """Take a screenshot and save to *path*."""
         if full_page:
-            self.logger.debug(
-                "Selenium does not support full-page screenshots; capturing the viewport instead."
-            )
+            self.logger.debug("Selenium does not support full-page screenshots; capturing the viewport instead.")
         png_bytes = await self._run(self._driver.get_screenshot_as_png)
         await self._run(self._driver.save_screenshot, path)
         return png_bytes
@@ -319,9 +306,7 @@ class SeleniumDriver(AbstractDriver):
 
     # ── Waiting ──────────────────────────────────────────────────
 
-    async def _wait_for_element(
-        self, selector: str, timeout: int = 10
-    ) -> None:
+    async def _wait_for_element(self, selector: str, timeout: int = 10) -> None:
         """Internal: wait for element to be present in the DOM."""
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support import expected_conditions as EC
@@ -337,9 +322,7 @@ class SeleniumDriver(AbstractDriver):
             EC.presence_of_element_located(locator),
         )
 
-    async def wait_for_selector(
-        self, selector: str, timeout: int = 10, state: str = "visible"
-    ) -> None:
+    async def wait_for_selector(self, selector: str, timeout: int = 10, state: str = "visible") -> None:
         """Wait for *selector* to reach *state*."""
         from selenium.webdriver.common.by import By
         from selenium.webdriver.support import expected_conditions as EC
@@ -356,13 +339,9 @@ class SeleniumDriver(AbstractDriver):
             "attached": EC.presence_of_element_located,
             "detached": EC.staleness_of,
         }
-        condition_factory = condition_map.get(
-            state, EC.visibility_of_element_located
-        )
+        condition_factory = condition_map.get(state, EC.visibility_of_element_located)
         condition = condition_factory(locator)
-        await self._run(
-            WebDriverWait(self._driver, timeout).until, condition
-        )
+        await self._run(WebDriverWait(self._driver, timeout).until, condition)
 
     async def wait_for_navigation(self, timeout: int = 30) -> None:
         """Wait for a navigation event to complete."""
@@ -371,13 +350,9 @@ class SeleniumDriver(AbstractDriver):
         def _ready(driver: Any) -> bool:
             return driver.execute_script("return document.readyState") == "complete"
 
-        await self._run(
-            WebDriverWait(self._driver, timeout).until, _ready
-        )
+        await self._run(WebDriverWait(self._driver, timeout).until, _ready)
 
-    async def wait_for_load_state(
-        self, state: str = "load", timeout: int = 30
-    ) -> None:
+    async def wait_for_load_state(self, state: str = "load", timeout: int = 30) -> None:
         """Wait until the page reaches the given load *state*."""
         from selenium.webdriver.support.ui import WebDriverWait
 
@@ -394,9 +369,7 @@ class SeleniumDriver(AbstractDriver):
                 return ready in ("interactive", "complete")
             return ready == target
 
-        await self._run(
-            WebDriverWait(self._driver, timeout).until, _check
-        )
+        await self._run(WebDriverWait(self._driver, timeout).until, _check)
 
     # ── Media / Scripts ──────────────────────────────────────────
 
@@ -406,9 +379,7 @@ class SeleniumDriver(AbstractDriver):
 
     async def evaluate(self, expression: str) -> Any:
         """Evaluate a JavaScript expression and return the result."""
-        return await self._run(
-            self._driver.execute_script, f"return {expression}"
-        )
+        return await self._run(self._driver.execute_script, f"return {expression}")
 
     # ── Property ─────────────────────────────────────────────────
 
