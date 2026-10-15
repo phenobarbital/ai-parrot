@@ -35,8 +35,11 @@ The ledger issue reported two pre-existing failures in
    its configured MCP servers — no error, no log. Only `VoiceBot`
    (`bots/voice.py:496`) and `MCPEnabledMixin` (`mcp/integration.py:1834`)
    implement it.
-2. `test_agent_real_integration` — **already passes on `dev`** (verified
-   2026-10-15 with `GOOGLE_API_KEY` set; skips without it). No change needed.
+2. `test_agent_real_integration` — passes when run alone, fails when the whole
+   module runs: the module-scoped `mock_agent_deps_module` fixture keeps
+   `parrot.clients.google` mocked in `sys.modules` until the module ends, so the
+   "real" test receives the mocked `GoogleGenAIClient`. Fix: move it, unchanged,
+   to its own module `test_basic_agent_integration.py`.
 
 ### Goals
 - `BasicAgent.setup_mcp_servers(configurations)` exists, registers each config via
@@ -47,7 +50,7 @@ The ledger issue reported two pre-existing failures in
 
 ### Non-Goals
 - No change to `registry.py`, `VoiceBot`, `MCPEnabledMixin` or `ToolManager`.
-- No change to `test_agent_real_integration`.
+- No change to the body of `test_agent_real_integration` (only its module).
 
 ---
 
@@ -78,7 +81,8 @@ async def setup_mcp_servers(self, configurations: Optional[List[MCPServerConfig]
 
 ### Module 1: BasicAgent.setup_mcp_servers
 - **Path**: `packages/ai-parrot/src/parrot/bots/agent.py`,
-  `packages/ai-parrot/tests/test_basic_agent_new.py`
+  `packages/ai-parrot/tests/test_basic_agent_new.py`,
+  `packages/ai-parrot/tests/test_basic_agent_integration.py` (new)
 - **Responsibility**: add the method; extend tests with a failure-isolation case
   (one config raising does not stop the next) and a `None` no-op case.
 
