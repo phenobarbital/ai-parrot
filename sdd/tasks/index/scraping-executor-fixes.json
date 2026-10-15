@@ -27,6 +27,27 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4358-click-text-contains-via-evaluate.md"
+    },
+    {
+      "id": "TASK-4363",
+      "slug": "scroll-bottom-height-via-evaluate",
+      "title": "Read the scroll-to-bottom page height through driver.evaluate",
+      "feature_id": "FEAT-682",
+      "feature": "scraping-executor-fixes",
+      "spec": "sdd/specs/scraping-executor-fixes.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4358"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-4358: both modify executor.py and test_executor.py (serialize same-file edits; appends after TestClickTextContains).",
+      "discovered_from": "issue:9cbd2cf9f9f9",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4363-scroll-bottom-height-via-evaluate.md"
     }
   ]
 }
