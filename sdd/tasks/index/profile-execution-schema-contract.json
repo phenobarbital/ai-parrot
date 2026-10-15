@@ -13,11 +13,12 @@
       "feature": "profile-execution-schema-contract",
       "slug": "profile-schema-typedicts",
       "title": "Add TypedDict schema contracts and parity test to profile_execution.py",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "depends_on": [],
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-3674-profile-schema-typedicts.md"
+      "file": "sdd/tasks/active/TASK-3674-profile-schema-typedicts.md",
+      "started_at": "2026-10-15T23:34:23+00:00"
     }
   ]
 }
