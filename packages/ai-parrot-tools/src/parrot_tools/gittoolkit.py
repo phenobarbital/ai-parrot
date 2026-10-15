@@ -1641,9 +1641,7 @@ class GitToolkit(AbstractToolkit):
             from urllib.parse import urlparse
 
             token = self._resolve_token()
-            rc, out, err = await self._run_subprocess(
-                ["git", "-C", repo_path, "remote", "get-url", "origin"], **kwargs
-            )
+            rc, out, err = await self._run_subprocess(["git", "-C", repo_path, "remote", "get-url", "origin"], **kwargs)
             if rc != 0:
                 raise GitToolkitError(f"pull of {repo_path!r} failed: {self._scrub(err, token)}")
             origin = out.strip()

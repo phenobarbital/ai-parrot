@@ -114,9 +114,7 @@ async def test_build_runner_timeout_kills_grandchildren(tmp_path: Path) -> None:
         f"pathlib.Path({str(pid_file)!r}).write_text(str(g.pid))\n"
         "time.sleep(60)\n",
     )
-    outcome = await WikiBuildRunner(executable=str(executable), timeout=0.5).run(
-        tmp_path / "clone", tmp_path / "plane"
-    )
+    outcome = await WikiBuildRunner(executable=str(executable), timeout=0.5).run(tmp_path / "clone", tmp_path / "plane")
     assert outcome.timed_out
     grandchild = int(pid_file.read_text())
     for _ in range(500):
