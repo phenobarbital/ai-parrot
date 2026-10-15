@@ -16,7 +16,7 @@
       "feature_id": "FEAT-684",
       "feature": "scraping-executor-fixes-2",
       "spec": "sdd/specs/scraping-executor-fixes-2.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -24,7 +24,7 @@
       "parallelism_notes": "Single task; touches only executor.py and test_executor_action_gaps.py.",
       "discovered_from": "issue:28c2e9573ce2",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-15T20:08:00Z",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4364-executor-xpath-escape-clear-first-submit.md"
     }
