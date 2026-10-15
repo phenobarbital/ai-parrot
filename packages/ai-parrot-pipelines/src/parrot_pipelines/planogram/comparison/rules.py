@@ -536,11 +536,18 @@ def _rule_visual(
     definition: SlotsDefinition,
     selectors: Sequence[object],
 ) -> RuleOutcome:
-    """Evaluate visual features from neutral observations and text evidence."""
+    """Evaluate visual features from neutral observations and text evidence.
+
+    A binding with ``params["checklist"]`` is scored on the counted checklist observations instead
+    (see ``_score_checklist``); ``expected`` and ``threshold`` are then ignored.
+    """
+    matched = _zone_matches(binding.target_id, perceptions, definition, selectors)
+    checklist = binding.params.get("checklist")
+    if checklist:
+        return _score_checklist(binding, checklist, matched, observations)
     observed, detected, refs = _entity_texts(
         binding, perceptions, identifications, registrations, definition, selectors
     )
-    matched = _zone_matches(binding.target_id, perceptions, definition, selectors)
     for image_id, _zone, shape, status in matched:
         if status != "matched" or shape is None:
             continue
@@ -558,6 +565,61 @@ def _rule_visual(
         assessed=True,
         passed=score >= float(binding.params.get("threshold", 0.5)),
         score=max(0.0, min(1.0, score)),
+        observations=_dedupe_refs(refs),
+    )
+
+
+def _score_checklist(
+    binding: RuleBinding,
+    checklist: Sequence[Dict[str, object]],
+    matched: Sequence[Tuple[str, ZoneDefinition, Optional[Shape], str]],
+    observations: Sequence[RuleObservation],
+) -> RuleOutcome:
+    """Score an opt-in ``visual_features`` checklist from counted zone observations.
+
+    Each feature's count is the highest assessed count (>= 0) over the matched zones of every image: a
+    photo or fragment may miss a figure but never invents one. The rule passes when every feature is
+    assessed and reaches its ``min_count``.
+
+    Args:
+        binding: The ``visual_features`` binding.
+        checklist: Its validated ``params["checklist"]`` entries (``feature``, optional ``min_count``).
+        matched: ``_zone_matches`` result for the binding's target.
+        observations: Every neutral rule observation of the run.
+
+    Returns:
+        The outcome; unassessed when no feature was counted.
+    """
+    counts: Dict[str, int] = {}
+    refs: List[ObservationRef] = []
+    for image_id, _zone, shape, status in matched:
+        if status != "matched" or shape is None:
+            continue
+        for observation in _rule_observations(observations, image_id, [shape.shape_id], "visual_checklist"):
+            if not isinstance(observation.value, dict):
+                continue
+            refs.append(_ref(image_id, observation.target_id, observation.source))
+            for feature, count in observation.value.items():
+                if isinstance(count, int) and count >= 0:
+                    counts[feature] = max(count, counts.get(feature, -1))
+    if not counts:
+        return _unassessed(binding, "checklist not observed")
+    satisfied = 0
+    details: List[str] = []
+    for item in checklist:
+        feature = str(item["feature"])
+        minimum = int(item.get("min_count", 1))
+        count = counts.get(feature)
+        if count is not None and count >= minimum:
+            satisfied += 1
+            continue
+        details.append(f"{feature}: {'unknown' if count is None else count} (expected >= {minimum})")
+    return RuleOutcome(
+        rule_id=binding.rule_id,
+        assessed=True,
+        passed=satisfied == len(checklist),
+        score=satisfied / len(checklist),
+        detail="; ".join(details) if details else None,
         observations=_dedupe_refs(refs),
     )
 

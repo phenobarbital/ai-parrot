@@ -18,7 +18,7 @@ from parrot_pipelines.planogram.perception.membership import assign_membership
 
 logger = logging.getLogger(__name__)
 
-DETECT_PROMPT_VERSION: str = "detect-v2"
+DETECT_PROMPT_VERSION: str = "detect-v3"
 DETECT_STAGE: str = "detect"
 MAX_SIDE: int = 2048
 _KIND_VALUES = ", ".join(kind.value for kind in ShapeKind)
@@ -28,7 +28,8 @@ GENERIC_DETECTION_PROMPT: str = (
     "fact tag and every header / backlit / poster zone you can see — one detection per physical object. "
     f"Set label to exactly one of: {_KIND_VALUES}. Give {BOX_2D_HINT}, "
     "a confidence 0..1, and content = the legible text on the object (null when nothing is legible). "
-    "Report only what is visible; do not guess and do not invent objects."
+    "Report only what is visible; do not guess and do not invent objects. "
+    "Write every price with its decimal point, e.g. 1499.99 for a price printed with superscript cents."
 )
 
 

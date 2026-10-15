@@ -169,4 +169,8 @@ DETECT_PROMPT_VERSION: str = "detect-v3"
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified (commit dedc07b82).
+- `tag_price` keeps the `12.99` / `12,99` match first. Otherwise it reads the last run of 3-6 digits that has no `$` before it (also with a space) and no `%` after it, and takes its last two digits as cents.
+- Real detector strings from the epson_projector_not_backlit run now parse: "149999" gives 1499.99 and "SAVE $200 64999" gives 649.99.
+- `GENERIC_DETECTION_PROMPT` asks for prices written with a decimal point; `DETECT_PROMPT_VERSION` is now `detect-v3`.
+- Tests: `test_price_superscript.py`, 13 tests. They pass together with `test_fact_tag_helpers`, `test_fact_tag_rule` and `test_detector_verify` (62 passed).
