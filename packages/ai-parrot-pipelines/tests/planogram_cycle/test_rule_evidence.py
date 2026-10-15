@@ -229,7 +229,9 @@ async def test_appearance_prompt_is_neutral():
 @pytest.mark.asyncio
 async def test_appearance_observation_recorded():
     """The existing zone call records the model's structured appearance answer."""
-    appearance = ZoneAppearance(background_color="white", border_color="blue", finish="matte", base_surface_color="blue")
+    appearance = ZoneAppearance(
+        background_color="white", border_color="blue", finish="matte", base_surface_color="blue"
+    )
     vision = RecordingVision(ZoneEvidenceAnswer(appearance=appearance))
     observations = await collect_rule_evidence(
         np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(vision, [_appearance_binding()])
