@@ -228,15 +228,16 @@
       ],
       "parallel": true,
       "parallelism_notes": "Modifies repo_cache.py after TASK-4339 (done; it built on TASK-4337's repo_lock/RepoCachePaths); calls GitToolkit.pull_repo(private=True) added by TASK-4343 (gittoolkit.py).",
-      "file": "sdd/tasks/active/TASK-4345-repo-cache-read-lease.md",
+      "file": "sdd/tasks/completed/TASK-4345-repo-cache-read-lease.md",
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "assigned_to": null,
       "started_at": "2026-10-15T00:22:22+00:00",
-      "completed_at": null,
-      "discovered_from": "issue:93f2022d934a"
+      "completed_at": "2026-10-15T00:25:19+00:00",
+      "discovered_from": "issue:93f2022d934a",
+      "verification": "verified"
     },
     {
       "id": "TASK-4346",
