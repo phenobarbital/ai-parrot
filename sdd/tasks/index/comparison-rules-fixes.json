@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-15T18:26:46+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-15T18:31:09+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -14,38 +14,40 @@
       "slug": "visual-checklist",
       "title": "Opt-in visual_features checklist (counted zone evidence)",
       "effort": "M",
-      "parallelism_notes": "independent: touches evidence.py, contracts.py, rules.py, definition.py \u2014 none shared with TASK-4366",
-      "file": "sdd/tasks/active/TASK-4365-visual-checklist.md",
+      "parallelism_notes": "independent: touches evidence.py, contracts.py, rules.py, definition.py — none shared with TASK-4366",
+      "file": "sdd/tasks/completed/TASK-4365-visual-checklist.md",
       "discovered_from": "issue:5475f47ee7f4",
       "feature_id": "FEAT-685",
       "feature": "comparison-rules-fixes",
       "spec": "sdd/specs/comparison-rules-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "depends_on": [],
       "parallel": true,
       "assigned_to": "claude",
       "started_at": "2026-10-15T18:27:07+00:00",
-      "completed_at": null
+      "completed_at": "2026-10-15T18:31:06+00:00",
+      "verification": "verified"
     },
     {
       "id": "TASK-4366",
       "slug": "superscript-cents-price",
       "title": "Read superscript-cents prices on fact tags",
       "effort": "S",
-      "parallelism_notes": "independent: touches tags.py and detector.py only \u2014 no file shared with TASK-4365",
-      "file": "sdd/tasks/active/TASK-4366-superscript-cents-price.md",
+      "parallelism_notes": "independent: touches tags.py and detector.py only — no file shared with TASK-4365",
+      "file": "sdd/tasks/completed/TASK-4366-superscript-cents-price.md",
       "discovered_from": "issue:946a3cc8a86b",
       "feature_id": "FEAT-685",
       "feature": "comparison-rules-fixes",
       "spec": "sdd/specs/comparison-rules-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "depends_on": [],
       "parallel": true,
       "assigned_to": "claude",
       "started_at": "2026-10-15T18:27:07+00:00",
-      "completed_at": null
+      "completed_at": "2026-10-15T18:31:09+00:00",
+      "verification": "verified"
     }
   ]
 }

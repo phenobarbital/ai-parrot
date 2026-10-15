@@ -288,4 +288,12 @@ FILL IN: the tests from the Test Specification, reusing the fakes of `test_rule_
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented as specified (commit d9e46ba0b).
+- `ChecklistCount`, `ZoneEvidenceAnswer.checklist`, a keyword-only `checklist` argument on `build_zone_prompt`, and a public `checklist_features(bindings)` helper in `identification/evidence.py`.
+- One `visual_checklist` observation per zone. A feature the model omits is recorded as -1 (unknown), never as 0.
+- `RuleObservation.kind`/`value` widened in `contracts.py`. The `Dict[str, int]` counts round-trip as ints (asserted by a test).
+- `_rule_visual` branches to `_score_checklist` right after `_zone_matches`, before the text-evidence path, so a checklist never depends on text evidence.
+- `validate_bindings` rejects a malformed checklist, including a bool `min_count`.
+- Tests: `test_visual_checklist.py`, 18 tests. They pass together with `test_rule_evidence`, `test_appearance_rule` and `test_shared_comparison` (43 passed).
+- `EVIDENCE_PROMPT_VERSION` stays `evidence-v2`; with no checklist the prompt is byte-identical.
+- Planogram suite: 787 passed. 1 failure (`test_ocr_reader.py::test_pyproject_declares_extra_and_direct_deps` asserts a bare `pillow`, but pyproject has `pillow>=12.3.0`) and 11 errors (`test_ink_wall_example.py` needs the git-ignored `examples/planogram/pipelines/`, which is absent from the worktree) were present before this branch; this task does not touch those files.
