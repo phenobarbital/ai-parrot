@@ -1,0 +1,30 @@
+{
+  "feature": "scheduler-interval-claim-anchor",
+  "feature_id": "FEAT-676",
+  "spec": "sdd/specs/scheduler-interval-claim-anchor.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-15T00:00:00+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4350",
+      "slug": "deterministic-trigger-anchor",
+      "title": "Deterministic interval/once trigger anchor for cross-worker fire claims",
+      "feature_id": "FEAT-676",
+      "feature": "scheduler-interval-claim-anchor",
+      "spec": "sdd/specs/scheduler-interval-claim-anchor.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4350-deterministic-trigger-anchor.md"
+    }
+  ]
+}
