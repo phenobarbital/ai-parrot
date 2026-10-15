@@ -79,7 +79,9 @@ async def test_submit_button_clicks(spy_driver: AsyncMock) -> None:
     """A non-form result from evaluation clicks the original selector."""
     spy_driver.evaluate.return_value = "click"
     plan = ScrapingPlan(
-        url="http://x/", objective="submit", steps=[{"action": "submit", "selector": "button[type='submit']", "timeout": 4}]
+        url="http://x/",
+        objective="submit",
+        steps=[{"action": "submit", "selector": "button[type='submit']", "timeout": 4}],
     )
 
     await execute_plan_steps(spy_driver, plan=plan)
