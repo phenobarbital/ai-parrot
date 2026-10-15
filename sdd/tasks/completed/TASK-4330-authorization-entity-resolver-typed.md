@@ -195,10 +195,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra (attempt b373c5a7), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: ontology authorization.py and entity_resolver.py migrated off `execute_traversal(aql=...)` to the typed OntologyTraversalStore operations (4 files; tests test_authorization/test_entity_resolver updated). Validation run directly: test_authorization + test_entity_resolver + tests/knowledge/ontology + mixin + degradation_chain = 276 passed; ruff F821/F401 clean; no remaining `execute_traversal` callers outside graph_store.py (alias deleted by TASK-4332). No live Arango. No review corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none.
