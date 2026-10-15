@@ -11,7 +11,7 @@ tags: [helixdb, graph-database, wiki, graphindex, vector-search, bm25]
 **Feature ID**: FEAT-670
 **Date**: 2026-10-14
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 **Source brainstorm**: `sdd/proposals/helixdb-provider.brainstorm.md` (accepted 2026-10-14; Option A; 9 resolved questions)
 **Depends on**: **FEAT-540 `graphindex-core-seams` v0.5** (M7 graph-persistence contract + registry, M8 ontology contracts, wiki/source backend registries) — must be merged to `dev` before this feature's worktree is created
@@ -1405,3 +1405,4 @@ Summary: **12** confirmed (S1/S4/S5/S8 realised in FEAT-540 v0.5; the escalated 
 | 0.2 | 2026-10-14 | Jesus Lara (with Claude) | Design research folded in: 10 confirmed (M3/M4/M5/M7/M9/M10/M11 contracts, AC18–AC24), 2 escalated (§8 Q1, Q2) |
 | 0.3 | 2026-10-14 | Jesus Lara (with Claude) | **Follows FEAT-540 v0.5** (owner decision): hard cross-feature dependency; every backend is a registered implementation of a FEAT-540 contract; removed this feature's own resolver/factory modules, `Literal`/`click.Choice` edits, AQL call-site migration and `UnsupportedTraversal`; codex S1/S4/S5/S8 generic parts moved into FEAT-540; Q1 resolved via `TraversalPattern.query_templates`; M4/M7/M8, AC2/4/7/16/19/20/21, §6 and worktree strategy rewritten accordingly |
 | 0.4 | 2026-10-14 | Jesus Lara (with Claude) | §8 Q1 → **option (a)**: backend-neutral `TraversalPattern.traversal_spec` + per-dialect compilers materialised into `query_templates` (M8a, AC25, G10); §8 Q2 → **ship** `wikitoolkit migrate --to <backend>` with the bulk-read surface, resumable checkpoint and verification report (new M12, AC26–AC27, G11); S3 / S11 closed; no open questions |
+| 0.5 | 2026-10-16 | Jesus Lara (with Claude) | **Approved.** Decomposition (`/sdd-task`) deferred until FEAT-540 `graphindex-core-seams` merges to `dev` (5/34 tasks done on 2026-10-16); the §6 registry anchors marked "unverified — created by FEAT-540" must be re-verified at task time |
