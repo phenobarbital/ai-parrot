@@ -197,10 +197,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: parrot/knowledge/wiki/transport.py (transport descriptors) + test_transport_descriptors.py; no review corrections. Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres and has pre-existing reds. With GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings (4319 passed) show no failure absent from the clean origin/dev baseline; ai-parrot-tools wiki tests 22 passed.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none

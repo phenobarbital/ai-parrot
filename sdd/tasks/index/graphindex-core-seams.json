@@ -304,7 +304,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -316,8 +316,9 @@
       "parallelism_notes": "builds descriptors from ops in TASK-4306 (wiki/operations.py), TASK-4307 (plane operations) and TASK-4308 (ledger operations)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4314-wiki-transport-descriptors.md"
+      "completed_at": "2026-10-15T00:31:55+00:00",
+      "file": "sdd/tasks/completed/TASK-4314-wiki-transport-descriptors.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4315",
@@ -412,7 +413,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -423,8 +424,9 @@
       "parallelism_notes": "implements Protocols from TASK-4302 (graphindex/protocols.py); postgres spec uses resolve_pg_settings from TASK-4312 (pg_schema.py)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4319-graph-backend-registry.md"
+      "completed_at": "2026-10-15T00:31:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4319-graph-backend-registry.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4320",
