@@ -2,7 +2,7 @@
 
 No live ArangoDB and no network access anywhere in this suite:
 
-- ``FakeGraphStore`` is an in-memory ``OntologyGraphStore`` double that
+- ``FakeGraphStore`` is an in-memory ``ArangoOntologyGraphStore`` double that
   faithfully reproduces the upsert/diff/traversal contract
   ``OntologyRefreshPipeline`` and ``article_in_force`` depend on (see its
   docstring for the one documented deviation, around ``_key`` derivation).
@@ -60,7 +60,7 @@ def legal_tenant_ctx() -> TenantContext:
 
 
 class FakeGraphStore:
-    """In-memory ``OntologyGraphStore`` double — no ArangoDB, no network.
+    """In-memory ``ArangoOntologyGraphStore`` double — no ArangoDB, no network.
 
     Reproduces the contract ``OntologyRefreshPipeline`` and
     ``article_in_force`` depend on: ``initialize_tenant``,
@@ -75,7 +75,7 @@ class FakeGraphStore:
     ... articulo._key is {norma}:{art}") and TASK-2371's
     ``article_in_force`` AQL (``FILTER a._key == @articulo_key``). This
     used to be a *documented deviation* from the real
-    ``OntologyGraphStore.upsert_nodes`` AQL, which did not copy
+    ``ArangoOntologyGraphStore.upsert_nodes`` AQL, which did not copy
     ``key_field``'s value into ArangoDB's own auto-generated ``_key``
     attribute on INSERT (see this task's Completion Note for the original
     finding) — fixed in a follow-up commit
@@ -97,7 +97,7 @@ class FakeGraphStore:
     async def insert_document(self, ctx: TenantContext, collection: str, doc: dict[str, Any]) -> None:
         """Insert one document — used by SuppressionLog.append (TASK-2495).
 
-        Mirrors ``OntologyGraphStore.insert_document``'s contract
+        Mirrors ``ArangoOntologyGraphStore.insert_document``'s contract
         (auto-key when absent) closely enough for append-only writer
         tests: records the call and stores the doc keyed by ``_key``.
         """

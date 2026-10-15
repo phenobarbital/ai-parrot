@@ -16,7 +16,7 @@ from parrot.knowledge.ontology.entity_resolver import (
     EntityAmbiguityError,
     EntityNotFoundError,
 )
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.mixin import OntologyRAGMixin
 from parrot.knowledge.ontology.schema import (
     AuthorizationRule,
@@ -92,7 +92,7 @@ def mock_tenant_mgr(tenant_ctx):
 
 @pytest.fixture
 def mock_graph_store():
-    store = AsyncMock(spec=OntologyGraphStore)
+    store = AsyncMock(spec=ArangoOntologyGraphStore)
     store.execute_pattern.return_value = [
         {"name": "Engineering", "dept_id": "ENG"},
     ]
@@ -405,7 +405,7 @@ class TestOntologyProcessStates:
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
 
-        mock_gs = AsyncMock(spec=OntologyGraphStore)
+        mock_gs = AsyncMock(spec=ArangoOntologyGraphStore)
 
         with (
             patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
@@ -452,7 +452,7 @@ class TestOntologyProcessStates:
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
 
-        mock_gs = AsyncMock(spec=OntologyGraphStore)
+        mock_gs = AsyncMock(spec=ArangoOntologyGraphStore)
 
         with (
             patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
@@ -492,7 +492,7 @@ class TestOntologyProcessStates:
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
 
-        mock_gs = AsyncMock(spec=OntologyGraphStore)
+        mock_gs = AsyncMock(spec=ArangoOntologyGraphStore)
 
         with (
             patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
@@ -542,7 +542,7 @@ class TestOntologyProcessStates:
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
 
-        mock_gs = AsyncMock(spec=OntologyGraphStore)
+        mock_gs = AsyncMock(spec=ArangoOntologyGraphStore)
         mock_gs.execute_pattern.return_value = [{"_id": "Employee/1"}]
 
         mock_tool_mgr = MagicMock()
@@ -605,7 +605,7 @@ class TestOntologyProcessStates:
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
 
-        mock_gs = AsyncMock(spec=OntologyGraphStore)
+        mock_gs = AsyncMock(spec=ArangoOntologyGraphStore)
         mock_gs.execute_pattern.return_value = [{"_id": "Employee/1"}]
 
         mock_tool_mgr = MagicMock()
@@ -688,7 +688,7 @@ class TestOntologyProcessStates:
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
 
-        mock_gs = AsyncMock(spec=OntologyGraphStore)
+        mock_gs = AsyncMock(spec=ArangoOntologyGraphStore)
         mock_gs.execute_pattern.return_value = [{"_id": "Member/1"}]
 
         seen_keys: list[str] = []
@@ -756,7 +756,7 @@ class TestOntologyProcessStates:
         mock_tm = MagicMock(spec=TenantOntologyManager)
         mock_tm.resolve.return_value = tenant_ctx
 
-        mock_gs = AsyncMock(spec=OntologyGraphStore)
+        mock_gs = AsyncMock(spec=ArangoOntologyGraphStore)
         mock_gs.execute_pattern.return_value = [{"jira_account_id": "acct:abc"}]
 
         mock_tool_mgr = MagicMock()

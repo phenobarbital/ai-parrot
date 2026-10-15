@@ -5,7 +5,6 @@ from typing import Any
 _LAZY_ATTRS: dict[str, str] = {
     "OntologyCache": "parrot.knowledge.ontology.cache",
     "ArangoOntologyGraphStore": "parrot.knowledge.ontology.graph_store",
-    "OntologyGraphStore": "parrot.knowledge.ontology.graph_store",
     "OntologyIntentResolver": "parrot.knowledge.ontology.intent",
     "OntologyRAGMixin": "parrot.knowledge.ontology.mixin",
     "TenantOntologyManager": "parrot.knowledge.ontology.tenant",
@@ -18,7 +17,6 @@ _LAZY_ATTRS: dict[str, str] = {
 __all__ = [
     "ArangoOntologyGraphStore",
     "OntologyCache",
-    "OntologyGraphStore",
     "OntologyIntentResolver",
     "OntologyRAGMixin",
     "TenantOntologyManager",

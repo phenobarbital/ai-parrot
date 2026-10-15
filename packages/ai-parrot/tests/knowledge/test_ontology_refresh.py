@@ -1,4 +1,5 @@
 """Tests for ontology refresh pipeline."""
+
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -6,7 +7,7 @@ import pytest
 
 from parrot.knowledge.ontology.cache import OntologyCache
 from parrot.knowledge.ontology.discovery import DiscoveryResult, DiscoveryStats, RelationDiscovery
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore, UpsertResult
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore, UpsertResult
 from parrot.knowledge.ontology.refresh import DiffResult, OntologyRefreshPipeline, RefreshReport
 from parrot.knowledge.ontology.schema import (
     DiscoveryConfig,
@@ -59,11 +60,13 @@ def tenant_ctx() -> TenantContext:
                     to_entity="Department",
                     edge_collection="belongs_to_dept",
                     discovery=DiscoveryConfig(
-                        rules=[DiscoveryRule(
-                            source_field="department",
-                            target_field="dept_id",
-                            match_type="exact",
-                        )]
+                        rules=[
+                            DiscoveryRule(
+                                source_field="department",
+                                target_field="dept_id",
+                                match_type="exact",
+                            )
+                        ]
                     ),
                 ),
             },
@@ -84,7 +87,7 @@ def mock_tenant_mgr(tenant_ctx):
 
 @pytest.fixture
 def mock_graph_store():
-    store = AsyncMock(spec=OntologyGraphStore)
+    store = AsyncMock(spec=ArangoOntologyGraphStore)
     store.get_all_nodes.return_value = [
         {"employee_id": "E1", "name": "Alice", "department": "ENG", "_active": True},
         {"employee_id": "E2", "name": "Bob", "department": "SALES", "_active": True},
@@ -174,11 +177,11 @@ class TestDiffComputation:
     def test_mixed_operations(self):
         new = [
             {"id": "1", "name": "Alice Updated"},  # update
-            {"id": "3", "name": "Carol"},           # add
+            {"id": "3", "name": "Carol"},  # add
         ]
         existing = [
-            {"id": "1", "name": "Alice"},           # will be updated
-            {"id": "2", "name": "Bob"},             # will be removed
+            {"id": "1", "name": "Alice"},  # will be updated
+            {"id": "2", "name": "Bob"},  # will be removed
         ]
         diff = OntologyRefreshPipeline._compute_diff(new, existing, "id")
         assert len(diff.to_add) == 1

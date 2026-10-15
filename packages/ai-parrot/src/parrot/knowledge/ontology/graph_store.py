@@ -86,7 +86,7 @@ class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
         """
         if self._client is None:
             raise RuntimeError(
-                "OntologyGraphStore requires an ArangoDB client. "
+                "ArangoOntologyGraphStore requires an ArangoDB client. "
                 "Pass an asyncdb.AsyncDB instance to the constructor."
             )
         # Use the tenant's database
@@ -1021,8 +1021,3 @@ class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
             },
         )
         return bool(list(result) if result else [])
-
-
-# TEMPORARY aliases (FEAT-540): removed by TASK-4332 once callers migrate.
-OntologyGraphStore = ArangoOntologyGraphStore
-ArangoOntologyGraphStore.execute_traversal = ArangoOntologyGraphStore._execute_aql  # type: ignore[attr-defined]

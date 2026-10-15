@@ -6,7 +6,7 @@ title, domain_tags); source content is referenced via ``content_ref``, not
 stored in the graph.
 
 Per-tenant isolation: each ``GraphAssembler`` instance is scoped to a single
-tenant, consistent with ``OntologyGraphStore`` isolation patterns.
+tenant, consistent with ``ArangoOntologyGraphStore`` isolation patterns.
 """
 
 from __future__ import annotations

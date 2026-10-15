@@ -20,7 +20,7 @@ Concepts
 
 Graph traversal
 ---------------
-Mocked via OntologyGraphStore.execute_traversal side-effects keyed on
+Mocked via ArangoOntologyGraphStore.execute_pattern side-effects keyed on
 bind_vars["authority_level"]:
 - "primary"   → [sales-commissions-policy]
 - "secondary" → [commissions-faq, commissions-memo]
@@ -32,6 +32,7 @@ Mocked via PgVectorStore.similarity_search side-effects:
 - with metadata_filters {"doc_type": [...]} → [filtered vector doc]
 - without filters                           → [plain vector doc]
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -41,7 +42,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from parrot.knowledge.ontology.cache import OntologyCache
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.schema import (
     EntityDef,
     EntityExtractionRule,
@@ -51,7 +52,6 @@ from parrot.knowledge.ontology.schema import (
     TraversalPattern,
 )
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
-
 
 # ── Documents ────────────────────────────────────────────────────────────────
 
@@ -207,17 +207,16 @@ def mock_cache() -> AsyncMock:
 def mock_graph_store() -> AsyncMock:
     """Graph store mock with authority-level-based traversal results."""
 
-    def _traversal_side_effect(**kwargs: Any) -> list[dict]:
-        bind_vars = kwargs.get("bind_vars", {})
-        level = bind_vars.get("authority_level", "")
+    def _traversal_side_effect(ctx: Any, pattern: Any, params: dict, collection_binds: Any = None) -> list[dict]:
+        level = params.get("authority_level", "")
         if level == "primary":
             return [SALES_COMMISSIONS_POLICY]
         if level == "secondary":
             return [COMMISSIONS_FAQ, COMMISSIONS_MEMO]
         return []
 
-    store = AsyncMock(spec=OntologyGraphStore)
-    store.execute_traversal.side_effect = _traversal_side_effect
+    store = AsyncMock(spec=ArangoOntologyGraphStore)
+    store.execute_pattern.side_effect = _traversal_side_effect
     return store
 
 

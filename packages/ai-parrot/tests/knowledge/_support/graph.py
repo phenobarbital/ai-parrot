@@ -1,4 +1,4 @@
-"""In-memory OntologyGraphStore double shared by knowledge test suites (FEAT-601).
+"""In-memory ArangoOntologyGraphStore double shared by knowledge test suites (FEAT-601).
 
 Promoted copy of ``tests/knowledge/contracts/test_graph_loader.py:32-146``.
 """
@@ -9,7 +9,7 @@ from typing import Any, Callable, Optional
 
 
 class FakeUpsertResult:
-    """Mimics ``OntologyGraphStore.upsert_nodes``'s return value."""
+    """Mimics ``ArangoOntologyGraphStore.upsert_nodes``'s return value."""
 
     def __init__(self, inserted: int = 0, updated: int = 0) -> None:
         self.inserted = inserted
@@ -143,7 +143,7 @@ class FakeGraphStore:
         """Register rows returned when an AQL query contains ``contains``."""
         self._traversal_rows.append((contains, rows))
 
-    async def execute_traversal(
+    async def _execute_aql(
         self,
         ctx: Any,
         aql: str,
@@ -158,6 +158,16 @@ class FakeGraphStore:
             if contains in aql:
                 return rows(bindings)
         return []
+
+    async def execute_pattern(
+        self,
+        ctx: Any,
+        pattern: Any,
+        params: dict[str, Any],
+        collection_binds: Optional[dict[str, str]] = None,
+    ) -> list[dict[str, Any]]:
+        """Run a traversal pattern through the scripted AQL surface."""
+        return await self._execute_aql(ctx, pattern.query_template, dict(params), collection_binds)
 
 
 class FakeTenantManager:

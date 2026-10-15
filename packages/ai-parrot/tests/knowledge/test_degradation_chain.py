@@ -19,7 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from parrot.knowledge.ontology.cache import OntologyCache
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.mixin import OntologyRAGMixin
 from parrot.knowledge.ontology.schema import (
     ContextEnvelope,
@@ -148,7 +148,7 @@ def mock_cache() -> AsyncMock:
 
 @pytest.fixture
 def mock_graph_store() -> AsyncMock:
-    return AsyncMock(spec=OntologyGraphStore)
+    return AsyncMock(spec=ArangoOntologyGraphStore)
 
 
 @pytest.fixture

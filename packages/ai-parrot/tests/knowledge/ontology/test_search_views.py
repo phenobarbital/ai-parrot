@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 from parrot.knowledge.ontology.exceptions import OntologyIntegrityError
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.merger import OntologyMerger
 from parrot.knowledge.ontology.schema import (
     EntityDef,
@@ -171,7 +171,7 @@ def ctx_with_view() -> TenantContext:
 
 class TestEnsureViewsIdempotent:
     async def test_creates_when_absent_and_skips_when_matching(self, ctx_with_view):
-        store = OntologyGraphStore(arango_client=object())
+        store = ArangoOntologyGraphStore(arango_client=object())
         conn = FakeConnection()
         db = type("DB", (), {"_connection": conn})()
 
@@ -186,7 +186,7 @@ class TestEnsureViewsIdempotent:
         assert conn.replaced == []
 
     async def test_replaces_on_drift(self, ctx_with_view):
-        store = OntologyGraphStore(arango_client=object())
+        store = ArangoOntologyGraphStore(arango_client=object())
         conn = FakeConnection(
             views=[{"name": "widgets_view", "links": {"widgets": {"analyzers": ["text_es"], "fields": {}}}}]
         )
@@ -197,6 +197,6 @@ class TestEnsureViewsIdempotent:
         assert len(conn.replaced) == 1
 
     async def test_raising_connection_only_logs_warning(self, ctx_with_view):
-        store = OntologyGraphStore(arango_client=object())
+        store = ArangoOntologyGraphStore(arango_client=object())
         db = type("DB", (), {"_connection": RaisingConnection()})()
         await store._ensure_views(db, ctx_with_view)  # must not raise

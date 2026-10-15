@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -26,9 +27,8 @@ async def test_query_documents_filters(fake_graph_store):
 async def test_scripted_traversal(fake_graph_store):
     """Traversal scripts receive query bindings and are recorded."""
     fake_graph_store.script_traversal("RETURN procedure", lambda bindings: [{"id": bindings["procedure_id"]}])
-    rows = await fake_graph_store.execute_traversal(
-        None, "FOR procedure RETURN procedure", {"procedure_id": "procedure-1"}
-    )
+    pattern = SimpleNamespace(query_template="FOR procedure RETURN procedure")
+    rows = await fake_graph_store.execute_pattern(None, pattern, {"procedure_id": "procedure-1"})
     assert rows == [{"id": "procedure-1"}]
     assert fake_graph_store.traversals[0][1] == {"procedure_id": "procedure-1"}
 

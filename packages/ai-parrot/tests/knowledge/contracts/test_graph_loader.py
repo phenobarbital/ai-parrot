@@ -30,7 +30,7 @@ FROZEN_NOW = datetime(2026, 9, 9, 12, 0, 0, tzinfo=timezone.utc)
 
 
 class UpsertResult:
-    """Mimics ``OntologyGraphStore.upsert_nodes``'s return value."""
+    """Mimics ``ArangoOntologyGraphStore.upsert_nodes``'s return value."""
 
     def __init__(self, inserted: int = 0, updated: int = 0) -> None:
         self.inserted = inserted
@@ -39,7 +39,7 @@ class UpsertResult:
 
 
 class FakeGraphStore:
-    """In-memory ``OntologyGraphStore`` with the semantics that matter.
+    """In-memory ``ArangoOntologyGraphStore`` with the semantics that matter.
 
     Faithfully reproduces the two behaviours the loader must work around:
     ``create_edges`` inserts by endpoints and **never** updates properties,
