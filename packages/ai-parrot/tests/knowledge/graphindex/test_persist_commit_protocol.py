@@ -1,4 +1,4 @@
-"""Behavioral tests for the ArangoDB commit protocol on GraphIndexPersistence.
+"""Behavioral tests for the ArangoDB commit protocol on ArangoPersistence.
 
 Runs the FULL protocol (publish → load → history → revert → conflict)
 against an in-memory ``FakeGraphStore`` that implements the
@@ -12,10 +12,10 @@ from typing import Any, Optional
 
 import pytest
 
-from parrot.knowledge.graphindex.persist import (
+from parrot.knowledge.graphindex.persist_arango import (
     COMMIT_ITEMS_COLLECTION,
     COMMITS_COLLECTION,
-    GraphIndexPersistence,
+    ArangoPersistence,
     _edge_to_doc,
     _node_to_doc,
 )
@@ -60,7 +60,7 @@ class _FakeUpsertResult:
 
 class FakeGraphStore:
     """In-memory double implementing the OntologyGraphStore surface used
-    by GraphIndexPersistence (documents keyed per collection)."""
+    by ArangoPersistence (documents keyed per collection)."""
 
     def __init__(self) -> None:
         self.collections: dict[str, dict[str, dict[str, Any]]] = {}
@@ -92,9 +92,7 @@ class FakeGraphStore:
         col = self.collections.setdefault(collection, {})
         return col.pop(key, None) is not None
 
-    async def query_documents(
-        self, ctx, collection, filters=None, sort_desc=None, limit=None
-    ):
+    async def query_documents(self, ctx, collection, filters=None, sort_desc=None, limit=None):
         rows = [
             dict(d)
             for d in self.collections.get(collection, {}).values()
@@ -121,9 +119,7 @@ class FakeGraphStore:
         matches = [
             k
             for k, d in col.items()
-            if d.get("source_id") == source_id
-            and d.get("target_id") == target_id
-            and d.get("kind") == kind
+            if d.get("source_id") == source_id and d.get("target_id") == target_id and d.get("kind") == kind
         ]
         for k in matches:
             col.pop(k)
@@ -160,11 +156,7 @@ class FakeGraphStore:
         return len(edges)
 
     async def get_all_nodes(self, ctx, collection):
-        return [
-            dict(d)
-            for d in self.collections.get(collection, {}).values()
-            if d.get("_active") is not False
-        ]
+        return [dict(d) for d in self.collections.get(collection, {}).values() if d.get("_active") is not False]
 
     async def soft_delete_nodes(self, ctx, collection, keys):
         col = self.collections.setdefault(collection, {})
@@ -205,7 +197,7 @@ def store():
 
 @pytest.fixture
 def persistence(store):
-    return GraphIndexPersistence(store)
+    return ArangoPersistence(store)
 
 
 @pytest.fixture
@@ -233,9 +225,7 @@ class TestDocMapping:
         assert _node_to_doc(make_node("a"))["assertion"] is None
 
     def test_edge_doc_carries_assertion(self):
-        meta = AssertionMeta(
-            asserted_by="agent:x", asserted_at="2026-01-01T00:00:00+00:00"
-        )
+        meta = AssertionMeta(asserted_by="agent:x", asserted_at="2026-01-01T00:00:00+00:00")
         edge = UniversalEdge(
             source_id="a",
             target_id="b",
@@ -274,9 +264,7 @@ class TestPublishAndLoad:
         assert node.assertion.asserted_by == "agent:test-agent"
         assert node.assertion.run_id == "r9"
 
-    async def test_run_and_claim_kinds_reach_their_collections(
-        self, publisher, store
-    ):
+    async def test_run_and_claim_kinds_reach_their_collections(self, publisher, store):
         await publisher.publish(
             make_update(
                 nodes=[
@@ -290,16 +278,10 @@ class TestPublishAndLoad:
         assert "claim-1" in store.collections["gi_claims"]
         assert len(store.collections["gi_produced"]) == 1
 
-    async def test_edge_endpoints_resolved_from_existing_graph(
-        self, publisher, store
-    ):
+    async def test_edge_endpoints_resolved_from_existing_graph(self, publisher, store):
         # Nodes land in one commit; the linking edge in a later one.
-        await publisher.publish(
-            make_update(nodes=[make_node("a"), make_node("b")])
-        )
-        await publisher.publish(
-            make_update(edges=[make_edge("a", "b")], op="link_nodes")
-        )
+        await publisher.publish(make_update(nodes=[make_node("a"), make_node("b")]))
+        await publisher.publish(make_update(edges=[make_edge("a", "b")], op="link_nodes"))
         edge_doc = next(iter(store.collections["gi_references"].values()))
         # _from/_to must be fully qualified even though the endpoints
         # were not part of the same update.
@@ -307,24 +289,28 @@ class TestPublishAndLoad:
         assert edge_doc["_to"] == "gi_concepts/b"
 
     async def test_load_graph_excludes_soft_deleted(self, publisher, persistence, ctx):
-        await publisher.publish(
-            make_update(nodes=[make_node("a"), make_node("dup")])
-        )
-        await publisher.publish(
-            make_update(removed_nodes=["dup"], op="merge_nodes")
-        )
+        await publisher.publish(make_update(nodes=[make_node("a"), make_node("dup")]))
+        await publisher.publish(make_update(removed_nodes=["dup"], op="merge_nodes"))
         nodes, _ = await persistence.load_graph(ctx)
         assert {n.node_id for n in nodes} == {"a"}
 
     async def test_load_graph_skips_unknown_kinds(self, persistence, store, ctx):
         store.collections["gi_concepts"] = {
             "good": {
-                "_key": "good", "node_id": "good", "kind": "concept",
-                "title": "Good", "source_uri": "x", "_active": True,
+                "_key": "good",
+                "node_id": "good",
+                "kind": "concept",
+                "title": "Good",
+                "source_uri": "x",
+                "_active": True,
             },
             "future": {
-                "_key": "future", "node_id": "future", "kind": "hologram",
-                "title": "Future", "source_uri": "x", "_active": True,
+                "_key": "future",
+                "node_id": "future",
+                "kind": "hologram",
+                "title": "Future",
+                "source_uri": "x",
+                "_active": True,
             },
         }
         nodes, _ = await persistence.load_graph(ctx)
@@ -335,7 +321,7 @@ class TestPublishAndLoad:
             async def get_all_nodes(self, *a, **k):
                 raise RuntimeError("no connection")
 
-        persistence = GraphIndexPersistence(_BrokenStore())
+        persistence = ArangoPersistence(_BrokenStore())
         assert await persistence.load_graph(ctx) == ([], [])
 
 
@@ -359,9 +345,7 @@ class TestCommitHistory:
         assert len(by_agent) == 2
 
     async def test_get_commit_payload_and_items(self, publisher):
-        receipt = await publisher.publish(
-            make_update(nodes=[make_node("a")], reason="why not")
-        )
+        receipt = await publisher.publish(make_update(nodes=[make_node("a")], reason="why not"))
         commit = await publisher.get_commit(receipt.commit_id)
         assert commit["reason"] == "why not"
         assert commit["payload"]["nodes"][0]["node_id"] == "a"
@@ -381,9 +365,7 @@ class TestCommitHistory:
 
 class TestRevert:
     async def test_revert_create_removes_docs(self, publisher, persistence, ctx, store):
-        receipt = await publisher.publish(
-            make_update(nodes=[make_node("a")], edges=[])
-        )
+        receipt = await publisher.publish(make_update(nodes=[make_node("a")], edges=[]))
         result = await publisher.revert_commit(receipt.commit_id)
         assert result["status"] == "reverted"
         nodes, _ = await persistence.load_graph(ctx)
@@ -391,18 +373,14 @@ class TestRevert:
         # Hard-removed, not just soft-deleted (created by the commit).
         assert "a" not in store.collections["gi_concepts"]
 
-    async def test_revert_update_restores_pre_image(
-        self, publisher, persistence, ctx
-    ):
+    async def test_revert_update_restores_pre_image(self, publisher, persistence, ctx):
         await publisher.publish(make_update(nodes=[make_node("a", title="v1")]))
         r2 = await publisher.publish(make_update(nodes=[make_node("a", title="v2")]))
         assert (await publisher.revert_commit(r2.commit_id))["status"] == "reverted"
         nodes, _ = await persistence.load_graph(ctx)
         assert nodes[0].title == "v1"
 
-    async def test_revert_merge_restores_duplicate_and_edges(
-        self, publisher, persistence, ctx
-    ):
+    async def test_revert_merge_restores_duplicate_and_edges(self, publisher, persistence, ctx):
         await publisher.publish(
             make_update(
                 nodes=[make_node("a"), make_node("b"), make_node("dup")],
@@ -459,19 +437,14 @@ class TestRevert:
 
 class TestReceiptAndAudit:
     async def test_receipt_includes_removed(self, publisher):
-        await publisher.publish(
-            make_update(nodes=[make_node("a"), make_node("dup")],
-                        edges=[make_edge("dup", "a")])
-        )
-        receipt = await publisher.publish(
-            make_update(removed_nodes=["dup"], op="merge_nodes")
-        )
+        await publisher.publish(make_update(nodes=[make_node("a"), make_node("dup")], edges=[make_edge("dup", "a")]))
+        receipt = await publisher.publish(make_update(removed_nodes=["dup"], op="merge_nodes"))
         assert "dup" in receipt.node_ids
         # Implicit incident edge of the removed node is captured.
         assert ("dup", "a", "references") in receipt.edge_keys
 
     async def test_unknown_kind_warns_in_receipt(self, publisher, monkeypatch):
-        import parrot.knowledge.graphindex.persist as persist_mod
+        import parrot.knowledge.graphindex.persist_arango as persist_mod
 
         monkeypatch.setattr(persist_mod, "KIND_TO_COLLECTION", {})
         receipt = await publisher.publish(make_update(nodes=[make_node("a")]))

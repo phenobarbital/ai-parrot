@@ -11,7 +11,7 @@ ArangoDB persistence is **optional**:
 * When ArangoDB credentials are supplied (explicit kwargs or an ``arango``
   dict; missing fields are filled from ``ARANGODB_*`` env vars via
   ``navconfig``), the graph is persisted through
-  :class:`~parrot.knowledge.graphindex.persist.GraphIndexPersistence` backed by
+  :class:`~parrot.knowledge.graphindex.persist_arango.ArangoPersistence` backed by
   an :class:`~parrot.knowledge.ontology.graph_store.OntologyGraphStore`.
 * When no credentials are given, an in-process no-op persistence is used: the
   full pipeline still runs and the assembled graph is exposed in memory, but
@@ -38,14 +38,14 @@ from parrot.knowledge.ontology.schema import TenantContext
 from .builder import GraphIndexBuilder
 from .embed import GraphIndexEmbedder
 from .meta_ontology import build_graphindex_ontology
-from .persist import GraphIndexPersistence
+from .persist_arango import ArangoPersistence
 from .schema import BuildResult, SourceConfig, UniversalEdge, UniversalNode
 
 
 class _NullPersistence:
     """No-op persistence used when no ArangoDB credentials are supplied.
 
-    Mirrors the :class:`GraphIndexPersistence` surface the builder calls so the
+    Mirrors the :class:`ArangoPersistence` surface the builder calls so the
     full pipeline runs end-to-end without a database. Nothing is written.
     """
 
@@ -310,7 +310,7 @@ class GraphIndexLoader(AbstractLoader):
                 "initialize_tenant failed (collections may already exist): %s",
                 exc,
             )
-        return GraphIndexPersistence(self.graph_store)
+        return ArangoPersistence(self.graph_store)
 
     def _resolve_arango(
         self,

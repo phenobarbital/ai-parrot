@@ -669,7 +669,7 @@ class TestHierarchicalCommunities:
 
 class TestPersistRoundTrip:
     def test_community_id_in_dumped_node(self):
-        from parrot.knowledge.graphindex.persist import _node_to_doc
+        from parrot.knowledge.graphindex.persist_arango import _node_to_doc
 
         g, nodes = _build_two_cliques()
         detect_communities(g, nodes, write_back_to_nodes=True)
