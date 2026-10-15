@@ -14,11 +14,14 @@ from parrot_pipelines.planogram.contracts import (
     PerceptionResult,
     Shape,
     ShapeKind,
+    ZoneAppearance,
 )
 from parrot_pipelines.planogram.identification.evidence import (
     EVIDENCE_STAGE,
+    EVIDENCE_PROMPT_VERSION,
     RegionPresenceAnswer,
     ZoneEvidenceAnswer,
+    build_zone_prompt,
     collect_rule_evidence,
 )
 from parrot_pipelines.planogram.identification.vision import VisionError
@@ -192,3 +195,63 @@ async def test_cancellation_propagates():
     vision = RecordingVision(asyncio.CancelledError())
     with pytest.raises(asyncio.CancelledError):
         await collect_rule_evidence(np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(vision, [binding]))
+
+
+def _appearance_binding():
+    """Build an appearance binding before RuleKind validates that kind."""
+    return RuleBinding.model_construct(
+        rule_id="appearance:zone_base",
+        kind="appearance",
+        target_id="zone_base",
+        params={"background_color": ["white"], "border_color": ["blue"]},
+        mandatory=True,
+    )
+
+
+def test_prompt_without_appearance_is_unchanged():
+    """Appearance opt-in preserves the existing zone prompt byte-for-byte."""
+    assert build_zone_prompt(True, True) == build_zone_prompt(True, True, False)
+    assert "dominant background colour" not in build_zone_prompt(True, True).lower()
+
+
+@pytest.mark.asyncio
+async def test_appearance_prompt_is_neutral():
+    """Appearance instructions do not disclose configured rule expectations."""
+    vision = RecordingVision(ZoneEvidenceAnswer(appearance=ZoneAppearance(background_color="white")))
+    await collect_rule_evidence(
+        np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(vision, [_appearance_binding()])
+    )
+    prompt = vision.prompts[0].lower()
+    assert "colour" in prompt
+    assert all(value not in prompt for value in ("white", "blue", "appearance:zone_base", "zone_base"))
+
+
+@pytest.mark.asyncio
+async def test_appearance_observation_recorded():
+    """The existing zone call records the model's structured appearance answer."""
+    appearance = ZoneAppearance(background_color="white", border_color="blue", finish="matte", base_surface_color="blue")
+    vision = RecordingVision(ZoneEvidenceAnswer(appearance=appearance))
+    observations = await collect_rule_evidence(
+        np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(vision, [_appearance_binding()])
+    )
+    assert len(vision.prompts) == 1
+    assert observations[0].kind == "appearance"
+    assert observations[0].value == appearance.model_dump()
+    assert observations[0].assessed is True
+    assert observations[0].target_id == "img0:zone0"
+
+
+@pytest.mark.asyncio
+async def test_all_unknown_appearance_is_unassessed():
+    """An entirely indeterminate appearance answer remains unassessed."""
+    vision = RecordingVision(ZoneEvidenceAnswer())
+    observations = await collect_rule_evidence(
+        np.zeros((300, 400, 3), np.uint8), _perception(_zone()), _ctx(vision, [_appearance_binding()])
+    )
+    assert observations[0].kind == "appearance"
+    assert observations[0].assessed is False
+
+
+def test_evidence_prompt_version_bumped():
+    """The schema-changing evidence prompt uses a distinct cache version."""
+    assert EVIDENCE_PROMPT_VERSION == "evidence-v2"
