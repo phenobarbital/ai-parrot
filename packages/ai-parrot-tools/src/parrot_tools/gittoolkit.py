@@ -1438,6 +1438,24 @@ class GitToolkit(AbstractToolkit):
             return f"https://x-access-token:{token}@{rest}", token
         return base_url, token
 
+    def _auth_env(self, url: str, token: str) -> Dict[str, str]:
+        """Return git env-config that authenticates ``url``'s host without persisting ``token``.
+
+        Requires git >= 2.31 (``GIT_CONFIG_COUNT``). The token lives only in the
+        child's environment: never in argv, never in ``.git/config``.
+        """
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        key = f"http.{parsed.scheme}://{parsed.hostname}/.extraheader"
+        header = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+        return {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": key,
+            "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {header}",
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+
     def _scrub(self, text: str, token: Optional[str] = None) -> str:
         """Redact known secrets from ``text`` (R2: tokens must never leak).
 
@@ -1448,6 +1466,9 @@ class GitToolkit(AbstractToolkit):
         ``token`` explicitly.
         """
         secrets = [token, self.github_token]
+        for raw in list(secrets):
+            if raw:
+                secrets.append(base64.b64encode(f"x-access-token:{raw}".encode()).decode())
         provider = getattr(self, "_token_provider", None)
         if provider is not None:
             secrets.append(getattr(provider, "_token", None))
@@ -1458,8 +1479,15 @@ class GitToolkit(AbstractToolkit):
         return redacted
 
     @staticmethod
-    async def _run_subprocess(argv: List[str], timeout: Optional[float] = None) -> tuple[int, str, str]:
+    async def _run_subprocess(
+        argv: List[str],
+        timeout: Optional[float] = None,
+        env: Optional[Dict[str, str]] = None,
+    ) -> tuple[int, str, str]:
         """Run ``argv`` asynchronously; return ``(returncode, stdout, stderr)``.
+
+        ``env`` is extra environment merged over ``os.environ`` (auth headers);
+        it is never logged.
 
         A timed-out or cancelled subprocess is terminated, given a bounded
         grace period, killed if necessary, and reaped before this method
@@ -1469,6 +1497,7 @@ class GitToolkit(AbstractToolkit):
             *argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, **env} if env else None,
         )
 
         async def _stop_and_reap() -> None:
@@ -1535,20 +1564,25 @@ class GitToolkit(AbstractToolkit):
         """
         if os.path.isdir(os.path.join(dest_dir, ".git")):
             # Already a clone → fast-forward instead of re-cloning (idempotent).
-            if timeout is None:
-                return await self.pull_repo(dest_dir, branch)
-            return await self.pull_repo(dest_dir, branch, timeout=timeout)
+            extra: Dict[str, Any] = {"private": True} if private else {}
+            if timeout is not None:
+                extra["timeout"] = timeout
+            return await self.pull_repo(dest_dir, branch, **extra)
 
         slug = self._clone_slug(repository)
         display = self._display_slug(slug)
         token: Optional[str] = None
+        env: Optional[Dict[str, str]] = None
 
         if private and prefer_gh and self._gh_available():
             argv = ["gh", "repo", "clone", display, dest_dir]
             if branch:
                 argv += ["--", "--branch", branch]
         else:
-            url, token = self._clone_url(slug, private)
+            url, _ = self._clone_url(slug, False)
+            if private:
+                token = self._resolve_token()
+                env = self._auth_env(url, token)
             argv = ["git", "clone"]
             if branch:
                 argv += ["--branch", branch]
@@ -1556,10 +1590,12 @@ class GitToolkit(AbstractToolkit):
                 argv += ["--depth", str(depth)]
             argv += [url, dest_dir]
 
-        if timeout is None:
-            rc, _out, err = await self._run_subprocess(argv)
-        else:
-            rc, _out, err = await self._run_subprocess(argv, timeout=timeout)
+        kwargs: Dict[str, Any] = {}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        if env is not None:
+            kwargs["env"] = env
+        rc, _out, err = await self._run_subprocess(argv, **kwargs)
         if rc != 0:
             raise GitToolkitError(f"clone of {display!r} failed: {self._scrub(err, token)}")
         return {
@@ -1575,6 +1611,7 @@ class GitToolkit(AbstractToolkit):
         branch: Optional[str] = None,
         *,
         timeout: Optional[float] = None,
+        private: bool = False,
     ) -> Dict[str, Any]:
         """Fast-forward an existing clone at ``repo_path`` to ``branch``.
 
@@ -1583,6 +1620,9 @@ class GitToolkit(AbstractToolkit):
             branch: Optional branch to pull (``origin <branch>``); defaults to
                 the clone's current upstream.
             timeout: Optional subprocess timeout in seconds.
+            private: Authenticate through the subprocess environment (git >= 2.31)
+                and first rewrite a credential-bearing ``origin`` URL (left by an
+                earlier clone) to its clean form.
 
         Returns:
             ``{"path", "branch", "updated"}``. Never contains a token.
@@ -1592,15 +1632,38 @@ class GitToolkit(AbstractToolkit):
         """
         if not os.path.isdir(os.path.join(repo_path, ".git")):
             raise GitToolkitError(f"{repo_path!r} is not a git clone")
+        env: Optional[Dict[str, str]] = None
+        token: Optional[str] = None
+        kwargs: Dict[str, Any] = {}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        if private:
+            from urllib.parse import urlparse
+
+            token = self._resolve_token()
+            rc, out, err = await self._run_subprocess(["git", "-C", repo_path, "remote", "get-url", "origin"], **kwargs)
+            if rc != 0:
+                raise GitToolkitError(f"pull of {repo_path!r} failed: {self._scrub(err, token)}")
+            origin = out.strip()
+            parsed = urlparse(origin)
+            if parsed.scheme in ("http", "https") and (parsed.username or parsed.password):
+                host = parsed.hostname or ""
+                if parsed.port:
+                    host = f"{host}:{parsed.port}"
+                origin = parsed._replace(netloc=host).geturl()
+                rc, _o, err = await self._run_subprocess(
+                    ["git", "-C", repo_path, "remote", "set-url", "origin", origin], **kwargs
+                )
+                if rc != 0:
+                    raise GitToolkitError(f"pull of {repo_path!r} failed: {self._scrub(err, token)}")
+            env = self._auth_env(origin, token)
+            kwargs["env"] = env
         argv = ["git", "-C", repo_path, "pull", "--ff-only"]
         if branch:
             argv += ["origin", branch]
-        if timeout is None:
-            rc, _out, err = await self._run_subprocess(argv)
-        else:
-            rc, _out, err = await self._run_subprocess(argv, timeout=timeout)
+        rc, _out, err = await self._run_subprocess(argv, **kwargs)
         if rc != 0:
-            raise GitToolkitError(f"pull of {repo_path!r} failed: {self._scrub(err)}")
+            raise GitToolkitError(f"pull of {repo_path!r} failed: {self._scrub(err, token)}")
         return {"path": repo_path, "branch": branch, "updated": True}
 
     # ------------------------------------------------------------------

@@ -41,6 +41,7 @@ class FakeGit:
 
     async def pull_repo(self, repo_path: str, branch, **kwargs) -> dict[str, object]:
         self.pull_calls += 1
+        self.pull_kwargs = kwargs
         if self.pull_fails:
             raise RuntimeError("pull failed")
         return {"path": repo_path, "branch": branch, "updated": True}
@@ -246,13 +247,90 @@ def test_evict_lru_respects_size_cap(tmp_path: Path) -> None:
     assert newest.clone_dir.exists()
 
 
-def test_evict_skips_locked_entries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_evict_skips_locked_entries(tmp_path: Path) -> None:
     """A busy entry is retained even when it leaves the cache above cap."""
     cache = _cache(tmp_path)
     paths = _entry(cache, "locked/repository", b"x" * 200, 1.0)
-    monkeypatch.setattr(cache, "_lock_is_busy", lambda _path: True)
-    assert cache._evict_if_needed() == []
+    _entry(cache, "other/repository", b"y" * 10, 2.0)
+    async with repo_lock(paths.lock_path, timeout=0.0) as held:
+        assert held
+        assert paths.slug not in cache._evict_if_needed()
     assert paths.clone_dir.exists()
+
+
+def _usable_entry(cache: RepoWikiCache, repository: str) -> RepoCachePaths:
+    paths = cache.paths_for(repository)
+    paths.plane_dir.mkdir(parents=True)
+    (paths.plane_dir / ".last_good_build.json").write_text("{}", encoding="utf-8")
+    (paths.plane_dir / "wiki.db").write_bytes(b"db")
+    return paths
+
+
+async def test_read_lease_blocks_writer_and_eviction(tmp_path: Path) -> None:
+    """A held lease excludes an exclusive lock and eviction of that entry."""
+    cache = _cache(tmp_path)
+    paths = _usable_entry(cache, "owner/name")
+    (paths.clone_dir).mkdir(parents=True)
+    (paths.clone_dir / "big.bin").write_bytes(b"x" * 500)
+    _entry(cache, "other/repo", b"y" * 10, 2.0)
+    async with cache.read_lease("owner/name") as leased:
+        assert leased is not None and leased.slug == paths.slug
+        async with repo_lock(paths.lock_path, timeout=0.0) as writer:
+            assert writer is False
+        assert paths.slug not in cache._evict_if_needed()
+        assert paths.clone_dir.exists()
+    async with repo_lock(paths.lock_path, timeout=0.0) as writer:
+        assert writer is True
+
+
+async def test_read_lease_yields_none_when_unusable_or_locked(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    async with cache.read_lease("owner/name") as leased:
+        assert leased is None
+    async with cache.read_lease("../bad") as leased:
+        assert leased is None
+    paths = _usable_entry(cache, "owner/usable")
+    async with repo_lock(paths.lock_path, timeout=0.0) as writer:
+        assert writer
+        async with cache.read_lease("owner/usable", timeout=0.0) as leased:
+            assert leased is None
+
+
+async def test_read_leases_are_shared(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    _usable_entry(cache, "owner/name")
+    async with cache.read_lease("owner/name") as first, cache.read_lease("owner/name") as second:
+        assert first is not None and second is not None
+
+
+def test_evict_reclaims_plane_only_orphan(tmp_path: Path) -> None:
+    cache = _cache(tmp_path)
+    orphan = cache.paths_for("orphan/plane")
+    orphan.plane_dir.mkdir(parents=True)
+    (orphan.plane_dir / "wiki.db").write_bytes(b"x" * 200)
+    (orphan.plane_dir / ".repo_cache_state.json").write_text(json.dumps({"last_used": 1.0}), encoding="utf-8")
+    _entry(cache, "live/repo", b"y" * 10, 2.0)
+    assert cache._evict_if_needed() == [orphan.slug]
+    assert not orphan.plane_dir.exists()
+
+
+async def test_eviction_runs_after_failed_build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cache = _cache(tmp_path)
+    cache.build_runner = FakeBuildRunner(fail=True)
+    calls: list[object] = []
+    monkeypatch.setattr(cache, "_evict_if_needed", lambda **kw: calls.append(kw) or [])
+    assert await cache.ensure_fresh("owner/name") is None
+    assert calls == [{"keep": "owner-name"}]
+
+
+async def test_pull_is_authenticated_for_private_repositories(tmp_path: Path) -> None:
+    git = FakeGit()
+    cache = _cache(tmp_path, git)
+    paths = cache.paths_for("owner/name")
+    await cache._ensure_clone(paths)
+    await cache._ensure_clone(paths)
+    assert git.pull_calls == 1
+    assert git.pull_kwargs["private"] is True
 
 
 def test_evict_never_drops_entry_being_refreshed(tmp_path: Path) -> None:

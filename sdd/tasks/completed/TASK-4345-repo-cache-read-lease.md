@@ -292,4 +292,4 @@ Standard SDD task flow (see `sdd/templates/task.md` → Agent Instructions).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker. Implementing commit 5da5757ff17541fd1914c1b490313927275147d0. test_repo_cache.py: 22 passed, 0 failed. Adapted test_evict_skips_locked_entries to a real held lock. Remaining ruff ASYNC110 is pre-existing. No contract drift.

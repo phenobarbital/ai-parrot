@@ -38,10 +38,12 @@ import logging as _stdlib_logging
 import re
 import shutil
 from collections import Counter
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import (
     Any,
+    AsyncIterator,
     Awaitable,
     Callable,
     Dict,
@@ -500,6 +502,7 @@ class GitHubReviewer(Agent):
         self.jira_toolkit: Optional[JiraToolkit] = None
         self._wiki_cache: Optional[RepoWikiCache] = None
         self._wiki_warmup_task: Optional[asyncio.Task[None]] = None
+        self._wiki_refresh_task: Optional[asyncio.Task[Optional[Path]]] = None
         self._wiki_toolkits_attached = False
         self._wiki_store: Any = None
         self._wiki_branch: Optional[str] = None
@@ -603,6 +606,7 @@ class GitHubReviewer(Agent):
 
         task = asyncio.create_task(warmup(), name=f"github-reviewer-wiki-warmup:{self._repository_lc}")
         self._wiki_warmup_task = task
+        self._wiki_refresh_task = task  # first delivery reuses the warm-up
 
         def log_failure(completed: asyncio.Task[None]) -> None:
             if completed.cancelled():
@@ -616,18 +620,21 @@ class GitHubReviewer(Agent):
 
     async def _shutdown_wiki_warmup(self) -> None:
         """Cancel and await the wiki warm-up task when it is still active."""
-        task = self._wiki_warmup_task
+        tasks: list[asyncio.Task[Any]] = []
+        for task in (self._wiki_warmup_task, self._wiki_refresh_task):
+            if task is not None and task not in tasks:
+                tasks.append(task)
         self._wiki_warmup_task = None
-        if task is None:
-            return
-        if not task.done():
-            task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-        except Exception:  # noqa: BLE001 - callback already logged the failure
-            pass
+        self._wiki_refresh_task = None
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:  # noqa: BLE001 - callback already logged the failure
+                pass
 
     async def _refresh_wiki_context(self, repository: str) -> Optional[Path]:
         """Refresh this reviewer's wiki plane, never one selected by a payload."""
@@ -649,6 +656,57 @@ class GitHubReviewer(Agent):
         self._wiki_built_at = self._wiki_cache.build_runner.last_good(paths.plane_dir)
         self._wiki_context_available = self._wiki_toolkits_attached
         return paths.clone_dir
+
+    def _start_wiki_refresh(self, repository: str) -> Optional[asyncio.Task[Optional[Path]]]:
+        """Start (or reuse) the single in-flight wiki refresh for this reviewer's repository."""
+        if self._wiki_cache is None or not isinstance(repository, str) or repository.lower() != self._repository_lc:
+            return None
+        current = self._wiki_refresh_task
+        if current is not None and not current.done():
+            return current
+        task = asyncio.create_task(
+            self._refresh_wiki_context(self.repository),
+            name=f"github-reviewer-wiki-refresh:{self._repository_lc}",
+        )
+        self._wiki_refresh_task = task
+
+        def log_failure(completed: asyncio.Task[Optional[Path]]) -> None:
+            if completed.cancelled():
+                return
+            try:
+                completed.result()
+            except Exception as exc:  # noqa: BLE001 - callback must consume task failures
+                self.logger.warning("GitHubReviewer: wiki refresh failed: %s", exc, exc_info=True)
+
+        task.add_done_callback(log_failure)
+        return task
+
+    async def _await_wiki_refresh(self, task: Optional[asyncio.Task[Optional[Path]]]) -> bool:
+        """Wait at most ``GITHUB_REVIEW_WIKI_WAIT`` seconds; never cancel the refresh."""
+        if task is None:
+            return False
+        done, _pending = await asyncio.wait({task}, timeout=conf.GITHUB_REVIEW_WIKI_WAIT)
+        if not done:
+            self.logger.info(
+                "GitHubReviewer: wiki refresh still running after %ss; reviewing without fresh wiki context.",
+                conf.GITHUB_REVIEW_WIKI_WAIT,
+            )
+            return False
+        return True
+
+    @asynccontextmanager
+    async def _wiki_review_lease(self) -> AsyncIterator[bool]:
+        """Hold a shared read lease on the plane for the duration of one review."""
+        if self._wiki_cache is None or not self._wiki_context_available:
+            yield False
+            return
+        async with AsyncExitStack() as stack:
+            try:
+                paths = await stack.enter_async_context(self._wiki_cache.read_lease(self.repository, timeout=0.0))
+            except Exception as exc:  # noqa: BLE001 - wiki enrichment must fail closed
+                self.logger.warning("GitHubReviewer: wiki read lease unavailable: %s", exc)
+                paths = None
+            yield paths is not None
 
     def _attach_wiki_toolkits(self, clone_root: Path) -> None:
         """Attach external-plane wiki toolkits once after a successful build."""
@@ -982,7 +1040,7 @@ class GitHubReviewer(Agent):
                 outcome["comment"] = comment
             return outcome
 
-        await self._refresh_wiki_context(repo)
+        wiki_refresh = self._start_wiki_refresh(repo)
 
         ticket = await self._fetch_ticket(ticket_key)
         if ticket is None:
@@ -993,15 +1051,18 @@ class GitHubReviewer(Agent):
             }
 
         diff_text, diff_truncated, diff_available = await self._fetch_diff(repo, pr_number)
+        await self._await_wiki_refresh(wiki_refresh)
 
-        result = await self._ask_llm_for_review(
-            payload=payload,
-            ticket_key=ticket_key,
-            ticket=ticket,
-            diff_text=diff_text,
-            diff_truncated=diff_truncated,
-            diff_available=diff_available,
-        )
+        async with self._wiki_review_lease() as wiki_leased:
+            result = await self._ask_llm_for_review(
+                payload=payload,
+                ticket_key=ticket_key,
+                ticket=ticket,
+                diff_text=diff_text,
+                diff_truncated=diff_truncated,
+                diff_available=diff_available,
+                use_wiki=wiki_leased,
+            )
 
         outcome: Dict[str, Any] = {
             "status": "reviewed",
@@ -1174,7 +1235,9 @@ class GitHubReviewer(Agent):
             return value
         return value[: self.max_ticket_bytes] + "\n[... truncated ...]"
 
-    async def _build_wiki_context(self, payload: Dict[str, Any], diff_text: str) -> Optional[str]:
+    async def _build_wiki_context(
+        self, payload: Dict[str, Any], diff_text: str, *, enabled: bool = True
+    ) -> Optional[str]:
         """Return token-bounded local-wiki context for a pull request.
 
         The reviewer only searches the store attached after a successful
@@ -1182,7 +1245,8 @@ class GitHubReviewer(Agent):
         the existing diff-only review path remains available.
         """
         if (
-            not self._wiki_context_available
+            not enabled
+            or not self._wiki_context_available
             or self._wiki_store is None
             or not self._wiki_branch
             or self._wiki_built_at is None
@@ -1251,6 +1315,7 @@ class GitHubReviewer(Agent):
         diff_text: str,
         diff_truncated: bool,
         diff_available: bool,
+        use_wiki: bool = True,
     ) -> PRReviewResult:
         fields = (ticket or {}).get("fields") or {}
         summary = _flatten_adf(fields.get("summary")) or ""
@@ -1269,7 +1334,7 @@ class GitHubReviewer(Agent):
             )
             header = "=== PR diff (unavailable) ==="
 
-        wiki_context = await self._build_wiki_context(payload, diff_text)
+        wiki_context = await self._build_wiki_context(payload, diff_text, enabled=use_wiki)
         wiki_block = f"{wiki_context}\n\n" if wiki_context else ""
         question = (
             f"Review pull request {payload.get('repository')}#"

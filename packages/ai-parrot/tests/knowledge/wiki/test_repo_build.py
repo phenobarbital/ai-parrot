@@ -102,6 +102,31 @@ async def test_build_runner_timeout_kills_child(tmp_path: Path) -> None:
         pytest.fail("timed-out wikitoolkit child survived")
 
 
+async def test_build_runner_timeout_kills_grandchildren(tmp_path: Path) -> None:
+    """A grandchild spawned by the build dies with its process group."""
+    import os
+
+    pid_file = tmp_path / "grandchild_pid"
+    executable = _fake_wikitoolkit(
+        tmp_path,
+        "import pathlib, subprocess, time\n"
+        "g = subprocess.Popen(['sleep', '60'])\n"
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(g.pid))\n"
+        "time.sleep(60)\n",
+    )
+    outcome = await WikiBuildRunner(executable=str(executable), timeout=0.5).run(tmp_path / "clone", tmp_path / "plane")
+    assert outcome.timed_out
+    grandchild = int(pid_file.read_text())
+    for _ in range(500):
+        try:
+            os.kill(grandchild, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        pytest.fail("grandchild of the timed-out build survived")
+
+
 def test_last_good_marker_roundtrip(tmp_path: Path) -> None:
     """Only a successful outcome makes a plane usable."""
     runner = WikiBuildRunner()
@@ -115,3 +140,29 @@ def test_last_good_marker_roundtrip(tmp_path: Path) -> None:
     )
     assert runner.last_good(tmp_path) is not None
     assert json.loads((tmp_path / LAST_GOOD_FILENAME).read_text())["state"] == "complete"
+
+
+async def test_build_runner_kills_sigterm_ignoring_grandchild_after_parent_exit(tmp_path: Path) -> None:
+    """A grandchild that ignores SIGTERM and holds the pipes is SIGKILLed even after the parent exits."""
+    import os
+
+    pid_file = tmp_path / "gc_pid"
+    executable = _fake_wikitoolkit(
+        tmp_path,
+        "import pathlib, subprocess, sys, time\n"
+        "g = subprocess.Popen([sys.executable, '-c', "
+        "'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'])\n"
+        f"pathlib.Path({str(pid_file)!r}).write_text(str(g.pid))\n"
+        "time.sleep(60)\n",
+    )
+    outcome = await WikiBuildRunner(executable=str(executable), timeout=0.5).run(tmp_path / "c", tmp_path / "p")
+    assert outcome.timed_out
+    gc = int(pid_file.read_text())
+    for _ in range(500):
+        try:
+            os.kill(gc, 0)
+        except ProcessLookupError:
+            break
+        await asyncio.sleep(0.01)
+    else:
+        pytest.fail("SIGTERM-ignoring grandchild survived")

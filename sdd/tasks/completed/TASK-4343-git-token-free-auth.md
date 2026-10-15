@@ -270,4 +270,4 @@ validation command with `PYTHONPATH` set to the worktree's absolute `packages/*/
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker (sequential, no coder seats). Implementing commit 06808192a. Tests: 15 passed, 0 failed (validation command). ruff: only 2 pre-existing ASYNC240 findings in gittoolkit.py (baseline identical). No contract drift.

@@ -266,4 +266,4 @@ Standard SDD task flow (see `sdd/templates/task.md` → Agent Instructions).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by sdd-worker. Implementing commit e37948d3641e61fd242462082b266327947fa6e3. test_github_reviewer.py: 89 passed, 0 failed. Existing fake_ask stubs gained a use_wiki kwarg. Lease uses AsyncExitStack (fail closed). No contract drift.
