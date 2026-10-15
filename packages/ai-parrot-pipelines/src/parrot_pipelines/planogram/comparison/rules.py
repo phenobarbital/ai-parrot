@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 ZONE_REGION_TARGET = "{image_id}:zone-region:{zone_id}"
 
 
-def normalize_text(text: str) -> str:
-    """Normalize OCR text using the ProductOnShelves comparison semantics."""
+def _normalize(text: str, keep_case: bool) -> str:
+    """De-accent, replace every non-alphanumeric character with a space and collapse whitespace."""
     if not text:
         return ""
     text = unicodedata.normalize("NFKC", text)
@@ -46,7 +46,27 @@ def normalize_text(text: str) -> str:
         text,
     )
     text = re.sub(r"[^A-Za-z0-9 ]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip().lower()
+    text = re.sub(r"\s+", " ", text).strip()
+    return text if keep_case else text.lower()
+
+
+def normalize_text(text: str) -> str:
+    """Normalize OCR text using the ProductOnShelves comparison semantics."""
+    return _normalize(text, keep_case=False)
+
+
+def _requirement_features(requirement: TextRequirement, raw: Sequence[str]) -> List[str]:
+    """Prepare raw text features for one requirement, so its match type sees what it needs.
+
+    ``regex`` and ``exact`` get the original text (NFKC only; ``TextMatcher`` normalizes ``exact`` itself), a
+    case-sensitive ``contains`` gets the text normalized with its case kept (its needle is normalized the same way),
+    and every other requirement gets the lowercased ``normalize_text`` features.
+    """
+    if requirement.match_type in ("regex", "exact"):
+        return [unicodedata.normalize("NFKC", feature) for feature in raw]
+    if requirement.case_sensitive:
+        return [_normalize(TextMatcher._strip_ocr_prefix(feature), keep_case=True) for feature in raw]
+    return [normalize_text(feature) for feature in raw]
 
 
 def visual_feature_match(expected: Sequence[str], detected: Sequence[str]) -> float:
@@ -299,7 +319,7 @@ def _entity_texts(
             if text:
                 features.extend([f"ocr:{text}", text])
         refs.append(_ref(image_id, identification.shape_id, identification.source))
-    return observed, [normalize_text(feature) for feature in features if feature], _dedupe_refs(refs)
+    return observed, [feature for feature in features if feature], _dedupe_refs(refs)
 
 
 def _rule_zone_present(
@@ -504,7 +524,7 @@ def _rule_text(
     results = [
         TextMatcher.check_text_match(
             required_text=requirement.required_text,
-            visual_features=features,
+            visual_features=_requirement_features(requirement, features),
             match_type=requirement.match_type,
             case_sensitive=requirement.case_sensitive,
             confidence_threshold=requirement.confidence_threshold,
@@ -548,6 +568,7 @@ def _rule_visual(
     observed, detected, refs = _entity_texts(
         binding, perceptions, identifications, registrations, definition, selectors
     )
+    detected = [normalize_text(feature) for feature in detected]
     for image_id, _zone, shape, status in matched:
         if status != "matched" or shape is None:
             continue
