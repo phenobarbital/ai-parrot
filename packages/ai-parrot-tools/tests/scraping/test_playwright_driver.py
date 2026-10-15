@@ -618,6 +618,102 @@ class TestObscuraModeSharesAbstractDriverSurface:
         mock_page.evaluate.assert_called_once_with("1 + 1")
 
 
+class TestObscuraSafeWaitsAndReads:
+    """Obscura 0.2.2: load events never fire after click-navigation and the
+    utility world is broken, so waits poll readyState and reads fall back to
+    main-world evaluate. The playwright engine path is unchanged."""
+
+    @pytest.fixture
+    def obscura_driver(self, mock_page, mock_context):
+        driver = PlaywrightDriver(PlaywrightConfig(engine="obscura"))
+        driver._page = mock_page
+        driver._context = mock_context
+        return driver
+
+    def test_is_obscura_flag(self, driver, obscura_driver):
+        assert obscura_driver._is_obscura is True
+        assert driver._is_obscura is False
+
+    @pytest.mark.asyncio
+    async def test_load_polls_ready_state_until_complete(self, obscura_driver, mock_page):
+        mock_page.evaluate = AsyncMock(side_effect=["loading", "interactive", "complete"])
+        await obscura_driver.wait_for_load_state("load", timeout=5)
+        assert mock_page.evaluate.call_count == 3
+        mock_page.wait_for_load_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_domcontentloaded_accepts_interactive(self, obscura_driver, mock_page):
+        mock_page.evaluate = AsyncMock(return_value="interactive")
+        await obscura_driver.wait_for_load_state("domcontentloaded", timeout=5)
+        mock_page.wait_for_load_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_wait_for_navigation_polls(self, obscura_driver, mock_page):
+        mock_page.evaluate = AsyncMock(return_value="complete")
+        await obscura_driver.wait_for_navigation(timeout=5)
+        mock_page.evaluate.assert_called_with("document.readyState")
+        mock_page.wait_for_load_state.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_poll_times_out(self, obscura_driver, mock_page):
+        mock_page.evaluate = AsyncMock(return_value="loading")
+        with pytest.raises(TimeoutError):
+            await obscura_driver.wait_for_load_state("load", timeout=0)
+
+    @pytest.mark.asyncio
+    async def test_networkidle_still_delegates(self, obscura_driver, mock_page):
+        await obscura_driver.wait_for_load_state("networkidle", timeout=3)
+        mock_page.wait_for_load_state.assert_called_once_with("networkidle", timeout=3000)
+
+    @pytest.mark.asyncio
+    async def test_playwright_engine_wait_unchanged(self, started_driver, mock_page):
+        await started_driver.wait_for_load_state("load", timeout=3)
+        mock_page.wait_for_load_state.assert_called_once_with("load", timeout=3000)
+        await started_driver.wait_for_navigation(timeout=2)
+        mock_page.wait_for_load_state.assert_called_with("domcontentloaded", timeout=2000)
+        mock_page.evaluate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_page_source_falls_back_to_evaluate(self, obscura_driver, mock_page):
+        mock_page.content = AsyncMock(side_effect=RuntimeError("utility world broken"))
+        mock_page.evaluate = AsyncMock(return_value="<html></html>")
+        assert await obscura_driver.get_page_source() == "<html></html>"
+
+    @pytest.mark.asyncio
+    async def test_get_page_source_timeout_reraises(self, obscura_driver, mock_page):
+        mock_page.content = AsyncMock(side_effect=TimeoutError("slow"))
+        with pytest.raises(TimeoutError):
+            await obscura_driver.get_page_source()
+        mock_page.evaluate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_page_source_playwright_engine_reraises(self, started_driver, mock_page):
+        mock_page.content = AsyncMock(side_effect=RuntimeError("boom"))
+        with pytest.raises(RuntimeError):
+            await started_driver.get_page_source()
+        mock_page.evaluate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_text_falls_back_to_evaluate(self, obscura_driver, mock_page, mock_locator):
+        mock_locator.inner_text = AsyncMock(side_effect=RuntimeError("utility world broken"))
+        mock_page.evaluate = AsyncMock(return_value="hello")
+        assert await obscura_driver.get_text("h1") == "hello"
+
+    @pytest.mark.asyncio
+    async def test_get_text_fallback_missing_element_reraises(self, obscura_driver, mock_page, mock_locator):
+        mock_locator.inner_text = AsyncMock(side_effect=RuntimeError("broken"))
+        mock_page.evaluate = AsyncMock(return_value=None)
+        with pytest.raises(RuntimeError):
+            await obscura_driver.get_text("h1")
+
+    @pytest.mark.asyncio
+    async def test_get_text_timeout_reraises(self, obscura_driver, mock_page, mock_locator):
+        mock_locator.inner_text = AsyncMock(side_effect=TimeoutError("slow"))
+        with pytest.raises(TimeoutError):
+            await obscura_driver.get_text("h1")
+        mock_page.evaluate.assert_not_called()
+
+
 # ── Lazy Import ──────────────────────────────────────────────────
 
 

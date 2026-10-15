@@ -5,7 +5,9 @@ full browser automation with Playwright-exclusive features such as request
 interception, HAR recording, tracing, PDF export, and session persistence.
 """
 
+import asyncio
 import logging
+import time
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from .abstract import AbstractDriver
@@ -220,13 +222,36 @@ class PlaywrightDriver(AbstractDriver):
     # ── Content Extraction ───────────────────────────────────────
 
     async def get_page_source(self) -> str:
-        """Return the full HTML of the current page."""
-        return await self._page.content()
+        """Return the full HTML of the current page.
+
+        On Obscura, Playwright's utility world is broken after a
+        renderer-initiated navigation, so a non-timeout ``content()`` failure
+        falls back to a main-world ``evaluate``.
+        """
+        try:
+            return await self._page.content()
+        except Exception as exc:
+            if not self._is_obscura or self._is_timeout(exc):
+                raise
+            self.logger.debug("content() failed on Obscura (%s); using evaluate()", exc)
+            return await self._page.evaluate("document.documentElement.outerHTML")
 
     async def get_text(self, selector: str, timeout: int = 10) -> str:
         """Return the inner text of the first matching element."""
         sel = self._resolve_selector(selector)
-        return await self._page.locator(sel).inner_text(timeout=timeout * 1000)
+        try:
+            return await self._page.locator(sel).inner_text(timeout=timeout * 1000)
+        except Exception as exc:
+            if not self._is_obscura or self._is_timeout(exc):
+                raise
+            self.logger.debug("inner_text() failed on Obscura (%s); using evaluate()", exc)
+            text = await self._page.evaluate(
+                "(sel) => { const el = document.querySelector(sel); return el ? el.innerText : null; }",
+                sel,
+            )
+            if text is None:
+                raise
+            return text
 
     async def get_attribute(self, selector: str, attribute: str, timeout: int = 10) -> Optional[str]:
         """Return the value of *attribute* on the matching element."""
@@ -277,11 +302,57 @@ class PlaywrightDriver(AbstractDriver):
 
     async def wait_for_navigation(self, timeout: int = 30) -> None:
         """Wait for a navigation event to complete."""
+        if self._is_obscura:
+            await self._poll_ready_state("domcontentloaded", timeout)
+            return
         await self._page.wait_for_load_state("domcontentloaded", timeout=timeout * 1000)
 
     async def wait_for_load_state(self, state: str = "load", timeout: int = 30) -> None:
-        """Wait until the page reaches the given load *state*."""
+        """Wait until the page reaches the given load *state*.
+
+        On Obscura, ``load``/``domcontentloaded`` events never fire after a
+        click-triggered navigation, so those states poll ``document.readyState``
+        instead. ``networkidle`` still delegates to Playwright.
+        """
+        if self._is_obscura and state in ("load", "domcontentloaded"):
+            await self._poll_ready_state(state, timeout)
+            return
         await self._page.wait_for_load_state(state, timeout=timeout * 1000)
+
+    async def _poll_ready_state(self, state: str, timeout: int) -> None:
+        """Poll ``document.readyState`` via main-world evaluate until *state* is reached.
+
+        ``domcontentloaded`` accepts ``interactive`` or ``complete``; ``load``
+        requires ``complete``.
+
+        Raises:
+            TimeoutError: If the state is not reached within *timeout* seconds.
+        """
+        accepted = ("interactive", "complete") if state == "domcontentloaded" else ("complete",)
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                ready = await self._page.evaluate("document.readyState")
+            except Exception as exc:  # document may be mid-navigation
+                self.logger.debug("readyState poll failed: %s", exc)
+                ready = None
+            if ready in accepted:
+                return
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Timeout {timeout}s waiting for readyState {state!r} (last: {ready!r})"
+                )
+            await asyncio.sleep(0.1)
+
+    @property
+    def _is_obscura(self) -> bool:
+        """Whether this driver is connected to an Obscura CDP endpoint."""
+        return getattr(self.config, "engine", "playwright") == "obscura"
+
+    @staticmethod
+    def _is_timeout(exc: BaseException) -> bool:
+        """Return True for Playwright/builtin timeout errors."""
+        return isinstance(exc, (TimeoutError, asyncio.TimeoutError)) or type(exc).__name__ == "TimeoutError"
 
     # ── Media / Scripts ──────────────────────────────────────────
 
