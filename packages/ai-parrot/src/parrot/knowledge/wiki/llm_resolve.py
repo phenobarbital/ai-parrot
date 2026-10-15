@@ -9,7 +9,9 @@ if TYPE_CHECKING:
 
 
 def _env_setting(name: str) -> str | None:
-    """Read a setting from navconfig (honours ``.env``), falling back to ``os.environ``.
+    """Read a setting: process environment first, then navconfig (honours ``.env``).
+
+    Uses ``resolve_setting`` (FEAT-540 M4 precedence: explicit -> env -> navconfig).
 
     Args:
         name: Setting name.

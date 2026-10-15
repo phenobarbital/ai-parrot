@@ -119,9 +119,11 @@ def __getattr__(name: str) -> Any:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     value = getattr(resolve_pg_settings(), field)
     if name == "GRAPHINDEX_PG_DSN" and value is None:
-        # The public module attribute keeps its historical framework default
-        # (the local Postgres from parrot.conf), imported only on access so
-        # that importing this module stays free of parrot.conf.
+        # Back-compat ONLY for this module attribute: it keeps its historical
+        # framework default (parrot.conf), imported lazily on access so importing
+        # this module stays free of parrot.conf. resolve_pg_settings() and
+        # create_graph_persistence("postgres") deliberately do NOT use it and
+        # require an explicit GRAPHINDEX_PG_DSN.
         from parrot.conf import default_dsn
 
         value = default_dsn

@@ -27,8 +27,8 @@ CEILINGS = [
 
 
 def _record(module: str, ceiling: int, result: object) -> None:
-    """Merge one probe result into the evidence file (skipped when UPDATE_EVIDENCE=0)."""
-    if os.environ.get("UPDATE_EVIDENCE", "1") == "0":
+    """Merge one probe result into the evidence file (opt-in: only when UPDATE_EVIDENCE=1)."""
+    if os.environ.get("UPDATE_EVIDENCE", "0") != "1":
         return
     try:
         _EVIDENCE.parent.mkdir(parents=True, exist_ok=True)

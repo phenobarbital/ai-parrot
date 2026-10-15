@@ -279,13 +279,24 @@ class GraphIndexLoader(AbstractLoader):
         password: Optional[str],
         database: Optional[str],
     ) -> Optional[dict[str, Any]]:
-        """Resolve explicitly requested Arango parameters through ``resolve_setting``."""
+        """Resolve explicitly requested Arango parameters through ``resolve_setting``.
+
+        Raises:
+            ValueError: When no host is configured (no implicit loopback default).
+        """
         explicit = arango is not None or any(value is not None for value in (host, user, password, database))
         if not explicit:
             return None
         base = dict(arango) if isinstance(arango, dict) else {}
+        resolved_host = resolve_setting("ARANGODB_HOST", explicit=base.get("host") or host)
+        if not resolved_host:
+            # Same rule as wiki ``resolve_arango_params``: never silently select loopback.
+            raise ValueError(
+                "Missing required ArangoDB setting: ARANGODB_HOST (pass arango_host=... / arango={'host': ...} "
+                "or set ARANGODB_HOST; an explicit 127.0.0.1 is accepted)"
+            )
         return {
-            "host": resolve_setting("ARANGODB_HOST", default="127.0.0.1", explicit=base.get("host") or host),
+            "host": resolved_host,
             "port": int(resolve_setting("ARANGODB_PORT", default=8529, explicit=base.get("port") or port)),
             "protocol": resolve_setting("ARANGODB_PROTOCOL", default="http", explicit=base.get("protocol") or protocol),
             "username": resolve_setting("ARANGODB_USERNAME", default="root", explicit=base.get("username") or user),

@@ -5,7 +5,7 @@ Features WAL journal mode, a ``files`` table for incremental staleness
 tracking, ``nodes``/``edges`` tables, and a ``nodes_fts`` FTS5/BM25
 virtual table for lexical search.
 
-Public API mirrors ``GraphIndexPersistence``:
+Public API mirrors ``ArangoPersistence``:
 - ``persist_graph(ctx, nodes, edges)`` — full persist with schema creation
 - ``replace_document_slice(ctx, document_uri, nodes, edges)`` — atomic DELETE+INSERT
 - ``is_stale(ctx, source_uri, mtime, sha1)`` — incremental staleness check
@@ -142,7 +142,7 @@ class SQLitePersistence:
     Creates one ``<tenant_id>.db`` file per tenant inside ``db_dir``.
     The schema is initialised automatically on first access.
 
-    The public API matches ``GraphIndexPersistence`` so the builder can
+    The public API matches ``ArangoPersistence`` so the builder can
     use either backend via dependency injection.  Additionally exposes
     ``is_stale()`` for incremental build support.
 

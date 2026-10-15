@@ -26,7 +26,7 @@ def test_sqlite_dir_selects_sqlite(tmp_path) -> None:
 
 def test_arango_params_select_arangodb() -> None:
     """Legacy Arango parameters select the ArangoDB registry backend."""
-    assert GraphIndexLoader(arango={"database": "graph"})._backend == "arangodb"
+    assert GraphIndexLoader(arango={"host": "db.example", "database": "graph"})._backend == "arangodb"
 
 
 def test_persistence_disabled_selects_null() -> None:
@@ -45,4 +45,13 @@ def test_sqlite_dir_conflicts_with_explicit_postgres(tmp_path) -> None:
 def test_sqlite_dir_conflicts_with_arango_params(tmp_path) -> None:
     """The two incompatible legacy persistence configurations are rejected."""
     with pytest.raises(ValueError, match="sqlite_dir"):
-        GraphIndexLoader(sqlite_dir=tmp_path, arango={"database": "graph"})
+        GraphIndexLoader(sqlite_dir=tmp_path, arango={"host": "db.example", "database": "graph"})
+
+
+def test_arango_without_host_raises_no_implicit_loopback(monkeypatch):
+    monkeypatch.delenv("ARANGODB_HOST", raising=False)
+    import parrot.loaders.graphindex as mod
+
+    monkeypatch.setattr(mod, "resolve_setting", lambda key, default=None, explicit=None, **_: explicit if explicit is not None else default)
+    with pytest.raises(ValueError, match="ARANGODB_HOST"):
+        GraphIndexLoader(arango={"database": "graph"})

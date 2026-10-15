@@ -203,7 +203,16 @@ async def _create_postgres(
     pool: Any = None,
     **_: Any,
 ) -> GraphPersistence:
-    """Build a ``PostgresPersistence``; ``dsn``/``schema`` fall back to ``GRAPHINDEX_PG_*`` settings."""
+    """Build a ``PostgresPersistence``; ``dsn``/``schema`` fall back to ``GRAPHINDEX_PG_*`` settings.
+
+    The DSN comes from the ``dsn`` option, else the ``GRAPHINDEX_PG_DSN`` setting
+    (environment variable or navconfig). The graph tree is framework-free and no
+    longer falls back to the ``parrot.conf`` database default, so deployments that
+    relied on that default must set ``GRAPHINDEX_PG_DSN`` explicitly.
+
+    Raises:
+        ValueError: When no DSN (and no ``pool``) is available.
+    """
     from parrot.knowledge.graphindex.persist_postgres import PostgresPersistence
     from parrot.knowledge.graphindex.pg_schema import resolve_pg_settings
 
@@ -212,7 +221,11 @@ async def _create_postgres(
         return PostgresPersistence(pool=pool, schema=settings.schema_name)
     settings = resolve_pg_settings(dsn=dsn, schema=schema)
     if not settings.dsn:
-        raise ValueError("graph backend 'postgres' requires option(s): dsn (or GRAPHINDEX_PG_DSN)")
+        raise ValueError(
+            "graph backend 'postgres' requires option(s): dsn (or GRAPHINDEX_PG_DSN). Set the GRAPHINDEX_PG_DSN "
+            "environment variable / navconfig setting or pass dsn=...; the parrot.conf database default is no "
+            "longer used by the framework-free graph tree."
+        )
     return PostgresPersistence(settings.dsn, schema=settings.schema_name)
 
 

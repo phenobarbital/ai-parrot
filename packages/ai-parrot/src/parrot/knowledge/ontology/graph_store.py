@@ -767,7 +767,7 @@ class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
     # Generic document helpers (graph commit protocol support)
     # ------------------------------------------------------------------
     #
-    # Thin AQL wrappers used by ``GraphIndexPersistence`` to implement the
+    # Thin AQL wrappers used by ``ArangoPersistence`` to implement the
     # audited commit protocol (apply_update / revert_commit / ...).  They
     # RAISE on failure (like ``_execute_aql``) — the caller owns the
     # degrade-or-propagate decision.
