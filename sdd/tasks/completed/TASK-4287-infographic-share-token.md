@@ -51,4 +51,7 @@ cd packages/ai-parrot-server/ui && npx vitest run src/lib/components/agents/canv
 
 ## Completion Note
 
-(filled on completion)
+Implemented in commit 884a191e2 (already merged to dev); SDD state closed retroactively on 2026-10-16.
+- AC1: `shareToken?: string` destructured in `$props()` (InfographicCanvas.svelte:24).
+- AC2: `<A2UISurface ... {shareToken} />` (InfographicCanvas.svelte:358).
+- AC3: `InfographicCanvas.a2ui.test.ts` — 6/6 passed (vitest).
