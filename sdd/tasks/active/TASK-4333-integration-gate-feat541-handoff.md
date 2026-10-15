@@ -38,6 +38,7 @@ Spec §3 M9 / §5. Turn every acceptance criterion into a passing test or record
 | `packages/ai-parrot/tests/knowledge/wiki/golden/cli_surface.json` | CREATE | CLI baseline |
 | `docs/graphindex/core-seams.md` | CREATE | seams doc |
 | `sdd/state/FEAT-540/handoff-541.md` | CREATE | FEAT-541 handoff |
+| `artifacts/logs/FEAT-540-import-ceilings.json` | CREATE | probe evidence required by Scope (git-ignored: committed with git add -f) |
 
 ---
 
