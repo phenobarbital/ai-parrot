@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-653 — Audio form voice post-processors
 **Spec**: `sdd/specs/audio-form-voice-postprocessors.spec.md`
-**Status**: pending
+**Status**: done-with-issues
 **Priority**: medium
 **Estimated effort**: M (2-4h, excluding corpus export)
 **Depends-on**: TASK-4255, TASK-4253
@@ -187,10 +187,8 @@ No new tests. The harness tests (TASK-4255) and the default-pinning tests cover 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sdd-worker (no work performed; blocked)
+**Date**: 2026-10-15
+**Notes**: Blocked on spec §8 Q8 (owners: Emmanuel / Juan). No FieldSync calibration corpus (JSONL export) exists in the repo or on this machine, and `sdd/state/FEAT-653/calibration/` was never created. Per the task, no corpus was fabricated and no defaults were invented (AC16). `VoiceFormConfig.{stt_confirm_threshold,llm_refine_threshold,llm_refine_timeout_s}` and `AudioSessionConfig.stt_confirm_threshold` keep their current defaults (0.6 / 0.8 / 4.0 / 0.6). Follow-up: once the corpus is exported, run `calibrate_voice_postprocessors.py` per this task's Run block and apply the recommendation to both `core/voice.py` and `audio/models.py`.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: task not executed (corpus absent).
