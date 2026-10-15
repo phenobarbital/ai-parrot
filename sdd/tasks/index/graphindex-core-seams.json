@@ -198,7 +198,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -208,8 +208,9 @@
       "parallelism_notes": "moves the tool classes that delegate to ops from TASK-4306/4308; edits wiki/tools.py after TASK-4308 (same file)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4309-parrot-tools-wiki-core.md"
+      "completed_at": "2026-10-15T00:08:14+00:00",
+      "file": "sdd/tasks/completed/TASK-4309-parrot-tools-wiki-core.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4310",
@@ -260,7 +261,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -270,8 +271,9 @@
       "parallelism_notes": "uses resolve_setting from TASK-4311 (wiki/project.py)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4312-pg-schema-lazy-settings.md"
+      "completed_at": "2026-10-15T00:08:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4312-pg-schema-lazy-settings.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4313",

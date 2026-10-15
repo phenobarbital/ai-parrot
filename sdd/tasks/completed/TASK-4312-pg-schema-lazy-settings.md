@@ -216,10 +216,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: native sonnet, consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: graphindex/pg_schema.py no longer imports asyncpg/navconfig/pgvector/parrot.conf at module level; PgSettings + resolve_pg_settings(); PEP 562 lazy GRAPHINDEX_PG_DSN/SCHEMA/EMBEDDING_DIM/ANN_INDEX_KIND; create_pg_pool raises ValueError naming GRAPHINDEX_PG_DSN when none; 7 new tests. DEVIATION for the spec owner: the lazy public GRAPHINDEX_PG_DSN attribute still falls back to parrot.conf.default_dsn (imported only on attribute read), because the existing test_default_dsn_fallback asserts it and persist_postgres.py/postgres_store.py take their DSN from it; resolve_pg_settings()/create_pg_pool apply no framework default, so the task's 'default_dsn only when the framework passes it explicitly' is only half met. A later task should move that fallback into the framework caller. No review corrections. Verification is `partial`: the engine merge-tier sandbox cannot reach Postgres and has pre-existing reds. With GRAPHINDEX_PG_DSN on local docker-postgres-1, tests/knowledge + tests/embeddings (4293 passed) show no failure absent from the clean origin/dev baseline.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: default_dsn fallback kept on the lazy public attribute (see Notes)
