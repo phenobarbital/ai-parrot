@@ -42,6 +42,10 @@ def _load_sdk_types() -> Any:
 
 
 types = _load_sdk_types()
+#: The real SDK modules, kept so a test can reinstate them after a whole-directory
+#: run has put this repository's ``tests/mcp`` package under the name ``mcp``.
+_SDK_MODULES = {name: module for name, module in sys.modules.items() if name == "mcp" or name.startswith("mcp.")}
+_SDK_MODULES.update({"mcp.types": types})
 
 
 class _BlockedFrameworkFinder(importlib.abc.MetaPathFinder):
@@ -88,6 +92,80 @@ def repo(tmp_path: Path) -> Path:
     store = create_wiki_store(config.storage_path(tmp_path), wiki_name=config.wiki_name, backend="sqlite")
     asyncio.run(store.upsert_pages([WikiPageRecord(concept_id="page", title="Page", body="Body")]))
     return tmp_path
+
+
+def _hide_framework_modules(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make ``parrot.mcp``, ``parrot.tools`` and ``parrot_tools`` unimportable.
+
+    Installing the finder is not enough on its own: modules another test already
+    imported stay in ``sys.modules`` (and as attributes of their parent package),
+    so they are removed for the duration of the test and restored afterwards.
+    """
+    import parrot
+
+    prefixes = _BlockedFrameworkFinder.prefixes
+    for name in [n for n in sys.modules if n.startswith(prefixes)]:
+        monkeypatch.delitem(sys.modules, name)
+    for attribute in ("mcp", "tools"):
+        monkeypatch.delattr(parrot, attribute, raising=False)
+    # Same treatment for the SDK: ``tests/mcp`` may sit under the name ``mcp``.
+    for name in [n for n in sys.modules if (n == "mcp" or n.startswith("mcp.")) and n not in _SDK_MODULES]:
+        monkeypatch.delitem(sys.modules, name)
+    for name, module in _SDK_MODULES.items():
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setattr(sys, "meta_path", [_BlockedFrameworkFinder(), *sys.meta_path])
+
+
+async def test_sdk_server_for_a_real_root_needs_no_framework_imports(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``transport="sdk"`` builds, lists and serves a real wiki without any framework module."""
+    _hide_framework_modules(monkeypatch)
+    with pytest.raises(ImportError, match="blocked framework import"):
+        importlib.import_module("parrot.mcp.local_server")
+
+    server = mcp_server.create_wiki_mcp_server(repo, transport="sdk")
+    try:
+        listed = await server.request_handlers[types.ListToolsRequest](types.ListToolsRequest())
+        tools = {tool.name: tool for tool in listed.root.tools}
+        bundle_descriptors = {item.name: item for item in server.wiki_bundle.descriptors}
+
+        assert {"wiki_query", "wiki_page", "wiki_status", "wiki_symbol_lookup"} <= set(tools)
+        assert set(tools) == set(bundle_descriptors)
+        for name, tool in tools.items():
+            assert tool.inputSchema == bundle_descriptors[name].input_model.model_json_schema()
+
+        called = await server.request_handlers[types.CallToolRequest](
+            types.CallToolRequest(params=types.CallToolRequestParams(name="wiki_status", arguments={}))
+        )
+        assert called.root.isError is False
+        assert not [name for name in sys.modules if name.startswith(_BlockedFrameworkFinder.prefixes)]
+    finally:
+        await mcp_server.close_bundle(server.wiki_bundle)
+
+
+def test_sdk_proxy_needs_no_framework_imports(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The SDK proxy is built without importing any framework module."""
+    _hide_framework_modules(monkeypatch)
+
+    server = mcp_server.create_proxy_mcp_server(
+        WikiRemoteConfig(url="http://wiki.invalid/mcp", actor="agent:t"), transport="sdk"
+    )
+
+    assert type(server).__module__.startswith("mcp.server")
+    assert not [name for name in sys.modules if name.startswith(_BlockedFrameworkFinder.prefixes)]
+
+
+def test_auto_does_not_swallow_framework_construction_errors(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only the ``parrot.mcp`` import may trigger the auto fallback."""
+    from parrot.mcp.local_server import StdioMCPServer
+
+    def fail(self: Any, tools: Any) -> None:
+        raise ImportError("raised while registering tools")
+
+    monkeypatch.setattr(StdioMCPServer, "register_tools", fail)
+    with pytest.raises(ImportError, match="registering tools"):
+        mcp_server.create_wiki_mcp_server(repo, transport="auto")
 
 
 async def test_sdk_adapter_works_without_framework_imports(monkeypatch: pytest.MonkeyPatch) -> None:
