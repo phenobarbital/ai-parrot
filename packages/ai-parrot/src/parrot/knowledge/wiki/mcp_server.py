@@ -10,6 +10,7 @@ Problem Statement for why the Bash-invoked CLI alone was not enough).
 from __future__ import annotations
 
 import asyncio
+import argparse
 import contextlib
 import logging
 import os
@@ -17,7 +18,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
@@ -26,7 +27,7 @@ from parrot.knowledge.wiki.project import (
     sqlite_policy_from_config,
 )
 from parrot.knowledge.wiki.store import create_wiki_store
-from parrot.knowledge.wiki.tools import create_wiki_tools
+from parrot.knowledge.wiki.transport import OperationDescriptor, build_operation_descriptors
 
 if TYPE_CHECKING:
     # Import only for the annotation below — the real (runtime) import is
@@ -100,6 +101,7 @@ class WikiToolBundle:
     read_store: Any
     ledger_service: Any | None
     namespace_handles: list[Any] = field(default_factory=list)
+    descriptors: list[OperationDescriptor] = field(default_factory=list)
 
 
 async def abuild_wiki_tools(
@@ -255,6 +257,11 @@ async def abuild_wiki_tools(
 
     if handles or skipped:
         read_store = FederatedWikiStore(store, config.wiki_name, handles, skipped)
+    # Keep framework wrappers out of the transport selection boundary.  The
+    # descriptors below are the common operation surface; framework wrappers
+    # are reconstructed only when the framework transport is selected.
+    from parrot.knowledge.wiki.tools import create_wiki_tools
+
     tools = create_wiki_tools(read_store, root=root, config=config, ledger_service=ledger_service)
 
     # FEAT-498: symbol-plane tools share the same federated read store.
@@ -307,7 +314,7 @@ async def abuild_wiki_tools(
             vault_tools.append(VaultIngestTool(store, root=root, config=config))
             description += f" — plus Obsidian vault management for {vault.name!r}"
 
-    return WikiToolBundle(
+    bundle = WikiToolBundle(
         tools=tools,
         vault_tools=vault_tools,
         description=description,
@@ -316,6 +323,8 @@ async def abuild_wiki_tools(
         ledger_service=ledger_service,
         namespace_handles=list(handles),
     )
+    bundle.descriptors = build_operation_descriptors(bundle)
+    return bundle
 
 
 def build_wiki_tools(
@@ -370,96 +379,256 @@ async def close_bundle(bundle: WikiToolBundle) -> None:
             logging.getLogger(__name__).warning("close_bundle: %s", exc)
 
 
-def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
-    """Build a `StdioMCPServer` with the six wiki tools registered.
+def to_framework_tools(descriptors: list[OperationDescriptor]) -> list[Any]:
+    """Wrap descriptors as lazily imported framework ``AbstractTool`` objects.
+
+    Args:
+        descriptors: Transport-neutral operations to expose through the
+            framework MCP server.
+
+    Returns:
+        Framework tool adapters with the descriptors' original schemas.
+    """
+    import parrot_tools.wiki  # noqa: F401 -- establish the optional framework distribution lazily
+    from parrot.tools.abstract import AbstractTool, ToolResult
+
+    class DescriptorTool(AbstractTool):
+        """Framework adapter for a single transport-neutral operation."""
+
+        def __init__(self, descriptor: OperationDescriptor) -> None:
+            super().__init__(name=descriptor.name, description=descriptor.description)
+            self.args_schema = descriptor.input_model
+            self._descriptor = descriptor
+
+        async def _execute(self, **kwargs: Any) -> ToolResult:
+            result = await self._descriptor.invoke(self.args_schema(**kwargs))
+            if result.is_error:
+                return ToolResult(success=False, status="error", result=None, error=result.text)
+            return ToolResult(result=result.data if result.data is not None else result.text)
+
+    return [DescriptorTool(descriptor) for descriptor in descriptors]
+
+
+def to_sdk_server(descriptors: list[OperationDescriptor], *, name: str) -> Any:
+    """Build a low-level MCP SDK stdio server for operation descriptors.
+
+    Args:
+        descriptors: Transport-neutral operations to expose.
+        name: MCP server name.
+
+    Returns:
+        A lazily-imported MCP SDK server with a ``start`` coroutine.
+    """
+    from mcp import types
+    from mcp.server import Server
+    from mcp.server.stdio import stdio_server
+
+    server = Server(name)
+
+    @server.list_tools()
+    async def list_tools() -> list[Any]:
+        """Return descriptor schemas in the SDK's MCP shape."""
+        return [
+            types.Tool(
+                name=descriptor.name,
+                description=descriptor.description,
+                inputSchema=descriptor.input_model.model_json_schema(),
+            )
+            for descriptor in descriptors
+        ]
+
+    @server.call_tool()
+    async def call_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
+        """Execute one operation and serialize its neutral result."""
+        descriptor = next((item for item in descriptors if item.name == tool_name), None)
+        if descriptor is None:
+            return types.CallToolResult(
+                content=[types.TextContent(type="text", text=f"Tool not found: {tool_name}")], isError=True
+            )
+        try:
+            result = await descriptor.invoke(descriptor.input_model(**arguments))
+        except Exception as exc:  # noqa: BLE001 -- MCP failures are request-scoped
+            return types.CallToolResult(content=[types.TextContent(type="text", text=str(exc))], isError=True)
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=result.text)],
+            structuredContent=result.data,
+            isError=result.is_error,
+        )
+
+    async def start() -> None:
+        """Serve JSON-RPC over the SDK stdio transport."""
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(read_stream, write_stream, server.create_initialization_options())
+
+    server.start = start
+    return server
+
+
+def create_wiki_mcp_server(
+    root: Path, *, transport: Literal["auto", "framework", "sdk"] = "auto"
+) -> Any:
+    """Build the wiki stdio MCP server on the selected transport.
 
     Args:
         root: Wiki project root (directory containing `.parrot/wiki.json`,
             or the nearest `.git` root — see `find_project_root()`).
 
     Returns:
-        A core `StdioMCPServer` with all six wiki tools registered.
+        A framework or SDK MCP server with all mounted wiki operations.
     """
-    # Some parrot.mcp.* dependencies print raw diagnostic lines directly to
-    # stdout during import (not via logging — pre-existing navconfig
-    # settings-init side effect, not introduced here). Redirect stdout to
-    # stderr for the duration of the import only, so nothing can leak into
-    # the JSON-RPC channel this import is deferred specifically to protect.
-    with contextlib.redirect_stdout(sys.stderr):
-        from parrot.mcp.local_server import StdioMCPServer
-        from parrot.mcp.server_base import LocalServerConfig
-
     config = load_effective_config(root).config
     bundle = build_wiki_tools(root, config)
     _ensure_stderr_logging()
-    server = StdioMCPServer(
-        LocalServerConfig(
-            name="wikitoolkit",
-            version="1.0.0",
-            description=bundle.description,
+    if transport == "sdk":
+        server = to_sdk_server(bundle.descriptors, name="wikitoolkit")
+        server.wiki_bundle = bundle
+        return server
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            from parrot.mcp.local_server import StdioMCPServer
+            from parrot.mcp.server_base import LocalServerConfig
+
+        server = StdioMCPServer(
+            LocalServerConfig(name="wikitoolkit", version="1.0.0", description=bundle.description)
         )
-    )
-    server.register_tools(bundle.tools)
-    if bundle.vault_tools:
-        server.register_tools(bundle.vault_tools)
-    return server
+        server.register_tools(to_framework_tools(bundle.descriptors))
+        server.register_tools([tool for tool in bundle.vault_tools if tool.name != "vault_ingest"])
+        server.wiki_bundle = bundle
+        return server
+    except ImportError:
+        if transport != "auto":
+            raise
+        server = to_sdk_server(bundle.descriptors, name="wikitoolkit")
+        server.wiki_bundle = bundle
+        return server
 
 
-def create_proxy_mcp_server(remote: Any) -> StdioMCPServer:
+def create_proxy_mcp_server(
+    remote: Any, *, transport: Literal["auto", "framework", "sdk"] = "auto"
+) -> Any:
     """Build a stdio server that forwards MCP requests to a remote wiki."""
-    with contextlib.redirect_stdout(sys.stderr):
-        from parrot.mcp.local_server import StdioMCPServer
-        from parrot.mcp.server_base import LocalServerConfig
     from parrot.knowledge.wiki.cli import _authoring_identity
     from parrot.knowledge.wiki.remote import RemoteWikiClient, RemoteWikiError
 
-    class ProxyStdioMCPServer(StdioMCPServer):
-        """Forwarding stdio server; remote failures remain request-scoped."""
-
-        def __init__(self, config: Any, remote_cfg: Any, actor: str) -> None:
-            super().__init__(config)
-            self._remote_cfg = remote_cfg
-            self._actor = actor
-            self._client: Any | None = None
-            self._tools_cache: list[dict[str, Any]] | None = None
-
-        async def _client_ready(self) -> Any:
-            if self._client is None:
-                client = RemoteWikiClient(self._remote_cfg, actor=self._actor)
-                await client.initialize()
-                self._client = client
-            return self._client
-
-        async def handle_tools_list(self, params: dict[str, Any]) -> dict[str, Any]:
-            """Return the remote tool definitions, cached after a successful request."""
-            try:
-                if self._tools_cache is None:
-                    self._tools_cache = await (await self._client_ready()).list_tools()
-            except RemoteWikiError:
-                self._client = None
-                raise
-            return {"tools": self._tools_cache}
-
-        async def handle_tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
-            """Forward one tool call and convert remote failures to local errors."""
-            try:
-                return await (await self._client_ready()).call_tool(
-                    params.get("name", ""), params.get("arguments", {}) or {}
-                )
-            except RemoteWikiError as exc:
-                self._client = None
-                raise RuntimeError(str(exc)) from exc
-
     actor = remote.actor if remote.actor is not None else _authoring_identity(None)
-    return ProxyStdioMCPServer(
-        LocalServerConfig(
-            name="wikitoolkit",
-            version="1.0.0",
-            description=f"remote proxy → {remote.url}",
-        ),
-        remote,
-        actor,
-    )
+
+    def make_sdk_proxy() -> Any:
+        """Build the lazy SDK proxy without importing framework modules."""
+        from mcp import types
+        from mcp.server import Server
+        from mcp.server.stdio import stdio_server
+
+        server = Server("wikitoolkit")
+        client: Any | None = None
+        tools_cache: list[dict[str, Any]] | None = None
+
+        async def client_ready() -> Any:
+            nonlocal client
+            if client is None:
+                client = RemoteWikiClient(remote, actor=actor)
+                await client.initialize()
+            return client
+
+        @server.list_tools()
+        async def list_tools() -> list[Any]:
+            """Forward remote MCP tool definitions."""
+            nonlocal client, tools_cache
+            try:
+                if tools_cache is None:
+                    tools_cache = await (await client_ready()).list_tools()
+                return [types.Tool(**tool) for tool in tools_cache]
+            except RemoteWikiError:
+                client = None
+                raise
+
+        @server.call_tool()
+        async def call_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
+            """Forward remote MCP calls preserving result envelopes."""
+            nonlocal client
+            try:
+                result = await (await client_ready()).call_tool(tool_name, arguments)
+            except RemoteWikiError as exc:
+                client = None
+                return types.CallToolResult(
+                    content=[types.TextContent(type="text", text=str(exc))], isError=True
+                )
+            content = [
+                types.TextContent(type="text", text=item.get("text", ""))
+                for item in result.get("content", [])
+                if item.get("type") == "text"
+            ]
+            return types.CallToolResult(
+                content=content,
+                structuredContent=result.get("structuredContent"),
+                isError=result.get("isError", False),
+            )
+
+        async def start() -> None:
+            """Serve the SDK proxy over stdio."""
+            async with stdio_server() as (read_stream, write_stream):
+                await server.run(read_stream, write_stream, server.create_initialization_options())
+
+        server.start = start
+        return server
+
+    if transport == "sdk":
+        return make_sdk_proxy()
+
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            from parrot.mcp.local_server import StdioMCPServer
+            from parrot.mcp.server_base import LocalServerConfig
+
+        class ProxyStdioMCPServer(StdioMCPServer):
+            """Forwarding stdio server; remote failures remain request-scoped."""
+
+            def __init__(self, config: Any, remote_cfg: Any, proxy_actor: str) -> None:
+                super().__init__(config)
+                self._remote_cfg = remote_cfg
+                self._actor = proxy_actor
+                self._client: Any | None = None
+                self._tools_cache: list[dict[str, Any]] | None = None
+
+            async def _client_ready(self) -> Any:
+                if self._client is None:
+                    client = RemoteWikiClient(self._remote_cfg, actor=self._actor)
+                    await client.initialize()
+                    self._client = client
+                return self._client
+
+            async def handle_tools_list(self, params: dict[str, Any]) -> dict[str, Any]:
+                """Return the remote tool definitions, cached after a successful request."""
+                try:
+                    if self._tools_cache is None:
+                        self._tools_cache = await (await self._client_ready()).list_tools()
+                except RemoteWikiError:
+                    self._client = None
+                    raise
+                return {"tools": self._tools_cache}
+
+            async def handle_tools_call(self, params: dict[str, Any]) -> dict[str, Any]:
+                """Forward one tool call and convert remote failures to local errors."""
+                try:
+                    return await (await self._client_ready()).call_tool(
+                        params.get("name", ""), params.get("arguments", {}) or {}
+                    )
+                except RemoteWikiError as exc:
+                    self._client = None
+                    raise RuntimeError(str(exc)) from exc
+
+        return ProxyStdioMCPServer(
+            LocalServerConfig(
+                name="wikitoolkit",
+                version="1.0.0",
+                description=f"remote proxy → {remote.url}",
+            ),
+            remote,
+            actor,
+        )
+    except ImportError:
+        if transport != "auto":
+            raise
+        return make_sdk_proxy()
 
 
 def main() -> None:
@@ -469,6 +638,10 @@ def main() -> None:
     to stderr before anything else runs.
     """
     _ensure_stderr_logging()
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--transport", choices=("auto", "framework", "sdk"), default="auto")
+    args = parser.parse_args()
 
     root = find_project_root(Path(_INVOCATION_CWD))
     if root is None:
@@ -488,7 +661,7 @@ def main() -> None:
 
     remote = resolve_remote(config)
     if remote is not None:
-        server = create_proxy_mcp_server(remote)
+        server = create_proxy_mcp_server(remote, transport=args.transport)
     else:
         if not config.is_built(root):
             print(
@@ -496,12 +669,17 @@ def main() -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
-        server = create_wiki_mcp_server(root)
+        server = create_wiki_mcp_server(root, transport=args.transport)
     # The lazy parrot.mcp.* import inside create_wiki_mcp_server() may have
     # re-attached a stdout handler (see _ensure_stderr_logging docstring) —
     # strip it again right before the stdin/stdout JSON-RPC loop starts.
     _ensure_stderr_logging()
-    asyncio.run(server.start())
+    try:
+        asyncio.run(server.start())
+    finally:
+        bundle = getattr(server, "wiki_bundle", None)
+        if bundle is not None:
+            _run_sync(close_bundle(bundle))
 
 
 if __name__ == "__main__":
