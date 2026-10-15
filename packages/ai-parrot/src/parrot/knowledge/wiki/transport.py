@@ -171,7 +171,10 @@ _SPECS: dict[str, _Spec] = {
         "Apply source slices pushed by `wikitoolkit build/upsert/ingest` in remote mode.\n\n    At most 200 slices and 1 MiB per call. For the CLI build push, not for agents.\n    ",
     ),
     "wiki_sync_push": _Spec(
-        "bulk", SyncPagesInput, "Merge remote sync data used by `wikitoolkit sync` in remote mode; not for agents."
+        "bulk",
+        SyncPagesInput,
+        "Merge remote sync data used by `wikitoolkit sync` in remote mode; not for agents.\n\n"
+        "    At most 200 pages and 1 MiB per call; the client chunks larger pushes.\n    ",
     ),
     "wiki_sync_pull": _Spec(
         "bulk", SyncPagesInput, "Return remote sync data used by `wikitoolkit sync` in remote mode; not for agents."
