@@ -229,6 +229,7 @@ _SPECS: dict[str, _Spec] = {
     ),
 }
 
+
 @dataclass
 class WikiOperationContext:
     """Everything the operations need, with no framework objects involved.

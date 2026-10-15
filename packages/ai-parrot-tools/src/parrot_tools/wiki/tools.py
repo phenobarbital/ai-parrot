@@ -538,9 +538,15 @@ class WikiSyncPushTool(AbstractTool):
             pages=[page if isinstance(page, WikiPageRecord) else WikiPageRecord.model_validate(page) for page in pages],
             edges=edges or [],
         )
-        return _to_tool_result(await op_sync_push(
-            self._store, params, wiki_name=self._wiki_name, root=self._root, config=self._config,
-        ))
+        return _to_tool_result(
+            await op_sync_push(
+                self._store,
+                params,
+                wiki_name=self._wiki_name,
+                root=self._root,
+                config=self._config,
+            )
+        )
 
 
 class WikiSyncPullTool(AbstractTool):
