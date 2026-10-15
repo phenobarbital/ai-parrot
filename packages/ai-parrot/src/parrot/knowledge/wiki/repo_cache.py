@@ -45,7 +45,7 @@ class BuildOutcome(BaseModel):
 
 
 @asynccontextmanager
-async def repo_lock(lock_path: Path, *, timeout: float) -> AsyncIterator[bool]:
+async def repo_lock(lock_path: Path, *, timeout: float, shared: bool = False) -> AsyncIterator[bool]:
     """Acquire an advisory process lock without blocking the event loop.
 
     The lock is held through an open descriptor via nonblocking ``flock``
@@ -57,6 +57,7 @@ async def repo_lock(lock_path: Path, *, timeout: float) -> AsyncIterator[bool]:
     Args:
         lock_path: Lock file path; parent directories are created.
         timeout: Seconds to keep retrying. ``0`` tries exactly once.
+        shared: Take ``LOCK_SH`` (concurrent readers) instead of ``LOCK_EX``.
 
     Yields:
         ``True`` when the lock is held by this caller, ``False`` on timeout.
@@ -68,10 +69,11 @@ async def repo_lock(lock_path: Path, *, timeout: float) -> AsyncIterator[bool]:
         if fcntl is None:  # pragma: no cover - non-POSIX platform
             acquired = True
         else:
+            mode = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
             deadline = time.monotonic() + max(timeout, 0.0)
             while True:
                 try:
-                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(handle.fileno(), mode | fcntl.LOCK_NB)
                     acquired = True
                     break
                 except OSError:
@@ -193,6 +195,7 @@ class RepoWikiCache:
                     outcome = await self.build_runner.run(paths.clone_dir, paths.plane_dir)
                     if not outcome.ok or not self._usable(paths):
                         self.logger.warning("wiki cache refresh failed for %s", paths.repository)
+                        await asyncio.to_thread(self._evict_if_needed, keep=paths.slug)
                         return None
                     self._record_success(paths)
                     await asyncio.to_thread(self._evict_if_needed, keep=paths.slug)
@@ -202,6 +205,22 @@ class RepoWikiCache:
         except Exception as exc:
             self.logger.warning("wiki cache refresh unavailable for %s: %s", repository, exc)
             return None
+
+    @asynccontextmanager
+    async def read_lease(self, repository: str, *, timeout: float = 0.0) -> AsyncIterator[Optional[RepoCachePaths]]:
+        """Hold a shared lock on a usable entry for the duration of a read.
+
+        Yields the entry's paths while refresh and eviction are excluded, or
+        ``None`` when the slug is invalid, the lock is unavailable within
+        ``timeout``, or the plane is not usable. Never raises for those cases.
+        """
+        try:
+            paths = self.paths_for(repository)
+        except ValueError:
+            yield None
+            return
+        async with repo_lock(paths.lock_path, timeout=timeout, shared=True) as acquired:
+            yield paths if acquired and self._usable(paths) else None
 
     async def _ensure_clone(self, paths: RepoCachePaths) -> None:
         """Clone or validate and fast-forward a cache clone, recloning once.
@@ -219,7 +238,7 @@ class RepoWikiCache:
                     if not await self._clone_matches(paths):
                         raise RuntimeError("cached clone identity or branch does not match")
                     await self.git_toolkit.pull_repo(
-                        str(paths.clone_dir), self.clone_branch, timeout=self.build_runner.timeout
+                        str(paths.clone_dir), self.clone_branch, timeout=self.build_runner.timeout, private=True
                     )
                 else:
                     await self.git_toolkit.clone_repo(
@@ -329,6 +348,26 @@ class RepoWikiCache:
             if path.exists():
                 rmtree(path)
 
+    def _remove_if_unlocked(self, paths: RepoCachePaths) -> bool:
+        """Remove an entry only while holding its exclusive lock; ``False`` if busy."""
+        if fcntl is None:  # pragma: no cover - non-POSIX platform
+            self._remove_entry(paths)
+            return True
+        paths.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        handle = open(paths.lock_path, "a+")  # noqa: SIM115 - closed in finally
+        try:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                return False
+            try:
+                self._remove_entry(paths)
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            return True
+        finally:
+            handle.close()
+
     def _evict_if_needed(self, *, keep: Optional[str] = None) -> list[str]:
         """Evict unlocked least-recently-used cache entries above the size cap.
 
@@ -341,10 +380,13 @@ class RepoWikiCache:
         locks_root = self.cache_dir / "locks"
         total = self._tree_size(repos_root) + self._tree_size(planes_root) + self._tree_size(locks_root)
         entries: list[tuple[float, str, int]] = []
-        for clone_dir in repos_root.iterdir() if repos_root.exists() else ():
-            if not clone_dir.is_dir() or clone_dir.is_symlink():
-                continue
-            slug = clone_dir.name
+        slugs: set[str] = set()
+        for root in (repos_root, planes_root):
+            for candidate in root.iterdir() if root.exists() else ():
+                if candidate.is_dir() and not candidate.is_symlink():
+                    slugs.add(candidate.name)
+        for slug in sorted(slugs):
+            clone_dir = repos_root / slug
             plane_dir = planes_root / slug
             size = self._tree_size(clone_dir) + self._tree_size(plane_dir)
             state = self._read_json(plane_dir / _STATE_FILENAME) or {}
@@ -357,7 +399,7 @@ class RepoWikiCache:
         for _last_used, slug, size in sorted(entries):
             if total <= self.max_bytes:
                 break
-            if slug == keep or self._lock_is_busy(locks_root / f"{slug}.lock"):
+            if slug == keep:
                 continue
             paths = RepoCachePaths(
                 slug=slug,
@@ -366,7 +408,8 @@ class RepoWikiCache:
                 plane_dir=planes_root / slug,
                 lock_path=locks_root / f"{slug}.lock",
             )
-            self._remove_entry(paths)
+            if not self._remove_if_unlocked(paths):
+                continue
             total -= size
             evicted.append(slug)
         return evicted
