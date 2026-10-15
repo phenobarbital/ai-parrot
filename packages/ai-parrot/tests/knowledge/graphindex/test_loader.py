@@ -1,4 +1,4 @@
-"""Unit tests for parrot.knowledge.graphindex.loader.GraphIndexLoader.
+"""Unit tests for parrot.loaders.graphindex.GraphIndexLoader.
 
 The heavy pipeline pieces (embedder, builder, ArangoDB) are replaced with
 fakes so the loader's wiring is exercised without models or a live database:
@@ -6,20 +6,18 @@ fakes so the loader's wiring is exercised without models or a live database:
 * a fake ``GraphIndexBuilder`` whose ``build`` feeds canned nodes/edges through
   the persistence object the loader supplied (so the capturing wrapper records
   them), then returns a ``BuildResult``;
-* the no-credentials path is asserted to use the in-memory ``_NullPersistence``;
-* the credentials path is asserted to construct an ``OntologyGraphStore`` +
-  ``ArangoPersistence`` against a mocked asyncdb client.
+* the no-credentials path is asserted to use the registry's ``NullPersistence``;
+* the credentials path is asserted to construct an ontology graph store through
+  the backend registry against a mocked asyncdb client.
 """
 
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import parrot.knowledge.graphindex.loader as loader_mod
-from parrot.knowledge.graphindex.loader import (
-    GraphIndexLoader,
-    _NullPersistence,
-)
+import parrot.loaders.graphindex as loader_mod
+from parrot.knowledge.graphindex.backends import NullPersistence
+from parrot.knowledge.graphindex.loader import GraphIndexLoader
 from parrot.knowledge.graphindex.schema import (
     BuildResult,
     NodeKind,
@@ -80,6 +78,9 @@ class TestConstruction:
     def test_is_abstract_loader_subclass(self, patched):
         assert issubclass(GraphIndexLoader, AbstractLoader)
 
+    def test_legacy_import_returns_relocated_class(self, patched):
+        assert GraphIndexLoader is loader_mod.GraphIndexLoader
+
     def test_no_creds_disables_persistence(self, patched):
         loader = GraphIndexLoader(tenant_id="t")
         assert loader.persist_enabled is False
@@ -115,7 +116,7 @@ class TestLoad:
         loader = GraphIndexLoader(tenant_id="t", output_dir=tmp_path)
         await loader.load([tmp_path])
         inner = patched["persistence"]._inner
-        assert isinstance(inner, _NullPersistence)
+        assert isinstance(inner, NullPersistence)
 
     @pytest.mark.asyncio
     async def test_node_metadata_mapping(self, patched, tmp_path):
@@ -152,9 +153,8 @@ class TestCredsPersistence:
         store_cls = MagicMock(return_value=fake_store)
         fake_persistence = MagicMock()
         fake_persistence.persist_graph = AsyncMock(return_value={"nodes_persisted": 2, "edges_persisted": 0})
-        persistence_cls = MagicMock(return_value=fake_persistence)
-        monkeypatch.setattr(loader_mod, "OntologyGraphStore", store_cls)
-        monkeypatch.setattr(loader_mod, "ArangoPersistence", persistence_cls)
+        monkeypatch.setattr(loader_mod, "create_ontology_graph_store", store_cls)
+        monkeypatch.setattr(loader_mod, "create_graph_persistence", AsyncMock(return_value=fake_persistence))
 
         loader = GraphIndexLoader(
             tenant_id="t",
@@ -167,6 +167,11 @@ class TestCredsPersistence:
         await loader.build_graph([tmp_path])
 
         fake_asyncdb.AsyncDB.assert_called_once()
-        store_cls.assert_called_once_with(arango_client=fake_db)
+        store_cls.assert_called_once_with("arangodb", arango_client=fake_db)
         fake_store.initialize_tenant.assert_awaited_once()
-        persistence_cls.assert_called_once_with(fake_store)
+        loader_mod.create_graph_persistence.assert_awaited_once_with(
+            "arangodb",
+            graph_store=fake_store,
+            arango_params=loader._arango_params,
+            tenant_ctx=loader.ctx,
+        )
