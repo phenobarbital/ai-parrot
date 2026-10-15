@@ -13,7 +13,7 @@
  * `features.x` is a runtime object-property read (not a bare `const` at
  * each call site), Rollup's dead-code elimination cannot prove the
  * guarded `import()` is unreachable when the flag is compiled `false` —
- * the chunk is still *emitted* into `dist/assets` (verified: CHARTS/
+ * the chunk is still *emitted* into `dist/ui/assets` (verified: CHARTS/
  * MAPS/AVATAR/RICH_EDITOR builds are byte-for-byte identical on/off). A
  * real per-flag chunk-removal fix would require flattening this module
  * to individual `const` exports, a cross-cutting change deferred as a

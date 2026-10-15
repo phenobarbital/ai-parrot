@@ -5,7 +5,7 @@
 // with a flag off, the corresponding heavy component is never rendered
 // and a "feature disabled in this build" placeholder appears instead —
 // i.e. the runtime behavior the gating exists for. It does NOT assert
-// that the flagged chunk is absent from `dist/assets`: verified during
+// that the flagged chunk is absent from `dist/ui/assets`: verified during
 // implementation (see this task's Completion Note) that Rollup always
 // emits a chunk for every reachable `import()` call regardless of a
 // surrounding `if (features.x)` runtime guard, because `features.x` is

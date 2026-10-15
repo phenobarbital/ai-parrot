@@ -10,8 +10,8 @@ import Login from "./Login.svelte";
 describe("Login", () => {
   beforeEach(() => {
     localStorage.clear();
-    window.history.pushState({}, "", "/admin/login");
-    router.path = "/admin/login";
+    window.history.pushState({}, "", "/login");
+    router.path = "/login";
     // Login.svelte's onMount discovery call deliberately bypasses `apiClient`
     // (see Login.svelte's comment: routing /api/v1/auth/methods through the
     // shared 401 interceptor corrupts `?next=` before the form ever mounts)
@@ -29,7 +29,7 @@ describe("Login", () => {
       .spyOn(apiClient, "post")
       .mockResolvedValue({ data: { token: "tok-1", username: "alice" } });
 
-    window.history.pushState({}, "", "/admin/login?next=%2Fadmin%2Fdashboard");
+    window.history.pushState({}, "", "/login?next=%2Fadmin%2Fdashboard");
 
     const { getByLabelText, getByRole } = render(Login);
 
@@ -41,7 +41,7 @@ describe("Login", () => {
     await waitFor(() => expect(router.path).toBe("/admin/dashboard"));
   });
 
-  it("submits credentials and navigates to Home when there is no ?next", async () => {
+  it("submits credentials and navigates to the agent list when there is no ?next", async () => {
     vi.spyOn(apiClient, "post").mockResolvedValue({ data: { token: "tok-1" } });
 
     const { getByLabelText, getByRole } = render(Login);
@@ -49,7 +49,7 @@ describe("Login", () => {
     await fireEvent.input(getByLabelText("Password"), { target: { value: "secret" } });
     await fireEvent.click(getByRole("button", { name: /sign in/i }));
 
-    await waitFor(() => expect(router.path).toBe("/admin/home"));
+    await waitFor(() => expect(router.path).toBe("/agents"));
   });
 
   it("renders the server's JSON error message inline on failure", async () => {

@@ -14,8 +14,22 @@
   import { themeStore } from "$lib/stores/theme.svelte";
   import AppShell from "$lib/components/AppShell.svelte";
 
+  // End-user pages live at the site root; administration under /admin.
+  // Every first segment used here MUST be listed in config.appSections and
+  // served by parrot/server/ui/serving.py (SPA_SECTIONS).
   router.routes = [
-    { path: "/admin/login", component: () => import("./pages/Login.svelte") },
+    { path: "/login", component: () => import("./pages/Login.svelte") },
+    {
+      path: "/agents",
+      component: () => import("./pages/Agents.svelte"),
+      requiresAuth: true,
+    },
+    {
+      path: "/agents/:name/chat",
+      component: () => import("./pages/agents/AgentChatPage.svelte"),
+      requiresAuth: true,
+    },
+    // --- Administration -------------------------------------------------
     { path: "/admin/home", component: () => import("./pages/Home.svelte"), requiresAuth: true },
     {
       path: "/admin/dashboard",
@@ -40,9 +54,7 @@
       component: () => import("./pages/agents/AgentFormPage.svelte"),
       requiresAuth: true,
     },
-    // FEAT-476: distinct segment count from "/admin/agents/:name" above —
-    // exact-length route matching (router.svelte.ts) means these never
-    // collide, so ordering relative to it doesn't matter.
+    // FEAT-476 compatibility alias for the pre-root-mount chat URL.
     {
       path: "/admin/agents/:name/chat",
       component: () => import("./pages/agents/AgentChatPage.svelte"),
@@ -54,12 +66,14 @@
   let activeRoute = $state<RouteDefinition | null>(null);
 
   function fallbackPath(): string {
-    return authStore.isAuthenticated ? "/admin/home" : config.loginPath;
+    return authStore.isAuthenticated ? config.homePath : config.loginPath;
   }
 
   async function resolve(): Promise<void> {
-    // Normalize the bare mount root to home (authenticated) or login.
-    if (router.path === config.basePath || router.path === `${config.basePath}/`) {
+    // Normalize the bare site root (and the bare /admin root) to the
+    // agent list (authenticated) or login.
+    const bare = router.path.split("?")[0];
+    if (bare === "/" || bare === "" || bare === config.adminPath || bare === `${config.adminPath}/`) {
       router.navigate(fallbackPath(), { replace: true });
       // Recurse immediately rather than relying on the $effect below to
       // re-fire on the mutated `router.path` — deterministic within a

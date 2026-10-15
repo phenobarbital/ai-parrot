@@ -95,7 +95,7 @@ describe("AuthStore", () => {
     expect(store.token).toBeNull();
     expect(localStorage.getItem("ai_parrot_token")).toBeNull();
     expect(router.path).toBe(
-      `/admin/login?next=${encodeURIComponent("/admin/dashboard")}`,
+      `/login?next=${encodeURIComponent("/admin/dashboard")}`,
     );
   });
 });
