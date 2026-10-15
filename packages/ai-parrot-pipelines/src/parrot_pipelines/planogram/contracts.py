@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -93,13 +93,55 @@ class ReferenceImage(BaseModel):
     brand: Optional[str] = None
 
 
+AppearanceColor = Literal[
+    "white",
+    "black",
+    "grey",
+    "silver",
+    "blue",
+    "red",
+    "green",
+    "yellow",
+    "orange",
+    "purple",
+    "brown",
+    "multicolor",
+    "unknown",
+]
+AppearanceFinish = Literal["matte", "glossy", "unknown"]
+
+#: Values meaning "could not determine": valid model answers, never valid expectations.
+APPEARANCE_UNDETERMINED: FrozenSet[str] = frozenset({"unknown", "not_visible"})
+
+_COLOURS: FrozenSet[str] = frozenset(
+    {"white", "black", "grey", "silver", "blue", "red", "green", "yellow", "orange", "purple", "brown", "multicolor"}
+)
+
+#: Attribute name -> values an ``appearance`` rule may expect.
+APPEARANCE_VALUES: Dict[str, FrozenSet[str]] = {
+    "background_color": _COLOURS,
+    "border_color": _COLOURS | {"none"},
+    "finish": frozenset({"matte", "glossy"}),
+    "base_surface_color": _COLOURS,
+}
+
+
+class ZoneAppearance(BaseModel):
+    """Closed-vocabulary appearance of one observed zone crop, as the model reads it."""
+
+    background_color: AppearanceColor = "unknown"
+    border_color: Union[AppearanceColor, Literal["none"]] = "unknown"
+    finish: AppearanceFinish = "unknown"
+    base_surface_color: Union[AppearanceColor, Literal["not_visible"]] = "unknown"
+
+
 class RuleObservation(BaseModel):
     """Neutral crop-tied observation, not an expected-rule verdict."""
 
     image_id: str
     target_id: str  # observed zone/shape id, or "<image_id>:zone-region:<zone_id>" for an inspected region
-    kind: Literal["illumination", "visual_features", "zone_present"]
-    value: str | bool | List[str] | None = None
+    kind: Literal["illumination", "visual_features", "zone_present", "appearance"]
+    value: str | bool | List[str] | Dict[str, str] | None = None
     assessed: bool = False
     source: ObservationSource
     evidence: List[str] = Field(default_factory=list)
