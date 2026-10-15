@@ -285,7 +285,7 @@ class TestResolvedIntentBackCompat:
         intent = ResolvedIntent(
             action="graph_query",
             pattern="find_dept",
-            aql="FOR v IN c RETURN v",
+            query="FOR v IN c RETURN v",
             params={"user_id": "emp/1"},
             collection_binds={},
             post_action="none",

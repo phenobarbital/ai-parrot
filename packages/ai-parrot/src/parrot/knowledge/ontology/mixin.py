@@ -60,18 +60,21 @@ fallback) are added on top of the existing single-traversal logic.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from parrot.auth.exceptions import AuthorizationRequired
 
 from .authorization import AuthorizationChecker
 from .cache import OntologyCache
+from .contracts import DynamicQuery
 from .entity_resolver import EntityAmbiguityError, EntityNotFoundError, EntityResolver
-from .graph_store import OntologyGraphStore
 from .intent import OntologyIntentResolver
 from .schema import ContextEnvelope, EnrichedContext, ResolvedIntent
 from .tenant import TenantOntologyManager
 from .tool_dispatcher import RenderError, ToolCallDispatcher
+
+if TYPE_CHECKING:
+    from .contracts import OntologyTraversalStore
 
 logger = logging.getLogger("Parrot.Ontology.Mixin")
 
@@ -102,7 +105,7 @@ class OntologyRAGMixin:
 
     Args:
         tenant_manager: TenantOntologyManager instance.
-        graph_store: OntologyGraphStore instance.
+        graph_store: OntologyTraversalStore instance.
         vector_store: Existing PgVector store for post-action vector search.
         cache: OntologyCache instance (Redis-backed).
         llm_client: LLM client for intent resolver's LLM path.
@@ -117,7 +120,7 @@ class OntologyRAGMixin:
     def __init__(
         self,
         tenant_manager: TenantOntologyManager | None = None,
-        graph_store: OntologyGraphStore | None = None,
+        graph_store: OntologyTraversalStore | None = None,
         vector_store: Any = None,
         cache: OntologyCache | None = None,
         llm_client: Any = None,
@@ -334,11 +337,8 @@ class OntologyRAGMixin:
                 # Level 1 — primary authority traversal
                 primary_params = {**intent.params, "authority_level": "primary"}
                 try:
-                    primary_result = await self._ont_graph_store.execute_traversal(
-                        ctx=tenant_ctx,
-                        aql=intent.aql,
-                        bind_vars=primary_params,
-                        collection_binds=intent.collection_binds,
+                    primary_result = await self._run_graph_query(
+                        tenant_ctx, intent, pattern, primary_params,
                     )
                     if primary_result:
                         graph_result = primary_result
@@ -356,11 +356,8 @@ class OntologyRAGMixin:
                     # Level 2 — secondary authority traversal
                     secondary_params = {**intent.params, "authority_level": "secondary"}
                     try:
-                        secondary_result = await self._ont_graph_store.execute_traversal(
-                            ctx=tenant_ctx,
-                            aql=intent.aql,
-                            bind_vars=secondary_params,
-                            collection_binds=intent.collection_binds,
+                        secondary_result = await self._run_graph_query(
+                            tenant_ctx, intent, pattern, secondary_params,
                         )
                         if secondary_result:
                             graph_result = secondary_result
@@ -376,11 +373,8 @@ class OntologyRAGMixin:
             else:
                 # Standard single traversal for non-authority patterns
                 try:
-                    single_result = await self._ont_graph_store.execute_traversal(
-                        ctx=tenant_ctx,
-                        aql=intent.aql,
-                        bind_vars=intent.params,
-                        collection_binds=intent.collection_binds,
+                    single_result = await self._run_graph_query(
+                        tenant_ctx, intent, pattern, intent.params,
                     )
                     if single_result:
                         graph_result = single_result
@@ -467,6 +461,41 @@ class OntologyRAGMixin:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    async def _run_graph_query(
+        self,
+        tenant_ctx: Any,
+        intent: ResolvedIntent,
+        pattern: Any,
+        params: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Run the intent through the traversal contract.
+
+        Pattern intents go through ``execute_pattern`` so every backend picks
+        its own template; dynamic LLM queries use ``execute_query``.
+
+        Args:
+            tenant_ctx: Tenant context.
+            intent: The resolved intent.
+            pattern: The matched ``TraversalPattern`` (``None`` for dynamic).
+            params: Bind variables.
+
+        Returns:
+            Result rows.
+        """
+        if pattern is not None:
+            return await self._ont_graph_store.execute_pattern(
+                tenant_ctx, pattern, params, intent.collection_binds,
+            )
+        return await self._ont_graph_store.execute_query(
+            tenant_ctx,
+            DynamicQuery(
+                dialect=intent.dialect,
+                text=intent.query or "",
+                bind_vars=params,
+                collection_binds=intent.collection_binds,
+            ),
+        )
 
     async def _build_and_dispatch(
         self,

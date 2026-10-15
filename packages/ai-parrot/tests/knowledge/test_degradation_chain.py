@@ -181,7 +181,7 @@ class TestDegradationChain:
 
         policy_row = {"_id": "documents/policy_1", "title": "Sales Commissions Policy"}
         # primary returns results, secondary should NOT be called
-        mock_graph_store.execute_traversal.return_value = [policy_row]
+        mock_graph_store.execute_pattern.return_value = [policy_row]
 
         with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
              patch(
@@ -204,8 +204,8 @@ class TestDegradationChain:
         assert result.context.source == "graph:primary"
         assert result.context.graph_context == [policy_row]
         # Level 1 call uses authority_level="primary"
-        call_args = mock_graph_store.execute_traversal.call_args_list[0]
-        assert call_args.kwargs.get("bind_vars", {}).get("authority_level") == "primary"
+        call_args = mock_graph_store.execute_pattern.call_args_list[0]
+        assert call_args.args[2].get("authority_level") == "primary"
 
     @pytest.mark.asyncio
     async def test_level2_secondary_when_primary_empty(
@@ -221,15 +221,15 @@ class TestDegradationChain:
 
         faq_row = {"_id": "documents/faq_1", "title": "Commissions FAQ"}
 
-        def traversal_side_effect(**kwargs: dict) -> list:
-            level = kwargs.get("bind_vars", {}).get("authority_level", "")
+        def traversal_side_effect(ctx, pattern, params, collection_binds=None) -> list:
+            level = params.get("authority_level", "")
             if level == "primary":
                 return []  # Level 1 empty
             if level == "secondary":
                 return [faq_row]  # Level 2 hit
             return []
 
-        mock_graph_store.execute_traversal.side_effect = traversal_side_effect
+        mock_graph_store.execute_pattern.side_effect = traversal_side_effect
 
         with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
              patch(
@@ -251,7 +251,7 @@ class TestDegradationChain:
         assert result.context is not None
         assert result.context.source == "graph:secondary"
         assert result.context.graph_context == [faq_row]
-        assert mock_graph_store.execute_traversal.call_count == 2
+        assert mock_graph_store.execute_pattern.call_count == 2
 
     @pytest.mark.asyncio
     async def test_level3_filtered_vector_when_graph_empty(
@@ -264,7 +264,7 @@ class TestDegradationChain:
         """Level 3: both graph levels empty, filtered vector search succeeds."""
         mock_tenant_mgr = MagicMock(spec=TenantOntologyManager)
         mock_tenant_mgr.resolve.return_value = authority_tenant_ctx
-        mock_graph_store.execute_traversal.return_value = []  # Both levels empty
+        mock_graph_store.execute_pattern.return_value = []  # Both levels empty
 
         filtered_doc = {"doc_id": "policy_manual_1", "content": "Commission rules"}
         mock_vector_store = AsyncMock()
@@ -311,7 +311,7 @@ class TestDegradationChain:
         """Level 4: filtered vector empty, plain vector search succeeds."""
         mock_tenant_mgr = MagicMock(spec=TenantOntologyManager)
         mock_tenant_mgr.resolve.return_value = authority_tenant_ctx
-        mock_graph_store.execute_traversal.return_value = []
+        mock_graph_store.execute_pattern.return_value = []
 
         plain_doc = {"doc_id": "some_doc", "content": "Some related content"}
         mock_vector_store = AsyncMock()
@@ -356,7 +356,7 @@ class TestDegradationChain:
         """All levels exhausted → source="vector_only"."""
         mock_tenant_mgr = MagicMock(spec=TenantOntologyManager)
         mock_tenant_mgr.resolve.return_value = authority_tenant_ctx
-        mock_graph_store.execute_traversal.return_value = []
+        mock_graph_store.execute_pattern.return_value = []
 
         mock_vector_store = AsyncMock()
         mock_vector_store.similarity_search.return_value = []  # All vector levels empty
@@ -395,7 +395,7 @@ class TestDegradationChain:
         """Graph empty + no vector store → source="vector_only"."""
         mock_tenant_mgr = MagicMock(spec=TenantOntologyManager)
         mock_tenant_mgr.resolve.return_value = authority_tenant_ctx
-        mock_graph_store.execute_traversal.return_value = []
+        mock_graph_store.execute_pattern.return_value = []
 
         with patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True), \
              patch(
@@ -435,7 +435,7 @@ class TestNonAuthorityPatterns:
         """Non-authority pattern succeeds → source="ontology", no authority_level bind var."""
         mock_tenant_mgr = MagicMock(spec=TenantOntologyManager)
         mock_tenant_mgr.resolve.return_value = standard_tenant_ctx
-        mock_graph_store.execute_traversal.return_value = [
+        mock_graph_store.execute_pattern.return_value = [
             {"name": "Engineering", "dept_id": "ENG"}
         ]
 
@@ -452,9 +452,9 @@ class TestNonAuthorityPatterns:
         assert result.context is not None
         assert result.context.source == "ontology"
         # Only one traversal call, no authority_level in bind_vars
-        assert mock_graph_store.execute_traversal.call_count == 1
-        call_kwargs = mock_graph_store.execute_traversal.call_args.kwargs
-        assert "authority_level" not in call_kwargs.get("bind_vars", {})
+        assert mock_graph_store.execute_pattern.call_count == 1
+        call_params = mock_graph_store.execute_pattern.call_args.args[2]
+        assert "authority_level" not in call_params
 
     @pytest.mark.asyncio
     async def test_standard_pattern_falls_to_vector_levels_when_empty(
@@ -467,7 +467,7 @@ class TestNonAuthorityPatterns:
         """Non-authority pattern empty graph → vector fallback levels still apply."""
         mock_tenant_mgr = MagicMock(spec=TenantOntologyManager)
         mock_tenant_mgr.resolve.return_value = standard_tenant_ctx
-        mock_graph_store.execute_traversal.return_value = []
+        mock_graph_store.execute_pattern.return_value = []
 
         plain_doc = {"doc_id": "doc1", "content": "Department info"}
         mock_vector_store = AsyncMock()
@@ -532,7 +532,7 @@ class TestBypassConditions:
             )
 
         assert result.state == "ambiguous"
-        mock_graph_store.execute_traversal.assert_not_called()
+        mock_graph_store.execute_pattern.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_entity_not_found_bypasses_chain(
@@ -564,4 +564,4 @@ class TestBypassConditions:
             )
 
         assert result.state == "entity_not_found"
-        mock_graph_store.execute_traversal.assert_not_called()
+        mock_graph_store.execute_pattern.assert_not_called()

@@ -93,7 +93,7 @@ def mock_tenant_mgr(tenant_ctx):
 @pytest.fixture
 def mock_graph_store():
     store = AsyncMock(spec=OntologyGraphStore)
-    store.execute_traversal.return_value = [
+    store.execute_pattern.return_value = [
         {"name": "Engineering", "dept_id": "ENG"},
     ]
     return store
@@ -169,7 +169,7 @@ class TestGraphQueryFlow:
             )
             assert isinstance(result, ContextEnvelope)
             assert result.context.graph_context == [{"cached": True}]
-            mock_graph_store.execute_traversal.assert_not_called()
+            mock_graph_store.execute_pattern.assert_not_called()
 
 
 class TestVectorOnlyFlow:
@@ -183,7 +183,7 @@ class TestVectorOnlyFlow:
             )
             assert isinstance(result, ContextEnvelope)
             assert result.context.source == "vector_only"
-            mock_graph_store.execute_traversal.assert_not_called()
+            mock_graph_store.execute_pattern.assert_not_called()
 
 
 class TestDisabledFlow:
@@ -205,7 +205,7 @@ class TestGracefulDegradation:
 
     @pytest.mark.asyncio
     async def test_graph_store_failure(self, mock_tenant_mgr, mock_graph_store, mock_cache, user_context):
-        mock_graph_store.execute_traversal.side_effect = Exception("ArangoDB down")
+        mock_graph_store.execute_pattern.side_effect = Exception("ArangoDB down")
         with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, mock_graph_store, mock_cache)
             result = await mixin.ontology_process(
@@ -240,7 +240,7 @@ class TestPostActions:
 
     @pytest.mark.asyncio
     async def test_vector_search_post_action(self, mock_tenant_mgr, mock_graph_store, mock_cache, user_context):
-        mock_graph_store.execute_traversal.return_value = [
+        mock_graph_store.execute_pattern.return_value = [
             {"portal_url": "https://epson.navigator.com"},
         ]
         mock_vector_store = AsyncMock()
@@ -275,7 +275,7 @@ class TestPostActions:
         mock_tenant_mgr.resolve.return_value = tenant_ctx
 
         mock_graph_store = AsyncMock()
-        mock_graph_store.execute_traversal.return_value = [
+        mock_graph_store.execute_pattern.return_value = [
             {"name": "Workday"},
         ]
 
@@ -515,7 +515,7 @@ class TestOntologyProcessStates:
         mock_tm.resolve.return_value = tenant_ctx
 
         mock_gs = AsyncMock(spec=OntologyGraphStore)
-        mock_gs.execute_traversal.return_value = [{"_id": "Employee/1"}]
+        mock_gs.execute_pattern.return_value = [{"_id": "Employee/1"}]
 
         mock_tool_mgr = MagicMock()
 
@@ -577,7 +577,7 @@ class TestOntologyProcessStates:
         mock_tm.resolve.return_value = tenant_ctx
 
         mock_gs = AsyncMock(spec=OntologyGraphStore)
-        mock_gs.execute_traversal.return_value = [{"_id": "Employee/1"}]
+        mock_gs.execute_pattern.return_value = [{"_id": "Employee/1"}]
 
         mock_tool_mgr = MagicMock()
 
@@ -629,7 +629,7 @@ class TestOntologyProcessStates:
         mock_tenant_mgr.resolve.return_value = tenant_ctx
 
         mock_gs = AsyncMock()
-        mock_gs.execute_traversal.return_value = [{"name": "Workday"}]
+        mock_gs.execute_pattern.return_value = [{"name": "Workday"}]
 
         with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True):
             mixin = _make_mixin(mock_tenant_mgr, mock_gs, mock_cache)
@@ -660,7 +660,7 @@ class TestOntologyProcessStates:
         mock_tm.resolve.return_value = tenant_ctx
 
         mock_gs = AsyncMock(spec=OntologyGraphStore)
-        mock_gs.execute_traversal.return_value = [{"_id": "Member/1"}]
+        mock_gs.execute_pattern.return_value = [{"_id": "Member/1"}]
 
         seen_keys: list[str] = []
 
@@ -731,7 +731,7 @@ class TestOntologyProcessStates:
         mock_tm.resolve.return_value = tenant_ctx
 
         mock_gs = AsyncMock(spec=OntologyGraphStore)
-        mock_gs.execute_traversal.return_value = [{"jira_account_id": "acct:abc"}]
+        mock_gs.execute_pattern.return_value = [{"jira_account_id": "acct:abc"}]
 
         mock_tool_mgr = MagicMock()
 

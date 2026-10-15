@@ -266,7 +266,7 @@ class TestResolvedIntent:
         ri = ResolvedIntent(
             action="graph_query",
             pattern="find_portal",
-            aql="FOR v IN 1..2 OUTBOUND @uid g RETURN v",
+            query="FOR v IN 1..2 OUTBOUND @uid g RETURN v",
             source="fast_path",
         )
         assert ri.action == "graph_query"
@@ -274,7 +274,7 @@ class TestResolvedIntent:
     def test_vector_only(self):
         ri = ResolvedIntent(action="vector_only")
         assert ri.pattern is None
-        assert ri.aql is None
+        assert ri.query is None
 
     def test_invalid_action(self):
         with pytest.raises(ValidationError):

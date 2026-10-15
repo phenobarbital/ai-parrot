@@ -84,7 +84,7 @@ class TestFastPath:
         assert result.action == "graph_query"
         assert result.pattern == "find_dept"
         assert result.source == "fast_path"
-        assert result.aql is not None
+        assert result.query is not None
 
     @pytest.mark.asyncio
     async def test_matches_portal_keyword(self, ontology, user_context):
@@ -150,7 +150,7 @@ class TestLLMPath:
             output=json.dumps({
                 "action": "graph_query",
                 "pattern": "dynamic",
-                "aql": "FOR v IN 1..2 OUTBOUND @user_id assigned_to RETURN v.name",
+                "query": "FOR v IN 1..2 OUTBOUND @user_id assigned_to RETURN v.name",
                 "suggested_post_action": "none",
             })
         )
@@ -161,7 +161,7 @@ class TestLLMPath:
         assert result.action == "graph_query"
         assert result.pattern == "dynamic"
         assert result.source == "llm_dynamic"
-        assert "OUTBOUND" in result.aql
+        assert "OUTBOUND" in result.query
 
     @pytest.mark.asyncio
     async def test_llm_vector_only(self, ontology, user_context):
@@ -193,7 +193,7 @@ class TestLLMPath:
             output=json.dumps({
                 "action": "graph_query",
                 "pattern": "dynamic",
-                "aql": "REMOVE { _key: '1' } IN employees",
+                "query": "REMOVE { _key: '1' } IN employees",
             })
         )
         resolver = OntologyIntentResolver(ontology, llm_client=mock_llm)
