@@ -1273,7 +1273,7 @@
     }
   },
   {
-    "description": "Merge remote sync data used by `wikitoolkit sync` in remote mode; not for agents.",
+    "description": "Merge remote sync data used by `wikitoolkit sync` in remote mode; not for agents.\n\n    At most 200 pages and 1 MiB per call; the client chunks larger pushes.\n    ",
     "mount": "bulk",
     "name": "wiki_sync_push",
     "schema": {
