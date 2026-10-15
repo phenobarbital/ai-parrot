@@ -18,10 +18,11 @@ def _driver(written: list[str]):
     driver.navigate = AsyncMock(return_value=None)
     driver.fill = AsyncMock(return_value=None)
 
-    async def shot(path):
+    async def shot(path, full_page=False):
         with open(path, "wb") as fh:
             fh.write(b"png")
         written.append(str(path))
+        return b"png"
 
     driver.screenshot = shot
     return driver
