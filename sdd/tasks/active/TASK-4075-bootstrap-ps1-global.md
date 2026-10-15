@@ -4,7 +4,7 @@
 **Spec**: `sdd/specs/parrot-installer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: M (2-4h)
+**Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4072
 **Assigned-to**: unassigned
 
@@ -28,11 +28,47 @@ rollback removes only what this run created.
 
 ---
 
+## Amendments — spec rev 0.2 (2026-10-14)
+
+Folded in from `sdd/proposals/parrot-installer-amendments.proposal.md` (§3 C14, §5 resolved by
+Jesus Lara) — the PowerShell mirror of TASK-4074's amendments. Every section below already
+reflects these deltas; this list is the audit trail.
+
+- **C14b — pre-install gate.** `-Global` evaluates `Test-Preflight` BEFORE any write and before
+  the pinned-uv download: supported platform (Windows AMD64 — the TASK-4094 wheel matrix; Arm64
+  is refused until a windows-arm64 core wheel exists), `Invoke-WebRequest` + `Get-FileHash`
+  available (always true on PowerShell 5.1+, still asserted), `git` on PATH, a writable
+  `PARROT_HOME` (nearest existing ancestor) with at least `$MinFreeKB` free, and GitHub + PyPI
+  reachable (HEAD; skipped under `-DryRun`). A failed gate writes `preflight: <condition> — fix:
+  <fix>` to the error stream and exits 1 with nothing written.
+- **C14b — post-install runtime check.** After the shims and the user-PATH edit the script runs
+  `parrot.exe self doctor --runtime-only` (TASK-4080) against the NEW managed runtime, pinned with
+  `$env:PARROT_VENV = "$PARROT_HOME\venv"` so the launcher never redirects to a project venv. That
+  scope checks only managed uv, Python, the runtime entry points and PATH; repository readiness,
+  host configuration and optional-component checks are excluded. Only a RUNTIME failure throws
+  into the EXISTING catch-rollback (only this run's paths; user PATH restored). A healthy runtime
+  stays installed when the invoking repo has unauthenticated `gh`, an uncommitted ledger or
+  outdated SDD assets. Under `-DryRun` it is only announced.
+- **C14a — self-describing one-liner.** `-Global` prints, first, a `Write-Plan` paragraph: what is
+  downloaded (uv `0.11.28`, URL, `.sha256`), where it writes (`PARROT_HOME\{bin,venv,python}` + the
+  user PATH), that the user's own uv is never touched, and the non-piped alternative. Docs: TASK-4095.
+- Tests: static assertions that the gate precedes the first `New-Item`, that the doctor step uses
+  `--runtime-only` and precedes `self add`; pwsh-gated runtime tests that `-DryRun` prints plan +
+  gate summary, that an unwritable `PARROT_HOME` ancestor exits 1 before any write, and the two
+  offline post-install outcomes (runtime failure rolls back; repo-readiness failures keep the
+  runtime) with fake `uv.exe`/`parrot.exe` scripts.
+
+---
+
 ## Scope
 
 - Add parameters `-Global`, `-Version <X>`, `-With <comma list>`; keep every existing parameter
   working; `-DryRun` stays total (no network, no writes).
 - Take the `-Global` branch BEFORE the Python guard; project mode is untouched.
+- In global mode, before anything else: `Write-Plan` (C14a paragraph), then `Test-Preflight`
+  (C14b gate: platform, download + checksum cmdlets, `git`, writable `PARROT_HOME` with
+  `$MinFreeKB` free, GitHub/PyPI reachable — network skipped under `-DryRun`); any failed gate
+  exits 1 with the condition and a fix BEFORE any directory is created.
 - Download pinned uv `0.11.28` (`uv-x86_64-pc-windows-msvc.zip` or `uv-aarch64-pc-windows-msvc.zip`
   plus `.sha256`) from `https://github.com/astral-sh/uv/releases/download/0.11.28/`, verify with
   `Get-FileHash -Algorithm SHA256`, `Expand-Archive` into a scratch dir, place `uv.exe` in
@@ -45,16 +81,26 @@ rollback removes only what this run created.
 - Add `$PARROT_HOME\bin` to the **User** PATH idempotently via
   `[Environment]::SetEnvironmentVariable('Path', …, 'User')` (never `Machine`), also prepend it to
   the current session's `$env:Path`, and print a "reopen your terminal" notice.
-- After install, run `& "$PARROT_HOME\bin\parrot.exe" self add <c>` for each `-With` component.
+- After the base runtime is installed (shims + user PATH), run
+  `& "$PARROT_HOME\bin\parrot.exe" self doctor --runtime-only` with
+  `$env:PARROT_VENV = "$PARROT_HOME\venv"` through `Run`; a non-zero `$LASTEXITCODE` throws, which
+  fires the catch-rollback (doctor's suggested fixes are already on stdout). Never the plain
+  `self doctor`: repository/host/component failures must not roll back a healthy runtime. Only
+  announced under `-DryRun`.
+- Then run `& "$PARROT_HOME\bin\parrot.exe" self add <c>` for each `-With` component.
 - Rollback (`trap`/`try…catch`) removes ONLY paths this run created and restores the user PATH
   value if this run changed it.
 - Extend `test_install_powershell.py` with static assertions (always run) and pwsh-gated parse /
-  dry-run tests (skipped when `pwsh` is absent, matching the existing soft pattern).
+  dry-run tests (skipped when `pwsh` is absent, matching the existing soft pattern), including the
+  C14 gate-order, plan-output and gate-before-write tests.
 
 **NOT in scope**:
 - `install-parrot.sh` (TASK-4074); CI legs + `SHA256SUMS` (TASK-4076); docs (TASK-4095).
 - `parrot self update` re-copying shims after an upgrade — owned by TASK-4080 (see FILL IN on
   trampolines; record the requirement in the Completion Note).
+- `parrot self doctor` itself and its SDD readiness checks (C15) — TASK-4080; this script only
+  calls it. The full dependency check list lives once, in doctor (proposal C14/C15 decision);
+  this script keeps only the pre-install gate.
 - Machine-scope PATH, code signing, `winget` changes, project-mode behavior.
 
 ---
@@ -63,8 +109,8 @@ rollback removes only what this run created.
 
 | File | Action | Description |
 |---|---|---|
-| `scripts/install/install-parrot.ps1` | MODIFY | `-Global` mode, new params, pinned-uv bootstrap, exe shims, user PATH, rollback |
-| `packages/ai-parrot/tests/docs/test_install_powershell.py` | MODIFY | static + pwsh-gated tests for `-Global` |
+| `scripts/install/install-parrot.ps1` | MODIFY | `-Global` mode, new params, C14a plan paragraph, C14b preflight gate, pinned-uv bootstrap, exe shims, user PATH, post-install doctor, rollback |
+| `packages/ai-parrot/tests/docs/test_install_powershell.py` | MODIFY | static + pwsh-gated tests for `-Global`, incl. C14 gate order / plan / gate-before-write |
 
 ---
 
@@ -111,7 +157,13 @@ def test_powershell_script_syntax() -> None:                          # line 16
 ### Does NOT Exist
 - ~~any uv download, `-Global`, `-Version`, `-With`, or `PARROT_HOME` handling in the `.ps1`~~ — new here.
 - ~~Machine-scope PATH editing~~ — forbidden; User scope only.
-- ~~a `parrot self` command~~ — TASK-4080; only announced under `-DryRun`.
+- ~~a `parrot self` command (`self add`, `self doctor`, `self doctor --runtime-only`)~~ — TASK-4080
+  (`--runtime-only` is a rev-0.2 addition there: managed uv, Python, runtime entry points and
+  PATH only; mutually exclusive with `--sdd`); only announced under `-DryRun`.
+- ~~`Test-Preflight`, `Write-Plan`, `$MinFreeKB`, `$RawBase`, any GitHub/PyPI reachability check
+  in the `.ps1`~~ — new here (proposal C14a/C14b); network checks must be skipped under `-DryRun`.
+- ~~a windows-arm64 core wheel~~ — TASK-4094's matrix is windows AMD64 only, so the platform gate
+  refuses `Arm64` for `-Global` (the uv asset for arm64 exists, the ai-parrot wheel does not).
 - ~~`pwsh` in the local dev environment / guaranteed on CI's ubuntu runner~~ — tests must stay
   soft (`skipif`), exactly like `test_powershell_script_syntax`.
 - ~~a root-level `install.ps1`~~ — never create one.
@@ -167,6 +219,32 @@ Run -Why "download pinned uv $UvVersion ($target)" -Cmd { Invoke-WebRequest -Uri
   `\`, prepend only if absent. Read with `[Environment]::GetEnvironmentVariable('Path','User')`
   (may be `$null` — treat as empty).
 - Download/checksum failure aborts BEFORE any shim copy or PATH change.
+- **Gate before write (C14b)**: `Test-Preflight` runs before `$Created` is populated and before
+  the first `New-Item` — *why*: a failed gate must leave nothing to roll back. Order: platform
+  (`OSArchitecture -eq 'X64'`; `Arm64` refused — no windows-arm64 core wheel in TASK-4094) →
+  cmdlets (`Get-Command Invoke-WebRequest, Get-FileHash`) → `git` (`Get-Command git`) →
+  `PARROT_HOME` writable (nearest existing ancestor; probe with a `[IO.File]::Create` of a temp
+  name then delete — the ONLY permitted write, inside the ancestor that already exists, never
+  creating `PARROT_HOME`) + free space (`[IO.DriveInfo]::new($ancestor).AvailableFreeSpace / 1KB`
+  ≥ `$MinFreeKB = 2097152`, 2 GiB) → network (`Invoke-WebRequest -Method Head -UseBasicParsing`
+  against `https://github.com` and `https://pypi.org/simple/`; skipped under `-DryRun` with a
+  printed notice). Failures: `Write-Error "preflight: <condition> — fix: <fix>"; exit 1`.
+- **Post-install runtime check (C14b)**: `Run -Why 'verify the managed runtime (parrot self doctor
+  --runtime-only)' -Cmd { $env:PARROT_VENV = $venv; & (Join-Path $bin 'parrot.exe') self doctor
+  --runtime-only; if ($LASTEXITCODE) { throw "parrot self doctor --runtime-only failed (exit
+  $LASTEXITCODE) — see its suggested fixes above" } }` sits after `Add-UserPath` and before the
+  `-With` loop — *why*: a broken base runtime rolls back before components are added; native
+  commands do not throw on non-zero exit, hence the explicit `$LASTEXITCODE` check. `PARROT_VENV`
+  pins the launcher (TASK-4071: first in the resolution order) to the venv just built, so a
+  project `.venv` in the invoking directory is never what gets checked; clear it afterwards
+  (`Remove-Item Env:PARROT_VENV`). `--runtime-only` is mandatory — the plain scope adds
+  repository readiness (`gh` auth, committed ledger, SDD asset currency — C15), host-config and
+  component checks, none of which may roll back a healthy runtime.
+- **Plan paragraph (C14a)**: `Write-Plan` is the FIRST output of `-Global` (before the gate), one
+  paragraph on stdout: uv version + URL + `.sha256` verification, `PARROT_HOME\{bin,venv,python}` +
+  the user PATH edit, "a uv already on your PATH is never used or modified", and the non-piped
+  alternative (`Invoke-WebRequest` `install-parrot.ps1` + `SHA256SUMS` from `$RawBase`, compare
+  `Get-FileHash`, read, run). Printed under `-DryRun` too.
 - Use `Invoke-WebRequest -UseBasicParsing` (Windows PowerShell 5.1 compatible) and set
   `[Net.ServicePointManager]::SecurityProtocol` to include TLS 1.2 when running under 5.1.
 - Rollback tracks a `$Created = [System.Collections.Generic.List[string]]::new()` and the original
@@ -187,8 +265,10 @@ Run -Why "download pinned uv $UvVersion ($target)" -Cmd { Invoke-WebRequest -Uri
 2. Move the provider→extras mapping (lines 101-121) into `function Resolve-Extras` defined before
    the guard and call it at the old location — *why*: global mode exits before that block.
 3. Insert the global-mode functions + dispatch immediately before the Python guard comment —
-   *why*: codex S10.
-4. Extend the test file with static assertions (no pwsh needed) and pwsh-gated runtime checks.
+   *why*: codex S10. `Write-Plan` and `Test-Preflight` are the first two things `Install-Global`
+   does (C14a/C14b); the post-install doctor step follows `Add-UserPath` (C14b).
+4. Extend the test file with static assertions (no pwsh needed) and pwsh-gated runtime checks,
+   including the C14 ones.
 
 ### `scripts/install/install-parrot.ps1` (MODIFY)
 ```powershell
@@ -212,6 +292,36 @@ Run -Why "download pinned uv $UvVersion ($target)" -Cmd { Invoke-WebRequest -Uri
 #   (verified: scripts/install/install-parrot.ps1:74) with this block followed by the original line.
 function Resolve-Extras { }  # FILL IN: old lines 101-121 verbatim, $script: scope — bounded by existing parse test
 $UvVersion = '0.11.28'
+$MinFreeKB = 2097152   # C14b gate: 2 GiB free under PARROT_HOME (managed CPython + venv + wheel cache)
+$RawBase = 'https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install'   # C14a non-piped alternative
+
+function Write-Plan([string]$Url, [string]$Spec, [string]$Home_, [string]$Py) {  # C14a — first output; no side effects
+  Write-Host @"
+This installer will download uv $UvVersion from $Url and verify it against $Url.sha256,
+create $Home_\{bin,venv,python} (a uv-managed Python $Py and a venv with $Spec),
+and add $Home_\bin to your USER PATH (never Machine). A uv already on your PATH is never used
+or modified. Existing $Home_ data is never touched.
+Prefer not to pipe a download into PowerShell? Invoke-WebRequest $RawBase/install-parrot.ps1 and
+$RawBase/SHA256SUMS, compare (Get-FileHash install-parrot.ps1).Hash with the SHA256SUMS line, read
+the script, then run it.
+"@
+}
+
+function Test-Preflight([string]$Home_) {  # C14b — read-only gate, in order; never creates PARROT_HOME
+  $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+  if ("$arch" -ne 'X64') { Write-Error "preflight: unsupported platform windows-$arch — fix: -Global needs an x64 Windows (no windows-$arch core wheel yet); use a project install"; exit 1 }
+  foreach ($c in @('Invoke-WebRequest', 'Get-FileHash')) { if (-not (Get-Command $c -ErrorAction SilentlyContinue)) { Write-Error "preflight: $c unavailable — fix: use Windows PowerShell 5.1+ or PowerShell 7"; exit 1 } }
+  if (-not (Get-Command git -ErrorAction SilentlyContinue)) { Write-Error 'preflight: git not found — fix: install Git for Windows (the SDD flow and parrot self doctor need it)'; exit 1 }
+  $anc = $Home_; while (-not (Test-Path $anc)) { $anc = Split-Path -Parent $anc }   # nearest existing ancestor
+  # FILL IN: writability probe — create+delete a temp file inside $anc; on failure
+  #          Write-Error "preflight: $anc is not writable — fix: set PARROT_HOME to a writable directory"; exit 1
+  $freeKB = [math]::Floor(([IO.DriveInfo]::new((Resolve-Path $anc).Path)).AvailableFreeSpace / 1KB)
+  if ($freeKB -lt $MinFreeKB) { Write-Error "preflight: only ${freeKB}KB free under $anc (need $MinFreeKB) — fix: free disk space or set PARROT_HOME elsewhere"; exit 1 }
+  if ($DryRun) { Write-Host 'preflight: network checks skipped (-DryRun)'; return }
+  # FILL IN: Invoke-WebRequest -Method Head -UseBasicParsing against https://github.com and https://pypi.org/simple/;
+  #          on failure Write-Error "preflight: <host> unreachable — fix: check your network/proxy"; exit 1
+  Write-Host 'preflight: ok'
+}
 
 function Add-UserPath([string]$Dir) {
   $cur = [Environment]::GetEnvironmentVariable('Path', 'User'); if ($null -eq $cur) { $cur = '' }
@@ -235,6 +345,8 @@ function Install-Global {
   $spec = "ai-parrot[$AllExtras]"; if ($Version) { $spec = "$spec==$Version" }
   $bin = Join-Path $home_ 'bin'; $venv = Join-Path $home_ 'venv'; $uv = Join-Path $bin 'uv.exe'
   $dl = Join-Path ([IO.Path]::GetTempPath()) "parrot-uv-$PID"
+  Write-Plan $url $spec $home_ $py      # C14a — before anything else
+  Test-Preflight $home_                 # C14b — exits 1 on any failed gate; nothing written yet
   $script:Created = [System.Collections.Generic.List[string]]::new()
   try {
     foreach ($d in @($home_, $bin)) {
@@ -261,6 +373,15 @@ function Install-Global {
       Run -Why "expose $s" -Cmd { Copy-Item $src "$dst.tmp" -Force; Move-Item "$dst.tmp" $dst -Force }
     }
     Run -Why "add $bin to the user PATH" -Cmd { Add-UserPath $bin }
+    # C14b — runtime scope only, pinned to the venv just built; native commands never throw on non-zero
+    #        exit, so the explicit check routes a RUNTIME failure to the catch-rollback
+    Run -Why 'verify the managed runtime (parrot self doctor --runtime-only)' -Cmd {
+      $env:PARROT_VENV = $venv
+      try {
+        & (Join-Path $bin 'parrot.exe') self doctor --runtime-only
+        if ($LASTEXITCODE) { throw "parrot self doctor --runtime-only failed (exit $LASTEXITCODE) — see its suggested fixes above" }
+      } finally { Remove-Item Env:PARROT_VENV -ErrorAction SilentlyContinue }
+    }
     foreach ($c in ($With -split ',' | Where-Object { $_ })) {
       Run -Why "add component $c" -Cmd { & (Join-Path $bin 'parrot.exe') self add $c }
     }
@@ -277,7 +398,9 @@ if ($GlobalMode) { Install-Global; Write-Host 'Done.'; exit 0 }
 # Python guard (AC10) — refuse anything outside >=3.11,<3.14 BEFORE any
 ```
 **Why this shape**: dispatch above the guard (codex S10); every side effect is inside `Run` so
-`-DryRun` stays total. `$PSBoundParameters` inside `Install-Global` refers to the FUNCTION's bound
+`-DryRun` stays total; `Write-Plan` and `Test-Preflight` are read-only and run before `$Created`
+exists, so a failed gate leaves no trace (C14); the doctor step is the last base-install step, so
+its failure rolls back the base runtime but never half-added components. `$PSBoundParameters` inside `Install-Global` refers to the FUNCTION's bound
 params — FILL IN: capture the script-level `$PSBoundParameters.ContainsKey('Python')` into
 `$script:PythonSet` before the function is called. Do NOT touch `Run`, the guard, or project mode.
 Scriptblocks passed to `Run` close over local variables only via dynamic scoping — keep the
@@ -311,6 +434,60 @@ def test_global_pins_and_verifies_uv() -> None:
     assert "'Machine'" not in _TEXT
 
 
+def test_preflight_gate_precedes_first_write() -> None:
+    """C14b: Write-Plan and Test-Preflight are called before $Created exists / the first New-Item in Install-Global."""
+    body = _TEXT[_TEXT.index("function Install-Global") :]
+    assert body.index("Write-Plan ") < body.index("Test-Preflight ") < body.index("$script:Created =") < body.index("New-Item")
+    for needle in ("preflight: unsupported platform", "git not found", "$MinFreeKB", "network checks skipped (-DryRun)"):
+        assert needle in _TEXT, needle
+
+
+def test_post_install_doctor_precedes_components() -> None:
+    """C14b: `self doctor --runtime-only` runs after Add-UserPath and before any `self add`, pinned via PARROT_VENV."""
+    body = _TEXT[_TEXT.index("function Install-Global") :]
+    assert body.index("Add-UserPath $bin") < body.index("self doctor --runtime-only") < body.index("self add $c")
+    assert "if ($LASTEXITCODE) { throw" in body
+    assert "$env:PARROT_VENV = $venv" in body
+    assert "self doctor\n" not in body and "self doctor;" not in body, "plain-scope doctor must never gate the install"
+
+
+def _run_offline_install(tmp_path: Path, *, fake_parrot: str) -> subprocess.CompletedProcess[str]:
+    """C14b harness (pwsh-gated): a real -Global run with fakes — no network, no real HOME, no real PATH edit."""
+    # FILL IN: fixture zip holding a fake `uv.exe` (a .cmd/.ps1 shim on Windows, a sh script under Linux
+    #          pwsh) whose `venv <dir>` creates <dir>\Scripts\{python,wikitoolkit,bookstore}.exe stubs and
+    #          writes `fake_parrot` as <dir>\Scripts\parrot.exe; `pip install` no-op) + its .sha256; stub
+    #          Invoke-WebRequest via a module on PSModulePath that copies the fixture for the zip/.sha256 URLs
+    #          and returns 200 for -Method Head; HOME/PARROT_HOME under tmp; `[Environment]::SetEnvironmentVariable`
+    #          User scope must be diverted (e.g. an env flag the script honours ONLY under test is NOT allowed —
+    #          instead assert on the announced Add-UserPath call and the restored value) — bounded by the two tests
+
+
+_PARROT_RUNTIME_BROKEN = "echo 'uv: missing — fix: rerun the bootstrap'; exit 1"
+_PARROT_REPO_NOT_READY = (
+    "if ($args -contains '--runtime-only') { 'runtime: ok'; exit 0 }; "
+    "'gh: not authenticated — fix: gh auth login'; 'ledger: uncommitted'; exit 1"
+)
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh not installed")
+def test_post_install_runtime_failure_rolls_back(tmp_path: Path) -> None:
+    """C14b: a failing `self doctor --runtime-only` removes what the run created and restores the user PATH."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_RUNTIME_BROKEN)
+    assert result.returncode != 0
+    assert "self doctor --runtime-only" in result.stdout and "suggested fixes above" in (result.stderr + result.stdout)
+    assert not (tmp_path / "home" / ".parrot").exists()
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh not installed")
+def test_post_install_repo_readiness_failures_keep_runtime(tmp_path: Path) -> None:
+    """C14b: unauthenticated gh / uncommitted ledger / outdated SDD assets never roll back a healthy runtime."""
+    result = _run_offline_install(tmp_path, fake_parrot=_PARROT_REPO_NOT_READY)
+    assert result.returncode == 0, result.stderr
+    assert "gh: not authenticated" not in result.stdout
+    home = tmp_path / "home" / ".parrot"
+    assert (home / "bin" / "parrot.exe").exists() and (home / "venv").exists()
+
+
 @pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh not installed")
 def test_global_dry_run(tmp_path: Path) -> None:
     """-Global -DryRun with a bogus -Python exits 0 and writes nothing under PARROT_HOME."""
@@ -327,10 +504,30 @@ def test_global_dry_run(tmp_path: Path) -> None:
     assert "unsupported Python" not in result.stderr
     assert "==9.9.9" in result.stdout and "self add sdd" in result.stdout
     assert not home.exists()
+    # C14a/C14b: plan paragraph and gate summary precede the first "->" announcement
+    assert "never used or modified" in result.stdout and "SHA256SUMS" in result.stdout
+    assert result.stdout.index("preflight: network checks skipped") < result.stdout.index("->")
+
+
+@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh not installed")
+def test_global_gate_unwritable_home_exits_before_write(tmp_path: Path) -> None:
+    """C14b: PARROT_HOME under a read-only parent fails the writability gate with nothing written."""
+    ro = tmp_path / "ro"; ro.mkdir(); ro.chmod(0o555)
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(SCRIPT), "-Global"],
+        capture_output=True, text=True, check=False,
+        env={"PARROT_HOME": str(ro / ".parrot"), **{k: v for k, v in os.environ.items() if k != "PARROT_HOME"}},
+    )
+    assert result.returncode == 1 and "not writable" in (result.stderr + result.stdout)
+    assert not (ro / ".parrot").exists()
+    # FILL IN: skip when running as root (root ignores 0o555); on Linux pwsh the platform gate sees
+    #          the host arch — run with `-DryRun` removed only if the X64 check passes there, otherwise
+    #          assert the platform refusal instead — bounded by "exits 1 before any write"
 ```
-**Why**: static assertions always run in CI (pwsh is not guaranteed); the runtime dry-run follows
-the existing soft `skipif` pattern. FILL IN: replace the `__import__("os")` with a top-level
-`import os` (add it to the imports) — bounded by ruff.
+**Why**: static assertions always run in CI (pwsh is not guaranteed); the runtime tests follow the
+existing soft `skipif` pattern. The C14 static tests pin the ORDER (gate before the first write,
+doctor before components) because that order is the whole safety argument. FILL IN: replace the
+`__import__("os")` with a top-level `import os` (add it to the imports) — bounded by ruff.
 
 ### FILL IN checklist
 - [ ] `install-parrot.ps1::Resolve-Extras` — move lines 101-121 verbatim into `$script:` scope.
@@ -341,6 +538,9 @@ the existing soft `skipif` pattern. FILL IN: replace the `__import__("os")` with
 - [ ] Trampoline-copy validity — confirm with spike S1 windows leg (TASK-4068); else re-copy rule for `self update` (TASK-4080).
 - [ ] TLS 1.2 enablement for Windows PowerShell 5.1.
 - [ ] Test file — top-level `import os`.
+- [ ] `install-parrot.ps1::Test-Preflight` — writability probe (create+delete inside the existing ancestor) and the GitHub/PyPI HEAD checks; bounded by "skipped under -DryRun" and "never creates PARROT_HOME".
+- [ ] `test_global_gate_unwritable_home_exits_before_write` — root skip + platform-gate behaviour under Linux pwsh.
+- [ ] `test_install_powershell.py::_run_offline_install` — fixture zip, fake `uv.exe`/`parrot.exe`, stubbed `Invoke-WebRequest`, diverted user-PATH write; bounded by the two C14b outcomes. If the User-scope PATH write cannot be diverted safely under pwsh on CI, keep the two tests pwsh-gated AND mark them `xfail(strict=False)` with the reason recorded in the Completion Note — never let a test edit the developer's real user PATH.
 
 ---
 
@@ -356,6 +556,21 @@ the existing soft `skipif` pattern. FILL IN: replace the `__import__("os")` with
 - [ ] User PATH (never Machine) edited idempotently via `[Environment]::SetEnvironmentVariable`,
       with a reopen-terminal notice (spec §5 Windows AC).
 - [ ] Rollback removes only paths created by this run; pre-existing `~/.parrot` data intact.
+- [ ] **C14a**: `-Global` (also under `-DryRun`) prints, before any `->` line, what is downloaded
+      (uv `0.11.28`, URL, `.sha256`), where it writes (`PARROT_HOME\{bin,venv,python}` + user PATH),
+      that the user's own uv is never used or modified, and the non-piped alternative (raw-URL
+      `install-parrot.ps1` + `SHA256SUMS`, `Get-FileHash`, read, run).
+- [ ] **C14b gate before write**: a non-x64 platform, a missing `Invoke-WebRequest`/`Get-FileHash`,
+      a missing `git`, an unwritable `PARROT_HOME` ancestor, less than `$MinFreeKB` free, or an
+      unreachable GitHub/PyPI each exit 1 with `preflight: <condition> — fix: <fix>` BEFORE any
+      directory is created; `-DryRun` skips only the network gates and says so.
+- [ ] **C14b post-install runtime check**: after shims + user PATH the script runs
+      `parrot.exe self doctor --runtime-only` with `PARROT_VENV` pinned to the new venv (never the
+      plain scope); a non-zero exit code throws into the existing catch-rollback (only this run's
+      paths; user PATH restored); `-DryRun` only announces the call.
+- [ ] **C14b readiness never rolls back**: with a `parrot.exe` whose `--runtime-only` passes while
+      the plain `self doctor` fails (unauthenticated `gh`, uncommitted ledger, outdated SDD
+      assets), the run exits 0 and `bin\`, `venv\` and the user PATH entry remain.
 - [ ] Project mode unchanged; `test_powershell_script_syntax` still passes where pwsh exists.
 
 ---
@@ -376,7 +591,12 @@ editable-installed against the main checkout).
 def test_global_params_declared(): ...                 # static
 def test_global_branch_precedes_python_guard(): ...    # static, codex S10
 def test_global_pins_and_verifies_uv(): ...            # static: 0.11.28, Get-FileHash, User not Machine
-def test_global_dry_run(tmp_path): ...                 # pwsh-gated runtime dry run
+def test_global_dry_run(tmp_path): ...                 # pwsh-gated runtime dry run (+ C14a plan, gate summary before "->")
+def test_preflight_gate_precedes_first_write(): ...    # static, C14b order: Write-Plan < Test-Preflight < $Created < New-Item
+def test_post_install_doctor_precedes_components(): ...# static, C14b: Add-UserPath < self doctor --runtime-only < self add; PARROT_VENV pinned
+def test_global_gate_unwritable_home_exits_before_write(tmp_path): ...  # pwsh-gated: read-only parent → exit 1, nothing written
+def test_post_install_runtime_failure_rolls_back(tmp_path): ...         # pwsh-gated, offline fakes: --runtime-only exit 1 → rollback
+def test_post_install_repo_readiness_failures_keep_runtime(tmp_path): ...  # pwsh-gated: --runtime-only ok, plain doctor fails → stays
 ```
 
 ---

@@ -131,7 +131,7 @@
       "spec": "sdd/specs/parrot-installer.spec.md",
       "status": "pending",
       "priority": "high",
-      "effort": "M",
+      "effort": "L",
       "depends_on": [
         "TASK-4072"
       ],
@@ -151,7 +151,7 @@
       "spec": "sdd/specs/parrot-installer.spec.md",
       "status": "pending",
       "priority": "high",
-      "effort": "M",
+      "effort": "L",
       "depends_on": [
         "TASK-4072"
       ],
@@ -251,12 +251,12 @@
       "spec": "sdd/specs/parrot-installer.spec.md",
       "status": "pending",
       "priority": "high",
-      "effort": "M",
+      "effort": "L",
       "depends_on": [
         "TASK-4079"
       ],
       "parallel": true,
-      "parallelism_notes": "calls install_component/update/uninstall from TASK-4079 (parrot/self_/components.py)",
+      "parallelism_notes": "calls install_component/update/uninstall from TASK-4079 (parrot/self_/components.py); SDD readiness checks import parrot.sdd.{config,installer,audit} lazily and tolerate their absence (TASK-4299/4091/4070 land later)",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -365,7 +365,7 @@
     {
       "id": "TASK-4086",
       "slug": "sdd-scripts-task-state",
-      "title": "SDD helpers move B1: task-state helpers into parrot.sdd.scripts",
+      "title": "SDD helpers move B1: task-state + review_checkpoint helpers into parrot.sdd.scripts",
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
@@ -413,10 +413,11 @@
       "priority": "medium",
       "effort": "M",
       "depends_on": [
-        "TASK-4085"
+        "TASK-4085",
+        "TASK-4334"
       ],
       "parallel": true,
-      "parallelism_notes": "imports parrot.sdd.scripts.sdd_meta re-export created by TASK-4085 (parrot/sdd/scripts/sdd_meta.py)",
+      "parallelism_notes": "imports parrot.sdd.scripts.sdd_meta re-export created by TASK-4085 (parrot/sdd/scripts/sdd_meta.py); git-mv's scripts/sdd/spec_tools.py from TASK-4334 (20th module)",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -425,21 +426,23 @@
     {
       "id": "TASK-4089",
       "slug": "sdd-markdown-rewrite",
-      "title": "Rewrite SDD markdown to python -m parrot.sdd.scripts.<name>",
+      "title": "Rewrite SDD markdown to parrot sdd run <name>",
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
       "status": "pending",
       "priority": "high",
-      "effort": "M",
+      "effort": "L",
       "depends_on": [
         "TASK-4070",
         "TASK-4086",
         "TASK-4087",
-        "TASK-4088"
+        "TASK-4088",
+        "TASK-4299",
+        "TASK-4334"
       ],
       "parallel": true,
-      "parallelism_notes": "needs every helper module to exist (TASK-4086 task-state, TASK-4087 shell ports, TASK-4088 taxonomy/misc) and the assumption inventory from TASK-4070 (parrot/sdd/audit.py)",
+      "parallelism_notes": "needs every helper module to exist (TASK-4086 task-state, TASK-4087 shell ports, TASK-4088 taxonomy/misc) and the assumption inventory from TASK-4070 (parrot/sdd/audit.py); needs sdd/config.json field names from TASK-4299 (C6) and audit kinds org-data/claude-md-ref/branch-literal from TASK-4070 (C11a); TASK-4334 first: it edits the same sdd-spec/sdd-task twins and its spec_tools invocations are rewritten by rule 5a",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -448,20 +451,21 @@
     {
       "id": "TASK-4090",
       "slug": "sdd-asset-packaging",
-      "title": "SDD asset packaging: _assets sync tool, package-data, MANIFEST.in, CI checks",
+      "title": "SDD asset packaging: _assets sync tool, package-data, MANIFEST.in, CI checks, single-copy prompts",
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
       "status": "pending",
       "priority": "high",
-      "effort": "M",
+      "effort": "L",
       "depends_on": [
+        "TASK-4070",
         "TASK-4072",
         "TASK-4076",
         "TASK-4089"
       ],
       "parallel": false,
-      "parallelism_notes": "syncs the rewritten markdown from TASK-4089; serialized after TASK-4072 (pyproject.toml) and TASK-4076 (ci.yml); exclusive: edits packages/ai-parrot/pyproject.toml package-data",
+      "parallelism_notes": "syncs the rewritten markdown from TASK-4089; serialized after TASK-4072 (pyproject.toml) and TASK-4076 (ci.yml); exclusive: edits packages/ai-parrot/pyproject.toml package-data; also edits flows/dev_loop/_subagent_defs.py and deletes the shipped-prompt copies under flows/dev_loop/_subagent_data/ and flows/dev_flow/ (C2)",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -470,20 +474,21 @@
     {
       "id": "TASK-4091",
       "slug": "sdd-installer-cli",
-      "title": "parrot sdd install|uninstall|status + lazy registration",
+      "title": "parrot sdd install|uninstall|status|run + lazy registration",
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
       "status": "pending",
       "priority": "high",
-      "effort": "M",
+      "effort": "L",
       "depends_on": [
         "TASK-4070",
         "TASK-4080",
-        "TASK-4090"
+        "TASK-4090",
+        "TASK-4299"
       ],
       "parallel": true,
-      "parallelism_notes": "reads parrot/sdd/_assets populated by TASK-4090, reports via scan from TASK-4070 (parrot/sdd/audit.py); serialized after TASK-4080 (cli/__init__.py _lazy_commands)",
+      "parallelism_notes": "reads parrot/sdd/_assets populated by TASK-4090, reports via scan from TASK-4070 (parrot/sdd/audit.py); serialized after TASK-4080 (cli/__init__.py _lazy_commands); seeds sdd/config.json via parrot.sdd.config.default_sdd_config (TASK-4299)",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -542,7 +547,7 @@
         "TASK-4090"
       ],
       "parallel": false,
-      "parallelism_notes": "runs scripts/install/smoke_install.py from TASK-4068; serialized after TASK-4090 (pyproject.toml); exclusive: edits release.yml + pyproject [tool.cibuildwheel]",
+      "parallelism_notes": "runs scripts/install/smoke_install.py from TASK-4068; serialized after TASK-4090 (pyproject.toml); exclusive: edits release.yml + pyproject [tool.cibuildwheel]; no edge to TASK-4091 by design: the wheel-matrix job runs TASK-4091's packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py only behind a `test -f` guard (ready=true|false), so it is a no-op until that test lands (check_task_graph possible-missing-dependency warning is expected)",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -551,20 +556,24 @@
     {
       "id": "TASK-4095",
       "slug": "docs-and-supersede",
-      "title": "Docs: global install path, portable config note; stamp FEAT-583 superseded",
+      "title": "Docs: canonical install guide (getting-started) + global runtime reference, kept true by CI",
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
       "status": "pending",
       "priority": "medium",
-      "effort": "S",
+      "effort": "M",
       "depends_on": [
         "TASK-4076",
         "TASK-4080",
         "TASK-4082",
         "TASK-4083",
         "TASK-4084",
-        "TASK-4091"
+        "TASK-4091",
+        "TASK-4074",
+        "TASK-4075",
+        "TASK-4089",
+        "TASK-4299"
       ],
       "parallel": true,
       "parallelism_notes": "documents behavior delivered by TASK-4076 (bootstrap/checksums), TASK-4080 (self), TASK-4082/4083/4084 (--portable), TASK-4091 (sdd install)",
@@ -572,6 +581,65 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4095-docs-and-supersede.md"
+    },
+    {
+      "id": "TASK-4298",
+      "slug": "branch-policy-single-source",
+      "title": "One source for the SDD branch policy in core (sdd_meta) — rev 0.2 C8",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "parallel": true,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "effort": "S",
+      "depends_on": [],
+      "parallelism_notes": "touches knowledge/wiki/ledger/sdd_meta.py and flows/dev_loop/nodes/{base,research,feature_handoff}.py; no overlap with M6 moves (TASK-4085 only re-exports sdd_meta); mentions parrot.sdd / parrot.sdd.scripts only in prose (TASK-4085 re-exports this module) and neither imports nor creates them, so no edge to TASK-4070/4085 (check_task_graph possible-missing-dependency warnings are false positives)",
+      "file": "sdd/tasks/active/TASK-4298-branch-policy-single-source.md"
+    },
+    {
+      "id": "TASK-4299",
+      "slug": "sdd-repo-config",
+      "title": "Per-repo SDD configuration — sdd/config.json read by the branch policy — rev 0.2 C6",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "parallel": true,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "effort": "M",
+      "depends_on": [
+        "TASK-4298",
+        "TASK-4085"
+      ],
+      "parallelism_notes": "creates parrot/sdd/config.py (package root from TASK-4070 via TASK-4085) and edits sdd_meta.py after TASK-4298; TASK-4089 and TASK-4091 depend on it; its validation command runs tests/sdd_scripts/test_sdd_meta_branch_policy.py, which dependency TASK-4298 creates (check_task_graph validation-path-unknown warning is expected)",
+      "file": "sdd/tasks/active/TASK-4299-sdd-repo-config.md"
+    },
+    {
+      "id": "TASK-4334",
+      "slug": "sdd-spec-tools-helper",
+      "title": "Q1 residual — spec_tools helper replaces inline python -c blocks in shipped /sdd-spec and /sdd-task",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "parallel": true,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "effort": "M",
+      "depends_on": [],
+      "parallelism_notes": "creates scripts/sdd/spec_tools.py and edits the sdd-spec/sdd-task command twins; no dependency — TASK-4088 (moves spec_tools) and TASK-4089 (rewrites its invocations, shares the twin files) depend on it; discovered_from issue:cac5c029bd88; mentions parrot.sdd / parrot.sdd.scripts only in prose and its 'NOT in scope' list (do not import or create them), so no edge to TASK-4070/4085 (check_task_graph possible-missing-dependency warnings are false positives)",
+      "file": "sdd/tasks/active/TASK-4334-sdd-spec-tools-helper.md"
     }
-  ]
+  ],
+  "amended_at": "2026-10-14T20:36:42+00:00",
+  "spec_revision": "0.2"
 }

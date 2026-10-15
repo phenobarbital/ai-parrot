@@ -52,6 +52,30 @@ class TestLexicon:
         assert load_lexicon("es-MX").locale == "es"
         assert load_lexicon("fr").locale == "en"
 
+    @pytest.mark.parametrize("bad", ["../../x", "..", ".", "", "a/b", "en\x00x", "es;rm"])
+    def test_locale_chain_rejects_traversal(self, bad):
+        """Traversal/malformed locales never become path components (CWE-22)."""
+        assert locale_chain(bad) == ["en"]
+
+    def test_locale_chain_salvages_valid_primary_subtag(self):
+        """A malformed tag whose primary subtag is shape-valid falls back through it."""
+        assert locale_chain("es-MX/../..") == ["es", "en"]
+
+    @pytest.mark.parametrize(
+        ("tag", "head"),
+        [("es-MX", "es-MX"), ("es_MX", "es_MX"), ("pt-BR", "pt-BR"), ("zh-Hant-TW", "zh-Hant-TW"), ("ast", "ast")],
+    )
+    def test_locale_chain_accepts_valid_tags(self, tag, head):
+        chain = locale_chain(tag)
+        assert chain[0] == head
+        assert chain[-1] == "en"
+
+    def test_load_locale_document_traversal_falls_back(self):
+        """A traversal-shaped locale resolves to the packaged ``en`` document, no exception."""
+        resolved, doc = load_locale_document("../../etc")
+        assert resolved == "en"
+        assert doc["templates"]
+
     @pytest.mark.parametrize("locale", ["en", "es"])
     def test_templates_and_commands_complete(self, locale):
         _, doc = load_locale_document(locale)

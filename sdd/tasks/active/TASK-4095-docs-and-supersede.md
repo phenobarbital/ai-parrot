@@ -1,53 +1,108 @@
-# TASK-4095: Docs: global install path, portable config note; stamp FEAT-583 superseded
+# TASK-4095: Docs: canonical install guide (getting-started) + global runtime reference, kept true by CI
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md`
 **Status**: pending
 **Priority**: medium
-**Estimated effort**: S (< 2h)
-**Depends-on**: TASK-4076, TASK-4080, TASK-4082, TASK-4083, TASK-4084, TASK-4091
+**Estimated effort**: M (2-4h)
+**Depends-on**: TASK-4074, TASK-4075, TASK-4076, TASK-4080, TASK-4082, TASK-4083, TASK-4084, TASK-4089, TASK-4091, TASK-4299
 **Assigned-to**: unassigned
 
 ---
 
 ## Context
 
-Closes spec §5's last two bullets: "`sdd/specs/portable-sdd-flow.spec.md` is stamped
-`Status: superseded` referencing FEAT-633" and "docs updated (`INSTALL.md`, `docs/INSTALL.md`, …)".
-By the time this runs, every documented behavior exists: the `--global`/`-Global` bootstrap and its
-published checksum (TASK-4074/4075/4076), `parrot self add|env|doctor|update|uninstall`
-(TASK-4080), `--portable` on the three host installers (TASK-4082/4083/4084) and
-`parrot sdd install|uninstall|status` (TASK-4091). This task writes one user-facing page
-(`docs/install/global-runtime.md`), links it from both install guides, adds a doc-claim test that
-keeps every cited `parrot …` command/flag honest against the real click CLI, and stamps FEAT-583's
-spec superseded (FEAT-583's satellite/`sdd`-binary design was rejected — spec Non-Goals).
+Closes spec §5's docs bullet ("docs updated (`INSTALL.md`, `docs/INSTALL.md`, …)") as amended by
+spec rev 0.2 (C13/C14a): there is ONE canonical, CI-verified install and first-use guide —
+FEAT-586's `docs/getting-started.md` — and one reference page for the managed runtime. By the
+time this runs, every documented behavior exists: the `--global`/`-Global` bootstrap with its
+pre-install gate, plan paragraph and published checksum (TASK-4074/4075/4076),
+`parrot self add|env|doctor|update|uninstall` incl. `doctor --sdd` / `--runtime-only`
+(TASK-4080), `--portable` on the three host installers (TASK-4082/4083/4084), the shipped
+markdown that calls helpers as `parrot sdd run <name>` (TASK-4089) and
+`parrot sdd install|uninstall|status|run` with `--dry-run`/`--force`, `sdd/config.json` and the
+`sdd/CONVENTIONS.md` seed (TASK-4091 and the C6 task). This task (a) extends `docs/getting-started.md`
+with the global path, `parrot self`, `parrot sdd` and a "Use the SDD flow in your repo" section,
+every claim carrying a `<!-- verify: … -->` anchor; (b) extends FEAT-586's claim harness
+(`test_getting_started_claims.py`) with `cli-verb` and `flag` kinds resolved against the real
+click CLI, over both the guide and the reference page; (c) writes the reference page
+`docs/install/global-runtime.md`; (d) turns `INSTALL.md` and `docs/INSTALL.md` into short pointers.
+
+---
+
+## Amendments — spec rev 0.2 (2026-10-14)
+
+Folded in from `sdd/proposals/parrot-installer-amendments.proposal.md` (§3 C13, C14a; §5
+resolved by Jesus Lara). Every section below already reflects these deltas; this list is the
+audit trail.
+
+- **FEAT-583 stamping step dropped.** `sdd/specs/portable-sdd-flow.spec.md` is already
+  `status: superseded` / `**Status**: superseded by FEAT-633` (commit `2ed09515e`, verified on
+  `dev` 2026-10-14). Nothing in this task touches that file; the H1 lost its "supersede" half
+  (file name kept — the index points at it).
+- **C13 — one canonical guide.** `docs/getting-started.md` is THE install and first-use guide
+  (it is the one FEAT-586 already verifies in CI's `install-guide` job). It gains the `--global`
+  path, `parrot self`, `parrot sdd install` (with `--dry-run`, `--force`, `status`, `run`) and
+  a "Use the SDD flow in your repo" section. `docs/install/global-runtime.md` holds the reference
+  detail; `INSTALL.md` and `docs/INSTALL.md` become short pointers to the guide. The task's
+  former `test_global_runtime_docs.py` is MERGED into the claim harness — no second verifier:
+  `test_getting_started_claims.py` gains the `cli-verb` and `flag` claim kinds, checked against
+  the real click commands through the lazy `parrot.cli:cli`, over both documents.
+- **C14a — every install command explained** (FEAT-586 AC8, `sdd/specs/parrot-install-guide.spec.md`
+  §5: "every command block is accompanied by an explanation of what it does … and a non-piped
+  alternative where one exists"). Each documented install command states what it downloads
+  (pinned uv `0.11.28`, the release URL, its `.sha256`; the raw-URL script and `SHA256SUMS`),
+  where it writes (`PARROT_HOME/{bin,venv,python}`, the PATH block / user PATH), how it is
+  verified, and the non-piped alternative (download, inspect, verify the checksum, run). Covers
+  the raw-URL bootstrap AND the pinned-uv download the bootstrap performs.
+- **Rev-0.2 behaviours the docs now describe**: helpers run as `parrot sdd run <name>` (Q1);
+  the repo config `sdd/config.json` (C6); the `sdd/CONVENTIONS.md` seed (C10);
+  `parrot sdd status` states `missing | current | outdated | edited` (C4); `parrot sdd install
+  --dry-run` (C5); `parrot self doctor --sdd` readiness checks and the bootstrap's
+  `--runtime-only` scope (C14/C15). Dependencies grew accordingly (TASK-4074/4075 for the gate +
+  plan text, TASK-4089 for the `parrot sdd run` form in shipped markdown).
 
 ---
 
 ## Scope
 
-- Create `docs/install/global-runtime.md` covering: install commands (raw GitHub URL +
-  `SHA256SUMS` verification, POSIX and PowerShell), what lands in `~/.parrot` (and what is never
-  touched), `parrot self add|env|doctor|update|uninstall`, the launcher resolution order,
-  `--portable` per host and its stickiness rule, `parrot sdd install`, Windows notes, and the wiki
-  store version-skew gate message + fix.
-- Add a "Quick global install" section + TOC entry to `INSTALL.md`, linking the new page.
-- Add a "Global install (managed runtime)" section to `docs/INSTALL.md`, and correct its stale
-  prerequisite line (`Python 3.10–3.12` → `Python 3.11–3.13`, matching `requires-python`).
-- In `sdd/specs/portable-sdd-flow.spec.md`, change ONLY the status: the `**Status**:` line and the
-  frontmatter `status:` field → `superseded`, the bold line pointing at FEAT-633.
-- Create `packages/ai-parrot/tests/docs/test_global_runtime_docs.py`: every `parrot <group> <cmd>`
-  invocation and `--flag` cited in the new page resolves in the click CLI; the page cites the raw
-  URL and `SHA256SUMS`; FEAT-583 is stamped superseded.
+- Extend `docs/getting-started.md` (canonical guide) with: a "Global install (managed runtime)"
+  path next to the existing project-venv path (POSIX + PowerShell one-liners, each with the
+  C14a explanation and the non-piped alternative); a "Manage the runtime: `parrot self`"
+  section; and a "Use the SDD flow in your repo" section (`parrot sdd install --host … --dry-run`
+  then the real install, edit `sdd/config.json`, `parrot self doctor --sdd`, first `/sdd-*`
+  command, `parrot sdd status`, upgrades keep edits). Every cited command/flag carries a
+  `<!-- verify: cli-verb=… -->` / `<!-- verify: flag=… -->` anchor; the raw URL + `SHA256SUMS`
+  are cited.
+- Extend `packages/ai-parrot/tests/docs/test_getting_started_claims.py`: add the `cli-verb` and
+  `flag` kinds to `DocClaim`, a `_resolve_verb()` that walks the lazy click tree, two tests that
+  verify every such claim in BOTH `docs/getting-started.md` and `docs/install/global-runtime.md`,
+  a parse test for the two kinds, and a test that each install one-liner in the guide is followed
+  by its explanation + non-piped alternative (C14a).
+- Create `docs/install/global-runtime.md` (reference detail): what lands in `~/.parrot` (and what
+  is never touched), the pre-install gate conditions and the plan paragraph the script prints,
+  `parrot self add|env|doctor|update|uninstall` (incl. `doctor --sdd` / `--runtime-only`), the
+  launcher resolution order, `--portable` per host and its stickiness rule, `parrot sdd
+  install|uninstall|status|run` with the conflict rule, the installed-record states, `--dry-run`,
+  `sdd/config.json` fields, the `sdd/CONVENTIONS.md` seed, Windows notes, and the wiki store
+  version-skew gate message + fix. Same claim anchors as the guide.
+- Reduce `INSTALL.md` and `docs/INSTALL.md` to short pointers: one paragraph each sending the
+  reader to `docs/getting-started.md` (and the reference page), keeping any content that is not
+  about installation; correct `docs/INSTALL.md`'s stale prerequisite line
+  (`Python 3.10–3.12` → `Python 3.11–3.13`, matching `requires-python`).
 
 **NOT in scope**:
+- `sdd/specs/portable-sdd-flow.spec.md` — already stamped superseded (commit `2ed09515e`); do
+  not touch it.
+- A second doc verifier (`test_global_runtime_docs.py` is NOT created); `mkdocs.yml`.
 - `.mcp.json.example` is deliberately NOT changed — monorepo developers keep the FEAT-495
   resolver form; the portable form only works once the global install puts `wikitoolkit` on PATH.
   The page explains this instead (spec §5 mentions a ".mcp.json.example note"; the note lives in
   the new page, not in the example file).
 - `mkdocs.yml` navigation (not in this task's file list — the page is reachable via links; report
   if `mkdocs build --strict` complains).
-- Any behavior change; README edits; any other line of `portable-sdd-flow.spec.md`.
+- Any behavior change; README edits; the bootstrap scripts' own plan text (TASK-4074/4075 — the
+  docs quote what they print, they do not define it).
 
 ---
 
@@ -55,11 +110,11 @@ spec superseded (FEAT-583's satellite/`sdd`-binary design was rejected — spec 
 
 | File | Action | Description |
 |---|---|---|
-| `INSTALL.md` | MODIFY | "Quick global install" section + TOC entry linking the new page |
-| `docs/INSTALL.md` | MODIFY | "Global install (managed runtime)" section; fix stale Python range |
-| `docs/install/global-runtime.md` | CREATE | managed-runtime user guide |
-| `sdd/specs/portable-sdd-flow.spec.md` | MODIFY | status → superseded (FEAT-633) |
-| `packages/ai-parrot/tests/docs/test_global_runtime_docs.py` | CREATE | doc-claim test against the click CLI |
+| `docs/getting-started.md` | MODIFY | canonical guide: global install path (C14a-explained), `parrot self`, "Use the SDD flow in your repo"; claim anchors |
+| `packages/ai-parrot/tests/docs/test_getting_started_claims.py` | MODIFY | `cli-verb` + `flag` claim kinds over guide + reference page; C14a explanation test |
+| `docs/install/global-runtime.md` | CREATE | managed-runtime reference page (claim anchors) |
+| `INSTALL.md` | MODIFY | short pointer to the canonical guide |
+| `docs/INSTALL.md` | MODIFY | short pointer to the canonical guide; fix stale Python range |
 
 ---
 
@@ -92,14 +147,35 @@ cli._lazy_commands = {...}                                 # line 109 — "claud
 gemini = google                            # packages/ai-parrot/src/parrot/knowledge/wiki/google/cli.py:137
 ```
 ```python
-# packages/ai-parrot/tests/docs/test_getting_started_claims.py — style to follow
+# packages/ai-parrot/tests/docs/test_getting_started_claims.py — the claim harness to EXTEND (verified 2026-10-14)
 REPO_ROOT = Path(__file__).resolve().parents[4]            # line 20
+GUIDE = REPO_ROOT / "docs" / "getting-started.md"          # line 21
+ANCHOR_RE = re.compile(r"<!--\s*verify:\s*(?P<kind>[\w-]+)=(?P<value>.+?)\s*-->")   # line 28
+class DocClaim:                                            # line 31 (frozen dataclass)
+    kind: Literal["python-range", "extra", "script", "provider", "envvar", "dep"]   # line 34 — grows by 2 kinds here
+    value: str; line: int; source: Path
 def extract_claims(path: Path) -> list[DocClaim]:          # line 40 — line-numbered extraction, loud failures
+def test_extract_claims_parses_all_kinds(tmp_path): ...    # line 59 — fixture doc with the 6 kinds; stays as is
+def _claims(kind: str) -> list[DocClaim]:                  # line 125 — GUIDE only
+def test_named_scripts_exist() -> None:                    # line 161 — style: f"{c.source}:{c.line} …" failures
+def test_named_dep_floors_match() -> None:                 # line 183 — last claim test before the hello-world block
 ```
+- Guide anchors in use today (style to copy): `<!-- verify: python-range=>=3.11,<3.14 -->` (:13),
+  `<!-- verify: extra=anthropic -->` (:134), `<!-- verify: script=wikitoolkit -->` (:272). Guide
+  headings: `## 2. Install the package` (:84), `## 5. Building and querying the codebase knowledge
+  graph` (:266), `## 6. Optional extras` (:291), `## 7. Verification checklist & troubleshooting` (:319).
+- CI: `.github/workflows/ci.yml` job `install-guide` (:113) runs the docs tests after "Scaffold
+  NavConfig environment" (:133) — the harness extension is CI-verified by construction.
 - Doc targets: `INSTALL.md` TOC line `- [Python Environment Setup](#python-environment-setup)` (:9),
   heading `## Python Environment Setup` (:158); `docs/INSTALL.md` `[Back to README](../README.md)` (:3),
   `- Python 3.10–3.12` (:8), `## Install with uv (recommended)` (:20).
-- `sdd/specs/portable-sdd-flow.spec.md`: frontmatter `status: draft` (:8), `**Status**: draft` (:17).
+- FEAT-586 AC8 (`sdd/specs/parrot-install-guide.spec.md:332-335`): "Every command block is
+  accompanied by an explanation of what it does … non-piped alternative where one exists."
+- Bootstrap facts to quote (TASK-4074/4075): pinned uv `0.11.28`, download URL
+  `https://github.com/astral-sh/uv/releases/download/0.11.28/uv-<target>.{tar.gz,zip}` + `.sha256`,
+  writes `PARROT_HOME/{bin,venv,python}`, gate conditions (platform, download + checksum tool, `git`,
+  writable `PARROT_HOME` with `MIN_FREE_KB` = 2 GiB free, GitHub/PyPI reachable), post-install
+  `parrot self doctor --runtime-only` with rollback on runtime failure only.
 - Raw URL base: `https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/`
   (repo `phenobarbital/ai-parrot`, verified from `docs/INSTALL.md:16` clone URL); checksum file
   `scripts/install/SHA256SUMS` (TASK-4076).
@@ -109,9 +185,23 @@ def extract_claims(path: Path) -> list[DocClaim]:          # line 40 — line-nu
   entries in portable form iff that host's current managed `wikitoolkit` entry is portable.
 - Store gate: `WikiStoreVersionError` (TASK-4092) — message names both versions and the fix
   (`parrot self update` / `parrot self add --here`).
+- `parrot sdd` surface (TASK-4091 + C6 task, rev 0.2): `install [--host …] [--dry-run] [--force]`,
+  `uninstall [--dry-run]`, `status` (per-file `missing | current | outdated | edited` from the
+  committed record `sdd/.sdd-installed.json`), `run <name> [args…]`; seeds `sdd/config.json`,
+  `sdd/CONVENTIONS.md`, `sdd/tasks/.id_ledger.json`, the `.claude/worktrees/` ignore block.
+- `parrot self doctor` scopes (TASK-4080, rev 0.2): default, `--sdd` (repo readiness: `origin`,
+  base branch, committed ledger, worktrees ignore, `gh` auth, `jq`, SDD files current, host CLIs
+  informational), `--runtime-only` (bootstrap scope); `--sdd` and `--runtime-only` are mutually
+  exclusive.
 
 ### Does NOT Exist
 - ~~`docs/install/`~~ — directory is new (created with the page).
+- ~~`cli-verb` / `flag` claim kinds, `_resolve_verb`, `CLI_DOCS` in the harness~~ — new here.
+- ~~`packages/ai-parrot/tests/docs/test_global_runtime_docs.py`~~ — never created (merged into
+  the harness, C13).
+- ~~`python -m parrot.sdd.scripts.<name>` as the documented helper form~~ — rev 0.2 replaced it
+  with `parrot sdd run <name>` (Q1); docs never show `python -m` for helpers.
+- ~~`sdd/CONFIG.md`~~ — rejected in the C6 decision; the only repo config file is `sdd/config.json`.
 - ~~a `parrot status` self-diagnostic~~ — `status` is agentd's daemon status; diagnostics are `parrot self doctor`.
 - ~~`parrot env` / `parrot doctor` top-level commands~~ — they are `parrot self env` / `parrot self doctor`.
 - ~~an `sdd` console script / `ai-parrot-sdd` package~~ — rejected FEAT-583 design; never document them.
@@ -127,11 +217,11 @@ def extract_claims(path: Path) -> list[DocClaim]:          # line 40 — line-nu
   "schema_version": 1,
   "targets": [
     {
-      "path": "INSTALL.md",
+      "path": "docs/getting-started.md",
       "action": "MODIFY"
     },
     {
-      "path": "docs/INSTALL.md",
+      "path": "packages/ai-parrot/tests/docs/test_getting_started_claims.py",
       "action": "MODIFY"
     },
     {
@@ -139,12 +229,12 @@ def extract_claims(path: Path) -> list[DocClaim]:          # line 40 — line-nu
       "action": "CREATE"
     },
     {
-      "path": "sdd/specs/portable-sdd-flow.spec.md",
+      "path": "INSTALL.md",
       "action": "MODIFY"
     },
     {
-      "path": "packages/ai-parrot/tests/docs/test_global_runtime_docs.py",
-      "action": "CREATE"
+      "path": "docs/INSTALL.md",
+      "action": "MODIFY"
     }
   ],
   "contract_symbols": [
@@ -154,7 +244,9 @@ def extract_claims(path: Path) -> list[DocClaim]:          # line 40 — line-nu
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py#claude",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py#codex",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/google/cli.py#google",
-    "sym:packages/ai-parrot/tests/docs/test_getting_started_claims.py#extract_claims"
+    "sym:packages/ai-parrot/tests/docs/test_getting_started_claims.py#extract_claims",
+    "sym:packages/ai-parrot/tests/docs/test_getting_started_claims.py#DocClaim",
+    "sym:packages/ai-parrot/tests/docs/test_getting_started_claims.py#test_named_scripts_exist"
   ]
 }
 ```
@@ -171,12 +263,25 @@ assert c.value in scripts, f"{c.source}:{c.line} unknown script '{c.value}'"
 ```
 
 ### Key Constraints
-- Write the page from the CODE as merged (run `parrot self --help`, `parrot sdd --help`,
-  `parrot claude install --help`, …) — *why*: the test fails on any flag the CLI does not register.
-- Every command example lives in a fenced ```bash / ```powershell block, one command per line,
-  starting with `parrot ` (no `$ ` prompt) — *why*: that is what the test extracts.
-- Quote the store-gate message only as the code emits it (TASK-4092) — FILL IN the exact text.
-- Keep `INSTALL.md` / `docs/INSTALL.md` edits additive and short; the detail lives in one page.
+- Write both pages from the CODE as merged (run `parrot self --help`, `parrot sdd --help`,
+  `parrot sdd install --help`, `parrot claude install --help`, …) — *why*: the harness fails on
+  any verb or flag the CLI does not register.
+- **Claims, not greps**: every documented `parrot …` command gets `<!-- verify: cli-verb=<group>
+  <sub> -->` and every documented flag `<!-- verify: flag=<group> <sub>:--flag -->`, in both
+  documents — *why*: the harness verifies anchors, exactly like FEAT-586's six kinds; nothing is
+  verified by scraping code fences.
+- **C14a explanation shape** (testable): in `docs/getting-started.md`, each install one-liner
+  fence (the `curl … | bash` / `irm … | iex` forms) is immediately followed by a paragraph
+  containing the literal phrases `Downloads:`, `Writes:`, `Verified by:` and `Without piping:`
+  — *why*: `test_install_commands_are_explained` finds the fence and asserts those four labels in
+  the next paragraph (file:line in the failure).
+- Quote the plan paragraph the bootstrap prints and the gate conditions as TASK-4074/4075
+  implement them; quote the store-gate message only as the code emits it (TASK-4092) — FILL IN
+  the exact texts.
+- `INSTALL.md` / `docs/INSTALL.md` become pointers: delete their install walkthroughs (they are
+  the duplicates C13 removes), keep non-install content, link `docs/getting-started.md` first and
+  `docs/install/global-runtime.md` second.
+- Never document `python -m parrot.sdd.scripts.<name>`; helpers are `parrot sdd run <name>` (Q1).
 - `LazyGroup.get_command` resolves `getattr(module, "self")` / `getattr(module, "sdd")`, so the
   test exercises the real lazy registration of TASK-4080 / TASK-4091.
 - Importing the host CLI modules may need navconfig's `env/` scaffold — CI's `install-guide` job
@@ -193,19 +298,158 @@ assert c.value in scripts, f"{c.source}:{c.line} unknown script '{c.value}'"
 ### Steps (in order)
 1. Collect the real command surface from `--help` output of the merged CLI — *why*: docs must not
    invent flags.
-2. Write `docs/install/global-runtime.md` — *why*: single detailed page.
-3. Link it from `INSTALL.md` and `docs/INSTALL.md`; fix the stale Python range — *why*: discoverability.
-4. Stamp `portable-sdd-flow.spec.md` superseded — *why*: spec §5 AC.
-5. Write the doc-claim test and run it — *why*: keep the page honest as the CLI evolves.
+2. Extend the claim harness (`cli-verb`, `flag`, C14a explanation test) and run it against the
+   unchanged guide — *why*: it must stay green before the docs grow.
+3. Extend `docs/getting-started.md` (canonical guide) — *why*: C13, one verified entry point.
+4. Write `docs/install/global-runtime.md` — *why*: reference detail, same anchors.
+5. Reduce `INSTALL.md` and `docs/INSTALL.md` to pointers; fix the stale Python range — *why*: C13.
+6. Run the harness again — *why*: every new claim must resolve.
+
+### `packages/ai-parrot/tests/docs/test_getting_started_claims.py` (MODIFY)
+```python
+# occurrences: 1 (verified: grep -c 'kind: Literal\["python-range", "extra", "script", "provider", "envvar", "dep"\]' packages/ai-parrot/tests/docs/test_getting_started_claims.py)
+# REPLACE — :34 with:
+    kind: Literal["python-range", "extra", "script", "provider", "envvar", "dep", "cli-verb", "flag"]
+
+# AFTER — `def test_named_dep_floors_match() -> None:` block (:183-…; anchor occurrences: 1) — insert
+# before `def _make_stub_client_class` (:198):
+GLOBAL_RUNTIME = REPO_ROOT / "docs" / "install" / "global-runtime.md"
+CLI_DOCS = (GUIDE, GLOBAL_RUNTIME)   # C13: both documents are verified by the same harness
+INSTALL_ONE_LINER_RE = re.compile(r"\|\s*(bash|sh|iex)\b")   # a piped install command inside a fence
+
+
+def _cli_claims(kind: str) -> list[DocClaim]:
+    """`cli-verb` / `flag` claims across every CLI-bearing document that exists."""
+    return [c for doc in CLI_DOCS if doc.is_file() for c in extract_claims(doc) if c.kind == kind]
+
+
+def _resolve_verb(path: str) -> click.Command | None:
+    """Walk `parrot <group> [<sub> …]` through the REAL lazy CLI (`LazyGroup.get_command` imports on demand)."""
+    from parrot.cli import cli  # imported lazily: needs navconfig's env/ scaffold (CI install-guide job)
+
+    cmd: click.Command = cli
+    ctx = click.Context(cli)
+    for part in path.split():
+        if not isinstance(cmd, click.Group):
+            return None
+        nxt = cmd.get_command(ctx, part)
+        if nxt is None:
+            return None
+        ctx = click.Context(nxt, parent=ctx)
+        cmd = nxt
+    return cmd
+
+
+def test_extract_claims_parses_cli_kinds(tmp_path: Path) -> None:
+    """The two rev-0.2 kinds parse with the `group sub` / `group sub:--flag` value shapes."""
+    doc = tmp_path / "d.md"
+    doc.write_text("<!-- verify: cli-verb=sdd install -->\n<!-- verify: flag=sdd install:--dry-run -->\n", encoding="utf-8")
+    kinds = {c.kind: c.value for c in extract_claims(doc)}
+    assert kinds == {"cli-verb": "sdd install", "flag": "sdd install:--dry-run"}
+
+
+def test_cited_cli_verbs_exist() -> None:
+    """Every `cli-verb` claim resolves to a registered click command (C13)."""
+    claims = _cli_claims("cli-verb")
+    assert claims, "no cli-verb claims found — the guide must anchor its parrot commands"
+    for c in claims:
+        assert _resolve_verb(c.value) is not None, f"{c.source}:{c.line} unknown command 'parrot {c.value}'"
+
+
+def test_cited_flags_exist() -> None:
+    """Every `flag` claim (`<verb>:<--flag>`) is an option of that command (C13)."""
+    for c in _cli_claims("flag"):
+        verb, _, flag = c.value.partition(":")
+        cmd = _resolve_verb(verb)
+        assert cmd is not None, f"{c.source}:{c.line} unknown command 'parrot {verb}'"
+        opts = {o for p in cmd.params for o in (*p.opts, *p.secondary_opts)}
+        assert flag in opts, f"{c.source}:{c.line} 'parrot {verb}' has no option {flag}"
+
+
+def test_install_commands_are_explained() -> None:
+    """C14a / FEAT-586 AC8: each piped install one-liner is followed by Downloads/Writes/Verified by/Without piping."""
+    lines = GUIDE.read_text(encoding="utf-8").splitlines()
+    found = 0
+    for i, text in enumerate(lines, start=1):
+        if not INSTALL_ONE_LINER_RE.search(text):
+            continue
+        found += 1
+        # FILL IN: locate the paragraph after the closing fence and assert the four labels — bounded by
+        #          failure messages of the form f"{GUIDE}:{i} install command lacks '<label>'"
+    assert found >= 2, "the guide must document the POSIX and PowerShell one-liners"
+```
+**Why**: FEAT-586's harness is already the CI-verified source of truth for the guide; adding two
+kinds (instead of a parallel `test_global_runtime_docs.py`) keeps one verifier and lets the
+reference page share it. `_resolve_verb` exercises the real lazy registration of TASK-4080
+(`self`) and TASK-4091 (`sdd`), so a renamed flag breaks this test, not users. `click` is a core
+dependency (`cli/__init__.py:16`); add `import click` to the test's imports.
+
+### `docs/getting-started.md` (MODIFY)
+```markdown
+<!-- occurrences: 1 (verified: grep -c '^## 3. Install a provider (REQUIRED)' docs/getting-started.md) -->
+<!-- AFTER — the end of `## 2. Install the package` (i.e. immediately BEFORE `## 3. Install a provider (REQUIRED)`, :132) — insert: -->
+### Global install (managed runtime, no project venv)
+<!-- verify: cli-verb=self doctor -->
+<!-- verify: flag=self doctor:--runtime-only -->
+
+One command installs `parrot`, `wikitoolkit` and `bookstore` for your coding assistant, machine-wide:
+
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/phenobarbital/ai-parrot/main/scripts/install/install-parrot.sh | bash -s -- --global --with sdd
+    ```
+**Downloads:** the script above and, from GitHub, pinned `uv 0.11.28` plus its `.sha256`.
+**Writes:** `~/.parrot/bin`, `~/.parrot/venv` (Python 3.12 + ai-parrot) and `~/.parrot/python`,
+plus a `# >>> parrot >>>` PATH block in your shell profile; nothing else in `~/.parrot` is touched.
+**Verified by:** the uv checksum, then `parrot self doctor --runtime-only` (a failure removes only
+what the run created). Before writing anything the script checks platform, `curl`/`wget`,
+`sha256sum`, `git`, free space (2 GiB) and GitHub/PyPI reachability.
+**Without piping:** download `install-parrot.sh` and `SHA256SUMS` from the same folder, run
+`sha256sum -c --ignore-missing SHA256SUMS`, read the script, then `bash install-parrot.sh --global`.
+<!-- FILL IN: the PowerShell one-liner (`irm … | iex` or Invoke-WebRequest + -File) with the same four
+     labels (Get-FileHash, user PATH never Machine) — bounded by TASK-4075 -->
+
+### Manage the runtime: `parrot self`
+<!-- verify: cli-verb=self add --> <!-- verify: cli-verb=self env --> <!-- verify: cli-verb=self update --> <!-- verify: cli-verb=self uninstall -->
+<!-- FILL IN: one line per command; `--here` is the only way a dependency enters a project venv — bounded by TASK-4080 --help -->
+
+<!-- occurrences: 1 (verified: grep -c '^## 6. Optional extras' docs/getting-started.md) -->
+<!-- AFTER — the end of section 5 (immediately BEFORE `## 6. Optional extras`, :291) — insert: -->
+### Use the SDD flow in your repo
+<!-- verify: cli-verb=sdd install --> <!-- verify: flag=sdd install:--host --> <!-- verify: flag=sdd install:--dry-run -->
+<!-- verify: flag=sdd install:--force --> <!-- verify: cli-verb=sdd status --> <!-- verify: cli-verb=sdd run -->
+<!-- verify: cli-verb=self doctor --> <!-- verify: flag=self doctor:--sdd -->
+
+    ```bash
+    parrot sdd install --host claude --dry-run   # preview: write / skip / upgrade per file
+    parrot sdd install --host claude
+    parrot self doctor --sdd                      # origin, base branch, ledger, gh, jq, host CLI
+    parrot sdd status                             # missing | current | outdated | edited
+    ```
+<!-- FILL IN: edit `sdd/config.json` (base_branch, hotfix_base, issue_tracker, test_command), the
+     `sdd/CONVENTIONS.md` seed, first `/sdd-*` command, helpers run as `parrot sdd run <name>`,
+     re-running install upgrades untouched files and keeps edited ones — bounded by TASK-4091 + C6 task -->
+```
+**Why**: the guide is the canonical entry point (C13); every command is explained in the AC8 shape
+(C14a) and anchored for the harness. Rendering note for THIS task file: inner fences are indented
+and headings shown one level deeper (`###`) so task parsers splitting on `^## ` are not confused —
+write them as `##`/normal fences in the real file, matching the guide's numbering.
 
 ### `docs/install/global-runtime.md` (CREATE)
 ```markdown
-# Global install: the parrot-managed runtime
+# Global install: the parrot-managed runtime (reference)
+
+> The guide is [docs/getting-started.md](../getting-started.md); this page holds the detail.
 
 `--global` installs AI-Parrot once per machine under `~/.parrot` (or `$PARROT_HOME`): a pinned
 `uv`, a uv-managed Python 3.12, `~/.parrot/venv`, and `parrot` / `wikitoolkit` / `bookstore` on PATH.
 Your existing `~/.parrot` data (wikis.json, library/, skills/, brains/, parrot.db) is never touched;
 the installer only adds `bin/`, `venv/` and `python/`, and a failed run removes only what it created.
+
+### What the installer checks and prints
+<!-- FILL IN: the gate list (platform matrix, download/checksum tool, git, writable PARROT_HOME with
+     2 GiB free, GitHub/PyPI reachable; network skipped under --dry-run) and the plan paragraph,
+     quoted as TASK-4074/4075 print them; post-install `parrot self doctor --runtime-only` and what
+     rolls back (runtime failures only — repo readiness never does) -->
 
 ### Install (Linux / macOS)
 
@@ -225,17 +469,22 @@ Flags: `--version <X>` pins ai-parrot, `--python 3.12` (default) picks the manag
 `--with a,b` runs `parrot self add` per component, `--dry-run` prints the plan only.
 
 ### Managing the runtime
+<!-- verify: cli-verb=self env --> <!-- verify: cli-verb=self doctor --> <!-- verify: flag=self doctor:--sdd -->
+<!-- verify: flag=self doctor:--runtime-only --> <!-- verify: cli-verb=self add --> <!-- verify: flag=self add:--here -->
+<!-- verify: cli-verb=self update --> <!-- verify: cli-verb=self uninstall --> <!-- verify: flag=self uninstall:--yes -->
 
     ```bash
     parrot self env
-    parrot self doctor
+    parrot self doctor            # runtime + host configs + components (+ SDD readiness when sdd/ exists)
+    parrot self doctor --sdd      # repo readiness only: origin, base branch, ledger, worktrees ignore, gh, jq, host CLIs
     parrot self add scraping
     parrot self add scraping --here
     parrot self update
     parrot self uninstall --yes
     ```
 <!-- FILL IN: one sentence per command from the merged --help; `--here` is the ONLY way a
-     dependency enters a project venv — bounded by TASK-4080 -->
+     dependency enters a project venv; `--runtime-only` is the bootstrap's scope and is mutually
+     exclusive with `--sdd` — bounded by TASK-4080 -->
 
 ### Which venv runs? (launcher resolution)
 From the managed venv, `parrot`/`wikitoolkit`/`bookstore` re-exec into, in order: `PARROT_VENV`;
@@ -256,14 +505,24 @@ session. Outside the managed venv nothing changes.
      `.mcp.json.example` keeps the FEAT-495 resolver form for monorepo developers on purpose. -->
 
 ### The SDD flow in any repository
+<!-- verify: cli-verb=sdd install --> <!-- verify: flag=sdd install:--host --> <!-- verify: flag=sdd install:--dry-run -->
+<!-- verify: flag=sdd install:--force --> <!-- verify: cli-verb=sdd status --> <!-- verify: cli-verb=sdd uninstall -->
+<!-- verify: flag=sdd uninstall:--dry-run --> <!-- verify: cli-verb=sdd run -->
 
     ```bash
+    parrot sdd install --host claude --dry-run
     parrot sdd install --host claude
     parrot sdd status
-    parrot sdd uninstall
+    parrot sdd run reserve_ids --kind task --count 1 --base-branch dev --label demo
+    parrot sdd uninstall --dry-run
     ```
-<!-- FILL IN: helpers run as `python -m parrot.sdd.scripts.<name>`; conflict rule (identical → skip,
-     differs → skip+warn unless --force) — bounded by TASK-4091 -->
+<!-- FILL IN: helpers run as `parrot sdd run <name>` (never `python -m …`: in a global-only install the
+     repo's `python` cannot import parrot); the record `sdd/.sdd-installed.json` and the status states
+     missing | current | outdated | edited; upgrade rule (recorded hash matches → upgrade; differs → kept
+     with a warning unless --force; not ours → skipped); `sdd/config.json` fields (base_branch,
+     staging_branch, hotfix_base, issue_tracker, jira_host, reviewer, test_command); the
+     `sdd/CONVENTIONS.md` seed (created once, never overwritten, even with --force) — bounded by
+     TASK-4091 and the C6 task -->
 
 ### Version skew
 <!-- FILL IN: quote WikiStoreVersionError's message as emitted (TASK-4092) and the fix
@@ -276,151 +535,80 @@ the Markdown blocks of this blueprint (here and in the two INSTALL blocks below)
 level deeper (`###`) so SDD task parsers that split on `^## ` are not confused — write them as
 normal top-level fences and `##` headings in the real files.
 
-### `INSTALL.md` (MODIFY)
+### `INSTALL.md` (MODIFY — becomes a pointer, C13)
 ```markdown
 <!-- occurrences: 1 (verified: grep -cF '- [Python Environment Setup](#python-environment-setup)' INSTALL.md) -->
-<!-- REPLACE — `- [Python Environment Setup](#python-environment-setup)` (verified: INSTALL.md:9) with: -->
-- [Quick global install](#quick-global-install)
-- [Python Environment Setup](#python-environment-setup)
+<!-- The install walkthrough sections (the TOC entry `- [Python Environment Setup](#python-environment-setup)`,
+     :9, through the end of that section, :158-…) are REPLACED by one pointer paragraph; non-install
+     content stays. FILL IN: the exact span after reading the file — bounded by "no install
+     walkthrough remains here". -->
+## Installing
 
-<!-- occurrences: 1 (verified: grep -cF '## Python Environment Setup' INSTALL.md) -->
-<!-- REPLACE — `## Python Environment Setup` (verified: INSTALL.md:158) with: -->
-### Quick global install
-
-Want `parrot`, `wikitoolkit` and `bookstore` for your coding assistant without a project venv?
-`scripts/install/install-parrot.sh --global` (or `install-parrot.ps1 -Global`) installs a managed
-runtime under `~/.parrot` — verified download, pinned uv, Python 3.12. See
-[docs/install/global-runtime.md](docs/install/global-runtime.md).
-
----
-
-### Python Environment Setup
+The install and first-use guide is [docs/getting-started.md](docs/getting-started.md) — project
+venv or the machine-wide managed runtime (`--global`), providers, verification. Reference detail for
+the managed runtime, `parrot self …` and the SDD flow: [docs/install/global-runtime.md](docs/install/global-runtime.md).
 ```
 
-### `docs/INSTALL.md` (MODIFY)
+### `docs/INSTALL.md` (MODIFY — becomes a pointer, C13)
 ```markdown
 <!-- occurrences: 1 (verified: grep -cF '- Python 3.10–3.12' docs/INSTALL.md) -->
 <!-- REPLACE — `- Python 3.10–3.12` (verified: docs/INSTALL.md:8) with: -->
 - Python 3.11–3.13
 
 <!-- occurrences: 1 (verified: grep -cF '## Install with uv (recommended)' docs/INSTALL.md) -->
-<!-- REPLACE — `## Install with uv (recommended)` (verified: docs/INSTALL.md:20) with: -->
-### Global install (managed runtime)
-No Python needed up front: `bash scripts/install/install-parrot.sh --global` (Windows:
-`install-parrot.ps1 -Global`) installs pinned uv + Python 3.12 + ai-parrot under `~/.parrot`.
-Details, checksum verification and `parrot self …`: [install/global-runtime.md](install/global-runtime.md).
+<!-- REPLACE — `## Install with uv (recommended)` (:20) and the install walkthrough that follows it with: -->
+## Install
 
-### Install with uv (recommended)
+Follow the canonical guide: [getting-started.md](getting-started.md). It covers the project-venv
+install, the machine-wide managed runtime (`install-parrot.sh --global` / `install-parrot.ps1
+-Global`, with what each command downloads, writes and verifies, and a non-piped alternative),
+providers and verification. Managed-runtime reference: [install/global-runtime.md](install/global-runtime.md).
+<!-- FILL IN: exact span to delete (through the end of the install walkthrough; keep `[Back to README]`
+     and any non-install sections) — bounded by "no install walkthrough remains here" -->
 ```
-
-### `sdd/specs/portable-sdd-flow.spec.md` (MODIFY)
-```markdown
-<!-- occurrences: 1 (verified: grep -c '^status: draft$' sdd/specs/portable-sdd-flow.spec.md) -->
-<!-- REPLACE — frontmatter `status: draft` (verified: sdd/specs/portable-sdd-flow.spec.md:8) with: -->
-status: superseded
-<!-- occurrences: 1 (verified: grep -c '^\*\*Status\*\*: draft$' sdd/specs/portable-sdd-flow.spec.md) -->
-<!-- REPLACE — `**Status**: draft` (verified: sdd/specs/portable-sdd-flow.spec.md:17) with: -->
-**Status**: superseded — by FEAT-633 (`sdd/specs/parrot-installer.spec.md`, parrot-installer); this design was rejected.
-```
-**Why**: spec §5 AC; touch nothing else in that file (its line 630 prose stays as history).
-
-### `packages/ai-parrot/tests/docs/test_global_runtime_docs.py` (CREATE)
-```python
-"""Doc-claim checks for docs/install/global-runtime.md (FEAT-633, TASK-4095)."""
-
-from __future__ import annotations
-
-import re
-from pathlib import Path
-
-import click
-import pytest
-
-from parrot.cli import cli
-
-REPO_ROOT = Path(__file__).resolve().parents[4]
-PAGE = REPO_ROOT / "docs" / "install" / "global-runtime.md"
-SUPERSEDED_SPEC = REPO_ROOT / "sdd" / "specs" / "portable-sdd-flow.spec.md"
-CMD_RE = re.compile(r"^\s*parrot\s+(?P<group>[\w-]+)\s+(?P<sub>[\w-]+)(?P<rest>.*)$")
-FLAG_RE = re.compile(r"(?<!\S)(--[\w-]+)")
-
-
-def _cited_commands(path: Path) -> list[tuple[int, str, str, list[str]]]:
-    """Return (line, group, subcommand, flags) for every `parrot <group> <sub>` line in a fence."""
-    found: list[tuple[int, str, str, list[str]]] = []
-    in_fence = False
-    for i, text in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-        if text.lstrip().startswith("```"):
-            in_fence = not in_fence
-            continue
-        m = CMD_RE.match(text) if in_fence else None
-        if m:
-            rest = m["rest"].split("#", 1)[0]
-            found.append((i, m["group"], m["sub"], FLAG_RE.findall(rest)))
-    return found
-
-
-def _resolve(group: str, sub: str) -> click.Command | None:
-    """Resolve `parrot <group> <sub>` through the real lazy CLI."""
-    ctx = click.Context(cli)
-    grp = cli.get_command(ctx, group)
-    if not isinstance(grp, click.Group):
-        return None
-    return grp.get_command(click.Context(grp, parent=ctx), sub)
-
-
-def test_page_cites_commands() -> None:
-    """The page exists and cites at least the self/sdd/portable commands."""
-    groups = {g for _, g, _, _ in _cited_commands(PAGE)}
-    assert {"self", "sdd", "claude", "codex", "google"} <= groups
-
-
-@pytest.mark.parametrize("line,group,sub,flags", _cited_commands(PAGE) if PAGE.is_file() else [])
-def test_cited_command_and_flags_exist(line: int, group: str, sub: str, flags: list[str]) -> None:
-    """Every cited command is registered and every cited flag is one of its options."""
-    cmd = _resolve(group, sub)
-    assert cmd is not None, f"{PAGE}:{line} unknown command 'parrot {group} {sub}'"
-    opts = {o for p in cmd.params for o in (*p.opts, *p.secondary_opts)}
-    for flag in flags:
-        assert flag in opts, f"{PAGE}:{line} 'parrot {group} {sub}' has no option {flag}"
-
-
-def test_page_documents_verified_download() -> None:
-    """The install section uses the raw GitHub URL and the committed SHA256SUMS."""
-    text = PAGE.read_text(encoding="utf-8")
-    assert "raw.githubusercontent.com/phenobarbital/ai-parrot/" in text
-    assert "SHA256SUMS" in text
-
-
-def test_feat_583_spec_superseded() -> None:
-    """portable-sdd-flow.spec.md is stamped superseded and points at FEAT-633."""
-    text = SUPERSEDED_SPEC.read_text(encoding="utf-8")
-    assert re.search(r"^\*\*Status\*\*: superseded.*FEAT-633", text, re.MULTILINE)
-```
-**Why**: mirrors `test_getting_started_claims.py` (file:line in every failure) but checks against
-the live click tree, so a renamed flag in TASK-4080/4082-4084/4091 breaks this test, not users.
+**Why**: C13 — four install documents became one verified guide plus one reference page; the two
+INSTALL files only point.
 
 ### FILL IN checklist
+- [ ] `getting-started.md` PowerShell one-liner + its four C14a labels; bounded by TASK-4075.
+- [ ] `getting-started.md` `parrot self` one-liners and the SDD section prose; bounded by TASK-4080/4091 `--help` + C6 task.
+- [ ] `test_getting_started_claims.py::test_install_commands_are_explained` — paragraph-after-fence location + the four labels; bounded by FEAT-586 AC8.
+- [ ] `global-runtime.md` gate list + plan paragraph quoted from the scripts; bounded by TASK-4074/4075.
 - [ ] `global-runtime.md` Windows section — exact PowerShell download/verify/run lines; bounded by TASK-4075.
-- [ ] `global-runtime.md` `parrot self …` descriptions and real flag names (e.g. `uninstall --yes`, `update --version`); bounded by TASK-4080 `--help`.
+- [ ] `global-runtime.md` `parrot self …` descriptions and real flag names (e.g. `uninstall --yes`, `update --version`, `doctor --sdd/--runtime-only`); bounded by TASK-4080 `--help`.
 - [ ] `global-runtime.md` `--portable` per-host field contract + stickiness + `.mcp.json.example` rationale; bounded by TASK-4082/4083/4084.
-- [ ] `global-runtime.md` `parrot sdd` conflict rule; bounded by TASK-4091.
+- [ ] `global-runtime.md` `parrot sdd` upgrade rule, status states, `run`, `sdd/config.json` fields, `CONVENTIONS.md` seed; bounded by TASK-4091 + C6 task.
 - [ ] `global-runtime.md` version-skew message text; bounded by TASK-4092's `WikiStoreVersionError`.
+- [ ] `INSTALL.md` / `docs/INSTALL.md` — exact spans replaced by the pointer paragraphs.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `docs/install/global-runtime.md` documents: raw-URL install + `SHA256SUMS` verification (POSIX
-      and PowerShell), `parrot self add|env|doctor|update|uninstall`, launcher resolution order,
-      `--portable` per host with the stickiness rule, `parrot sdd install`, Windows notes, and the
-      version-skew gate message + fix.
-- [ ] `INSTALL.md` and `docs/INSTALL.md` link the page; `docs/INSTALL.md` states Python 3.11–3.13.
-- [ ] `sdd/specs/portable-sdd-flow.spec.md` reads `**Status**: superseded` referencing FEAT-633
-      (and `status: superseded` in frontmatter); no other line changed (spec §5 AC).
+- [ ] **C13**: `docs/getting-started.md` is the canonical guide — it documents the `--global`
+      path (POSIX + PowerShell), `parrot self add|env|doctor|update|uninstall`, `parrot sdd
+      install` (`--host`, `--dry-run`, `--force`), `parrot sdd status`, `parrot sdd run`,
+      `parrot self doctor --sdd`, and a "Use the SDD flow in your repo" section; every
+      `parrot …` command and flag it cites carries a `cli-verb` / `flag` anchor.
+- [ ] **C14a / FEAT-586 AC8**: every documented install one-liner (raw-URL bootstrap, which
+      itself downloads pinned uv) is followed by what it downloads, where it writes, how it is
+      verified (checksums + `doctor --runtime-only`) and a non-piped alternative (download,
+      inspect, verify, run) — asserted by `test_install_commands_are_explained`.
+- [ ] `docs/install/global-runtime.md` documents: the pre-install gate + plan paragraph, raw-URL
+      install + `SHA256SUMS` verification (POSIX and PowerShell), `parrot self …` incl. `doctor
+      --sdd` / `--runtime-only`, launcher resolution order, `--portable` per host with the
+      stickiness rule, `parrot sdd install|uninstall|status|run` with the upgrade rule and status
+      states, `sdd/config.json`, the `sdd/CONVENTIONS.md` seed, Windows notes, and the
+      version-skew gate message + fix; same anchors.
+- [ ] `INSTALL.md` and `docs/INSTALL.md` contain no install walkthrough — only pointers to the
+      guide (first) and the reference page; `docs/INSTALL.md` states Python 3.11–3.13.
+- [ ] No document shows `python -m parrot.sdd.scripts.<name>` as the helper form; helpers are
+      `parrot sdd run <name>`.
+- [ ] `sdd/specs/portable-sdd-flow.spec.md` is untouched (already superseded in `2ed09515e`).
 - [ ] `.mcp.json.example` is unchanged (deliberate; rationale in the page).
-- [ ] `test_global_runtime_docs.py` passes: every cited `parrot <group> <sub> --flag` is registered.
-- [ ] `test_getting_started_claims.py` still passes.
+- [ ] `test_getting_started_claims.py` passes with the `cli-verb` / `flag` kinds verifying BOTH
+      documents against the real click CLI (`_resolve_verb` through `parrot.cli:cli`), and no
+      `test_global_runtime_docs.py` exists.
 
 ---
 
@@ -429,19 +617,21 @@ the live click tree, so a renamed flag in TASK-4080/4082-4084/4091 breaks this t
 Run from the feature worktree with `PYTHONPATH=packages/ai-parrot/src` (the shared venv is
 editable-installed against the main checkout).
 
-- `pytest packages/ai-parrot/tests/docs/test_global_runtime_docs.py -q`
 - `pytest packages/ai-parrot/tests/docs/test_getting_started_claims.py -q`
+Also, outside the pytest contract: `packages/ai-parrot/tests/docs/test_global_runtime_docs.py` must NOT exist
+(`test ! -e …`), and `grep -rn "python -m parrot.sdd.scripts" docs/getting-started.md docs/install/global-runtime.md INSTALL.md docs/INSTALL.md`
+must find nothing.
 
 ---
 
 ## Test Specification
 
 ```python
-# packages/ai-parrot/tests/docs/test_global_runtime_docs.py — see blueprint (whole file)
-def test_page_cites_commands(): ...
-def test_cited_command_and_flags_exist(line, group, sub, flags): ...   # parametrized per cited line
-def test_page_documents_verified_download(): ...
-def test_feat_583_spec_superseded(): ...
+# packages/ai-parrot/tests/docs/test_getting_started_claims.py — additions (see blueprint)
+def test_extract_claims_parses_cli_kinds(tmp_path): ...   # cli-verb / flag value shapes
+def test_cited_cli_verbs_exist(): ...                      # every cli-verb claim (guide + reference page) resolves via parrot.cli:cli
+def test_cited_flags_exist(): ...                          # every flag claim is an option of its command
+def test_install_commands_are_explained(): ...             # C14a: Downloads / Writes / Verified by / Without piping after each one-liner
 ```
 
 ---

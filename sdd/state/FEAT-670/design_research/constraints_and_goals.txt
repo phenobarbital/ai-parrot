@@ -1,0 +1,36 @@
+- **Drop-in**: every consumer keeps talking to `BaseWikiStore`, the `SQLitePersistence`
+  duck-typed persistence surface, `OntologyGraphStore`, `CatalogStore` and
+  `HybridPageIndexSearch`. No consumer code path forks on backend.
+- **Both deployment modes from one code path**: `helixdb` backend resolves to a server
+  URL (shared / local-server) or an embedded source (tests / single-process tools).
+- **Local multi-process writes stay safe** (Round 2a decision): the local mode is a
+  long-lived HelixDB **server** (docker or `helix start --disk`) and every process is an
+  HTTP client. Embedded `Disk`/`InMemory` is reserved for tests and single-process
+  tools, because embedded HelixDB is a single-writer engine and the wiki plane is
+  written concurrently by the git post-commit hook (`wikitoolkit upsert --changed`),
+  the `wikitoolkit` MCP server and parallel agent sessions.
+- **Packaging** (Round 2d decision): modules live in core `packages/ai-parrot/src/parrot/`
+  behind an optional extra `ai-parrot[helixdb]`; the HTTP client (`helix-db`) depends on
+  `httpx`, which is allowed **only async** (`helixdb.AsyncClient`) and only inside the
+  provider module via a `ruff.toml` per-file `TID251` exemption. Never the sync
+  `helixdb.Client` in an async path.
+- **Scope** (Round 1a + 2b + 2c decisions): wiki plane, GraphIndex persistence, ledger +
+  schema overlay planes, Ontology graph store (AQL callers rewritten), PageIndex and
+  BookStore as **projections** (files/SQLite stay canonical; HelixDB is the search +
+  graph plane). Full backend implementation now, **ignoring FEAT-540**'s in-flight
+  tasks on the same files (merge conflicts resolved at merge time).
+- **Infra deliverables** requested: `docker/helixdb/` (Dockerfile + compose), Makefile
+  targets, `pyproject.toml` extra, env/config wiring.
+- **Platform**: `helix-db-embedded` 0.3.3 ships wheels for manylinux_2_28 (x86_64,
+  aarch64), macOS universal2, win_amd64; Python ≥3.10 (repo is ≥3.11,<3.14). The native
+  `.so` is 77 MB (27 MB wheel) — must not become a core dependency.
+- **Async-first**: embedded calls are native UniFFI futures; server calls go through
+  `httpx.AsyncClient` pooling. Sync consumers (`CatalogStore`, `SourceCollectionManager`
+  CLI paths) reuse the existing `_run_async` bridge pattern (`wiki/sources.py:1224`).
+- **No hidden behaviour change for `sqlite`/`memory`/`arangodb`/`postgres`** backends.
+  ArangoDB is **not** being retired: HelixDB is an additional supported backend, so no
+  deprecation warnings, doc redirects or removals touch the ArangoDB code or `docker/arango`.
+- **Secrets from env only** (`HELIXDB_URL`, `HELIXDB_API_KEY`), resolved via the existing
+  `_env_credential()` chain (os.environ → navconfig → default), like `ARANGODB_*`.
+
+---

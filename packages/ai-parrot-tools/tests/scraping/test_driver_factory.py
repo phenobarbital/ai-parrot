@@ -7,8 +7,25 @@ import pytest
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
+from parrot.tools.scraping import driver_factory as driver_factory_module
 from parrot.tools.scraping.driver_factory import DriverFactory
 from parrot.tools.scraping.drivers.abstract import AbstractDriver
+
+
+@pytest.fixture(autouse=True)
+def _no_default_chrome_executable(monkeypatch):
+    """Ignore the host's ``DEFAULT_CHROME_EXECUTABLE_PATH`` setting.
+
+    ``resolve_browser_binary`` falls back to that navconfig/env setting when no
+    ``browser_binary`` is configured, which would leak a machine-specific
+    ``options={"browser_binary": ...}`` into the exact-call assertions below.
+    Explicitly configured binaries are still passed through untouched.
+    """
+    monkeypatch.setattr(
+        driver_factory_module,
+        "resolve_browser_binary",
+        lambda browser_binary, browser="chrome", channel=None: browser_binary or None,
+    )
 
 # ── Factory Create ───────────────────────────────────────────────
 

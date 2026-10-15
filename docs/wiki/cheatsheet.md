@@ -250,7 +250,7 @@ wikitoolkit ledger plan-fix [--severity major] [--lane fast|sdd] --json   # lote
 wikitoolkit ledger ingest-sdd        # specs + índices de tareas → nodos spec:/task:
 wikitoolkit ledger sync              # aplica eventos pendientes al índice
 wikitoolkit ledger rebuild           # reconstruye desde el log (re-ejecuta ingest-sdd después)
-wikitoolkit ledger audit · wikitoolkit ledger export --dest <dir> · wikitoolkit ledger compact
+wikitoolkit ledger audit · wikitoolkit ledger export --dest <dir> [--no-reconcile] · wikitoolkit ledger compact
 ```
 
 Kinds: `bug | tech_debt | feature_gap | vulnerability`. Severidades:

@@ -1,11 +1,11 @@
-# TASK-4090: SDD asset packaging: _assets sync tool, package-data, MANIFEST.in, CI checks
+# TASK-4090: SDD asset packaging: _assets sync tool, package-data, MANIFEST.in, CI checks, single-copy prompts
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: M (2-4h)
-**Depends-on**: TASK-4072, TASK-4076, TASK-4089
+**Estimated effort**: L (4-8h)
+**Depends-on**: TASK-4070, TASK-4072, TASK-4076, TASK-4089
 **Assigned-to**: unassigned
 
 ---
@@ -21,9 +21,38 @@ divergence (FEAT-553 `_rules_data` precedent). Packaging is a **verified build a
 (codex S8): `MANIFEST.in` grows the asset tree and CI proves the built wheel contains the
 full set.
 
-This task runs after TASK-4089 (the markdown is already rewritten to
-`python -m parrot.sdd.scripts.<name>`, so the copies are installable), and is serialized after
-TASK-4072 (`pyproject.toml`) and TASK-4076 (`ci.yml`).
+This task runs after TASK-4089 (the markdown is already rewritten to the installable helper
+form, so the copies are installable), after TASK-4070 (the scanner used by the publication
+check), and is serialized after TASK-4072 (`pyproject.toml`) and TASK-4076 (`ci.yml`).
+
+---
+
+## Amendments — spec rev 0.2 (2026-10-14)
+
+Folded in from `sdd/proposals/parrot-installer-amendments.proposal.md` (§3, §5; decisions by
+Jesus Lara, 2026-10-14). Every section below is already edited to match; this list is the
+delta for reviewers.
+
+- **C10 — no rulebook ships.** `codebase-conventions.md` is removed from the asset set for
+  every host (both the `.claude/rules/` row and the `.agent/rules/` row). The only shipped
+  rule is `.claude/rules/worktree-management.md`. A neutral, team-owned seed
+  `sdd/CONVENTIONS.md` is added to the repo and packaged with `seed: true` in the manifest;
+  TASK-4091 creates it once and never overwrites or removes it. ai-parrot's own rules files
+  stay as repo files; `flows/_rules_data/` (FEAT-553, dev-loop coder seats) is untouched.
+- **C9 — no unshipped skill.** `.claude/skills/second-opinion/SKILL.md` is packaged for the
+  claude host (`hosts: ["claude"]`). Codex and Google have no equivalent skill under
+  `.agents/skills/` or `.agent/skills/`, so it ships for claude only.
+- **C2 — one copy of each agent prompt.** `load_subagent_definition()` in
+  `flows/dev_loop/_subagent_defs.py` and `flows/dev_flow/_subagent_defs.py` reads the packaged
+  copy under `parrot/sdd/_assets/claude/agents/<name>.md` (frontmatter stripped as today).
+  The nine `_subagent_data/` copies that have a `.claude/agents/` twin are deleted
+  (`sdd-codereview.md` has no twin and stays in `dev_loop/_subagent_data/`). The failing
+  `test_subagent_parity.py::test_prompt_parity[sdd-worker]` is removed: the asset-sync check
+  is the parity gate now. The former "no sync tool for `_subagent_data/`" note is gone.
+- **C11c/C11d — publication safety.** `check_asset_sync.py --wheel` also rejects a deny-list of
+  paths that must never ship; CI scans `_assets/` with TASK-4070's scanner and fails on any
+  `org-data`, `claude-md-ref` or `branch-literal` finding; a planted forbidden file fails the
+  wheel check (test).
 
 ---
 
@@ -31,18 +60,33 @@ TASK-4072 (`pyproject.toml`) and TASK-4076 (`ci.yml`).
 
 - Create the stdlib-only `scripts/sdd/check_asset_sync.py` (`--write` regenerates `_assets/` +
   `manifest.json`; default / `--check` exits 1 listing diverging, missing and extra files;
-  `--wheel <path>` verifies a built wheel contains `manifest.json` and every manifest entry).
+  `--wheel <path>` verifies a built wheel contains `manifest.json` and every manifest entry
+  **and** contains nothing matching the publication deny-list — C11d).
+- Create the neutral seed `sdd/CONVENTIONS.md` in the repo (C10); it is packaged like any
+  other asset and flagged `seed: true` in the manifest.
 - Generate `packages/ai-parrot/src/parrot/sdd/_assets/` (77 files + `manifest.json`) with `--write`.
 - Declare the asset tree in `[tool.setuptools.package-data]` and in `MANIFEST.in`.
-- Add the sync-check step and a wheel-content job to `.github/workflows/ci.yml`.
+- Add the sync-check step, the publication scan step (C11c) and a wheel-content job to
+  `.github/workflows/ci.yml`.
+- Point both `load_subagent_definition()` loaders at `parrot/sdd/_assets/claude/agents/`
+  and delete the nine duplicated `_subagent_data/` prompts (C2); adapt the tests that read
+  `_subagent_data/` by path; remove the parity test that the sync check replaces.
 - Write `tests/sdd_scripts/test_check_asset_sync.py`.
 
 **NOT in scope**:
-- `parrot/sdd/installer.py`, `parrot/sdd/cli.py`, lazy `sdd` registration (TASK-4091).
-- Rewriting markdown references (TASK-4089 — already done when this starts).
-- `parrot/sdd/__init__.py` (TASK-4070) and `parrot/sdd/scripts/` (TASK-4085..4088).
+- `parrot/sdd/installer.py`, `parrot/sdd/cli.py`, lazy `sdd` registration, creating
+  `sdd/CONVENTIONS.md` in a *target* repo and the never-overwrite rule for seeds (TASK-4091).
+- Rewriting markdown references (TASK-4089 — already done when this starts). This includes
+  making shipped files point at `sdd/CONVENTIONS.md` instead of `codebase-conventions.md`,
+  and the content fixes that make the publication scan pass (placeholders, no `CLAUDE.md`
+  references, no branch literals). This task only *gates* on them.
+- `parrot/sdd/__init__.py`, `parrot/sdd/audit.py` and its finding kinds (TASK-4070) and
+  `parrot/sdd/scripts/` (TASK-4085..4088).
 - Wiring the SDD hook into `.claude/settings.json` of a target repo — this task only packages
   `.claude/hooks/sdd-worker-format.sh`; registration is TASK-4091's concern.
+- `flows/_rules_data/` and `test_rules_parity.py` (FEAT-553): untouched.
+- Deleting `dev_loop/_subagent_data/sdd-codereview.md`: it has no `.claude/agents/` twin and
+  stays core-only, loaded from `_subagent_data/` as today.
 - `release.yml` / `[tool.cibuildwheel]` (the M8 wheel-matrix task).
 
 ---
@@ -56,10 +100,25 @@ TASK-4072 (`pyproject.toml`) and TASK-4076 (`ci.yml`).
 | `packages/ai-parrot/src/parrot/sdd/_assets/manifest.json` | CREATE | Generated manifest (`schema_version: 1`, one entry per asset) |
 | `packages/ai-parrot/pyproject.toml` | MODIFY | `"parrot.sdd"` package-data with explicit per-subdir patterns |
 | `packages/ai-parrot/MANIFEST.in` | MODIFY | `graft src/parrot/sdd/_assets` so the sdist (and wheel-from-sdist) carry the tree |
-| `.github/workflows/ci.yml` | MODIFY | Asset-sync check step + `sdd-assets-wheel` job (build sdist→wheel, verify contents) |
-| `tests/sdd_scripts/test_check_asset_sync.py` | CREATE | Unit tests for write/check/extra/missing/diverge/wheel + package-data coverage |
+| `.github/workflows/ci.yml` | MODIFY | Asset-sync check step + publication scan step + `sdd-assets-wheel` job (build sdist→wheel, verify contents + deny-list) |
+| `tests/sdd_scripts/test_check_asset_sync.py` | CREATE | Unit tests for write/check/extra/missing/diverge/wheel/deny-list/seed + package-data coverage + publication scan |
+| `sdd/CONVENTIONS.md` | CREATE | Neutral team-conventions seed (C10); repo source of the packaged `sdd/CONVENTIONS.md` asset |
+| `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py` | MODIFY | `load_subagent_definition` reads `parrot/sdd/_assets/claude/agents/<name>.md`; `sdd-codereview` keeps `_subagent_data/` |
+| `packages/ai-parrot/src/parrot/flows/dev_flow/_subagent_defs.py` | MODIFY | `load_subagent_definition("sdd-ideation")` reads the packaged asset |
+| `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-{autopilot,coder,feedback,planner,qa,research,secondopinion,worker}.md` | DELETE | 8 duplicated prompts (C2); `sdd-codereview.md` stays |
+| `packages/ai-parrot/src/parrot/flows/dev_flow/_subagent_data/sdd-ideation.md` | DELETE | duplicated prompt (C2); the now-empty `dev_flow/_subagent_data/` dir goes with it |
+| `packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py` | MODIFY | Drop `test_prompt_parity` + `_NO_REPO_TWIN`/`_package_prompts` helpers; keep the two body tests |
+| `packages/ai-parrot/tests/flows/dev_flow/test_subagent_defs.py` | MODIFY | Parity assertions (lines 54, 267-271) now compare `.claude/agents/sdd-ideation.md` with the packaged asset |
+| `packages/ai-parrot/tests/flows/dev_flow/test_base_branch_threading.py` | MODIFY | Line 77 reads the packaged asset path |
+| `packages/ai-parrot/tests/flows/dev_loop/test_planner_node.py` | MODIFY | Line 23 path → packaged asset |
+| `packages/ai-parrot/tests/flows/dev_loop/test_pool_wiring.py` | MODIFY | Line 82 path → packaged asset |
+| `packages/ai-parrot/tests/flows/dev_loop/test_secondopinion_brief.py` | MODIFY | Lines 30, 52 path → packaged asset |
+| `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_review_handoff_contract.py` | MODIFY | Line 107 reads the packaged asset |
+| `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py` | MODIFY | Lines 1223, 1247 path/docstring → packaged asset |
 
 The source → `_assets/` → target mapping is decided in Implementation Notes › Asset mapping.
+The test paths above were verified with `grep -rn _subagent_data packages/ai-parrot/tests`
+on 2026-10-14; re-run it before editing — the line numbers drift.
 
 
 ---
@@ -81,7 +140,10 @@ from pathlib import Path
 import pytest
 import tomllib                                   # stdlib (Python >= 3.11; core requires-python is >=3.11)
 from scripts.sdd import check_asset_sync         # pattern verified: tests/sdd_scripts/test_check_task_state.py:6
-                                                 # (`from scripts.sdd.check_task_state import ...`; testpaths=["tests"], pyproject.toml:240)
+                                                 # (`from scripts.sdd.check_task_state import ...`; testpaths=["tests"], root pyproject.toml:252 — re-verified 2026-10-14)
+from parrot.sdd.audit import scan_paths, KINDS   # TASK-4070 (publication scan test only; the script itself never imports parrot)
+# loaders (C2):
+from importlib.resources import files            # already used: flows/dev_loop/_subagent_defs.py, flows/dev_flow/_subagent_defs.py
 ```
 
 ### Existing Signatures to Use
@@ -89,10 +151,28 @@ from scripts.sdd import check_asset_sync         # pattern verified: tests/sdd_s
 # packages/ai-parrot/pyproject.toml
 [build-system] requires = ["setuptools>=77.0.0", "Cython==3.0.11", "wheel>=0.44.0"]   # lines 1-7 (local setuptools 84.0.0)
 [tool.setuptools.packages.find] where = ["src"]; include = ["parrot*"]; namespaces = true   # lines 951-954
-[tool.setuptools.package-data]                                                         # line 956
-parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]                       # line 957 (`**` already used)
-"parrot.flows" = ["_rules_data/*.md"]                                                  # line 969 — anchor, grep -c == 1
-"parrot.flows.dev_loop" = ["_subagent_data/*.md"]                                      # line 970
+[tool.setuptools.package-data]                                                         # line 965 (re-verified 2026-10-14)
+parrot = ["py.typed", "templates/*.tpl", "**/*.pyx", "**/*.pxd"]                       # line 966 (`**` already used)
+"parrot.flows" = ["_rules_data/*.md"]                                                  # line 978 — anchor, grep -c == 1
+"parrot.flows.dev_loop" = ["_subagent_data/*.md"]                                      # line 979 — KEEP (sdd-codereview.md stays)
+# FEAT-412: dev_flow ships its own prompt set (sdd-ideation); the loader …           # lines 980-981 (comment) — REMOVE with the line below
+"parrot.flows.dev_flow" = ["_subagent_data/*.md"]                                      # line 982 — REMOVE (dir deleted by C2)
+
+# packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py
+def _strip_frontmatter(text: str) -> str:                                              # line 70 — reuse unchanged
+def load_subagent_definition(name: str) -> str:                                        # line 95
+    data_dir = files("parrot.flows.dev_loop") / "_subagent_data"                       # line 114 — the edit site
+_VALID_NAMES  # module-level frozenset of the 9 dev-loop names (incl. sdd-codereview)
+# packages/ai-parrot/src/parrot/flows/dev_flow/_subagent_defs.py
+_VALID_NAMES: frozenset[str] = frozenset({"sdd-ideation"})                            # line 31
+def load_subagent_definition(name: str) -> str:                                        # line 64
+    data_dir = files("parrot.flows.dev_flow") / "_subagent_data"                       # line 86 — the edit site
+
+# Prompt inventory (verified 2026-10-14):
+#   .claude/agents/sdd-*.md (9): autopilot, coder, feedback, ideation, planner, qa, research, secondopinion, worker
+#   dev_loop/_subagent_data/ (9): the 8 above minus ideation, plus sdd-codereview (NO .claude twin)
+#   dev_flow/_subagent_data/ (1): sdd-ideation
+# .claude/skills/second-opinion/SKILL.md — single-file composite skill (git ls-files: only SKILL.md); no twin under .agents/ or .agent/
 
 # packages/ai-parrot/MANIFEST.in (2 lines today)
 recursive-include src *.pyx *.pxd      # line 1
@@ -109,18 +189,25 @@ include setup.py                       # line 2 — anchor, grep -c == 1
 
 # scripts/generate_tool_registry.py — `--check` CI precedent: "CI mode: exit 1 if stale" (line 11, 362, 447-449)
 # packages/ai-parrot/tests/flows/dev_loop/test_rules_parity.py — FEAT-553 precedent: byte parity via
-#   `read_bytes() == read_bytes()` (lines 22-39); there is NO sync script for _rules_data (test-only)
+#   `read_bytes() == read_bytes()` (lines 22-39); there is NO sync script for _rules_data (test-only) — untouched here
+# packages/ai-parrot/src/parrot/sdd/audit.py (TASK-4070) — `scan_paths(paths) -> list[AssumptionFinding]`,
+#   `KINDS` incl. "org-data", "claude-md-ref", "branch-literal"; CLI `python -m parrot.sdd.audit PATH... --fail-on <kinds>`
 ```
 
 ### Does NOT Exist
 - ~~`scripts/sdd/check_asset_sync.py`, `parrot/sdd/_assets/`~~ — new in this task.
-- ~~a sync/regeneration tool for `_rules_data/` or `_subagent_data/`~~ — the FEAT-553 precedent
-  is parity tests only; this task introduces the first `--write` generator (mirrors
-  `generate_tool_registry.py --check`).
+- ~~a sync/regeneration tool for `_rules_data/`~~ — FEAT-553 keeps parity tests only and is
+  untouched; this task introduces the first `--write` generator (mirrors
+  `generate_tool_registry.py --check`), and for the agent prompts it is the ONLY copy mechanism
+  (C2): `_subagent_data/` holds nothing that has a `.claude/agents/` twin after this task.
+- ~~`sdd/CONVENTIONS.md`, a `seed` manifest key, `SEED_TARGETS`, `DENY_PATTERNS`~~ — new in this task (C10, C11d).
+- ~~`_assets/claude/skills/`~~ — new in this task (C9).
 - ~~any wheel-content check in `ci.yml`~~ — `ci.yml` builds no wheel today (`grep -n "uv build" ci.yml` → none).
 - ~~`MANIFEST.in` data entries~~ — Cython sources + `setup.py` only.
 - ~~`sdd/templates/research_plan.schema.json` in git~~ — on disk but untracked; never package it.
 - ~~`_assets/.claude/...` dot-dir layout~~ — rejected (see mapping rationale).
+- ~~`.agents/skills/second-opinion/`, `.agent/skills/second-opinion/`~~ — no codex/google twin of the skill exists.
+- ~~`.claude/agents/sdd-codereview.md`~~ — never existed (`git log --all` empty); the prompt is core-only.
 
 ---
 
@@ -141,10 +228,18 @@ include setup.py                       # line 2 — anchor, grep -c == 1
     {"path": "packages/ai-parrot/pyproject.toml", "action": "MODIFY"},
     {"path": "packages/ai-parrot/MANIFEST.in", "action": "MODIFY"},
     {"path": ".github/workflows/ci.yml", "action": "MODIFY"},
-    {"path": "tests/sdd_scripts/test_check_asset_sync.py", "action": "CREATE"}
+    {"path": "tests/sdd_scripts/test_check_asset_sync.py", "action": "CREATE"},
+    {"path": "sdd/CONVENTIONS.md", "action": "CREATE"},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/src/parrot/flows/dev_flow/_subagent_defs.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/flows/dev_flow/test_subagent_defs.py", "action": "MODIFY"}
   ],
   "contract_symbols": [
-    "sym:packages/ai-parrot/tests/flows/dev_loop/test_rules_parity.py#test_claude_rules_twin_is_identical"
+    "sym:packages/ai-parrot/tests/flows/dev_loop/test_rules_parity.py#test_claude_rules_twin_is_identical",
+    "sym:packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py#load_subagent_definition",
+    "sym:packages/ai-parrot/src/parrot/flows/dev_flow/_subagent_defs.py#load_subagent_definition",
+    "sym:packages/ai-parrot/src/parrot/sdd/audit.py#scan_paths"
   ]
 }
 ```
@@ -166,18 +261,36 @@ workflows in `.agent/workflows/sdd-*.md` …, skills in `.agents/skills/sdd-*`, 
 | claude | `.claude/commands/sdd-*.md` | 14 | `claude/commands/` |
 | claude | `.claude/agents/sdd-*.md` | 9 | `claude/agents/` |
 | claude | `.claude/hooks/sdd-worker-format.sh` | 1 | `claude/hooks/` |
-| claude | `.claude/rules/codebase-conventions.md`, `.claude/rules/worktree-management.md` | 2 | `claude/rules/` |
+| claude | `.claude/rules/worktree-management.md` | 1 | `claude/rules/` |
+| claude | `.claude/skills/second-opinion/SKILL.md` (C9) | 1 | `claude/skills/second-opinion/` |
 | codex, google | `.agents/skills/sdd-*/SKILL.md` | 14 | `agents/skills/<n>/` |
-| codex, google | `.agent/rules/codebase-conventions.md` | 1 | `agent/rules/` |
 | codex | `.codex/agents/sdd-worker.toml` | 1 | `codex/agents/` |
 | google | `.agent/workflows/sdd-*.md` | 14 | `agent/workflows/` |
 | google | `.agents/agents/sdd-*/agent.md` | 8 | `agents/agents/<n>/` |
 | claude, codex, google | `sdd/templates/*` (git-tracked: 12 — `research_plan.schema.json` is untracked and excluded) | 12 | `sdd/sdd_templates/` |
 | claude, codex, google | `sdd/WORKFLOW.md` | 1 | `sdd/WORKFLOW.md` |
+| claude, codex, google | `sdd/CONVENTIONS.md` — **seed** (`seed: true`; C10) | 1 | `sdd/CONVENTIONS.md` |
 
-**Total: 77 assets.** Excluded on purpose: `.agent/agents/sdd-*/agent.md` (no host doc names
-`.agent/agents/` — Antigravity's subagent dir is `.agents/agents/`), `.agent/skills/worktree-management/`
-(not an SDD-named skill on any host list), `.claude/agents/qa-runner.md` (not `sdd-*`).
+**Total: 77 assets** (the two `codebase-conventions.md` rows left; the skill and the seed
+came in). Excluded on purpose: `.claude/rules/codebase-conventions.md` and
+`.agent/rules/codebase-conventions.md` (C10 — ai-parrot's rulebook never ships; the codex and
+google wiki installers keep rendering `.agent/rules/` from the *repo*, which is untouched),
+`.agent/agents/sdd-*/agent.md` (no host doc names `.agent/agents/` — Antigravity's subagent dir
+is `.agents/agents/`), `.agent/skills/worktree-management/` (not an SDD-named skill on any host
+list), `.claude/agents/qa-runner.md` (not `sdd-*`).
+
+**Seed semantics (C10).** A manifest entry with `"seed": true` is written by TASK-4091 only
+when the target is absent and is never overwritten, diffed or removed afterwards, `--force`
+included. The repo's `sdd/CONVENTIONS.md` IS the seed text — neutral placeholders only
+("describe your stack, package manager, lint / format / test commands, forbidden libraries");
+ai-parrot's real conventions stay in `.claude/rules/codebase-conventions.md`, which Claude Code
+loads from the repo as today. Keep the seed byte-identical to what ships: the sync check
+treats it like any other asset.
+
+**Publication deny-list (C11d).** Nothing under these patterns may appear in the wheel's
+`parrot/sdd/_assets/` tree: `sdd/references/`, `sdd/state/`, `sdd/ledger/`, `.parrot/`,
+`*.jsonl`, `*.db`, `sdd/tasks/.id_ledger.json`, any `.id_ledger*`. `check_wheel` fails on a
+match even when the manifest is complete.
 
 **Why `_assets/` does NOT mirror dot-dirs** (verified, not assumed): setuptools 84's
 `setuptools.glob` *does* match dot-dirs (checked: `_assets/**/*.md` returned
@@ -223,9 +336,15 @@ the manifest alone.
 > class name, or file path the blueprint fixes.
 
 ### Steps (in order)
+0. Create `sdd/CONVENTIONS.md` (seed block below) and commit it — *why*: it must be git-tracked
+   before `--write` can package it.
 1. Write `scripts/sdd/check_asset_sync.py` — *why*: it owns the mapping; the tree is generated from it.
 2. Run `python scripts/sdd/check_asset_sync.py --write`, then `--check` (expect exit 0, 77 assets)
    — *why*: `_assets/` and `manifest.json` must never be hand-written.
+2b. Edit both `_subagent_defs.py` loaders, `git rm` the nine duplicated `_subagent_data/` prompts,
+   drop the `parrot.flows.dev_flow` package-data line, adapt the tests listed in the Files table
+   — *why*: the packaged asset is now the only copy (C2); do this right after step 2 so the
+   loaders have something to read.
 3. `git add -f` is NOT needed (no ignored path in the tree) — verify with
    `git status --porcelain -uall packages/ai-parrot/src/parrot/sdd/_assets | wc -l` == 78 — *why*: a silently
    ignored asset would ship nowhere.
@@ -260,19 +379,27 @@ WHEEL_PREFIX = "parrot/sdd/_assets/"
 HOST_ORDER: tuple[str, ...] = ("claude", "codex", "google")
 
 #: (git pathspec glob relative to the repo root, hosts) — see the task's mapping table.
+#: NEVER list `codebase-conventions.md` here (C10: ai-parrot's rulebook does not ship).
 ASSET_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
     (".claude/commands/sdd-*.md", ("claude",)),
     (".claude/agents/sdd-*.md", ("claude",)),
     (".claude/hooks/sdd-worker-format.sh", ("claude",)),
-    (".claude/rules/codebase-conventions.md", ("claude",)),
     (".claude/rules/worktree-management.md", ("claude",)),
+    (".claude/skills/second-opinion/SKILL.md", ("claude",)),          # C9 — claude only; no codex/google twin
     (".agents/skills/sdd-*/SKILL.md", ("codex", "google")),
-    (".agent/rules/codebase-conventions.md", ("codex", "google")),
     (".codex/agents/sdd-worker.toml", ("codex",)),
     (".agent/workflows/sdd-*.md", ("google",)),
     (".agents/agents/sdd-*/agent.md", ("google",)),
     ("sdd/templates/*", HOST_ORDER),
     ("sdd/WORKFLOW.md", HOST_ORDER),
+    ("sdd/CONVENTIONS.md", HOST_ORDER),                               # C10 — seed, see SEED_TARGETS
+)
+#: Targets written once by the installer and never overwritten/removed (manifest `"seed": true`).
+SEED_TARGETS: frozenset[str] = frozenset({"sdd/CONVENTIONS.md"})
+#: Wheel paths (relative to WHEEL_PREFIX) that must never ship — C11d. fnmatch on the posix path.
+DENY_PATTERNS: tuple[str, ...] = (
+    "sdd/references/*", "sdd/state/*", "sdd/ledger/*", ".parrot/*", "*/.parrot/*",
+    "*.jsonl", "*.db", "*.id_ledger*", "sdd/tasks/*",
 )
 #: target prefix -> asset prefix. No dot-dirs (nested .claude/ discovery) and no `templates/` (.gitignore:273).
 PREFIX_MAP: tuple[tuple[str, str], ...] = (
@@ -292,10 +419,14 @@ class AssetEntry:
     source: str
     target: str
     hosts: tuple[str, ...]
+    seed: bool = False
 
     def as_json(self) -> dict[str, object]:
-        """Manifest form (key order fixed: source, target, hosts)."""
-        return {"source": self.source, "target": self.target, "hosts": list(self.hosts)}
+        """Manifest form (key order fixed: source, target, hosts[, seed]); ``seed`` only when true."""
+        payload: dict[str, object] = {"source": self.source, "target": self.target, "hosts": list(self.hosts)}
+        if self.seed:
+            payload["seed"] = True
+        return payload
 
 
 def asset_source_for(target: str) -> str:
@@ -314,7 +445,8 @@ def expected_entries(root: Path) -> list[AssetEntry]:
     """Resolve ``ASSET_SOURCES`` against the git-tracked files of ``root``, sorted by target."""
     # FILL IN: one `git -C root ls-files -z -- <pathspecs>` call, glob-match each tracked path to the
     #          FIRST matching ASSET_SOURCES row (fnmatch on the posix path), merge hosts if a target
-    #          matches twice (keep HOST_ORDER) — bounded by "git-tracked only" + deterministic order
+    #          matches twice (keep HOST_ORDER), seed=(target in SEED_TARGETS) — bounded by "git-tracked
+    #          only" + deterministic order
     raise NotImplementedError
 
 
@@ -345,10 +477,14 @@ def write_assets(root: Path, assets_dir: Path) -> list[AssetEntry]:
 
 
 def check_wheel(wheel: Path) -> list[str]:
-    """Verify ``wheel`` contains ``parrot/sdd/_assets/manifest.json`` and every entry it lists."""
+    """Verify ``wheel`` contains ``parrot/sdd/_assets/manifest.json`` and every entry it lists,
+    and nothing under ``WHEEL_PREFIX`` that matches ``DENY_PATTERNS`` (C11d)."""
     # FILL IN: zipfile.ZipFile(wheel).namelist(); read the manifest FROM THE WHEEL (not the checkout);
-    #          one "missing in wheel: <WHEEL_PREFIX><source>" per absent entry; flag an empty asset list —
-    #          bounded by codex S8 (prove the shipped artifact) and test_check_wheel_reports_missing_entry
+    #          one "missing in wheel: <WHEEL_PREFIX><source>" per absent entry; flag an empty asset list;
+    #          then for every name under WHEEL_PREFIX, fnmatch against DENY_PATTERNS →
+    #          "forbidden in wheel: <name>" (also when the name is NOT in the manifest) —
+    #          bounded by codex S8 (prove the shipped artifact), test_check_wheel_reports_missing_entry
+    #          and test_check_wheel_rejects_forbidden_paths
     raise NotImplementedError
 
 
@@ -392,19 +528,77 @@ reads the manifest *from the wheel* so it proves the shipped artifact, not the c
 # GENERATED — never hand-write. Produced by: python scripts/sdd/check_asset_sync.py --write
 _assets/
   manifest.json                      {"schema_version": 1, "assets": [{"source": "claude/commands/sdd-spec.md",
-                                       "target": ".claude/commands/sdd-spec.md", "hosts": ["claude"]}, ...]}  (77 entries)
+                                       "target": ".claude/commands/sdd-spec.md", "hosts": ["claude"]}, ...,
+                                       {"source": "sdd/CONVENTIONS.md", "target": "sdd/CONVENTIONS.md",
+                                        "hosts": ["claude", "codex", "google"], "seed": true}]}  (77 entries)
   claude/{commands,agents,hooks,rules}/...
+  claude/skills/second-opinion/SKILL.md
   agents/skills/sdd-*/SKILL.md       agents/agents/sdd-*/agent.md
-  agent/workflows/sdd-*.md           agent/rules/codebase-conventions.md
+  agent/workflows/sdd-*.md
   codex/agents/sdd-worker.toml
-  sdd/sdd_templates/*                sdd/WORKFLOW.md
+  sdd/sdd_templates/*                sdd/WORKFLOW.md                sdd/CONVENTIONS.md
 ```
 **Why**: the manifest format is fixed by the FEAT-633 brief; TASK-4091 reads it via `importlib.resources`.
+`seed` is an optional key (absent ⇒ false), so `schema_version` stays 1 and TASK-4091 reads it
+with `entry.get("seed", False)`. No `agent/rules/` subtree exists any more (C10).
+
+### `sdd/CONVENTIONS.md` (CREATE — the seed, C10)
+```markdown
+# Team conventions
+
+> Seeded by `parrot sdd install`. This file belongs to your team: edit it freely — the
+> installer never overwrites or removes it. The SDD commands and agents read it before
+> writing code.
+
+## Stack
+<!-- Languages, frameworks, runtime versions. -->
+
+## Package manager and environment
+<!-- How dependencies are declared and installed; how a shell is prepared. -->
+
+## Format, lint and test commands
+<!-- The exact commands an agent must run before committing. -->
+
+## Forbidden libraries and patterns
+<!-- What must never be imported or done, and what to use instead. -->
+
+## Style
+<!-- Naming, docstrings, line length, logging, error handling. -->
+```
+**Why**: shipped files no longer mandate a language, framework or package manager (C10); the
+team describes its own. The text is neutral on purpose — it ships verbatim to every host and
+must produce zero scanner findings.
+
+### `flows/dev_loop/_subagent_defs.py` and `flows/dev_flow/_subagent_defs.py` (MODIFY — C2)
+```python
+# dev_loop/_subagent_defs.py — replace line 114 (`data_dir = files("parrot.flows.dev_loop") / "_subagent_data"`):
+_CORE_ONLY: frozenset[str] = frozenset({"sdd-codereview"})   # no .claude/agents/ twin — stays in _subagent_data/
+
+    if name in _CORE_ONLY:
+        target = files("parrot.flows.dev_loop") / "_subagent_data" / f"{name}.md"
+    else:
+        # FEAT-633 C2: the packaged SDD asset is the ONLY copy of a prompt that Claude Code also loads.
+        target = files("parrot.sdd") / "_assets" / "claude" / "agents" / f"{name}.md"
+    text = target.read_text(encoding="utf-8")
+    return _strip_frontmatter(text)
+
+# dev_flow/_subagent_defs.py — replace line 86 (`data_dir = files("parrot.flows.dev_flow") / "_subagent_data"`):
+    target = files("parrot.sdd") / "_assets" / "claude" / "agents" / f"{name}.md"
+    text = target.read_text(encoding="utf-8")
+    return _strip_frontmatter(text)
+```
+**Why**: the frontmatter is the only host-specific part and both loaders already strip it;
+reading the packaged asset removes the drift that broke `test_prompt_parity[sdd-worker]`
+(`.claude/agents/sdd-worker.md` lists `Monitor, TaskStop` in `tools:`, the `_subagent_data`
+copy did not). Update both module docstrings (dev_loop lines 25-45, dev_flow lines 19-23)
+to say where the prompt lives now. `git rm` the nine duplicated files; remove the
+`"parrot.flows.dev_flow"` package-data line (and its FEAT-412 comment) because the directory
+is gone; keep the `dev_loop` line for `sdd-codereview.md`.
 
 ### `packages/ai-parrot/pyproject.toml` (MODIFY)
 ```toml
 # occurrences: 1 (verified: grep -c '"parrot.flows" = \["_rules_data/\*.md"\]' packages/ai-parrot/pyproject.toml)
-# AFTER — insert below `"parrot.flows" = ["_rules_data/*.md"]` (verified: packages/ai-parrot/pyproject.toml:969)
+# AFTER — insert below `"parrot.flows" = ["_rules_data/*.md"]` (verified: packages/ai-parrot/pyproject.toml:978, 2026-10-14)
 # FEAT-633: packaged SDD flow assets deployed by `parrot sdd install`, read via importlib.resources.
 # Explicit per-subdir patterns (one per _assets/ subtree); test_check_asset_sync asserts they cover
 # every manifest entry, so a new subtree fails CI instead of silently missing from the wheel.
@@ -414,18 +608,22 @@ _assets/
     "_assets/claude/agents/*.md",
     "_assets/claude/hooks/*.sh",
     "_assets/claude/rules/*.md",
+    "_assets/claude/skills/*/SKILL.md",
     "_assets/agents/skills/*/SKILL.md",
     "_assets/agents/agents/*/agent.md",
     "_assets/agent/workflows/*.md",
-    "_assets/agent/rules/*.md",
     "_assets/codex/agents/*.toml",
     "_assets/sdd/sdd_templates/*",
     "_assets/sdd/WORKFLOW.md",
+    "_assets/sdd/CONVENTIONS.md",
 ]
+# ALSO (C2): delete lines 980-982 — the FEAT-412 comment and `"parrot.flows.dev_flow" = ["_subagent_data/*.md"]`;
+# the directory no longer exists. Keep line 979 (`"parrot.flows.dev_loop"`): sdd-codereview.md stays there.
 ```
 **Why**: setuptools here (≥77, local 84) supports `**`, but explicit globs keep the wheel's
-content reviewable and the coverage test makes drift loud. Insert after line 969, not after
-the `parrot.flows.dev_flow` comment block, so TASK-4072's `[project.scripts]` edit (:199) never collides.
+content reviewable and the coverage test makes drift loud. Insert after line 978, so
+TASK-4072's `[project.scripts]` edit (:199) never collides. There is no `agent/rules/` glob:
+nothing ships there any more (C10).
 
 ### `packages/ai-parrot/MANIFEST.in` (MODIFY)
 ```text
@@ -445,6 +643,16 @@ wheel) could lose the tree (spec §3 M6, codex S8).
       # .agent/, .codex/, sdd/); fail on any byte divergence. Fix: python scripts/sdd/check_asset_sync.py --write
       - name: Check packaged SDD assets are in sync (FEAT-633)
         run: python scripts/sdd/check_asset_sync.py --check
+
+      # FEAT-633 C11c: the asset tree goes into the PUBLIC wheel. Fail on any organisation data,
+      # CLAUDE.md reference or hardcoded flow branch in a shipped file (kinds from TASK-4070).
+      # Fix: edit the SOURCE file (.claude/, .agents/, …), then `check_asset_sync.py --write`.
+      - name: Scan packaged SDD assets for publication-unsafe content (FEAT-633)
+        run: >
+          uv run --no-sync python -m parrot.sdd.audit
+          packages/ai-parrot/src/parrot/sdd/_assets
+          --root packages/ai-parrot/src/parrot/sdd/_assets
+          --fail-on org-data,claude-md-ref,branch-literal
 
   # FEAT-633 (codex S8): prove the BUILT wheel carries the SDD asset tree. `uv build` builds the
   # sdist first and the wheel from it, so this also proves MANIFEST.in. g++ is preinstalled on
@@ -468,11 +676,13 @@ wheel) could lose the tree (spec §3 M6, codex S8).
       - name: Build ai-parrot sdist + wheel
         run: uv build --package ai-parrot --out-dir dist
 
-      - name: Verify wheel contains manifest.json and every manifest entry
+      - name: Verify wheel contains manifest.json, every manifest entry, and nothing on the deny-list
         run: python scripts/sdd/check_asset_sync.py --wheel dist/ai_parrot-*.whl
 ```
-**Why**: the sync step is stdlib, so it needs no environment; the wheel job is the cheapest
-reliable proof — one build (sdist→wheel, ~2 min incl. Cython) and a zip listing.
+**Why**: the sync step is stdlib, so it needs no environment; the publication scan runs in
+`lint-and-registry`, which already has the synced venv (`uv sync --all-packages`, line 10 block);
+the wheel job is the cheapest reliable proof — one build (sdist→wheel, ~2 min incl. Cython) and
+a zip listing, now also matched against `DENY_PATTERNS`.
 Rejected cheaper options: `setup.py build_py` (skips sdist/MANIFEST.in, not the shipped artifact);
 reusing `release.yml` (tag-only, codex S8 wants PR-time proof).
 
@@ -545,6 +755,68 @@ def test_check_wheel_reports_missing_entry(tmp_path: Path) -> None:
     assert cas.check_wheel(wheel) == [f"missing in wheel: {cas.WHEEL_PREFIX}claude/commands/a.md"]
 
 
+@pytest.mark.parametrize("planted", ["sdd/state/FEAT-1/notes.md", "sdd/ledger/issues.jsonl", ".parrot/wiki.db",
+                                     "sdd/tasks/.id_ledger.json", "sdd/references/x.md"])
+def test_check_wheel_rejects_forbidden_paths(tmp_path: Path, planted: str) -> None:
+    """C11d: a complete manifest does not excuse a forbidden file in the asset tree."""
+    wheel = tmp_path / "ai_parrot-0-py3-none-any.whl"
+    manifest = {"schema_version": 1, "assets": [{"source": "sdd/WORKFLOW.md", "target": "sdd/WORKFLOW.md", "hosts": ["claude"]}]}
+    with zipfile.ZipFile(wheel, "w") as zf:
+        zf.writestr(cas.WHEEL_PREFIX + "manifest.json", json.dumps(manifest))
+        zf.writestr(cas.WHEEL_PREFIX + "sdd/WORKFLOW.md", "# ok\n")
+        zf.writestr(cas.WHEEL_PREFIX + planted, "secret\n")
+    assert cas.check_wheel(wheel) == [f"forbidden in wheel: {cas.WHEEL_PREFIX}{planted}"]
+
+
+def test_seed_entry_is_flagged(mini_repo: Path) -> None:
+    """C10: sdd/CONVENTIONS.md carries `"seed": true`; nothing else carries the key."""
+    (mini_repo / "sdd/CONVENTIONS.md").write_text("# Team conventions\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=mini_repo, check=True)
+    _run(mini_repo, "--write")
+    manifest = json.loads((mini_repo / "assets" / "manifest.json").read_text())
+    by_target = {e["target"]: e for e in manifest["assets"]}
+    assert by_target["sdd/CONVENTIONS.md"]["seed"] is True
+    assert all("seed" not in e for t, e in by_target.items() if t != "sdd/CONVENTIONS.md")
+
+
+def test_no_rulebook_and_no_dot_rules_ship() -> None:
+    """C10: codebase-conventions.md is packaged for no host; the only rule asset is worktree-management."""
+    manifest = json.loads((_REPO_ROOT / "packages/ai-parrot/src/parrot/sdd/_assets/manifest.json").read_text())
+    targets = {e["target"] for e in manifest["assets"]}
+    assert not any(t.endswith("codebase-conventions.md") for t in targets)
+    assert ".claude/rules/worktree-management.md" in targets
+    assert ".claude/skills/second-opinion/SKILL.md" in targets          # C9
+    assert "sdd/CONVENTIONS.md" in targets                              # C10
+
+
+def test_assets_have_no_publication_findings() -> None:
+    """C11c: the committed asset tree has zero org-data / claude-md-ref / branch-literal findings."""
+    from parrot.sdd.audit import scan_paths  # TASK-4070
+
+    assets_dir = _REPO_ROOT / "packages/ai-parrot/src/parrot/sdd/_assets"
+    findings = scan_paths(sorted(p for p in assets_dir.rglob("*") if p.is_file() and p.name != "manifest.json"))
+    bad = [f for f in findings if f.kind in {"org-data", "claude-md-ref", "branch-literal"}]
+    assert not bad, [(f.path, f.line, f.kind, f.snippet) for f in bad]
+
+
+def test_dev_loop_prompts_load_from_packaged_assets() -> None:
+    """C2: every dual-sourced prompt is read from parrot/sdd/_assets/claude/agents/; sdd-codereview stays core-only."""
+    from importlib.resources import files
+
+    from parrot.flows.dev_flow._subagent_defs import load_subagent_definition as load_flow
+    from parrot.flows.dev_loop._subagent_defs import load_subagent_definition as load_loop
+
+    agents = files("parrot.sdd") / "_assets" / "claude" / "agents"
+    for name in ("sdd-worker", "sdd-planner", "sdd-secondopinion"):
+        body = load_loop(name)
+        assert body and body in (agents / f"{name}.md").read_text(encoding="utf-8")
+    ideation = load_flow("sdd-ideation")
+    assert ideation and ideation in (agents / "sdd-ideation.md").read_text(encoding="utf-8")
+    assert load_loop("sdd-codereview")                                   # still served from _subagent_data/
+    data_dir = files("parrot.flows.dev_loop") / "_subagent_data"
+    assert sorted(p.name for p in data_dir.iterdir() if p.name.endswith(".md")) == ["sdd-codereview.md"]
+
+
 def test_repo_assets_in_sync() -> None:
     """The committed _assets/ tree matches the monorepo sources (the CI gate, as a test)."""
     assert cas.main(["--check", "--root", str(_REPO_ROOT)]) == 0
@@ -560,14 +832,33 @@ def test_package_data_covers_every_manifest_entry() -> None:
     missing = [e["source"] for e in manifest["assets"] if f"_assets/{e['source']}" not in covered]
     assert not missing, missing
 ```
-**Why**: covers spec §4 `test_asset_sync_check` (divergence fails) plus the two packaging
-guarantees this task adds (git-tracked only, package-data coverage).
+**Why**: covers spec §4 `test_asset_sync_check` (divergence fails) plus the packaging
+guarantees this task adds (git-tracked only, package-data coverage, deny-list, seed flag, zero
+publication findings, single-copy prompts). The last three tests import `parrot.*` — fine in
+`tests/`, forbidden in the script.
+
+### Test edits for the moved prompts (C2)
+- `tests/flows/dev_loop/test_subagent_parity.py`: delete `test_prompt_parity`, `_NO_REPO_TWIN`,
+  `_repo_agents_dir`, `_package_prompts` and the `resources`/`pytest` imports they needed; keep
+  `test_research_prompt_has_wiki_block` and `test_worker_prompt_has_per_spec_index_instructions`
+  unchanged (they go through `load_subagent_definition`). Rewrite the module docstring: parity
+  is now `scripts/sdd/check_asset_sync.py --check` (CI) + `test_repo_assets_in_sync`.
+- `tests/flows/dev_flow/test_subagent_defs.py` lines 54 and 267-271: the packaged copy is
+  `resources.files("parrot.sdd") / "_assets" / "claude" / "agents" / "sdd-ideation.md"`; the
+  assertion message says `_assets/` instead of `_subagent_data/`.
+- Every other test that builds a `_subagent_data/<name>.md` path by hand (Files table) points
+  at `packages/ai-parrot/src/parrot/sdd/_assets/claude/agents/<name>.md` instead. Behaviour
+  asserted by those tests does not change.
+- `tests/flows/dev_loop/test_subagent_codereview.py`, `test_subagent_defs.py`,
+  `test_subagent_defs_conventions.py`: unchanged (they call the loader).
 
 ### FILL IN checklist
-- [ ] `check_asset_sync.py::expected_entries` — git ls-files + first-match glob; bounded by "git-tracked only", deterministic order.
+- [ ] `check_asset_sync.py::expected_entries` — git ls-files + first-match glob + `seed`; bounded by "git-tracked only", deterministic order.
 - [ ] `check_asset_sync.py::find_problems` — byte compare, extras, manifest text; bounded by AC-2.
 - [ ] `check_asset_sync.py::write_assets` — wholesale regeneration, idempotent; bounded by AC-1.
+- [ ] `check_asset_sync.py::check_wheel` — deny-list pass after the completeness pass; bounded by `test_check_wheel_rejects_forbidden_paths`.
 - [ ] `test_divergence_missing_and_extra_fail` — final stderr assertions.
+- [ ] Both `load_subagent_definition` edits + module docstrings; bounded by `test_dev_loop_prompts_load_from_packaged_assets`.
 
 ---
 
@@ -580,10 +871,27 @@ guarantees this task adds (git-tracked only, package-data coverage).
       CI on `.claude/` ↔ `_assets/` divergence").
 - [ ] `manifest.json` matches the brief's format (`schema_version: 1`, `source`/`target`/`hosts`), sorted by target.
 - [ ] `uv build --package ai-parrot` produces a wheel for which `check_asset_sync.py --wheel` exits 0
-      (codex S8 — installed runtime never depends on a monorepo checkout).
-- [ ] `ci.yml` runs the sync check in `lint-and-registry` and the new `sdd-assets-wheel` job.
+      (codex S8 — installed runtime never depends on a monorepo checkout), and planting any
+      deny-listed path in the asset tree makes it exit 1 naming the file (C11d).
+- [ ] `ci.yml` runs the sync check, the publication scan (`--fail-on org-data,claude-md-ref,branch-literal`)
+      in `lint-and-registry`, and the new `sdd-assets-wheel` job (C11c).
+- [ ] No manifest target ends with `codebase-conventions.md`; `sdd/CONVENTIONS.md` is in the manifest
+      with `"seed": true` and no other entry carries the key; `.claude/skills/second-opinion/SKILL.md`
+      is in the manifest with `hosts == ["claude"]` (C9, C10).
+- [ ] `sdd/CONVENTIONS.md` exists in the repo, neutral (names no language, framework or package
+      manager) and yields zero scanner findings.
+- [ ] `dev_loop/_subagent_data/` contains only `sdd-codereview.md`; `dev_flow/_subagent_data/` is gone;
+      both `load_subagent_definition` read `parrot/sdd/_assets/claude/agents/<name>.md`;
+      `test_prompt_parity` no longer exists and the full `tests/flows/dev_loop` + `tests/flows/dev_flow`
+      suites pass (C2).
+- [ ] Ledger `issue:ace18bef4e6e` ("sdd-worker prompt twins drifted: test_prompt_parity[sdd-worker]
+      fails on dev (and CI does not run it)") is closed with
+      `wikitoolkit ledger close issue:ace18bef4e6e --resolved-by task:TASK-4090 --reason "asset-sync CI
+      gate replaces test_prompt_parity"`. The drift itself was re-synced before this task (the `tools:`
+      line of the `_subagent_data/` copy). The issue stays open until this task's CI-gated
+      `check_asset_sync.py` replaces the parity test that CI never ran.
 - [ ] No new runtime dependency; `check_asset_sync.py` imports stdlib only.
-- [ ] `ruff check scripts/sdd/check_asset_sync.py tests/sdd_scripts/test_check_asset_sync.py` passes.
+- [ ] `ruff check scripts/sdd/check_asset_sync.py tests/sdd_scripts/test_check_asset_sync.py packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_defs.py packages/ai-parrot/src/parrot/flows/dev_flow/_subagent_defs.py` passes.
 
 ---
 
@@ -594,6 +902,17 @@ editable-installed against the main checkout).
 
 - `pytest tests/sdd_scripts/test_check_asset_sync.py -q`
 - `pytest packages/ai-parrot/tests/flows/dev_loop/test_rules_parity.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_review_handoff_contract.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_planner_node.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_pool_wiring.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_secondopinion_brief.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_subagent_codereview.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_subagent_defs_conventions.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_subagent_defs.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_subagent_parity.py -q`
+- `pytest packages/ai-parrot/tests/flows/dev_flow/test_subagent_defs.py -q`
+Also, outside the pytest contract (the CI gate of C11c): `python -m parrot.sdd.audit packages/ai-parrot/src/parrot/sdd/_assets --root packages/ai-parrot/src/parrot/sdd/_assets --fail-on org-data,claude-md-ref,branch-literal` exits 0.
 
 ---
 
@@ -607,6 +926,11 @@ editable-installed against the main checkout).
 #   test_divergence_missing_and_extra_fail         spec §4 test_asset_sync_check
 #   test_untracked_source_is_not_packaged          git-tracked only
 #   test_check_wheel_reports_missing_entry         wheel verifier
+#   test_check_wheel_rejects_forbidden_paths       C11d deny-list (parametrized over 5 planted paths)
+#   test_seed_entry_is_flagged                     C10 `seed: true` only on sdd/CONVENTIONS.md
+#   test_no_rulebook_and_no_dot_rules_ship         C9/C10 manifest content
+#   test_assets_have_no_publication_findings       C11c zero org-data/claude-md-ref/branch-literal
+#   test_dev_loop_prompts_load_from_packaged_assets C2 loaders + _subagent_data/ holds only sdd-codereview.md
 #   test_repo_assets_in_sync                       committed tree == sources
 #   test_package_data_covers_every_manifest_entry  pyproject globs ⊇ manifest
 ```

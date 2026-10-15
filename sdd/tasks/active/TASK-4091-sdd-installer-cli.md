@@ -1,11 +1,11 @@
-# TASK-4091: parrot sdd install|uninstall|status + lazy registration
+# TASK-4091: parrot sdd install|uninstall|status|run + lazy registration
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: M (2-4h)
-**Depends-on**: TASK-4070, TASK-4080, TASK-4090
+**Estimated effort**: L (4-8h) — was M; raised by the rev 0.2 amendments (receipt, dry-run, `run`, seeds, wheel-only test)
+**Depends-on**: TASK-4070, TASK-4080, TASK-4090, TASK-4299
 **Assigned-to**: unassigned
 
 ---
@@ -25,30 +25,138 @@ Sites, `cli/__init__.py:109`), serialized after TASK-4080 which adds `"self"` to
 
 ---
 
+## Amendments — spec rev 0.2 (2026-10-14)
+
+- **Cross-task interface (TASK-4094)**: `test_wheel_only_foreign_repo.py` honours an optional
+  `PARROT_WHEEL_PATH` environment variable — when set, it skips `uv build --wheel` and installs
+  that wheel instead, so the release workflow's `smoke-sdd-foreign` job can run the same test
+  against the built artifact. Unset → build locally as described below.
+
+Folded in from `sdd/proposals/parrot-installer-amendments.proposal.md` (§3, §5; decisions by
+Jesus Lara, 2026-10-14). Every section below is already rewritten to match; this list is the
+delta for reviewers.
+
+- **C4 — install receipt (reverses the "no hash manifest" wording).** The installer records
+  the SHA-256 of the bytes it wrote per target, plus the ai-parrot version that wrote it, in a
+  **committed** `sdd/.sdd-installed.json` (the `sdd/` tree is committed; `.parrot/` is
+  gitignored at `.gitignore:411`). The conflict rule becomes receipt-driven:
+  absent → write + record · matches the record → upgrade (overwrite + re-record) ·
+  differs from the record → edited by the team → skip + `warning:` unless `--force` ·
+  not in the record → foreign → skip + `warning:`, **never overwritten, even with `--force`**.
+  Interpretation fixed here: a file not in the record but **byte-identical** to the packaged
+  copy is adopted as `current` and recorded (harmless; covers installs made before the
+  receipt existed). `uninstall` removes only files whose SHA matches the record.
+  `parrot sdd status` classifies each manifest target as
+  `missing | current | outdated | edited | foreign`.
+- **C5 — `--dry-run`** on `install` and `uninstall`: prints the exact plan (one line per
+  target: write / upgrade / overwrite / skip-current / skip-edited / skip-foreign / remove /
+  keep-edited / keep-foreign, plus the `.gitignore` block, the ledger seed, the config seed and
+  the conventions seed) and changes nothing — the test hashes every file under the repo
+  before and after.
+- **Q1 — `parrot sdd run <name> [ARGS]...`** joins the group. Shipped markdown (TASK-4089,
+  rev 0.2) now invokes helpers as `parrot sdd run <name>`, never `python -m
+  parrot.sdd.scripts.<name>`: `python -m` runs whatever `python` is first on PATH, which in a
+  foreign repo has no ai-parrot; everything entering through `parrot` inherits the M1 launcher's
+  venv resolution. `run` sets `sys.argv` and calls `runpy.run_module(..., run_name="__main__",
+  alter_sys=True)`, propagates the helper's exit code, and lists available helpers
+  (`pkgutil.iter_modules` over `parrot.sdd.scripts` — every module, `sdd_meta` included: after
+  TASK-4299 it has a `main()` and shipped markdown invokes `parrot sdd run sdd_meta parse|taxonomy|resolve-flow …`) on an unknown
+  name. `python -m parrot.sdd.scripts.<name>` keeps working for direct use.
+- **C6 seed** — `install` seeds `sdd/config.json` from `parrot.sdd.config.default_sdd_config()`
+  (TASK-4299) when absent; never overwrites it. New dependency: TASK-4299.
+- **C10 seed** — `install` applies a **write-once rule to every manifest entry carrying the
+  optional `"seed": true` key** (TASK-4090 rev 0.2 adds the key; manifest `schema_version`
+  stays 1; a missing key means `false`). Today that is `sdd/CONVENTIONS.md`, but the installer,
+  `status` and the tests are generic over the flag — never a hardcoded path. Seeds are written
+  only when absent, never overwritten (not even with `--force`), never recorded in the receipt
+  (team-owned), and never removed by `uninstall`; `status` reports each as `seed-present | missing`.
+- **C15 hook** — `sdd_status(root)` is the public, import-cheap entry point `parrot self doctor`
+  (TASK-4080) calls lazily to report whether installed SDD files are current. Nothing else in
+  this task changes for TASK-4080's benefit; TASK-4080 must tolerate `parrot.sdd.installer`
+  being absent.
+- **Q1 residual — `spec_tools` scenarios (TASK-4334, 2026-10-15).** The wheel-only test's
+  per-helper `Scenario` set must cover every `parrot sdd run spec_tools <sub>` invocation the
+  installed markdown carries (`init-run`, `render-brief`, `stamp-run`, `validate-suggestions`,
+  `check-path`, `existing-feature-id`, `commit-intake`): the fixture repo needs
+  `sdd/templates/design_research.{prompt.md,schema.json}` (shipped by TASK-4090) and a `$DR`
+  directory holding the six brief inputs plus a `suggestions.json` of the sample shape.
+- **C3 — wheel-only foreign-repo test (proposal rev 0.3 wording).** New
+  `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` (explicit
+  `pytestmark = pytest.mark.integration`, skipped unless `uv` is on PATH). It:
+  1. builds the ai-parrot wheel (`uv build --wheel`);
+  2. creates a temporary `PARROT_HOME` whose venv has ai-parrot installed **from that wheel
+     with its declared runtime dependencies** (`uv pip install <wheel>`, non-editable, no
+     monorepo path);
+  3. `git init`s an unrelated, non-Python repo with one commit and a local **bare `origin`**;
+  4. runs `parrot sdd install --host claude` there;
+  5. runs **every helper invocation found in the installed markdown using its documented
+     command and flags** — placeholders (`<FEAT-ID>`, `<slug>`, `<path>`, `TASK-<NNN>` …)
+     substituted with fixture values, and each invocation's required state supplied by a
+     per-helper scenario (committed ledger pushed to the bare origin, task files, index,
+     evidence where needed), with isolated state per scenario (fresh clone per invocation).
+     Helper implementations are **not mocked**; a helper name found in markdown with no
+     scenario fails the test;
+  6. uses `PATH=$PARROT_HOME/bin:<tools-dir>` where `<tools-dir>` exposes an explicit
+     allowlist of system tools (`git`, plus `bash`/`jq` only when an invocation needs them);
+     project/test venv bins are excluded; `PYTHONPATH`, `PYTHONHOME`, `VIRTUAL_ENV`,
+     `PARROT_VENV`, `PARROT_PROJECT` and `CONDA_PREFIX` are unset; and asserts that `parrot`
+     and the helper interpreter resolve to the temporary managed install (`parrot self env`
+     reports the managed venv and rule `managed`).
+  This is the proof of Q1: it fails by design while any shipped file still says `python -m
+  parrot.sdd.scripts…`, and it proves system prerequisites remain available while ai-parrot
+  loads only from the wheel. It builds a wheel (minutes), so it runs in the **merge tier only**
+  (`-m integration`), never in the task-tier selector. TASK-4094 reuses it as the release smoke.
+- **Effort** raised M → L. The spec §4/§5 rows this task implements are the rev 0.2 ones
+  (`test_sdd_flow_in_foreign_repo` now checks the `parrot sdd run` form).
+
+---
+
 ## Scope
 
-- Implement `parrot/sdd/installer.py`: `install_sdd_integration`, `uninstall_sdd_integration`,
-  `sdd_status` with the FEAT-633 conflict rule (absent → write; byte-identical → skip;
-  differs → skip + warning unless `force`; uninstall removes byte-identical files only).
+- Implement `parrot/sdd/installer.py`: `plan_install` / `plan_uninstall` (pure: compute a
+  `list[PlannedAction]`), `install_sdd_integration`, `uninstall_sdd_integration` (apply the plan
+  unless `dry_run`), `sdd_status`, `classify_entry`, `load_receipt`, with the **rev 0.2
+  receipt-driven conflict rule** (C4): absent → write + record; matches the receipt → upgrade;
+  differs from the receipt → edited → skip + warning unless `force`; not in the receipt →
+  foreign → skip + warning, never overwritten; byte-identical-but-unrecorded → adopt as
+  current. `uninstall` removes only files whose SHA matches the receipt.
+- Write and maintain the install receipt `sdd/.sdd-installed.json`
+  (`{"schema_version": 1, "version": "<ai-parrot>", "files": {"<target>": "<sha256>"}}`), one
+  write per install/uninstall, sorted keys, trailing newline.
+- `--dry-run` for `install` and `uninstall` (C5): print the plan, write nothing.
 - Add a managed `.gitignore` marker block ignoring `.claude/worktrees/` (own copy of the
   marker helpers — do NOT import the claude installer).
 - Seed `sdd/tasks/.id_ledger.json` when absent (decided below — `reserve_ids` cannot run without it).
+- Seed `sdd/config.json` from `parrot.sdd.config.default_sdd_config()` when absent (C6,
+  TASK-4299) and every manifest entry flagged `"seed": true` (today `sdd/CONVENTIONS.md`) when
+  absent (C10, TASK-4090 rev 0.2) — generic over the flag, never a hardcoded path. Seeds: never
+  overwritten, never recorded, never removed.
 - After install, scan the installed files with `parrot.sdd.audit.scan_paths` +
   `missing_tools` and report unavailable tooling as warnings (codex S9).
-- Implement `parrot/sdd/cli.py`: click group `sdd` with `install` / `uninstall` / `status`.
+- Implement `parrot/sdd/cli.py`: click group `sdd` with `install` / `uninstall` / `status` /
+  **`run`** (Q1: `parrot sdd run <name> [ARGS]...` dispatches to `parrot.sdd.scripts.<name>` via
+  `runpy.run_module`, propagating the exit code).
 - Register `"sdd": "parrot.sdd.cli"` in `cli._lazy_commands`.
 - Write `packages/ai-parrot/tests/sdd/test_installer.py` (incl. spec §4
-  `test_sdd_install_into_empty_repo` and integration `test_sdd_flow_in_foreign_repo`) and
-  `packages/ai-parrot/tests/sdd/test_sdd_cli.py`.
+  `test_sdd_install_into_empty_repo`, integration `test_sdd_flow_in_foreign_repo`, and the C4 /
+  C5 / seed tests), `packages/ai-parrot/tests/sdd/test_sdd_cli.py` (incl. the `run` tests) and
+  `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` (C3, `@pytest.mark.integration`).
 
 **NOT in scope**:
-- Producing / syncing `_assets/` or `manifest.json` (TASK-4090).
-- Moving helpers / rewriting markdown (TASK-4085..4089).
+- Producing / syncing `_assets/` or `manifest.json`, including the `"seed": true` flag on the
+  `sdd/CONVENTIONS.md` entry (TASK-4090, rev 0.2).
+- `parrot/sdd/config.py` (`SddConfig`, `load_sdd_config`, `default_sdd_config`, `CONFIG_PATH`)
+  — TASK-4299 creates it; this task only calls `default_sdd_config()` to seed.
+- Moving helpers / rewriting markdown to the `parrot sdd run <name>` form (TASK-4085..4089).
 - `parrot/sdd/__init__.py`, `parrot/sdd/audit.py`, `packages/ai-parrot/tests/sdd/__init__.py` (TASK-4070).
+- The SDD readiness checks themselves (`parrot self doctor --sdd`, TASK-4080) — this task
+  only exposes `sdd_status` for them.
 - Registering the `sdd-worker-format.sh` hook in the target's `.claude/settings.json` — v1 copies
   the script only and prints a one-line wiring note (JSON-merge of settings is not a spec'd target).
-- Committing anything in the target repo (the installer never runs `git add/commit/push`).
-- A hash manifest / install receipt (spec non-goal: "no manifest/symlink machinery").
+- Committing anything in the target repo (the installer never runs `git add/commit/push`);
+  the receipt and the seeds are written to disk and the action log tells the user to commit them.
+- A per-file hash comment or a `.parrot/`-resident receipt — rejected in the proposal (JSON/TOML
+  assets cannot carry comments; `.parrot/` is gitignored).
 
 ---
 
@@ -56,11 +164,12 @@ Sites, `cli/__init__.py:109`), serialized after TASK-4080 which adds `"self"` to
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/sdd/installer.py` | CREATE | install / uninstall / status over `_assets/manifest.json`; gitignore block; ledger seed; S9 audit |
-| `packages/ai-parrot/src/parrot/sdd/cli.py` | CREATE | click group `sdd`: `install` / `uninstall` / `status` |
+| `packages/ai-parrot/src/parrot/sdd/installer.py` | CREATE | plan / install / uninstall / status over `_assets/manifest.json`; C4 receipt (`sdd/.sdd-installed.json`); C5 dry-run; gitignore block; ledger, config (C6) and conventions (C10) seeds; S9 audit |
+| `packages/ai-parrot/src/parrot/sdd/cli.py` | CREATE | click group `sdd`: `install` / `uninstall` / `status` / `run` (Q1); `--dry-run` on install/uninstall |
 | `packages/ai-parrot/src/parrot/cli/__init__.py` | MODIFY | `"sdd": "parrot.sdd.cli"` in `cli._lazy_commands` |
-| `packages/ai-parrot/tests/sdd/test_installer.py` | CREATE | Installer unit tests + `test_sdd_flow_in_foreign_repo` integration |
-| `packages/ai-parrot/tests/sdd/test_sdd_cli.py` | CREATE | CliRunner tests for the group and lazy registration |
+| `packages/ai-parrot/tests/sdd/test_installer.py` | CREATE | Installer unit tests (receipt states, dry-run, seeds) + `test_sdd_flow_in_foreign_repo` integration |
+| `packages/ai-parrot/tests/sdd/test_sdd_cli.py` | CREATE | CliRunner tests for the group, lazy registration, `--dry-run`, `run` |
+| `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` | CREATE | C3: wheel-only managed install + foreign repo with bare origin; every documented `parrot sdd run <name> …` invocation runs with fixture inputs under an allowlisted PATH and scrubbed env (merge tier, `pytestmark = pytest.mark.integration`) |
 
 ---
 
@@ -77,10 +186,16 @@ import click                                   # core dependency: packages/ai-pa
 from importlib import resources                # stdlib; precedent: tests/flows/dev_loop/test_subagent_parity.py:15
 from importlib.resources.abc import Traversable   # stdlib (Python >= 3.11; core requires-python >=3.11)
 from parrot.cli import cli                     # packages/ai-parrot/src/parrot/cli/__init__.py:104 (LazyGroup instance)
+import hashlib, pkgutil, runpy, sys            # stdlib — receipt SHA-256 (C4), helper discovery + dispatch (Q1)
+from importlib import metadata                 # stdlib — metadata.version("ai-parrot") stamps the receipt (C4)
+from typing import Literal
+from pydantic import BaseModel                 # core dependency; convention: data structures are Pydantic v2 models
 # Created by dependency tasks (do NOT exist on dev yet — verify exact names before use):
 from parrot.sdd.audit import AssumptionFinding, missing_tools, scan_paths   # TASK-4070
 from parrot.sdd.scripts.id_ledger import LEDGER_PATH, bootstrap_ledger, save_ledger  # TASK-4085 (moved from
                                                # scripts/sdd/id_ledger.py:28,145,69 — same names)
+from parrot.sdd.config import CONFIG_PATH, default_sdd_config  # TASK-4299 (C6): CONFIG_PATH = Path("sdd/config.json");
+                                               # default_sdd_config() -> SddConfig (Pydantic v2; .model_dump_json(indent=2))
 ```
 
 ### Existing Signatures to Use
@@ -124,6 +239,17 @@ path_option = click.option("--path", "path_", default=None, help="Repo root (def
   copy it (spec §6 Integration Points: "same discipline (own copy)").
 - ~~ledger auto-creation inside `reserve_ids`~~ — it raises; seeding is the installer's job.
 - ~~exec-bit preservation from wheel package data~~ — not guaranteed; chmod `.sh` targets on install.
+- ~~`sdd/.sdd-installed.json`, `load_receipt`, `classify_entry`, `PlannedAction`, `plan_install`,
+  `plan_uninstall`~~ — new here (C4/C5, rev 0.2); no receipt exists anywhere on `dev`.
+- ~~`parrot sdd run`, any `run` helper dispatcher~~ — new here (Q1, rev 0.2). `python -m
+  parrot.sdd.scripts.<name>` is NOT what shipped markdown says after TASK-4089 rev 0.2.
+- ~~`parrot.sdd.config`~~ — TASK-4299 creates it; this task imports it lazily inside the seed
+  helper and must not re-implement `SddConfig`.
+- ~~a `"seed"` key in `_assets/manifest.json` on `dev`~~ — TASK-4090 rev 0.2 adds it for
+  `sdd/CONVENTIONS.md`; treat a missing key as `false`.
+- ~~`pytest.mark.integration` auto-applied to `tests/sdd/test_wheel_only_foreign_repo.py`~~ —
+  the FEAT-563 auto-mark (`packages/ai-parrot/pyproject.toml:1048`) only covers files under an
+  `integration/` directory; mark the module explicitly with `pytestmark = pytest.mark.integration`.
 
 ---
 
@@ -142,7 +268,8 @@ path_option = click.option("--path", "path_", default=None, help="Repo root (def
     {"path": "packages/ai-parrot/src/parrot/sdd/cli.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/src/parrot/cli/__init__.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/sdd/test_installer.py", "action": "CREATE"},
-    {"path": "packages/ai-parrot/tests/sdd/test_sdd_cli.py", "action": "CREATE"}
+    {"path": "packages/ai-parrot/tests/sdd/test_sdd_cli.py", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py", "action": "CREATE"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/cli/__init__.py#LazyGroup",
@@ -167,19 +294,39 @@ the public function returns the list; `uninstall` is the exact inverse; marker b
 BEGIN marker.
 
 ### Key Constraints
-- **Spec signature delta (from the FEAT-633 brief, supersedes spec §3 M6 skeleton)**:
-  `install_sdd_integration(root, hosts=("claude",), *, force=False)` and
-  `uninstall_sdd_integration(root, hosts=("claude",))`.
+- **Spec signature delta (rev 0.2; supersedes spec §3 M6 skeleton and the FEAT-633 brief)**:
+  `install_sdd_integration(root, hosts=("claude",), *, force=False, dry_run=False)` and
+  `uninstall_sdd_integration(root, hosts=("claude",), *, dry_run=False)`; both are
+  `plan_* + apply` — `dry_run=True` returns the plan as `plan: <action> <target>` lines and
+  performs no filesystem write of any kind (no receipt, no seeds, no gitignore, no mkdir).
 - An asset belongs to the install iff `set(entry["hosts"]) & set(hosts)`; shared assets
   (templates, `sdd/WORKFLOW.md`) therefore install for any host. On uninstall, a shared asset is
-  removed only if **no remaining installed host** still needs it — v1 has no receipt, so
-  "remaining" = hosts NOT passed to uninstall whose host-specific assets are still present
-  byte-identical (FILL IN bounded by this rule).
+  removed only if **no remaining installed host** still needs it — "remaining" = hosts NOT
+  passed to uninstall that still have at least one host-specific target recorded in the receipt
+  and present on disk (FILL IN bounded by this rule).
 - Read assets via `importlib.resources.files("parrot.sdd") / "_assets"` — never a repo path
   (installed runtime must not depend on a monorepo checkout, codex S8).
-- `force=True` overwrites a differing file; it never touches a file that is not a manifest target.
-- Uninstall never removes a modified file, never removes `sdd/tasks/.id_ledger.json` (state, not
-  an asset), and prunes only directories it leaves empty.
+- **Receipt (C4)** is the single source of "ours": `classify_entry` compares on-disk SHA-256
+  against the receipt first, then against the packaged bytes. `force=True` overwrites an
+  `edited` file and re-records it; it never touches a `foreign` file (present, not recorded,
+  not byte-identical), never a non-manifest path, never a seed. The receipt is rewritten once
+  per install/uninstall (never per file) and stamped with `metadata.version("ai-parrot")`.
+- **Seeds (C6/C10)** — `sdd/config.json` (from `default_sdd_config()`) and every manifest entry
+  with `"seed": true` — are written only when absent, are not recorded in the receipt, are
+  reported by `status` as `seed-present | missing`, and are never removed by `uninstall`.
+- Uninstall never removes an `edited` or `foreign` file, never removes
+  `sdd/tasks/.id_ledger.json`, `sdd/config.json`, seeds, or the receipt itself while any
+  recorded file remains (when nothing remains, the receipt is deleted too), and prunes only
+  directories it leaves empty.
+- **`run` (Q1)**: `click.argument("args", nargs=-1, type=click.UNPROCESSED)` under
+  `context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False}` so
+  `--help` and every other flag reach the helper untouched; `sys.argv = [f"parrot.sdd.scripts.{name}", *args]`;
+  `runpy.run_module(f"parrot.sdd.scripts.{name}", run_name="__main__", alter_sys=True)`;
+  a `SystemExit` raised by the helper propagates its code; a normal return exits 0; unknown
+  name → `click.ClickException` listing the helpers discovered via `pkgutil.iter_modules` over
+  `parrot.sdd.scripts.__path__` — all of them, `sdd_meta` included (TASK-4299 gives it a `main()`;
+  `pkgutil.iter_modules` never lists `__init__`) (exit 1). Never import the helper module at
+  group-load time (lazy by construction).
 - Hosts are validated against `SUPPORTED_HOSTS`; unknown → `ValueError` (CLI: `click.Choice`).
 - Library code logs via `logger = logging.getLogger(__name__)`; only `cli.py` writes output (`click.echo`).
 
@@ -196,29 +343,40 @@ BEGIN marker.
 > class name, or file path the blueprint fixes.
 
 ### Steps (in order)
-1. Confirm `parrot.sdd.audit`, `parrot.sdd.scripts.id_ledger` and
-   `resources.files("parrot.sdd") / "_assets" / "manifest.json"` exist — *why*: all three come from dependency tasks.
-2. Write `installer.py` (manifest loader → per-asset decision → gitignore → ledger → audit) — *why*: the CLI is a thin shell over it.
-3. Write `cli.py` exposing the group as attribute `sdd` — *why*: `LazyGroup.get_command` resolves `getattr(mod, "sdd")` (cli/__init__.py:99-100).
+1. Confirm `parrot.sdd.audit`, `parrot.sdd.scripts.id_ledger`, `parrot.sdd.config` (TASK-4299) and
+   `resources.files("parrot.sdd") / "_assets" / "manifest.json"` exist, and whether the manifest
+   already carries `"seed": true` on `sdd/CONVENTIONS.md` — *why*: all come from dependency tasks.
+2. Write `installer.py` (manifest + receipt loader → `classify_entry` → `plan_install` /
+   `plan_uninstall` → `apply` → gitignore → ledger / config / conventions seeds → receipt write
+   → audit) — *why*: the CLI is a thin shell over it, and `--dry-run` is just "plan without apply".
+3. Write `cli.py` exposing the group as attribute `sdd`, with `install` / `uninstall` (`--dry-run`),
+   `status` and `run` — *why*: `LazyGroup.get_command` resolves `getattr(mod, "sdd")` (cli/__init__.py:99-100).
 4. Add the `_lazy_commands` entry — *why*: lazy import keeps `parrot --help` cheap.
-5. Write both test files; run the Validation Commands.
+5. Write the three test files; run the Validation Commands (the wheel-only test only with `-m integration`).
 
 ### `packages/ai-parrot/src/parrot/sdd/installer.py` (CREATE)
 ```python
-"""Deploy the packaged SDD flow (``parrot/sdd/_assets/``) into a repository (FEAT-633 M6).
+"""Deploy the packaged SDD flow (``parrot/sdd/_assets/``) into a repository (FEAT-633 M6, rev 0.2).
 
-Conflict rule (no hash manifest — spec non-goal): absent → write; byte-identical → skip;
-differs → skip with a warning unless ``force``. ``uninstall`` removes byte-identical files only.
+Conflict rule (C4, receipt-driven — ``sdd/.sdd-installed.json`` records the SHA-256 of every
+byte sequence this installer wrote): absent → write + record; matches the receipt → upgrade;
+differs from the receipt → edited → skip + warning unless ``force``; not in the receipt →
+foreign → skip + warning, never overwritten; unrecorded but byte-identical → adopt as current.
+``uninstall`` removes only files whose SHA matches the receipt. Seeds (``sdd/config.json`` and
+manifest entries flagged ``"seed": true``) are written once and never touched again.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-from importlib import resources
+from importlib import metadata, resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Literal, Sequence
+
+from pydantic import BaseModel
 
 from parrot.sdd.audit import missing_tools, scan_paths  # TASK-4070
 
@@ -226,9 +384,32 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_HOSTS: tuple[str, ...] = ("claude", "codex", "google")
 MANIFEST_SCHEMA_VERSION = 1
+RECEIPT_PATH = Path("sdd/.sdd-installed.json")  # C4: committed with sdd/; .parrot/ is gitignored (.gitignore:411)
+RECEIPT_SCHEMA_VERSION = 1
 GITIGNORE_BEGIN = "# >>> parrot sdd (managed) >>>"
 GITIGNORE_END = "# <<< parrot sdd (managed) <<<"
-GITIGNORE_BLOCK = f"{GITIGNORE_BEGIN}\n# SDD feature worktrees (python -m parrot.sdd.scripts.ensure_worktree)\n.claude/worktrees/\n{GITIGNORE_END}"
+GITIGNORE_BLOCK = f"{GITIGNORE_BEGIN}\n# SDD feature worktrees (parrot sdd run ensure_worktree)\n.claude/worktrees/\n{GITIGNORE_END}"
+
+FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
+#: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
+#: seed | skip-seed | gitignore | ledger-seed | config-seed. uninstall: remove | keep-edited | keep-foreign |
+#: skip-missing | keep-shared | gitignore-remove | receipt-remove.
+PlanAction = Literal[
+    "write", "upgrade", "overwrite", "skip-current", "skip-edited", "skip-foreign",
+    "seed", "skip-seed", "gitignore", "ledger-seed", "config-seed",
+    "remove", "keep-edited", "keep-foreign", "skip-missing", "keep-shared", "gitignore-remove", "receipt-remove",
+]
+
+
+class PlannedAction(BaseModel):
+    """One step of an install/uninstall plan; ``str()`` is the ``--dry-run`` line."""
+
+    action: PlanAction
+    target: str
+    note: str = ""
+
+    def __str__(self) -> str:
+        return f"plan: {self.action} {self.target}" + (f" ({self.note})" if self.note else "")
 HOOK_WIRING_NOTE = (
     "note: .claude/hooks/sdd-worker-format.sh is installed but not registered — add it to "
     ".claude/settings.json (SubagentStop/Stop) if you want post-run formatting"
@@ -281,21 +462,109 @@ def _remove_marker_block(text: str, begin: str, end: str) -> str:
     raise NotImplementedError
 
 
-def _install_asset(root: Path, entry: dict[str, Any], *, force: bool) -> str:
-    """Apply the conflict rule to one manifest entry; return the action line ('warning: …' when skipped)."""
-    payload = (_assets_root() / entry["source"]).read_bytes()
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def load_receipt(root: Path) -> dict[str, Any]:
+    """Return ``<root>/sdd/.sdd-installed.json`` or an empty receipt when absent.
+
+    Shape: ``{"schema_version": 1, "version": "<ai-parrot that wrote it>" | None, "files": {target: sha256}}``.
+    An unreadable or wrong-schema receipt is treated as empty and logged at WARNING (never raises).
+    """
+    # FILL IN: read + validate schema_version == RECEIPT_SCHEMA_VERSION; else empty receipt — bounded by C4
+    raise NotImplementedError
+
+
+def _save_receipt(root: Path, receipt: dict[str, Any]) -> None:
+    """Write the receipt once (sorted keys, indent 2, trailing newline), stamped with the running ai-parrot version."""
+    receipt["schema_version"] = RECEIPT_SCHEMA_VERSION
+    receipt["version"] = metadata.version("ai-parrot")
+    path = root / RECEIPT_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def classify_entry(root: Path, entry: dict[str, Any], receipt: dict[str, Any]) -> FileState:
+    """C4 state of one manifest target.
+
+    missing → not on disk; foreign → on disk, not in the receipt, not byte-identical to the
+    packaged copy; edited → on disk, in the receipt, SHA differs from the record; current → SHA
+    equals the record (or unrecorded but byte-identical to the packaged copy — adopted) AND equals
+    the packaged copy; outdated → SHA equals the record but the packaged copy changed.
+    """
     target = root / entry["target"]
-    if target.exists() and target.read_bytes() == payload:
+    if not target.is_file():
+        return "missing"
+    on_disk = _sha256(target.read_bytes())
+    packaged = _sha256((_assets_root() / entry["source"]).read_bytes())
+    recorded = receipt["files"].get(entry["target"])
+    if recorded is None:
+        return "current" if on_disk == packaged else "foreign"
+    if on_disk != recorded:
+        return "edited"
+    return "current" if on_disk == packaged else "outdated"
+
+
+def plan_install(root: Path, hosts: Sequence[str], *, force: bool = False) -> list[PlannedAction]:
+    """Pure: the ordered plan for ``install`` (assets, seeds, gitignore, ledger, config). No I/O writes."""
+    receipt = load_receipt(root)
+    plan: list[PlannedAction] = []
+    for entry in _selected(load_manifest(), _validate_hosts(hosts)):
+        if entry.get("seed", False):
+            plan.append(PlannedAction(action="skip-seed" if (root / entry["target"]).exists() else "seed", target=entry["target"]))
+            continue
+        state = classify_entry(root, entry, receipt)
+        # FILL IN: missing→write; current→skip-current; outdated→upgrade; edited→overwrite if force else
+        #          skip-edited (note "use --force"); foreign→skip-foreign (note "not written by parrot sdd;
+        #          never overwritten") — bounded by the C4 rule in the module docstring
+        raise NotImplementedError
+    plan.append(PlannedAction(action="gitignore", target=".gitignore"))
+    if not (root / "sdd/tasks/.id_ledger.json").exists():
+        plan.append(PlannedAction(action="ledger-seed", target="sdd/tasks/.id_ledger.json"))
+    if not (root / "sdd/config.json").exists():
+        plan.append(PlannedAction(action="config-seed", target="sdd/config.json"))
+    return plan
+
+
+def plan_uninstall(root: Path, hosts: Sequence[str]) -> list[PlannedAction]:
+    """Pure: ``remove`` only targets whose on-disk SHA matches the receipt; keep edited/foreign; keep shared
+    assets another installed host still needs; seeds and state are never planned for removal."""
+    # FILL IN: per selected non-seed entry — current/outdated→remove (shared+still needed→keep-shared);
+    #          edited→keep-edited; foreign→keep-foreign; missing→skip-missing; then gitignore-remove and
+    #          receipt-remove when no recorded file would remain — bounded by Key Constraints
+    raise NotImplementedError
+
+
+def _apply_asset(root: Path, entry: dict[str, Any], action: PlannedAction, receipt: dict[str, Any]) -> str:
+    """Execute one asset action; updates ``receipt["files"]`` in place; returns the action-log line."""
+    target = root / entry["target"]
+    if action.action in {"skip-current", "skip-seed"}:
+        if action.action == "skip-current":
+            receipt["files"][entry["target"]] = _sha256(target.read_bytes())  # adoption of unrecorded identical files
         return f"{entry['target']} — up to date"
-    if target.exists() and not force:
-        logger.warning("sdd install: %s differs from the packaged copy; skipped", entry["target"])
-        return f"warning: {entry['target']} differs from the packaged copy — skipped (use --force)"
-    existed = target.exists()
+    if action.action in {"skip-edited", "skip-foreign"}:
+        logger.warning("sdd install: %s %s; skipped", entry["target"], action.note)
+        return f"warning: {entry['target']} — {action.note}"
+    payload = (_assets_root() / entry["source"]).read_bytes()
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(payload)
     if target.suffix == ".sh":
         target.chmod(0o755)  # wheels do not reliably preserve the exec bit
-    return f"{entry['target']} — {'overwritten (--force)' if existed else 'installed'}"
+    if action.action != "seed":
+        receipt["files"][entry["target"]] = _sha256(payload)
+    verb = {"write": "installed", "upgrade": "upgraded", "overwrite": "overwritten (--force)", "seed": "seeded (team-owned; never overwritten)"}
+    return f"{entry['target']} — {verb[action.action]}"
+
+
+def _seed_config(root: Path) -> str:
+    """C6: write ``sdd/config.json`` from ``default_sdd_config()`` iff absent (TASK-4299; lazy import)."""
+    from parrot.sdd.config import CONFIG_PATH, default_sdd_config  # TASK-4299
+
+    path = root / CONFIG_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(default_sdd_config().model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return f"{CONFIG_PATH} — seeded; edit base_branch/hotfix_base/issue_tracker/test_command for this repo and commit it"
 
 
 def _install_gitignore(root: Path) -> str:
@@ -320,7 +589,7 @@ def _seed_id_ledger(root: Path) -> str | None:
     save_ledger(path, bootstrap_ledger(root / "sdd/tasks/index", root / "sdd/specs"))
     return (
         f"{LEDGER_PATH} — seeded; warning: commit and push it to your base branch before "
-        "`python -m parrot.sdd.scripts.reserve_ids` (it reads the ledger from git)"
+        "`parrot sdd run reserve_ids` (it reads the ledger from git)"
     )
 
 
@@ -332,71 +601,107 @@ def _audit(root: Path, installed: list[Path]) -> list[str]:
     raise NotImplementedError
 
 
-def install_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *, force: bool = False) -> list[str]:
+def install_sdd_integration(
+    root: Path, hosts: Sequence[str] = ("claude",), *, force: bool = False, dry_run: bool = False
+) -> list[str]:
     """Deploy packaged SDD assets for ``hosts`` into ``root``; never overwrites foreign content.
 
     Args:
         root: Target repository root (need not be a Python project).
         hosts: Any of ``SUPPORTED_HOSTS``; shared assets (templates, WORKFLOW.md) install for every host.
-        force: Overwrite manifest targets whose bytes differ from the packaged copy.
+        force: Overwrite manifest targets the receipt says we wrote but the team edited since.
+            Never touches foreign (unrecorded) files or seeds.
+        dry_run: Return the plan (``plan: <action> <target>`` lines) and write NOTHING — no asset,
+            seed, gitignore, ledger, config, receipt, or directory.
 
     Returns:
-        Human-readable action log; skipped conflicts and audit findings start with ``warning:``.
+        Human-readable action log; skipped conflicts and audit findings start with ``warning:``;
+        dry-run lines start with ``plan:``.
 
     Raises:
         ValueError: unknown host.
         RuntimeError: packaged manifest missing/unsupported.
     """
-    selected = _selected(load_manifest(), _validate_hosts(hosts))
-    actions = [_install_asset(root, entry, force=force) for entry in selected]
-    actions.append(_install_gitignore(root))
-    seeded = _seed_id_ledger(root)
-    if seeded:
-        actions.append(seeded)
+    plan = plan_install(root, hosts, force=force)
+    if dry_run:
+        return [str(step) for step in plan]
+    receipt = load_receipt(root)
+    by_target = {e["target"]: e for e in load_manifest()}
+    actions: list[str] = []
+    for step in plan:
+        if step.target in by_target:
+            actions.append(_apply_asset(root, by_target[step.target], step, receipt))
+        elif step.action == "gitignore":
+            actions.append(_install_gitignore(root))
+        elif step.action == "ledger-seed":
+            actions.append(_seed_id_ledger(root) or "")
+        elif step.action == "config-seed":
+            actions.append(_seed_config(root))
+    _save_receipt(root, receipt)
+    actions.append(f"{RECEIPT_PATH} — written; commit it with the installed files (it drives upgrades and uninstall)")
     if "claude" in hosts:
         actions.append(HOOK_WIRING_NOTE)
-    actions.extend(_audit(root, [root / e["target"] for e in selected if (root / e["target"]).is_file()]))
-    return actions
+    installed = [root / t for t in receipt["files"] if (root / t).is_file()]
+    actions.extend(_audit(root, installed))
+    return [a for a in actions if a]
 
 
-def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",)) -> list[str]:
-    """Remove byte-identical SDD assets for ``hosts`` (modified files are kept and reported).
+def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *, dry_run: bool = False) -> list[str]:
+    """Remove SDD assets for ``hosts`` whose on-disk SHA matches the receipt (edited/foreign files are kept and reported).
 
-    The ``.gitignore`` block is removed only when no supported host keeps installed assets;
-    ``sdd/tasks/.id_ledger.json`` is never removed (it is state, not an asset).
+    The ``.gitignore`` block and the receipt are removed only when no recorded file remains;
+    ``sdd/tasks/.id_ledger.json``, ``sdd/config.json`` and seeds are never removed (state / team-owned).
+    ``dry_run`` returns the plan and writes nothing.
     """
-    # FILL IN: per selected entry — identical → unlink + prune now-empty parents up to root;
-    #          differs → 'warning: … modified — kept'; absent → skip. Shared assets: keep while another
-    #          host's identical assets remain (Key Constraints). Drop the .gitignore block via
-    #          _remove_marker_block when nothing remains — bounded by the FEAT-633 conflict rule
+    plan = plan_uninstall(root, hosts)
+    if dry_run:
+        return [str(step) for step in plan]
+    # FILL IN: apply — remove → unlink + prune now-empty parents up to root + drop from receipt;
+    #          keep-edited/keep-foreign → 'warning: … kept'; gitignore-remove via _remove_marker_block;
+    #          receipt-remove → unlink RECEIPT_PATH, else _save_receipt — bounded by the C4 rule
     raise NotImplementedError
 
 
 def sdd_status(root: Path) -> dict[str, Any]:
-    """Per-host install state: ``{"hosts": {h: {"installed": [...], "modified": [...], "missing": [...]}},
-    "gitignore": bool, "id_ledger": bool}`` (targets are repo-relative strings)."""
-    # FILL IN: classify every manifest entry per host it belongs to (identical/differs/absent) — bounded by
-    #          the dict shape in this docstring (test_installer asserts it)
+    """Per-host install state (C4/C15):
+
+    ``{"hosts": {h: {"current": [...], "outdated": [...], "edited": [...], "foreign": [...], "missing": [...]}},
+    "seeds": {"<target>": "seed-present" | "missing"}, "config": bool, "gitignore": bool, "id_ledger": bool,
+    "receipt_version": str | None}`` (targets are repo-relative strings). Import-cheap: ``parrot self
+    doctor`` (TASK-4080) imports this lazily and treats ``outdated``/``edited`` as "not current".
+    """
+    # FILL IN: classify every non-seed manifest entry per host via classify_entry(…, load_receipt(root));
+    #          seeds via existence — bounded by the dict shape in this docstring (test_installer asserts it)
     raise NotImplementedError
 ```
-**Why this shape**: the manifest (TASK-4090) is the only source of what to install; the
-conflict rule and marker block follow the brief verbatim. The ledger seed is required because
+**Why this shape**: the manifest (TASK-4090) is the only source of what to install; the receipt
+(C4) is the only source of what *we* wrote, which is what lets an upgrade tell an untouched
+older file from a team edit without `--force`. `plan_*` are pure so `--dry-run` (C5) is
+"plan without apply" and the no-write test is trivial. The ledger seed is required because
 `reserve_ids._read_ledger_at` (reserve_ids.py:259) raises `IdReservationError` when the ledger is
 absent from the base commit — a fresh repo could otherwise never run `/sdd-spec`. Seeding only
-when absent and never removing it keeps installs idempotent and uninstall state-safe.
+when absent and never removing it keeps installs idempotent and uninstall state-safe; the same
+rule covers `sdd/config.json` (C6) and `sdd/CONVENTIONS.md` (C10).
 
 ### `packages/ai-parrot/src/parrot/sdd/cli.py` (CREATE)
 ```python
-"""``parrot sdd`` — install the SDD flow (commands, agents, rules, templates) into a repository."""
+"""``parrot sdd`` — install the SDD flow (commands, agents, rules, templates) into a repository,
+and run its packaged helpers (``parrot sdd run <name>``, Q1) inside the venv the launcher resolved."""
 
 from __future__ import annotations
 
 import json
+import pkgutil
+import runpy
+import sys
 from pathlib import Path
 
 import click
 
 from parrot.sdd.installer import SUPPORTED_HOSTS, install_sdd_integration, sdd_status, uninstall_sdd_integration
+
+_HELPER_PACKAGE = "parrot.sdd.scripts"
+_dry_run_option = click.option("--dry-run", is_flag=True, help="Print the plan and change nothing.")
 
 _path_option = click.option(
     "--path", "path_", type=click.Path(file_okay=False, path_type=Path), default=None,
@@ -420,23 +725,34 @@ def _echo_actions(actions: list[str]) -> None:
     for action in actions:
         if action.startswith(("warning:", "note:")):
             click.echo(f"  ! {action}", err=True)
+        elif action.startswith("plan:"):
+            click.echo(f"  · {action}")
         else:
             click.echo(f"  ✓ {action}")
 
 
+def available_helpers() -> list[str]:
+    """Names accepted by ``parrot sdd run``: every module of parrot.sdd.scripts (``sdd_meta`` included —
+    TASK-4299 gives it a ``main()``; ``pkgutil`` never lists ``__init__``)."""
+    import parrot.sdd.scripts as pkg  # TASK-4085 package; lazy so `parrot --help` stays cheap
+
+    return sorted(m.name for m in pkgutil.iter_modules(pkg.__path__) if not m.ispkg)
+
+
 @click.group(name="sdd")
 def sdd() -> None:
-    """Spec-Driven Development flow: install / uninstall / status."""
+    """Spec-Driven Development flow: install / uninstall / status / run."""
 
 
 @sdd.command()
 @_path_option
 @_host_option
-@click.option("--force", is_flag=True, help="Overwrite SDD files that differ from the packaged copy.")
-def install(path_: Path | None, hosts: tuple[str, ...], force: bool) -> None:
-    """Deploy the packaged SDD assets into the repository."""
+@click.option("--force", is_flag=True, help="Overwrite SDD files you edited since parrot wrote them (never foreign files or seeds).")
+@_dry_run_option
+def install(path_: Path | None, hosts: tuple[str, ...], force: bool, dry_run: bool) -> None:
+    """Deploy the packaged SDD assets into the repository (upgrades untouched files, keeps your edits)."""
     try:
-        _echo_actions(install_sdd_integration(_root(path_), hosts or ("claude",), force=force))
+        _echo_actions(install_sdd_integration(_root(path_), hosts or ("claude",), force=force, dry_run=dry_run))
     except (ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -444,10 +760,11 @@ def install(path_: Path | None, hosts: tuple[str, ...], force: bool) -> None:
 @sdd.command()
 @_path_option
 @_host_option
-def uninstall(path_: Path | None, hosts: tuple[str, ...]) -> None:
-    """Remove SDD files that are still byte-identical to the packaged copy."""
+@_dry_run_option
+def uninstall(path_: Path | None, hosts: tuple[str, ...], dry_run: bool) -> None:
+    """Remove SDD files that parrot wrote and you have not edited (seeds and state are kept)."""
     try:
-        _echo_actions(uninstall_sdd_integration(_root(path_), hosts or ("claude",)))
+        _echo_actions(uninstall_sdd_integration(_root(path_), hosts or ("claude",), dry_run=dry_run))
     except (ValueError, RuntimeError) as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -456,13 +773,33 @@ def uninstall(path_: Path | None, hosts: tuple[str, ...]) -> None:
 @_path_option
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 def status(path_: Path | None, as_json: bool) -> None:
-    """Show which SDD assets are installed, modified or missing per host."""
+    """Show each SDD asset as current, outdated, edited, foreign or missing per host, plus seeds and state."""
     report = sdd_status(_root(path_))
     if as_json:
         click.echo(json.dumps(report, indent=2))
         return
-    # FILL IN: one summary line per host (installed/modified/missing counts) + gitignore/ledger flags
+    # FILL IN: one summary line per host (current/outdated/edited/foreign/missing counts), one line per seed,
+    #          and the config/gitignore/ledger/receipt_version flags — bounded by the sdd_status docstring
     raise NotImplementedError
+
+
+@sdd.command(context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False})
+@click.argument("name")
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
+def run(name: str, args: tuple[str, ...]) -> None:
+    """Run a packaged SDD helper (e.g. `parrot sdd run reserve_ids --help`) in the venv the launcher resolved.
+
+    This is the only form shipped markdown uses (Q1): `python -m parrot.sdd.scripts.<name>` would
+    run whatever `python` is first on PATH, which in a non-Python repo has no ai-parrot.
+    """
+    helpers = available_helpers()
+    if name not in helpers:
+        raise click.ClickException(f"unknown helper {name!r}; available: {', '.join(helpers)}")
+    sys.argv = [f"{_HELPER_PACKAGE}.{name}", *args]
+    try:
+        runpy.run_module(f"{_HELPER_PACKAGE}.{name}", run_name="__main__", alter_sys=True)
+    except SystemExit as exc:  # the helper's own exit code (argparse --help exits 0)
+        raise click.exceptions.Exit(exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)) from exc
 ```
 **Why this shape**: the attribute is named `sdd` because `LazyGroup.get_command` resolves
 `getattr(mod, cmd_name.replace("-", "_"))` (cli/__init__.py:99-100); `--host` is a repeatable
@@ -487,7 +824,9 @@ integration test_sdd_flow_in_foreign_repo)."""
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -496,6 +835,7 @@ import pytest
 
 from parrot.sdd.installer import (
     GITIGNORE_BEGIN,
+    RECEIPT_PATH,
     install_sdd_integration,
     load_manifest,
     sdd_status,
@@ -534,7 +874,16 @@ def test_reinstall_is_idempotent(empty_repo: Path) -> None:
     assert not any("installed" in a or "overwritten" in a for a in actions)
 
 
+def _tree_digest(root: Path) -> dict[str, str]:
+    """{relative path: sha256} for every file under root except .git/ (C5 no-write assertion)."""
+    return {
+        str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+        for p in root.rglob("*") if p.is_file() and ".git" not in p.parts
+    }
+
+
 def test_modified_file_skipped_unless_force_and_kept_on_uninstall(empty_repo: Path) -> None:
+    """C4: a file in the receipt whose bytes changed is `edited` — kept unless --force, never uninstalled."""
     install_sdd_integration(empty_repo)
     target = empty_repo / _claude_targets()[0]
     target.write_text("user edit\n")
@@ -544,6 +893,90 @@ def test_modified_file_skipped_unless_force_and_kept_on_uninstall(empty_repo: Pa
     assert target.read_text() == "user edit\n"
     install_sdd_integration(empty_repo, force=True)
     assert target.read_text() != "user edit\n"
+    assert sdd_status(empty_repo)["hosts"]["claude"]["current"]  # re-recorded after --force
+
+
+def test_untouched_file_upgrades_from_older_record(empty_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """C4: a file untouched since an OLDER release (receipt sha == on-disk sha != packaged) upgrades without --force."""
+    install_sdd_integration(empty_repo)
+    target = _claude_targets()[0]
+    old_bytes = b"# older packaged copy\n"
+    (empty_repo / target).write_bytes(old_bytes)
+    receipt = json.loads((empty_repo / RECEIPT_PATH).read_text())
+    receipt["files"][target] = hashlib.sha256(old_bytes).hexdigest()
+    receipt["version"] = "0.0.1"
+    (empty_repo / RECEIPT_PATH).write_text(json.dumps(receipt))
+    assert sdd_status(empty_repo)["hosts"]["claude"]["outdated"] == [target]
+    actions = install_sdd_integration(empty_repo)
+    assert any(a.endswith("upgraded") and target in a for a in actions)
+    assert (empty_repo / target).read_bytes() != old_bytes
+    assert json.loads((empty_repo / RECEIPT_PATH).read_text())["version"] != "0.0.1"
+
+
+def test_foreign_file_never_touched_even_with_force(empty_repo: Path) -> None:
+    """C4: a target that exists but was not written by us (and is not byte-identical) is `foreign`."""
+    target = empty_repo / _claude_targets()[0]
+    target.parent.mkdir(parents=True)
+    target.write_text("theirs\n")
+    for force in (False, True):
+        actions = install_sdd_integration(empty_repo, force=force)
+        assert any(a.startswith("warning:") and "never overwritten" in a for a in actions)
+        assert target.read_text() == "theirs\n"
+    assert sdd_status(empty_repo)["hosts"]["claude"]["foreign"] == [_claude_targets()[0]]
+    uninstall_sdd_integration(empty_repo)
+    assert target.read_text() == "theirs\n"
+
+
+def test_unrecorded_identical_file_is_adopted(empty_repo: Path) -> None:
+    """C4 interpretation: byte-identical to the packaged copy but missing from the receipt → current + recorded."""
+    install_sdd_integration(empty_repo)
+    (empty_repo / RECEIPT_PATH).unlink()
+    install_sdd_integration(empty_repo)
+    receipt = json.loads((empty_repo / RECEIPT_PATH).read_text())
+    assert set(receipt["files"]) >= set(_claude_targets())
+
+
+def test_dry_run_changes_nothing(empty_repo: Path) -> None:
+    """C5: install/uninstall --dry-run print a plan and leave the tree byte-for-byte unchanged."""
+    before = _tree_digest(empty_repo)
+    plan = install_sdd_integration(empty_repo, dry_run=True)
+    assert plan and all(p.startswith("plan: ") for p in plan)
+    assert any(p.startswith("plan: write ") for p in plan)
+    assert any(p.startswith(("plan: gitignore", "plan: ledger-seed", "plan: config-seed")) for p in plan)
+    assert _tree_digest(empty_repo) == before and not (empty_repo / RECEIPT_PATH).exists()
+    install_sdd_integration(empty_repo)
+    before = _tree_digest(empty_repo)
+    plan = uninstall_sdd_integration(empty_repo, dry_run=True)
+    assert any(p.startswith("plan: remove ") for p in plan)
+    assert _tree_digest(empty_repo) == before
+
+
+def _seed_targets() -> list[str]:
+    """Every manifest entry flagged `"seed": true` (TASK-4090 rev 0.2) — generic, never a hardcoded path."""
+    return [e["target"] for e in load_manifest() if e.get("seed", False)]
+
+
+def test_seeds_written_once_never_overwritten_or_removed(empty_repo: Path) -> None:
+    """C6/C10: sdd/config.json and EVERY `"seed": true` asset are written iff absent; --force and uninstall leave them."""
+    seeds = _seed_targets()
+    assert seeds, "TASK-4090 must flag at least one seed (sdd/CONVENTIONS.md)"
+    install_sdd_integration(empty_repo)
+    config = empty_repo / "sdd/config.json"
+    assert config.is_file() and json.loads(config.read_text())["base_branch"] == "dev"
+    assert all((empty_repo / t).is_file() for t in seeds)
+    config.write_text('{"base_branch": "develop", "hotfix_base": "main"}\n')
+    for t in seeds:
+        (empty_repo / t).write_text("# ours\n")
+    install_sdd_integration(empty_repo, force=True)
+    assert "develop" in config.read_text()
+    assert all((empty_repo / t).read_text() == "# ours\n" for t in seeds)
+    receipt = json.loads((empty_repo / RECEIPT_PATH).read_text())
+    assert "sdd/config.json" not in receipt["files"] and not set(seeds) & set(receipt["files"])
+    uninstall_sdd_integration(empty_repo)
+    assert config.is_file() and all((empty_repo / t).read_text() == "# ours\n" for t in seeds)
+    report = sdd_status(empty_repo)
+    assert all(report["seeds"][t] == "seed-present" for t in seeds)
+    assert not any(t in report["hosts"][h][state] for t in seeds for h in report["hosts"] for state in report["hosts"][h])
 
 
 def test_existing_gitignore_content_preserved(empty_repo: Path) -> None:
@@ -560,24 +993,27 @@ def test_unknown_host_rejected(empty_repo: Path) -> None:
 def test_status_shape(empty_repo: Path) -> None:
     install_sdd_integration(empty_repo, hosts=("codex",))
     report = sdd_status(empty_repo)
-    assert set(report) >= {"hosts", "gitignore", "id_ledger"}
+    assert set(report) >= {"hosts", "seeds", "config", "gitignore", "id_ledger", "receipt_version"}
+    assert set(report["hosts"]["codex"]) == {"current", "outdated", "edited", "foreign", "missing"}
     assert report["hosts"]["codex"]["missing"] == []
     # FILL IN: assert claude-only targets are reported missing for "claude" — bounded by sdd_status docstring
 
 
 @pytest.mark.parametrize("hosts", [("claude",), ("codex",), ("google",)])
 def test_sdd_flow_in_foreign_repo(empty_repo: Path, hosts: tuple[str, ...]) -> None:
-    """Integration: installed markdown references only parrot.sdd.scripts modules that import (spec §4)."""
+    """Integration (spec §4, rev 0.2): installed markdown invokes helpers ONLY as `parrot sdd run <name>`,
+    every such name is a real parrot.sdd.scripts module, and no `python -m` / repo-script form remains."""
     install_sdd_integration(empty_repo, hosts=hosts)
     installed = [empty_repo / e["target"] for e in load_manifest() if set(hosts) & set(e["hosts"])]
     texts = [p.read_text(encoding="utf-8") for p in installed if p.suffix in {".md", ".toml"}]
-    # FILL IN: (1) every `parrot\.sdd\.scripts\.([a-z_]+)` name resolves via importlib.util.find_spec;
-    #          (2) no `python -m scripts.sdd.<moved>` / `scripts/sdd/<moved>.(py|sh)` remains — bounded by spec §5
-    #          ("every helper referenced by installed markdown resolves as python -m parrot.sdd.scripts.<name>")
+    # FILL IN: (1) every `parrot sdd run ([a-z_]+)` name resolves via importlib.util.find_spec("parrot.sdd.scripts.<name>");
+    #          (2) no `python -m parrot.sdd.scripts.`, `python -m scripts.sdd.`, `scripts/sdd/<x>.(py|sh)` remains
+    #          — bounded by spec §5 rev 0.2 ("every helper referenced by installed markdown runs as parrot sdd run <name>")
     raise NotImplementedError
 ```
 **Why**: maps 1:1 onto spec §4 (`test_sdd_install_into_empty_repo`, `test_sdd_flow_in_foreign_repo`)
-and the brief's conflict rule.
+and the rev 0.2 receipt rule (C4), dry-run (C5) and seeds (C6/C10). `_tree_digest` is the
+whole C5 proof: identical digests before/after means no write happened anywhere.
 
 ### `packages/ai-parrot/tests/sdd/test_sdd_cli.py` (CREATE)
 ```python
@@ -619,32 +1055,233 @@ def test_force_flag_overwrites(tmp_path: Path) -> None:
     runner = CliRunner()
     runner.invoke(cli, ["sdd", "install", "--path", str(tmp_path)])
     # FILL IN: edit one installed .claude/commands file, re-run without/with --force and assert skip/overwrite
+
+
+def test_dry_run_flag_prints_plan_and_writes_nothing(tmp_path: Path) -> None:
+    """C5 at the CLI layer."""
+    result = CliRunner().invoke(cli, ["sdd", "install", "--path", str(tmp_path), "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "plan: write" in result.output
+    assert not any(tmp_path.iterdir())
+
+
+def test_run_dispatches_helper_help() -> None:
+    """Q1: `parrot sdd run reserve_ids --help` reaches the helper's argparse and exits 0."""
+    result = CliRunner().invoke(cli, ["sdd", "run", "reserve_ids", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--kind" in result.output and "--base-branch" in result.output  # reserve_ids' own argparse help
+
+
+def test_run_unknown_helper_lists_available() -> None:
+    result = CliRunner().invoke(cli, ["sdd", "run", "nope"])
+    assert result.exit_code == 1
+    assert "unknown helper" in result.output and "reserve_ids" in result.output and "sdd_meta" in result.output
+
+
+def test_run_sdd_meta_is_dispatchable() -> None:
+    """`sdd_meta` is a real helper after TASK-4299 (shipped markdown uses `parrot sdd run sdd_meta parse <spec>`)."""
+    result = CliRunner().invoke(cli, ["sdd", "run", "sdd_meta", "--help"])
+    assert result.exit_code == 0, result.output
+
+
+def test_run_propagates_helper_exit_code() -> None:
+    """A helper that argparse-rejects exits 2 — the code must pass through, not be flattened to 1."""
+    result = CliRunner().invoke(cli, ["sdd", "run", "reserve_ids", "--kind", "bogus"])
+    assert result.exit_code == 2
 ```
+
+### `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` (CREATE)
+```python
+"""C3 (FEAT-633 rev 0.2/0.3): prove the SDD flow from the BUILT WHEEL in a clean foreign repo.
+
+Merge tier only (builds a wheel). Nothing here imports parrot: every assertion goes through
+subprocesses whose PATH holds only $PARROT_HOME/bin and an allowlisted tools dir, with every
+Python/venv/parrot override variable unset. Helpers are never mocked.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import shutil
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Callable
+
+import pytest
+
+pytestmark = pytest.mark.integration  # FEAT-563 auto-mark covers only integration/ dirs — mark explicitly
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+INVOCATION_RE = re.compile(r"parrot sdd run ([a-z_]+)((?: [^\n`]*)?)")
+SCRUBBED_ENV = ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PARROT_VENV", "PARROT_PROJECT", "CONDA_PREFIX")
+#: System tools the fixture PATH may expose; anything else must come from the wheel.
+TOOL_ALLOWLIST = ("git", "bash", "jq")
+
+if shutil.which("uv") is None:  # pragma: no cover — this module must never import parrot itself
+    pytest.skip("uv not on PATH", allow_module_level=True)
+
+
+@dataclass
+class Scenario:
+    """How to run one documented helper invocation: placeholder values + required state."""
+
+    placeholders: dict[str, str]
+    prepare: Callable[[Path], None] = lambda repo: None  # creates ledger/task/index/evidence in a fresh clone
+    expect_exit: int = 0
+    tools: tuple[str, ...] = ("git",)
+
+
+# FILL IN: one Scenario per helper name that appears in installed markdown (ensure_worktree, reserve_ids,
+#          close_task, heal_orphans, check_task_state, select_tests, insight, doc_taxonomy, worktree_status,
+#          finalize_task, check_task_graph, backfill_taxonomy, migrate_index, id_ledger, check_id_collisions,
+#          install_hooks, AND sdd_meta — `parrot sdd run sdd_meta parse <spec>` / `taxonomy` / `resolve-flow …`
+#          appear in shipped markdown after TASK-4299). Placeholders: <FEAT-ID>→FEAT-001, <slug>→demo-feature,
+#          TASK-<NNN>→TASK-001, <path>→<repo>, <base_branch>→main. `prepare` commits sdd/tasks/.id_ledger.json,
+#          a per-spec index, one active task file and pushes to the bare origin where the helper needs them.
+#          — bounded by proposal C3 step 5 (documented command AND flags, fixture inputs, isolated state)
+SCENARIOS: dict[str, Scenario] = {}
+
+
+@pytest.fixture(scope="module")
+def wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    out = tmp_path_factory.mktemp("dist")
+    subprocess.run(["uv", "build", "--wheel", "--out-dir", str(out), str(REPO_ROOT / "packages/ai-parrot")], check=True)
+    return next(out.glob("ai_parrot-*.whl"))
+
+
+@pytest.fixture(scope="module")
+def managed_home(wheel: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """~/.parrot-like tree whose venv has ONLY the wheel + its declared runtime deps (non-editable)."""
+    home = tmp_path_factory.mktemp("parrot-home")
+    subprocess.run(["uv", "venv", str(home / "venv"), "--python", "3.12"], check=True)
+    subprocess.run(["uv", "pip", "install", "--python", str(home / "venv/bin/python"), str(wheel)], check=True)
+    (home / "bin").mkdir()
+    for name in ("parrot", "wikitoolkit", "bookstore"):
+        os.symlink(home / "venv/bin" / name, home / "bin" / name)
+    return home
+
+
+@pytest.fixture(scope="module")
+def tools_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    tools = tmp_path_factory.mktemp("tools")
+    for name in TOOL_ALLOWLIST:
+        if (found := shutil.which(name)) is not None:
+            os.symlink(found, tools / name)
+    assert (tools / "git").exists(), "git is a hard prerequisite of every scenario"
+    return tools
+
+
+def _env(home: Path, tools: Path) -> dict[str, str]:
+    env = {k: v for k, v in os.environ.items() if k not in SCRUBBED_ENV}
+    env["PATH"] = f"{home / 'bin'}{os.pathsep}{tools}"
+    env["PARROT_HOME"] = str(home)
+    return env
+
+
+@pytest.fixture
+def foreign_repo(tmp_path: Path) -> tuple[Path, Path]:
+    """(working clone, bare origin) of an unrelated non-Python repo with one commit on main."""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True)
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "clone", "-q", str(origin), str(repo)], check=True)
+    (repo / "README.md").write_text("# not a python project\n")
+    subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@x", "commit", "-qm", "init"], check=True)
+    subprocess.run(["git", "-C", str(repo), "push", "-q", "-u", "origin", "main"], check=True)
+    return repo, origin
+
+
+def test_parrot_resolves_to_managed_install(managed_home: Path, tools_dir: Path, foreign_repo: tuple[Path, Path]) -> None:
+    repo, _ = foreign_repo
+    env = _env(managed_home, tools_dir)
+    which = subprocess.run(["bash", "-c", "command -v parrot"], cwd=repo, env=env, capture_output=True, text=True, check=True)
+    assert Path(which.stdout.strip()).resolve() == (managed_home / "venv/bin/parrot").resolve()
+    env_out = subprocess.run(["parrot", "self", "env"], cwd=repo, env=env, capture_output=True, text=True, check=True).stdout
+    assert str(managed_home / "venv") in env_out and "rule: managed" in env_out  # TASK-4080 `self env` format
+
+
+def test_install_then_every_documented_helper_invocation(
+    managed_home: Path, tools_dir: Path, foreign_repo: tuple[Path, Path], tmp_path: Path
+) -> None:
+    repo, origin = foreign_repo
+    env = _env(managed_home, tools_dir)
+    subprocess.run(["parrot", "sdd", "install", "--host", "claude"], cwd=repo, env=env, check=True)
+    texts = "\n".join(p.read_text(encoding="utf-8") for p in (repo / ".claude").rglob("*.md"))
+    texts += "\n" + "\n".join(p.read_text(encoding="utf-8") for p in (repo / "sdd").rglob("*.md"))
+    assert "python -m parrot.sdd.scripts" not in texts, "Q1: shipped markdown must use `parrot sdd run`"
+    invocations = {(m.group(1), m.group(2).strip()) for m in INVOCATION_RE.finditer(texts)}
+    assert invocations, "no `parrot sdd run` invocations found — TASK-4089 rewrite missing?"
+    missing = sorted({name for name, _ in invocations} - set(SCENARIOS))
+    assert not missing, f"helpers documented but without a C3 scenario: {missing}"
+    for i, (name, argv) in enumerate(sorted(invocations)):
+        scenario = SCENARIOS[name]
+        clone = tmp_path / f"scenario-{i}-{name}"
+        subprocess.run(["git", "clone", "-q", str(origin), str(clone)], check=True)
+        shutil.copytree(repo / ".claude", clone / ".claude", dirs_exist_ok=True)
+        shutil.copytree(repo / "sdd", clone / "sdd", dirs_exist_ok=True)
+        scenario.prepare(clone)
+        for placeholder, value in scenario.placeholders.items():
+            argv = argv.replace(placeholder, value.replace("<repo>", str(clone)))
+        result = subprocess.run(["parrot", "sdd", "run", name, *argv.split()], cwd=clone, env=env, capture_output=True, text=True)
+        assert result.returncode == scenario.expect_exit, f"{name} {argv}\n{result.stdout}\n{result.stderr}"
+```
+**Why**: proposal C3 (rev 0.3) step by step — wheel + declared deps, bare origin, documented
+flags with fixture inputs, allowlisted tools, scrubbed env, managed-resolution assertion, no
+mocks. `SCENARIOS` is the only `FILL IN`, and the test fails loudly for any documented helper
+that lacks one, so coverage of "every documented helper invocation" is enforced, not hoped for.
 
 ### FILL IN checklist
 - [ ] `installer.py::_upsert_marker_block` / `_remove_marker_block` — verbatim copies of claude_code/installer.py:50/:71.
+- [ ] `installer.py::load_receipt` — read/validate; empty receipt on absence or bad schema (C4).
+- [ ] `installer.py::plan_install` state→action mapping; `plan_uninstall` — receipt-matching removal, edited/foreign retention, shared-asset retention, gitignore/receipt removal (C4/C5).
+- [ ] `installer.py::uninstall_sdd_integration` apply step.
 - [ ] `installer.py::_audit` — S9 warnings from `scan_paths` + `missing_tools`; bounded by TASK-4070 API; never raises.
-- [ ] `installer.py::uninstall_sdd_integration` — identical-only removal, shared-asset retention, gitignore block removal.
-- [ ] `installer.py::sdd_status` — dict shape in the docstring.
+- [ ] `installer.py::sdd_status` — dict shape in the docstring (five states + seeds + flags).
 - [ ] `cli.py::status` — human summary.
 - [ ] `test_installer.py::test_status_shape`, `test_sdd_flow_in_foreign_repo`; `test_sdd_cli.py::test_force_flag_overwrites`.
+- [ ] `test_wheel_only_foreign_repo.py::SCENARIOS` — one per helper name found in installed markdown (C3).
 
 ---
 
 ## Acceptance Criteria
 
 - [ ] `parrot sdd install` into an empty non-Python git repo deploys every manifest asset for the
-      requested host(s), writes the `.gitignore` marker block and seeds `sdd/tasks/.id_ledger.json`
-      (spec §5: "`parrot sdd install` deploys the flow into an empty non-Python repo").
-- [ ] Every helper referenced by installed markdown resolves as `python -m parrot.sdd.scripts.<name>`
+      requested host(s), writes the `.gitignore` marker block, seeds `sdd/tasks/.id_ledger.json`,
+      `sdd/config.json` (C6) and `sdd/CONVENTIONS.md` (C10), and writes `sdd/.sdd-installed.json`
+      (spec §5 rev 0.2: "`parrot sdd install` deploys the flow into an empty non-Python repo").
+- [ ] Every helper referenced by installed markdown is invoked as `parrot sdd run <name>` and
+      resolves to a `parrot.sdd.scripts` module; no `python -m` form remains
       (`test_sdd_flow_in_foreign_repo`, all three hosts).
-- [ ] Conflict rule: absent → write; identical → skip; differs → skip + `warning:` unless `--force`;
-      uninstall removes byte-identical files only and never the ledger.
+- [ ] C4 receipt rule: absent → write + record; matches record → upgrade without `--force`
+      (`test_untouched_file_upgrades_from_older_record`); differs from record → kept + `warning:`
+      unless `--force`; not in record → foreign, kept even with `--force`
+      (`test_foreign_file_never_touched_even_with_force`); unrecorded-but-identical → adopted;
+      uninstall removes only receipt-matching files and never the ledger, config, seeds.
+- [ ] `parrot sdd status` classifies every target as `missing | current | outdated | edited | foreign`
+      and reports seeds as `seed-present | missing`; the receipt carries the writing ai-parrot version.
+- [ ] C5: `install --dry-run` / `uninstall --dry-run` print one `plan:` line per action and leave the
+      tree byte-for-byte unchanged (`test_dry_run_changes_nothing`).
+- [ ] Seeds are written only when absent and survive `--force` and `uninstall`
+      (`test_seeds_written_once_never_overwritten_or_removed`).
+- [ ] Q1: `parrot sdd run reserve_ids --help` prints the helper's argparse help and exits 0; an
+      unknown name exits 1 listing every `parrot.sdd.scripts` module, `sdd_meta` included; the
+      helper's own exit code propagates (`test_run_*`).
+- [ ] Seeds are generic over the manifest's optional `"seed": true` key (schema_version stays 1;
+      missing key = `false`): every flagged entry gets the write-once rule and a `seeds` row in
+      `status`; no seed path is hardcoded in `installer.py`.
+- [ ] C3: `test_wheel_only_foreign_repo.py` passes on Linux CI in the merge tier with `-m integration`
+      once TASK-4089's rewrite is in: ai-parrot loaded only from the built wheel, every documented
+      helper invocation run with fixture inputs under the allowlisted PATH and scrubbed env, `parrot`
+      and the helper interpreter resolved to the temporary managed install, no helper mocked.
 - [ ] Unavailable tooling referenced by installed assets is reported as warnings, never as a failure (codex S9).
-- [ ] `parrot sdd --help` lists `install`, `uninstall`, `status`; `--host` accepts only
+- [ ] `parrot sdd --help` lists `install`, `uninstall`, `status`, `run`; `--host` accepts only
       `claude|codex|google`; `parrot status` (agentd) is unchanged.
-- [ ] `parrot.sdd.installer` does not import `parrot.knowledge.wiki.*`.
-- [ ] `ruff check` passes on all five files; all tests below pass.
+- [ ] `parrot.sdd.installer` does not import `parrot.knowledge.wiki.*`; `parrot.sdd.cli` imports no
+      helper module at load time.
+- [ ] `ruff check` passes on all six files; all tests below pass.
 
 ---
 
@@ -655,6 +1292,11 @@ editable-installed against the main checkout).
 
 - `pytest packages/ai-parrot/tests/sdd/test_installer.py -q`
 - `pytest packages/ai-parrot/tests/sdd/test_sdd_cli.py -q`
+- `pytest packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py -q -m integration`
+  (C3; merge tier only — builds a wheel, needs `uv` and `git`; skipped automatically without `uv`.
+  Expected to FAIL until TASK-4089's `parrot sdd run` rewrite has landed: that failure is the
+  design, not a bug in this task — record it in the Completion Note if TASK-4089 is not yet done.)
+Also, outside the pytest contract: lint with `ruff check packages/ai-parrot/src/parrot/sdd/installer.py packages/ai-parrot/src/parrot/sdd/cli.py packages/ai-parrot/tests/sdd/`.
 
 ---
 
@@ -665,11 +1307,18 @@ editable-installed against the main checkout).
 ```python
 # packages/ai-parrot/tests/sdd/test_installer.py — see the CREATE block:
 #   test_sdd_install_into_empty_repo (spec §4), test_reinstall_is_idempotent,
-#   test_modified_file_skipped_unless_force_and_kept_on_uninstall, test_existing_gitignore_content_preserved,
+#   test_modified_file_skipped_unless_force_and_kept_on_uninstall (C4 edited),
+#   test_untouched_file_upgrades_from_older_record (C4 outdated), test_foreign_file_never_touched_even_with_force (C4 foreign),
+#   test_unrecorded_identical_file_is_adopted (C4 adoption), test_dry_run_changes_nothing (C5),
+#   test_seeds_written_once_never_overwritten_or_removed (C6/C10), test_existing_gitignore_content_preserved,
 #   test_unknown_host_rejected, test_status_shape, test_sdd_flow_in_foreign_repo[claude|codex|google] (spec §4 integration)
 # packages/ai-parrot/tests/sdd/test_sdd_cli.py — see the CREATE block:
-#   test_lazy_registration, test_install_status_uninstall_roundtrip,
-#   test_unknown_host_is_a_usage_error, test_force_flag_overwrites
+#   test_lazy_registration, test_install_status_uninstall_roundtrip, test_unknown_host_is_a_usage_error,
+#   test_force_flag_overwrites, test_dry_run_flag_prints_plan_and_writes_nothing (C5),
+#   test_run_dispatches_helper_help, test_run_unknown_helper_lists_available, test_run_sdd_meta_is_dispatchable,
+#   test_run_propagates_helper_exit_code (Q1)
+# packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py — see the CREATE block (C3, merge tier):
+#   test_parrot_resolves_to_managed_install, test_install_then_every_documented_helper_invocation
 ```
 
 ---

@@ -4,7 +4,7 @@
 **Spec**: `sdd/specs/parrot-installer.spec.md`
 **Status**: pending
 **Priority**: high
-**Estimated effort**: M (2-4h)
+**Estimated effort**: L (4-8h) — was M; raised by the rev 0.2/0.3 amendments (SDD readiness checks, `--sdd` / `--runtime-only` scopes)
 **Depends-on**: TASK-4079
 **Assigned-to**: unassigned
 
@@ -21,13 +21,62 @@ so every diagnostic lives under `self`.
 
 ---
 
+## Amendments — spec rev 0.2 (2026-10-14)
+
+Folded in from `sdd/proposals/parrot-installer-amendments.proposal.md` (§3 C14/C15, §5;
+decisions by Jesus Lara, 2026-10-14; C14/C15 scope wording from the proposal's rev 0.3 Codex
+review). Every section below is already rewritten to match; this list is the delta.
+
+- **C15 — SDD readiness checks.** `run_doctor` gains a second check family, run when
+  `<root>/sdd/` exists or `parrot self doctor --sdd` is passed: `origin` remote present; the
+  configured base branch exists on `origin` (branch from `sdd/config.json` via
+  `parrot.sdd.config.load_sdd_config(root)` — TASK-4299 — default `dev`; probed with
+  `git ls-remote --heads origin <branch>`, a network error is reported as a *warning*, not a
+  failure); `sdd/tasks/.id_ledger.json` is git-tracked; `.claude/worktrees/` is ignored; `gh`
+  present **and** `gh auth status` exits 0; `jq` present — reported only while an installed
+  shipped file still references it (TASK-4070's `external-tool` scan over the installed files);
+  installed SDD files current (TASK-4091's `sdd_status`: any `outdated`/`edited` target is "not
+  current"); host CLI (`claude` / `codex` / `agy`) present per installed host — **informational**.
+  Doctor still only reports and suggests a concrete `fix`; it never changes anything.
+- **C14 — `--runtime-only` scope (bootstrap).** `install-parrot.sh --global` /
+  `install-parrot.ps1 -Global` (TASK-4074/4075) end by running `parrot self doctor
+  --runtime-only` against the freshly installed managed runtime and roll back on failure. That
+  scope checks **only** managed uv, managed Python, the runtime entry points
+  (`parrot`/`wikitoolkit`/`bookstore` shims resolvable from `$PARROT_HOME/bin`) and PATH; it
+  excludes repository readiness, host configuration and optional-component checks, so a sound
+  runtime is never rolled back because the invoking repo has an unauthenticated `gh`, an
+  uncommitted ledger or outdated SDD assets. `--runtime-only` and `--sdd` are mutually
+  exclusive (usage error, exit 2). Plain `parrot self doctor` keeps runtime + host + component
+  diagnostics and adds the applicable SDD checks.
+- **Exit code rule.** Exit 1 only when a **non-informational** check in the selected scope
+  fails; informational host-CLI checks never fail doctor. `DoctorCheck` gains
+  `informational: bool = False`.
+- **Circularity / lazy imports.** TASK-4091 depends on this task, so `parrot.sdd.config`,
+  `parrot.sdd.installer` and `parrot.sdd.audit` must be imported **lazily inside the SDD
+  checks** and tolerated when absent (ImportError → the check reports "module unavailable" /
+  "SDD flow not installed" as informational, never raises). No new `Depends-on`.
+- **Effort** raised M → L; new test module `packages/ai-parrot/tests/self_/test_doctor_sdd.py`.
+
+---
+
 ## Scope
 
 - Create `parrot/self_/cli.py`: `@click.group(name="self")` `self_group` with
   `add(component, --here)`, `update(--version)`, `doctor()`, `env()`, `uninstall(--yes)`;
   expose it under the module attribute `self` (LazyGroup's lookup convention, below).
-- Create `parrot/self_/doctor.py`: `DoctorCheck` model (name, ok, detail, fix),
-  `run_doctor(root: Path) -> list[DoctorCheck]`, `installed_version(venv) -> str | None`.
+- Create `parrot/self_/doctor.py`: `DoctorCheck` model (name, ok, detail, fix, informational),
+  `run_doctor(root: Path, *, scope: DoctorScope = "full") -> list[DoctorCheck]`,
+  `installed_version(venv) -> str | None`, `failed(checks) -> list[DoctorCheck]` (non-informational
+  failures only).
+- Implement the three scopes (C14/C15): `"runtime-only"` = uv, Python, runtime entry points, PATH;
+  `"full"` = runtime + host configs + toolkits + SDD checks iff `<root>/sdd/` exists;
+  `"sdd"` = `"full"` with the SDD checks forced on.
+- Implement the SDD readiness checks (C15): `origin` remote; configured base branch on `origin`;
+  ledger git-tracked; `.claude/worktrees/` ignored; `gh` present + authenticated; `jq` present
+  while referenced; installed SDD files current (`sdd_status`); host CLIs present (informational).
+  All `parrot.sdd.*` imports lazy and absence-tolerant.
+- `parrot self doctor [--sdd | --runtime-only]`: mutually exclusive flags (usage error, exit 2);
+  exit 1 iff a non-informational check in the selected scope failed.
 - Register `"self": "parrot.self_.cli"` in `cli._lazy_commands`.
 - `env` prints: resolved venv + the rule that picked it (`resolve_venv`), the ai-parrot
   version inside that venv, and the managed venv's ai-parrot version.
@@ -40,7 +89,11 @@ so every diagnostic lives under `self`.
 
 **NOT in scope**: the engine (TASK-4079); fixing anything doctor reports (it only
 reports + suggests a `fix`); `parrot sdd` registration (TASK-4091 adds `"sdd"` to the same
-dict later — leave room, touch only the `self` line); touching `parrot status`.
+dict later — leave room, touch only the `self` line); touching `parrot status`;
+`parrot.sdd.config` (TASK-4299), `parrot.sdd.installer.sdd_status` (TASK-4091) and
+`parrot.sdd.audit` (TASK-4070) — consumed lazily, never created or re-implemented here; the
+bootstrap scripts' call to `parrot self doctor --runtime-only` and their rollback
+(TASK-4074/4075); the pre-install gate (C14b, TASK-4074/4075).
 
 ---
 
@@ -52,7 +105,8 @@ dict later — leave room, touch only the `self` line); touching `parrot status`
 | `packages/ai-parrot/src/parrot/self_/doctor.py` | CREATE | `DoctorCheck`, `run_doctor`, `installed_version` |
 | `packages/ai-parrot/src/parrot/cli/__init__.py` | MODIFY | Lazy `"self"` entry |
 | `packages/ai-parrot/tests/self_/test_self_cli.py` | CREATE | CLI tests (registration, env, add/uninstall wiring) |
-| `packages/ai-parrot/tests/self_/test_doctor.py` | CREATE | Doctor check tests |
+| `packages/ai-parrot/tests/self_/test_doctor.py` | CREATE | Doctor check tests (runtime / host / toolkits) |
+| `packages/ai-parrot/tests/self_/test_doctor_sdd.py` | CREATE | C15 SDD readiness checks, `--sdd` / `--runtime-only` scopes, exit-code rule (fixture repo per missing prerequisite) |
 
 ---
 
@@ -68,6 +122,12 @@ import tomllib  # stdlib (requires-python >=3.11, packages/ai-parrot/pyproject.t
 # Created by dependency tasks:
 from parrot.launcher import MANAGED_PYTHON, find_project_root, parrot_home, resolve_venv, script_path  # TASK-4071
 from parrot.self_.components import install_component, managed_venv, uninstall_runtime, update_runtime  # TASK-4079
+# Consumed LAZILY inside the SDD checks and tolerated when absent (these tasks land AFTER this one —
+# TASK-4091 depends on TASK-4080; never import them at module level, never add them to Depends-on):
+from parrot.sdd.config import load_sdd_config        # TASK-4299 — load_sdd_config(root: Path) -> SddConfig (.base_branch, default "dev")
+from parrot.sdd.installer import sdd_status          # TASK-4091 — sdd_status(root) -> {"hosts": {h: {"current"|"outdated"|"edited"|"foreign"|"missing": [...]}}, ...}
+from parrot.sdd.audit import scan_paths, missing_tools  # TASK-4070 — external-tool findings over installed files (jq)
+import shutil, subprocess  # stdlib — shutil.which for gh/jq/claude/codex/agy; git/gh probes via subprocess.run
 ```
 
 ### Existing Signatures to Use
@@ -114,6 +174,10 @@ MCP_TABLE = "mcp_servers.wikitoolkit"   # line 19; toolkit tables `[mcp_servers.
 - ~~`parrot.self_.cli` / `parrot.self_.doctor`~~ — created here.
 - ~~a shared host-config parser in core~~ — doctor reads the three files directly (json / tomllib).
 - ~~`parrot sdd` in `_lazy_commands`~~ — TASK-4091's line, not this task's.
+- ~~`parrot.sdd.config`, `parrot.sdd.installer`, `parrot.sdd.audit` on `dev` today~~ — created by
+  TASK-4299 / TASK-4091 / TASK-4070; the SDD checks must work (report "unavailable") when any is missing.
+- ~~`DoctorScope`, `--sdd`, `--runtime-only`, `DoctorCheck.informational`, `failed()`~~ — new here (rev 0.2/0.3).
+- ~~a `sdd/config.json` schema in this task~~ — `base_branch` is the only field read, via `load_sdd_config`.
 
 ---
 
@@ -127,7 +191,8 @@ MCP_TABLE = "mcp_servers.wikitoolkit"   # line 19; toolkit tables `[mcp_servers.
     {"path": "packages/ai-parrot/src/parrot/self_/doctor.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/src/parrot/cli/__init__.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/self_/test_self_cli.py", "action": "CREATE"},
-    {"path": "packages/ai-parrot/tests/self_/test_doctor.py", "action": "CREATE"}
+    {"path": "packages/ai-parrot/tests/self_/test_doctor.py", "action": "CREATE"},
+    {"path": "packages/ai-parrot/tests/self_/test_doctor_sdd.py", "action": "CREATE"}
   ],
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/cli/__init__.py#LazyGroup",
@@ -169,6 +234,24 @@ def toolkits() -> None:
 - Python version check reads `pyvenv.cfg` (no subprocess); version reporting of ai-parrot
   inside a venv uses `subprocess.run([python, "-c", ...], capture_output=True, text=True)`
   — synchronous is correct in a one-shot CLI (no event loop).
+- **Scopes (C14/C15)**: `"runtime-only"` runs exactly `_check_uv`, `_check_python`,
+  `_check_entrypoints`, `_check_path` — nothing that touches `root`, a host config, a toolkit
+  or the network. `"full"` adds host configs + toolkits, and `_check_sdd(root)` iff
+  `(root / "sdd").is_dir()`. `"sdd"` forces `_check_sdd`. The `--runtime-only` scope must stay
+  cheap and offline: the bootstrap runs it on a machine that may have no repo at all.
+- **SDD checks are lazy and absence-tolerant**: every `parrot.sdd.*` import sits inside the
+  `_check_sdd_*` function that needs it; `ImportError` → `DoctorCheck(ok=True, informational=True,
+  detail="… unavailable in this ai-parrot build")`. Git probes use `subprocess.run(["git", "-C", root, …],
+  capture_output=True, text=True, check=False)`; a non-zero `git ls-remote` with a network-ish
+  stderr is reported as `ok=True, informational=True, detail="could not reach origin: …"`
+  (warning), while "branch absent" (exit 0, empty stdout) is a real failure.
+- **Exit code**: `failed(checks)` = `[c for c in checks if not c.ok and not c.informational]`;
+  `doctor` exits 1 iff that list is non-empty. Informational checks print with `·`, failures
+  with `✗`, passes with `✓`.
+- **Fix strings are concrete commands**, e.g. `git remote add origin <url>`,
+  `git push -u origin dev`, `git add sdd/tasks/.id_ledger.json && git commit -m "sdd: seed id ledger"`,
+  `parrot sdd install` (adds the `.gitignore` block), `gh auth login`, `parrot sdd install`
+  (outdated files), `parrot sdd status` (edited files).
 
 ### References in Codebase
 - `packages/ai-parrot/src/parrot/cli/toolkits.py` — CLI style, lazy imports
@@ -179,14 +262,19 @@ def toolkits() -> None:
 ## Implementation Blueprint
 
 ### Steps (in order)
-1. Create `doctor.py` (`DoctorCheck`, `installed_version`, one private `_check_*` per spec check, `run_doctor`) — *why*: the CLI and tests both consume it.
-2. Create `cli.py` with the group, five subcommands and `self = self_group` — *why*: LazyGroup resolves `getattr(mod, "self")` (cli/__init__.py:99-100).
+1. Create `doctor.py` (`DoctorCheck`, `DoctorScope`, `installed_version`, one private `_check_*` per spec check, the `_check_sdd_*` family, `run_doctor(root, *, scope)`, `failed`) — *why*: the CLI and tests both consume it.
+2. Create `cli.py` with the group, five subcommands (`doctor` taking `--sdd` / `--runtime-only`) and `self = self_group` — *why*: LazyGroup resolves `getattr(mod, "self")` (cli/__init__.py:99-100).
 3. Register `"self"` in `_lazy_commands` — *why*: spec §3 M3 / §6 Edit Sites.
-4. Write tests — *why*: spec §4 `test_self_env_rule_report`, `test_doctor_flags_broken_host_config`.
+4. Write tests — *why*: spec §4 `test_self_env_rule_report`, `test_doctor_flags_broken_host_config`, plus the C15 fixture-repo matrix and the scope/exit-code rules (rev 0.2/0.3).
 
 ### `packages/ai-parrot/src/parrot/self_/doctor.py` (CREATE)
 ```python
-"""`parrot self doctor` checks (FEAT-633, spec §3 M3). Read-only diagnostics."""
+"""`parrot self doctor` checks (FEAT-633, spec §3 M3; rev 0.2 C14/C15). Read-only diagnostics.
+
+Scopes: "runtime-only" (bootstrap: uv, Python, entry points, PATH — offline, repo-free),
+"full" (runtime + host configs + toolkits + SDD readiness iff <root>/sdd exists),
+"sdd" (full with SDD readiness forced). Every parrot.sdd.* import is lazy and absence-tolerant.
+"""
 
 from __future__ import annotations
 
@@ -197,7 +285,7 @@ import shutil
 import subprocess
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -208,15 +296,25 @@ logger = logging.getLogger(__name__)
 
 #: Kept in sync with the pin in scripts/install/install-parrot.{sh,ps1} (--global mode).
 PINNED_UV_VERSION: str = "0.11.28"
+DoctorScope = Literal["full", "runtime-only", "sdd"]
+RUNTIME_ENTRYPOINTS: tuple[str, ...] = ("parrot", "wikitoolkit", "bookstore")
+HOST_CLIS: dict[str, str] = {"claude": "claude", "codex": "codex", "google": "agy"}
+SDD_LEDGER = Path("sdd/tasks/.id_ledger.json")
 
 
 class DoctorCheck(BaseModel):
-    """One diagnostic result."""
+    """One diagnostic result. ``informational`` checks never fail doctor (C15 host-CLI checks, warnings)."""
 
     name: str
     ok: bool
     detail: str = ""
     fix: str = ""
+    informational: bool = False
+
+
+def failed(checks: list[DoctorCheck]) -> list[DoctorCheck]:
+    """Non-informational failures — the only thing that makes ``parrot self doctor`` exit 1."""
+    return [c for c in checks if not c.ok and not c.informational]
 
 
 def installed_version(venv: Path) -> str | None:
@@ -246,6 +344,64 @@ def _check_python() -> DoctorCheck:
 def _check_path() -> DoctorCheck:
     """PATH contains ~/.parrot/bin (resolved comparison, os.pathsep split)."""
     # FILL IN: fix text differs per OS (POSIX profile line vs Windows user PATH) — bounded by spec §5 PATH bullets
+    raise NotImplementedError
+
+
+def _check_entrypoints() -> DoctorCheck:
+    """C14 runtime scope: the three console-script shims exist under ~/.parrot/bin AND resolve in the managed venv."""
+    home_bin = parrot_home() / "bin"
+    missing = [n for n in RUNTIME_ENTRYPOINTS if not (home_bin / (f"{n}.exe" if os.name == "nt" else n)).exists()
+               or not script_path(managed_venv(), n).exists()]
+    return DoctorCheck(
+        name="runtime entry points", ok=not missing,
+        detail="all present" if not missing else f"missing: {', '.join(missing)}",
+        fix="" if not missing else "re-run install-parrot --global (or: parrot self update)",
+    )
+
+
+# --- C15: SDD readiness (lazy, absence-tolerant; run only in "full" with <root>/sdd present, or "sdd") ---
+
+def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=False)
+
+
+def _sdd_base_branch(root: Path) -> tuple[str, DoctorCheck | None]:
+    """(branch, informational check when the config module is unavailable). Default 'dev'."""
+    try:
+        from parrot.sdd.config import load_sdd_config  # TASK-4299 — lazy on purpose
+    except ImportError:
+        return "dev", DoctorCheck(name="sdd config", ok=True, informational=True,
+                                  detail="parrot.sdd.config unavailable in this build; assuming base branch 'dev'")
+    try:
+        return load_sdd_config(root).base_branch, None
+    except (OSError, ValueError) as exc:  # unreadable / invalid sdd/config.json is itself a failed check
+        return "dev", DoctorCheck(name="sdd config", ok=False, detail=f"sdd/config.json invalid: {exc}",
+                                  fix="fix sdd/config.json (parrot sdd install --dry-run shows the seed shape)")
+
+
+def _check_sdd(root: Path) -> list[DoctorCheck]:
+    """C15 check list, in proposal order. Never raises; never writes."""
+    checks: list[DoctorCheck] = []
+    origin = _git(root, "remote", "get-url", "origin")
+    checks.append(DoctorCheck(name="sdd: origin remote", ok=origin.returncode == 0,
+                              detail=origin.stdout.strip() or origin.stderr.strip(),
+                              fix="git remote add origin <url>"))
+    branch, cfg_check = _sdd_base_branch(root)
+    if cfg_check:
+        checks.append(cfg_check)
+    # FILL IN (bounded by Key Constraints "SDD checks are lazy and absence-tolerant"):
+    #   base branch on origin: `git ls-remote --heads origin <branch>`; exit!=0 → ok=True informational
+    #     "could not reach origin: <stderr>"; exit 0 + empty stdout → ok=False fix f"git push -u origin {branch}"
+    #   ledger tracked: `git ls-files --error-unmatch sdd/tasks/.id_ledger.json` → fix "git add … && git commit"
+    #   worktrees ignored: `git check-ignore -q .claude/worktrees/x` → fix "parrot sdd install (adds the .gitignore block)"
+    #   gh: shutil.which("gh") and `gh auth status` exit 0 → fix "install gh / gh auth login"
+    #   jq: only if TASK-4070's scan over the installed files (lazy import parrot.sdd.audit; ImportError → skip)
+    #     yields an external-tool finding for jq → shutil.which("jq") → fix "install jq"
+    #   sdd files current: lazy `from parrot.sdd.installer import sdd_status`; ImportError or no receipt →
+    #     ok=True informational "SDD flow not installed"; any host with outdated/edited targets → ok=False,
+    #     detail lists them, fix "parrot sdd install" (outdated) / "parrot sdd status" (edited)
+    #   host CLIs: for each host with installed assets (sdd_status hosts with any current target),
+    #     shutil.which(HOST_CLIS[host]) → ALWAYS informational=True
     raise NotImplementedError
 
 
@@ -289,16 +445,27 @@ def _check_toolkits(root: Path) -> list[DoctorCheck]:
     return checks
 
 
-def run_doctor(root: Path) -> list[DoctorCheck]:
-    """Run every check, in spec order; never raises for a broken environment."""
-    checks = [_check_uv(), _check_python(), _check_path()]
+def run_doctor(root: Path, *, scope: DoctorScope = "full") -> list[DoctorCheck]:
+    """Run the checks of ``scope`` in spec order; never raises for a broken environment.
+
+    "runtime-only" (C14 bootstrap) touches neither ``root`` nor the network; "full" adds host configs,
+    toolkits and — iff ``root/sdd`` exists — the C15 SDD readiness checks; "sdd" forces the latter.
+    """
+    checks = [_check_uv(), _check_python(), _check_entrypoints(), _check_path()]
+    if scope == "runtime-only":
+        return checks
     checks.extend(_check_host_configs(root))
     checks.extend(_check_toolkits(root))
+    if scope == "sdd" or (root / "sdd").is_dir():
+        checks.extend(_check_sdd(root))
     return checks
 ```
 **Why this shape**: one function per spec check keeps each independently testable;
-`run_doctor`'s signature is fixed by the spec skeleton. `_check_uv` inspects the bundled path
-directly — never `bundled_uv()`, whose PATH fallback would mask a missing pinned uv.
+`run_doctor`'s positional signature is the spec skeleton's, and `scope` is keyword-only so
+existing callers are untouched. `_check_uv` inspects the bundled path directly — never
+`bundled_uv()`, whose PATH fallback would mask a missing pinned uv. `"runtime-only"` returns
+before anything repo- or network-bound so the bootstrap (C14) can never roll back a sound
+runtime because of the invoking repo's state.
 
 ### `packages/ai-parrot/src/parrot/self_/cli.py` (CREATE)
 ```python
@@ -353,20 +520,31 @@ def update(version: str | None) -> None:
 
 
 @self_group.command()
-def doctor() -> None:
-    """Diagnose uv, Python, PATH, host configs and toolkit requirements."""
-    from parrot.launcher import find_project_root  # TASK-4071
-    from parrot.self_.doctor import run_doctor
+@click.option("--sdd", "sdd_scope", is_flag=True, help="Force the SDD readiness checks even without an sdd/ tree.")
+@click.option("--runtime-only", is_flag=True, help="Bootstrap scope: managed uv, Python, entry points and PATH only.")
+def doctor(sdd_scope: bool, runtime_only: bool) -> None:
+    """Diagnose the managed runtime, host configs, toolkit requirements and SDD readiness.
 
+    Exit 1 only when a non-informational check in the selected scope fails.
+    """
+    from parrot.launcher import find_project_root  # TASK-4071
+    from parrot.self_.doctor import failed, run_doctor
+
+    if sdd_scope and runtime_only:
+        raise click.UsageError("--sdd and --runtime-only are mutually exclusive")
+    scope = "runtime-only" if runtime_only else ("sdd" if sdd_scope else "full")
     root = find_project_root(sys.argv[1:], os.environ, Path.cwd()) or Path.cwd()
-    checks = run_doctor(root)
+    checks = run_doctor(root, scope=scope)
     for check in checks:
-        mark, colour = ("✓", "green") if check.ok else ("✗", "red")
+        if check.informational:
+            mark, colour = "·", "yellow" if not check.ok else None
+        else:
+            mark, colour = ("✓", "green") if check.ok else ("✗", "red")
         click.secho(f"  {mark} {check.name}: {check.detail}", fg=colour)
         if not check.ok and check.fix:
             click.echo(f"      fix: {check.fix}")
-    # FILL IN: exit code — decided: SystemExit(1) iff any check failed (CI-usable); keep unless spec says otherwise
-    raise NotImplementedError
+    if failed(checks):
+        raise click.exceptions.Exit(1)
 
 
 @self_group.command()
@@ -515,14 +693,146 @@ def test_run_doctor_never_raises_on_empty_home(isolated_home: Path, tmp_path: Pa
     assert all(isinstance(c, doctor.DoctorCheck) for c in checks)
 ```
 
+### `packages/ai-parrot/tests/self_/test_doctor_sdd.py` (CREATE)
+```python
+"""C15 SDD readiness checks + C14 scopes (FEAT-633 rev 0.2/0.3, TASK-4080).
+
+The parrot.sdd.* modules may not exist when this task lands (TASK-4091/4299 come later): every
+test here must pass BOTH with them absent (checks report 'unavailable' as informational) and present.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+from pathlib import Path
+from unittest import mock
+
+import pytest
+from click.testing import CliRunner
+
+from parrot.cli import cli
+from parrot.self_ import doctor
+
+
+def _git(root: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@x", *args], check=True, capture_output=True)
+
+
+@pytest.fixture
+def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A repo satisfying EVERY C15 prerequisite: bare origin with 'dev', tracked ledger, ignored worktrees, config."""
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "dev", str(origin)], check=True)
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "clone", "-q", str(origin), str(repo)], check=True)
+    (repo / "sdd/tasks").mkdir(parents=True)
+    (repo / "sdd/tasks/.id_ledger.json").write_text('{"task": 0, "feature": 0}\n')
+    (repo / "sdd/config.json").write_text(json.dumps({"base_branch": "dev", "hotfix_base": "main"}) + "\n")
+    (repo / ".gitignore").write_text(".claude/worktrees/\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "seed")
+    _git(repo, "push", "-q", "-u", "origin", "dev")
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/usr/bin/{name}")  # gh, jq, claude present
+    monkeypatch.setattr(doctor.subprocess, "run", _gh_ok(doctor.subprocess.run))
+    return repo
+
+
+def _gh_ok(real_run):
+    """Pass-through for git; fake `gh auth status` → exit 0."""
+    def run(cmd, *a, **k):
+        if cmd[:3] == ["gh", "auth", "status"]:
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+        return real_run(cmd, *a, **k)
+    return run
+
+
+def test_ready_repo_has_no_sdd_failures(ready_repo: Path) -> None:
+    checks = doctor._check_sdd(ready_repo)
+    assert checks and not doctor.failed(checks), [c.model_dump() for c in doctor.failed(checks)]
+
+
+@pytest.mark.parametrize(
+    "break_it, check_name, fix_fragment",
+    [
+        (lambda r: _git(r, "remote", "remove", "origin"), "sdd: origin remote", "git remote add origin"),
+        (lambda r: subprocess.run(["git", "-C", str(r), "push", "-q", "origin", "--delete", "dev"], check=True), "sdd: base branch on origin", "git push -u origin dev"),
+        (lambda r: (_git(r, "rm", "-q", "--cached", "sdd/tasks/.id_ledger.json"), _git(r, "commit", "-qm", "untrack")), "sdd: id ledger tracked", "git add sdd/tasks/.id_ledger.json"),
+        (lambda r: (r / ".gitignore").write_text(""), "sdd: worktrees ignored", "parrot sdd install"),
+    ],
+)
+def test_each_missing_prerequisite_fails_its_check_with_a_fix(ready_repo: Path, break_it, check_name: str, fix_fragment: str) -> None:
+    """C15 'done when': a fixture repo missing each prerequisite gets the matching check failing, with its fix."""
+    break_it(ready_repo)
+    bad = {c.name: c for c in doctor.failed(doctor._check_sdd(ready_repo))}
+    assert check_name in bad and fix_fragment in bad[check_name].fix
+
+
+def test_gh_unauthenticated_fails_non_informational(ready_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # FILL IN: patch subprocess.run so `gh auth status` exits 1 → "sdd: gh" in failed(), fix mentions "gh auth login"
+    raise NotImplementedError
+
+
+def test_host_cli_missing_is_informational_only(ready_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # FILL IN: which("claude") → None with an installed claude host → a check with ok=False, informational=True,
+    #          NOT in failed() — bounded by C15 "informational host-CLI checks never fail doctor"
+    raise NotImplementedError
+
+
+def test_sdd_modules_absent_degrade_to_informational(ready_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """ImportError for parrot.sdd.config / installer / audit must yield informational checks, never raise."""
+    import builtins
+    real_import = builtins.__import__
+
+    def no_sdd(name, *a, **k):
+        if name.startswith("parrot.sdd"):
+            raise ImportError(name)
+        return real_import(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", no_sdd)
+    checks = doctor._check_sdd(ready_repo)
+    assert not doctor.failed([c for c in checks if "config" in c.name or "files current" in c.name])
+
+
+def test_scope_runtime_only_excludes_repo_host_and_component_checks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """C14: a broken repo / host config / toolkit must NOT surface under --runtime-only."""
+    repo = tmp_path / "repo"
+    (repo / "sdd").mkdir(parents=True)  # no git at all → every SDD check would fail in "full"
+    (repo / ".mcp.json").write_text(json.dumps({"mcpServers": {"wikitoolkit": {"command": "/nope/wikitoolkit"}}}))
+    names = {c.name for c in doctor.run_doctor(repo, scope="runtime-only")}
+    assert names == {"uv", "python", "runtime entry points", "PATH"} or all(
+        not n.startswith("sdd:") and "mcp" not in n.lower() and "toolkit" not in n.lower() for n in names
+    )
+    assert any(c.name.startswith("sdd:") for c in doctor.run_doctor(repo, scope="full"))
+    assert any(c.name.startswith("sdd:") for c in doctor.run_doctor(tmp_path / "no-sdd-dir", scope="sdd"))
+    assert not any(c.name.startswith("sdd:") for c in doctor.run_doctor(tmp_path / "no-sdd-dir", scope="full"))
+
+
+def test_cli_flags_mutually_exclusive_and_exit_codes(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = CliRunner().invoke(cli, ["self", "doctor", "--sdd", "--runtime-only"])
+    assert result.exit_code == 2 and "mutually exclusive" in result.output
+    informational_fail = [doctor.DoctorCheck(name="sdd: host cli claude", ok=False, informational=True)]
+    with mock.patch("parrot.self_.doctor.run_doctor", return_value=informational_fail):
+        assert CliRunner().invoke(cli, ["self", "doctor"]).exit_code == 0
+    real_fail = [doctor.DoctorCheck(name="sdd: gh", ok=False, fix="gh auth login")]
+    with mock.patch("parrot.self_.doctor.run_doctor", return_value=real_fail):
+        result = CliRunner().invoke(cli, ["self", "doctor", "--sdd"])
+        assert result.exit_code == 1 and "gh auth login" in result.output
+```
+**Why**: the C15 "done when" is literally the parametrized matrix (each prerequisite removed →
+its check fails with its fix); C14/rev 0.3 is the scope test (runtime-only never sees repo,
+host or component failures; full/`--sdd` still do) plus the exit-code and mutual-exclusion
+rules at the CLI layer. The ImportError test pins the circularity rule (TASK-4091/4299 land later).
+
 ### FILL IN checklist
 - [ ] `doctor.py::_check_uv` — presence + version compare; bounded by spec §3 M3 check 1
 - [ ] `doctor.py::_check_python` — pyvenv.cfg parse; bounded by MANAGED_PYTHON (3.12)
 - [ ] `doctor.py::_check_path` — OS-specific fix text; bounded by spec §5 PATH bullets
 - [ ] `doctor.py::_command_problem` / `_check_host_configs` — per-file checks + Gemini collision; bounded by spec §3 M3 check 4, §7
 - [ ] `doctor.py::_check_toolkits` — dist/env checks; bounded by spec §3 M3 check 5
-- [ ] `cli.py::update` / `cli.py::doctor` exit code — bounded by add's error mapping / "exit 1 iff any failed"
-- [ ] tests marked FILL IN in both test files
+- [ ] `doctor.py::_check_sdd` — the seven remaining C15 checks after `origin`; bounded by Key Constraints (lazy, absence-tolerant, informational rules)
+- [ ] `cli.py::update` — bounded by add's error mapping (`doctor`'s exit code is now fully specified in the blueprint)
+- [ ] tests marked FILL IN in all three test files
 
 ---
 
@@ -531,6 +841,10 @@ def test_run_doctor_never_raises_on_empty_home(isolated_home: Path, tmp_path: Pa
 - [ ] `parrot self --help` lists `add`, `update`, `doctor`, `env`, `uninstall`; `parrot status` is untouched.
 - [ ] `parrot self env` prints the resolved venv, the rule (`PARROT_VENV|project|VIRTUAL_ENV|managed`), and both ai-parrot versions (spec §4 `test_self_env_rule_report`).
 - [ ] `parrot self doctor` reports every spec §3 M3 check; a host config pointing at a missing binary is flagged (spec §4 `test_doctor_flags_broken_host_config`); the Gemini cross-repo collision is flagged with a `--portable` fix (spec §7).
+- [ ] C15: with an `sdd/` tree (or `--sdd`), doctor reports `origin` remote, configured base branch on `origin` (from `sdd/config.json`, default `dev`), ledger git-tracked, `.claude/worktrees/` ignored, `gh` present + authenticated, `jq` present while referenced, installed SDD files current, and host CLIs (informational); a fixture repo missing each prerequisite gets exactly that check failing with a concrete `fix` (`test_each_missing_prerequisite_fails_its_check_with_a_fix`).
+- [ ] C14: `parrot self doctor --runtime-only` runs only uv, Python, runtime entry points and PATH — no repository, host-config or toolkit check, no network — and a repo with a broken host config, uncommitted ledger or unauthenticated `gh` does not fail it (`test_scope_runtime_only_excludes_repo_host_and_component_checks`).
+- [ ] `--sdd` and `--runtime-only` together are a usage error (exit 2); doctor exits 1 iff a non-informational check in the selected scope failed; informational host-CLI checks never fail it (`test_cli_flags_mutually_exclusive_and_exit_codes`).
+- [ ] Every `parrot.sdd.*` import is lazy and its absence degrades to an informational check (`test_sdd_modules_absent_degrade_to_informational`); doctor never writes and never raises.
 - [ ] `parrot self add <c> [--here]` delegates to `install_component`; unknown names list available templates; errors exit 1 via `ClickException`.
 - [ ] `parrot self uninstall` confirms unless `--yes` and never touches user data (delegates to TASK-4079).
 - [ ] `ruff check packages/ai-parrot/src/parrot/self_/ packages/ai-parrot/src/parrot/cli/__init__.py` clean.
@@ -544,15 +858,19 @@ editable-installed against the main checkout).
 
 - `pytest packages/ai-parrot/tests/self_/test_self_cli.py -q`
 - `pytest packages/ai-parrot/tests/self_/test_doctor.py -q`
+- `pytest packages/ai-parrot/tests/self_/test_doctor_sdd.py -q`
 - `pytest packages/ai-parrot/tests/cli/test_toolkits_cli.py -q`
+Also, outside the pytest contract: lint with `ruff check packages/ai-parrot/src/parrot/self_/ packages/ai-parrot/src/parrot/cli/__init__.py packages/ai-parrot/tests/self_/`.
 
 ---
 
 ## Test Specification
 
 See the CREATE blocks for `test_self_cli.py` (registration, `test_self_env_rule_report`,
-add/uninstall wiring) and `test_doctor.py` (`test_doctor_flags_broken_host_config`,
-Gemini collision, Python/PATH/toolkit checks, never-raises).
+add/uninstall wiring), `test_doctor.py` (`test_doctor_flags_broken_host_config`,
+Gemini collision, Python/PATH/toolkit checks, never-raises) and `test_doctor_sdd.py`
+(C15 ready-repo baseline + per-prerequisite failure matrix, `gh` unauthenticated, informational
+host CLI, `parrot.sdd.*` absent, C14 `--runtime-only` scope exclusion, mutual exclusion + exit codes).
 
 ---
 

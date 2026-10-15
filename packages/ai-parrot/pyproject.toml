@@ -67,7 +67,7 @@ dependencies = [
     # moonshot, openrouter, local, nvidia) — its SDK moves from an opt-in
     # `ai-parrot[openai]` extra to a base dependency, same reasoning as
     # tenacity above.
-    "openai==3.3.1",
+    "openai==3.31.0",
     "psutil>=5.9",
     # `parrot/bots/flows/crew/crew.py` (AgentCrew, re-exported by
     # `parrot.bots.flows.__init__`) does a module-level
@@ -508,7 +508,7 @@ mcp = [
     # FEAT-523: google-genai removed — it was a stray pin core never imported
     # directly (only parrot.clients.google, now ai-parrot-client-google,
     # needs it); install that satellite (or `ai-parrot[google]`) instead.
-    "openai==3.3.1",
+    "openai==3.31.0",
     "yfinance==0.2.54",
     "youtube_search==2.1.2",
     "wikipedia==1.4.0",

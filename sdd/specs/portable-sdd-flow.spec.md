@@ -5,7 +5,7 @@ type: feature
 base_branch: dev
 projects: []
 tags: []
-status: draft
+status: superseded
 created: 2026-09-19
 ---
 
@@ -14,7 +14,7 @@ created: 2026-09-19
 **Feature ID**: FEAT-583
 **Date**: 2026-09-19
 **Author**: Jesus
-**Status**: draft
+**Status**: superseded by FEAT-633 (sdd/specs/parrot-installer.spec.md)
 **Target version**: Next release (owner-selected release milestone; version assigned by release tooling)
 
 Source: `sdd/proposals/portable-sdd-flow.brainstorm.md` (accepted).
