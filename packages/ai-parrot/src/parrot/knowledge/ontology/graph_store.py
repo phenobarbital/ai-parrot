@@ -264,7 +264,7 @@ class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
         """
         try:
             await db.execute_query(
-                f"FOR doc IN @@col LIMIT 0 RETURN null",
+                "FOR doc IN @@col LIMIT 0 RETURN null",
                 bind_vars={"@col": collection},
             )
             # The actual index creation depends on the asyncdb adapter.
@@ -316,9 +316,7 @@ class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
     # ── Typed traversal surface (OntologyTraversalStore) ──────────────
 
     @staticmethod
-    def _filter_clause(
-        filters: Mapping[str, Any] | None, bind_vars: dict[str, Any]
-    ) -> str:
+    def _filter_clause(filters: Mapping[str, Any] | None, bind_vars: dict[str, Any]) -> str:
         """Build equality ``FILTER`` clauses for ``filters`` on alias ``e``.
 
         Args:
@@ -367,11 +365,7 @@ class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
         depth = int(max_depth)
         if depth < 1:
             raise ValueError("max_depth must be >= 1")
-        aql = (
-            f"FOR v IN 1..{depth} {keyword} @asker_id @@edge_collection "
-            "FILTER v._id == @target_id "
-            "RETURN v._id"
-        )
+        aql = f"FOR v IN 1..{depth} {keyword} @asker_id @@edge_collection " "FILTER v._id == @target_id " "RETURN v._id"
         rows = await self._execute_aql(
             ctx,
             aql,
@@ -424,9 +418,7 @@ class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
             f"{extra} "
             f"LIMIT {int(limit)} RETURN e"
         )
-        return await self._execute_aql(
-            ctx, aql, bind_vars=bind_vars, collection_binds={"@collection": collection}
-        )
+        return await self._execute_aql(ctx, aql, bind_vars=bind_vars, collection_binds={"@collection": collection})
 
     async def search_by_name(
         self,
@@ -461,9 +453,7 @@ class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
             f"SORT LENGTH(e.{attr}) ASC "
             f"LIMIT {int(limit)} RETURN e"
         )
-        return await self._execute_aql(
-            ctx, aql, bind_vars=bind_vars, collection_binds={"@collection": collection}
-        )
+        return await self._execute_aql(ctx, aql, bind_vars=bind_vars, collection_binds={"@collection": collection})
 
     async def execute_pattern(
         self,
@@ -493,9 +483,7 @@ class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
         aql = templates.get(self.dialect) or getattr(pattern, "query_template", None)
         if not aql:
             raise TraversalPatternUnavailable(f"Pattern has no {self.dialect!r} query template")
-        return await self._execute_aql(
-            ctx, aql, bind_vars=dict(params), collection_binds=dict(collection_binds or {})
-        )
+        return await self._execute_aql(ctx, aql, bind_vars=dict(params), collection_binds=dict(collection_binds or {}))
 
     async def execute_query(self, ctx: TenantContext, query: DynamicQuery) -> list[dict[str, Any]]:
         """Execute a dynamic query bound to the AQL dialect.
@@ -511,9 +499,7 @@ class ArangoOntologyGraphStore(GraphDocumentStore, OntologyTraversalStore):
             QueryDialectMismatch: If ``query.dialect`` is not ``aql``.
         """
         if query.dialect != self.dialect:
-            raise QueryDialectMismatch(
-                f"Store dialect is {self.dialect!r}, query dialect is {query.dialect!r}"
-            )
+            raise QueryDialectMismatch(f"Store dialect is {self.dialect!r}, query dialect is {query.dialect!r}")
         return await self._execute_aql(
             ctx, query.text, bind_vars=dict(query.bind_vars), collection_binds=dict(query.collection_binds)
         )

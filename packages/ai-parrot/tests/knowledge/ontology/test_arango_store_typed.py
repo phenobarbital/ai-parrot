@@ -45,9 +45,7 @@ def test_contracts_and_aliases() -> None:
 @pytest.mark.asyncio
 async def test_is_reachable_aql_verbatim() -> None:
     store, client = _store(["employees/2"])
-    assert await store.is_reachable(
-        CTX, "employees/1", "employees/2", edge_collection="reports_to", max_depth=10
-    )
+    assert await store.is_reachable(CTX, "employees/1", "employees/2", edge_collection="reports_to", max_depth=10)
     assert client.calls == [
         (
             "FOR v IN 1..10 OUTBOUND @asker_id @@edge_collection FILTER v._id == @target_id RETURN v._id",
@@ -90,9 +88,7 @@ async def test_find_by_field_with_filters() -> None:
     store, client = _store()
     await store.find_by_field(CTX, "employees", "name", "Ann", filters={"department": "ops"}, limit=5)
     aql, binds = client.calls[0]
-    assert aql == (
-        "FOR e IN @@collection FILTER e.name == @mention FILTER e.department == @filter_0 LIMIT 5 RETURN e"
-    )
+    assert aql == ("FOR e IN @@collection FILTER e.name == @mention FILTER e.department == @filter_0 LIMIT 5 RETURN e")
     assert binds["filter_0"] == "ops"
     with pytest.raises(ValueError):
         await store.find_by_field(CTX, "employees", "name; x", "Ann")
