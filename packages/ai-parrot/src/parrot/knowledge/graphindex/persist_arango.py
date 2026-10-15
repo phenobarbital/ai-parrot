@@ -27,6 +27,7 @@ crash mid-apply is at least visible in the audit trail.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import uuid
 from collections import defaultdict
@@ -211,9 +212,23 @@ class ArangoPersistence:
         self._tenant_locks = defaultdict(asyncio.Lock)
         # Tenants whose commit-log collections have been ensured.
         self._commit_ready: set[str] = set()
+        # Set by ``create_arango_persistence`` when it opened the client itself.
+        self._owned_client: Any = None
 
     async def close(self) -> None:
-        """No-op — the store owns its client."""
+        """Close the client only when this persistence created it.
+
+        A caller-supplied ``graph_store`` (``_owned_client is None``) keeps
+        ownership of its own client and is never closed here.
+        """
+        client, self._owned_client = self._owned_client, None
+        if client is None:
+            return
+        closer = getattr(client, "close", None) or getattr(client, "disconnect", None)
+        if closer is not None:
+            result = closer()
+            if inspect.isawaitable(result):
+                await result
 
     # ------------------------------------------------------------------
     # Public interface
@@ -867,4 +882,7 @@ async def create_arango_persistence(
             client = AsyncDB("arangodb", params=arango_params)
             await client.connection()
         graph_store = ArangoOntologyGraphStore(arango_client=client)
+        persistence = ArangoPersistence(graph_store)
+        persistence._owned_client = client
+        return persistence
     return ArangoPersistence(graph_store)

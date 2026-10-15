@@ -147,8 +147,11 @@ async def build_novelty_scorer(root: Path, config: WikiProjectConfig, store: Bas
 
     async def _build_evaluator() -> Any:
         persistence = await persistence_for_project(config, root)
-        ctx = make_stub_tenant_context(config.wiki_name)
-        nodes, edges = await persistence.load_graph(ctx)
+        try:
+            ctx = make_stub_tenant_context(config.wiki_name)
+            nodes, edges = await persistence.load_graph(ctx)
+        finally:
+            await persistence.close()
         assembler = GraphAssembler(tenant_id=config.wiki_name)
         for node in nodes:
             assembler.add_node(node)

@@ -288,45 +288,51 @@ async def build_graph_memory_toolkit(
         backend,
         **_backend_options(backend, db_dir=db_dir, dsn=dsn, schema=schema, backend_explicit=backend_explicit),
     )
-    publisher = GraphPublisher(persistence, ctx)
+    # Ownership: on success the toolkit keeps writing through ``persistence`` (via
+    # the publisher), so it stays open; it is closed only if a later step raises.
+    try:
+        publisher = GraphPublisher(persistence, ctx)
 
-    nodes, edges = await persistence.load_graph(ctx)
+        nodes, edges = await persistence.load_graph(ctx)
 
-    assembler = GraphAssembler(tenant_id=tenant_id)
-    for node in nodes:
-        assembler.add_node(node)
-    skipped_edges = 0
-    for edge in edges:
-        if assembler.add_edge(edge) is None:
-            skipped_edges += 1
-    if skipped_edges:
-        logger.warning(
-            "build_graph_memory_toolkit: %d edges skipped (missing endpoints)",
-            skipped_edges,
+        assembler = GraphAssembler(tenant_id=tenant_id)
+        for node in nodes:
+            assembler.add_node(node)
+        skipped_edges = 0
+        for edge in edges:
+            if assembler.add_edge(edge) is None:
+                skipped_edges += 1
+        if skipped_edges:
+            logger.warning(
+                "build_graph_memory_toolkit: %d edges skipped (missing endpoints)",
+                skipped_edges,
+            )
+
+        from parrot.embeddings.graphindex import attach_hot_index
+
+        embedder = embedder or HashingGraphEmbedder(dimension=dimension)
+        if nodes:
+            await embedder.embed_nodes(nodes)
+
+        toolkit = GraphIndexToolkit(
+            graph=assembler.graph,
+            **attach_hot_index(embedder),
+            node_map=dict(assembler._node_index_map),
+            client=client,
+            assembler=assembler,
+            embedder=embedder,
+            nodes=nodes,
+            publisher=publisher,
+            agent_id=agent_id,
+            run_id=run_id,
         )
-
-    from parrot.embeddings.graphindex import attach_hot_index
-
-    embedder = embedder or HashingGraphEmbedder(dimension=dimension)
-    if nodes:
-        await embedder.embed_nodes(nodes)
-
-    toolkit = GraphIndexToolkit(
-        graph=assembler.graph,
-        **attach_hot_index(embedder),
-        node_map=dict(assembler._node_index_map),
-        client=client,
-        assembler=assembler,
-        embedder=embedder,
-        nodes=nodes,
-        publisher=publisher,
-        agent_id=agent_id,
-        run_id=run_id,
-    )
-    logger.info(
-        "build_graph_memory_toolkit: tenant %r — %d nodes, %d edges loaded",
-        tenant_id,
-        len(nodes),
-        len(edges),
-    )
-    return toolkit
+        logger.info(
+            "build_graph_memory_toolkit: tenant %r — %d nodes, %d edges loaded",
+            tenant_id,
+            len(nodes),
+            len(edges),
+        )
+        return toolkit
+    except BaseException:
+        await persistence.close()
+        raise
