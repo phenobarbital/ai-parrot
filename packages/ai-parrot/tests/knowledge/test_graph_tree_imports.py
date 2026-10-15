@@ -59,7 +59,7 @@ def _imported_modules(node: ast.stmt, path: Path) -> list[str]:
         if node.level:
             base = _package_of(path)
             base = base[: len(base) - (node.level - 1)] if node.level > 1 else base
-            module = ".".join([*base, *( [node.module] if node.module else [])])
+            module = ".".join([*base, *([node.module] if node.module else [])])
         else:
             module = node.module or ""
         names = [f"{module}.{alias.name}" for alias in node.names]
@@ -120,8 +120,11 @@ def test_scanner_flags_eager_and_exempts_lazy(tmp_path: Path) -> None:
     )
     tree = ast.parse(body)
     flagged = [
-        m for n in _walk_executable(tree.body) if isinstance(n, (ast.Import, ast.ImportFrom))
-        for m in _imported_modules(n, sample) if _is_forbidden(m)
+        m
+        for n in _walk_executable(tree.body)
+        if isinstance(n, (ast.Import, ast.ImportFrom))
+        for m in _imported_modules(n, sample)
+        if _is_forbidden(m)
     ]
     assert flagged == ["parrot_tools.y"]
 

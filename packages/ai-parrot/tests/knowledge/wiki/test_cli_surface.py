@@ -37,8 +37,8 @@ def test_cli_surface_matches_golden() -> None:
         GOLDEN.parent.mkdir(parents=True, exist_ok=True)
         GOLDEN.write_text(json.dumps(current, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     baseline = json.loads(GOLDEN.read_text(encoding="utf-8"))
-    assert sorted(current) == sorted(baseline), (
-        f"commands added={sorted(set(current) - set(baseline))} removed={sorted(set(baseline) - set(current))}"
-    )
+    assert sorted(current) == sorted(
+        baseline
+    ), f"commands added={sorted(set(current) - set(baseline))} removed={sorted(set(baseline) - set(current))}"
     for name, entry in baseline.items():
         assert current[name] == entry, f"{name}: {current[name]} != {entry}"
