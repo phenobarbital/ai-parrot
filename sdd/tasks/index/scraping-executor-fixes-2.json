@@ -1,0 +1,32 @@
+{
+  "feature": "scraping-executor-fixes-2",
+  "feature_id": "FEAT-684",
+  "spec": "sdd/specs/scraping-executor-fixes-2.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-15T20:05:00Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4364",
+      "slug": "executor-xpath-escape-clear-first-submit",
+      "title": "Escape text-selector XPath, honour focused clear_first, strip submit pseudos",
+      "feature_id": "FEAT-684",
+      "feature": "scraping-executor-fixes-2",
+      "spec": "sdd/specs/scraping-executor-fixes-2.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "Single task; touches only executor.py and test_executor_action_gaps.py.",
+      "discovered_from": "issue:28c2e9573ce2",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4364-executor-xpath-escape-clear-first-submit.md"
+    }
+  ]
+}
