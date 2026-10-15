@@ -26,6 +26,7 @@ Complete M2 typing/screenshot behavior and remaining M3 unit/integration coverag
 | `packages/ai-parrot-tools/tests/scraping/test_executor_screenshot_gaps.py` | CREATE | Type/screenshot unit tests |
 | `packages/ai-parrot-tools/tests/scraping/test_browsing_action_sequence.py` | CREATE | Real-browser sequence test |
 | `packages/ai-parrot-tools/tests/scraping/fixtures/action_gaps.html` | CREATE | Local browser fixture |
+| `packages/ai-parrot-tools/tests/test_path_confinement_pa14.py` | MODIFY | Fake driver `screenshot` accepts `full_page` (regression from screenshot signature) |
 
 ## Codebase Contract (Anti-Hallucination)
 
