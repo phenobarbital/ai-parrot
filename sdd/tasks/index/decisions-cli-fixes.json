@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-15T12:14:46+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-15T12:19:04+00:00",
   "tasks": [
     {
       "id": "TASK-4349",
@@ -14,15 +14,16 @@
       "feature_id": "FEAT-675",
       "feature": "decisions-cli-fixes",
       "spec": "sdd/specs/decisions-cli-fixes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "assigned_to": null,
       "started_at": "2026-10-15T12:16:00+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4349-decisions-cli-ns-write-e2e.md"
+      "completed_at": "2026-10-15T12:19:04+00:00",
+      "file": "sdd/tasks/completed/TASK-4349-decisions-cli-ns-write-e2e.md",
+      "verification": "verified"
     }
   ]
 }
