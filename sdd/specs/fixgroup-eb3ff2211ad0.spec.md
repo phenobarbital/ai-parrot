@@ -47,7 +47,8 @@ for page reads; it is not sufficient on its own because of (1).
 - In `engine == "obscura"` mode only, `wait_for_load_state("load" |
   "domcontentloaded")` and `wait_for_navigation()` poll `document.readyState`
   through main-world `page.evaluate` instead of waiting on lifecycle events.
-- In `engine == "obscura"` mode only, `get_page_source()` and `get_text()`
+- In `engine == "obscura"` mode only, `get_page_source()`, `get_text()` and
+  `screenshot()` (via raw CDP `Page.captureScreenshot`)
   fall back to a main-world `page.evaluate` read when the Playwright call fails
   with a non-timeout error.
 - The default `engine == "playwright"` path is unchanged byte for byte.
@@ -135,3 +136,4 @@ None.
 
 ## Revision History
 - 2026-10-15: initial (sdd-fix lane for issue:b09cc5d3389d).
+- 2026-10-15: `screenshot()` CDP fallback added during implementation (TASK-4367).
