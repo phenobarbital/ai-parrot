@@ -141,4 +141,11 @@ TextMatcher.check_text_match(required_text, visual_features, match_type="contain
 
 ## Completion Note
 
-_(fill on completion)_
+Implemented as specified (commit e168ddc9f).
+- `_entity_texts` now returns the collected features as read. `_rule_text` prepares them per requirement with `_requirement_features`:
+  - `regex` and `exact`: original text (NFKC only);
+  - case-sensitive `contains`: normalized with the case kept;
+  - default (`contains` without case): `normalize_text`, exactly as before.
+- `_rule_visual` normalizes its own input, so the visual score is unchanged. `normalize_text` keeps its output; it now delegates to `_normalize(text, keep_case)`.
+- Behaviour change worth knowing: a case-insensitive `regex` now runs on the original text (with IGNORECASE) instead of the normalized one, so a pattern written against the stripped form (e.g. `scan done`) no longer matches `Scan & Done`. No stored row or test uses a regex today.
+- Tests: 10 new in `test_text_requirements_case.py`; the planogram_cycle suite passes except the 12 pre-existing, unrelated failures (pillow pin in `test_ocr_reader.py`, ink-wall example needing the git-ignored `examples/planogram/pipelines/`).
