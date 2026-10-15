@@ -482,7 +482,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -492,8 +492,9 @@
       "parallelism_notes": "needs SourceCoherencePersistence implementations (file_hashes) from TASK-4319 (persist_sqlite.py / persist_postgres.py)",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4322-capability-consumers.md"
+      "completed_at": "2026-10-15T12:01:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4322-capability-consumers.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4323",
