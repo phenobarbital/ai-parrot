@@ -180,10 +180,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: codex gpt-5.6-terra (attempt d31a3a22), consolidated by sdd-worker
+**Date**: 2026-10-15
+**Notes**: test_mcp_manifest_golden.py (21 tests: 10 configurations x framework/sdk transports against one golden each, plus a frozen minimal tool surface) + README with the UPDATE_GOLDEN=1 regeneration recipe + ten generated golden JSONs. The fidelity gate flagged the ten JSONs as undeclared (spec gap: the README itself says one JSON per configuration is written); they were committed and the task note amended. Engine quirk: the merge-tier selector passes every changed file under tests/ (README.md, *.json) to pytest as a target, so the engine run exits 4 "not found"; the real tests were run directly instead: golden + transport selector = 25 passed. No review corrections.
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: ten golden JSON files added to the declared scope.

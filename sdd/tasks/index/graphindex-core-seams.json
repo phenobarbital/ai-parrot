@@ -350,7 +350,7 @@
       "feature_id": "FEAT-540",
       "feature": "graphindex-core-seams",
       "spec": "sdd/specs/graphindex-core-seams.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -360,8 +360,9 @@
       "parallelism_notes": "exclusive: regenerates golden files under tests/knowledge/wiki/golden/ against a clean tree; needs both transports from TASK-4315",
       "assigned_to": null,
       "started_at": "2026-10-14T22:00:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4316-wiki-mcp-golden-manifests.md"
+      "completed_at": "2026-10-15T11:55:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4316-wiki-mcp-golden-manifests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4317",
