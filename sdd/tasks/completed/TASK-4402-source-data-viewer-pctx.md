@@ -150,3 +150,51 @@ Verify the Codebase Contract before editing. Touch only the two listed files.
 Do not change `resolve_surface_access` or `_refresh`.
 
 ## Completion Note
+
+**Status**: done (verified) — 2026-10-16. Commit `e571aa804`.
+
+### What changed
+`_source_data` now builds the pctx from `user_id or record.user_id`. The
+`share_only` predicate is gone: it keyed on *how* access was granted, so any
+authenticated session user presenting a valid share token inherited the
+owner's PBAC. Keying on authentication matches FEAT-636 §2 / §3 M5 / AC8
+("no session user") and removes the duplicated `scope_grants` re-derivation,
+which is why `resolve_surface_access` did not need widening after all.
+
+### Vulnerability demonstrated, then closed
+The new `test_authenticated_share_token_holder_uses_own_pctx` was run against
+the unfixed handler first and failed with:
+
+```
+assert service.fetch_source.call_args.kwargs["pctx"].user_id == "viewer-9"
+E  AssertionError: assert 'owner-1' == 'viewer-9'
+```
+
+That is the escalation itself: `viewer-9` executing as `owner-1`. It passes
+after the change.
+
+### Test corrected, not just added
+`test_share_only_viewer_uses_owner_pctx` asserted the vulnerable behavior
+(authenticated `viewer-9` + token → `owner-1`), which is why review missed the
+defect. It is renamed `test_anonymous_share_viewer_uses_owner_pctx` and now
+passes `user_id=None`, the condition the spec actually requires. The owner and
+scope-granted tests were left untouched so they still pin the unchanged paths.
+
+### Out of scope, deliberately
+`_refresh` / `_refresh_linked` still use the owner's pctx unconditionally.
+That is documented at `ui_surfaces.py:660-661` as a spec Known Risk
+("Share-bearer refresh runs with the OWNER's PermissionContext"), not an
+oversight, and refresh re-runs the owner's recipe by design. **It is the same
+class of exposure, so if that Known Risk is ever revisited this handler is the
+place to start** — worth a separate ledger issue if the risk is no longer
+accepted.
+
+### Evidence
+- `pytest .../test_ui_surfaces_source_data.py -q` → **12 passed**.
+- `ruff check` on both touched files → clean.
+- `pytest packages/ai-parrot-server/tests/handlers/ -k "ui_surfaces or a2ui"`
+  → 143 passed, 2 failed. Both failures are in `test_agent_a2ui_stream.py`
+  (`test_chunked_wire_contract_unchanged`,
+  `test_a2ui_envelope_added_to_final_stream_dict`) and were verified failing
+  identically with my two files reverted to HEAD — **pre-existing**.
+
