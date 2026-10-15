@@ -187,9 +187,9 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-15T00:22:22+00:00",
       "completed_at": null,
       "discovered_from": "issue:93f2022d934a"
     },
@@ -208,9 +208,9 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-15T00:22:22+00:00",
       "completed_at": null,
       "discovered_from": "issue:93f2022d934a"
     },
@@ -230,9 +230,9 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-15T00:22:22+00:00",
       "completed_at": null,
       "discovered_from": "issue:93f2022d934a"
     },
@@ -253,9 +253,9 @@
       "feature_id": "FEAT-672",
       "feature": "github-reviewer-local-repo-wiki",
       "spec": "sdd/specs/github-reviewer-local-repo-wiki.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-15T00:22:22+00:00",
       "completed_at": null,
       "discovered_from": "issue:93f2022d934a"
     }
