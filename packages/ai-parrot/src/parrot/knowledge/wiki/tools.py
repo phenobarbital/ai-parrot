@@ -987,6 +987,8 @@ class IngestBatchReport(BaseModel):
 
 
 SYNC_PULL_MAX = 2000
+SYNC_PUSH_MAX_PAGES = 200
+SYNC_PUSH_MAX_BYTES = 1_048_576
 
 
 class SyncPagesInput(BaseModel):
@@ -1096,14 +1098,28 @@ class WikiIngestBatchTool(AbstractTool):
 
 
 class WikiSyncPushTool(AbstractTool):
-    """Merge remote sync data used by `wikitoolkit sync` in remote mode; not for agents."""
+    """Merge remote sync data used by `wikitoolkit sync` in remote mode; not for agents.
+
+    At most 200 pages and 1 MiB per call; the client chunks larger pushes.
+    """
 
     name = "wiki_sync_push"
     args_schema = SyncPagesInput
 
-    def __init__(self, store: BaseWikiStore, wiki_name: str):
+    def __init__(
+        self,
+        store: BaseWikiStore,
+        wiki_name: str,
+        root: Path | None = None,
+        config: WikiProjectConfig | None = None,
+    ):
         super().__init__()
         self._store, self._wiki_name = store, wiki_name
+        self._root, self._config = root, config
+
+    @staticmethod
+    def _error(message: str) -> ToolResult:
+        return ToolResult(success=False, status="error", result=None, error=message)
 
     async def _execute(
         self,
@@ -1112,9 +1128,36 @@ class WikiSyncPushTool(AbstractTool):
         **_unused: Any,
     ) -> ToolResult:
         """Merge a client memory slice into the server wiki plane."""
+        pages = [page if isinstance(page, WikiPageRecord) else WikiPageRecord.model_validate(page) for page in pages]
+        edges = list(edges or [])
+        # Validate everything BEFORE taking the lock or writing anything.
+        if len(pages) > SYNC_PUSH_MAX_PAGES:
+            return self._error(f"at most {SYNC_PUSH_MAX_PAGES} pages per call; chunk the push")
+        payload = {"pages": [p.model_dump(mode="json") for p in pages], "edges": edges}
+        if len(json.dumps(payload).encode()) > SYNC_PUSH_MAX_BYTES:
+            return self._error("payload too large (max 1 MiB); chunk the push")
+        if self._root is None or self._config is None:
+            return ToolResult(result=await self._merge(pages, edges))
+        try:
+            # Same writer discipline as wiki_ingest_batch: asyncio lock in-process,
+            # cross-process flock entered/left in a worker thread.
+            async with _INGEST_LOCK:
+                cm = wiki_write_lock(self._config.storage_path(self._root), timeout=self._config.sqlite_busy_timeout)
+                acquired = await asyncio.to_thread(cm.__enter__)
+                try:
+                    if not acquired:
+                        return self._error("busy: wiki writer lock is held by another process")
+                    report = await self._merge(pages, edges)
+                finally:
+                    await asyncio.to_thread(cm.__exit__, None, None, None)
+        except WikiStoreBusy as exc:
+            return self._error(f"busy: {exc}")
+        return ToolResult(result=report)
+
+    async def _merge(self, pages: list[WikiPageRecord], edges: list[tuple[str, str, str, str]]) -> dict[str, Any]:
+        """Apply the validated pages and edges; the caller holds the writer lock when it has one."""
         from parrot.knowledge.wiki.sync import SyncReport, _merge_body, _record_from
 
-        pages = [page if isinstance(page, WikiPageRecord) else WikiPageRecord.model_validate(page) for page in pages]
         # Apply last-writer-wins directly against the server store. A staging
         # store is not used: it would re-stamp ``updated_at`` with "now" and
         # defeat the comparison against the caller's own timestamps.
@@ -1142,12 +1185,12 @@ class WikiSyncPushTool(AbstractTool):
             await self._store.upsert_pages([_record_from(page, merged_body)])
         to_write = [
             (edge[0], edge[1], edge[2], "asserted")
-            for edge in (edges or [])
+            for edge in edges
             if edge[0] in concept_ids or edge[1] in concept_ids
         ]
         if to_write:
             await self._store.add_edges(to_write)
-        return ToolResult(result=report.model_dump())
+        return report.model_dump()
 
 
 class WikiSyncPullTool(AbstractTool):
@@ -1213,7 +1256,7 @@ def create_bulk_tools(store: BaseWikiStore, root: Path, config: WikiProjectConfi
     return [
         WikiPageHashesTool(store),
         WikiIngestBatchTool(store, root, config),
-        WikiSyncPushTool(store, config.wiki_name),
+        WikiSyncPushTool(store, config.wiki_name, root, config),
         WikiSyncPullTool(store),
     ]
 

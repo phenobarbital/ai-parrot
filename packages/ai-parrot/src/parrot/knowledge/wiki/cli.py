@@ -4722,6 +4722,7 @@ def sync_push_cmd(path_: str | None, target_env: str, dry_run: bool) -> None:
         click.echo(
             f"pushed: created={result.get('created', 0)} updated={result.get('updated', 0)} "
             f"skipped-older={result.get('skipped_older', 0)}"
+            + (f" rejected={len(result['rejected'])}" if result.get("rejected") else "")
         )
         return
 
