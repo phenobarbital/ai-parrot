@@ -15,13 +15,14 @@
       "feature_id": "FEAT-678",
       "feature": "fixgroup-fa16a91bd3ea",
       "spec": "sdd/specs/fixgroup-fa16a91bd3ea.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": false,
       "assigned_to": null,
-      "file": "sdd/tasks/active/TASK-4353-chunked-sync-push.md"
+      "file": "sdd/tasks/active/TASK-4353-chunked-sync-push.md",
+      "started_at": "2026-10-15T12:30:17+00:00"
     }
   ]
 }
