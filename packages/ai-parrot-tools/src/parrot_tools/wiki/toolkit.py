@@ -142,23 +142,17 @@ class LLMWikiToolkit(AbstractToolkit):
         # namespaces bring their own manifests, which this toolkit never
         # writes. Keep keying it on the config, as before.
         sources_dir = config.storage_dir / "sources"
-        if config.storage_backend == "sqlite":
-            self._sources = SourceCollectionManager(sources_dir, db_path=config.storage_dir / "wiki.db")
-        elif config.storage_backend == "arangodb":
-            # arango_store (not arango_db): __init__ is synchronous and
-            # cannot await self._store.initialize() itself — the manager
-            # lazily initializes it (idempotent) on first actual use.
-            # With an injected federated store, the manifest still lives
-            # in the LOCAL plane's SOURCES collection — reach through to
-            # it rather than silently degrading to a JSON manifest that
-            # would report every source as missing.
-            arango_local = self._local_arango_store()
-            if arango_local is None:
-                self._sources = SourceCollectionManager(sources_dir, backend="json")
-            else:
-                self._sources = SourceCollectionManager(sources_dir, backend="arangodb", arango_store=arango_local)
-        else:
-            self._sources = SourceCollectionManager(sources_dir, backend="json")
+        arango_local = self._local_arango_store()
+        source_backend = {
+            "sqlite": "sqlite",
+            "arangodb": "arangodb" if arango_local is not None else "json",
+        }.get(config.storage_backend, "json")
+        self._sources = SourceCollectionManager(
+            sources_dir,
+            db_path=config.storage_dir / "wiki.db",
+            backend=source_backend,
+            arango_store=arango_local,
+        )
         self._bookkeeper = WikiBookkeeper()
         self._search = WikiCombinedSearch(
             pageindex_toolkit,

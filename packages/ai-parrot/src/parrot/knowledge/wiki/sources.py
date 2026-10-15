@@ -34,16 +34,11 @@ import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator, Literal
+from typing import Any, Iterator
 from urllib.parse import urlparse
 
 from parrot.knowledge.wiki.models import SourceManifestEntry
-
-#: ``wiki_sources`` collection name — matches
-#: ``parrot.knowledge.wiki.arango_store.SOURCES_COLLECTION``. Duplicated
-#: as a literal (rather than imported) so lightweight sqlite/json
-#: consumers of this module never pull in ``asyncdb``.
-_ARANGO_SOURCES_COLLECTION = "wiki_sources"
+from parrot.knowledge.wiki.sources_backend import create_source_backend
 
 #: The one definition of the sqlite ``sources`` upsert, shared by the
 #: single-row (``_upsert``) and batch (``_upsert_many``) writers so the
@@ -145,7 +140,7 @@ class SourceCollectionManager:
         self,
         sources_dir: Path,
         db_path: Path | None = None,
-        backend: Literal["sqlite", "json", "arangodb"] = "sqlite",
+        backend: str = "sqlite",
         arango_db: Any | None = None,
         arango_store: Any | None = None,
         *,
@@ -181,8 +176,6 @@ class SourceCollectionManager:
                 ``backend="arangodb"`` is given without ``arango_db``
                 or ``arango_store``.
         """
-        if backend not in ("sqlite", "json", "arangodb"):
-            raise ValueError(f"Unknown sources backend {backend!r} — expected 'sqlite'," " 'json', or 'arangodb'")
         self.sources_dir: Path = Path(sources_dir)
         self.sources_dir.mkdir(parents=True, exist_ok=True)
         self.backend: str = backend
@@ -193,8 +186,15 @@ class SourceCollectionManager:
         self._manifest: dict[str, SourceManifestEntry] = {}
         self._arango_db: Any | None = arango_db
         self._arango_store: Any | None = arango_store
+        self._backend_name = backend
         self._arango_loop: asyncio.AbstractEventLoop | None = None
-        if backend == "arangodb":
+        self._backend = create_source_backend(
+            backend,
+            manager=self,
+            arango_db=arango_db,
+            arango_store=arango_store,
+        )
+        if backend in {"arangodb"}:
             if arango_db is None and arango_store is None:
                 raise ValueError(
                     "SourceCollectionManager(backend='arangodb') requires"
@@ -211,7 +211,7 @@ class SourceCollectionManager:
                 self._arango_loop = asyncio.get_running_loop()
             except RuntimeError:
                 self._arango_loop = None
-        if backend == "sqlite":
+        if backend in {"sqlite"}:
             from parrot.knowledge.wiki.store import WIKI_SCHEMA_SQL
 
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -219,7 +219,7 @@ class SourceCollectionManager:
                 conn.executescript(WIKI_SCHEMA_SQL)
             self._migrate_sources_columns()
             self._migrate_json_manifest()
-        elif backend == "arangodb":
+        elif backend in {"arangodb"}:
             pass  # validated above; connection resolved lazily at first use
         else:
             self._load_manifest()
@@ -316,9 +316,9 @@ class SourceCollectionManager:
         if not uris:
             return {}
         wanted = set(uris)
-        if self.backend == "json":
+        if self._backend_name == "json":
             return {e.source_uri: e for e in self._manifest.values() if e.source_uri in wanted}
-        if self.backend == "arangodb":
+        if self._backend_name == "arangodb":
             rows = self._run_async(
                 self._arango_query(
                     "FOR doc IN @@collection FILTER doc.source_uri IN @uris RETURN doc",
@@ -356,9 +356,9 @@ class SourceCollectionManager:
         if not source_ids:
             return {}
         wanted = set(source_ids)
-        if self.backend == "json":
+        if self._backend_name == "json":
             return {sid: e for sid, e in self._manifest.items() if sid in wanted}
-        if self.backend == "arangodb":
+        if self._backend_name == "arangodb":
             rows = self._run_async(
                 self._arango_query(
                     "FOR doc IN @@collection FILTER doc._key IN @keys RETURN doc",
@@ -503,9 +503,9 @@ class SourceCollectionManager:
             A list of :class:`SourceManifestEntry` objects, one per
             registered source, in insertion order.
         """
-        if self.backend == "json":
+        if self._backend_name == "json":
             return list(self._manifest.values())
-        if self.backend == "arangodb":
+        if self._backend_name == "arangodb":
             return self._run_async(self._async_list_sources())
         with self._connect() as conn:
             rows = conn.execute("SELECT * FROM sources ORDER BY rowid").fetchall()
@@ -521,9 +521,9 @@ class SourceCollectionManager:
         Returns:
             The :class:`SourceManifestEntry`, or ``None`` if not found.
         """
-        if self.backend == "json":
+        if self._backend_name == "json":
             return self._manifest.get(source_id)
-        if self.backend == "arangodb":
+        if self._backend_name == "arangodb":
             return self._run_async(self._async_get_source(source_id))
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM sources WHERE source_id = ?", (source_id,)).fetchone()
@@ -782,14 +782,14 @@ class SourceCollectionManager:
             ``True`` if the entry existed and was removed; ``False`` if
             ``source_id`` was not present.
         """
-        if self.backend == "json":
+        if self._backend_name == "json":
             if source_id not in self._manifest:
                 return False
             del self._manifest[source_id]
             self._save_manifest()
             self.logger.debug("Source removed: source_id=%s", source_id)
             return True
-        if self.backend == "arangodb":
+        if self._backend_name == "arangodb":
             removed = self._run_async(self._async_remove_source(source_id))
             if removed:
                 self.logger.debug("Source removed: source_id=%s", source_id)
@@ -830,12 +830,12 @@ class SourceCollectionManager:
             The matching :class:`SourceManifestEntry`, or ``None`` if no
             row carries that ``external_id``.
         """
-        if self.backend == "json":
+        if self._backend_name == "json":
             for entry in self._manifest.values():
                 if entry.external_id == external_id:
                     return entry
             return None
-        if self.backend == "arangodb":
+        if self._backend_name == "arangodb":
             return self._run_async(self._async_find_by_external_id(external_id))
         with self._connect() as conn:
             row = conn.execute(
@@ -857,13 +857,13 @@ class SourceCollectionManager:
         if not external_ids:
             return {}
         wanted = set(external_ids)
-        if self.backend == "json":
+        if self._backend_name == "json":
             return {
                 e.external_id: e
                 for e in self._manifest.values()
                 if e.external_id is not None and e.external_id in wanted
             }
-        if self.backend == "arangodb":
+        if self._backend_name == "arangodb":
             rows = self._run_async(
                 self._arango_query(
                     "FOR doc IN @@collection FILTER doc.external_id IN @ids RETURN doc",
@@ -898,11 +898,11 @@ class SourceCollectionManager:
             Matching entries; rows with a ``None`` external_id or a
             different prefix are excluded.
         """
-        if self.backend == "json":
+        if self._backend_name == "json":
             return [
                 e for e in self._manifest.values() if e.external_id is not None and e.external_id.startswith(prefix)
             ]
-        if self.backend == "arangodb":
+        if self._backend_name == "arangodb":
             rows = self._run_async(
                 self._arango_query(
                     "FOR doc IN @@collection"
@@ -1063,11 +1063,11 @@ class SourceCollectionManager:
 
     def _upsert(self, entry: SourceManifestEntry) -> None:
         """Insert or replace one source entry in the active backend."""
-        if self.backend == "json":
+        if self._backend_name == "json":
             self._manifest[entry.source_id] = entry
             self._save_manifest()
             return
-        if self.backend == "arangodb":
+        if self._backend_name == "arangodb":
             self._run_async(self._async_upsert(entry))
             return
         with self._write("upsert_source") as conn:
@@ -1085,12 +1085,12 @@ class SourceCollectionManager:
         """
         if not entries:
             return
-        if self.backend == "json":
+        if self._backend_name == "json":
             for entry in entries:
                 self._manifest[entry.source_id] = entry
             self._save_manifest()
             return
-        if self.backend == "arangodb":
+        if self._backend_name == "arangodb":
             self._run_async(self._async_upsert_many(entries))
             return
         with self._write("upsert_sources") as conn:
@@ -1203,12 +1203,12 @@ class SourceCollectionManager:
 
     def _find_id_by_uri(self, source_uri: str) -> str | None:
         """Look up an existing source ID by URI (internal implementation)."""
-        if self.backend == "json":
+        if self._backend_name == "json":
             for sid, entry in self._manifest.items():
                 if entry.source_uri == source_uri:
                     return sid
             return None
-        if self.backend == "arangodb":
+        if self._backend_name == "arangodb":
             return self._run_async(self._async_find_id_by_uri(source_uri))
         with self._connect() as conn:
             row = conn.execute(
@@ -1527,6 +1527,92 @@ class SourceCollectionManager:
             len(data),
             self.manifest_path,
         )
+
+
+SourceCollectionManager._legacy_upsert = SourceCollectionManager._upsert
+SourceCollectionManager._legacy_upsert_many = SourceCollectionManager._upsert_many
+SourceCollectionManager._legacy_list_sources = SourceCollectionManager.list_sources
+SourceCollectionManager._legacy_get_source = SourceCollectionManager.get_source
+SourceCollectionManager._legacy_remove_source = SourceCollectionManager.remove_source
+SourceCollectionManager._legacy_find_id_by_uri = SourceCollectionManager._find_id_by_uri
+SourceCollectionManager._legacy_find_by_external_id = SourceCollectionManager.find_by_external_id
+SourceCollectionManager._legacy_find_by_uris = SourceCollectionManager.find_entries_by_uris
+SourceCollectionManager._legacy_find_by_ids = SourceCollectionManager.find_entries_by_ids
+SourceCollectionManager._legacy_find_by_external_ids = SourceCollectionManager.find_entries_by_external_ids
+SourceCollectionManager._legacy_list_by_external_prefix = SourceCollectionManager.list_by_external_prefix
+
+
+def _run_source_operation(manager: SourceCollectionManager, operation: Any, *args: Any) -> Any:
+    """Execute one registered source backend operation through the sync bridge."""
+    return manager._run_async(operation(*args))
+
+
+def _upsert(self: SourceCollectionManager, entry: SourceManifestEntry) -> None:
+    """Insert or replace one source entry through the configured backend."""
+    _run_source_operation(self, self._backend.upsert, entry)
+
+
+def _upsert_many(self: SourceCollectionManager, entries: list[SourceManifestEntry]) -> None:
+    """Insert or replace source entries through the configured backend."""
+    _run_source_operation(self, self._backend.upsert_many, entries)
+
+
+def _list_sources(self: SourceCollectionManager) -> list[SourceManifestEntry]:
+    """Return source entries through the configured backend."""
+    return _run_source_operation(self, self._backend.list_sources)
+
+
+def _get_source(self: SourceCollectionManager, source_id: str) -> SourceManifestEntry | None:
+    """Return one source entry through the configured backend."""
+    return _run_source_operation(self, self._backend.get_source, source_id)
+
+
+def _remove_source(self: SourceCollectionManager, source_id: str) -> bool:
+    """Remove one source entry through the configured backend."""
+    return _run_source_operation(self, self._backend.remove_source, source_id)
+
+
+def _find_id_by_uri(self: SourceCollectionManager, source_uri: str) -> str | None:
+    """Find a source id through the configured backend."""
+    return _run_source_operation(self, self._backend.find_id_by_uri, source_uri)
+
+
+def _find_by_external_id(self: SourceCollectionManager, external_id: str) -> SourceManifestEntry | None:
+    """Find one source entry through the configured backend."""
+    return _run_source_operation(self, self._backend.find_by_external_id, external_id)
+
+
+def _find_by_uris(self: SourceCollectionManager, uris: list[str]) -> dict[str, SourceManifestEntry]:
+    """Find source entries by URI through the configured backend."""
+    return _run_source_operation(self, self._backend.find_by_uris, uris)
+
+
+def _find_by_ids(self: SourceCollectionManager, source_ids: list[str]) -> dict[str, SourceManifestEntry]:
+    """Find source entries by id through the configured backend."""
+    return _run_source_operation(self, self._backend.find_by_ids, source_ids)
+
+
+def _find_by_external_ids(self: SourceCollectionManager, external_ids: list[str]) -> dict[str, SourceManifestEntry]:
+    """Find source entries by external id through the configured backend."""
+    return _run_source_operation(self, self._backend.find_by_external_ids, external_ids)
+
+
+def _list_by_external_prefix(self: SourceCollectionManager, prefix: str) -> list[SourceManifestEntry]:
+    """List source entries by external-id prefix through the configured backend."""
+    return _run_source_operation(self, self._backend.list_by_external_prefix, prefix)
+
+
+SourceCollectionManager._upsert = _upsert
+SourceCollectionManager._upsert_many = _upsert_many
+SourceCollectionManager.list_sources = _list_sources
+SourceCollectionManager.get_source = _get_source
+SourceCollectionManager.remove_source = _remove_source
+SourceCollectionManager._find_id_by_uri = _find_id_by_uri
+SourceCollectionManager.find_by_external_id = _find_by_external_id
+SourceCollectionManager.find_entries_by_uris = _find_by_uris
+SourceCollectionManager.find_entries_by_ids = _find_by_ids
+SourceCollectionManager.find_entries_by_external_ids = _find_by_external_ids
+SourceCollectionManager.list_by_external_prefix = _list_by_external_prefix
 
 
 def format_decision_log_details(entry: SourceManifestEntry) -> str:
