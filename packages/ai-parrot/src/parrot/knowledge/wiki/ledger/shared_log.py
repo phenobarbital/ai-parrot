@@ -273,7 +273,9 @@ def rotate_events(
         movable = event is not None and event_timestamp is not None and event_timestamp < cutoff
         if movable and event.kind.startswith("issue."):
             status, terminal_timestamp = issue_states.get(event.subject, ("", None))
-            movable = status in TERMINAL_ISSUE_STATUSES and terminal_timestamp is not None and terminal_timestamp < cutoff
+            movable = (
+                status in TERMINAL_ISSUE_STATUSES and terminal_timestamp is not None and terminal_timestamp < cutoff
+            )
         if movable:
             month = event_timestamp.strftime("%Y-%m")
             moved_by_month.setdefault(month, []).append(raw_line)

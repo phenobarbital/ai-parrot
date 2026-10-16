@@ -24,7 +24,6 @@ from parrot.knowledge.wiki.ledger.shared_log import (
     shared_log_files,
 )
 
-
 NOW = datetime(2026, 10, 16, tzinfo=timezone.utc)
 OLD = "2026-08-01T00:00:00+00:00"
 RECENT = "2026-10-15T00:00:00+00:00"

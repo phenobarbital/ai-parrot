@@ -3687,7 +3687,10 @@ def ledger_rotate_log(repo_root: str | None, older_than_days: int, now: str | No
             LedgerService.from_root().rotate_shared_log(root, older_than_days=older_than_days, now=parsed_now)
         )
         if stage and report.moved > 0:
-            staged_paths = [str(SHARED_LOG_REL_PATH), *(str(path.relative_to(root)) for path in report.archives_touched)]
+            staged_paths = [
+                str(SHARED_LOG_REL_PATH),
+                *(str(path.relative_to(root)) for path in report.archives_touched),
+            ]
             subprocess.run(["git", "-C", str(root), "add", "--", *staged_paths], check=True)
     except (OSError, ValueError) as exc:
         raise click.ClickException(str(exc)) from exc

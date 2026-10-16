@@ -40,7 +40,11 @@ from parrot.knowledge.wiki.store import SQLitePragmaPolicy, WikiStoreBusy, estim
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from parrot.knowledge.wiki.ledger.shared_log import SharedLogExportReport, SharedLogImportReport, SharedLogRotateReport
+    from parrot.knowledge.wiki.ledger.shared_log import (
+        SharedLogExportReport,
+        SharedLogImportReport,
+        SharedLogRotateReport,
+    )
 
 
 def _write_snapshot_if_changed(dest: Path, new_content: str) -> bool:
