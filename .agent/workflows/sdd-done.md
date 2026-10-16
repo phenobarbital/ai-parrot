@@ -266,6 +266,39 @@ git -C "$WORKTREE_PATH" diff --cached --name-only   # sanity-check: only the ind
 git -C "$WORKTREE_PATH" commit -m "sdd: close tasks for FEAT-<ID> — <slug>"
 ```
 
+### 7.1. Close Resolved Ledger Issues
+
+The `/sdd-fix` SDD lane hands an issue's closure to this command: it files the
+spec and tasks, but the fix lands later (often via `sdd-worker`), so its own
+close step never runs. Without this step those issues stay `claimed` (hidden
+from `ledger plan-fix`) or `open` (re-offered as if still broken) after the fix
+merges.
+
+An issue is linked to the feature by a task's `**Discovered-from**: \`issue:<id>\``
+line, or by `issue:<id>` in the spec's frontmatter (spec *body* mentions are
+context, never linked). The script closes a linked `open`/`claimed` issue only
+with `/sdd-fix`'s two keys, fail-closed: every linked task is `done` +
+`verification: verified` (Step 7), AND one of the issue's files is in
+`git diff --name-only origin/$BASE_BRANCH...HEAD`. It writes
+`ledger close --resolved-by task:TASK-<NNN> --actor agent:sdd-done`; anything
+failing a key is reported and left untouched. Run it after Step 7 and before
+Step 9.1, so the snapshot exports the closures. Skip for hotfixes and
+`--dry-run` (pass `--dry-run` to the script to preview).
+
+```bash
+if [[ "$TYPE" != "hotfix" ]]; then
+    git -C "$WORKTREE_PATH" fetch -q origin "$BASE_BRANCH"
+    (cd "$WORKTREE_PATH" && python -m scripts.sdd.close_resolved_issues \
+        --worktree "$WORKTREE_PATH" --index "$INDEX" --base "origin/$BASE_BRANCH" \
+        --feature-id "$FEAT_ID") | sed -n '/^{/,$p'
+fi
+```
+
+The JSON report lists each linked issue with `outcome`: `closed` /
+`skipped` (with the failing key in `detail`) / `read-only` (report
+`(NOT closed: shared ledger is read-only)`) / `error`. Never fails
+`/sdd-done`; carry every non-`closed` row into the Step 12 output.
+
 ### 8. Push the Feature Branch
 If the worktree branch hasn't been pushed yet:
 ```bash
@@ -715,6 +748,12 @@ Branch pushed: feat-<ID>-<slug>
 Merged into <BASE_BRANCH>: feat-<ID>-<slug> ✅
 Worktree removed: .claude/worktrees/feat-<ID>-<slug>
 Local branch deleted: feat-<ID>-<slug>
+```
+
+Ledger issues (Step 7.1), when the feature links any:
+```
+Ledger: closed issue:569e81756247 (task:TASK-3580)
+        skipped issue:0306504b9917 — linked task(s) not verified: TASK-3601
 ```
 
 If `--resolve-jira` was used and succeeded:

@@ -253,7 +253,8 @@ file, the task is too big.
    re-query ready work to recover an issue that is now claimed. For standalone
    promotion, locate the issue in `wikitoolkit ledger plan-fix --json` first.
    Use `wikitoolkit ledger context <issue.files...>` with repo-relative file
-   paths, not the issue ID. Include `discovered_from: <issue-id>` in the task.
+   paths, not the issue ID. Include the line `` **Discovered-from**: `issue:<id>` `` in the task —
+   `/sdd-done` closes the issue through it.
    Promotion never runs `ledger close`: filing a task is not resolution.
    Close separately only after implementation and validation, with the
    two-key evidence required by `/sdd-fix`.
