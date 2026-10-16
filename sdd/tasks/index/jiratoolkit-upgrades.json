@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-16T18:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-16T21:25:00+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-696",
       "feature": "jiratoolkit-upgrades",
       "spec": "sdd/specs/jiratoolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task — no dependencies, no shared files with TASK-4418",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4417-jira-kb-model.md"
+      "started_at": "2026-10-16T19:56:09+00:00",
+      "completed_at": "2026-10-16T20:28:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4417-jira-kb-model.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4418",
@@ -34,16 +35,17 @@
       "feature_id": "FEAT-696",
       "feature": "jiratoolkit-upgrades",
       "spec": "sdd/specs/jiratoolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task — modifies only jira_oauth.py, no overlap with TASK-4417",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4418-jira-oauth-helpers.md"
+      "started_at": "2026-10-16T19:56:09+00:00",
+      "completed_at": "2026-10-16T20:02:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4418-jira-oauth-helpers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4419",
@@ -52,16 +54,19 @@
       "feature_id": "FEAT-696",
       "feature": "jiratoolkit-upgrades",
       "spec": "sdd/specs/jiratoolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-4418"],
+      "depends_on": [
+        "TASK-4418"
+      ],
       "parallel": true,
       "parallelism_notes": "imports refresh_access_token from TASK-4418 (jira_oauth.py); creates new file jira_local_auth.py — no overlap with TASK-4420",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4419-jira-local-auth.md"
+      "started_at": "2026-10-16T19:56:09+00:00",
+      "completed_at": "2026-10-16T20:15:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4419-jira-local-auth.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4420",
@@ -70,16 +75,19 @@
       "feature_id": "FEAT-696",
       "feature": "jiratoolkit-upgrades",
       "spec": "sdd/specs/jiratoolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
-      "depends_on": ["TASK-4417"],
+      "depends_on": [
+        "TASK-4417"
+      ],
       "parallel": true,
       "parallelism_notes": "imports JiraKnowledgeBase from TASK-4417 (jira_kb.py); modifies jiratoolkit.py — serialized with TASK-4421 via dependency",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4420-jira-parity-tools.md"
+      "started_at": "2026-10-16T19:56:09+00:00",
+      "completed_at": "2026-10-16T21:19:05+00:00",
+      "file": "sdd/tasks/completed/TASK-4420-jira-parity-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4421",
@@ -88,16 +96,20 @@
       "feature_id": "FEAT-696",
       "feature": "jiratoolkit-upgrades",
       "spec": "sdd/specs/jiratoolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-4419", "TASK-4420"],
+      "depends_on": [
+        "TASK-4419",
+        "TASK-4420"
+      ],
       "parallel": true,
       "parallelism_notes": "imports FileTokenCredentialResolver from TASK-4419 (jira_local_auth.py); modifies jiratoolkit.py — file overlap with TASK-4420 requires dependency; also modifies jira_config.py (exclusive to this task)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4421-jira-oauth2-local-wiring.md"
+      "started_at": "2026-10-16T19:56:09+00:00",
+      "completed_at": "2026-10-16T21:25:00+00:00",
+      "file": "sdd/tasks/completed/TASK-4421-jira-oauth2-local-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4422",
@@ -106,16 +118,21 @@
       "feature_id": "FEAT-696",
       "feature": "jiratoolkit-upgrades",
       "spec": "sdd/specs/jiratoolkit-upgrades.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
-      "depends_on": ["TASK-4417", "TASK-4418", "TASK-4419"],
+      "depends_on": [
+        "TASK-4417",
+        "TASK-4418",
+        "TASK-4419"
+      ],
       "parallel": true,
       "parallelism_notes": "imports build_authorization_url/exchange_code from TASK-4418 (jira_oauth.py), LocalJiraTokenStore from TASK-4419 (jira_local_auth.py), JiraKnowledgeBase from TASK-4417 (jira_kb.py); creates new files jira_cli.py and modifies cli/__init__.py (exclusive to this task)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4422-jira-cli.md"
+      "started_at": "2026-10-16T19:56:09+00:00",
+      "completed_at": "2026-10-16T21:19:53+00:00",
+      "file": "sdd/tasks/completed/TASK-4422-jira-cli.md",
+      "verification": "verified"
     }
   ]
 }

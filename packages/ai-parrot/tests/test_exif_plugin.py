@@ -1,6 +1,8 @@
+import json
 import pytest
 from PIL import Image
-from parrot.interfaces.images.plugins.exif import EXIFPlugin
+from PIL.TiffImagePlugin import IFDRational
+from parrot.interfaces.images.plugins.exif import EXIFPlugin, _json_safe, _make_serialisable
 import os
 from pathlib import Path
 from PIL.ExifTags import TAGS, GPSTAGS
@@ -146,3 +148,17 @@ async def test_user_comment_decoding(exif_plugin):
             test_image_path.unlink()
         if test_image_path.parent.exists():
             test_image_path.parent.rmdir() 
+
+
+def test_json_safe_zero_denominator_rational_is_none():
+    """0/0 rationals (e.g. Google Pixel GPSImgDirection) must not become NaN."""
+    assert _json_safe(IFDRational(0, 0)) is None
+    assert _make_serialisable(IFDRational(0, 0)) is None
+
+
+def test_json_safe_nan_inf_and_valid_rational():
+    """NaN/Inf floats become None; valid rationals keep their float value."""
+    result = _json_safe({"a": float("nan"), "b": float("inf"), "c": IFDRational(1, 2)})
+    assert result == {"a": None, "b": None, "c": 0.5}
+    # Must produce strict JSON (PostgreSQL rejects NaN tokens)
+    json.dumps(result, allow_nan=False)

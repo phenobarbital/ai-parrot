@@ -84,6 +84,41 @@ def locale_chain(locale: str) -> list[str]:
     return chain
 
 
+def locale_document_path(base: Path, candidate: str) -> Path | None:
+    """Return the ``narration.yaml`` of the locale directory *named* ``candidate``, or ``None``.
+
+    The returned path is assembled exclusively from entries yielded by
+    ``base.iterdir()``: ``candidate`` is only ever compared against a directory
+    name, never concatenated into a path. That makes the locale an allowlist
+    lookup against what is actually installed rather than a caller-supplied
+    path component, which is the CWE-22 barrier for every consumer (the
+    ``_LOCALE_RE`` shape check in :func:`locale_chain` stays as a second
+    layer). Directories symlinked outside ``base`` are skipped.
+
+    Args:
+        base: Templates root to search (resolved internally).
+        candidate: Locale tag to match against the directory names under ``base``.
+
+    Returns:
+        The existing document path, or ``None`` when no such locale directory
+        exists or it holds no ``narration.yaml``.
+    """
+    base = base.resolve()
+    try:
+        entries = sorted(base.iterdir())
+    except OSError:
+        return None
+    for entry in entries:
+        if entry.name != candidate or not entry.is_dir():
+            continue
+        resolved = entry.resolve()
+        if not resolved.is_relative_to(base):
+            continue
+        document = resolved / "narration.yaml"
+        return document if document.is_file() else None
+    return None
+
+
 def load_locale_document(locale: str, *, templates_dir: Path | None = None) -> tuple[str, dict[str, Any]]:
     """Load the first existing ``<dir>/<locale>/narration.yaml`` along the fallback chain.
 
@@ -99,12 +134,11 @@ def load_locale_document(locale: str, *, templates_dir: Path | None = None) -> t
     """
     base = (templates_dir or TEMPLATES_DIR).resolve()
     for candidate in locale_chain(locale):
-        path = (base / candidate / "narration.yaml").resolve()
-        if not path.is_relative_to(base):
-            raise ValueError(f"Locale {locale!r} resolves outside templates directory")
-        if path.is_file():
-            with path.open(encoding="utf-8") as fh:
-                return candidate, yaml.safe_load(fh) or {}
+        path = locale_document_path(base, candidate)
+        if path is None:
+            continue
+        with path.open(encoding="utf-8") as fh:
+            return candidate, yaml.safe_load(fh) or {}
     raise FileNotFoundError(f"No narration.yaml for {locale!r} under {base}")
 
 

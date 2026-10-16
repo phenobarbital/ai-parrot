@@ -23,6 +23,7 @@ from enum import Enum
 
 from ....conf import (
     AWS_NOVA_API_KEY,
+    AWS_NOVA_REGION,
     AWS_REGION_NAME,
     BEDROCK_AWS_REGION,
     BEDROCK_MANTLE_API_KEY,
@@ -45,8 +46,8 @@ class BedrockMantleClient(OpenAIBaseClient):
         2. ``BEDROCK_MANTLE_BASE_URL`` conf var;
         3. constructed as ``https://bedrock-mantle.{region}.api.aws/v1``,
            where ``region`` resolves (first match wins) from the explicit
-           ``region`` kwarg, ``BEDROCK_AWS_REGION``, ``AWS_REGION_NAME``,
-           or ``"us-east-1"``.
+           ``region`` kwarg, ``BEDROCK_AWS_REGION``, ``AWS_NOVA_REGION``,
+           ``AWS_REGION_NAME``, or ``"us-east-1"``.
 
     API-key resolution (first match wins):
         1. explicit ``api_key`` kwarg;
@@ -65,8 +66,8 @@ class BedrockMantleClient(OpenAIBaseClient):
             ``BEDROCK_MANTLE_BASE_URL`` then a region-constructed URL.
         region: AWS region used to construct the default base URL when
             neither ``base_url`` nor ``BEDROCK_MANTLE_BASE_URL`` is set.
-            Falls back to ``BEDROCK_AWS_REGION`` then ``AWS_REGION_NAME``
-            then ``"us-east-1"``.
+            Falls back to ``BEDROCK_AWS_REGION`` then ``AWS_NOVA_REGION``
+            then ``AWS_REGION_NAME`` then ``"us-east-1"``.
         **kwargs: Additional arguments passed to ``OpenAIClient`` /
             ``AbstractClient``.
 
@@ -118,9 +119,10 @@ class BedrockMantleClient(OpenAIBaseClient):
         **kwargs,
     ):
         resolved_key = api_key or BEDROCK_MANTLE_API_KEY or AWS_NOVA_API_KEY
-        resolved_region = region or BEDROCK_AWS_REGION or AWS_REGION_NAME or "us-east-1"
+        resolved_region = region or BEDROCK_AWS_REGION or AWS_NOVA_REGION or AWS_REGION_NAME or "us-east-1"
         resolved_base_url = (
-            base_url or BEDROCK_MANTLE_BASE_URL or f"https://bedrock-mantle.{resolved_region}.api.aws/v1"
+            base_url or BEDROCK_MANTLE_BASE_URL
+            or f"https://bedrock-mantle.{resolved_region}.api.aws/v1"
         )
         # FEAT-438 G5: AbstractClient.__init__ now only creates an instance
         # attribute when the caller explicitly passes fallback_model=, so
