@@ -64,6 +64,7 @@ from .toolkit import AbstractToolkit
 from .decorators import tool_schema, requires_permission
 from .jira_config import JiraToolkitConfig
 from .jira_kb import JiraKnowledgeBase
+from .jira_local_auth import FileTokenCredentialResolver
 from parrot.auth.jira_oauth import fetch_accessible_resources
 
 #: Suffix every Jira text template file carries.
@@ -919,6 +920,14 @@ class JiraToolkit(AbstractToolkit):
         else:
             self.auth_type = None  # type: ignore[assignment]
 
+        if self.auth_type == "oauth2_local":
+            if credential_resolver is None:
+                credential_resolver = FileTokenCredentialResolver.from_env()
+            self.auth_type = "oauth2_3lo"
+            self._local_single_user = True
+        else:
+            self._local_single_user = False
+
         # For oauth2_3lo the server URL is resolved per-user at runtime via the
         # CredentialResolver, so ``server_url`` is optional. Explicit static
         # modes validate it in the client-init block below.
@@ -1317,30 +1326,45 @@ class JiraToolkit(AbstractToolkit):
             return None
 
         perm_ctx = kwargs.get("_permission_context")
-        if perm_ctx is None:
-            raise AuthorizationRequired(
-                tool_name=tool_name,
-                message=(
-                    "Permission context is required for Jira OAuth 2.0 (3LO) "
-                    "tools. The call must be routed through ToolManager with "
-                    "a populated PermissionContext."
-                ),
-                provider="jira",
-                scopes=list(self._OAUTH_SCOPES),
-            )
+        if self._local_single_user:
+            if perm_ctx is not None:
+                channel = getattr(perm_ctx, "channel", None) or "unknown"
+                if channel not in self.credential_resolver.allowed_channels:
+                    raise AuthorizationRequired(
+                        tool_name=tool_name,
+                        message="Local Jira OAuth credentials are not available for this channel.",
+                        provider="jira",
+                        scopes=list(self._OAUTH_SCOPES),
+                    )
+            channel = "cli"
+            user_id = "local"
+            user_key = "local:cli"
+            token_set = await self.credential_resolver.resolve(channel, user_id)
+        else:
+            if perm_ctx is None:
+                raise AuthorizationRequired(
+                    tool_name=tool_name,
+                    message=(
+                        "Permission context is required for Jira OAuth 2.0 (3LO) "
+                        "tools. The call must be routed through ToolManager with "
+                        "a populated PermissionContext."
+                    ),
+                    provider="jira",
+                    scopes=list(self._OAUTH_SCOPES),
+                )
 
-        user_id = getattr(perm_ctx, "user_id", None)
-        channel = getattr(perm_ctx, "channel", None) or "unknown"
-        if not user_id:
-            raise AuthorizationRequired(
-                tool_name=tool_name,
-                message="Cannot resolve Jira credentials without a user_id.",
-                provider="jira",
-                scopes=list(self._OAUTH_SCOPES),
-            )
+            user_id = getattr(perm_ctx, "user_id", None)
+            channel = getattr(perm_ctx, "channel", None) or "unknown"
+            if not user_id:
+                raise AuthorizationRequired(
+                    tool_name=tool_name,
+                    message="Cannot resolve Jira credentials without a user_id.",
+                    provider="jira",
+                    scopes=list(self._OAUTH_SCOPES),
+                )
 
-        user_key = f"{channel}:{user_id}"
-        token_set = await self.credential_resolver.resolve(channel, user_id)
+            user_key = f"{channel}:{user_id}"
+            token_set = await self.credential_resolver.resolve(channel, user_id)
         if token_set is None:
             try:
                 auth_url = await self.credential_resolver.get_auth_url(channel, user_id)
