@@ -1,4 +1,5 @@
 """Jira site knowledge base — YAML-backed structural cache (FEAT-696 M6)."""
+
 from __future__ import annotations
 
 import logging
