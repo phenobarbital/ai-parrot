@@ -78,7 +78,9 @@ def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
 def test_git_union_merge_has_no_conflict(tmp_path: Path) -> None:
     """Concurrent appends to the shared log merge cleanly with the repo's union attribute."""
     attributes = [
-        line for line in (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8").splitlines() if "merge=union" in line
+        line
+        for line in (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8").splitlines()
+        if "merge=union" in line
     ]
     assert any(line.startswith("sdd/ledger/events.jsonl") for line in attributes)
 
@@ -107,9 +109,7 @@ def test_git_union_merge_has_no_conflict(tmp_path: Path) -> None:
     assert "<<<<<<<" not in log.read_text(encoding="utf-8")
 
 
-async def test_rebuild_not_triggered_by_import_e2e(
-    tmp_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_rebuild_not_triggered_by_import_e2e(tmp_path: Path, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Importing foreign events never runs the destructive rebuild; local state survives."""
     alpha = _machine(tmp_path, "alpha")
     beta = _machine(tmp_path, "beta")
