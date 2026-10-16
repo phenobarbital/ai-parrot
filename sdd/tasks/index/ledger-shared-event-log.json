@@ -35,7 +35,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "imports export_events/import_events/MARKER_FILENAME/report models from TASK-4405 (ledger/shared_log.py)",
       "assigned_to": null,
       "started_at": "2026-10-16T01:03:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4406-shared-log-service-cli.md"
+      "completed_at": "2026-10-16T01:26:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4406-shared-log-service-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4407",
