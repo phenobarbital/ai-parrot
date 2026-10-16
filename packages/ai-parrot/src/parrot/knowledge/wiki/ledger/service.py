@@ -573,9 +573,7 @@ class LedgerService:
 
         return await asyncio.to_thread(export_events, self.log, repo_root or self.shared_root)
 
-    async def import_shared_log(
-        self, repo_root: Path | None = None, *, force: bool = False
-    ) -> "SharedLogImportReport":
+    async def import_shared_log(self, repo_root: Path | None = None, *, force: bool = False) -> "SharedLogImportReport":
         """Append unknown committed events, incrementally sync, and report claim conflicts.
 
         Args:
@@ -606,11 +604,7 @@ class LedgerService:
         for event in claimed:
             state = issues.get(event.subject)
             foreign_claimed_by = event.payload.get("claimed_by")
-            if (
-                state is not None
-                and state.get("status") == "claimed"
-                and state.get("claimed_by") != foreign_claimed_by
-            ):
+            if state is not None and state.get("status") == "claimed" and state.get("claimed_by") != foreign_claimed_by:
                 report.claim_conflicts.append(
                     ClaimConflict(
                         issue_id=event.subject,

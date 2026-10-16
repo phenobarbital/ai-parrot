@@ -43,7 +43,13 @@ def test_cli_import_log_outputs_and_exit_codes(tmp_path: Path, monkeypatch) -> N
     service.import_shared_log = AsyncMock(
         side_effect=[
             SharedLogImportReport(
-                files=[], fast_path=True, added=0, skipped_known=0, skipped_unparseable=0, synced_events=0, index_busy=False
+                files=[],
+                fast_path=True,
+                added=0,
+                skipped_known=0,
+                skipped_unparseable=0,
+                synced_events=0,
+                index_busy=False,
             ),
             SharedLogImportReport(
                 files=[],
@@ -55,12 +61,21 @@ def test_cli_import_log_outputs_and_exit_codes(tmp_path: Path, monkeypatch) -> N
                 index_busy=False,
                 claim_conflicts=[
                     ClaimConflict(
-                        issue_id="issue:abc", local_claimed_by="task:local", foreign_claimed_by="task:foreign", foreign_event_id="e1"
+                        issue_id="issue:abc",
+                        local_claimed_by="task:local",
+                        foreign_claimed_by="task:foreign",
+                        foreign_event_id="e1",
                     )
                 ],
             ),
             SharedLogImportReport(
-                files=[], fast_path=False, added=1, skipped_known=0, skipped_unparseable=0, synced_events=0, index_busy=True
+                files=[],
+                fast_path=False,
+                added=1,
+                skipped_known=0,
+                skipped_unparseable=0,
+                synced_events=0,
+                index_busy=True,
             ),
         ]
     )

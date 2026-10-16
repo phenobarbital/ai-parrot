@@ -17,6 +17,7 @@ from parrot.knowledge.wiki.store import SQLitePragmaPolicy, WikiStoreBusy
 @pytest.fixture
 def two_ledgers(tmp_path: Path) -> tuple[LedgerService, LedgerService, Path]:
     """Return isolated local/foreign services that share a temporary checkout."""
+
     def build(name: str) -> LedgerService:
         ledger_dir = tmp_path / name / ".parrot" / "ledger"
         ledger_dir.mkdir(parents=True)
@@ -33,7 +34,9 @@ def two_ledgers(tmp_path: Path) -> tuple[LedgerService, LedgerService, Path]:
     return build("local"), build("foreign"), checkout
 
 
-async def test_import_keeps_cursor_valid(two_ledgers: tuple[LedgerService, LedgerService, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_import_keeps_cursor_valid(
+    two_ledgers: tuple[LedgerService, LedgerService, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Import uses incremental sync and never invokes the destructive rebuild path."""
     local, foreign, checkout = two_ledgers
     await foreign.open_issue("Foreign", "body", discovered_from="spec:FEAT-694")
@@ -60,13 +63,16 @@ async def test_import_detects_claim_conflict(two_ledgers: tuple[LedgerService, L
 
     report = await local.import_shared_log(checkout)
 
-    assert [(conflict.issue_id, conflict.local_claimed_by, conflict.foreign_claimed_by) for conflict in report.claim_conflicts] == [
-        (issue_id, "task:local", "task:foreign")
-    ]
+    assert [
+        (conflict.issue_id, conflict.local_claimed_by, conflict.foreign_claimed_by)
+        for conflict in report.claim_conflicts
+    ] == [(issue_id, "task:local", "task:foreign")]
     assert dict(await local._all_issues())[issue_id]["claimed_by"] == "task:local"
 
 
-async def test_import_index_busy_is_soft(two_ledgers: tuple[LedgerService, LedgerService, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_import_index_busy_is_soft(
+    two_ledgers: tuple[LedgerService, LedgerService, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A busy index leaves the durable import intact and reports a soft failure."""
     local, foreign, checkout = two_ledgers
     await foreign.open_issue("Foreign", "body", discovered_from="spec:FEAT-694")
