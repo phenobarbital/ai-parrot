@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+"""AI-Parrot server entrypoint.
+
+Two ways to start the same application:
+
+* ``python run.py`` — Navigator's own runner (host/port from navconfig),
+  with the force-exit signal handling below. Suited to development and to
+  ``supervisord`` running a single process.
+* ``gunicorn --config deploy/gunicorn.conf.py "run:create_app()"`` — the
+  :func:`create_app` factory below, one aiohttp app per gunicorn worker
+  (``aiohttp.GunicornWebWorker``). Gunicorn owns signals and binding there.
+
+Both serve the embedded web UI (``/login``, ``/agents``, ``/admin``) when
+it was built (``make build-server-ui``).
+"""
 import asyncio
 import signal
 import os
@@ -7,10 +21,27 @@ import sys
 from navigator import Application
 from app import Main
 
-# define a new Application
-app = Application(Main, enable_jinja2=True)
-# Enable WebSockets Support
-app.add_websockets()
+
+def build_application() -> Application:
+    """Create the Navigator application wrapping :class:`app.Main`."""
+    nav = Application(Main, enable_jinja2=True)
+    # Enable WebSockets Support
+    nav.add_websockets()
+    return nav
+
+
+def create_app():
+    """Gunicorn application factory (``run:create_app()``).
+
+    Returns the fully set-up aiohttp application — ``setup_app()`` runs the
+    same Jinja2/middleware/installed-apps setup ``Application.run()`` does
+    before serving — without installing this module's SIGINT handler, since
+    gunicorn manages worker signals itself.
+    """
+    return build_application().setup_app()
+
+
+app = None
 
 
 async def _install_force_exit_handler(aiohttp_app) -> None:
@@ -48,8 +79,6 @@ async def _install_force_exit_handler(aiohttp_app) -> None:
         loop.add_signal_handler(sig, lambda s=sig: _handler(s.name))
 
 
-aiohttp_app = app.get_app()
-aiohttp_app.on_startup.append(_install_force_exit_handler)
 
 
 def _hard_exit_after_graceful_shutdown() -> None:
@@ -91,6 +120,9 @@ def _hard_exit_after_graceful_shutdown() -> None:
 
 
 if __name__ == '__main__':
+    app = build_application()
+    aiohttp_app = app.get_app()
+    aiohttp_app.on_startup.append(_install_force_exit_handler)
     try:
         app.run()
     except KeyboardInterrupt:

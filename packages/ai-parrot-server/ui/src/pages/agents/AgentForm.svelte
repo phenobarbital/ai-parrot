@@ -100,7 +100,7 @@
   ];
 
   function cancel(): void {
-    router.navigate("/admin/agents");
+    router.navigate(`${config.adminPath}/agents`);
   }
 
   async function save(): Promise<void> {
@@ -113,7 +113,7 @@
         if (formState.values.name && response.name !== formState.values.name) {
           renameNotice = `Saved as "${response.name}" (adjusted from "${formState.values.name}").`;
         }
-        router.navigate(`/admin/agents/${encodeURIComponent(response.name)}`, {
+        router.navigate(`${config.adminPath}/agents/${encodeURIComponent(response.name)}`, {
           replace: true,
         });
       } else {

@@ -1,6 +1,6 @@
 <!--
   AgentChatPage (TASK-2597, FEAT-476) — route wrapper for
-  `/admin/agents/:name/chat`. Reads `router.params.name`, fetches the
+  `/agents/:name/chat` (alias: `/admin/agents/:name/chat`). Reads `router.params.name`, fetches the
   agent via the same `getAgent()` used by AgentFormPage (GET
   /api/v1/bots/:name) to decide the prompt-library `chatbotId` (database
   agents carry `chatbot_id`; registry agents don't — the library is
@@ -15,6 +15,7 @@
 <script lang="ts">
   import { getAgent } from "$lib/api/agents";
   import { ApiError } from "$lib/api/http";
+  import { config } from "$lib/config";
   import { router } from "$lib/router.svelte";
   import type { BotAgentItem } from "$lib/types/generated/BotAgentItem";
   import { Button } from "$lib/ui/internal/shadcn/ui/button/index.js";
@@ -67,7 +68,7 @@
   });
 
   function backToAgents(): void {
-    router.navigate("/admin/agents");
+    router.navigate(config.homePath);
   }
 </script>
 

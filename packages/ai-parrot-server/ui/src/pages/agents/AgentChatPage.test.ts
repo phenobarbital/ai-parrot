@@ -75,7 +75,7 @@ describe("AgentChatPage", () => {
     expect(queryByTestId("agentchat-stub")).toBeNull();
   });
 
-  it("Back to Agents navigates to /admin/agents from the not-found state", async () => {
+  it("Back to Agents navigates to /agents from the not-found state", async () => {
     router.params = { name: "does-not-exist" };
     vi.spyOn(apiClient, "get").mockRejectedValue(
       new ApiError("Not found", "server", 404),
@@ -89,7 +89,7 @@ describe("AgentChatPage", () => {
     const button = (await findByTestId("agent-chat-not-found")).querySelector("button")!;
     await fireEvent.click(button);
 
-    expect(navigateSpy).toHaveBeenCalledWith("/admin/agents");
+    expect(navigateSpy).toHaveBeenCalledWith("/agents");
   });
 
   it("shows a retry card on a non-404 error", async () => {

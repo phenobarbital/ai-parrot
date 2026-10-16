@@ -1834,8 +1834,10 @@ name = "ai-parrot-server"
 source = { editable = "packages/ai-parrot-server" }
 dependencies = [
     { name = "ai-parrot" },
+    { name = "ai-parrot-tools" },
     { name = "packaging" },
     { name = "pyarrow" },
+    { name = "sqlalchemy" },
 ]
 
 [package.optional-dependencies]
@@ -1876,6 +1878,7 @@ scheduler = [
 requires-dist = [
     { name = "ai-parrot", editable = "packages/ai-parrot" },
     { name = "ai-parrot-server", extras = ["a2a", "autonomous", "comm-center", "mcp", "scheduler"], marker = "extra == 'all'", editable = "packages/ai-parrot-server" },
+    { name = "ai-parrot-tools", editable = "packages/ai-parrot-tools" },
     { name = "aiofiles", marker = "extra == 'autonomous'", specifier = ">=23.0" },
     { name = "aioquic", marker = "extra == 'mcp'", specifier = "==1.3.0" },
     { name = "apscheduler", marker = "extra == 'scheduler'", specifier = "==3.11.2" },
@@ -1888,6 +1891,7 @@ requires-dist = [
     { name = "pyjwt", marker = "extra == 'a2a'", specifier = ">=2.8.0" },
     { name = "pylsqpack", marker = "extra == 'mcp'", specifier = "==0.3.23" },
     { name = "pyyaml", marker = "extra == 'mcp'", specifier = ">=6.0.2" },
+    { name = "sqlalchemy", specifier = ">=2.0" },
 ]
 provides-extras = ["scheduler", "mcp", "a2a", "autonomous", "comm-center", "all"]
 

@@ -115,7 +115,7 @@ class AuthStore {
     this.token = null;
     this.user = null;
     const current = router.path;
-    const next = isInAppPath(current) ? current : config.basePath;
+    const next = isInAppPath(current) ? current : config.homePath;
     router.navigate(`${config.loginPath}?next=${encodeURIComponent(next)}`, {
       replace: true,
     });
