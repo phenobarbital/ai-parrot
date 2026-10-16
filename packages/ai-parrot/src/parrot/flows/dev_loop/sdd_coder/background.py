@@ -33,6 +33,7 @@ import os
 import re
 import shlex
 import signal
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,6 +43,7 @@ from pydantic import BaseModel, ConfigDict
 
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration, BackgroundStatus, EvidenceRef
+from parrot.flows.dev_loop.test_scope import report as test_report
 from parrot.flows.dev_loop.test_scope.context import record_green_escalation, record_red_run
 from parrot.flows.dev_loop.test_scope.select import changed_files, plan_tests
 from parrot.flows.dev_loop.worktree_environment import protected_argv
@@ -64,6 +66,8 @@ _EXECUTION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 #: Same closed shape as `optimization_models._TASK_ID_PATTERN` (not imported --
 #: that module's validators are private to its own field declarations).
 _TASK_ID_RE = re.compile(r"^TASK-\d{1,5}$")
+#: FEAT-695: canonical feature id shape for test-result records.
+_FEATURE_ID_RE = re.compile(r"^FEAT-\d+$")
 
 #: Spec R8: `coder_run_validation(..., timeout_seconds)` is mandatory, 1..7200.
 _MIN_TIMEOUT_SECONDS = 1
@@ -588,7 +592,9 @@ class ValidationSupervisor:
 
             first, *rest = plan.invocations
             await asyncio.to_thread(self._append_log, log_path, self._selection_header(plan))
-            sandboxed_argv = protected_argv(worktree, list(first.argv))
+            feature_id = await asyncio.to_thread(self._resolve_feature_id, worktree, feature)
+            first_argv, first_junit = self._argv_with_junit(feature_id, task_ids[0], first, 0)
+            sandboxed_argv = protected_argv(worktree, first_argv)
             await asyncio.to_thread(
                 self._append_log, log_path, f"# $ {shlex.join(first.argv)} (distribution={first.distribution})\n"
             )
@@ -623,6 +629,11 @@ class ValidationSupervisor:
                 first_invocation=first,
                 plan=plan,
                 worktree=worktree,
+                feature_id=feature_id,
+                task_ids=list(task_ids),
+                tier=tier,
+                base_ref=base_ref or _DEFAULT_BASE_REF,
+                first_junit=first_junit,
             )
         )
         self._background_tasks[(execution_id, handle)] = task
@@ -734,13 +745,34 @@ class ValidationSupervisor:
         first_invocation: "PytestInvocation",
         plan: "ScopePlan",
         worktree: Path,
+        feature_id: str = "",
+        task_ids: Optional[list[str]] = None,
+        tier: str = "merge",
+        base_ref: str = _DEFAULT_BASE_REF,
+        first_junit: Optional[Path] = None,
     ) -> None:
         """Drain the admitted process to its own deadline, run any remaining invocations, settle."""
+        started = time.monotonic()
         outcome, exit_code = await self._await_one(process=process, log_path=log_path, deadline=deadline)
         await self._record_invocation_outcome(
             worktree=worktree, invocation=first_invocation, plan=plan, exit_code=exit_code
         )
+        if first_junit is not None and task_ids:
+            await self._record_test_results(
+                worktree=worktree,
+                feature_id=feature_id,
+                task_ids=task_ids,
+                invocation=first_invocation,
+                junit_path=first_junit,
+                exit_code=exit_code,
+                duration_s=time.monotonic() - started,
+                timed_out=outcome == "timed_out",
+                tier=tier,
+                base_ref=base_ref,
+            )
+        ordinal = 0
         for invocation in remaining_invocations:
+            ordinal += 1
             if outcome == "timed_out":
                 break
             remaining_seconds = deadline - time.monotonic()
@@ -748,7 +780,10 @@ class ValidationSupervisor:
                 outcome, exit_code = "timed_out", 124
                 break
             try:
-                sandboxed_argv = protected_argv(worktree, list(invocation.argv))
+                next_argv, next_junit = self._argv_with_junit(
+                    feature_id, (task_ids or ["TASK-0"])[0], invocation, ordinal, enabled=bool(task_ids)
+                )
+                sandboxed_argv = protected_argv(worktree, next_argv)
                 await asyncio.to_thread(
                     self._append_log,
                     log_path,
@@ -767,12 +802,26 @@ class ValidationSupervisor:
                 )
                 outcome, exit_code = "failed", 1
                 break
+            next_started = time.monotonic()
             next_outcome, next_exit_code = await self._await_one(
                 process=next_process, log_path=log_path, deadline=deadline
             )
             await self._record_invocation_outcome(
                 worktree=worktree, invocation=invocation, plan=plan, exit_code=next_exit_code
             )
+            if next_junit is not None and task_ids:
+                await self._record_test_results(
+                    worktree=worktree,
+                    feature_id=feature_id,
+                    task_ids=task_ids,
+                    invocation=invocation,
+                    junit_path=next_junit,
+                    exit_code=next_exit_code,
+                    duration_s=time.monotonic() - next_started,
+                    timed_out=next_outcome == "timed_out",
+                    tier=tier,
+                    base_ref=base_ref,
+                )
             if next_outcome == "timed_out":
                 outcome, exit_code = "timed_out", next_exit_code
             elif next_outcome == "failed" and outcome != "timed_out":
@@ -781,6 +830,88 @@ class ValidationSupervisor:
         await self.registry._record_transition(
             execution_id, handle, state="finished", outcome=outcome, exit_code=exit_code, log_path=log_path
         )
+
+    @staticmethod
+    def _resolve_feature_id(worktree: Path, feature: str) -> str:
+        """Resolve *feature* to ``FEAT-<NNN>`` via the per-spec index header; fall back to the raw value."""
+        if _FEATURE_ID_RE.match(feature):
+            return feature
+        try:
+            for index_path in sorted((worktree / "sdd" / "tasks" / "index").glob("*.json")):
+                try:
+                    header = json.loads(index_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                if not isinstance(header, dict):
+                    continue
+                feature_id = header.get("feature_id")
+                if header.get("feature") == feature and isinstance(feature_id, str) and _FEATURE_ID_RE.match(feature_id):
+                    return feature_id
+        except OSError:
+            pass
+        logger.warning("could not resolve feature %r to a FEAT-<NNN> id; recording under the raw value", feature)
+        return feature
+
+    @staticmethod
+    def _argv_with_junit(
+        feature_id: str, task_id: str, invocation: "PytestInvocation", ordinal: int, *, enabled: bool = True
+    ) -> Tuple[list[str], Optional[Path]]:
+        """Return the invocation argv plus a unique junit path; plain argv when the path is unavailable."""
+        if not enabled:
+            return list(invocation.argv), None
+        try:
+            junit = test_report.junit_path_for(feature_id, task_id, invocation.distribution, ordinal)
+            return list(test_report.with_junit(invocation, junit)), junit
+        except Exception:  # noqa: BLE001 — recording setup must never block a validation
+            logger.warning("could not prepare a junit report path for %s", invocation.distribution, exc_info=True)
+            return list(invocation.argv), None
+
+    async def _record_test_results(
+        self,
+        *,
+        worktree: Path,
+        feature_id: str,
+        task_ids: list[str],
+        invocation: "PytestInvocation",
+        junit_path: Path,
+        exit_code: int,
+        duration_s: float,
+        timed_out: bool,
+        tier: str,
+        base_ref: str,
+    ) -> None:
+        """FEAT-695: write one test_report record per task id. Never raises, never alters the outcome."""
+        try:
+
+            def _head() -> str:
+                done = subprocess.run(
+                    ["git", "rev-parse", "HEAD"], cwd=worktree, capture_output=True, text=True, timeout=30, check=False
+                )
+                return done.stdout.strip() if done.returncode == 0 else ""
+
+            head_sha = await asyncio.to_thread(_head)
+            result = await asyncio.to_thread(
+                test_report.parse_junit,
+                junit_path,
+                suite=invocation.distribution,
+                argv=tuple(invocation.argv),
+                exit_code=exit_code,
+                duration_s=duration_s,
+                timed_out=timed_out,
+            )
+            for task_id in task_ids:
+                await asyncio.to_thread(
+                    test_report.append_suite,
+                    feature_id,
+                    task_id,
+                    result,
+                    head_sha=head_sha,
+                    base_ref=base_ref,
+                    tier=tier,
+                    source="coder_run_validation",
+                )
+        except Exception:  # noqa: BLE001 — recording must never fail a validation
+            self.logger.warning("could not record test results for %s", invocation.distribution, exc_info=True)
 
     async def _record_invocation_outcome(
         self, *, worktree: Path, invocation: "PytestInvocation", plan: "ScopePlan", exit_code: int
