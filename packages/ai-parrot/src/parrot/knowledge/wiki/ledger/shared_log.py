@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -214,4 +215,93 @@ def import_events(
             index_busy=False,
         ),
         imported_claims,
+    )
+
+
+def _parse_event_timestamp(timestamp: str) -> datetime | None:
+    """Parse an event timestamp, interpreting naive timestamps as UTC."""
+    try:
+        parsed = datetime.fromisoformat(timestamp)
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed
+
+
+def rotate_events(
+    repo_root: Path, *, older_than_days: int = ROTATION_DAYS_DEFAULT, now: datetime | None = None
+) -> SharedLogRotateReport:
+    """Move old terminal lines of the committed log into monthly archive files (deterministic)."""
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    cutoff = now - timedelta(days=older_than_days)
+    current = repo_root / SHARED_LOG_REL_PATH
+    if not current.exists():
+        return SharedLogRotateReport(current=current, moved=0, kept=0, cutoff=cutoff.isoformat())
+
+    raw_lines = current.read_bytes().splitlines(keepends=True)
+    parsed_lines: list[tuple[bytes, LedgerEvent | None, datetime | None]] = []
+    issue_states: dict[str, tuple[str, datetime | None]] = {}
+    for raw_line in raw_lines:
+        event: LedgerEvent | None = None
+        event_timestamp: datetime | None = None
+        try:
+            event = LedgerEvent(**json.loads(raw_line.decode("utf-8")))
+            event_timestamp = _parse_event_timestamp(event.ts)
+        except (TypeError, UnicodeDecodeError, ValueError, json.JSONDecodeError):
+            pass
+        parsed_lines.append((raw_line, event, event_timestamp))
+        if event is None or not event.kind.startswith("issue."):
+            continue
+
+        status, terminal_timestamp = issue_states.get(event.subject, ("", None))
+        if event.kind == "issue.opened" and not status:
+            status, terminal_timestamp = "open", None
+        elif event.kind == "issue.claimed" and status == "open":
+            status, terminal_timestamp = "claimed", None
+        elif event.kind == "issue.closed" and status:
+            status, terminal_timestamp = "closed", event_timestamp
+        elif event.kind == "issue.superseded" and status:
+            status, terminal_timestamp = "superseded", event_timestamp
+        elif event.kind == "issue.unclaimed" and status == "claimed":
+            status, terminal_timestamp = "open", None
+        issue_states[event.subject] = (status, terminal_timestamp)
+
+    moved_by_month: dict[str, list[bytes]] = {}
+    kept_lines: list[bytes] = []
+    for raw_line, event, event_timestamp in parsed_lines:
+        movable = event is not None and event_timestamp is not None and event_timestamp < cutoff
+        if movable and event.kind.startswith("issue."):
+            status, terminal_timestamp = issue_states.get(event.subject, ("", None))
+            movable = status in TERMINAL_ISSUE_STATUSES and terminal_timestamp is not None and terminal_timestamp < cutoff
+        if movable:
+            month = event_timestamp.strftime("%Y-%m")
+            moved_by_month.setdefault(month, []).append(raw_line)
+        else:
+            kept_lines.append(raw_line)
+
+    if not moved_by_month:
+        return SharedLogRotateReport(current=current, moved=0, kept=len(kept_lines), cutoff=cutoff.isoformat())
+
+    archive_dir = repo_root / ARCHIVE_REL_DIR
+    archives_touched: list[Path] = []
+    for month in sorted(moved_by_month):
+        archive = archive_dir / ARCHIVE_FILENAME_FMT.format(yyyy_mm=month)
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        with archive.open("ab") as handle:
+            for raw_line in moved_by_month[month]:
+                handle.write(raw_line)
+                if not raw_line.endswith((b"\n", b"\r")):
+                    handle.write(b"\n")
+        archives_touched.append(archive)
+
+    temporary_current = current.with_suffix(f"{current.suffix}.tmp")
+    temporary_current.write_bytes(b"".join(kept_lines))
+    os.replace(temporary_current, current)
+    return SharedLogRotateReport(
+        current=current,
+        moved=sum(len(lines) for lines in moved_by_month.values()),
+        kept=len(kept_lines),
+        archives_touched=archives_touched,
+        cutoff=cutoff.isoformat(),
     )
