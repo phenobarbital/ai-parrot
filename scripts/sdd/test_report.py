@@ -94,7 +94,9 @@ def main(argv: list[str] | None = None) -> int:
     records, _notes = report_mod.load_records(feature_id)
     rerun = records.pop(report_mod.RERUN_RECORD, None)
     rerun_skip_reason = (
-        None if rerun is not None or report_mod.should_rerun(task_count) else f"{task_count} tasks > {report_mod.RERUN_TASK_THRESHOLD}"
+        None
+        if rerun is not None or report_mod.should_rerun(task_count)
+        else f"{task_count} tasks > {report_mod.RERUN_TASK_THRESHOLD}"
     )
     markdown = report_mod.render_markdown(
         records,
