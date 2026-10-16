@@ -16,7 +16,7 @@
       "feature_id": "FEAT-695",
       "feature": "sdd-done-tests",
       "spec": "sdd/specs/sdd-done-tests.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "root task: creates test_scope/report.py that every other task imports",
       "assigned_to": null,
       "started_at": "2026-10-16T01:11:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4411-test-report-kernel.md"
+      "completed_at": "2026-10-16T01:17:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4411-test-report-kernel.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4412",

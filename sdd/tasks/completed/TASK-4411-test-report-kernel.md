@@ -254,4 +254,15 @@ Follow `sdd/templates/task.md` § Agent Instructions: work in the feature worktr
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+- Task: TASK-4411
+- Feature: sdd-done-tests
+- Implementation SHA: 6808df78e49e5cf71d86dbc1fcc16b0fff6516e9
+- Closed at (UTC): 2026-10-16T01:17:30+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 260.8s · Tokens: n/a |
