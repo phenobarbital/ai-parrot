@@ -49,7 +49,6 @@ Three related gaps in JiraToolkit (`parrot_tools/jiratoolkit.py`):
 ### Non-Goals
 - Replacing `JiraOAuthManager`, or changing the server-side Redis 3LO flow (it only gains extracted helpers).
 - A loopback HTTP callback server. It was rejected in the proposal Q&A in favour of manual paste.
-- Preserving YAML comments across `sync-kb` (see §7 Risks).
 - Writing the KB into the wiki ledger. `status_map` is consumed as data only.
 
 ---
@@ -168,7 +167,7 @@ Reads and writes stay in `JiraToolkit`, and `JiraInterface` remains untouched an
 parrot jiratoolkit ──(lazy)──→ parrot_tools.jira_cli
    auth/status/logout ──→ parrot.auth.jira_oauth helpers (exchange/refresh/resources/myself)
                       ──→ LocalJiraTokenStore (~/.parrot/jira/settings.local.json) + .env upsert
-   sync-kb ──→ JiraToolkit (live reads) ──→ JiraKnowledgeBase.save(yaml)
+   sync-kb ──→ JiraToolkit (live reads) ──→ JiraKnowledgeBase.save(ruamel.yaml round-trip)
 
 JiraToolkit(auth_type=oauth2_local, knowledge_base=…)
    _pre_execute ──→ FileTokenCredentialResolver.resolve() ──refresh──→ jira_oauth helpers
@@ -398,11 +397,11 @@ class LocalSettings(BaseModel):            # ~/.parrot/jira/settings.local.json
 - [ ] AC7: With a KB loaded, `jira_create_issue(issue_type="Story", project="NAV")` performs **no**
   issue-type/project lookup call. An unknown type triggers a live lookup and logs `jira KB stale`.
 - [ ] AC8: Summary and description limits from the KB are enforced before any API call.
-- [ ] AC9: `sync-kb` over an existing file keeps `status_map`, `templates`, `limits` and the priority
-  `legacy`/`default` byte-for-value, and refreshes `verified`.
+- [ ] AC9: `sync-kb` over an existing file keeps `status_map`, `templates`, `limits`, the priority
+  `legacy`/`default` byte-for-value, **and all YAML comments**, and refreshes `verified`.
 - [ ] AC10: A missing or invalid KB file never stops the toolkit from loading; it only logs a warning.
 - [ ] AC10b: `oauth2_local` refuses a PermissionContext whose channel is not in `allowed_channels`.
-- [ ] AC11: `ruff check` is clean; no new third-party dependency is added (PyYAML is already in core).
+- [ ] AC11: `ruff check` is clean. The only new third-party dependency is `ruamel.yaml` (for comment-preserving round-trip).
 
 ---
 
@@ -418,6 +417,7 @@ from .toolkit import AbstractToolkit                               # jiratoolkit
 from .decorators import tool_schema, requires_permission          # jiratoolkit.py:63
 from .jira_config import JiraToolkitConfig                         # jiratoolkit.py:64
 import yaml                                                         # PyYAML>=6.0.2 in packages/ai-parrot/pyproject.toml:58
+from ruamel.yaml import YAML                                        # ruamel.yaml (new dep, for comment-preserving KB round-trip)
 ```
 
 ### Existing Class Signatures
@@ -482,7 +482,8 @@ JIRA.project_issue_fields(project, issue_type, startAt=0, maxResults=50)
 - ~~a non-Redis token store for Jira 3LO~~ (all 3LO tokens live in Redis today)
 - ~~`parrot jira …` / `parrot jiratoolkit …` CLI~~
 - ~~`python-dotenv` as a declared dependency~~: do not `import dotenv`; write `upsert_env` by hand.
-- ~~`ruamel.yaml`~~: not a dependency; use PyYAML.
+- `ruamel.yaml` is now a dependency — used by `jira_kb.py` for comment-preserving YAML round-trip.
+  PyYAML remains for the rest of the codebase.
 - ~~`JIRA_OAUTH_CLIENT_ID`~~ as the canonical env name: the codebase mostly uses `JIRA_CLIENT_ID`,
   `JIRA_CLIENT_SECRET` and `JIRA_REDIRECT_URI`.
 
@@ -522,14 +523,14 @@ Verified against: `7b820a208`
   and `status` masks it.
 - **`.env` upsert** must not reorder or drop unrelated lines, and must quote values that contain `#` or spaces.
 - **`_edge/tenant_info`** is undocumented. It is best-effort only and must not break the tool.
-- **PyYAML drops comments**, so `sync-kb` loses the user's inline comments. Mitigation: write a header noting that
-  the file is generated and that the curated sections are preserved; document this.
+- ~~**PyYAML drops comments**~~: resolved — `sync-kb` uses `ruamel.yaml` (round-trip mode) so inline and block
+  comments survive the rewrite.
 - **`jiratoolkit.py` churn** (FEAT-637/639/688 all touch it): `/sdd-task` must re-verify anchors.
 - **The single-user bypass** in `_pre_execute` must be reachable **only** through `oauth2_local`. A server deploy
   using `oauth2_3lo` must still require a PermissionContext. Cover this with a test.
 
 ### External Dependencies
-None new. `jira` 3.10.5, PyYAML ≥ 6.0.2, aiohttp and click are already present.
+`ruamel.yaml` ≥ 0.18 (comment-preserving YAML round-trip for `sync-kb`). `jira` 3.10.5, PyYAML ≥ 6.0.2, aiohttp and click are already present.
 
 ---
 
