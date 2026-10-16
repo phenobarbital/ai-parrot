@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-16T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-16T01:36:01+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -118,7 +118,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -128,8 +128,9 @@
       "parallelism_notes": "exclusive: reads the live <main>/.parrot/ledger/events.jsonl outside its files; needs .gitattributes from TASK-4409 and the final export-log filter",
       "assigned_to": null,
       "started_at": "2026-10-16T01:03:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4410-bootstrap-shared-event-log.md"
+      "completed_at": "2026-10-16T01:36:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4410-bootstrap-shared-event-log.md",
+      "verification": "verified"
     }
   ]
 }
