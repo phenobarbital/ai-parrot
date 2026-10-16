@@ -25,6 +25,7 @@ workflow **without** running the `/sdd-*` commands. Details:
 | `sdd/state/<FEAT-ID>/` | Research / design-research artifacts of a feature |
 | `sdd/reviews/` | Feature code-review reports |
 | `sdd/ledger/issues.jsonl` | Committed snapshot of the work ledger (written by `/sdd-done`) |
+| `sdd/ledger/events.jsonl` / `sdd/ledger/archive/` | Shared ledger event log (FEAT-694) — synced by the `parrot-ledger` git hooks; rotated only by `/sdd-done` |
 
 Gone / legacy — never write to them: `sdd/tasks/.index.json` (old monolith,
 ignored), `tasks/` at the repo root, `docs/sdd/specs/`, `docs/sdd/proposals/`.

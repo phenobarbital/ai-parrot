@@ -474,8 +474,9 @@ fi
 
 ### 9.1. Snapshot Ledger Issues (FEAT-566)
 
-For feature flows (not hotfixes), regenerate `sdd/ledger/issues.jsonl` from a
-throwaway worktree at `origin/<BASE_BRANCH>` and commit/push it directly to
+For feature flows (not hotfixes), regenerate `sdd/ledger/issues.jsonl`, export the
+shared `sdd/ledger/events.jsonl`, and rotate old terminal events from a throwaway
+worktree at `origin/<BASE_BRANCH>`; commit/push the resulting ledger snapshot directly to
 `base_branch` when it changed — never from an active worktree, never on the
 feature branch. Bounded retry on a rejected push; never fails `/sdd-done`.
 
@@ -494,11 +495,12 @@ if [[ "$TYPE" != "hotfix" ]]; then
     # worktree agents write to $WORKTREES_DIR outside their own checkout.
     TEMP_WORKTREE="$WORKTREES_DIR/_ledger-snapshot-$$"
     git worktree add --detach "$TEMP_WORKTREE" "origin/$BASE_BRANCH" >/dev/null 2>&1
-    # No --force: the throwaway checkout only ever touches issues.jsonl, so
-    # restoring that one file leaves it clean and a plain remove succeeds
+    # No --force: the throwaway checkout only ever touches sdd/ledger, so
+    # restoring and cleaning that directory leaves it clean and a plain remove succeeds
     # (a detached, unpushed snapshot commit does not block `worktree remove`).
     cleanup_snapshot_worktree() {
-        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger/issues.jsonl >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" clean -fdq -- sdd/ledger >/dev/null 2>&1
         git worktree remove "$TEMP_WORKTREE" >/dev/null 2>&1 || true
     }
     trap cleanup_snapshot_worktree EXIT
@@ -507,12 +509,15 @@ if [[ "$TYPE" != "hotfix" ]]; then
     MAX_ATTEMPTS=3
     while (( ATTEMPT <= MAX_ATTEMPTS )); do
         EXPORT_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export 2>&1)
-        if [[ "$EXPORT_OUTPUT" != *"(changed)"* ]]; then
+        LOG_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export-log 2>&1)
+        ROTATE_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger rotate-log --older-than-days 30 2>&1)
+        if [[ "$EXPORT_OUTPUT" != *"(changed)"* && "$LOG_OUTPUT" != *"(+"* && "$ROTATE_OUTPUT" != *"Rotated"* ]]; then
             echo "📝 Ledger snapshot unchanged — nothing to commit."
             break
         fi
 
-        git -C "$TEMP_WORKTREE" add sdd/ledger/issues.jsonl
+        git -C "$TEMP_WORKTREE" add sdd/ledger/issues.jsonl sdd/ledger/events.jsonl
+        [ -d "$TEMP_WORKTREE/sdd/ledger/archive" ] && git -C "$TEMP_WORKTREE" add sdd/ledger/archive
         git -C "$TEMP_WORKTREE" commit -q -m "sdd: ledger snapshot for $FEAT_ID"
         if git -C "$TEMP_WORKTREE" push origin "HEAD:$BASE_BRANCH" >/dev/null 2>&1; then
             echo "📝 Ledger snapshot updated with changed issues."
@@ -521,7 +526,8 @@ if [[ "$TYPE" != "hotfix" ]]; then
 
         # Rejected push: re-sync the throwaway worktree only, re-export, retry.
         git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
-        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger/issues.jsonl >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" clean -fdq -- sdd/ledger >/dev/null 2>&1
         git -C "$TEMP_WORKTREE" checkout -q --detach "origin/$BASE_BRANCH" >/dev/null 2>&1
         ATTEMPT=$((ATTEMPT + 1))
         if (( ATTEMPT > MAX_ATTEMPTS )); then
