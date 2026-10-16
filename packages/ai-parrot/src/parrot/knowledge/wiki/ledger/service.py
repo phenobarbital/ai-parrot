@@ -16,7 +16,7 @@ import json
 import logging
 from collections.abc import Collection, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from parrot.knowledge.wiki.ledger.events import (
     IssueKind,
@@ -37,6 +37,9 @@ from parrot.knowledge.wiki.project import (
 from parrot.knowledge.wiki.store import SQLitePragmaPolicy, WikiStoreBusy, estimate_tokens
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from parrot.knowledge.wiki.ledger.shared_log import SharedLogExportReport, SharedLogImportReport
 
 
 def _write_snapshot_if_changed(dest: Path, new_content: str) -> bool:
@@ -557,6 +560,61 @@ class LedgerService:
 
         return await asyncio.to_thread(_write_snapshot_if_changed, dest, new_content)
 
+    async def export_shared_log(self, repo_root: Path | None = None) -> "SharedLogExportReport":
+        """Append this machine's shareable events to the committed shared log.
+
+        Args:
+            repo_root: Checkout containing the shared ``sdd/ledger`` directory.
+
+        Returns:
+            The append-only export report.
+        """
+        from parrot.knowledge.wiki.ledger.shared_log import export_events
+
+        return await asyncio.to_thread(export_events, self.log, repo_root or self.shared_root)
+
+    async def import_shared_log(self, repo_root: Path | None = None, *, force: bool = False) -> "SharedLogImportReport":
+        """Append unknown committed events, incrementally sync, and report claim conflicts.
+
+        Args:
+            repo_root: Checkout containing the shared ``sdd/ledger`` directory.
+            force: Whether to bypass the digest-marker fast path.
+
+        Returns:
+            Import details, including a soft index-busy result when applicable.
+        """
+        from parrot.knowledge.wiki.ledger.shared_log import MARKER_FILENAME, ClaimConflict, import_events
+
+        marker = Path(self.log.path).parent / MARKER_FILENAME
+        report, claimed = await asyncio.to_thread(
+            import_events, self.log, repo_root or self.shared_root, marker, force=force
+        )
+        if report.fast_path or report.added == 0:
+            return report
+
+        try:
+            report.synced_events = await self.index.sync()
+        except WikiStoreBusy:
+            logger.warning("Ledger index sync skipped: writer lock busy; imported events remain durable.")
+            report.index_busy = True
+            report.synced_events = 0
+            return report
+
+        issues = dict(await self._all_issues())
+        for event in claimed:
+            state = issues.get(event.subject)
+            foreign_claimed_by = event.payload.get("claimed_by")
+            if state is not None and state.get("status") == "claimed" and state.get("claimed_by") != foreign_claimed_by:
+                report.claim_conflicts.append(
+                    ClaimConflict(
+                        issue_id=event.subject,
+                        local_claimed_by=state["claimed_by"],
+                        foreign_claimed_by=foreign_claimed_by,
+                        foreign_event_id=event.event_id,
+                    )
+                )
+        return report
+
     async def compact(self, older_than_days: int = 30) -> int:
         """Delegate to :meth:`LedgerIndex.compact`."""
         return await self.index.compact(older_than_days)
@@ -587,5 +645,38 @@ class LedgerService:
             "cursor_offset": offset,
             "cursor_lag_events": lag,
             "broken_edges": broken_edges,
+            "shared_log": await asyncio.to_thread(self._shared_log_audit),
             "sqlite": await self.store.sqlite_settings(),
+        }
+
+    def _shared_log_audit(self) -> dict[str, Any]:
+        """Blocking: compare the local log with the committed logical shared log."""
+        from parrot.knowledge.wiki.ledger.shared_log import (
+            MARKER_FILENAME,
+            SHARED_LOG_REL_PATH,
+            digest_files,
+            is_shareable,
+            read_raw_events,
+            read_shared_event_ids,
+            shared_log_files,
+        )
+
+        files = shared_log_files(self.shared_root)
+        committed = read_shared_event_ids(files)
+        local_events = read_raw_events(Path(self.log.path))
+        local = {event.event_id for _, event in local_events if is_shareable(event)}
+        all_local_ids = {event.event_id for _, event in local_events}
+        marker = Path(self.log.path).parent / MARKER_FILENAME
+        if not marker.exists():
+            marker_state = "missing"
+        elif marker.read_text(encoding="utf-8") == digest_files(files):
+            marker_state = "ok"
+        else:
+            marker_state = "stale"
+        return {
+            "path": str(self.shared_root / SHARED_LOG_REL_PATH),
+            "exists": (self.shared_root / SHARED_LOG_REL_PATH).exists(),
+            "local_only_events": len(local - committed),
+            "committed_unknown_events": len(committed - all_local_ids),
+            "marker": marker_state,
         }
