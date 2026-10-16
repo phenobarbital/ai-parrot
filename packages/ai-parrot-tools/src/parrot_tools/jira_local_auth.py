@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Iterator, Optional
 
 import aiohttp
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from parrot.auth.credentials import CredentialResolver
 from parrot.auth.jira_oauth import JiraTokenSet, refresh_access_token
@@ -59,13 +59,30 @@ class LocalJiraTokenStore:
             finally:
                 os.close(fd)
 
-    def load(self) -> LocalSettings:
-        """Load settings from disk, returning defaults if missing."""
+    def load(self, *, strict: bool = True) -> LocalSettings:
+        """Load settings from disk, returning defaults if missing.
+
+        Args:
+            strict: When True (default) a corrupt file raises ``ValueError``; when False a
+                corrupt file is logged and treated as empty (used by writers so that
+                re-authenticating repairs the store).
+
+        Raises:
+            ValueError: If the file is not valid settings JSON and ``strict`` is True.
+        """
         if not self.path.exists():
             return LocalSettings()
-        with self.path.open("r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        return LocalSettings.model_validate(data)
+        try:
+            with self.path.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            return LocalSettings.model_validate(data)
+        except (json.JSONDecodeError, ValidationError) as exc:
+            if not strict:
+                logger.warning("Ignoring corrupt Jira settings file %s: %s", self.path, type(exc).__name__)
+                return LocalSettings()
+            raise ValueError(
+                f"Jira settings file {self.path} is corrupt; run `parrot jiratoolkit auth` again."
+            ) from exc
 
     def get(self, site: Optional[str] = None) -> Optional[JiraTokenSet]:
         """Return the token set for a site, or the default site."""
@@ -99,7 +116,7 @@ class LocalJiraTokenStore:
         return token.site_url or token.cloud_id
 
     def _save_unlocked(self, token: JiraTokenSet, *, make_default: bool = True, key: Optional[str] = None) -> None:
-        settings = self.load()
+        settings = self.load(strict=False)
         key = key or self._site_key(token)
         settings.sites[key] = token.model_dump(mode="json")
         if make_default or not settings.default_site:
@@ -118,7 +135,7 @@ class LocalJiraTokenStore:
             True if an entry was removed.
         """
         with self.locked():
-            settings = self.load()
+            settings = self.load(strict=False)
             key = site or settings.default_site
             if not key or key not in settings.sites:
                 return False

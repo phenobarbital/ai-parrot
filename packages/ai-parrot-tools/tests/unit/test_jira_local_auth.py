@@ -156,3 +156,25 @@ async def test_cancelled_lock_acquisition_releases_lock(tmp_path) -> None:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # raises BlockingIOError if still held
     finally:
         os.close(fd)
+
+
+class TestCorruptStore:
+    def test_corrupt_file_raises_clean_error_on_read(self, tmp_path):
+        store = _store(tmp_path)
+        store.path.parent.mkdir(parents=True)
+        store.path.write_text("{not json", encoding="utf-8")
+        with pytest.raises(ValueError, match="corrupt"):
+            store.get()
+
+    def test_save_repairs_corrupt_file(self, tmp_path):
+        store = _store(tmp_path)
+        store.path.parent.mkdir(parents=True)
+        store.path.write_text("{not json", encoding="utf-8")
+        store.save(_token())
+        assert store.get().access_token == "a1"
+
+    def test_delete_on_corrupt_file_is_noop(self, tmp_path):
+        store = _store(tmp_path)
+        store.path.parent.mkdir(parents=True)
+        store.path.write_text("{not json", encoding="utf-8")
+        assert store.delete() is False

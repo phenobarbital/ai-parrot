@@ -119,3 +119,11 @@ class TestFetchMyself:
         session = _session(_Resp(403, text="nope"))
         with pytest.raises(ValueError, match="/myself failed with status 403"):
             await fetch_myself(session, "tok", "cloud1")
+
+
+def test_truncate_bounds_error_bodies() -> None:
+    from parrot.auth.jira_oauth import _truncate
+
+    assert _truncate("  short  ") == "short"
+    out = _truncate("x" * 500)
+    assert len(out) < 230 and out.endswith("[truncated]")

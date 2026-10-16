@@ -83,6 +83,15 @@ class JiraTokenSet(BaseModel):
         return f"https://api.atlassian.com/ex/jira/{self.cloud_id}"
 
 
+_MAX_ERROR_BODY_CHARS = 200
+
+
+def _truncate(text: str, limit: int = _MAX_ERROR_BODY_CHARS) -> str:
+    """Bound an HTTP error body before it is embedded in an exception message."""
+    text = text.strip()
+    return text if len(text) <= limit else text[:limit] + "…[truncated]"
+
+
 def build_authorization_url(
     client_id: str,
     redirect_uri: str,
@@ -140,7 +149,7 @@ async def exchange_code(
     ) as response:
         if response.status != 200:
             text = await response.text()
-            raise ValueError(f"Token exchange failed with status {response.status}: {text}")
+            raise ValueError(f"Token exchange failed with status {response.status}: {_truncate(text)}")
         return await response.json()
 
 
@@ -168,7 +177,7 @@ async def refresh_access_token(
     ) as response:
         if response.status != 200:
             text = await response.text()
-            raise ValueError(f"Token refresh failed with status {response.status}: {text}")
+            raise ValueError(f"Token refresh failed with status {response.status}: {_truncate(text)}")
         return await response.json()
 
 
@@ -188,7 +197,7 @@ async def fetch_accessible_resources(
     ) as response:
         if response.status != 200:
             text = await response.text()
-            raise ValueError(f"accessible-resources failed with status {response.status}: {text}")
+            raise ValueError(f"accessible-resources failed with status {response.status}: {_truncate(text)}")
         data = await response.json()
         if not isinstance(data, list):
             raise ValueError("accessible-resources returned a non-list payload.")
@@ -208,7 +217,7 @@ async def fetch_myself(session: aiohttp.ClientSession, access_token: str, cloud_
     ) as response:
         if response.status != 200:
             text = await response.text()
-            raise ValueError(f"/myself failed with status {response.status}: {text}")
+            raise ValueError(f"/myself failed with status {response.status}: {_truncate(text)}")
         return await response.json()
 
 

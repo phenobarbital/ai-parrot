@@ -240,7 +240,10 @@ async def _fetch_structure(token: JiraTokenSet, project_keys: Optional[list[str]
 def _load_fresh_token(site: Optional[str] = None) -> JiraTokenSet:
     """Return the stored token, refreshing it through the local resolver when expired."""
     store = LocalJiraTokenStore()
-    token = store.get(site)
+    try:
+        token = store.get(site)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
     if token is None:
         raise click.ClickException("No stored Jira credentials. Run `parrot jiratoolkit auth` first.")
     if not token.is_expired:
@@ -271,8 +274,21 @@ jiratoolkit = cli
 @click.option("--client-id", default=None, help="OAuth client ID")
 @click.option("--client-secret", default=None, help="OAuth client secret")
 @click.option("--redirect-uri", default=None, help="OAuth redirect URI")
-def auth(site, scopes, env_file, client_id, client_secret, redirect_uri) -> None:
+@click.option(
+    "--allow-bare-code",
+    is_flag=True,
+    default=False,
+    help="Accept a bare authorization code (no CSRF state check). Default: require the full redirected URL.",
+)
+def auth(site, scopes, env_file, client_id, client_secret, redirect_uri, allow_bare_code) -> None:
     """Authenticate with Jira using OAuth 2.0 (3LO) — manual paste flow."""
+    if client_secret:
+        click.secho(
+            "Warning: --client-secret exposes the secret in your shell history and process list; "
+            "prefer JIRA_CLIENT_SECRET or the hidden prompt.",
+            fg="yellow",
+            err=True,
+        )
     client_id = _prompt_value(client_id, "JIRA_CLIENT_ID", "Jira OAuth client ID")
     client_secret = _prompt_value(client_secret, "JIRA_CLIENT_SECRET", "Jira OAuth client secret", hide=True)
     redirect_uri = _prompt_value(redirect_uri, "JIRA_REDIRECT_URI", "Redirect URI registered on the Jira app")
@@ -288,6 +304,11 @@ def auth(site, scopes, env_file, client_id, client_secret, redirect_uri) -> None
     if _looks_like_url(pasted):
         if returned_state is None or not hmac.compare_digest(returned_state, state):
             raise click.ClickException("State mismatch: the pasted URL is not from this login. Aborting.")
+    elif not allow_bare_code:
+        raise click.ClickException(
+            "Paste the full redirected URL so the login state can be verified "
+            "(or pass --allow-bare-code to skip the CSRF check)."
+        )
     else:
         click.secho("Warning: bare code accepted without a state check.", fg="yellow", err=True)
 
@@ -334,7 +355,10 @@ def auth(site, scopes, env_file, client_id, client_secret, redirect_uri) -> None
 @click.option("--site", default=None, help="Jira site URL")
 def status(site) -> None:
     """Show current Jira authentication status."""
-    token = LocalJiraTokenStore().get(site)
+    try:
+        token = LocalJiraTokenStore().get(site)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
     if token is None:
         raise click.ClickException("Not authenticated. Run `parrot jiratoolkit auth`.")
     click.echo(f"Site:     {token.site_url}")

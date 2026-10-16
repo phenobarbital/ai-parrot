@@ -190,13 +190,23 @@ class TestAuthCommand:
         assert "access_denied" in result.output
         assert fake_network["exchange_calls"] == []
 
-    def test_bare_code_accepted_with_warning(self, settings_path, fake_network, tmp_path):
+    def test_bare_code_rejected_by_default(self, settings_path, fake_network, tmp_path):
+        result = CliRunner().invoke(cli, _auth_args(tmp_path / ".env"), input="bare-code-123\n")
+        assert result.exit_code != 0
+        assert "full redirected URL" in result.output
+        assert fake_network["exchange_calls"] == []
+
+    def test_bare_code_accepted_only_with_flag(self, settings_path, fake_network, tmp_path):
         env = tmp_path / ".env"
-        result = CliRunner().invoke(cli, _auth_args(env), input="bare-code-123\n")
+        result = CliRunner().invoke(cli, _auth_args(env, "--allow-bare-code"), input="bare-code-123\n")
         assert result.exit_code == 0, result.output
         assert "without a state check" in result.output
         assert fake_network["exchange_calls"][0][2] == "bare-code-123"
         assert LocalStoreHelper.load_default(settings_path).cloud_id == SITE_A["id"]
+
+    def test_client_secret_flag_warns(self, settings_path, fake_network, tmp_path):
+        result = CliRunner().invoke(cli, _auth_args(tmp_path / ".env"), input="\n")
+        assert "--client-secret exposes the secret" in result.output
 
     def test_pasted_url_with_matching_state_saves_everything(self, settings_path, fake_network, tmp_path):
         env = tmp_path / ".env"
