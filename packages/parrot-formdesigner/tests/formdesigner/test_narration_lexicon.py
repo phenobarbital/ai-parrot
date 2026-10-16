@@ -2,7 +2,13 @@
 
 import pytest
 
-from parrot_formdesigner.audio.narration import load_lexicon, load_locale_document, locale_chain, normalize
+from parrot_formdesigner.audio.narration import (
+    load_lexicon,
+    load_locale_document,
+    locale_chain,
+    locale_document_path,
+    normalize,
+)
 
 EXPECTED_KEYS = {
     "question",
@@ -75,6 +81,34 @@ class TestLexicon:
         resolved, doc = load_locale_document("../../etc")
         assert resolved == "en"
         assert doc["templates"]
+
+    @pytest.mark.parametrize("candidate", ["../escape", "../..", "/etc", "en/../..", "..", ".", "", "fr"])
+    def test_locale_document_path_rejects_non_locale_candidates(self, tmp_path, candidate):
+        """Only a directory *named* exactly like the candidate can ever be returned (CWE-22)."""
+        (tmp_path / "root" / "en").mkdir(parents=True)
+        (tmp_path / "root" / "en" / "narration.yaml").write_text("templates: {}\n", encoding="utf-8")
+        (tmp_path / "escape" / "narration.yaml").parent.mkdir(parents=True)
+        (tmp_path / "escape" / "narration.yaml").write_text("templates: {}\n", encoding="utf-8")
+        assert locale_document_path(tmp_path / "root", candidate) is None
+
+    def test_locale_document_path_returns_installed_locale(self, tmp_path):
+        (tmp_path / "es-MX").mkdir()
+        (tmp_path / "es-MX" / "narration.yaml").write_text("templates: {}\n", encoding="utf-8")
+        assert locale_document_path(tmp_path, "es-MX") == tmp_path.resolve() / "es-MX" / "narration.yaml"
+
+    def test_locale_document_path_skips_symlink_out_of_root(self, tmp_path):
+        """A locale directory symlinked outside the templates root is not served."""
+        outside = tmp_path / "outside"
+        (outside / "narration.yaml").parent.mkdir(parents=True)
+        (outside / "narration.yaml").write_text("templates: {}\n", encoding="utf-8")
+        base = tmp_path / "root"
+        base.mkdir()
+        (base / "en").symlink_to(outside, target_is_directory=True)
+        assert locale_document_path(base, "en") is None
+
+    def test_locale_document_path_missing_document(self, tmp_path):
+        (tmp_path / "en").mkdir()
+        assert locale_document_path(tmp_path, "en") is None
 
     @pytest.mark.parametrize("locale", ["en", "es"])
     def test_templates_and_commands_complete(self, locale):
