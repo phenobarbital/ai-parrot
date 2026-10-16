@@ -34,6 +34,7 @@ import re
 import logging
 import asyncio
 import importlib
+import aiohttp
 from datetime import datetime
 from pydantic import BaseModel, Field
 import pandas as pd
@@ -62,6 +63,8 @@ from parrot.template import JinjaConfig, TemplateEngine
 from .toolkit import AbstractToolkit
 from .decorators import tool_schema, requires_permission
 from .jira_config import JiraToolkitConfig
+from .jira_kb import JiraKnowledgeBase
+from parrot.auth.jira_oauth import fetch_accessible_resources
 
 #: Suffix every Jira text template file carries.
 _TEMPLATE_SUFFIX = ".j2"
@@ -729,6 +732,32 @@ class SetAcceptanceCriteriaInput(BaseModel):
     )
 
 
+class CreateIssueLinkInput(BaseModel):
+    """Input for creating a link between two Jira issues."""
+
+    inward_issue: str = Field(..., description="Issue key of the inward issue (e.g. 'PROJ-1')")
+    outward_issue: str = Field(..., description="Issue key of the outward issue (e.g. 'PROJ-2')")
+    link_type: str = Field("Relates", description="Link type name (e.g. 'Blocks', 'Relates')")
+    comment: Optional[str] = Field(None, description="Optional comment on the link")
+
+
+class GetCreateFieldsInput(BaseModel):
+    """Input for retrieving issue creation field metadata."""
+
+    issue_type: str = Field(..., description="Issue type name or id")
+    project: Optional[str] = Field(None, description="Project key (uses default_project if omitted)")
+
+
+class EditCommentInput(BaseModel):
+    """Input for replacing an existing Jira comment."""
+
+    issue: str = Field(..., description="Issue key (e.g. 'PROJ-123')")
+    comment_id: str = Field(..., description="Comment id to edit")
+    body: Optional[str] = Field(None, description="New comment body (plain text or ADF)")
+    template: Optional[str] = Field(None, description="Template name (FEAT-637)")
+    template_params: Optional[Dict[str, Any]] = Field(None, description="Template parameters")
+
+
 class ConfigureClientInput(BaseModel):
     """Input for re-configuring the Jira client."""
 
@@ -858,6 +887,7 @@ class JiraToolkit(AbstractToolkit):
         verify_credentials: bool = True,
         templates_dir: Optional[Union[str, Path]] = None,
         templates: Optional[Mapping[str, str]] = None,
+        knowledge_base: Optional[Union[str, Path, JiraKnowledgeBase]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -936,6 +966,32 @@ class JiraToolkit(AbstractToolkit):
         # loader ``uptodate`` probes of every source it was parsed from, so an
         # edited file or overridden inline template invalidates the entry.
         self._template_variables_cache: Dict[str, tuple[frozenset[str], tuple[Callable[[], bool], ...]]] = {}
+
+        # FEAT-696 — site structure cache. A KB is advisory: construction and
+        # live Jira access continue when its path is absent, invalid, or for a
+        # different site.
+        self._kb: Optional[JiraKnowledgeBase] = None
+        self._kb_path: Optional[str] = None
+        _kb_source = knowledge_base or _cfg("JIRA_KB_PATH")
+        if isinstance(_kb_source, JiraKnowledgeBase):
+            self._kb = _kb_source
+            self._kb_path = "<provided>"
+        elif _kb_source:
+            self._kb_path = str(_kb_source)
+            try:
+                self._kb = JiraKnowledgeBase.load(_kb_source)
+            except (OSError, ValueError) as exc:
+                self.logger.warning("Could not load Jira knowledge base %s: %s", _kb_source, exc)
+
+        if self._kb is not None and self.server_url:
+            if self._kb.site.rstrip("/") != self.server_url.rstrip("/"):
+                self.logger.warning(
+                    "Ignoring Jira knowledge base %s: site %s does not match server %s",
+                    self._kb_path,
+                    self._kb.site,
+                    self.server_url,
+                )
+                self._kb = None
 
         # Declared workflow paths — the ordered status chain for a project's
         # custom Jira workflow. Jira's API only exposes the transitions
@@ -2592,6 +2648,8 @@ class JiraToolkit(AbstractToolkit):
         # Apply configured defaults for omitted fields
         project = project or self.default_project or "NAV"
         issuetype = issuetype or self.default_issue_type or "Task"
+        if self._kb is not None:
+            self._kb.validate_limits(summary=summary, description=description)
         if labels is None and self.default_labels:
             labels = list(self.default_labels)
         if components is None and self.default_components:
@@ -2651,6 +2709,8 @@ class JiraToolkit(AbstractToolkit):
         if rendered_description is not description and fields and "description" in fields:
             raise JiraTemplateError("fields['description'] conflicts with the rendered template description")
         description = rendered_description
+        if self._kb is not None:
+            self._kb.validate_limits(summary=summary, description=description)
 
         # Build fields dict
         issue_fields: Dict[str, Any] = {
@@ -2686,6 +2746,8 @@ class JiraToolkit(AbstractToolkit):
 
         # Merge with additional fields if provided
         if fields:
+            if self._kb is not None:
+                fields = {self._kb.resolve_field(name): value for name, value in fields.items()}
             issue_fields.update(fields)
 
         def _run():
@@ -2775,6 +2837,8 @@ class JiraToolkit(AbstractToolkit):
         if rendered_description is not description and fields and "description" in fields:
             raise JiraTemplateError("fields['description'] conflicts with the rendered template description")
         description = rendered_description
+        if self._kb is not None:
+            self._kb.validate_limits(summary=summary, description=description)
 
         update_kwargs: Dict[str, Any] = {}
         update_fields: Dict[str, Any] = {}
@@ -2811,6 +2875,8 @@ class JiraToolkit(AbstractToolkit):
 
         # Merge with arbitrary fields if provided
         if fields:
+            if self._kb is not None:
+                fields = {self._kb.resolve_field(name): value for name, value in fields.items()}
             update_fields.update(fields)
 
         if update_fields:
@@ -2958,6 +3024,15 @@ class JiraToolkit(AbstractToolkit):
 
         Example: jira.jira_get_issue_types(project='PROJ')
         """
+
+        if project and self._kb is not None:
+            kb_project = self._kb.projects.get(project)
+            if kb_project is not None:
+                return [
+                    {"id": issue_type.id, "name": name, "description": ""}
+                    for name, issue_type in kb_project.issue_types.items()
+                ]
+            self.logger.warning("jira KB stale: project %s not found in %s", project, self._kb_path)
 
         def _run():
             if project:
@@ -3158,6 +3233,13 @@ class JiraToolkit(AbstractToolkit):
             AuthorizationRequired: When the empty list is caused by failed
                 authentication (expired/revoked token, wrong username).
         """
+        if self._kb is not None and self._kb.projects:
+            projects = [
+                {"key": key, "name": project.name}
+                for key, project in self._kb.projects.items()
+            ]
+            return {"projects": projects, "count": len(projects), "authenticated": True, "source": "kb"}
+
         # Transport delegated to JiraInterface (FEAT-454, G1) — the exact
         # same client.projects() call this method used to make directly.
         # A JiraAuthError here (unresolved auth_type, direct call bypassing
@@ -3224,6 +3306,11 @@ class JiraToolkit(AbstractToolkit):
         proj = project or self.default_project
         if not proj:
             raise ValueError("Project key is required for listing components")
+
+        if self._kb is not None and self._kb.components:
+            return [{"id": name, "name": name, "description": ""} for name in self._kb.components]
+        if self._kb is not None:
+            self.logger.warning("jira KB stale: components not found in %s", self._kb_path)
 
         def _run():
             return self.jira.project_components(proj)
@@ -4243,6 +4330,189 @@ class JiraToolkit(AbstractToolkit):
         """List all status changes (transitions) for a ticket."""
         changelog = await self._get_full_changelog(issue)
         return self._extract_field_history(changelog, "status")
+
+    @requires_permission("jira.write")
+    @tool_schema(CreateIssueLinkInput)
+    async def jira_create_issue_link(
+        self,
+        inward_issue: str,
+        outward_issue: str,
+        link_type: str = "Relates",
+        comment: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Link two issues (e.g. 'Blocks', 'Relates'). Use jira_get_link_types for valid names."""
+
+        def _run() -> Any:
+            return self.jira.create_issue_link(link_type, inward_issue, outward_issue, comment=comment)
+
+        try:
+            await asyncio.wait_for(asyncio.to_thread(_run), timeout=self.request_timeout + 5)
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(f"Jira create_issue_link timed out after {self.request_timeout + 5:.0f}s") from exc
+        return {
+            "ok": True,
+            "inward_issue": inward_issue,
+            "outward_issue": outward_issue,
+            "link_type": link_type,
+        }
+
+    @tool_schema(TicketIdInput)
+    async def jira_get_link_types(self) -> List[Dict[str, Any]]:
+        """List issue link types: name, inward and outward descriptions."""
+
+        def _run() -> Any:
+            return self.jira.issue_link_types()
+
+        try:
+            link_types = await asyncio.wait_for(asyncio.to_thread(_run), timeout=self.request_timeout + 5)
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(f"Jira issue_link_types timed out after {self.request_timeout + 5:.0f}s") from exc
+        return [
+            {
+                "id": getattr(link_type, "id", None),
+                "name": getattr(link_type, "name", ""),
+                "inward": getattr(link_type, "inward", ""),
+                "outward": getattr(link_type, "outward", ""),
+            }
+            for link_type in link_types
+        ]
+
+    @tool_schema(GetCreateFieldsInput)
+    async def jira_get_create_fields(self, issue_type: str, project: Optional[str] = None) -> Dict[str, Any]:
+        """Fields (id, name, required, schema, allowedValues) to create an issue of this type."""
+        project_key = project or self.default_project
+        if not project_key:
+            raise ValueError("Project key is required for create field metadata")
+
+        issue_type_id: Optional[str] = None
+        kb_hit = False
+        if self._kb is not None:
+            entry = self._kb.resolve_issue_type(project_key, issue_type)
+            if entry is not None:
+                issue_type_id = entry.id
+                kb_hit = True
+            else:
+                self.logger.warning("jira KB stale: issue type %s not found in %s", issue_type, self._kb_path)
+
+        if issue_type_id is None:
+            def _live_issue_types() -> Any:
+                return self.jira.project(project_key).issueTypes
+
+            try:
+                issue_types = await asyncio.wait_for(
+                    asyncio.to_thread(_live_issue_types), timeout=self.request_timeout + 5
+                )
+            except asyncio.TimeoutError as exc:
+                raise TimeoutError(f"Jira list issue_types timed out after {self.request_timeout + 5:.0f}s") from exc
+            for candidate in issue_types:
+                candidate_id = str(getattr(candidate, "id", ""))
+                candidate_name = getattr(candidate, "name", "")
+                if issue_type in (candidate_id, candidate_name):
+                    issue_type_id = candidate_id
+                    break
+        if issue_type_id is None:
+            raise ValueError(f"Issue type '{issue_type}' is not available for project '{project_key}'")
+
+        def _run() -> Any:
+            return self.jira.project_issue_fields(project_key, issue_type_id)
+
+        try:
+            field_values = await asyncio.wait_for(asyncio.to_thread(_run), timeout=self.request_timeout + 5)
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(f"Jira project_issue_fields timed out after {self.request_timeout + 5:.0f}s") from exc
+        fields = [getattr(value, "raw", value) for value in field_values]
+        return {
+            "project": project_key,
+            "issue_type": issue_type_id,
+            "fields": fields,
+            "source": "kb" if kb_hit else "live",
+        }
+
+    @requires_permission("jira.write")
+    @tool_schema(EditCommentInput)
+    async def jira_edit_comment(
+        self,
+        issue: str,
+        comment_id: str,
+        body: Optional[str] = None,
+        template: Optional[str] = None,
+        template_params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Replace the body of an existing comment."""
+        project = self._project_of(issue)
+        body = await self._render_jira_text(
+            "comment",
+            text=body,
+            template=template,
+            template_params=template_params,
+            call_fields={"issue": issue, "project": project, "body": body},
+            project=project,
+        )
+        if body is None:
+            raise ValueError("jira_edit_comment: body is required when no template applies")
+
+        def _run() -> Any:
+            comment = self.jira.comment(issue, comment_id)
+            comment.update(body=body)
+            return comment
+
+        try:
+            comment = await asyncio.wait_for(asyncio.to_thread(_run), timeout=self.request_timeout + 5)
+        except asyncio.TimeoutError as exc:
+            raise TimeoutError(f"Jira edit_comment timed out after {self.request_timeout + 5:.0f}s") from exc
+        return {"ok": True, "issue": issue, "comment": self._issue_to_dict(comment)}
+
+    async def jira_get_accessible_resources(self) -> Dict[str, Any]:
+        """Return {cloud_id, site_url, sites, source} in any auth mode."""
+        options = getattr(self.jira, "_options", {}) if self.jira is not None else {}
+        headers = options.get("headers", {}) if isinstance(options, dict) else {}
+        if not isinstance(headers, dict):
+            headers = {}
+        authorization = headers.get("Authorization", "")
+        if authorization.lower().startswith("bearer "):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    sites = await fetch_accessible_resources(session, authorization[7:])
+                first = sites[0] if sites else {}
+                return {
+                    "cloud_id": first.get("id"),
+                    "site_url": first.get("url"),
+                    "sites": sites,
+                    "source": "oauth2_3lo",
+                }
+            except Exception as exc:  # noqa: BLE001 -- resource discovery must be best-effort
+                self.logger.warning("Could not fetch accessible Jira resources: %s", exc)
+
+        if self._kb is not None:
+            return {
+                "cloud_id": self._kb.cloud_id,
+                "site_url": self._kb.site,
+                "sites": [{"id": self._kb.cloud_id, "url": self._kb.site}],
+                "source": "kb",
+            }
+
+        def _tenant_info() -> Dict[str, Any]:
+            session = getattr(self.jira, "_session", None)
+            if session is None or not self.server_url:
+                return {}
+            response = session.get(f"{self.server_url.rstrip('/')}/_edge/tenant_info")
+            if getattr(response, "status_code", 0) != 200:
+                return {}
+            data = response.json()
+            return data if isinstance(data, dict) else {}
+
+        try:
+            tenant = await asyncio.wait_for(asyncio.to_thread(_tenant_info), timeout=self.request_timeout + 5)
+        except Exception as exc:  # noqa: BLE001 -- tenant info is undocumented and best-effort
+            self.logger.warning("Could not fetch Jira tenant info: %s", exc)
+            tenant = {}
+        cloud_id = tenant.get("cloudId") or tenant.get("cloud_id") or tenant.get("id")
+        return {
+            "cloud_id": cloud_id,
+            "site_url": self.server_url or None,
+            "sites": [{"id": cloud_id, "url": self.server_url}] if cloud_id else [],
+            "source": "tenant_info" if cloud_id else "unavailable",
+        }
 
     @tool_schema(ListHistoryInput)
     async def jira_list_assignees(self, issue: str) -> List[Dict[str, Any]]:
