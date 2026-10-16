@@ -3,6 +3,7 @@
 Stdlib-only, like the rest of the kernel. Records are temporary artifacts under
 ``report_root()``; they are never written into a worktree or committed.
 """
+
 from __future__ import annotations
 
 import json
@@ -82,9 +83,7 @@ def with_junit(invocation: PytestInvocation, junit_path: Path) -> tuple[str, ...
     return (*invocation.argv, f"--junitxml={junit_path}")
 
 
-def _empty_result(
-    suite: str, argv: tuple[str, ...], exit_code: int, duration_s: float, status: str
-) -> SuiteResult:
+def _empty_result(suite: str, argv: tuple[str, ...], exit_code: int, duration_s: float, status: str) -> SuiteResult:
     """Build a zero-count result for a missing or unparsable junit report."""
     return SuiteResult(suite, 0, 0, 0, 0, 0, duration_s, exit_code, argv, status)
 

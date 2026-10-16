@@ -1,4 +1,5 @@
 """Tests for the FEAT-695 test-report kernel."""
+
 from __future__ import annotations
 
 import json
@@ -17,7 +18,18 @@ def _root(tmp_path, monkeypatch):
 
 
 def _result(suite="core", **changes):
-    values = dict(suite=suite, tests=4, passed=4, failed=0, errors=0, skipped=0, duration_s=1.25, exit_code=0, argv=("pytest",), status="ok")
+    values = dict(
+        suite=suite,
+        tests=4,
+        passed=4,
+        failed=0,
+        errors=0,
+        skipped=0,
+        duration_s=1.25,
+        exit_code=0,
+        argv=("pytest",),
+        status="ok",
+    )
     values.update(changes)
     return report.SuiteResult(**values)
 
@@ -25,7 +37,9 @@ def _result(suite="core", **changes):
 def _append(root: str, suite: str) -> None:
     os_environ = report.os.environ
     os_environ[report.REPORT_ROOT_ENV] = root
-    report.append_suite("FEAT-695", "TASK-1", _result(suite), head_sha="head", base_ref="dev", tier="task", source="test")
+    report.append_suite(
+        "FEAT-695", "TASK-1", _result(suite), head_sha="head", base_ref="dev", tier="task", source="test"
+    )
 
 
 def test_with_junit_does_not_mutate(tmp_path):
@@ -39,7 +53,14 @@ def test_parse_junit_counts(tmp_path):
     path = tmp_path / "result.xml"
     path.write_text('<testsuites><testsuite tests="4" failures="1" errors="1" skipped="1" /></testsuites>')
     result = report.parse_junit(path, suite="a", argv=("pytest",), exit_code=1, duration_s=2.0)
-    assert (result.tests, result.passed, result.failed, result.errors, result.skipped, result.status) == (4, 1, 1, 1, 1, "failed")
+    assert (result.tests, result.passed, result.failed, result.errors, result.skipped, result.status) == (
+        4,
+        1,
+        1,
+        1,
+        1,
+        "failed",
+    )
 
 
 def test_parse_junit_missing_file(tmp_path):
@@ -51,8 +72,14 @@ def test_parse_junit_missing_file(tmp_path):
 def test_parse_junit_malformed_and_timed_out(tmp_path):
     path = tmp_path / "bad.xml"
     path.write_text("not xml")
-    assert report.parse_junit(path, suite="a", argv=("pytest",), exit_code=1, duration_s=1.0).status == "report_parse_error"
-    assert report.parse_junit(path, suite="a", argv=("pytest",), exit_code=1, duration_s=1.0, timed_out=True).status == "timed_out"
+    assert (
+        report.parse_junit(path, suite="a", argv=("pytest",), exit_code=1, duration_s=1.0).status
+        == "report_parse_error"
+    )
+    assert (
+        report.parse_junit(path, suite="a", argv=("pytest",), exit_code=1, duration_s=1.0, timed_out=True).status
+        == "timed_out"
+    )
 
 
 def test_parse_junit_xdist_shape(tmp_path):
@@ -71,7 +98,15 @@ def test_junit_paths_are_unique_per_invocation():
 def test_append_suite_replaces_same_suite():
     report.append_suite("FEAT-695", "TASK-1", _result("a"), head_sha="one", base_ref="dev", tier="task", source="test")
     report.append_suite("FEAT-695", "TASK-1", _result("b"), head_sha="two", base_ref="dev", tier="task", source="test")
-    report.append_suite("FEAT-695", "TASK-1", _result("a", tests=7, passed=7), head_sha="three", base_ref="dev", tier="task", source="test")
+    report.append_suite(
+        "FEAT-695",
+        "TASK-1",
+        _result("a", tests=7, passed=7),
+        head_sha="three",
+        base_ref="dev",
+        tier="task",
+        source="test",
+    )
     records, notes = report.load_records("FEAT-695")
     assert not notes
     assert records["TASK-1"].attempts == 3
@@ -107,14 +142,25 @@ def _record(task_id: str, result, head="final"):
 
 
 def test_render_aggregates_by_suite_and_marks_failures():
-    records = {"TASK-1": _record("TASK-1", _result("a")), "TASK-2": _record("TASK-2", _result("a", failed=1, passed=3, status="failed"))}
-    output = report.render_markdown(records, ["TASK-1", "TASK-2"], final_head="final", rerun=None, rerun_skip_reason=None)
+    records = {
+        "TASK-1": _record("TASK-1", _result("a")),
+        "TASK-2": _record("TASK-2", _result("a", failed=1, passed=3, status="failed")),
+    }
+    output = report.render_markdown(
+        records, ["TASK-1", "TASK-2"], final_head="final", rerun=None, rerun_skip_reason=None
+    )
     assert "| a ❌ | 8 | 7 | 1 | 0 | 0 | 2.50s |" in output
     assert "Total (per-task invocation totals)" in output
 
 
 def test_render_no_data_and_stale_marking():
-    output = report.render_markdown({"TASK-1": _record("TASK-1", _result(), "old")}, ["TASK-1", "TASK-2"], final_head="final", rerun=None, rerun_skip_reason=None)
+    output = report.render_markdown(
+        {"TASK-1": _record("TASK-1", _result(), "old")},
+        ["TASK-1", "TASK-2"],
+        final_head="final",
+        rerun=None,
+        rerun_skip_reason=None,
+    )
     assert "TASK-1 (stale)" in output
     assert "TASK-2: no data" in output
 
