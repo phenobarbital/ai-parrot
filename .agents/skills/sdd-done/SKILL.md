@@ -129,6 +129,12 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - task count by status
    - task-by-task evidence
    - E2E policy/status/gate_satisfied recorded in step 4.6
+   - Test report (FEAT-695), never blocking: run
+     `python -m scripts.sdd.test_report decide-rerun --index sdd/tasks/index/<feature-slug>.json`;
+     when it says `rerun`, run in the background
+     `timeout -k 10 1800 python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> --worktree <wt> $(printf -- '--task-file %s ' <every task file of the index>) --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run`;
+     then `python -m scripts.sdd.test_report render --index <idx> --worktree <wt> --out "$TEST_REPORT_MD"`
+     (a path under the report root). Report `Tests: <passed>/<tests> (<failed> failed) - re-run: <done|skipped (N tasks > 10)>`
    - lint residuals and any missing review evidence
 7. Respect flags:
    - `--dry-run`: stop after the report
@@ -200,8 +206,9 @@ do not run task closure again on base_branch and do not clean worktrees with unk
 12. Integrate:
     - If `base_branch == main`, refuse automatic merge or PR creation. Print
       the manual hotfix PR command:
-      `gh pr create --base main --head <branch> --title "<title>" --body "<verification summary>"`.
-    - If feature and no `--merge`, run `gh pr create --base <base_branch> --head <branch>`.
+      `gh pr create --base main --head <branch> --title "<title>" --body-file "$TEST_REPORT_MD"`.
+    - If feature and no `--merge`, run `gh pr create --base <base_branch> --head <branch>`; the PR body includes the
+      rendered `## Tests` section (`$(cat "$TEST_REPORT_MD")`) after `<N>/<total> tasks verified.`.
     - If `gh` is missing or not authenticated, print the manual command.
     - If feature and `--merge`, merge into `base_branch`, run
       `scripts/sdd/heal_orphans.sh <feature-slug>`, commit any staged orphan
@@ -236,6 +243,7 @@ Branch pushed: <branch>
 PR opened: <url> or manual command printed
 Ledger: closed issue:<id> (task:TASK-NNN) / skipped issue:<id> - <reason>
 E2E: <policy> - <status> (gate_satisfied: <bool>)
+Tests: <passed>/<tests> (<failed> failed) - re-run: <done | skipped (N tasks > 10)>
 Worktree removed: .claude/worktrees/<name>
 Jira: <key> -> Done, when requested and successful
 ```

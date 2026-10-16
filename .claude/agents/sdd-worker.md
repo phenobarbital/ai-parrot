@@ -535,7 +535,7 @@ If ANY check fails, fix or STOP.
   (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
 - Run the task's `## Validation Commands`, then `mkdir -p artifacts/logs;
   python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch>
-  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --run > artifacts/logs/merge-tests-TASK-<NNN>.log 2>&1`
+  --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --feature FEAT-<NNN> --report-task TASK-<NNN> --run > artifacts/logs/merge-tests-TASK-<NNN>.log 2>&1`
   as a background Bash call (`run_in_background: true`, no `timeout`), then read that log — a foreground call is
   bounded at 120 s and this sweep is routinely longer
   (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).

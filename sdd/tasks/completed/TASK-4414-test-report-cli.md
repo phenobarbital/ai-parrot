@@ -170,4 +170,15 @@ Follow `sdd/templates/task.md` § Agent Instructions. Close with `scripts/sdd/cl
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+- Task: TASK-4414
+- Feature: sdd-done-tests
+- Implementation SHA: a343bee8b9fccd25d27c5364f83676a982364fb6
+- Closed at (UTC): 2026-10-16T01:26:10+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 92.1s · Tokens: n/a |

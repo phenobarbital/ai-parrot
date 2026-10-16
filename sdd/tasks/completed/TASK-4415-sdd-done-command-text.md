@@ -150,4 +150,6 @@ Follow `sdd/templates/task.md` § Agent Instructions. Close with `scripts/sdd/cl
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+- Implementation: c01d5f38e, done by the orchestrator as attempt 3. Attempt 1 (gemini) delivered no file change; attempt 2 (glm) hit a Bedrock 403 (infrastructure).
+- Validation: merge-tier selector 18 passed; `test_done_optimization_contract.py` 7 passed.
+- Also recorded: this run's own results went through `--feature FEAT-695 --report-task TASK-4415`.

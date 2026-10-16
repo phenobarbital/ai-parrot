@@ -11,6 +11,7 @@ import argparse
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import ModuleType
 
@@ -34,6 +35,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--worktree", type=Path, default=Path.cwd())
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--feature", default=None, help="FEAT-<NNN>: record structured results (FEAT-695)")
+    parser.add_argument("--report-task", default=None, help="TASK-<NNN> or _rerun: record owner (FEAT-695)")
+    parser.add_argument("--no-ledger", action="store_true", help="report-only: never touch the escalation ledger")
     parser.add_argument(
         "--timeout",
         type=int,
@@ -97,24 +101,97 @@ def main(argv: list[str] | None = None) -> int:
     if not args.run:
         return 0
 
+    recording = bool(args.feature and args.report_task)
+    report_mod = None
+    head_sha = ""
+    if recording:
+        try:
+            import test_scope.report as report_mod  # noqa: PLC0415 — path-dependent import
+        except ImportError as exc:  # recording is best-effort and must never abort a test run
+            print(f"warning: test result recording disabled: {exc}", file=sys.stderr)  # noqa: T201
+            report_mod = None
+            recording = False
+
+        try:
+            head_result = subprocess.run(
+                ["git", "rev-parse", "HEAD"], cwd=worktree, capture_output=True, text=True, check=False
+            )
+            head_sha = head_result.stdout.strip()
+        except OSError:
+            head_sha = ""
+
+        if recording and not plan.invocations:
+            selection = report_mod.SuiteResult(
+                suite="selection",
+                tests=0,
+                passed=0,
+                failed=0,
+                errors=0,
+                skipped=0,
+                duration_s=0.0,
+                exit_code=0,
+                argv=(),
+                status="selection_error",
+            )
+            report_mod.append_suite(
+                args.feature,
+                args.report_task,
+                selection,
+                head_sha=head_sha,
+                base_ref=args.base,
+                tier=args.tier,
+                source="select_tests",
+                note="selection_error: no test invocations planned",
+            )
+
     exit_code = 0
-    for invocation in plan.invocations:
+    for ordinal, invocation in enumerate(plan.invocations):
         # FEAT-617: bound each test so a hang fails loudly, named, instead of stalling
         # the whole merge gate. Build a local argv -- invocation.argv is read elsewhere
         # (the printed plan) and must stay unmodified.
         argv = list(invocation.argv)
         if args.timeout is not None:
             argv.append(f"--timeout={args.timeout}")
+        junit = None
+        if recording:
+            try:
+                junit = report_mod.junit_path_for(args.feature, args.report_task, invocation.distribution, ordinal)
+                invocation_copy = type(invocation)(
+                    distribution=invocation.distribution,
+                    argv=tuple(argv),
+                    targets=invocation.targets,
+                )
+                argv = list(report_mod.with_junit(invocation_copy, junit))
+            except OSError:
+                junit = None
+        started = time.monotonic()
         result = subprocess.run(argv, cwd=worktree)
+        if recording and junit is not None:
+            suite = report_mod.parse_junit(
+                junit,
+                suite=invocation.distribution,
+                argv=tuple(argv),
+                exit_code=result.returncode,
+                duration_s=time.monotonic() - started,
+            )
+            report_mod.append_suite(
+                args.feature,
+                args.report_task,
+                suite,
+                head_sha=head_sha,
+                base_ref=args.base,
+                tier=args.tier,
+                source="select_tests",
+            )
         is_core_escalation = any(target.reason == "core" for target in invocation.targets)
         is_cap_escalation = any(target.reason == "escalated" for target in invocation.targets)
         if result.returncode != 0:
             exit_code = 1
-            if is_core_escalation or is_cap_escalation:
+            if not args.no_ledger and (is_core_escalation or is_cap_escalation):
                 # R14/AC9c: a red escalation run re-arms it, even when its driving file content is unchanged.
                 kernel.context.record_red_run(worktree, [invocation.distribution])
             continue
-        if is_core_escalation or is_cap_escalation:
+        if not args.no_ledger and (is_core_escalation or is_cap_escalation):
             dist = invocation.distribution
             core_files = [hit.path for hit in plan.core_hits if dist in hit.distributions]
             impact_files = list(plan.cap_hits.get(dist, ()))
