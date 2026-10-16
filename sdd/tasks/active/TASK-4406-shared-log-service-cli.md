@@ -6,6 +6,7 @@
 **Priority**: high
 **Estimated effort**: L (4-8h)
 **Depends-on**: TASK-4405
+**Discovered-from**: `issue:fe3480881432`
 **Assigned-to**: unassigned
 
 ---
@@ -117,9 +118,13 @@ click.echo(f"Total events: {audit['total_events']}")                            
 
 - Soft index failure: `WikiStoreBusy` on `sync()` → `index_busy=True, synced_events=0`; the
   log is already durable. CLI `import-log` exits 2 in that case (same contract as `ledger sync`).
-- Claim conflict: for each imported `issue.claimed` event, look up the issue state (via
-  `_all_issues()` or a single page read); if `status == "claimed"` and `claimed_by !=
-  event.payload.get("claimed_by")` → `ClaimConflict`. Skip the check when `index_busy`.
+- Claim conflict (issue:fe3480881432 — spurious-conflict fix): after sync, filter the
+  `claimed` list (returned by `import_events`) to only the **last** `issue.claimed` event
+  per subject in the imported batch — discard earlier claims that were superseded by a later
+  `issue.unclaimed` or `issue.closed` for the same subject within the batch. Then for each
+  surviving claim, look up the issue state (via `_all_issues()` or a single page read); if
+  `status == "claimed"` and `claimed_by != event.payload.get("claimed_by")` →
+  `ClaimConflict`. Skip the check when `index_busy`.
   Verify the payload key name against `index.py:191-200` (`_apply_issue_claimed`) before use.
 - `--stage` runs `subprocess.run(["git", "-C", str(root), "add", "--", str(SHARED_LOG_REL_PATH)], check=True)`
   only when `added > 0 or created`.
@@ -157,7 +162,10 @@ click.echo(f"Total events: {audit['total_events']}")                            
             return report
         # FILL IN: try `report.synced_events = await self.index.sync()` except WikiStoreBusy →
         # logger.warning + index_busy=True, synced_events=0 (pattern service.py:212-217);
-        # then, unless index_busy, build ClaimConflict list from `claimed` — bounded by G3, AC10
+        # then, unless index_busy, build ClaimConflict list from `claimed` — bounded by G3, AC10.
+        # (issue:fe3480881432): filter `claimed` to only the LAST issue.claimed per subject —
+        # discard any claim whose subject has a later issue.unclaimed or issue.closed in the
+        # batch (prevents spurious A-vs-B conflicts from "A claims, A unclaims, B claims").
         return report
 
 # occurrences: 1 (verified: grep -cF '            "broken_edges": broken_edges,' service.py)
@@ -173,7 +181,15 @@ Add the import block next to `service.py:29-31` and a private sync helper method
         # local = shareable local ids; return {"path": str(self.shared_root / SHARED_LOG_REL_PATH),
         # "exists": bool, "local_only_events": len(local - committed),
         # "committed_unknown_events": len(committed - all_local_ids),
-        # "marker": "missing" | "ok" (marker text == digest_files(files)) | "stale"} — bounded by spec §3 M2 audit
+        # "marker": "missing" | "ok" (marker text == digest_files(files)) | "stale",
+        # "claim_conflicts": <int>} — bounded by spec §3 M2 audit, AC10
+        #
+        # Claim conflicts (issue:fe3480881432): recompute statelessly instead of relying on
+        # the transient SharedLogImportReport (which is lost when hooks redirect to /dev/null).
+        # Read committed issue.claimed events from `files`, filter to only the last claim per
+        # subject (discard superseded — same logic as import_shared_log), then compare each
+        # surviving claim's claimed_by against `_all_issues()`. Count mismatches. This is the
+        # only AC10-compliant audit path — the import report is ephemeral.
 ```
 **Why**: `cursor_offset` is unused by the helper today; drop the parameter if ruff flags it —
 the key set is what is fixed.
@@ -215,6 +231,7 @@ def ledger_import_log(repo_root: str | None, force: bool, quiet: bool) -> None:
     shared = audit.get("shared_log")
     if shared:
         # FILL IN: "Shared log: <path> (+K archives) · local-only events: N · committed-unknown events: M · marker: <state>"
+        # Also (issue:fe3480881432): "  claim conflicts: N" when claim_conflicts > 0 (AC10)
         pass
 ```
 
@@ -224,7 +241,12 @@ def ledger_import_log(repo_root: str | None, force: bool, quiet: bool) -> None:
 """FEAT-694 M2 — LedgerService shared-log import/export."""
 # FILL IN: fixture `two_ledgers` per spec §4; tests test_import_keeps_cursor_valid (spy
 # `LedgerIndex._rebuild_locked_with_cursor` never called), test_import_detects_claim_conflict,
-# test_import_index_busy_is_soft (patch index.sync to raise WikiStoreBusy), test_audit_reports_shared_log_block
+# test_import_ignores_superseded_claim (issue:fe3480881432 — "A claims, A unclaims, B claims"
+#   must NOT produce a ClaimConflict; only live, unsuperseded claims conflict),
+# test_import_index_busy_is_soft (patch index.sync to raise WikiStoreBusy),
+# test_audit_reports_shared_log_block,
+# test_audit_counts_claim_conflicts (issue:fe3480881432 — audit["shared_log"]["claim_conflicts"]
+#   reflects the stateless recomputation, not the transient import report)
 
 # tests/knowledge/wiki/test_cli_ledger_shared_log.py
 """FEAT-694 M2 — `wikitoolkit ledger export-log|import-log`."""
@@ -233,10 +255,10 @@ def ledger_import_log(repo_root: str | None, force: bool, quiet: bool) -> None:
 ```
 
 ### FILL IN checklist
-- [ ] `import_shared_log` sync + conflicts; G3/AC3/AC10
-- [ ] `_shared_log_audit` keys exactly per spec
-- [ ] `_git_toplevel`, `export-log`, `import-log`, audit line
-- [ ] six test functions listed above
+- [ ] `import_shared_log` sync + conflicts; G3/AC3/AC10; filter superseded claims (issue:fe3480881432)
+- [ ] `_shared_log_audit` keys exactly per spec + `claim_conflicts` key (issue:fe3480881432)
+- [ ] `_git_toplevel`, `export-log`, `import-log`, audit line (incl. conflict count)
+- [ ] eight test functions listed above (incl. superseded-claim + audit-conflicts tests)
 
 ---
 

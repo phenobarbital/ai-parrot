@@ -7,14 +7,17 @@
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4411
 **Assigned-to**: unassigned
+**Discovered-from**: `issue:326c8c0da36c`
 
 ---
 
 ## Context
 
 This task implements spec §3 Module 4: the deterministic entry points `/sdd-done` calls. The
-re-run decision is `len(index["tasks"]) <= 10` (AC3). The renderer always exits 0, even with
-failures or missing data (AC6).
+re-run decision is `len(index["tasks"]) <= 10` (AC3). Both subcommands are **fail-open**: they exit 0
+even with red suites, no records, an unreadable index or an unwritable `--out` (AC6, spec §3 Module 4
+"Fail-open contract"). `/sdd-done` §4.7 calls them unconditionally and must still open the PR, so a
+non-zero exit or empty output here would block a closeout — `issue:326c8c0da36c`.
 
 ---
 
@@ -28,7 +31,13 @@ failures or missing data (AC6).
   - take the final HEAD from `git -C <wt> rev-parse HEAD`;
   - pass the `_rerun` record if present, else the skip reason;
   - write the Markdown to stdout or `--out`; exit 0.
-  Exit 2 only on a usage error or an unreadable index.
+- **Fail-open paths (`issue:326c8c0da36c`)** — never a non-zero exit, never silent:
+  - index missing / unreadable / not valid JSON / no `feature_id`: `decide-rerun` prints
+    `skip (index unreadable)`; `render` emits a minimal section
+    (`## Tests` + `_No test data recorded for this feature._`) to the same destination. Both exit 0.
+  - `--out` raises `OSError`: log a one-line warning to stderr, write the same Markdown to stdout
+    instead, and still exit 0 (the caller guards on a non-empty file).
+  - the only non-zero exit left is argparse's own usage exit for an unknown subcommand/flag.
 - Create `tests/sdd_scripts/test_test_report.py`.
 
 **NOT in scope**: rendering logic (TASK-4411 owns `render_markdown`); `.md` command text.
@@ -121,7 +130,10 @@ def _load_report() -> ModuleType:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """0 ok (always, even with red tests or no data); 2 usage error / unreadable index."""
+    """Always 0 — red tests, no data, an unreadable index and an unwritable --out all exit 0.
+
+    Only argparse's own usage error (unknown subcommand/flag) leaves a non-zero code.
+    """
     # FILL IN: subparsers decide-rerun/render; output "rerun" | f"skip ({n} tasks > {report.RERUN_TASK_THRESHOLD})"
     # FILL IN: render → records, notes = load_records(feature_id); final_head via git rev-parse (fallback "unknown")
 
@@ -133,12 +145,17 @@ if __name__ == "__main__":
 ### FILL IN checklist
 - [ ] `decide-rerun` output format exactly `rerun` / `skip (<N> tasks > 10)` — AC3
 - [ ] `render` exits 0 with missing records ("no data") and red suites — AC6
-- [ ] tests: `test_decide_rerun_cli` (10 → rerun, 11 → skip), render with a fixture record, unreadable index → 2 (set `SDD_TEST_REPORT_DIR` to tmp)
+- [ ] `decide-rerun` on an unreadable index prints `skip (index unreadable)` and exits 0 — AC6
+- [ ] `render` on an unreadable index emits the minimal `## Tests` + `_No test data recorded for this feature._` and exits 0 — AC6
+- [ ] an `OSError` from `--out` warns on stderr, falls back to stdout, exits 0 — AC6
+- [ ] tests: `test_decide_rerun_cli` (10 → rerun, 11 → skip), render with a fixture record, `test_decide_rerun_unreadable_index`, `test_render_unreadable_index_exits_zero`, `test_render_out_oserror_falls_back_to_stdout` (set `SDD_TEST_REPORT_DIR` to tmp)
 
 ---
 
 ## Acceptance Criteria
 - [ ] Spec AC3 and AC6 hold for the CLI.
+- [ ] No input makes either subcommand exit non-zero except an argparse usage error, and `render` always writes
+      a `## Tests` section somewhere (file or stdout) — `issue:326c8c0da36c`.
 - [ ] `ruff check scripts/sdd/test_report.py` is clean.
 
 ## Validation Commands

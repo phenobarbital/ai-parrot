@@ -208,6 +208,16 @@ class TaskTestRecord:
   ```
   It loads the kernel by path, the same way `select_tests.py:_load_kernel` does, and never runs `import parrot`.
 
+  **Fail-open contract (AC6).** Both subcommands are non-blocking by construction, because
+  `/sdd-done` §4.7 runs them unconditionally and the PR must open regardless:
+  - an index that cannot be read or parsed is *not* an error: `decide-rerun` prints
+    `skip (index unreadable)` and `render` emits a minimal `## Tests` section whose body is
+    `_No test data recorded for this feature._`; both still exit 0;
+  - a `--out` path that cannot be written (OSError) is reported on stderr and the Markdown
+    falls back to stdout; the exit code stays 0;
+  - the only non-zero exit is argparse's own usage exit for an unknown subcommand or flag,
+    which the fixed command lines in §3 Module 5 never produce.
+
 ### Module 5: Command text — `/sdd-done`, Codex twin, sdd-worker twins
 - `.claude/commands/sdd-done.md`:
   - Replace the §4 "intentionally skipped" note.
@@ -220,7 +230,9 @@ class TaskTestRecord:
   - Add a `Tests:` line to the §5 report.
   - Insert the rendered section into the §9.2 PR body, between `## Tasks` and the footer, and into the hotfix manual body.
 - `.agents/skills/sdd-done/SKILL.md` **and** `.agent/workflows/sdd-done.md` (third mirror; its own "intentionally skipped" note is at `:124`, its PR body at `:440`): the same steps.
-- The `gh` fallback (no `gh` / unauthenticated) and the hotfix manual command print `--body-file <rendered file>` instead of a placeholder body.
+- The `gh` fallback (no `gh` / unauthenticated) and the hotfix manual command print `--body-file <rendered file>` instead of a placeholder body,
+  guarded by a non-empty check on that file: when the render produced nothing (unwritable path, no data), the commands fall back to the
+  placeholder body rather than pointing `gh pr create --body-file` at a file that does not exist.
 - `.claude/agents/sdd-worker.md` **and** `packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-worker.md`: the fallback-lane `select_tests` line gains `--feature FEAT-<NNN> --report-task TASK-<NNN>`.
 
 ---
@@ -265,7 +277,9 @@ Mirror parity: extend `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_do
 - [ ] AC3: The re-run decision is deterministic. ≤ 10 tasks in the per-spec index → re-run; > 10 → no re-run, and the PR states `re-run skipped (<N> tasks > 10)`.
 - [ ] AC4: The PR body opened by `/sdd-done` (feature PR and the hotfix manual body) contains a `## Tests` table. The table has one row per suite (aggregate of all task records) with tests / passed / failed / skipped / errors / duration, plus a **Total** row. When a re-run happened, it has a "final HEAD re-run" column.
 - [ ] AC5: The per-task breakdown appears in a collapsible `<details>` block. Tasks with no record are listed as "no data", and records whose `head_sha` ≠ the final HEAD are marked "stale".
-- [ ] AC6: Red tests never block. `/sdd-done` still opens the PR, and `render`/`decide-rerun` exit 0.
+- [ ] AC6: Red tests never block. `/sdd-done` still opens the PR, and `render`/`decide-rerun` exit 0 — including when the per-spec index is
+      unreadable or unparsable, when `--out` cannot be written, and when no records exist at all. A missing or empty rendered file never
+      breaks the §9.2 PR body or the `--body-file` fallbacks; the `## Tests` section is simply omitted or carries a "no data" note.
 - [ ] AC7: Recording failures (unwritable root, bad junit) never change a test run's exit code.
 - [ ] AC8: Records live only under the report root (tmp). Nothing new is committed or written into the worktree.
 - [ ] AC9: The kernel stays stdlib-only (importable by path, no `parrot`/pydantic import).

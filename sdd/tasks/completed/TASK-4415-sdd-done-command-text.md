@@ -7,6 +7,7 @@
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4412, TASK-4414
 **Assigned-to**: unassigned
+**Discovered-from**: `issue:326c8c0da36c`
 
 ---
 
@@ -27,9 +28,14 @@ sdd-worker twins must pass `--feature/--report-task` in the fallback-lane `selec
     - `decide-rerun`;
     - if `rerun`: a background `timeout -k 10 1800 python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> --worktree "$WT" $(printf -- '--task-file %s ' <every task file of the index>) --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run`;
     - then `python -m scripts.sdd.test_report render --index <idx> --worktree "$WT" --out "$TEST_REPORT_MD"` (a path under the report root). It never blocks.
+    - every later use of `$TEST_REPORT_MD` is guarded by `[ -s "$TEST_REPORT_MD" ]` (`issue:326c8c0da36c`): the render may legitimately
+      produce no file (unwritable path — the CLI then falls back to stdout), and an unguarded `cat`/`--body-file` on a missing file
+      would fail the PR step that §4.7 promises never to block.
   - Add `Tests: <total passed>/<total tests> (<failed> failed) — re-run: <done|skipped (N tasks > 10)>` to the §5 report.
-  - Insert `$(cat "$TEST_REPORT_MD")` into the §9.2 PR body, after `<N>/<total> tasks verified.`.
-  - The manual/hotfix fallback commands use `--body-file`.
+  - Insert the rendered section into the §9.2 PR body, after `<N>/<total> tasks verified.`, as
+    `$([ -s "$TEST_REPORT_MD" ] && cat "$TEST_REPORT_MD")` — a missing file omits the section instead of breaking the heredoc.
+  - The manual/hotfix fallback commands use `--body-file "$TEST_REPORT_MD"` **only when that file is non-empty**, and otherwise keep
+    the placeholder body — `gh pr create --body-file` on a missing path exits non-zero (`issue:326c8c0da36c`).
 - **`.agent/workflows/sdd-done.md`**: the same edits (note at `:124`, PR body at `:451`).
 - **`.agents/skills/sdd-done/SKILL.md`**: the same steps in its condensed numbered style; the PR line (`:197`) includes the rendered section.
 - **`.claude/agents/sdd-worker.md`** and **`packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-worker.md`**: on line 538 add `--feature FEAT-<NNN> --report-task TASK-<NNN>` before `--run`.
@@ -109,7 +115,7 @@ CLI names fixed by TASK-4412/4414: `select_tests --feature --report-task --no-le
 Tests: <passed>/<tests> (<failed> failed) — re-run: <done | skipped (N tasks > 10)>
 
 <!-- occurrences: 1 — AFTER `<N>/<total> tasks verified.` (line 560), inside the heredoc: -->
-$(cat "$TEST_REPORT_MD")
+$([ -s "$TEST_REPORT_MD" ] && cat "$TEST_REPORT_MD")
 ```
 
 ### `.claude/agents/sdd-worker.md` + `_subagent_data/sdd-worker.md` (MODIFY)
@@ -121,13 +127,16 @@ $(cat "$TEST_REPORT_MD")
 
 ### FILL IN checklist
 - [ ] §4.7 text for all three mirrors (re-run in background, `timeout -k 10 1800`, every `--task-file`, `--no-ledger`)
-- [ ] hotfix manual command + `gh` fallback print `--body-file "$TEST_REPORT_MD"` (spec §9 S11)
+- [ ] hotfix manual command + `gh` fallback print `--body-file "$TEST_REPORT_MD"` (spec §9 S11), guarded by `[ -s "$TEST_REPORT_MD" ]` with the
+      placeholder body as the fallback (`issue:326c8c0da36c`)
 - [ ] contract test assertions (AC10)
 
 ---
 
 ## Acceptance Criteria
 - [ ] Spec AC3, AC4, AC6, AC10, AC12 are reflected in all three mirrors.
+- [ ] No mirror references `$TEST_REPORT_MD` unguarded: every `cat`/`--body-file` use is preceded by a non-empty check, so a missing
+      render degrades to "no `## Tests` section" instead of a failed PR step — `issue:326c8c0da36c`.
 - [ ] The contract test passes.
 
 ## Validation Commands
