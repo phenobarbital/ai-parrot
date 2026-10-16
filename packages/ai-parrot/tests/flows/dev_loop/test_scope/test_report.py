@@ -173,6 +173,38 @@ def test_render_rerun_column_and_skip_reason():
     assert "re-run skipped (11 tasks > 10)" in output
 
 
+def test_render_flags_zero_count_non_ok_status():
+    records = {"TASK-1": _record("TASK-1", _result("a", tests=0, passed=0, status="timed_out"))}
+    output = report.render_markdown(records, ["TASK-1"], final_head="final", rerun=None, rerun_skip_reason=None)
+    assert "| a ❌ | 0 | 0 | 0 | 0 | 0 | 1.25s |" in output
+    assert "| Total (per-task invocation totals) ❌ |" in output
+
+
+def test_render_flags_non_ok_rerun_suite():
+    rerun = _record(report.RERUN_RECORD, _result("a", tests=0, passed=0, status="no_junit"))
+    output = report.render_markdown({}, [], final_head="final", rerun=rerun, rerun_skip_reason=None)
+    assert "| 0/0 ❌ |" in output
+
+
+def test_render_marks_stale_rerun_column():
+    rerun = _record(report.RERUN_RECORD, _result("a"), head="old")
+    output = report.render_markdown({}, [], final_head="final", rerun=rerun, rerun_skip_reason=None)
+    assert "Final HEAD re-run (stale)" in output
+    fresh = report.render_markdown(
+        {}, [], final_head="final", rerun=_record(report.RERUN_RECORD, _result("a")), rerun_skip_reason=None
+    )
+    assert "Final HEAD re-run (stale)" not in fresh
+
+
+def test_render_notes_section():
+    output = report.render_markdown(
+        {}, [], final_head="final", rerun=None, rerun_skip_reason=None, notes=("skipped corrupt report: bad.json",)
+    )
+    assert "### Notes" in output
+    assert "- skipped corrupt report: bad.json" in output
+    assert "### Notes" not in report.render_markdown({}, [], final_head="final", rerun=None, rerun_skip_reason=None)
+
+
 def test_load_records_skips_corrupt_file():
     directory = report.report_root() / "FEAT-695"
     directory.mkdir(parents=True)

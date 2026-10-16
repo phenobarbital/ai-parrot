@@ -275,6 +275,16 @@ def _aggregate(records: dict[str, TaskTestRecord]) -> dict[str, list[float]]:
     return totals
 
 
+def _is_failure(result: SuiteResult) -> bool:
+    """Return whether a suite result must be flagged, including zero-count non-ok statuses."""
+    return result.status != "ok" or bool(result.failed or result.errors)
+
+
+def _failed_suites(records: dict[str, TaskTestRecord]) -> set[str]:
+    """Suite names with at least one flagged result across all records."""
+    return {result.suite for record in records.values() for result in record.suites if _is_failure(result)}
+
+
 def _rerun_value(rerun: TaskTestRecord | None, suite: str) -> str:
     """Render the final-head count cell for one suite."""
     if rerun is None:
@@ -282,7 +292,7 @@ def _rerun_value(rerun: TaskTestRecord | None, suite: str) -> str:
     result = next((item for item in rerun.suites if item.suite == suite), None)
     if result is None:
         return "—"
-    marker = " ❌" if result.failed or result.errors else ""
+    marker = " ❌" if _is_failure(result) else ""
     return f"{result.passed}/{result.tests}{marker}"
 
 
@@ -293,14 +303,16 @@ def render_markdown(
     final_head: str,
     rerun: TaskTestRecord | None,
     rerun_skip_reason: str | None,
+    notes: tuple[str, ...] = (),
 ) -> str:
     """Render a deterministic Tests section including aggregate and per-task evidence."""
     totals = _aggregate(records)
+    failed_suites = _failed_suites(records)
     has_rerun = rerun is not None
     header = "| Suite | Tests | Passed | Failed | Skipped | Errors | Duration"
     separator = "| --- | ---: | ---: | ---: | ---: | ---: | ---:"
     if has_rerun:
-        header += " | Final HEAD re-run"
+        header += " | Final HEAD re-run (stale)" if rerun.head_sha != final_head else " | Final HEAD re-run"
         separator += " | ---"
     rows = ["## Tests", "", header + " |", separator + " |"]
     grand_total = [0, 0, 0, 0, 0, 0.0]
@@ -309,7 +321,7 @@ def render_markdown(
         values = totals.get(suite, [0, 0, 0, 0, 0, 0.0])
         for index, value in enumerate(values):
             grand_total[index] += value
-        label = f"{suite}{' ❌' if values[2] or values[4] else ''}"
+        label = f"{suite}{' ❌' if suite in failed_suites else ''}"
         row = (
             f"| {label} | {int(values[0])} | {int(values[1])} | {int(values[2])} | "
             f"{int(values[3])} | {int(values[4])} | {values[5]:.2f}s"
@@ -319,16 +331,14 @@ def render_markdown(
         rows.append(row + " |")
     total_label = "Total (per-task invocation totals)"
     row = (
-        f"| {total_label}{' ❌' if grand_total[2] or grand_total[4] else ''} | {int(grand_total[0])} | "
+        f"| {total_label}{' ❌' if failed_suites else ''} | {int(grand_total[0])} | "
         f"{int(grand_total[1])} | {int(grand_total[2])} | {int(grand_total[3])} | {int(grand_total[4])} | "
         f"{grand_total[5]:.2f}s"
     )
     if has_rerun:
         rerun_tests = sum(result.tests for result in rerun.suites)
         rerun_passed = sum(result.passed for result in rerun.suites)
-        rerun_failed = sum(result.failed for result in rerun.suites)
-        rerun_errors = sum(result.errors for result in rerun.suites)
-        marker = " ❌" if rerun_failed or rerun_errors else ""
+        marker = " ❌" if any(_is_failure(result) for result in rerun.suites) else ""
         row += f" | {rerun_passed}/{rerun_tests}{marker}"
     rows.append(row + " |")
     if rerun_skip_reason:
@@ -342,4 +352,8 @@ def render_markdown(
             state = " (stale)" if record.head_sha != final_head else ""
             rows.append(f"- {task_id}{state}: {len(record.suites)} suite(s), {record.attempts} attempt(s)")
     rows.extend(["", "</details>", ""])
+    if notes:
+        rows.extend(["### Notes", ""])
+        rows.extend(f"- {note}" for note in notes)
+        rows.append("")
     return "\n".join(rows)
