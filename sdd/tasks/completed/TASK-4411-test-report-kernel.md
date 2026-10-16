@@ -191,7 +191,11 @@ def parse_junit(junit_path: Path, *, suite: str, argv: tuple[str, ...], exit_cod
 
 def append_suite(feature_id: str, task_id: str, result: SuiteResult, *, head_sha: str, base_ref: str,
                  tier: str, source: str, note: str | None = None) -> Path | None:
-    """Merge into <root>/<feature>/<task>.json: same suite replaced, attempts+1; atomic + flock; None on OSError."""
+    """Merge into <root>/<feature>/<task>.json: same suite replaced, attempts+1; atomic + flock; None on OSError.
+
+    NOTE: head_sha/tier/source are record-level (last-write-wins). When suites within one task run at
+    different commits (rare, during retries), the staleness check uses the last append's SHA. This is
+    acceptable: a single task normally runs all suites at one commit."""
 
 
 def load_records(feature_id: str) -> tuple[dict[str, TaskTestRecord], list[str]]:
@@ -204,12 +208,16 @@ def should_rerun(task_count: int) -> bool:
 
 
 def render_markdown(records: dict[str, TaskTestRecord], task_ids: list[str], *, final_head: str,
-                    rerun: TaskTestRecord | None, rerun_skip_reason: str | None) -> str:
+                    rerun: TaskTestRecord | None, rerun_skip_reason: str | None,
+                    notes: tuple[str, ...] = ()) -> str:
     """'## Tests' section: per-suite aggregate rows + Total + optional re-run column + <details> per task."""
-    # FILL IN: table columns Suite|Tests|Passed|Failed|Skipped|Errors|Duration[|Final HEAD re-run]; ❌ when failed+errors>0;
-    #          Total label per AC13; "re-run skipped (<reason>)" line; per-task rows mark "stale" (head_sha != final_head) / "no data"
+    # FILL IN: table columns Suite|Tests|Passed|Failed|Skipped|Errors|Duration[|Final HEAD re-run];
+    #          ❌ when status != "ok" (covers timed_out/no_junit/report_parse_error with 0 counts) OR failed+errors>0;
+    #          Total label per AC13; "re-run skipped (<reason>)" line; per-task rows mark "stale" (head_sha != final_head) / "no data";
+    #          if rerun and rerun.head_sha != final_head, mark the re-run column as "stale";
+    #          if notes, append a "### Notes" subsection listing each corrupt-record note
 ```
-**Why this shape**: these names and signatures are the contract that TASK-4412/4413/4414 call. Do not rename them. `load_records` returns notes so the renderer can surface corrupt files instead of hiding them.
+**Why this shape**: these names and signatures are the contract that TASK-4412/4413/4414 call. Do not rename them. `load_records` returns notes so the renderer can surface corrupt files instead of hiding them. `render_markdown` accepts `notes` explicitly so the CLI (TASK-4414) passes them through — discarding them silently was a design bug (issue:5b33290f55c9).
 
 ### `packages/ai-parrot/tests/flows/dev_loop/test_scope/test_report.py` (CREATE)
 ```python
@@ -232,9 +240,13 @@ def _root(tmp_path, monkeypatch):
 ### FILL IN checklist
 - [ ] `report_root` env/default — spec §7
 - [ ] `parse_junit` counting + status precedence — AC7, §9 S7
-- [ ] `append_suite` latest-wins + attempts + atomic/flock — AC13
+- [ ] `append_suite` latest-wins + attempts + atomic/flock — AC13; document last-write-wins for record-level metadata
+- [ ] `render_markdown` ❌ = `status != "ok"` OR `failed+errors>0` — a timed_out/no_junit/report_parse_error suite with 0 counts must still show ❌ (issue:5b33290f55c9)
 - [ ] `render_markdown` table, Total label, stale/no-data, re-run column/skip line — AC4/AC5/AC13
+- [ ] `render_markdown` notes: append "### Notes" subsection with corrupt-record notes when non-empty (issue:5b33290f55c9)
+- [ ] `render_markdown` rerun staleness: if `rerun.head_sha != final_head`, mark the re-run column as stale (issue:5b33290f55c9)
 - [ ] tests for every kernel row in spec §4, including concurrent append (two `multiprocessing` processes)
+- [ ] test: timed_out suite with 0 tests/0 failed renders ❌ not ✅ (issue:5b33290f55c9)
 
 ---
 
@@ -254,4 +266,15 @@ Follow `sdd/templates/task.md` § Agent Instructions: work in the feature worktr
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+- Task: TASK-4411
+- Feature: sdd-done-tests
+- Implementation SHA: 6808df78e49e5cf71d86dbc1fcc16b0fff6516e9
+- Closed at (UTC): 2026-10-16T01:17:30+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 260.8s · Tokens: n/a |

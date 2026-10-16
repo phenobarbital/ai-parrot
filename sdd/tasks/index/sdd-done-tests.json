@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-16T01:07:14.452619+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-16T13:24:29+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-695",
       "feature": "sdd-done-tests",
       "spec": "sdd/specs/sdd-done-tests.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates test_scope/report.py that every other task imports",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4411-test-report-kernel.md"
+      "started_at": "2026-10-16T01:11:20+00:00",
+      "completed_at": "2026-10-16T01:17:30+00:00",
+      "file": "sdd/tasks/completed/TASK-4411-test-report-kernel.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4412",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-695",
       "feature": "sdd-done-tests",
       "spec": "sdd/specs/sdd-done-tests.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -43,9 +44,10 @@
       "parallel": true,
       "parallelism_notes": "imports junit_path_for/with_junit/parse_junit/append_suite from TASK-4411 (test_scope/report.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4412-select-tests-recording.md"
+      "started_at": "2026-10-16T01:11:20+00:00",
+      "completed_at": "2026-10-16T01:22:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4412-select-tests-recording.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4413",
@@ -54,7 +56,7 @@
       "feature_id": "FEAT-695",
       "feature": "sdd-done-tests",
       "spec": "sdd/specs/sdd-done-tests.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,9 +65,10 @@
       "parallel": true,
       "parallelism_notes": "imports test_scope.report (with_junit/parse_junit/append_suite) from TASK-4411 into background.py",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4413-validation-supervisor-recording.md"
+      "started_at": "2026-10-16T01:11:20+00:00",
+      "completed_at": "2026-10-16T01:23:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4413-validation-supervisor-recording.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4414",
@@ -74,7 +77,7 @@
       "feature_id": "FEAT-695",
       "feature": "sdd-done-tests",
       "spec": "sdd/specs/sdd-done-tests.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -83,18 +86,19 @@
       "parallel": true,
       "parallelism_notes": "loads should_rerun/load_records/render_markdown from TASK-4411 (test_scope/report.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4414-test-report-cli.md"
+      "started_at": "2026-10-16T01:11:20+00:00",
+      "completed_at": "2026-10-16T01:26:10+00:00",
+      "file": "sdd/tasks/completed/TASK-4414-test-report-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4415",
       "slug": "sdd-done-command-text",
-      "title": "/sdd-done mirrors + sdd-worker twins \u2014 test report step and PR table",
+      "title": "/sdd-done mirrors + sdd-worker twins — test report step and PR table",
       "feature_id": "FEAT-695",
       "feature": "sdd-done-tests",
       "spec": "sdd/specs/sdd-done-tests.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -104,9 +108,10 @@
       "parallel": true,
       "parallelism_notes": "writes CLI flags --feature/--report-task/--no-ledger from TASK-4412 (select_tests.py) and test_report decide-rerun/render from TASK-4414 into command text",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4415-sdd-done-command-text.md"
+      "started_at": "2026-10-16T01:11:20+00:00",
+      "completed_at": "2026-10-16T01:42:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4415-sdd-done-command-text.md",
+      "verification": "verified"
     }
   ]
 }

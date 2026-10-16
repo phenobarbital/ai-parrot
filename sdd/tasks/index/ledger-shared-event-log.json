@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-16T00:00:00Z",
-  "completed_at": null,
+  "completed_at": "2026-10-16T01:36:01+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates shared_log.py and LedgerLog.append_line; no dependencies",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4405-shared-log-core.md"
+      "started_at": "2026-10-16T01:03:22+00:00",
+      "completed_at": "2026-10-16T01:18:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4405-shared-log-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4406",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -43,9 +44,10 @@
       "parallel": true,
       "parallelism_notes": "imports export_events/import_events/MARKER_FILENAME/report models from TASK-4405 (ledger/shared_log.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4406-shared-log-service-cli.md"
+      "started_at": "2026-10-16T01:03:22+00:00",
+      "completed_at": "2026-10-16T01:26:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4406-shared-log-service-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4407",
@@ -54,16 +56,17 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent: embeds only the frozen command names from spec §2; touches claude_code/assets.py + installer.py only",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4407-ledger-git-hooks-installer.md"
+      "started_at": "2026-10-16T01:03:22+00:00",
+      "completed_at": "2026-10-16T01:18:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4407-ledger-git-hooks-installer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4408",
@@ -72,7 +75,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -81,9 +84,10 @@
       "parallel": true,
       "parallelism_notes": "calls import_shared_log added by TASK-4406 and modifies the same service.py/cli.py/shared_log.py (serialized after TASK-4406)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4408-rotation-and-claim-preimport.md"
+      "started_at": "2026-10-16T01:03:22+00:00",
+      "completed_at": "2026-10-16T01:29:49+00:00",
+      "file": "sdd/tasks/completed/TASK-4408-rotation-and-claim-preimport.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4416",
@@ -112,7 +116,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -123,9 +127,10 @@
       "parallel": true,
       "parallelism_notes": "sdd-done 9.1 calls rotate-log from TASK-4408 (cli.py); docs name the parrot-ledger hooks from TASK-4407 (assets.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4409-gitattributes-sdd-done-docs.md"
+      "started_at": "2026-10-16T01:03:22+00:00",
+      "completed_at": "2026-10-16T01:35:38+00:00",
+      "file": "sdd/tasks/completed/TASK-4409-gitattributes-sdd-done-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4410",
@@ -134,7 +139,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -143,9 +148,10 @@
       "parallel": false,
       "parallelism_notes": "exclusive: reads the live <main>/.parrot/ledger/events.jsonl outside its files; needs .gitattributes from TASK-4409 and the final export-log filter",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4410-bootstrap-shared-event-log.md"
+      "started_at": "2026-10-16T01:03:22+00:00",
+      "completed_at": "2026-10-16T01:36:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4410-bootstrap-shared-event-log.md",
+      "verification": "verified"
     }
   ]
 }

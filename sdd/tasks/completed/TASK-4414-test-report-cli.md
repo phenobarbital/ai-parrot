@@ -68,7 +68,7 @@ def _load_kernel() -> ModuleType: ...   # inserts _KERNEL_PARENT on sys.path, `i
 # test_scope/report.py (TASK-4411)
 should_rerun(task_count: int) -> bool
 load_records(feature_id: str) -> tuple[dict[str, TaskTestRecord], list[str]]
-render_markdown(records, task_ids, *, final_head, rerun, rerun_skip_reason) -> str
+render_markdown(records, task_ids, *, final_head, rerun, rerun_skip_reason, notes=()) -> str
 RERUN_RECORD = "_rerun"; RERUN_TASK_THRESHOLD = 10
 # per-spec index shape: {"feature_id": "FEAT-695", "tasks": [{"id": "TASK-4411", ...}, ...]}  (sdd/tasks/index/sdd-done-tests.json)
 ```
@@ -136,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     """
     # FILL IN: subparsers decide-rerun/render; output "rerun" | f"skip ({n} tasks > {report.RERUN_TASK_THRESHOLD})"
     # FILL IN: render → records, notes = load_records(feature_id); final_head via git rev-parse (fallback "unknown")
+    #          pass notes= to render_markdown so corrupt-record notes appear in the output (issue:5b33290f55c9)
 
 
 if __name__ == "__main__":
@@ -169,4 +170,15 @@ Follow `sdd/templates/task.md` § Agent Instructions. Close with `scripts/sdd/cl
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+
+- Task: TASK-4414
+- Feature: sdd-done-tests
+- Implementation SHA: a343bee8b9fccd25d27c5364f83676a982364fb6
+- Closed at (UTC): 2026-10-16T01:26:10+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 92.1s · Tokens: n/a |

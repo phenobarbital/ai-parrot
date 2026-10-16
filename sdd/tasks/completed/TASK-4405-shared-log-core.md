@@ -319,10 +319,8 @@ the listed files, close with `scripts/sdd/close_task.sh TASK-4405 ledger-shared-
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-terra (codex) via coder engine
+**Date**: 2026-10-16
+**Notes**: Shared event-log core delivered (c96dd500e, lint f08e5abdf). Task-scoped tests green. Merge-tier run red only on pre-existing failures (postgres/mcp/standup, reproduced on origin/dev).
 
 **Deviations from spec**: none

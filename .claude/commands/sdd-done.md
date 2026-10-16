@@ -142,9 +142,7 @@ Read the task file and extract the "Files to create/modify" section.
 test -f <worktree-path>/<filepath>
 ```
 
-**Note:** Test validation is intentionally skipped here — each task already ran
-its acceptance-criteria tests during `/sdd-start` or `sdd-worker` execution.
-Re-running them at close time adds latency without new signal.
+**Note:** Per-task test runs are recorded (FEAT-695) and aggregated in §4.7 — this step does not run tests.
 
 ### 4.5. Full Lint Pass (once per feature)
 
@@ -261,6 +259,37 @@ stdout is not valid JSON, treat that exactly like `E2E_STATUS=MISSING`.
 Carry the recorded `(POLICY, E2E_STATUS, E2E_GATE_SATISFIED, E2E_REASONS)`
 tuple into Step 5's report and Step 12's output as an `E2E:` line.
 
+### 4.7. Test Report (FEAT-695)
+
+Aggregate the per-task test results recorded during implementation into a `## Tests` section for the PR body.
+This step never blocks closeout and never changes an exit code (a missing or corrupt record is reported, not fatal).
+
+```bash
+IDX="sdd/tasks/index/<feature-slug>.json"
+TEST_REPORT_MD="${SDD_TEST_REPORT_DIR:-/tmp/claude-$(id -u)/sdd-tests}/FEAT-<ID>/pr-tests.md"
+mkdir -p "$(dirname "$TEST_REPORT_MD")"
+
+# Deterministic rule: re-run the feature tier at the final HEAD only for features of <= 10 tasks.
+DECISION=$(python -m scripts.sdd.test_report decide-rerun --index "$IDX")
+```
+
+If `DECISION` is `rerun`, run the feature-tier suite once at the final HEAD in the background
+(`run_in_background: true`), with every task file of the index and without writing to the ledger:
+
+```bash
+timeout -k 10 1800 python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> \
+  --worktree "$WT" $(printf -- '--task-file %s ' <every task file of the index>) \
+  --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run
+```
+
+If `DECISION` is `skip`, do not re-run; the rendered table states `re-run skipped (N tasks > 10)`.
+
+Then render the section (always, even when the re-run was skipped or failed):
+
+```bash
+python -m scripts.sdd.test_report render --index "$IDX" --worktree "$WT" --out "$TEST_REPORT_MD"
+```
+
 ### 5. Build Verification Report
 Classify each task:
 
@@ -278,6 +307,7 @@ Commits found: <N>
 Tasks: <total> total, <verified> verified, <partial> partial, <missing> missing
 Lint: <autofixed files> auto-fixed, <fixed> hand-fixed, <residual> residual (<blocking> blocking)
 E2E: <policy> — <status> (gate_satisfied: <bool>)
+Tests: <passed>/<tests> (<failed> failed) — re-run: <done | skipped (N tasks > 10)>
 
   ✅ TASK-096 — Scene Editor Refactor
      Commits: feat(videoreel): TASK-096 — Scene Editor Refactor (abc1234)
@@ -444,8 +474,9 @@ fi
 
 ### 9.1. Snapshot Ledger Issues (FEAT-566)
 
-For feature flows (not hotfixes), regenerate `sdd/ledger/issues.jsonl` from a
-throwaway worktree at `origin/<BASE_BRANCH>` and commit/push it directly to
+For feature flows (not hotfixes), regenerate `sdd/ledger/issues.jsonl`, export the
+shared `sdd/ledger/events.jsonl`, and rotate old terminal events from a throwaway
+worktree at `origin/<BASE_BRANCH>`; commit/push the resulting ledger snapshot directly to
 `base_branch` when it changed — never from an active worktree, never on the
 feature branch. Bounded retry on a rejected push; never fails `/sdd-done`.
 
@@ -464,11 +495,12 @@ if [[ "$TYPE" != "hotfix" ]]; then
     # worktree agents write to $WORKTREES_DIR outside their own checkout.
     TEMP_WORKTREE="$WORKTREES_DIR/_ledger-snapshot-$$"
     git worktree add --detach "$TEMP_WORKTREE" "origin/$BASE_BRANCH" >/dev/null 2>&1
-    # No --force: the throwaway checkout only ever touches issues.jsonl, so
-    # restoring that one file leaves it clean and a plain remove succeeds
+    # No --force: the throwaway checkout only ever touches sdd/ledger, so
+    # restoring and cleaning that directory leaves it clean and a plain remove succeeds
     # (a detached, unpushed snapshot commit does not block `worktree remove`).
     cleanup_snapshot_worktree() {
-        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger/issues.jsonl >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" clean -fdq -- sdd/ledger >/dev/null 2>&1
         git worktree remove "$TEMP_WORKTREE" >/dev/null 2>&1 || true
     }
     trap cleanup_snapshot_worktree EXIT
@@ -477,12 +509,15 @@ if [[ "$TYPE" != "hotfix" ]]; then
     MAX_ATTEMPTS=3
     while (( ATTEMPT <= MAX_ATTEMPTS )); do
         EXPORT_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export 2>&1)
-        if [[ "$EXPORT_OUTPUT" != *"(changed)"* ]]; then
+        LOG_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export-log 2>&1)
+        ROTATE_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger rotate-log --older-than-days 30 2>&1)
+        if [[ "$EXPORT_OUTPUT" != *"(changed)"* && "$LOG_OUTPUT" != *"(+"* && "$ROTATE_OUTPUT" != *"Rotated"* ]]; then
             echo "📝 Ledger snapshot unchanged — nothing to commit."
             break
         fi
 
-        git -C "$TEMP_WORKTREE" add sdd/ledger/issues.jsonl
+        git -C "$TEMP_WORKTREE" add sdd/ledger/issues.jsonl sdd/ledger/events.jsonl
+        [ -d "$TEMP_WORKTREE/sdd/ledger/archive" ] && git -C "$TEMP_WORKTREE" add sdd/ledger/archive
         git -C "$TEMP_WORKTREE" commit -q -m "sdd: ledger snapshot for $FEAT_ID"
         if git -C "$TEMP_WORKTREE" push origin "HEAD:$BASE_BRANCH" >/dev/null 2>&1; then
             echo "📝 Ledger snapshot updated with changed issues."
@@ -491,7 +526,8 @@ if [[ "$TYPE" != "hotfix" ]]; then
 
         # Rejected push: re-sync the throwaway worktree only, re-export, retry.
         git fetch origin "$BASE_BRANCH" >/dev/null 2>&1
-        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger/issues.jsonl >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger >/dev/null 2>&1
+        git -C "$TEMP_WORKTREE" clean -fdq -- sdd/ledger >/dev/null 2>&1
         git -C "$TEMP_WORKTREE" checkout -q --detach "origin/$BASE_BRANCH" >/dev/null 2>&1
         ATTEMPT=$((ATTEMPT + 1))
         if (( ATTEMPT > MAX_ATTEMPTS )); then
@@ -523,7 +559,7 @@ if [[ "$BASE_BRANCH" == "main" ]]; then
 
      gh pr create --base main --head feat-<FEAT-ID>-<slug> \\
        --title "<hotfix title>" \\
-       --body "<verification summary>"
+       --body-file "$TEST_REPORT_MD"
 
    After the PR merges, the sync-down.yml Action propagates the change to staging
    and dev automatically. If the Action fails or you are offline, re-run with
@@ -559,6 +595,8 @@ gh pr create \
 
 <N>/<total> tasks verified.
 
+$(cat "$TEST_REPORT_MD")
+
 ---
 _Closed by /sdd-done_
 EOF
@@ -571,7 +609,7 @@ If `gh` is not installed or not authenticated, print the manual command:
 
     gh pr create --base <BASE_BRANCH> --head feat-<FEAT-ID>-<slug> \
       --title "feat(<feature-slug>): FEAT-<ID> — <title>" \
-      --body "<verification summary>"
+      --body-file "$TEST_REPORT_MD"
 ```
 
 **Feature flow with `--merge` — direct merge (old behavior):**
