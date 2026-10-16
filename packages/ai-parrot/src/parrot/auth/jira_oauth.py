@@ -14,6 +14,7 @@ for per-user Jira access:
 The manager never holds credentials in memory — everything flows through
 Redis so the HTTP callback process and the agent session can share state.
 """
+
 from __future__ import annotations
 
 import json
@@ -27,22 +28,21 @@ import aiohttp
 from aiohttp import web
 from pydantic import BaseModel, Field
 
-
 # Atlassian OAuth 2.0 (3LO) endpoints.
 AUTHORIZATION_URL = "https://auth.atlassian.com/authorize"
 TOKEN_URL = "https://auth.atlassian.com/oauth/token"
 ACCESSIBLE_RESOURCES_URL = "https://api.atlassian.com/oauth/token/accessible-resources"
 
 # Redis key prefixes.
-_TOKEN_KEY_PREFIX = "jira:oauth"       # jira:oauth:{channel}:{user_id}
-_NONCE_KEY_PREFIX = "jira:nonce"       # jira:nonce:{nonce}
+_TOKEN_KEY_PREFIX = "jira:oauth"  # jira:oauth:{channel}:{user_id}
+_NONCE_KEY_PREFIX = "jira:nonce"  # jira:nonce:{nonce}
 _LOCK_KEY_PREFIX = "lock:jira:refresh"  # lock:jira:refresh:{channel}:{user_id}
 
 # TTLs.
 _TOKEN_TTL_SECONDS = 90 * 24 * 60 * 60  # 90 days
-_NONCE_TTL_SECONDS = 10 * 60            # 10 minutes
-_REFRESH_LOCK_TIMEOUT = 10              # seconds
-_REFRESH_LOCK_BLOCKING_TIMEOUT = 5      # seconds
+_NONCE_TTL_SECONDS = 10 * 60  # 10 minutes
+_REFRESH_LOCK_TIMEOUT = 10  # seconds
+_REFRESH_LOCK_BLOCKING_TIMEOUT = 5  # seconds
 
 # Default scopes for Jira 3LO integrations.
 DEFAULT_SCOPES: List[str] = [
@@ -195,9 +195,7 @@ async def fetch_accessible_resources(
         return data
 
 
-async def fetch_myself(
-    session: aiohttp.ClientSession, access_token: str, cloud_id: str
-) -> Dict[str, Any]:
+async def fetch_myself(session: aiohttp.ClientSession, access_token: str, cloud_id: str) -> Dict[str, Any]:
     """Fetch the authenticated user's profile.
 
     Raises:
@@ -239,10 +237,7 @@ class JiraOAuthManager:
         http_session: Optional[aiohttp.ClientSession] = None,
     ) -> None:
         if app is None and redis_client is None and not redis_url:
-            raise ValueError(
-                "JiraOAuthManager requires one of: app (with app['redis']), "
-                "redis_client, or redis_url"
-            )
+            raise ValueError("JiraOAuthManager requires one of: app (with app['redis']), " "redis_client, or redis_url")
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
@@ -289,14 +284,12 @@ class JiraOAuthManager:
         app = self._app
         existing = app.get("jira_oauth_manager")
         if existing is not None and existing is not self:
-            raise RuntimeError(
-                "app['jira_oauth_manager'] is already set to a different "
-                "JiraOAuthManager instance."
-            )
+            raise RuntimeError("app['jira_oauth_manager'] is already set to a different " "JiraOAuthManager instance.")
         app["jira_oauth_manager"] = self
         app.on_startup.append(self._on_startup)
         app.on_cleanup.append(self._on_cleanup)
         from .routes import setup_jira_oauth_routes
+
         setup_jira_oauth_routes(app)
         self._setup_done = True
 
@@ -319,8 +312,10 @@ class JiraOAuthManager:
                 self._redis_owned = False
             elif self._redis_url:
                 import redis.asyncio as aioredis
+
                 self.redis = aioredis.from_url(
-                    self._redis_url, decode_responses=True,
+                    self._redis_url,
+                    decode_responses=True,
                 )
                 self._redis_owned = True
             else:
@@ -494,7 +489,10 @@ class JiraOAuthManager:
         await self._write_token(self._token_key(channel, user_id), token)
         self.logger.info(
             "Stored Jira token for %s:%s (%s @ %s)",
-            channel, user_id, display_name, site_url,
+            channel,
+            user_id,
+            display_name,
+            site_url,
         )
         return token, state_payload
 
@@ -537,9 +535,7 @@ class JiraOAuthManager:
 
     # ------------------------------------------------------------------ reads
 
-    async def get_valid_token(
-        self, channel: str, user_id: str
-    ) -> Optional[JiraTokenSet]:
+    async def get_valid_token(self, channel: str, user_id: str) -> Optional[JiraTokenSet]:
         """Return a non-expired token, refreshing it transparently if needed."""
         key = self._token_key(channel, user_id)
         token = await self._read_token(key)
@@ -558,9 +554,7 @@ class JiraOAuthManager:
         """
         return (await self.get_valid_token(channel, user_id)) is not None
 
-    async def validate_token(
-        self, channel: str, user_id: str
-    ) -> Optional[JiraTokenSet]:
+    async def validate_token(self, channel: str, user_id: str) -> Optional[JiraTokenSet]:
         """Return the stored token only if Atlassian still accepts it.
 
         Combines :meth:`get_valid_token` with a live ``/myself`` probe so
@@ -585,9 +579,10 @@ class JiraOAuthManager:
         except PermissionError as exc:
             # _refresh_tokens already revoked locally on a 401 refresh.
             self.logger.info(
-                "Jira token unrefreshable for %s:%s — treating as "
-                "disconnected: %s",
-                channel, user_id, exc,
+                "Jira token unrefreshable for %s:%s — treating as " "disconnected: %s",
+                channel,
+                user_id,
+                exc,
             )
             return None
         if token is None:
@@ -595,9 +590,10 @@ class JiraOAuthManager:
         status = await self._probe_token(token)
         if status in (401, 403):
             self.logger.info(
-                "Jira token for %s:%s rejected by Atlassian (HTTP %s) "
-                "— revoking",
-                channel, user_id, status,
+                "Jira token for %s:%s rejected by Atlassian (HTTP %s) " "— revoking",
+                channel,
+                user_id,
+                status,
             )
             await self.revoke(channel, user_id)
             return None
@@ -623,7 +619,8 @@ class JiraOAuthManager:
                 return response.status
         except aiohttp.ClientError as exc:
             self.logger.warning(
-                "Jira /myself probe transport error: %s", exc,
+                "Jira /myself probe transport error: %s",
+                exc,
             )
             return 0
 
@@ -633,9 +630,7 @@ class JiraOAuthManager:
 
     # ------------------------------------------------------------------ refresh
 
-    async def _refresh_tokens(
-        self, channel: str, user_id: str, token_set: JiraTokenSet
-    ) -> JiraTokenSet:
+    async def _refresh_tokens(self, channel: str, user_id: str, token_set: JiraTokenSet) -> JiraTokenSet:
         """Refresh a user's tokens using the rotating refresh token.
 
         Uses a Redis distributed lock so that concurrent refresh requests
@@ -662,7 +657,9 @@ class JiraOAuthManager:
             # just finished refreshing and stored a fresh token.
             self.logger.warning(
                 "Could not acquire refresh lock for %s:%s within %ss; re-reading",
-                channel, user_id, _REFRESH_LOCK_BLOCKING_TIMEOUT,
+                channel,
+                user_id,
+                _REFRESH_LOCK_BLOCKING_TIMEOUT,
             )
             fresh = await self._read_token(key)
             if fresh and not fresh.is_expired:
@@ -693,28 +690,24 @@ class JiraOAuthManager:
                     if response.status == 401:
                         # Atlassian rejected the refresh token — revoke locally.
                         await self.revoke(channel, user_id)
-                        raise PermissionError(
-                            "Jira refresh token rejected (401); user must re-authorize."
-                        )
+                        raise PermissionError("Jira refresh token rejected (401); user must re-authorize.")
                     if response.status != 200:
                         text = await response.text()
-                        raise PermissionError(
-                            f"Jira token refresh failed with status {response.status}: {text}"
-                        )
+                        raise PermissionError(f"Jira token refresh failed with status {response.status}: {text}")
                     payload = await response.json()
 
             except aiohttp.ClientError as exc:
-                raise PermissionError(
-                    f"Jira token refresh network error: {exc}"
-                ) from exc
+                raise PermissionError(f"Jira token refresh network error: {exc}") from exc
 
             now = time.time()
-            refreshed = token_set.model_copy(update={
-                "access_token": payload["access_token"],
-                "refresh_token": payload.get("refresh_token", token_set.refresh_token),
-                "expires_at": now + int(payload.get("expires_in", 3600)),
-                "last_refreshed_at": now,
-            })
+            refreshed = token_set.model_copy(
+                update={
+                    "access_token": payload["access_token"],
+                    "refresh_token": payload.get("refresh_token", token_set.refresh_token),
+                    "expires_at": now + int(payload.get("expires_in", 3600)),
+                    "last_refreshed_at": now,
+                }
+            )
             await self._write_token(key, refreshed)
             return refreshed
         finally:
@@ -741,9 +734,7 @@ class JiraOAuthManager:
 
     async def _fetch_accessible_resources(self, access_token: str) -> List[Dict[str, Any]]:
         session = await self._get_session()
-        return await fetch_accessible_resources(
-            session, access_token, url=self.accessible_resources_url
-        )
+        return await fetch_accessible_resources(session, access_token, url=self.accessible_resources_url)
 
     async def _fetch_myself(self, access_token: str, cloud_id: str) -> Dict[str, Any]:
         session = await self._get_session()

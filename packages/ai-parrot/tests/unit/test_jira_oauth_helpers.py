@@ -1,4 +1,5 @@
 """Tests for module-level 3LO helpers (FEAT-696 M2)."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -59,9 +60,7 @@ class TestBuildAuthorizationUrl:
 class TestExchangeCode:
     async def test_posts_payload(self):
         session = _session(_Resp(200, {"access_token": "a"}))
-        out = await exchange_code(
-            session, client_id="c", client_secret="s", code="k", redirect_uri="http://r"
-        )
+        out = await exchange_code(session, client_id="c", client_secret="s", code="k", redirect_uri="http://r")
         assert out == {"access_token": "a"}
         args, kwargs = session.post.call_args
         assert args[0] == TOKEN_URL
@@ -71,17 +70,13 @@ class TestExchangeCode:
     async def test_error_raises(self):
         session = _session(_Resp(400, text="bad"))
         with pytest.raises(ValueError, match="Token exchange failed with status 400"):
-            await exchange_code(
-                session, client_id="c", client_secret="s", code="k", redirect_uri="r"
-            )
+            await exchange_code(session, client_id="c", client_secret="s", code="k", redirect_uri="r")
 
 
 class TestRefreshAccessToken:
     async def test_posts_payload(self):
         session = _session(_Resp(200, {"access_token": "n"}))
-        out = await refresh_access_token(
-            session, client_id="c", client_secret="s", refresh_token="rt"
-        )
+        out = await refresh_access_token(session, client_id="c", client_secret="s", refresh_token="rt")
         assert out["access_token"] == "n"
         _, kwargs = session.post.call_args
         assert kwargs["data"]["grant_type"] == "refresh_token"
@@ -90,9 +85,7 @@ class TestRefreshAccessToken:
     async def test_error_raises(self):
         session = _session(_Resp(401, text="no"))
         with pytest.raises(ValueError, match="Token refresh failed with status 401"):
-            await refresh_access_token(
-                session, client_id="c", client_secret="s", refresh_token="rt"
-            )
+            await refresh_access_token(session, client_id="c", client_secret="s", refresh_token="rt")
 
 
 class TestFetchAccessibleResources:
