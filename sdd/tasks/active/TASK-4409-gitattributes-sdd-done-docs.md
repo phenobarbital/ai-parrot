@@ -88,7 +88,7 @@ Commands available after TASK-4406/4408: `wikitoolkit ledger export-log`, `impor
 {
   "schema_version": 1,
   "targets": [
-    {"path": ".gitattributes", "action": "CREATE"},
+    {"path": ".gitattributes", "action": "MODIFY"},
     {"path": ".claude/commands/sdd-done.md", "action": "MODIFY"},
     {"path": ".agent/workflows/sdd-done.md", "action": "MODIFY"},
     {"path": ".agents/skills/sdd-done/SKILL.md", "action": "MODIFY"},
