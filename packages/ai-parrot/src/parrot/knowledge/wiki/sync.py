@@ -5,7 +5,9 @@ their attributed notes, and the ``asserted`` edges touching them, between
 the LOCAL plane (env ``"local"``) and a shared REMOTE plane (typically
 ArangoDB, resolved from ``target_env``'s effective config). Conflict rule
 is last-write-wins per record by :attr:`WikiPageRecord.updated_at`
-(TASK-2465); notes merge append-if-absent so a note is never dropped by a
+(TASK-2465), compared as parsed UTC datetimes and clamped to the
+destination's clock (FEAT-692); a memory record never overwrites a
+non-memory page with the same ``concept_id``; notes merge append-if-absent so a note is never dropped by a
 merge; deletes are never propagated (v1 limitation, documented).
 
 The engine talks only :class:`BaseWikiStore` APIs — never a raw driver —
@@ -18,6 +20,7 @@ import getpass
 import hashlib
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -47,6 +50,17 @@ _NOTE_RE = re.compile(
 )
 
 
+#: How far ahead of the destination's clock a synced `updated_at` may be
+#: before it is clamped to ``now + SYNC_CLOCK_SKEW`` (FEAT-692) — so a
+#: far-future client clock cannot win every later merge permanently.
+SYNC_CLOCK_SKEW = timedelta(minutes=5)
+
+#: Sort key for a missing/unparseable stamp: older than any real one.
+_MIN_STAMP = datetime.min.replace(tzinfo=timezone.utc)
+
+LWWOutcome = Literal["create", "update", "older", "foreign"]
+
+
 class SyncError(RuntimeError):
     """Raised when the remote plane cannot be reached or opened.
 
@@ -68,6 +82,8 @@ class SyncReport(BaseModel):
             already as new or newer (LWW).
         skipped_own: Pull-only — source records whose `asserted_by`
             matched the local identity, excluded by default.
+        skipped_foreign: Records left alone because the destination page
+            with that `concept_id` is not a memory page (FEAT-692).
         dry_run: Whether this report describes a dry run (nothing applied).
         details: Optional human-readable per-record lines, for CLI
             verbose output.
@@ -79,6 +95,7 @@ class SyncReport(BaseModel):
     updated: int = 0
     skipped_older: int = 0
     skipped_own: int = 0
+    skipped_foreign: int = 0
     dry_run: bool = False
     details: list[str] = Field(default_factory=list)
 
@@ -177,6 +194,133 @@ def _merge_body(winner_body: str, loser_body: str) -> str:
     return _strip_notes(winner_body) + _render_notes(merged_notes)
 
 
+def parse_sync_stamp(value: Any) -> datetime | None:
+    """Parse a sync `updated_at` into an aware UTC datetime.
+
+    Accepts ISO-8601 strings with ``Z`` or any offset, fractional seconds,
+    and ``datetime`` objects (postgres rows). A naive value is taken as UTC.
+
+    Args:
+        value: The raw stamp.
+
+    Returns:
+        The UTC datetime, or ``None`` when `value` is missing or unparseable.
+    """
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str) and value.strip():
+        text = value.strip()
+        if text[-1] in "zZ":
+            text = text[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _format_stamp(stamp: datetime) -> str:
+    """Render a UTC datetime in the store's ``+00:00`` ISO shape."""
+    return stamp.isoformat(timespec="seconds" if stamp.microsecond == 0 else "microseconds")
+
+
+def normalize_sync_stamp(value: Any, *, now: datetime | None = None) -> str | None:
+    """Normalise a sync stamp to UTC and clamp it to ``now + SYNC_CLOCK_SKEW``.
+
+    Args:
+        value: The raw stamp.
+        now: The destination's current time (defaults to the system clock).
+
+    Returns:
+        ``YYYY-MM-DDTHH:MM:SS[.ffffff]+00:00``, or ``None`` when unparseable.
+    """
+    parsed = parse_sync_stamp(value)
+    if parsed is None:
+        return None
+    ceiling = (now or datetime.now(tz=timezone.utc)) + SYNC_CLOCK_SKEW
+    return _format_stamp(min(parsed, ceiling))
+
+
+def _stamp_key(value: Any) -> datetime:
+    """Comparable form of a stamp; missing/unparseable sorts oldest."""
+    return parse_sync_stamp(value) or _MIN_STAMP
+
+
+def _lww_outcome(source_stamp: Any, existing: dict[str, Any] | None) -> LWWOutcome:
+    """Decide what writing a memory record over `existing` does.
+
+    Args:
+        source_stamp: The incoming record's `updated_at`.
+        existing: The destination page (with `origin`), or ``None``.
+
+    Returns:
+        ``"create"`` (no page), ``"foreign"`` (the page is not a memory page —
+        never overwritten), ``"update"`` (the source is strictly newer) or
+        ``"older"``. An unparseable source stamp never beats an existing page.
+    """
+    if existing is None:
+        return "create"
+    if (existing.get("origin") or "") != "memory":
+        return "foreign"
+    source = normalize_sync_stamp(source_stamp)
+    if source is None:
+        return "older"
+    return "update" if _stamp_key(source) > _stamp_key(existing.get("updated_at")) else "older"
+
+
+async def _memory_page_window(
+    store: BaseWikiStore,
+    *,
+    since: str | None,
+    cursor: str | None,
+    skip_asserted_by: str | None,
+    limit: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """One deterministic page of memory records, ordered by ``(updated_at, concept_id)``.
+
+    Filtering, ordering and cursoring run on body-less `list_pages` stubs;
+    bodies are fetched only for the returned page (at most `limit`
+    `get_page` calls), never for every memory page.
+
+    Args:
+        store: The source plane.
+        since: Exclusive lower `updated_at` bound.
+        cursor: ``"<updated_at>|<concept_id>"`` of the last record already returned.
+        skip_asserted_by: Exclude records asserted by this identity.
+        limit: Page size.
+
+    Returns:
+        ``(pages_with_body, has_more)``.
+    """
+    stubs = await store.list_pages(origin=["memory"], limit=_SYNC_LIST_LIMIT)
+    since_key = _stamp_key(since) if since is not None else None
+    after: tuple[datetime, str] | None = None
+    if cursor is not None:
+        cursor_stamp, _, cursor_concept_id = cursor.partition("|")
+        after = (_stamp_key(cursor_stamp), cursor_concept_id)
+    keyed = []
+    for stub in stubs:
+        key = (_stamp_key(stub.get("updated_at")), stub["concept_id"])
+        if since_key is not None and key[0] <= since_key:
+            continue
+        if skip_asserted_by is not None and stub.get("asserted_by") == skip_asserted_by:
+            continue
+        if after is not None and key <= after:
+            continue
+        keyed.append((key, stub["concept_id"]))
+    keyed.sort()
+    pages: list[dict[str, Any]] = []
+    for _, concept_id in keyed[:limit]:
+        full = await store.get_page(concept_id, include_body=True)
+        if full is not None:
+            pages.append(full)
+    return pages, len(keyed) > limit
+
+
 async def _synced_memory_pages(store: BaseWikiStore) -> list[dict[str, Any]]:
     """Full (with body) memory-origin page dicts from `store`."""
     stubs = await store.list_pages(origin=["memory"], limit=_SYNC_LIST_LIMIT)
@@ -246,16 +390,18 @@ async def _sync_records(
         selected_ids.add(concept_id)
 
         existing = await destination.get_page(concept_id, include_body=True)
-        source_stamp = page.get("updated_at") or ""
-        if existing is None:
+        outcome = _lww_outcome(page.get("updated_at"), existing)
+        if outcome == "create":
             report.created += 1
             report.details.append(f"created: {concept_id}")
             if not dry_run:
                 await destination.upsert_pages([_record_from(page, page.get("body", ""))])
             continue
-
-        dest_stamp = existing.get("updated_at") or ""
-        if source_stamp <= dest_stamp:
+        if outcome == "foreign":
+            report.skipped_foreign += 1
+            report.details.append(f"skipped_foreign: {concept_id}")
+            continue
+        if outcome == "older":
             report.skipped_older += 1
             report.details.append(f"skipped_older: {concept_id}")
             continue
@@ -272,8 +418,9 @@ async def _sync_records(
 def _record_from(page: dict[str, Any], body: str) -> WikiPageRecord:
     """Build the `WikiPageRecord` written to the destination.
 
-    Preserves the SOURCE's `updated_at` verbatim (TASK-2465 semantics) —
-    a synced record must never look "just written" at the destination.
+    Preserves the SOURCE's `updated_at` (TASK-2465 semantics) — a synced
+    record must never look "just written" at the destination — normalised
+    to UTC and clamped to ``now + SYNC_CLOCK_SKEW`` (FEAT-692).
     """
     return WikiPageRecord(
         concept_id=page["concept_id"],
@@ -286,7 +433,7 @@ def _record_from(page: dict[str, Any], body: str) -> WikiPageRecord:
         token_count=page.get("token_count") or 0,
         origin="memory",
         asserted_by=page.get("asserted_by"),
-        updated_at=page.get("updated_at"),
+        updated_at=normalize_sync_stamp(page.get("updated_at")),
     )
 
 
