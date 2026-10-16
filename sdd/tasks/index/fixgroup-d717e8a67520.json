@@ -1,0 +1,27 @@
+{
+  "feature": "fixgroup-d717e8a67520",
+  "feature_id": "FEAT-692",
+  "spec": "sdd/specs/fixgroup-d717e8a67520.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "parallel_semantics": "exclusive",
+  "created_at": "2026-10-16T00:00:00+00:00",
+  "completed_at": null,
+  "tasks": [
+    {
+      "id": "TASK-4403",
+      "slug": "clock-safe-sync-lww",
+      "title": "Clock-safe, origin-checked wiki sync LWW and a cheap pull page",
+      "feature_id": "FEAT-692",
+      "feature": "fixgroup-d717e8a67520",
+      "spec": "sdd/specs/fixgroup-d717e8a67520.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": false,
+      "assigned_to": null,
+      "file": "sdd/tasks/active/TASK-4403-clock-safe-sync-lww.md"
+    }
+  ]
+}
