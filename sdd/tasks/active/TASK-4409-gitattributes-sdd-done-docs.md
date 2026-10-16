@@ -32,11 +32,18 @@ Spec §3 Module 4 + the M5 `/sdd-done` wiring. Makes git merge the shared log by
 
 ---
 
+## Attempt-2 status (orchestrator note)
+
+Attempt 1 already delivered: `.gitattributes` (exists — verify only), `.claude/commands/sdd-done.md` and
+`.agent/workflows/sdd-done.md` §9.1. It OMITTED and attempt 2 MUST deliver: `.agents/skills/sdd-done/SKILL.md`
+(codex twin, prose form, same §9.1 change), `docs/wiki/cheatsheet.md`, `docs/sdd/WORKFLOW.md`, and
+`tests/knowledge/wiki/test_ledger_shared_log_integration.py`. Do not redo the finished files.
+
 ## Files to Create / Modify
 
 | File | Action | Description |
 |---|---|---|
-| `.gitattributes` | CREATE | `merge=union` for the shared log + archives |
+| `.gitattributes` | MODIFY | `merge=union` for the shared log + archives |
 | `.claude/commands/sdd-done.md` | MODIFY | §9.1 export-log + rotate-log + stage/restore `sdd/ledger` |
 | `.agent/workflows/sdd-done.md` | MODIFY | same §9.1 change (twin) |
 | `.agents/skills/sdd-done/SKILL.md` | MODIFY | same §9.1 change (codex twin, prose form) |
