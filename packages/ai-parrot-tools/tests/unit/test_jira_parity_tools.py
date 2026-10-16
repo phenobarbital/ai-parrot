@@ -65,7 +65,10 @@ def test_parity_methods_are_registered_tools() -> None:
 async def test_create_fields_uses_kb_issue_type_id() -> None:
     """Known KB issue types avoid a live issue-type lookup before field metadata."""
     kb = JiraKnowledgeBase.model_validate(
-        {"site": "https://acme.atlassian.net", "projects": {"NAV": {"name": "Nav", "issue_types": {"Story": {"id": "10001"}}}}}
+        {
+            "site": "https://acme.atlassian.net",
+            "projects": {"NAV": {"name": "Nav", "issue_types": {"Story": {"id": "10001"}}}},
+        }
     )
     toolkit = _toolkit(knowledge_base=kb)
     toolkit.jira.project_issue_fields.return_value = [SimpleNamespace(raw={"id": "summary", "required": True})]
@@ -95,9 +98,7 @@ async def test_edit_comment_renders_template_then_updates_comment() -> None:
 @pytest.mark.asyncio
 async def test_accessible_resources_static_kb_and_tenant_failure() -> None:
     """Static clients use the KB and tenant lookup failures are non-fatal."""
-    kb = JiraKnowledgeBase.model_validate(
-        {"site": "https://acme.atlassian.net", "cloud_id": "cloud-1"}
-    )
+    kb = JiraKnowledgeBase.model_validate({"site": "https://acme.atlassian.net", "cloud_id": "cloud-1"})
     kb_toolkit = _toolkit(knowledge_base=kb)
     assert await kb_toolkit.jira_get_accessible_resources() == {
         "cloud_id": "cloud-1",

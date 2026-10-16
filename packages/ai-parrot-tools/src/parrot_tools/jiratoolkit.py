@@ -3234,10 +3234,7 @@ class JiraToolkit(AbstractToolkit):
                 authentication (expired/revoked token, wrong username).
         """
         if self._kb is not None and self._kb.projects:
-            projects = [
-                {"key": key, "name": project.name}
-                for key, project in self._kb.projects.items()
-            ]
+            projects = [{"key": key, "name": project.name} for key, project in self._kb.projects.items()]
             return {"projects": projects, "count": len(projects), "authenticated": True, "source": "kb"}
 
         # Transport delegated to JiraInterface (FEAT-454, G1) — the exact
@@ -4395,6 +4392,7 @@ class JiraToolkit(AbstractToolkit):
                 self.logger.warning("jira KB stale: issue type %s not found in %s", issue_type, self._kb_path)
 
         if issue_type_id is None:
+
             def _live_issue_types() -> Any:
                 return self.jira.project(project_key).issueTypes
 
