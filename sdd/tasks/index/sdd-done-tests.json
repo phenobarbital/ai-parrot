@@ -35,7 +35,7 @@
       "feature_id": "FEAT-695",
       "feature": "sdd-done-tests",
       "spec": "sdd/specs/sdd-done-tests.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -45,8 +45,9 @@
       "parallelism_notes": "imports junit_path_for/with_junit/parse_junit/append_suite from TASK-4411 (test_scope/report.py)",
       "assigned_to": null,
       "started_at": "2026-10-16T01:11:20+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4412-select-tests-recording.md"
+      "completed_at": "2026-10-16T01:22:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4412-select-tests-recording.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4413",
