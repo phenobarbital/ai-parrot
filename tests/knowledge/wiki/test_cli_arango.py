@@ -15,6 +15,12 @@ from parrot.knowledge.wiki.cli import wiki
 from parrot.knowledge.wiki.project import load_project_config
 
 
+@pytest.fixture(autouse=True)
+def _set_arango_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """resolve_arango_params requires ARANGODB_HOST since FEAT-540."""
+    monkeypatch.setenv("ARANGODB_HOST", "127.0.0.1")
+
+
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     """A small fake repository."""

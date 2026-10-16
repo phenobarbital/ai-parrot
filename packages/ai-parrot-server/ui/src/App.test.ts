@@ -33,7 +33,7 @@ test("unauthenticated visit to the app root resolves to the Login page", async (
 // Regression test: Router.match() used to do an EXACT string match
 // (including the query string) against the route table's bare paths.
 // guard()/AuthStore.handle401() redirect to `${loginPath}?next=<encoded>`,
-// which never equals the route table's bare "/admin/login" entry — so
+// which never equals the route table's bare "/login" entry — so
 // App.svelte's resolve() treated that redirect as an unmatched route and
 // immediately navigated AWAY again (to the fallback path), wiping
 // `?next=` before Login.svelte ever mounted to read it via
@@ -68,7 +68,7 @@ test("visiting a guarded route while unauthenticated preserves ?next= through Lo
   // The guard redirects to login, preserving ?next= for the originally
   // requested (guarded) route.
   await waitFor(
-    () => expect(window.location.pathname).toBe("/admin/login"),
+    () => expect(window.location.pathname).toBe("/login"),
     { timeout: 10000 },
   );
   expect(window.location.search).toBe(
@@ -118,7 +118,7 @@ test("a 401 from auth-method discovery on the login page does not corrupt the pe
   const { findByLabelText, getByLabelText, getByRole } = render(App);
 
   await waitFor(
-    () => expect(window.location.pathname).toBe("/admin/login"),
+    () => expect(window.location.pathname).toBe("/login"),
     { timeout: 10000 },
   );
   // The ?next= target must still point at the originally guarded route —

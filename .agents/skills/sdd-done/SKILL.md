@@ -152,6 +152,20 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      (PR flow and `--merge` alike)
    - stage only the index and this feature's task files, verify cached names
    - commit `sdd: close tasks for FEAT-NNN - <feature-slug>`
+8.1. Close resolved ledger issues (feature flows only, after step 8, before step 11's snapshot):
+   - the `$sdd-fix` SDD lane hands issue closure to this step; without it fixed
+     issues stay `claimed`/`open` after merge
+   - run `python -m scripts.sdd.close_resolved_issues --worktree <worktree>
+     --index sdd/tasks/index/<feature>.json --base origin/<BASE_BRANCH>
+     --feature-id FEAT-NNN` inside the worktree (`--dry-run` to preview);
+     strip any banner before the JSON report
+   - links: a task's `**Discovered-from**: \`issue:<id>\`` line, or `issue:<id>`
+     in the spec frontmatter (never the spec body)
+   - two keys, fail-closed: every linked task `done` + `verified`, AND one of the
+     issue's files in `git diff --name-only origin/<BASE_BRANCH>...HEAD`; closes with
+     `ledger close --resolved-by task:TASK-NNN --actor agent:sdd-done`
+   - report `skipped`/`read-only`/`error` rows (read-only →
+     `(NOT closed: shared ledger is read-only)`); never fails `$sdd-done`
 9. Push feature branch:
    - `git -C <worktree> push origin <branch>`
 10. Check merge blockers (feature flows only):
@@ -213,6 +227,7 @@ Report:
 FEAT-NNN - <title>: <closed>/<total> tasks closed
 Branch pushed: <branch>
 PR opened: <url> or manual command printed
+Ledger: closed issue:<id> (task:TASK-NNN) / skipped issue:<id> - <reason>
 E2E: <policy> - <status> (gate_satisfied: <bool>)
 Worktree removed: .claude/worktrees/<name>
 Jira: <key> -> Done, when requested and successful

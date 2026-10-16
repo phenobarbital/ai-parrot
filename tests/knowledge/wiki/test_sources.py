@@ -707,7 +707,7 @@ class TestBulkManifestOperations:
 
     def test_find_entries_by_uris_chunks_past_the_sqlite_limit(self, sources_dir):
         """More URIs than sqlite's bind-parameter ceiling must not raise."""
-        from parrot.knowledge.wiki.sources import _SQLITE_IN_CHUNK
+        from parrot.knowledge.wiki.sources_backend import _SQLITE_IN_CHUNK
 
         mgr = SourceCollectionManager(sources_dir / "m")
         many = []
@@ -915,7 +915,7 @@ class TestExternalIdReadersWriters:
         assert {e.external_id for e in found} == {"fireflies:1", "fireflies:2"}
 
     def test_find_entries_by_external_ids_chunked(self, sources_dir):
-        from parrot.knowledge.wiki.sources import _SQLITE_IN_CHUNK
+        from parrot.knowledge.wiki.sources_backend import _SQLITE_IN_CHUNK
 
         mgr = SourceCollectionManager(sources_dir)
         ids = []

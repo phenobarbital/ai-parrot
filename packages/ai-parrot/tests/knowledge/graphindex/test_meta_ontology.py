@@ -24,8 +24,15 @@ class TestBuildGraphIndexOntology:
         onto = build_graphindex_ontology()
         assert len(onto.entities) == 9
         expected = {
-            "document", "section", "symbol", "concept", "rationale", "skill",
-            "wiki_page", "run", "claim",
+            "document",
+            "section",
+            "symbol",
+            "concept",
+            "rationale",
+            "skill",
+            "wiki_page",
+            "run",
+            "claim",
         }
         assert set(onto.entities.keys()) == expected
 
@@ -36,8 +43,16 @@ class TestBuildGraphIndexOntology:
         onto = build_graphindex_ontology()
         assert len(onto.relations) == 10
         expected = {
-            "contains", "references", "defines", "mentions", "explains", "extends",
-            "produced", "about", "supported_by", "contradicts",
+            "contains",
+            "references",
+            "defines",
+            "mentions",
+            "explains",
+            "extends",
+            "produced",
+            "about",
+            "supported_by",
+            "contradicts",
         }
         assert set(onto.relations.keys()) == expected
 
@@ -45,30 +60,26 @@ class TestBuildGraphIndexOntology:
         onto = build_graphindex_ontology()
         for entity_def in onto.entities.values():
             assert entity_def.collection is not None
-            assert entity_def.collection.startswith("gi_"), (
-                f"Collection {entity_def.collection} should start with 'gi_'"
-            )
+            assert entity_def.collection.startswith(
+                "gi_"
+            ), f"Collection {entity_def.collection} should start with 'gi_'"
 
     def test_edge_collections_prefixed_gi(self):
         onto = build_graphindex_ontology()
         for rel_def in onto.relations.values():
-            assert rel_def.edge_collection.startswith("gi_"), (
-                f"Edge collection {rel_def.edge_collection} should start with 'gi_'"
-            )
+            assert rel_def.edge_collection.startswith(
+                "gi_"
+            ), f"Edge collection {rel_def.edge_collection} should start with 'gi_'"
 
     def test_entity_key_field_node_id(self):
         onto = build_graphindex_ontology()
         for name, entity_def in onto.entities.items():
-            assert entity_def.key_field == "node_id", (
-                f"Entity {name} should have key_field='node_id'"
-            )
+            assert entity_def.key_field == "node_id", f"Entity {name} should have key_field='node_id'"
 
     def test_vectorize_fields_present(self):
         onto = build_graphindex_ontology()
         for name, entity_def in onto.entities.items():
-            assert "title" in entity_def.vectorize, (
-                f"Entity {name} should vectorize 'title'"
-            )
+            assert "title" in entity_def.vectorize, f"Entity {name} should vectorize 'title'"
 
     def test_name_and_version(self):
         onto = build_graphindex_ontology()
@@ -130,15 +141,15 @@ class TestEnumCompleteness:
 
     @pytest.mark.parametrize("kind", list(NodeKind))
     def test_every_node_kind_has_collection(self, kind: NodeKind):
-        assert kind.value in KIND_TO_COLLECTION, (
-            f"NodeKind.{kind.name} ({kind.value!r}) has no KIND_TO_COLLECTION entry"
-        )
+        assert (
+            kind.value in KIND_TO_COLLECTION
+        ), f"NodeKind.{kind.name} ({kind.value!r}) has no KIND_TO_COLLECTION entry"
 
     @pytest.mark.parametrize("kind", list(EdgeKind))
     def test_every_edge_kind_has_collection(self, kind: EdgeKind):
-        assert kind.value in EDGE_KIND_TO_COLLECTION, (
-            f"EdgeKind.{kind.name} ({kind.value!r}) has no EDGE_KIND_TO_COLLECTION entry"
-        )
+        assert (
+            kind.value in EDGE_KIND_TO_COLLECTION
+        ), f"EdgeKind.{kind.name} ({kind.value!r}) has no EDGE_KIND_TO_COLLECTION entry"
 
 
 class TestPersistenceRoutesMemoryKinds:
@@ -149,26 +160,33 @@ class TestPersistenceRoutesMemoryKinds:
     async def test_upsert_routes_memory_kinds_without_warning(self, caplog):
         from unittest.mock import AsyncMock, MagicMock
 
-        from parrot.knowledge.graphindex.persist import GraphIndexPersistence
+        from parrot.knowledge.graphindex.persist_arango import ArangoPersistence
         from parrot.knowledge.graphindex.schema import Provenance, UniversalNode
 
         store = MagicMock()
-        store.upsert_nodes = AsyncMock(
-            return_value=MagicMock(inserted=1, updated=0)
-        )
-        persistence = GraphIndexPersistence(graph_store=store)
+        store.upsert_nodes = AsyncMock(return_value=MagicMock(inserted=1, updated=0))
+        persistence = ArangoPersistence(store=store)
         nodes = [
             UniversalNode(
-                node_id="run-1", kind=NodeKind.RUN, title="Run 1",
-                source_uri="dev_loop://run-1", provenance=Provenance.ASSERTED,
+                node_id="run-1",
+                kind=NodeKind.RUN,
+                title="Run 1",
+                source_uri="dev_loop://run-1",
+                provenance=Provenance.ASSERTED,
             ),
             UniversalNode(
-                node_id="claim-1", kind=NodeKind.CLAIM, title="Claim 1",
-                source_uri="dev_loop://run-1", provenance=Provenance.ASSERTED,
+                node_id="claim-1",
+                kind=NodeKind.CLAIM,
+                title="Claim 1",
+                source_uri="dev_loop://run-1",
+                provenance=Provenance.ASSERTED,
             ),
             UniversalNode(
-                node_id="wiki-1", kind=NodeKind.WIKI_PAGE, title="Wiki 1",
-                source_uri="wiki://wiki-1", provenance=Provenance.ASSERTED,
+                node_id="wiki-1",
+                kind=NodeKind.WIKI_PAGE,
+                title="Wiki 1",
+                source_uri="wiki://wiki-1",
+                provenance=Provenance.ASSERTED,
             ),
         ]
         ctx = MagicMock()

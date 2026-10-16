@@ -4,21 +4,15 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from parrot.bots.database.toolkits.bigquery import BigQueryToolkit
-from parrot.bots.database.toolkits.postgres import PostgresToolkit
-from parrot.bots.database.toolkits.sql import SQLToolkit
 from parrot.knowledge.wiki.schema.models import SchemaSourceConfig, TableRecord
 from parrot.knowledge.wiki.schema.render import content_hash
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from parrot.bots.database.toolkits.sql import SQLToolkit
 
-_TOOLKITS: dict[str, type[SQLToolkit]] = {
-    "postgres": PostgresToolkit,
-    "postgresql": PostgresToolkit,
-    "bigquery": BigQueryToolkit,
-}
+logger = logging.getLogger(__name__)
 
 
 def toolkit_for(cfg: SchemaSourceConfig, dsn: str) -> SQLToolkit:
@@ -31,7 +25,17 @@ def toolkit_for(cfg: SchemaSourceConfig, dsn: str) -> SQLToolkit:
     Returns:
         A toolkit configured for the source dialect and allowed schemas.
     """
-    toolkit_class = _TOOLKITS.get(cfg.dialect, SQLToolkit)
+    # Lazy: parrot.bots.database drags navconfig/parrot.conf into the wiki CLI import chain.
+    from parrot.bots.database.toolkits.bigquery import BigQueryToolkit
+    from parrot.bots.database.toolkits.postgres import PostgresToolkit
+    from parrot.bots.database.toolkits.sql import SQLToolkit
+
+    toolkits: dict[str, type[SQLToolkit]] = {
+        "postgres": PostgresToolkit,
+        "postgresql": PostgresToolkit,
+        "bigquery": BigQueryToolkit,
+    }
+    toolkit_class = toolkits.get(cfg.dialect, SQLToolkit)
     kwargs: dict[str, Any] = {
         "dsn": dsn,
         "allowed_schemas": list(cfg.allowed_schemas),

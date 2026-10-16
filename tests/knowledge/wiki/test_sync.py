@@ -234,6 +234,7 @@ class TestUnreachableRemote:
         import parrot.knowledge.wiki.arango_store as arango_module
 
         monkeypatch.setattr(arango_module, "ArangoDBWikiStore", _HangingArango)
+        monkeypatch.setenv("ARANGODB_HOST", "fake.invalid")
         root = tmp_path
         parrot_dir = root / ".parrot"
         parrot_dir.mkdir()

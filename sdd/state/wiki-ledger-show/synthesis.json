@@ -1,0 +1,14 @@
+{"summary_oneline":"Add `wikitoolkit ledger list` and `ledger show <id>` (+ ledger_list/ledger_show MCP tools) over existing LedgerService reads",
+ "mode":"enrichment","overall_confidence":"high",
+ "localization":[
+  {"path":"packages/ai-parrot/src/parrot/knowledge/wiki/cli.py","symbol":"ledger (group), ledger_ready","lines":"3221-3295","role":"add list/show commands","evidence":["F001"]},
+  {"path":"packages/ai-parrot/src/parrot/knowledge/wiki/ledger/service.py","symbol":"list_issues, _issue_state, _issue_dict","lines":"109-125,278-341","role":"reuse list_issues; add public get_issue + issue_history","evidence":["F002"]},
+  {"path":"packages/ai-parrot/src/parrot/knowledge/wiki/ledger/log.py","symbol":"LedgerLog.iter_events","lines":"83","role":"per-issue history","evidence":["F003"]},
+  {"path":"packages/ai-parrot/src/parrot/knowledge/wiki/ledger/operations.py","symbol":"op_ledger_ready, LedgerReadyInput","lines":"40-100","role":"add op_ledger_list/op_ledger_show + inputs","evidence":["F004"]},
+  {"path":"packages/ai-parrot/src/parrot/knowledge/wiki/transport.py","symbol":"_SPECS","lines":"143-147,381-404","role":"register tools","evidence":["F004"]},
+  {"path":"packages/ai-parrot/src/parrot/knowledge/wiki/remote.py","symbol":"READ_ONLY_TOOLS","lines":"16-30","role":"allow proxy","evidence":["F004"]},
+  {"path":"packages/ai-parrot-tools/src/parrot_tools/wiki/tools.py","symbol":"ledger_ready tool class","lines":"346-355","role":"tool adapters","evidence":["F004"]}],
+ "unknowns":[
+  {"id":"U1","question":"Which surfaces?","user_answer":"CLI + MCP + remote"},
+  {"id":"U2","question":"show depth?","user_answer":"State + event history"}],
+ "recommended_next_command":{"command":"sdd-spec","rationale":"Additive, well-localized, all building blocks exist; ~2-3 tasks."}}

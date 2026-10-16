@@ -64,18 +64,18 @@ class ProjectingGraphStore:
             if (item["_from"], item["_to"], item["kind"]) != (source, target, kind)
         ]
 
-    async def execute_traversal(
+    async def execute_pattern(
         self,
         ctx: Any,
-        aql: str,
-        bind_vars: Optional[dict[str, Any]] = None,
+        pattern: Any,
+        params: Optional[dict[str, Any]] = None,
         collection_binds: Optional[dict[str, str]] = None,
     ) -> list[dict[str, Any]]:
         """Project active procedure steps from the stored manual card."""
         del ctx, collection_binds
-        if aql != "procedure_steps":
+        if pattern.query_template != "procedure_steps":
             return []
-        procedure_id = (bind_vars or {}).get("procedure_id")
+        procedure_id = (params or {}).get("procedure_id")
         procedure = next(item for item in self.card.procedures if item.procedure_id == procedure_id)
         return [
             {

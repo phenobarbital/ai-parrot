@@ -2654,7 +2654,8 @@ class BotManager:
         setup_mcp_helper_routes(self.app)
         # Thales research flow routes (FEAT-425): POST + polling + artifacts
         setup_thales_routes(self.app)
-        # Embedded Admin UI (FEAT-468): mounts the compiled SPA when present,
+        # Embedded web UI (FEAT-468): mounts the compiled SPA (end-user pages at
+        # /, /login, /agents; administration under /admin) when present,
         # gracefully absent otherwise (install-from-git without Node build).
         setup_admin_ui(self.app)
         # CommCenter bulk notification sender routes (FEAT-417)

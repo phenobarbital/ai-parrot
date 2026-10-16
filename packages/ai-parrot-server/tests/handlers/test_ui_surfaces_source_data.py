@@ -63,8 +63,40 @@ async def test_owner_gets_rows_with_own_pctx():
     assert kwargs["pctx"].user_id == "user-1"
 
 
-async def test_share_only_viewer_uses_owner_pctx():
-    """A share-token-only viewer runs the guarded fetch as the surface owner."""
+async def test_anonymous_share_viewer_uses_owner_pctx():
+    """An ANONYMOUS share-token viewer runs the guarded fetch as the surface owner.
+
+    Spec FEAT-636 AC8 / §3 M5: owner pctx applies to "share-token access (no
+    session user)" only — see the authenticated counterpart below.
+    """
+    record = _make_record(user_id="owner-1")
+    store = _store(record)
+    store.resolve_share.return_value = SimpleNamespace(surface_id="surface-1")
+    service = _service()
+    app = _app(store, service)
+    response = await _post(
+        _handler(
+            app,
+            match_info={"surface_id": "surface-1", "key": "activity"},
+            path=PATH,
+            json_body={},
+            user_id=None,
+            query={"share": "tok"},
+        )
+    )
+
+    assert response.status == 200
+    assert service.fetch_source.call_args.kwargs["pctx"].user_id == "owner-1"
+
+
+async def test_authenticated_share_token_holder_uses_own_pctx():
+    """An AUTHENTICATED token holder who is neither owner nor scope-granted
+    runs under their OWN pctx — never the owner's (issue:ca055067b827).
+
+    Regression test for a privilege escalation: the previous predicate keyed
+    on *how* access was granted, so any session user presenting a valid share
+    token was promoted to the owner's PBAC.
+    """
     record = _make_record(user_id="owner-1")
     store = _store(record)
     store.resolve_share.return_value = SimpleNamespace(surface_id="surface-1")
@@ -82,7 +114,7 @@ async def test_share_only_viewer_uses_owner_pctx():
     )
 
     assert response.status == 200
-    assert service.fetch_source.call_args.kwargs["pctx"].user_id == "owner-1"
+    assert service.fetch_source.call_args.kwargs["pctx"].user_id == "viewer-9"
 
 
 async def test_scope_granted_viewer_uses_own_pctx_even_with_share_token():

@@ -113,14 +113,14 @@ class _ProjectingGraphStore:
     def __init__(self, card: Any) -> None:
         self.card = card
 
-    async def execute_traversal(
-        self, ctx: Any, aql: str, bind_vars: Optional[dict[str, Any]] = None, collection_binds: Any = None
+    async def execute_pattern(
+        self, ctx: Any, pattern: Any, params: Optional[dict[str, Any]] = None, collection_binds: Any = None
     ) -> list[dict[str, Any]]:
         """Return the fixed traversal rows for the ``procedure_steps`` pattern only."""
         del ctx, collection_binds
-        if aql != "procedure_steps":
+        if pattern.query_template != "procedure_steps":
             return []
-        procedure_id = (bind_vars or {}).get("procedure_id")
+        procedure_id = (params or {}).get("procedure_id")
         procedure = next(item for item in self.card.procedures if item.procedure_id == procedure_id)
         return [
             {

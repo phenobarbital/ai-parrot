@@ -19,12 +19,18 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_TWINNED = ("sdd-spec", "sdd-task")
+_TWINNED = ("sdd-next", "sdd-spec", "sdd-status", "sdd-task")
 
 # name -> (exact original substring, exact twin substring). Each pair must
 # appear exactly once in its respective file today; see TASK-3098's
 # Completion Note for how these were re-verified against a stale assumption.
+# A twinned command with no entry here must match its twin byte-for-byte
+# (modulo frontmatter) — `sdd-status` does today.
 _SUBSTITUTIONS: dict[str, tuple[str, str]] = {
+    "sdd-next": (
+        '- Worktree policy: `CLAUDE.md` (section "Worktree Policy")',
+        "- Worktree policy: `AGENTS.md` and `sdd/WORKFLOW.md`",
+    ),
     "sdd-spec": (
         '- Worktree policy: `CLAUDE.md` (section "Worktree Policy")',
         "- Worktree policy: `AGENTS.md` and `sdd/WORKFLOW.md`",
@@ -45,12 +51,15 @@ def _strip_frontmatter(text: str) -> str:
 
 
 def _apply_expected_substitution(name: str, original_text: str) -> str:
-    """Apply the ONE documented twin-only substitution for `name`.
+    """Apply the ONE documented twin-only substitution for `name`, if it has one.
 
     Asserts the substitution anchor is present exactly once, so a future
     edit that changes or removes that line causes this test to fail loudly
-    (pointing at the stale anchor) rather than silently pass.
+    (pointing at the stale anchor) rather than silently pass. A command with
+    no entry in `_SUBSTITUTIONS` is required to match its twin exactly.
     """
+    if name not in _SUBSTITUTIONS:
+        return original_text
     original_line, twin_line = _SUBSTITUTIONS[name]
     count = original_text.count(original_line)
     assert count == 1, (

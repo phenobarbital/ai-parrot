@@ -16,7 +16,7 @@ for this feature, see the spec's Non-Goals).
 
 Connection is via ``asyncdb``'s ArangoDB driver (``AsyncDB("arangodb", ...)``,
 the same driver used by
-:class:`~parrot.knowledge.ontology.graph_store.OntologyGraphStore`). The
+:class:`~parrot.knowledge.ontology.graph_store.ArangoOntologyGraphStore`). The
 constructor is synchronous — the connection, database, collections, and
 view are created lazily by :meth:`ArangoDBWikiStore.initialize`, which every
 public method calls through :meth:`ArangoDBWikiStore._ensure_init`.

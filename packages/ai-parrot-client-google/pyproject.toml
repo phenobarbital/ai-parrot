@@ -24,7 +24,14 @@ dependencies = [
     # claimed to work; a higher, untested version (e.g. this workspace's
     # uv.lock currently resolves 2.24.0) is likewise not claimed — only what
     # was actually run against is declared as the floor.
-    "google-genai>=2.23.0",
+    # FEAT-688: floor raised to 2.31.0 and aligned with ai-parrot-embeddings.
+    # Verified 2026-10-15 by introspecting 2.31.0 in an isolated venv:
+    # ThinkingConfig(thinking_budget, thinking_level), types.ComputerUse,
+    # CreateCachedContentConfig, Http(Retry)Options, and the aio surfaces
+    # models.generate_videos, operations.get, files.download, interactions.create,
+    # live.music.connect, caches.create and aclose. Gemini 4 Argon (gemini-4-argon)
+    # needs nothing beyond 2.24.0; the raise realigns the two divergent pins.
+    "google-genai>=2.31.0",
     # NOT declared here: google-api-python-client / google-cloud-texttospeech
     # / google-cloud-aiplatform — verified via grep that nothing under
     # parrot/clients/google/ imports any of them; those SDKs back other,

@@ -12,7 +12,7 @@ import time
 
 from pydantic import BaseModel, ConfigDict, SkipValidation
 
-from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
+from parrot.knowledge.graphindex.protocols import LLMCaller
 from parrot.knowledge.wiki.bookkeeper import WikiBookkeeper
 from parrot.knowledge.wiki.charter import Charter
 from parrot.knowledge.wiki.documents import (
@@ -55,8 +55,8 @@ class InboxRuntime(BaseModel):
     acquirer: DocumentAcquirer
     router: IngestTriageRouter
     orchestrator: WikiIngestOrchestrator
-    light_adapter: SkipValidation[PageIndexLLMAdapter]
-    heavy_adapter: SkipValidation[PageIndexLLMAdapter]
+    light_adapter: SkipValidation[LLMCaller]
+    heavy_adapter: SkipValidation[LLMCaller]
     search: WikiCombinedSearch
     models: dict[str, str]
 

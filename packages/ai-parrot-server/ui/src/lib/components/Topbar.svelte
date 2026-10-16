@@ -26,7 +26,7 @@
 </script>
 
 <header class="border-border bg-card flex h-14 items-center justify-between border-b px-4">
-  <span class="text-sm font-semibold">AI-Parrot Admin</span>
+  <span class="text-sm font-semibold">AI-Parrot</span>
 
   <div class="flex items-center gap-3">
     <span class="text-muted-foreground text-sm" data-testid="topbar-identity">{identity}</span>

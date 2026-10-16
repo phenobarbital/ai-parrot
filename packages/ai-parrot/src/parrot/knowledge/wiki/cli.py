@@ -38,12 +38,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, cast, get_args
 
 import click
 from pydantic import ValidationError
 
-from parrot.tools.sql_dialects import _SQLGLOT_DIALECT_MAP
+from parrot.knowledge.common.sql_dialects import _SQLGLOT_DIALECT_MAP
 
 if TYPE_CHECKING:
     from parrot.knowledge.wiki.schema.service import SchemaPlaneService
@@ -108,17 +108,25 @@ from parrot.knowledge.wiki.repo_scan import (
     scan_repository,
 )
 from parrot.knowledge.wiki.sources import SourceCollectionManager
-from parrot.knowledge.wiki.store import BaseWikiStore, SQLiteWikiStore, WikiStoreBusy, create_wiki_store
+from parrot.knowledge.wiki.store import (
+    BaseWikiStore,
+    SQLiteWikiStore,
+    WikiStoreBusy,
+    create_wiki_store,
+    is_server_backend,
+    wiki_backend_names,
+)
 from parrot.knowledge.wiki.symbols import SymbolKind, parse_sym_id
 from parrot.knowledge.wiki.runtime import (
     WikiRuntimeError,
     build_ingest_runtime,
     build_novelty_scorer,
     build_triage_adapters,
+    persistence_for_project,
 )
-from parrot.knowledge.wiki.ledger.service import LedgerService
+from parrot.knowledge.wiki.ledger.service import LedgerService, normalize_issue_id
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
-from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity
+from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity, IssueStatus
 from parrot.knowledge.wiki.schema.models import SchemaSourceConfig
 
 _cli_logger = logging.getLogger("wikitoolkit.cli")
@@ -576,18 +584,15 @@ def _run(coro: Any) -> Any:
 def _env_setting(name: str) -> str | None:
     """Read a wiki env setting (``WIKI_STORE`` / ``WIKI_STORE_BACKEND``).
 
-    Prefers navconfig (so values in ``.env`` are honoured, matching the
-    legacy ``parrot llmwiki`` behaviour) and falls back to ``os.environ``
-    when navconfig is unavailable.
+    Resolved through ``resolve_setting`` with the spec'd precedence
+    (FEAT-540 M4): process environment first, then navconfig (so values in
+    ``.env`` are still honoured when the variable is not exported), then
+    ``None``. Note this is environment-first, unlike the legacy
+    ``parrot llmwiki`` navconfig-first lookup.
     """
-    try:
-        from navconfig import config as _nav
+    from parrot.knowledge.wiki.project import resolve_setting
 
-        value = _nav.get(name, fallback=None)
-    except Exception:  # noqa: BLE001 — navconfig optional; env is enough
-        import os
-
-        value = os.environ.get(name)
+    value = resolve_setting(name)
     return value or None
 
 
@@ -667,7 +672,7 @@ def _store_options(func: Any) -> Any:
     func = click.option(
         "--backend",
         "backend_opt",
-        type=click.Choice(["sqlite", "memory", "arangodb"]),
+        type=_BackendChoice(),
         default=None,
         help="Backend for --store (default: sqlite / WIKI_STORE_BACKEND).",
     )(func)
@@ -679,6 +684,35 @@ def _store_options(func: Any) -> Any:
         "defaults to WIKI_STORE env or the project's own plane.",
     )(func)
     return func
+
+
+class _BackendChoice(click.ParamType):
+    """Validate a backend name against the live wiki backend registry."""
+
+    name = "backend"
+
+    def convert(
+        self,
+        value: object,
+        param: click.Parameter | None,
+        ctx: click.Context | None,
+    ) -> str:
+        """Validate one command-line backend value.
+
+        Args:
+            value: Raw command-line value.
+            param: Click parameter receiving the value.
+            ctx: Current Click context.
+
+        Returns:
+            The validated backend name.
+        """
+        backend = str(value)
+        names = wiki_backend_names()
+        if backend in names:
+            return backend
+        self.fail(f"{backend!r} is not one of {', '.join(names)}", param, ctx)
+        raise AssertionError("click.ParamType.fail always raises")
 
 
 def _render_results_table(rows: list[dict[str, Any]], question: str, show_body: bool) -> None:
@@ -1517,7 +1551,7 @@ def mcp() -> None:
 @click.option("--name", default=None, help="Wiki name (default: repo directory name).")
 @click.option(
     "--backend",
-    type=click.Choice(["sqlite", "memory", "arangodb"]),
+    type=_BackendChoice(),
     default=None,
     help="Retrieval-plane backend (default: sqlite).",
 )
@@ -1664,7 +1698,7 @@ def build(
 
         async def _pipeline() -> dict[str, Any]:
             store = _open_store(root, config)
-            if config.backend == "arangodb":
+            if is_server_backend(config.backend):
                 await store.initialize()
             sources = _open_sources(root, config, store=store)
             # FEAT-532 TASK-2909: attach Roblox DataModel/API enrichment
@@ -1730,9 +1764,9 @@ def build(
         try:
             counts = _run(_pipeline())
         except Exception as exc:  # surfaced as a clear CLI error
-            if config.backend == "arangodb":
+            if is_server_backend(config.backend):
                 raise click.ClickException(
-                    f"Could not connect to ArangoDB for wiki " f"{config.wiki_name!r}: {exc}"
+                    f"Could not connect to {config.backend} for wiki " f"{config.wiki_name!r}: {exc}"
                 ) from exc
             raise
         if storage_dir is None:
@@ -1995,7 +2029,7 @@ def upsert(
 
         async def _pipeline() -> dict[str, Any]:
             store = _open_store(root, config)
-            if config.backend == "arangodb":
+            if is_server_backend(config.backend):
                 await store.initialize()
             sources = _open_sources(root, config, store=store)
             # FEAT-532 TASK-2909: same enrichment pass as `build` — a
@@ -2036,9 +2070,9 @@ def upsert(
                 )
             return
         except Exception as exc:  # surfaced as a clear CLI error
-            if config.backend == "arangodb":
+            if is_server_backend(config.backend):
                 raise click.ClickException(
-                    f"Could not connect to ArangoDB for wiki " f"{config.wiki_name!r}: {exc}"
+                    f"Could not connect to {config.backend} for wiki " f"{config.wiki_name!r}: {exc}"
                 ) from exc
             raise
         if not quiet:
@@ -2347,12 +2381,12 @@ def lint(
     if not config.is_built(root):
         raise click.ClickException(f"Wiki not built for {root} — run `wikitoolkit build`.")
     store = _open_store(root, config)
-    if config.backend == "arangodb":
+    if is_server_backend(config.backend):
         try:
             _run(store.initialize())
         except Exception as exc:
             raise click.ClickException(
-                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: " f"{exc}"
+                f"Could not connect to {config.backend} for wiki {config.wiki_name!r}: " f"{exc}"
             ) from exc
     sources = _open_sources(root, config, store=store)
     read_store = _federate(root, config, store, ns_opt)
@@ -2427,12 +2461,12 @@ def status(path_: str | None, ns_opt: str | None, as_json: bool) -> None:
         click.echo(f"Wiki not built for {root} — run `wikitoolkit build`.")
         return
     store = _open_store(root, config)
-    if config.backend == "arangodb":
+    if is_server_backend(config.backend):
         try:
             _run(store.initialize())
         except Exception as exc:  # surfaced as a clear CLI error
             raise click.ClickException(
-                f"Could not connect to ArangoDB for wiki {config.wiki_name!r}: " f"{exc}"
+                f"Could not connect to {config.backend} for wiki {config.wiki_name!r}: " f"{exc}"
             ) from exc
     # Source staleness is a property of the LOCAL plane — the manager
     # must see the real store, not the federation wrapping it.
@@ -3261,6 +3295,130 @@ def ledger_ready(kind: str | None) -> None:
         click.echo(f"Ledger index is busy ({exc.operation}); no ready issues available (index_pending)")
 
 
+@ledger.command("list")
+@click.option(
+    "--status",
+    "statuses",
+    multiple=True,
+    type=click.Choice(["open", "claimed", "closed", "superseded", "all"]),
+    help="Repeatable; default open+claimed.",
+)
+@click.option("--kind", type=click.Choice(["bug", "tech_debt", "feature_gap", "vulnerability"]), default=None)
+@click.option("--severity", type=click.Choice(["critical", "major", "minor", "low"]), default=None)
+@click.option("--about", "about_prefix", default=None, help="Keep issues whose about starts with this prefix.")
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@remote_cli.remote_aware(proxied=True, tool="ledger_list")
+def ledger_list(
+    statuses: tuple[str, ...], kind: str | None, severity: str | None, about_prefix: str | None, as_json: bool
+) -> None:
+    """List ledger issues by status, kind, severity or about prefix."""
+    want_all = "all" in statuses
+    explicit = [status for status in statuses if status != "all"]
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {
+            "statuses": explicit or None,
+            "all_statuses": want_all,
+            "kind": kind,
+            "severity": severity,
+            "about_prefix": about_prefix,
+        }
+        if as_json:
+            click.echo(json.dumps(remote_cli.call_remote(remote, "ledger_list", arguments), indent=2, default=str))
+        else:
+            click.echo(remote_cli.call_remote_text(remote, "ledger_list", arguments))
+        return
+    service = LedgerService.from_root()
+    try:
+        resolved = get_args(IssueStatus) if want_all else (tuple(explicit) or ("open", "claimed"))
+        issues = _run(
+            service.list_issues(
+                resolved,
+                kind=cast(IssueKind, kind) if kind else None,
+                severity=cast(IssueSeverity, severity) if severity else None,
+                about_prefix=about_prefix,
+            )
+        )
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); no issues available (index_pending)")
+        return
+    if as_json:
+        click.echo(json.dumps({"issues": issues}, indent=2, default=str))
+        return
+    for issue in issues:
+        claimed = f" — claimed by {issue['claimed_by']}" if issue["status"] == "claimed" else ""
+        click.echo(
+            f"{issue['issue_id']} [{issue['severity']}] {issue['status']} {issue['title']} ({issue['kind']}){claimed}"
+        )
+    if not issues:
+        click.echo("No matching issues.")
+
+
+@ledger.command("show")
+@click.argument("issue_id")
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
+@click.option("--no-history", is_flag=True, help="Omit the event history.")
+@remote_cli.remote_aware(proxied=True, tool="ledger_show")
+def ledger_show(issue_id: str, as_json: bool, no_history: bool) -> None:
+    """Show one ledger issue in full: state, body and event history."""
+    remote = click.get_current_context().obj.get("remote")
+    if remote is not None:
+        arguments = {"issue_id": issue_id, "include_history": not no_history}
+        if as_json:
+            click.echo(json.dumps(remote_cli.call_remote(remote, "ledger_show", arguments), indent=2, default=str))
+        else:
+            click.echo(remote_cli.call_remote_text(remote, "ledger_show", arguments))
+        return
+    service = LedgerService.from_root()
+    try:
+        issue = _run(service.get_issue(issue_id))
+        if issue is None:
+            raise click.ClickException(f"Issue {normalize_issue_id(issue_id)} not found")
+        history = [] if no_history else _run(service.issue_history(issue_id))
+    except WikiStoreBusy as exc:
+        click.echo(f"Ledger index is busy ({exc.operation}); issue unavailable (index_pending)")
+        return
+    if as_json:
+        payload: dict[str, Any] = {"issue": issue}
+        if not no_history:
+            payload["history"] = history
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+    header_fields = (
+        ("id", issue.get("issue_id")),
+        ("title", issue.get("title")),
+        ("status", issue.get("status")),
+        ("kind", issue.get("kind")),
+        ("severity", issue.get("severity")),
+        ("acknowledged", issue.get("acknowledged")),
+        ("discovered_from", issue.get("discovered_from")),
+        ("about", ", ".join(issue.get("about") or [])),
+        ("claimed_by", issue.get("claimed_by")),
+        ("closed_by", issue.get("closed_by")),
+        ("closed_reason", issue.get("closed_reason")),
+        ("resolved_by", issue.get("resolved_by")),
+    )
+    for key, value in header_fields:
+        if value is None or value == "" or value is False:
+            continue
+        click.echo(f"{key}: {value}")
+    click.echo()
+    click.echo(str(issue.get("body") or ""), nl=False)
+    if not no_history:
+        click.echo()
+        click.echo("History:")
+        for event in history:
+            click.echo(f"{event['ts']} {event['actor']} {event['kind']}", nl=False)
+            payload = event.get("payload") or {}
+            detail = next(
+                (payload[key] for key in ("reason", "claimed_by", "unclaimed_by", "resolved_by") if payload.get(key)),
+                None,
+            )
+            if detail is not None:
+                click.echo(f" {detail}", nl=False)
+            click.echo()
+
+
 @ledger.command("claim")
 @click.argument("issue_id")
 @click.option("--actor", default="agent:cli", help="Actor claiming the issue.")
@@ -4013,7 +4171,6 @@ def _sync_memory_to_graph(
     """
     try:
         from parrot.knowledge.graphindex.factory import make_stub_tenant_context
-        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
         from parrot.knowledge.graphindex.publish import GraphPublisher
         from parrot.knowledge.graphindex.schema import (
             EdgeKind,
@@ -4027,9 +4184,10 @@ def _sync_memory_to_graph(
         click.echo(f"[graph sync skipped: graphindex unavailable — {exc}]")
         return None
 
+    persistence = None
     try:
         ctx = make_stub_tenant_context(config.wiki_name)
-        persistence = SQLitePersistence(config.graph_path(root))
+        persistence = _run(persistence_for_project(config, root))
         publisher = GraphPublisher(persistence, ctx)
 
         nodes = [
@@ -4078,6 +4236,9 @@ def _sync_memory_to_graph(
     except Exception as exc:  # noqa: BLE001 — sync must never block the save
         click.echo(f"[graph sync failed: {exc}]")
         return None
+    finally:
+        if persistence is not None:
+            _run(persistence.close())
 
 
 def _extract_into_graph(
@@ -4117,16 +4278,17 @@ def _extract_into_graph(
     if not spec:
         click.echo("[extract skipped: set WIKI_EXTRACT_LLM (e.g." " 'anthropic:claude-haiku-4-5') to enable]")
         return None
+    persistence = None
     try:
         from parrot.clients.factory import LLMFactory
         from parrot.knowledge.graphindex.extractors.llm import LLMGraphExtractor
         from parrot.knowledge.graphindex.factory import make_stub_tenant_context
-        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
         from parrot.knowledge.graphindex.publish import GraphPublisher
 
         client = LLMFactory.create(spec, model_args={"temperature": 0.0})
         ctx = make_stub_tenant_context(config.wiki_name)
-        publisher = GraphPublisher(SQLitePersistence(config.graph_path(root)), ctx)
+        persistence = _run(persistence_for_project(config, root))
+        publisher = GraphPublisher(persistence, ctx)
         extractor = LLMGraphExtractor(client, publisher)
         result = _run(
             extractor.extract_and_publish(
@@ -4145,6 +4307,9 @@ def _extract_into_graph(
     except Exception as exc:  # noqa: BLE001 — extraction is best-effort
         click.echo(f"[extract failed: {exc}]")
         return None
+    finally:
+        if persistence is not None:
+            _run(persistence.close())
 
 
 @wiki.command()
@@ -4571,19 +4736,20 @@ def audit(
     if root is not None and config is not None:
         graph_db = config.graph_path(root) / f"{config.wiki_name}.db"
         if graph_db.exists():
+            persistence = None
             try:
                 from parrot.knowledge.graphindex.factory import (
                     make_stub_tenant_context,
                 )
-                from parrot.knowledge.graphindex.persist_sqlite import (
-                    SQLitePersistence,
-                )
 
-                persistence = SQLitePersistence(config.graph_path(root))
+                persistence = _run(persistence_for_project(config, root))
                 ctx = make_stub_tenant_context(config.wiki_name)
                 graph_commits = _run(persistence.list_commits(ctx, limit=limit))
             except Exception as exc:  # noqa: BLE001
                 click.echo(f"[graph audit unavailable: {exc}]")
+            finally:
+                if persistence is not None:
+                    _run(persistence.close())
 
     if as_json:
         click.echo(
@@ -4635,15 +4801,17 @@ def ground(
             make_stub_tenant_context,
         )
         from parrot.knowledge.graphindex.grounding import GroundingEvaluator
-        from parrot.knowledge.graphindex.persist_sqlite import SQLitePersistence
         from parrot.knowledge.graphindex.retriever import GraphExpandedRetriever
     except ImportError as exc:
         raise click.ClickException(f"graphindex unavailable: {exc}") from exc
 
     async def _ground() -> dict[str, Any]:
-        persistence = SQLitePersistence(config.graph_path(root))
-        ctx = make_stub_tenant_context(config.wiki_name)
-        nodes, edges = await persistence.load_graph(ctx)
+        persistence = await persistence_for_project(config, root)
+        try:
+            ctx = make_stub_tenant_context(config.wiki_name)
+            nodes, edges = await persistence.load_graph(ctx)
+        finally:
+            await persistence.close()
         assembler = GraphAssembler(tenant_id=config.wiki_name)
         for node in nodes:
             assembler.add_node(node)
@@ -6040,7 +6208,13 @@ def claude_hook() -> None:
 
 def main() -> None:
     """Console-script entry point for ``wikitoolkit``."""
-    wiki()
+    from parrot.knowledge.graphindex.protocols import ProviderNotAvailable
+
+    try:
+        wiki()
+    except ProviderNotAvailable as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(2)
 
 
 if __name__ == "__main__":

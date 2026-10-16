@@ -43,10 +43,12 @@ worktree-local ledger, and exit non-zero WITHOUT claiming anything.
    - **SDD lane** (`lane == "sdd"`): if any `group.parents[].open` is true, reuse that parent spec (`/sdd-task <spec> --from-issue …` per issue);
      otherwise `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch dev --label <suggested_slug>`, author
      `sdd/specs/<suggested_slug>.spec.md` from the group, `/sdd-task`, then
-     `python -m scripts.sdd.ensure_worktree --slug <suggested_slug> --feature-id FEAT-<NNN>`. `/sdd-done <FEAT-ID>` closes it out unchanged.
+     `python -m scripts.sdd.ensure_worktree --slug <suggested_slug> --feature-id FEAT-<NNN>`. `/sdd-done <FEAT-ID>` closes it out, including the issues its verified tasks resolve.
      For a new spec, the slug comes from `suggested_slug`; never re-derive it. For a reused parent,
      use that parent index's existing slug, feature_id, spec and base_branch when provisioning the worktree.
      Task creation alone is not resolution: implement and validate the task in that worktree before step 6.
+     Every task filed for an issue MUST carry `` **Discovered-from**: `issue:<id>` `` — that link is how
+     `/sdd-done` finds the issue to close. If implementation does not finish in this session, hand the claim off (step 7).
 6. **Close** — two keys, fail-closed: an issue closes only if the implementing agent asserts its id as resolved AND at least one of
    its `files` appears in `git diff --name-only <base>...HEAD`. Then `wikitoolkit ledger close <issue-id> --reason "<what changed>"
    --actor agent:sdd-fix --resolved-by commit:<sha>` (fast, the implementing commit on the pushed PR branch)
@@ -57,6 +59,9 @@ worktree-local ledger, and exit non-zero WITHOUT claiming anything.
    Run release on every exit path, including test/push/PR failures or interrupted execution.
    If unclaim itself fails, report the issue ID and reason for recovery; do not claim success.
    Never leave an issue claimed silently; acknowledgement stays human-only and out of scope here.
+   **SDD-lane hand-off**: an issue whose `Discovered-from` task is filed in the feature's per-spec index but not yet
+   implemented STAYS claimed and is reported as `handed off to /sdd-done <FEAT-ID>`, which closes it by the same two
+   keys once the task is verified. Release it instead when no filed task cites it.
 
 ## Output
 Per group processed:
@@ -64,3 +69,4 @@ Per group processed:
 - Branch/PR URL (Fast) or FEAT-ID + worktree path (SDD)
 - Issues closed with their resolved_by evidence
 - Issues released with reason
+- Issues handed off to `/sdd-done <FEAT-ID>` (SDD lane)

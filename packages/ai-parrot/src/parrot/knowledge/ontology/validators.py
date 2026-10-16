@@ -3,11 +3,13 @@
 Ensures that dynamic AQL from the intent resolver is read-only,
 depth-limited, and does not access system collections or execute JavaScript.
 """
+
 from __future__ import annotations
 
 import re
+from collections.abc import Awaitable, Callable
 
-from .exceptions import AQLValidationError
+from .exceptions import AQLValidationError, QueryValidationError
 
 # Mutation keywords that indicate a write operation
 _MUTATION_PATTERN = re.compile(
@@ -28,9 +30,7 @@ _JS_PATTERN = re.compile(
 )
 
 # Traversal depth pattern: matches "1..N" or "..N" in traversal syntax
-_TRAVERSAL_DEPTH_PATTERN = re.compile(
-    r"\b(\d+)\.\.(\d+)\b"
-)
+_TRAVERSAL_DEPTH_PATTERN = re.compile(r"\b(\d+)\.\.(\d+)\b")
 
 
 async def validate_aql(
@@ -60,6 +60,7 @@ async def validate_aql(
     if max_depth is None:
         try:
             from parrot.conf import ONTOLOGY_MAX_TRAVERSAL_DEPTH
+
             max_depth = ONTOLOGY_MAX_TRAVERSAL_DEPTH
         except (ImportError, AttributeError):
             max_depth = 4
@@ -70,16 +71,14 @@ async def validate_aql(
     match = _MUTATION_PATTERN.search(aql)
     if match:
         raise AQLValidationError(
-            f"AQL contains mutation keyword '{match.group()}'. "
-            f"Only read-only queries are allowed for dynamic AQL."
+            f"AQL contains mutation keyword '{match.group()}'. " f"Only read-only queries are allowed for dynamic AQL."
         )
 
     # 2. No system collections
     match = _SYSTEM_COLLECTIONS.search(aql)
     if match:
         raise AQLValidationError(
-            f"AQL accesses system collection '{match.group()}'. "
-            f"System collections are not allowed in dynamic AQL."
+            f"AQL accesses system collection '{match.group()}'. " f"System collections are not allowed in dynamic AQL."
         )
 
     # 3. No JavaScript execution
@@ -100,3 +99,46 @@ async def validate_aql(
             )
 
     return aql
+
+
+_VALIDATORS: dict[str, Callable[[str, int | None], Awaitable[str]]] = {}
+
+
+def register_query_validator(
+    dialect: str,
+    validator: Callable[[str, int | None], Awaitable[str]],
+) -> None:
+    """Register a dynamic-query validator for a query dialect.
+
+    Args:
+        dialect: Query dialect name.
+        validator: Async function that validates query text and returns it.
+    """
+    _VALIDATORS[dialect] = validator
+
+
+async def validate_query(
+    dialect: str,
+    text: str,
+    max_depth: int | None = None,
+) -> str:
+    """Validate dynamic query text using its registered dialect validator.
+
+    Args:
+        dialect: Query dialect name.
+        text: Dynamic query text to validate.
+        max_depth: Optional maximum traversal depth.
+
+    Returns:
+        The validated query text.
+
+    Raises:
+        QueryValidationError: If no validator is registered for ``dialect``.
+    """
+    validator = _VALIDATORS.get(dialect)
+    if validator is None:
+        raise QueryValidationError(f"No query validator registered for dialect {dialect!r}")
+    return await validator(text, max_depth)
+
+
+register_query_validator("aql", validate_aql)

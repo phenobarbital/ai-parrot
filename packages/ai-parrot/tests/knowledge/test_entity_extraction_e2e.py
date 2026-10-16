@@ -9,6 +9,7 @@ Spy strategy: a lightweight ToolCallSpy registered in a fake ToolManager. The sp
 records the last ``_permission_context`` kwarg so tests can verify per-user OAuth
 routing without importing JiraToolkit.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -22,7 +23,7 @@ import yaml
 from parrot.auth.exceptions import AuthorizationRequired
 from parrot.auth.permission import PermissionContext, UserSession
 from parrot.knowledge.ontology.cache import OntologyCache
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.mixin import OntologyRAGMixin
 from parrot.knowledge.ontology.schema import (
     AuthorizationRule,
@@ -37,7 +38,6 @@ from parrot.knowledge.ontology.schema import (
     TraversalPattern,
 )
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
-
 
 # ---------------------------------------------------------------------------
 # Fixture YAML path
@@ -83,10 +83,7 @@ def _load_pattern_from_fixture() -> TraversalPattern:
     spec = raw["team_work_in_progress"]
 
     # Parse entity_extraction
-    ee = {
-        k: EntityExtractionRule(**v)
-        for k, v in spec.get("entity_extraction", {}).items()
-    }
+    ee = {k: EntityExtractionRule(**v) for k, v in spec.get("entity_extraction", {}).items()}
 
     # Parse authorization
     auth_raw = spec.get("authorization")
@@ -200,8 +197,8 @@ def cache() -> AsyncMock:
 @pytest.fixture
 def graph_store_with_team() -> AsyncMock:
     """Graph store returning a seeded team (Jesús Lara's reports)."""
-    store = AsyncMock(spec=OntologyGraphStore)
-    store.execute_traversal.return_value = [
+    store = AsyncMock(spec=ArangoOntologyGraphStore)
+    store.execute_pattern.return_value = [
         {"employee_id": "E002", "name": "Bob Jones", "jira_account_id": "acct:bob"},
         {"employee_id": "E003", "name": "Carol Chen", "jira_account_id": "acct:carol"},
     ]
@@ -246,15 +243,15 @@ class TestE2ETeamWorkInProgress:
         tm = _make_tool_manager(spy)
         mixin = _make_mixin(ontology, graph_store_with_team, cache, tm)
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
-             patch(
-                 "parrot.knowledge.ontology.mixin.EntityResolver",
-                 autospec=True,
-             ) as MockResolver:
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
+                "parrot.knowledge.ontology.mixin.EntityResolver",
+                autospec=True,
+            ) as MockResolver,
+        ):
             instance = MockResolver.return_value
-            instance.extract_and_resolve = AsyncMock(
-                return_value={"target_employee": "Employee/E001"}
-            )
+            instance.extract_and_resolve = AsyncMock(return_value={"target_employee": "Employee/E001"})
 
             result = await mixin.ontology_process(
                 query="¿en qué está trabajando el equipo de Jesús Lara?",
@@ -285,7 +282,7 @@ class TestE2ETeamWorkInProgress:
     ) -> None:
         """Two Jesús employees → ambiguity_strategy=ask_user → state="ambiguous"."""
         ontology = _make_ontology(pattern)
-        gs = AsyncMock(spec=OntologyGraphStore)
+        gs = AsyncMock(spec=ArangoOntologyGraphStore)
         mixin = _make_mixin(ontology, gs, cache, _make_tool_manager(spy))
 
         ambiguous_candidates = [
@@ -293,12 +290,15 @@ class TestE2ETeamWorkInProgress:
             {"_id": "Employee/2", "name": "Jesús Pérez"},
         ]
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
-             patch(
-                 "parrot.knowledge.ontology.mixin.EntityResolver",
-                 autospec=True,
-             ) as MockResolver:
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
+                "parrot.knowledge.ontology.mixin.EntityResolver",
+                autospec=True,
+            ) as MockResolver,
+        ):
             from parrot.knowledge.ontology.entity_resolver import EntityAmbiguityError
+
             instance = MockResolver.return_value
             instance.extract_and_resolve = AsyncMock(
                 side_effect=EntityAmbiguityError(
@@ -345,26 +345,24 @@ class TestE2ETeamWorkInProgress:
             tool_call=pattern.tool_call,
         )
         ontology = _make_ontology(restricted_pattern)
-        gs = AsyncMock(spec=OntologyGraphStore)
+        gs = AsyncMock(spec=ArangoOntologyGraphStore)
         mixin = _make_mixin(ontology, gs, cache, _make_tool_manager(spy))
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
-             patch(
-                 "parrot.knowledge.ontology.mixin.EntityResolver",
-                 autospec=True,
-             ) as MockResolver, \
-             patch(
-                 "parrot.knowledge.ontology.mixin.AuthorizationChecker",
-                 autospec=True,
-             ) as MockChecker:
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
+                "parrot.knowledge.ontology.mixin.EntityResolver",
+                autospec=True,
+            ) as MockResolver,
+            patch(
+                "parrot.knowledge.ontology.mixin.AuthorizationChecker",
+                autospec=True,
+            ) as MockChecker,
+        ):
             instance_resolver = MockResolver.return_value
-            instance_resolver.extract_and_resolve = AsyncMock(
-                return_value={"target_employee": "Employee/E001"}
-            )
+            instance_resolver.extract_and_resolve = AsyncMock(return_value={"target_employee": "Employee/E001"})
             instance_checker = MockChecker.return_value
-            instance_checker.check = AsyncMock(
-                return_value=(False, "no authorization rule matched")
-            )
+            instance_checker.check = AsyncMock(return_value=(False, "no authorization rule matched"))
 
             result = await mixin.ontology_process(
                 query="¿en qué está trabajando el equipo de Jesús?",
@@ -400,19 +398,21 @@ class TestE2ETeamWorkInProgress:
 
         ontology = _make_ontology(pattern)
         mixin = _make_mixin(
-            ontology, graph_store_with_team, cache,
+            ontology,
+            graph_store_with_team,
+            cache,
             _make_tool_manager(auth_required_spy),
         )
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
-             patch(
-                 "parrot.knowledge.ontology.mixin.EntityResolver",
-                 autospec=True,
-             ) as MockResolver:
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
+                "parrot.knowledge.ontology.mixin.EntityResolver",
+                autospec=True,
+            ) as MockResolver,
+        ):
             instance = MockResolver.return_value
-            instance.extract_and_resolve = AsyncMock(
-                return_value={"target_employee": "Employee/E001"}
-            )
+            instance.extract_and_resolve = AsyncMock(return_value={"target_employee": "Employee/E001"})
 
             result = await mixin.ontology_process(
                 query="¿en qué está trabajando el equipo de Jesús?",
@@ -436,13 +436,15 @@ class TestE2ETeamWorkInProgress:
     ) -> None:
         """Two queries with different target employees get distinct cache keys.
 
-        Verifies that graph_store.execute_traversal is called a second time —
+        Verifies that graph_store.execute_pattern is called a second time —
         the second call cannot reuse the first call's cached result because
         resolved_entities differ.
         """
         ontology = _make_ontology(pattern)
         mixin = _make_mixin(
-            ontology, graph_store_with_team, cache,
+            ontology,
+            graph_store_with_team,
+            cache,
             _make_tool_manager(spy),
         )
 
@@ -458,44 +460,41 @@ class TestE2ETeamWorkInProgress:
             seen_keys.append(key)
             return key
 
-        with patch.object(OntologyRAGMixin, '_is_ontology_enabled', return_value=True), \
-             patch(
-                 "parrot.knowledge.ontology.mixin.EntityResolver",
-                 autospec=True,
-             ) as MockResolver, \
-             patch.object(OntologyCache, 'build_key', staticmethod(fake_build_key)):
+        with (
+            patch.object(OntologyRAGMixin, "_is_ontology_enabled", return_value=True),
+            patch(
+                "parrot.knowledge.ontology.mixin.EntityResolver",
+                autospec=True,
+            ) as MockResolver,
+            patch.object(OntologyCache, "build_key", staticmethod(fake_build_key)),
+        ):
 
             instance = MockResolver.return_value
 
             # First query: resolves Employee/E001
             cache.get.return_value = None
-            instance.extract_and_resolve = AsyncMock(
-                return_value={"target_employee": "Employee/E001"}
-            )
+            instance.extract_and_resolve = AsyncMock(return_value={"target_employee": "Employee/E001"})
             await mixin.ontology_process(
                 query="¿en qué está trabajando el equipo de Jesús Lara?",
                 user_context={"user_id": "alice", "roles": ["hr_manager"]},
                 tenant_id="acme",
             )
-            traversal_count_after_first = graph_store_with_team.execute_traversal.call_count
+            traversal_count_after_first = graph_store_with_team.execute_pattern.call_count
 
             # Second query: resolves a different employee
             cache.get.return_value = None  # Cache miss also for second query
-            instance.extract_and_resolve = AsyncMock(
-                return_value={"target_employee": "Employee/E004"}
-            )
+            instance.extract_and_resolve = AsyncMock(return_value={"target_employee": "Employee/E004"})
             await mixin.ontology_process(
                 query="¿en qué está trabajando el equipo de Pérez?",
                 user_context={"user_id": "alice", "roles": ["hr_manager"]},
                 tenant_id="acme",
             )
-            traversal_count_after_second = graph_store_with_team.execute_traversal.call_count
+            traversal_count_after_second = graph_store_with_team.execute_pattern.call_count
 
         # Each query should produce a distinct cache key
         assert len(seen_keys) == 2
         assert seen_keys[0] != seen_keys[1], (
-            f"Cache keys must differ when resolved_entities differ.\n"
-            f"Key 1: {seen_keys[0]}\nKey 2: {seen_keys[1]}"
+            f"Cache keys must differ when resolved_entities differ.\n" f"Key 1: {seen_keys[0]}\nKey 2: {seen_keys[1]}"
         )
         # Second query hit the graph store again (not served from cache)
         assert traversal_count_after_second > traversal_count_after_first, (

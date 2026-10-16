@@ -114,6 +114,18 @@ def parallel_width(wave: Sequence[TaskRef]) -> int:
     return parallel_count if parallel_count > 0 else 1
 
 
+def is_exclusive_batch(batch: Sequence[TaskRef]) -> bool:
+    """Whether ``batch`` is a single exclusive task, i.e. an exclusive round of :func:`partition_wave`.
+
+    Args:
+        batch: One batch returned by :func:`partition_wave`.
+
+    Returns:
+        ``True`` only for a one-task batch whose task has ``parallel=False``.
+    """
+    return len(batch) == 1 and not batch[0].parallel
+
+
 class TaskScheduler:
     """Computes dependency-respecting waves over a per-spec task index.
 

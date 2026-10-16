@@ -8,6 +8,7 @@ Keeps the ontology graph in sync with source data via:
     5. SYNC: Update PgVector embeddings for changed vectorizable fields.
     6. INVALIDATE: Bust Redis cache for the affected tenant.
 """
+
 from __future__ import annotations
 
 import logging
@@ -18,7 +19,7 @@ from pydantic import BaseModel, Field
 
 from .cache import OntologyCache
 from .discovery import DiscoveryStats, RelationDiscovery
-from .graph_store import OntologyGraphStore, UpsertResult
+from .graph_store import ArangoOntologyGraphStore, UpsertResult
 from .tenant import TenantOntologyManager
 
 logger = logging.getLogger("Parrot.Ontology.Refresh")
@@ -65,7 +66,7 @@ class OntologyRefreshPipeline:
 
     Args:
         tenant_manager: TenantOntologyManager instance.
-        graph_store: OntologyGraphStore instance.
+        graph_store: ArangoOntologyGraphStore instance.
         discovery: RelationDiscovery instance.
         datasource_factory: DataSourceFactory instance.
         cache: OntologyCache instance.
@@ -76,7 +77,7 @@ class OntologyRefreshPipeline:
     def __init__(
         self,
         tenant_manager: TenantOntologyManager,
-        graph_store: OntologyGraphStore,
+        graph_store: ArangoOntologyGraphStore,
         discovery: RelationDiscovery,
         datasource_factory: Any,
         cache: OntologyCache,
@@ -119,7 +120,10 @@ class OntologyRefreshPipeline:
 
             try:
                 await self._refresh_entity(
-                    ctx, entity_name, entity_def, report,
+                    ctx,
+                    entity_name,
+                    entity_def,
+                    report,
                 )
             except Exception as e:
                 error_msg = f"Entity '{entity_name}' refresh failed: {e}"
@@ -137,8 +141,10 @@ class OntologyRefreshPipeline:
         duration = (report.completed_at - report.started_at).total_seconds()
         logger.info(
             "Refresh complete for tenant '%s' in %.1fs: %d entities, %d errors",
-            tenant_id, duration,
-            len(report.entity_results), len(report.errors),
+            tenant_id,
+            duration,
+            len(report.entity_results),
+            len(report.errors),
         )
         return report
 
@@ -160,7 +166,8 @@ class OntologyRefreshPipeline:
         # 1. EXTRACT
         source_config = self.source_configs.get(entity_def.source, {})
         source = self.datasource_factory.get(
-            entity_def.source, source_config,
+            entity_def.source,
+            source_config,
         )
         property_names = list(entity_def.get_property_names())
         extraction = await source.extract(fields=property_names)
@@ -172,33 +179,38 @@ class OntologyRefreshPipeline:
         new_data = [record.data for record in extraction.records]
         logger.info(
             "Extracted %d records for entity '%s' from source '%s'",
-            len(new_data), entity_name, entity_def.source,
+            len(new_data),
+            entity_name,
+            entity_def.source,
         )
 
         # 2. DIFF
         existing = await self.graph_store.get_all_nodes(
-            ctx, entity_def.collection,
+            ctx,
+            entity_def.collection,
         )
         diff = self._compute_diff(
-            new_data, existing, key_field=entity_def.key_field,
+            new_data,
+            existing,
+            key_field=entity_def.key_field,
         )
 
         # 3. APPLY
         if diff.to_add or diff.to_update:
             result = await self.graph_store.upsert_nodes(
-                ctx, entity_def.collection,
+                ctx,
+                entity_def.collection,
                 diff.to_add + diff.to_update,
                 key_field=entity_def.key_field,
             )
             report.entity_results[entity_name] = result
 
         if diff.to_remove:
-            keys_to_remove = [
-                d.get(entity_def.key_field, d.get("_key", ""))
-                for d in diff.to_remove
-            ]
+            keys_to_remove = [d.get(entity_def.key_field, d.get("_key", "")) for d in diff.to_remove]
             await self.graph_store.soft_delete_nodes(
-                ctx, entity_def.collection, keys_to_remove,
+                ctx,
+                entity_def.collection,
+                keys_to_remove,
             )
 
         # 4. REDISCOVER EDGES (only for changed nodes)
@@ -210,13 +222,18 @@ class OntologyRefreshPipeline:
                     if not target_entity:
                         continue
                     target_data = await self.graph_store.get_all_nodes(
-                        ctx, target_entity.collection,
+                        ctx,
+                        target_entity.collection,
                     )
                     discovery_result = await self.discovery.discover(
-                        ctx, rel_def, changed_nodes, target_data,
+                        ctx,
+                        rel_def,
+                        changed_nodes,
+                        target_data,
                     )
                     await self.graph_store.create_edges(
-                        ctx, rel_def.edge_collection,
+                        ctx,
+                        rel_def.edge_collection,
                         discovery_result.confirmed,
                     )
                     report.discovery_results[rel_name] = discovery_result.stats
@@ -225,7 +242,10 @@ class OntologyRefreshPipeline:
         vec_fields = entity_def.vectorize
         if vec_fields and changed_nodes and self.vector_store:
             await self._sync_vectors(
-                ctx, entity_def, changed_nodes, vec_fields,
+                ctx,
+                entity_def,
+                changed_nodes,
+                vec_fields,
             )
 
     @staticmethod
@@ -247,12 +267,8 @@ class OntologyRefreshPipeline:
         Returns:
             DiffResult with to_add, to_update, to_remove lists.
         """
-        existing_map = {
-            d.get(key_field, d.get("_key", "")): d for d in existing
-        }
-        new_map = {
-            d.get(key_field, ""): d for d in new_data if d.get(key_field)
-        }
+        existing_map = {d.get(key_field, d.get("_key", "")): d for d in existing}
+        new_map = {d.get(key_field, ""): d for d in new_data if d.get(key_field)}
 
         to_add = [d for k, d in new_map.items() if k not in existing_map]
         to_remove = [d for k, d in existing_map.items() if k not in new_map]
@@ -262,11 +278,7 @@ class OntologyRefreshPipeline:
             if k in existing_map:
                 old_d = existing_map[k]
                 # Compare only the data fields (ignore ArangoDB internal fields)
-                changed = any(
-                    new_d.get(field) != old_d.get(field)
-                    for field in new_d
-                    if not field.startswith("_")
-                )
+                changed = any(new_d.get(field) != old_d.get(field) for field in new_d if not field.startswith("_"))
                 if changed:
                     to_update.append(new_d)
 
@@ -293,11 +305,7 @@ class OntologyRefreshPipeline:
         """
         try:
             for node in changed_nodes:
-                texts = [
-                    str(node.get(f, ""))
-                    for f in vec_fields
-                    if node.get(f)
-                ]
+                texts = [str(node.get(f, "")) for f in vec_fields if node.get(f)]
                 if texts:
                     combined = " ".join(texts)
                     await self.vector_store.upsert(

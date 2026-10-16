@@ -9,14 +9,14 @@ whole batch in one audited, revertible transaction.
 The publisher is duck-typed over its ``persistence`` dependency — any
 backend exposing ``apply_update`` / ``get_commit`` / ``list_commits`` /
 ``revert_commit`` works (``SQLitePersistence`` today; the ArangoDB
-``GraphIndexPersistence`` can implement the same protocol later).
+``ArangoPersistence`` can implement the same protocol later).
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from parrot.knowledge.graphindex.schema import (
     AssertionMeta,
@@ -25,6 +25,9 @@ from parrot.knowledge.graphindex.schema import (
     Provenance,
 )
 from parrot.knowledge.ontology.schema import TenantContext
+
+if TYPE_CHECKING:  # pragma: no cover — typing only
+    from parrot.knowledge.graphindex.protocols import GraphPersistence
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +47,7 @@ class GraphPublisher:
         ctx: Tenant context identifying the target graph.
     """
 
-    def __init__(self, persistence: Any, ctx: TenantContext) -> None:
+    def __init__(self, persistence: "GraphPersistence", ctx: TenantContext) -> None:
         self.persistence = persistence
         self.ctx = ctx
         self.logger = logging.getLogger(__name__)
@@ -76,10 +79,7 @@ class GraphPublisher:
         for node in update.nodes:
             if node.assertion is None:
                 node.assertion = meta
-                if (
-                    node.provenance == Provenance.EXTRACTED
-                    and node.source_uri.startswith("agent://")
-                ):
+                if node.provenance == Provenance.EXTRACTED and node.source_uri.startswith("agent://"):
                     node.provenance = Provenance.ASSERTED
         for edge in update.edges:
             if edge.assertion is None:
@@ -133,9 +133,7 @@ class GraphPublisher:
         Returns:
             Commit summary dicts.
         """
-        return await self.persistence.list_commits(
-            self.ctx, run_id=run_id, agent_id=agent_id, limit=limit
-        )
+        return await self.persistence.list_commits(self.ctx, run_id=run_id, agent_id=agent_id, limit=limit)
 
     async def revert_commit(self, commit_id: str) -> dict[str, Any]:
         """Revert a commit by restoring its captured pre-images.

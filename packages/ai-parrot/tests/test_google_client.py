@@ -348,7 +348,7 @@ class TestSupportsCombinedToolsAndSchema:
     DEFAULT_PREFIXES = GoogleGenAIClient._default_combined_call_prefixes
 
     def test_is_staticmethod(self):
-        """Helper is a @staticmethod (matches the _is_gemini3_model pattern)."""
+        """Helper is a @staticmethod (matches the _is_modern_gemini_model pattern)."""
         descriptor = GoogleGenAIClient.__dict__["_supports_combined_tools_and_schema"]
         assert isinstance(descriptor, staticmethod)
 
@@ -360,6 +360,7 @@ class TestSupportsCombinedToolsAndSchema:
             "gemini-3.1-flash-lite-preview",
             # also matches longer suffixes the API may publish later
             "gemini-3.5-flash-001",
+            "gemini-4-argon",
         ],
     )
     def test_whitelisted_returns_true(self, model):
@@ -372,6 +373,7 @@ class TestSupportsCombinedToolsAndSchema:
             "gemini-2.5-flash",
             "gemini-2.0-flash",
             "gemini-3-flash-preview",  # NOT in the prefix list — 3-flash without the .5
+            "gemini-3.7-pro",  # retired upstream (FEAT-688) — no longer whitelisted
         ],
     )
     def test_unwhitelisted_returns_false(self, model):
@@ -393,6 +395,37 @@ class TestSupportsCombinedToolsAndSchema:
     def test_empty_prefixes_disables_combined_mode(self):
         """Passing an empty prefix tuple is the documented kill switch."""
         assert GoogleGenAIClient._supports_combined_tools_and_schema("gemini-3.5-flash", ()) is False
+
+
+class TestModernGeminiGates:
+    """FEAT-688: generation predicate, cache key and thinking gates for Gemini 4.x."""
+
+    @pytest.mark.parametrize("model", ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-4-argon"])
+    def test_is_modern_gemini_model_true(self, model):
+        assert GoogleGenAIClient._is_modern_gemini_model(model) is True
+
+    @pytest.mark.parametrize("model", ["gemini-2.5-pro", "gemini-flash-latest", "", None])
+    def test_is_modern_gemini_model_false(self, model):
+        assert GoogleGenAIClient._is_modern_gemini_model(model) is False
+
+    def test_is_modern_gemini_model_accepts_enum(self):
+        assert GoogleGenAIClient._is_modern_gemini_model(GoogleModel.GEMINI_3_5_FLASH) is True
+
+    def test_old_predicate_removed(self):
+        assert not hasattr(GoogleGenAIClient, "_is_gemini3_model")
+
+    def test_model_class_key_separates_generations(self):
+        client = GoogleGenAIClient(api_key="fake")
+        assert client._model_class_key("gemini-4-argon") != client._model_class_key("gemini-3.5-flash")
+        assert client._model_class_key("gemini-4-argon").startswith("gemini4_")
+        assert client._model_class_key("gemini-2.5-pro") == "default"
+
+    def test_argon_is_not_thinking_only(self):
+        assert GoogleGenAIClient._requires_thinking("gemini-4-argon") is False
+        assert GoogleGenAIClient._rejects_zero_thinking_budget("gemini-4-argon") is False
+
+    def test_gemini_3_7_pro_no_longer_thinking_gated(self):
+        assert GoogleGenAIClient._requires_thinking("gemini-3.7-pro") is False
 
 
 class TestCombinedCallPrefixesResolution:

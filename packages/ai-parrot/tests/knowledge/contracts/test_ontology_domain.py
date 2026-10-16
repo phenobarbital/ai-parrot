@@ -294,16 +294,15 @@ class _RecordingGraphStore:
         self.department = department
         self.calls: list[dict[str, Any]] = []
 
-    async def execute_traversal(self, ctx, aql, bind_vars=None, collection_binds=None):
+    async def get_document_by_id(self, ctx, doc_id):
         self.calls.append(
             {
                 "tenant_id": ctx.tenant_id,
                 "arango_db": ctx.arango_db,
-                "aql": aql,
-                "bind_vars": dict(bind_vars or {}),
+                "doc_id": doc_id,
             }
         )
-        return [self.department]
+        return {"department": self.department}
 
 
 @pytest.mark.asyncio
@@ -312,7 +311,7 @@ async def test_spike_same_department_reads_a_contract_department_generically():
 
     Verified behaviour against a Contract fixture:
 
-    * it reads ``DOCUMENT(@target_id).department`` — a generic field read,
+    * it reads the target's ``department`` via ``get_document_by_id`` — a generic field read,
       so a Contract supplies ``department`` exactly like an Employee;
     * it builds the conventional ``<tenant>_ontology`` database name;
     * it matches ANY resolved entity, not a specific one.
@@ -332,8 +331,7 @@ async def test_spike_same_department_reads_a_contract_department_generically():
     )
 
     assert allowed is True and reason is None
-    assert store.calls[0]["aql"] == "RETURN DOCUMENT(@target_id).department"
-    assert store.calls[0]["bind_vars"] == {"target_id": "contract/acme-msa"}
+    assert store.calls[0]["doc_id"] == "contract/acme-msa"
     assert store.calls[0]["arango_db"] == "troc_ontology"
 
 

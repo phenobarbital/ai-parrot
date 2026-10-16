@@ -325,7 +325,7 @@ class TestFederatedInjection:
         """The config-driven store construction is bypassed entirely."""
         from unittest.mock import patch
 
-        import parrot.knowledge.wiki.toolkit as toolkit_module
+        import parrot_tools.wiki.toolkit as toolkit_module
         from parrot.knowledge.wiki.store import SQLiteWikiStore
 
         injected = SQLiteWikiStore(tmp_path / "plane" / "wiki.db")

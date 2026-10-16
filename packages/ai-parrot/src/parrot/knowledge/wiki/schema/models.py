@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from parrot.bots.database.models import TableMetadata
+from parrot.knowledge.wiki.schema.table_metadata import TableMetadata
 
 
 class SchemaSourceConfig(BaseModel):

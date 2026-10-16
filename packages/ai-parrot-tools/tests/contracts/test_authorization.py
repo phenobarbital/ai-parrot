@@ -167,7 +167,7 @@ async def test_direct_execution_of_a_plan_is_gated_too(retrieval):
 @pytest.mark.asyncio
 async def test_direct_graph_execution_is_gated_before_the_query(retrieval):
     class ExplodingStore:
-        async def execute_traversal(self, *args, **kwargs):
+        async def execute_pattern(self, *args, **kwargs):
             raise AssertionError("the query must never run for an unauthorized caller")
 
     retrieval.graph_store = ExplodingStore()

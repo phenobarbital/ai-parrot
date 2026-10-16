@@ -1,4 +1,5 @@
 """Tests for ontology dual-path intent resolver."""
+
 import json
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
@@ -84,7 +85,7 @@ class TestFastPath:
         assert result.action == "graph_query"
         assert result.pattern == "find_dept"
         assert result.source == "fast_path"
-        assert result.aql is not None
+        assert result.query is not None
 
     @pytest.mark.asyncio
     async def test_matches_portal_keyword(self, ontology, user_context):
@@ -129,16 +130,16 @@ class TestLLMPath:
     async def test_llm_selects_known_pattern(self, ontology, user_context):
         mock_llm = AsyncMock()
         mock_llm.completion.return_value = MagicMock(
-            output=json.dumps({
-                "action": "graph_query",
-                "pattern": "find_dept",
-            })
+            output=json.dumps(
+                {
+                    "action": "graph_query",
+                    "pattern": "find_dept",
+                }
+            )
         )
         resolver = OntologyIntentResolver(ontology, llm_client=mock_llm)
         # Query that doesn't match fast path keywords
-        result = await resolver.resolve(
-            "Tell me about the org structure I belong to", user_context
-        )
+        result = await resolver.resolve("Tell me about the org structure I belong to", user_context)
         assert result.action == "graph_query"
         assert result.pattern == "find_dept"
         assert result.source == "llm"
@@ -147,32 +148,28 @@ class TestLLMPath:
     async def test_llm_generates_dynamic_aql(self, ontology, user_context):
         mock_llm = AsyncMock()
         mock_llm.completion.return_value = MagicMock(
-            output=json.dumps({
-                "action": "graph_query",
-                "pattern": "dynamic",
-                "aql": "FOR v IN 1..2 OUTBOUND @user_id assigned_to RETURN v.name",
-                "suggested_post_action": "none",
-            })
+            output=json.dumps(
+                {
+                    "action": "graph_query",
+                    "pattern": "dynamic",
+                    "query": "FOR v IN 1..2 OUTBOUND @user_id assigned_to RETURN v.name",
+                    "suggested_post_action": "none",
+                }
+            )
         )
         resolver = OntologyIntentResolver(ontology, llm_client=mock_llm)
-        result = await resolver.resolve(
-            "Show me all projects connected to my team", user_context
-        )
+        result = await resolver.resolve("Show me all projects connected to my team", user_context)
         assert result.action == "graph_query"
         assert result.pattern == "dynamic"
         assert result.source == "llm_dynamic"
-        assert "OUTBOUND" in result.aql
+        assert "OUTBOUND" in result.query
 
     @pytest.mark.asyncio
     async def test_llm_vector_only(self, ontology, user_context):
         mock_llm = AsyncMock()
-        mock_llm.completion.return_value = MagicMock(
-            output=json.dumps({"action": "vector_only"})
-        )
+        mock_llm.completion.return_value = MagicMock(output=json.dumps({"action": "vector_only"}))
         resolver = OntologyIntentResolver(ontology, llm_client=mock_llm)
-        result = await resolver.resolve(
-            "How do I configure my email client?", user_context
-        )
+        result = await resolver.resolve("How do I configure my email client?", user_context)
         assert result.action == "vector_only"
 
     @pytest.mark.asyncio
@@ -180,9 +177,7 @@ class TestLLMPath:
         mock_llm = AsyncMock()
         mock_llm.completion.side_effect = Exception("LLM unavailable")
         resolver = OntologyIntentResolver(ontology, llm_client=mock_llm)
-        result = await resolver.resolve(
-            "Something complex about the org", user_context
-        )
+        result = await resolver.resolve("Something complex about the org", user_context)
         assert result.action == "vector_only"
 
     @pytest.mark.asyncio
@@ -190,11 +185,13 @@ class TestLLMPath:
         """Dynamic AQL with mutations should be rejected."""
         mock_llm = AsyncMock()
         mock_llm.completion.return_value = MagicMock(
-            output=json.dumps({
-                "action": "graph_query",
-                "pattern": "dynamic",
-                "aql": "REMOVE { _key: '1' } IN employees",
-            })
+            output=json.dumps(
+                {
+                    "action": "graph_query",
+                    "pattern": "dynamic",
+                    "query": "REMOVE { _key: '1' } IN employees",
+                }
+            )
         )
         resolver = OntologyIntentResolver(ontology, llm_client=mock_llm)
         # Should fall through to vector_only because validation rejects the AQL
@@ -218,3 +215,36 @@ class TestCollectionBinds:
         assert "Employee" in resolver._schema_prompt
         assert "belongs_to" in resolver._schema_prompt
         assert "find_dept" in resolver._schema_prompt
+
+
+class TestLegacyAqlKey:
+    """An LLM answering with the pre-dialect ``aql`` key must not silently degrade."""
+
+    @staticmethod
+    def _llm():
+        mock_llm = AsyncMock()
+        mock_llm.completion.return_value = MagicMock(
+            output=json.dumps(
+                {
+                    "action": "graph_query",
+                    "pattern": "dynamic",
+                    "aql": "FOR v IN 1..2 OUTBOUND @user_id assigned_to RETURN v.name",
+                }
+            )
+        )
+        return mock_llm
+
+    @pytest.mark.asyncio
+    async def test_legacy_aql_key_is_aliased_for_aql_dialect(self, ontology, user_context):
+        resolver = OntologyIntentResolver(ontology, llm_client=self._llm())
+        result = await resolver.resolve("Show me all projects connected to my team", user_context)
+        assert result is not None and result.source == "llm_dynamic"
+        assert "OUTBOUND" in result.query
+
+    @pytest.mark.asyncio
+    async def test_legacy_aql_key_ignored_with_warning_for_other_dialects(self, ontology, user_context, caplog):
+        resolver = OntologyIntentResolver(ontology, llm_client=self._llm(), dialect="cypher")
+        with caplog.at_level("WARNING"):
+            result = await resolver.resolve("Show me all projects connected to my team", user_context)
+        assert result is None or result.source != "llm_dynamic"
+        assert "legacy 'aql' key" in caplog.text

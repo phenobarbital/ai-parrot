@@ -6,13 +6,17 @@ execution contract via real subprocesses (process-boundary behavior is
 never faked), the ``TargetAdapter`` protocol's runtime-checkable shape, and
 the lazy fixed registry's success/failure/import-scoping behavior.
 
-No concrete target module (``parrot.e2e.targets.{mcp,botmanager,ui,
-browser}``) exists yet in this checkout — the "missing optional
-implementation" prerequisite-failure path is exercised against the real,
-current repository state for every one of the six target kinds, with no
-mocking required. Only the "module exists but the factory disagrees"
-sub-cases inject a synthetic ``sys.modules`` entry, and always through
-``monkeypatch.setitem``/``monkeypatch.setattr`` so it is undone automatically.
+Every one of the six target kinds now has a concrete module in this
+checkout (``parrot.e2e.targets.{mcp,botmanager,ui,browser}``), so the
+"missing optional implementation" prerequisite-failure path can no longer
+be exercised against real repository state. Pinning that path to whichever
+kind happens to be unimplemented goes stale the moment that kind lands —
+it did so for ``browser``, and then again for ``mcp-agent`` once TASK-3540
+added ``build_mcp_agent_adapter``. It is therefore exercised by pointing a
+registry entry at a synthetic module name that will never exist, which no
+future target implementation can invalidate. Every such injection goes
+through ``monkeypatch.setitem``/``monkeypatch.setattr`` so it is undone
+automatically.
 """
 
 from __future__ import annotations
