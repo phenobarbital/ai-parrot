@@ -53,7 +53,7 @@
       "feature_id": "FEAT-696",
       "feature": "jiratoolkit-upgrades",
       "spec": "sdd/specs/jiratoolkit-upgrades.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,9 @@
       "parallelism_notes": "imports refresh_access_token from TASK-4418 (jira_oauth.py); creates new file jira_local_auth.py — no overlap with TASK-4420",
       "assigned_to": null,
       "started_at": "2026-10-16T19:56:09+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4419-jira-local-auth.md"
+      "completed_at": "2026-10-16T20:15:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4419-jira-local-auth.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4420",

@@ -349,10 +349,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4419
+- Feature: jiratoolkit-upgrades
+- Implementation SHA: 43d2b8118e7abfefdcf49b0ac13729ce2607abb2
+- Closed at (UTC): 2026-10-16T20:15:25+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~53s · Tokens: n/a |
+| validation_note | Merge-tier run red (144 failed/33 errors) but none in jira tests; failures in ibkr/pulumi/graphindex/permissions/etc and a read-only-FS chromedriver. Task tests: 10 passed. |
