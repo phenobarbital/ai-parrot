@@ -96,7 +96,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "done",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -107,9 +107,8 @@
       "parallelism_notes": "sdd-done 9.1 calls rotate-log from TASK-4408 (cli.py); docs name the parrot-ledger hooks from TASK-4407 (assets.py)",
       "assigned_to": null,
       "started_at": "2026-10-16T01:03:22+00:00",
-      "completed_at": "2026-10-16T01:32:25+00:00",
-      "file": "sdd/tasks/completed/TASK-4409-gitattributes-sdd-done-docs.md",
-      "verification": "verified"
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4409-gitattributes-sdd-done-docs.md"
     },
     {
       "id": "TASK-4410",
