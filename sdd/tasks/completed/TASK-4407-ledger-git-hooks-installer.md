@@ -42,6 +42,7 @@ from TASK-4405/4406 and runs in parallel with them.
 | `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py` | MODIFY | ledger hook constants + block builders |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py` | MODIFY | generalised installer, ledger install/uninstall, wiring |
 | `tests/knowledge/wiki/test_installer_ledger_hooks.py` | CREATE | M3 tests |
+| `tests/knowledge/wiki/test_claude_code.py` | MODIFY | action-count assertion 11 → 12 (extra ledger-hook action) |
 
 ---
 
@@ -261,10 +262,8 @@ Standard SDD flow (`sdd/templates/task.md` § Agent Instructions); feature workt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: sonnet (native) via coder engine
+**Date**: 2026-10-16
+**Notes**: Managed parrot-ledger git hooks (6164b075b). Review fix b875f6885: test_claude_code.py action count 11→12 (file added to task table). Feedback recorded: coder-feedback:02d60106926170a4f46cfbe4. Merge-tier red only on pre-existing failures otherwise.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: Added manual_hint kwarg to _install_managed_git_hook (task-permitted); test_claude_code.py touched for count.

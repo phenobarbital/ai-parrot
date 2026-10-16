@@ -127,10 +127,8 @@ Standard SDD flow; exclusive task (do not run alongside others). Close with
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: orchestrator (exclusive task, run directly)
+**Date**: 2026-10-16
+**Notes**: export-log wrote 1170 events; 0 coder_suspension lines (AC5); second run printed `(unchanged)` (AC1). events.jsonl committed alone. PENDING for the user: `parrot claude install` on the main checkout (mutates shared .git/hooks, outside worktree) and the manual two-machine run for AC4.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: main-checkout hook install and AC4 two-machine check deferred to user.
