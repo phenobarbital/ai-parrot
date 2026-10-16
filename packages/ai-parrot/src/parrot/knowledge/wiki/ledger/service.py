@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Collection, Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -39,7 +40,11 @@ from parrot.knowledge.wiki.store import SQLitePragmaPolicy, WikiStoreBusy, estim
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from parrot.knowledge.wiki.ledger.shared_log import SharedLogExportReport, SharedLogImportReport
+    from parrot.knowledge.wiki.ledger.shared_log import (
+        SharedLogExportReport,
+        SharedLogImportReport,
+        SharedLogRotateReport,
+    )
 
 
 def _write_snapshot_if_changed(dest: Path, new_content: str) -> bool:
@@ -373,7 +378,16 @@ class LedgerService:
         return await asyncio.to_thread(_scan)
 
     async def claim(self, issue_id: str, actor: str) -> bool:
-        """Delegate to :meth:`LedgerIndex.claim_issue`."""
+        """Import the committed shared log first (FEAT-694 G8), then :meth:`LedgerIndex.claim_issue`."""
+        from parrot.knowledge.wiki.ledger.shared_log import SHARED_LOG_REL_PATH
+
+        if (self.shared_root / SHARED_LOG_REL_PATH).exists():
+            try:
+                await self.import_shared_log()
+            except WikiStoreBusy:
+                pass
+            except Exception:  # noqa: BLE001 -- a broken checkout must never block a claim (AC15)
+                logger.warning("Shared ledger log import before claim failed; claiming anyway.", exc_info=True)
         return await self.index.claim_issue(issue_id, actor)
 
     async def acknowledge(self, issue_id: str, reason: str, actor: str) -> bool:
@@ -614,6 +628,16 @@ class LedgerService:
                     )
                 )
         return report
+
+    async def rotate_shared_log(
+        self, repo_root: Path | None = None, *, older_than_days: int = 30, now: datetime | None = None
+    ) -> SharedLogRotateReport:
+        """Rotate the committed log (``/sdd-done`` 9.1 only). Never touches the local log or index."""
+        from parrot.knowledge.wiki.ledger.shared_log import rotate_events
+
+        return await asyncio.to_thread(
+            rotate_events, repo_root or self.shared_root, older_than_days=older_than_days, now=now
+        )
 
     async def compact(self, older_than_days: int = 30) -> int:
         """Delegate to :meth:`LedgerIndex.compact`."""
