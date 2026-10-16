@@ -845,7 +845,11 @@ class ValidationSupervisor:
                 if not isinstance(header, dict):
                     continue
                 feature_id = header.get("feature_id")
-                if header.get("feature") == feature and isinstance(feature_id, str) and _FEATURE_ID_RE.match(feature_id):
+                if (
+                    header.get("feature") == feature
+                    and isinstance(feature_id, str)
+                    and _FEATURE_ID_RE.match(feature_id)
+                ):
                     return feature_id
         except OSError:
             pass

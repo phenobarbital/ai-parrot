@@ -336,7 +336,7 @@ async def test_lost_owner_blocks_settlement(tmp_path: Path, monkeypatch: pytest.
 _JUNIT_CHILD = (
     "import sys;"
     "a=[x for x in sys.argv if x.startswith('--junitxml=')][0].split('=',1)[1];"
-    "open(a,'w').write('<testsuites><testsuite tests=\"3\" failures=\"1\" errors=\"0\" skipped=\"0\"/></testsuites>');"
+    'open(a,\'w\').write(\'<testsuites><testsuite tests="3" failures="1" errors="0" skipped="0"/></testsuites>\');'
     "sys.exit(1)"
 )
 
