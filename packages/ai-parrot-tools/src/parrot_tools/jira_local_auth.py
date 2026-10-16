@@ -1,4 +1,5 @@
 """Local Jira OAuth 2.0 token store and credential resolver (FEAT-696 M3)."""
+
 from __future__ import annotations
 
 import asyncio

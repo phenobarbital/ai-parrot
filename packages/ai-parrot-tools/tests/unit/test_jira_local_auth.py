@@ -1,4 +1,5 @@
 """Tests for LocalJiraTokenStore and FileTokenCredentialResolver (FEAT-696 M3)."""
+
 from __future__ import annotations
 
 import json
@@ -16,15 +17,25 @@ from parrot.auth.jira_oauth import JiraTokenSet
 def _isolate(monkeypatch, tmp_path):
     """Never touch the real home directory."""
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    for name in ("JIRA_LOCAL_SETTINGS", "JIRA_CLIENT_ID", "JIRA_CLIENT_SECRET", "JIRA_LOCAL_SITE",
-                 "JIRA_LOCAL_ALLOWED_CHANNELS"):
+    for name in (
+        "JIRA_LOCAL_SETTINGS",
+        "JIRA_CLIENT_ID",
+        "JIRA_CLIENT_SECRET",
+        "JIRA_LOCAL_SITE",
+        "JIRA_LOCAL_ALLOWED_CHANNELS",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
 def _token(expires_in: float = 3600, refresh: str = "r1", site: str = "https://x.atlassian.net") -> JiraTokenSet:
     return JiraTokenSet(
-        access_token="a1", refresh_token=refresh, expires_at=time.time() + expires_in,
-        cloud_id="cid", site_url=site, account_id="acc", display_name="Me",
+        access_token="a1",
+        refresh_token=refresh,
+        expires_at=time.time() + expires_in,
+        cloud_id="cid",
+        site_url=site,
+        account_id="acc",
+        display_name="Me",
     )
 
 
@@ -77,8 +88,10 @@ class TestFileTokenCredentialResolver:
         store = _store(tmp_path)
         store.save(_token(expires_in=-100))
         r = FileTokenCredentialResolver(store, "id", "secret")
-        with patch("parrot_tools.jira_local_auth.refresh_access_token",
-                   new=AsyncMock(return_value={"access_token": "a2", "refresh_token": "r2", "expires_in": 3600})):
+        with patch(
+            "parrot_tools.jira_local_auth.refresh_access_token",
+            new=AsyncMock(return_value={"access_token": "a2", "refresh_token": "r2", "expires_in": 3600}),
+        ):
             tok = await r.resolve("cli", "u")
         assert tok.access_token == "a2"
         assert store.get().refresh_token == "r2"
@@ -89,8 +102,10 @@ class TestFileTokenCredentialResolver:
         store = _store(tmp_path)
         store.save(_token(expires_in=-100, refresh="keepme"))
         r = FileTokenCredentialResolver(store, "id", "secret")
-        with patch("parrot_tools.jira_local_auth.refresh_access_token",
-                   new=AsyncMock(return_value={"access_token": "a2", "expires_in": 3600})):
+        with patch(
+            "parrot_tools.jira_local_auth.refresh_access_token",
+            new=AsyncMock(return_value={"access_token": "a2", "expires_in": 3600}),
+        ):
             tok = await r.resolve("cli", "u")
         assert tok.refresh_token == "keepme"
         assert store.get().refresh_token == "keepme"
