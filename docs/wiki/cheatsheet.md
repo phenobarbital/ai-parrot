@@ -253,6 +253,15 @@ wikitoolkit ledger rebuild           # reconstruye desde el log (re-ejecuta inge
 wikitoolkit ledger audit · wikitoolkit ledger export --dest <dir> [--no-reconcile] · wikitoolkit ledger compact
 ```
 
+**Shared event log (FEAT-694).** `sdd/ledger/events.jsonl` (+ `sdd/ledger/archive/`) is a
+git-tracked, append-only copy of the ledger events, merged by git with `merge=union`
+(`.gitattributes`). The four `parrot-ledger` git hooks (post-merge, post-checkout,
+post-rewrite, pre-push) import it into / export it from the local ledger automatically.
+Manual commands: `wikitoolkit ledger export-log`, `wikitoolkit ledger import-log`,
+`wikitoolkit ledger rotate-log --older-than-days N`. Rotation runs only in `/sdd-done`
+step 9.1, never in a hook. Existing checkouts: re-run `parrot claude install` once to
+install the hooks.
+
 Kinds: `bug | tech_debt | feature_gap | vulnerability`. Severidades:
 `critical | major | minor | low`. `--discovered-from`: `spec:<FEAT>`,
 `task:<TASK>`, `review:<TASK>`.

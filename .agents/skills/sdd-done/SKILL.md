@@ -180,9 +180,16 @@ do not run task closure again on base_branch and do not clean worktrees with unk
 11. Snapshot ledger issues (feature flows only):
     - For features (not hotfixes), `git fetch origin <BASE_BRANCH>` then create a
       throwaway detached worktree at `origin/<BASE_BRANCH>` (`git worktree add --detach`)
-    - Run `wikitoolkit ledger export` there; only when its output contains `(changed)`:
-      `git add sdd/ledger/issues.jsonl`, commit `sdd: ledger snapshot for <FEAT-ID>`,
+    - Run `wikitoolkit ledger export`, `wikitoolkit ledger export-log` and
+      `wikitoolkit ledger rotate-log --older-than-days 30` there (this step is the only
+      place rotation may run); only when `export` reports `(changed)`, `export-log`
+      reports `(+N ...)` or `rotate-log` reports `Rotated`:
+      `git add sdd/ledger/issues.jsonl sdd/ledger/events.jsonl` (plus `sdd/ledger/archive`
+      when it exists), commit `sdd: ledger snapshot for <FEAT-ID>`,
       and `git push origin HEAD:<BASE_BRANCH>`
+    - On cleanup, restore and clean `sdd/ledger` in the throwaway worktree
+      (`git restore --staged --worktree -- sdd/ledger` + `git clean -fdq -- sdd/ledger`)
+      so a stale untracked archive never survives a rejected push
     - On a rejected push, fetch and create a fresh throwaway worktree at the
       updated remote base, re-export, commit and retry — up to 3 attempts,
       then warn and continue without failing `$sdd-done`
