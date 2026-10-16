@@ -1,0 +1,55 @@
+{
+  "feature": "sdd-coder-complexity-collectors-fixes",
+  "feature_id": "FEAT-697",
+  "spec": "sdd/specs/sdd-coder-complexity-collectors-fixes.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-16T22:42:40Z",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "TASK-4423",
+      "slug": "wiki-plane-resolver",
+      "title": "Wiki plane resolver for linked worktrees",
+      "feature_id": "FEAT-697",
+      "feature": "sdd-coder-complexity-collectors-fixes",
+      "spec": "sdd/specs/sdd-coder-complexity-collectors-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "adds _resolve_wiki_plane_root to complexity_collectors.py; TASK-4424 edits the same file and calls this function, so the two are strictly sequential",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4423-wiki-plane-resolver.md",
+      "discovered_from": "issue:9448f28680e0",
+      "verification": null
+    },
+    {
+      "id": "TASK-4424",
+      "slug": "collector-uses-plane-root",
+      "title": "Route the blast collector at the resolved plane root",
+      "feature_id": "FEAT-697",
+      "feature": "sdd-coder-complexity-collectors-fixes",
+      "spec": "sdd/specs/sdd-coder-complexity-collectors-fixes.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4423"
+      ],
+      "parallel": false,
+      "parallelism_notes": "consumes _resolve_wiki_plane_root from TASK-4423 and edits the same file (complexity_collectors.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4424-collector-uses-plane-root.md",
+      "discovered_from": "issue:9448f28680e0",
+      "verification": null
+    }
+  ]
+}
