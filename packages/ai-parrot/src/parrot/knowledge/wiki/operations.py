@@ -757,9 +757,15 @@ async def _apply_sync_push(
     store: BaseWikiStore,
     params: SyncPagesInput,
     wiki_name: str,
+    caller_identity: str | None = None,
 ) -> dict[str, Any]:
-    """Apply the validated pages and edges; the caller holds the writer lock when it has one."""
-    from parrot.knowledge.wiki.sync import SyncReport, _merge_body, _record_from
+    """Apply the validated pages and edges; the caller holds the writer lock when it has one.
+
+    LWW compares parsed UTC stamps clamped to the server clock, and a memory record never
+    overwrites a non-memory page (FEAT-692). A server-known ``caller_identity`` replaces the
+    client-asserted ``asserted_by``.
+    """
+    from parrot.knowledge.wiki.sync import SyncReport, _lww_outcome, _merge_body, _record_from
 
     report = SyncReport(direction="push", env=wiki_name, dry_run=False)
     concept_ids: set[str] = set()
@@ -767,15 +773,22 @@ async def _apply_sync_push(
         if record.origin != "memory":
             continue
         page = record.model_dump()
+        if caller_identity is not None:
+            page["asserted_by"] = caller_identity
         concept_id = record.concept_id
-        concept_ids.add(concept_id)
         existing = await store.get_page(concept_id, include_body=True)
-        if existing is None:
+        outcome = _lww_outcome(record.updated_at, existing)
+        if outcome == "foreign":
+            report.skipped_foreign += 1
+            report.details.append(f"skipped_foreign: {concept_id}")
+            continue
+        concept_ids.add(concept_id)
+        if outcome == "create":
             report.created += 1
             report.details.append(f"created: {concept_id}")
             await store.upsert_pages([_record_from(page, record.body)])
             continue
-        if (record.updated_at or "") <= (existing.get("updated_at") or ""):
+        if outcome == "older":
             report.skipped_older += 1
             report.details.append(f"skipped_older: {concept_id}")
             continue
@@ -801,12 +814,15 @@ async def op_sync_push(store: BaseWikiStore, params: SyncPagesInput, **context: 
     Args:
         store: The server wiki store.
         params: The pushed pages and edges.
-        **context: ``wiki_name`` (``str``), optional ``root`` (``Path``) and
-            ``config`` (:class:`WikiProjectConfig`).
+        **context: ``wiki_name`` (``str``), optional ``root`` (``Path``),
+            ``config`` (:class:`WikiProjectConfig`) and ``caller_identity``
+            (``str``, a server-authenticated identity that overrides each
+            record's client-supplied ``asserted_by``).
     """
     from parrot.knowledge.wiki.project import wiki_write_lock
 
     wiki_name: str = context["wiki_name"]
+    caller_identity: str | None = context.get("caller_identity")
     root: Path | None = context.get("root")
     config: WikiProjectConfig | None = context.get("config")
 
@@ -817,7 +833,7 @@ async def op_sync_push(store: BaseWikiStore, params: SyncPagesInput, **context: 
         return _error("payload too large (max 1 MiB); chunk the push")
 
     if root is None or config is None:
-        return OperationResult(data=await _apply_sync_push(store, params, wiki_name))
+        return OperationResult(data=await _apply_sync_push(store, params, wiki_name, caller_identity))
     try:
         async with _INGEST_LOCK:
             cm = wiki_write_lock(config.storage_path(root), timeout=config.sqlite_busy_timeout)
@@ -825,7 +841,7 @@ async def op_sync_push(store: BaseWikiStore, params: SyncPagesInput, **context: 
             try:
                 if not acquired:
                     return _error("busy: wiki writer lock is held by another process")
-                data = await _apply_sync_push(store, params, wiki_name)
+                data = await _apply_sync_push(store, params, wiki_name, caller_identity)
             finally:
                 await asyncio.to_thread(cm.__exit__, None, None, None)
     except WikiStoreBusy as exc:
@@ -834,29 +850,20 @@ async def op_sync_push(store: BaseWikiStore, params: SyncPagesInput, **context: 
 
 
 async def op_sync_pull(store: BaseWikiStore, params: SyncPagesInput, **context: Any) -> OperationResult:
-    """wiki_sync_pull — a deterministic page of server-authored memory records."""
-    from parrot.knowledge.wiki.sync import _synced_memory_pages
+    """wiki_sync_pull — a deterministic page of server-authored memory records.
 
-    since = params.since
-    skip_asserted_by = params.skip_asserted_by
+    Selection runs on body-less stubs; bodies are fetched only for the returned page (FEAT-692).
+    """
+    from parrot.knowledge.wiki.sync import _memory_page_window
+
     limit = max(1, min(params.limit, SYNC_PULL_MAX))
-    pages = await _synced_memory_pages(store)
-    pages = [
-        page
-        for page in pages
-        if (since is None or (page.get("updated_at") or "") > since)
-        and (skip_asserted_by is None or page.get("asserted_by") != skip_asserted_by)
-    ]
-    pages.sort(key=lambda page: (page.get("updated_at") or "", page["concept_id"]))
-    if params.cursor is not None:
-        cursor_updated_at, _, cursor_concept_id = params.cursor.partition("|")
-        pages = [
-            page
-            for page in pages
-            if (page.get("updated_at") or "", page["concept_id"]) > (cursor_updated_at, cursor_concept_id)
-        ]
-
-    selected = pages[:limit]
+    selected, has_more = await _memory_page_window(
+        store,
+        since=params.since,
+        cursor=params.cursor,
+        skip_asserted_by=params.skip_asserted_by,
+        limit=limit,
+    )
     concept_ids = {page["concept_id"] for page in selected}
     edges = [
         (edge["src"], edge["dst"], edge["rel"], "asserted")
@@ -864,7 +871,7 @@ async def op_sync_pull(store: BaseWikiStore, params: SyncPagesInput, **context: 
         if edge["src"] in concept_ids or edge["dst"] in concept_ids
     ]
     next_cursor = None
-    if len(pages) > limit:
+    if has_more and selected:
         last = selected[-1]
         next_cursor = f"{last.get('updated_at') or ''}|{last['concept_id']}"
     return OperationResult(
