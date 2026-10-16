@@ -20,7 +20,7 @@ import json
 import logging
 import secrets
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urlencode
 
 import aiohttp
@@ -81,6 +81,137 @@ class JiraTokenSet(BaseModel):
     def api_base_url(self) -> str:
         """Return the Atlassian REST API base URL for this cloud_id."""
         return f"https://api.atlassian.com/ex/jira/{self.cloud_id}"
+
+
+def build_authorization_url(
+    client_id: str,
+    redirect_uri: str,
+    state: str,
+    scopes: Sequence[str] = DEFAULT_SCOPES,
+    authorization_url: str = AUTHORIZATION_URL,
+) -> str:
+    """Build the Atlassian 3LO authorization URL.
+
+    Args:
+        client_id: OAuth app client id.
+        redirect_uri: Registered callback URL.
+        state: CSRF state nonce.
+        scopes: Scopes to request.
+        authorization_url: Authorization endpoint override.
+
+    Returns:
+        The full authorization URL with query string.
+    """
+    params = {
+        "audience": "api.atlassian.com",
+        "client_id": client_id,
+        "scope": " ".join(scopes),
+        "redirect_uri": redirect_uri,
+        "state": state,
+        "response_type": "code",
+        "prompt": "consent",
+    }
+    return f"{authorization_url}?{urlencode(params)}"
+
+
+async def exchange_code(
+    session: aiohttp.ClientSession,
+    *,
+    client_id: str,
+    client_secret: str,
+    code: str,
+    redirect_uri: str,
+    token_url: str = TOKEN_URL,
+) -> Dict[str, Any]:
+    """Exchange an authorization code for tokens.
+
+    Raises:
+        ValueError: If the token endpoint answers with a non-200 status.
+    """
+    async with session.post(
+        token_url,
+        data={
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code,
+            "redirect_uri": redirect_uri,
+        },
+    ) as response:
+        if response.status != 200:
+            text = await response.text()
+            raise ValueError(f"Token exchange failed with status {response.status}: {text}")
+        return await response.json()
+
+
+async def refresh_access_token(
+    session: aiohttp.ClientSession,
+    *,
+    client_id: str,
+    client_secret: str,
+    refresh_token: str,
+    token_url: str = TOKEN_URL,
+) -> Dict[str, Any]:
+    """Refresh an access token using the rotating refresh token.
+
+    Raises:
+        ValueError: If the token endpoint answers with a non-200 status.
+    """
+    async with session.post(
+        token_url,
+        data={
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "refresh_token": refresh_token,
+        },
+    ) as response:
+        if response.status != 200:
+            text = await response.text()
+            raise ValueError(f"Token refresh failed with status {response.status}: {text}")
+        return await response.json()
+
+
+async def fetch_accessible_resources(
+    session: aiohttp.ClientSession,
+    access_token: str,
+    url: str = ACCESSIBLE_RESOURCES_URL,
+) -> List[Dict[str, Any]]:
+    """Fetch the list of Atlassian sites the token can access.
+
+    Raises:
+        ValueError: On a non-200 status or a non-list payload.
+    """
+    async with session.get(
+        url,
+        headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+    ) as response:
+        if response.status != 200:
+            text = await response.text()
+            raise ValueError(f"accessible-resources failed with status {response.status}: {text}")
+        data = await response.json()
+        if not isinstance(data, list):
+            raise ValueError("accessible-resources returned a non-list payload.")
+        return data
+
+
+async def fetch_myself(
+    session: aiohttp.ClientSession, access_token: str, cloud_id: str
+) -> Dict[str, Any]:
+    """Fetch the authenticated user's profile.
+
+    Raises:
+        ValueError: If ``/myself`` answers with a non-200 status.
+    """
+    url = f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/myself"
+    async with session.get(
+        url,
+        headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
+    ) as response:
+        if response.status != 200:
+            text = await response.text()
+            raise ValueError(f"/myself failed with status {response.status}: {text}")
+        return await response.json()
 
 
 class JiraOAuthManager:
@@ -599,52 +730,24 @@ class JiraOAuthManager:
 
     async def _exchange_code(self, code: str) -> Dict[str, Any]:
         session = await self._get_session()
-        async with session.post(
-            self.token_url,
-            data={
-                "grant_type": "authorization_code",
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-                "code": code,
-                "redirect_uri": self.redirect_uri,
-            },
-        ) as response:
-            if response.status != 200:
-                text = await response.text()
-                raise ValueError(
-                    f"Token exchange failed with status {response.status}: {text}"
-                )
-            return await response.json()
+        return await exchange_code(
+            session,
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            code=code,
+            redirect_uri=self.redirect_uri,
+            token_url=self.token_url,
+        )
 
     async def _fetch_accessible_resources(self, access_token: str) -> List[Dict[str, Any]]:
         session = await self._get_session()
-        async with session.get(
-            self.accessible_resources_url,
-            headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
-        ) as response:
-            if response.status != 200:
-                text = await response.text()
-                raise ValueError(
-                    f"accessible-resources failed with status {response.status}: {text}"
-                )
-            data = await response.json()
-            if not isinstance(data, list):
-                raise ValueError("accessible-resources returned a non-list payload.")
-            return data
+        return await fetch_accessible_resources(
+            session, access_token, url=self.accessible_resources_url
+        )
 
     async def _fetch_myself(self, access_token: str, cloud_id: str) -> Dict[str, Any]:
-        url = f"https://api.atlassian.com/ex/jira/{cloud_id}/rest/api/3/myself"
         session = await self._get_session()
-        async with session.get(
-            url,
-            headers={"Authorization": f"Bearer {access_token}", "Accept": "application/json"},
-        ) as response:
-            if response.status != 200:
-                text = await response.text()
-                raise ValueError(
-                    f"/myself failed with status {response.status}: {text}"
-                )
-            return await response.json()
+        return await fetch_myself(session, access_token, cloud_id)
 
     async def aclose(self) -> None:
         """Close the underlying aiohttp session if this manager owns it."""
