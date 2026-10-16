@@ -17,6 +17,7 @@ from parrot.flows.dev_loop.sdd_coder.complexity_collectors import (
     _collect_dependency_metrics,
     _collect_ruff_cyclomatic,
     _collect_wiki_blast,
+    _git_common_dir,
     _resolve_wiki_plane_root,
     _run_subprocess,
     SubprocessResult,
@@ -96,6 +97,11 @@ class SampleClass:
         }
         index_file = worktree / "index.json"
         index_file.write_text(json.dumps(index_content))
+
+        # Tests on this fixture stub the wiki CLI, which presupposes a built
+        # plane: without one the collector short-circuits to plane-unavailable
+        # `unknown` and never shells out at all (FEAT-697).
+        (worktree / ".parrot" / "wiki").mkdir(parents=True)
 
         _init_git_repo(worktree)
 
@@ -699,11 +705,11 @@ async def test_plane_resolver_prefers_a_local_plane(tmp_path):
     """T1: a worktree with its own plane resolves to itself and never shells out."""
     (tmp_path / ".parrot" / "wiki").mkdir(parents=True)
 
-    with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess") as mock_run:
+    with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors._git_common_dir") as mock_git:
         resolved = await _resolve_wiki_plane_root(tmp_path, ComplexityPolicy())
 
     assert resolved == tmp_path
-    mock_run.assert_not_called()
+    mock_git.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -715,8 +721,8 @@ async def test_plane_resolver_falls_back_to_the_main_checkout(tmp_path):
     worktree.mkdir(parents=True)
 
     with patch(
-        "parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess",
-        new=AsyncMock(return_value=SubprocessResult(0, f"{main}/.git\n", "")),
+        "parrot.flows.dev_loop.sdd_coder.complexity_collectors._git_common_dir",
+        return_value=f"{main}/.git",
     ):
         resolved = await _resolve_wiki_plane_root(worktree, ComplexityPolicy())
 
@@ -731,27 +737,163 @@ async def test_plane_resolver_returns_none_without_any_plane(tmp_path):
     worktree.mkdir(parents=True)
 
     with patch(
-        "parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess",
-        new=AsyncMock(return_value=SubprocessResult(0, f"{main}/.git\n", "")),
+        "parrot.flows.dev_loop.sdd_coder.complexity_collectors._git_common_dir",
+        return_value=f"{main}/.git",
     ):
         assert await _resolve_wiki_plane_root(worktree, ComplexityPolicy()) is None
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "outcome",
+    "failure",
     [
-        AsyncMock(side_effect=FileNotFoundError("git")),
-        AsyncMock(side_effect=asyncio.TimeoutError()),
-        AsyncMock(return_value=SubprocessResult(128, "", "not a git repository")),
-        AsyncMock(return_value=SubprocessResult(0, "   \n", "")),
+        {"side_effect": FileNotFoundError("git")},
+        {"side_effect": subprocess.TimeoutExpired("git", 1)},
+        {"return_value": subprocess.CompletedProcess([], 128, "", "not a git repository")},
+        {"return_value": subprocess.CompletedProcess([], 0, "   \n", "")},
     ],
     ids=["git-missing", "git-timeout", "git-nonzero", "git-empty-stdout"],
 )
-async def test_plane_resolver_degrades_to_none_on_git_failure(tmp_path, outcome):
-    """T6: every git failure mode yields None rather than propagating."""
+async def test_plane_resolver_degrades_to_none_on_git_failure(tmp_path, failure):
+    """T6: every git failure mode yields None rather than propagating.
+
+    Patches `subprocess.run` itself, so the real `_git_common_dir` error
+    handling is what is under test.
+    """
     worktree = tmp_path / "wt"
     worktree.mkdir()
 
-    with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess", new=outcome):
+    with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors.subprocess.run", **failure):
         assert await _resolve_wiki_plane_root(worktree, ComplexityPolicy()) is None
+
+
+# ---------------------------------------------------------------------------
+# FEAT-697 / issue:9448f28680e0 -- the collector must query the resolved plane
+# root, not the worktree (TASK-4424).
+# ---------------------------------------------------------------------------
+
+_BLAST_CONTRACT = ComplexityContract(
+    targets=(ComplexityTarget(path="src/sample.py", action="MODIFY"),),
+    contract_symbols=("sym:src/sample.py#SampleClass",),
+)
+
+_BLAST_JSON = json.dumps(
+    {
+        "root": {"symbol_id": "sym:src/sample.py#SampleClass", "stale": False},
+        "impacted": [
+            {"symbol": {"symbol_id": "sym:src/other.py#caller", "stale": False}, "distance": 1},
+        ],
+        "files": ["src/other.py"],
+        "truncated": False,
+    }
+)
+
+
+def _add_linked_worktree(main: Path, worktree: Path) -> None:
+    """Attach a real linked worktree to `main` (sync: ASYNC221 forbids this in a test body)."""
+    subprocess.run(["git", "worktree", "add", "-q", str(worktree)], cwd=main, check=True)
+
+
+async def _run_blast(worktree, plane_root, subprocess_mock):
+    """Drive `_collect_wiki_blast` with the plane resolver and CLI both stubbed."""
+    with patch(
+        "parrot.flows.dev_loop.sdd_coder.complexity_collectors._resolve_wiki_plane_root",
+        new=AsyncMock(return_value=plane_root),
+    ):
+        with patch(
+            "parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess",
+            new=subprocess_mock,
+        ):
+            metrics, _, _, _, _ = await _collect_wiki_blast(
+                worktree, _BLAST_CONTRACT, ComplexityPolicy(), asyncio.Semaphore(1)
+            )
+    return metrics["blast_symbols"]
+
+
+@pytest.mark.asyncio
+async def test_blast_without_any_plane_is_unknown_and_spawns_nothing(tmp_path):
+    """T3: no plane anywhere -> plane-unavailable unknown, zero subprocesses."""
+    run_mock = AsyncMock()
+
+    evidence = await _run_blast(tmp_path, None, run_mock)
+
+    assert evidence.state == "unknown"
+    assert evidence.reason == "Wiki plane unavailable (no .parrot/wiki in worktree or main checkout)"
+    run_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_blast_in_a_worktree_uses_the_main_checkout_plane(tmp_path):
+    """T4: the regression this feature exists to fix.
+
+    Plane only in the main checkout -> the measurement succeeds (`ok`) and the
+    CLI is invoked against the PLANE root, never the worktree. Before the fix
+    this produced `unknown` with "exit 1" for every contract symbol.
+    """
+    main = tmp_path / "main"
+    worktree = main / ".claude" / "worktrees" / "feat-x"
+    worktree.mkdir(parents=True)
+    run_mock = AsyncMock(return_value=SubprocessResult(0, _BLAST_JSON, ""))
+
+    evidence = await _run_blast(worktree, main, run_mock)
+
+    assert evidence.state == "ok"
+    assert evidence.value == 1
+
+    cmd, cwd = run_mock.await_args.args[0], run_mock.await_args.args[1]
+    assert cmd[cmd.index("--path") + 1] == str(main)
+    assert str(worktree) not in cmd
+    assert cwd == main
+
+
+@pytest.mark.asyncio
+async def test_blast_keeps_failing_closed_when_the_cli_exits_nonzero(tmp_path):
+    """T5: a resolved plane does not weaken the fail-closed rule."""
+    run_mock = AsyncMock(return_value=SubprocessResult(1, "", "boom"))
+
+    evidence = await _run_blast(tmp_path, tmp_path, run_mock)
+
+    assert evidence.state == "unknown"
+    assert "exit 1" in evidence.reason
+
+
+@pytest.mark.asyncio
+async def test_blast_symbol_missing_from_a_present_plane_is_still_unknown(tmp_path):
+    """AC5: plane-absent and symbol-absent stay separable."""
+    missing_root = json.dumps({"root": None, "impacted": [], "files": [], "truncated": False})
+    run_mock = AsyncMock(return_value=SubprocessResult(0, missing_root, ""))
+
+    evidence = await _run_blast(tmp_path, tmp_path, run_mock)
+
+    assert evidence.state == "unknown"
+    assert "missing root" in evidence.reason
+    assert evidence.reason != "Wiki plane unavailable (no .parrot/wiki in worktree or main checkout)"
+
+
+@pytest.mark.asyncio
+async def test_blast_resolves_a_real_linked_worktree_to_its_main_checkout(tmp_path):
+    """T7: end-to-end plane resolution over a real `git worktree`, CLI stubbed.
+
+    Exercises the unmocked resolver -- the git-common-dir derivation that the
+    unit tests stub out -- against an actual linked worktree.
+    """
+    main = tmp_path / "main"
+    main.mkdir()
+    (main / "seed.txt").write_text("seed")
+    _init_git_repo(main)
+    (main / ".parrot" / "wiki").mkdir(parents=True)
+
+    worktree = tmp_path / "linked"
+    _add_linked_worktree(main, worktree)
+    assert not (worktree / ".parrot" / "wiki").exists()
+
+    resolved = await _resolve_wiki_plane_root(worktree, ComplexityPolicy())
+    assert resolved == main.resolve()
+
+    run_mock = AsyncMock(return_value=SubprocessResult(0, _BLAST_JSON, ""))
+    with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess", new=run_mock):
+        metrics, _, _, _, _ = await _collect_wiki_blast(
+            worktree, _BLAST_CONTRACT, ComplexityPolicy(), asyncio.Semaphore(1)
+        )
+
+    assert metrics["blast_symbols"].state == "ok"
