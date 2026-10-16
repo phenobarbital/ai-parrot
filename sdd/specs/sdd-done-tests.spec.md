@@ -10,7 +10,7 @@ tags: [sdd-done, test-reporting, pull-request, sdd-coder, evidence]
 **Feature ID**: FEAT-695
 **Date**: 2026-10-16
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Source**: `sdd/proposals/sdd-done-tests.proposal.md` (accepted) · research `sdd/state/FEAT-695/`
 
