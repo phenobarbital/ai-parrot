@@ -130,3 +130,29 @@ class TestFileTokenCredentialResolver:
         assert (r.client_id, r.client_secret, r.site) == ("cid", "sec", "https://x.atlassian.net")
         assert r.store.path == tmp_path / "s.json"
         assert r.single_user is True
+
+
+@pytest.mark.asyncio
+async def test_cancelled_lock_acquisition_releases_lock(tmp_path) -> None:
+    """A resolve() cancelled while waiting for the flock must not leave the lock held."""
+    import asyncio
+    import fcntl
+    import os
+
+    store = _store(tmp_path)
+    store.save(_token(expires_in=-100))
+    resolver = FileTokenCredentialResolver(store, "id", "secret")
+
+    with store.locked():
+        task = asyncio.ensure_future(resolver.resolve("cli", "local"))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+    await asyncio.sleep(0.2)  # let the worker thread finish and the release callback run
+
+    fd = os.open(store.lock_path, os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # raises BlockingIOError if still held
+    finally:
+        os.close(fd)

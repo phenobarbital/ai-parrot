@@ -128,3 +128,38 @@ class TestSave:
         assert kb2.site == kb.site
         assert kb2.projects == kb.projects
         assert kb2 == kb
+
+
+def test_save_preserves_yaml_comments_on_round_trip(tmp_path) -> None:
+    """AC9: re-saving a loaded KB keeps hand-written comments and curated values."""
+    src = tmp_path / "kb.yaml"
+    src.write_text(
+        "# my own header\n"
+        "site: https://acme.atlassian.net\n"
+        "verified: '2020-01-01'\n"
+        "status_map:\n"
+        "  Done: [Closed]  # curated by hand\n"
+        "limits:\n"
+        "  summary_max_chars: 80  # team rule\n",
+        encoding="utf-8",
+    )
+    kb = JiraKnowledgeBase.load(src)
+    generated = JiraKnowledgeBase(site="https://acme.atlassian.net", verified="2026-10-16")
+    merged = kb.merge_generated(generated)
+    merged.save(src)
+
+    text = src.read_text(encoding="utf-8")
+    assert "# my own header" in text
+    assert "# curated by hand" in text
+    assert "# team rule" in text
+    reloaded = JiraKnowledgeBase.load(src)
+    assert reloaded.verified == "2026-10-16"
+    assert reloaded.status_map == {"Done": ["Closed"]}
+    assert reloaded.limits.summary_max_chars == 80
+
+
+def test_save_fresh_kb_writes_header(tmp_path) -> None:
+    """A KB with no source file gets the generated-file header."""
+    dest = tmp_path / "new.yaml"
+    JiraKnowledgeBase(site="https://acme.atlassian.net").save(dest)
+    assert dest.read_text(encoding="utf-8").startswith("# Jira knowledge base")

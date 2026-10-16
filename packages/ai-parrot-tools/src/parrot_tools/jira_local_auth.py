@@ -183,7 +183,13 @@ class FileTokenCredentialResolver(CredentialResolver):
         key = self._resolve_key()
         # Acquire the cross-process lock without blocking the event loop.
         cm = self.store.locked()
-        await asyncio.to_thread(cm.__enter__)
+        acquire = asyncio.ensure_future(asyncio.to_thread(cm.__enter__))
+        try:
+            await asyncio.shield(acquire)
+        except asyncio.CancelledError:
+            # The worker thread may still take the flock after we are cancelled: release it then.
+            acquire.add_done_callback(lambda fut: fut.cancelled() or fut.exception() or cm.__exit__(None, None, None))
+            raise
         try:
             # Another process may have refreshed while we waited.
             current = self.store.get(self.site)
