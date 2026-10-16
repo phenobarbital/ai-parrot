@@ -47,6 +47,11 @@ HOOK_MATCHER = "Grep|Glob|Read|Bash"
 GIT_HOOK_BEGIN = "# >>> parrot-wiki post-commit >>>"
 GIT_HOOK_END = "# <<< parrot-wiki post-commit <<<"
 
+# FEAT-694: shared ledger event log sync (export on pre-commit, import after pull/checkout/rewrite).
+LEDGER_HOOK_BEGIN = "# >>> parrot-ledger >>>"
+LEDGER_HOOK_END = "# <<< parrot-ledger <<<"
+LEDGER_HOOK_EVENTS: tuple[str, ...] = ("pre-commit", "post-merge", "post-checkout", "post-rewrite")
+
 #: Permission allow-rules merged into .claude/settings.json so wiki
 #: queries run without a permission prompt. Covers the bare CLI, the
 #: ``parrot wiki`` alias, and the common venv-activation compound.
@@ -208,6 +213,34 @@ def git_hook_block(root: Path) -> str:
 def git_hook_new_file(root: Path) -> str:
     """Build a fresh managed hook file with an absolute path."""
     return f"#!/bin/sh\n{git_hook_block(root)}"
+
+
+def ledger_hook_block(root: Path, hook_name: str) -> str:
+    """Build the managed ledger-sync block for one hook event (no linked-worktree guard).
+
+    Args:
+        root: Repository root (used to resolve the wikitoolkit binary).
+        hook_name: One of :data:`LEDGER_HOOK_EVENTS`.
+
+    Raises:
+        ValueError: ``hook_name`` is not in :data:`LEDGER_HOOK_EVENTS`.
+    """
+    if hook_name not in LEDGER_HOOK_EVENTS:
+        raise ValueError(f"unknown ledger hook event: {hook_name!r}")
+    wt_bin = resolve_wikitoolkit_bin(root)
+    sub = "ledger export-log --stage --quiet" if hook_name == "pre-commit" else "ledger import-log --quiet"
+    return (
+        f"{LEDGER_HOOK_BEGIN}\n"
+        f"# Sync the shared SDD ledger event log (FEAT-694).\n"
+        f"# Installed by `parrot claude install`; remove with `parrot claude uninstall`.\n"
+        f"{wt_bin} {sub} >/dev/null 2>&1 || true\n"
+        f"{LEDGER_HOOK_END}\n"
+    )
+
+
+def ledger_hook_new_file(root: Path, hook_name: str) -> str:
+    """Build a fresh hook file holding only the ledger block."""
+    return f"#!/bin/sh\n{ledger_hook_block(root, hook_name)}"
 
 
 def permission_rules(root: Path) -> tuple[str, ...]:
