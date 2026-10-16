@@ -10,7 +10,7 @@ tags: [sdd, workflow, hotfix, ledger, commands]
 **Feature ID**: FEAT-698
 **Date**: 2026-10-17
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
