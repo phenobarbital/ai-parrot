@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { Router } from "./router.svelte";
+import { Router, isInAppPath } from "./router.svelte";
 
-const LOGIN = "/admin/login";
+const LOGIN = "/login";
 const DASHBOARD = "/admin/dashboard";
 
 function setPath(path: string) {
@@ -62,7 +62,7 @@ describe("Router", () => {
     expect(matched?.path).toBe(LOGIN);
   });
 
-  it("rejects external next targets, falling back to the base path", () => {
+  it("rejects external next targets, falling back to the agent list", () => {
     const router = new Router([
       {
         path: "https://evil.example/phish",
@@ -73,7 +73,7 @@ describe("Router", () => {
 
     router.guard("https://evil.example/phish");
 
-    expect(router.path).toBe(`${LOGIN}?next=${encodeURIComponent("/admin")}`);
+    expect(router.path).toBe(`${LOGIN}?next=${encodeURIComponent("/agents")}`);
   });
 
   describe(":param routes", () => {
@@ -177,6 +177,27 @@ describe("Router", () => {
 
       expect(allowed).toBe(false);
       expect(router.path).toBe(`${LOGIN}?next=${encodeURIComponent(DASHBOARD)}`);
+    });
+  });
+
+  describe("isInAppPath", () => {
+    it("accepts the SPA's own sections and the site root", () => {
+      for (const path of ["/", "/login", "/agents", "/agents/helpdesk/chat", "/admin/home"]) {
+        expect(isInAppPath(path)).toBe(true);
+      }
+    });
+
+    it("rejects off-site and non-SPA targets", () => {
+      for (const path of [
+        "//evil.example/phish",
+        "https://evil.example/phish",
+        "/\\evil.example",
+        "/api/v1/bots",
+        "/administer",
+        "agents",
+      ]) {
+        expect(isInAppPath(path)).toBe(false);
+      }
     });
   });
 });

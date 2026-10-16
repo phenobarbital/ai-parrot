@@ -4,10 +4,10 @@
  *
  * No router library (svelte-spa-router / tinro) is used per the resolved
  * design decision — this is intentionally small (~100 lines) rather than a
- * general-purpose router. Base-path aware (`config.basePath`, `/admin`):
- * every path this class deals with is an absolute in-app path starting
- * with `/admin` (matching `window.location.pathname` when the SPA is
- * served at that prefix).
+ * general-purpose router. The SPA is served at the site root: every path
+ * this class deals with is an absolute in-app path whose first segment is
+ * one of `config.appSections` (`/login`, `/agents/...`, `/admin/...`),
+ * matching `window.location.pathname`.
  *
  * `guard()` reads the auth token directly from localStorage (via
  * `config.tokenStorageKey`) rather than importing `AuthStore`, so this
@@ -19,7 +19,7 @@ import { config } from "./config";
 export type RouteComponentLoader = () => Promise<{ default: unknown }>;
 
 export interface RouteDefinition {
-  /** Absolute in-app path, e.g. "/admin/login" or "/admin/agents/:name". */
+  /** Absolute in-app path, e.g. "/login" or "/admin/agents/:name". */
   path: string;
   /** Lazy import of the page component for this route (code-splitting). */
   component: RouteComponentLoader;
@@ -61,8 +61,18 @@ function matchRoute(
   return params;
 }
 
+/**
+ * True when `path` is a root-relative path owned by this SPA. Rejects
+ * protocol-relative (`//host`) and absolute URLs so a crafted `?next=`
+ * can never redirect off-site after login.
+ */
 function isInAppPath(path: string): boolean {
-  return typeof path === "string" && path.startsWith(config.basePath);
+  if (typeof path !== "string" || !path.startsWith("/") || path.startsWith("//")) {
+    return false;
+  }
+  if (path.includes("\\")) return false;
+  const first = segments(path)[0];
+  return first === undefined || config.appSections.includes(first);
 }
 
 function hasToken(): boolean {
@@ -76,7 +86,7 @@ function hasToken(): boolean {
 
 class Router {
   path = $state(
-    typeof window !== "undefined" ? window.location.pathname : config.basePath,
+    typeof window !== "undefined" ? window.location.pathname : config.homePath,
   );
 
   /**
@@ -166,8 +176,8 @@ class Router {
    * pathname. A query string, e.g. the login route's own
    * `?next=<encoded>` produced by `guard()`/`AuthStore.handle401()`, is
    * stripped before comparing. Without this, `router.path` values like
-   * `/admin/login?next=%2Fadmin%2Fdashboard` would never match the route
-   * table's bare `/admin/login` entry, and `App.svelte`'s `resolve()`
+   * `/login?next=%2Fadmin%2Fdashboard` would never match the route
+   * table's bare `/login` entry, and `App.svelte`'s `resolve()`
    * would treat the login redirect as an unmatched route and immediately
    * navigate away again — wiping `?next=` before `Login.svelte` ever
    * mounts to read it.
@@ -210,7 +220,7 @@ class Router {
     if (!route?.requiresAuth) return true;
     if (hasToken()) return true;
 
-    const next = isInAppPath(path) ? path : config.basePath;
+    const next = isInAppPath(path) ? path : config.homePath;
     this._commit(
       `${config.loginPath}?next=${encodeURIComponent(next)}`,
       { replace: true },

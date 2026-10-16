@@ -6,6 +6,7 @@
 <script lang="ts">
   import apiClient from "$lib/api/http";
   import type { AdminStatus } from "$lib/types/generated/AdminStatus";
+  import { config } from "$lib/config";
   import { navEntries } from "$lib/nav";
   import { router } from "$lib/router.svelte";
   import { Card, CardContent, CardHeader, CardTitle } from "$lib/ui/internal/shadcn/ui/card/index.js";
@@ -26,7 +27,7 @@
       });
   });
 
-  const cards = $derived(navEntries.filter((entry) => entry.path !== "/admin/home"));
+  const cards = $derived(navEntries.filter((entry) => entry.path !== `${config.adminPath}/home`));
 </script>
 
 <div class="flex flex-col gap-6">

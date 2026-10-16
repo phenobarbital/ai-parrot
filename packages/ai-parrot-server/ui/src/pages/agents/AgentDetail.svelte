@@ -21,6 +21,7 @@
   compact chat panel from the agent's detail surface").
 -->
 <script lang="ts">
+  import { config } from "$lib/config";
   import { router } from "$lib/router.svelte";
   import type { BotAgentItem } from "$lib/types/generated/BotAgentItem";
   import { Badge } from "$lib/ui/internal/shadcn/ui/badge/index.js";
@@ -40,9 +41,12 @@
   let {
     agent = null,
     open = $bindable(false),
+    canManage = true,
   }: {
     agent: BotAgentItem | null;
     open?: boolean;
+    /** False on the end-user agent list: hides the Edit affordance. */
+    canManage?: boolean;
   } = $props();
 
   let activeTab = $state("details");
@@ -50,7 +54,7 @@
   function goEdit(): void {
     if (!agent) return;
     open = false;
-    router.navigate(`/admin/agents/${encodeURIComponent(agent.name)}`);
+    router.navigate(`${config.adminPath}/agents/${encodeURIComponent(agent.name)}`);
   }
 
   /** Every field except `name`/`source`, which the header already shows. */
@@ -76,7 +80,7 @@
       <DialogHeader>
         <div class="flex items-center justify-between gap-4">
           <DialogTitle>{agent.name}</DialogTitle>
-          {#if agent.source === "database"}
+          {#if canManage && agent.source === "database"}
             <Button size="sm" variant="outline" onclick={goEdit} data-testid="agent-detail-edit">
               Edit
             </Button>

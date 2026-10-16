@@ -1,5 +1,5 @@
 <!--
-  Login page (TASK-2528) — route /admin/login.
+  Login page (TASK-2528) — route /login.
 
   Structurally adapted from navigator-frontend-next's
   src/lib/navauth/components/LoginForm.svelte + src/routes/login/+page.svelte
@@ -31,7 +31,9 @@
   function nextTarget(): string {
     const params = new URLSearchParams(window.location.search);
     const next = params.get("next");
-    return next && isInAppPath(next) ? next : "/admin/home";
+    return next && isInAppPath(next) && !next.startsWith(config.loginPath)
+      ? next
+      : config.homePath;
   }
 
   onMount(async () => {
@@ -79,7 +81,7 @@
 <main class="bg-background text-foreground flex min-h-screen items-center justify-center p-4">
   <Card class="w-full max-w-sm">
     <CardHeader>
-      <CardTitle class="text-xl">Sign in to AI-Parrot Admin</CardTitle>
+      <CardTitle class="text-xl">Sign in to AI-Parrot</CardTitle>
     </CardHeader>
     <CardContent class="flex flex-col gap-4">
       {#if error}

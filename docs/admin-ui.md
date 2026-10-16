@@ -7,10 +7,25 @@ Admin UI itself.
 
 ## What it is
 
-`ai-parrot-server` embeds a small single-page Admin UI, served at `/admin`
-by the same aiohttp application that serves the API. It gives operators a
-login page, a status dashboard, and a read-only agent inventory without
-standing up a separate frontend deployment.
+`ai-parrot-server` embeds a small single-page web UI, served by the same
+aiohttp application that serves the API. End users get a login page, the
+agent list and a chat page per agent at the site root; operators get the
+administration pages under `/admin` — without standing up a separate
+frontend deployment.
+
+| URL | Page | Who |
+|---|---|---|
+| `/` | redirects to `/agents` (signed in) or `/login` | everyone |
+| `/login` | navigator-auth sign-in | everyone |
+| `/agents` | agent list, **Chat** action only | any signed-in user |
+| `/agents/<name>/chat` | full-page [Agent Chat](#agent-chat) | any signed-in user (PBAC `agent:chat` decides) |
+| `/admin/home`, `/admin/dashboard`, `/admin/agents[...]` | administration (below) | any signed-in user today; role gating is future work |
+
+Hashed assets are served from `/ui/assets/`. The SPA never registers a root
+catch-all: only the paths above return `index.html`, so `/api/*`,
+`/static/*`, `/a2a`, etc. are untouched. Set `PARROT_UI_AT_ROOT=false` to
+keep `/` for something else (the SPA then answers only `/login`, `/agents`
+and `/admin`).
 
 - **Home** (`/admin/home`) — server identity + navigation.
 - **Dashboard** (`/admin/dashboard`) — `GET /api/v1/admin/status`: version,
@@ -36,7 +51,7 @@ auth system for the Admin UI.
   `parrot/autonomous/admin.py`'s inline admin page and
   `parrot-formdesigner` use, so a redirect between them round-trips
   correctly), not the session cookie navigator-auth also sets. A `401`
-  response clears the stored session and redirects to `/admin/login`,
+  response clears the stored session and redirects to `/login`,
   preserving the page you were on via `?next=`.
 - Logout: `GET /api/v1/logout`.
 
@@ -182,6 +197,44 @@ it separately (as it did before FEAT-475). The registration is
 idempotent: a host app that still registers the route itself does not
 crash on startup.
 
+## Quick start: `python run.py`, gunicorn or supervisord
+
+From a checkout of this repository (venv active):
+
+```bash
+make build-server-ui      # once per UI change: Node 24 + pnpm 9 (corepack)
+make run-server           # = python run.py  (builds the UI first if missing)
+# or, multi-process:
+AUTH_SECRET_KEY=... make serve-gunicorn   # gunicorn --config deploy/gunicorn.conf.py "run:create_app()"
+```
+
+Open `http://localhost:5000/` → sign in → **Agents** → **Chat**.
+
+- **Minimal install**: `ai-parrot` + `ai-parrot-server` + `ai-parrot-integrations`
+  is enough. `app.py` registers QuerySource, the agent scheduler/GitHub
+  reviewer, the vector-store API, parrot-formdesigner and the planogram
+  pipeline only when their packages are installed, logging one `INFO` line
+  per skipped component. Add `ai-parrot-server[scheduler]`, `ai-parrot[db]`,
+  `ai-parrot-loaders`, `parrot-formdesigner`, `ai-parrot-pipelines` to get them.
+- **Infrastructure**: PostgreSQL (navigator pool + navigator-auth's
+  `auth.users` table) and Redis are required at startup.
+- **Login**: set `AUTHENTICATION_BACKENDS=navigator_auth.backends.BasicAuth`
+  (plus any SSO backend) and create users in `auth.users`.
+- **`AUTH_SECRET_KEY`**: always set it in production. Without it navigator-auth
+  generates a random signing key per process, so tokens die on restart and,
+  under gunicorn with several workers, a token minted by one worker is
+  rejected by the others (users bounce back to `/login`).
+  `deploy/gunicorn.conf.py` refuses to start more than one worker without it.
+- **Chat permission (PBAC)**: chatting is `agent:chat` on `agent:<name>`,
+  deny-by-default. The policies shipped in `policies/` only grant it to
+  specific groups/users; add a policy for your users or a `403 No policies
+  matched` shows up as an error bubble in the chat.
+- **LLM provider**: each agent needs its client package
+  (e.g. `ai-parrot-client-google`) and API key; otherwise the chat reports
+  `Agent '<name>' not found` because it failed to instantiate at startup.
+- **supervisord**: `deploy/supervisord/ai-parrot.conf` runs the gunicorn
+  command (or, alternatively, `python run.py`) with graceful stop settings.
+
 ## Adopter view: running it
 
 ```bash
@@ -190,7 +243,7 @@ pip install ai-parrot-server
 # setup_admin_ui() automatically ...
 ```
 
-Visit `/admin` — you get the login page, then Home/Dashboard/Agents, with
+Visit `/` — you get the login page, then the agent list and chat, with
 **no Node.js required on the host**. The UI ships pre-built inside the
 wheel (`parrot/server/ui/dist/`); the server only serves static files.
 
@@ -203,7 +256,7 @@ running the UI build first**, `parrot/server/ui/dist/` will not exist.
 
 - the server starts normally,
 - a single `WARNING` is logged,
-- zero `/admin` routes are registered,
+- zero UI routes (`/`, `/login`, `/agents`, `/admin`) are registered,
 - the rest of the API is completely unaffected.
 
 This is expected, not a bug — `dist/` is intentionally gitignored (it is
@@ -270,7 +323,8 @@ pnpm build
 
 writes the production bundle to
 `packages/ai-parrot-server/src/parrot/server/ui/dist/` (see
-`vite.config.ts`'s `build.outDir`) — directly into the Python package's
+`vite.config.ts`'s `build.outDir`; hashed assets go to `dist/ui/assets/`
+and are referenced as `/ui/assets/*`) — directly into the Python package's
 source tree, one level below the aiohttp handlers that serve it
 (`parrot/server/ui/serving.py`). That directory is gitignored; it exists
 only as local build output or as release-pipeline output.
@@ -323,7 +377,7 @@ runs the frontend build automatically. This is caught by a **dual check**:
 
 **Feature**: FEAT-476 — AgentChat Migration
 
-`/admin/agents/:name/chat` mounts a full-page chat with a single agent
+`/agents/:name/chat` (alias: `/admin/agents/:name/chat`) mounts a full-page chat with a single agent
 (vendored from the `navigator-frontend-next` reference frontend, spec
 `sdd/specs/agentchat-migration.spec.md`). It's also reachable without
 leaving the agents list: a **Chat** button on every enabled row (database

@@ -1,7 +1,8 @@
 <!--
   AgentsList (TASK-2530; create/edit/delete affordances added TASK-2588,
-  FEAT-475) — agents table over GET /api/v1/bots. Route /admin/agents
-  (wired via pages/Agents.svelte).
+  FEAT-475) — agents table over GET /api/v1/bots. Routes /agents
+  (`mode="user"`: Chat only) and /admin/agents (`mode="admin"`: full
+  create/edit/delete), both wired via pages/Agents.svelte.
 
   Establishes the module pattern for future feature modules: page under
   pages/<module>/, nav entry already present (TASK-2528's registry), data
@@ -24,6 +25,7 @@
 <script lang="ts">
   import { listAgents } from "$lib/api/agents";
   import { ApiError } from "$lib/api/http";
+  import { config } from "$lib/config";
   import { router } from "$lib/router.svelte";
   import type { BotAgentItem } from "$lib/types/generated/BotAgentItem";
   import { Badge } from "$lib/ui/internal/shadcn/ui/badge/index.js";
@@ -36,6 +38,9 @@
 
   import AgentDetail from "./AgentDetail.svelte";
   import DeleteAgentDialog from "./DeleteAgentDialog.svelte";
+
+  let { mode = "admin" }: { mode?: "user" | "admin" } = $props();
+  const canManage = $derived(mode === "admin");
 
   type SourceFilter = "all" | "database" | "registry";
 
@@ -99,17 +104,17 @@
   }
 
   function goCreate(): void {
-    router.navigate("/admin/agents/new");
+    router.navigate(`${config.adminPath}/agents/new`);
   }
 
   function goEdit(agent: BotAgentItem, e: MouseEvent): void {
     e.stopPropagation();
-    router.navigate(`/admin/agents/${encodeURIComponent(agent.name)}`);
+    router.navigate(`${config.adminPath}/agents/${encodeURIComponent(agent.name)}`);
   }
 
   function goChat(agent: BotAgentItem, e: MouseEvent): void {
     e.stopPropagation();
-    router.navigate(`/admin/agents/${encodeURIComponent(agent.name)}/chat`);
+    router.navigate(`${config.basePath}/agents/${encodeURIComponent(agent.name)}/chat`);
   }
 
   function openDelete(agent: BotAgentItem, e: MouseEvent): void {
@@ -154,7 +159,9 @@
         <Label for="show-disabled">Show disabled</Label>
       </div>
     </div>
-    <Button onclick={goCreate} data-testid="create-agent-button">Create Agent</Button>
+    {#if canManage}
+      <Button onclick={goCreate} data-testid="create-agent-button">Create Agent</Button>
+    {/if}
   </div>
 
   {#if loading && agents === null}
@@ -234,7 +241,7 @@
                       Chat
                     </Button>
                   {/if}
-                  {#if agent.source === "database"}
+                  {#if canManage && agent.source === "database"}
                     <Button
                       size="sm"
                       variant="outline"
@@ -266,5 +273,7 @@
   {/if}
 </div>
 
-<AgentDetail agent={selectedAgent} bind:open={detailOpen} />
-<DeleteAgentDialog agent={deleteTarget} bind:open={deleteOpen} ondeleted={handleDeleted} />
+<AgentDetail agent={selectedAgent} bind:open={detailOpen} {canManage} />
+{#if canManage}
+  <DeleteAgentDialog agent={deleteTarget} bind:open={deleteOpen} ondeleted={handleDeleted} />
+{/if}

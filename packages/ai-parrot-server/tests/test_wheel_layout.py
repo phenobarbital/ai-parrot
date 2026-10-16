@@ -61,7 +61,7 @@ class TestWheelContainsAdminUI:
     (``pnpm generate && pnpm build`` in ``packages/ai-parrot-server/ui/``)
     must have populated ``src/parrot/server/ui/dist/`` BEFORE ``uv build``
     runs (which is what ``satellite_wheel_path`` invokes), or the
-    ``"parrot.server.ui" = ["dist/*", "dist/assets/*"]`` package-data glob
+    ``"parrot.server.ui" = ["dist/*", "dist/ui/assets/*"]`` package-data glob
     in ``pyproject.toml`` has nothing to pick up and the wheel silently
     ships no UI. This test fails in that case and passes once the UI has
     been built — see the release pipeline stage (Makefile
@@ -82,9 +82,9 @@ class TestWheelContainsAdminUI:
     @pytest.mark.wheel_build
     def test_dist_assets_present(self, satellite_wheel_namelist):
         """The wheel contains at least one built asset (JS/CSS bundle)."""
-        assets = [n for n in satellite_wheel_namelist if n.startswith("parrot/server/ui/dist/assets/")]
+        assets = [n for n in satellite_wheel_namelist if n.startswith("parrot/server/ui/dist/ui/assets/")]
         assert assets, (
-            "wheel is missing parrot/server/ui/dist/assets/* — the Admin UI "
+            "wheel is missing parrot/server/ui/dist/ui/assets/* — the Admin UI "
             "build produced no assets (or was skipped entirely)."
         )
 
@@ -99,7 +99,7 @@ class TestWheelContainsAdminUI:
         chunks = [
             n
             for n in satellite_wheel_namelist
-            if n.startswith("parrot/server/ui/dist/assets/") and "AgentChat" in n and n.endswith(".js")
+            if n.startswith("parrot/server/ui/dist/ui/assets/") and "AgentChat" in n and n.endswith(".js")
         ]
         assert chunks, (
             "wheel is missing the AgentChat chunk — was the UI built with "

@@ -1,9 +1,11 @@
-"""Unit tests for the embedded Admin UI serving module (FEAT-468, TASK-2523).
+"""Unit tests for the embedded web UI serving module (FEAT-468, TASK-2523).
 
 Covers ``setup_admin_ui()``: absent-dist graceful degradation, SPA
-index-fallback deep links, hashed-asset static mount, no shadowing of
-``/api/*`` routes, and navigator-auth exclude-list registration (with and
-without an installed ``AuthHandler``).
+index-fallback deep links (end-user sections at the site root plus the
+``/admin`` prefix), hashed-asset static mount at ``/ui/assets/``, the root
+mount (direct route or middleware when ``GET /`` is already taken), no
+shadowing of ``/api/*`` routes, and navigator-auth exclude-list
+registration (with and without an installed ``AuthHandler``).
 """
 from __future__ import annotations
 
@@ -18,9 +20,9 @@ from parrot.server.ui import serving, setup_admin_ui
 def fake_dist(tmp_path, monkeypatch):
     """Minimal fake ``dist/``: index.html + a hashed asset."""
     dist = tmp_path / "dist"
-    (dist / "assets").mkdir(parents=True)
+    (dist / "ui" / "assets").mkdir(parents=True)
     (dist / "index.html").write_text("<html>admin</html>")
-    (dist / "assets" / "app-abc123.js").write_text("//js")
+    (dist / "ui" / "assets" / "app-abc123.js").write_text("//js")
     monkeypatch.setattr(serving, "_dist_dir", lambda: dist)
     return dist
 
@@ -62,12 +64,70 @@ class TestMountedDist:
         assert resp.status == 200
         assert "admin" in (await resp.text())
 
+    @pytest.mark.parametrize(
+        "path", ["/", "/login", "/agents", "/agents/helpdesk/chat", "/admin/home"]
+    )
+    async def test_user_sections_served_at_root(self, fake_dist, aiohttp_client, path):
+        app = web.Application()
+        assert setup_admin_ui(app, mount_root=True) is True
+
+        client = await aiohttp_client(app)
+        resp = await client.get(path)
+        assert resp.status == 200
+        assert "admin" in (await resp.text())
+        assert resp.headers.get("Cache-Control") == "no-cache"
+
+    async def test_unknown_root_paths_not_swallowed(self, fake_dist, aiohttp_client):
+        """There is no root catch-all: unrelated paths still 404."""
+        app = web.Application()
+        assert setup_admin_ui(app, mount_root=True) is True
+
+        client = await aiohttp_client(app)
+        for path in ("/not-a-ui-page", "/agentsfoo", "/api/v1/missing"):
+            resp = await client.get(path)
+            assert resp.status == 404, path
+
+    async def test_root_served_by_middleware_when_already_taken(
+        self, fake_dist, aiohttp_client
+    ):
+        """navigator's AppHandler always registers its own ``GET /``: the SPA
+        must still answer ``/`` (via a middleware scoped to exactly ``/``)
+        without breaking any other route."""
+        app = web.Application()
+
+        async def _navigator_home(request):
+            return web.Response(text="navigator home")
+
+        async def _ping(request):
+            return web.Response(text="PONG")
+
+        app.router.add_route("GET", "/", _navigator_home, name="home")
+        app.router.add_get("/ping", _ping)
+        assert setup_admin_ui(app, mount_root=True) is True
+
+        client = await aiohttp_client(app)
+        resp = await client.get("/")
+        assert resp.status == 200
+        assert "admin" in (await resp.text())
+        resp = await client.get("/ping")
+        assert (await resp.text()) == "PONG"
+
+    async def test_mount_root_disabled(self, fake_dist, aiohttp_client):
+        app = web.Application()
+        assert setup_admin_ui(app, mount_root=False) is True
+
+        client = await aiohttp_client(app)
+        resp = await client.get("/")
+        assert resp.status == 404
+        resp = await client.get("/agents")
+        assert resp.status == 200
+
     async def test_assets_served_with_long_cache_headers(self, fake_dist, aiohttp_client):
         app = web.Application()
         assert setup_admin_ui(app) is True
 
         client = await aiohttp_client(app)
-        resp = await client.get("/admin/assets/app-abc123.js")
+        resp = await client.get("/ui/assets/app-abc123.js")
         assert resp.status == 200
         assert "js" in (await resp.text())
         assert resp.headers.get("Cache-Control") == "public, max-age=31536000, immutable"
@@ -128,14 +188,15 @@ class TestMountedDist:
 
         await aiohttp_client(app)  # starts the app -> fires on_startup
 
-        assert "/admin" in app[AUTH_EXCLUDE_LIST_KEY]
-        assert "/admin/*" in app[AUTH_EXCLUDE_LIST_KEY]
-        # Segment-boundary patterns must not accidentally match lookalikes.
+        excluded = app[AUTH_EXCLUDE_LIST_KEY]
+        for pattern in ("/admin", "/admin/*", "/login", "/agents", "/agents/*", "/ui/assets/*"):
+            assert pattern in excluded
+        # Segment-boundary patterns must not accidentally match lookalikes,
+        # and the root pattern must never exclude the JSON API.
         import fnmatch
 
-        assert not any(
-            fnmatch.fnmatch("/administer", p) for p in app[AUTH_EXCLUDE_LIST_KEY]
-        )
+        for path in ("/administer", "/agentsfoo", "/api/v1/bots", "/api/v1/login"):
+            assert not any(fnmatch.fnmatch(path, p) for p in excluded), path
 
     async def test_no_crash_without_auth_handler(self, fake_dist, aiohttp_client):
         app = web.Application()
