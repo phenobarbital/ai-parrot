@@ -994,7 +994,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=5.9" },
     { name = "psycopg-binary", marker = "extra == 'db'", specifier = ">=3.2.12" },
     { name = "pyarrow", specifier = ">=25.0" },
-    { name = "pydantic", specifier = "==2.12.5" },
+    { name = "pydantic", specifier = ">=2.12.5,<3" },
     { name = "pydub", marker = "extra == 'audio'", specifier = "==0.25.1" },
     { name = "pyheif", marker = "extra == 'images'", specifier = "==0.8.0" },
     { name = "pymupdf", marker = "extra == 'agents'", specifier = "==1.27.1" },
