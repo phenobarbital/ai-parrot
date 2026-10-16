@@ -248,9 +248,7 @@ def test_run_with_timeout_appends_flag_to_every_invocation(fixture_monorepo, mon
     seen = _captured_argvs(monkeypatch)
     (fixture_monorepo / "packages/a/src/pa/x.py").write_text("X = 2\n")
 
-    rc = main(
-        ["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--run", "--timeout", "60"]
-    )
+    rc = main(["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--run", "--timeout", "60"])
 
     assert rc == 0
     assert seen, "expected at least one planned invocation"
