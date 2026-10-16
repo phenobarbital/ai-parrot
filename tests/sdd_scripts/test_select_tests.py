@@ -256,3 +256,152 @@ def test_run_with_timeout_appends_flag_to_every_invocation(fixture_monorepo, mon
     assert seen, "expected at least one planned invocation"
     for argv in seen:
         assert argv[-1] == "--timeout=60", argv
+
+
+def test_select_tests_flags_absent_is_identical(fixture_monorepo, monkeypatch):
+    """The report flags leave the original pytest argv untouched when absent."""
+    seen = _captured_argvs(monkeypatch)
+    (fixture_monorepo / "packages/a/src/pa/x.py").write_text("X = 2\n")
+
+    assert main(["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--run"]) == 0
+
+    assert seen
+    for argv in seen:
+        assert not any(argument.startswith("--junitxml=") for argument in argv), argv
+
+
+def test_select_tests_records(fixture_monorepo, monkeypatch, tmp_path):
+    """A flagged run writes the parsed suite result under its task report."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    _load_kernel()
+    import test_scope.report as report_mod
+    import scripts.sdd.select_tests as sel
+
+    monkeypatch.setenv("SDD_TEST_REPORT_DIR", str(tmp_path / "reports"))
+    (fixture_monorepo / "packages/a/src/pa/x.py").write_text("X = 2\n")
+    real_run = sel.subprocess.run
+
+    def _fake_run(argv, **kwargs):
+        if any("pytest" in part for part in argv):
+            junit_argument = next(part for part in argv if part.startswith("--junitxml="))
+            Path(junit_argument.removeprefix("--junitxml=")).write_text(
+                '<testsuites><testsuite tests="2" failures="0" errors="0" skipped="1" /></testsuites>'
+            )
+            return SimpleNamespace(returncode=0)
+        return real_run(argv, **kwargs)
+
+    monkeypatch.setattr(sel.subprocess, "run", _fake_run)
+
+    assert (
+        main(
+            [
+                "--tier",
+                "merge",
+                "--base",
+                "HEAD",
+                "--worktree",
+                str(fixture_monorepo),
+                "--feature",
+                "FEAT-695",
+                "--report-task",
+                "TASK-4412",
+                "--run",
+            ]
+        )
+        == 0
+    )
+
+    records, notes = report_mod.load_records("FEAT-695")
+    record = records["TASK-4412"]
+    assert notes == []
+    assert record.head_sha
+    assert record.base_ref == "HEAD"
+    assert record.source == "select_tests"
+    assert all(suite.tests == 2 and suite.passed == 1 and suite.skipped == 1 for suite in record.suites)
+    assert all(suite.argv[-1].startswith("--junitxml=") for suite in record.suites)
+
+
+def test_no_ledger_skips_escalation_ledger(fixture_monorepo, monkeypatch):
+    """Report-only runs never alter the escalation ledger."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    from test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
+
+    plan = ScopePlan(
+        tier="merge",
+        invocations=(
+            PytestInvocation(
+                distribution="a",
+                argv=("pytest", "packages/a/tests"),
+                targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
+            ),
+        ),
+        escalated=("a",),
+        core_hits=(),
+        skipped_escalations=(),
+        notes=(),
+        cap_hits={},
+        cap_impacted={},
+    )
+    calls: list[str] = []
+    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
+    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
+    monkeypatch.setattr(kernel.context, "record_red_run", lambda *_: calls.append("red"))
+    monkeypatch.setattr(kernel.context, "record_green_escalation", lambda *_args, **_kwargs: calls.append("green"))
+    monkeypatch.setattr(
+        "scripts.sdd.select_tests.subprocess",
+        SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=0)),
+    )
+
+    assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run", "--no-ledger"]) == 0
+    assert calls == []
+
+
+def test_empty_plan_selection_error(fixture_monorepo, monkeypatch, tmp_path):
+    """A flagged empty plan produces a reportable selection-error result."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    import test_scope.report as report_mod
+    from test_scope.datatypes import ScopePlan
+
+    monkeypatch.setenv("SDD_TEST_REPORT_DIR", str(tmp_path / "reports"))
+    monkeypatch.setattr(
+        kernel,
+        "plan_tests",
+        lambda **_: ScopePlan(
+            tier="merge",
+            invocations=(),
+            escalated=(),
+            core_hits=(),
+            skipped_escalations=(),
+            notes=(),
+            cap_hits={},
+            cap_impacted={},
+        ),
+    )
+    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
+
+    assert (
+        main(
+            [
+                "--tier",
+                "merge",
+                "--worktree",
+                str(fixture_monorepo),
+                "--feature",
+                "FEAT-695",
+                "--report-task",
+                "TASK-4412",
+                "--run",
+            ]
+        )
+        == 0
+    )
+
+    records, _ = report_mod.load_records("FEAT-695")
+    record = records["TASK-4412"]
+    assert record.notes == ("selection_error: no test invocations planned",)
+    assert record.suites[0].status == "selection_error"
