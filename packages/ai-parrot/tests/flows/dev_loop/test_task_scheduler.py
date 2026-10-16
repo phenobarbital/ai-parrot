@@ -6,7 +6,13 @@ import json
 
 import pytest
 
-from parrot.flows.dev_loop.task_scheduler import TaskRef, TaskScheduler, partition_wave, parallel_width
+from parrot.flows.dev_loop.task_scheduler import (
+    TaskRef,
+    TaskScheduler,
+    is_exclusive_batch,
+    partition_wave,
+    parallel_width,
+)
 
 
 def _ref(task_id: str, *, parallel: bool = True, depends_on: list[str] | None = None) -> TaskRef:
@@ -243,3 +249,22 @@ class TestParallelWidth:
         # Empty wave returns 0
         wave: list[TaskRef] = []
         assert parallel_width(wave) == 0
+
+
+class TestIsExclusiveBatch:
+    def test_single_exclusive_task_is_exclusive(self):
+        assert is_exclusive_batch([_ref("TASK-1", parallel=False)]) is True
+
+    def test_single_parallel_task_is_not_exclusive(self):
+        assert is_exclusive_batch([_ref("TASK-1", parallel=True)]) is False
+
+    def test_multi_task_batch_is_not_exclusive(self):
+        # partition_wave never groups exclusive tasks, so only a lone task can be exclusive
+        assert is_exclusive_batch([_ref("TASK-1", parallel=False), _ref("TASK-2", parallel=False)]) is False
+
+    def test_empty_batch_is_not_exclusive(self):
+        assert is_exclusive_batch([]) is False
+
+    def test_matches_partition_wave_rounds(self):
+        wave = [_ref("TASK-2", parallel=False), _ref("TASK-1", parallel=True), _ref("TASK-3", parallel=True)]
+        assert [is_exclusive_batch(b) for b in partition_wave(wave)] == [True, False]
