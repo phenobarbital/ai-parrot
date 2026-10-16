@@ -90,6 +90,26 @@
       "verification": "verified"
     },
     {
+      "id": "TASK-4416",
+      "slug": "shared-log-hardening",
+      "title": "Shared-log hardening — crash-safe rotation, kind filter, newline, path digest, pre-import scope, CLI error handling",
+      "feature_id": "FEAT-694",
+      "feature": "ledger-shared-event-log",
+      "spec": "sdd/specs/ledger-shared-event-log.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4408"
+      ],
+      "parallel": true,
+      "parallelism_notes": "hardens code created by TASK-4405/4406/4408; serialized after TASK-4408 (rotation must exist); before TASK-4409 (docs)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4416-shared-log-hardening.md"
+    },
+    {
       "id": "TASK-4409",
       "slug": "gitattributes-sdd-done-docs",
       "title": "gitattributes, /sdd-done 9.1 (three twins), docs, integration tests",
@@ -101,7 +121,8 @@
       "effort": "M",
       "depends_on": [
         "TASK-4407",
-        "TASK-4408"
+        "TASK-4408",
+        "TASK-4416"
       ],
       "parallel": true,
       "parallelism_notes": "sdd-done 9.1 calls rotate-log from TASK-4408 (cli.py); docs name the parrot-ledger hooks from TASK-4407 (assets.py)",
