@@ -10,7 +10,7 @@ tags: [jira, oauth2-3lo, cli, knowledge-base, toolkit]
 **Feature ID**: FEAT-696
 **Date**: 2026-10-16
 **Author**: Jesus Lara (spec drafted by Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 **Source**: `sdd/proposals/jiratoolkit-upgrades.proposal.md` (accepted) · research `sdd/state/jiratoolkit-upgrades/`
 
