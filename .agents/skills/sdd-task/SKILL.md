@@ -170,7 +170,7 @@ Example:
      not the issue ID. Preserve the selected FixPlan/claimed issue passed by
      `$sdd-fix`; a fresh ready-work query would omit that claimed issue.
      For standalone promotion locate the issue in `wikitoolkit ledger plan-fix --json`.
-     Record `discovered_from: <issue-id>`. Filing a task is not resolution:
+     Record `` **Discovered-from**: `issue:<id>` `` (`$sdd-done` closes the issue through it). Filing a task is not resolution:
      run `wikitoolkit ledger close <issue-id>` separately only after implementation
      and validation, with the two-key evidence required by `$sdd-fix`.
      Deprecated (FEAT-572): prefer `sdd-fix <issue-id>`, which routes the issue's group to

@@ -847,6 +847,11 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-benchmark>=4.0",
     "ruff>=0.4",
+    "flake8>=7.0",
+    "black>=24.0",
+    # Sampling profiler (attach to a live gunicorn/aiohttp worker:
+    # `py-spy dump --pid <pid>` / `py-spy top --pid <pid>`).
+    "py-spy>=0.4",
     # FEAT-322 TASK-1850: reducer/host property tests (fold invariant,
     # totality, arbitration, expiry). The spec's contract claimed this was
     # "already used in repo tests" — verified absent in-tree; added here.
