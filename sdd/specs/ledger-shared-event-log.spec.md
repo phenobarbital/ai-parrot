@@ -28,6 +28,8 @@ through git is `sdd/ledger/issues.jsonl`, a **one-way export of state** written 
 reads it back: `ledger sync` and `ledger rebuild` replay the local event log only, and
 FEAT-671 explicitly listed "cross-machine synchronisation of `events.jsonl`" and
 "importing carried-forward rows into the local index" as non-goals.
+**Both of those FEAT-671 non-goals are superseded by FEAT-694** (this spec), which
+implements exactly that synchronisation via the shared event log and managed git hooks.
 
 Measured on 2026-10-16 on one of the maintainer's two machines:
 
