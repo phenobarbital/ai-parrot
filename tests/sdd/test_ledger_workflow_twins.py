@@ -122,6 +122,13 @@ class TestDoneTwins:
             assert "ledger export" in content, path
             assert "hotfix" in content.lower(), path
 
+    def test_closes_issues_resolved_by_verified_tasks(self):
+        """The /sdd-fix SDD lane hands issue closure to /sdd-done; every twin must run it."""
+        for path in (self.CLAUDE, self.ANTIGRAVITY, self.CODEX):
+            content = read_workflow_file(path)
+            assert "scripts.sdd.close_resolved_issues" in content, path
+            assert "shared ledger is read-only" in content, path
+
 
 # --------------------------------------------------------------------------
 # TASK-3241 — Start, next, and issue-promotion workflow twins
@@ -170,7 +177,7 @@ class TestStartNextTwins:
             content = read_workflow_file(path)
             assert "--from-issue" in content, (platform, path)
             assert "reserve_ids" in content, (platform, path)
-            assert "discovered_from" in content, (platform, path)
+            assert "**Discovered-from**: `issue:<id>`" in content, (platform, path)
 
 
 # --------------------------------------------------------------------------
