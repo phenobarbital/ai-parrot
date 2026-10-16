@@ -4,7 +4,7 @@ type: feature
 base_branch: dev
 projects: [ai-parrot]
 tags: [sdd, workflow, hotfix, ledger, commands]
-status: brainstorm
+status: accepted
 created: 2026-10-17
 ---
 
