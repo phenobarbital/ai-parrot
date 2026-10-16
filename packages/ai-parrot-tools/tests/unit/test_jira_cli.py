@@ -172,9 +172,7 @@ class TestAuthCommand:
     def test_state_mismatch_aborts_without_saving(self, settings_path, fake_network, tmp_path):
         env = tmp_path / ".env"
         runner = CliRunner()
-        result = runner.invoke(
-            cli, _auth_args(env), input=f"{REDIRECT_URI}?code=abc&state=wrong-state\n"
-        )
+        result = runner.invoke(cli, _auth_args(env), input=f"{REDIRECT_URI}?code=abc&state=wrong-state\n")
         assert result.exit_code != 0
         assert "State mismatch" in result.output
         assert not settings_path.exists()
@@ -187,9 +185,7 @@ class TestAuthCommand:
         assert not settings_path.exists()
 
     def test_error_redirect_aborts(self, settings_path, fake_network, tmp_path):
-        result = CliRunner().invoke(
-            cli, _auth_args(tmp_path / ".env"), input=f"{REDIRECT_URI}?error=access_denied\n"
-        )
+        result = CliRunner().invoke(cli, _auth_args(tmp_path / ".env"), input=f"{REDIRECT_URI}?error=access_denied\n")
         assert result.exit_code != 0
         assert "access_denied" in result.output
         assert fake_network["exchange_calls"] == []
@@ -232,9 +228,7 @@ class TestAuthCommand:
         runner = CliRunner()
         first = runner.invoke(cli, _auth_args(tmp_path / ".env"), input="\n")
         state = _state_from_output(first.output)
-        result = runner.invoke(
-            cli, _auth_args(tmp_path / ".env"), input=f"{REDIRECT_URI}?code=abc&state={state}\n2\n"
-        )
+        result = runner.invoke(cli, _auth_args(tmp_path / ".env"), input=f"{REDIRECT_URI}?code=abc&state={state}\n2\n")
         assert result.exit_code == 0, result.output
         assert LocalStoreHelper.load_default(settings_path).site_url == SITE_B["url"]
 
