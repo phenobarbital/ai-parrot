@@ -9,6 +9,62 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.2.3] — 2026-10-16 — GraphIndex core seams, planogram appearance rules, Gemini upgrade
+
+Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.3`, `ai-parrot-server` to `1.3.2`,
+the other core-line packages to `1.2.3`, satellites to `0.4.3`). Satellites are re-pinned to `ai-parrot>=1.2.3`.
+
+### Removed
+
+- **GraphIndex legacy aliases (FEAT-540).** `OntologyGraphStore` and `execute_traversal` aliases are gone;
+  use `ArangoOntologyGraphStore` and its typed traversals. `persist.py` is now `persist_arango.py`
+  (`ArangoPersistence`).
+
+### Security
+
+- **Knowledge uploads are authorized before download** (Teams/Telegram, FEAT-647 follow-up).
+- **Google Drive `upload_file` path confinement** and conflict-behavior isolation (FEAT-690).
+- **Share-token viewers** get a proper viewer permission context on authenticated UI surfaces (FEAT-691).
+- **GitHub reviewer local repo wiki (FEAT-672).** Token-free git auth for private clone/pull, wiki build in
+  its own process group with group-wide kill (SIGKILL escalation), bounded wiki wait + shared read lease.
+
+### Added
+
+- **GraphIndex core seams (FEAT-540).** Graph backend registry, `NullPersistence`, `file_hashes`, conformance
+  suite; `WikiBackendSpec` registry with backend-neutral namespace dispatch; `query_templates` and
+  `ResolvedIntent` query/dialect; golden MCP manifests; SDK transport descriptors built from the operations
+  registry; actionable PG DSN errors.
+- **Planogram appearance rule (FEAT-683)** plus comparison-rule work: opt-in `visual_features` checklist and
+  superscript-cents prices on fact tags (FEAT-685), per-requirement text features (FEAT-687), fact-tag
+  end-to-end compare test (FEAT-674).
+- **Server web UI at site root.** `ai-parrot-server` serves navigator-auth login and the agent chat at `/`;
+  admin pages move under `/admin`.
+- **Wiki `ledger show` (FEAT-689)**; clock-safe, origin-checked last-writer-wins wiki sync with a cheap pull
+  page; chunked remote `wiki_sync_push` with a capped, locked server tool.
+- **`BasicAgent.setup_mcp_servers`.**
+
+### Changed
+
+- **Gemini upgrade (FEAT-688).** `google-genai` floor raised to `2.31.0`; `GoogleGenAIClient` routing gates.
+- **Scheduler (FEAT-676).** Deterministic interval/once trigger anchor for claims.
+- **`DatabaseAgent`** rejects unsupported `schema_plane` values (FEAT-679).
+- **Core `pydantic` pin relaxed** to `>=2.12.5,<3`.
+- **Dev tooling.** `flake8`, `black` and `py-spy` in the `ai-parrot` dev extra; flake8 config consolidated in
+  `.flake8` with 120-column lines.
+
+### Fixed
+
+- **Browsing/scraping executors (FEAT-681, FEAT-682, FEAT-684).** Obscura-safe load waits, page reads and a
+  CDP screenshot fallback in `PlaywrightDriver`; click text-contains and scroll-bottom height via
+  `driver.evaluate`; escaped text XPath, focused-element clearing, submit pseudo stripping.
+- **Compliance.** `TextMatcher` honours `match_type: "exact"`; out-of-vocabulary appearance answers coerce to
+  `unknown`.
+- **Decisions CLI (FEAT-675)** single-namespace `--ns` guard; narration engine fixes (FEAT-669).
+- **SDD infra.** `/sdd-done` closes ledger issues resolved by verified tasks (FEAT-671); hardened
+  `install_hooks` repo-root resolution; `sdd-next` workflow twin reconciled.
+
+---
+
 ## [1.2.2] — 2026-10-14 — Voice-driven form filling, scheduler manager, wikitoolkit HTTP MCP
 
 Every distribution moves one patch step (`ai-parrot-pipelines` to `1.3.2`, `ai-parrot-server` to `1.3.1`,
