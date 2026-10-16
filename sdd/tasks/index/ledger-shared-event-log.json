@@ -16,7 +16,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "root task: creates shared_log.py and LedgerLog.append_line; no dependencies",
       "assigned_to": null,
       "started_at": "2026-10-16T01:03:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4405-shared-log-core.md"
+      "completed_at": "2026-10-16T01:18:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4405-shared-log-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4406",
@@ -54,7 +55,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -62,8 +63,9 @@
       "parallelism_notes": "independent: embeds only the frozen command names from spec §2; touches claude_code/assets.py + installer.py only",
       "assigned_to": null,
       "started_at": "2026-10-16T01:03:22+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4407-ledger-git-hooks-installer.md"
+      "completed_at": "2026-10-16T01:18:22+00:00",
+      "file": "sdd/tasks/completed/TASK-4407-ledger-git-hooks-installer.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4408",
