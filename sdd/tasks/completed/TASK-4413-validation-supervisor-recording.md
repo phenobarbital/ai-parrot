@@ -144,4 +144,7 @@ Follow `sdd/templates/task.md` § Agent Instructions. Close with `scripts/sdd/cl
 ---
 
 ## Completion Note
-*(Agent fills this in when done)*
+- Implementation: 1f80aa09b (lint 7dce57e75), merged by the engine. Validation: wave-2 merge-tier run, 552 passed.
+- Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1
+- Review: no corrections (review recorded as coder-review:9deacfca72100350d38aef2f).
+- Closed manually via close_task.sh: finalize_task rejected the evidence because HEAD already carried the TASK-4412 SDD-state commit.
