@@ -59,7 +59,13 @@ from parrot.flows.dev_loop.nodes.base import (
     register_dev_loop_node,
     transition_issue_with_candidates,
 )
-from parrot.flows.dev_loop.task_scheduler import TaskRef, TaskScheduler
+from parrot.flows.dev_loop.task_scheduler import (
+    TaskRef,
+    TaskScheduler,
+    is_exclusive_batch,
+    parallel_width,
+    partition_wave,
+)
 from parrot.flows.dev_loop.worktree_manager import SubWorktreeManager
 
 #: The spec header line ``/sdd-spec`` writes, e.g. ``**Status**: draft``.
@@ -94,8 +100,6 @@ def should_fan_out(wave: List[TaskRef], pool_cfg: DevAgentPoolConfig) -> bool:
         the pool has more than one effective worker slot — i.e. fanning
         out could actually run tasks in parallel.
     """
-    from parrot.flows.dev_loop.task_scheduler import parallel_width
-
     return parallel_width(wave) >= 2 and sum(spec.count for spec in pool_cfg.agents) > 1
 
 
@@ -1385,8 +1389,6 @@ class DevelopmentNode(DevLoopNode):
             SubWorktreeMergeError: Unresolvable merge conflict in 'isolated' mode.
             RuntimeError: Every dispatchable task ended up incomplete.
         """
-        from parrot.flows.dev_loop.task_scheduler import partition_wave
-
         pool = DevAgentPool.build(pool_cfg, self._dispatcher_builder, self._pool_max)
         self._propagate_usage_wiring(pool)
         # FEAT-486 (spec G4): make the deployment visible. `DevAgentPool.
@@ -1492,7 +1494,7 @@ class DevelopmentNode(DevLoopNode):
 
                 batch = batches[0]
                 wave_number += 1
-                is_exclusive = len(batch) == 1 and not batch[0].parallel
+                is_exclusive = is_exclusive_batch(batch)
 
                 # Log exclusive rounds differently
                 if is_exclusive:
@@ -1569,7 +1571,7 @@ class DevelopmentNode(DevLoopNode):
                         len(scheduler.skipped()),
                     )
 
-                # For exclusive rounds, merge and refresh before the next batch
+                # In isolated mode, merge and refresh after every round (exclusive or not)
                 if manager is not None:
                     await manager.merge_sequential(resolver=_resolver)
                     merged_any = True

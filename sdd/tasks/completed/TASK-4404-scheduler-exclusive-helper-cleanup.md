@@ -166,3 +166,22 @@ class TestIsExclusiveBatch:
 - `pytest packages/ai-parrot/tests/flows/dev_loop/test_development_node.py -q`
 
 ## Completion Note
+Completed 2026-10-16 (sdd-fix lane, fixgroup:80693c1eee43). Implementing commit 7857c7b6d.
+
+- `task_scheduler.is_exclusive_batch(batch)` added next to `partition_wave` /
+  `parallel_width`; `_execute_pool` now uses it, so `development.py` no longer
+  reads `TaskRef.parallel` (issue:8f46e2c1eed1).
+- `development.py` imports `is_exclusive_batch`, `parallel_width`,
+  `partition_wave` at module level; both function-local imports removed
+  (issue:a02a4ef38c4e).
+- Merge/refresh comment reworded: runs after every round in isolated mode
+  (issue:7f7d8adce7e2).
+- FEAT-560 spec: AC-3 grep fixed to match the real code, and the
+  `sdd_coder/roster.py` `ChunkAssigner` split is noted as still separate. AC-5
+  is scoped to the task set and pool sizing; the id-sorted order is intentional
+  per its §7 (issue:27a665e3773c, issue:8f46e2c1eed1's stale-grep note).
+- Log and progress strings unchanged. 5 new `TestIsExclusiveBatch` tests;
+  `test_task_scheduler.py` + `test_development_node.py` = 81 passed against
+  the worktree code (Cython `.so` symlinked from the main checkout); ruff clean.
+- Not changed: issue:ee92b81d1adf (`_resolver_label_model`). It asks for no code
+  change, so it was released to the ledger for a human to acknowledge.

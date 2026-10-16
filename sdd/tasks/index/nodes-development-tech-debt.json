@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-16T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-16T00:03:43+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,17 +16,23 @@
       "feature_id": "FEAT-693",
       "feature": "nodes-development-tech-debt",
       "spec": "sdd/specs/nodes-development-tech-debt.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task; touches only task_scheduler.py, development.py, its test file and the FEAT-560 spec",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4404-scheduler-exclusive-helper-cleanup.md",
-      "discovered_from": ["issue:27a665e3773c", "issue:7f7d8adce7e2", "issue:8f46e2c1eed1", "issue:a02a4ef38c4e"]
+      "started_at": "2026-10-16T00:01:52+00:00",
+      "completed_at": "2026-10-16T00:03:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4404-scheduler-exclusive-helper-cleanup.md",
+      "discovered_from": [
+        "issue:27a665e3773c",
+        "issue:7f7d8adce7e2",
+        "issue:8f46e2c1eed1",
+        "issue:a02a4ef38c4e"
+      ],
+      "verification": "verified"
     }
   ]
 }
