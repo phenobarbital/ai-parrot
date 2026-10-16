@@ -16,14 +16,14 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates shared_log.py and LedgerLog.append_line; no dependencies",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-16T01:03:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4405-shared-log-core.md"
     },
@@ -34,7 +34,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -43,7 +43,7 @@
       "parallel": true,
       "parallelism_notes": "imports export_events/import_events/MARKER_FILENAME/report models from TASK-4405 (ledger/shared_log.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-16T01:03:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4406-shared-log-service-cli.md"
     },
@@ -54,14 +54,14 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "independent: embeds only the frozen command names from spec §2; touches claude_code/assets.py + installer.py only",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-16T01:03:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4407-ledger-git-hooks-installer.md"
     },
@@ -72,7 +72,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -81,7 +81,7 @@
       "parallel": true,
       "parallelism_notes": "calls import_shared_log added by TASK-4406 and modifies the same service.py/cli.py/shared_log.py (serialized after TASK-4406)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-16T01:03:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4408-rotation-and-claim-preimport.md"
     },
@@ -92,7 +92,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -102,7 +102,7 @@
       "parallel": true,
       "parallelism_notes": "sdd-done 9.1 calls rotate-log from TASK-4408 (cli.py); docs name the parrot-ledger hooks from TASK-4407 (assets.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-16T01:03:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4409-gitattributes-sdd-done-docs.md"
     },
@@ -113,7 +113,7 @@
       "feature_id": "FEAT-694",
       "feature": "ledger-shared-event-log",
       "spec": "sdd/specs/ledger-shared-event-log.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -122,7 +122,7 @@
       "parallel": false,
       "parallelism_notes": "exclusive: reads the live <main>/.parrot/ledger/events.jsonl outside its files; needs .gitattributes from TASK-4409 and the final export-log filter",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-16T01:03:22+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4410-bootstrap-shared-event-log.md"
     }
