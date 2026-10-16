@@ -450,10 +450,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4417
+- Feature: jiratoolkit-upgrades
+- Implementation SHA: b46ffe4bdcf5533467b4b1a7a7e99886cbf940a2
+- Closed at (UTC): 2026-10-16T20:28:09+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra (codex, empty_delivery x2) then sonnet native retry · Backend: native · Model: sonnet · Attempts: 2 · Duration: ~48s native · Tokens: n/a |
+| spec_drift | Implemented per task file: PyYAML, comments NOT preserved. Amended spec (AC9/AC11) requires ruamel.yaml round-trip preserving comments; needs follow-up (jira_kb.py save + ai-parrot-tools pyproject dep). |
+| validation_note | Merge-tier red (144F/33E) identical to prior baseline run, none in jira tests. 16 task tests pass. |
