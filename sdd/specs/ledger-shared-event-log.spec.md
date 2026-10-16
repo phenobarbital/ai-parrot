@@ -11,7 +11,7 @@ tags: [ledger, wikitoolkit, git-hooks, multi-machine, sdd-tooling]
 **Feature ID**: FEAT-694
 **Date**: 2026-10-16
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.30.0
 
 ---
@@ -70,15 +70,28 @@ Consequences the maintainer hit:
 - G7. The "is the committed file newer than what I imported?" check uses a content
   marker under `.parrot/ledger/`, never `ORIG_HEAD` (the known-broken pattern of
   `issue:7f50ee6aaa74`).
+- G8. `wikitoolkit ledger claim` (and the `ledger_claim` MCP path through the same service
+  method) imports the committed log **before** reclaiming, so the window for a
+  concurrent claim shrinks to "both machines claim between their last pull and now";
+  the residual conflict is still reported (G6). The reducer rule stays "first claim in
+  local log order wins" (§8 Q1).
+- G9. The committed log is **rotated** by `/sdd-done` step 9.1 only: shareable lines older
+  than 30 days whose subject is terminal move, deterministically, to
+  `sdd/ledger/archive/events-<YYYY-MM>.jsonl`. Import and export treat `events.jsonl` +
+  `archive/*.jsonl` as one logical log, so a fresh clone still rebuilds every issue and
+  export never re-adds a rotated line (§8 Q3).
 
 ### Non-Goals (explicitly out of scope)
 
 - Deterministic cross-machine resolution of **concurrent claims** (e.g. earliest `ts`
-  wins). v1 keeps "first claim in *local* log order wins" (`index.py:191-200`) and reports
-  conflicts; see §8 Q1.
-- Rotation/compaction of the committed `sdd/ledger/events.jsonl` — `ledger compact` stays
-  index-only (`index.py:529-535`); growth is bounded by the 4 KiB line cap and tracked in
-  §7 risks.
+  wins, `claimed_at` in the reducer). Decided against for v1 (§8 Q1): the reducer keeps
+  "first claim in *local* log order wins" (`index.py:191-200`); mitigation is G8 + G6.
+- Rotation of the **local** `.parrot/ledger/events.jsonl`: never rewritten (the index cursor
+  is a byte offset into it, `index.py:252-260`); `ledger compact` stays index-only
+  (`index.py:529-535`). Only the committed copy rotates (G9).
+- Rotation triggered from hooks: `rotate-log` runs exclusively inside `/sdd-done` 9.1's
+  throwaway worktree on the base branch (single serialized writer), never from
+  `pre-commit`, so feature commits only ever *add* lines.
 - Sharing the sdd-coder **seat suspension** records (`insight.recorded` with
   `category == "coder_suspension"`, `coder_suspensions.py:42`): those describe a machine's
   runtime seat state and stay local (§2 filter).
@@ -101,15 +114,16 @@ Two directions, both automatic, both append-only, both idempotent:
 
 1. **Export (local → repo)** — `wikitoolkit ledger export-log --stage`, run by the managed
    `pre-commit` block. Reads the local `<shared>/.parrot/ledger/events.jsonl`, computes the
-   set of `event_id`s already present in `<checkout>/sdd/ledger/events.jsonl`, appends the
-   missing **shareable** local lines verbatim (raw bytes, local order), and `git add`s the
-   file. The committed file is therefore a strict superset over time: lines are never
+   set of `event_id`s already present in `<checkout>/sdd/ledger/events.jsonl` **and**
+   `<checkout>/sdd/ledger/archive/*.jsonl`, appends the missing **shareable** local lines
+   verbatim (raw bytes, local order) to `events.jsonl`, and `git add`s that file. The committed file is therefore a strict superset over time: lines are never
    reordered or removed, so every diff is a pure addition and `merge=union` applies.
 2. **Import (repo → local)** — `wikitoolkit ledger import-log`, run by the managed
-   `post-merge`, `post-checkout` and `post-rewrite` blocks. Fast path: if the SHA-256 of
-   the committed file equals the marker in `<shared>/.parrot/ledger/shared_log.marker`,
-   exit 0 with no work. Otherwise append every committed line whose `event_id` is not in
-   the local log, in committed order, through the same O_APPEND + fsync + 4 KiB path the
+   `post-merge`, `post-checkout` and `post-rewrite` blocks. Fast path: if the digest of
+   the committed files (archives + current, see below) equals the marker in
+   `<shared>/.parrot/ledger/shared_log.marker`, exit 0 with no work. Otherwise append every
+   committed line whose `event_id` is not in the local log — archives first, then the
+   current file, each in file order — through the same O_APPEND + fsync + 4 KiB path the
    writers use, then run the incremental `LedgerIndex.sync()`; finally compare each
    imported `issue.claimed` against the index and report claim conflicts.
 
@@ -122,6 +136,27 @@ Causality is preserved by construction: a machine can only act on a foreign issu
 importing its `issue.opened`, and that line is then in the merge base of any later
 3-way merge, so git's union driver can only interleave *independent* lines. Each side's
 own lines keep their relative order under `merge=union`.
+
+3. **Claim pre-import (G8)** — `LedgerService.claim()` calls `import_shared_log()` first
+   (fast path when the marker matches, so the cost is one SHA-256 of the committed files
+   in the common case), then delegates to `LedgerIndex.claim_issue` unchanged. A claim
+   that lost to an already-imported foreign claim therefore returns `False` with the
+   existing "already claimed" message instead of creating a conflict.
+4. **Rotation (G9)** — `wikitoolkit ledger rotate-log --older-than-days 30`, run only by
+   `/sdd-done` 9.1 in its throwaway base-branch worktree. It replays the committed file's
+   own events per issue subject, and moves a line to `sdd/ledger/archive/events-<YYYY-MM>.jsonl`
+   (month of the event's `ts`, appended in file order) when `ts < now − 30 d` **and** the
+   subject is terminal: `issue.*` whose final state in the file is `closed`/`superseded`
+   and whose closing event is itself older than 30 days; `task.*`, `spec.*`, `insight.*`
+   regardless of subject state. Every event of a non-terminal issue stays, whatever its
+   age, so a fresh clone materialises every open/claimed issue from the archive + current
+   file. Archive files are append-only and carry `merge=union` too. The rotation output is
+   deterministic for a given `(input bytes, now)`; `--now` is an explicit option for tests.
+
+The "logical shared log" read by import and export is the ordered list
+`sorted(archive/*.jsonl) + [events.jsonl]`; the import marker digests that whole list
+(`sha256` over each file's `(relative path, sha256)`), so a rotation also invalidates the
+fast path once and then settles.
 
 Hooks never fail a git operation (`|| true`, stdout/stderr to `/dev/null`); the CLI
 commands carry the diagnostics for humans running them by hand.
@@ -152,9 +187,11 @@ commands carry the diagnostics for humans running them by hand.
 | `wikitoolkit ledger` click group (`cli.py:3222`) | extends | `export-log`, `import-log` commands next to `export` (`cli.py:3593`) |
 | `claude_code/assets.py` | extends | `LEDGER_HOOK_BEGIN/END`, `ledger_hook_block(root, hook_name)` |
 | `claude_code/installer.py` | extends | `_install_ledger_hooks(root)` on the four hook events, under the existing `git_hook` flag; uninstall strips the block |
-| `/sdd-done` §9.1 (`.claude/commands/sdd-done.md:412-470`) | modifies | the throwaway-worktree snapshot commit also exports and stages `sdd/ledger/events.jsonl` |
-| `.gitattributes` (new, repo root) | creates | `sdd/ledger/events.jsonl merge=union` |
+| `/sdd-done` §9.1 (`.claude/commands/sdd-done.md:412-470`) | modifies | the throwaway-worktree snapshot commit also exports, **rotates** and stages `sdd/ledger/events.jsonl` + `sdd/ledger/archive/*.jsonl`; `issues.jsonl` keeps being written (Q2) |
+| `wikitoolkit ledger claim` (`cli.py:3422-3444`) / `LedgerService.claim` (`service.py:372`) | modifies | `claim()` runs `import_shared_log()` before `LedgerIndex.claim_issue` (G8); CLI text unchanged |
+| `.gitattributes` (new, repo root) | creates | `sdd/ledger/events.jsonl merge=union` and `sdd/ledger/archive/*.jsonl merge=union` |
 | `sdd/ledger/events.jsonl` (new, committed) | creates | bootstrapped once from the implementing machine's local log |
+| `sdd/ledger/archive/` (new, committed) | creates (lazily) | written by the first rotation that has something to move; no `.gitkeep` |
 | `scripts/sdd/install_hooks.py` (FEAT-577) | coexists | its `sdd-intake-prune` block and ours chain in the same hook files; neither strips the other |
 
 ### Data Models
@@ -165,8 +202,20 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 SHARED_LOG_REL_PATH: Path = Path("sdd/ledger/events.jsonl")
+ARCHIVE_REL_DIR: Path = Path("sdd/ledger/archive")
+ARCHIVE_FILENAME_FMT: str = "events-{yyyy_mm}.jsonl"        # e.g. events-2026-09.jsonl
 MARKER_FILENAME: str = "shared_log.marker"
+ROTATION_DAYS_DEFAULT: int = 30
+TERMINAL_ISSUE_STATUSES: frozenset[str] = frozenset({"closed", "superseded"})
 LOCAL_ONLY_INSIGHT_CATEGORIES: frozenset[str] = frozenset({"coder_suspension"})  # == CODER_SUSPENSION_CATEGORY
+
+
+class SharedLogRotateReport(BaseModel):
+    current: Path
+    moved: int                         # lines moved out of current
+    kept: int                          # lines left in current
+    archives_touched: list[Path] = Field(default_factory=list)
+    cutoff: str                        # ISO-8601 UTC of now − older_than_days
 
 
 class ClaimConflict(BaseModel):
@@ -186,7 +235,7 @@ class SharedLogExportReport(BaseModel):
 
 
 class SharedLogImportReport(BaseModel):
-    src: Path
+    files: list[Path]                  # sorted(archive/*.jsonl) + [events.jsonl], existing ones only
     fast_path: bool                    # marker matched; nothing read
     added: int
     skipped_known: int
@@ -200,20 +249,27 @@ class SharedLogImportReport(BaseModel):
 
 ```python
 # CLI (wikitoolkit ledger …)
-wikitoolkit ledger export-log [--dest PATH] [--stage] [--quiet]
-wikitoolkit ledger import-log [--src PATH] [--force] [--quiet]
+wikitoolkit ledger export-log [--repo-root PATH] [--stage] [--quiet]
+wikitoolkit ledger import-log [--repo-root PATH] [--force] [--quiet]
+wikitoolkit ledger rotate-log [--repo-root PATH] [--older-than-days 30] [--now ISO8601] [--stage] [--quiet]
+wikitoolkit ledger claim <issue> [--actor …]      # unchanged surface; now imports first (G8)
 # audit output gains:
-#   Shared log: <path> (committed) · local-only events: N · committed-unknown events: M · marker: ok|stale|missing
+#   Shared log: <events.jsonl> (+K archives) · local-only events: N · committed-unknown events: M · marker: ok|stale|missing
 
 # Service
 class LedgerService:
-    async def export_shared_log(self, dest: Path | None = None) -> SharedLogExportReport: ...
-    async def import_shared_log(self, src: Path | None = None, *, force: bool = False) -> SharedLogImportReport: ...
+    async def export_shared_log(self, repo_root: Path | None = None) -> SharedLogExportReport: ...
+    async def import_shared_log(self, repo_root: Path | None = None, *, force: bool = False) -> SharedLogImportReport: ...
+    async def rotate_shared_log(self, repo_root: Path | None = None, *, older_than_days: int = 30, now: datetime | None = None) -> SharedLogRotateReport: ...
+    async def claim(self, issue_id: str, actor: str) -> bool:   # modified: import_shared_log() first, then LedgerIndex.claim_issue
 ```
 
-Resolution of `dest`/`src` when omitted: the CLI passes `<git toplevel of cwd>/sdd/ledger/events.jsonl`
-(so a `pre-commit` running inside a linked worktree stages *that* worktree's file); the
-service defaults to `self.shared_root / SHARED_LOG_REL_PATH` for programmatic callers.
+`repo_root` is the checkout whose `sdd/ledger/` is read/written: the CLI passes
+`git rev-parse --show-toplevel` of the cwd (so a `pre-commit` running inside a linked
+worktree stages *that* worktree's file); the service defaults to `self.shared_root` for
+programmatic callers. The logical shared log under a `repo_root` is
+`sorted((repo_root / ARCHIVE_REL_DIR).glob("events-*.jsonl")) + [repo_root / SHARED_LOG_REL_PATH]`,
+existing files only.
 
 ---
 
@@ -227,6 +283,7 @@ service defaults to `self.shared_root / SHARED_LOG_REL_PATH` for programmatic ca
 | M2: service + CLI | yes | method names/signatures fixed in §2; click options fixed; exit codes mirror `ledger sync` (0 ok, 2 on `WikiStoreBusy` for import) | — |
 | M3: hook assets + installer | yes | marker strings, hook events tuple, block text and installer action strings fixed below; chaining rules identical to `_install_managed_git_hook` | — |
 | M4: gitattributes, bootstrap, `/sdd-done` 9.1, docs | yes | exact file contents and anchors in §6 | — |
+| M5: rotation + claim pre-import | yes | rotation predicate, archive naming, determinism contract and `claim()` ordering fixed in §2/§3; `--now` for tests | — |
 
 ### Module 1: Shared-log core
 - **Path**: `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py` (new) + `ledger/log.py` (modify)
@@ -264,22 +321,43 @@ service defaults to `self.shared_root / SHARED_LOG_REL_PATH` for programmatic ca
       in file order; ``[]`` when missing. Unparseable lines are logged at WARNING with
       their 1-based line number and skipped (mirrors ``_read_snapshot_rows``, service.py:52)."""
 
-  def export_events(local: LedgerLog, dest: Path) -> SharedLogExportReport:
-      """Append to ``dest`` every shareable local event whose ``event_id`` is not already in
-      ``dest``, verbatim and in local order; create ``dest`` (and parents) when missing.
-      Never rewrites, reorders or removes a line of ``dest``. Blocking — callers wrap in
-      ``asyncio.to_thread``."""
+  def shared_log_files(repo_root: Path) -> list[Path]:
+      """``sorted((repo_root / ARCHIVE_REL_DIR).glob("events-*.jsonl")) + [repo_root / SHARED_LOG_REL_PATH]``,
+      existing files only (may be empty)."""
 
-  def import_events(local: LedgerLog, src: Path, marker: Path, *, force: bool = False) -> tuple[SharedLogImportReport, list[LedgerEvent]]:
-      """Append to ``local`` every event of ``src`` whose ``event_id`` is unknown locally, in
-      ``src`` order, via :meth:`LedgerLog.append_line`. Fast path: when ``not force`` and
-      ``marker`` holds the SHA-256 of ``src``'s current bytes, return ``fast_path=True``
-      without reading ``local``. Writes the new digest to ``marker`` (atomic: tmp + rename)
+  def read_shared_event_ids(files: list[Path]) -> set[str]:
+      """Union of ``event_id`` over every parseable line of ``files``."""
+
+  def export_events(local: LedgerLog, repo_root: Path) -> SharedLogExportReport:
+      """Append to ``repo_root / SHARED_LOG_REL_PATH`` every shareable local event whose
+      ``event_id`` is not in :func:`read_shared_event_ids(shared_log_files(repo_root))`
+      (archives included — a rotated line is never re-added), verbatim and in local order;
+      create the file (and parents) when missing. Never rewrites, reorders or removes a
+      line. Blocking — callers wrap in ``asyncio.to_thread``."""
+
+  def import_events(local: LedgerLog, repo_root: Path, marker: Path, *, force: bool = False) -> tuple[SharedLogImportReport, list[LedgerEvent]]:
+      """Append to ``local`` every event of :func:`shared_log_files(repo_root)` (archives
+      first, then current, each in file order) whose ``event_id`` is unknown locally, via
+      :meth:`LedgerLog.append_line`. Fast path: when ``not force`` and ``marker`` holds
+      :func:`digest_files` of the current file list, return ``fast_path=True`` without
+      reading ``local``. Writes the new digest to ``marker`` (atomic: tmp + ``os.replace``)
       only after all appends succeeded. Returns the report plus the list of imported
       ``issue.claimed`` events for the service's conflict check. Blocking."""
 
-  def digest_file(path: Path) -> str | None:
-      """SHA-256 hex of ``path``'s bytes, ``None`` when missing."""
+  def digest_files(files: list[Path]) -> str:
+      """SHA-256 hex over the concatenation of ``f"{rel_path}\\0{sha256(bytes)}\\n"`` for each
+      file in order; ``""`` for an empty list."""
+
+  def rotate_events(repo_root: Path, *, older_than_days: int = ROTATION_DAYS_DEFAULT, now: datetime | None = None) -> SharedLogRotateReport:
+      """Move rotatable lines of ``repo_root / SHARED_LOG_REL_PATH`` to
+      ``repo_root / ARCHIVE_REL_DIR / ARCHIVE_FILENAME_FMT`` (month of the event's ``ts``),
+      appending to the archive in file order and rewriting the current file with the kept
+      lines in their original order (atomic: tmp + ``os.replace``). A line is rotatable iff
+      ``ts < cutoff`` and (``kind`` not in ``issue.*``, or the subject's final status after
+      replaying the current file's own ``issue.*`` events is in ``TERMINAL_ISSUE_STATUSES``
+      and the terminal event's ``ts < cutoff``). Unparseable lines are kept in place.
+      Deterministic for a given ``(file bytes, now)``; ``now`` defaults to
+      ``datetime.now(timezone.utc)``. Blocking."""
   ```
 
 ### Module 2: Service + CLI + audit
@@ -290,17 +368,29 @@ service defaults to `self.shared_root / SHARED_LOG_REL_PATH` for programmatic ca
   ```python
   # packages/ai-parrot/src/parrot/knowledge/wiki/ledger/service.py  (modifies service.py:560 — insert before compact)
   class LedgerService:
-      async def export_shared_log(self, dest: Path | None = None) -> SharedLogExportReport:
-          """``asyncio.to_thread(export_events, self.log, dest or self.shared_root / SHARED_LOG_REL_PATH)``.
+      async def export_shared_log(self, repo_root: Path | None = None) -> SharedLogExportReport:
+          """``asyncio.to_thread(export_events, self.log, repo_root or self.shared_root)``.
           Never touches the index. Never raises on an unparseable local line (skipped, logged)."""
 
-      async def import_shared_log(self, src: Path | None = None, *, force: bool = False) -> SharedLogImportReport:
-          """``asyncio.to_thread(import_events, …, marker=self.log_dir / MARKER_FILENAME)`` then,
-          when ``added > 0``, ``self.index.sync()`` (incremental; ``WikiStoreBusy`` → ``index_busy=True``,
+      async def import_shared_log(self, repo_root: Path | None = None, *, force: bool = False) -> SharedLogImportReport:
+          """``asyncio.to_thread(import_events, self.log, repo_root or self.shared_root,
+          marker=Path(self.log.path).parent / MARKER_FILENAME, force=force)`` then, when
+          ``added > 0``, ``self.index.sync()`` (incremental; ``WikiStoreBusy`` → ``index_busy=True``,
           ``synced_events=0``, exit path identical to ``_sync_best_effort``, service.py:212). Then for
           every imported ``issue.claimed`` whose index state is ``status == "claimed"`` with
           ``claimed_by != payload.claimed_by`` append a ``ClaimConflict``. Fast path returns
           immediately with ``fast_path=True``."""
+
+      async def rotate_shared_log(self, repo_root: Path | None = None, *, older_than_days: int = 30, now: datetime | None = None) -> SharedLogRotateReport:
+          """``asyncio.to_thread(rotate_events, repo_root or self.shared_root, …)``. Never touches
+          the local log or the index."""
+
+      async def claim(self, issue_id: str, actor: str) -> bool:        # modifies service.py:372-374
+          """G8: ``await self.import_shared_log()`` first (its ``WikiStoreBusy`` is already soft —
+          ``index_busy=True`` — and any other exception is logged at WARNING and swallowed so a
+          broken checkout never blocks a claim), then ``return await self.index.claim_issue(issue_id, actor)``.
+          ``LedgerService.from_dir`` instances (no checkout) skip the import when
+          ``shared_root / SHARED_LOG_REL_PATH`` does not exist."""
 
       async def audit(self) -> dict[str, Any]:   # modifies service.py:564-591
           """Existing keys unchanged; adds ``"shared_log": {"path": str, "exists": bool,
@@ -308,27 +398,42 @@ service defaults to `self.shared_root / SHARED_LOG_REL_PATH` for programmatic ca
 
   # packages/ai-parrot/src/parrot/knowledge/wiki/cli.py  (modifies cli.py:3613 — insert before @ledger.command("sync"))
   @ledger.command("export-log")
-  @click.option("--dest", default=None, help="Committed log path; default <git toplevel>/sdd/ledger/events.jsonl")
+  @click.option("--repo-root", default=None, help="Checkout whose sdd/ledger/ is written; default: git toplevel of cwd")
   @click.option("--stage", is_flag=True, default=False, help="git add the file when it changed")
   @click.option("--quiet", is_flag=True, default=False)
   @remote_cli.remote_aware(proxied=False)   # verified: cli.py:3601 (same decorator as ledger export)
-  def ledger_export_log(dest: str | None, stage: bool, quiet: bool) -> None:
+  def ledger_export_log(repo_root: str | None, stage: bool, quiet: bool) -> None:
       """Append this machine's shareable ledger events to the committed sdd/ledger/events.jsonl.
       Prints ``Exported <path> (+N events)`` or ``(unchanged)``; with --stage runs
-      ``git -C <toplevel> add -- <rel>`` only when ``added > 0 or created``. Exit 0 always
-      except an OSError on the log (exit 1 via ClickException)."""
+      ``git -C <repo_root> add -- sdd/ledger/events.jsonl`` only when ``added > 0 or created``.
+      Exit 0 always except an OSError on the log (exit 1 via ClickException)."""
 
   @ledger.command("import-log")
-  @click.option("--src", default=None)
+  @click.option("--repo-root", default=None)
   @click.option("--force", is_flag=True, default=False, help="Ignore the marker fast path")
   @click.option("--quiet", is_flag=True, default=False)
   @remote_cli.remote_aware(proxied=False)
-  def ledger_import_log(src: str | None, force: bool, quiet: bool) -> None:
-      """Append committed events unknown to this machine into .parrot/ledger/events.jsonl and sync.
-      Prints ``Imported +N events (M known)`` / ``(up to date)``; one ``⚠️ claim conflict …`` line
-      per conflict; exit 2 when the index is busy (log durable, next sync catches up — same
-      contract as ``ledger sync``, cli.py:3613-3626); exit 0 otherwise, including no-op."""
+  def ledger_import_log(repo_root: str | None, force: bool, quiet: bool) -> None:
+      """Append committed events (archives + current) unknown to this machine into
+      .parrot/ledger/events.jsonl and sync. Prints ``Imported +N events (M known)`` /
+      ``(up to date)``; one ``⚠️ claim conflict …`` line per conflict; exit 2 when the index is
+      busy (log durable, next sync catches up — same contract as ``ledger sync``,
+      cli.py:3613-3626); exit 0 otherwise, including no-op."""
+
+  @ledger.command("rotate-log")
+  @click.option("--repo-root", default=None)
+  @click.option("--older-than-days", default=30, show_default=True, type=click.IntRange(min=1))
+  @click.option("--now", default=None, help="ISO-8601 UTC override of 'now' (tests / reproducible runs)")
+  @click.option("--stage", is_flag=True, default=False, help="git add current + touched archives when anything moved")
+  @click.option("--quiet", is_flag=True, default=False)
+  @remote_cli.remote_aware(proxied=False)
+  def ledger_rotate_log(repo_root: str | None, older_than_days: int, now: str | None, stage: bool, quiet: bool) -> None:
+      """Move terminal events older than N days from sdd/ledger/events.jsonl to sdd/ledger/archive/.
+      Prints ``Rotated N events into K archive file(s)`` or ``(nothing to rotate)``; exit 0."""
   ```
+
+  `ledger_claim` (`cli.py:3422-3444`) is **not** edited: the pre-import lives in
+  `LedgerService.claim` so the MCP `ledger_claim` tool and the dev-loop get it too.
   `_git_toplevel(cwd: Path) -> Path` helper in `cli.py`: `git rev-parse --show-toplevel`,
   falling back to `find_shared_root(cwd)` (`project.py:1519`) when git is unavailable.
 
@@ -385,15 +490,31 @@ service defaults to `self.shared_root / SHARED_LOG_REL_PATH` for programmatic ca
   # .gitattributes  (new, repo root)
   # FEAT-694: the shared ledger event log is append-only on every machine; take both sides.
   sdd/ledger/events.jsonl merge=union
+  sdd/ledger/archive/*.jsonl merge=union
   ```
   ```bash
   # .claude/commands/sdd-done.md §9.1  (modifies sdd-done.md:446-453)
-  EXPORT_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export 2>&1)
+  EXPORT_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export 2>&1)            # issues.jsonl keeps being written (Q2)
   LOG_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger export-log 2>&1)
-  if [[ "$EXPORT_OUTPUT" != *"(changed)"* && "$LOG_OUTPUT" != *"(+"* ]]; then … unchanged … fi
-  git -C "$TEMP_WORKTREE" add sdd/ledger/issues.jsonl sdd/ledger/events.jsonl
-  # cleanup/restore lines: both files
+  ROTATE_OUTPUT=$(cd "$TEMP_WORKTREE" && wikitoolkit ledger rotate-log --older-than-days 30 2>&1)
+  if [[ "$EXPORT_OUTPUT" != *"(changed)"* && "$LOG_OUTPUT" != *"(+"* && "$ROTATE_OUTPUT" != *"Rotated"* ]]; then … unchanged … fi
+  git -C "$TEMP_WORKTREE" add sdd/ledger/issues.jsonl sdd/ledger/events.jsonl sdd/ledger/archive
+  # cleanup/restore lines: `git restore --staged --worktree -- sdd/ledger` (whole directory) in both places
   ```
+  Rotation runs **only here**: 9.1 is the single serialized writer on `base_branch`, so
+  the line deletions it produces never race a feature branch's tail appends in the same
+  hunk.
+
+### Module 5: Rotation + claim pre-import
+- **Path**: `ledger/shared_log.py` (`rotate_events`, shared with M1), `ledger/service.py`
+  (`rotate_shared_log`, `claim`), `cli.py` (`rotate-log`), `.claude/commands/sdd-done.md` (9.1)
+- **Responsibility**: keep the committed log bounded (G9) and shrink the concurrent-claim
+  window (G8). Listed as its own module so `/sdd-task` can schedule it after M1/M2 land
+  (it edits the same three files — tasks serialize on them).
+- **Depends on**: Module 1 (`shared_log_files`, `read_raw_events`), Module 2
+  (`import_shared_log`, CLI group).
+- **Interface Skeleton**: see `rotate_events` (M1), `rotate_shared_log` / `claim` (M2) and
+  `ledger_rotate_log` (M2) above — no further names.
   Bootstrap: the implementing task runs `wikitoolkit ledger export-log` once in the feature
   worktree and commits the resulting `sdd/ledger/events.jsonl` (~1 150 lines / ~0.8 MB on
   the authoring machine) with `git add` (path is not git-ignored; no `-f` needed).
@@ -425,6 +546,14 @@ Tests go in the **root** tree `tests/knowledge/wiki/` (the one CI runs; the
 | `test_ledger_hook_runs_without_worktree_guard` | M3 | stub `wikitoolkit` (pattern of `test_installer_worktree_guard.py:31`) is invoked both when `.git` is a dir and when it is a file; records the subcommand (`export-log --stage` on pre-commit, `import-log` elsewhere) |
 | `test_uninstall_strips_only_ledger_block` | M3 | other blocks byte-identical; file deleted when only the shebang remains |
 | `test_install_claude_integration_action_count` | M3 | exactly one more action entry than before under `git_hook=True`; unchanged with `git_hook=False` |
+| `test_export_skips_ids_present_in_archive` | M1/M5 | a local event whose line already sits in `archive/events-2026-08.jsonl` is not re-appended to `events.jsonl` |
+| `test_import_reads_archives_then_current` | M1/M5 | fresh local log + `archive/events-2026-08.jsonl` (opened) + `events.jsonl` (closed) → local order is open then close; index shows `closed` |
+| `test_rotate_moves_only_terminal_and_old` | M5 | with `--now` fixed: closed-45d-ago issue → both its lines move to `events-<month>.jsonl`; open-60d-ago issue → stays entirely; `task.closed` 40d → moves; `issue.closed` 10d → stays; kept lines keep order |
+| `test_rotate_is_deterministic_and_idempotent` | M5 | same `(bytes, now)` twice → byte-identical outputs; second run `moved == 0` |
+| `test_rotate_keeps_unparseable_lines` | M5 | garbage line stays in current, counted in `kept` |
+| `test_marker_invalidated_by_rotation` | M5 | after rotation the import fast path misses once, imports `added == 0`, then hits again |
+| `test_claim_imports_first` | M5 | foreign claim committed but not yet imported → `claim()` returns `False`, index shows the foreign claimant, no `ClaimConflict`; with an unreadable checkout the import failure is logged and the claim proceeds |
+| `test_cli_rotate_log_stage_adds_archive` | M5 | in a `tmp_path` git repo `--stage` stages `events.jsonl` and every touched archive file |
 
 ### Integration Tests
 | Test | Description |
@@ -432,6 +561,7 @@ Tests go in the **root** tree `tests/knowledge/wiki/` (the one CI runs; the
 | `test_two_machines_converge_via_shared_file` | Two isolated ledgers A and B (`LedgerService.from_dir`, pattern of `test_ledger_export_snapshot.py:36`) and one shared file: A opens+claims, A export → B import → B sees the issue claimed; B closes, B export → A import → `A.list_issues(status="closed")` contains it; a second round trip is a no-op on both (`added == 0`, `fast_path=True`) |
 | `test_git_union_merge_has_no_conflict` | Real `git init` repo with the `.gitattributes` line: two branches each append distinct lines to `sdd/ledger/events.jsonl` → `git merge` exits 0, both lines present, no conflict markers, each side's lines keep relative order |
 | `test_rebuild_not_triggered_by_import_e2e` | After import + sync, `spec:`/`task:` pages previously written by `SDDGraphIngest` are still present (proves G3) |
+| `test_fresh_clone_after_rotation_sees_everything` | Machine A exports, rotation archives the old closed issues, a brand-new machine C imports → C lists the same open/claimed/closed set as A (archives + current), and C's export is a no-op |
 
 ### Test Data / Fixtures
 ```python
@@ -462,7 +592,11 @@ def _event(kind: str, subject: str, actor: str, **payload) -> LedgerEvent: ...
 - [ ] AC11. `/sdd-done` §9.1 commits `sdd/ledger/events.jsonl` together with `issues.jsonl` in the throwaway worktree and restores both on cleanup.
 - [ ] AC12. Hooks never fail a git operation: every hook line ends in `|| true` and redirects output; a missing `wikitoolkit` binary leaves `git commit`/`git pull` exit codes unchanged (test with a non-existent `wt_bin`).
 - [ ] AC13. `docs/wiki/cheatsheet.md` §5 and `docs/sdd/WORKFLOW.md` describe the shared log, the four hooks, and the two commands; the FEAT-671 non-goal is marked superseded by FEAT-694 in this spec's §1 (the old spec file is not edited).
-- [ ] AC14. All new tests pass under `pytest tests/knowledge/wiki/ -q -k "shared_log or ledger_hooks or import_log or export_log"`; `ruff check` clean on touched files; existing `tests/knowledge/wiki/test_installer_worktree_guard.py`, `test_cli_ledger.py`, `test_ledger_service.py` still pass.
+- [ ] AC14. All new tests pass under `pytest tests/knowledge/wiki/ -q -k "shared_log or ledger_hooks or import_log or export_log or rotate_log"`; `ruff check` clean on touched files; existing `tests/knowledge/wiki/test_installer_worktree_guard.py`, `test_cli_ledger.py`, `test_ledger_service.py` still pass.
+- [ ] AC15. `LedgerService.claim()` imports the committed log before `LedgerIndex.claim_issue`; a claim already present in the committed log (not yet imported) makes the local claim return `False` with the existing "already claimed" CLI message; an import failure other than `WikiStoreBusy` is logged and does not block the claim.
+- [ ] AC16. `wikitoolkit ledger rotate-log --older-than-days 30` moves exactly the lines matching the §2 predicate into `sdd/ledger/archive/events-<YYYY-MM>.jsonl`, keeps every event of a non-terminal issue regardless of age, keeps order on both sides, is byte-deterministic for a fixed `--now`, and reports `(nothing to rotate)` on a second run.
+- [ ] AC17. Export never re-adds a rotated line (dedup covers `archive/*.jsonl`); import reads archives before the current file; a fresh clone materialises the same issue set as a machine that never rotated (integration test).
+- [ ] AC18. `/sdd-done` §9.1 runs `export`, `export-log` and `rotate-log` in the throwaway worktree, stages `sdd/ledger/issues.jsonl`, `sdd/ledger/events.jsonl` and `sdd/ledger/archive/`, and restores the whole `sdd/ledger` directory on cleanup; `issues.jsonl` keeps being produced (Q2). No hook ever runs `rotate-log`.
 
 ---
 
@@ -535,6 +669,7 @@ class LedgerService:
     async def _sync_best_effort(self) -> None                                            # line 212 — swallows WikiStoreBusy with a WARNING
     async def _all_issues(self) -> list[tuple[str, dict[str, Any]]]                      # line 219
     async def open_issue(...) -> str                                                     # line 235 — appends via asyncio.to_thread(self.log.append, event) (264)
+    async def claim(self, issue_id: str, actor: str) -> bool                             # line 372-374 — pure delegate to self.index.claim_issue (G8 inserts the import here)
     async def close_issue(self, issue_id, reason, actor, resolved_by=None) -> bool       # line 405
     async def export_snapshot(self, dest: Path, *, reconcile: bool = True) -> bool       # line 515
     async def compact(self, older_than_days: int = 30) -> int                            # line 560
@@ -544,6 +679,7 @@ class LedgerService:
 _run(coro) -> Any                                                                        # line 579
 _cli_logger = logging.getLogger("wikitoolkit.cli")                                       # line 132
 def ledger() -> None  (click group `wikitoolkit ledger`)                                 # line 3222
+@ledger.command("claim")   … def ledger_claim(issue_id: str, actor: str) -> None          # line 3422-3444 — calls service.claim(); exit 1 "already claimed or closed", exit 2 busy; remote-proxied to MCP ledger_claim (3425)
 @ledger.command("export")  … def ledger_export(dest: str, no_reconcile: bool) -> None     # line 3593-3610 — prints "Exported <p> (changed|unchanged)"
 @ledger.command("sync")    … def ledger_sync() -> None                                   # line 3613-3626 — exit 2 on WikiStoreBusy
 @ledger.command("rebuild") … def ledger_rebuild() -> None                                # line 3629-3658 — re-runs SDDGraphIngest after replay (spec/task pages are NOT event-sourced)
@@ -595,7 +731,8 @@ def hooks_dir(repo_root) -> Path (git rev-parse --git-path hooks); def primary_c
 - ~~`LedgerLog.append_line()`~~ / ~~`LedgerLog.append_raw()`~~ — only `append(event)` exists.
 - ~~`parrot.knowledge.wiki.ledger.shared_log`~~ — module does not exist.
 - ~~`.gitattributes`~~ at the repo root — absent (`git check-attr merge sdd/ledger/issues.jsonl` → `unspecified`).
-- ~~`sdd/ledger/events.jsonl`~~ — absent; only `sdd/ledger/issues.jsonl` is committed.
+- ~~`sdd/ledger/events.jsonl`~~, ~~`sdd/ledger/archive/`~~ — absent; only `sdd/ledger/issues.jsonl` is committed.
+- ~~`wikitoolkit ledger rotate-log`~~ / ~~`LedgerService.rotate_shared_log()`~~ — absent; `ledger compact` (`service.py:560`) is index-only and unrelated.
 - ~~`assets.LEDGER_HOOK_BEGIN`~~, ~~`assets.ledger_hook_block`~~, ~~`installer._install_ledger_hooks`~~ — absent.
 - ~~`.git/hooks/pre-commit`~~, ~~`post-checkout`~~, ~~`post-rewrite`~~ — not installed by any parrot tool today (only `post-commit`, `post-merge`).
 - ~~`LedgerIndex` reducers for `insight.*` / `task.*` / `spec.*`~~ — `apply_event` ignores them (`index.py:122-124`); `coder_*.py` scan the log directly; `spec:`/`task:` pages come from `SDDGraphIngest`, not events.
@@ -614,6 +751,7 @@ Verified against: `b5fce0a0d`
 | `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/shared_log.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/service.py` | MODIFY | `    async def compact(self, older_than_days: int = 30) -> int:` | `service.py:560` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/service.py` | MODIFY | `            "broken_edges": broken_edges,` (inside `audit()` return dict) | `service.py:589` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/service.py` | MODIFY | `        return await self.index.claim_issue(issue_id, actor)` (body of `claim`, G8) | `service.py:374` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` | MODIFY | `@ledger.command("sync")` | `cli.py:3613` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/cli.py` | MODIFY | `    click.echo(f"Total events: {audit['total_events']}")` | `cli.py:3704` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py` | MODIFY | `GIT_HOOK_END = "# <<< parrot-wiki post-commit <<<"` | `assets.py:48` | 1 |
@@ -624,6 +762,7 @@ Verified against: `b5fce0a0d`
 | `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py` | MODIFY | `        actions.append("nothing to remove — integration not installed")` | `installer.py:1203` | 1 |
 | `.gitattributes` | CREATE | — | — | — |
 | `sdd/ledger/events.jsonl` | CREATE (generated by `ledger export-log`) | — | — | — |
+| `sdd/ledger/archive/events-<YYYY-MM>.jsonl` | CREATE (generated lazily by `ledger rotate-log` from `/sdd-done` 9.1; nothing committed by the feature itself unless the bootstrap already has 30-day-old terminal events) | — | — | — |
 | `.claude/commands/sdd-done.md` | MODIFY | `    git -C "$TEMP_WORKTREE" add sdd/ledger/issues.jsonl` | `sdd-done.md:452` | 1 |
 | `.claude/commands/sdd-done.md` | MODIFY | `        git -C "$TEMP_WORKTREE" restore --staged --worktree -- sdd/ledger/issues.jsonl >/dev/null 2>&1` — **2 occurrences**: line 438 inside `cleanup_snapshot_worktree() {` and line 461 after `# Rejected push: re-sync the throwaway worktree only, re-export, retry.`; change both | `sdd-done.md:438,461` | 2 |
 | `docs/wiki/cheatsheet.md` | MODIFY | `wikitoolkit ledger audit · wikitoolkit ledger export --dest <dir> [--no-reconcile] · wikitoolkit ledger compact` | `cheatsheet.md:253` | 1 |
@@ -682,8 +821,23 @@ Verified against: `b5fce0a0d`
 - **PR noise.** Every commit may carry appended ledger lines; reviewers see pure
   additions in `sdd/ledger/events.jsonl`. Accepted (same class of noise as the existing
   `issues.jsonl` snapshot commits).
-- **Growth.** ~0.8 MB today, ≤ 4 KiB/line, index-only compaction. `ledger audit` already
-  warns above 50 MiB (`service.py:572-573`). Rotation is a follow-up (non-goal).
+- **Growth.** ~0.8 MB today, ≤ 4 KiB/line. The committed file is bounded by the 30-day
+  rotation (G9); the local log is not rotated (cursor stability) and `ledger audit` keeps
+  warning above 50 MiB (`service.py:572-573`).
+- **Rotation deletes lines from a file otherwise treated as append-only.** Safe because:
+  (1) it runs only in `/sdd-done` 9.1 on the base branch, so the deletion commit is
+  serialized with every other base-branch writer; (2) a feature branch's appends live in
+  the tail hunk, the rotation's deletions in earlier hunks — a normal 3-way merge keeps
+  both; (3) if two rotations with different `now` ever race, `merge=union` keeps the
+  lines either side kept (no duplicates, nothing lost — the next rotation finishes the
+  job); (4) import dedups by `event_id`, so a line that resurfaces is a no-op.
+- **Rotation must never move an event of a non-terminal issue**, or a fresh clone would
+  miss an open issue's `issue.opened` and silently drop every later event on it
+  (`_apply_issue_claimed/closed` are no-ops on an unknown subject, `index.py:194-196,215-217`).
+  The predicate replays the current file's own `issue.*` events per subject; AC16 pins it.
+- **`claim()` now does I/O on the checkout.** A broken or missing `sdd/ledger/` must not
+  block claims: the pre-import swallows everything except `WikiStoreBusy` (already soft)
+  with a WARNING. `from_dir` services (MCP `serve`) skip it when the file is absent.
 - **Stale local hooks.** Hooks are per-clone; a machine that never re-runs
   `parrot claude install` keeps working in the old per-machine mode (nothing breaks, it
   just does not sync). The cheatsheet tells users to re-run the installer once.
@@ -723,13 +877,43 @@ Verified against: `b5fce0a0d`
   review*: `coder_review` (331 events) and `coder_feedback` (91) are shared;
   `coder_suspension` (26) stays local because it encodes a machine's seat runtime state.
   Overturn by editing `LOCAL_ONLY_INSIGHT_CATEGORIES` before `/sdd-task`.
-- [ ] Q1. Deterministic cross-machine claim resolution (e.g. earliest `ts` wins, with
-  `claimed_at` recorded by the reducer) — do we want it in a follow-up, or is surfacing
-  conflicts (AC10) enough? — *Owner: Jesus*
-- [ ] Q2. Should `/sdd-done` keep writing `issues.jsonl` once the event log is shared, or
-  drop it after one release? — *Owner: Jesus* (v1 keeps it, G5)
-- [ ] Q3. Rotation of the committed log (archive lines older than N days into
-  `sdd/ledger/archive/`) once it approaches tens of MB — *Owner: Jesus*; follow-up spec.
+- [x] Q1. Deterministic cross-machine claim resolution (earliest `ts` wins, `claimed_at`
+  in the reducer)? — *Resolved by Jesus, 2026-10-16*: **no reducer change**. Keep "first
+  claim in local log order wins"; `ledger claim` imports the committed log first (G8,
+  AC15) and residual conflicts are reported (G6, AC10). The `ts`-ordered rule was
+  rejected because it needs per-subject replay reordering to keep `unclaim` semantics
+  correct — revisit only if a conflict is ever observed in practice.
+- [x] Q2. Should `/sdd-done` keep writing `issues.jsonl`? — *Resolved by Jesus,
+  2026-10-16*: **yes**, it keeps being written (G5, AC18); it stays the human/`jq` view and
+  FEAT-671's carry-forward stays untouched.
+- [x] Q3. Rotation of the committed log? — *Resolved by Jesus, 2026-10-16*: **yes, 30 days**
+  — `ledger rotate-log --older-than-days 30` from `/sdd-done` 9.1 into
+  `sdd/ledger/archive/events-<YYYY-MM>.jsonl` (G9, M5, AC16–AC18). The local log is not
+  rotated.
+
+---
+
+## Worktree Strategy
+
+- **Isolation**: one feature worktree for FEAT-694 (`feat-FEAT-694-ledger-shared-event-log`,
+  from `origin/dev`); the `sdd-coder` engine gives each task its own sub-worktree inside it.
+- **Module dependency graph** (evidence in §3):
+  - M2 → M1: `service.py` imports `export_events` / `import_events` / `digest_files` from
+    `shared_log.py`; `cli.py` calls the M2 service methods.
+  - M3 → M2 (names only): the hook block text embeds `ledger export-log --stage --quiet`
+    and `ledger import-log --quiet`; M3 can be implemented concurrently with M2 once the
+    §2 command names are frozen (they are).
+  - M5 → M1 + M2: `rotate_events` builds on `shared_log_files` / `read_raw_events`;
+    `claim()` calls `import_shared_log()`.
+  - M4 → M2 + M3 + M5: the bootstrap runs the real `export-log`; `/sdd-done` 9.1 calls
+    `export-log` and `rotate-log`; docs name the hooks.
+- **Shared files** (their tasks serialize): `ledger/shared_log.py` (M1, M5),
+  `ledger/service.py` (M2, M5), `cli.py` (M2, M5), `.claude/commands/sdd-done.md` (M4, M5).
+- **Exclusive resources**: the M4 bootstrap task reads the **live** `<main>/.parrot/ledger/events.jsonl`
+  of the implementing machine and commits a ~0.8 MB file — `parallel: false`, and it must
+  run last, after every code task, so the generated file reflects the final filter.
+- **Cross-feature dependencies**: none to merge first. `scripts/sdd/install_hooks.py`
+  (FEAT-577) is not modified, only coexisted with (AC7).
 
 ---
 
@@ -753,3 +937,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-16 | Jesus Lara / Claude | Initial draft from the per-machine ledger diagnosis (142/308 snapshot rows unknown locally) |
+| 0.2 | 2026-10-16 | Jesus Lara / Claude | Q1–Q3 resolved: claim pre-import (G8, M5, AC15), 30-day rotation of the committed log into `sdd/ledger/archive/` (G9, M5, AC16–18), `issues.jsonl` kept; archives folded into export/import/marker; Worktree Strategy added; **approved** |
