@@ -121,9 +121,7 @@ Read the task file and extract the "Files to create/modify" section.
 test -f <worktree-path>/<filepath>
 ```
 
-**Note:** Test validation is intentionally skipped here — each task already ran
-its acceptance-criteria tests during `/sdd-start` or `sdd-worker` execution.
-Re-running them at close time adds latency without new signal.
+**Note:** Per-task test runs are recorded (FEAT-695) and aggregated in §4.7 — this step does not run tests.
 
 ### 4.5. Full Lint Pass (once per feature)
 
@@ -156,6 +154,37 @@ violations in a touched file included — that is deliberate code improvement):
   Residual syntax errors / undefined names (`E9`, `F63`, `F7`, `F82`) are merge
   blockers: they turn Step 6 into the "issues" branch. Other residue does not.
 
+### 4.7. Test Report (FEAT-695)
+
+Aggregate the per-task test results recorded during implementation into a `## Tests` section for the PR body.
+This step never blocks closeout and never changes an exit code (a missing or corrupt record is reported, not fatal).
+
+```bash
+IDX="sdd/tasks/index/<feature-slug>.json"
+TEST_REPORT_MD="${SDD_TEST_REPORT_DIR:-/tmp/claude-$(id -u)/sdd-tests}/FEAT-<ID>/pr-tests.md"
+mkdir -p "$(dirname "$TEST_REPORT_MD")"
+
+# Deterministic rule: re-run the feature tier at the final HEAD only for features of <= 10 tasks.
+DECISION=$(python -m scripts.sdd.test_report decide-rerun --index "$IDX")
+```
+
+If `DECISION` is `rerun`, run the feature-tier suite once at the final HEAD in the background
+(`run_in_background: true`), with every task file of the index and without writing to the ledger:
+
+```bash
+timeout -k 10 1800 python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> \
+  --worktree "$WT" $(printf -- '--task-file %s ' <every task file of the index>) \
+  --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run
+```
+
+If `DECISION` is `skip`, do not re-run; the rendered table states `re-run skipped (N tasks > 10)`.
+
+Then render the section (always, even when the re-run was skipped or failed):
+
+```bash
+python -m scripts.sdd.test_report render --index "$IDX" --worktree "$WT" --out "$TEST_REPORT_MD"
+```
+
 ### 5. Build Verification Report
 Classify each task:
 
@@ -172,6 +201,7 @@ Branch: feat-<ID>-<slug>
 Commits found: <N>
 Tasks: <total> total, <verified> verified, <partial> partial, <missing> missing
 Lint: <autofixed files> auto-fixed, <fixed> hand-fixed, <residual> residual (<blocking> blocking)
+Tests: <passed>/<tests> (<failed> failed) — re-run: <done | skipped (N tasks > 10)>
 
   ✅ TASK-096 — Scene Editor Refactor
      Commits: feat(videoreel): TASK-096 — Scene Editor Refactor (abc1234)
@@ -414,7 +444,7 @@ if [[ "$BASE_BRANCH" == "main" ]]; then
 
      gh pr create --base main --head feat-<FEAT-ID>-<slug> \\
        --title "<hotfix title>" \\
-       --body "<verification summary>"
+       --body-file "$TEST_REPORT_MD"
 
    After the PR merges, the sync-down.yml Action propagates the change to staging
    and dev automatically. If the Action fails or you are offline, re-run with
@@ -450,6 +480,8 @@ gh pr create \
 
 <N>/<total> tasks verified.
 
+$(cat "$TEST_REPORT_MD")
+
 ---
 _Closed by /sdd-done_
 EOF
@@ -462,7 +494,7 @@ If `gh` is not installed or not authenticated, print the manual command:
 
     gh pr create --base <BASE_BRANCH> --head feat-<FEAT-ID>-<slug> \
       --title "feat(<feature-slug>): FEAT-<ID> — <title>" \
-      --body "<verification summary>"
+      --body-file "$TEST_REPORT_MD"
 ```
 
 **Feature flow with `--merge` — direct merge (old behavior):**
