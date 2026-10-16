@@ -1,6 +1,7 @@
 from collections.abc import Mapping, Sequence
 from typing import Any, Dict, Optional, List, Tuple
 import re
+import math
 import plistlib
 import struct
 from datetime import datetime
@@ -18,11 +19,23 @@ import base64
 register_heif_opener()  # ADD HEIF support
 
 
+def _rational_to_float(r):
+    """Convert an IFDRational to float, or None when it is not representable
+    in JSON (zero denominator, e.g. 0/0 written by some devices, or NaN/Inf)."""
+    if r.denominator == 0:
+        return None
+    value = float(r)
+    return value if math.isfinite(value) else None
+
+
 def _json_safe(obj):
     """Return a structure containing only JSON‑serialisable scalar types,
-    no IFDRational, no bytes, and **no NUL characters**."""
+    no IFDRational, no bytes, no NaN/Inf, and **no NUL characters**."""
     if isinstance(obj, IFDRational):
-        return float(obj)
+        return _rational_to_float(obj)
+
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
 
     if isinstance(obj, bytes):
         # bytes -> str *and* strip embedded NULs
@@ -43,7 +56,9 @@ def _json_safe(obj):
 
 def _make_serialisable(val):
     if isinstance(val, IFDRational):
-        return float(val)
+        return _rational_to_float(val)
+    if isinstance(val, float) and not math.isfinite(val):
+        return None
     if isinstance(val, bytes):
         return val.decode(errors="replace")
     return val
