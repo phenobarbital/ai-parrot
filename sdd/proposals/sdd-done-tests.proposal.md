@@ -4,7 +4,7 @@ id_status: provisional  # ledger next_feature_id=695; /sdd-spec must reserve via
 title: "/sdd-done reports a test-results table in the PR body"
 type: feature
 mode: enrichment
-status: review
+status: accepted
 base_branch: dev
 source: inline
 confidence: medium
@@ -55,8 +55,8 @@ Markdown table in the PR body.
 ## 3. Scope (single hypothesis)
 
 1. **Structured counts at the source.** `select_tests --run` gains `--junitxml`/`--report-json <path>`. It parses passed/failed/skipped/errors/duration per suite. The sdd-coder validation path (`coder_run_validation`) persists those counts in its evidence record (`TaskCompletionEvidence.completion_facts` or a typed `TestRunSummary`). The sdd-worker fallback lane writes the same JSON next to the task.
-2. **Re-run in `/sdd-done`** (new step between §4.5 and §5): `select_tests --tier feature --base origin/<base> --run --report-json`. The result reflects the final HEAD.
-3. **PR-body table**: one row per suite (test module or package) plus a **Total** row (run · passed · failed · skipped · duration). Add a collapsible per-task section built from the recorded per-task evidence. Mark rows where the evidence predates the final HEAD.
+2. **Re-run in `/sdd-done`, only for specs with ≤10 tasks** (new step between §4.5 and §5; decided deterministically from the per-spec index's task count): `select_tests --tier feature --base origin/<base> --run --report-json`. The result reflects the final HEAD.
+3. **PR-body table, always built from the aggregate of every task's recorded runs**: one row per suite (test module or package) plus a **Total** row (run · passed · failed · skipped · duration). Add a collapsible per-task section built from the recorded per-task evidence. Mark rows where the evidence predates the final HEAD.
 4. **Report only, never block.** Failures show up in the table (❌), and the PR is opened anyway.
 
 Not in scope: CI changes, coverage %, E2E gate.
@@ -71,8 +71,8 @@ Not in scope: CI changes, coverage %, E2E gate.
 - [x] Data source → **both**: per-task recorded evidence plus an authoritative re-run in `/sdd-done`.
 - [x] Do failures block the PR? → **No**, report only.
 - [x] Table granularity → **per suite plus a total row** (per-task detail goes in a collapsible section).
-- [ ] Timeout/budget for the re-run on large features, and what the table says when it times out.
-- [ ] Where per-task JSON lives in the fallback lane (git-ignored `artifacts/logs/` vs the evidence store).
+- [x] Re-run on large features → **deterministic rule**: re-run only when the per-spec index has ≤10 tasks; >10 tasks → no re-run, and the PR says "re-run skipped (N tasks > 10)". The table ALWAYS shows the aggregate of what each task executed; the re-run, when it happens, is an extra row/column.
+- [x] Per-task JSON location (fallback lane) → **temporary artifact under tmp** (e.g. `$TMPDIR/sdd-tests/<FEAT-ID>/<TASK-ID>.json`), not committed and not durable; `/sdd-done` aggregates from it plus the sdd-coder evidence store.
 
 ## 6. Recommended Next Step
 → `/sdd-spec sdd/proposals/sdd-done-tests.proposal.md`. Localization is high-confidence; the two remaining questions are spec-level details.
