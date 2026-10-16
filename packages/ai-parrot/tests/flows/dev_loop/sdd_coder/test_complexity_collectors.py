@@ -17,6 +17,7 @@ from parrot.flows.dev_loop.sdd_coder.complexity_collectors import (
     _collect_dependency_metrics,
     _collect_ruff_cyclomatic,
     _collect_wiki_blast,
+    _resolve_wiki_plane_root,
     _run_subprocess,
     SubprocessResult,
 )
@@ -682,3 +683,75 @@ async def test_modify_target_syntax_error_is_unknown_not_zero():
 
     assert metrics["cyclomatic_max"].state == "unknown"
     assert "src/broken.py" in metrics["cyclomatic_max"].reason
+
+
+# ---------------------------------------------------------------------------
+# FEAT-697 / issue:9448f28680e0 -- wiki plane resolution (TASK-4423)
+#
+# `.parrot/wiki` is git-ignored and built only in the main checkout, so every
+# linked worktree lacks one. Pointing `symbols blast --path` at the worktree
+# made the CLI exit 1 and demoted every contract-symbol task to `unknown`.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_plane_resolver_prefers_a_local_plane(tmp_path):
+    """T1: a worktree with its own plane resolves to itself and never shells out."""
+    (tmp_path / ".parrot" / "wiki").mkdir(parents=True)
+
+    with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess") as mock_run:
+        resolved = await _resolve_wiki_plane_root(tmp_path, ComplexityPolicy())
+
+    assert resolved == tmp_path
+    mock_run.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_plane_resolver_falls_back_to_the_main_checkout(tmp_path):
+    """T2: no plane in the worktree, one in the main checkout -> the main checkout."""
+    main = tmp_path / "main"
+    (main / ".parrot" / "wiki").mkdir(parents=True)
+    worktree = tmp_path / "main" / ".claude" / "worktrees" / "feat-x"
+    worktree.mkdir(parents=True)
+
+    with patch(
+        "parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess",
+        new=AsyncMock(return_value=SubprocessResult(0, f"{main}/.git\n", "")),
+    ):
+        resolved = await _resolve_wiki_plane_root(worktree, ComplexityPolicy())
+
+    assert resolved == main.resolve()
+
+
+@pytest.mark.asyncio
+async def test_plane_resolver_returns_none_without_any_plane(tmp_path):
+    """T3 (resolver half): no plane in either location -> None, no exception."""
+    main = tmp_path / "main"
+    worktree = main / "wt"
+    worktree.mkdir(parents=True)
+
+    with patch(
+        "parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess",
+        new=AsyncMock(return_value=SubprocessResult(0, f"{main}/.git\n", "")),
+    ):
+        assert await _resolve_wiki_plane_root(worktree, ComplexityPolicy()) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        AsyncMock(side_effect=FileNotFoundError("git")),
+        AsyncMock(side_effect=asyncio.TimeoutError()),
+        AsyncMock(return_value=SubprocessResult(128, "", "not a git repository")),
+        AsyncMock(return_value=SubprocessResult(0, "   \n", "")),
+    ],
+    ids=["git-missing", "git-timeout", "git-nonzero", "git-empty-stdout"],
+)
+async def test_plane_resolver_degrades_to_none_on_git_failure(tmp_path, outcome):
+    """T6: every git failure mode yields None rather than propagating."""
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+
+    with patch("parrot.flows.dev_loop.sdd_coder.complexity_collectors._run_subprocess", new=outcome):
+        assert await _resolve_wiki_plane_root(worktree, ComplexityPolicy()) is None
