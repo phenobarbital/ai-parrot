@@ -125,6 +125,8 @@ cli._lazy_commands = {
     "devloop": "parrot.cli.devloop",
     # FEAT-601 — Procedure Graph manuals CLI, ships in ai-parrot-tools.
     "manuals": "parrot_tools.procedures.cli",
+    # FEAT-696 — Jira toolkit CLI (local 3LO auth, KB sync), ships in ai-parrot-tools.
+    "jiratoolkit": "parrot_tools.jira_cli",
     # FEAT-581 — Deterministic E2E gate, ships in ai-parrot-server.
     "e2e": "parrot.e2e.cli",
     # FEAT-422 — Agent CLI Daemon (agentd), ships in ai-parrot-integrations.
@@ -147,6 +149,7 @@ cli._lazy_extras = {
     "mcp-serve": _AGENTD_INSTALL_HINT,
     "e2e": _E2E_INSTALL_HINT,
     "manuals": "ai-parrot-tools: pip install ai-parrot-tools ai-parrot[manuals]",
+    "jiratoolkit": "ai-parrot-tools: pip install ai-parrot-tools",
 }
 
 if __name__ == "__main__":
