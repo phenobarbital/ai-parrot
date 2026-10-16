@@ -153,6 +153,8 @@ TOOL_REGISTRY: dict[str, str] = {
     "ledger_claim": "parrot_tools.wiki.tools.LedgerClaimTool",
     "ledger_close": "parrot_tools.wiki.tools.LedgerCloseTool",
     "ledger_context": "parrot_tools.wiki.tools.LedgerContextTool",
+    "ledger_list": "parrot_tools.wiki.tools.LedgerListTool",
+    "ledger_show": "parrot_tools.wiki.tools.LedgerShowTool",
     "wiki_page_hashes": "parrot_tools.wiki.tools.WikiPageHashesTool",
     "wiki_ingest_batch": "parrot_tools.wiki.tools.WikiIngestBatchTool",
     "wiki_sync_push": "parrot_tools.wiki.tools.WikiSyncPushTool",

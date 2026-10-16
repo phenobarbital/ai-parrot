@@ -199,6 +199,89 @@ def test_ledger_ready_lists_issues(runner: CliRunner, mock_ledger_service: Magic
     assert "critical" in result.output
 
 
+def _issue(**over: Any) -> dict[str, Any]:
+    """A public issue dict as LedgerService.get_issue returns it."""
+    row = {
+        "issue_id": "issue:abc123",
+        "title": "Broken thing",
+        "status": "open",
+        "kind": "bug",
+        "severity": "major",
+        "acknowledged": False,
+        "discovered_from": "spec:FEAT-689",
+        "about": ["sym:a.py#f"],
+        "claimed_by": None,
+        "closed_by": None,
+        "closed_reason": None,
+        "resolved_by": None,
+        "body": "Full body text",
+    }
+    row.update(over)
+    return row
+
+
+def test_cli_ledger_list_default_and_status_all(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
+    """Default passes open+claimed; --status all passes every status."""
+    service = mock_ledger_service
+    service.list_issues = AsyncMock(return_value=[])
+
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
+        default_result = runner.invoke(ledger, ["list"])
+        all_result = runner.invoke(ledger, ["list", "--status", "all"])
+
+    assert default_result.exit_code == 0
+    assert all_result.exit_code == 0
+    assert service.list_issues.await_args_list[0].args[0] == ("open", "claimed")
+    assert service.list_issues.await_args_list[1].args[0] == ("open", "claimed", "closed", "superseded")
+
+
+def test_cli_ledger_list_json(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
+    """--json stdout parses with json.loads and has an "issues" key."""
+    service = mock_ledger_service
+    service.list_issues = AsyncMock(return_value=[_issue()])
+
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
+        result = runner.invoke(ledger, ["list", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["issues"] == [_issue()]
+
+
+def test_cli_ledger_show_text_and_json(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
+    """Text shows body and History lines; --json has issue+history; --no-history omits them."""
+    service = mock_ledger_service
+    issue = _issue()
+    history = [
+        {"event_id": "e1", "kind": "issue.opened", "actor": "agent:x", "ts": "2026-10-16T00:00:00+00:00", "payload": {}}
+    ]
+    service.get_issue = AsyncMock(return_value=issue)
+    service.issue_history = AsyncMock(return_value=history)
+
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
+        text_result = runner.invoke(ledger, ["show", "abc123"])
+        json_result = runner.invoke(ledger, ["show", "abc123", "--json"])
+        no_history_result = runner.invoke(ledger, ["show", "abc123", "--json", "--no-history"])
+
+    assert text_result.exit_code == 0
+    assert "Full body text" in text_result.output
+    assert "History:" in text_result.output
+    assert "2026-10-16T00:00:00+00:00 agent:x issue.opened" in text_result.output
+    assert json.loads(json_result.output) == {"issue": issue, "history": history}
+    assert json.loads(no_history_result.output) == {"issue": issue}
+
+
+def test_cli_ledger_show_unknown_exit_1(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
+    """Unknown id exits 1 and names the normalized id."""
+    service = mock_ledger_service
+    service.get_issue = AsyncMock(return_value=None)
+
+    with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=service):
+        result = runner.invoke(ledger, ["show", "abc123"])
+
+    assert result.exit_code == 1
+    assert "issue:abc123" in result.output
+
+
 def test_ledger_close_command(runner: CliRunner, mock_ledger_service: MagicMock) -> None:
     """Test ledger close command."""
     with patch("parrot.knowledge.wiki.cli.LedgerService.from_root", return_value=mock_ledger_service):

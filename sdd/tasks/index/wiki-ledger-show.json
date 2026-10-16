@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-15T23:23:42Z",
-  "completed_at": null,
+  "completed_at": "2026-10-15T23:43:20+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-689",
       "feature": "wiki-ledger-show",
       "spec": "sdd/specs/wiki-ledger-show.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "Root task: creates LedgerService.get_issue/issue_history, normalize_issue_id and the list_issues severity filter (ledger/service.py) that TASK-4399 and TASK-4400 both call.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4398-ledger-service-read-api.md"
+      "started_at": "2026-10-15T23:25:41+00:00",
+      "completed_at": "2026-10-15T23:31:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4398-ledger-service-read-api.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4399",
@@ -34,16 +35,19 @@
       "feature_id": "FEAT-689",
       "feature": "wiki-ledger-show",
       "spec": "sdd/specs/wiki-ledger-show.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-4398"],
+      "depends_on": [
+        "TASK-4398"
+      ],
       "parallel": true,
       "parallelism_notes": "Depends on TASK-4398: op_ledger_list/op_ledger_show call LedgerService.list_issues(severity=), get_issue, issue_history and normalize_issue_id (ledger/service.py). Touches no file of TASK-4400, so the two can run concurrently.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4399-ledger-list-show-ops-mcp.md"
+      "started_at": "2026-10-15T23:25:41+00:00",
+      "completed_at": "2026-10-15T23:43:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4399-ledger-list-show-ops-mcp.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4400",
@@ -52,16 +56,19 @@
       "feature_id": "FEAT-689",
       "feature": "wiki-ledger-show",
       "spec": "sdd/specs/wiki-ledger-show.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-4398"],
+      "depends_on": [
+        "TASK-4398"
+      ],
       "parallel": true,
       "parallelism_notes": "Depends on TASK-4398: the CLI local branch awaits LedgerService.get_issue/issue_history/list_issues(severity=) and imports normalize_issue_id (ledger/service.py). Uses the ledger_list/ledger_show tool names only as strings, so no edge to TASK-4399.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4400-ledger-list-show-cli.md"
+      "started_at": "2026-10-15T23:25:41+00:00",
+      "completed_at": "2026-10-15T23:43:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4400-ledger-list-show-cli.md",
+      "verification": "verified"
     }
   ]
 }
