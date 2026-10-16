@@ -24,8 +24,11 @@ Reproduces ``workday.py:362-445`` exactly:
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import Any
+import math
+import types
+from typing import Annotated, Any, Union, get_args, get_origin
 from urllib.parse import urlparse, urlunparse
 
 import pandas as pd
@@ -116,6 +119,54 @@ _OPERATION_MODEL_MAP: dict[str, type] = {
 
 # REST custom report types that require Basic Auth (workday.py:364)
 _REST_REPORT_TYPES: tuple[str, ...] = ("custom_report", "custom_punch_field_report_rest")
+
+
+def _accepts_str(annotation: Any) -> bool:
+    """Return True when a field annotation admits a plain ``str`` value."""
+    if annotation is Any or annotation is str:
+        return True
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        return _accepts_str(get_args(annotation)[0])
+    if origin is Union or origin is types.UnionType:
+        return any(_accepts_str(arg) for arg in get_args(annotation))
+    return False
+
+
+def _record_to_model_kwargs(model_class: type, record: dict[str, Any]) -> dict[str, Any]:
+    """Undo the DataFrame flattening of a handler row before model validation.
+
+    Handlers JSON-encode list/dict columns (``safe_serialize``) and pandas
+    turns missing values into ``NaN``. For model fields that do not accept a
+    ``str``, a JSON string is decoded back and an empty string is dropped so
+    the field default applies; ``NaN`` becomes ``None``. Fields typed ``str``
+    are left untouched.
+
+    Args:
+        model_class: Pydantic model the row is validated into.
+        record: One ``DataFrame.to_dict(orient="records")`` row.
+
+    Returns:
+        Keyword arguments for ``model_class``.
+    """
+    fields = getattr(model_class, "model_fields", {})
+    kwargs: dict[str, Any] = {}
+    for key, value in record.items():
+        if isinstance(value, float) and math.isnan(value):
+            value = None
+        field = fields.get(key)
+        if field is not None and isinstance(value, str) and not _accepts_str(field.annotation):
+            if value == "":
+                if not field.is_required():
+                    continue
+                value = None
+            elif value[:1] in ("[", "{"):
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    pass
+        kwargs[key] = value
+    return kwargs
 
 
 class WorkdayService(SOAPClient):
@@ -335,7 +386,7 @@ class WorkdayService(SOAPClient):
         models = []
         for record in df.to_dict(orient="records"):
             try:
-                models.append(model_class(**record))
+                models.append(model_class(**_record_to_model_kwargs(model_class, record)))
             except Exception as exc:  # noqa: BLE001
                 self._logger.warning(
                     "fetch_models: could not reconstruct %s from row: %s",
