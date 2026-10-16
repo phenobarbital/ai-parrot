@@ -181,4 +181,39 @@ before committing. Commit as
 
 ## Completion Note
 
-*(fill in on close)*
+Implemented in commit `088e7a63c`.
+
+`_collect_wiki_blast` now resolves the plane once before the per-symbol loop
+and uses it for both the `--path` argument and the `_run_subprocess` `cwd`.
+With no plane in either location it returns immediately with
+`_PLANE_UNAVAILABLE_REASON` and spawns nothing.
+
+All acceptance criteria verified:
+
+- AC1/AC2 — `test_blast_in_a_worktree_uses_the_main_checkout_plane`: state is
+  `ok` and the captured `cmd` carries the main checkout after `--path`, with
+  the worktree path absent from the command entirely.
+- AC3 — `test_blast_without_any_plane_is_unknown_and_spawns_nothing`.
+- AC4 — `test_blast_keeps_failing_closed_when_the_cli_exits_nonzero`.
+- AC5 — `test_blast_symbol_missing_from_a_present_plane_is_still_unknown`
+  asserts the missing-root reason and that it differs from the
+  plane-unavailable one.
+- AC6 — `git diff -U0 origin/dev` places every hunk at module constants, in
+  the inserted helpers, or inside `_collect_wiki_blast`; none falls inside
+  `_collect_ruff_cyclomatic` or `_collect_ruff_syntax`.
+- AC7 — the task's two validation commands pass: 70 passed across
+  `test_complexity_collectors.py`, `test_complexity.py` and
+  `test_complexity_routing.py`; `ruff check` clean.
+
+T7 was implemented against a real `git worktree` rather than only a stubbed
+one, so the unmocked git-common-dir derivation is exercised end to end.
+
+**Two notes for review.**
+
+1. The shared `temp_worktree` fixture had to gain a `.parrot/wiki` directory.
+   Its tests stub the wiki CLI, which presupposes a built plane; without one
+   the collector now correctly short-circuits before shelling out. This is a
+   fixture precondition made explicit, not a weakened assertion.
+2. `test_engine_plan_merge.py::test_all_seats_exhausted` fails in this
+   worktree. It was verified to fail identically on a clean `dev` checkout at
+   `e92fa8726` — pre-existing and unrelated to this feature.

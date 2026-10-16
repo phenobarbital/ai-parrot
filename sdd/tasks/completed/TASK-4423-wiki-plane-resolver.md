@@ -169,4 +169,29 @@ commands before committing. Commit as
 
 ## Completion Note
 
-*(fill in on close)*
+Implemented in commits `66b42e0c9` (resolver + tests) and `088e7a63c`
+(correction described below).
+
+`_resolve_wiki_plane_root` resolves in the specified order: a local
+`<worktree>/.parrot/wiki` first, then the main checkout derived from
+`git rev-parse --path-format=absolute --git-common-dir`, then `None`. The
+blocking path probes (`is_dir`, `resolve`) are off-loaded through
+`asyncio.to_thread` via `_has_wiki_plane` / `_plane_root_from_common_dir`,
+because ruff's `ASYNC240` is selected repo-wide and this module keeps no
+blocking path call on the event loop.
+
+**Deviation from this task's Implementation Notes.** The task prescribed
+routing the `git rev-parse` call through `_run_subprocess`. That was done
+first and proved wrong at integration time (TASK-4424): `_run_subprocess` is
+the collectors' *evidence* surface, and the suite stubs it with ordered
+`side_effect` lists — one entry per analysis command. The resolver's probe
+silently consumed the first entry, shifting every subsequent result and
+breaking `test_collect_complexity_basic`. Plane discovery is infrastructure
+lookup, not evidence, so it now runs through its own `_git_common_dir`
+helper (`subprocess.run` with a `timeout`, off-loaded via
+`asyncio.to_thread`). The timeout bound the task asked for is preserved;
+only the shared mock surface is no longer involved.
+
+Tests: 7 resolver cases pass (local plane, main-checkout fallback, no plane
+anywhere, and four git failure modes — missing, timeout, non-zero exit,
+empty stdout). `ruff check` clean on both files.
