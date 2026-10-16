@@ -59,7 +59,7 @@ def _load_kernel() -> ModuleType: ...   # inserts _KERNEL_PARENT on sys.path, `i
 # test_scope/report.py (TASK-4411)
 should_rerun(task_count: int) -> bool
 load_records(feature_id: str) -> tuple[dict[str, TaskTestRecord], list[str]]
-render_markdown(records, task_ids, *, final_head, rerun, rerun_skip_reason) -> str
+render_markdown(records, task_ids, *, final_head, rerun, rerun_skip_reason, notes=()) -> str
 RERUN_RECORD = "_rerun"; RERUN_TASK_THRESHOLD = 10
 # per-spec index shape: {"feature_id": "FEAT-695", "tasks": [{"id": "TASK-4411", ...}, ...]}  (sdd/tasks/index/sdd-done-tests.json)
 ```
@@ -124,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
     """0 ok (always, even with red tests or no data); 2 usage error / unreadable index."""
     # FILL IN: subparsers decide-rerun/render; output "rerun" | f"skip ({n} tasks > {report.RERUN_TASK_THRESHOLD})"
     # FILL IN: render → records, notes = load_records(feature_id); final_head via git rev-parse (fallback "unknown")
+    #          pass notes= to render_markdown so corrupt-record notes appear in the output (issue:5b33290f55c9)
 
 
 if __name__ == "__main__":
