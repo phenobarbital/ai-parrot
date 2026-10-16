@@ -634,6 +634,10 @@ WORKDAY_TOKEN_URL = config.get("WORKDAY_TOKEN_URL")
 WORKDAY_WSDL_PATH = config.get(
     "WORKDAY_WSDL_PATH", fallback=BASE_DIR.joinpath("env", "workday", "staffing_custom_44_2.wsdl")
 )
+# Get_Positions only exists in the Staffing WSDL; WORKDAY_WSDL_PATH may point elsewhere.
+WORKDAY_WSDL_STAFFING = config.get(
+    "WORKDAY_WSDL_STAFFING", fallback=BASE_DIR.joinpath("env", "workday", "staffing_custom_44_2.wsdl")
+)
 WORKDAY_WSDL_TIME = config.get(
     "WORKDAY_WSDL_TIME", fallback=BASE_DIR.joinpath("env", "workday", "timetracking_custom_44_2.wsdl")
 )
