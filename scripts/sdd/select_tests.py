@@ -105,7 +105,12 @@ def main(argv: list[str] | None = None) -> int:
     report_mod = None
     head_sha = ""
     if recording:
-        import test_scope.report as report_mod  # noqa: PLC0415 — path-dependent import
+        try:
+            import test_scope.report as report_mod  # noqa: PLC0415 — path-dependent import
+        except ImportError as exc:  # recording is best-effort and must never abort a test run
+            print(f"warning: test result recording disabled: {exc}", file=sys.stderr)  # noqa: T201
+            report_mod = None
+            recording = False
 
         try:
             head_result = subprocess.run(
@@ -115,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
         except OSError:
             head_sha = ""
 
-        if not plan.invocations:
+        if recording and not plan.invocations:
             selection = report_mod.SuiteResult(
                 suite="selection",
                 tests=0,

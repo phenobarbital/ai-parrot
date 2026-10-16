@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass, field
@@ -71,11 +72,30 @@ def report_root() -> Path:
     return Path("/tmp") / f"claude-{os.getuid()}" / "sdd-tests"
 
 
+_SAFE_ID_RE = re.compile(r"^(?:FEAT-\d+|TASK-\d+|_rerun)$")
+
+
+def _safe_id(value: str) -> bool:
+    """Return True when ``value`` is a feature/task id that is safe to use as a path component."""
+    return bool(_SAFE_ID_RE.match(value))
+
+
 def junit_path_for(feature_id: str, task_id: str, suite: str, ordinal: int) -> Path:
-    """Return a unique junit path for an invocation and ensure its directory exists."""
-    junit_dir = report_root() / feature_id / "junit"
+    """Return a fresh junit path for an invocation and ensure its directory exists.
+
+    Any file left at the path by an earlier attempt is removed, so a run killed before pytest writes its XML can
+    never be reported with a previous attempt's counts. Unsafe ids are mapped to a neutral directory name.
+    """
+    feature_dir = feature_id if _safe_id(feature_id) else "_invalid"
+    task_part = task_id if _safe_id(task_id) else "_invalid"
+    junit_dir = report_root() / feature_dir / "junit"
     junit_dir.mkdir(parents=True, exist_ok=True)
-    return junit_dir / f"{task_id}--{suite}--{ordinal}.xml"
+    path = junit_dir / f"{task_part}--{suite}--{ordinal}.xml"
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning("could not remove stale junit file %s", path)
+    return path
 
 
 def with_junit(invocation: PytestInvocation, junit_path: Path) -> tuple[str, ...]:
@@ -175,6 +195,9 @@ def append_suite(
     note: str | None = None,
 ) -> Path | None:
     """Merge one suite into a task record, returning ``None`` for I/O failures."""
+    if not (_safe_id(feature_id) and _safe_id(task_id)):
+        logger.warning("refusing to record test results for unsafe ids %r/%r", feature_id, task_id)
+        return None
     path = report_root() / feature_id / f"{task_id}.json"
     lock_path = path.with_suffix(".json.lock")
     try:
@@ -211,9 +234,11 @@ def append_suite(
 
 def load_records(feature_id: str) -> tuple[dict[str, TaskTestRecord], list[str]]:
     """Load valid feature records and notes for corrupt records that were skipped."""
-    directory = report_root() / feature_id
     records: dict[str, TaskTestRecord] = {}
     notes: list[str] = []
+    if not _safe_id(feature_id):
+        return records, [f"unsafe feature id {feature_id!r}: no records loaded"]
+    directory = report_root() / feature_id
     try:
         paths = sorted(directory.glob("*.json"))
     except OSError as exc:

@@ -180,3 +180,18 @@ def test_load_records_skips_corrupt_file():
     records, notes = report.load_records("FEAT-695")
     assert records == {}
     assert notes == ["skipped corrupt report: bad.json"]
+
+
+def test_junit_path_for_removes_stale_file() -> None:
+    """A stale junit file from an earlier attempt is never reused as a new run's result."""
+    path = report.junit_path_for("FEAT-1", "TASK-1", "root", 0)
+    path.write_text("<testsuite tests='9'/>", encoding="utf-8")
+    again = report.junit_path_for("FEAT-1", "TASK-1", "root", 0)
+    assert again == path and not again.exists()
+
+
+def test_unsafe_ids_are_not_recorded(tmp_path) -> None:
+    """Path-traversal ids never write outside the report root."""
+    result = report.SuiteResult("root", 1, 1, 0, 0, 0, 0.1, 0, ("pytest",), "ok")
+    assert report.append_suite("../..", "TASK-1", result, head_sha="a", base_ref="b", tier="merge", source="t") is None
+    assert report.load_records("../..")[0] == {}
