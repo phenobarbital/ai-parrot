@@ -35,9 +35,10 @@ class TestOAuth2LocalMode:
     async def test_toolkit_runs_without_permission_context(self) -> None:
         """Local mode resolves the CLI token without a permission context."""
         resolver = _resolver()
-        with patch(
-            "parrot_tools.jiratoolkit.FileTokenCredentialResolver.from_env", return_value=resolver
-        ) as from_env, patch("parrot_tools.jiratoolkit.JIRA"):
+        with (
+            patch("parrot_tools.jiratoolkit.FileTokenCredentialResolver.from_env", return_value=resolver) as from_env,
+            patch("parrot_tools.jiratoolkit.JIRA"),
+        ):
             toolkit = JiraToolkit(auth_type="oauth2_local")
             await toolkit._pre_execute("jira_get_issue")
 
