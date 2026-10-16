@@ -69,9 +69,7 @@ class SharedLogImportReport(BaseModel):
 
 def is_shareable(event: LedgerEvent) -> bool:
     """Return whether an event belongs in the cross-machine shared log."""
-    return not (
-        event.kind.startswith("insight.") and event.payload.get("category") in LOCAL_ONLY_INSIGHT_CATEGORIES
-    )
+    return not (event.kind.startswith("insight.") and event.payload.get("category") in LOCAL_ONLY_INSIGHT_CATEGORIES)
 
 
 def _read_raw_events(path: Path) -> tuple[list[tuple[str, LedgerEvent]], int]:
