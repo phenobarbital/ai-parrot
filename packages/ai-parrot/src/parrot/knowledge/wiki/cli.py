@@ -125,6 +125,7 @@ from parrot.knowledge.wiki.runtime import (
     persistence_for_project,
 )
 from parrot.knowledge.wiki.ledger.service import LedgerService, normalize_issue_id
+from parrot.knowledge.wiki.ledger.shared_log import SHARED_LOG_REL_PATH, shared_log_files
 from parrot.knowledge.wiki.ledger.fix_planner import FixPlan, Lane, plan_fix_batch
 from parrot.knowledge.wiki.ledger.events import IssueKind, IssueSeverity, IssueStatus
 from parrot.knowledge.wiki.schema.models import SchemaSourceConfig
@@ -3610,6 +3611,66 @@ def ledger_export(dest: str, no_reconcile: bool) -> None:
         click.echo(f"Exported {dest_path} (unchanged)")
 
 
+def _git_toplevel(cwd: Path) -> Path:
+    """Return Git's top-level directory, or a shared-root/current-directory fallback."""
+    result = subprocess.run(
+        ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return Path(result.stdout.strip())
+    return find_shared_root(cwd) or cwd
+
+
+@ledger.command("export-log")
+@click.option("--repo-root", default=None, help="Checkout whose sdd/ledger/ is written; default: git toplevel of cwd")
+@click.option("--stage", is_flag=True, default=False, help="git add the file when it changed")
+@click.option("--quiet", is_flag=True, default=False)
+@remote_cli.remote_aware(proxied=False)
+def ledger_export_log(repo_root: str | None, stage: bool, quiet: bool) -> None:
+    """Append this machine's shareable events to the committed shared ledger log."""
+    root = Path(repo_root) if repo_root else _git_toplevel(Path.cwd())
+    try:
+        report = _run(LedgerService.from_root().export_shared_log(root))
+        if stage and (report.added > 0 or report.created):
+            subprocess.run(["git", "-C", str(root), "add", "--", str(SHARED_LOG_REL_PATH)], check=True)
+    except OSError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if not quiet:
+        if report.added:
+            click.echo(f"Exported {report.dest} (+{report.added} events)")
+        else:
+            click.echo(f"Exported {report.dest} (unchanged)")
+
+
+@ledger.command("import-log")
+@click.option("--repo-root", default=None)
+@click.option("--force", is_flag=True, default=False, help="Ignore the marker fast path")
+@click.option("--quiet", is_flag=True, default=False)
+@remote_cli.remote_aware(proxied=False)
+def ledger_import_log(repo_root: str | None, force: bool, quiet: bool) -> None:
+    """Append committed ledger events unknown to this machine and sync the index."""
+    root = Path(repo_root) if repo_root else _git_toplevel(Path.cwd())
+    try:
+        report = _run(LedgerService.from_root().import_shared_log(root, force=force))
+    except OSError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if not quiet:
+        if report.fast_path or report.added == 0:
+            click.echo("Shared ledger log (up to date)")
+        else:
+            click.echo(f"Imported +{report.added} events ({report.skipped_known} known)")
+    for conflict in report.claim_conflicts:
+        click.echo(
+            f"⚠️ claim conflict on {conflict.issue_id}: local {conflict.local_claimed_by} "
+            f"vs committed {conflict.foreign_claimed_by} ({conflict.foreign_event_id})"
+        )
+    if report.index_busy:
+        raise SystemExit(2)
+
+
 @ledger.command("sync")
 @remote_cli.remote_aware(proxied=False)
 def ledger_sync() -> None:
@@ -3702,6 +3763,14 @@ def ledger_audit() -> None:
 
     click.echo(f"Log size: {audit['log_size_bytes']} bytes")
     click.echo(f"Total events: {audit['total_events']}")
+    shared = audit.get("shared_log")
+    if shared:
+        archive_count = max(0, len(shared_log_files(service.shared_root)) - int(shared["exists"]))
+        click.echo(
+            f"Shared log: {shared['path']} (+{archive_count} archives) · "
+            f"local-only events: {shared['local_only_events']} · "
+            f"committed-unknown events: {shared['committed_unknown_events']} · marker: {shared['marker']}"
+        )
     if audit.get("event_counts"):
         click.echo("Event counts by kind:")
         for kind, count in sorted(audit["event_counts"].items()):
