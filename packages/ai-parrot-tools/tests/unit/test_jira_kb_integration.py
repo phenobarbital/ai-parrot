@@ -87,3 +87,30 @@ def test_site_mismatch_and_invalid_path_leave_kb_unset(tmp_path, caplog) -> None
         )
     assert toolkit._kb is None
     assert "knowledge base" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_create_issue_with_known_type_performs_no_lookup() -> None:
+    """AC7: a KB-known issue type is accepted without any Jira issue-type/project lookup."""
+    toolkit = _toolkit(_kb())
+    toolkit._validate_issue_type = JiraToolkit._validate_issue_type.__get__(toolkit)  # use the real one
+
+    await toolkit.jira_create_issue(project="NAV", summary="ok", issuetype="story")
+
+    toolkit.jira.project.assert_not_called()
+    toolkit.jira.issue_types.assert_not_called()
+    assert toolkit.jira.create_issue.call_args.kwargs["fields"]["issuetype"]["name"] == "Story"
+
+
+@pytest.mark.asyncio
+async def test_create_issue_with_unknown_type_goes_live_and_logs_stale(caplog) -> None:
+    """AC7: an unknown type in a known project triggers one live lookup and logs the stale KB."""
+    toolkit = _toolkit(_kb())
+    toolkit._validate_issue_type = JiraToolkit._validate_issue_type.__get__(toolkit)
+    toolkit.jira.project.return_value.issueTypes = [SimpleNamespace(id="10004", name="Bug", description="")]
+
+    await toolkit.jira_create_issue(project="NAV", summary="ok", issuetype="Bug")
+
+    toolkit.jira.project.assert_called_once_with("NAV")
+    assert "jira KB stale" in caplog.text
+    assert toolkit.jira.create_issue.call_args.kwargs["fields"]["issuetype"]["name"] == "Bug"

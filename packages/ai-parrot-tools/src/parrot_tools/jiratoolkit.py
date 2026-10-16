@@ -3058,6 +3058,11 @@ class JiraToolkit(AbstractToolkit):
                 ]
             self.logger.warning("jira KB stale: project %s not found in %s", project, self._kb_path)
 
+        return await self._list_issue_types_live(project)
+
+    async def _list_issue_types_live(self, project: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List issue types straight from Jira, bypassing the knowledge base."""
+
         def _run():
             if project:
                 proj = self.jira.project(project)
@@ -3091,8 +3096,21 @@ class JiraToolkit(AbstractToolkit):
             ValueError: When ``issuetype`` doesn't match any type for the
                 project. The message contains all valid names.
         """
+        requested = issuetype.strip().lower()
+        use_live = False
+        if self._kb is not None:
+            kb_project = self._kb.projects.get(project)
+            if kb_project is not None:
+                for kb_name in kb_project.issue_types:
+                    if kb_name.lower() == requested:
+                        return kb_name  # KB hit: no Jira lookup (FEAT-696 AC7)
+                self.logger.warning("jira KB stale: issue type %s not found in %s", issuetype, self._kb_path)
+                use_live = True
         try:
-            valid = await self.jira_get_issue_types(project=project)
+            if use_live:
+                valid = await self._list_issue_types_live(project)
+            else:
+                valid = await self.jira_get_issue_types(project=project)
         except Exception as exc:  # noqa: BLE001 — don't block create on probe failure
             # If we can't list types (permissions, transient error), skip
             # validation and let the real POST produce whatever error Jira
