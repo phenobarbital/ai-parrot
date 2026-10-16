@@ -222,10 +222,8 @@ Standard SDD flow (`sdd/templates/task.md` § Agent Instructions); feature workt
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: gpt-5.6-terra (codex) via coder engine
+**Date**: 2026-10-16
+**Notes**: Rotation + claim pre-import delivered (lint b83c42590). Wiki/ledger/installer/cli tests green.
 
 **Deviations from spec**: none
