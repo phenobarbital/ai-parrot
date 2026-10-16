@@ -1,0 +1,57 @@
+site: "https://acme.atlassian.net"
+cloud_id: "abc-123"
+verified: "2026-10-16"
+projects:
+  NAV:
+    name: "Navigator"
+    issue_types:
+      Story:
+        id: "10001"
+        subtask: false
+        level: 0
+      Bug:
+        id: "10004"
+        subtask: false
+        level: 0
+      Sub-task:
+        id: "10003"
+        subtask: true
+        level: 1
+priorities:
+  scale:
+    - Highest
+    - High
+    - Medium
+    - Low
+    - Lowest
+  legacy:
+    - Critical
+    - Blocker
+  default: Medium
+status_map:
+  to_do:
+    - Open
+    - Reopened
+  in_progress:
+    - "In Progress"
+    - "In Review"
+  done:
+    - Done
+    - Closed
+fields:
+  team: "customfield_10001"
+  sprint: "customfield_10020"
+  story_points: "customfield_10028"
+limits:
+  summary_max_chars: 255
+  description_max_chars: 32767
+  summary_target_chars: 80
+templates:
+  bug_report:
+    types:
+      - Bug
+    default: "bug_report"
+components:
+  - Backend
+  - Frontend
+  - DevOps
