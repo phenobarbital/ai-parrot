@@ -786,6 +786,42 @@ see empty structured output.
 PANDAS_INSTRUCTIONS_LAYER = DATA_INSTRUCTIONS_LAYER
 
 
+# ── Data agents called with use_tools=False ────────────────────
+# Stands in for STRICT_GROUNDING_LAYER + DATA_INSTRUCTIONS_LAYER (and the
+# dataframe catalog) on a request that sends no function declarations: the
+# figures already travel in the prompt, so every "run code / call
+# list_datasets / set data_variable" instruction would push the model toward
+# tools it does not have (Gemini answers that with MALFORMED_FUNCTION_CALL).
+# REQUEST phase with no variables: it is added per call to an already
+# configured builder, so it must not depend on configure-time context.
+TOOLLESS_DATA_GROUNDING_LAYER = PromptLayer(
+    name="toolless_data_grounding",
+    priority=LayerPriority.BEHAVIOR - 5,
+    phase=RenderPhase.REQUEST,
+    template="""<grounding_policy>
+No tools are available for this request: you cannot run code, query or load
+datasets, or call any function. Answer directly, in prose and markdown tables,
+from the information already provided — the user's message, the conversation,
+and the context blocks above.
+
+1. **Figures**: Quote every number, name, id and categorical value exactly as
+   it appears in the provided information. Never round, estimate, or reuse
+   figures from memory or training data.
+2. **Derived figures**: Do not compute new totals, averages or percentages
+   unless the request asks for them; when it does, derive them only from the
+   provided figures and show which ones you used.
+3. **Missing data**: If something the request needs is not in the provided
+   information, say "Data not available" for that item. Do not fill gaps with
+   plausible values or sample rows.
+4. **No internal references**: Never mention datasets, DataFrame or variable
+   names, column names, tools, or implementation details in your answer.
+   Present the results, not the process.
+5. **Structured response**: If a structured response is requested, put any
+   table rows inline in its data field and leave data_variable empty.
+</grounding_policy>""",
+)
+
+
 # ── Bot-level output language (FEAT-638) ──────────────────────
 # Priority 59 = OUTPUT (60) - 1 → renders just before the output-format rules.
 # CONFIGURE phase → cacheable (FEAT-181). NO condition=: when the bot's language
@@ -841,6 +877,7 @@ _DOMAIN_LAYERS: Dict[str, PromptLayer] = {
     "jira_workflow": JIRA_WORKFLOW_LAYER,
     "capabilities": CAPABILITIES_LAYER,
     "data_instructions": DATA_INSTRUCTIONS_LAYER,
+    "toolless_data_grounding": TOOLLESS_DATA_GROUNDING_LAYER,
     "output_language": OUTPUT_LANGUAGE_LAYER,
 }
 
