@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-692 — fixgroup-d717e8a67520
 **Spec**: `sdd/specs/fixgroup-d717e8a67520.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -97,3 +97,18 @@ async def list_pages(self, category=None, limit=100, origin=None) -> list[dict]:
 - `pytest packages/ai-parrot/tests/knowledge/wiki/test_sync_tools.py packages/ai-parrot/tests/knowledge/wiki/test_bulk_tools.py packages/ai-parrot/tests/knowledge/wiki/test_sync_push_chunking.py packages/ai-parrot/tests/knowledge/wiki/test_cli_remote_push.py packages/ai-parrot/tests/knowledge/wiki/test_ledger_bulk_operations.py -q`
 
 ## Completion Note
+Completed 2026-10-16 (sdd-fix lane, ledger issue:5e85c06ed736). Implementing commit b2a2d030c.
+
+- `sync.py`: `SYNC_CLOCK_SKEW` (5 min), `parse_sync_stamp`, `normalize_sync_stamp`,
+  `_lww_outcome`, `_memory_page_window`, `SyncReport.skipped_foreign`. `_sync_records`
+  (local engine, also used by `remote_cli.sync_pull_remote`) and `_record_from` use them.
+- `operations.py`: `_apply_sync_push` uses `_lww_outcome` (parsed UTC compare, clamp,
+  origin check) and an optional `caller_identity`; `op_sync_push` reads it from context;
+  `op_sync_pull` selects on stubs and fetches ≤ `limit` bodies per call. Cursor format unchanged.
+- Tests: 20 new in `test_sync_lww_hardening.py`; 130 passed across all wiki sync-related
+  modules. `test_tool_surface_golden.py::test_local_stdio_surface` fails identically on
+  unmodified `dev` (ledger tools in the local surface) — pre-existing, unrelated.
+- Limitations: no transport caller identity exists yet, so `asserted_by` stays
+  client-asserted unless a host passes `caller_identity`. Records already stored with a
+  far-future stamp before this change still win until repaired (the clamp applies on write).
+  A *new* record with an unparseable stamp is created with the store's write time.
