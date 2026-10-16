@@ -1,0 +1,3 @@
+# FEAT-694: the shared ledger event log is append-only on every machine; take both sides.
+sdd/ledger/events.jsonl merge=union
+sdd/ledger/archive/*.jsonl merge=union
