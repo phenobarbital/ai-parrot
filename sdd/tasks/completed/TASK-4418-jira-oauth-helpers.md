@@ -332,10 +332,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4418
+- Feature: jiratoolkit-upgrades
+- Implementation SHA: 13419a97e4b6f2d358e5c80f1ddee3b1e38d8f05
+- Closed at (UTC): 2026-10-16T20:02:16+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: ~84s · Tokens: n/a |
+| validation_note | Merge-tier run exit 5/failed: 16 failures, all pre-existing (the two Jira OAuth callback ones reproduce on dev baseline; rest in dataset_guard/pbac/slack/wrappers unrelated). Helper+manager tests 48 passed. |

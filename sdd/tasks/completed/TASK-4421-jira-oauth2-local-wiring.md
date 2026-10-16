@@ -266,10 +266,16 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4421
+- Feature: jiratoolkit-upgrades
+- Implementation SHA: ae656e55e366cc0f48c750263169a4c983392a51
+- Closed at (UTC): 2026-10-16T21:25:00+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 196s · Tokens: n/a |
+| validation_note | Engine merge-tier run not usable: hangs on pre-existing Textual TUI test (also hangs on dev). Evidence is the orchestrator's targeted test log; ai-parrot jira-scope failures (75) identical to dev baseline. |

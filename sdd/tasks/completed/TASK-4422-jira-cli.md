@@ -361,10 +361,20 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+- Seat: haiku · Backend: native · Model: haiku · Attempts: 1 · Duration: ~235s · Tokens: n/a
+- Code commit: 094ec8616 (+ engine lint c0d7baf19, merge 66e4bb0a3)
+- Closed by sdd-worker via close_task.sh (finalize_task refused: implementation_sha must equal HEAD, and HEAD already carried TASK-4420's closure commit).
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder: haiku native)
+**Date**: 2026-10-16
+
 **Notes**:
+- Validation: 27 tests in test_jira_cli.py pass; ruff clean. Engine merge-tier run hung on a pre-existing Textual TUI test
+  (tests/cli/tui/test_widgets.py::test_composer_enter_submits_and_ctrl_j_newline, also hangs on dev); jira-scope ai-parrot failures (75) identical to dev baseline.
+- Coder reported: `jiratoolkit = cli` alias added for the lazy loader; sync-kb output path is -o, then $JIRA_KB_PATH, then ./jira_kb.yaml;
+  sync-kb endpoints (/project, /priority, /field, ...) mocked in tests, not verified against a live Jira; `status` probes /myself with an expired token and reports a failed probe;
+  projects not listed in --projects are dropped from sync output; only pre-existing hand-edited field aliases are kept (no new aliases generated).
+- Review recorded: coder-review:d47c80c6705992b0dc799d79 (no fix commits).
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: AC9 (sync-kb preserves YAML comments) and AC11 (ruamel.yaml dependency) in the amended spec are NOT met. TASK-4417 was
+implemented with PyYAML per its (stale) task file, so JiraKnowledgeBase.save() drops comments. Needs a follow-up: declare ruamel.yaml in ai-parrot-tools and switch jira_kb.save().

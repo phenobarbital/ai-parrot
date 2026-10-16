@@ -332,10 +332,17 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4420
+- Feature: jiratoolkit-upgrades
+- Implementation SHA: 59c54e9f23d5fe48e7d201e72ae42843301a3951
+- Closed at (UTC): 2026-10-16T21:19:05+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 335s · Tokens: n/a |
+| spec_drift | AC9 (comment-preserving sync-kb) and AC11 (ruamel.yaml) unmet: TASK-4417 implemented with PyYAML per stale task file. Follow-up needed. |
+| validation_note | Engine merge-tier run hung/timed out on pre-existing Textual TUI test (tests/cli/tui/test_widgets.py::test_composer_enter_submits_and_ctrl_j_newline; also hangs on dev baseline). Orchestrator-run targeted tests green; ai-parrot jira-scope failures identical to dev baseline (75). Evidence is the orchestrator log, not an engine validation. |
