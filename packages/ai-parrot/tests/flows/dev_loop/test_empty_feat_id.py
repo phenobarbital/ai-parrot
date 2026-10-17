@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+
+import pytest
 from unittest.mock import MagicMock
 
 from parrot.flows.dev_loop import BugBrief, FlowtaskCriterion, ResearchOutput
@@ -96,3 +98,15 @@ class TestPrTitle:
         node = _build_node(MagicMock())
         title = node._build_title(_bug_brief(), _research())
         assert title.startswith("FEAT-466:")
+
+
+class TestEmptyFeatIdWithIndexPath:
+    @pytest.mark.asyncio
+    async def test_empty_feat_id_with_index_path_builds_scheduler(self, tmp_path):
+        """FEAT-698: a brief run (feat_id == "") with an explicit index_path gets a scheduler."""
+        rel = "sdd/briefs/demo.index.json"
+        (tmp_path / "sdd" / "briefs").mkdir(parents=True)
+        (tmp_path / rel).write_text(json.dumps({"tasks": [{"id": "HOTFIX-1", "status": "pending"}]}))
+        node = DevelopmentNode(dispatcher=MagicMock())
+        research = _research(feat_id="", worktree_path=str(tmp_path), index_path=rel)
+        assert await node._build_scheduler(research) is not None
