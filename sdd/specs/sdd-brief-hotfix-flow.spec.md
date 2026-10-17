@@ -108,10 +108,21 @@ the task ids (`HOTFIX-<KEY>-N`), and the index identity
 matching `^FEAT-\d+$`, so no id-ledger collision and no feature-board
 ingestion; S2).
 
-Task materialization is what keeps Decision 5 ("downstream unchanged") true:
-`sdd-worker`'s planner, the `parrot-sdd-coder` MCP chunker and fidelity gate,
-and manual `/sdd-start`-style implementation all consume the exact
-`sdd/templates/task.md` shape they consume today.
+Task materialization keeps the *task-file* half of Decision 5 ("downstream
+unchanged") true: `sdd-worker`'s planner, the `parrot-sdd-coder` MCP chunker
+and fidelity gate, and manual `/sdd-start`-style implementation all consume
+the exact `sdd/templates/task.md` shape they consume today. The *index* half
+is NOT free (rev 0.2): five dev_loop resolvers hardcode `sdd/tasks/index/`
+(`engine._resolve_feature`, `inspection._resolve_index_path`,
+`checkpoint._index_path`, `background.py` index glob,
+`TaskScheduler.from_worktree`), and so do the four `sdd-worker` prompt twins.
+One shared discovery rule fixes all of them — **index candidates =
+`sdd/tasks/index/*.json` (minus `_orphans.json`) followed by
+`sdd/briefs/*.index.json`; a per-slug lookup tries
+`sdd/tasks/index/<slug>.json` first, then `sdd/briefs/<slug>.index.json`** —
+implemented once in `task_scheduler.py` (no `scripts.sdd` import: that package
+is not importable from `parrot`, research.py:162-168) and delegated to by
+every resolver.
 
 `/sdd-done` gains a **separate brief lane** (S4): resolve by slug/KEY via
 worktree scan → verify via the per-brief index + the brief's Validation
@@ -157,10 +168,11 @@ hard cut in one feature.
 | `scripts/sdd/ensure_worktree.py` `ensure()` | uses + extends | new `--brief` input; unset-upstream + verify after create (S6) |
 | `scripts.sdd.sdd_meta.WorktreePlan` | constructs | `brief_meta.plan_brief_worktree()` builds the plan directly; `plan_worktree()` and `FlowMeta` untouched |
 | `wikitoolkit ledger` (`show`/`plan-fix`/`claim`/`close`) | uses | ledger source intake + transactional claim lifecycle (S7) |
-| `TaskScheduler` (`dev_loop/task_scheduler.py`) | extends | `from_index_path()` so briefs schedule from `sdd/briefs/<slug>.index.json` (S3) |
+| `TaskScheduler` (`dev_loop/task_scheduler.py`) | extends | shared `resolve_index_path()` / `iter_index_files()` brief-aware discovery; `from_worktree` delegates; existing `from_index_file` reused for explicit paths (rev 0.2) |
 | `DevelopmentNode` (`dev_loop/nodes/development.py`) | modifies | explicit index resolution before the `feat_id` scan (S3) |
 | `ResearchOutput` (`dev_loop/models/base.py`) | extends | optional `index_path` field (S3) |
-| `parrot-sdd-coder` checkpoint/engine | unchanged | satisfied by non-empty `feature_id: "BRIEF-<KEY>"` (S2) |
+| `parrot-sdd-coder` engine/inspection/checkpoint/background | modifies | delegate their hardcoded `sdd/tasks/index` lookups to the shared discovery; non-empty `feature_id: "BRIEF-<KEY>"` satisfies checkpoint validation (S2, rev 0.2) |
+| `sdd-worker` prompt twins (4) | modifies | feature resolution + `INDEX` variable honor the brief index location (rev 0.2) |
 | `/sdd-done`, `/sdd-spec`, CLAUDE.md, WORKFLOW.md | modifies | brief lane, hotfix-path removal, FEAT-187 rewording |
 
 ### Data Models
@@ -349,10 +361,15 @@ New user-facing command: `/sdd-brief <source> [--base-branch main|dev|staging]
           description="Explicit per-brief index path inside the worktree (sdd/briefs/<slug>.index.json); None ⇒ legacy per-spec index scan.",
       )
 
-  # packages/ai-parrot/src/parrot/flows/dev_loop/task_scheduler.py  (modifies, verified :201)
-  @classmethod
-  def from_index_path(cls, worktree_path: str, index_path: str) -> Optional["TaskScheduler"]:
-      """Build a scheduler from an explicit index file (repo-relative to the worktree)."""
+  # packages/ai-parrot/src/parrot/flows/dev_loop/task_scheduler.py  (modifies, verified :201) — rev 0.2
+  # NOTE: the rev-0.1 `from_index_path` is dropped — `TaskScheduler.from_index_file(path)`
+  # already exists (verified :164) and is what explicit-path callers use.
+  def resolve_index_path(worktree_path: str | Path, feature_slug: str) -> Path:
+      """sdd/tasks/index/<slug>.json if it exists, else sdd/briefs/<slug>.index.json if it exists,
+      else the sdd/tasks/index path (preserves today's not-found behavior)."""
+
+  def iter_index_files(worktree_path: str | Path) -> List[Path]:
+      """Sorted sdd/tasks/index/*.json (minus _orphans.json), then sorted sdd/briefs/*.index.json."""
 
   # packages/ai-parrot/src/parrot/flows/dev_loop/nodes/development.py  (modifies _build_scheduler, verified :1344)
   async def _build_scheduler(self, research: ResearchOutput) -> Optional[TaskScheduler]:
@@ -508,7 +525,9 @@ def from_worktree(cls, worktree_path: str, feature_slug: str) -> Optional["TaskS
 - ~~`sdd/briefs/`~~ — directory does not exist yet (born inside worktrees).
 - ~~`/sdd-brief` command, `.claude/commands/sdd-brief.md`, `sdd/templates/brief.md`~~ — created by M1.
 - ~~`FlowMeta.type == "brief"`~~ — must NEVER exist; `plan_worktree()` raises `ValueError` for any type beyond feature/hotfix (sdd_meta.py:384-385).
-- ~~`ResearchOutput.index_path`~~ / ~~`TaskScheduler.from_index_path`~~ — created by M5.
+- ~~`ResearchOutput.index_path`~~ — created by M5.
+- ~~`TaskScheduler.from_index_path`~~ — NOT created (rev 0.2); use the existing `TaskScheduler.from_index_file(path)` (task_scheduler.py:164).
+- ~~`resolve_index_path` / `iter_index_files`~~ — created by M5 (rev 0.2) in `task_scheduler.py`.
 - ~~any `--unset-upstream` call in `ensure_worktree.py`~~ — S6 adds it; today a bare `git push` from a fresh worktree targets the base branch.
 - ~~`close_task.sh` support for briefs~~ — briefs never use it (in-place closure).
 - ~~a WorkBrief/DevRequestBrief `kind == "brief"`~~ — brief runs still enter as `kind == "bug"`; only the scaffolding command changes.
@@ -647,3 +666,4 @@ Summary: **9** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-17 | Jesus Lara + Claude | Initial draft from accepted brainstorm + codex design research (9/9 confirmed) |
+| 0.2 | 2026-10-17 | Claude (/sdd-task) | Corrected the "coder pipeline unchanged" claim: five dev_loop resolvers + four sdd-worker twins hardcode `sdd/tasks/index/`; added one shared brief-aware discovery rule in `task_scheduler.py`; dropped `from_index_path` (existing `from_index_file` suffices). Decomposed into TASK-4425..4439. |
