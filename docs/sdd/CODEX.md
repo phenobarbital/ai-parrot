@@ -190,7 +190,7 @@ Use `$sdd-spec` to create the formal specification:
 
 ```text
 $sdd-spec crew-result-storage
-$sdd-spec hotfix-pdf-render --type hotfix --base-branch main
+$sdd-brief NAV-9001   # hotfixes skip $sdd-spec — one-command brief flow (FEAT-698)
 ```
 
 The spec is the single source of truth. It must include:
@@ -222,7 +222,7 @@ Rules:
 - `type: feature` defaults to `base_branch: dev`.
 - `type: feature` may use `staging` during a release freeze.
 - `type: feature` must not use `main`.
-- `type: hotfix` must use `main`.
+- `$sdd-spec` no longer scaffolds hotfixes; use `$sdd-brief <source>` (FEAT-698).
 
 For feature specs, `$sdd-spec` reserves the formal `FEAT-NNN` through:
 
@@ -420,9 +420,8 @@ Hotfix:
 
 ```text
 $sdd-proposal NAV-9001 --mode=investigation
-$sdd-spec nav-9001-pdf-hotfix --type hotfix --base-branch main
-# usually skip task decomposition for very small hotfixes
-Use the sdd-worker agent to implement the hotfix spec.
+$sdd-brief NAV-9001
+# the brief flow scaffolds the hotfix on main; no $sdd-spec / $sdd-task
 $sdd-done NAV-9001
 ```
 
