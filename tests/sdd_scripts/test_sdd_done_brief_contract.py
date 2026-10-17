@@ -30,14 +30,14 @@ def test_pr_created_with_base_branch_variable() -> None:
 def test_merge_into_main_refused_before_push() -> None:
     doc = _doc()
     refusal = doc.index('"$BASE_BRANCH" == "main" && "$MERGE_FLAG" == "--merge"')
-    assert doc.index("### 8.") < refusal < doc.index("git -C <worktree-path> push origin \"$BRANCH\"")
+    assert doc.index("### 8.") < refusal < doc.index('git -C <worktree-path> push origin "$BRANCH"')
     assert refusal < doc.index("### 9.")
 
 
 def test_brief_lane_present_and_never_checks_out_main() -> None:
     doc = _doc()
     assert "### 2b. Brief Lane (FEAT-698)" in doc
-    lane = doc[doc.index("### 2b."): doc.index("### 3. Locate the Worktree")]
+    lane = doc[doc.index("### 2b.") : doc.index("### 3. Locate the Worktree")]
     assert "never runs `git checkout`" in lane
     assert "sdd/briefs/<slug>.index.json" in lane
     assert not re.search(r"^\s*git checkout", lane, re.M)

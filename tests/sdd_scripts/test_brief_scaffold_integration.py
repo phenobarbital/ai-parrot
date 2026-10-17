@@ -47,9 +47,7 @@ def test_brief_scaffold_round_trip(tmp_git_repo: Path, capsys, monkeypatch) -> N
     assert plan["name"] == "fix-abc123-fix-null-deref"
 
     # No upstream on the fresh worktree branch.
-    upstream = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "@{u}"], cwd=wt, capture_output=True, text=True
-    )
+    upstream = subprocess.run(["git", "rev-parse", "--abbrev-ref", "@{u}"], cwd=wt, capture_output=True, text=True)
     assert upstream.returncode != 0
 
     meta = BriefMeta.model_validate(
