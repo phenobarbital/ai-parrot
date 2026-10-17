@@ -223,7 +223,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -233,8 +233,9 @@
       "parallelism_notes": "Brief lane reads the per-brief index header and frontmatter shape (type: brief, BRIEF-<KEY>, ledger_issue) and the hotfix-/fix- worktree naming defined by TASK-4425 (scripts/sdd/brief_meta.py).",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4435-sdd-done-brief-lane.md"
+      "completed_at": "2026-10-17T00:49:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4435-sdd-done-brief-lane.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4436",
