@@ -287,21 +287,19 @@ class BedrockConverseBase(AbstractClient):
         # profile (fallback to 'default') → SDK chain (attributes may end
         # up ``None``, but are never unbound).
         #
-        # Code-review fix (post-FEAT-315): the conf-wide ``AWS_ACCESS_KEY``/
-        # ``AWS_SECRET_KEY``/``AWS_SESSION_TOKEN`` fallback was removed —
-        # it made every no-``aws_id`` client silently authenticate as
-        # whatever IAM identity happens to be configured for unrelated
-        # services, which may (as observed) be denied Bedrock access
-        # entirely. Static keys now require an explicit kwarg or a named
-        # ``aws_id`` profile; failing both, we try a Bedrock API key
-        # (bearer token) instead of a static keypair, and only fall through
-        # to the plain SDK credential chain (env vars, shared credentials
-        # file, SSO, ...) if that is unset too.
+        # When no ``aws_id`` is given, the resolver falls back to the
+        # ``"bedrock"`` profile — a dedicated credential slot that reads
+        # ``AWS_BEDROCK_KEY_ID``/``AWS_BEDROCK_SECRET_KEY`` (SigV4) and
+        # carries ``AWS_NOVA_API_KEY`` as ``aws_bearer_token`` (bearer
+        # fallback). This avoids silently picking up unrelated IAM keys
+        # (S3/DynamoDB/monitoring) that may lack Bedrock permissions.
         credentials: Dict[str, Any] = {}
         if self._aws_id:
             credentials = AWS_CREDENTIALS.get(self._aws_id) or {}
             if not credentials:
                 credentials = AWS_CREDENTIALS.get("default", {})
+        else:
+            credentials = AWS_CREDENTIALS.get("bedrock", {})
         self._aws_access_key = aws_access_key or credentials.get("aws_key") or credentials.get("aws_access_key_id")
         self._aws_secret_key = (
             aws_secret_key or credentials.get("aws_secret") or credentials.get("aws_secret_access_key")
