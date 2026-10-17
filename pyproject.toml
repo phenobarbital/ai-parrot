@@ -63,7 +63,7 @@ dev = [
     "pytest-asyncio==1.4.0",
     "pytest-xdist==3.3.1",
     "pytest-assume==2.4.3",
-    "pytest-mock==3.15.1",
+    "pytest-mock==3.16.0",
     "black",
     "pylint",
     "mypy",
