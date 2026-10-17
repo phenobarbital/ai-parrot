@@ -59,7 +59,7 @@ together on the feature branch. The manual (no-command) procedure is in
 ### Phase 4 — Validation (Reviewer)
 `/sdd-codereview` reviews completed tasks (with an adversarial `codex` cross-check);
 `/sdd-done FEAT-<NNN>` verifies every task, snapshots the ledger, pushes, and
-opens a PR against `base_branch` (`--merge` merges directly).
+opens a PR against `base_branch` (`--merge` merges directly; it never merges into `main`).
 
 ---
 
@@ -114,10 +114,10 @@ base_branch: dev     # for feature: dev or staging; for hotfix: must be "main"
 | `feature` | `dev` (default)     | Most work. Lands on `dev` via `/sdd-done`.                   |
 | `feature` | `staging`           | Stabilization fix during a release freeze. Lands on `staging`. |
 | `feature` | `<other-branch>`    | Sub-features extending another feature branch.               |
-| `hotfix`  | `main` (required)   | Production hotfixes. Land on `main` via manual PR.           |
+| `hotfix`  | `main` (required)   | Production hotfixes, produced by `/sdd-brief`. `/sdd-done` opens the `main` PR; merging it is manual. |
 
-Features MUST NOT base on `main`. `/sdd-done` enforces: hotfixes are NEVER
-auto-pushed or auto-PR'd to `main`. The user opens the PR manually; afterwards,
+Features MUST NOT base on `main`. `/sdd-done` enforces: it NEVER merges into
+`main` (`--merge` is refused); it opens the PR and merging is the human act; afterwards,
 `.github/workflows/sync-down.yml` propagates the change back to `staging` and
 `dev` automatically. If the Action fails, run `/sdd-done --sync-down` locally.
 

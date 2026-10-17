@@ -43,17 +43,13 @@ verify work, but modifies state only on `base_branch`.
   partial/missing evidence (Step 6) and ledger merge blockers (Step 9) —
   it never bypasses a required E2E gate (spec AC9).
 
-> **CRITICAL — `/sdd-done` NEVER pushes to `main` and NEVER opens a PR against `main` (FEAT-145).**
-> Hotfixes go to `main` ONLY via a manually-opened PR. This rule is non-negotiable
-> and applies to every flag combination — including `--merge`, `--force`, and `--resolve-jira`.
-> For hotfixes, this command pushes the hotfix branch and prints a `gh pr create
-> --base main` snippet. After the user merges the PR, the `.github/workflows/sync-down.yml`
-> Action propagates the change to `staging` and `dev` automatically. If the Action
-> fails or you are offline, re-run with `--sync-down` to propagate the change back to
-> both `staging` and `dev` manually. (`--sync-dev` is a deprecated alias for `--sync-down`.)
->
-> **Default behavior for features**: `/sdd-done` opens a PR against `BASE_BRANCH`
-> (typically `dev` or `staging`). Pass `--merge` to merge directly instead.
+> **CRITICAL — `/sdd-done` NEVER pushes to `main` and NEVER merges into `main` (FEAT-145, FEAT-698).**
+> It opens the PR itself in every flow, against the flow's `base_branch` — `main` for a
+> hotfix brief, `dev`/`staging` for a feature. Merging a `main` PR is the human act:
+> `--merge` with `BASE_BRANCH == main` is refused before anything is pushed, under every
+> flag combination — including `--force` and `--resolve-jira`. After a `main` PR merges,
+> `.github/workflows/sync-down.yml` propagates it to `staging` and `dev`; if the Action
+> fails or you are offline, re-run with `--sync-down`. (`--sync-dev` is a deprecated alias.)
 
 ## Steps
 
@@ -114,6 +110,24 @@ to `(NOT filed: shared ledger is read-only)` as documented in `sdd-worker`.
    If no match, list available features (one per per-spec index file) and ask the user to clarify.
 2. Read the spec file referenced by the per-spec index header.
 3. The list of tasks for this feature is the `tasks[]` array in the matched per-spec index file.
+
+### 2b. Brief Lane (FEAT-698)
+
+A brief (`/sdd-brief`) has no FEAT/TASK ids and lives only in its worktree, so it
+gets its own lane instead of conditionals threaded through the feature lane.
+
+1. If the input is not a `FEAT-*` id/slug, treat it as a brief KEY or slug. Scan
+   `$WORKTREES_DIR` for `hotfix-*` / `fix-*` worktrees containing
+   `sdd/briefs/<slug>.index.json`. This works from inside the worktree and from the
+   main repo **on any branch** — the brief lane never checks out `BASE_BRANCH` and
+   never runs `git checkout` in the shared checkout.
+2. Read `base_branch` and `ledger_issue` from `sdd/briefs/<slug>.brief.md`
+   frontmatter. Set `BASE_BRANCH` accordingly and `BRANCH` to the worktree's branch.
+3. Verify every task in the per-brief index is `done`, then run the brief's
+   `## Validation Commands` from the worktree root. Any failure aborts.
+4. Skip `close_task.sh`, the ledger snapshot (Step 9.1) and E2E (as `TYPE == hotfix`
+   does). Briefs close in place — there is no `active/` → `completed/` move.
+5. Continue at Step 8 / 9.2 using `$BRANCH` for every push and PR head.
 
 ### 3. Locate the Worktree
 Find the feature's worktree:
@@ -436,9 +450,18 @@ The JSON report lists each linked issue with `outcome`: `closed` /
 `/sdd-done`; carry every non-`closed` row into the Step 12 output.
 
 ### 8. Push the Feature Branch
-If the worktree branch hasn't been pushed yet:
+**Pre-push gate (FEAT-698):** a merge into `main` is never performed here. Refuse
+**before any push**, under every flag combination:
 ```bash
-git -C <worktree-path> push origin feat-<FEAT-ID>-<slug>
+if [[ "$BASE_BRANCH" == "main" && "$MERGE_FLAG" == "--merge" ]]; then
+    echo "⚠️  --merge into 'main' is refused. /sdd-done opens the PR; merging a main PR is the human act." >&2
+    exit 1
+fi
+```
+If the worktree branch hasn't been pushed yet (`BRANCH` is the worktree branch —
+`feat-<FEAT-ID>-<slug>` for features, the brief's branch for briefs):
+```bash
+git -C <worktree-path> push origin "$BRANCH"
 ```
 
 ### 9. Check Merge Blockers (FEAT-566)
@@ -545,46 +568,23 @@ fi
 > **CRITICAL**: This is the step that brings the implementation code into the
 > base branch. The default is to open a PR; pass `--merge` to merge directly.
 
-**Hard refusal — `BASE_BRANCH == "main"`:**
+**`BASE_BRANCH == "main"` (hotfix brief):** `--merge` was already refused before any
+push (Step 8). The PR flow below opens the PR against `main` itself; merging it is the
+human act, and `sync-down.yml` propagates it afterwards (`--sync-down` is the fallback).
 
-Hotfixes ALWAYS go through a PR, regardless of flags (including `--merge`):
-
-```bash
-if [[ "$BASE_BRANCH" == "main" ]]; then
-    cat <<EOF
-⚠️ Hotfix merging into 'main' MUST go through a PR. /sdd-done refuses to merge
-   into main directly, regardless of flags.
-
-   Open the PR manually:
-
-     gh pr create --base main --head feat-<FEAT-ID>-<slug> \\
-       --title "<hotfix title>" \\
-       --body-file "$TEST_REPORT_MD"
-
-   After the PR merges, the sync-down.yml Action propagates the change to staging
-   and dev automatically. If the Action fails or you are offline, re-run with
-   --sync-down to propagate the change manually:
-
-     /sdd-done <FEAT-ID> --sync-down
-
-EOF
-    exit 0   # NOT an error — the hotfix workflow continues outside this command
-fi
-```
-
-**Feature flow (`BASE_BRANCH != "main"`) — default: open a PR:**
+**Both lanes — default: open a PR against `$BASE_BRANCH`:**
 
 Unless `--merge` is passed, push the feature branch and open a PR against
 `BASE_BRANCH`:
 
 ```bash
 # Push the feature branch (already done in Step 8, but ensure it's up to date)
-git -C <worktree-path> push origin feat-<FEAT-ID>-<slug>
+git -C <worktree-path> push origin "$BRANCH"
 
 # Open a PR against the base branch
 gh pr create \
   --base "$BASE_BRANCH" \
-  --head "feat-<FEAT-ID>-<slug>" \
+  --head "$BRANCH" \
   --title "feat(<feature-slug>): FEAT-<ID> — <title>" \
   --body "$(cat <<EOF
 ## Summary
@@ -603,14 +603,23 @@ EOF
 )"
 ```
 
-If `gh` is not installed or not authenticated, print the manual command:
+If `gh` is missing, unauthenticated, or fails, fail closed: keep the worktree and branch
+(skip Step 11 cleanup), print the manual command, and exit non-zero:
 ```
 ℹ️  Could not create PR automatically. Run manually:
 
-    gh pr create --base <BASE_BRANCH> --head feat-<FEAT-ID>-<slug> \
+    gh pr create --base "$BASE_BRANCH" --head "$BRANCH" \
       --title "feat(<feature-slug>): FEAT-<ID> — <title>" \
       --body-file "$TEST_REPORT_MD"
 ```
+
+**Brief ledger close (FEAT-698):** a brief with `ledger_issue` set closes its ledger issue
+only once the fix is confirmed merged. PR-only finish: print the exact command next to the
+PR URL and do not close it yet:
+```bash
+wikitoolkit ledger close <ledger_issue> --reason "fixed by <PR url>" --resolved-by commit:<merge-sha>
+```
+After a confirmed `--merge` on a dev-based brief, run that command.
 
 **Feature flow with `--merge` — direct merge (old behavior):**
 
@@ -637,7 +646,7 @@ fi
 
 ```bash
 # We're on $BASE_BRANCH in the main repo (verified in Step 1, IN_WORKTREE=0)
-git merge --no-edit feat-<FEAT-ID>-<slug>
+git merge --no-edit "$BRANCH"
 ```
 
 If the merge has conflicts (e.g. code-level changes to the same files):

@@ -194,7 +194,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+*(done)*
+
+**Deviations**: `.agent/skills/worktree-management/` twin line 56 still carries the old "opens a PR feature → base_branch" wording; not in this task's file list — left for follow-up.
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD

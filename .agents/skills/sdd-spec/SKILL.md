@@ -16,12 +16,12 @@ and legacy shell examples; retain all workflow gates and evidence requirements.
 Use this skill when the user asks to run `sdd-spec`, create a formal SDD
 specification, or convert a brainstorm/proposal into a spec.
 
-Codex invocation: `$sdd-spec [<feature-slug>] [--type feature|hotfix] [--base-branch <branch>] [--interview | --no-interview] [--resume [<staging-dir>]] [--research full|light|none] [--no-gate] [--budget tight|default|loose] [-- <notes>]`.
+Codex invocation: `$sdd-spec [<feature-slug>] [--type feature] [--base-branch <branch>] [--interview | --no-interview] [--resume [<staging-dir>]] [--research full|light|none] [--no-gate] [--budget tight|default|loose] [-- <notes>]`.
 
 ## Purpose
 
 Create `sdd/specs/<feature-slug>.spec.md`, the single source of truth for a
-feature or hotfix.
+feature. Hotfixes are not specs: use `$sdd-brief <source>` (FEAT-698).
 
 ## Guardrails
 
@@ -72,7 +72,8 @@ stay with the thinking model — eligibility never delegates a design choice.
    - exploration frontmatter is next
    - default is `type: feature`, `base_branch: dev`
 5. Validate:
-   - hotfix requires `main`
+   - `--type hotfix` or `type: hotfix` exploration frontmatter: abort with
+     `⚠️  /sdd-spec no longer scaffolds hotfixes — use /sdd-brief <source> (FEAT-698).`
    - feature must not use `main`
 6. Sync base branch:
    - refuse if inside `.claude/worktrees/`
@@ -112,12 +113,10 @@ stay with the thinking model — eligibility never delegates a design choice.
      `python -m scripts.sdd.reserve_ids --kind feature --count 1 --base-branch <base_branch> --label <feature-slug>`.
    - Use the returned `FEAT-NNN` verbatim.
    - Do not fall back to hand-computed IDs.
-   - For `type: hotfix`, reserve no `FEAT-NNN`; use the Jira key as identity
-     when available.
 10. Write the spec:
    - frontmatter `type` and `base_branch`
    - frontmatter `projects` and `tags`, carried from the exploration doc (FEAT-576)
-   - ID or Jira identity
+   - Feature ID
    - date
    - architecture and module breakdown
    - Interface Skeletons for every module: public signatures and docstrings,
@@ -153,28 +152,15 @@ stay with the thinking model — eligibility never delegates a design choice.
    - never overwrite existing promoted directories; retain staging and report
      the collision for inspection; preserve source artifacts until copying succeeds
    - verify cached names
-   - commit `sdd: add spec for FEAT-NNN - <feature-slug>` for features, or a
-     hotfix equivalent for hotfixes
+   - commit `sdd: add spec for FEAT-NNN - <feature-slug>`
 
 ## Output
-
-For features:
 
 ```text
 Spec created and committed: sdd/specs/<feature-slug>.spec.md
 Feature ID: FEAT-NNN
 Isolation: per-spec|mixed
 Next: review, mark approved, run $sdd-task sdd/specs/<feature-slug>.spec.md
-```
-
-For hotfixes:
-
-```text
-Spec created and committed: sdd/specs/<feature-slug>.spec.md
-Identity: Jira <KEY> or hotfix slug
-Base branch: main
-Next: normally skip task decomposition and dispatch direct development; run
-$sdd-task only for unusually large hotfixes.
 ```
 
 ## References
