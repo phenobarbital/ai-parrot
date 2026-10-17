@@ -245,7 +245,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -256,8 +256,9 @@
       "parallelism_notes": "The refusal points users at the /sdd-brief command created by TASK-4429; docs/sdd/CODEX.md examples switch to the $sdd-brief skill created by TASK-4430.",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4436-sdd-spec-hotfix-removal.md"
+      "completed_at": "2026-10-17T00:57:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4436-sdd-spec-hotfix-removal.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4437",
