@@ -160,6 +160,26 @@ Extract from the per-spec index header: `feature_id`, `feature` slug,
 `spec` path. Task list in dependency order is the `tasks[]` array filtered
 to status `"pending"` and topologically sorted on `depends_on`.
 
+### 1b. Brief Lane (FEAT-698)
+
+Also consider `sdd/briefs/*.index.json` after the feature indexes; a feature
+index wins a tie. A match whose header has `"type": "brief"` is a **brief**:
+it exists only inside its worktree.
+
+- `IN_WORKTREE=0` ⇒ STOP: `⚠️  Briefs exist only inside their worktree: cd <worktree> and re-run sdd-worker.`
+- §3 provisions with `--brief-key "${FEATURE_ID#BRIEF-}" --base-branch "<base_branch>"` instead of `--feature-id`/`--jira-key`.
+- `INDEX` (§4.5, closure) is the matched `sdd/briefs/<slug>.index.json`; task files come from `tasks[].file`.
+- Closure: NO `close_task.sh`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
+
+  ```bash
+  jq --arg id "TASK-<NNN>" --arg now "$NOW" \
+    '(.tasks[] | select(.id == $id) | .status) = "done" |
+     (.tasks[] | select(.id == $id) | .completed_at) = $now' \
+    "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
+
+  # Fill in the Completion Note in <task file> without moving it.
+  git add "$INDEX" "<task file>"
+  ```
 ### 2. Never Write Task State on `BASE_BRANCH`
 
 Do NOT mark tasks `in-progress` (or commit anything under `sdd/`) on
