@@ -30,9 +30,7 @@ def _research(worktree: Path, index_path: str = INDEX_REL, feat_id: str = "") ->
 def _write_index(worktree: Path, ids: list[str]) -> None:
     path = worktree / INDEX_REL
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps({"tasks": [{"id": tid, "status": "pending", "depends_on": []} for tid in ids]})
-    )
+    path.write_text(json.dumps({"tasks": [{"id": tid, "status": "pending", "depends_on": []} for tid in ids]}))
 
 
 def _node() -> DevelopmentNode:
