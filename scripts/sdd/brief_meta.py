@@ -53,6 +53,7 @@ def _check_base_branch(base_branch: str) -> str:
         raise ValueError(f"base_branch must be one of {sorted(BRIEF_BASE_BRANCHES)}, got {base_branch!r}")
     return value
 
+
 SourceType = Literal["code-scanning", "github-issue", "jira", "ledger", "text", "file"]
 
 
