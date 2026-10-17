@@ -287,7 +287,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -299,8 +299,9 @@
       "parallelism_notes": "Imports BriefMeta/write_brief_index from TASK-4425 (brief_meta.py), drives ensure_worktree main(--brief-key) from TASK-4427, and exercises checkpoint._load_index_sync / TaskScheduler.from_worktree brief resolution from TASK-4431.",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4438-brief-integration-tests.md"
+      "completed_at": "2026-10-17T00:51:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4438-brief-integration-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4439",
