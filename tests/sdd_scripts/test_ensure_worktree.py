@@ -261,3 +261,63 @@ def test_clear_upstream_failure_discards_worktree(tmp_git_repo: Path, monkeypatc
         check=True,
     )
     assert branches.stdout.strip() == ""
+
+
+def test_main_brief_key_dev_plans_fix_worktree(tmp_git_repo: Path, capsys, monkeypatch) -> None:
+    """--brief-key with --base-branch dev plans a no-upstream fix worktree."""
+    monkeypatch.chdir(tmp_git_repo)
+
+    rc = main(["--slug", "fix-x", "--brief-key", "abc123", "--base-branch", "dev", "--json"])
+
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["name"] == "fix-abc123-fix-x"
+    assert out["base_ref"] == "origin/dev"
+    assert _upstream(Path(out["path"])).returncode != 0
+
+
+def test_main_brief_key_defaults_to_main_hotfix_name(tmp_git_repo: Path, capsys, monkeypatch) -> None:
+    """--brief-key defaults to a hotfix worktree planned from origin/main."""
+    monkeypatch.chdir(tmp_git_repo)
+
+    rc = main(["--slug", "fix-x", "--brief-key", "abc123", "--dry-run", "--json"])
+
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["name"] == "hotfix-abc123-fix-x"
+    assert out["base_ref"] == "origin/main"
+
+
+@pytest.mark.parametrize(
+    "conflicting_args",
+    [
+        ["--feature-id", "FEAT-999"],
+        ["--jira-key", "NAV-8036"],
+        ["--type", "hotfix"],
+    ],
+)
+def test_main_brief_key_rejects_feature_id_jira_and_type(
+    tmp_git_repo: Path, capsys, monkeypatch, conflicting_args: list[str]
+) -> None:
+    """--brief-key rejects every legacy flow identity selector without mutating git."""
+    monkeypatch.chdir(tmp_git_repo)
+    before = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=tmp_git_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+    rc = main(["--slug", "fix-x", "--brief-key", "abc123", *conflicting_args])
+
+    after = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=tmp_git_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert rc == 1
+    assert "Error:" in capsys.readouterr().err
+    assert after == before
