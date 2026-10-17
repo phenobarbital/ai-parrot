@@ -120,7 +120,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -130,8 +130,9 @@
       "parallelism_notes": "Mirrors .claude/commands/sdd-brief.md created by TASK-4429; its parity test reads that file.",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4430-sdd-brief-codex-twin.md"
+      "completed_at": "2026-10-17T00:46:52+00:00",
+      "file": "sdd/tasks/completed/TASK-4430-sdd-brief-codex-twin.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4431",
