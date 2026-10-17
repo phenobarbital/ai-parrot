@@ -46,6 +46,7 @@ from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegist
 from parrot.flows.dev_loop.test_scope import report as test_report
 from parrot.flows.dev_loop.test_scope.context import record_green_escalation, record_red_run
 from parrot.flows.dev_loop.test_scope.select import changed_files, plan_tests
+from parrot.flows.dev_loop.task_scheduler import iter_index_files
 from parrot.flows.dev_loop.worktree_environment import protected_argv
 
 if TYPE_CHECKING:  # never imported at runtime -- annotations only (deferred by `__future__`).
@@ -67,7 +68,7 @@ _EXECUTION_ID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}
 #: that module's validators are private to its own field declarations).
 _TASK_ID_RE = re.compile(r"^TASK-\d{1,5}$")
 #: FEAT-695: canonical feature id shape for test-result records.
-_FEATURE_ID_RE = re.compile(r"^FEAT-\d+$")
+_FEATURE_ID_RE = re.compile(r"^(?:FEAT-\d+|BRIEF-[A-Za-z0-9][A-Za-z0-9._-]*)$")
 
 #: Spec R8: `coder_run_validation(..., timeout_seconds)` is mandatory, 1..7200.
 _MIN_TIMEOUT_SECONDS = 1
@@ -833,11 +834,11 @@ class ValidationSupervisor:
 
     @staticmethod
     def _resolve_feature_id(worktree: Path, feature: str) -> str:
-        """Resolve *feature* to ``FEAT-<NNN>`` via the per-spec index header; fall back to the raw value."""
+        """Resolve *feature* to ``FEAT-<NNN>``/``BRIEF-<KEY>`` via the feature or brief index header; fall back to the raw value."""
         if _FEATURE_ID_RE.match(feature):
             return feature
         try:
-            for index_path in sorted((worktree / "sdd" / "tasks" / "index").glob("*.json")):
+            for index_path in iter_index_files(worktree):
                 try:
                     header = json.loads(index_path.read_text(encoding="utf-8"))
                 except (OSError, ValueError):
@@ -853,7 +854,7 @@ class ValidationSupervisor:
                     return feature_id
         except OSError:
             pass
-        logger.warning("could not resolve feature %r to a FEAT-<NNN> id; recording under the raw value", feature)
+        logger.warning("could not resolve feature %r to a FEAT-<NNN>/BRIEF-<KEY> id; recording under the raw value", feature)
         return feature
 
     @staticmethod
