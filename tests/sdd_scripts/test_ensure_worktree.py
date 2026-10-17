@@ -239,9 +239,7 @@ def test_reused_worktree_upstream_untouched(tmp_git_repo: Path) -> None:
     assert after.stdout == before.stdout
 
 
-def test_clear_upstream_failure_discards_worktree(
-    tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_clear_upstream_failure_discards_worktree(tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A failed upstream clear must discard both the worktree and branch."""
     plan = _plan()
     target_path = (tmp_git_repo / plan.path).resolve()
