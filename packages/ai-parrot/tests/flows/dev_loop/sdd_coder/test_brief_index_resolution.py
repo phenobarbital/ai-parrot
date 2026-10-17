@@ -23,17 +23,31 @@ def _write(path: Path, header: dict) -> Path:
 
 def _brief_header(slug: str = "demo-fix", key: str = "cs-224") -> dict:
     return {
-        "feature": slug, "feature_id": f"BRIEF-{key}", "spec": f"sdd/briefs/{slug}.brief.md",
-        "type": "brief", "base_branch": "main", "parallel_semantics": "exclusive",
-        "tasks": [{"id": f"HOTFIX-{key}-1", "status": "pending", "depends_on": [],
-                   "file": f"sdd/briefs/{slug}/tasks/HOTFIX-{key}-1-x.md"}],
+        "feature": slug,
+        "feature_id": f"BRIEF-{key}",
+        "spec": f"sdd/briefs/{slug}.brief.md",
+        "type": "brief",
+        "base_branch": "main",
+        "parallel_semantics": "exclusive",
+        "tasks": [
+            {
+                "id": f"HOTFIX-{key}-1",
+                "status": "pending",
+                "depends_on": [],
+                "file": f"sdd/briefs/{slug}/tasks/HOTFIX-{key}-1-x.md",
+            }
+        ],
     }
 
 
 def _feature_header(slug: str, fid: str = "FEAT-001") -> dict:
     return {
-        "feature": slug, "feature_id": fid, "spec": f"sdd/specs/{slug}.spec.md", "type": "feature",
-        "base_branch": "dev", "tasks": [{"id": "TASK-0001", "status": "pending", "depends_on": []}],
+        "feature": slug,
+        "feature_id": fid,
+        "spec": f"sdd/specs/{slug}.spec.md",
+        "type": "feature",
+        "base_branch": "dev",
+        "tasks": [{"id": "TASK-0001", "status": "pending", "depends_on": []}],
     }
 
 
@@ -83,7 +97,20 @@ async def test_engine_resolve_feature_matches_brief_by_feature_id(tmp_path: Path
     await asyncio.to_thread(subprocess.run, ["git", "init", "-q", "-b", "hotfix-x", str(wt)], check=True)
     await asyncio.to_thread(
         subprocess.run,
-        ["git", "-C", str(wt), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init"],
+        [
+            "git",
+            "-C",
+            str(wt),
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "init",
+        ],
         check=True,
     )
     _brief(wt)

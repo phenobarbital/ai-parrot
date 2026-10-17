@@ -854,7 +854,9 @@ class ValidationSupervisor:
                     return feature_id
         except OSError:
             pass
-        logger.warning("could not resolve feature %r to a FEAT-<NNN>/BRIEF-<KEY> id; recording under the raw value", feature)
+        logger.warning(
+            "could not resolve feature %r to a FEAT-<NNN>/BRIEF-<KEY> id; recording under the raw value", feature
+        )
         return feature
 
     @staticmethod
