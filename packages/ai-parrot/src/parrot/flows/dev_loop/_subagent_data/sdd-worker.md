@@ -223,7 +223,7 @@ it exists only inside its worktree.
 - Closure: NO `close_task.sh`. Set one entry in place, fill its Completion Note in place, then stage the index and task file:
 
   ```bash
-  jq --arg id "TASK-<NNN>" --arg now "$NOW" \
+  jq --arg id "HOTFIX-<KEY>-<N>" --arg now "$NOW" \
     '(.tasks[] | select(.id == $id) | .status) = "done" |
      (.tasks[] | select(.id == $id) | .completed_at) = $now' \
     "$INDEX" > "$INDEX.tmp" && mv "$INDEX.tmp" "$INDEX"
