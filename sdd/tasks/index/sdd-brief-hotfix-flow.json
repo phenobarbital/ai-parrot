@@ -16,7 +16,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "No dependencies: creates the new scripts/sdd/brief_meta.py module that TASK-4427/4428/4429/4434/4435/4438 import.",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4425-brief-meta-module.md"
+      "completed_at": "2026-10-17T00:31:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4425-brief-meta-module.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4426",
@@ -34,7 +35,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -42,8 +43,9 @@
       "parallelism_notes": "No dependencies: self-contained change to ensure() in scripts/sdd/ensure_worktree.py; TASK-4427 edits the same file and is ordered after it.",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4426-ensure-worktree-unset-upstream.md"
+      "completed_at": "2026-10-17T00:31:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4426-ensure-worktree-unset-upstream.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4427",
@@ -135,7 +137,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -143,8 +145,9 @@
       "parallelism_notes": "No dependencies: defines resolve_index_path/iter_index_files in task_scheduler.py and delegates the four sdd_coder resolvers to them; touches no other task's files. Its mention of scripts/sdd/brief_meta.py (TASK-4425) is a FORBIDDEN import listed under Does NOT Exist (parrot cannot import scripts.sdd) — not a use, so no edge.",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4431-dev-loop-brief-index-discovery.md"
+      "completed_at": "2026-10-17T00:31:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4431-dev-loop-brief-index-discovery.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4432",
@@ -153,7 +156,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -161,8 +164,9 @@
       "parallelism_notes": "No dependencies: models/base.py + nodes/development.py only, building on the pre-existing TaskScheduler.from_index_file (task_scheduler.py:164), not on TASK-4431's helpers.",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4432-research-output-index-path.md"
+      "completed_at": "2026-10-17T00:31:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4432-research-output-index-path.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4433",
