@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from scripts.sdd.brief_meta import (
+    BRIEF_BASE_BRANCHES,
     BriefMeta,
     brief_task_id,
     brief_worktree_plan,
@@ -57,6 +58,37 @@ def test_unsafe_slug_or_key_rejected(bad: str) -> None:
         _meta(slug=bad)
     with pytest.raises(ValidationError):
         _meta(key=bad)
+
+
+@pytest.mark.parametrize("bad", ["a..b", "x.", "x.lock", "a..b.lock"])
+def test_invalid_git_ref_components_rejected(bad: str) -> None:
+    """``..``, a trailing ``.`` and the ``.lock`` suffix fail at parse time.
+
+    These pass a bare character-class check but ``git check-ref-format``
+    rejects them, so without this they would only fail inside
+    ``git worktree add``.
+    """
+    with pytest.raises(ValidationError):
+        _meta(slug=bad)
+    with pytest.raises(ValidationError):
+        _meta(key=bad)
+    with pytest.raises(ValueError, match="safe for a git branch"):
+        brief_worktree_plan(slug=bad, key="cs-224", base_branch="main")
+    with pytest.raises(ValueError, match="safe for a git branch"):
+        brief_worktree_plan(slug="fix-path-injection", key=bad, base_branch="main")
+
+
+def test_base_branch_must_be_long_lived() -> None:
+    """Only ``main``/``dev``/``staging`` are accepted, in the model and the planner."""
+    assert BRIEF_BASE_BRANCHES == {"main", "dev", "staging"}
+
+    with pytest.raises(ValidationError, match="base_branch"):
+        _meta(base_branch="feature/x")
+    with pytest.raises(ValueError, match="base_branch"):
+        brief_worktree_plan(slug="fix-path-injection", key="cs-224", base_branch="feature/x")
+
+    for branch in sorted(BRIEF_BASE_BRANCHES):
+        assert brief_worktree_plan(slug="s", key="k", base_branch=branch).base_ref == f"origin/{branch}"
 
 
 def test_ledger_requires_dev() -> None:

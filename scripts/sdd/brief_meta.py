@@ -24,7 +24,34 @@ logger = logging.getLogger(__name__)
 BRIEFS_DIR: str = "sdd/briefs"
 #: Prefix of the per-brief index ``feature_id`` — non-empty, never ``FEAT-<NNN>``.
 BRIEF_ID_PREFIX: str = "BRIEF-"
+#: Long-lived branches a brief may base on (CLAUDE.md "Git Configuration").
+BRIEF_BASE_BRANCHES: frozenset[str] = frozenset({"main", "dev", "staging"})
 _SAFE_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _is_safe_ref(value: str) -> bool:
+    """Whether ``value`` is usable as a single ``git check-ref-format`` component.
+
+    ``_SAFE_REF_RE`` alone still admits sequences git rejects, so an invalid
+    brief key would surface late — inside ``git worktree add`` — instead of at
+    parse time. Reject them here: ``..`` anywhere, a trailing ``.``, and the
+    reserved ``.lock`` suffix.
+    """
+    if not _SAFE_REF_RE.fullmatch(value):
+        return False
+    return ".." not in value and not value.endswith(".") and not value.endswith(".lock")
+
+
+def _check_base_branch(base_branch: str) -> str:
+    """Return ``base_branch`` when it is one of ``BRIEF_BASE_BRANCHES``.
+
+    Raises:
+        ValueError: When the branch is not a long-lived Git Parrot Flow branch.
+    """
+    value = base_branch.strip()
+    if value not in BRIEF_BASE_BRANCHES:
+        raise ValueError(f"base_branch must be one of {sorted(BRIEF_BASE_BRANCHES)}, got {base_branch!r}")
+    return value
 
 SourceType = Literal["code-scanning", "github-issue", "jira", "ledger", "text", "file"]
 
@@ -54,9 +81,15 @@ class BriefMeta(BaseModel):
     def _branch_safe(cls, value: str) -> str:
         """Reject values that cannot appear in a git branch / worktree dir name."""
         value = value.strip()
-        if not _SAFE_REF_RE.fullmatch(value):
+        if not _is_safe_ref(value):
             raise ValueError("must be safe for a git branch and worktree directory name")
         return value
+
+    @field_validator("base_branch")
+    @classmethod
+    def _known_base_branch(cls, value: str) -> str:
+        """Reject base branches outside the flow's long-lived set."""
+        return _check_base_branch(value)
 
     @model_validator(mode="after")
     def _ledger_implies_dev(self) -> "BriefMeta":
@@ -114,9 +147,20 @@ def emit_brief_frontmatter(meta: BriefMeta) -> str:
 
 
 def brief_worktree_plan(*, slug: str, key: str, base_branch: str) -> WorktreePlan:
-    """Build a brief worktree plan using its base branch and safe identity fields."""
-    if not _SAFE_REF_RE.fullmatch(slug) or not _SAFE_REF_RE.fullmatch(key):
+    """Build a brief worktree plan using its base branch and safe identity fields.
+
+    Re-checks the ``BriefMeta`` invariants for callers that never build one —
+    notably ``ensure_worktree --brief-key``, which plans straight from raw CLI
+    strings. The ``ledger => dev`` rule stays on ``BriefMeta`` alone: the
+    source type is not derivable from these arguments.
+
+    Raises:
+        ValueError: When ``slug``/``key`` are not safe ref components, or
+            ``base_branch`` is not one of ``BRIEF_BASE_BRANCHES``.
+    """
+    if not _is_safe_ref(slug) or not _is_safe_ref(key):
         raise ValueError("slug and key must be safe for a git branch and worktree directory name")
+    base_branch = _check_base_branch(base_branch)
 
     prefix = "hotfix" if base_branch == "main" else "fix"
     name = f"{prefix}-{key}-{slug}"
