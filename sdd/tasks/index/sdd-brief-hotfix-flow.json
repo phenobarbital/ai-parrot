@@ -267,7 +267,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -278,8 +278,9 @@
       "parallelism_notes": "Restates the PR policy implemented in .claude/commands/sdd-done.md by TASK-4435 and the hotfix-path removal from .claude/commands/sdd-spec.md by TASK-4436.",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4437-policy-docs-rewording.md"
+      "completed_at": "2026-10-17T00:58:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4437-policy-docs-rewording.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4438",
