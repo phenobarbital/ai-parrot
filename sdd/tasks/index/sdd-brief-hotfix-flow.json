@@ -97,7 +97,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -109,8 +109,9 @@
       "parallelism_notes": "Procedure calls write_brief_index from TASK-4425 (brief_meta.py), ensure_worktree --brief-key from TASK-4427, and fills sdd/templates/brief.md created by TASK-4428.",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4429-sdd-brief-command.md"
+      "completed_at": "2026-10-17T00:46:07+00:00",
+      "file": "sdd/tasks/completed/TASK-4429-sdd-brief-command.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4430",
@@ -198,7 +199,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -210,8 +211,9 @@
       "parallelism_notes": "Documents the sdd/briefs index layout fixed by TASK-4425 (brief_meta.py), provisions with the --brief-key flag from TASK-4427, and relies on SddCoderEngine._resolve_feature finding brief indexes via TASK-4431 (sdd_coder/engine.py).",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4434-sdd-worker-brief-lane.md"
+      "completed_at": "2026-10-17T00:46:07+00:00",
+      "file": "sdd/tasks/completed/TASK-4434-sdd-worker-brief-lane.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4435",
