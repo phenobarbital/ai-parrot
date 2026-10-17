@@ -54,7 +54,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -65,8 +65,9 @@
       "parallelism_notes": "Imports brief_worktree_plan from TASK-4425 (scripts/sdd/brief_meta.py); modifies the same files as TASK-4426 (scripts/sdd/ensure_worktree.py, tests/sdd_scripts/test_ensure_worktree.py).",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4427-ensure-worktree-brief-cli.md"
+      "completed_at": "2026-10-17T00:34:34+00:00",
+      "file": "sdd/tasks/completed/TASK-4427-ensure-worktree-brief-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4428",
@@ -75,7 +76,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -85,8 +86,9 @@
       "parallelism_notes": "Contract test imports parse_brief from TASK-4425 (scripts/sdd/brief_meta.py) to prove the template parses as BriefMeta.",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4428-brief-template.md"
+      "completed_at": "2026-10-17T00:34:34+00:00",
+      "file": "sdd/tasks/completed/TASK-4428-brief-template.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4429",
