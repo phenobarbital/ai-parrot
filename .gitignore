@@ -416,6 +416,8 @@ sdd/state/.design_research/
 sdd/state/e2e/
 # FEAT-577: id-less /sdd-spec intake staging; promoted to sdd/state/<FEAT-ID>/intake/ on commit, pruned after 10 days by a daily git hook (scripts/sdd/install_hooks.py)
 sdd/state/.intake/
+# FEAT-698: /sdd-brief draft staging; the committed brief lives only inside the worktree
+sdd/state/.brief/
 
 # Local Claude Code config: machine-specific settings and local-only skills
 .claude/settings.json
