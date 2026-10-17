@@ -108,6 +108,11 @@ def ensure(
 
     # Step 4: Create
     _create_worktree(plan, target_path, repo_root=repo_root)
+    try:
+        _clear_upstream(plan, target_path)
+    except EnsureWorktreeError:
+        _discard_new_worktree(plan, target_path, repo_root=repo_root)
+        raise
 
     # Step 5: Verify
     missing = _missing_paths(target_path, require_paths)
@@ -199,6 +204,40 @@ def _create_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: Path) 
             except Exception:  # noqa: BLE001 — best effort, the original error is what matters
                 pass
         raise
+
+
+_UPSTREAM_PROBE = ("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+
+
+def _clear_upstream(plan: WorktreePlan, target_path: Path) -> None:
+    """Drop the upstream ``git worktree add -b`` sets and prove it is gone.
+
+    ``worktree add -b <name> <path> origin/<base>`` makes ``<name>`` track
+    ``origin/<base>``; for a hotfix that is ``origin/main``, so a bare
+    ``git push`` would target main.
+
+    Raises:
+        EnsureWorktreeError: The upstream could not be unset or still resolves.
+    """
+    probe = subprocess.run(
+        ["git", *_UPSTREAM_PROBE],
+        cwd=target_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if probe.returncode == 0:
+        _git("branch", "--unset-upstream", cwd=target_path)
+
+    verified = subprocess.run(
+        ["git", *_UPSTREAM_PROBE],
+        cwd=target_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if verified.returncode == 0:
+        raise EnsureWorktreeError(f"Failed to clear upstream for newly created worktree {plan.name!r}.")
 
 
 def _discard_new_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: Path) -> None:
