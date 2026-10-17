@@ -39,45 +39,30 @@ criteria) you must:
 2. **Create the Jira ticket** via ``gh`` or the JiraToolkit if available
    in the dispatcher's tool surface. Reporter = original human (kept on
    the brief). Assignee = the dev-loop service account (``flow-bot``).
-3. **Scaffold an SDD spec**. Run ``/sdd-spec`` with a feature slug
-   derived from the affected component, fill in the motivation and
-   acceptance criteria from the brief. **Flow type — pass it explicitly,
-   do not let `/sdd-spec` infer it (FEAT-466):**
+3. **Scaffold the flow.** Check the brief's own `flow_type` / `base_branch`
+   fields FIRST: these explicit console/operator overrides (FEAT-466
+   TASK-2508) win over the `kind`-derived default. A `kind == "bug"` brief
+   with `flow_type: "feature"` stays on the feature path; otherwise a bug
+   uses the brief flow. Run:
+   ```
+   /sdd-brief <JIRA-KEY> --no-interview                                    # kind == "bug" (FEAT-698)
+   /sdd-spec <slug> --type feature --base-branch dev --no-interview        # kind == "enhancement" | "new_feature"
+   ```
+   For a bug, add `--base-branch <brief.base_branch>` to `/sdd-brief` when
+   the operator overrode the base branch. A bug overridden to
+   `flow_type: "feature"` uses the feature command (with its overridden base
+   branch) and remains a feature run in every respect.
+4. **Decompose into tasks — feature only.** Run ``/sdd-task <spec-path>``
+   for a feature. Bug runs skip this step: the brief already materialized its
+   task files.
+5. **Create the worktree — feature only.** For a feature, run the shared
+   rule:
 
-   **Check the brief's own `flow_type` / `base_branch` fields FIRST** —
-   these are an explicit console/operator override (FEAT-466 TASK-2508)
-   and, when present, WIN OVER the `kind`-derived default below. A
-   `kind == "bug"` brief with `flow_type: "feature"` set means the
-   operator decided this particular fix does not need to be a hotfix
-   (e.g. a hardening change with no live incident behind it) — pass
-   `--type feature` (and `--base-branch <brief.base_branch or "dev">"`),
-   not `--type hotfix`. Only fall back to the `kind`-derived default when
-   the brief's `flow_type`/`base_branch` are absent (`null`):
-   ```
-   /sdd-spec <slug> --type hotfix --base-branch main       # kind == "bug"
-   /sdd-spec <slug> --type feature --base-branch dev        # kind == "enhancement" | "new_feature"
-   ```
-   `kind == "bug"` → `type: hotfix` / `base_branch: main` (bug fixes land
-   on `main`), UNLESS the brief overrode `flow_type` to `"feature"` (see
-   above). `kind == "enhancement"` or `"new_feature"` → `type: feature` /
-   `base_branch: dev`. **When the resolved `type` (after applying any
-   override) is `hotfix`, no `FEAT-<NNN>`/`TASK-<NNN>` id is reserved at
-   all** — `/sdd-spec` skips the ledger allocator entirely for
-   `type: hotfix` (a bugfix is not a feature); the Jira issue key from
-   step 2 is this run's identity instead. A `kind == "bug"` brief
-   overridden to `type: feature` DOES reserve a `FEAT-<NNN>` normally — it
-   is now a feature run in every respect, not just for the base branch.
-4. **Decompose into tasks — `type: feature` only.** Run
-   ``/sdd-task <spec-path>``. **For `type: hotfix`, SKIP this step
-   entirely** — a one-or-two-commit bugfix is handled directly by the
-   dev-loop's single-agent development path from the spec alone; there is
-   no per-spec task index and no `TASK-<NNN>` id to reserve. Proceed
-   straight to step 5.
-5. **Create the worktree**. The base ref and branch/worktree naming depend
-   on the spec's ``type`` (FEAT-466 — a hotfix has no reserved id, so its
-   name is built from the Jira key instead):
-   - ``hotfix``: ``git worktree add -b hotfix-<JIRA-KEY>-<slug> .claude/worktrees/hotfix-<JIRA-KEY>-<slug> origin/main``
-   - ``feature``: ``git worktree add -b feat-<id>-<slug> .claude/worktrees/feat-<id>-<slug> origin/dev``
+       python -m scripts.sdd.ensure_worktree --json \
+         --slug <slug> --feature-id FEAT-<NNN>
+
+   Bug runs skip ``ensure_worktree``: `/sdd-brief` provisioned the worktree.
+   Take ``worktree_path`` from its handoff output for the output contract.
 
 ## Cardinal rules
 
@@ -90,8 +75,8 @@ criteria) you must:
 - The Jira ticket MUST be created BEFORE the spec/tasks/worktree, so the
   reporter sees a ticket even if scaffolding fails later.
 - The worktree branch name MUST match ``feat-<id>-<slug>`` (features) or
-  ``hotfix-<JIRA-KEY>-<slug>`` (hotfixes — no id is reserved, FEAT-466) so
-  the ``pull_request.closed`` webhook can clean it up automatically.
+  ``hotfix-<KEY>-<slug>`` / ``fix-<KEY>-<slug>`` (briefs — no id is reserved,
+  FEAT-698) so the ``pull_request.closed`` webhook can clean it up automatically.
 
 ## Output Contract
 
