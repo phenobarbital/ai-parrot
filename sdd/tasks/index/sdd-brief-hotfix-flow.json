@@ -179,7 +179,7 @@
       "feature_id": "FEAT-698",
       "feature": "sdd-brief-hotfix-flow",
       "spec": "sdd/specs/sdd-brief-hotfix-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -190,8 +190,9 @@
       "parallelism_notes": "Twins invoke the /sdd-brief command created by TASK-4429 (.claude/commands/sdd-brief.md) and emit the ResearchOutput.index_path field added by TASK-4432 (dev_loop/models/base.py).",
       "assigned_to": null,
       "started_at": "2026-10-17T00:20:03+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4433-sdd-research-brief-lane.md"
+      "completed_at": "2026-10-17T00:50:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4433-sdd-research-brief-lane.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4434",
