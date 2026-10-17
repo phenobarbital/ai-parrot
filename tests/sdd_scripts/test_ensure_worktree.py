@@ -204,3 +204,60 @@ def test_ensure_rejects_absolute_require_paths(tmp_git_repo: Path) -> None:
     with pytest.raises(EnsureWorktreeError) as exc_info:
         ensure(plan, repo_root=tmp_git_repo, require_paths=["/etc/hostname"])
     assert "repo-relative" in str(exc_info.value)
+
+
+def _upstream(worktree: Path) -> subprocess.CompletedProcess[str]:
+    """Return the branch-upstream probe result for ``worktree``."""
+    return subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+        cwd=worktree,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_created_worktree_has_no_upstream(tmp_git_repo: Path) -> None:
+    """A fresh worktree from origin/<base> must not track it (FEAT-698 S6)."""
+    path, created = ensure(_plan(), repo_root=tmp_git_repo)
+    assert created is True
+    assert _upstream(path).returncode != 0
+
+
+def test_reused_worktree_upstream_untouched(tmp_git_repo: Path) -> None:
+    """Reuse must preserve an upstream an operator configured deliberately."""
+    path, _ = ensure(_plan(), repo_root=tmp_git_repo)
+    subprocess.run(["git", "branch", "--set-upstream-to=origin/dev"], cwd=path, check=True)
+    before = _upstream(path)
+
+    reused_path, created = ensure(_plan(), repo_root=tmp_git_repo)
+
+    after = _upstream(reused_path)
+    assert created is False
+    assert before.returncode == 0
+    assert after.returncode == 0
+    assert after.stdout == before.stdout
+
+
+def test_clear_upstream_failure_discards_worktree(tmp_git_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed upstream clear must discard both the worktree and branch."""
+    plan = _plan()
+    target_path = (tmp_git_repo / plan.path).resolve()
+
+    def fail_clear_upstream(_plan_arg: object, _target_path: Path) -> None:
+        raise EnsureWorktreeError("injected upstream failure")
+
+    monkeypatch.setattr("scripts.sdd.ensure_worktree._clear_upstream", fail_clear_upstream)
+
+    with pytest.raises(EnsureWorktreeError, match="injected upstream failure"):
+        ensure(plan, repo_root=tmp_git_repo)
+
+    assert not target_path.exists()
+    branches = subprocess.run(
+        ["git", "branch", "--list", plan.name],
+        cwd=tmp_git_repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert branches.stdout.strip() == ""
