@@ -32,10 +32,9 @@ when safe.
 - Do not modify the spec.
 - Do not mark tasks done unless there is evidence in the worktree.
 - Always show a verification report before writing closeout state.
-- Hotfixes never merge directly to `main`.
-- Hotfixes never push directly to `main`.
-- For hotfixes, print a manual `gh pr create --base main` command instead of
-  creating or merging the PR automatically.
+- Never push directly to `main` and never merge into `main` (`--merge` with base `main` is refused before any push).
+- `$sdd-done` opens the PR itself in every flow against `base_branch`, `main` included; on `gh` failure keep the worktree/branch, print the manual command and exit non-zero.
+- A brief (`sdd/briefs/<slug>.index.json`, no FEAT id) uses its own lane: resolve by scanning worktrees, verify the per-brief index + Validation Commands, close in place, never check out a branch in the shared checkout; close its `ledger_issue` only after a confirmed merge.
 - Use `--sync-down` only after the hotfix PR has merged to `main`.
 - Use `--sync-dev` only as a deprecated alias for `--sync-down`.
 - Merge gate checks apply only to `--merge` flag, not PR flow.
@@ -204,12 +203,10 @@ do not run task closure again on base_branch and do not clean worktrees with unk
     - Skip the snapshot entirely for hotfixes
 
 12. Integrate:
-    - If `base_branch == main`, refuse automatic merge or PR creation. Print
-      the manual hotfix PR command:
-      `gh pr create --base main --head <branch> --title "<title>" --body-file "$TEST_REPORT_MD"`.
-    - If feature and no `--merge`, run `gh pr create --base <base_branch> --head <branch>`; the PR body includes the
+    - If `base_branch == main` and `--merge` is set, refuse before any push; merging a `main` PR is the human act.
+    - Without `--merge` (every flow, `main` included), run `gh pr create --base <base_branch> --head <branch>`; the PR body includes the
       rendered `## Tests` section (`$(cat "$TEST_REPORT_MD")`) after `<N>/<total> tasks verified.`.
-    - If `gh` is missing or not authenticated, print the manual command.
+    - If `gh` is missing, not authenticated or fails, keep the worktree/branch, print the manual command and exit non-zero.
     - If feature and `--merge`, merge into `base_branch`, run
       `scripts/sdd/heal_orphans.sh <feature-slug>`, commit any staged orphan
       cleanup, and push `base_branch`.
