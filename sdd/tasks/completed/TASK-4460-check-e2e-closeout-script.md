@@ -359,4 +359,32 @@ at this same function.
 
 ## Completion Note
 
-*(to be filled in on completion)*
+**Completed by**: sdd-fix (Claude)
+**Status**: done
+
+- Created `scripts/sdd/check_e2e_closeout.py` with `resolve_policy`,
+  `evaluate_closeout_gate`, `evaluate_closeout_gate_detailed` and `main`.
+  The decision table was moved verbatim from
+  `tests/sdd_scripts/test_e2e_closeout_contract.py` L86–113; reason-code
+  strings are unchanged, which TASK-4461's 15 retargeted tests confirm.
+- **Design refinement over the blueprint**: the blueprint left a `FILL IN` for
+  threading `status`/`gate_satisfied` into the JSON payload. Rather than
+  re-parsing reason codes or validating twice, the gate was split into
+  `evaluate_closeout_gate_detailed()` (returns a `GateDecision` dataclass with
+  allowed/policy/status/gate_satisfied/reason_codes) and the original 2-tuple
+  `evaluate_closeout_gate()` as a thin wrapper. The 15 existing tests keep
+  calling the tuple form unchanged; `main()` uses the detailed form. No
+  duplicated decision logic.
+- Synthetic statuses for the non-validator paths: `NONE` for `policy: none`,
+  `MISSING` when no plan file exists.
+- **Lint finding worth recording**: `ruff` raised `ASYNC240` on
+  `plan_path.is_file()` inside the async gate — a blocking pathlib call on the
+  event loop that the original test-local function also had (tests aren't linted
+  under that rule). Fixed properly with
+  `await asyncio.to_thread(plan_path.is_file)` rather than a `noqa`.
+- Created `tests/sdd_scripts/test_check_e2e_closeout.py` (19 tests): policy
+  resolution incl. 4 malformed-value cases, signature introspection proving
+  `force` is absent from both gate functions, 5 CLI exit-code/JSON cases, the
+  import-guard path (monkeypatched `builtins.__import__`), and wrapper parity.
+- Validation: `pytest tests/sdd_scripts/test_check_e2e_closeout.py -q` → 19
+  passed; `ruff check` and `black --check` clean on both files.

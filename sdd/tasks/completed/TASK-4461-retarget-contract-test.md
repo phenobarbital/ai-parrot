@@ -229,4 +229,24 @@ gate with no weakening: if one fails, fix `scripts/sdd/check_e2e_closeout.py`
 
 ## Completion Note
 
-*(to be filled in on completion)*
+**Completed by**: sdd-fix (Claude)
+**Status**: done
+
+- Deleted the task-local `evaluate_closeout_gate` (L59–113, banner included) and
+  imported the shipped one from `scripts.sdd.check_e2e_closeout`. Verified
+  repo-wide that exactly one definition now exists, in `scripts/sdd/`.
+- Removed the `force` kwarg from all 15 call sites (8 × `force=False`,
+  6 × `force=True`, 1 × `force=force`).
+- Rewrote `test_required_policy_blocks_on_missing_evidence_regardless_of_force`
+  as `test_required_policy_cannot_be_bypassed_by_force`: the
+  `@pytest.mark.parametrize("force", [False, True])` sweep became a signature
+  assertion (`"force" not in inspect.signature(...).parameters`) paired with the
+  original missing-evidence blocking assertion, so AC9 is now proven
+  structurally rather than by exercising a flag that no longer exists.
+- Updated the module docstring to record that the suite certifies the shipped
+  gate, and why the task-local copy was removed.
+- No behavioral test body was weakened; all 15 passed against the real gate on
+  the first run, which confirms TASK-4460's move was faithful.
+- Validation: `pytest tests/sdd_scripts/test_e2e_closeout_contract.py -q` → 25
+  passed (the count drops by one vs. before because the force parametrization
+  collapsed from 2 cases to 1); `ruff` and `black` clean.
