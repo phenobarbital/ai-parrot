@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -222,10 +223,17 @@ def test_select_tests_on_fixture_monorepo(fixture_monorepo):
     assert rc == 1
 
 
-def test_run_records_green_core_escalation(fixture_monorepo, capsys, monkeypatch):
+def test_run_core_change_without_contract_is_a_note_never_an_escalation(fixture_monorepo, capsys, monkeypatch):
+    """FEAT-699 re-baseline of the FEAT-563 core-escalation CLI test.
+
+    Without a test contract the plan is the bounded fallback (file-level mirror + depth-1 direct
+    importers). A core hit is demoted to a "covered by nightly" note: no suite target, nothing in
+    `escalated` / `skipped_escalations`, and the FEAT-604 ledger is neither consulted nor written —
+    a green run on a non-escalated invocation proves nothing about a suite."""
     from scripts.sdd.select_tests import _load_kernel
 
     _load_kernel()  # ensures test_scope is importable as a top-level module
+    import test_scope.context as ctx
     import test_scope.select as select_mod
     from test_scope.policy import ScopePolicy as RealScopePolicy
 
@@ -236,43 +244,86 @@ def test_run_records_green_core_escalation(fixture_monorepo, capsys, monkeypatch
     rc = main(["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--run"])
     assert rc == 0
     capsys.readouterr()  # discard the first call's shell-line + subprocess output
+    assert ctx.read_ledger(fixture_monorepo) == {}
 
     main(["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--json"])
     payload = json.loads(capsys.readouterr().out)
-    assert "a" in payload["skipped_escalations"]
+    assert payload["mode"] == "fallback"
+    assert payload["escalated"] == []
+    assert payload["skipped_escalations"] == []
+    assert [hit["path"] for hit in payload["core_hits"]] == ["packages/a/src/pa/x.py"]
+    assert any("covered by nightly" in note for note in payload["notes"])
+    targets = [target for invocation in payload["invocations"] for target in invocation["targets"]]
+    assert targets, "the bounded fallback must still plan the mirror/importer files"
+    assert {target["reason"] for target in targets} <= {"mirror", "import"}
+    assert all(target["path"].endswith(".py") for target in targets)
 
 
-def test_run_rearms_escalation_on_a_later_red_run(fixture_monorepo, capsys, monkeypatch):
-    """FEAT-563 review (R14/AC9c): a red run on a core-escalation invocation must re-arm it — a
-    stale ledger record for that distribution must not survive a red run, even one that predates
-    (or otherwise never matched) the current core-file content.
-
-    A distribution whose ledger entry already matches the current content is *skipped* by
-    `pending_escalations` — the escalated invocation is then never even added to the plan, so it
-    cannot go red "for real" through this path. This test instead seeds a ledger entry that does
-    NOT match (so the escalation is still attempted, exactly like a genuinely-stale or corrupted
-    record would be) and asserts a subsequent red run clears it rather than leaving a misleading
-    record behind."""
+def test_cli_fresh_process_green_core_change_exits_zero(tmp_path):
+    """Regression (FEAT-699 review): `select_tests.py` run as its own process — exactly how the merge
+    gate and `/sdd-done` invoke it — must not crash after a green run whose diff touches a
+    `CORE_PATHS` file. TASK-4445 removed the only import that made `test_scope.context` an attribute
+    of the kernel package; the in-process pytest suite masked it because sibling tests import that
+    submodule first."""
     from scripts.sdd.select_tests import _load_kernel
 
-    kernel = _load_kernel()
+    _load_kernel()
+    from test_scope.policy import CORE_PATHS
+
+    core_file = CORE_PATHS[0]  # forced core hit — no fan-in needed
+    parts = core_file.split("/")
+    assert parts[0] == "packages" and parts[2] == "src", core_file
+    mirror_test = f"packages/{parts[1]}/tests/test_{Path(core_file).stem}.py"
+    for rel, body in {
+        "pytest.ini": "[pytest]\n",
+        core_file: "X = 1\n",
+        mirror_test: "def test_core():\n    assert True\n",
+    }.items():
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(body)
+    _git(tmp_path, "init", "-q", "-b", "main")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "init")
+    (tmp_path / core_file).write_text("X = 2\n")
+
+    script = Path(__file__).resolve().parents[2] / "scripts/sdd/select_tests.py"
+    proc = subprocess.run(
+        [sys.executable, str(script), "--tier", "merge", "--base", "HEAD", "--worktree", str(tmp_path), "--run"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "Traceback" not in proc.stderr
+    assert "covered by nightly" in proc.stdout
+
+
+def test_run_red_fallback_run_leaves_ledger_untouched(fixture_monorepo, monkeypatch):
+    """FEAT-699 re-baseline of the FEAT-563 re-arm test (R14/AC9c).
+
+    Re-arming only ever applied to an *escalated* invocation. In the bounded fallback no invocation
+    is an escalation, so a red run must neither drop nor refresh ledger records — the same rule as
+    `ValidationSupervisor._record_invocation_outcome` ("an invocation with no escalated target
+    records nothing")."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    _load_kernel()
+    import test_scope.context as ctx
     import test_scope.select as select_mod
     from test_scope.policy import ScopePolicy as RealScopePolicy
 
     monkeypatch.setattr(select_mod, "ScopePolicy", lambda: RealScopePolicy(core_fanin_threshold=1))
 
     (fixture_monorepo / "packages/a/src/pa/x.py").write_text("X = 2\n")
-    # Seed a ledger entry with no matching blobs, so pending_escalations does NOT skip "a"/"b".
-    kernel.context.record_green_escalation(fixture_monorepo, ["a", "b"], [])
-    assert "a" in kernel.context.read_ledger(fixture_monorepo)
+    ctx.record_green_escalation(fixture_monorepo, ["a", "b"], [])
+    before = ctx.read_ledger(fixture_monorepo)
+    assert set(before) == {"a", "b"}
 
     (fixture_monorepo / "packages/a/tests/test_x.py").write_text("def test_x():\n    assert False\n")
     rc = main(["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--run"])
-    assert rc == 1  # "a"'s escalated suite failed; "b"'s passed
+    assert rc == 1  # "a"'s mirror test failed; "b"'s importer test passed
 
-    ledger = kernel.context.read_ledger(fixture_monorepo)
-    assert "a" not in ledger  # re-armed: the stale/red entry was dropped, not left in place
-    assert "b" in ledger  # "b" was green and got a fresh, correct record
+    assert ctx.read_ledger(fixture_monorepo) == before
 
 
 def test_run_records_green_cap_escalation(fixture_monorepo, monkeypatch):
@@ -308,7 +359,9 @@ def test_run_records_green_cap_escalation(fixture_monorepo, monkeypatch):
 
     assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run"]) == 0
 
-    ledger = kernel.context.read_ledger(fixture_monorepo)
+    import test_scope.context as ctx
+
+    ledger = ctx.read_ledger(fixture_monorepo)
     assert driving_file in ledger["a"].impact_blobs
     assert ledger["a"].impacted_hash == "cap-impact-hash"
 
@@ -336,7 +389,9 @@ def test_run_rearms_red_cap_escalation(fixture_monorepo, monkeypatch):
         cap_hits={"a": ("packages/a/src/pa/x.py",)},
         cap_impacted={"a": "cap-impact-hash"},
     )
-    kernel.context.record_green_escalation(
+    import test_scope.context as ctx
+
+    ctx.record_green_escalation(
         fixture_monorepo,
         ["a"],
         [],
@@ -351,7 +406,7 @@ def test_run_rearms_red_cap_escalation(fixture_monorepo, monkeypatch):
     )
 
     assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--run"]) == 1
-    assert "a" not in kernel.context.read_ledger(fixture_monorepo)
+    assert "a" not in ctx.read_ledger(fixture_monorepo)
 
 
 # ── FEAT-617: --timeout bounds a hung test in the merge-tier sweep ──────────
@@ -496,8 +551,10 @@ def test_no_ledger_skips_escalation_ledger(fixture_monorepo, monkeypatch):
     calls: list[str] = []
     monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
     monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
-    monkeypatch.setattr(kernel.context, "record_red_run", lambda *_: calls.append("red"))
-    monkeypatch.setattr(kernel.context, "record_green_escalation", lambda *_args, **_kwargs: calls.append("green"))
+    import test_scope.context as ctx
+
+    monkeypatch.setattr(ctx, "record_red_run", lambda *_: calls.append("red"))
+    monkeypatch.setattr(ctx, "record_green_escalation", lambda *_args, **_kwargs: calls.append("green"))
     monkeypatch.setattr(
         "scripts.sdd.select_tests.subprocess",
         SimpleNamespace(run=lambda *args, **kwargs: SimpleNamespace(returncode=0)),
