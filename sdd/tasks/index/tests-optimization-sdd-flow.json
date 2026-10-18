@@ -28,7 +28,7 @@
       "feature_id": "FEAT-699",
       "feature": "tests-optimization-sdd-flow",
       "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -36,8 +36,9 @@
       "parallelism_notes": "root of the graph: creates TestContract/GreenCacheEntry/BaselineVerdict (datatypes.py) and contract parsers (contract.py); sole owner of datatypes.py",
       "assigned_to": null,
       "started_at": "2026-10-18T20:43:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4440-test-contract-model-and-parsing.md"
+      "completed_at": "2026-10-18T21:05:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4440-test-contract-model-and-parsing.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4441",

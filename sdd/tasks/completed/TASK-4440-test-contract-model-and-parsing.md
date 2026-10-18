@@ -313,10 +313,8 @@ Contract, implement from the blueprint, run the Validation Commands with
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: gpt-5.6-terra (codex seat), integration fix by sdd-worker (sonnet)
+**Date**: 2026-10-18
+**Notes**: Merge-tier run: 434 passed, 6 failed. 5 failures in test_llm_code_dispatcher.py are pre-existing on dev (reproduced on primary checkout). The 6th, test_models.py::test_mirror_covers_every_scope_plan_field, came from the new ScopePlan fields; fixed in 658347780. test_scope suite: 125 passed. Not closed through finalize_task because the merge gate cannot go green while the dev baseline is red.
 
-**Completed by**:
-**Date**:
-**Notes**:
-
-**Deviations from spec**: none
+**Deviations from spec**: models.py (ScopePlanModel mode/cached mirror, planned for TASK-4445) was edited here with user approval (Option A) to keep the mirror test green; TASK-4445 only needs the `contract` reason Literal.
