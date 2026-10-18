@@ -382,8 +382,7 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
      `TASK_FILES=$(jq -r '.tasks[].file' sdd/tasks/index/<feature-slug>.json)`, then
      `coder_run_validation(feature, worktree, execution_id, task_ids=<this chunk's merged task ids>, tier="merge",
      timeout_seconds=<explicit budget>, request_id=<stable id, e.g. "<execution_id>:<task_id>:merge">)`
-     (mirror ∪ import-impact of the merge ∪ core escalation, paid once per content via the ledger — integration with
-     sibling merges can break them). Wait on its `bg_handle` with `coder_bg_wait` per step 3 until
+     (the plan is the chunk tasks' Validation Commands ∪ the spec `test_contract` — fallback: the tasks' own tests + direct importers, never a suite; unchanged green targets are skipped as `cached`; a red verdict means a NEW red vs `origin/<base_branch>`). Wait on its `bg_handle` with `coder_bg_wait` per step 3 until
      `state="finished"`; `outcome="completed"`
      is the only green — `failed`/`timed_out`/`cancelled`, or a still `pending`/`running`/`unknown` status, is never
      treated as green and is never inferred from an empty log or a vanished process.
@@ -554,7 +553,7 @@ If ANY check fails, fix or STOP.
   `black <task .py files>` only if `pyproject.toml` has `[tool.black]`. Fix only syntax errors / undefined names
   (`ruff check --select E9,F63,F7,F82`); leave remaining style findings to `/sdd-done`.
 - Run the task's `## Validation Commands`, then `mkdir -p artifacts/logs;
-  python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch>
+  python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
   --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --feature FEAT-<NNN> --report-task TASK-<NNN> --run > artifacts/logs/merge-tests-TASK-<NNN>.log 2>&1`
   as a background Bash call (`run_in_background: true`, no `timeout`), then read that log — a foreground call is
   bounded at 120 s and this sweep is routinely longer
