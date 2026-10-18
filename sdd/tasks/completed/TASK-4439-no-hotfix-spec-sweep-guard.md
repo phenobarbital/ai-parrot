@@ -165,7 +165,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+*(done)*
+
+**Sweep result**: initially 2 hits (`.agents/agents/sdd-research/agent.md:57`, `.agent/agents/sdd-research/agent.md:57` — twins TASK-4433 did not cover). Synced both twins to the Claude agent's brief lane (integration fix by the orchestrator); sweep now clean.
 
 **Completed by**: <session or agent ID>
 **Date**: YYYY-MM-DD

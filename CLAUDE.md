@@ -148,7 +148,8 @@ The Git Parrot Flow (FEAT-187) uses three long-lived branches:
 **Flow types** (FEAT-145, refined by FEAT-187):
 - `feature` — base is `dev` (default) or `staging` (during a release
   freeze). NEVER `main`.
-- `hotfix` — base is `main` (mandatory).
+- `hotfix` — base is `main` (mandatory); produced by `/sdd-brief`. Briefs
+  sourced from a ledger issue base on `dev`.
 
 **Sync-down automation** (FEAT-187): `.github/workflows/sync-down.yml`
 listens for pushes to `main` and tries to fast-forward `staging` and
@@ -156,11 +157,11 @@ listens for pushes to `main` and tries to fast-forward `staging` and
 the lagging branch. `/sdd-done --sync-down` is the manual fallback for
 the same operation.
 
-**`/sdd-done` NEVER pushes to or opens a PR against `main`** —
-hotfix PRs are user-initiated. After the user merges the hotfix into
-`main`, the Action propagates the change to `staging` and `dev`. If
-the Action fails (or the user is offline), run
-`/sdd-done <FEAT-ID> --sync-down` to do the same locally.
+**`/sdd-done` NEVER pushes to or merges into `main`** — it opens the PR
+against the flow's `base_branch` itself (`main` for a hotfix brief); merging a
+`main` PR is the human act, and `--merge` into `main` is refused. After the
+merge, the Action propagates the change to `staging` and `dev`; if it fails (or
+the user is offline), run `/sdd-done <KEY> --sync-down` to do the same locally.
 
 **Recommended branch protection**: `main` (and `staging` once in use)
 should require PRs, passing CI, and signed commits. Not configured
@@ -188,6 +189,7 @@ dev-loop orchestrators); `/sdd-task` creates none (FEAT-552).
 | `/sdd-proposal`   | `sdd/proposals/<n>.proposal.md` (with frontmatter)  | `base_branch` |
 | `/sdd-spec`       | `sdd/specs/<n>.spec.md` (with frontmatter) + a `reserve_ids.py` FEAT-ID reservation commit to `sdd/tasks/.id_ledger.json` (FEAT-387) | `base_branch` |
 | `/sdd-task`       | `sdd/tasks/index/<feature>.json` + `sdd/tasks/active/TASK-*` + a `reserve_ids.py` TASK-ID reservation commit to `sdd/tasks/.id_ledger.json` (FEAT-387) — and NO worktree (FEAT-552: it is created by the implementing lane) | `base_branch` |
+| `/sdd-brief`      | `sdd/briefs/<slug>.brief.md` + task files + per-brief index, committed **inside the worktree** it provisions (no FEAT/TASK id reservation) | worktree (`hotfix-*` / `fix-*` branch) |
 | `/sdd-start`      | Per-spec index status update + implementation code  | worktree (feature branch) |
 | `/sdd-done`       | Verification stamp on per-spec index (committed on feature branch); opens a PR feature → `base_branch` (`--merge` merges directly) | worktree (feature branch), integrated into `base_branch` by Step 9.2 |
 
@@ -196,13 +198,9 @@ Commit message convention:
 sdd: <action> for <feature-name>
 ```
 
-**Note (FEAT-466)**: the `/sdd-spec` and `/sdd-task` reservation commits in
-the table above do **not** occur for `type: hotfix`. A bugfix is not a
-feature and reserves no `FEAT-<NNN>`/`TASK-<NNN>` id — `/sdd-spec` skips
-`reserve_ids.py --kind feature` and `/sdd-task` is normally skipped
-entirely (the single-agent dev-loop path handles a hotfix directly from the
-spec). The hotfix's identity is its Jira issue key instead; see
-`sdd/specs/dev-loop-run-fidelity.spec.md` §3 Module 2.
+**Note (FEAT-698)**: a hotfix is a `/sdd-brief`; it reserves no ids. Brief
+tasks carry local `HOTFIX-<KEY>-<N>` ids, so neither `reserve_ids.py` commit
+in the table above occurs, and `/sdd-spec` no longer scaffolds hotfixes.
 
 **Note (FEAT-145)**: `/sdd-start` no longer needs to `cd` back to the main
 repo to update SDD state — per-spec indexes mean each feature owns its own

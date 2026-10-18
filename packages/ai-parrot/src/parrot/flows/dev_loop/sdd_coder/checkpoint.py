@@ -64,7 +64,7 @@ from parrot.flows.dev_loop.sdd_coder.optimization_models import (
     ReviewCheckpoint,
 )
 from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root
-from parrot.flows.dev_loop.task_scheduler import TaskScheduler
+from parrot.flows.dev_loop.task_scheduler import TaskScheduler, resolve_index_path
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,7 @@ def _confined_read_text(worktree: Path, relative_path: str) -> str:
 
 def _index_path(worktree: Path, feature: str) -> Path:
     """Same convention `TaskScheduler.from_worktree`/`inspection._resolve_index_path` use."""
-    return worktree / "sdd" / "tasks" / "index" / f"{feature}.json"
+    return resolve_index_path(worktree, feature)
 
 
 def _load_index_sync(worktree: Path, feature: str) -> Tuple[Path, bytes, dict]:

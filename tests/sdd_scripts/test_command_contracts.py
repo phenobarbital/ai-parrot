@@ -23,6 +23,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CREATORS: dict[str, bool] = {
     ".claude/commands/sdd-task.md": False,
     ".claude/commands/sdd-start.md": True,
+    ".claude/commands/sdd-brief.md": True,
     ".claude/agents/sdd-worker.md": True,
     ".claude/agents/sdd-planner.md": True,
     ".claude/agents/sdd-research.md": True,
