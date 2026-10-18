@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from .datatypes import CoreHit, PytestInvocation, ScopePlan, TestTarget
+from .datatypes import CoreHit, PytestInvocation, ScopePlan, TestContract, TestTarget
 from .mirror import prune_nested
 from .policy import AGENT_FLAGS, TIERS, ScopePolicy
 
@@ -14,7 +14,17 @@ PER_DIST_EXTRA_ARGS: tuple[str, ...] = ("--confcutdir", "{worktree}")
 
 # Preference order when the same path is selected under two different reasons
 # (lower index wins). Bounded by AC11.
-_REASON_PRIORITY: dict[str, int] = {"declared": 0, "core": 1, "escalated": 2, "import": 3, "mirror": 4}
+_REASON_PRIORITY: dict[str, int] = {"declared": 0, "contract": 1, "core": 2, "escalated": 3, "import": 4, "mirror": 5}
+OVERRIDE_MARKER_EXPRESSION: str = "not real_llm"
+
+
+def marker_expression_for(
+    targets: Sequence[TestTarget], *, contract: TestContract | None, policy: ScopePolicy
+) -> str:
+    """Return the permissive marker expression for an all-contract invocation."""
+    if contract is not None and targets and all(target.reason == "contract" for target in targets):
+        return OVERRIDE_MARKER_EXPRESSION
+    return policy.marker_expression
 
 
 def _dist_root(distribution: str) -> str:
@@ -23,7 +33,12 @@ def _dist_root(distribution: str) -> str:
 
 
 def _invocation(
-    distribution: str, targets: Sequence[TestTarget], *, worktree: Path, policy: ScopePolicy
+    distribution: str,
+    targets: Sequence[TestTarget],
+    *,
+    worktree: Path,
+    policy: ScopePolicy,
+    marker_expression: str | None = None,
 ) -> PytestInvocation:
     """Build the argv for one distribution's pruned targets."""
     kept_paths = prune_nested({t.path for t in targets})
@@ -39,7 +54,8 @@ def _invocation(
     kept = tuple(sorted(best.values(), key=lambda t: t.path))
     xdist = ("-n", "auto") if distribution in policy.xdist_safe else ()
     extra = tuple(a.format(worktree=str(worktree), dist_root=_dist_root(distribution)) for a in PER_DIST_EXTRA_ARGS)
-    argv = ("pytest", *AGENT_FLAGS, "-m", policy.marker_expression, *xdist, *extra, *kept_paths)
+    expression = marker_expression or policy.marker_expression
+    argv = ("pytest", *AGENT_FLAGS, "-m", expression, *xdist, *extra, *kept_paths)
     return PytestInvocation(distribution=distribution, argv=argv, targets=kept)
 
 
@@ -55,6 +71,8 @@ def build_plan(
     cap_hits: Mapping[str, tuple[str, ...]] | None = None,
     cap_impacted: Mapping[str, str] | None = None,
     notes: Sequence[str] = (),
+    contract: TestContract | None = None,
+    mode: str = "fallback",
 ) -> ScopePlan:
     """Group by distribution, prune nested, add flags/markers/xdist → one PytestInvocation per group.
 
@@ -66,14 +84,47 @@ def build_plan(
     groups: dict[str, list[TestTarget]] = {}
     for target in targets:
         groups.setdefault(target.distribution, []).append(target)
-    invocations = tuple(_invocation(dist, groups[dist], worktree=worktree, policy=policy) for dist in sorted(groups))
+
+    invocations: list[PytestInvocation] = []
+    for distribution in sorted(groups):
+        group = groups[distribution]
+        contract_paths = {target.path for target in group if target.reason == "contract"}
+        default_targets = [target for target in group if target.path not in contract_paths]
+        contract_targets = [target for target in group if target.reason == "contract"]
+
+        if default_targets:
+            invocations.append(_invocation(distribution, default_targets, worktree=worktree, policy=policy))
+        if contract_targets:
+            invocations.append(
+                _invocation(
+                    distribution,
+                    contract_targets,
+                    worktree=worktree,
+                    policy=policy,
+                    marker_expression=marker_expression_for(contract_targets, contract=contract, policy=policy),
+                )
+            )
+            if contract is not None and contract.markers:
+                tests_root = "tests" if distribution == "root" else f"packages/{distribution}/tests"
+                marker_target = TestTarget(path=tests_root, distribution=distribution, reason="contract")
+                marker_expression = f"({' or '.join(contract.markers)}) and {OVERRIDE_MARKER_EXPRESSION}"
+                invocations.append(
+                    _invocation(
+                        distribution,
+                        (marker_target,),
+                        worktree=worktree,
+                        policy=policy,
+                        marker_expression=marker_expression,
+                    )
+                )
     return ScopePlan(
         tier=tier,
-        invocations=invocations,
+        invocations=tuple(invocations),
         escalated=tuple(sorted(set(escalated))),
         core_hits=tuple(core_hits),
         skipped_escalations=tuple(sorted(set(skipped_escalations))),
         notes=tuple(notes),
         cap_hits=dict(cap_hits or {}),
         cap_impacted=dict(cap_impacted or {}),
+        mode=mode,
     )
