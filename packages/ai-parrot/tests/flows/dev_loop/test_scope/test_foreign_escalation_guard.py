@@ -1,4 +1,4 @@
-"""FEAT-618 TASK-3909: merge-tier escalation must not import a foreign red baseline.
+"""FEAT-699: bounded fallback must not import a foreign red suite baseline.
 
 `issue:181bd0c01bb4` — a diff confined to `parrot/outputs/a2ui/linked/*` escalated
 outward until the merge gate collected ~2800 tests across every distribution, and
@@ -53,19 +53,19 @@ def _plan(repo: Path, policy: ScopePolicy):
     )
 
 
-def test_cap_only_foreign_escalation_is_skipped(repo: Path) -> None:
-    """A cap-exceeded distribution owning none of the changed files yields no target."""
+def test_cap_truncates_foreign_importers_without_suite(repo: Path) -> None:
+    """A cap-exceeded foreign distribution yields a note and no target."""
     plan = _plan(repo, ScopePolicy(impact_cap=0, core_fanin_threshold=999))
 
     assert "b" not in plan.escalated
     assert not [inv for inv in plan.invocations if inv.distribution == "b"]
-    assert any("owning none of the changed files" in note for note in plan.notes)
-    # The distribution that DOES own the change is still escalated.
-    assert "a" in plan.escalated
+    assert any("b: 1 impacted tests exceed cap 0; kept 0" in note for note in plan.notes)
+    assert plan.escalated == ()
+    assert any(inv.distribution == "a" for inv in plan.invocations)
 
 
-def test_skipped_foreign_dist_is_in_neither_escalated_nor_skipped(repo: Path) -> None:
-    """A guard-skipped distribution must not be double-reported (select.py invariant)."""
+def test_foreign_dist_is_absent_from_all_escalation_metadata(repo: Path) -> None:
+    """Fallback caps never populate the obsolete escalation metadata."""
     plan = _plan(repo, ScopePolicy(impact_cap=0, core_fanin_threshold=999))
 
     assert "b" not in plan.escalated
@@ -73,26 +73,32 @@ def test_skipped_foreign_dist_is_in_neither_escalated_nor_skipped(repo: Path) ->
     assert "b" not in plan.cap_hits
 
 
-def test_opt_in_restores_previous_targets(repo: Path) -> None:
-    """escalate_foreign_dists=True reproduces the pre-FEAT-618 escalation."""
+def test_foreign_escalation_policy_is_inert(repo: Path) -> None:
+    """The legacy escalation opt-in cannot restore suite targets."""
     plan = _plan(
         repo,
         ScopePolicy(impact_cap=0, core_fanin_threshold=999, escalate_foreign_dists=True),
     )
 
-    assert "b" in plan.escalated
-    assert not any("owning none of the changed files" in note for note in plan.notes)
+    assert "b" not in plan.escalated
+    assert not [inv for inv in plan.invocations if inv.distribution == "b"]
+    assert any("b: 1 impacted tests exceed cap 0; kept 0" in note for note in plan.notes)
 
 
-def test_core_reached_distribution_is_not_skipped(repo: Path) -> None:
-    """detect_core() still escalates a distribution the guard would otherwise skip."""
+def test_core_reached_distribution_is_nightly_only(repo: Path) -> None:
+    """Core detection stays informative and does not restore a foreign suite."""
     plan = _plan(repo, ScopePolicy(impact_cap=0, core_fanin_threshold=1))
 
-    assert "b" in plan.escalated
+    assert "b" not in plan.escalated
+    assert not [inv for inv in plan.invocations if inv.distribution == "b"]
+    assert plan.core_hits
+    assert any("covered by nightly" in note for note in plan.notes)
 
 
 def test_guard_is_inert_when_nothing_exceeds_the_cap(repo: Path) -> None:
-    """With a generous cap there is no escalation to guard, foreign or not."""
+    """With a generous cap, the direct foreign importer remains file-level."""
     plan = _plan(repo, ScopePolicy(impact_cap=999, core_fanin_threshold=999))
 
-    assert not any("owning none of the changed files" in note for note in plan.notes)
+    foreign_targets = [target.path for inv in plan.invocations if inv.distribution == "b" for target in inv.targets]
+    assert foreign_targets == ["packages/b/tests/test_use.py"]
+    assert all(path != "packages/b/tests" for path in foreign_targets)

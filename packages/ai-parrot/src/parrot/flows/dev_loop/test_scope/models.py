@@ -15,7 +15,7 @@ class TestTargetModel(BaseModel):
     __test__ = False  # not a pytest test class
     path: str
     distribution: str
-    reason: Literal["declared", "mirror", "import", "core", "escalated"]
+    reason: Literal["declared", "contract", "mirror", "import", "core", "escalated"]
 
 
 class PytestInvocationModel(BaseModel):

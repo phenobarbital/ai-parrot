@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from parrot.flows.dev_loop.test_scope import changed_files, plan_tests
-from parrot.flows.dev_loop.test_scope.context import record_green_escalation
 from parrot.flows.dev_loop.test_scope.policy import ScopePolicy
 
 
@@ -46,7 +45,7 @@ def test_task_tier_never_escalates(repo):
     assert plan.escalated == () and plan.core_hits == ()
 
 
-def test_core_escalates_every_importing_distribution(repo):
+def test_core_is_informational_and_fallback_stays_file_bounded(repo):
     plan = plan_tests(
         worktree=repo,
         changed_files=["packages/a/src/pa/base.py"],
@@ -54,13 +53,14 @@ def test_core_escalates_every_importing_distribution(repo):
         policy=ScopePolicy(core_fanin_threshold=1),
     )
     paths = {t.path for inv in plan.invocations for t in inv.targets}
-    assert {"packages/a/tests", "packages/b/tests"} <= paths
+    assert paths == {"packages/b/tests/test_use.py"}
+    assert plan.escalated == ()
+    assert plan.core_hits
+    assert any("covered by nightly" in note for note in plan.notes)
 
 
-def test_core_escalation_is_also_visible_in_the_escalated_field(repo):
-    """FEAT-563 review (I1): a core-only escalation (no impact-cap trip) must still be visible
-    via `plan.escalated` — the plain-text CLI and the spec's own datatypes.py contract both
-    document `escalated` as covering "core or cap", not cap-only."""
+def test_core_never_populates_escalation_fields(repo):
+    """Core classification remains informative without scheduling suite targets."""
     for tier in ("merge", "feature"):
         plan = plan_tests(
             worktree=repo,
@@ -68,38 +68,45 @@ def test_core_escalation_is_also_visible_in_the_escalated_field(repo):
             tier=tier,
             policy=ScopePolicy(core_fanin_threshold=1),
         )
-        assert {"a", "b"} <= set(plan.escalated), (tier, plan.escalated)
+        assert plan.escalated == (), (tier, plan.escalated)
+        assert plan.skipped_escalations == ()
+        assert plan.core_hits
 
 
-def test_feature_tier_no_impact_without_core(repo):
+def test_feature_tier_uses_direct_importers_without_core(repo):
     plan = plan_tests(
         worktree=repo,
         changed_files=["packages/a/src/pa/leaf.py"],
         tier="feature",
         policy=ScopePolicy(core_fanin_threshold=999),
     )
-    assert all(t.reason in {"mirror", "declared"} for inv in plan.invocations for t in inv.targets)
+    targets = [t for inv in plan.invocations for t in inv.targets]
+    assert [target.path for target in targets] == ["packages/a/tests/test_leaf.py"]
+    assert targets[0].reason == "import"
 
 
-def test_ledger_skips_green_same_content(repo):
-    record_green_escalation(repo, ["a", "b"], ["packages/a/src/pa/base.py"])
+def test_plan_does_not_consult_escalation_ledger(repo):
     plan = plan_tests(
         worktree=repo,
         changed_files=["packages/a/src/pa/base.py"],
         tier="merge",
         policy=ScopePolicy(core_fanin_threshold=1),
     )
-    assert plan.skipped_escalations == ("a", "b")
+    assert plan.skipped_escalations == ()
+    assert plan.escalated == ()
 
 
-def test_cap_escalates_to_package_suite(repo):
+def test_cap_adds_note_without_package_suite(repo):
     plan = plan_tests(
         worktree=repo,
         changed_files=["packages/a/src/pa/leaf.py"],
         tier="merge",
         policy=ScopePolicy(impact_cap=0, core_fanin_threshold=999),
     )
-    assert "a" in plan.escalated
+    assert plan.escalated == ()
+    assert plan.cap_hits == {}
+    assert any("exceed cap 0; kept 0, rest covered by nightly" in note for note in plan.notes)
+    assert all(t.path != "packages/a/tests" for inv in plan.invocations for t in inv.targets)
 
 
 def test_non_git_worktree_degrades_with_note(tmp_path):
