@@ -3,7 +3,7 @@
 import pytest
 
 from parrot.flows.dev_loop.nodes.qa import QANode
-from parrot.flows.dev_loop.test_scope import distribution_of, pytest_targets
+from parrot.flows.dev_loop.test_scope import distribution_of
 from parrot.flows.dev_loop.test_scope.mirror import pytest_file_target_for, pytest_file_targets
 
 
@@ -15,13 +15,27 @@ def mirrored(tmp_path):
     (tmp_path / "packages" / "ai-parrot-visualizations" / "src").mkdir(parents=True)
     (tmp_path / "packages" / "ai-parrot" / "tests" / "flows" / "dev_loop").mkdir(parents=True)
     (tmp_path / "packages" / "ai-parrot" / "tests" / "loaders").mkdir(parents=True)
+    for rel in (
+        "packages/ai-parrot/tests/flows/dev_loop/test_qa.py",
+        "packages/ai-parrot/tests/test_b.py",
+        "packages/ai-parrot-tools/tests/test_a.py",
+        "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/qa.py",
+        "packages/ai-parrot/src/parrot/b.py",
+        "packages/ai-parrot-tools/src/parrot_tools/a.py",
+    ):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("")
     return tmp_path
 
 
 @pytest.mark.parametrize(
     "files",
     [
-        ["packages/ai-parrot-tools/src/a.py", "packages/ai-parrot/src/b.py", "scripts/sdd/reserve_ids.py"],
+        [
+            "packages/ai-parrot-tools/src/parrot_tools/a.py",
+            "packages/ai-parrot/src/parrot/b.py",
+            "scripts/sdd/reserve_ids.py",
+        ],
         ["packages/ai-parrot/src/parrot/flows/dev_loop/nodes/qa.py"],
         ["packages/ai-parrot/src/parrot/flows/dev_flow/nodes/ideation.py"],
         ["packages/ai-parrot/tests/loaders/test_gone.py"],
@@ -30,7 +44,10 @@ def mirrored(tmp_path):
     ],
 )
 def test_mirror_parity_with_qanode_fixtures(mirrored, files):
-    assert pytest_targets(files, str(mirrored)) == QANode._pytest_targets(files, str(mirrored))
+    got = pytest_file_targets(files, str(mirrored))
+    assert got == QANode._pytest_targets(files, str(mirrored))
+    if files == ["packages/ai-parrot/src/parrot/flows/dev_loop/nodes/qa.py"]:
+        assert got == ["packages/ai-parrot/tests/flows/dev_loop/test_qa.py"]
 
 
 def test_distribution_of():
