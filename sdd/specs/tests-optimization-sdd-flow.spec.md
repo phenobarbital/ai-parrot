@@ -10,7 +10,7 @@ tags: [test-selection, validation-contract, sdd-done, sdd-worker, ci]
 **Feature ID**: FEAT-699
 **Date**: 2026-10-18
 **Author**: Jesus Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.30.0
 
 ---
