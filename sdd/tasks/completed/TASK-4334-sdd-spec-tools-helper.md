@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-633 — Parrot Bootstrap Installer
 **Spec**: `sdd/specs/parrot-installer.spec.md` (rev 0.2, §3 M6 amendment **Q1**, residual listed under §7 risks)
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: M
 **Depends-on**: none
@@ -441,7 +441,25 @@ edit that re-introduces `python -c` fails this test on `dev`, before any packagi
 
 ## Completion Note
 
-<!-- Filled by the implementing agent. Include: the per-file `python -c` counts (AC-6),
-the three sdd_meta allowances still exercised, and the cross-task reminders —
-TASK-4088 moves `spec_tools.py`; TASK-4089 adds `spec_tools` to MOVED (20 names);
-TASK-4091's wheel-only test needs a Scenario per `spec_tools` subcommand. -->
+**Completed**: 2026-10-15 — implementing commit `d14e9339b` on `feat-FEAT-633-parrot-installer`
+(base `f64c563b1`), verification `verified`.
+
+- **Helper**: `scripts/sdd/spec_tools.py` (195 lines, seven subcommands; `jsonschema` + stdlib +
+  `scripts.sdd.reserve_ids.existing_feature_id`). `reserve_ids.py`, `sdd_meta.py`,
+  `sdd/templates/*`, `scripts/sdd/__init__.py` untouched (AC-8).
+- **`python -c` counts after the change (AC-6)**: `.claude/commands/sdd-spec.md` = 3
+  (`:173` resolve_flow, `:189` prose, `:590` parse_taxonomy), `.agent/workflows/sdd-spec.md` = 3,
+  `.claude/commands/sdd-task.md` = 1 (`:55` parse), `.agent/workflows/sdd-task.md` = 1,
+  `.agents/skills/sdd-task/SKILL.md` = 0. All remaining ones import `scripts.sdd.sdd_meta` —
+  the three allowances `test_shipped_commands_have_no_inline_python` still exercises (per twin).
+- **Validation**: `test_spec_tools.py` (17), `test_command_contracts.py`, `test_command_twin_parity.py`,
+  `test_design_research_templates.py` → 48 passed; full `tests/sdd_scripts` → 433 passed; `ruff` + `black` clean.
+  AC-2 oracle: the helper's `brief.md` equals the retired heredoc's output on the real template.
+- **Behavioural note**: `init-run` reads `$DR/probe.txt` itself, so the `PROBE_OUTPUT=` shell
+  variable was removed (no other reference existed). `commit-intake` uses
+  `datetime.now(timezone.utc).isoformat()` — same `+00:00` shape as the old `utcnow()+'+00:00'`.
+- **Cross-task reminders (already written into the tasks on `dev` @ `f64c563b1`)**: TASK-4088 moves
+  `spec_tools.py` (20th module; rewrite `prog` and the `reserve_ids` import); TASK-4089 has
+  `spec_tools` in `MOVED` (20 names) and its residual bullet marked RETIRED; TASK-4091's wheel-only
+  test needs a `Scenario` per `spec_tools` subcommand.
+- **Ledger**: closes `issue:cac5c029bd88` (two-key: task completed + `.claude/commands/sdd-spec.md` in the diff).
