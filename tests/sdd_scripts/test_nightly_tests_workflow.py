@@ -26,7 +26,7 @@ def test_triggers_and_marker():
     triggers = data.get(True, data.get("on"))
     assert triggers["schedule"][0]["cron"] == "17 6 * * *"
     assert "workflow_dispatch" in triggers
-    assert 'not real_llm' in WF.read_text(encoding="utf-8")
+    assert "not real_llm" in WF.read_text(encoding="utf-8")
 
 
 def test_read_only_and_no_push():

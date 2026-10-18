@@ -59,7 +59,13 @@ def test_second_run_is_cached(git_repo):
 
 @pytest.mark.parametrize(
     "edit",
-    [TEST, "packages/a/tests/conftest.py", "packages/a/pyproject.toml", "pyproject.toml", "packages/a/src/amod/core.py"],
+    [
+        TEST,
+        "packages/a/tests/conftest.py",
+        "packages/a/pyproject.toml",
+        "pyproject.toml",
+        "packages/a/src/amod/core.py",
+    ],
 )
 def test_input_change_invalidates(git_repo, edit):
     _green(git_repo, _plan(git_repo, TEST))
@@ -102,8 +108,12 @@ def test_namespace_change_resets(git_repo):
     _green(git_repo, _plan(git_repo, TEST))
     other = gc.cache_namespace(feature_id="FEAT-2", base_ref="origin/dev", contract_digest="d")
     assert gc.filter_cached(git_repo, _plan(git_repo, TEST), namespace=other).cached == ()
-    gc.record_green(git_repo, namespace=other, plan=_plan(git_repo, "packages/a/tests/test_y.py"),
-                    nodes=[("packages/a/tests/test_y.py::t", "passed")])
+    gc.record_green(
+        git_repo,
+        namespace=other,
+        plan=_plan(git_repo, "packages/a/tests/test_y.py"),
+        nodes=[("packages/a/tests/test_y.py::t", "passed")],
+    )
     assert gc.filter_cached(git_repo, _plan(git_repo, TEST), namespace=NS).cached == ()
 
 
@@ -117,8 +127,11 @@ def test_invalidate_and_corrupt_store(git_repo):
     _green(git_repo, _plan(git_repo, TEST))
     gc.invalidate(git_repo)
     assert gc.filter_cached(git_repo, _plan(git_repo, TEST), namespace=NS).cached == ()
-    git_dir = Path(subprocess.run(["git", "rev-parse", "--absolute-git-dir"], cwd=git_repo, capture_output=True,
-                                  text=True).stdout.strip())
+    git_dir = Path(
+        subprocess.run(
+            ["git", "rev-parse", "--absolute-git-dir"], cwd=git_repo, capture_output=True, text=True
+        ).stdout.strip()
+    )
     (git_dir / gc.CACHE_FILENAME).write_text("{not json")
     assert gc.filter_cached(git_repo, _plan(git_repo, TEST), namespace=NS).cached == ()
 

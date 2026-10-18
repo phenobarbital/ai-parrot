@@ -13,7 +13,11 @@ FAIL = "def test_x():\n    assert False\n"
 
 def _git(repo: Path, *args: str) -> str:
     proc = subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=repo, capture_output=True, text=True, check=True
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return proc.stdout.strip()
 
@@ -43,7 +47,9 @@ def _worktrees(repo: Path) -> list[str]:
 def test_new_red_vs_baseline_red(hermetic_repo, tmp_path):
     repo, base = hermetic_repo
     ids = ["tests/test_a.py::test_x", "tests/test_b.py::test_x"]
-    verdicts = classify_failures(worktree=repo, base_ref=base, failed_nodeids=ids, timeout_s=120, scratch=tmp_path / "s")
+    verdicts = classify_failures(
+        worktree=repo, base_ref=base, failed_nodeids=ids, timeout_s=120, scratch=tmp_path / "s"
+    )
     assert [v.status for v in verdicts] == ["new_red", "baseline_red"]
     assert gate_failed(verdicts)
     assert summarize(verdicts) == {"new_red": 1, "baseline_red": 1}

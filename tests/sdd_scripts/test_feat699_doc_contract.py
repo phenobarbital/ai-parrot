@@ -1,4 +1,5 @@
 """FEAT-699: agent/command prompts describe contract-driven, new-red-gated validation."""
+
 import re
 from pathlib import Path
 
@@ -41,8 +42,15 @@ def test_index_flag_on_every_select_tests_tier_call(rel):
         assert "--index" in call, (rel, call)
 
 
-@pytest.mark.parametrize("rel", [".claude/commands/sdd-done.md", ".agent/workflows/sdd-done.md",
-                                 ".agents/skills/sdd-done/SKILL.md", ".claude/agents/qa-runner.md"])
+@pytest.mark.parametrize(
+    "rel",
+    [
+        ".claude/commands/sdd-done.md",
+        ".agent/workflows/sdd-done.md",
+        ".agents/skills/sdd-done/SKILL.md",
+        ".claude/agents/qa-runner.md",
+    ],
+)
 def test_new_red_gate_phrase(rel):
     assert "new red" in _text(rel).lower()
 

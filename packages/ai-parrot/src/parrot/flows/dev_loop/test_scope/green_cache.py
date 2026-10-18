@@ -97,7 +97,11 @@ def _manifest(
             return None
     if not add("pyproject:root", "pyproject.toml"):
         return None
-    if len(parts) > 1 and parts[0] == "packages" and not add(f"pyproject:{parts[1]}", f"packages/{parts[1]}/pyproject.toml"):
+    if (
+        len(parts) > 1
+        and parts[0] == "packages"
+        and not add(f"pyproject:{parts[1]}", f"packages/{parts[1]}/pyproject.toml")
+    ):
         return None
     for module in sorted(imports.get(file_path, ())):
         paths = _module_paths(worktree, module)
@@ -134,7 +138,9 @@ def _read_store(path: Path, namespace: str) -> dict[str, dict[str, str]]:
     entries = data.get("entries")
     if not isinstance(entries, dict):
         return {}
-    return {k: v for k, v in entries.items() if isinstance(k, str) and isinstance(v, dict) and isinstance(v.get("key"), str)}
+    return {
+        k: v for k, v in entries.items() if isinstance(k, str) and isinstance(v, dict) and isinstance(v.get("key"), str)
+    }
 
 
 def _planned_targets(plan: ScopePlan) -> list[tuple[TestTarget, str]]:
@@ -239,11 +245,7 @@ def record_green(
         removed: set[str] = set()
         for target, expression in planned:
             own = [(nid, st) for nid, st in nodes if nid == target.path or nid.startswith(target.path + "::")]
-            green = (
-                unmapped == 0
-                and bool(own)
-                and all(st in _GREEN_STATUSES or nid in reds for nid, st in own)
-            )
+            green = unmapped == 0 and bool(own) and all(st in _GREEN_STATUSES or nid in reds for nid, st in own)
             manifest = _manifest(worktree, target.path, expression, imports) if green else None
             if manifest is None:
                 removed.add(target.path)
