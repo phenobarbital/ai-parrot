@@ -1,0 +1,333 @@
+{
+  "feature": "tests-optimization-sdd-flow",
+  "feature_id": "FEAT-699",
+  "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-18T09:25:01+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 1,
+    "tests": [
+      "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select.py",
+      "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_contract.py",
+      "packages/ai-parrot/tests/flows/dev_loop/test_scope/test_report.py",
+      "packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_validation.py",
+      "tests/sdd_scripts/test_check_task_graph.py"
+    ],
+    "markers": [],
+    "digest": "sha256:2f4eab4a1cf04be016f8d56e2876f33cd5a58c2dc7da1cce15de46f3cf9ba6dc"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4440",
+      "slug": "test-contract-model-and-parsing",
+      "title": "TestContract model, spec/index parsing and new kernel dataclasses",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "root of the graph: creates TestContract/GreenCacheEntry/BaselineVerdict (datatypes.py) and contract parsers (contract.py); sole owner of datatypes.py",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4440-test-contract-model-and-parsing.md"
+    },
+    {
+      "id": "TASK-4441",
+      "slug": "check-task-graph-test-contract-lint",
+      "title": "Lint the test_contract index header in check_task_graph",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4440"
+      ],
+      "parallel": true,
+      "parallelism_notes": "calls contract_from_index_header created by TASK-4440 (test_scope/contract.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4441-check-task-graph-test-contract-lint.md"
+    },
+    {
+      "id": "TASK-4442",
+      "slug": "spec-template-validation-contract",
+      "title": "Validation Contract in the spec template and /sdd-spec",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4440"
+      ],
+      "parallel": true,
+      "parallelism_notes": "its contract test parses the template with parse_spec_contract from TASK-4440 (test_scope/contract.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4442-spec-template-validation-contract.md"
+    },
+    {
+      "id": "TASK-4443",
+      "slug": "sdd-task-caches-test-contract",
+      "title": "/sdd-task caches the spec contract into the index header",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4440"
+      ],
+      "parallel": true,
+      "parallelism_notes": "cache_test_contract.py calls parse_spec_contract + contract_to_header from TASK-4440 (test_scope/contract.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4443-sdd-task-caches-test-contract.md"
+    },
+    {
+      "id": "TASK-4444",
+      "slug": "file-level-mirror-and-marker-composition",
+      "title": "File-level mirror and per-invocation marker composition",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4440"
+      ],
+      "parallel": true,
+      "parallelism_notes": "planner.py imports TestContract from TASK-4440 (test_scope/datatypes.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4444-file-level-mirror-and-marker-composition.md"
+    },
+    {
+      "id": "TASK-4445",
+      "slug": "plan-tests-contract-and-fallback-modes",
+      "title": "plan_tests contract mode and bounded fallback mode",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4444"
+      ],
+      "parallel": true,
+      "parallelism_notes": "select.py calls pytest_file_targets and build_plan(contract=, mode=) from TASK-4444 (mirror.py, planner.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4445-plan-tests-contract-and-fallback-modes.md"
+    },
+    {
+      "id": "TASK-4446",
+      "slug": "node-level-junit-evidence",
+      "title": "Node-level junit evidence in test_scope.report",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4444"
+      ],
+      "parallel": true,
+      "parallelism_notes": "report.suite_name imports OVERRIDE_MARKER_EXPRESSION from TASK-4444 (test_scope/planner.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4446-node-level-junit-evidence.md"
+    },
+    {
+      "id": "TASK-4447",
+      "slug": "green-cache",
+      "title": "Content-addressed green cache across merges",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4445",
+        "TASK-4446"
+      ],
+      "parallel": true,
+      "parallelism_notes": "filter_cached rebuilds plans produced by plan_tests contract mode from TASK-4445 (select.py); record_green consumes SuiteResult.nodes/unmapped from TASK-4446 (report.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4447-green-cache.md"
+    },
+    {
+      "id": "TASK-4448",
+      "slug": "baseline-verdict",
+      "title": "Baseline-aware verdict (test_scope/baseline.py)",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4446"
+      ],
+      "parallel": true,
+      "parallelism_notes": "classify_failures reads parse_junit node statuses added by TASK-4446 (test_scope/report.py)",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4448-baseline-verdict.md"
+    },
+    {
+      "id": "TASK-4449",
+      "slug": "closeout-report-columns-and-rerun-rule",
+      "title": "Closeout table columns and the re-run rule",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4446"
+      ],
+      "parallel": true,
+      "parallelism_notes": "modifies report.py after TASK-4446 (shared file) and renders SuiteResult.baseline added there",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4449-closeout-report-columns-and-rerun-rule.md"
+    },
+    {
+      "id": "TASK-4450",
+      "slug": "select-tests-cli-contract-cache-baseline",
+      "title": "select_tests.py: contract, green cache and baseline verdict",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4445",
+        "TASK-4447",
+        "TASK-4448",
+        "TASK-4449"
+      ],
+      "parallel": true,
+      "parallelism_notes": "CLI calls plan_tests(contract=) from TASK-4445, green_cache from TASK-4447, baseline.classify_failures from TASK-4448, report.append_cached from TASK-4449",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4450-select-tests-cli-contract-cache-baseline.md"
+    },
+    {
+      "id": "TASK-4451",
+      "slug": "supervisor-engine-contract-wiring",
+      "title": "ValidationSupervisor + engine: declared tests, contract, cache, baseline",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "L",
+      "depends_on": [
+        "TASK-4445",
+        "TASK-4447",
+        "TASK-4448",
+        "TASK-4449"
+      ],
+      "parallel": true,
+      "parallelism_notes": "background.py calls plan_tests(contract=) from TASK-4445, green_cache.filter_cached/record_green from TASK-4447, baseline from TASK-4448, append_cached from TASK-4449",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4451-supervisor-engine-contract-wiring.md"
+    },
+    {
+      "id": "TASK-4452",
+      "slug": "command-and-agent-docs",
+      "title": "/sdd-done, sdd-worker, qa-runner, sdd-coder docs: contract-driven validation",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4449",
+        "TASK-4450",
+        "TASK-4451"
+      ],
+      "parallel": true,
+      "parallelism_notes": "documents frozen behaviour: always-rerun from TASK-4449, select_tests --index from TASK-4450, supervisor merge gate from TASK-4451",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4452-command-and-agent-docs.md"
+    },
+    {
+      "id": "TASK-4453",
+      "slug": "nightly-package-suites-workflow",
+      "title": "Nightly full package-suite workflow on dev",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "independent track: only .github/workflows/nightly-tests.yml + its own script/tests; no kernel imports",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4453-nightly-package-suites-workflow.md"
+    },
+    {
+      "id": "TASK-4454",
+      "slug": "validation-budget-evidence",
+      "title": "Measure the merge/feature budgets and document the flow",
+      "feature_id": "FEAT-699",
+      "feature": "tests-optimization-sdd-flow",
+      "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4443",
+        "TASK-4450",
+        "TASK-4451",
+        "TASK-4453"
+      ],
+      "parallel": true,
+      "parallelism_notes": "replays FEAT-698 with the select_tests --index/--run flags from TASK-4450, builds the temp index via scripts/sdd/cache_test_contract.py from TASK-4443, documents the supervisor path from TASK-4451 and .github/workflows/nightly-tests.yml from TASK-4453",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4454-validation-budget-evidence.md"
+    }
+  ]
+}
