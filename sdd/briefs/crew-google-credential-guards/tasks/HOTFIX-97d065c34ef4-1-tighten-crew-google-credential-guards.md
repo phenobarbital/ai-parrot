@@ -2,7 +2,7 @@
 
 **Feature**: issue:97d065c34ef4 — Crew-level default Google client injection doesn't check credentials_file/credentials/vertexai, only api_key
 **Spec**: `sdd/briefs/crew-google-credential-guards.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -307,8 +307,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: claude (sdd-start)
+**Date**: 2026-10-18
+**Notes**: Added has_explicit_google_credential() in credentials.py, used by apply_google_api_key and both AgentCrew.__init__ guards. 4 new test groups (credentials_file/credentials/vertexai on both branches, api_key=None injects, helper). 19 passed across both Google-key test files; ruff clean.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
