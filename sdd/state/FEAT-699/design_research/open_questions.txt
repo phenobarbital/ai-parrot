@@ -1,0 +1,5 @@
+- [ ] Should the `/sdd-done` feature tier bypass the green cache so the closeout table is a fresh end-to-end run of the contract? — *Owner: Jesus Lara*
+- [ ] Once the feature tier is cheap, drop `RERUN_TASK_THRESHOLD` (> 10 tasks ⇒ skip) or raise it? — *Owner: Jesus Lara*
+- [ ] Nightly new reds: open a GitHub issue, or write a `wikitoolkit ledger` issue (needs a commit from CI)? — *Owner: Jesus Lara*
+- [ ] Should `/sdd-brief` (hotfix/fix briefs, FEAT-698) also carry an optional contract? — *Owner: Jesus Lara*
+- [ ] Retry-once for flaky tests before classifying as new red? — *Owner: Jesus Lara*
