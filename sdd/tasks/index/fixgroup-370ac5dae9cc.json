@@ -16,14 +16,14 @@
       "feature_id": "FEAT-702",
       "feature": "fixgroup-370ac5dae9cc",
       "spec": "sdd/specs/fixgroup-370ac5dae9cc.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task in this feature; touches sdd_coder/lint.py, models.py, engine.py and test_lint.py",
-      "assigned_to": "unassigned",
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-18T21:30:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4459-formatter-changed-lines-scope.md"
     }
