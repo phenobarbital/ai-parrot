@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-19T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-18T22:49:13+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "tasks": [
@@ -16,7 +16,7 @@
       "feature_id": "FEAT-703",
       "feature": "fixgroup-603217cacd87",
       "spec": "sdd/specs/fixgroup-603217cacd87.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -24,8 +24,9 @@
       "parallelism_notes": "Root task; creates scripts/sdd/check_e2e_closeout.py and its own test file, touched by no other task.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4460-check-e2e-closeout-script.md"
+      "completed_at": "2026-10-18T22:49:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4460-check-e2e-closeout-script.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4461",
@@ -34,16 +35,19 @@
       "feature_id": "FEAT-703",
       "feature": "fixgroup-603217cacd87",
       "spec": "sdd/specs/fixgroup-603217cacd87.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
-      "depends_on": ["TASK-4460"],
+      "depends_on": [
+        "TASK-4460"
+      ],
       "parallel": true,
       "parallelism_notes": "Imports evaluate_closeout_gate from TASK-4460 (scripts/sdd/check_e2e_closeout.py); the module cannot be imported before that task creates it.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4461-retarget-contract-test.md"
+      "completed_at": "2026-10-18T22:49:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4461-retarget-contract-test.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4462",
@@ -52,16 +56,19 @@
       "feature_id": "FEAT-703",
       "feature": "fixgroup-603217cacd87",
       "spec": "sdd/specs/fixgroup-603217cacd87.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
-      "depends_on": ["TASK-4461"],
+      "depends_on": [
+        "TASK-4461"
+      ],
       "parallel": true,
       "parallelism_notes": "Both tasks modify tests/sdd_scripts/test_e2e_closeout_contract.py (TASK-4461 the behavioral tests, this task the 5 test_each_surface_* doc tests), so they must be serialized on that shared file.",
       "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4462-rewire-closeout-twins.md"
+      "completed_at": "2026-10-18T22:49:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4462-rewire-closeout-twins.md",
+      "verification": "verified"
     }
   ]
 }

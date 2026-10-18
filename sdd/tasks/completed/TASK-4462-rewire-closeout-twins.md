@@ -287,4 +287,41 @@ committing.
 
 ## Completion Note
 
-*(to be filled in on completion)*
+**Completed by**: sdd-fix (Claude)
+**Status**: done
+
+- Replaced `.claude/commands/sdd-done.md` Step 4.6 (L192–274, ~83 lines of
+  prose + an inline `python -c` policy parser + a `jq`-parsed
+  `parrot e2e verify` call + a 4-bullet decision table) with the single
+  `python -m scripts.sdd.check_e2e_closeout` invocation and an exit-code branch.
+  The `jq` dependency for this step is gone.
+- Applied the equivalent change to `.agents/skills/sdd-done/SKILL.md` step 4.6.
+  Both twins retain the verbatim `--force` guarantee, the refusal message, the
+  `--dry-run` behaviour and the exploration-exclusion statement.
+- Updated the doc-surface tests: `test_each_surface_invokes_verify_before_every_mutating_step`
+  → `test_each_surface_invokes_the_gate_script`, and
+  `test_each_surface_states_the_three_policy_literals_with_no_coercion` →
+  `test_each_surface_branches_on_the_gate_exit_code`. The latter was replaced
+  rather than kept because the policy literals now live in `resolve_policy()`;
+  asserting them in markdown would force the prose to keep duplicating the very
+  table this feature removes. The other three tests are unchanged.
+- **Gotcha corrected from the task's Implementation Notes**: the task warned
+  that `.agents/` might be git-ignored. It is not — `.claude/` is. The already-
+  tracked `.claude/commands/sdd-done.md` needed `git add -f`; `.agents/` staged
+  normally.
+- **Negative test performed** (required by this task's Test Specification):
+  reverting `SKILL.md` to its pre-change state turned the suite red
+  (`test_each_surface_invokes_the_gate_script[SKILL.md]` failed), then the file
+  was restored clean. The doc-surface tests do catch twin drift.
+- **End-to-end smoke test** of the real gate, invoked exactly as the twins now
+  specify:
+  - `--spec sdd/specs/fixgroup-603217cacd87.spec.md --feat-id FEAT-703` (policy
+    `none`) → exit 0, `{"status": "NONE", "allowed": true}`.
+  - `--spec sdd/specs/agentic-e2e-testing.spec.md --feat-id FEAT-581` (policy
+    `required`) → exit 1, `reason_codes: ["e2e_required_not_satisfied:MISSING",
+    "evidence_pointer_missing"]`. That second reason code comes from the real
+    `verify_evidence`, confirming the full integration path (not just the
+    missing-plan short circuit) is exercised.
+- Validation: `pytest tests/sdd_scripts/test_e2e_closeout_contract.py
+  tests/sdd_scripts/test_check_e2e_closeout.py -q` → 44 passed; `ruff` and
+  `black` clean.
