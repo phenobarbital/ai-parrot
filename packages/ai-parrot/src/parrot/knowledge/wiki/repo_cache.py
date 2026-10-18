@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from shutil import rmtree
 from typing import Any, AsyncIterator, Optional
+from urllib.parse import urlparse
 
 from pydantic import BaseModel
 
@@ -22,6 +23,10 @@ except ImportError:  # pragma: no cover - non-POSIX platform
 _LOCK_POLL_SECONDS = 0.05
 _IDENTITY_FILENAME = ".repo_cache_identity.json"
 _STATE_FILENAME = ".repo_cache_state.json"
+#: Exact hosts a cache clone's ``origin`` may point at (never a suffix match).
+_GITHUB_HOSTS: frozenset[str] = frozenset({"github.com", "www.github.com"})
+#: URL schemes accepted for a clone ``origin``.
+_ORIGIN_SCHEMES: frozenset[str] = frozenset({"https", "http", "ssh", "git"})
 
 
 class RepoCachePaths(BaseModel):
@@ -295,15 +300,25 @@ class RepoWikiCache:
 
     @staticmethod
     def _origin_matches(origin: str, repository: str) -> bool:
-        """Compare a GitHub origin URL with a canonical owner/name identity."""
-        normalized = origin.strip().rstrip("/")
-        if normalized.endswith(".git"):
-            normalized = normalized[:-4]
-        if normalized.startswith("git@github.com:"):
-            normalized = normalized.partition(":")[2]
-        elif "github.com/" in normalized:
-            normalized = normalized.split("github.com/", 1)[1]
-        return normalized.lower() == repository
+        """Compare a GitHub origin URL with a canonical owner/name identity.
+
+        The origin is parsed before its host is checked (CodeQL
+        ``py/incomplete-url-substring-sanitization``): only the SCP form
+        ``git@github.com:owner/name`` or a URL whose parsed host is exactly a
+        GitHub host matches. The slug is taken from the parsed path alone.
+        """
+        normalized = origin.strip()
+        if normalized.lower().startswith("git@github.com:"):
+            path = normalized.partition(":")[2]
+        else:
+            parsed = urlparse(normalized)
+            if parsed.scheme.lower() not in _ORIGIN_SCHEMES or parsed.hostname not in _GITHUB_HOSTS:
+                return False
+            path = parsed.path
+        path = path.strip("/")
+        if path.lower().endswith(".git"):
+            path = path[:-4]
+        return path.lower() == repository
 
     def _usable(self, paths: RepoCachePaths) -> bool:
         """Return whether a completed plane has its required SQLite artifact."""
