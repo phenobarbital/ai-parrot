@@ -47,7 +47,7 @@
       "feature_id": "FEAT-699",
       "feature": "tests-optimization-sdd-flow",
       "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -57,8 +57,9 @@
       "parallelism_notes": "calls contract_from_index_header created by TASK-4440 (test_scope/contract.py)",
       "assigned_to": null,
       "started_at": "2026-10-18T20:43:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4441-check-task-graph-test-contract-lint.md"
+      "completed_at": "2026-10-18T21:10:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4441-check-task-graph-test-contract-lint.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4442",
@@ -107,7 +108,7 @@
       "feature_id": "FEAT-699",
       "feature": "tests-optimization-sdd-flow",
       "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -117,8 +118,9 @@
       "parallelism_notes": "planner.py imports TestContract from TASK-4440 (test_scope/datatypes.py)",
       "assigned_to": null,
       "started_at": "2026-10-18T20:43:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4444-file-level-mirror-and-marker-composition.md"
+      "completed_at": "2026-10-18T21:10:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4444-file-level-mirror-and-marker-composition.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4445",
