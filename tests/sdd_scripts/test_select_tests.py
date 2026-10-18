@@ -222,7 +222,10 @@ def test_select_tests_on_fixture_monorepo(fixture_monorepo):
     assert rc == 1
 
 
-def test_run_records_green_core_escalation(fixture_monorepo, capsys, monkeypatch):
+def test_core_change_is_a_note_not_an_escalation(fixture_monorepo, capsys, monkeypatch):
+    """FEAT-699: a core change (fan-in >= threshold) is reported as a plan note and never
+    escalates a distribution suite -- `escalated` / `skipped_escalations` stay empty and every
+    operand is a file. Nightly (`nightly-tests.yml`) is the safety net."""
     from scripts.sdd.select_tests import _load_kernel
 
     _load_kernel()  # ensures test_scope is importable as a top-level module
@@ -239,7 +242,18 @@ def test_run_records_green_core_escalation(fixture_monorepo, capsys, monkeypatch
 
     main(["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--json"])
     payload = json.loads(capsys.readouterr().out)
-    assert "a" in payload["skipped_escalations"]
+    assert payload["escalated"] == []
+    assert payload["skipped_escalations"] == []
+    assert any(
+        note.startswith("core change (packages/a/src/pa/x.py)") and "covered by nightly" in note
+        for note in payload["notes"]
+    )
+    assert [hit["path"] for hit in payload["core_hits"]] == ["packages/a/src/pa/x.py"]
+    operands = [
+        arg for invocation in payload["invocations"] for arg in invocation["argv"] if arg.startswith("packages/")
+    ]
+    assert operands, "sanity: the plan still selects the mirrored tests"
+    assert all(operand.endswith(".py") for operand in operands)
 
 
 def test_run_rearms_escalation_on_a_later_red_run(fixture_monorepo, capsys, monkeypatch):
