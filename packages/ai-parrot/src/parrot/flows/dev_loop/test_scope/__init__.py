@@ -5,7 +5,7 @@ Stdlib-only: importable as ``parrot.flows.dev_loop.test_scope`` and, by path, as
 """
 
 from .contract import VALIDATION_HEADING, is_broad_pytest, is_pytest_invocation, parse_validation_commands
-from .datatypes import AttemptContext, CoreHit, LedgerEntry, PytestInvocation, ScopePlan, TestTarget
+from .datatypes import AttemptContext, CoreHit, LedgerEntry, PytestInvocation, ScopePlan, TestContract, TestTarget
 from .mirror import deepest_existing_dir, distribution_of, prune_nested, pytest_target_for, pytest_targets
 from .select import changed_files, plan_tests
 
@@ -15,6 +15,7 @@ __all__ = [
     "LedgerEntry",
     "PytestInvocation",
     "ScopePlan",
+    "TestContract",
     "TestTarget",
     "VALIDATION_HEADING",
     "changed_files",
