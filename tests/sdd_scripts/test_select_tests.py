@@ -38,6 +38,14 @@ def fixture_monorepo(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def _write_index(root: Path, payload: dict[str, object]) -> Path:
+    """Write a per-spec index fixture and return its repo-relative path."""
+    index = root / "sdd/tasks/index/fixture.json"
+    index.parent.mkdir(parents=True, exist_ok=True)
+    index.write_text(json.dumps(payload))
+    return index.relative_to(root)
+
+
 def test_cli_json_and_exit_codes(fixture_monorepo, capsys):
     (fixture_monorepo / "packages/a/src/pa/x.py").write_text("X = 2\n")
     rc = main(["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--json"])
@@ -49,6 +57,145 @@ def test_cli_json_and_exit_codes(fixture_monorepo, capsys):
 
 def test_empty_task_plan_exits_2(fixture_monorepo):
     assert main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo)]) == 2
+
+
+def test_index_contract_selects_declared_operands(fixture_monorepo, capsys):
+    """An explicit contract selects its operands instead of import-derived targets."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    contract = kernel.contract.contract_to_header(
+        kernel.contract.parse_spec_contract("### Validation Contract\n\ntests:\n- packages/a/tests/test_x.py\nmarkers: none\n")
+    )
+    index = _write_index(
+        fixture_monorepo,
+        {"feature_id": "FEAT-699", "base_branch": "main", "test_contract": contract, "tasks": []},
+    )
+
+    assert main(["--tier", "merge", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--index", str(index)]) == 0
+
+    output = capsys.readouterr().out
+    assert "packages/a/tests/test_x.py" in output
+    assert "packages/b/tests/test_y.py" not in output
+
+
+def test_malformed_contract_exits_2(fixture_monorepo):
+    """Malformed explicit contracts fail closed rather than selecting fallback tests."""
+    index = _write_index(fixture_monorepo, {"feature_id": "FEAT-699", "test_contract": {"schema": 1}})
+
+    assert main(["--tier", "merge", "--worktree", str(fixture_monorepo), "--index", str(index)]) == 2
+
+
+def test_feature_tier_fresh_by_default(fixture_monorepo, monkeypatch):
+    """Feature runs bypass the green cache unless ``--use-cache`` was explicitly selected."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    _load_kernel()
+    import test_scope.green_cache as green_cache
+
+    calls: list[str] = []
+    monkeypatch.setattr(green_cache, "filter_cached", lambda *args, **kwargs: calls.append("cache") or args[1])
+
+    common = ["--tier", "feature", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--feature", "FEAT-699"]
+    assert main(common) == 0
+    assert calls == []
+    assert main([*common, "--use-cache"]) == 0
+    assert calls == ["cache"]
+
+
+def test_merge_run_uses_cache_second_time(fixture_monorepo, capsys):
+    """A green merge run caches an unchanged file for its next feature-scoped run."""
+    (fixture_monorepo / "pyproject.toml").write_text("[project]\nname = 'fixture-root'\nversion = '0.0.0'\n")
+    (fixture_monorepo / "packages/a/pyproject.toml").write_text("[project]\nname = 'a'\nversion = '0.0.0'\n")
+    _git(fixture_monorepo, "add", "pyproject.toml", "packages/a/pyproject.toml")
+    _git(fixture_monorepo, "commit", "-qm", "cache metadata")
+    (fixture_monorepo / "packages/a/src/pa/x.py").write_text("X = 2\n")
+
+    command = [
+        "--tier",
+        "merge",
+        "--base",
+        "HEAD",
+        "--worktree",
+        str(fixture_monorepo),
+        "--feature",
+        "FEAT-699",
+        "--report-task",
+        "TASK-4450",
+        "--run",
+    ]
+    assert main(command) == 0
+    capsys.readouterr()
+    assert main(command) == 0
+    assert "# cached: packages/a/tests/test_x.py" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("status", "expected"), [("baseline_red", 0), ("new_red", 1)])
+def test_baseline_verdict_controls_failure_exit(fixture_monorepo, monkeypatch, status, expected):
+    """Only a baseline-red failed node may turn an otherwise red invocation green."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    import scripts.sdd.select_tests as sel
+    import test_scope.baseline as baseline
+    from test_scope.datatypes import BaselineVerdict, PytestInvocation, ScopePlan, TestTarget
+
+    target = "packages/a/tests/test_x.py"
+    plan = ScopePlan(
+        tier="merge",
+        invocations=(
+            PytestInvocation(
+                distribution="a",
+                argv=("pytest", target),
+                targets=(TestTarget(path=target, distribution="a", reason="declared"),),
+            ),
+        ),
+        escalated=(),
+        core_hits=(),
+        skipped_escalations=(),
+        notes=(),
+    )
+    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
+    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
+
+    real_run = sel.subprocess.run
+
+    def _failed_run(argv, **kwargs):
+        if not any(str(value).startswith("pytest") for value in argv):
+            return real_run(argv, **kwargs)
+        junit = Path(next(value for value in argv if value.startswith("--junitxml=")).removeprefix("--junitxml="))
+        junit.write_text(
+            '<testsuites><testsuite tests="1" failures="1">'
+            '<testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x" name="test_x">'
+            "<failure />" "</testcase></testsuite></testsuites>"
+        )
+        return SimpleNamespace(returncode=1)
+
+    monkeypatch.setattr(sel.subprocess, "run", _failed_run)
+    monkeypatch.setattr(
+        baseline,
+        "classify_failures",
+        lambda **kwargs: (BaselineVerdict(kwargs["failed_nodeids"][0], status),),
+    )
+
+    assert (
+        main(
+            [
+                "--tier",
+                "merge",
+                "--base",
+                "HEAD",
+                "--worktree",
+                str(fixture_monorepo),
+                "--feature",
+                "FEAT-699",
+                "--report-task",
+                "TASK-4450",
+                "--run",
+            ]
+        )
+        == expected
+    )
 
 
 def test_bad_flag_exits_2():

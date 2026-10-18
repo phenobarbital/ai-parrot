@@ -8,6 +8,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import shlex
 import subprocess
 import sys
@@ -30,7 +31,17 @@ def _load_kernel() -> ModuleType:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Plan (and optionally run) tier-scoped pytest invocations.")
     parser.add_argument("--tier", required=True, choices=("task", "merge", "feature"))
-    parser.add_argument("--base", default="origin/dev")
+    parser.add_argument(
+        "--base", default=None, help="diff + baseline ref (default: origin/<index base_branch> or origin/dev)"
+    )
+    parser.add_argument("--index", type=Path, default=None, help="per-spec index (FEAT-699 test_contract source)")
+    cache = parser.add_mutually_exclusive_group()
+    cache.add_argument("--use-cache", dest="use_cache", action="store_true", default=None)
+    cache.add_argument("--fresh", dest="use_cache", action="store_false")
+    baseline = parser.add_mutually_exclusive_group()
+    baseline.add_argument("--baseline", dest="baseline", action="store_true", default=True)
+    baseline.add_argument("--no-baseline", dest="baseline", action="store_false")
+    parser.add_argument("--timeout-baseline", type=int, default=600, metavar="SECONDS")
     parser.add_argument("--task-file", action="append", default=[], type=Path)
     parser.add_argument("--worktree", type=Path, default=Path.cwd())
     parser.add_argument("--run", action="store_true")
@@ -53,6 +64,50 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_index(args: argparse.Namespace, worktree: Path, kernel: ModuleType) -> tuple[dict, list[str]]:
+    """Return an index header and discovery notes, preferring an explicit ``--index``."""
+    if args.index is not None:
+        index_path = args.index if args.index.is_absolute() else worktree / args.index
+        return kernel.contract.load_index_header(index_path), []
+    if not args.feature:
+        return {}, []
+
+    matches: list[dict] = []
+    for index_path in sorted((worktree / "sdd/tasks/index").glob("*.json")):
+        try:
+            header = kernel.contract.load_index_header(index_path)
+        except ValueError:
+            continue
+        if header.get("feature_id") == args.feature:
+            matches.append(header)
+    if len(matches) == 1:
+        return matches[0], []
+    if not matches:
+        return {}, [f"no index found for feature {args.feature}; no test contract applied"]
+    return {}, [f"multiple indexes found for feature {args.feature}; no test contract applied"]
+
+
+def _record_suite(
+    report_mod: ModuleType | None,
+    args: argparse.Namespace,
+    suite: object,
+    *,
+    head_sha: str,
+    base_ref: str,
+) -> None:
+    """Best-effort record of one suite result when a feature/task owner was supplied."""
+    if report_mod is not None and args.feature and args.report_task:
+        report_mod.append_suite(
+            args.feature,
+            args.report_task,
+            suite,
+            head_sha=head_sha,
+            base_ref=base_ref,
+            tier=args.tier,
+            source="select_tests",
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point: 0 ok, 1 an invocation failed, 2 usage error / empty task-tier plan."""
     try:
@@ -61,6 +116,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     kernel = _load_kernel()
     worktree = args.worktree.resolve()
+
+    try:
+        index_header, index_notes = _resolve_index(args, worktree, kernel)
+        contract = kernel.contract.contract_from_index_header(index_header) if index_header else None
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)  # noqa: T201 - CLI output
+        return 2
+    base_ref = args.base or f"origin/{index_header.get('base_branch', 'dev')}"
 
     declared: list[list[str]] = []
     for task_file in args.task_file:
@@ -73,10 +136,26 @@ def main(argv: list[str] | None = None) -> int:
 
     plan = kernel.plan_tests(
         worktree=worktree,
-        changed_files=kernel.changed_files(worktree, args.base),
+        changed_files=kernel.changed_files(worktree, base_ref),
         tier=args.tier,
         declared=declared,
+        contract=contract,
     )
+    if index_notes:
+        plan = replace(plan, notes=(*plan.notes, *index_notes))
+
+    use_cache = args.use_cache if args.use_cache is not None else args.tier == "merge"
+    namespace = None
+    if args.feature:
+        import test_scope.green_cache as green_cache  # noqa: PLC0415 — path-dependent import
+
+        namespace = green_cache.cache_namespace(
+            feature_id=args.feature,
+            base_ref=base_ref,
+            contract_digest=contract.digest if contract else "none",
+        )
+        if use_cache:
+            plan = green_cache.filter_cached(worktree, plan, namespace=namespace, contract=contract)
 
     if not plan.invocations and args.tier == "task":
         import test_scope.guard as guard_mod  # noqa: PLC0415 — path-dependent import
@@ -91,6 +170,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         for invocation in plan.invocations:
             print(shlex.join(invocation.argv))  # noqa: T201 - CLI output
+        for target in plan.cached:
+            print(f"# cached: {target}")  # noqa: T201 - CLI output
         for note in plan.notes:
             print(f"# note: {note}")  # noqa: T201 - CLI output
         for dist in plan.escalated:
@@ -102,16 +183,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     recording = bool(args.feature and args.report_task)
-    report_mod = None
+    report_mod: ModuleType | None = None
     head_sha = ""
-    if recording:
-        try:
-            import test_scope.report as report_mod  # noqa: PLC0415 — path-dependent import
-        except ImportError as exc:  # recording is best-effort and must never abort a test run
-            print(f"warning: test result recording disabled: {exc}", file=sys.stderr)  # noqa: T201
-            report_mod = None
-            recording = False
+    try:
+        import test_scope.report as report_mod  # noqa: PLC0415 — path-dependent import
+    except ImportError as exc:
+        print(f"warning: junit recording disabled: {exc}", file=sys.stderr)  # noqa: T201
 
+    if recording:
         try:
             head_result = subprocess.run(
                 ["git", "rev-parse", "HEAD"], cwd=worktree, capture_output=True, text=True, check=False
@@ -138,13 +217,16 @@ def main(argv: list[str] | None = None) -> int:
                 args.report_task,
                 selection,
                 head_sha=head_sha,
-                base_ref=args.base,
+                base_ref=base_ref,
                 tier=args.tier,
                 source="select_tests",
                 note="selection_error: no test invocations planned",
             )
 
     exit_code = 0
+    suites: list[object] = []
+    failed_nodeids: list[str] = []
+    unclassified_failure = False
     for ordinal, invocation in enumerate(plan.invocations):
         # FEAT-617: bound each test so a hang fails loudly, named, instead of stalling
         # the whole merge gate. Build a local argv -- invocation.argv is read elsewhere
@@ -153,9 +235,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.timeout is not None:
             argv.append(f"--timeout={args.timeout}")
         junit = None
-        if recording:
+        if recording and report_mod is not None:
             try:
-                junit = report_mod.junit_path_for(args.feature, args.report_task, invocation.distribution, ordinal)
+                feature_id = args.feature or "_rerun"
+                task_id = args.report_task or "_rerun"
+                junit = report_mod.junit_path_for(feature_id, task_id, invocation.distribution, ordinal)
                 invocation_copy = type(invocation)(
                     distribution=invocation.distribution,
                     argv=tuple(argv),
@@ -166,41 +250,98 @@ def main(argv: list[str] | None = None) -> int:
                 junit = None
         started = time.monotonic()
         result = subprocess.run(argv, cwd=worktree)
-        if recording and junit is not None:
+        suite = None
+        if report_mod is not None and junit is not None:
             suite = report_mod.parse_junit(
                 junit,
-                suite=invocation.distribution,
+                suite=report_mod.suite_name(invocation),
                 argv=tuple(argv),
                 exit_code=result.returncode,
                 duration_s=time.monotonic() - started,
             )
-            report_mod.append_suite(
-                args.feature,
-                args.report_task,
-                suite,
-                head_sha=head_sha,
-                base_ref=args.base,
-                tier=args.tier,
-                source="select_tests",
-            )
-        is_core_escalation = any(target.reason == "core" for target in invocation.targets)
+            suites.append(suite)
+            _record_suite(report_mod, args, suite, head_sha=head_sha, base_ref=base_ref)
+        is_core_escalation = bool(plan.core_hits) or any(target.reason == "core" for target in invocation.targets)
         is_cap_escalation = any(target.reason == "escalated" for target in invocation.targets)
         if result.returncode != 0:
             exit_code = 1
+            if suite is None or suite.status in {"no_junit", "report_parse_error"} or suite.unmapped:
+                unclassified_failure = True
+            else:
+                nodes = [nodeid for nodeid, status in suite.nodes if status in {"failed", "error"}]
+                if not nodes:
+                    unclassified_failure = True
+                failed_nodeids.extend(nodes)
             if not args.no_ledger and (is_core_escalation or is_cap_escalation):
                 # R14/AC9c: a red escalation run re-arms it, even when its driving file content is unchanged.
                 kernel.context.record_red_run(worktree, [invocation.distribution])
             continue
         if not args.no_ledger and (is_core_escalation or is_cap_escalation):
             dist = invocation.distribution
-            core_files = [hit.path for hit in plan.core_hits if dist in hit.distributions]
+            core_files = [hit.path for hit in plan.core_hits]
             impact_files = list(plan.cap_hits.get(dist, ()))
             impacted_hashes = {dist: plan.cap_impacted[dist]} if dist in plan.cap_impacted else {}
             if core_files or impact_files:
                 kernel.context.record_green_escalation(
                     worktree, [dist], core_files, impact_files=impact_files, impacted_hashes=impacted_hashes
                 )
-    return exit_code
+
+    verdicts = ()
+    if failed_nodeids and args.baseline:
+        import test_scope.baseline as baseline  # noqa: PLC0415 — path-dependent import
+
+        verdicts = baseline.classify_failures(
+            worktree=worktree,
+            base_ref=base_ref,
+            failed_nodeids=failed_nodeids,
+            timeout_s=args.timeout_baseline or 600,
+        )
+        verdict_by_node = {verdict.nodeid: verdict.status for verdict in verdicts}
+        if set(failed_nodeids) - set(verdict_by_node):
+            unclassified_failure = True
+        for suite in suites:
+            baseline_nodes = tuple((nodeid, verdict_by_node[nodeid]) for nodeid, _ in suite.nodes if nodeid in verdict_by_node)
+            if baseline_nodes:
+                _record_suite(
+                    report_mod,
+                    args,
+                    replace(suite, baseline=baseline_nodes),
+                    head_sha=head_sha,
+                    base_ref=base_ref,
+                )
+        summary = baseline.summarize(verdicts)
+        print(
+            f"# baseline: new_red={summary.get('new_red', 0)} "
+            f"baseline_red={summary.get('baseline_red', 0)} unknown={summary.get('unknown', 0)}"
+        )  # noqa: T201 - CLI output
+        exit_code = 1 if baseline.gate_failed(verdicts) or unclassified_failure else 0
+    elif exit_code:
+        unclassified_failure = True
+
+    if namespace is not None and not args.no_ledger:
+        import test_scope.green_cache as green_cache  # noqa: PLC0415 — path-dependent import
+
+        all_nodes = tuple(node for suite in suites for node in suite.nodes)
+        unmapped = sum(suite.unmapped for suite in suites)
+        green_cache.record_green(
+            worktree,
+            namespace=namespace,
+            plan=plan,
+            nodes=all_nodes,
+            unmapped=unmapped,
+            baseline_reds=tuple(verdict.nodeid for verdict in verdicts if verdict.status == "baseline_red"),
+        )
+    if recording and report_mod is not None and plan.cached:
+        report_mod.append_cached(
+            args.feature,
+            args.report_task,
+            plan.cached,
+            head_sha=head_sha,
+            base_ref=base_ref,
+            tier=args.tier,
+            source="select_tests",
+        )
+    return 1 if unclassified_failure else exit_code
 
 
 if __name__ == "__main__":
