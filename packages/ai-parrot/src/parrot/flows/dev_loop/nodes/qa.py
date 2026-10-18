@@ -551,8 +551,8 @@ class QANode(DevLoopNode):
     ) -> List[AcceptanceCriterion]:
         """Derive one executable criterion for a run that declared none.
 
-        Runs pytest scoped to the narrowest existing test directory that
-        mirrors each changed file (see :meth:`_pytest_targets`) — the
+        Runs pytest scoped to the existing test files that mirror each
+        changed file (file-level, FEAT-699; see :meth:`_pytest_targets`) — the
         whole-monorepo suite is minutes of wall clock, and so is the full
         test tree of ``ai-parrot`` itself (1250+ test modules), for a
         change that usually lands in one subsystem.
@@ -641,22 +641,13 @@ class QANode(DevLoopNode):
 
     @classmethod
     def _pytest_targets(cls, files: List[str], worktree_path: str) -> List[str]:
-        """Delegates to test_scope.mirror.pytest_targets (FEAT-563)."""
-        return _scope_mirror.pytest_targets(files, worktree_path)
+        """Delegates to test_scope.mirror.pytest_file_targets (FEAT-699 file-level mirror)."""
+        return _scope_mirror.pytest_file_targets(files, worktree_path)
 
     @classmethod
     def _pytest_target_for(cls, path: str, worktree_path: str) -> Optional[str]:
-        """Delegates to test_scope.mirror.pytest_target_for (FEAT-563)."""
-        return _scope_mirror.pytest_target_for(path, worktree_path)
-
-    @staticmethod
-    def _deepest_existing_dir(
-        tests_root: str,
-        subdirs: Tuple[str, ...],
-        worktree_path: str,
-    ) -> str:
-        """Delegates to test_scope.mirror.deepest_existing_dir (FEAT-563)."""
-        return _scope_mirror.deepest_existing_dir(tests_root, subdirs, worktree_path)
+        """Delegates to test_scope.mirror.pytest_file_target_for (FEAT-699 file-level mirror)."""
+        return _scope_mirror.pytest_file_target_for(path, worktree_path)
 
     @staticmethod
     def _prune_nested(targets: set) -> List[str]:
