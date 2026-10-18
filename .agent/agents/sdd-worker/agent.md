@@ -286,7 +286,7 @@ If ANY check fails, fix or STOP.
 
 ### e) Validate (in worktree)
 - Run linting and fix issues.
-- Run the task's `## Validation Commands`, then `python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch>
+- Run the task's `## Validation Commands`, then `python -m scripts.sdd.select_tests --tier merge --base origin/<base_branch> --index sdd/tasks/index/<feature-slug>.json
   --task-file sdd/tasks/active/TASK-<NNN>-<slug>.md --run`
   (this lane has no attempt context, so no harness guard — never run a directory or full-suite pytest by hand).
 - If stuck after 3 attempts, mark as `"done-with-issues"`.

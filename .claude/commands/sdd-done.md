@@ -182,7 +182,8 @@ Then fix what `ruff check` still reports, in those files only (pre-existing
 violations in a touched file included — that is deliberate code improvement):
 - Keep each fix behavior-neutral; when one is not (e.g. narrowing a blind
   `except Exception`), run `TASK_FILES=$(jq -r '.tasks[].file' "sdd/tasks/index/<feature-slug>.json");
-  python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> --worktree "$WT"
+  python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> --worktree "$WT" \
+  --index "sdd/tasks/index/<feature-slug>.json"
   $(printf -- '--task-file %s ' $TASK_FILES) --run` before committing.
 - Commit as `style(<slug>): FEAT-<ID> — lint fixes`.
 - A finding you cannot fix safely goes under **Lint residual** in the report.
@@ -283,7 +284,8 @@ IDX="sdd/tasks/index/<feature-slug>.json"
 TEST_REPORT_MD="${SDD_TEST_REPORT_DIR:-/tmp/claude-$(id -u)/sdd-tests}/FEAT-<ID>/pr-tests.md"
 mkdir -p "$(dirname "$TEST_REPORT_MD")"
 
-# Deterministic rule: re-run the feature tier at the final HEAD only for features of <= 10 tasks.
+# FEAT-699: the feature tier always re-runs FRESH at the final HEAD (contract-driven, cheap); decide-rerun
+# prints `rerun` for any non-empty index. Gate = new reds (+ unknowns) vs origin/<base_branch>.
 DECISION=$(python -m scripts.sdd.test_report decide-rerun --index "$IDX")
 ```
 
@@ -292,11 +294,14 @@ If `DECISION` is `rerun`, run the feature-tier suite once at the final HEAD in t
 
 ```bash
 timeout -k 10 1800 python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> \
-  --worktree "$WT" $(printf -- '--task-file %s ' <every task file of the index>) \
+  --worktree "$WT" --index "$IDX" $(printf -- '--task-file %s ' <every task file of the index>) \
   --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run
 ```
 
-If `DECISION` is `skip`, do not re-run; the rendered table states `re-run skipped (N tasks > 10)`.
+The feature tier is driven by the index's `test_contract` and always runs fresh (`--fresh` is the feature-tier
+default). The rendered table has **New red**, **Baseline red** and **Unknown** columns, a `cached` line for
+unchanged green targets, and a gate line: the PR is blocked only by new reds or unknowns; baseline reds are
+reported, not blocking.
 
 Then render the section (always, even when the re-run was skipped or failed):
 
@@ -321,7 +326,7 @@ Commits found: <N>
 Tasks: <total> total, <verified> verified, <partial> partial, <missing> missing
 Lint: <autofixed files> auto-fixed, <fixed> hand-fixed, <residual> residual (<blocking> blocking)
 E2E: <policy> — <status> (gate_satisfied: <bool>)
-Tests: <passed>/<tests> (<failed> failed) — re-run: <done | skipped (N tasks > 10)>
+Tests: <passed>/<tests> (<failed> failed) — re-run: done
 
   ✅ TASK-096 — Scene Editor Refactor
      Commits: feat(videoreel): TASK-096 — Scene Editor Refactor (abc1234)

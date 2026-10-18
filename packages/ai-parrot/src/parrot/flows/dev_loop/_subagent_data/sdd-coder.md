@@ -176,6 +176,7 @@ If ANY check fails, fix it or STOP and report.
   `pytest` on a directory, `tests/`, `packages/<dist>/tests` or with no path: inside an sdd-coder
   attempt the harness rewrites such a command to your task's scoped tests (MCP and native seats),
   blocks it when nothing is scoped, or denies it with the scoped command to run (codex).
+  The task tier runs your task's own Validation Commands plus file-level mirror tests; a directory mirror no longer happens.
 - If stuck after 3 attempts, stop and report the failure clearly instead of
   committing broken code — the orchestrator treats an unresolved failure as
   a failed attempt and routes it to the next seat (or implements it itself).

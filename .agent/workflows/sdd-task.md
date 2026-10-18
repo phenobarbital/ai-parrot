@@ -295,6 +295,7 @@ and ignored by all FEAT-145 commands). Schema:
   "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
+  "test_contract": {"schema": 1, "tests": ["<operand>", "..."], "markers": [], "digest": "sha256:<hex>"},
   "tasks": [
     {
       "id": "TASK-<NNN>",
@@ -356,6 +357,17 @@ complete. `design_complete: true` is a declaration the task author signs.
   only then re-runs `writer_generate`.
 - Omit the section entirely when the task is not eligible. Most tasks are not,
   and that is the normal, expected route.
+
+#### Cache the Validation Contract (FEAT-699, mandatory)
+
+After writing the index and before §4b, run:
+```bash
+python -m scripts.sdd.cache_test_contract --spec <spec-path> --index sdd/tasks/index/<feature-slug>.json
+```
+It writes the spec §4 `### Validation Contract` into the header as `test_contract` (or removes it for
+`none — fallback`). Never hand-write `test_contract`. Exit 2 means the spec subsection is malformed or
+missing — fix the spec, do not skip the step. Each task's `## Validation Commands` lists that task's OWN
+test files; the contract is added by the selector at merge/feature tier, never copied into every task.
 
 #### Validation Commands (mandatory, per task — FEAT-563)
 

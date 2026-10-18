@@ -50,6 +50,8 @@ class ScopePlan:
     notes: tuple[str, ...]
     cap_hits: Mapping[str, tuple[str, ...]] = field(default_factory=lambda: MappingProxyType({}))
     cap_impacted: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    mode: str = "fallback"  # "contract" | "fallback" (FEAT-699)
+    cached: tuple[str, ...] = ()  # targets dropped by the green cache (FEAT-699)
 
     def __post_init__(self) -> None:
         """Freeze the mapping fields so the frozen dataclass is truly immutable."""
@@ -57,6 +59,36 @@ class ScopePlan:
             value = getattr(self, name)
             if not isinstance(value, MappingProxyType):
                 object.__setattr__(self, name, MappingProxyType(dict(value)))
+
+
+@dataclass(frozen=True)
+class TestContract:
+    """Normalized spec-declared validation contract (per-spec index header ``test_contract``, FEAT-699)."""
+
+    __test__ = False  # not a pytest test class
+
+    schema: int  # payload version; only 1 is understood
+    tests: tuple[str, ...]  # pytest operands: repo-relative file or file::node
+    markers: tuple[str, ...]  # registered marker names, never "real_llm"
+    digest: str  # "sha256:<hex>" of the normalized payload
+
+
+@dataclass(frozen=True)
+class GreenCacheEntry:
+    """One cached-green test target within a feature (FEAT-699 green cache)."""
+
+    target: str  # repo-relative file or file::node exactly as planned
+    key: str  # content key, see green_cache.target_key
+    recorded_at: str  # UTC ISO-8601
+
+
+@dataclass(frozen=True)
+class BaselineVerdict:
+    """Classification of one failed node id against origin/<base_branch> (FEAT-699)."""
+
+    nodeid: str
+    status: str  # "new_red" | "baseline_red" | "unknown" | "flaky"
+    detail: str = ""
 
 
 @dataclass(frozen=True)

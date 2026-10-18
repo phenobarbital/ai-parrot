@@ -20,9 +20,9 @@ def _write_index(path: Path, task_count: int = 1) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
-@pytest.mark.parametrize(("task_count", "expected"), [(10, "rerun"), (11, "skip (11 tasks > 10)")])
+@pytest.mark.parametrize(("task_count", "expected"), [(0, "skip (no tasks)"), (10, "rerun"), (15, "rerun")])
 def test_decide_rerun_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str], task_count: int, expected: str) -> None:
-    """The task-count threshold produces the exact deterministic decision text."""
+    """Every nonempty task index produces the exact deterministic re-run decision."""
     index = tmp_path / "index.json"
     _write_index(index, task_count)
 

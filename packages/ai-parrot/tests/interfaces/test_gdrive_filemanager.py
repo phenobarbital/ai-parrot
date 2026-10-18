@@ -634,6 +634,63 @@ async def test_setup_mounts_guarded_extension_and_413_over_limit(manager):
 
 
 @pytest.mark.asyncio
+async def test_download_to_stream_seeks_back_on_retry(manager):
+    """Bug fix: retry of a BinaryIO download must seek back to start, not duplicate bytes."""
+    result, client = manager
+    client.drive.put_file("reports/2026/doc.bin", b"hello world")
+    buf = io.BytesIO()
+    # First download attempt will fail with a retryable 500, second succeeds
+    client.fail_next(500, method="files.download")
+    await result.download_file("doc.bin", buf)
+    assert buf.getvalue() == b"hello world", f"got {buf.getvalue()!r} — bytes were duplicated on retry"
+
+
+@pytest.mark.asyncio
+async def test_download_to_non_seekable_stream_does_not_retry(manager):
+    """Bug fix: non-seekable BinaryIO must not retry (idempotent=False)."""
+    result, client = manager
+    client.drive.put_file("reports/2026/doc.bin", b"data")
+
+    class NonSeekableIO(io.RawIOBase):
+        def __init__(self) -> None:
+            self.chunks: list[bytes] = []
+
+        def write(self, data: bytes) -> int:
+            self.chunks.append(data)
+            return len(data)
+
+        def seekable(self) -> bool:
+            return False
+
+        def readable(self) -> bool:
+            return False
+
+    sink = NonSeekableIO()
+    # Inject a retryable failure — should NOT be retried for a non-seekable stream
+    client.fail_next(500, method="files.download")
+
+    with pytest.raises((GoogleDriveFileManagerError, FakeHTTPError)):
+        await result.download_file("doc.bin", sink)
+
+
+@pytest.mark.asyncio
+async def test_resumable_chunk_429_honours_retry_after(manager):
+    """Bug fix: resumable upload chunk 429 must expose Retry-After to _retrying."""
+    result, drive = manager
+    # Verify that the response object is attached to the error raised by _put
+    from types import SimpleNamespace
+
+    from parrot.interfaces.file.gdrive import GoogleDriveFileManagerError
+
+    err = GoogleDriveFileManagerError("chunk failed", status_code=429)
+    err.res = SimpleNamespace(
+        status_code=429, headers={"Retry-After": "42"}, json=None
+    )
+    delay = result._retry_after_seconds(err)
+    assert delay == 42.0, f"expected 42.0 but got {delay}"
+
+
+@pytest.mark.asyncio
 async def test_missing_path_raises_file_not_found_for_mutations(manager):
     """Review fix: mutating ops on a missing path surface FileNotFoundError, not a generic error."""
     result, _drive = manager

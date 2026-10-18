@@ -339,7 +339,7 @@ mv "sdd/state/.intake/<slug>-<RUN_ID>"/* "sdd/state/<FEAT-ID>/intake/"
 rmdir "sdd/state/.intake/<slug>-<RUN_ID>" 2>/dev/null || true
 ```
 
-**No overwrite**: If `sdd/state/<FEAT-ID>/intake/` already exists, abort with an error.
+**No overwrite**: If `sdd/state/<FEAT-ID>/intake/` already exists, warn and leave the staging directory in place for manual review — never abort the spec commit.
 
 Set `intake.json.phase = "committed"` and commit the spec along with the intake directory.
 

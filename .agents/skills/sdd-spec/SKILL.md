@@ -130,6 +130,7 @@ stay with the thinking model — eligibility never delegates a design choice.
    - tests and acceptance criteria
    - mandatory Codebase Contract
    - Worktree Strategy
+   - `### Validation Contract` in §4 (FEAT-699): explicit pytest operands or `none — fallback`
    - optional `e2e` frontmatter and `### E2E Scenarios` subsection (FEAT-581)
      only when the feature exercises the deterministic E2E gate: `policy`
      must be exactly `required`, `optional` or `none` (never coerced when
