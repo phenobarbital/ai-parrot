@@ -1,0 +1,1 @@
+- [ ] sidemantic `SemanticLayer.compile` reentrancy: spike needed (parallel compile under a thread pool) to decide lock vs lock-free; also confirm `load_from_directory` accepts Ossie 0.1.1 fixtures from `github.com/apache/ossie` unchanged. — *Owner: implementing lane (a)*
