@@ -16,14 +16,14 @@
       "feature_id": "BRIEF-792b6e2a8f25",
       "feature": "e2e-up-launcher-exit-survival",
       "spec": "sdd/briefs/e2e-up-launcher-exit-survival.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-18T20:45:36+00:00",
       "completed_at": null,
       "file": "sdd/briefs/e2e-up-launcher-exit-survival/tasks/HOTFIX-792b6e2a8f25-1-up-launcher-exit-survival-test.md"
     }
