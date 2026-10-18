@@ -12,12 +12,14 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 **Author**: Jesus Lara (brainstorm + decisions); spec drafted with Claude
 **Status**: approved
 **Target version**: Next release (assigned by release tooling)
-**Revision**: 0.3 (2026-10-17) — folds in C16 of
-`sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.4): `worktree_environment`
-enters scope (amends TASK-4085, 4072, 4089, 4090, 4091).
+**Revision**: 0.4 (2026-10-18) — folds in C17 of
+`sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.5): `/sdd-brief` (FEAT-698)
+ships through the installer (amends TASK-4070, 4085, 4089, 4090, 4091, 4299).
+**Revision 0.3** (2026-10-17) — folds in C16 of the same proposal (rev 0.4):
+`worktree_environment` enters scope (amends TASK-4085, 4072, 4089, 4090, 4091).
 **Revision 0.2** (2026-10-14) — folds in the approved amendments of the same proposal
 (rev 0.3): C2–C6, C8–C15, Q1, C7.
-Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`) mark every changed clause.
+Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`, `[rev 0.4 C17]`) mark every changed clause.
 
 > Source brainstorm: `sdd/proposals/parrot-installer.brainstorm.md` (accepted, Option B′,
 > all 16 open questions resolved). Supersedes `sdd/specs/portable-sdd-flow.spec.md`
@@ -48,8 +50,9 @@ Codex or Gemini/Antigravity assumes a developer who already has Python and a pro
    `sys.executable -m parrot.knowledge.bookstore.cli mcp` with absolute `cwd` in all
    three hosts. Gemini's config is **user-global** (`~/.gemini/config/mcp_config.json`),
    so absolute per-project paths collide across repos.
-4. **The SDD flow is not installable.** 14 `/sdd-*` commands, 9 `sdd-*` agents, hooks,
-   rules, 13 templates and ~29 `scripts/sdd/` helpers live only in this repo.
+4. **The SDD flow is not installable.** 15 `/sdd-*` commands *[rev 0.4 C17: `/sdd-brief`,
+   FEAT-698]*, 9 `sdd-*` agents, hooks, rules, 14 templates and ~30 `scripts/sdd/` helpers
+   live only in this repo.
 5. **Toolkit exposure installs nothing.** Templates carry only
    `summary|requires_llm|requires_dist`; no pip requirement, post-install step, or
    env-var declaration.
@@ -461,9 +464,9 @@ class ToolkitTemplate(BaseModel):
   `installer.py`, `scripts/`, `_assets/{commands,agents,hooks,rules,templates}/`),
   `cli/__init__.py` (lazy `sdd`), `pyproject.toml` (package-data),
   `scripts/sdd/check_asset_sync.py` (new CI check), `scripts/sdd/*.py` (thin wrappers)
-- **Responsibility**: package the 14 commands, 9 agents, SDD hooks, **one** rule
+- **Responsibility**: package the 15 commands *[rev 0.4 C17]*, 9 agents, SDD hooks, **one** rule
   (`worktree-management`, after C11's rewrite), the `second-opinion` skill, a
-  `CONVENTIONS.md` seed and 13 templates as package data *[rev 0.2 C9/C10]*; `parrot sdd install [--host …]` deploys them with the
+  `CONVENTIONS.md` seed and 14 templates *[rev 0.4 C17]* as package data *[rev 0.2 C9/C10]*; `parrot sdd install [--host …]` deploys them with the
   marker-block discipline (template: `claude_code/installer.py` `_upsert_marker_block`,
   installer.py:50). The 18 doc-referenced helpers (`sdd_meta`, `reserve_ids`,
   `ensure_worktree`, `close_task`, `heal_orphans`, `check_task_state`, `select_tests`,
@@ -488,6 +491,18 @@ class ToolkitTemplate(BaseModel):
   the target machine (shell-only helpers, `jq`, POSIX-isms — codex S9; spike S5
   inventories them).
 - **Depends on**: spike S5 (assumption inventory drives the markdown rewrite list).
+- **Rev 0.4 amendment C17 — `/sdd-brief` ships** (details and "done when" in the
+  amendments proposal §3 C17). FEAT-698 (merged 2026-10-17, PR #1715) added a 15th command
+  (`.claude/commands/sdd-brief.md` + the Codex twin `.agents/skills/sdd-brief/SKILL.md`), a
+  14th template (`sdd/templates/brief.md`), a repo-local helper (`scripts/sdd/brief_meta.py`)
+  and `ensure_worktree --brief-key`. The packaging globs pick the command, the skill and the
+  template up by themselves; what does not follow by itself: `brief_meta` joins TASK-4085's
+  move (`ensure_worktree` imports it, so it cannot stay behind) and gains an argparse
+  `main()` (`plan`, `write-index`) in TASK-4299 so installed markdown can say
+  `parrot sdd run brief_meta …`; the missing Google twin `.agent/workflows/sdd-brief.md` is
+  created by TASK-4089 before its rewrite; TASK-4070's helper map, TASK-4090's asset counts
+  (15 commands per host, 13 tracked templates, 81 manifest entries) and TASK-4091's C3
+  scenarios (`ensure_worktree --brief-key`, `brief_meta write-index`) cover the new files.
 - **Rev 0.2 amendments** (details and "done when" in the amendments proposal §3):
   - **C2 — one copy of each agent prompt.** `load_subagent_definition()`
     (`flows/dev_loop/_subagent_defs.py`) reads the packaged `_assets/` copy, stripping
@@ -744,6 +759,12 @@ def linked_worktree_repo(tmp_path):
       `scripts/`, `$CLAUDE_PROJECT_DIR/…`) — `test_no_repo_script_refs` is widened past
       C12's `scripts/sdd` sweep — and C3's foreign-repo test shows the shared-environment
       guard denying a write with only `$PARROT_HOME/bin` on PATH.
+- [ ] *[rev 0.4 C17]* `parrot sdd install` deploys `/sdd-brief` on all three hosts
+      (`.claude/commands/sdd-brief.md`, `.agents/skills/sdd-brief/SKILL.md`,
+      `.agent/workflows/sdd-brief.md`) and `sdd/templates/brief.md`; the installed
+      `sdd-brief.md` invokes only `parrot sdd run ensure_worktree --brief-key …`,
+      `parrot sdd run brief_meta write-index …` and `parrot sdd run check_task_graph …`,
+      each covered by a C3 scenario; `scripts.sdd.brief_meta` stays importable as a shim.
 - [ ] *[rev 0.2 C4/C5]* Re-running `parrot sdd install` upgrades untouched files, keeps
       edited ones (warning; `--force` overrides), never touches files it did not write;
       `parrot sdd status` reports `missing|current|outdated|edited|foreign`; `--dry-run`
@@ -923,6 +944,10 @@ Verified against: `56ff8cd58`
 | `packages/ai-parrot/src/parrot/self_/{__init__,cli,components,doctor}.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/sdd/{__init__,cli,installer}.py` + `scripts/` + `_assets/` | CREATE | — | — | — |
 | `scripts/sdd/check_asset_sync.py` | CREATE | — | — | — |
+| `scripts/sdd/brief_meta.py` | MODIFY | `from scripts.sdd.sdd_meta import WORKTREE_ROOT, WorktreePlan` *(becomes alias shim — rev 0.4 C17)* | `brief_meta.py:19` | 1 |
+| `scripts/sdd/ensure_worktree.py` | MODIFY | `from scripts.sdd.brief_meta import brief_worktree_plan` *(second import rewrite — rev 0.4 C17)* | `ensure_worktree.py:20` | 1 |
+| `packages/ai-parrot/src/parrot/sdd/scripts/brief_meta.py` | CREATE | — *(`git mv` + argparse `main` — rev 0.4 C17)* | — | — |
+| `.agent/workflows/sdd-brief.md` | CREATE | — *(Google twin of `.claude/commands/sdd-brief.md` — rev 0.4 C17)* | — | — |
 
 Anchors go stale between spec time and task time — `/sdd-task` MUST re-run the
 `grep -c` for every row it uses.
@@ -1072,3 +1097,4 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.1 | 2026-10-05 | Jesus Lara + Claude | Initial draft from accepted brainstorm (FEAT-633) |
 | 0.2 | 2026-10-14 | Jesus Lara + Claude | Amendments C2–C6, C8–C15, Q1, C7 folded in (proposal `parrot-installer-amendments` rev 0.3): `parrot sdd run`, install receipt, `--dry-run`, `sdd/config.json` + single branch policy (TASK-4298/4299), conventions seed, publication safety, canonical docs, bootstrap gate + `doctor --runtime-only`, SDD readiness checks; FEAT-583 stamp marked done |
 | 0.3 | 2026-10-17 | Jesus Lara + Claude | Amendment C16 folded in (proposal rev 0.4): `worktree_environment` enters scope — relocated to `parrot/sdd/scripts/` with a re-export shim, hook invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, `test_no_repo_script_refs` widened to any monorepo source path (amends TASK-4085, 4072, 4089, 4090, 4091) |
+| 0.4 | 2026-10-18 | Jesus Lara + Claude | Amendment C17 folded in (proposal rev 0.5): `/sdd-brief` (FEAT-698, merged after rev 0.3) ships through the installer — `brief_meta` moves with TASK-4085 and gets a CLI (`plan`, `write-index`) in TASK-4299, TASK-4089 creates the missing Google twin `.agent/workflows/sdd-brief.md` and rewrites the three `sdd-brief` files, counts updated to 15 commands per host / 14 templates / 81 manifest entries (TASK-4070, 4090), C3 scenarios for `ensure_worktree --brief-key` and `brief_meta write-index` (TASK-4091) |

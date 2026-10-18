@@ -36,13 +36,32 @@ re-export shim (the precedent) and is **not changed**.
 
 ---
 
+## Amendments — spec rev 0.4 (2026-10-18)
+
+Folded in from `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C17 (decision by
+Jesus Lara, 2026-10-18). Every section below is already edited to match.
+
+- **C17 — `brief_meta` moves with the worktree helpers.** FEAT-698 (merged 2026-10-17)
+  added `scripts/sdd/brief_meta.py` (pydantic `BriefMeta`, `brief_worktree_plan`,
+  `write_brief_index`, …; 8.4 KB, no `main()`), and `scripts/sdd/ensure_worktree.py:20` now
+  imports `brief_worktree_plan` from it. A moved `ensure_worktree` that still imports
+  `scripts.sdd.brief_meta` is a monorepo import in a foreign repo, so `brief_meta.py` is the
+  fifth `git mv` of this task: rewrite its `scripts.sdd.sdd_meta` import (`:19`) to
+  `parrot.sdd.scripts.sdd_meta`, rewrite both imports of the moved `ensure_worktree.py`
+  (`:19`, `:20`), leave the alias shim at `scripts/sdd/brief_meta.py`. It is a library
+  module: the `--help` parity test does not cover it (`MOVED_LIBS`); TASK-4299 adds its
+  argparse `main()`. `tests/sdd_scripts/test_brief_meta.py` keeps importing
+  `scripts.sdd.brief_meta` through the shim, unmodified.
+
+---
+
 ## Scope
 
 - Create `parrot/sdd/scripts/__init__.py` (docstring only, no imports).
 - Create `parrot/sdd/scripts/sdd_meta.py`, re-exporting the same 15 names as
   `scripts/sdd/sdd_meta.py`.
-- Move `id_ledger.py`, `reserve_ids.py`, `check_id_collisions.py` and
-  `ensure_worktree.py` from `scripts/sdd/` to `packages/ai-parrot/src/parrot/sdd/scripts/`
+- Move `id_ledger.py`, `reserve_ids.py`, `check_id_collisions.py`, `ensure_worktree.py` and
+  `brief_meta.py` *(rev 0.4 C17)* from `scripts/sdd/` to `packages/ai-parrot/src/parrot/sdd/scripts/`
   **with `git mv`** to keep history. Then rewrite only their `from scripts.sdd…` import
   lines.
 - Recreate each `scripts/sdd/<name>.py` as the alias shim. The module object becomes
@@ -71,11 +90,13 @@ re-export shim (the precedent) and is **not changed**.
 | `packages/ai-parrot/src/parrot/sdd/scripts/id_ledger.py` | CREATE | `git mv` of `scripts/sdd/id_ledger.py` (no line changes) |
 | `packages/ai-parrot/src/parrot/sdd/scripts/reserve_ids.py` | CREATE | `git mv` of `scripts/sdd/reserve_ids.py` + 1 import rewrite |
 | `packages/ai-parrot/src/parrot/sdd/scripts/check_id_collisions.py` | CREATE | `git mv` of `scripts/sdd/check_id_collisions.py` (no line changes) |
-| `packages/ai-parrot/src/parrot/sdd/scripts/ensure_worktree.py` | CREATE | `git mv` of `scripts/sdd/ensure_worktree.py` + 1 import rewrite |
+| `packages/ai-parrot/src/parrot/sdd/scripts/ensure_worktree.py` | CREATE | `git mv` of `scripts/sdd/ensure_worktree.py` + 2 import rewrites (`sdd_meta` at `:19`, `brief_meta` at `:20` — rev 0.4 C17) |
+| `packages/ai-parrot/src/parrot/sdd/scripts/brief_meta.py` | CREATE | `git mv` of `scripts/sdd/brief_meta.py` + 1 import rewrite (`:19`, `sdd_meta`) — rev 0.4 C17 |
 | `scripts/sdd/id_ledger.py` | MODIFY | Becomes alias shim |
 | `scripts/sdd/reserve_ids.py` | MODIFY | Becomes alias shim |
 | `scripts/sdd/check_id_collisions.py` | MODIFY | Becomes alias shim |
 | `scripts/sdd/ensure_worktree.py` | MODIFY | Becomes alias shim |
+| `scripts/sdd/brief_meta.py` | MODIFY | Becomes alias shim (rev 0.4 C17) |
 | `packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py` | CREATE | Importability, `-m --help`, shim identity, help parity |
 
 ---
@@ -175,6 +196,8 @@ if __name__ == "__main__":  # pragma: no cover                       # :323-324 
     {"path": "scripts/sdd/reserve_ids.py", "action": "MODIFY"},
     {"path": "scripts/sdd/check_id_collisions.py", "action": "MODIFY"},
     {"path": "scripts/sdd/ensure_worktree.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/src/parrot/sdd/scripts/brief_meta.py", "action": "CREATE"},
+    {"path": "scripts/sdd/brief_meta.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py", "action": "CREATE"}
   ],
   "contract_symbols": [
@@ -448,6 +471,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SRC = REPO_ROOT / "packages" / "ai-parrot" / "src"
 MOVED = ("id_ledger", "reserve_ids", "check_id_collisions", "ensure_worktree")
+MOVED_LIBS = ("brief_meta",)  # rev 0.4 C17: library module, no main() until TASK-4299 adds the CLI
 SDD_META_NAMES = (
     "KNOWN_BRANCHES", "KNOWN_PROJECTS", "PROJECT_ALIASES", "WORK_KIND_FLOW", "WORKTREE_ROOT", "DocTaxonomy",
     "FlowMeta", "WorktreePlan", "emit", "normalize_project", "normalize_tag", "parse", "parse_taxonomy",
@@ -465,7 +489,7 @@ def _run(module: str, *args: str, cwd: Path) -> subprocess.CompletedProcess[str]
     return subprocess.run([sys.executable, "-m", module, *args], cwd=cwd, env=_env(), capture_output=True, text=True)
 
 
-@pytest.mark.parametrize("name", (*MOVED, "sdd_meta"))
+@pytest.mark.parametrize("name", (*MOVED, *MOVED_LIBS, "sdd_meta"))
 def test_importable_from_package(name: str) -> None:
     assert importlib.import_module(f"parrot.sdd.scripts.{name}") is not None
 
@@ -475,7 +499,7 @@ def test_module_help_from_foreign_cwd(name: str, tmp_path: Path) -> None:
     assert _run(f"parrot.sdd.scripts.{name}", "--help", cwd=tmp_path).returncode == 0
 
 
-@pytest.mark.parametrize("name", MOVED)
+@pytest.mark.parametrize("name", (*MOVED, *MOVED_LIBS))
 def test_shim_aliases_package_module(name: str) -> None:
     assert importlib.import_module(f"scripts.sdd.{name}") is importlib.import_module(f"parrot.sdd.scripts.{name}")
 

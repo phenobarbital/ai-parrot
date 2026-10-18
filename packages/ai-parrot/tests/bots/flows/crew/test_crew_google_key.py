@@ -109,3 +109,49 @@ async def test_run_loop_and_summary_fallback_use_key(monkeypatch):
         await crew.summary(mode="executive_summary")
 
     assert _FakeClient.last_kwargs["api_key"] == "k"
+
+
+_CRED_CASES = [
+    {"credentials_file": "sa.json"},
+    {"credentials": {"client_email": "x"}},
+    {"vertexai": True},
+]
+
+
+@pytest.mark.parametrize("cred_kwargs", _CRED_CASES)
+def test_crew_default_llm_explicit_credential_blocks_key(monkeypatch, cred_kwargs):
+    """Any explicit credential signal suppresses crew-key injection (default branch)."""
+    monkeypatch.setitem(SUPPORTED_CLIENTS, "google", _FakeClient)
+    _FakeClient.last_kwargs = {}
+    AgentCrew(google_api_key="k", **cred_kwargs)
+    assert "api_key" not in _FakeClient.last_kwargs
+
+
+@pytest.mark.parametrize("cred_kwargs", _CRED_CASES)
+def test_crew_string_llm_explicit_credential_blocks_key(monkeypatch, cred_kwargs):
+    """Same suppression on the llm='google' string branch."""
+    monkeypatch.setitem(SUPPORTED_CLIENTS, "google", _FakeClient)
+    _FakeClient.last_kwargs = {}
+    AgentCrew(llm="google", google_api_key="k", **cred_kwargs)
+    assert "api_key" not in _FakeClient.last_kwargs
+
+
+@pytest.mark.parametrize("llm", [None, "google"])
+def test_crew_explicit_none_api_key_now_injects(monkeypatch, llm):
+    """api_key=None is not a credential — truthiness semantics (behavior change)."""
+    monkeypatch.setitem(SUPPORTED_CLIENTS, "google", _FakeClient)
+    _FakeClient.last_kwargs = {}
+    kwargs = {"llm": llm} if llm else {}
+    AgentCrew(google_api_key="k", api_key=None, **kwargs)
+    assert _FakeClient.last_kwargs["api_key"] == "k"
+
+
+def test_has_explicit_google_credential_helper():
+    from parrot.bots.flows.crew.credentials import has_explicit_google_credential
+
+    assert has_explicit_google_credential({"api_key": "x"})
+    assert has_explicit_google_credential({"credentials_file": "f"})
+    assert has_explicit_google_credential({"credentials": {"a": 1}})
+    assert has_explicit_google_credential({"vertexai": True})
+    assert not has_explicit_google_credential({})
+    assert not has_explicit_google_credential({"api_key": None, "vertexai": False})

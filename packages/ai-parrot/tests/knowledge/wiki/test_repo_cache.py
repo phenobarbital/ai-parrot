@@ -208,6 +208,62 @@ async def test_ensure_clone_validates_origin_and_branch(tmp_path: Path) -> None:
     await branch_cache._ensure_clone(branch_cache.paths_for("owner/name"))
 
 
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://github.com/owner/name.git",
+        "https://github.com/owner/name",
+        "https://github.com/owner/name/",
+        "https://github.com/Owner/Name.git",
+        "https://www.github.com/owner/name",
+        "http://github.com/owner/name",
+        "ssh://git@github.com/owner/name.git",
+        "git@github.com:owner/name.git",
+        "git@github.com:owner/name",
+        "https://x-access-token:secret@github.com/owner/name.git",
+        "  https://github.com/owner/name.git\n",
+    ],
+)
+def test_origin_matches_accepts_github_origins(origin: str) -> None:
+    """Every legitimate GitHub origin form for owner/name matches."""
+    assert RepoWikiCache._origin_matches(origin, "owner/name")
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://evil.example/github.com/owner/name",
+        "https://evil.example/github.com/owner/name.git",
+        "https://github.com.evil.example/owner/name",
+        "https://github.com@evil.example/owner/name",
+        "https://evil.example/?u=github.com/owner/name",
+        "https://github.com/other/name",
+        "https://github.com/owner/name/extra",
+        "https://github.com/owner",
+        "github.com/owner/name",
+        "owner/name",
+        "file:///tmp/github.com/owner/name",
+        "git@gitlab.com:owner/name.git",
+        "",
+    ],
+)
+def test_origin_matches_rejects_lookalike_origins(origin: str) -> None:
+    """A host embedded elsewhere in the URL, or any non-GitHub host, never matches."""
+    assert not RepoWikiCache._origin_matches(origin, "owner/name")
+
+
+async def test_ensure_clone_rejects_lookalike_host(tmp_path: Path) -> None:
+    """A clone whose origin merely contains github.com/ is discarded and re-cloned once."""
+    git = FakeGit()
+    cache = _cache(tmp_path, git)
+    paths = cache.paths_for("owner/name")
+    (paths.clone_dir / ".git").mkdir(parents=True)
+    git.origin = "https://evil.example/github.com/owner/name.git"
+    await cache._ensure_clone(paths)
+    assert git.clone_calls == 1
+    assert git.pull_calls == 0
+
+
 async def test_ensure_clone_reclones_once_on_corruption(tmp_path: Path) -> None:
     """Corruption and a failed fast-forward get exactly one recovery clone."""
     git = FakeGit()

@@ -35,7 +35,8 @@ Warnings (exit 0):
     file never references a file A declares (by path or dotted module), and
     B's ``parallelism_notes`` do not name A.
   * ``possible-missing-dependency`` — B references a file A creates, yet B does
-    not depend on A.
+    not depend on A, and B's ``parallelism_notes`` do not name A (a note that
+    names A is the author arguing the non-edge, e.g. "mentions it in prose only").
   * ``duplicate-notes`` — the same ``parallelism_notes`` on 3+ tasks.
   * ``exclusive-without-notes`` — ``parallel: false`` with no named resource.
   * ``legacy-semantics`` — the header lacks ``"parallel_semantics":
@@ -458,15 +459,21 @@ def check_graph(index_path: Path, root: Path) -> GraphReport:
                 continue
             created = [p for p, is_create in other.files.items() if is_create and p not in task.files]
             cited = [p for p in created if _references(task.text, p)]
-            if cited:
-                add(
-                    Finding(
-                        level="warning",
-                        code="possible-missing-dependency",
-                        tasks=[tid, other_id],
-                        message=f"{tid} references {', '.join(cited)} created by {other_id} but does not depend on it",
-                    )
+            if not cited:
+                continue
+            # A rationale that names the creating task ("no edge to TASK-4070: parrot.sdd appears in
+            # prose only") is the author arguing the non-edge — the same evidence `unjustified-edge`
+            # accepts for an edge — so the warning is not re-emitted on every run.
+            if re.search(rf"\b{re.escape(other_id)}\b", task.notes) is not None:
+                continue
+            add(
+                Finding(
+                    level="warning",
+                    code="possible-missing-dependency",
+                    tasks=[tid, other_id],
+                    message=f"{tid} references {', '.join(cited)} created by {other_id} but does not depend on it",
                 )
+            )
 
     for notes, count in Counter(t.notes for t in tasks.values() if t.notes).items():
         if count >= 3:

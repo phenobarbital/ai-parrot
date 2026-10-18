@@ -16,17 +16,9 @@ from parrot.knowledge.wiki.project import (
     save_project_config,
 )
 from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
+from tests.knowledge.wiki._tool_surface import LOCAL_NO_LEDGER
 
-BASE_TOOLS = {
-    "wiki_query",
-    "wiki_page",
-    "wiki_related",
-    "wiki_remember",
-    "wiki_note",
-    "wiki_status",
-    "wiki_lint",
-    "wiki_standup",
-}
+BASE_TOOLS = set(LOCAL_NO_LEDGER)
 
 
 async def _seed(root: Path, config: WikiProjectConfig, concept_id: str) -> None:

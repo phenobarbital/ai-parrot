@@ -25,6 +25,21 @@ Sites, `cli/__init__.py:109`), serialized after TASK-4080 which adds `"self"` to
 
 ---
 
+## Amendments — spec rev 0.4 (2026-10-18)
+
+- **C17 — `/sdd-brief` (FEAT-698) scenarios.** The installed `sdd-brief.md` (plus its Codex
+  and Google twins, the latter created by TASK-4089) carries three `parrot sdd run` forms the
+  C3 test must cover with a `Scenario` each: `ensure_worktree --json --slug <slug>
+  --brief-key <KEY> --base-branch <base>` (fixture repo with the bare origin; expects a
+  `hotfix-<KEY>-<slug>` / `fix-<KEY>-<slug>` worktree and no upstream set),
+  `brief_meta write-index <brief.md> --tasks <tasks.json> --worktree-root <wt>` (fixture brief
+  rendered from `sdd/templates/brief.md`, which TASK-4090 ships; one task dict) and
+  `check_task_graph <wt>/sdd/briefs/<slug>.index.json` (already a scenario for `/sdd-task`;
+  reuse it with the brief index). `parrot sdd install --host google` is expected to write
+  `.agent/workflows/sdd-brief.md`; `--host claude|codex|google` all write
+  `sdd/templates/brief.md`. A `brief_meta` invocation with no scenario fails the test, as for
+  every other helper.
+
 ## Amendments — spec rev 0.2 (2026-10-14)
 
 - **Cross-task interface (TASK-4094)**: `test_wheel_only_foreign_repo.py` honours an optional
@@ -1284,6 +1299,10 @@ that lacks one, so coverage of "every documented helper invocation" is enforced,
 - [ ] `ruff check` passes on all six files; all tests below pass.
 
 ---
+
+- [ ] *(rev 0.4 C17)* C3 scenarios exist for `ensure_worktree --brief-key`, `brief_meta write-index`
+      and `check_task_graph` over a brief index; `parrot sdd install --host google` writes
+      `.agent/workflows/sdd-brief.md`; every host writes `sdd/templates/brief.md`.
 
 ## Validation Commands
 

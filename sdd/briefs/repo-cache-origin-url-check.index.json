@@ -1,0 +1,31 @@
+{
+  "feature": "repo-cache-origin-url-check",
+  "feature_id": "BRIEF-cs-228",
+  "spec": "sdd/briefs/repo-cache-origin-url-check.brief.md",
+  "type": "brief",
+  "base_branch": "main",
+  "created_at": "2026-10-18",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-cs-228-1",
+      "slug": "parse-origin-host-before-match",
+      "title": "Parse the clone origin host before matching it in RepoWikiCache._origin_matches",
+      "feature_id": "BRIEF-cs-228",
+      "feature": "repo-cache-origin-url-check",
+      "spec": "sdd/briefs/repo-cache-origin-url-check.brief.md",
+      "status": "done",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": "2026-10-18T22:19:02+00:00",
+      "completed_at": "2026-10-18T22:20:35+00:00",
+      "file": "sdd/briefs/repo-cache-origin-url-check/tasks/HOTFIX-cs-228-1-parse-origin-host-before-match.md"
+    }
+  ]
+}

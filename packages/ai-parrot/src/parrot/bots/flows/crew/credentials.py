@@ -11,7 +11,7 @@ Nothing here mutates a ``CrewDefinition``, and the key value is never logged.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from navconfig.logging import logging  # verified: crew.py:53
 
@@ -25,6 +25,23 @@ GOOGLE_PROVIDER_KEYS: frozenset[str] = frozenset({"google", "gemini-live", "goog
 
 #: ``llm_kwargs`` keys that mean "this agent brought its own credential".
 _CREDENTIAL_KWARGS: tuple[str, ...] = ("api_key", "credentials_file", "credentials")
+
+
+def has_explicit_google_credential(kwargs: Mapping[str, Any]) -> bool:
+    """Report whether ``kwargs`` carries an explicit Google credential signal.
+
+    True when any of ``api_key``/``credentials_file``/``credentials`` is truthy,
+    or ``vertexai`` is truthy (see ``docs/crew_handler.md`` "Precedence").
+
+    Args:
+        kwargs: Client / LLM keyword arguments to inspect (never mutated).
+
+    Returns:
+        ``True`` when the caller brought their own credential.
+    """
+    if any(kwargs.get(key) for key in _CREDENTIAL_KWARGS):
+        return True
+    return bool(kwargs.get("vertexai"))
 
 #: Module-level warn-once latch (AC6). Reset by tests via monkeypatch.
 _warned_unset: bool = False
@@ -126,9 +143,7 @@ def apply_google_api_key(agent: Any, api_key: Optional[str]) -> bool:
     if not is_google_llm(getattr(agent, "_llm_raw", None), getattr(agent, "_default_llm", "google")):
         return False
     llm_kwargs = getattr(agent, "_llm_kwargs", None) or {}
-    if any(llm_kwargs.get(key) for key in _CREDENTIAL_KWARGS):
-        return False
-    if llm_kwargs.get("vertexai"):
+    if has_explicit_google_credential(llm_kwargs):
         return False
     agent._llm_kwargs = {**llm_kwargs, "api_key": api_key}
     logger.debug("Injected CREW_AI_KEY into agent's Google llm_kwargs")
