@@ -49,8 +49,8 @@ def test_known_hubs_are_core_by_fanin(repo_index):
 
 
 def test_self_contained_leaves_are_not_core(repo_index):
-    """A leaf module must not escalate under the shipped default policy."""
+    """A leaf module must not be classified as core under the shipped default policy."""
     policy = ScopePolicy(core_paths=())
     for path in LEAVES:
         hits = detect_core(repo_index, [path], policy=policy)
-        assert hits == [], f"{path} is a self-contained leaf and must not escalate"
+        assert hits == [], f"{path} is a self-contained leaf and must not be classified as core"
