@@ -190,7 +190,9 @@ class TestPlanBudgetDrivesFixtureBudget:
 
     def test_plan_budget_drives_opt_in_and_generation_budget(self) -> None:
         """Plan ceilings and ``max_calls`` reach the fixture budget unchanged (spec AC1)."""
-        plan_json = LiveBudget(timeout_s=90, max_calls=2, max_output_tokens=512, max_request_bytes=16384).model_dump_json()
+        plan_json = LiveBudget(
+            timeout_s=90, max_calls=2, max_output_tokens=512, max_request_bytes=16384
+        ).model_dump_json()
         env = {**_FULL_OPT_IN_ENV, e2e_live.LIVE_BUDGET_ENV: plan_json}
 
         plan_budget = e2e_live.resolve_plan_budget(env)
