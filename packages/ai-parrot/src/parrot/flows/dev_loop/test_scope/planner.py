@@ -18,9 +18,7 @@ _REASON_PRIORITY: dict[str, int] = {"declared": 0, "contract": 1, "core": 2, "es
 OVERRIDE_MARKER_EXPRESSION: str = "not real_llm"
 
 
-def marker_expression_for(
-    targets: Sequence[TestTarget], *, contract: TestContract | None, policy: ScopePolicy
-) -> str:
+def marker_expression_for(targets: Sequence[TestTarget], *, contract: TestContract | None, policy: ScopePolicy) -> str:
     """Return the permissive marker expression for an all-contract invocation."""
     if contract is not None and targets and all(target.reason == "contract" for target in targets):
         return OVERRIDE_MARKER_EXPRESSION
