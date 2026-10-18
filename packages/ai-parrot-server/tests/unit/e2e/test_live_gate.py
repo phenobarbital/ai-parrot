@@ -150,6 +150,62 @@ class TestBuildLiveGenerationBudget:
         assert budget.calls_used == 0
 
 
+class TestResolvePlanBudget:
+    """``resolve_plan_budget`` -- the runner-forwarded plan budget, defaults when absent, fail-closed when malformed."""
+
+    def test_unset_returns_defaults(self) -> None:
+        """An absent or empty variable yields the model defaults, never an error."""
+        assert e2e_live.resolve_plan_budget(env={}) == LiveBudget()
+        assert e2e_live.resolve_plan_budget(env={e2e_live.LIVE_BUDGET_ENV: ""}) == LiveBudget()
+
+    def test_payload_round_trips(self) -> None:
+        """A ``LiveBudget`` serialized by the runner parses back to an equal model."""
+        expected = LiveBudget(timeout_s=90, max_calls=2)
+        env = {e2e_live.LIVE_BUDGET_ENV: expected.model_dump_json()}
+
+        resolved = e2e_live.resolve_plan_budget(env=env)
+
+        assert resolved == expected
+        assert resolved.timeout_s == 90
+        assert resolved.max_calls == 2
+
+    @pytest.mark.parametrize("raw", ["{not json", '{"max_calls": 0}'])
+    def test_malformed_is_config_error(self, raw: str) -> None:
+        """Malformed JSON and invalid field values are configuration errors, never silent defaults."""
+        with pytest.raises(E2EConfigError) as excinfo:
+            e2e_live.resolve_plan_budget(env={e2e_live.LIVE_BUDGET_ENV: raw})
+
+        assert excinfo.value.reason_code == "invalid_budget"
+        assert e2e_live.LIVE_BUDGET_ENV in str(excinfo.value)
+
+    def test_live_budget_env_is_forwarded(self) -> None:
+        """The ``mcp-agent`` adapter forwards the budget var without any code change of its own."""
+        assert e2e_live.LIVE_BUDGET_ENV == "PARROT_E2E_LIVE_BUDGET"
+        assert e2e_live.LIVE_BUDGET_ENV in e2e_live.FORWARDED_ENV_VARS
+
+
+@_skip_no_google_budget
+class TestPlanBudgetDrivesFixtureBudget:
+    """The forwarded plan budget drives both the opt-in defaults and the one shared ``GenerationBudget``."""
+
+    def test_plan_budget_drives_opt_in_and_generation_budget(self) -> None:
+        """Plan ceilings and ``max_calls`` reach the fixture budget unchanged (spec AC1)."""
+        plan_json = LiveBudget(timeout_s=90, max_calls=2, max_output_tokens=512, max_request_bytes=16384).model_dump_json()
+        env = {**_FULL_OPT_IN_ENV, e2e_live.LIVE_BUDGET_ENV: plan_json}
+
+        plan_budget = e2e_live.resolve_plan_budget(env)
+        opt_in = e2e_live.require_live_opt_in(budget=plan_budget, env=env)
+        budget = e2e_live.build_live_generation_budget(opt_in, budget=plan_budget)
+
+        assert (
+            opt_in.max_calls,
+            budget.max_calls,
+            budget.timeout_s,
+            budget.max_output_tokens,
+            budget.max_request_bytes,
+        ) == (2, 2, 90, 512, 16384)
+
+
 @_skip_no_google_budget
 class TestBuildLiveClient:
     """``build_live_client`` -- resolves through ``LLMFactory`` only after opt-in succeeded."""
