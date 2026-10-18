@@ -237,7 +237,7 @@
       "feature_id": "FEAT-699",
       "feature": "tests-optimization-sdd-flow",
       "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -250,8 +250,9 @@
       "parallelism_notes": "CLI calls plan_tests(contract=) from TASK-4445, green_cache from TASK-4447, baseline.classify_failures from TASK-4448, report.append_cached from TASK-4449",
       "assigned_to": null,
       "started_at": "2026-10-18T20:43:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4450-select-tests-cli-contract-cache-baseline.md"
+      "completed_at": "2026-10-18T21:45:07+00:00",
+      "file": "sdd/tasks/completed/TASK-4450-select-tests-cli-contract-cache-baseline.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4451",
@@ -260,7 +261,7 @@
       "feature_id": "FEAT-699",
       "feature": "tests-optimization-sdd-flow",
       "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -273,8 +274,9 @@
       "parallelism_notes": "background.py calls plan_tests(contract=) from TASK-4445, green_cache.filter_cached/record_green from TASK-4447, baseline from TASK-4448, append_cached from TASK-4449",
       "assigned_to": null,
       "started_at": "2026-10-18T20:43:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4451-supervisor-engine-contract-wiring.md"
+      "completed_at": "2026-10-18T21:45:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4451-supervisor-engine-contract-wiring.md",
+      "verification": "partial"
     },
     {
       "id": "TASK-4452",
