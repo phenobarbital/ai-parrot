@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-18T09:25:01+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-18T22:00:20+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -285,7 +285,7 @@
       "feature_id": "FEAT-699",
       "feature": "tests-optimization-sdd-flow",
       "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -297,8 +297,9 @@
       "parallelism_notes": "documents frozen behaviour: always-rerun from TASK-4449, select_tests --index from TASK-4450, supervisor merge gate from TASK-4451",
       "assigned_to": null,
       "started_at": "2026-10-18T20:43:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4452-command-and-agent-docs.md"
+      "completed_at": "2026-10-18T22:00:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4452-command-and-agent-docs.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4453",
@@ -326,7 +327,7 @@
       "feature_id": "FEAT-699",
       "feature": "tests-optimization-sdd-flow",
       "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -339,8 +340,9 @@
       "parallelism_notes": "replays FEAT-698 with the select_tests --index/--run flags from TASK-4450, builds the temp index via scripts/sdd/cache_test_contract.py from TASK-4443, documents the supervisor path from TASK-4451 and .github/workflows/nightly-tests.yml from TASK-4453",
       "assigned_to": null,
       "started_at": "2026-10-18T20:43:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4454-validation-budget-evidence.md"
+      "completed_at": "2026-10-18T22:00:20+00:00",
+      "file": "sdd/tasks/completed/TASK-4454-validation-budget-evidence.md",
+      "verification": "verified"
     }
   ]
 }
