@@ -68,10 +68,7 @@ def _test_contract_header(tests: list[str]) -> dict:
     """Build an index header with a valid cached test contract."""
     contract = _load_contract()
     normalized = contract.parse_spec_contract(
-        "### Validation Contract\n\n"
-        + "tests:\n"
-        + "\n".join(f"- {test}" for test in tests)
-        + "\nmarkers: none\n"
+        "### Validation Contract\n\n" + "tests:\n" + "\n".join(f"- {test}" for test in tests) + "\nmarkers: none\n"
     )
     assert normalized is not None
     return {
@@ -273,9 +270,7 @@ def test_test_contract_findings(tmp_path):
     malformed["test_contract"] = {"schema": 1}
     index.write_text(json.dumps(malformed))
     malformed_findings = check_graph(index, tmp_path).findings
-    assert [(finding.level, finding.code) for finding in malformed_findings] == [
-        ("error", "test-contract-malformed")
-    ]
+    assert [(finding.level, finding.code) for finding in malformed_findings] == [("error", "test-contract-malformed")]
 
 
 def test_legacy_index_has_no_test_contract_findings(tmp_path):
