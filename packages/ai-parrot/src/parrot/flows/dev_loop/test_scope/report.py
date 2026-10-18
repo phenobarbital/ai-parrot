@@ -12,6 +12,7 @@ import os
 import re
 import tempfile
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,7 +29,6 @@ except ImportError:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 REPORT_ROOT_ENV = "SDD_TEST_REPORT_DIR"
-RERUN_TASK_THRESHOLD = 10
 RERUN_RECORD = "_rerun"
 STATUSES = ("ok", "failed", "timed_out", "no_junit", "report_parse_error", "selection_error")
 
@@ -66,6 +66,7 @@ class TaskTestRecord:
     attempts: int
     suites: tuple[SuiteResult, ...]
     notes: tuple[str, ...] = field(default_factory=tuple)
+    cached: tuple[str, ...] = field(default_factory=tuple)
 
 
 def report_root() -> Path:
@@ -236,6 +237,7 @@ def _record_from_payload(payload: dict[str, object]) -> TaskTestRecord:
         attempts=payload["attempts"],
         suites=suites,
         notes=tuple(payload.get("notes", ())),
+        cached=tuple(payload.get("cached", ())),
     )
 
 
@@ -290,6 +292,7 @@ def append_suite(
                     attempts=(old.attempts if old else 0) + 1,
                     suites=tuple(suites[name] for name in sorted(suites)),
                     notes=notes,
+                    cached=old.cached if old else (),
                 )
                 _write_record(path, record)
             finally:
@@ -297,6 +300,53 @@ def append_suite(
                     fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
     except (OSError, ValueError, TypeError, KeyError) as exc:
         logger.warning("Unable to record pytest result for %s: %s", task_id, exc)
+        return None
+    return path
+
+
+def append_cached(
+    feature_id: str,
+    task_id: str,
+    targets: Sequence[str],
+    *,
+    head_sha: str,
+    base_ref: str,
+    tier: str,
+    source: str,
+) -> Path | None:
+    """Merge cached target paths into a task record, returning ``None`` for I/O failures."""
+    if not (_safe_id(feature_id) and _safe_id(task_id)):
+        logger.warning("refusing to record cached targets for unsafe ids %r/%r", feature_id, task_id)
+        return None
+    path = report_root() / feature_id / f"{task_id}.json"
+    lock_path = path.with_suffix(".json.lock")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
+            if fcntl is not None:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                old = _record_from_payload(json.loads(path.read_text(encoding="utf-8"))) if path.exists() else None
+                cached = tuple(sorted(set(old.cached if old else ()) | set(targets)))
+                record = TaskTestRecord(
+                    feature_id=feature_id,
+                    task_id=task_id,
+                    head_sha=head_sha,
+                    base_ref=base_ref,
+                    tier=tier,
+                    source=source,
+                    recorded_at=datetime.now(timezone.utc).isoformat(),
+                    attempts=old.attempts if old else 0,
+                    suites=old.suites if old else (),
+                    notes=old.notes if old else (),
+                    cached=cached,
+                )
+                _write_record(path, record)
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        logger.warning("Unable to record cached targets for %s: %s", task_id, exc)
         return None
     return path
 
@@ -325,8 +375,8 @@ def load_records(feature_id: str) -> tuple[dict[str, TaskTestRecord], list[str]]
 
 
 def should_rerun(task_count: int) -> bool:
-    """Return whether the deterministic closeout rule permits a re-run."""
-    return task_count <= RERUN_TASK_THRESHOLD
+    """FEAT-699: re-run whenever the feature has at least one task."""
+    return task_count >= 1
 
 
 def _aggregate(records: dict[str, TaskTestRecord]) -> dict[str, list[float]]:
@@ -355,6 +405,18 @@ def _rerun_value(rerun: TaskTestRecord | None, suite: str) -> str:
     return f"{result.passed}/{result.tests}{marker}"
 
 
+def _baseline_counts(results: Sequence[SuiteResult]) -> tuple[int | None, int | None, int | None]:
+    """Return new-red, baseline-red, and unknown counts for aggregated suite results."""
+    if any((result.failed or result.errors) and not result.baseline for result in results):
+        return None, None, None
+    counts = {"new_red": 0, "baseline_red": 0, "unknown": 0}
+    for result in results:
+        for _nodeid, status in result.baseline:
+            if status in counts:
+                counts[status] += 1
+    return counts["new_red"], counts["baseline_red"], counts["unknown"]
+
+
 def render_markdown(
     records: dict[str, TaskTestRecord],
     task_ids: list[str],
@@ -366,22 +428,37 @@ def render_markdown(
     """Render a deterministic Tests section including aggregate and per-task evidence."""
     totals = _aggregate(records)
     has_rerun = rerun is not None
-    header = "| Suite | Tests | Passed | Failed | Skipped | Errors | Duration"
-    separator = "| --- | ---: | ---: | ---: | ---: | ---: | ---:"
+    suites: dict[str, list[SuiteResult]] = {}
+    for record in records.values():
+        for result in record.suites:
+            suites.setdefault(result.suite, []).append(result)
+    header = "| Suite | Tests | Passed | Failed | Skipped | Errors | New red | Baseline red | Unknown | Duration"
+    separator = "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---:"
     if has_rerun:
         header += " | Final HEAD re-run"
         separator += " | ---"
     rows = ["## Tests", "", header + " |", separator + " |"]
     grand_total = [0, 0, 0, 0, 0, 0.0]
+    baseline_totals = [0, 0, 0]
+    unclassified_failures = False
     rerun_suites = {result.suite: result for result in rerun.suites} if rerun else {}
     for suite in sorted(set(totals) | set(rerun_suites)):
         values = totals.get(suite, [0, 0, 0, 0, 0, 0.0])
         for index, value in enumerate(values):
             grand_total[index] += value
         label = f"{suite}{' ❌' if values[2] or values[4] else ''}"
+        new_red, baseline_red, unknown = _baseline_counts(suites.get(suite, ()))
+        if new_red is None:
+            unclassified_failures = True
+            baseline_cells = ("—", "—", "—")
+        else:
+            baseline_totals[0] += new_red
+            baseline_totals[1] += baseline_red
+            baseline_totals[2] += unknown
+            baseline_cells = (str(new_red), str(baseline_red), str(unknown))
         row = (
             f"| {label} | {int(values[0])} | {int(values[1])} | {int(values[2])} | "
-            f"{int(values[3])} | {int(values[4])} | {values[5]:.2f}s"
+            f"{int(values[3])} | {int(values[4])} | {' | '.join(baseline_cells)} | {values[5]:.2f}s"
         )
         if has_rerun:
             row += f" | {_rerun_value(rerun, suite)}"
@@ -390,7 +467,9 @@ def render_markdown(
     row = (
         f"| {total_label}{' ❌' if grand_total[2] or grand_total[4] else ''} | {int(grand_total[0])} | "
         f"{int(grand_total[1])} | {int(grand_total[2])} | {int(grand_total[3])} | {int(grand_total[4])} | "
-        f"{grand_total[5]:.2f}s"
+        f"{baseline_totals[0] if not unclassified_failures else '—'} | "
+        f"{baseline_totals[1] if not unclassified_failures else '—'} | "
+        f"{baseline_totals[2] if not unclassified_failures else '—'} | {grand_total[5]:.2f}s"
     )
     if has_rerun:
         rerun_tests = sum(result.tests for result in rerun.suites)
@@ -400,6 +479,14 @@ def render_markdown(
         marker = " ❌" if rerun_failed or rerun_errors else ""
         row += f" | {rerun_passed}/{rerun_tests}{marker}"
     rows.append(row + " |")
+    cached = sum(len(record.cached) for record in records.values())
+    rows.extend(["", f"cached (skipped, unchanged since green): {cached} target(s)"])
+    if unclassified_failures:
+        rows.append("Gate: ⚠️ failures not classified")
+    elif baseline_totals[0] or baseline_totals[2]:
+        rows.append(f"Gate: ❌ {baseline_totals[0]} new red, {baseline_totals[2]} unknown")
+    else:
+        rows.append("Gate: ✅ no new reds")
     if rerun_skip_reason:
         rows.extend(["", f"re-run skipped ({rerun_skip_reason})"])
     rows.extend(["", "<details>", "<summary>Per-task test results</summary>", ""])
