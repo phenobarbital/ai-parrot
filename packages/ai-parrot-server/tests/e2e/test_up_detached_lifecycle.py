@@ -109,7 +109,7 @@ async def _teardown(worktree: Path, owner_id: str, state: RunState | None) -> No
 
 @pytest.mark.e2e
 @pytest.mark.xfail(
-    reason="issue:0a04d048dab5 - daemon stops gracefully when the launcher exits normally (observed in sandbox)",
+    reason="issue:0a04d048dab5 - launcher asyncio loop teardown SIGKILLs the detached daemon (BaseSubprocessTransport.close)",
     strict=False,
 )
 async def test_up_daemon_and_target_survive_launcher_exit(e2e_worktree: Path) -> None:
