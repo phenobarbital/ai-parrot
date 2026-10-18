@@ -2,7 +2,7 @@
 
 **Feature**: 57bfa5240cab — gdrive download retry safety
 **Spec**: `sdd/briefs/gdrive-download-retry.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -196,10 +196,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-brief
+**Date**: 2026-10-18
+**Notes**: Both bugs fixed. Bug 1: download_file() now checks seekability; seekable streams seek back + truncate before each retry attempt; non-seekable streams pass idempotent=False. Bug 2: _upload_resumable._put() attaches exc.res = res so _retry_after_seconds reads Retry-After. 3 regression tests added (46/46 pass). 4 ASYNC240 false positives suppressed with noqa (BinaryIO ops, not pathlib).
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: none
