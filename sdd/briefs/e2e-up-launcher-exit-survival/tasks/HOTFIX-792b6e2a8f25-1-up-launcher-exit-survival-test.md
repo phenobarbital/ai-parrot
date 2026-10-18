@@ -2,7 +2,7 @@
 
 **Feature**: BRIEF-792b6e2a8f25 — e2e-up-launcher-exit-survival
 **Spec**: `sdd/briefs/e2e-up-launcher-exit-survival.brief.md`
-**Status**: pending
+**Status**: done-with-issues
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -256,4 +256,11 @@ the suite's established bar.
 
 ## Completion Note
 
-> (filled on completion)
+**Completed by**: sdd-start (Claude)
+**Status**: done-with-issues — scenario 2 passes; scenario 1 is xfail
+
+- Created `packages/ai-parrot-server/tests/e2e/test_up_detached_lifecycle.py` (two real-subprocess scenarios, identity-verified liveness, `down` teardown with killpg fallback).
+- `test_up_daemon_survives_launcher_sigkill_mid_wait`: PASSES (daemon+target survive a SIGKILLed launcher).
+- `test_up_daemon_and_target_survive_launcher_exit`: FAILS reproducibly in this sandbox — after `up` exits 0 the daemon stops gracefully (state `stopped`, `cleanup_complete=true`, no `down` call) and the target follows. Marked `xfail(strict=False)` referencing `issue:0a04d048dab5` (cause unconfirmed; may be a sandbox artifact). No product code changed.
+- Validation: `PARROT_TEST_E2E=1 pytest …/test_up_detached_lifecycle.py` → 1 passed, 1 xfailed; skipped without opt-in; `ruff check` + `black --check` clean.
+
