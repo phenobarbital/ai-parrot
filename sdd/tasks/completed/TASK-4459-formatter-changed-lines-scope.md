@@ -317,4 +317,22 @@ See blueprint and spec §4.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (Claude Code session)
+**Date**: 2026-10-18
+**Notes**: run_lint_pass gained diff_base (engine.merge passes its merge base) and
+LintConfig.format_scope ("changed-lines" default, "file" = previous behaviour).
+parse_unified_hunks/changed_line_ranges derive post-image hunks from
+`git diff -U0 <base> -- <file>` after ruff --fix; black gets every hunk as
+--line-ranges in one call, ruff format gets one --range per hunk bottom-up
+(ruff's A-B is A:1-B:1, so the inclusive hunk is passed as start-(end+1)).
+Added files and git failures fall back to whole-file formatting (failure noted
+in tool_error). 11 tests in test_lint.py pass (6 new: hunk parser, ruff
+changed-lines via engine.merge, scope=file via engine.merge, black
+changed-lines, unusable diff_base fallback, added file); 88 merge-path tests
+(test_engine_plan_merge/dispatch, native_observations, integration_chunk) pass.
+
+**Deviations from spec**: the two engine.merge sandbox tests add a sixth
+MODIFY-shaped task (TASK-0006 on pkg/base.py) to the sandbox index inside the
+test instead of reusing TASK-0002/0003 — the planner routes a CREATE task whose
+target already exists away from the native seat. conftest.py untouched.
+
