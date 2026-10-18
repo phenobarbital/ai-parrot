@@ -2722,6 +2722,7 @@ class SddCoderEngine:
             changed,
             config=self.roster.lint,
             commit_message=f"style({ctx.feature}): {task.task_id} — engine lint autofix",
+            diff_base=diff_base,
         )
         # FEAT-553 (spec §10 R1): the shared merge boundary — `merge()` reaches here directly
         # for native tasks and re-merges, so the banned-import gate lives HERE, not only in

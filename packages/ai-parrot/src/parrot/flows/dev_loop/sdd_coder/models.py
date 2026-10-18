@@ -184,11 +184,16 @@ class LintConfig(BaseModel):
         error_select: Correctness rules (syntax errors, undefined names) reported separately as
             ``LintReport.errors`` so the orchestrator fixes them; everything else is residual
             style debt left for the full pass in ``/sdd-done``. Never blocks the merge.
+        format_scope: ``changed-lines`` formats only the task's changed hunks (black
+            ``--line-ranges`` / ``ruff format --range``) so an unclean base file is not reformatted
+            wholesale under the task's name; ``file`` restores whole-file formatting. Files the
+            task added are always formatted whole (FEAT-702).
     """
 
     autofix: bool = True
     formatter: LintFormatter = "auto"
     error_select: List[str] = Field(default_factory=lambda: ["E9", "F63", "F7", "F82"])
+    format_scope: Literal["changed-lines", "file"] = "changed-lines"
 
 
 class LintReport(BaseModel):
