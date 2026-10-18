@@ -1008,12 +1008,37 @@ def config_path(root: Path) -> Path:
     return root / PARROT_DIR / CONFIG_FILENAME
 
 
+def _is_temp_root(candidate: Path) -> bool:
+    """True when ``candidate`` is the system temp directory or one of its ancestors.
+
+    The upward walks in :func:`find_project_root` and :func:`find_shared_root` stop
+    there: a stray ``/tmp/.git`` (or ``/tmp/.parrot``) left by an unrelated process
+    must never turn every ``tmp_path``-based test — or any scratch checkout under the
+    temp dir — into a child of a ``/tmp`` "project" (issue:1270bc83b087). Projects
+    *below* the temp dir are unaffected; only the temp dir itself and its parents
+    (``/``) are excluded.
+
+    Args:
+        candidate: A resolved directory from the upward walk.
+
+    Returns:
+        Whether the walk must stop at ``candidate`` without inspecting it.
+    """
+    try:
+        temp_root = Path(tempfile.gettempdir()).resolve()
+    except (OSError, RuntimeError):
+        return False
+    return candidate == temp_root or candidate in temp_root.parents
+
+
 def find_project_root(start: Path | None = None) -> Path | None:
     """Walk upwards from ``start`` to the nearest configured repo root.
 
     A directory is a wiki project root when it contains
     ``.parrot/wiki.json``; as a fallback, the nearest ``.git`` root is
-    returned so ``wikitoolkit build`` can bootstrap a fresh repo.
+    returned so ``wikitoolkit build`` can bootstrap a fresh repo. The walk
+    never inspects the system temp directory or its ancestors
+    (:func:`_is_temp_root`).
 
     Args:
         start: Directory to start from (defaults to CWD).
@@ -1024,6 +1049,8 @@ def find_project_root(start: Path | None = None) -> Path | None:
     current = (start or Path.cwd()).resolve()
     git_root: Path | None = None
     for candidate in (current, *current.parents):
+        if _is_temp_root(candidate):
+            break
         if config_path(candidate).exists():
             return candidate
         if git_root is None and (candidate / ".git").exists():
@@ -1520,7 +1547,9 @@ def find_shared_root(start: Path | None = None) -> Path | None:
     """Find the shared root directory for parrot state, tolerating failures.
 
     Walks upward from start to find the Git root, then resolves to the
-    main checkout's .git directory even in linked worktrees.
+    main checkout's .git directory even in linked worktrees. The walk never
+    inspects the system temp directory or its ancestors (:func:`_is_temp_root`),
+    so a stray ``/tmp/.git`` cannot become everyone's shared ledger root.
 
     Args:
         start: Directory to start from (defaults to CWD).
@@ -1534,6 +1563,8 @@ def find_shared_root(start: Path | None = None) -> Path | None:
 
         # First, find the nearest git root
         for candidate in (current, *current.parents):
+            if _is_temp_root(candidate):
+                break
             git_path = candidate / ".git"
             if git_path.exists():
                 git_root = candidate
