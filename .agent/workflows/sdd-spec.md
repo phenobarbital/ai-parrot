@@ -542,6 +542,13 @@ Include a `## Worktree Strategy` section in the spec with:
   `parallel: false`.
 - Cross-feature dependencies: list any specs that must be merged first.
 
+**Validation Contract hint (FEAT-699 — mandatory subsection, may be `none — fallback`):**
+Fill §4 `### Validation Contract` with the integration tests that prove THIS feature works: start from the
+§3 modules' existing test files and the §4 Integration Tests table, prefer files over node ids, never a
+directory, never a `real_llm` test. It replaces heuristic test breadth in every tier, so under-declaring
+narrows local coverage (the nightly workflow is the backstop). Write `none — fallback` only when no
+existing test exercises the feature yet; the selector then uses its bounded fallback.
+
 **E2E plan hint (new section in spec, FEAT-581 — optional):**
 Only add this when the feature exercises the deterministic E2E gate
 (`parrot e2e run` / `parrot e2e verify`); otherwise omit both the

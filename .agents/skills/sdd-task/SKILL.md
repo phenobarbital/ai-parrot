@@ -106,6 +106,9 @@ Use one backticked pytest command per bullet, targeting test files or node IDs;
 never bare pytest or directory-wide test operands. Set new index headers to
 `"validation_contract": "required"` so missing or broad commands fail validation.
 
+Each task lists its OWN test files only; the spec-wide contract is cached once with
+`python -m scripts.sdd.cache_test_contract --spec <spec> --index <index>` (never hand-write `test_contract`).
+
 #### Delegation Contract (optional, per task)
 
 Emit a `## Delegation Contract` packet ONLY for a task whose design is

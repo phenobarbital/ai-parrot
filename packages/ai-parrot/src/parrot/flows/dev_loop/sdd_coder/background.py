@@ -35,15 +35,22 @@ import shlex
 import signal
 import subprocess
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Literal, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict
 
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration, BackgroundStatus, EvidenceRef
+from parrot.flows.dev_loop.test_scope import baseline, green_cache
 from parrot.flows.dev_loop.test_scope import report as test_report
+from parrot.flows.dev_loop.test_scope.contract import (
+    contract_from_index_header,
+    load_index_header,
+    parse_validation_commands,
+)
 from parrot.flows.dev_loop.test_scope.context import record_green_escalation, record_red_run
 from parrot.flows.dev_loop.test_scope.select import changed_files, plan_tests
 from parrot.flows.dev_loop.task_scheduler import iter_index_files
@@ -456,20 +463,14 @@ class ValidationSupervisor:
     module's own docstring) and the in-process claim is released so a later
     retry under the SAME `request_id` is not permanently locked out.
 
-    Known, bounded scope decisions (flagged for review, not silently
-    invented): `task_ids` is validated for shape (`TASK-<1-5 digits>`,
-    non-empty) and folded into the payload hash, but --  since this task's
-    Codebase Contract closes the new-import list to `protected_argv` and
-    `plan_tests` -- it is never used to read a task's own declared
-    `Validation Commands` from disk; the selection is the selector's own
-    mirror/impact/core coverage over `changed_files`, exactly like
-    `scripts/sdd/select_tests.py` without `--task-file`. `changed_files` is
-    imported from the SAME already-verified `test_scope.select` module as
-    `plan_tests` (verified directly by reading that module, not guessed) --
-    without it, `plan_tests` cannot be called meaningfully at all. There is
-    no `base_ref` parameter on `start()`, so the diff base is the same fixed
-    `origin/dev` default `select_tests.py`'s own CLI already uses; a
-    hotfix's `origin/main` base is out of this task's scope.
+    Known, bounded scope decisions: `task_ids` is validated for shape
+    (`TASK-<1-5 digits>`, non-empty) and folded into the payload hash. When
+    the engine supplies `index_path`, the supervisor reads those tasks'
+    declared `Validation Commands` plus the index `test_contract`; legacy
+    callers without an index retain the bounded fallback selector. The diff
+    base remains server-derived and is deliberately excluded from the
+    caller payload hash. Baseline comparison uses the index header's
+    `base_branch`, falling back to `origin/dev` when unavailable.
     """
 
     def __init__(self, *, registry: BackgroundRegistry, store: ExecutionEvidenceStore) -> None:
@@ -500,6 +501,7 @@ class ValidationSupervisor:
         timeout_seconds: int,
         request_id: str,
         base_ref: Optional[str] = None,
+        index_path: Optional[Path] = None,
     ) -> BackgroundRegistration:
         """Admit only a declared, protected, idempotent selection; never await the suite.
 
@@ -519,6 +521,10 @@ class ValidationSupervisor:
         folding it in would turn a legitimate idempotent replay (same
         `request_id`, same declared payload) into a `BackgroundConflictError`
         as soon as another task merged in between.
+
+        `index_path` is likewise resolved by the engine from the feature
+        context and is not caller-declared payload, so it is deliberately
+        excluded from `_payload_hash`.
 
         Raises:
             ValueError: a malformed request (bad ids, tier, timeout, paths).
@@ -576,9 +582,38 @@ class ValidationSupervisor:
             return registration
 
         try:
-            plan = await self._plan_selection(worktree=worktree, tier=tier, base_ref=base_ref)
+            feature_id = await asyncio.to_thread(self._resolve_feature_id, worktree, feature)
+            plan = await self._plan_selection(
+                worktree=worktree,
+                tier=tier,
+                base_ref=base_ref,
+                index_path=index_path,
+                task_ids=task_ids,
+                feature_id=feature_id,
+            )
+            baseline_ref, contract_digest = await asyncio.to_thread(self._index_runtime_metadata, index_path)
+            namespace = await asyncio.to_thread(
+                green_cache.cache_namespace,
+                feature_id=feature_id,
+                base_ref=baseline_ref,
+                contract_digest=contract_digest,
+            )
             log_path = self._log_path(execution_id, handle)
             await asyncio.to_thread(log_path.parent.mkdir, parents=True, exist_ok=True)
+
+            if plan.cached:
+                head_sha = await asyncio.to_thread(self._head_sha, worktree)
+                for task_id in task_ids:
+                    await asyncio.to_thread(
+                        test_report.append_cached,
+                        feature_id,
+                        task_id,
+                        plan.cached,
+                        head_sha=head_sha,
+                        base_ref=baseline_ref,
+                        tier=tier,
+                        source="coder_run_validation",
+                    )
 
             if not plan.invocations:
                 await asyncio.to_thread(
@@ -593,7 +628,6 @@ class ValidationSupervisor:
 
             first, *rest = plan.invocations
             await asyncio.to_thread(self._append_log, log_path, self._selection_header(plan))
-            feature_id = await asyncio.to_thread(self._resolve_feature_id, worktree, feature)
             first_argv, first_junit = self._argv_with_junit(feature_id, task_ids[0], first, 0)
             sandboxed_argv = protected_argv(worktree, first_argv)
             await asyncio.to_thread(
@@ -633,7 +667,8 @@ class ValidationSupervisor:
                 feature_id=feature_id,
                 task_ids=list(task_ids),
                 tier=tier,
-                base_ref=base_ref or _DEFAULT_BASE_REF,
+                base_ref=baseline_ref,
+                cache_namespace=namespace,
                 first_junit=first_junit,
             )
         )
@@ -716,16 +751,112 @@ class ValidationSupervisor:
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     async def _plan_selection(
-        self, *, worktree: Path, tier: Literal["merge", "feature"], base_ref: Optional[str] = None
+        self,
+        *,
+        worktree: Path,
+        tier: Literal["merge", "feature"],
+        base_ref: Optional[str] = None,
+        index_path: Optional[Path] = None,
+        task_ids: Sequence[str] = (),
+        feature_id: str = "",
     ) -> "ScopePlan":
-        """Build the tier-scoped selection from the existing selector -- never a free-form argv.
+        """Tier-scoped selection: task declarations plus spec contract; never a free-form argv.
 
-        `base_ref` defaults to `_DEFAULT_BASE_REF` (`select_tests.py`'s own CLI
-        default) whenever the caller could not resolve a narrower, merge-scoped
-        base -- the selection is then the historical cumulative one.
+        Raises:
+            ValueError: The index or its ``test_contract`` is malformed.
         """
         changed = await asyncio.to_thread(changed_files, worktree, base_ref or _DEFAULT_BASE_REF)
-        return await asyncio.to_thread(plan_tests, worktree=worktree, changed_files=changed, tier=tier)
+        declared: list[list[str]] = []
+        contract = None
+        baseline_ref = _DEFAULT_BASE_REF
+        if index_path is not None:
+            header = await asyncio.to_thread(load_index_header, index_path)
+            contract = await asyncio.to_thread(contract_from_index_header, header)
+            baseline_ref = self._base_ref_from_header(header)
+            declared = await asyncio.to_thread(self._load_declared_commands, index_path, worktree, task_ids)
+        if index_path is None:
+            return await asyncio.to_thread(plan_tests, worktree=worktree, changed_files=changed, tier=tier)
+        plan = await asyncio.to_thread(
+            plan_tests,
+            worktree=worktree,
+            changed_files=changed,
+            tier=tier,
+            declared=declared,
+            contract=contract,
+        )
+        if tier == "merge":
+            namespace = await asyncio.to_thread(
+                green_cache.cache_namespace,
+                feature_id=feature_id,
+                base_ref=baseline_ref,
+                contract_digest=contract.digest if contract is not None else "",
+            )
+            plan = await asyncio.to_thread(
+                green_cache.filter_cached,
+                worktree,
+                plan,
+                namespace=namespace,
+                contract=contract,
+            )
+            self.logger.info(
+                "validation green cache feature=%s selected=%d cached=%d",
+                feature_id,
+                len(plan.invocations),
+                len(plan.cached),
+            )
+        return plan
+
+    @staticmethod
+    def _load_declared_commands(index_path: Path, worktree: Path, task_ids: Sequence[str]) -> list[list[str]]:
+        """Read selected task files from one per-spec index and parse their validation commands."""
+        try:
+            payload = json.loads(index_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"unable to read task declarations from {index_path}") from exc
+        tasks = payload.get("tasks") if isinstance(payload, dict) else None
+        if not isinstance(tasks, list):
+            raise ValueError("index tasks must be a list")
+        by_id = {
+            item.get("id"): item.get("file")
+            for item in tasks
+            if isinstance(item, dict) and isinstance(item.get("id"), str) and isinstance(item.get("file"), str)
+        }
+        declared: list[list[str]] = []
+        for task_id in task_ids:
+            task_file = by_id.get(task_id)
+            if task_file is None:
+                raise ValueError(f"task {task_id!r} is not declared in {index_path}")
+            try:
+                task_markdown = (worktree / task_file).read_text(encoding="utf-8")
+            except OSError as exc:
+                raise ValueError(f"unable to read task file {task_file!r} for {task_id}") from exc
+            declared.extend(parse_validation_commands(task_markdown))
+        return declared
+
+    @staticmethod
+    def _base_ref_from_header(header: dict[str, object]) -> str:
+        """Return ``origin/<base_branch>`` or the safe historical default."""
+        base_branch = header.get("base_branch")
+        if isinstance(base_branch, str) and base_branch.strip():
+            return f"origin/{base_branch.strip()}"
+        return _DEFAULT_BASE_REF
+
+    @classmethod
+    def _index_runtime_metadata(cls, index_path: Optional[Path]) -> tuple[str, str]:
+        """Return baseline ref and contract digest for cache/report wiring."""
+        if index_path is None:
+            return _DEFAULT_BASE_REF, ""
+        header = load_index_header(index_path)
+        contract = contract_from_index_header(header)
+        return cls._base_ref_from_header(header), contract.digest if contract is not None else ""
+
+    @staticmethod
+    def _head_sha(worktree: Path) -> str:
+        """Return the worktree HEAD SHA, or an empty string when unavailable."""
+        done = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=worktree, capture_output=True, text=True, timeout=30, check=False
+        )
+        return done.stdout.strip() if done.returncode == 0 else ""
 
     def _log_path(self, execution_id: str, handle: str) -> Path:
         """Confined, opaque-named slot for this handle's supervised log (mirrors `_record_path`)."""
@@ -750,6 +881,7 @@ class ValidationSupervisor:
         task_ids: Optional[list[str]] = None,
         tier: str = "merge",
         base_ref: str = _DEFAULT_BASE_REF,
+        cache_namespace: str = "",
         first_junit: Optional[Path] = None,
     ) -> None:
         """Drain the admitted process to its own deadline, run any remaining invocations, settle."""
@@ -758,8 +890,9 @@ class ValidationSupervisor:
         await self._record_invocation_outcome(
             worktree=worktree, invocation=first_invocation, plan=plan, exit_code=exit_code
         )
+        first_result = None
         if first_junit is not None and task_ids:
-            await self._record_test_results(
+            first_result = await self._record_test_results(
                 worktree=worktree,
                 feature_id=feature_id,
                 task_ids=task_ids,
@@ -770,7 +903,18 @@ class ValidationSupervisor:
                 timed_out=outcome == "timed_out",
                 tier=tier,
                 base_ref=base_ref,
+                deadline=deadline,
             )
+            await self._record_green_cache(
+                worktree=worktree,
+                namespace=cache_namespace,
+                plan=plan,
+                invocation=first_invocation,
+                result=first_result,
+            )
+            if outcome == "failed" and self._only_baseline_reds(first_result):
+                outcome, exit_code = "completed", 0
+                await asyncio.to_thread(self._append_log, log_path, "# baseline: only baseline reds — gate passes\n")
         ordinal = 0
         for invocation in remaining_invocations:
             ordinal += 1
@@ -810,8 +954,9 @@ class ValidationSupervisor:
             await self._record_invocation_outcome(
                 worktree=worktree, invocation=invocation, plan=plan, exit_code=next_exit_code
             )
+            next_result = None
             if next_junit is not None and task_ids:
-                await self._record_test_results(
+                next_result = await self._record_test_results(
                     worktree=worktree,
                     feature_id=feature_id,
                     task_ids=task_ids,
@@ -822,7 +967,20 @@ class ValidationSupervisor:
                     timed_out=next_outcome == "timed_out",
                     tier=tier,
                     base_ref=base_ref,
+                    deadline=deadline,
                 )
+                await self._record_green_cache(
+                    worktree=worktree,
+                    namespace=cache_namespace,
+                    plan=plan,
+                    invocation=invocation,
+                    result=next_result,
+                )
+                if next_outcome == "failed" and self._only_baseline_reds(next_result):
+                    next_outcome, next_exit_code = "completed", 0
+                    await asyncio.to_thread(
+                        self._append_log, log_path, "# baseline: only baseline reds — gate passes\n"
+                    )
             if next_outcome == "timed_out":
                 outcome, exit_code = "timed_out", next_exit_code
             elif next_outcome == "failed" and outcome != "timed_out":
@@ -886,26 +1044,53 @@ class ValidationSupervisor:
         timed_out: bool,
         tier: str,
         base_ref: str,
-    ) -> None:
-        """FEAT-695: write one test_report record per task id. Never raises, never alters the outcome."""
+        deadline: float,
+    ) -> Optional[test_report.SuiteResult]:
+        """Write one test-report record per task id and return its parsed evidence."""
         try:
-
-            def _head() -> str:
-                done = subprocess.run(
-                    ["git", "rev-parse", "HEAD"], cwd=worktree, capture_output=True, text=True, timeout=30, check=False
-                )
-                return done.stdout.strip() if done.returncode == 0 else ""
-
-            head_sha = await asyncio.to_thread(_head)
+            head_sha = await asyncio.to_thread(self._head_sha, worktree)
+            suite = await asyncio.to_thread(test_report.suite_name, invocation)
             result = await asyncio.to_thread(
                 test_report.parse_junit,
                 junit_path,
-                suite=invocation.distribution,
+                suite=suite,
                 argv=tuple(invocation.argv),
                 exit_code=exit_code,
                 duration_s=duration_s,
                 timed_out=timed_out,
             )
+            failed_nodes = [nodeid for nodeid, status in result.nodes if status in ("failed", "error")]
+            if exit_code != 0 and failed_nodes:
+                remaining = deadline - time.monotonic()
+                if remaining < 30:
+                    self.logger.warning(
+                        "baseline classification skipped with %.1fs remaining for %s", remaining, result.suite
+                    )
+                    verdicts = tuple(
+                        baseline.BaselineVerdict(nodeid, "unknown", "less than 30 seconds remained")
+                        for nodeid in failed_nodes
+                    )
+                else:
+                    try:
+                        verdicts = await asyncio.wait_for(
+                            asyncio.to_thread(
+                                baseline.classify_failures,
+                                worktree=worktree,
+                                base_ref=base_ref,
+                                failed_nodeids=failed_nodes,
+                                timeout_s=max(1, int(remaining)),
+                            ),
+                            timeout=remaining,
+                        )
+                    except asyncio.TimeoutError:
+                        self.logger.warning(
+                            "baseline classification exceeded the remaining deadline for %s", result.suite
+                        )
+                        verdicts = tuple(
+                            baseline.BaselineVerdict(nodeid, "unknown", "baseline classification timed out")
+                            for nodeid in failed_nodes
+                        )
+                result = replace(result, baseline=tuple((item.nodeid, item.status) for item in verdicts))
             for task_id in task_ids:
                 await asyncio.to_thread(
                     test_report.append_suite,
@@ -917,8 +1102,47 @@ class ValidationSupervisor:
                     tier=tier,
                     source="coder_run_validation",
                 )
+            return result
         except Exception:  # noqa: BLE001 — recording must never fail a validation
             self.logger.warning("could not record test results for %s", invocation.distribution, exc_info=True)
+            return None
+
+    async def _record_green_cache(
+        self,
+        *,
+        worktree: Path,
+        namespace: str,
+        plan: "ScopePlan",
+        invocation: "PytestInvocation",
+        result: Optional[test_report.SuiteResult],
+    ) -> None:
+        """Record one invocation's node evidence without letting cache I/O affect the gate."""
+        if result is None:
+            return
+        baseline_reds = [nodeid for nodeid, status in result.baseline if status == "baseline_red"]
+        invocation_plan = replace(plan, invocations=(invocation,))
+        await asyncio.to_thread(
+            green_cache.record_green,
+            worktree,
+            namespace=namespace,
+            plan=invocation_plan,
+            nodes=result.nodes,
+            unmapped=result.unmapped,
+            baseline_reds=baseline_reds,
+        )
+
+    @staticmethod
+    def _only_baseline_reds(result: Optional[test_report.SuiteResult]) -> bool:
+        """True only when every observed failure was classified baseline-red."""
+        if result is None or result.unmapped:
+            return False
+        failed_nodes = {nodeid for nodeid, status in result.nodes if status in ("failed", "error")}
+        verdicts = dict(result.baseline)
+        return (
+            bool(failed_nodes)
+            and set(verdicts) == failed_nodes
+            and all(verdicts[nodeid] == "baseline_red" for nodeid in failed_nodes)
+        )
 
     async def _record_invocation_outcome(
         self, *, worktree: Path, invocation: "PytestInvocation", plan: "ScopePlan", exit_code: int
@@ -1022,6 +1246,7 @@ class ValidationSupervisor:
             f" skipped_escalations=[{', '.join(plan.skipped_escalations)}]\n"
         ]
         lines += [f"# note: {note}\n" for note in plan.notes]
+        lines += [f"# cached: {target}\n" for target in plan.cached]
         return "".join(lines)
 
     @staticmethod

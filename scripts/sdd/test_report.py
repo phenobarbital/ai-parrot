@@ -88,16 +88,12 @@ def main(argv: list[str] | None = None) -> int:
         if report_mod.should_rerun(task_count):
             print("rerun")  # noqa: T201 - CLI output
         else:
-            print(f"skip ({task_count} tasks > {report_mod.RERUN_TASK_THRESHOLD})")  # noqa: T201 - CLI output
+            print("skip (no tasks)")  # noqa: T201 - CLI output
         return 0
 
     records, _notes = report_mod.load_records(feature_id)
     rerun = records.pop(report_mod.RERUN_RECORD, None)
-    rerun_skip_reason = (
-        None
-        if rerun is not None or report_mod.should_rerun(task_count)
-        else f"{task_count} tasks > {report_mod.RERUN_TASK_THRESHOLD}"
-    )
+    rerun_skip_reason = None if rerun is not None or report_mod.should_rerun(task_count) else "no tasks"
     markdown = report_mod.render_markdown(
         records,
         task_ids,

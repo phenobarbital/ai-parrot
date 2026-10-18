@@ -15,7 +15,7 @@ class TestTargetModel(BaseModel):
     __test__ = False  # not a pytest test class
     path: str
     distribution: str
-    reason: Literal["declared", "mirror", "import", "core", "escalated"]
+    reason: Literal["declared", "contract", "mirror", "import", "core", "escalated"]
 
 
 class PytestInvocationModel(BaseModel):
@@ -47,6 +47,8 @@ class ScopePlanModel(BaseModel):
     skipped_escalations: list[str] = Field(default_factory=list)
     cap_hits: dict[str, list[str]] = Field(default_factory=dict)
     cap_impacted: dict[str, str] = Field(default_factory=dict)
+    mode: str = "fallback"
+    cached: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_plan(cls, plan: ScopePlan) -> "ScopePlanModel":
@@ -78,4 +80,6 @@ class ScopePlanModel(BaseModel):
             skipped_escalations=list(plan.skipped_escalations),
             cap_hits={key: list(value) for key, value in plan.cap_hits.items()},
             cap_impacted=dict(plan.cap_impacted),
+            mode=plan.mode,
+            cached=list(plan.cached),
         )

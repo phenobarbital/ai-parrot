@@ -300,7 +300,7 @@ async def test_start_logs_selection_summary(
 def _cap_forcing_plan(argv: tuple[str, ...]):
     """Wrap the REAL selector (forced cap policy); only each invocation's argv becomes a controlled child."""
 
-    def _plan(*, worktree: Path, changed_files, tier: str) -> ScopePlan:
+    def _plan(*, worktree: Path, changed_files, tier: str, **_extra) -> ScopePlan:
         plan = real_plan_tests(
             worktree=worktree,
             changed_files=changed_files,
