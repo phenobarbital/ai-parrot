@@ -914,9 +914,7 @@ class ValidationSupervisor:
             )
             if outcome == "failed" and self._only_baseline_reds(first_result):
                 outcome, exit_code = "completed", 0
-                await asyncio.to_thread(
-                    self._append_log, log_path, "# baseline: only baseline reds — gate passes\n"
-                )
+                await asyncio.to_thread(self._append_log, log_path, "# baseline: only baseline reds — gate passes\n")
         ordinal = 0
         for invocation in remaining_invocations:
             ordinal += 1
@@ -1085,7 +1083,9 @@ class ValidationSupervisor:
                             timeout=remaining,
                         )
                     except asyncio.TimeoutError:
-                        self.logger.warning("baseline classification exceeded the remaining deadline for %s", result.suite)
+                        self.logger.warning(
+                            "baseline classification exceeded the remaining deadline for %s", result.suite
+                        )
                         verdicts = tuple(
                             baseline.BaselineVerdict(nodeid, "unknown", "baseline classification timed out")
                             for nodeid in failed_nodes
@@ -1138,8 +1138,10 @@ class ValidationSupervisor:
             return False
         failed_nodes = {nodeid for nodeid, status in result.nodes if status in ("failed", "error")}
         verdicts = dict(result.baseline)
-        return bool(failed_nodes) and set(verdicts) == failed_nodes and all(
-            verdicts[nodeid] == "baseline_red" for nodeid in failed_nodes
+        return (
+            bool(failed_nodes)
+            and set(verdicts) == failed_nodes
+            and all(verdicts[nodeid] == "baseline_red" for nodeid in failed_nodes)
         )
 
     async def _record_invocation_outcome(

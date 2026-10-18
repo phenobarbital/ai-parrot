@@ -33,9 +33,7 @@ def _index(worktree: Path, *, malformed: bool = False) -> Path:
         "# Task\n\n## Validation Commands\n\n- `pytest tests/test_declared.py -q`\n",
         encoding="utf-8",
     )
-    contract = parse_spec_contract(
-        "### Validation Contract\n\ntests:\n- tests/test_contract.py\nmarkers: none\n"
-    )
+    contract = parse_spec_contract("### Validation Contract\n\ntests:\n- tests/test_contract.py\nmarkers: none\n")
     assert contract is not None
     header = {
         "feature": "demo",
@@ -169,7 +167,7 @@ _JUNIT_FAILURE_CHILD = (
     "p=[x for x in sys.argv if x.startswith('--junitxml=')][0].split('=',1)[1];"
     "open(p,'w').write(\"<testsuites><testsuite tests='1' failures='1'>"
     "<testcase file='tests/test_declared.py' classname='tests.test_declared' name='test_red'>"
-    "<failure/></testcase></testsuite></testsuites>\");"
+    '<failure/></testcase></testsuite></testsuites>");'
     "sys.exit(1)"
 )
 
