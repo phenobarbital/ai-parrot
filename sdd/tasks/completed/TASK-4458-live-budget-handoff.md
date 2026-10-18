@@ -265,4 +265,22 @@ See blueprint and spec §4.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (Claude Code session; implemented by a delegated coder, diff reviewed line by line)
+**Date**: 2026-10-18
+**Notes**: live.py: LIVE_BUDGET_ENV="PARROT_E2E_LIVE_BUDGET" appended to
+FORWARDED_ENV_VARS; resolve_plan_budget() parses it (defaults when unset/empty,
+E2EConfigError reason_code="invalid_budget" when malformed); _ensure_agent
+passes the resolved plan budget to both require_live_opt_in and
+build_live_generation_budget. runner.py: _LiveBudgetContext.child_env() emits
+the JSON budget into the pytest child env; the `_ = live_budget` placeholder is
+gone. Tests: TestResolvePlanBudget (4), TestPlanBudgetDrivesFixtureBudget (1,
+asserts timeout_s=90/max_calls=2 reach the GenerationBudget),
+test_live_budget_context_child_env_carries_plan_budget, and the run_plan test
+now asserts the forwarded budget JSON. test_live_gate+test_runner: 26 passed;
+test_mcp_targets: 24 passed (no forwarded-env pin exists there).
+
+**Deviations from spec**: none. One pre-existing flake observed once in
+test_mcp_targets.py::test_mcp_toolkit_real_subprocess_ready_then_put_get_drop
+(real-subprocess readiness timing; passes on base and on this branch in
+repeated runs; unrelated to this change).
+
