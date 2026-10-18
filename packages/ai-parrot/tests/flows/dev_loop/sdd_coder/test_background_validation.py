@@ -74,7 +74,9 @@ async def test_idempotent_launch_and_scope(tmp_path: Path, monkeypatch: pytest.M
 
     plan_calls: list[str] = []
 
-    def _fake_plan_tests(*, worktree: Path, changed_files: list[str], tier: str, declared=(), policy=None) -> ScopePlan:
+    def _fake_plan_tests(
+        *, worktree: Path, changed_files: list[str], tier: str, declared=(), contract=None, policy=None
+    ) -> ScopePlan:
         plan_calls.append(tier)
         return _single_invocation_plan((sys.executable, "-c", "import sys; sys.exit(0)"), tier=tier)
 
@@ -105,7 +107,7 @@ async def test_idempotent_launch_and_scope(tmp_path: Path, monkeypatch: pytest.M
     assert plan_calls == ["merge"]
     assert len(protected_calls) == 1
     assert protected_calls[0][1][:3] == (sys.executable, "-c", "import sys; sys.exit(0)")
-    assert protected_calls[0][1][3].startswith("--junitxml=")
+    assert protected_calls[0][1][-1].startswith("--junitxml=")
 
     await _settle(supervisor, execution_id, "req-1")
     settled: BackgroundStatus = await registry.status(execution_id, "req-1")
@@ -346,7 +348,9 @@ def _patch_recording(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, argv: tupl
     monkeypatch.setattr(
         background_module,
         "plan_tests",
-        lambda *, worktree, changed_files, tier, declared=(), policy=None: _single_invocation_plan(argv, tier=tier),
+        lambda *, worktree, changed_files, tier, declared=(), contract=None, policy=None: _single_invocation_plan(
+            argv, tier=tier
+        ),
     )
     monkeypatch.setattr(background_module, "protected_argv", lambda cwd, argv: list(argv))
 

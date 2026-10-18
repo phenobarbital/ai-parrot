@@ -1226,6 +1226,7 @@ class SddCoderEngine:
                 timeout_seconds=timeout_seconds,
                 request_id=request_id,
                 base_ref=base_ref,
+                index_path=Path(ctx.index_path),
             )
         except BackgroundConflictError as exc:
             raise CoderFailure("validation_request_conflict", str(exc)) from exc
