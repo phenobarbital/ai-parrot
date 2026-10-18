@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .datatypes import PytestInvocation
+from .planner import OVERRIDE_MARKER_EXPRESSION
 
 try:  # POSIX only
     import fcntl
@@ -46,6 +47,9 @@ class SuiteResult:
     exit_code: int
     argv: tuple[str, ...]
     status: str
+    nodes: tuple[tuple[str, str], ...] = ()
+    unmapped: int = 0
+    baseline: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -99,8 +103,38 @@ def junit_path_for(feature_id: str, task_id: str, suite: str, ordinal: int) -> P
 
 
 def with_junit(invocation: PytestInvocation, junit_path: Path) -> tuple[str, ...]:
-    """Return a new invocation argv augmented with its isolated junit path."""
-    return (*invocation.argv, f"--junitxml={junit_path}")
+    """Invocation argv + isolated junit path, forcing xunit1 so testcases carry ``file`` (FEAT-699)."""
+    return (*invocation.argv, "-o", "junit_family=xunit1", f"--junitxml={junit_path}")
+
+
+def nodeid_from_testcase(file_attr: str | None, classname: str, name: str) -> str | None:
+    """Canonical pytest node id for one xunit1 testcase, or None when it cannot be built safely."""
+    if not file_attr or not file_attr.endswith(".py"):
+        return None
+
+    module_path = file_attr[:-3].replace("/", ".")
+    if classname == module_path:
+        class_segments: tuple[str, ...] = ()
+    elif classname.startswith(f"{module_path}."):
+        class_segments = tuple(classname[len(module_path) + 1 :].split("."))
+    else:
+        return None
+
+    return "::".join((file_attr, *class_segments, name))
+
+
+def suite_name(invocation: PytestInvocation) -> str:
+    """Record key for one invocation: ``<dist>``, ``<dist>[contract]`` or ``<dist>[markers]``."""
+    try:
+        marker_expression = invocation.argv[invocation.argv.index("-m") + 1]
+    except (ValueError, IndexError):
+        return invocation.distribution
+
+    if marker_expression == OVERRIDE_MARKER_EXPRESSION:
+        return f"{invocation.distribution}[contract]"
+    if marker_expression.startswith("(") and marker_expression.endswith(f" and {OVERRIDE_MARKER_EXPRESSION}"):
+        return f"{invocation.distribution}[markers]"
+    return invocation.distribution
 
 
 def _empty_result(suite: str, argv: tuple[str, ...], exit_code: int, duration_s: float, status: str) -> SuiteResult:
@@ -127,6 +161,25 @@ def parse_junit(
         for node in root.iter("testsuite"):
             for name in counts:
                 counts[name] += int(node.attrib.get(name, "0"))
+        nodes: list[tuple[str, str]] = []
+        unmapped = 0
+        for testcase in root.iter("testcase"):
+            testcase_status = (
+                "failed"
+                if testcase.find("failure") is not None
+                else (
+                    "error"
+                    if testcase.find("error") is not None
+                    else "skipped" if testcase.find("skipped") is not None else "passed"
+                )
+            )
+            nodeid = nodeid_from_testcase(
+                testcase.attrib.get("file"), testcase.attrib.get("classname", ""), testcase.attrib.get("name", "")
+            )
+            if nodeid is None:
+                unmapped += 1
+            else:
+                nodes.append((nodeid, testcase_status))
     except (ET.ParseError, OSError, ValueError):
         return _empty_result(suite, argv, exit_code, duration_s, "timed_out" if timed_out else "report_parse_error")
 
@@ -136,7 +189,20 @@ def parse_junit(
     tests = counts["tests"]
     passed = max(0, tests - failed - errors - skipped)
     status = "timed_out" if timed_out else "failed" if exit_code != 0 or failed or errors else "ok"
-    return SuiteResult(suite, tests, passed, failed, errors, skipped, duration_s, exit_code, argv, status)
+    return SuiteResult(
+        suite,
+        tests,
+        passed,
+        failed,
+        errors,
+        skipped,
+        duration_s,
+        exit_code,
+        argv,
+        status,
+        nodes=tuple(sorted(nodes)),
+        unmapped=unmapped,
+    )
 
 
 def _record_from_payload(payload: dict[str, object]) -> TaskTestRecord:
@@ -153,6 +219,9 @@ def _record_from_payload(payload: dict[str, object]) -> TaskTestRecord:
             exit_code=item["exit_code"],
             argv=tuple(item["argv"]),
             status=item["status"],
+            nodes=tuple(tuple(node) for node in item.get("nodes", ())),
+            unmapped=item.get("unmapped", 0),
+            baseline=tuple(tuple(verdict) for verdict in item.get("baseline", ())),
         )
         for item in payload["suites"]
     )

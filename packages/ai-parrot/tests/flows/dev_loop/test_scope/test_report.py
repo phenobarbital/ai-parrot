@@ -11,6 +11,11 @@ import pytest
 from parrot.flows.dev_loop.test_scope import report
 from parrot.flows.dev_loop.test_scope.datatypes import PytestInvocation
 
+XUNIT1 = """<testsuites><testsuite tests="2" failures="1" errors="0" skipped="0">
+<testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x.TestC" name="test_ok"/>
+<testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x" name="test_bad[1]"><failure/></testcase>
+</testsuite></testsuites>"""
+
 
 @pytest.fixture(autouse=True)
 def _root(tmp_path, monkeypatch):
@@ -46,7 +51,35 @@ def test_with_junit_does_not_mutate(tmp_path):
     invocation = PytestInvocation("root", ("pytest", "test_x.py"), ())
     argv = report.with_junit(invocation, tmp_path / "result.xml")
     assert invocation.argv == ("pytest", "test_x.py")
-    assert argv[-1] == f"--junitxml={tmp_path / 'result.xml'}"
+    assert argv[-3:] == ("-o", "junit_family=xunit1", f"--junitxml={tmp_path / 'result.xml'}")
+
+
+def test_suite_name_variants():
+    default = PytestInvocation("ai-parrot", ("pytest", "-m", "not slow"), ())
+    contract = PytestInvocation("ai-parrot", ("pytest", "-m", "not real_llm"), ())
+    markers = PytestInvocation("ai-parrot", ("pytest", "-m", "(unit or smoke) and not real_llm"), ())
+    assert report.suite_name(default) == "ai-parrot"
+    assert report.suite_name(contract) == "ai-parrot[contract]"
+    assert report.suite_name(markers) == "ai-parrot[markers]"
+
+
+def test_parse_junit_nodes(tmp_path):
+    path = tmp_path / "result.xml"
+    path.write_text(XUNIT1)
+    result = report.parse_junit(path, suite="a", argv=("pytest",), exit_code=1, duration_s=2.0)
+    assert result.nodes == (
+        ("packages/a/tests/test_x.py::TestC::test_ok", "passed"),
+        ("packages/a/tests/test_x.py::test_bad[1]", "failed"),
+    )
+    assert result.unmapped == 0
+
+
+def test_parse_junit_unmapped_testcase(tmp_path):
+    path = tmp_path / "result.xml"
+    path.write_text('<testsuite tests="1"><testcase classname="test_x" name="test_unknown"/></testsuite>')
+    result = report.parse_junit(path, suite="a", argv=("pytest",), exit_code=0, duration_s=1.0)
+    assert result.nodes == ()
+    assert result.unmapped == 1
 
 
 def test_parse_junit_counts(tmp_path):
@@ -180,6 +213,25 @@ def test_load_records_skips_corrupt_file():
     records, notes = report.load_records("FEAT-695")
     assert records == {}
     assert notes == ["skipped corrupt report: bad.json"]
+
+
+def test_load_records_accepts_pre_feat_699_payload():
+    directory = report.report_root() / "FEAT-695"
+    directory.mkdir(parents=True)
+    record = _record("TASK-1", _result())
+    payload = report.asdict(record)
+    for suite in payload["suites"]:
+        suite.pop("nodes")
+        suite.pop("unmapped")
+        suite.pop("baseline")
+    (directory / "TASK-1.json").write_text(json.dumps(payload))
+
+    records, notes = report.load_records("FEAT-695")
+
+    assert not notes
+    assert records["TASK-1"].suites[0].nodes == ()
+    assert records["TASK-1"].suites[0].unmapped == 0
+    assert records["TASK-1"].suites[0].baseline == ()
 
 
 def test_junit_path_for_removes_stale_file() -> None:
