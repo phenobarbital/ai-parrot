@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.sdd.check_task_graph import check_graph, main, module_of, parse_declared_files
+from scripts.sdd.check_task_graph import _load_contract, check_graph, main, module_of, parse_declared_files
 
 _TASK = """# {tid}: demo
 
@@ -62,6 +62,19 @@ def _with_validation(tmp_path: Path, commands: list[str], required: bool, files:
 
 def _codes(report) -> list[str]:
     return sorted(f.code for f in report.findings)
+
+
+def _test_contract_header(tests: list[str]) -> dict:
+    """Build an index header with a valid cached test contract."""
+    contract = _load_contract()
+    normalized = contract.parse_spec_contract(
+        "### Validation Contract\n\n" + "tests:\n" + "\n".join(f"- {test}" for test in tests) + "\nmarkers: none\n"
+    )
+    assert normalized is not None
+    return {
+        "parallel_semantics": "exclusive",
+        "test_contract": contract.contract_to_header(normalized),
+    }
 
 
 def test_parse_declared_files_marks_create():
@@ -227,3 +240,46 @@ def test_declared_or_existing_file_passes(tmp_path):
     }
     assert not (contract_codes & set(_codes(report)))
     assert main([str(index), "--root", str(tmp_path)]) == 0
+
+
+def test_test_contract_findings(tmp_path):
+    """A cached contract reports malformed, missing, real_llm, and uncovered operands."""
+    task_test = "tests/task_test.py"
+    missing = "tests/missing.py"
+    real_llm = "tests/real_llm/test_live.py"
+    (tmp_path / task_test).parent.mkdir()
+    (tmp_path / task_test).write_text("def test_task(): pass\n")
+    index = _repo(
+        tmp_path,
+        [
+            {
+                "id": "TASK-1",
+                "files": {"tests/declared.py": "CREATE"},
+                "validation": [f"pytest {task_test} -q"],
+            }
+        ],
+        header=_test_contract_header([missing, real_llm, "tests/declared.py"]),
+    )
+    findings = {finding.code: finding for finding in check_graph(index, tmp_path).findings}
+    assert findings["test-contract-operand-missing"].level == "error"
+    assert findings["test-contract-real-llm"].level == "error"
+    assert findings["test-contract-task-tests-uncovered"].level == "warning"
+    assert "tests/declared.py" not in findings["test-contract-operand-missing"].message
+
+    malformed = json.loads(index.read_text())
+    malformed["test_contract"] = {"schema": 1}
+    index.write_text(json.dumps(malformed))
+    malformed_findings = check_graph(index, tmp_path).findings
+    assert [(finding.level, finding.code) for finding in malformed_findings] == [("error", "test-contract-malformed")]
+
+
+def test_legacy_index_has_no_test_contract_findings(tmp_path):
+    """Indexes without a cached test contract retain their existing behavior."""
+    report = check_graph(
+        _repo(
+            tmp_path,
+            [{"id": "TASK-1", "files": {}, "validation": _self_validation("TASK-1")}],
+        ),
+        tmp_path,
+    )
+    assert not [finding for finding in report.findings if finding.code.startswith("test-contract-")]
