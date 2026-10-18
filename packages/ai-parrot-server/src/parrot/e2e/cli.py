@@ -464,6 +464,24 @@ def _daemon_log_path(worktree: Path, invocation_id: str) -> Path:
     return directory / f"{invocation_id}.log"
 
 
+def _detach_from_loop(process: Any) -> None:
+    """Stop the asyncio transport from killing the daemon when the launcher's loop closes.
+
+    ``asyncio.create_subprocess_exec`` wraps the child in a transport whose
+    ``close()`` (run at ``asyncio.run`` teardown) SIGKILLs a still-running
+    child. ``start_new_session=True`` does not prevent that, so without this
+    the daemon would die with the launcher. Dropping the transport's ``Popen``
+    reference makes ``close()`` a no-op for it. Objects without a transport
+    (test doubles) are left untouched.
+
+    Args:
+        process: The :class:`asyncio.subprocess.Process` of the started daemon.
+    """
+    transport = getattr(process, "_transport", None)
+    if transport is not None and hasattr(transport, "_proc"):
+        transport._proc = None
+
+
 async def _spawn_detached_target(
     target: str,
     config: TargetConfig,
@@ -532,6 +550,7 @@ async def _spawn_detached_target(
     deadline = time.monotonic() + config.startup_timeout_s + _UP_DAEMON_SPAWN_GRACE_S
     while True:
         if ticket_path.is_file():
+            _detach_from_loop(process)
             break
         if process.returncode is not None:
             raise E2ETargetError(
