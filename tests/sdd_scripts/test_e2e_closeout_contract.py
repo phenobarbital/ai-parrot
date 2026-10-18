@@ -427,25 +427,27 @@ async def test_none_policy_never_reads_a_plan_or_evidence(git_worktree: Path) ->
 
 
 # ---------------------------------------------------------------------------
-# Cross-surface consistency: Claude command and Codex skill document the
-# same required/optional/none policy and the same "force never bypasses a
-# required gate" contract this file's decision function proves behaviorally.
+# Cross-surface consistency: the Claude command and the Codex skill both
+# delegate the decision to the gate script this file proves behaviorally
+# (FEAT-703), rather than restating its decision table in prose.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("path", _DOC_SURFACES, ids=lambda p: p.name)
-def test_each_surface_invokes_verify_before_every_mutating_step(path: Path) -> None:
+def test_each_surface_invokes_the_gate_script(path: Path) -> None:
+    """FEAT-703: enforcement is an invocation, not an instruction."""
     text = path.read_text(encoding="utf-8")
-    assert "parrot e2e verify" in text
+    assert "scripts.sdd.check_e2e_closeout" in text
     for keyword in ("stamp", "push", "merge", "cleanup"):
         assert keyword in text.lower()
 
 
 @pytest.mark.parametrize("path", _DOC_SURFACES, ids=lambda p: p.name)
-def test_each_surface_states_the_three_policy_literals_with_no_coercion(path: Path) -> None:
-    text = path.read_text(encoding="utf-8")
-    assert "required" in text and "optional" in text and "none" in text
-    assert "coerc" in text.lower()
+def test_each_surface_branches_on_the_gate_exit_code(path: Path) -> None:
+    """The surfaces must act on the exit code, not re-derive the decision."""
+    text = path.read_text(encoding="utf-8").lower()
+    assert "exit" in text
+    assert "non-zero" in text or "nonzero" in text
 
 
 @pytest.mark.parametrize("path", _DOC_SURFACES, ids=lambda p: p.name)

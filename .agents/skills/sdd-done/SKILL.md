@@ -95,28 +95,27 @@ do not run task closure again on base_branch and do not clean worktrees with unk
      before committing; refresh checkpoint/review evidence after any change
    - report unfixable findings under Lint residual; residual `E9`, `F63`, `F7`
      or `F82` errors block normal closeout and enter the issues/confirmation path
-4.6. Verify E2E evidence (FEAT-581), before any stamp/push/merge-blocker/PR/
-   merge/cleanup step below:
-   - read `e2e.policy` from the spec's frontmatter: no `e2e` key defaults to
-     `optional`; a present but malformed policy value is never coerced — treat
-     it exactly like `required` with missing evidence
-   - `none`: no execution expected or fabricated; record as exempt and continue
-   - `required`/`optional` with no plan file at
-     `sdd/state/<FEAT-ID>/e2e-plan.md` in the worktree: `optional` records an
-     advisory skip and continues (no plan means no automatic run for an
-     optional spec); `required` falls through to the block below
-   - otherwise run the same read-only validator the Claude twin uses:
-     `parrot e2e verify --plan sdd/state/<FEAT-ID>/e2e-plan.md` from the
-     worktree — it never executes pytest or a target, only validates a
-     previously persisted verdict (exit 0=PASS, 1=FAIL, 3=BLOCKED, 4=MISSING/
-     stale/tampered); an unavailable CLI or non-JSON stdout counts as MISSING
-   - `required` and `status == PASS` with `gate_satisfied: true`: record and
-     continue
-   - `required` and anything else (FAIL/BLOCKED/MISSING, missing plan,
-     unavailable CLI, malformed policy): abort the entire command now, before
-     building the verification report — `--force` does not bypass this
-   - `optional`: record the outcome as advisory only (never blocks), reporting
-     the real status honestly, never upgraded to a pass
+4.6. Verify E2E evidence (FEAT-581/FEAT-703), before any stamp/push/
+   merge-blocker/PR/merge/cleanup step below — the gate is code, not prose:
+   - run `python -m scripts.sdd.check_e2e_closeout --spec <spec-path>
+     --feat-id <FEAT-ID> --worktree <worktree>`; it reads the spec's
+     `e2e.policy`, resolves the worktree-scoped plan at
+     `sdd/state/<FEAT-ID>/e2e-plan.md`, and runs the same read-only validator
+     the Claude twin uses — it never executes pytest or a target, only
+     validates a previously persisted verdict, and never reads an
+     `e2e-exploration.json` report (exploration can never satisfy this gate)
+   - exit 0: record `E2E: <policy> - <status> (gate_satisfied: <bool>)` from
+     the JSON on stdout and continue; `none` is exempt (no execution expected
+     or fabricated) and `optional` outcomes are advisory only — never
+     blocking, always reported with their real status, never upgraded to a pass
+   - exit non-zero: abort the entire command now, before building the
+     verification report — `--force` does not bypass this (spec AC9); it only
+     overrides per-task partial/missing evidence and ledger merge blockers
+   - the decision table itself (policy resolution, where a missing `e2e` key
+     defaults to `optional` and a malformed value is never coerced; missing
+     plans; validator errors; an uninstalled `ai-parrot-server`) lives in
+     `scripts/sdd/check_e2e_closeout.py`, not here — the exit code is the
+     contract, and the gate takes no `--force` argument at all
 5. Classify:
    - `VERIFIED`: commit found and files exist
    - `PARTIAL`: commit found but files are missing
