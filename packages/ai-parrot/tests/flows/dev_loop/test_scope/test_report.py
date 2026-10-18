@@ -172,9 +172,7 @@ def test_should_rerun_for_any_nonempty_feature():
 
 
 def _record(task_id: str, result, head="final", cached=()):
-    return report.TaskTestRecord(
-        "FEAT-695", task_id, head, "dev", "task", "test", "now", 1, (result,), cached=cached
-    )
+    return report.TaskTestRecord("FEAT-695", task_id, head, "dev", "task", "test", "now", 1, (result,), cached=cached)
 
 
 def test_render_aggregates_by_suite_and_marks_failures():
@@ -218,7 +216,9 @@ def test_render_baseline_reds_are_not_new_reds_and_cached_targets_are_counted():
         baseline=(("tests/test_example.py::test_red", "baseline_red"),),
     )
     record = _record("TASK-1", result, cached=("tests/test_one.py", "tests/test_two.py"))
-    output = report.render_markdown({"TASK-1": record}, ["TASK-1"], final_head="final", rerun=None, rerun_skip_reason=None)
+    output = report.render_markdown(
+        {"TASK-1": record}, ["TASK-1"], final_head="final", rerun=None, rerun_skip_reason=None
+    )
     assert "| core ❌ | 4 | 3 | 1 | 0 | 0 | 0 | 1 | 0 | 1.25s |" in output
     assert "cached (skipped, unchanged since green): 2 target(s)" in output
     assert "Gate: ✅ no new reds" in output
@@ -234,7 +234,9 @@ def test_render_new_red_and_unknown_gate():
             ("tests/test_example.py::test_unknown", "unknown"),
         ),
     )
-    output = report.render_markdown({"TASK-1": _record("TASK-1", result)}, ["TASK-1"], final_head="final", rerun=None, rerun_skip_reason=None)
+    output = report.render_markdown(
+        {"TASK-1": _record("TASK-1", result)}, ["TASK-1"], final_head="final", rerun=None, rerun_skip_reason=None
+    )
     assert "Gate: ❌ 1 new red, 1 unknown" in output
 
 
