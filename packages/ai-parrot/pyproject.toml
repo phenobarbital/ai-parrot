@@ -51,7 +51,7 @@ dependencies = [
     # core entirely to the ai-parrot-client-openai satellite.]
     "tenacity>=8.2",
     "typing-extensions>=4.14.1,<5",
-    "pydantic==2.12.5",
+    "pydantic>=2.12.5,<3",
     # Required for pydantic.EmailStr (FEAT-441: FirefliesFilters.organizers/
     # .participants email validation).
     "email-validator>=2.0",
@@ -67,7 +67,7 @@ dependencies = [
     # moonshot, openrouter, local, nvidia) — its SDK moves from an opt-in
     # `ai-parrot[openai]` extra to a base dependency, same reasoning as
     # tenacity above.
-    "openai==3.3.1",
+    "openai==3.31.0",
     "psutil>=5.9",
     # `parrot/bots/flows/crew/crew.py` (AgentCrew, re-exported by
     # `parrot.bots.flows.__init__`) does a module-level
@@ -508,7 +508,7 @@ mcp = [
     # FEAT-523: google-genai removed — it was a stray pin core never imported
     # directly (only parrot.clients.google, now ai-parrot-client-google,
     # needs it); install that satellite (or `ai-parrot[google]`) instead.
-    "openai==3.3.1",
+    "openai==3.31.0",
     "yfinance==0.2.54",
     "youtube_search==2.1.2",
     "wikipedia==1.4.0",
@@ -847,6 +847,11 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-benchmark>=4.0",
     "ruff>=0.4",
+    "flake8>=7.0",
+    "black>=24.0",
+    # Sampling profiler (attach to a live gunicorn/aiohttp worker:
+    # `py-spy dump --pid <pid>` / `py-spy top --pid <pid>`).
+    "py-spy>=0.4",
     # FEAT-322 TASK-1850: reducer/host property tests (fold invariant,
     # totality, arbitration, expiry). The spec's contract claimed this was
     # "already used in repo tests" — verified absent in-tree; added here.

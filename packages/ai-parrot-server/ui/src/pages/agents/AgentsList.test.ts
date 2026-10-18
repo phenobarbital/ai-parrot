@@ -114,6 +114,18 @@ describe("AgentsList", () => {
     expect(navigateSpy).toHaveBeenCalledWith("/admin/agents/new");
   });
 
+  it("user mode hides Create/Edit/Delete but keeps Chat", async () => {
+    mockAgents([dbAgent, registryAgent]);
+
+    const { findByTestId, queryByTestId } = render(AgentsList, { props: { mode: "user" } });
+    await findByTestId("agent-row-helpdesk");
+
+    expect(await findByTestId("agent-chat-helpdesk")).toBeTruthy();
+    expect(queryByTestId("create-agent-button")).toBeNull();
+    expect(queryByTestId("agent-edit-helpdesk")).toBeNull();
+    expect(queryByTestId("agent-delete-helpdesk")).toBeNull();
+  });
+
   it("renders a Chat button for enabled rows of both sources (TASK-2597)", async () => {
     mockAgents([dbAgent, registryAgent]);
 
@@ -133,14 +145,14 @@ describe("AgentsList", () => {
     expect(queryByTestId("agent-chat-helpdesk")).toBeNull();
   });
 
-  it("Chat navigates to /admin/agents/{name}/chat without opening the detail dialog (TASK-2597)", async () => {
+  it("Chat navigates to /agents/{name}/chat without opening the detail dialog (TASK-2597)", async () => {
     mockAgents([dbAgent]);
     const navigateSpy = vi.spyOn(router, "navigate");
 
     const { findByTestId, queryByTestId } = render(AgentsList);
     await fireEvent.click(await findByTestId("agent-chat-helpdesk"));
 
-    expect(navigateSpy).toHaveBeenCalledWith("/admin/agents/helpdesk/chat");
+    expect(navigateSpy).toHaveBeenCalledWith("/agents/helpdesk/chat");
     expect(queryByTestId("agent-detail-dialog")).toBeNull();
   });
 

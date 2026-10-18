@@ -13,7 +13,7 @@ projects: [ai-parrot, sdd-tooling, dev-loop, docs, ci]
 tags: [installer, sdd-packaging, portability, publication-safety, amendment]
 research_state: sdd/state/FEAT-633/
 created: 2026-10-14
-updated: 2026-10-14
+updated: 2026-10-17
 ---
 
 # FEAT-633 — Amendments: portability safeguards carried over from FEAT-583
@@ -52,6 +52,9 @@ its spec:
 - **One new open question**, now resolved. How installed commands call helpers in a
   global-only install (**Q1**): through `parrot sdd run <helper>` (§3, Q1 resolution).
   C3's test proves it.
+- **C16 was added later** (2026-10-17, rev 0.4), after C12's sweep was found to have a
+  blind spot: it looked for `scripts/sdd` references only, and missed a shipped reference
+  to a path inside the monorepo **source tree**.
 
 | # | Amendment | Amends | ⚖️ | Effort |
 |---|---|---|---|---|
@@ -69,6 +72,7 @@ its spec:
 | C14 | Explain every install command and gate the install | TASK-4074, 4075, 4095 | — | S |
 | C15 | SDD readiness checks in `parrot self doctor` | TASK-4080, TASK-4091 | — | S |
 | Q1 | `parrot sdd run <helper>` replaces `python -m parrot.sdd.scripts.<name>` | spec M6, TASK-4089, TASK-4091 | ⚖️ | S |
+| C16 | No shipped reference to a monorepo source path (`worktree_environment`) | TASK-4085, 4072, 4089, 4090, 4091 | ⚖️ | M |
 
 ---
 
@@ -445,6 +449,70 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
   markdown with C3's fixture inputs and allowlisted system tools, while resolving
   `parrot` and the helper interpreter exclusively from the managed installation.
 
+### C16 — No shipped reference to a monorepo source path ⚖️
+- **Problem**: C12 (§2.2-8) swept the shipped set for `scripts.sdd.*` / `scripts/sdd/*`
+  and concluded that `review_checkpoint` is "the only non-moved helper any shipped file
+  references". The sweep missed a second class of reference: a path into the monorepo
+  **source tree**. Two files in TASK-4090's shipped set — `.claude/agents/sdd-coder.md:21`
+  and `.claude/agents/sdd-worker.md:32` — carry this in their `PreToolUse` frontmatter:
+
+  ```
+  command: 'python3 "$CLAUDE_PROJECT_DIR/packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py" --hook || exit 2'
+  ```
+
+  `$CLAUDE_PROJECT_DIR/packages/…` does not exist in a foreign repo. That hook *is* the
+  shared-environment guard (`POLICY_MESSAGE`, `protected_argv`, `validate_write_path`), so
+  an installed `sdd-coder` / `sdd-worker` would run there with no sandbox at all. C12's
+  extended `test_no_repo_script_refs` cannot catch it: the string contains neither
+  `scripts.sdd` nor `scripts/sdd`.
+- **Why this is not a plain C12 case**: the module already ships inside the wheel. What
+  breaks is how it is *addressed* — by filesystem path rather than by command. And the
+  path form is deliberate, not sloppy: `parrot/flows/dev_loop/__init__.py` eagerly imports
+  the dispatchers, the flow, the runner, the streaming layer and the Pydantic models, so
+  `python -m parrot.flows.dev_loop.worktree_environment` would drag the whole dev-loop
+  stack into **every** `PreToolUse` call. Running the file by path skips the parent
+  package — which is exactly why the module is stdlib-only (L7-16) and invoked this way.
+  Any fix must preserve that cost.
+- **Change** *(mechanism drafted with Claude, 2026-10-17 — confirm before TASK-4085 starts)*:
+  1. **Relocate to a light parent.** `git mv` the module to
+     `parrot/sdd/scripts/worktree_environment.py`;
+     `parrot/flows/dev_loop/worktree_environment.py` becomes a re-export shim so the three
+     in-core importers keep working unchanged (`dispatchers/claude.py:66`,
+     `dispatchers/llm.py:58`, `sdd_coder/background.py:49`). `parrot/sdd/__init__.py` and
+     `parrot/sdd/scripts/__init__.py` stay import-free — TASK-4085 already specifies the
+     latter as "docstring only, no imports" — so the module stays reachable without
+     importing anything else.
+  2. **PATH-resolved invocation with a fast path.** The hook becomes
+     `parrot sdd run worktree_environment --hook` (Q1's single form, so byte-equality
+     holds), and `parrot/launcher.py` gains an argv fast path for it — the same shape as
+     the `wikitoolkit claude-hook` fast path the spec already mandates (§7, spec:920-921):
+     the check happens before Click is imported, behind a single `is_managed()` call.
+     Without that fast path the guard pays launcher + Click on every Bash/Write/Edit.
+  3. **Stop deriving the command from `__file__`.** `dispatchers/claude.py:625` builds the
+     same hook string from `Path(worktree_environment.__file__).resolve()` for programmatic
+     `AgentDefinition`s; after (1) that would resolve to the shim. It emits the portable
+     command instead.
+  4. **Rewrite the two shipped frontmatters.** The `_subagent_data/` copies are already
+     retired by C2, so there is one copy of each to change.
+  5. **Widen C12's test.** `test_no_repo_script_refs` fails on **any** monorepo source path
+     in a shipped file — `packages/`, `scripts/`, `$CLAUDE_PROJECT_DIR/…` — not only
+     `scripts/sdd/*`. Historical `sdd/specs/` and `sdd/tasks/` stay excluded.
+  6. **Cover it in C3's proof.** `test_wheel_only_foreign_repo` exercises the hook itself,
+     not only the helper invocations in the installed markdown: a write that the policy
+     denies must still be denied in the foreign repo.
+- **Amends**: TASK-4085 (move + shim), TASK-4072 (launcher fast path), TASK-4089 (the two
+  frontmatters), TASK-4090 (widened test), TASK-4091 (C3 coverage).
+- **⚖️ Reverses**: C12's scope claim that `review_checkpoint` is the only offending
+  reference, and TASK-4089's *NOT in scope* clause that its substitution table "matches the
+  19 moved names only, by construction".
+  **Decision note (Jesus Lara, 2026-10-17)**: approved — `worktree_environment` enters
+  FEAT-633's scope.
+- **Open**: the latency budget for the fast path (a number for the `--hook` round trip) is
+  not fixed here; set it with TASK-4072.
+- **Done when**: no shipped file names a monorepo source path; the widened
+  `test_no_repo_script_refs` passes; and C3's foreign-repo test shows the guard denying a
+  shared-environment write with only `$PARROT_HOME/bin` on PATH.
+
 ### What's untouched (non-goals)
 - FEAT-633's core design: the launcher, managed venv, `parrot self`, `--portable`, the
   store gate and the wheel matrix.
@@ -622,6 +690,7 @@ the markers. What should happen in other repos?
   (TASK-4299) and are rewritten by TASK-4089; the other inline `python -c` blocks in
   `sdd-spec.md` (stdlib JSON edits, `jsonschema`, `reserve_ids.existing_feature_id`) still
   need a system `python` in a foreign repo — ledger `issue:cac5c029bd88`.
+  **Resolved 2026-10-15**: TASK-4334 (`scripts/sdd/spec_tools.py`) retired them; the issue is closed.
 - **C7 option A** (repo-supplied test-selection policy): deferred to v1.1, pending the
   §6 evidence step.
 - **Spike S1**: whether ai-parrot core installs without a compiler on macOS and Windows.
@@ -670,3 +739,4 @@ with fixture inputs. This corrects the earlier claim that `resolve_flow()` was a
 | 0.1 | 2026-10-14 | Arturo Martinez + Claude | Initial amendment proposal for FEAT-633 |
 | 0.2 | 2026-10-14 | Jesus Lara + Claude | All ⚖️ items, Q1 and C7 resolved; C6 reduced (no `CONFIG.md`, `test_command` added); branch-policy inventory updated (resolver omission corrected in 0.3), `KNOWN_BRANCHES` third copy, `lint_new`/`token_audit` not referenced by shipped files; Q1 resolution section added |
 | 0.3 | 2026-10-14 | Codex, requested by Jesus Lara | C14/C15 scope bootstrap doctor to runtime health; C6 includes existing `resolve_flow()` and fallback tests; C3 retains allowlisted system tools and supplies fixture arguments/state; repeated claims reconciled |
+| 0.4 | 2026-10-17 | Jesus Lara + Claude | C16 added: C12's sweep covered only `scripts/sdd` references and missed the shipped `sdd-coder`/`sdd-worker` hook, which addresses `worktree_environment.py` by monorepo source path; the module is relocated to `parrot/sdd/scripts/` with a re-export shim, invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, and `test_no_repo_script_refs` is widened to any monorepo source path |

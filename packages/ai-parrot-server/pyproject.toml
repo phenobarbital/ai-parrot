@@ -27,6 +27,12 @@ classifiers = [
 ]
 dependencies = [
     "ai-parrot",
+    # BotManager imports these unconditionally at module load:
+    # parrot.handlers.agents.data -> parrot.bots.data -> parrot_tools, and
+    # parrot.stores.parents.factory -> in_table -> sqlalchemy. Without them a
+    # bare `ai-parrot-server` install cannot start the HTTP server.
+    "ai-parrot-tools",
+    "sqlalchemy>=2.0",
     # Parquet dataset-part decoding for the infographic render endpoint
     # (FEAT-327) — dtype-preserving via pyarrow. Declared here (not
     # transitive through pandas) per the resolved brainstorm decision.
@@ -116,8 +122,10 @@ namespaces = true
 "parrot.mcp.transports" = ["*.proto"]
 # Embedded Admin UI (FEAT-468): built by release CI (Node 24 LTS + pnpm 9)
 # into src/parrot/server/ui/dist/ before `uv build`; never committed to git.
-# Globs are non-recursive per key — keep Vite's output flat (dist/*, dist/assets/*).
-"parrot.server.ui" = ["dist/*", "dist/assets/*"]
+# Globs are non-recursive per key — list every Vite output dir explicitly
+# (dist/* for index.html, dist/ui/assets/* for the hashed bundle; see
+# ui/vite.config.ts build.assetsDir).
+"parrot.server.ui" = ["dist/*", "dist/ui/assets/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -134,3 +142,4 @@ markers = [
 
 [tool.uv.sources]
 ai-parrot = { workspace = true }
+ai-parrot-tools = { workspace = true }

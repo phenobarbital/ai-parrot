@@ -356,27 +356,62 @@ def echo_push_report(report: IngestBatchReport, url: str) -> None:
 
 
 async def sync_push_remote(client: RemoteWikiClient, local: BaseWikiStore) -> dict[str, Any]:
-    """Send local memory pages and their asserted edges through ``wiki_sync_push``."""
+    """Send local memory pages and their asserted edges through ``wiki_sync_push``.
+
+    The push is chunked (200 pages / 1 MiB per call, the server's caps). Each edge
+    travels with the first chunk holding one of its endpoints, so the server's
+    "edge must touch a pushed page" filter accepts it. A page that alone exceeds the
+    byte budget is not sent and is listed under ``rejected``. Counts are summed over chunks.
+    """
     from parrot.knowledge.wiki.store import WikiPageRecord
     from parrot.knowledge.wiki.sync import _synced_memory_pages
+    from parrot.knowledge.wiki.tools import SYNC_PUSH_MAX_BYTES, SYNC_PUSH_MAX_PAGES
 
+    # Leave headroom for the JSON-RPC envelope: the server limit applies to the whole arguments.
+    chunk_budget = SYNC_PUSH_MAX_BYTES - 8192
     pages = [WikiPageRecord.model_validate(p) for p in await _synced_memory_pages(local)]
     ids = {p.concept_id for p in pages}
     # Edges touching a memory page are always asserted (same rule as sync._sync_edges).
-    edges = [
-        [e["src"], e["dst"], e["rel"], "asserted"]
-        for e in await local.dump_edges()
-        if e["src"] in ids or e["dst"] in ids
-    ]
+    edges_by_page: dict[str, list[list[str]]] = {}
+    for e in await local.dump_edges():
+        if e["src"] in ids or e["dst"] in ids:
+            owner = e["src"] if e["src"] in ids else e["dst"]
+            edges_by_page.setdefault(owner, []).append([e["src"], e["dst"], e["rel"], "asserted"])
+
+    def _size(obj: Any) -> int:
+        return len(json.dumps(obj).encode())
+
+    result: dict[str, Any] = {"created": 0, "updated": 0, "skipped_older": 0, "rejected": []}
+    chunks: list[tuple[list[dict[str, Any]], list[list[str]]]] = []
+    cur_pages: list[dict[str, Any]] = []
+    cur_edges: list[list[str]] = []
+    cur_bytes = 0
+    for page in pages:
+        dumped = page.model_dump(mode="json")
+        page_edges = edges_by_page.get(page.concept_id, [])
+        size = _size(dumped) + sum(_size(e) for e in page_edges)
+        if size > chunk_budget:
+            result["rejected"].append(page.concept_id)
+            continue
+        if cur_pages and (len(cur_pages) >= SYNC_PUSH_MAX_PAGES or cur_bytes + size > chunk_budget):
+            chunks.append((cur_pages, cur_edges))
+            cur_pages, cur_edges, cur_bytes = [], [], 0
+        cur_pages.append(dumped)
+        cur_edges.extend(page_edges)
+        cur_bytes += size
+    if cur_pages:
+        chunks.append((cur_pages, cur_edges))
+
     try:
         async with client:
-            envelope = await client.call_tool(
-                "wiki_sync_push",
-                {"pages": [p.model_dump(mode="json") for p in pages], "edges": edges},
-            )
-            return _tool_json(envelope)
+            for chunk_pages, chunk_edges in chunks:
+                envelope = await client.call_tool("wiki_sync_push", {"pages": chunk_pages, "edges": chunk_edges})
+                outcome = _tool_json(envelope)
+                for key in ("created", "updated", "skipped_older"):
+                    result[key] += int(outcome.get(key, 0))
     except RemoteWikiError as exc:
         raise RemoteCliError(str(exc)) from exc
+    return result
 
 
 class _PullStaging:

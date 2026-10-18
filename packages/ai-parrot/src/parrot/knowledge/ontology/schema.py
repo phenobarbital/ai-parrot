@@ -276,6 +276,7 @@ class TraversalPattern(BaseModel):
         description: Human-readable description of what this pattern does.
         trigger_intents: Keywords for fast-path matching.
         query_template: AQL with bind variables.
+        query_templates: Per-dialect query templates keyed by dialect name.
         post_action: What happens after graph traversal.
         post_query: Field name to use as vector query (for vector_search).
         entity_extraction: Named entity extraction rules (FEAT-158).
@@ -286,6 +287,7 @@ class TraversalPattern(BaseModel):
     description: str
     trigger_intents: list[str] = Field(default_factory=list)
     query_template: str
+    query_templates: dict[str, str] = Field(default_factory=dict)
     post_action: Literal["vector_search", "tool_call", "none"] = "none"
     post_query: str | None = None
     entity_extraction: dict[str, EntityExtractionRule] = Field(default_factory=dict)
@@ -555,9 +557,10 @@ class ResolvedIntent(BaseModel):
     Args:
         action: Whether the query needs graph traversal or vector-only.
         pattern: Name of the matched traversal pattern (if any).
-        aql: AQL query to execute (if graph_query).
-        params: Bind variables for the AQL query.
-        collection_binds: @@collection resolutions for AQL.
+        query: Query text to execute (if graph_query).
+        dialect: Query dialect of ``query`` (default ``aql``).
+        params: Bind variables for the query.
+        collection_binds: @@collection resolutions.
         post_action: What to do after graph traversal.
         post_query: Field to use as vector search query.
         source: How the intent was resolved.
@@ -568,7 +571,8 @@ class ResolvedIntent(BaseModel):
 
     action: Literal["graph_query", "vector_only"]
     pattern: str | None = None
-    aql: str | None = None
+    query: str | None = None
+    dialect: str = "aql"
     params: dict[str, Any] = Field(default_factory=dict)
     collection_binds: dict[str, str] = Field(default_factory=dict)
     post_action: str = "none"

@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 from navconfig import config
 
 if TYPE_CHECKING:
-    from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
+    from parrot_tools.wiki import LLMWikiToolkit
     from parrot.tools.obsidian import ObsidianToolkit
 
 logger = logging.getLogger(__name__)
@@ -107,7 +107,7 @@ async def build_gestoria_wiki(
 
         from parrot.knowledge.graphindex.factory import build_graph_memory_toolkit
         from parrot.knowledge.wiki.models import WikiConfig
-        from parrot.knowledge.wiki.toolkit import LLMWikiToolkit
+        from parrot_tools.wiki import LLMWikiToolkit
 
         pageindex_toolkit = _build_pageindex_toolkit(storage)
         graph_toolkit = await build_graph_memory_toolkit(

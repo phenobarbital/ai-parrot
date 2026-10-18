@@ -8,6 +8,9 @@ from typing import Mapping, Optional, Sequence
 from parrot_pipelines.planogram.contracts import Identification, Shape, Slot
 
 _PRICE = re.compile(r"(\d+)[.,](\d{2})")
+#: A price printed with superscript cents and read without a separator ("149999" = 1499.99). A "$" amount on a
+#: fact tag is the saving ("SAVE $200"), and a "%" number is a discount: neither is the price.
+_SUPERSCRIPT_PRICE = re.compile(r"(?<![\d$])(?<!\$ )(\d{1,4})(\d{2})(?![\d%])")
 
 
 def tag_text(tag: Shape, readings: Mapping[str, object], reads: Mapping[str, Identification]) -> Optional[str]:
@@ -36,6 +39,12 @@ def slot_above(tag: Shape, slots: Sequence[Slot]) -> Optional[Slot]:
 
 
 def tag_price(text: Optional[str]) -> Optional[float]:
-    """First ``12.99`` / ``12,99`` amount in a text, or None."""
+    """First ``12.99`` / ``12,99`` amount in a text, else the last superscript-cents run (``149999``); or None."""
     match = _PRICE.search(text or "")
-    return float(f"{match.group(1)}.{match.group(2)}") if match else None
+    if match:
+        return float(f"{match.group(1)}.{match.group(2)}")
+    runs = _SUPERSCRIPT_PRICE.findall(text or "")
+    if not runs:
+        return None
+    dollars, cents = runs[-1]
+    return float(f"{dollars}.{cents}")

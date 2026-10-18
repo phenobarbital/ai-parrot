@@ -39,6 +39,6 @@ describe("AppShell", () => {
     await Promise.resolve();
 
     expect(authStore.token).toBeNull();
-    expect(router.path).toBe("/admin/login");
+    expect(router.path).toBe("/login");
   });
 });

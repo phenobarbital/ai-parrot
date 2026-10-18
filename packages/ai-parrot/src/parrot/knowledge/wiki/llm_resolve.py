@@ -9,7 +9,9 @@ if TYPE_CHECKING:
 
 
 def _env_setting(name: str) -> str | None:
-    """Read a setting from navconfig (honours ``.env``), falling back to ``os.environ``.
+    """Read a setting: process environment first, then navconfig (honours ``.env``).
+
+    Uses ``resolve_setting`` (FEAT-540 M4 precedence: explicit -> env -> navconfig).
 
     Args:
         name: Setting name.
@@ -17,14 +19,9 @@ def _env_setting(name: str) -> str | None:
     Returns:
         The non-empty value, or ``None``.
     """
-    try:
-        from navconfig import config as _nav
+    from parrot.knowledge.wiki.project import resolve_setting
 
-        value = _nav.get(name, fallback=None)
-    except Exception:  # noqa: BLE001 — navconfig optional; env is enough
-        import os
-
-        value = os.environ.get(name)
+    value = resolve_setting(name)
     return value or None
 
 

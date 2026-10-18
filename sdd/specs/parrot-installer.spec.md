@@ -12,9 +12,12 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 **Author**: Jesus Lara (brainstorm + decisions); spec drafted with Claude
 **Status**: approved
 **Target version**: Next release (assigned by release tooling)
-**Revision**: 0.2 (2026-10-14) — folds in the approved amendments of
-`sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.3): C2–C6, C8–C15, Q1, C7.
-Amendment tags below (`[rev 0.2 C<n>]`) mark every changed clause.
+**Revision**: 0.3 (2026-10-17) — folds in C16 of
+`sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.4): `worktree_environment`
+enters scope (amends TASK-4085, 4072, 4089, 4090, 4091).
+**Revision 0.2** (2026-10-14) — folds in the approved amendments of the same proposal
+(rev 0.3): C2–C6, C8–C15, Q1, C7.
+Amendment tags below (`[rev 0.2 C<n>]`, `[rev 0.3 C16]`) mark every changed clause.
 
 > Source brainstorm: `sdd/proposals/parrot-installer.brainstorm.md` (accepted, Option B′,
 > all 16 open questions resolved). Supersedes `sdd/specs/portable-sdd-flow.spec.md`
@@ -194,7 +197,7 @@ parrot/launcher.py ── is_managed()? ──no──► direct call (today's b
 | `mcp/toolkit_install.py`, `cli/toolkits.py` | extends | offer `parrot self add` when `dist_available` is false |
 | `knowledge/wiki/store.py::SQLiteWikiStore` | modifies | backup + lock + min-runtime gate around existing `_maybe_migrate` |
 | `knowledge/wiki/project.py`, `knowledge/bookstore/config.py`, `cli/modes.py` | refactor | three `parrot_home()` copies delegate to `parrot.launcher` |
-| `flows/dev_loop/worktree_environment.py` | source template | `repository_paths`/`shared_environments` logic ported (not imported) into the launcher |
+| `flows/dev_loop/worktree_environment.py` | source template **+ relocated** *[rev 0.3 C16]* | `repository_paths`/`shared_environments` logic ported (not imported) into the launcher; the module itself moves to `parrot/sdd/scripts/` (light parent) and leaves a re-export shim behind |
 | `.github/workflows/release.yml` | modifies | core matrix: +macOS arm64, +linux aarch64, dedupe linux legs |
 | `.claude/` SDD assets + `scripts/sdd/*` | packaged | synced copies under `parrot/sdd/_assets/`; helpers migrate to `parrot.sdd.scripts` |
 
@@ -279,6 +282,10 @@ class ToolkitTemplate(BaseModel):
   `parrot` pulls Click and `bookstore` imports configuration at module load, so the
   wrappers must resolve first and import the real entry only on the final interpreter;
   the `wikitoolkit claude-hook` fast path must survive **after** a re-exec too (codex S1).
+  *[rev 0.3 C16]* The same fast-path shape covers
+  `parrot sdd run worktree_environment --hook`: it fires on every `PreToolUse` of an
+  `sdd-coder`/`sdd-worker` seat, so its argv check happens before Click is imported,
+  behind one `is_managed()` call. TASK-4072 fixes the latency budget.
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/launcher.py  (new; stdlib-only)
@@ -462,7 +469,12 @@ class ToolkitTemplate(BaseModel):
   `ensure_worktree`, `close_task`, `heal_orphans`, `check_task_state`, `select_tests`,
   `insight`, `doc_taxonomy`, `worktree_status`, `finalize_task`, `check_task_graph`,
   `backfill_taxonomy`, `migrate_index`, `id_ledger`, `check_id_collisions`,
-  `install_hooks`, + `__init__`) move to `parrot/sdd/scripts/`; ALL markdown (installed
+  `install_hooks`, + `__init__`) move to `parrot/sdd/scripts/`; *[rev 0.3 C16]* so does
+  `flows/dev_loop/worktree_environment.py` — not because it is unpackaged (it already
+  ships) but because the shipped `sdd-coder`/`sdd-worker` frontmatter addresses it by
+  monorepo path, and its current parent package `parrot.flows.dev_loop` imports the
+  whole dev-loop stack at module load, so `python -m` is not an option; it leaves a
+  re-export shim for its three in-core importers; ALL markdown (installed
   AND monorepo) references the single form `parrot sdd run <name>` so the
   byte-equality sync holds; `scripts/sdd/*.py` become thin wrappers (import + main) for
   direct-invocation compatibility; `close_task.sh`/`heal_orphans.sh` logic ports to
@@ -728,6 +740,10 @@ def linked_worktree_repo(tmp_path):
       a wheel-only managed install (C3 test); `scripts/sdd/` wrappers keep the monorepo's
       existing invocations working; `check_asset_sync.py` gates CI on `.claude/` ↔
       `_assets/` divergence AND on deny-listed or scanner-flagged content [rev 0.2 Q1/C3/C11].
+- [ ] *[rev 0.3 C16]* No shipped file names a monorepo source path (`packages/`,
+      `scripts/`, `$CLAUDE_PROJECT_DIR/…`) — `test_no_repo_script_refs` is widened past
+      C12's `scripts/sdd` sweep — and C3's foreign-repo test shows the shared-environment
+      guard denying a write with only `$PARROT_HOME/bin` on PATH.
 - [ ] *[rev 0.2 C4/C5]* Re-running `parrot sdd install` upgrades untouched files, keeps
       edited ones (warning; `--force` overrides), never touches files it did not write;
       `parrot sdd status` reports `missing|current|outdated|edited|foreign`; `--dry-run`
@@ -957,9 +973,11 @@ Anchors go stale between spec time and task time — `/sdd-task` MUST re-run the
   import `sdd_meta` are covered by the `sdd_meta` CLI (TASK-4299) and rewritten to
   `parrot sdd run sdd_meta …` (TASK-4089). Other inline blocks in `sdd-spec.md` (stdlib
   JSON/index edits, one `jsonschema` import, one `reserve_ids.existing_feature_id`) still
-  need a `python` on PATH in a foreign repo. TASK-4089 inventories them; ledger item
-  `issue:cac5c029bd88` (`feature_gap`, minor) tracks the follow-up port. C3's
-  wheel-only test enumerates `parrot sdd run` invocations only, so it does not cover them.
+  needed a `python` on PATH in a foreign repo. **Resolved 2026-10-15 by TASK-4334**
+  (`scripts/sdd/spec_tools.py`, promoted from ledger `issue:cac5c029bd88`, now closed): the
+  seven blocks call `python -m scripts.sdd.spec_tools <sub> …` on one line, TASK-4088 moves the
+  helper and TASK-4089 rule 5a rewrites the invocations like any other helper, so C3's
+  wheel-only test covers them through their `spec_tools` scenarios (TASK-4091).
 - **C6/C11 change ai-parrot's own command files** *[rev 0.2]*: byte-equality means the
   placeholders and the "base branch in `sdd/config.json`" wording land in `.claude/` too;
   ai-parrot's `sdd/config.json` must be committed in the same change or the monorepo's
@@ -1053,3 +1071,4 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-10-05 | Jesus Lara + Claude | Initial draft from accepted brainstorm (FEAT-633) |
 | 0.2 | 2026-10-14 | Jesus Lara + Claude | Amendments C2–C6, C8–C15, Q1, C7 folded in (proposal `parrot-installer-amendments` rev 0.3): `parrot sdd run`, install receipt, `--dry-run`, `sdd/config.json` + single branch policy (TASK-4298/4299), conventions seed, publication safety, canonical docs, bootstrap gate + `doctor --runtime-only`, SDD readiness checks; FEAT-583 stamp marked done |
+| 0.3 | 2026-10-17 | Jesus Lara + Claude | Amendment C16 folded in (proposal rev 0.4): `worktree_environment` enters scope — relocated to `parrot/sdd/scripts/` with a re-export shim, hook invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, `test_no_repo_script_refs` widened to any monorepo source path (amends TASK-4085, 4072, 4089, 4090, 4091) |

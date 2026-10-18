@@ -37,7 +37,7 @@ from parrot.knowledge.wiki.project import (
     sqlite_policy_from_config,
     wiki_write_lock,
 )
-from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, create_wiki_store
+from parrot.knowledge.wiki.store import BaseWikiStore, WikiPageRecord, create_wiki_store, wiki_backend_names
 
 logger = logging.getLogger("wikitoolkit.entity_cli")
 
@@ -255,7 +255,12 @@ def entity() -> None:
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 @click.option("--path", "path_", default=None, help="Repo root (default: auto-detect).")
 @click.option("--store", "store_opt", default=None, help="Write to this wiki store directory.")
-@click.option("--backend", "backend_opt", default=None, help="Backend (default: sqlite / WIKI_STORE_BACKEND).")
+@click.option(
+    "--backend",
+    "backend_opt",
+    default=None,
+    help=f"Backend ({', '.join(wiki_backend_names())}; default: sqlite / WIKI_STORE_BACKEND).",
+)
 def add_entity(
     type_: str,
     title: str,
@@ -371,7 +376,12 @@ def add_entity(
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON.")
 @click.option("--path", "path_", default=None, help="Repo root (default: auto-detect).")
 @click.option("--store", "store_opt", default=None, help="Read this pre-built wiki store directly.")
-@click.option("--backend", "backend_opt", default=None, help="Backend (default: sqlite / WIKI_STORE_BACKEND).")
+@click.option(
+    "--backend",
+    "backend_opt",
+    default=None,
+    help=f"Backend ({', '.join(wiki_backend_names())}; default: sqlite / WIKI_STORE_BACKEND).",
+)
 def list_entities(
     type_: str | None,
     status: str | None,
@@ -451,7 +461,12 @@ def _frontmatter_text(page: dict[str, Any]) -> tuple[str | None, str]:
 @click.option("--ns", "ns_opt", default=None, help="Only the local plane may be reindexed.")
 @click.option("--path", "path_", default=None, help="Repo root (default: auto-detect).")
 @click.option("--store", "store_opt", default=None, help="Reindex this wiki store directory.")
-@click.option("--backend", "backend_opt", default=None, help="Backend (default: sqlite / WIKI_STORE_BACKEND).")
+@click.option(
+    "--backend",
+    "backend_opt",
+    default=None,
+    help=f"Backend ({', '.join(wiki_backend_names())}; default: sqlite / WIKI_STORE_BACKEND).",
+)
 def reindex_entities(
     category: str | None,
     dry_run: bool,

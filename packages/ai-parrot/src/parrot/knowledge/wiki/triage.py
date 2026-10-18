@@ -7,7 +7,7 @@ document:
 - **Stage 0 (free)**: duplicate content / oversized / disallowed-suffix
   documents are rejected via :class:`~parrot.knowledge.wiki.sources.
   SourceCollectionManager` bookkeeping alone — **zero** LLM calls.
-- **Stage 1 (lightweight)**: :meth:`PageIndexLLMAdapter.ask_structured`
+- **Stage 1 (lightweight)**: :meth:`LLMCaller.ask_structured`
   produces a :class:`~parrot.knowledge.wiki.review.TriageOutput`. Novelty
   is then re-scored via :class:`NoveltyScorer` (grounding-backed, never
   LLM-self-assessed), and the composite is computed **in Python** from
@@ -28,7 +28,7 @@ Design notes:
   router constructor parameters, not charter fields (`CharterScope` only
   has include/exclude rules); (2) an optional `heavy_adapter` parameter
   supports the two distinct model tiers the cascade needs, since a single
-  `PageIndexLLMAdapter` is bound to one model at construction time.
+  `LLMCaller` is bound to one model at construction time.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import Literal
 
 from parrot.knowledge.graphindex.grounding import GroundingEvaluator
-from parrot.knowledge.pageindex.llm_adapter import PageIndexLLMAdapter
+from parrot.knowledge.graphindex.protocols import LLMCaller
 from parrot.knowledge.wiki.charter import Charter
 from parrot.knowledge.wiki.review import (
     Claim,
@@ -262,11 +262,11 @@ class IngestTriageRouter:
     def __init__(
         self,
         charter: Charter,
-        adapter: PageIndexLLMAdapter,
+        adapter: LLMCaller,
         sources: SourceCollectionManager,
         novelty_scorer: NoveltyScorer,
         *,
-        heavy_adapter: PageIndexLLMAdapter | None = None,
+        heavy_adapter: LLMCaller | None = None,
         max_size_bytes: int = DEFAULT_MAX_SIZE_BYTES,
         allowed_suffixes: frozenset[str] | None = None,
     ) -> None:

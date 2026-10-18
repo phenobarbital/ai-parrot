@@ -78,12 +78,15 @@ class TextMatcher:
         TextMatcher.check_text_match(
             required_text: str,
             visual_features: List[str],
-            match_type: str = "contains",      # "contains" | "regex" | "ngram" | "auto"
+            match_type: str = "contains",      # "exact" | "contains" | "regex" | "ngram" | "auto"
             case_sensitive: bool = False,
             confidence_threshold: float = 0.6, # used for "ngram"/"auto"
             ngram_range: Tuple[int, int] = (1, 3),
             min_token_len: int = 2,
         ) -> TextComplianceResult
+
+    "exact" requires the whole phrase on word boundaries (after normalization) and never falls back to
+    fuzzy matching; "contains" is a plain substring test of the normalized text.
     """
 
     @staticmethod
@@ -186,7 +189,17 @@ class TextMatcher:
                         return _result(True, 1.0, "regex", [raw])
                 return _result(False, 0.0, "regex", [])
 
-        # ----- 2) Contains (fast path)
+        # ----- 2) Exact: the whole phrase on word boundaries; never fuzzy
+        if match_type == "exact":
+            needle = req_norm_cs if case_sensitive else req_norm
+            if needle:
+                for raw in raw_features:
+                    haystack = cls._normalize(raw, keep_case=case_sensitive)
+                    if f" {needle} " in f" {haystack} ":
+                        return _result(True, 1.0, "exact", [needle])
+            return _result(False, 0.0, "exact", [])
+
+        # ----- 3) Contains (fast path)
         if match_type == "contains":
             needle = req_norm_cs if case_sensitive else req_norm
             for raw, norm in zip(raw_features, norm_features, strict=True):
@@ -195,7 +208,7 @@ class TextMatcher:
                     return _result(True, 1.0, "contains", [needle])
             return _result(False, 0.0, "contains", [])
 
-        # ----- 3) N-gram / Auto (n-gram + fuzzy + contains fallback)
+        # ----- 4) N-gram / Auto (n-gram + fuzzy + contains fallback)
         # quick exact-substring fallback (case-insensitive)
         for _raw, norm in zip(raw_features, norm_features, strict=True):
             if req_norm and req_norm in norm:

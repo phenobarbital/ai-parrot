@@ -8,11 +8,12 @@ every one of the eight action types must actually invoke its real
 still return ``False`` (never a silent ``True``).
 """
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from parrot_tools.scraping import executor as executor_module
 from parrot_tools.scraping.executor import execute_plan_steps
+from parrot_tools.scraping.models import ACTION_MAP
 from parrot_tools.scraping.plan import ScrapingPlan
 
 STUBBED = [
@@ -83,9 +84,13 @@ class TestStubClosure:
         ), "the stub warning message must not survive in _dispatch_step"
 
     async def test_unknown_action_returns_false(self, spy_driver):
-        # "hover" is registered in ACTION_MAP (so ScrapingStep.from_dict does
-        # not raise) but is not handled by _dispatch_step's if/elif chain,
-        # exercising the real "unknown to the dispatcher" else-branch.
-        plan = ScrapingPlan(url="http://x/", objective="t", steps=[{"action": "hover", "selector": "#x"}])
-        result = await execute_plan_steps(spy_driver, plan=plan)
-        assert not result.success or result.metadata.get("step_errors")
+        """An opcode outside the registered action map reaches the fallback."""
+        unsupported_opcode = "__unsupported_action__"
+        assert unsupported_opcode not in ACTION_MAP
+        step = MagicMock()
+        step.action = MagicMock()
+        step.action.get_action_type.return_value = unsupported_opcode
+
+        result = await executor_module._dispatch_step(spy_driver, step, "http://x/", 10, {})
+
+        assert result is False

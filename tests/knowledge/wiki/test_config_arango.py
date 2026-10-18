@@ -104,9 +104,17 @@ def _no_navconfig(monkeypatch: pytest.MonkeyPatch) -> None:
 class TestResolveArangoParams:
     """Credential resolution from ``ARANGODB_*`` (or custom-prefixed) env vars."""
 
-    def test_defaults_when_env_unset(self, monkeypatch: pytest.MonkeyPatch):
+    def test_missing_host_raises(self, monkeypatch: pytest.MonkeyPatch):
         _clear_env(monkeypatch)
         _no_navconfig(monkeypatch)
+        config = WikiProjectConfig(backend="arangodb", wiki_name="my-wiki")
+        with pytest.raises(ValueError, match="Missing required ArangoDB setting.*HOST"):
+            resolve_arango_params(config)
+
+    def test_defaults_with_host_set(self, monkeypatch: pytest.MonkeyPatch):
+        _clear_env(monkeypatch)
+        _no_navconfig(monkeypatch)
+        monkeypatch.setenv("ARANGODB_HOST", "127.0.0.1")
         config = WikiProjectConfig(backend="arangodb", wiki_name="my-wiki")
         params = resolve_arango_params(config)
         assert params == {
@@ -169,7 +177,7 @@ class TestResolveArangoParams:
     def test_navconfig_values_are_type_normalised(self, monkeypatch: pytest.MonkeyPatch):
         """navconfig can hand back non-strings; the params dict must not."""
         _clear_env(monkeypatch)
-        fake = _FakeNavConfig({"ARANGODB_PORT": 8530, "ARANGODB_PASSWORD": 12345})
+        fake = _FakeNavConfig({"ARANGODB_HOST": "arango.local", "ARANGODB_PORT": 8530, "ARANGODB_PASSWORD": 12345})
         monkeypatch.setattr("parrot.knowledge.wiki.project._navconfig", lambda: fake)
 
         params = resolve_arango_params(WikiProjectConfig(backend="arangodb", wiki_name="w"))
@@ -177,19 +185,33 @@ class TestResolveArangoParams:
         assert params["port"] == 8530 and isinstance(params["port"], int)
         assert params["password"] == "12345" and isinstance(params["password"], str)
 
-    def test_unimportable_navconfig_degrades_to_defaults(self, monkeypatch):
-        """This module is imported by the PreToolUse hook — a missing or
-        broken navconfig must never make it raise.
-
-        Exercises the REAL accessor: ``None`` in ``sys.modules`` makes
-        ``from navconfig import config`` raise, so nothing here is stubbed
-        out except the import itself.
+    def test_unimportable_navconfig_raises_when_host_unset(self, monkeypatch):
+        """With a broken navconfig AND no ``ARANGODB_HOST`` in the real
+        environment, the required-host guard must raise ``ValueError``
+        rather than silently falling back to loopback.
         """
         import sys
 
         import parrot.knowledge.wiki.project as project_mod
 
         _clear_env(monkeypatch)
+        monkeypatch.setitem(sys.modules, "navconfig", None)
+
+        assert project_mod._navconfig() is None
+
+        with pytest.raises(ValueError, match="Missing required ArangoDB setting.*HOST"):
+            resolve_arango_params(WikiProjectConfig(backend="arangodb", wiki_name="w"))
+
+    def test_unimportable_navconfig_degrades_when_host_in_env(self, monkeypatch):
+        """With a broken navconfig but ``ARANGODB_HOST`` exported, the
+        remaining params fall back to their built-in defaults.
+        """
+        import sys
+
+        import parrot.knowledge.wiki.project as project_mod
+
+        _clear_env(monkeypatch)
+        monkeypatch.setenv("ARANGODB_HOST", "127.0.0.1")
         monkeypatch.setitem(sys.modules, "navconfig", None)
 
         assert project_mod._navconfig() is None
@@ -210,7 +232,8 @@ class TestResolveArangoParams:
 
         assert params["host"] == "isolated.example.io"
 
-    def test_explicit_database_overrides_default(self):
+    def test_explicit_database_overrides_default(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("ARANGODB_HOST", "127.0.0.1")
         config = WikiProjectConfig(
             backend="arangodb", wiki_name="my-wiki", arango_database="shared_db"
         )

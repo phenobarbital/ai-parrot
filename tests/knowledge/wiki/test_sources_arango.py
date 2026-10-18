@@ -46,7 +46,7 @@ class TestSourceCollectionManagerArangoInit:
     def test_backend_accepted(self, tmp_path: Path, mock_arango_db):
         mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_db=mock_arango_db)
         assert mgr.backend == "arangodb"
-        assert mgr._arango_db is mock_arango_db
+        assert mgr._backend._backend._arango_db is mock_arango_db
 
     def test_arangodb_backend_requires_connection(self, tmp_path: Path):
         with pytest.raises(ValueError, match="requires either arango_db"):
@@ -208,20 +208,20 @@ class TestArangoQueryHelpers:
     @pytest.mark.asyncio
     async def test_arango_query_no_data_found_returns_empty(self, manager, mock_arango_db):
         mock_arango_db.query = AsyncMock(return_value=(None, "ArangoDB: No Data Found"))
-        result = await manager._arango_query("FOR doc IN @@collection RETURN doc", {})
+        result = await manager._backend._backend._query("FOR doc IN @@collection RETURN doc", {})
         assert result == []
 
     @pytest.mark.asyncio
     async def test_arango_query_raises_on_real_error(self, manager, mock_arango_db):
         mock_arango_db.query = AsyncMock(return_value=(None, "Connection refused"))
         with pytest.raises(RuntimeError):
-            await manager._arango_query("FOR doc IN @@collection RETURN doc", {})
+            await manager._backend._backend._query("FOR doc IN @@collection RETURN doc", {})
 
     @pytest.mark.asyncio
     async def test_arango_execute_raises_on_error(self, manager, mock_arango_db):
         mock_arango_db.execute = AsyncMock(return_value=(None, "Write failed"))
         with pytest.raises(RuntimeError):
-            await manager._arango_execute("REMOVE 'x' IN @@collection", {})
+            await manager._backend._backend._execute("REMOVE 'x' IN @@collection", {})
 
 
 class TestLazyArangoStoreConstruction:
@@ -234,8 +234,8 @@ class TestLazyArangoStoreConstruction:
     def test_arango_store_accepted(self, tmp_path: Path):
         fake_store = MagicMock()
         mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_store=fake_store)
-        assert mgr._arango_store is fake_store
-        assert mgr._arango_db is None
+        assert mgr._backend._backend._arango_store is fake_store
+        assert mgr._backend._backend._arango_db is None
 
     @pytest.mark.asyncio
     async def test_resolve_arango_db_initializes_lazily(self, tmp_path: Path):
@@ -243,7 +243,7 @@ class TestLazyArangoStoreConstruction:
         fake_store.initialize = AsyncMock()
         fake_store._db = "the-connection"
         mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_store=fake_store)
-        db = await mgr._resolve_arango_db()
+        db = await mgr._backend._backend._resolve_arango_db()
         fake_store.initialize.assert_awaited_once()
         assert db == "the-connection"
 
@@ -255,7 +255,7 @@ class TestLazyArangoStoreConstruction:
         fake_store.initialize = AsyncMock()
         fake_store._db = fake_db
         mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_store=fake_store)
-        result = await mgr._arango_query("FOR doc IN @@collection RETURN doc", {})
+        result = await mgr._backend._backend._query("FOR doc IN @@collection RETURN doc", {})
         assert result == ["row"]
         fake_store.initialize.assert_awaited_once()
 
@@ -277,11 +277,11 @@ class TestRunAsyncLoopAffinity:
     @pytest.mark.asyncio
     async def test_captures_running_loop_at_construction(self, tmp_path: Path):
         mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_db=MagicMock())
-        assert mgr._arango_loop is asyncio.get_running_loop()
+        assert mgr._backend._loop is asyncio.get_running_loop()
 
     def test_no_captured_loop_outside_any_running_loop(self, tmp_path: Path):
         mgr = SourceCollectionManager(tmp_path / "sources", backend="arangodb", arango_db=MagicMock())
-        assert mgr._arango_loop is None
+        assert mgr._backend._loop is None
 
     @pytest.mark.asyncio
     async def test_direct_call_on_same_loop_raises_instead_of_deadlocking(self, tmp_path: Path):

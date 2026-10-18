@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "feat_id": "FEAT-688",
+  "feat_id_provisional": false,
+  "phase": "committed",
+  "mode": "enrichment",
+  "started_at": "2026-10-15T17:33:00Z",
+  "updated_at": "2026-10-15T18:05:00Z",
+  "base_branch": "dev",
+  "type": "feature",
+  "wiki_available": true,
+  "source": {
+    "kind": "inline",
+    "jira_key": null,
+    "summary_oneline": "Subir google-genai e incorporar los modelos Gemini 4.x (Argon) en GoogleModel, retirando los deprecated",
+    "path": "sdd/state/FEAT-688/source.md"
+  },
+  "budget": {
+    "profile": "default",
+    "max_files_read": 40,
+    "max_grep_calls": 25,
+    "max_git_calls": 10,
+    "max_depth": 2,
+    "max_wall_seconds": 300
+  },
+  "consumed": {
+    "files_read": 9,
+    "grep_calls": 15,
+    "git_calls": 3,
+    "depth_reached": 2,
+    "wall_seconds": 240
+  },
+  "phases": {
+    "plan": {
+      "status": "complete",
+      "approved_by_user": true,
+      "queries_total": 14
+    },
+    "research": {
+      "status": "complete",
+      "queries_executed": 13,
+      "queries_failed": 1,
+      "truncated": false,
+      "truncation_reason": null,
+      "failure_note": "Q014 (external web research) failed: WebSearch and WebFetch both unavailable in this environment"
+    },
+    "synthesis": {
+      "status": "complete",
+      "overall_confidence": "medium",
+      "claims_high": 7,
+      "claims_medium": 1,
+      "claims_low": 3,
+      "unknowns": 5
+    },
+    "qa": {
+      "status": "partial",
+      "questions_total": 5,
+      "questions_answered": 3,
+      "resolved": [
+        "U2",
+        "U4",
+        "U5"
+      ],
+      "unresolved": [
+        "U1",
+        "U3"
+      ]
+    },
+    "output": {
+      "proposal_path": "sdd/proposals/gemini-upgrade.proposal.md",
+      "commit_sha": "ca140336e"
+    }
+  },
+  "resume_hint": {
+    "next_phase": "committed",
+    "next_action": "Answer U1 (Argon model ids + SDK floor) and U3 (prefix whitelist), then /sdd-spec FEAT-688"
+  },
+  "errors": []
+}

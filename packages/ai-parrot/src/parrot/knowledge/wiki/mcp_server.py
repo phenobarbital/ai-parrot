@@ -10,14 +10,14 @@ Problem Statement for why the Bash-invoked CLI alone was not enough).
 from __future__ import annotations
 
 import asyncio
+import argparse
 import contextlib
 import logging
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any, Literal
 
 from parrot.knowledge.wiki.project import (
     WikiConfigError,
@@ -26,12 +26,7 @@ from parrot.knowledge.wiki.project import (
     sqlite_policy_from_config,
 )
 from parrot.knowledge.wiki.store import create_wiki_store
-from parrot.knowledge.wiki.tools import create_wiki_tools
-
-if TYPE_CHECKING:
-    # Import only for the annotation below — the real (runtime) import is
-    # deferred inside create_wiki_mcp_server() itself, see its docstring.
-    from parrot.mcp.local_server import StdioMCPServer
+from parrot.knowledge.wiki.transport import OperationDescriptor, WikiOperationContext, build_operation_descriptors
 
 # Captured now, before create_wiki_mcp_server()/main() below ever import
 # parrot.mcp.* (lazily, on purpose) — parrot.mcp's package __init__ pulls
@@ -89,17 +84,64 @@ def _run_sync(coro: Any) -> Any:
         return pool.submit(asyncio.run, coro).result()
 
 
-@dataclass
 class WikiToolBundle:
-    """Everything a transport needs to register for one wiki (FEAT-569)."""
+    """Everything a transport needs to register for one wiki (FEAT-569).
 
-    tools: list[Any]
-    vault_tools: list[Any]
-    description: str
-    store: Any
-    read_store: Any
-    ledger_service: Any | None
-    namespace_handles: list[Any] = field(default_factory=list)
+    ``descriptors`` (and the stores) are built without any framework import.
+    The framework ``AbstractTool`` wrappers in ``tools`` / ``vault_tools`` are
+    built lazily from ``context`` on first access, so only the framework
+    transport pays for (or requires) ``parrot.tools`` / ``parrot_tools``.
+    """
+
+    def __init__(
+        self,
+        tools: list[Any] | None = None,
+        vault_tools: list[Any] | None = None,
+        description: str = "",
+        store: Any = None,
+        read_store: Any = None,
+        ledger_service: Any | None = None,
+        namespace_handles: list[Any] | None = None,
+        descriptors: list[OperationDescriptor] | None = None,
+        context: WikiOperationContext | None = None,
+    ) -> None:
+        self._tools = tools
+        self._vault_tools = vault_tools
+        self.description = description
+        self.store = store
+        self.read_store = read_store
+        self.ledger_service = ledger_service
+        self.namespace_handles = namespace_handles if namespace_handles is not None else []
+        self.descriptors = descriptors if descriptors is not None else []
+        self.context = context
+
+    def _ensure_framework_tools(self) -> None:
+        """Build the framework wrappers once, if they were not supplied."""
+        if self._tools is None or self._vault_tools is None:
+            if self.context is None:
+                self._tools, self._vault_tools = [], []
+            else:
+                self._tools, self._vault_tools = build_framework_tools(self.context)
+
+    @property
+    def tools(self) -> list[Any]:
+        """Framework ``AbstractTool`` wrappers for the mounted operations (lazy)."""
+        self._ensure_framework_tools()
+        return self._tools  # type: ignore[return-value]
+
+    @tools.setter
+    def tools(self, value: list[Any]) -> None:
+        self._tools = value
+
+    @property
+    def vault_tools(self) -> list[Any]:
+        """Obsidian vault management tools plus ``vault_ingest`` (lazy, framework only)."""
+        self._ensure_framework_tools()
+        return self._vault_tools  # type: ignore[return-value]
+
+    @vault_tools.setter
+    def vault_tools(self, value: list[Any]) -> None:
+        self._vault_tools = value
 
 
 async def abuild_wiki_tools(
@@ -255,16 +297,79 @@ async def abuild_wiki_tools(
 
     if handles or skipped:
         read_store = FederatedWikiStore(store, config.wiki_name, handles, skipped)
-    tools = create_wiki_tools(read_store, root=root, config=config, ledger_service=ledger_service)
+    # Descriptors are built from the operations registry and the stores/services
+    # above.  No framework wrapper (parrot.tools / parrot_tools) is imported
+    # here; those are built lazily by ``build_framework_tools`` for the
+    # framework transport only.
+    with contextlib.redirect_stdout(sys.stderr):
+        from parrot.knowledge.wiki.decisions.factory import make_decision_service_factory
+        from parrot.knowledge.wiki.project import resolve_vault_dir
+        from parrot.knowledge.wiki.structural.factory import make_structural_service_factory
+
+        vault = resolve_vault_dir(root, config)
+        context = WikiOperationContext(
+            store=store,
+            read_store=read_store,
+            root=root,
+            config=config,
+            ledger_service=ledger_service,
+            schema_service=schema_service,
+            structural_service_factory=make_structural_service_factory(
+                read_store, root, config, read_repair=read_repair
+            ),
+            decision_service_factory=make_decision_service_factory(read_store, root, config),
+            include_bulk_tools=include_bulk_tools,
+            vault_dir=vault,
+            read_repair=read_repair,
+        )
+
+    description = (
+        "Codebase knowledge graph — query, explore, remember, and look up "
+        "symbols (functions/classes/methods), outlines, and blast radius"
+    )
+    if handles:
+        names = ", ".join(sorted(h.name for h in handles))
+        description += f" — federating {len(handles)} namespace(s): {names}"
+    if vault is not None:
+        description += f" — plus Obsidian vault management for {vault.name!r}"
+
+    return WikiToolBundle(
+        description=description,
+        store=store,
+        read_store=read_store,
+        ledger_service=ledger_service,
+        namespace_handles=list(handles),
+        descriptors=build_operation_descriptors(context),
+        context=context,
+    )
+
+
+def build_framework_tools(context: WikiOperationContext) -> tuple[list[Any], list[Any]]:
+    """Build the framework ``AbstractTool`` wrappers for the framework transport.
+
+    Imports ``parrot_tools.wiki`` and ``parrot.tools``; the SDK transport never
+    calls this.
+
+    Args:
+        context: Transport-neutral operation context.
+
+    Returns:
+        ``(tools, vault_tools)``: the wiki/structural/bulk/decision/schema
+        tools, and the Obsidian toolkit tools plus ``vault_ingest`` (empty
+        when the project has no vault).
+    """
+    root, config, read_store, store = context.root, context.config, context.read_store, context.store
+    from parrot.knowledge.wiki.tools import create_wiki_tools
+
+    tools = create_wiki_tools(read_store, root=root, config=config, ledger_service=context.ledger_service)
 
     # FEAT-498: symbol-plane tools share the same federated read store.
     with contextlib.redirect_stdout(sys.stderr):
         from parrot.knowledge.wiki.structural import create_structural_tools
 
-        structural_tools = create_structural_tools(read_store, root, config, read_repair=read_repair)
-    tools = tools + structural_tools
+        tools = tools + create_structural_tools(read_store, root, config, read_repair=context.read_repair)
 
-    if include_bulk_tools:
+    if context.include_bulk_tools:
         from parrot.knowledge.wiki.tools import create_bulk_tools
 
         tools = tools + create_bulk_tools(store, root, config)
@@ -273,49 +378,26 @@ async def abuild_wiki_tools(
     with contextlib.redirect_stdout(sys.stderr):
         from parrot.knowledge.wiki.decisions import create_decision_tools
 
-        decision_tools = create_decision_tools(read_store, root, config)
-    tools = tools + decision_tools
+        tools = tools + create_decision_tools(read_store, root, config)
 
     # FEAT-600: schema-plane tools share read_store; [] when no plane is mounted (AC11).
     with contextlib.redirect_stdout(sys.stderr):
         from parrot.knowledge.wiki.schema.tools import create_schema_tools
 
-        schema_tools = create_schema_tools(read_store, root, config, schema_service)
-    tools = tools + schema_tools
+        tools = tools + create_schema_tools(read_store, root, config, context.schema_service)
 
-    # Obsidian vault exposure: when the project has a vault (explicit
-    # `vault_dir` in wiki.json, or the root itself is a vault), register
-    # the full ObsidianToolkit plus the wiki-side vault_ingest tool.
-    vault_tools = []
-    description = (
-        "Codebase knowledge graph — query, explore, remember, and look up "
-        "symbols (functions/classes/methods), outlines, and blast radius"
-    )
-    if handles:
-        names = ", ".join(sorted(h.name for h in handles))
-        description += f" — federating {len(handles)} namespace(s): {names}"
-    with contextlib.redirect_stdout(sys.stderr):
-        from parrot.knowledge.wiki.project import resolve_vault_dir
-
-        vault = resolve_vault_dir(root, config)
-        if vault is not None:
+    # Obsidian vault exposure: when the project has a vault, register the full
+    # ObsidianToolkit plus the wiki-side vault_ingest tool.
+    vault_tools: list[Any] = []
+    if context.vault_dir is not None:
+        with contextlib.redirect_stdout(sys.stderr):
             from parrot.knowledge.wiki.tools import VaultIngestTool
             from parrot.tools.obsidian import ObsidianToolkit
 
-            toolkit = ObsidianToolkit(vault_path=vault)
+            toolkit = ObsidianToolkit(vault_path=context.vault_dir)
             vault_tools = list(toolkit.get_tools_sync())
             vault_tools.append(VaultIngestTool(store, root=root, config=config))
-            description += f" — plus Obsidian vault management for {vault.name!r}"
-
-    return WikiToolBundle(
-        tools=tools,
-        vault_tools=vault_tools,
-        description=description,
-        store=store,
-        read_store=read_store,
-        ledger_service=ledger_service,
-        namespace_handles=list(handles),
-    )
+    return tools, vault_tools
 
 
 def build_wiki_tools(
@@ -370,56 +452,209 @@ async def close_bundle(bundle: WikiToolBundle) -> None:
             logging.getLogger(__name__).warning("close_bundle: %s", exc)
 
 
-def create_wiki_mcp_server(root: Path) -> StdioMCPServer:
-    """Build a `StdioMCPServer` with the six wiki tools registered.
+def to_sdk_server(descriptors: list[OperationDescriptor], *, name: str) -> Any:
+    """Build a low-level MCP SDK stdio server for operation descriptors.
+
+    Args:
+        descriptors: Transport-neutral operations to expose.
+        name: MCP server name.
+
+    Returns:
+        A lazily-imported MCP SDK server with a ``start`` coroutine.
+    """
+    from mcp import types
+    from mcp.server import Server
+    from mcp.server.stdio import stdio_server
+
+    server = Server(name)
+
+    @server.list_tools()
+    async def list_tools() -> list[Any]:
+        """Return descriptor schemas in the SDK's MCP shape."""
+        return [
+            types.Tool(
+                name=descriptor.name,
+                description=descriptor.description,
+                inputSchema=descriptor.input_model.model_json_schema(),
+            )
+            for descriptor in descriptors
+        ]
+
+    @server.call_tool()
+    async def call_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
+        """Execute one operation and serialize its neutral result."""
+        descriptor = next((item for item in descriptors if item.name == tool_name), None)
+        if descriptor is None:
+            return types.CallToolResult(
+                content=[types.TextContent(type="text", text=f"Tool not found: {tool_name}")], isError=True
+            )
+        try:
+            result = await descriptor.invoke(descriptor.input_model(**arguments))
+        except Exception as exc:  # noqa: BLE001 -- MCP failures are request-scoped
+            return types.CallToolResult(content=[types.TextContent(type="text", text=str(exc))], isError=True)
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=result.text)],
+            structuredContent=result.data,
+            isError=result.is_error,
+        )
+
+    async def start() -> None:
+        """Serve JSON-RPC over the SDK stdio transport."""
+        async with stdio_server() as (read_stream, write_stream):
+            await server.run(read_stream, write_stream, server.create_initialization_options())
+
+    server.start = start
+    return server
+
+
+def _import_framework_server() -> tuple[Any, Any]:
+    """Import the framework stdio server classes (the only auto-fallback trigger).
+
+    Returns:
+        ``(StdioMCPServer, LocalServerConfig)``.
+
+    Raises:
+        ImportError: When ``parrot.mcp`` is unavailable.
+    """
+    with contextlib.redirect_stdout(sys.stderr):
+        from parrot.mcp.local_server import StdioMCPServer
+        from parrot.mcp.server_base import LocalServerConfig
+    return StdioMCPServer, LocalServerConfig
+
+
+def _resolve_transport(transport: Literal["auto", "framework", "sdk"]) -> tuple[str, Any]:
+    """Pick the concrete transport, falling back to the SDK only for ``auto``.
+
+    Args:
+        transport: Requested transport.
+
+    Returns:
+        ``("sdk", None)`` or ``("framework", (StdioMCPServer, LocalServerConfig))``.
+
+    Raises:
+        ImportError: When ``framework`` is requested and ``parrot.mcp`` is unavailable.
+    """
+    if transport == "sdk":
+        return "sdk", None
+    try:
+        return "framework", _import_framework_server()
+    except ImportError as exc:
+        if transport != "auto":
+            raise
+        logging.getLogger(__name__).warning("framework MCP transport unavailable (%s); falling back to the SDK", exc)
+        return "sdk", None
+
+
+def create_wiki_mcp_server(root: Path, *, transport: Literal["auto", "framework", "sdk"] = "auto") -> Any:
+    """Build the wiki stdio MCP server on the selected transport.
 
     Args:
         root: Wiki project root (directory containing `.parrot/wiki.json`,
             or the nearest `.git` root — see `find_project_root()`).
+        transport: ``sdk`` builds from the operation descriptors with the MCP
+            SDK and imports no framework module; ``framework`` registers the
+            ``AbstractTool`` wrappers on ``StdioMCPServer``; ``auto`` prefers
+            the framework and falls back to the SDK only when ``parrot.mcp``
+            cannot be imported.
 
     Returns:
-        A core `StdioMCPServer` with all six wiki tools registered.
+        A framework or SDK MCP server with all mounted wiki operations.
     """
-    # Some parrot.mcp.* dependencies print raw diagnostic lines directly to
-    # stdout during import (not via logging — pre-existing navconfig
-    # settings-init side effect, not introduced here). Redirect stdout to
-    # stderr for the duration of the import only, so nothing can leak into
-    # the JSON-RPC channel this import is deferred specifically to protect.
-    with contextlib.redirect_stdout(sys.stderr):
-        from parrot.mcp.local_server import StdioMCPServer
-        from parrot.mcp.server_base import LocalServerConfig
-
     config = load_effective_config(root).config
     bundle = build_wiki_tools(root, config)
     _ensure_stderr_logging()
-    server = StdioMCPServer(
-        LocalServerConfig(
-            name="wikitoolkit",
-            version="1.0.0",
-            description=bundle.description,
-        )
-    )
-    server.register_tools(bundle.tools)
-    if bundle.vault_tools:
-        server.register_tools(bundle.vault_tools)
+    selected, framework = _resolve_transport(transport)
+    if selected == "sdk":
+        server = to_sdk_server(bundle.descriptors, name="wikitoolkit")
+    else:
+        stdio_server_cls, local_config_cls = framework
+        server = stdio_server_cls(local_config_cls(name="wikitoolkit", version="1.0.0", description=bundle.description))
+        # The framework path registers the wrapper tools (they keep their
+        # store handles); descriptors feed only the SDK transport.
+        server.register_tools(bundle.tools)
+        if bundle.vault_tools:
+            server.register_tools(bundle.vault_tools)
+    server.wiki_bundle = bundle
     return server
 
 
-def create_proxy_mcp_server(remote: Any) -> StdioMCPServer:
+def create_proxy_mcp_server(remote: Any, *, transport: Literal["auto", "framework", "sdk"] = "auto") -> Any:
     """Build a stdio server that forwards MCP requests to a remote wiki."""
-    with contextlib.redirect_stdout(sys.stderr):
-        from parrot.mcp.local_server import StdioMCPServer
-        from parrot.mcp.server_base import LocalServerConfig
     from parrot.knowledge.wiki.cli import _authoring_identity
     from parrot.knowledge.wiki.remote import RemoteWikiClient, RemoteWikiError
 
-    class ProxyStdioMCPServer(StdioMCPServer):
+    actor = remote.actor if remote.actor is not None else _authoring_identity(None)
+
+    def make_sdk_proxy() -> Any:
+        """Build the lazy SDK proxy without importing framework modules."""
+        from mcp import types
+        from mcp.server import Server
+        from mcp.server.stdio import stdio_server
+
+        server = Server("wikitoolkit")
+        client: Any | None = None
+        tools_cache: list[dict[str, Any]] | None = None
+
+        async def client_ready() -> Any:
+            nonlocal client
+            if client is None:
+                client = RemoteWikiClient(remote, actor=actor)
+                await client.initialize()
+            return client
+
+        @server.list_tools()
+        async def list_tools() -> list[Any]:
+            """Forward remote MCP tool definitions."""
+            nonlocal client, tools_cache
+            try:
+                if tools_cache is None:
+                    tools_cache = await (await client_ready()).list_tools()
+                return [types.Tool(**tool) for tool in tools_cache]
+            except RemoteWikiError:
+                client = None
+                raise
+
+        @server.call_tool()
+        async def call_tool(tool_name: str, arguments: dict[str, Any]) -> Any:
+            """Forward remote MCP calls preserving result envelopes."""
+            nonlocal client
+            try:
+                result = await (await client_ready()).call_tool(tool_name, arguments)
+            except RemoteWikiError as exc:
+                client = None
+                return types.CallToolResult(content=[types.TextContent(type="text", text=str(exc))], isError=True)
+            content = [
+                types.TextContent(type="text", text=item.get("text", ""))
+                for item in result.get("content", [])
+                if item.get("type") == "text"
+            ]
+            return types.CallToolResult(
+                content=content,
+                structuredContent=result.get("structuredContent"),
+                isError=result.get("isError", False),
+            )
+
+        async def start() -> None:
+            """Serve the SDK proxy over stdio."""
+            async with stdio_server() as (read_stream, write_stream):
+                await server.run(read_stream, write_stream, server.create_initialization_options())
+
+        server.start = start
+        return server
+
+    selected, framework = _resolve_transport(transport)
+    if selected == "sdk":
+        return make_sdk_proxy()
+
+    stdio_server_cls, local_config_cls = framework
+
+    class ProxyStdioMCPServer(stdio_server_cls):
         """Forwarding stdio server; remote failures remain request-scoped."""
 
-        def __init__(self, config: Any, remote_cfg: Any, actor: str) -> None:
+        def __init__(self, config: Any, remote_cfg: Any, proxy_actor: str) -> None:
             super().__init__(config)
             self._remote_cfg = remote_cfg
-            self._actor = actor
+            self._actor = proxy_actor
             self._client: Any | None = None
             self._tools_cache: list[dict[str, Any]] | None = None
 
@@ -450,9 +685,8 @@ def create_proxy_mcp_server(remote: Any) -> StdioMCPServer:
                 self._client = None
                 raise RuntimeError(str(exc)) from exc
 
-    actor = remote.actor if remote.actor is not None else _authoring_identity(None)
     return ProxyStdioMCPServer(
-        LocalServerConfig(
+        local_config_cls(
             name="wikitoolkit",
             version="1.0.0",
             description=f"remote proxy → {remote.url}",
@@ -469,6 +703,10 @@ def main() -> None:
     to stderr before anything else runs.
     """
     _ensure_stderr_logging()
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--transport", choices=("auto", "framework", "sdk"), default="auto")
+    args, _unknown = parser.parse_known_args()
 
     root = find_project_root(Path(_INVOCATION_CWD))
     if root is None:
@@ -488,7 +726,7 @@ def main() -> None:
 
     remote = resolve_remote(config)
     if remote is not None:
-        server = create_proxy_mcp_server(remote)
+        server = create_proxy_mcp_server(remote, transport=args.transport)
     else:
         if not config.is_built(root):
             print(
@@ -496,12 +734,17 @@ def main() -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
-        server = create_wiki_mcp_server(root)
+        server = create_wiki_mcp_server(root, transport=args.transport)
     # The lazy parrot.mcp.* import inside create_wiki_mcp_server() may have
     # re-attached a stdout handler (see _ensure_stderr_logging docstring) —
     # strip it again right before the stdin/stdout JSON-RPC loop starts.
     _ensure_stderr_logging()
-    asyncio.run(server.start())
+    try:
+        asyncio.run(server.start())
+    finally:
+        bundle = getattr(server, "wiki_bundle", None)
+        if bundle is not None:
+            _run_sync(close_bundle(bundle))
 
 
 if __name__ == "__main__":

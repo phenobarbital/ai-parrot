@@ -1,0 +1,16 @@
+.claude/commands/sdd-spec.md
+.claude/commands/sdd-done.md
+.claude/commands/sdd-task.md
+.claude/commands/sdd-fix.md
+.claude/commands/sdd-start.md
+.claude/agents/sdd-research.md
+packages/ai-parrot/src/parrot/flows/dev_loop/_subagent_data/sdd-research.md
+packages/ai-parrot/src/parrot/flows/dev_loop/nodes/development.py
+packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py
+scripts/sdd/sdd_meta.py
+scripts/sdd/ensure_worktree.py
+scripts/sdd/reserve_ids.py
+sdd/templates/task.md
+sdd/templates/spec.md
+.claude/rules/worktree-management.md
+docs/sdd/WORKFLOW.md

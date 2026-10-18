@@ -12,11 +12,15 @@ class ClaudeModel(Enum):
     # ── Claude 5 family (2026) ───────────────────────────────────────────────
     FABLE_5_1 = "claude-fable-5-1"  # latest Fable (5.1)
     FABLE_5 = "claude-fable-5"  # Fable 5.0
+    OPUS_5_5 = "claude-opus-5-5"  # latest Opus (5.5)
+    OPUS_5 = "claude-opus-5"  # Opus 5
+    SONNET_5_5 = "claude-sonnet-5-5"  # latest Sonnet (5.5)
     SONNET_5 = "claude-sonnet-5"  # Sonnet 5
+    HAIKU_5_5 = "claude-haiku-5-5"  # latest Haiku (5.5)
 
     # ── Claude Opus 4.7 / 4.8 (2026) ─────────────────────────────────────────
-    OPUS_4_8 = "claude-opus-4-8"  # alias → latest Opus 4.8 (current Opus)
-    OPUS_4_7 = "claude-opus-4-7"  # alias → latest Opus 4.7
+    OPUS_4_8 = "claude-opus-4-8"  # Opus 4.8
+    OPUS_4_7 = "claude-opus-4-7"  # Opus 4.7
 
     # ── Claude 4.6 (Feb 2026) ────────────────────────────────────────────────
     OPUS_4_6 = "claude-opus-4-6"  # alias → latest Opus 4.6

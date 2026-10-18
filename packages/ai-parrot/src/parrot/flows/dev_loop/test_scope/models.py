@@ -45,6 +45,8 @@ class ScopePlanModel(BaseModel):
     notes: list[str] = Field(default_factory=list)
     core_hits: list[CoreHitModel] = Field(default_factory=list)
     skipped_escalations: list[str] = Field(default_factory=list)
+    cap_hits: dict[str, list[str]] = Field(default_factory=dict)
+    cap_impacted: dict[str, str] = Field(default_factory=dict)
 
     @classmethod
     def from_plan(cls, plan: ScopePlan) -> "ScopePlanModel":
@@ -74,4 +76,6 @@ class ScopePlanModel(BaseModel):
                 for hit in plan.core_hits
             ],
             skipped_escalations=list(plan.skipped_escalations),
+            cap_hits={key: list(value) for key, value in plan.cap_hits.items()},
+            cap_impacted=dict(plan.cap_impacted),
         )

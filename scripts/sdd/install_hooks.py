@@ -30,6 +30,35 @@ def hooks_dir(repo_root: Path) -> Path:
     return path if path.is_absolute() else (repo_root / path).resolve()
 
 
+def primary_checkout(repo_root: Path) -> Path:
+    """Resolve the primary checkout of ``repo_root``'s repository.
+
+    The hooks directory is shared by every worktree of a repository, so the installed
+    block must ``cd`` into the *primary* checkout — not into whichever linked worktree
+    (or subdirectory) happened to run the installer. ``git rev-parse --git-common-dir``
+    always points at the primary checkout's ``.git``, so its parent is that checkout.
+    Falls back to ``repo_root`` resolved when git cannot answer.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (subprocess.CalledProcessError, OSError):
+        return repo_root.resolve()
+
+    if not out:
+        return repo_root.resolve()
+
+    common = Path(out)
+    if not common.is_absolute():
+        common = (repo_root / common).resolve()
+    return common.parent
+
+
 def render_block(python: str, repo_root: Path) -> str:
     """The marker-delimited shell block: primary checkout only; prune --daily --apply; never fails."""
     return (
@@ -121,8 +150,9 @@ def main(argv: list[str] | None = None) -> int:
     repo_root = args.repo_root.resolve()
     try:
         hooks = hooks_dir(repo_root)
-    except Exception:
-        # Fallback if git command fails or we are not in a git repo
+    except (subprocess.CalledProcessError, OSError):
+        # Expected when git is absent or this is not a git repo; anything else is a
+        # genuine bug and must surface instead of being masked by this fallback.
         hooks = repo_root / ".git" / "hooks"
 
     if not hooks.is_dir():
@@ -137,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         for p in uninstalled:
             print(f"Uninstalled prune hook from {p}")
     else:
-        block = render_block(sys.executable, repo_root)
+        block = render_block(sys.executable, primary_checkout(repo_root))
         installed = install(hooks, block)
         for p in installed:
             print(f"Installed prune hook to {p}")

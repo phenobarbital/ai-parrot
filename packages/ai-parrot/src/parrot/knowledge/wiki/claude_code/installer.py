@@ -899,7 +899,16 @@ def _shebang_is_sh_compatible(first_line: str) -> bool:
     return interpreter in _SH_FAMILY
 
 
-def _install_managed_git_hook(root: Path, hook_name: str, label: str) -> str:
+def _install_managed_git_hook(
+    root: Path,
+    hook_name: str,
+    label: str,
+    *,
+    block: str | None = None,
+    new_file: str | None = None,
+    begin_marker: str | None = None,
+    manual_hint: str | None = None,
+) -> str:
     """Install (or chain into) a managed git hook running the wiki upsert.
 
     Shared body for the ``post-commit`` (:func:`_install_git_hook`) and
@@ -917,18 +926,20 @@ def _install_managed_git_hook(root: Path, hook_name: str, label: str) -> str:
     hook_path = _git_hook_path(root, hook_name)
     if hook_path is None:
         return f"git {label} hook — skipped (not a git repository)"
-    block = assets.git_hook_block(root)
-    new_file = assets.git_hook_new_file(root)
+    block = block if block is not None else assets.git_hook_block(root)
+    new_file = new_file if new_file is not None else assets.git_hook_new_file(root)
+    begin_marker = begin_marker if begin_marker is not None else assets.GIT_HOOK_BEGIN
+    manual_hint = manual_hint if manual_hint is not None else "wikitoolkit upsert --changed --quiet"
     if hook_path.exists():
         text = hook_path.read_text(encoding="utf-8")
-        if assets.GIT_HOOK_BEGIN in text:
+        if begin_marker in text:
             return f"git {label} hook — already installed"
         first_line = text.splitlines()[0] if text.strip() else ""
         if not _shebang_is_sh_compatible(first_line):
             # Appending sh syntax to a python/node/csh hook would break it.
             return (
                 f"git {label} hook — skipped (existing hook is not a "
-                "shell script; add `wikitoolkit upsert --changed --quiet` "
+                f"shell script; add `{manual_hint}` "
                 "to it manually)"
             )
         if not text.endswith("\n"):
@@ -957,6 +968,46 @@ def _install_post_merge_hook(root: Path) -> str:
     branch), not just after each individual commit.
     """
     return _install_managed_git_hook(root, "post-merge", "post-merge")
+
+
+def _install_ledger_hooks(root: Path) -> list[str]:
+    """Install the ``parrot-ledger`` block on every event of :data:`assets.LEDGER_HOOK_EVENTS`."""
+    return [
+        _install_managed_git_hook(
+            root,
+            event,
+            f"{event} ledger",
+            block=assets.ledger_hook_block(root, event),
+            new_file=assets.ledger_hook_new_file(root, event),
+            begin_marker=assets.LEDGER_HOOK_BEGIN,
+            manual_hint=(
+                "wikitoolkit ledger export-log --stage --quiet"
+                if event == "pre-commit"
+                else "wikitoolkit ledger import-log --quiet"
+            ),
+        )
+        for event in assets.LEDGER_HOOK_EVENTS
+    ]
+
+
+def _uninstall_ledger_hooks(root: Path) -> list[str]:
+    """Strip the ``parrot-ledger`` block from each ledger hook; never touch other blocks."""
+    actions: list[str] = []
+    for event in assets.LEDGER_HOOK_EVENTS:
+        hook_path = _git_hook_path(root, event)
+        if hook_path is None or not hook_path.exists():
+            continue
+        text = hook_path.read_text(encoding="utf-8")
+        if assets.LEDGER_HOOK_BEGIN not in text:
+            continue
+        updated = _remove_marker_block(text, assets.LEDGER_HOOK_BEGIN, assets.LEDGER_HOOK_END)
+        if updated.strip() in {"", "#!/bin/sh"}:
+            hook_path.unlink()
+            actions.append(f"git {event} ledger hook — removed")
+        else:
+            hook_path.write_text(updated, encoding="utf-8")
+            actions.append(f"git {event} ledger hook — ledger block removed")
+    return actions
 
 
 def _install_gitignore(root: Path) -> str:
@@ -1059,6 +1110,7 @@ def install_claude_integration(
         commit_action = _install_git_hook(root)
         merge_action = _install_post_merge_hook(root)
         actions.append(f"{commit_action}; {merge_action}")
+        actions.append("; ".join(_install_ledger_hooks(root)))
     if gitignore:
         actions.append(_install_gitignore(root))
     if bookstore:
@@ -1198,6 +1250,8 @@ def uninstall_claude_integration(root: Path) -> list[str]:
             else:
                 hook_path.write_text(updated, encoding="utf-8")
                 actions.append("git post-commit hook — wiki block removed")
+
+    actions.extend(_uninstall_ledger_hooks(root))
 
     if not actions:
         actions.append("nothing to remove — integration not installed")

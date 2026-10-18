@@ -18,7 +18,7 @@ import os
 import re
 import tempfile
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -226,10 +226,9 @@ class WikiNamespaceConfig(BaseModel):
             "Backend for a `store`/`database` entry. Built-in values: "
             "'sqlite', 'memory', 'arangodb'. Also accepts a name "
             "registered via wiki/store.py's register_wiki_backend "
-            "(FEAT-449 M7) — not validated against the registry here "
-            "(core must not import a satellite package at validation "
-            "time); an unknown name surfaces as a ValueError when the "
-            "namespace is actually opened."
+            "(FEAT-449 M7). Validated against the wiki backend registry "
+            "when the config is loaded; an unknown name raises a "
+            "ValueError listing the registered backends."
         ),
     )
     database: str | None = Field(default=None, description="ArangoDB database name")
@@ -260,10 +259,12 @@ class WikiNamespaceConfig(BaseModel):
             raise ValueError(
                 "Exactly one of path / store / database / vault must be set " f"(got: {', '.join(present) or 'none'})"
             )
-        if self.database and self.backend in ("sqlite", "memory"):
+        if self.database and ("backend" not in self.model_fields_set or self.backend in ("sqlite", "memory")):
             # A `database` entry is ArangoDB by construction — UNLESS the
             # caller explicitly named a non-built-in (satellite-registered,
-            # FEAT-449 M7) backend, which survives untouched.
+            # FEAT-449 M7) backend, which survives untouched. A local kind
+            # (sqlite/memory, e.g. the CLI default) cannot open a `database`
+            # source, so it is coerced as well.
             object.__setattr__(self, "backend", "arangodb")
         return self
 
@@ -558,6 +559,18 @@ class WikiRemoteConfig(BaseModel):
         return value.rstrip("/")
 
 
+def _check_backend_name(value: str | None) -> str | None:
+    """Validate a backend name against the wiki backend registry (``None`` passes through)."""
+    if value is None:
+        return None
+    from parrot.knowledge.wiki.store import wiki_backend_names  # lazy: avoid import cycle
+
+    names = wiki_backend_names()
+    if value not in names:
+        raise ValueError(f"Unknown wiki storage backend {value!r} — expected one of {', '.join(map(repr, names))}")
+    return value
+
+
 class WikiProjectConfig(BaseModel):
     """Repository-level wiki configuration (``.parrot/wiki.json``).
 
@@ -602,7 +615,7 @@ class WikiProjectConfig(BaseModel):
 
     wiki_name: str = Field(default="codebase")
     storage_dir: str = Field(default=f"{PARROT_DIR}/wiki")
-    backend: Literal["sqlite", "memory", "arangodb"] = Field(default="sqlite")
+    backend: str = Field(default="sqlite")
     include_suffixes: list[str] = Field(default_factory=list)
     exclude_dirs: list[str] = Field(default_factory=list)
     body_max_chars: int = Field(default=16_000, ge=1_000)
@@ -771,21 +784,35 @@ class WikiProjectConfig(BaseModel):
         path = Path(self.inbox.markdown_dir)
         return path if path.is_absolute() else root / path
 
+    @field_validator("backend")
+    @classmethod
+    def _validate_backend(cls, value: str) -> str:
+        """Check ``backend`` against the wiki backend registry."""
+        return _check_backend_name(value)  # type: ignore[return-value]
+
     def is_built(self, root: Path) -> bool:
         """Whether the retrieval plane exists for this repo.
 
-        ``sqlite``/``memory`` are on-disk backends, so this is a cheap
-        local file/directory probe. ``arangodb`` is server-hosted — there
-        is no local artifact to check, and probing the server here would
-        turn a synchronous config check into a network round-trip. The
-        real "is it built" signal for ``arangodb`` is deferred to the
-        store's own (idempotent) ``initialize()`` connection, which
-        creates the database/collections/view on first use if missing.
+        Driven by the registered backend's ``kind``: an optional
+        ``is_built`` hook (lazy ``"module:attr"`` path, called as
+        ``hook(config, root)``) wins; ``server`` backends are hosted
+        remotely so there is no local artifact to probe (their store's
+        idempotent ``initialize()`` creates the plane on first use);
+        ``local`` backends probe the sqlite file or the markdown bundle.
         """
+        from parrot.knowledge.wiki.store import wiki_backend_spec  # lazy: avoid import cycle
+
+        spec = wiki_backend_spec(self.backend)
+        if spec.is_built:
+            import importlib
+
+            module_name, _, attr = spec.is_built.partition(":")
+            hook = getattr(importlib.import_module(module_name), attr)
+            return bool(hook(self, root))
+        if spec.kind == "server":
+            return True
         if self.backend == "sqlite":
             return self.db_path(root).exists()
-        if self.backend == "arangodb":
-            return True
         return (self.storage_path(root) / "pages").exists()
 
 
@@ -819,8 +846,44 @@ def _navconfig() -> Any | None:
     return nav_config
 
 
+def resolve_setting(
+    key: str,
+    *,
+    default: Any = None,
+    explicit: Any = None,
+    project_defaults: Mapping[str, Any] | None = None,
+) -> Any:
+    """Resolve a setting from explicit, environment, navconfig, project, and default values.
+
+    ``None`` means that a source does not provide the setting. Falsey values
+    such as ``False``, ``0``, and ``""`` are preserved. navconfig remains an
+    optional, lazy dependency; failures there are handled by :func:`_navconfig`.
+
+    Args:
+        key: Setting name to resolve.
+        default: Value returned when no source provides ``key``.
+        explicit: Explicit caller-supplied value.
+        project_defaults: Optional defaults already read by the caller.
+
+    Returns:
+        The first non-``None`` value in precedence order.
+    """
+    if explicit is not None:
+        return explicit
+    if key in os.environ:
+        return os.environ[key]
+    nav_config = _navconfig()
+    if nav_config is not None:
+        value = nav_config.get(key)
+        if value is not None:
+            return value
+    if project_defaults is not None and project_defaults.get(key) is not None:
+        return project_defaults[key]
+    return default
+
+
 def _env_credential(key: str, default: Any) -> Any:
-    """Resolve one credential key: ``os.environ``, then navconfig, then default.
+    """Resolve one credential key through :func:`resolve_setting`.
 
     ``os.environ`` wins so an explicit ``export`` (or a test's
     ``monkeypatch.setenv`` / ``delenv``) always overrides what the env
@@ -834,18 +897,7 @@ def _env_credential(key: str, default: Any) -> Any:
     Returns:
         The resolved value, or ``default``.
     """
-    value = os.environ.get(key)
-    if value is not None:
-        return value
-    nav_config = _navconfig()
-    if nav_config is not None:
-        # navconfig's `get` may return None for a missing key even with a
-        # fallback argument, so coalesce explicitly (same guard as
-        # graphindex/loader.py).
-        value = nav_config.get(key)
-        if value is not None:
-            return value
-    return default
+    return resolve_setting(key, default=default)
 
 
 def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
@@ -859,7 +911,8 @@ def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
 
     Each variable resolves through :func:`_env_credential`:
     ``os.environ`` first, then navconfig (which is what loads
-    ``env/.env``), then the built-in default.
+    ``env/.env``), then the built-in default. The host is required so a
+    missing setting never silently selects loopback.
 
     Args:
         config: Project config carrying the ArangoDB backend settings.
@@ -871,8 +924,11 @@ def resolve_arango_params(config: WikiProjectConfig) -> dict[str, Any]:
         field a ``str`` except the ``int`` port.
     """
     prefix = config.arango_credentials_env
+    host = _env_credential(f"{prefix}_HOST", None)
+    if host is None:
+        raise ValueError(f"Missing required ArangoDB setting: {prefix}_HOST")
     return {
-        "host": str(_env_credential(f"{prefix}_HOST", "127.0.0.1")),
+        "host": str(host),
         "port": int(_env_credential(f"{prefix}_PORT", 8529)),
         "protocol": str(_env_credential(f"{prefix}_PROTOCOL", "http")),
         "username": str(_env_credential(f"{prefix}_USERNAME", "root")),
@@ -1060,7 +1116,7 @@ class WikiEnvOverlay(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    backend: Literal["sqlite", "memory", "arangodb"] | None = None
+    backend: str | None = None
     storage_dir: str | None = None
     arango_database: str | None = None
     arango_credentials_env: str | None = None
@@ -1077,6 +1133,12 @@ class WikiEnvOverlay(BaseModel):
     remote: WikiRemoteConfig | None = None
     standup: StandupConfig | None = None
     inbox: InboxConfig | None = None
+
+    @field_validator("backend")
+    @classmethod
+    def _validate_backend(cls, value: str | None) -> str | None:
+        """Check ``backend`` against the wiki backend registry."""
+        return _check_backend_name(value)
 
     @field_validator("namespaces")
     @classmethod

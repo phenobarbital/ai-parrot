@@ -9,6 +9,7 @@ import pytest
 
 from parrot.bots.database import DatabaseAgent
 from parrot.bots.database.cache import CachePartition
+from parrot.knowledge.wiki.schema.models import SchemaPlaneConfig
 from parrot.knowledge.wiki.schema.service import SchemaPlaneService
 
 
@@ -61,3 +62,17 @@ async def test_no_plane_leaves_partition_unconfigured(fake_postgres_toolkit):
     assert partition.plane_write is False
     assert partition.origin is None
     assert partition.dialect is None
+
+
+@pytest.mark.parametrize(
+    "bad_plane",
+    [
+        SchemaPlaneConfig(),
+        object(),
+    ],
+    ids=["schema-plane-config", "plain-object"],
+)
+def test_unsupported_plane_raises_type_error(bad_plane, fake_postgres_toolkit):
+    """A value without the SchemaPlaneReader surface is rejected at construction."""
+    with pytest.raises(TypeError, match="schema_plane must be"):
+        DatabaseAgent(toolkits=[fake_postgres_toolkit], schema_plane=bad_plane)

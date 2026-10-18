@@ -285,14 +285,16 @@ def patch_shared_skill_registry(monkeypatch, fake_skill_registry):
 
 @pytest.fixture(autouse=True)
 def patch_vault_keys(monkeypatch):
+    """Point BYOK at a real in-memory vault ``KeyRing`` (FEAT-099 seam: ``get_vault_keyring``)."""
     try:
-        import navigator_session.vault.config as vault_config_module
+        from navigator_session.vault import KeyRing
     except ImportError:
         pytest.skip("navigator_session.vault not installed")
-    monkeypatch.setattr(vault_config_module, "load_master_keys", lambda: MASTER_KEYS)
-    monkeypatch.setattr(vault_config_module, "get_active_key_id", lambda: MASTER_KEY_ID)
-    monkeypatch.setattr(byok_module, "load_master_keys", lambda: MASTER_KEYS, raising=False)
-    monkeypatch.setattr(byok_module, "get_active_key_id", lambda: MASTER_KEY_ID, raising=False)
+    import parrot.security.vault_utils as vault_utils_module
+
+    keyring = KeyRing(MASTER_KEYS, MASTER_KEY_ID)
+    monkeypatch.setattr(vault_utils_module, "get_vault_keyring", lambda: keyring)
+    monkeypatch.setattr(byok_module, "get_vault_keyring", lambda: keyring)
 
 
 @pytest.fixture
@@ -435,13 +437,14 @@ class _FakeSessionCtx:
 
 
 class _FakeAskBot:
-    def __init__(self):
+    def __init__(self, name: str = "loop-agent"):
+        self.name = name
         self.ask_calls: list[str] = []
 
     def session(self, request=None, app=None, **kwargs):
         return _FakeSessionCtx(self)
 
-    async def ask(self, question: str):
+    async def ask(self, question: str, **kwargs):
         self.ask_calls.append(question)
         return SimpleNamespace(content="mocked answer", metadata={})
 

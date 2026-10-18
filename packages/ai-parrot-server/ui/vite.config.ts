@@ -39,15 +39,18 @@ function agentchatDefines(env: Record<string, string>): Record<string, string> {
   return defines;
 }
 
-// TASK-2525: standalone Vite + Svelte 5 SPA (NOT SvelteKit). The Admin UI
-// is served from the aiohttp backend at /admin (see
-// parrot/server/ui/serving.py), hence base: '/admin/'.
+// TASK-2525: standalone Vite + Svelte 5 SPA (NOT SvelteKit). The SPA is
+// served from the aiohttp backend at the site root — end-user pages at
+// /login and /agents/*, administration under /admin/* (see
+// parrot/server/ui/serving.py), hence base: '/'. Built assets are emitted
+// under dist/ui/assets/ and referenced as /ui/assets/* so they never collide
+// with an application route (serving.py mounts exactly that prefix).
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, __dirname, '');
   const apiUrl = env.PUBLIC_API_URL || 'http://localhost:5000';
 
   return {
-    base: '/admin/',
+    base: '/',
     // Vite only exposes vars matching `envPrefix` to client code via
     // `import.meta.env` (default: just `VITE_`). `src/lib/config.ts` reads
     // `PUBLIC_API_URL` / `PUBLIC_API_WITH_CREDENTIALS` straight off
@@ -72,7 +75,7 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: path.resolve(__dirname, '../src/parrot/server/ui/dist'),
       emptyOutDir: true,
-      assetsDir: 'assets',
+      assetsDir: 'ui/assets',
     },
     server: {
       proxy: {

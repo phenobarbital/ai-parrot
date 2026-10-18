@@ -59,7 +59,13 @@ from parrot.flows.dev_loop.nodes.base import (
     register_dev_loop_node,
     transition_issue_with_candidates,
 )
-from parrot.flows.dev_loop.task_scheduler import TaskRef, TaskScheduler
+from parrot.flows.dev_loop.task_scheduler import (
+    TaskRef,
+    TaskScheduler,
+    is_exclusive_batch,
+    parallel_width,
+    partition_wave,
+)
 from parrot.flows.dev_loop.worktree_manager import SubWorktreeManager
 
 #: The spec header line ``/sdd-spec`` writes, e.g. ``**Status**: draft``.
@@ -94,8 +100,6 @@ def should_fan_out(wave: List[TaskRef], pool_cfg: DevAgentPoolConfig) -> bool:
         the pool has more than one effective worker slot — i.e. fanning
         out could actually run tasks in parallel.
     """
-    from parrot.flows.dev_loop.task_scheduler import parallel_width
-
     return parallel_width(wave) >= 2 and sum(spec.count for spec in pool_cfg.agents) > 1
 
 
@@ -1337,6 +1341,25 @@ class DevelopmentNode(DevLoopNode):
                 return data.get("feature") or path.stem
         return None
 
+    @staticmethod
+    def _contained_index_path(worktree_path: str, index_path: str) -> Optional[Path]:
+        """Resolve ``index_path`` against the worktree; ``None`` when it escapes it.
+
+        Args:
+            worktree_path: The run's worktree root.
+            index_path: Repo-relative index path reported by sdd-research.
+
+        Returns:
+            The absolute path, or ``None`` for an absolute or worktree-escaping path.
+        """
+        if Path(index_path).is_absolute():
+            return None
+        root = Path(worktree_path).resolve()
+        candidate = (root / index_path).resolve()
+        if candidate == root or root in candidate.parents:
+            return candidate
+        return None
+
     async def _build_scheduler(self, research: ResearchOutput) -> Optional[TaskScheduler]:
         """Resolve the per-spec index and build a :class:`TaskScheduler`.
 
@@ -1355,6 +1378,16 @@ class DevelopmentNode(DevLoopNode):
         """
         # Index discovery + parsing are small local filesystem reads; keep
         # them off the event loop to honour the async-first rule.
+        if research.index_path:
+            explicit = await asyncio.to_thread(self._contained_index_path, research.worktree_path, research.index_path)
+            if explicit is not None:
+                return await asyncio.to_thread(TaskScheduler.from_index_file, explicit)
+            self.logger.warning(
+                "Ignoring index_path %r: it does not resolve inside worktree %s; "
+                "falling back to the per-spec index scan.",
+                research.index_path,
+                research.worktree_path,
+            )
         feature_slug = await asyncio.to_thread(self._find_feature_slug, research.worktree_path, research.feat_id)
         if feature_slug is None:
             return None
@@ -1385,8 +1418,6 @@ class DevelopmentNode(DevLoopNode):
             SubWorktreeMergeError: Unresolvable merge conflict in 'isolated' mode.
             RuntimeError: Every dispatchable task ended up incomplete.
         """
-        from parrot.flows.dev_loop.task_scheduler import partition_wave
-
         pool = DevAgentPool.build(pool_cfg, self._dispatcher_builder, self._pool_max)
         self._propagate_usage_wiring(pool)
         # FEAT-486 (spec G4): make the deployment visible. `DevAgentPool.
@@ -1492,7 +1523,7 @@ class DevelopmentNode(DevLoopNode):
 
                 batch = batches[0]
                 wave_number += 1
-                is_exclusive = len(batch) == 1 and not batch[0].parallel
+                is_exclusive = is_exclusive_batch(batch)
 
                 # Log exclusive rounds differently
                 if is_exclusive:
@@ -1569,7 +1600,7 @@ class DevelopmentNode(DevLoopNode):
                         len(scheduler.skipped()),
                     )
 
-                # For exclusive rounds, merge and refresh before the next batch
+                # In isolated mode, merge and refresh after every round (exclusive or not)
                 if manager is not None:
                     await manager.merge_sequential(resolver=_resolver)
                     merged_any = True

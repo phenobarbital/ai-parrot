@@ -4,6 +4,7 @@
 .PHONY: venv install install-core install-tools install-loaders install-codex-sdk-editable \
 		develop develop-fast develop-ml setup dev release format lint test clean distclean lock sync \
 		generate-registry check-registry build-codec-rs build-navrules-rs build-rust build-server-ui \
+		run-server serve-gunicorn \
 		install-go install-whatsapp-bridge build-whatsapp-bridge \
 		run-whatsapp-bridge docker-whatsapp-bridge install-tesseract install-gvisor \
 		install-supertonic install-obscura injection-model docker-tool-worker docker-integrations docker-dev \
@@ -494,7 +495,7 @@ build-rust: build-codec-rs build-navrules-rs
 # FEAT-468: build the embedded Admin UI (Node 24 LTS + pnpm 9) BEFORE
 # `uv build --package ai-parrot-server`. `packages/ai-parrot-server/src/
 # parrot/server/ui/dist/` is gitignored — the pyproject.toml package-data
-# glob ("parrot.server.ui" = ["dist/*", "dist/assets/*"], TASK-2523) only
+# glob ("parrot.server.ui" = ["dist/*", "dist/ui/assets/*"], TASK-2523) only
 # picks up files that already exist there at build time, so skipping this
 # step silently ships a wheel with NO Admin UI. Fails loudly (via `test -f`)
 # rather than falling through to a UI-less wheel.
@@ -510,6 +511,19 @@ build-server-ui:
 	@test -f packages/ai-parrot-server/src/parrot/server/ui/dist/index.html || \
 		{ echo "❌ Admin UI build did not produce dist/index.html — aborting."; exit 1; }
 	@echo "✅ Admin UI built: packages/ai-parrot-server/src/parrot/server/ui/dist/"
+
+# Start the server (API + web UI at http://localhost:5000/) with Navigator's
+# runner. Builds the web UI first when dist/ is missing.
+SERVER_UI_INDEX := packages/ai-parrot-server/src/parrot/server/ui/dist/index.html
+run-server:
+	@test -f $(SERVER_UI_INDEX) || $(MAKE) build-server-ui
+	. .venv/bin/activate && python run.py
+
+# Same app under gunicorn (aiohttp worker); see deploy/gunicorn.conf.py for
+# the APP_PORT / WEB_CONCURRENCY / PARROT_BIND overrides.
+serve-gunicorn:
+	@test -f $(SERVER_UI_INDEX) || $(MAKE) build-server-ui
+	. .venv/bin/activate && gunicorn --config deploy/gunicorn.conf.py "run:create_app()"
 
 # Full build using uv (builds all workspace packages)
 build: clean

@@ -13,7 +13,7 @@ from jinja2.sandbox import ImmutableSandboxedEnvironment
 from ...core.types import FieldType
 from ...core.voice import FieldVoiceMeta, VoiceFormConfig
 from ..models import AudioQuestion, NarrationPlan, ReviewItemData
-from .lexicon import locale_chain
+from .lexicon import locale_chain, locale_document_path
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -111,9 +111,10 @@ class Narrator:
     def __init__(self, locale: str, *, templates_dir: Path | None = None) -> None:
         """Load ``<locale>/narration.yaml`` with fallback ``es-MX → es → en``.
 
-        Raises:
-            ValueError: when a locale candidate resolves outside the templates
-                directory (mirrors ``lexicon.load_locale_document``).
+        Locale directories are selected by name from a listing of the templates
+        root (``lexicon.locale_document_path``), so a candidate that is not an
+        installed locale is simply skipped — it never becomes a path component
+        (mirrors ``lexicon.load_locale_document``).
         """
         self.logger = logging.getLogger(__name__)
         self.locale = locale
@@ -122,10 +123,8 @@ class Narrator:
         self._templates: dict[str, str] = {}
         base = self._dir.resolve()
         for loc in reversed(locale_chain(locale)):  # en first, most specific last wins
-            path = (base / loc / "narration.yaml").resolve()
-            if not path.is_relative_to(base):
-                raise ValueError(f"Locale {locale!r} resolves outside templates directory")
-            if not path.is_file():
+            path = locale_document_path(base, loc)
+            if path is None:
                 continue
             data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             self._templates.update(data.get("templates") or {})

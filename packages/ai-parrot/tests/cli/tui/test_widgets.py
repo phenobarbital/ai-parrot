@@ -24,6 +24,17 @@ class _Harness(App[None]):
         yield StatusBar(id="status")
 
 
+class _SubmitHarness(_Harness):
+    """Harness that records ``Composer.Submitted`` through a normal Textual handler."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.posted: List[Composer.Submitted] = []
+
+    def on_composer_submitted(self, message: Composer.Submitted) -> None:
+        self.posted.append(message)
+
+
 def _started(turn_id: str = "t1", query: str = "hi") -> TurnStarted:
     return TurnStarted(kind=TurnEventKind.STARTED, turn_id=turn_id, seq=0, query=query, streaming=True)
 
@@ -75,11 +86,10 @@ async def test_tool_rows_only_from_tool_started():
 
 @pytest.mark.asyncio
 async def test_composer_enter_submits_and_ctrl_j_newline():
-    app = _Harness()
+    app = _SubmitHarness()
     async with app.run_test() as pilot:
         composer = app.query_one("#composer", Composer)
-        posted: List[Composer.Submitted] = []
-        composer.post_message = lambda message: posted.append(message)  # type: ignore[method-assign]
+        posted = app.posted
         composer.focus()
         await pilot.pause()
 

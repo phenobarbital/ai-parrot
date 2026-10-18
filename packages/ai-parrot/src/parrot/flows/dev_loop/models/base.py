@@ -408,6 +408,16 @@ class ResearchOutput(BaseModel):
         ),
         validation_alias=AliasChoices("base_branch", "base"),
     )
+    index_path: str = Field(
+        default="",
+        description=(
+            "Explicit task-index path inside the worktree, e.g. "
+            "'sdd/briefs/<slug>.index.json' for a FEAT-698 brief run. '' means "
+            "no explicit index: DevelopmentNode falls back to the per-spec index "
+            "scan keyed by feat_id."
+        ),
+        validation_alias=AliasChoices("index_path", "index"),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────

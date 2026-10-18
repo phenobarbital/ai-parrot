@@ -1,0 +1,85 @@
+**Option A** — persistent per-repo clone, CLI build as a subprocess, per-repo
+serialization, read side wired through the existing toolkits.
+
+Why, concretely:
+
+- It is the only option where **no existing code changes shape**. `clone_repo`
+  already does the cloning *and* the idempotent refresh; `--path` already makes
+  every wikitoolkit command root-agnostic; `CodeStructuralToolkit`,
+  `LLMWikiToolkit` and the `DevLoopWikiSearch` pattern already accept an
+  explicit root. The feature is wiring plus configuration, which is the right
+  size for a capability whose value is still unproven in production.
+- Against **B**: the incremental machinery is the whole economic argument. A
+  reviewer that rebuilds from scratch on every webhook delivery puts a
+  repository-size-dependent cost directly in the latency path, and gains
+  isolation we can get more cheaply with one lock.
+- Against **C**: extracting `build_wiki()` is the better *engineering* outcome
+  and should happen — but it is a wikitoolkit-core refactor with a much larger
+  blast radius than a reviewer enrichment, and bundling it here means the
+  reviewer feature inherits its review bar and its risk. Split it: ship A, and
+  file the extraction as its own feature. The subprocess boundary is a seam we
+  can replace later without touching the reviewer's own logic.
+- Against **D**: it is the right architecture at N repositories and M reader
+  processes, and the wrong one at 1 and 1. Option A's cache layout (one
+  directory per `owner-repo`, absolute `storage_dir`) is deliberately
+  compatible with D, so the sidecar can take over later by pointing at the same
+  planes.
+
+**What we are trading off, explicitly:** (1) the server process must be able to
+resolve the `wikitoolkit` console script, which couples the deployment to the
+venv layout; (2) disk grows with the number and size of watched repositories,
+and nothing in this feature reclaims it; (3) the graph reflects the **base
+branch**, so a symbol the PR itself introduces is absent from it — the reviewer
+must be told so in its prompt, or it will confidently report a new function as
+nonexistent. That last one is the sharpest edge of this design and belongs in
+the spec's acceptance criteria, not in a footnote.
+
+---
+
+--- Recommended Option body ---
+
+### Option A: Persistent per-repo clone + CLI build, orchestrated by the agent
+
+The reviewer owns a cache directory. On `post_configure()` it schedules a
+background warm-up task: `GitToolkit.clone_repo(GITHUB_REVIEW_REPOSITORY,
+dest_dir=<cache>/<owner>-<repo>, private=True)` followed by
+`wikitoolkit build --path <clone>` as a subprocess, with `storage_dir` pointed
+at an absolute directory outside the clone. On every PR event the same pair
+runs again — `clone_repo` detects an existing clone and delegates to
+`pull_repo` (fast-forward), and `build` re-ingests only stale files — guarded
+by a per-repository `asyncio.Lock`. The resulting root is then handed to
+`CodeStructuralToolkit(root=...)` and `LLMWikiToolkit`, attached through the
+existing `_attach_toolkit()` (`github_reviewer.py:568`), plus a ranked-context
+block spliced into the question built by `_ask_llm_for_review()`
+(`github_reviewer.py:1031`).
+
+✅ **Pros:**
+- Nothing in wikitoolkit core changes; `--path` already exists for every command.
+- Second and later PRs are cheap: `pull` + incremental ingest, no re-clone, no re-scan.
+- Failure is naturally local — a non-zero exit code degrades the review, nothing else.
+- Reviewer stays a single process; no new service to operate.
+
+❌ **Cons:**
+- Depends on `wikitoolkit` being resolvable on the server process's PATH/venv.
+- Subprocess error handling is exit-code granularity; stdout is unstructured
+  (and the navconfig banner pollutes it — see Open Questions).
+- Keeps a working copy of every watched repository on the server's disk
+  (retention/GC is an operational concern).
+- First warm-up on a large repository is a multi-minute scan.
+
+📊 **Effort:** Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| `wikitoolkit` (console script) | Build the graph over the clone | Ships in core: `parrot.knowledge.wiki.entry:main` (`pyproject.toml:204`) |
+| `git` / `gh` CLI | Clone / fast-forward | Already required by `clone_repo`; `gh` optional, preferred for private repos |
+| `asyncio` (stdlib) | Per-repo serialization + background warm-up | No new dependency |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot-tools/src/parrot_tools/gittoolkit.py:1590` — `clone_repo()`, idempotent, token-scrubbed.
+- `packages/ai-parrot-tools/src/parrot_tools/gittoolkit.py:1653` — `pull_repo()`, fast-forward only.
+- `packages/ai-parrot/src/parrot/knowledge/wiki/structural/toolkit.py:44` — `CodeStructuralToolkit(root=...)`.
+- `packages/ai-parrot/src/parrot/knowledge/wiki/toolkit.py:77` — `LLMWikiToolkit`.
+- `packages/ai-parrot/src/parrot/flows/dev_loop/wiki_search.py:40` — `DevLoopWikiSearch.from_project(root=...)` as the prompt-injection pattern *and* as the degradation contract.
+- `packages/ai-parrot/src/parrot/bots/github_reviewer.py:568` — `_attach_toolkit()`.

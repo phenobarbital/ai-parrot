@@ -50,7 +50,7 @@ from parrot.flows.dev_loop.models import (  # verified: models/base.py:412, :763
     TaskScopedBrief,
 )
 from parrot.flows.dev_loop.session_state import DispatchCompleted  # verified: session_state.py:476
-from parrot.flows.dev_loop.task_scheduler import TaskScheduler  # verified: task_scheduler.py:53
+from parrot.flows.dev_loop.task_scheduler import TaskScheduler, iter_index_files  # verified: task_scheduler.py:53
 from parrot.flows.dev_loop.worktree_manager import (  # verified: worktree_manager.py:75, :41
     SubWorktreeManager,
     SubWorktreeMergeError,
@@ -1484,7 +1484,7 @@ class SddCoderEngine:
             raise CoderFailure("internal_error", str(exc)) from exc
 
     async def _resolve_feature(self, feature: str, worktree: str) -> _FeatureCtx:
-        """Match sdd/tasks/index/*.json headers in the sdd-worker.md §1 order.
+        """Match per-spec and brief index headers in the sdd-worker.md §1 order.
 
         Order (first match wins): feature_id exact -> feature exact ->
         feature_id numeric/any suffix -> feature substring -> spec filename.
@@ -1493,15 +1493,9 @@ class SddCoderEngine:
         if not (wt == self._base_path or wt.startswith(self._base_path + os.sep)):
             raise CoderFailure("worktree_outside_base", f"{worktree} is not under {self._base_path}")
 
-        index_dir = Path(wt) / "sdd" / "tasks" / "index"
-
         def _read_headers() -> List[Tuple[Path, Dict[str, Any]]]:
             headers: List[Tuple[Path, Dict[str, Any]]] = []
-            if not index_dir.is_dir():
-                return headers
-            for p in sorted(index_dir.glob("*.json")):
-                if p.name == _ORPHANS_INDEX_NAME:
-                    continue
+            for p in iter_index_files(wt):
                 try:
                     data = json.loads(p.read_text(encoding="utf-8"))
                 except (json.JSONDecodeError, OSError):

@@ -13,6 +13,7 @@ from parrot.knowledge.manuals.catalog import ManualCatalogStore
 from parrot.knowledge.manuals.domain import CURATOR_ROLE as DOMAIN_CURATOR_ROLE
 from parrot.knowledge.manuals.domain import TECHNICIAN_ROLE
 from parrot.knowledge.manuals.models import EquipmentRef, ManualCard, ManualVersion, ProcedureRef
+from parrot.knowledge.ontology.schema import TraversalPattern
 
 logger = logging.getLogger(__name__)
 
@@ -289,8 +290,8 @@ class ProcedureRetrieval:
         self.authorize(context, pattern=plan.pattern)
         if self.graph_store is None:
             raise RuntimeError("no graph store configured")
-        rows = await self.graph_store.execute_traversal(
-            self.tenant_context, self.aql_for(plan.pattern), bind_vars=dict(plan.bind_vars), collection_binds={}
+        rows = await self.graph_store.execute_pattern(
+            self.tenant_context, self.pattern_for(plan.pattern), dict(plan.bind_vars), {}
         )
         result = list(rows or [])
         self._validate_projection(result, pattern=plan.pattern)
@@ -308,8 +309,8 @@ class ProcedureRetrieval:
         ]
         return RetrievalResult(pattern="lookup", fallback_sections=projected, manual=await self.catalog.get(manual_id))
 
-    def aql_for(self, pattern: str) -> str:
-        """Return only an ontology-declared graph query, never caller-provided AQL."""
+    def pattern_for(self, pattern: str) -> TraversalPattern:
+        """Return only an ontology-declared traversal pattern, never caller-provided AQL."""
         if pattern not in PATTERNS or pattern == "lookup":
             raise AuthorizationDenied(f"{pattern!r} is not an allowlisted graph pattern", pattern=pattern)
         if self.ontology is None:
@@ -317,7 +318,7 @@ class ProcedureRetrieval:
         declared = self.ontology.traversal_patterns.get(pattern)
         if declared is None:
             raise AuthorizationDenied(f"{pattern!r} is not declared in the ontology", pattern=pattern)
-        return declared.query_template
+        return declared
 
     @staticmethod
     def _validate_projection(rows: Sequence[dict[str, Any]], *, pattern: str) -> None:

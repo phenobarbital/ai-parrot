@@ -37,7 +37,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Optional
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal, Optional
 from urllib.parse import quote
 
 import aiosqlite
@@ -536,18 +536,162 @@ imported. See :func:`register_wiki_backend` and the dispatch in
 """
 
 
-def register_wiki_backend(name: str, factory: Callable[..., BaseWikiStore]) -> None:
-    """Register a satellite-provided wiki backend (FEAT-449 M7).
+class WikiBackendSpec(BaseModel):
+    """One wiki backend entry of the registry (FEAT-540 M7).
+
+    Attributes:
+        name: Backend name (``WikiNamespaceConfig.backend`` /
+            ``create_wiki_store(backend=...)``).
+        kind: ``"local"`` (on-disk plane under a storage dir) or ``"server"``
+            (server-hosted plane — no local directory).
+        factory: Store factory, or a lazy ``"module:attr"`` path to it.
+        resolve_options: Optional callable (or lazy ``"module:attr"`` path)
+            ``(cfg) -> dict`` turning a ``WikiNamespaceConfig`` into factory
+            keyword options. ``None`` keeps the legacy ArangoDB-params
+            behaviour (only ever used by satellites registered with the
+            two-argument form).
+        is_built: Optional lazy path of the "is this plane built" probe.
+        extra: Optional install extra that provides the backend.
+    """
+
+    name: str
+    kind: Literal["local", "server"]
+    factory: Any
+    resolve_options: Any = None
+    is_built: str | None = None
+    extra: str | None = None
+
+
+def _make_sqlite(*, storage_dir: Any = None, wiki_name: str = "", sqlite_policy: Any = None, **_: Any) -> BaseWikiStore:
+    """Build the ``sqlite`` plane under ``{storage_dir}/wiki.db``."""
+    return SQLiteWikiStore(Path(storage_dir) / "wiki.db", wiki_name=wiki_name, sqlite_policy=sqlite_policy)
+
+
+def _make_memory(*, storage_dir: Any = None, wiki_name: str = "", **_: Any) -> BaseWikiStore:
+    """Build the in-memory plane over the OKF bundle ``{storage_dir}/pages``."""
+    # Imported lazily — file_store imports export helpers which import this module.
+    from parrot.knowledge.wiki.file_store import InMemoryWikiStore
+
+    return InMemoryWikiStore(Path(storage_dir) / "pages", wiki_name=wiki_name)
+
+
+def _make_arangodb(*, wiki_name: str = "", **kwargs: Any) -> BaseWikiStore:
+    """Build the server-hosted ArangoDB plane."""
+    # Imported lazily — arango_store imports asyncdb, an optional dependency.
+    from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
+
+    return ArangoDBWikiStore(
+        arango_params=kwargs.get("arango_params", {}),
+        database=kwargs.get("database", ""),
+        wiki_name=wiki_name,
+        text_analyzer=kwargs.get("text_analyzer", "text_en"),
+    )
+
+
+def _make_postgres(*, wiki_name: str = "", **kwargs: Any) -> BaseWikiStore:
+    """Build the server-hosted PostgreSQL plane (FEAT-520)."""
+    # Imported lazily — postgres_store imports asyncpg, an optional dependency.
+    from parrot.knowledge.graphindex.pg_schema import GRAPHINDEX_PG_DSN
+    from parrot.knowledge.wiki.postgres_store import PostgresWikiStore
+
+    return PostgresWikiStore(
+        dsn=kwargs.get("dsn") or GRAPHINDEX_PG_DSN,
+        wiki_name=wiki_name,
+        schema=kwargs.get("schema", "graphindex"),
+    )
+
+
+def _no_options(cfg: Any) -> dict[str, Any]:
+    """Factory options for a backend configured entirely from the environment."""
+    return {}
+
+
+_BUILTIN_WIKI_BACKENDS: dict[str, WikiBackendSpec] = {
+    "sqlite": WikiBackendSpec(name="sqlite", kind="local", factory=_make_sqlite, resolve_options=_no_options),
+    "memory": WikiBackendSpec(name="memory", kind="local", factory=_make_memory, resolve_options=_no_options),
+    "arangodb": WikiBackendSpec(name="arangodb", kind="server", factory=_make_arangodb),
+    "postgres": WikiBackendSpec(name="postgres", kind="server", factory=_make_postgres, resolve_options=_no_options),
+}
+"""Built-in wiki backends. Satellites add theirs via :func:`register_wiki_backend`."""
+
+_EXTRA_SPECS: dict[str, WikiBackendSpec] = {}
+"""Metadata (kind / resolve_options) of satellite backends; factories live in ``_EXTRA_BACKENDS``."""
+
+
+def register_wiki_backend(
+    name: str,
+    factory: Callable[..., BaseWikiStore],
+    *,
+    kind: Literal["local", "server"] = "server",
+    resolve_options: Callable[[Any], dict[str, Any]] | None = None,
+) -> None:
+    """Register a satellite-provided wiki backend (FEAT-449 M7, FEAT-540 M7).
 
     Args:
         name: Backend name (matches ``WikiNamespaceConfig.backend`` /
             ``create_wiki_store(backend=...)``). Must not collide with a
-            built-in name (``"sqlite"``, ``"memory"``, ``"arangodb"``).
+            built-in name (``"sqlite"``, ``"memory"``, ``"arangodb"``,
+            ``"postgres"``).
         factory: Callable constructing the store,
             ``factory(*, storage_dir=None, wiki_name="", **kwargs) ->
             BaseWikiStore``.
+        kind: ``"server"`` (default) or ``"local"``.
+        resolve_options: ``(WikiNamespaceConfig) -> dict`` of factory
+            options used when opening a federated namespace. ``None``
+            keeps the legacy behaviour of passing ArangoDB params
+            (backward compatibility for the two-argument form).
     """
     _EXTRA_BACKENDS[name] = factory
+    _EXTRA_SPECS[name] = WikiBackendSpec(name=name, kind=kind, factory=factory, resolve_options=resolve_options)
+
+
+def wiki_backend_names() -> list[str]:
+    """Return every known backend name (built-ins first, then satellites)."""
+    return [*_BUILTIN_WIKI_BACKENDS, *(n for n in _EXTRA_BACKENDS if n not in _BUILTIN_WIKI_BACKENDS)]
+
+
+def wiki_backend_spec(name: str) -> WikiBackendSpec:
+    """Return the :class:`WikiBackendSpec` for ``name``.
+
+    Raises:
+        ValueError: For an unknown backend, listing the known ones.
+    """
+    spec = _BUILTIN_WIKI_BACKENDS.get(name)
+    if spec is not None:
+        return spec
+    factory = _EXTRA_BACKENDS.get(name)
+    if factory is not None:
+        known = _EXTRA_SPECS.get(name)
+        if known is not None and known.factory is factory:
+            return known
+        # Registered by direct `_EXTRA_BACKENDS` assignment (legacy) or replaced since.
+        return WikiBackendSpec(name=name, kind="server", factory=factory)
+    known_names = ", ".join(repr(b) for b in wiki_backend_names())
+    raise ValueError(f"Unknown wiki storage backend {name!r} — expected one of {known_names}")
+
+
+def _lazy(target: Any) -> Any:
+    """Resolve a ``"module:attr"`` path lazily; pass callables through."""
+    if isinstance(target, str):
+        import importlib
+
+        module, _, attr = target.partition(":")
+        return getattr(importlib.import_module(module), attr)
+    return target
+
+
+def resolve_wiki_backend(name: str) -> Callable[..., BaseWikiStore]:
+    """Return the store factory registered for ``name``.
+
+    Raises:
+        ValueError: For an unknown backend.
+    """
+    return _lazy(wiki_backend_spec(name).factory)
+
+
+def is_server_backend(name: str) -> bool:
+    """Whether ``name`` is a server-hosted backend (no local storage dir)."""
+    return wiki_backend_spec(name).kind == "server"
 
 
 class BaseWikiStore(ABC):
@@ -2700,45 +2844,10 @@ def create_wiki_store(
         ValueError: For an unknown ``backend`` value.
     """
     storage_dir = Path(storage_dir)
-    # Pop, never peek: `kwargs` is forwarded verbatim to satellite
-    # backends at the _EXTRA_BACKENDS branch, which would reject an
-    # unexpected `sqlite_policy` keyword.
+    # Pop, never peek: `kwargs` is forwarded verbatim to the backend factory,
+    # which (outside sqlite) would reject an unexpected `sqlite_policy` keyword.
     sqlite_policy = kwargs.pop("sqlite_policy", None)
+    factory = resolve_wiki_backend(backend)
     if backend == "sqlite":
-        return SQLiteWikiStore(
-            storage_dir / "wiki.db",
-            wiki_name=wiki_name,
-            sqlite_policy=sqlite_policy,
-        )
-    if backend == "memory":
-        # Imported lazily — file_store imports export helpers which
-        # import this module.
-        from parrot.knowledge.wiki.file_store import InMemoryWikiStore
-
-        return InMemoryWikiStore(storage_dir / "pages", wiki_name=wiki_name)
-    if backend == "arangodb":
-        # Imported lazily — arango_store imports asyncdb, an optional
-        # dependency not needed by the sqlite/memory paths.
-        from parrot.knowledge.wiki.arango_store import ArangoDBWikiStore
-
-        return ArangoDBWikiStore(
-            arango_params=kwargs.get("arango_params", {}),
-            database=kwargs.get("database", ""),
-            wiki_name=wiki_name,
-            text_analyzer=kwargs.get("text_analyzer", "text_en"),
-        )
-    if backend == "postgres":
-        # Imported lazily — postgres_store imports asyncpg, an optional
-        # dependency not needed by the sqlite/memory paths (FEAT-520).
-        from parrot.knowledge.graphindex.pg_schema import GRAPHINDEX_PG_DSN
-        from parrot.knowledge.wiki.postgres_store import PostgresWikiStore
-
-        return PostgresWikiStore(
-            dsn=kwargs.get("dsn") or GRAPHINDEX_PG_DSN,
-            wiki_name=wiki_name,
-            schema=kwargs.get("schema", "graphindex"),
-        )
-    if backend in _EXTRA_BACKENDS:
-        return _EXTRA_BACKENDS[backend](storage_dir=storage_dir, wiki_name=wiki_name, **kwargs)
-    known = ", ".join(["'sqlite'", "'memory'", "'arangodb'", "'postgres'", *(repr(b) for b in _EXTRA_BACKENDS)])
-    raise ValueError(f"Unknown wiki storage backend {backend!r} — expected one of {known}")
+        kwargs["sqlite_policy"] = sqlite_policy
+    return factory(storage_dir=storage_dir, wiki_name=wiki_name, **kwargs)

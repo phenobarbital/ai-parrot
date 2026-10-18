@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from scripts.sdd.brief_meta import brief_worktree_plan
 from scripts.sdd.sdd_meta import WorktreePlan, plan_worktree, resolve_flow
 
 logger = logging.getLogger(__name__)
@@ -108,6 +109,11 @@ def ensure(
 
     # Step 4: Create
     _create_worktree(plan, target_path, repo_root=repo_root)
+    try:
+        _clear_upstream(plan, target_path)
+    except EnsureWorktreeError:
+        _discard_new_worktree(plan, target_path, repo_root=repo_root)
+        raise
 
     # Step 5: Verify
     missing = _missing_paths(target_path, require_paths)
@@ -201,6 +207,40 @@ def _create_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: Path) 
         raise
 
 
+_UPSTREAM_PROBE = ("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+
+
+def _clear_upstream(plan: WorktreePlan, target_path: Path) -> None:
+    """Drop the upstream ``git worktree add -b`` sets and prove it is gone.
+
+    ``worktree add -b <name> <path> origin/<base>`` makes ``<name>`` track
+    ``origin/<base>``; for a hotfix that is ``origin/main``, so a bare
+    ``git push`` would target main.
+
+    Raises:
+        EnsureWorktreeError: The upstream could not be unset or still resolves.
+    """
+    probe = subprocess.run(
+        ["git", *_UPSTREAM_PROBE],
+        cwd=target_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if probe.returncode == 0:
+        _git("branch", "--unset-upstream", cwd=target_path)
+
+    verified = subprocess.run(
+        ["git", *_UPSTREAM_PROBE],
+        cwd=target_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if verified.returncode == 0:
+        raise EnsureWorktreeError(f"Failed to clear upstream for newly created worktree {plan.name!r}.")
+
+
 def _discard_new_worktree(plan: WorktreePlan, target_path: Path, *, repo_root: Path) -> None:
     """Undo a worktree ``_create_worktree`` just made, after verification failed.
 
@@ -238,6 +278,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Jira issue key; required for hotfix runs. Implies --type hotfix "
         "and --base-branch main unless either is passed explicitly.",
     )
+    parser.add_argument(
+        "--brief-key",
+        help="Brief identity (FEAT-698 /sdd-brief): Jira key, ledger short id, or slug. "
+        "Plans hotfix-<KEY>-<slug> on main (default) or fix-<KEY>-<slug> on --base-branch; "
+        "mutually exclusive with --feature-id, --jira-key and --type.",
+    )
     parser.add_argument("--spec", help="Path to spec markdown file.")
     parser.add_argument("--index", help="Path to index JSON file.")
     parser.add_argument("--base-branch", help="Override base branch.")
@@ -249,33 +295,42 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 
     try:
-        # Resolve flow. `--jira-key` with no explicit `--type` implies a
-        # hotfix (and therefore `origin/main`) — without this, the
-        # documented invocation `--slug <slug> --jira-key <KEY>` (see
-        # CLAUDE.md and sdd-research.md) would fail with "feature_id is
-        # required", since resolve_flow() defaults to type="feature" and
-        # has no other signal here that this is a hotfix run.
-        type_override = args.type
-        base_branch_override = args.base_branch
-        if args.jira_key and not type_override:
-            type_override = "hotfix"
-            if not base_branch_override:
-                base_branch_override = "main"
+        if args.brief_key:
+            if args.feature_id or args.jira_key or args.type:
+                raise ValueError("--brief-key is mutually exclusive with --feature-id, --jira-key, and --type")
+            plan = brief_worktree_plan(
+                slug=args.slug,
+                key=args.brief_key,
+                base_branch=args.base_branch or "main",
+            )
+        else:
+            # Resolve flow. `--jira-key` with no explicit `--type` implies a
+            # hotfix (and therefore `origin/main`) — without this, the
+            # documented invocation `--slug <slug> --jira-key <KEY>` (see
+            # CLAUDE.md and sdd-research.md) would fail with "feature_id is
+            # required", since resolve_flow() defaults to type="feature" and
+            # has no other signal here that this is a hotfix run.
+            type_override = args.type
+            base_branch_override = args.base_branch
+            if args.jira_key and not type_override:
+                type_override = "hotfix"
+                if not base_branch_override:
+                    base_branch_override = "main"
 
-        doc_path = Path(args.spec) if args.spec else None
-        meta = resolve_flow(
-            doc_path=doc_path,
-            type_override=type_override,
-            base_branch_override=base_branch_override,
-        )
+            doc_path = Path(args.spec) if args.spec else None
+            meta = resolve_flow(
+                doc_path=doc_path,
+                type_override=type_override,
+                base_branch_override=base_branch_override,
+            )
 
-        # Plan worktree
-        plan = plan_worktree(
-            meta,
-            slug=args.slug,
-            feature_id=args.feature_id,
-            jira_key=args.jira_key,
-        )
+            # Plan worktree
+            plan = plan_worktree(
+                meta,
+                slug=args.slug,
+                feature_id=args.feature_id,
+                jira_key=args.jira_key,
+            )
 
         # Determine require_paths
         require_paths = []

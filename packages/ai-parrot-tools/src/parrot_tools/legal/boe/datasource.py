@@ -140,7 +140,7 @@ class BOEDataSource(ExtractDataSource):
         ``legal.ontology.yaml`` by design, since they are facts extracted
         directly from BOE's XML, not field-matchable). This method exposes
         them explicitly so a caller (``sync_boe``) can bridge them into
-        ``OntologyGraphStore.create_edges`` itself.
+        ``ArangoOntologyGraphStore.create_edges`` itself.
 
         Reuses the same per-instance parse cache as ``extract()`` — call
         both on the SAME ``BOEDataSource`` instance to avoid re-fetching

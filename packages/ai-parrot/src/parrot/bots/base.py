@@ -173,6 +173,7 @@ class BaseBot(AbstractBot):
         output_mode: OutputMode = OutputMode.DEFAULT,
         format_kwargs: dict = None,
         system_prompt: Optional[str] = None,
+        use_tools: Optional[bool] = None,
         trace_context=None,
         **kwargs,
     ) -> AIMessage:
@@ -196,6 +197,10 @@ class BaseBot(AbstractBot):
             score_threshold: Minimum score for context relevance
             use_vector_context: Whether to retrieve context from vector store
             use_conversation_history: Whether to use conversation history
+            use_tools: Explicit tool switch for this call. ``None`` (default)
+                lets ``mode`` decide; ``True``/``False`` overrides it, with
+                the same contract as :meth:`ask` (``False`` sends no function
+                declarations and drops the tool-dependent prompt layers).
             **kwargs: Additional arguments for LLM
 
         Returns:
@@ -235,6 +240,7 @@ class BaseBot(AbstractBot):
                 output_mode=output_mode,
                 format_kwargs=format_kwargs,
                 system_prompt=system_prompt,
+                use_tools=use_tools,
                 trace_context=trace_context,
                 **kwargs,
             )
@@ -263,6 +269,7 @@ class BaseBot(AbstractBot):
         output_mode: OutputMode = OutputMode.DEFAULT,
         format_kwargs: dict = None,
         system_prompt: Optional[str] = None,
+        use_tools: Optional[bool] = None,
         trace_context=None,
         **kwargs,
     ) -> AIMessage:
@@ -394,6 +401,7 @@ class BaseBot(AbstractBot):
                 vector_metadata["activated_kbs"] = kb_meta["activated_kbs"]
 
             # Determine if tools should be used
+            requested_use_tools = use_tools
             use_tools = self._use_tools(question)
             if mode == "adaptive":
                 effective_mode = "agentic" if use_tools else "conversational"
@@ -403,6 +411,10 @@ class BaseBot(AbstractBot):
             else:  # conversational
                 use_tools = False
                 effective_mode = "conversational"
+            # An explicit use_tools wins over the mode heuristic (same contract as ask()).
+            if requested_use_tools is not None:
+                use_tools = requested_use_tools
+                effective_mode = "agentic" if use_tools else "conversational"
 
             # Log tool usage decision
             self.logger.info(
@@ -432,6 +444,7 @@ class BaseBot(AbstractBot):
                 user_context=user_context,
                 user_id=user_id,
                 session_id=session_id,
+                tools_enabled=use_tools,
                 **kwargs,
             ) + (system_prompt_addition or "")
 
@@ -1336,6 +1349,7 @@ class BaseBot(AbstractBot):
                 memory_context=memory_context or None,
                 user_id=user_id,
                 session_id=session_id,
+                tools_enabled=use_tools,
                 **kwargs,
             ) + (system_prompt_addition or "")
             self.logger.debug(
@@ -1809,10 +1823,15 @@ class BaseBot(AbstractBot):
         structured_output: Optional[Union[Type[BaseModel], StructuredOutputConfig]] = None,
         output_mode: OutputMode = OutputMode.DEFAULT,
         system_prompt: Optional[str] = None,
+        use_tools: bool = True,
         trace_context=None,
         **kwargs,
     ) -> AsyncIterator[Union[str, AIMessage]]:
-        """Stream responses using the same preparation logic as :meth:`ask`."""
+        """Stream responses using the same preparation logic as :meth:`ask`.
+
+        ``use_tools`` follows the :meth:`ask` contract: ``False`` sends no
+        function declarations and drops the tool-dependent prompt layers.
+        """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
         _agent_token = current_agent_name.set(self.name)
         # Pre-declared so `finally` below can safely no-op if an exception is
@@ -1958,6 +1977,7 @@ class BaseBot(AbstractBot):
                 vector_context=vector_context,
                 metadata=vector_metadata,
                 user_context=user_context,
+                tools_enabled=use_tools,
                 **kwargs,
             ) + (system_prompt_addition or "")
 
@@ -1997,7 +2017,7 @@ class BaseBot(AbstractBot):
                         "model": kwargs.get("model", self._llm_model),
                         "temperature": kwargs.get("temperature", 0),
                         "history": rendered_history,
-                        "use_tools": kwargs.get("use_tools", True),
+                        "use_tools": use_tools,
                     }
 
                     if "tool_type" in kwargs:

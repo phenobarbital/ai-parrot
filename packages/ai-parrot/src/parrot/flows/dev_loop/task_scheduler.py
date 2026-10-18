@@ -28,6 +28,54 @@ logger = logging.getLogger(__name__)
 #: flag is ignored and only ``depends_on`` shapes the waves.
 PARALLEL_SEMANTICS_EXCLUSIVE = "exclusive"
 
+#: Feature task indexes (FEAT-145) and brief indexes (FEAT-698), relative to a worktree.
+TASK_INDEX_DIR = Path("sdd") / "tasks" / "index"
+BRIEF_INDEX_DIR = Path("sdd") / "briefs"
+BRIEF_INDEX_SUFFIX = ".index.json"
+_ORPHANS_INDEX = "_orphans.json"
+
+
+def resolve_index_path(worktree_path: str | Path, feature_slug: str) -> Path:
+    """Locate a slug's index: feature index first, then brief index.
+
+    Args:
+        worktree_path: The worktree root.
+        feature_slug: The feature or brief slug.
+
+    Returns:
+        The ``sdd/tasks/index/<slug>.json`` path when it exists, else the
+        ``sdd/briefs/<slug>.index.json`` path when that exists, else the
+        feature index path (so callers keep today's not-found behavior).
+    """
+    root = Path(worktree_path)
+    feature_index = root / TASK_INDEX_DIR / f"{feature_slug}.json"
+    if feature_index.is_file():
+        return feature_index
+    brief_index = root / BRIEF_INDEX_DIR / f"{feature_slug}{BRIEF_INDEX_SUFFIX}"
+    if brief_index.is_file():
+        return brief_index
+    return feature_index
+
+
+def iter_index_files(worktree_path: str | Path) -> List[Path]:
+    """Every index under a worktree: sorted feature indexes (minus orphans), then sorted brief indexes.
+
+    Args:
+        worktree_path: The worktree root.
+
+    Returns:
+        The index paths; ``[]`` when neither directory exists.
+    """
+    root = Path(worktree_path)
+    found: List[Path] = []
+    task_dir = root / TASK_INDEX_DIR
+    if task_dir.is_dir():
+        found.extend(p for p in sorted(task_dir.glob("*.json")) if p.name != _ORPHANS_INDEX)
+    brief_dir = root / BRIEF_INDEX_DIR
+    if brief_dir.is_dir():
+        found.extend(sorted(brief_dir.glob(f"*{BRIEF_INDEX_SUFFIX}")))
+    return found
+
 
 class TaskRef(BaseModel):
     """A single task entry read from the per-spec index (FEAT-145).
@@ -114,6 +162,18 @@ def parallel_width(wave: Sequence[TaskRef]) -> int:
     return parallel_count if parallel_count > 0 else 1
 
 
+def is_exclusive_batch(batch: Sequence[TaskRef]) -> bool:
+    """Whether ``batch`` is a single exclusive task, i.e. an exclusive round of :func:`partition_wave`.
+
+    Args:
+        batch: One batch returned by :func:`partition_wave`.
+
+    Returns:
+        ``True`` only for a one-task batch whose task has ``parallel=False``.
+    """
+    return len(batch) == 1 and not batch[0].parallel
+
+
 class TaskScheduler:
     """Computes dependency-respecting waves over a per-spec task index.
 
@@ -198,7 +258,7 @@ class TaskScheduler:
             A new :class:`TaskScheduler`, or ``None`` on degradation (see
             :meth:`from_index_file`).
         """
-        index_path = Path(worktree_path) / "sdd" / "tasks" / "index" / f"{feature_slug}.json"
+        index_path = resolve_index_path(worktree_path, feature_slug)
         return cls.from_index_file(index_path)
 
     def _check_cycles(self) -> None:

@@ -1,0 +1,78 @@
+{
+  "feat_id": "FEAT-688",
+  "mode": "enrichment",
+  "summary_oneline": "Raise the google-genai floor and refresh GoogleModel for Gemini 4.x (Argon), retiring deprecated ids",
+  "overall_confidence": "medium",
+  "localization": [
+    {"path": "packages/ai-parrot-client-google/src/parrot/clients/google/models.py", "symbol": "GoogleModel", "lines": "11-73", "role": "the model catalogue itself — 53 names, 34 distinct values", "evidence": ["F001", "F002"]},
+    {"path": "packages/ai-parrot-client-google/src/parrot/clients/google/models.py", "symbol": "VertexAIModel", "lines": "76-99", "role": "Vertex subset, no aliases, separate decision", "evidence": ["F001"]},
+    {"path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py", "symbol": "_default_combined_call_prefixes", "lines": "144-158", "role": "prefix whitelist deciding combined tools+schema", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py", "symbol": "_requires_thinking", "lines": "270-283", "role": "thinking-only gate, prefix-based", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py", "symbol": "_is_gemini3_model", "lines": "230-239", "role": "generation gate hardcoded to gemini-3", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot-client-google/src/parrot/clients/google/client.py", "symbol": "_default_model", "lines": "127-131", "role": "default/fallback/lightweight ids pinned to 3.x", "evidence": ["F004"]},
+    {"path": "packages/ai-parrot-client-google/pyproject.toml", "symbol": "dependencies", "lines": "27", "role": "google-genai>=2.23.0 floor", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot-embeddings/pyproject.toml", "symbol": "dependencies", "lines": "55", "role": "divergent google-genai>=2.18.1 floor", "evidence": ["F003"]},
+    {"path": "packages/ai-parrot/src/parrot/clients/factory.py", "symbol": "LLMFactory.list_models", "lines": "224-253", "role": "active/deprecated catalogue API, reads deprecated_models", "evidence": ["F005"]},
+    {"path": "packages/ai-parrot-client-openai/src/parrot/clients/openai/models.py", "symbol": "DEPRECATIONS", "lines": "85-201", "role": "the precedent shape for retiring ids", "evidence": ["F005"]},
+    {"path": "packages/ai-parrot-server/src/parrot/handlers/google_generation.py", "symbol": "list_models", "lines": "42-44", "role": "public HTTP surface enumerating the enum", "evidence": ["F006"]},
+    {"path": "packages/ai-parrot/tests/test_google_models.py", "symbol": "catalogue assertions", "lines": "7-39", "role": "tests pinning exact name->value pairs", "evidence": ["F006"]},
+    {"path": "packages/ai-parrot/tests/clients/test_google_models.py", "symbol": "computer-use assertions", "lines": "11-26", "role": "tests pinning computer-use members", "evidence": ["F006"]},
+    {"path": "packages/ai-parrot/src/parrot/memory/compaction/budget.py", "symbol": "MODEL_WINDOWS", "lines": "51", "role": "bare gemini- prefix -> 1M window, auto-matches 4.x", "evidence": ["F009"]}
+  ],
+  "constraints": [
+    {"claim": "Duplicate enum values become aliases, so a 4.x name reusing an existing value vanishes and the public catalogue publishes 34 ids, not 53", "evidence": ["F002", "F006"]},
+    {"claim": "Capability routing is by string prefix, not enum membership — a gemini-4 id silently takes the conservative two-phase path", "evidence": ["F004"]},
+    {"claim": "Google declares no deprecated_models, so LLMFactory always reports an empty deprecated list for it; OpenAI's DEPRECATIONS is the in-repo precedent", "evidence": ["F005"]},
+    {"claim": "Only two distributions pin google-genai and they disagree (>=2.23.0 vs >=2.18.1); installed is 2.24.0 and google-cloud-aiplatform couples the floor", "evidence": ["F003"]},
+    {"claim": "handlers/google_generation.py publishes the enum over HTTP, so removals are a visible API change", "evidence": ["F006"]},
+    {"claim": "Three test modules assert exact name->value pairs and fail on any removal", "evidence": ["F006"]},
+    {"claim": "The same operation was done twice before with a stable 3-part footprint: enum + prefix whitelist + tests", "evidence": ["F007"]},
+    {"claim": "A gemini-4 id inherits the 1M compaction window automatically via the bare gemini- prefix", "evidence": ["F009"]}
+  ],
+  "scope": {
+    "confidence": "medium",
+    "changes": [
+      {"what": "GoogleModel / VertexAIModel: add the 4.x (Argon) members, retire the deprecated ones", "evidence": ["F001", "F002"]},
+      {"what": "client.py: extend _default_combined_call_prefixes, _requires_thinking, _is_gemini3_model and the _default/_fallback/_lightweight/_reformat ids for the new family", "evidence": ["F004"]},
+      {"what": "Introduce GoogleGenAIClient.deprecated_models following the OpenAI DEPRECATIONS shape so retirement is expressible", "evidence": ["F005"]},
+      {"what": "Raise the google-genai floor in ai-parrot-client-google and realign ai-parrot-embeddings", "evidence": ["F003"]},
+      {"what": "Update the three test modules that pin model ids", "evidence": ["F006"]}
+    ],
+    "non_goals": [
+      "Rewriting the prefix-gate design into capability metadata on the enum",
+      "Moving the Google model tests out of packages/ai-parrot/tests into the satellite",
+      "Touching parrot/clients/base.py or the LLMFactory contract",
+      "Vertex-specific location/api_version plumbing beyond adding members"
+    ],
+    "risks": [
+      {"risk": "Adding 4.x to the enum without touching the prefix gates ships a silently degraded path (no combined tools+schema, wrong thinking config)", "evidence": ["F004"]},
+      {"risk": "Deleting ids breaks the public /models response and three test modules", "evidence": ["F006"]},
+      {"risk": "A 4.x name reusing an existing value becomes an invisible alias", "evidence": ["F002"]}
+    ]
+  },
+  "confidence_map": [
+    {"id": "C1", "claim": "The catalogue is models.py in ai-parrot-client-google", "evidence": ["F001"], "confidence": "high"},
+    {"id": "C2", "claim": "19 of 53 names are enum aliases; only 34 distinct values", "evidence": ["F002"], "confidence": "high"},
+    {"id": "C3", "claim": "Capability gates are prefix-based and 3.x-hardcoded", "evidence": ["F004"], "confidence": "high"},
+    {"id": "C4", "claim": "A deprecated_models seam exists and Google does not use it", "evidence": ["F005"], "confidence": "high"},
+    {"id": "C5", "claim": "google-genai floors are >=2.23.0 and >=2.18.1; installed 2.24.0", "evidence": ["F003"], "confidence": "high"},
+    {"id": "C6", "claim": "The enum is published over HTTP and pinned by three test modules", "evidence": ["F006"], "confidence": "high"},
+    {"id": "C7", "claim": "The precedent footprint is enum + whitelist + tests (2 prior commits)", "evidence": ["F007"], "confidence": "high"},
+    {"id": "C8", "claim": "A gemini-4 id inherits the 1M compaction window with no edit", "evidence": ["F009"], "confidence": "medium"},
+    {"id": "C9", "claim": "Which ids to ADD (Gemini 4.x Argon) is unknown", "evidence": ["F008"], "confidence": "low"},
+    {"id": "C10", "claim": "Which ids to RETIRE is unknown", "evidence": ["F008"], "confidence": "low"},
+    {"id": "C11", "claim": "The target google-genai version is unknown", "evidence": ["F008"], "confidence": "low"}
+  ],
+  "unknowns": [
+    {"id": "U1", "question": "What are the exact Gemini 4.x (Argon) model ids to add, and what google-genai version is the floor?", "blocks": ["C9", "C11"], "user_answer": null},
+    {"id": "U2", "question": "How should deprecated ids be retired: delete them, remap them as aliases (current Google practice), or introduce a GoogleGenAIClient.deprecated_models registry in the OpenAI DEPRECATIONS shape?", "blocks": ["C10"], "user_answer": null},
+    {"id": "U3", "question": "Does the 4.x family go into _default_combined_call_prefixes, and is any 4.x Pro thinking-only (_requires_thinking)?", "blocks": ["C3"], "user_answer": null},
+    {"id": "U4", "question": "Do _default_model / _fallback_model / _lightweight_model / _default_reformat_model move to 4.x now, or stay on 3.x until Argon is GA?", "blocks": ["C3"], "user_answer": null},
+    {"id": "U5", "question": "Does VertexAIModel receive the 4.x family in the same change?", "blocks": ["C9"], "user_answer": null}
+  ],
+  "recommended_next_command": {
+    "command": "sdd-spec",
+    "rationale": "Localization is high-confidence and the footprint is a known, twice-executed shape; what is missing is operator-supplied data (model ids, SDK floor) and one design decision (how to express retirement), both of which a spec resolves. No architectural fork justifies a brainstorm."
+  },
+  "budget_status": {"files_read": 9, "grep_calls": 14, "git_calls": 3, "truncated": false, "failed_queries": ["Q014"]}
+}

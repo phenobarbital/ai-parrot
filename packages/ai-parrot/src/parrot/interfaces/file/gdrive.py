@@ -638,10 +638,26 @@ class GoogleDriveFileManager(FileManagerInterface):
                     label="download",
                 )
                 return destination
-            await self._retrying(
-                lambda: self.drive.files_download(file_id, pipe_to=_AsyncSink(destination), **self._list_params()),
-                label="download",
-            )
+            seekable = hasattr(destination, "seekable") and destination.seekable()  # noqa: ASYNC240
+            if seekable:
+                start_pos = destination.tell()  # noqa: ASYNC240
+
+                async def _download_to_stream() -> None:
+                    destination.seek(start_pos)  # noqa: ASYNC240
+                    destination.truncate()  # noqa: ASYNC240
+                    await self.drive.files_download(
+                        file_id, pipe_to=_AsyncSink(destination), **self._list_params()
+                    )
+
+                await self._retrying(_download_to_stream, label="download")
+            else:
+                await self._retrying(
+                    lambda: self.drive.files_download(
+                        file_id, pipe_to=_AsyncSink(destination), **self._list_params()
+                    ),
+                    label="download",
+                    idempotent=False,
+                )
             return Path(source)
         except (FileNotFoundError, GoogleDriveFileManagerError):
             raise
@@ -786,7 +802,9 @@ class GoogleDriveFileManager(FileManagerInterface):
                 res = await self.drive.send_raw(_request, full_res=True, raise_for_status=False)
                 code = getattr(res, "status_code", None)
                 if code not in (200, 201, 308):
-                    raise GoogleDriveFileManagerError(f"resumable upload chunk failed ({code})", status_code=code)
+                    exc = GoogleDriveFileManagerError(f"resumable upload chunk failed ({code})", status_code=code)
+                    exc.res = res  # expose headers (incl. Retry-After) to _retry_after_seconds
+                    raise exc
                 return res
 
             res, _ = await self._retrying(_put, label="upload-chunk", idempotent=True)

@@ -39,14 +39,27 @@ const rawBaseUrl = env.PUBLIC_API_URL ?? DEFAULT_API;
 const apiBaseUrl = rawBaseUrl.replace(/\/$/, "");
 const apiWithCredentials = parseEnvBoolean(env.PUBLIC_API_WITH_CREDENTIALS, false);
 
-/** Base path the Admin UI SPA is mounted under (see vite.config.ts `base`). */
-const basePath = "/admin";
+/**
+ * The SPA is served at the site root (see `parrot/server/ui/serving.py`):
+ * end-user pages (login, agent list, agent chat) live at the top level and
+ * administration pages under `adminPath`. `basePath` is kept as the
+ * root-relative prefix every in-app path is built from (empty = site root).
+ */
+const basePath = "";
+const adminPath = "/admin";
 
 export const config = {
   apiBaseUrl,
   apiWithCredentials,
   basePath,
+  adminPath,
   loginPath: `${basePath}/login`,
+  /** Landing page for an authenticated user (agent list). */
+  homePath: `${basePath}/agents`,
+  /** First path segments the SPA owns; anything else is not an in-app path
+   * (guards `?next=` redirects against leaving the SPA). MUST match the
+   * routes `parrot/server/ui/serving.py` serves `index.html` for. */
+  appSections: ["login", "agents", "admin"],
   loginUrl: "/api/v1/login",
   logoutUrl: "/api/v1/logout",
   authMethodsUrl: "/api/v1/auth/methods",

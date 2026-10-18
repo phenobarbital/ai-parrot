@@ -14,7 +14,7 @@ from typing import Any
 
 from parrot.knowledge.ontology.cache import OntologyCache
 from parrot.knowledge.ontology.discovery import DiscoveryStats, RelationDiscovery
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.refresh import OntologyRefreshPipeline, RefreshReport
 from parrot.knowledge.ontology.schema import TenantContext
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
@@ -30,7 +30,7 @@ async def sync_boe(tenant_id: str, since: date | None = None) -> RefreshReport:
     runs it against the ``"legal"`` domain. After the pipeline's node sync
     completes, also bridges the ``modifica``/``deroga`` provenance edges
     parsed by ``BOEDataSource`` directly into
-    ``OntologyGraphStore.create_edges`` — see
+    ``ArangoOntologyGraphStore.create_edges`` — see
     ``_sync_provenance_edges``'s docstring for why the generic pipeline
     cannot create them on its own.
 
@@ -59,7 +59,7 @@ async def sync_boe(tenant_id: str, since: date | None = None) -> RefreshReport:
         ``OntologyRefreshPipeline.run(tenant_id, domain="legal")``.
     """
     tenant_manager = TenantOntologyManager()
-    graph_store = OntologyGraphStore()
+    graph_store = ArangoOntologyGraphStore()
     discovery = RelationDiscovery()
     cache = OntologyCache()
     datasource_factory = DataSourceFactory()
@@ -105,7 +105,7 @@ async def sync_boe(tenant_id: str, since: date | None = None) -> RefreshReport:
 
 async def _sync_provenance_edges(
     ctx: TenantContext,
-    graph_store: OntologyGraphStore,
+    graph_store: ArangoOntologyGraphStore,
     boe_source: Any,
 ) -> tuple[dict[str, DiscoveryStats], list[str]]:
     """Create `modifica`/`deroga` edges from the datasource's parsed relations.
@@ -114,9 +114,9 @@ async def _sync_provenance_edges(
         ctx: Resolved TenantContext for the "legal" domain, used to map
             each relation's declared ``from``/``to`` entity to its
             collection name (building the ``_from``/``_to`` document IDs
-            ``OntologyGraphStore.create_edges`` requires) and its
+            ``ArangoOntologyGraphStore.create_edges`` requires) and its
             ``edge_collection``.
-        graph_store: The OntologyGraphStore to write edges to.
+        graph_store: The ArangoOntologyGraphStore to write edges to.
         boe_source: A ``BOEDataSource`` instance (same one used for node
             extraction, so its per-instance parse cache is reused —
             avoids re-fetching each configured norm).

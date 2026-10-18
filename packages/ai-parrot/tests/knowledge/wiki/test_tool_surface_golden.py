@@ -27,7 +27,9 @@ LOCAL_NO_LEDGER = sorted(
         "wiki_standup",
     ]
 )
-LEDGER = sorted(["ledger_open", "ledger_ready", "ledger_claim", "ledger_close", "ledger_context"])
+LEDGER = sorted(
+    ["ledger_open", "ledger_ready", "ledger_claim", "ledger_close", "ledger_context", "ledger_list", "ledger_show"]
+)
 BULK = sorted(["wiki_page_hashes", "wiki_ingest_batch", "wiki_sync_push", "wiki_sync_pull"])
 
 

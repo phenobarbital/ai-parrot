@@ -21,7 +21,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from parrot.knowledge.ontology.graph_store import OntologyGraphStore
+from parrot.knowledge.ontology.contracts import DynamicQuery
+from parrot.knowledge.ontology.graph_store import ArangoOntologyGraphStore
 from parrot.knowledge.ontology.parser import OntologyParser
 from parrot.knowledge.ontology.schema import TenantContext
 from parrot.knowledge.ontology.tenant import TenantOntologyManager
@@ -60,7 +61,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
         wiki_name: Wiki name recorded/used for tenant resolution.
         read_only: Always effectively ``True`` for this adapter; kept as
             a constructor param for symmetry with the other backends.
-        store: Test-injection seam — a pre-built ``OntologyGraphStore``
+        store: Test-injection seam — a pre-built ``ArangoOntologyGraphStore``
             (or compatible double). When provided together with ``ctx``,
             ``initialize()`` is a no-op (already "initialized").
         ctx: Test-injection seam — a pre-built ``TenantContext``.
@@ -73,14 +74,14 @@ class OntologyLegalWikiStore(BaseWikiStore):
         database: str,
         wiki_name: str = "",
         read_only: bool = True,
-        store: OntologyGraphStore | None = None,
+        store: ArangoOntologyGraphStore | None = None,
         ctx: TenantContext | None = None,
     ) -> None:
         self._params = arango_params
         self._database = database
         self._wiki_name = wiki_name
         self._read_only = read_only
-        self._store: OntologyGraphStore | None = store
+        self._store: ArangoOntologyGraphStore | None = store
         self._ctx: TenantContext | None = ctx
         self._initialized = store is not None and ctx is not None
         self._init_lock = asyncio.Lock()
@@ -206,7 +207,7 @@ class OntologyLegalWikiStore(BaseWikiStore):
                 )
 
             self._ctx = ctx
-            self._store = OntologyGraphStore(arango_client=client)
+            self._store = ArangoOntologyGraphStore(arango_client=client)
             self._initialized = True
             self.logger.info(
                 "OntologyLegalWikiStore initialized (read-only) against database %r",
@@ -262,18 +263,21 @@ class OntologyLegalWikiStore(BaseWikiStore):
         """
         await self._ensure_init()
         today = datetime.now(UTC).date()
-        rows = await self._store.execute_traversal(
+        rows = await self._store.execute_query(
             self._ctx,
-            (
-                "FOR a IN @@articulo FILTER a._key == @key LIMIT 1 "
-                "FOR v IN a.versions "
-                "FILTER v.valid_from <= @as_of "
-                "FILTER v.valid_to == null OR v.valid_to > @as_of "
-                "LIMIT 1 "
-                "RETURN {norma_ref: a.norma_ref, numero: a.numero, version: v}"
+            DynamicQuery(
+                dialect="aql",
+                text=(
+                    "FOR a IN @@articulo FILTER a._key == @key LIMIT 1 "
+                    "FOR v IN a.versions "
+                    "FILTER v.valid_from <= @as_of "
+                    "FILTER v.valid_to == null OR v.valid_to > @as_of "
+                    "LIMIT 1 "
+                    "RETURN {norma_ref: a.norma_ref, numero: a.numero, version: v}"
+                ),
+                bind_vars={"key": concept_id, "as_of": today.isoformat()},
+                collection_binds={"@articulo": self._articulo_collection},
             ),
-            bind_vars={"key": concept_id, "as_of": today.isoformat()},
-            collection_binds={"@articulo": self._articulo_collection},
         )
         if not rows:
             return None
@@ -318,20 +322,23 @@ class OntologyLegalWikiStore(BaseWikiStore):
         stubs: list[dict[str, Any]] = []
 
         if category in (None, "articulo"):
-            rows = await self._store.execute_traversal(
+            rows = await self._store.execute_query(
                 self._ctx,
-                (
-                    "FOR a IN @@articulo "
-                    "LIMIT @limit "
-                    "FOR v IN a.versions "
-                    "FILTER v.valid_from <= @as_of "
-                    "FILTER v.valid_to == null OR v.valid_to > @as_of "
-                    "LIMIT 1 "
-                    "RETURN {articulo_key: a._key, norma_ref: a.norma_ref, "
-                    "numero: a.numero, version: v}"
+                DynamicQuery(
+                    dialect="aql",
+                    text=(
+                        "FOR a IN @@articulo "
+                        "LIMIT @limit "
+                        "FOR v IN a.versions "
+                        "FILTER v.valid_from <= @as_of "
+                        "FILTER v.valid_to == null OR v.valid_to > @as_of "
+                        "LIMIT 1 "
+                        "RETURN {articulo_key: a._key, norma_ref: a.norma_ref, "
+                        "numero: a.numero, version: v}"
+                    ),
+                    bind_vars={"as_of": today, "limit": limit},
+                    collection_binds={"@articulo": self._articulo_collection},
                 ),
-                bind_vars={"as_of": today, "limit": limit},
-                collection_binds={"@articulo": self._articulo_collection},
             )
             for row in rows:
                 version = row["version"]
@@ -351,11 +358,14 @@ class OntologyLegalWikiStore(BaseWikiStore):
                 )
 
         if category in (None, "norma"):
-            rows = await self._store.execute_traversal(
+            rows = await self._store.execute_query(
                 self._ctx,
-                "FOR n IN @@norma LIMIT @limit RETURN {boe_id: n._key, titulo: n.titulo}",
-                bind_vars={"limit": limit},
-                collection_binds={"@norma": self._norma_collection},
+                DynamicQuery(
+                    dialect="aql",
+                    text="FOR n IN @@norma LIMIT @limit RETURN {boe_id: n._key, titulo: n.titulo}",
+                    bind_vars={"limit": limit},
+                    collection_binds={"@norma": self._norma_collection},
+                ),
             )
             for row in rows:
                 titulo = row.get("titulo") or ""
@@ -436,20 +446,26 @@ class OntologyLegalWikiStore(BaseWikiStore):
         results: list[dict[str, Any]] = []
         for rel_name, collection in relations.items():
             if direction in ("out", "both"):
-                rows = await self._store.execute_traversal(
+                rows = await self._store.execute_query(
                     self._ctx,
-                    "FOR e IN @@edges FILTER e._from == @seed RETURN {target: e._to}",
-                    bind_vars={"seed": concept_id},
-                    collection_binds={"@edges": collection},
+                    DynamicQuery(
+                        dialect="aql",
+                        text="FOR e IN @@edges FILTER e._from == @seed RETURN {target: e._to}",
+                        bind_vars={"seed": concept_id},
+                        collection_binds={"@edges": collection},
+                    ),
                 )
                 for row in rows:
                     results.append({"concept_id": row["target"], "rel": rel_name, "direction": "out"})
             if direction in ("in", "both"):
-                rows = await self._store.execute_traversal(
+                rows = await self._store.execute_query(
                     self._ctx,
-                    "FOR e IN @@edges FILTER e._to == @seed RETURN {target: e._from}",
-                    bind_vars={"seed": concept_id},
-                    collection_binds={"@edges": collection},
+                    DynamicQuery(
+                        dialect="aql",
+                        text="FOR e IN @@edges FILTER e._to == @seed RETURN {target: e._from}",
+                        bind_vars={"seed": concept_id},
+                        collection_binds={"@edges": collection},
+                    ),
                 )
                 for row in rows:
                     results.append({"concept_id": row["target"], "rel": rel_name, "direction": "in"})
@@ -464,11 +480,14 @@ class OntologyLegalWikiStore(BaseWikiStore):
         await self._ensure_init()
         edges: list[dict[str, Any]] = []
         for rel_name, collection in self._edge_collections.items():
-            rows = await self._store.execute_traversal(
+            rows = await self._store.execute_query(
                 self._ctx,
-                "FOR e IN @@edges RETURN {src: e._from, dst: e._to, rel: @rel}",
-                bind_vars={"rel": rel_name},
-                collection_binds={"@edges": collection},
+                DynamicQuery(
+                    dialect="aql",
+                    text="FOR e IN @@edges RETURN {src: e._from, dst: e._to, rel: @rel}",
+                    bind_vars={"rel": rel_name},
+                    collection_binds={"@edges": collection},
+                ),
             )
             edges.extend(rows)
         return edges
@@ -477,17 +496,21 @@ class OntologyLegalWikiStore(BaseWikiStore):
         """Counts: normas, articulos, total versions, in-force versions."""
         await self._ensure_init()
         today = datetime.now(UTC).date().isoformat()
-        articulos = await self._store.execute_traversal(
+        articulos = await self._store.execute_query(
             self._ctx,
-            "FOR a IN @@articulo RETURN a.versions",
-            bind_vars={},
-            collection_binds={"@articulo": self._articulo_collection},
+            DynamicQuery(
+                dialect="aql",
+                text="FOR a IN @@articulo RETURN a.versions",
+                collection_binds={"@articulo": self._articulo_collection},
+            ),
         )
-        normas = await self._store.execute_traversal(
+        normas = await self._store.execute_query(
             self._ctx,
-            "FOR n IN @@norma RETURN 1",
-            bind_vars={},
-            collection_binds={"@norma": self._norma_collection},
+            DynamicQuery(
+                dialect="aql",
+                text="FOR n IN @@norma RETURN 1",
+                collection_binds={"@norma": self._norma_collection},
+            ),
         )
         total_versions = 0
         in_force_versions = 0

@@ -1,0 +1,33 @@
+`GitHubReviewer` reviews a pull request with exactly two inputs: the Jira
+ticket (summary, description, acceptance criteria) and the PR **diff** fetched
+from the GitHub API (`_fetch_diff`, `github_reviewer.py:998`). It never sees
+the repository the diff belongs to.
+
+That makes a whole class of review findings structurally impossible:
+
+- *"this changes a function with 40 callers"* — the diff shows the function,
+  not its blast radius;
+- *"this duplicates an existing helper two modules over"*;
+- *"this new toolkit ignores the convention every sibling toolkit follows"*;
+- *"the symbol this patch calls does not exist on that class"*.
+
+Meanwhile the repository already owns the machinery that answers exactly those
+questions: the **wikitoolkit** knowledge graph (ranked page stubs, symbol
+lookup, code outline, blast radius) — but it is built from a *local* checkout.
+`find_project_root()` (`project.py:955`) walks up from the CWD looking for
+`.parrot/wiki.json` or a `.git` root, and the reviewer is a long-lived agent in
+an aiohttp server whose CWD is whatever directory gunicorn was started in. It
+has no local copy of `GITHUB_REVIEW_REPOSITORY` (`conf.py:767`) at all.
+
+**Who is affected**: every deployment that runs a `GitHubReviewer` subclass
+per watched repository; indirectly the humans reading its PR reviews, who today
+get criteria-vs-diff verdicts with no codebase awareness.
+
+**Why now**: both halves already exist and are already paid for.
+`GitToolkit.clone_repo()` shipped with FEAT-250 (`gittoolkit.py:1590`) and is
+idempotent and token-scrubbed; every wikitoolkit CLI command already takes an
+explicit `--path` (`cli.py:149`), so `find_project_root()` is only the fallback
+and does **not** need to change. What is missing is the ~200 lines of wiring
+between them.
+
+---

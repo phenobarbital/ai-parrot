@@ -1,0 +1,4 @@
+### 2.3 Constraints
+- The toolkit file is large and touched by FEAT-637/639. Re-check line numbers before editing.
+- aiohttp only. Secrets go only in git-ignored files or env vars.
+

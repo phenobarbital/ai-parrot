@@ -78,3 +78,38 @@ async def test_pull_paginates_filters_and_returns_asserted_edges(store, tmp_path
         "wiki_sync_push",
         "wiki_sync_pull",
     ]
+
+
+async def test_push_rejects_more_than_max_pages_without_writing(store):
+    """Over-count pushes are refused before any write (FEAT-678)."""
+    from parrot.knowledge.wiki.tools import SYNC_PUSH_MAX_PAGES
+
+    tool = WikiSyncPushTool(store, "t")
+    pages = [_mem(f"memory:c{i}", "b", "2026-01-01T00:00:00+00:00") for i in range(SYNC_PUSH_MAX_PAGES + 1)]
+    result = await tool._execute(pages=pages)
+    assert result.success is False and "at most" in result.error
+    assert await store.get_page("memory:c0") is None
+
+
+async def test_push_rejects_oversized_payload_without_writing(store):
+    """Over-size pushes are refused before any write (FEAT-678)."""
+    tool = WikiSyncPushTool(store, "t")
+    result = await tool._execute(pages=[_mem("memory:big", "x" * 1_100_000, "2026-01-01T00:00:00+00:00")])
+    assert result.success is False and "too large" in result.error
+    assert await store.get_page("memory:big") is None
+
+
+async def test_bulk_push_writes_under_writer_lock(store, tmp_path):
+    """The bulk-built push tool honours the wiki writer lock (FEAT-678)."""
+    from parrot.knowledge.wiki.project import wiki_write_lock
+
+    cfg = WikiProjectConfig(wiki_name="t", sqlite_busy_timeout=1)
+    tool = next(t for t in create_bulk_tools(store, tmp_path, cfg) if t.name == "wiki_sync_push")
+    page = _mem("memory:locked", "b", "2026-01-01T00:00:00+00:00")
+    with wiki_write_lock(cfg.storage_path(tmp_path)) as held:
+        assert held
+        result = await tool._execute(pages=[page])
+    assert result.success is False and result.error.startswith("busy:")
+    assert await store.get_page("memory:locked") is None
+    result = await tool._execute(pages=[page])
+    assert result.success and result.result["created"] == 1

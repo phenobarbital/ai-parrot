@@ -66,11 +66,13 @@ from urllib.parse import urlencode
 import xmltodict
 from pydantic import BaseModel, Field
 from zeep import helpers
+from zeep.exceptions import Fault
 from ..toolkit import AbstractToolkit
 from ..decorators import tool_schema
 from parrot.interfaces.http import HTTPService
 from ..interfaces.workday.service import WorkdayService as WorkdayComposable
 from ..interfaces.workday.config import WorkdayConfig
+from ..interfaces.workday.utils.utils import ensure_list, extract_by_type, first
 from .models import (
     WorkerModel,
     WorkdayResponseParser
@@ -285,6 +287,26 @@ class GetCompanyPaymentDatesInput(BaseModel):
     pay_group_id: Optional[str] = Field(
         default=None,
         description="Optional Pay Group ID to filter by"
+    )
+
+
+class GetPositionInput(BaseModel):
+    """Input for retrieving a single position (seat) by Position_ID."""
+
+    position_id: str = Field(
+        description="Workday Position ID (e.g., 'P105294')"
+    )
+    include_closed: bool = Field(
+        default=True,
+        description="Also return closed positions (Workday omits them by default)"
+    )
+
+
+class GetJobProfileInput(BaseModel):
+    """Input for retrieving a Job Profile by Job_Profile_ID."""
+
+    job_profile_id: str = Field(
+        description="Workday Job Profile ID / job code (e.g., 'STFLV')"
     )
 
 
@@ -1232,6 +1254,257 @@ class WorkdayToolkit(AbstractToolkit):
             end_date=end_date,
             pay_group_id=pay_group_id,
         )
+
+    @tool_schema(GetPositionInput)
+    async def wd_get_position(
+        self,
+        position_id: str,
+        include_closed: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Get a position (seat) by its Position ID.
+
+        Returns the position's posting title, its allowed Job Profile(s)
+        (the catalog job, which can differ from the posting title), status,
+        supervisory organization, default company/cost center, the worker
+        filling it and its competencies.
+
+        Args:
+            position_id: Workday Position ID (e.g. "P105294")
+            include_closed: Also return closed positions (Workday omits them by default)
+
+        Returns:
+            Position data dictionary, or an empty dict if the position is not found
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_positions")
+
+        request = {
+            "Request_References": {
+                "Positions_Reference": [
+                    {"ID": [{"type": "Position_ID", "_value_1": position_id}]}
+                ]
+            },
+            "Request_Criteria": {"Include_Closed_Positions": include_closed},
+            "Response_Group": {
+                "Include_Reference": True,
+                "Include_Position_Definition_Data": True,
+                "Include_Position_Restrictions_Data": True,
+                "Include_Default_Position_Organization_Assignment_Data": True,
+                "Include_Worker_For_Filled_Positions_Data": True,
+                "Include_Qualifications": True,
+            },
+        }
+
+        try:
+            result = await svc.call_operation("Get_Positions", **request)
+        except Fault as exc:
+            # Workday rejects unknown references with a validation fault
+            if "Invalid ID value" in str(exc):
+                return {}
+            raise
+        data = svc.serialize_object(result) if result else {}
+        positions = [
+            pos
+            for block in ensure_list(data.get("Response_Data"))
+            for pos in ensure_list((block or {}).get("Position"))
+        ]
+        return self._parse_position(positions[0]) if positions else {}
+
+    @tool_schema(GetJobProfileInput)
+    async def wd_get_job_profile(self, job_profile_id: str) -> Dict[str, Any]:
+        """
+        Get a Job Profile (catalog job) by its Job Profile ID.
+
+        Returns the job title, description, management level, job families,
+        classifications, pay rate type and exempt status per country,
+        compensation grade, workers' compensation codes and skills.
+
+        Args:
+            job_profile_id: Workday Job Profile ID / job code (e.g. "STFLV")
+
+        Returns:
+            Job Profile data dictionary, or an empty dict if not found
+        """
+        if not self._initialized:
+            await self.wd_start()
+
+        svc = await self._get_composable("get_job_profiles")
+
+        request = {
+            "Request_References": {
+                "Job_Profile_Reference": [
+                    {"ID": [{"type": "Job_Profile_ID", "_value_1": job_profile_id}]}
+                ]
+            },
+        }
+
+        try:
+            result = await svc.call_operation("Get_Job_Profiles", **request)
+        except Fault as exc:
+            # Workday rejects unknown references with a validation fault
+            if "Invalid ID value" in str(exc):
+                return {}
+            raise
+        data = svc.serialize_object(result) if result else {}
+        profiles = [
+            jp
+            for block in ensure_list(data.get("Response_Data"))
+            for jp in ensure_list((block or {}).get("Job_Profile"))
+        ]
+        return self._parse_job_profile(profiles[0]) if profiles else {}
+
+    def _parse_job_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Flatten a serialized Get_Job_Profiles ``Job_Profile`` element.
+        """
+        def ref_id(ref: Any, id_type: str) -> Optional[str]:
+            return extract_by_type((first(ref) or {}).get("ID", []), id_type)
+
+        jp_data = (profile.get("Job_Profile_Data") or {}).get("Job_Profile_Request_Data") or {}
+        basic = first(jp_data.get("Job_Profile_Basic_Data"))
+        compensation = first(jp_data.get("Job_Profile_Compensation_Data"))
+        skills = ((jp_data.get("Qualification_Replacement_Data") or {}).get("Skill_Qualification_Replacement") or {})
+
+        return {
+            "job_profile_id": ref_id(profile.get("Job_Profile_Reference"), "Job_Profile_ID")
+            or jp_data.get("Job_Code"),
+            "job_profile_wid": ref_id(profile.get("Job_Profile_Reference"), "WID"),
+            "job_code": jp_data.get("Job_Code"),
+            "job_title": basic.get("Job_Title"),
+            "job_description": basic.get("Job_Description"),
+            "effective_date": jp_data.get("Effective_Date"),
+            "inactive": basic.get("Inactive"),
+            "public_job": basic.get("Public_Job"),
+            "critical_job": basic.get("Critical_Job"),
+            "work_shift_required": basic.get("Work_Shift_Required"),
+            "management_level": ref_id(basic.get("Management_Level_Reference"), "Management_Level_ID"),
+            "job_families": [
+                fam_id
+                for fam in ensure_list(basic.get("Job_Family_Data"))
+                if (fam_id := ref_id((fam or {}).get("Job_Family_Reference"), "Job_Family_ID"))
+            ],
+            "job_classifications": [
+                jc_id
+                for jc in ensure_list(jp_data.get("Job_Classification_Data"))
+                if (jc_id := ref_id((jc or {}).get("Job_Classifications_Reference"), "Job_Classification_Reference_ID"))
+            ],
+            "pay_rate_types": [
+                {
+                    "country": ref_id(pr.get("Country_Reference"), "ISO_3166-1_Alpha-2_Code"),
+                    "pay_rate_type": ref_id(pr.get("Pay_Rate_Type_Reference"), "Pay_Rate_Type_ID"),
+                }
+                for pr in ensure_list(jp_data.get("Job_Profile_Pay_Rate_Data"))
+                if pr
+            ],
+            "exempt": [
+                {
+                    "country": ref_id(ex.get("Location_Context_Reference"), "ISO_3166-1_Alpha-2_Code"),
+                    "job_exempt": ex.get("Job_Exempt"),
+                }
+                for ex in ensure_list(jp_data.get("Job_Profile_Exempt_Data"))
+                if ex
+            ],
+            "compensation_grade": ref_id(compensation.get("Compensation_Grade_Reference"), "Compensation_Grade_ID"),
+            "compensation_grade_profiles": [
+                cgp
+                for ref in ensure_list(compensation.get("Compensation_Grade_Profile_Reference"))
+                if (cgp := extract_by_type((ref or {}).get("ID", []), "Compensation_Grade_Profile_ID"))
+            ],
+            "workers_compensation_codes": [
+                code
+                for wc in ensure_list(jp_data.get("Workers_Compensation_Code_Replacement_Data"))
+                if (code := ref_id((wc or {}).get("Workers_Compensation_Code_Reference"), "Workers_Compensation_ID"))
+            ],
+            "skills": [
+                {
+                    "skill_id": ref_id(sk.get("Skill_Reference"), "Remote_Skill_ID"),
+                    "name": sk.get("Name"),
+                    "required": sk.get("Required"),
+                }
+                for sk in ensure_list(skills.get("Skill_Qualification_Replacement_Data"))
+                if sk
+            ],
+        }
+
+    def _parse_position(self, position: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Flatten a serialized Get_Positions ``Position`` element.
+        """
+        def ref_id(ref: Any, id_type: str) -> Optional[str]:
+            return extract_by_type((first(ref) or {}).get("ID", []), id_type)
+
+        pos_data = position.get("Position_Data") or {}
+        definition = pos_data.get("Position_Definition_Data") or {}
+        restrictions = pos_data.get("Position_Restrictions_Data") or {}
+        assignments = pos_data.get("Default_Position_Organization_Assignments_Data") or {}
+        filled_by = pos_data.get("Worker_For_Filled_Position") or {}
+        worker_ref = (filled_by.get("Worker_Reference") or {}).get("ID", [])
+
+        job_profiles = [
+            {
+                "job_profile_id": ref_id(jp.get("Job_Profile_Reference"), "Job_Profile_ID"),
+                "job_profile_name": jp.get("Job_Profile_Name"),
+                "management_level": ref_id(jp.get("Management_Level_Reference"), "Management_Level_ID"),
+                "job_families": [
+                    fam_id
+                    for fam in ensure_list(jp.get("Job_Family_Reference"))
+                    if (fam_id := extract_by_type((fam or {}).get("ID", []), "Job_Family_ID"))
+                ],
+            }
+            for jp in ensure_list(restrictions.get("Job_Profile_Restriction_Summary_Data"))
+            if jp
+        ]
+
+        competencies = [
+            {
+                "competency": ref_id(profile.get("Competency_Reference"), "Competency_ID"),
+                "required": profile.get("Required"),
+            }
+            for comp in ensure_list((pos_data.get("Qualification_Data") or {}).get("Competency_Data"))
+            if (profile := (comp or {}).get("Competency_Profile_Data"))
+        ]
+
+        return {
+            "position_id": definition.get("Position_ID")
+            or ref_id(position.get("Position_Reference"), "Position_ID"),
+            "position_wid": ref_id(position.get("Position_Reference"), "WID"),
+            "job_posting_title": definition.get("Job_Posting_Title"),
+            "job_description": definition.get("Job_Description"),
+            "closed": pos_data.get("Closed"),
+            "effective_date": pos_data.get("Effective_Date"),
+            "available_for_hire": definition.get("Available_For_Hire"),
+            "available_for_recruiting": definition.get("Available_for_Recruiting"),
+            "hiring_freeze": definition.get("Hiring_Freeze"),
+            "critical_job": definition.get("Critical_Job"),
+            "supervisory_organization_id": ref_id(
+                pos_data.get("Supervisory_Organization_Reference"), "Organization_Reference_ID"
+            ),
+            "availability_date": restrictions.get("Availability_Date"),
+            "earliest_hire_date": restrictions.get("Earliest_Hire_Date"),
+            "job_profiles": job_profiles,
+            "job_family_ids": [
+                fam_id
+                for fam in ensure_list(restrictions.get("Job_Family_Reference"))
+                if (fam_id := extract_by_type((fam or {}).get("ID", []), "Job_Family_ID"))
+            ],
+            "company_ids": [
+                cid
+                for ref in ensure_list(assignments.get("Company_Assignments_Reference"))
+                if (cid := extract_by_type((ref or {}).get("ID", []), "Company_Reference_ID"))
+            ],
+            "cost_center_ids": [
+                cc
+                for ref in ensure_list(assignments.get("Cost_Center_Assignments_Reference"))
+                if (cc := extract_by_type((ref or {}).get("ID", []), "Cost_Center_Reference_ID"))
+            ],
+            "worker_id": extract_by_type(worker_ref, "Employee_ID")
+            or extract_by_type(worker_ref, "Contingent_Worker_ID"),
+            "worker_wid": extract_by_type(worker_ref, "WID"),
+            "competencies": competencies,
+        }
 
     def _parse_workers_response(self, response: Any) -> List[Dict[str, Any]]:
         """

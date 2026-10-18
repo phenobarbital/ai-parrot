@@ -1,0 +1,35 @@
+Decisions from discovery (2026-10-18):
+  - Flow: `type: feature`, `base_branch: dev`.
+  - The spec-declared set **replaces** heuristic escalation/breadth when present;
+    full-suite runs move out of the local SDD loop.
+  - Applies to **all** phases: task (`sdd-coder`), merge (`sdd-worker`),
+    feature (`/sdd-done`), and `qa-runner` / autopilot QA.
+  - Expressed as **both** explicit pytest paths/nodeids **and** optional markers.
+  - Merge tier = the chunk's tasks' `## Validation Commands` ∪ the spec contract
+    (no import-impact selection when a contract exists).
+  - When a spec declares **no** contract: bounded fallback — tasks' own tests +
+    file-level direct (depth-1) importers, **never** escalate to a whole suite;
+    a note in the report says so.
+  - **Dedupe across merges is in scope**: a test file already green in this
+    feature, whose own blob and imported-source blobs are unchanged, is skipped.
+  - **Baseline-aware verdict**: the gate fails only on tests that pass on
+    `origin/<base_branch>` and fail on the branch (new reds).
+  - Safety net: a **nightly full-suite workflow on `dev`** covering every
+    `packages/*/tests`.
+- Targets: merge-tier validation **< 2 min**, `/sdd-done` feature tier **< 5 min**.
+- Decisions from spec kickoff (2026-10-18):
+  - Contract lives in spec §4 as a `### Validation Contract` body subsection,
+    cached by `/sdd-task` into the per-spec index header; the kernel reads only
+    the index.
+  - Baseline re-run happens in a temporary detached checkout of
+    `origin/<base_branch>` with the compiled Cython `.so` copied from the main
+    checkout (same mechanism as sub-worktrees); an unbuildable checkout ⇒
+    *unknown*, treated as failure.
+  - Explicit contract operands override the `integration`/`e2e` marker
+    exclusions (declaring is the opt-in); `real_llm` stays excluded and is
+    lint-flagged by `check_task_graph.py`.
+- Deterministic, stdlib-only kernel (the `test_scope` package is imported by
+  path from the system-python native hook — no Pydantic in `__init__`).
+- Backward compatible: specs/task files written before this feature keep
+  working (fallback path); the guard (`guard.py`) keeps rewriting broad pytest.
+- Never run a full suite from an agent-issued command (unchanged FEAT-563 rule).

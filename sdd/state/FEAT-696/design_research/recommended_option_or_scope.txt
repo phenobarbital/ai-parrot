@@ -1,0 +1,29 @@
+## 3. Scope
+**M1 — Parity tools:** add `jira_create_issue_link` (with `jira_get_link_types`),
+`jira_get_create_fields(project, issue_type)` (createmeta), `jira_edit_comment(issue, comment_id, body)` (FEAT-637
+template support optional), and `jira_get_accessible_resources` (all modes; see §5).
+
+**M2 — `parrot jiratoolkit auth`:** a click group in ai-parrot-tools, registered lazily like `manuals`. The flow:
+1. Print the Atlassian authorize URL (redirect = `JIRA_OAUTH_REDIRECT_URI`) and prompt the user to paste back the
+   redirected URL or the code. There is no local server (**decided**).
+2. Exchange the code for tokens and resolve `cloud_id` via accessible-resources. If several sites are returned,
+   the user picks one.
+3. Persist the result in two places (**decided: both**):
+   - `JIRA_OAUTH_CLIENT_ID` and `JIRA_OAUTH_CLIENT_SECRET` go in `.env`.
+   - The rotating access/refresh tokens, `cloud_id` and `site` go in `~/.parrot/jira/settings.local.json`, mode 0600 (**decided: per user**).
+4. Add a `FileTokenCredentialResolver` that refreshes the tokens and writes them back atomically. It plugs into
+   `credential_resolver`.
+
+Related subcommands: `status`, `logout`, `sync-kb`.
+
+**M3 — YAML knowledge base:** a Pydantic `JiraKnowledgeBase` model following the user's schema. It is loaded from
+`knowledge_base=` / `JIRA_KB_PATH`. The toolkit uses it to:
+- resolve issue-type names and ids, priorities and custom-field aliases (`team` → `customfield_10001`);
+- map template names to their allowed types;
+- enforce summary/description limits;
+- map statuses into the wiki enum.
+
+When the KB lacks an entry, the toolkit falls back to the live API and logs a stale-KB warning (**decided**).
+`sync-kb` generates the structural sections from the API and keeps the hand-written ones (status_map, templates,
+limits) (**decided**).
+

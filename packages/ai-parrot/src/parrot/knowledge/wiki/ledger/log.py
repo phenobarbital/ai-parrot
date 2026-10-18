@@ -80,6 +80,34 @@ class LedgerLog:
 
         return event.event_id, start_offset
 
+    def append_line(self, line: str) -> int:
+        """Append one already-serialized event line verbatim.
+
+        Args:
+            line: One JSON event line, with or without its trailing newline.
+
+        Returns:
+            The informational start byte offset of the append.
+
+        Raises:
+            ValueError: If the encoded line exceeds 4 KiB (4096 bytes).
+        """
+        encoded = (line if line.endswith("\n") else line + "\n").encode("utf-8")
+        if len(encoded) > 4096:
+            raise ValueError(f"Serialized event size ({len(encoded)} bytes) exceeds the 4 KiB limit.")
+
+        fd = os.open(self.path, os.O_APPEND | os.O_WRONLY | os.O_CREAT)
+        try:
+            start_offset = os.lseek(fd, 0, os.SEEK_END)
+            written = os.write(fd, encoded)
+            if written != len(encoded):
+                raise OSError("Failed to write the complete event line atomically.")
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+        return start_offset
+
     def iter_events(self, from_offset: int = 0) -> Iterator[tuple[LedgerEvent, int]]:
         """Stream events from the log starting at a given byte offset.
 
