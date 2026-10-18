@@ -10,27 +10,7 @@ from parrot.knowledge.wiki.mcp_server import build_wiki_tools, create_wiki_mcp_s
 from parrot.knowledge.wiki.project import WikiProjectConfig, load_effective_config, save_project_config
 from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
 
-LOCAL_NO_LEDGER = sorted(
-    [
-        "wiki_query",
-        "wiki_page",
-        "wiki_related",
-        "wiki_remember",
-        "wiki_note",
-        "wiki_status",
-        "wiki_symbol_lookup",
-        "wiki_code_outline",
-        "wiki_blast_radius",
-        "wiki_decision_why",
-        "wiki_decisions_for_symbol",
-        "wiki_lint",
-        "wiki_standup",
-    ]
-)
-LEDGER = sorted(
-    ["ledger_open", "ledger_ready", "ledger_claim", "ledger_close", "ledger_context", "ledger_list", "ledger_show"]
-)
-BULK = sorted(["wiki_page_hashes", "wiki_ingest_batch", "wiki_sync_push", "wiki_sync_pull"])
+from tests.knowledge.wiki._tool_surface import BULK, LEDGER, LOCAL_NO_LEDGER  # noqa: E402 — after importorskip
 
 
 @pytest.fixture
