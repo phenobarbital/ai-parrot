@@ -16,7 +16,7 @@
       "feature_id": "BRIEF-792b6e2a8f25",
       "feature": "e2e-up-launcher-exit-survival",
       "spec": "sdd/briefs/e2e-up-launcher-exit-survival.brief.md",
-      "status": "done-with-issues",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],

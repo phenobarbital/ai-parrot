@@ -2,7 +2,7 @@
 
 **Feature**: BRIEF-792b6e2a8f25 — e2e-up-launcher-exit-survival
 **Spec**: `sdd/briefs/e2e-up-launcher-exit-survival.brief.md`
-**Status**: done-with-issues
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -62,6 +62,7 @@ scenario suite this belongs to (`packages/ai-parrot-server/tests/e2e/`,
 | File | Action | Description |
 |---|---|---|
 | `packages/ai-parrot-server/tests/e2e/test_up_detached_lifecycle.py` | CREATE | Two real-subprocess AC5 survival scenarios + teardown helpers |
+| `packages/ai-parrot-server/src/parrot/e2e/cli.py` | MODIFY | `_detach_from_loop` so the launcher's loop teardown no longer kills the daemon (approved scope expansion) |
 
 ---
 
@@ -257,10 +258,9 @@ the suite's established bar.
 ## Completion Note
 
 **Completed by**: sdd-start (Claude)
-**Status**: done-with-issues — scenario 2 passes; scenario 1 is xfail
+**Status**: done
 
 - Created `packages/ai-parrot-server/tests/e2e/test_up_detached_lifecycle.py` (two real-subprocess scenarios, identity-verified liveness, `down` teardown with killpg fallback).
-- `test_up_daemon_survives_launcher_sigkill_mid_wait`: PASSES (daemon+target survive a SIGKILLed launcher).
-- `test_up_daemon_and_target_survive_launcher_exit`: FAILS reproducibly in this sandbox — after `up` exits 0 the daemon stops gracefully (state `stopped`, `cleanup_complete=true`, no `down` call) and the target follows. Marked `xfail(strict=False)` referencing `issue:0a04d048dab5` (ROOT CAUSE confirmed by strace: the launcher process itself calls kill(<daemon>, SIGKILL) at asyncio loop teardown — `BaseSubprocessTransport.close()` kills a still-running child; `_spawn_detached_target` in cli.py uses `asyncio.create_subprocess_exec`, so `start_new_session=True` does not protect against it. The watchdog then sees the daemon die and SIGTERMs the target. Not a sandbox artifact. Fix belongs in cli.py: spawn the daemon with `subprocess.Popen` (no loop transport) or neutralize the transport before returning). No product code changed.
-- Validation: `PARROT_TEST_E2E=1 pytest …/test_up_detached_lifecycle.py` → 1 passed, 1 xfailed; skipped without opt-in; `ruff check` + `black --check` clean.
-
+- The natural-exit scenario exposed a real product bug (`issue:0a04d048dab5`), root-caused by strace: the launcher's asyncio loop teardown (`BaseSubprocessTransport.close()`) SIGKILLs the detached daemon, then the watchdog tears the target down. **Scope expansion approved by the user**: fixed in `packages/ai-parrot-server/src/parrot/e2e/cli.py` with a new `_detach_from_loop()` helper, called once the readiness ticket appears in `_spawn_detached_target` (drops the transport's Popen reference; it touches asyncio's private `_transport._proc`, guarded by getattr/hasattr).
+- Validation: `PARROT_TEST_E2E=1 pytest …/test_up_detached_lifecycle.py` → 2 passed; `tests/unit/e2e/test_cli.py` → 40 passed; skipped without opt-in; ruff + black clean.
+- Follow-up: `issue:0a04d048dab5` should be closed with this fix; the private-attribute detach is a pragmatic choice — a `subprocess.Popen`-based spawn would avoid it but would require rewriting the monkeypatched unit tests.
