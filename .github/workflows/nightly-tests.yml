@@ -124,7 +124,9 @@ jobs:
           fi
 
       - name: Compute red set
+        shell: bash
         run: |
+          set -o pipefail
           ARGS=""
           if [ -f previous/red-set.json ]; then
             ARGS="--previous previous/red-set.json"
