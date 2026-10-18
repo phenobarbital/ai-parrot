@@ -122,7 +122,7 @@ async def _second_sandbox(base_path: Path) -> Path:
 
 
 def _fast_plan_tests(argv: tuple[str, ...]):
-    def _plan(*, worktree, changed_files, tier, declared=(), policy=None) -> ScopePlan:
+    def _plan(*, worktree, changed_files, tier, declared=(), policy=None, contract=None) -> ScopePlan:
         invocation = PytestInvocation(distribution="root", argv=argv, targets=())
         return ScopePlan(
             tier=tier, invocations=(invocation,), escalated=(), core_hits=(), skipped_escalations=(), notes=()
