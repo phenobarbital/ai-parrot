@@ -2,7 +2,7 @@
 
 **Feature**: cs:228 — Incomplete URL substring sanitization in `RepoWikiCache._origin_matches` (CodeQL `py/incomplete-url-substring-sanitization`, CWE-020)
 **Spec**: `sdd/briefs/repo-cache-origin-url-check.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -328,8 +328,8 @@ When you pick up this task:
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude (sdd-start)
+**Date**: 2026-10-19
+**Notes**: `_origin_matches` now parses the origin with `urlparse`, allowlists scheme and exact host, derives the slug from the path only. Tests: 55 passed (test_repo_cache.py + test_repo_build.py). Code commit 19cafc02f. Pre-existing ruff ASYNC110 at test_repo_cache.py:433 (unrelated, untouched). Compiled .so files were copied (untracked) from the main checkout to run tests.
 
-**Deviations from spec**:
+**Deviations from spec**: none
