@@ -143,7 +143,7 @@ from tests.knowledge.wiki._tool_surface import BULK, LEDGER, LOCAL_NO_LEDGER  # 
 ```python
 # occurrences: 1 (verified: grep -c 'assert names == {' <path>)
 # REPLACE — the `assert names == { ... }` literal (lines 89-98) with:
-            assert names == set(LOCAL_NO_LEDGER)
+            assert names == set(LOCAL_NO_LEDGER) | set(LEDGER)  # _seed_wiki creates .git → ledger overlay mounted (spec rev 0.2)
 # occurrences: 1 (verified: grep -c 'assert captured\["kwargs"\] == {}' <path>)
 # REPLACE line 182 with:
         assert set(captured["kwargs"]) == {"sqlite_policy"}
@@ -166,7 +166,7 @@ BASE_TOOLS = set(LOCAL_NO_LEDGER)
 - [ ] AC1: `test_initialize_and_list_tools`, `test_no_namespaces_keeps_a_plain_store`,
       `test_namespace_is_injected`, `test_no_vault_keeps_base_tool_set`,
       `test_sqlite_backend_unaffected_by_arango_branch` pass.
-- [ ] AC2: `grep -rn '"wiki_decisions_for_symbol"' packages/ai-parrot/tests/knowledge/wiki/` hits only `_tool_surface.py`.
+- [ ] AC2: among the four surface test modules, the inventory literal lives only in `_tool_surface.py` (spec rev 0.2 scope).
 - [ ] AC3: `test_tool_surface_golden.py` still passes (2 tests).
 - [ ] No linting errors on the five files.
 
