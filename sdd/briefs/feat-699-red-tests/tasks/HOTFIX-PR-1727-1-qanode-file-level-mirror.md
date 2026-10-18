@@ -2,7 +2,7 @@
 
 **Feature**: PR-1727 — FEAT-699 red tests
 **Spec**: `sdd/briefs/feat-699-red-tests.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: none
@@ -255,8 +255,8 @@ When you pick up this task:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (sequential fallback: engine cannot assess brief task ids)
+**Date**: 2026-10-19
+**Notes**: QANode._pytest_targets/_pytest_target_for now delegate to the file-level mirror; _deepest_existing_dir removed; 3 test files rewritten to file-level semantics. 33 tests green (qa_default_criteria, qanode_feature_tier, mirror).
 
 **Deviations from spec**: none

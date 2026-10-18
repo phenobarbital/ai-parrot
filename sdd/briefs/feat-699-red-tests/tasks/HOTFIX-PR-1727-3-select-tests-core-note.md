@@ -2,7 +2,7 @@
 
 **Feature**: PR-1727 — FEAT-699 red tests
 **Spec**: `sdd/briefs/feat-699-red-tests.brief.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: S (< 2h)
 **Depends-on**: none
@@ -179,8 +179,8 @@ When you pick up this task:
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (sequential fallback: engine cannot assess brief task ids)
+**Date**: 2026-10-19
+**Notes**: Test renamed test_core_change_is_a_note_not_an_escalation with the four assertions; tests/sdd_scripts/test_select_tests.py: 20 green.
 
 **Deviations from spec**: none
