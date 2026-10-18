@@ -1341,6 +1341,25 @@ class DevelopmentNode(DevLoopNode):
                 return data.get("feature") or path.stem
         return None
 
+    @staticmethod
+    def _contained_index_path(worktree_path: str, index_path: str) -> Optional[Path]:
+        """Resolve ``index_path`` against the worktree; ``None`` when it escapes it.
+
+        Args:
+            worktree_path: The run's worktree root.
+            index_path: Repo-relative index path reported by sdd-research.
+
+        Returns:
+            The absolute path, or ``None`` for an absolute or worktree-escaping path.
+        """
+        if Path(index_path).is_absolute():
+            return None
+        root = Path(worktree_path).resolve()
+        candidate = (root / index_path).resolve()
+        if candidate == root or root in candidate.parents:
+            return candidate
+        return None
+
     async def _build_scheduler(self, research: ResearchOutput) -> Optional[TaskScheduler]:
         """Resolve the per-spec index and build a :class:`TaskScheduler`.
 
@@ -1359,6 +1378,16 @@ class DevelopmentNode(DevLoopNode):
         """
         # Index discovery + parsing are small local filesystem reads; keep
         # them off the event loop to honour the async-first rule.
+        if research.index_path:
+            explicit = await asyncio.to_thread(self._contained_index_path, research.worktree_path, research.index_path)
+            if explicit is not None:
+                return await asyncio.to_thread(TaskScheduler.from_index_file, explicit)
+            self.logger.warning(
+                "Ignoring index_path %r: it does not resolve inside worktree %s; "
+                "falling back to the per-spec index scan.",
+                research.index_path,
+                research.worktree_path,
+            )
         feature_slug = await asyncio.to_thread(self._find_feature_slug, research.worktree_path, research.feat_id)
         if feature_slug is None:
             return None

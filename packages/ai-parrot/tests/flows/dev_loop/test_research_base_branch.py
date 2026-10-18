@@ -198,3 +198,24 @@ class TestResolveBaseBranch:
         result = await node.execute({"bug_brief": _brief(), "run_id": "r1"})
 
         assert result.base_branch != ""
+
+
+@pytest.mark.asyncio
+async def test_brief_frontmatter_resolves_base_branch(tmp_path, monkeypatch):
+    """FEAT-698: a brief's frontmatter (`kind: brief`, no `type:`) still yields base_branch."""
+    _pin_worktree_base(monkeypatch, tmp_path)
+    worktree = tmp_path / "actual" / "hotfix-ops-1-x"
+    (worktree / "sdd" / "briefs").mkdir(parents=True)
+    (worktree / "sdd" / "briefs" / "x.brief.md").write_text("---\nkind: brief\nbase_branch: main\n---\n# Brief\n")
+    dispatch_out = ResearchOutput(
+        jira_issue_key="OPS-1",
+        spec_path="sdd/briefs/x.brief.md",
+        feat_id="",
+        branch_name="hotfix-ops-1-x",
+        worktree_path=str(worktree),
+        base_branch="dev",
+    )
+    dispatcher = MagicMock()
+    dispatcher.dispatch = AsyncMock(return_value=dispatch_out)
+    result = await _build_node(dispatcher).execute({"bug_brief": _brief(), "run_id": "r1"})
+    assert result.base_branch == "main"

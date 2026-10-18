@@ -1,0 +1,9 @@
+## 3. Scope (single hypothesis)
+
+1. **Structured counts at the source.** `select_tests --run` gains `--junitxml`/`--report-json <path>`. It parses passed/failed/skipped/errors/duration per suite. The sdd-coder validation path (`coder_run_validation`) persists those counts in its evidence record (`TaskCompletionEvidence.completion_facts` or a typed `TestRunSummary`). The sdd-worker fallback lane writes the same JSON next to the task.
+2. **Re-run in `/sdd-done`, only for specs with ≤10 tasks** (new step between §4.5 and §5; decided deterministically from the per-spec index's task count): `select_tests --tier feature --base origin/<base> --run --report-json`. The result reflects the final HEAD.
+3. **PR-body table, always built from the aggregate of every task's recorded runs**: one row per suite (test module or package) plus a **Total** row (run · passed · failed · skipped · duration). Add a collapsible per-task section built from the recorded per-task evidence. Mark rows where the evidence predates the final HEAD.
+4. **Report only, never block.** Failures show up in the table (❌), and the PR is opened anyway.
+
+Not in scope: CI changes, coverage %, E2E gate.
+

@@ -26,12 +26,13 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "ai-parrot>=1.2.2",
+    "ai-parrot>=1.2.3",
     "PyGithub>=2.1",
     "ddgs>=9.5.2",
     # parrot_tools.graphindex.toolkit imports rustworkx unconditionally at
     # module level (FEAT-471).
     "rustworkx>=0.15",
+    "ruamel-yaml>=0.18",
 ]
 
 [project.optional-dependencies]

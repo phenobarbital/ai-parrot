@@ -32,10 +32,9 @@ when safe.
 - Do not modify the spec.
 - Do not mark tasks done unless there is evidence in the worktree.
 - Always show a verification report before writing closeout state.
-- Hotfixes never merge directly to `main`.
-- Hotfixes never push directly to `main`.
-- For hotfixes, print a manual `gh pr create --base main` command instead of
-  creating or merging the PR automatically.
+- Never push directly to `main` and never merge into `main` (`--merge` with base `main` is refused before any push).
+- `$sdd-done` opens the PR itself in every flow against `base_branch`, `main` included; on `gh` failure keep the worktree/branch, print the manual command and exit non-zero.
+- A brief (`sdd/briefs/<slug>.index.json`, no FEAT id) uses its own lane: resolve by scanning worktrees, verify the per-brief index + Validation Commands, close in place, never check out a branch in the shared checkout; close its `ledger_issue` only after a confirmed merge.
 - Use `--sync-down` only after the hotfix PR has merged to `main`.
 - Use `--sync-dev` only as a deprecated alias for `--sync-down`.
 - Merge gate checks apply only to `--merge` flag, not PR flow.
@@ -129,6 +128,12 @@ do not run task closure again on base_branch and do not clean worktrees with unk
    - task count by status
    - task-by-task evidence
    - E2E policy/status/gate_satisfied recorded in step 4.6
+   - Test report (FEAT-695), never blocking: run
+     `python -m scripts.sdd.test_report decide-rerun --index sdd/tasks/index/<feature-slug>.json`;
+     when it says `rerun`, run in the background
+     `timeout -k 10 1800 python -m scripts.sdd.select_tests --tier feature --base origin/<base_branch> --worktree <wt> $(printf -- '--task-file %s ' <every task file of the index>) --feature FEAT-<ID> --report-task _rerun --no-ledger --timeout 300 --run`;
+     then `python -m scripts.sdd.test_report render --index <idx> --worktree <wt> --out "$TEST_REPORT_MD"`
+     (a path under the report root). Report `Tests: <passed>/<tests> (<failed> failed) - re-run: <done|skipped (N tasks > 10)>`
    - lint residuals and any missing review evidence
 7. Respect flags:
    - `--dry-run`: stop after the report
@@ -180,9 +185,16 @@ do not run task closure again on base_branch and do not clean worktrees with unk
 11. Snapshot ledger issues (feature flows only):
     - For features (not hotfixes), `git fetch origin <BASE_BRANCH>` then create a
       throwaway detached worktree at `origin/<BASE_BRANCH>` (`git worktree add --detach`)
-    - Run `wikitoolkit ledger export` there; only when its output contains `(changed)`:
-      `git add sdd/ledger/issues.jsonl`, commit `sdd: ledger snapshot for <FEAT-ID>`,
+    - Run `wikitoolkit ledger export`, `wikitoolkit ledger export-log` and
+      `wikitoolkit ledger rotate-log --older-than-days 30` there (this step is the only
+      place rotation may run); only when `export` reports `(changed)`, `export-log`
+      reports `(+N ...)` or `rotate-log` reports `Rotated`:
+      `git add sdd/ledger/issues.jsonl sdd/ledger/events.jsonl` (plus `sdd/ledger/archive`
+      when it exists), commit `sdd: ledger snapshot for <FEAT-ID>`,
       and `git push origin HEAD:<BASE_BRANCH>`
+    - On cleanup, restore and clean `sdd/ledger` in the throwaway worktree
+      (`git restore --staged --worktree -- sdd/ledger` + `git clean -fdq -- sdd/ledger`)
+      so a stale untracked archive never survives a rejected push
     - On a rejected push, fetch and create a fresh throwaway worktree at the
       updated remote base, re-export, commit and retry — up to 3 attempts,
       then warn and continue without failing `$sdd-done`
@@ -191,11 +203,10 @@ do not run task closure again on base_branch and do not clean worktrees with unk
     - Skip the snapshot entirely for hotfixes
 
 12. Integrate:
-    - If `base_branch == main`, refuse automatic merge or PR creation. Print
-      the manual hotfix PR command:
-      `gh pr create --base main --head <branch> --title "<title>" --body "<verification summary>"`.
-    - If feature and no `--merge`, run `gh pr create --base <base_branch> --head <branch>`.
-    - If `gh` is missing or not authenticated, print the manual command.
+    - If `base_branch == main` and `--merge` is set, refuse before any push; merging a `main` PR is the human act.
+    - Without `--merge` (every flow, `main` included), run `gh pr create --base <base_branch> --head <branch>`; the PR body includes the
+      rendered `## Tests` section (`$(cat "$TEST_REPORT_MD")`) after `<N>/<total> tasks verified.`.
+    - If `gh` is missing, not authenticated or fails, keep the worktree/branch, print the manual command and exit non-zero.
     - If feature and `--merge`, merge into `base_branch`, run
       `scripts/sdd/heal_orphans.sh <feature-slug>`, commit any staged orphan
       cleanup, and push `base_branch`.
@@ -229,6 +240,7 @@ Branch pushed: <branch>
 PR opened: <url> or manual command printed
 Ledger: closed issue:<id> (task:TASK-NNN) / skipped issue:<id> - <reason>
 E2E: <policy> - <status> (gate_satisfied: <bool>)
+Tests: <passed>/<tests> (<failed> failed) - re-run: <done | skipped (N tasks > 10)>
 Worktree removed: .claude/worktrees/<name>
 Jira: <key> -> Done, when requested and successful
 ```

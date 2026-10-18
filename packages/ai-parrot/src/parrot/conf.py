@@ -494,6 +494,12 @@ AWS_NOVA_API_KEY = config.get("AWS_NOVA_API_KEY", fallback=None)
 #   when unset, the base URL is constructed from the resolved region.
 BEDROCK_MANTLE_API_KEY = config.get("BEDROCK_MANTLE_API_KEY", fallback=None)
 BEDROCK_MANTLE_BASE_URL = config.get("BEDROCK_MANTLE_BASE_URL", fallback=None)
+AWS_NOVA_REGION = config.get("AWS_NOVA_REGION", fallback=None)
+# Dedicated Bedrock SigV4 credentials — the "bedrock" profile in
+# AWS_CREDENTIALS, isolated from S3/DynamoDB/monitoring keys.
+AWS_BEDROCK_KEY_ID = config.get("AWS_BEDROCK_KEY_ID", fallback=None)
+AWS_BEDROCK_SECRET_KEY = config.get("AWS_BEDROCK_SECRET_KEY", fallback=None)
+AWS_BEDROCK_REGION = config.get("AWS_BEDROCK_REGION", fallback=BEDROCK_AWS_REGION or AWS_NOVA_REGION or "us-east-2")
 
 # Backend (DynamoDB) credentials — kept separate from the general AWS_ACCESS_KEY/
 # AWS_SECRET_KEY so that the conversations/artifacts backend can run against a
@@ -547,6 +553,13 @@ AWS_CREDENTIALS = {
         "aws_key": config.get("AWS_NOVA_SONIC_KEY_ID"),
         "aws_secret": config.get("AWS_NOVA_SONIC_SECRET_KEY"),
         "region_name": config.get("AWS_NOVA_SONIC_REGION", fallback="us-east-1"),
+    },
+    "bedrock": {
+        "use_credentials": bool(AWS_BEDROCK_KEY_ID and AWS_BEDROCK_SECRET_KEY),
+        "aws_key": AWS_BEDROCK_KEY_ID,
+        "aws_secret": AWS_BEDROCK_SECRET_KEY,
+        "aws_bearer_token": AWS_NOVA_API_KEY,
+        "region_name": AWS_BEDROCK_REGION,
     },
 }
 
@@ -633,6 +646,10 @@ WORKDAY_CLIENT_SECRET = config.get("WORKDAY_CLIENT_SECRET")
 WORKDAY_TOKEN_URL = config.get("WORKDAY_TOKEN_URL")
 WORKDAY_WSDL_PATH = config.get(
     "WORKDAY_WSDL_PATH", fallback=BASE_DIR.joinpath("env", "workday", "staffing_custom_44_2.wsdl")
+)
+# Get_Positions only exists in the Staffing WSDL; WORKDAY_WSDL_PATH may point elsewhere.
+WORKDAY_WSDL_STAFFING = config.get(
+    "WORKDAY_WSDL_STAFFING", fallback=BASE_DIR.joinpath("env", "workday", "staffing_custom_44_2.wsdl")
 )
 WORKDAY_WSDL_TIME = config.get(
     "WORKDAY_WSDL_TIME", fallback=BASE_DIR.joinpath("env", "workday", "timetracking_custom_44_2.wsdl")

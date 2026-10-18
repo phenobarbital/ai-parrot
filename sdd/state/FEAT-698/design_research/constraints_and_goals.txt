@@ -1,0 +1,24 @@
+Goals:
+- One command from "here is a bug/alert/issue" to "worktree ready with an actionable brief inside it".
+- Research-first: fetch the source artifact (gh api for code-scanning alerts), locate the code via the repo knowledge graph (symbol lookup, blast radius), pull ledger context for touched files, establish root cause BEFORE asking the user anything.
+- Bounded Q&A: only decisions research could not settle, hard cap ~5 questions, --no-interview skips and records assumptions.
+- A single brief document an implementer (human, sdd-worker, or sdd-coder) can execute without reading anything else.
+- Optional task split using local ids HOTFIX-<KEY>-1..N — no reserve_ids.py calls.
+
+Base-branch resolution (binding decisions):
+- Ledger-sourced briefs are ALWAYS based on dev — never main; --base-branch main combined with a ledger source is refused.
+- All other sources (code-scanning alert, GitHub issue, Jira, free text, file) default to main, with --base-branch available for exceptions (dev, staging).
+- /sdd-done opens the PR itself in every flow, targeting the flow's base_branch (main for a hotfix brief, dev for regular features). Direct merge into main stays forbidden (--merge refused; the merge of the main PR is the only human act).
+
+Constraints:
+- Worktree rules unchanged: always under .claude/worktrees/, created from origin/<base_branch> via scripts.sdd.ensure_worktree, never HEAD; git worktree add -b X <path> origin/main auto-sets upstream so the command must run branch --unset-upstream immediately.
+- The brief is committed INSIDE the worktree, never in the shared main checkout; it rides in the fix PR.
+- FlowMeta (parrot.knowledge.wiki.ledger.sdd_meta) ships in the wikitoolkit wheel and must stay untouched — briefs bypass FlowMeta/resolve_flow entirely and use their own light frontmatter (kind: brief) parsed at command level.
+- No new id kinds in sdd/tasks/.id_ledger.json; no FEAT/TASK reservation on the brief path.
+- Identity when there is no Jira ticket: the slug (or the ledger id for ledger sources) is the KEY.
+
+Anti-goals (failure even if it works):
+- Any path by which the brief flow pushes to or merges into main directly.
+- Writing or committing the brief in the shared main checkout.
+- A quick flow that silently skips research and produces a guess-shaped brief.
+- Reintroducing FEAT/TASK id reservation on the hotfix path.

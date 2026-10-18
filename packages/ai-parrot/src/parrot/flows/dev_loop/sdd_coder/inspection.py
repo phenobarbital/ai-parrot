@@ -52,7 +52,7 @@ from pydantic import BaseModel, ConfigDict
 from parrot.flows.dev_loop.procs import git_env, run_bounded
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.fidelity import check_fidelity, parse_task_files
-from parrot.flows.dev_loop.task_scheduler import TaskRef, TaskScheduler
+from parrot.flows.dev_loop.task_scheduler import TaskRef, TaskScheduler, resolve_index_path
 
 #: Spec AC4/AC5: keep every returned snapshot's own (non-referenced) content small.
 _MAX_INLINE_EXCERPT_BYTES = 4096
@@ -102,7 +102,7 @@ async def _publish_text(store: ExecutionEvidenceStore, execution_id: str, text: 
 
 def _resolve_index_path(worktree: Path, feature: str) -> Path:
     """The per-spec index path `TaskScheduler.from_worktree` itself resolves to (FEAT-145)."""
-    return worktree / "sdd" / "tasks" / "index" / f"{feature}.json"
+    return resolve_index_path(worktree, feature)
 
 
 def _load_scheduler(worktree: Path, feature: str) -> TaskScheduler:

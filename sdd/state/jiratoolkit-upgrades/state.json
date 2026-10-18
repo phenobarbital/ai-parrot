@@ -1,0 +1,4 @@
+{"feat_id":"PROVISIONAL","slug":"jiratoolkit-upgrades","phase":"committed","mode":"enrichment","started_at":"2026-10-16","budget":"tight",
+ "source":{"kind":"inline","summary_oneline":"JiraToolkit: missing Atlassian-MCP parity methods, `parrot jiratoolkit auth` 3LO CLI, YAML knowledge base"},
+ "phases":{"plan":{"approved_by_user":false,"note":"gates collapsed into one Q&A round"},"qa":{"questions_total":3,"questions_answered":3}},
+ "notes":"FEAT-ID not reserved: id ledger next_feature_id=696 but specs already cite FEAT-715; /sdd-spec reserves via reserve_ids.py"}

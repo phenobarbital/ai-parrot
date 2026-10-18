@@ -16,7 +16,8 @@ class JiraToolkitConfig(BaseModel):
     server_url: str | None = Field(default=None, description="Jira base URL, e.g. https://acme.atlassian.net")
     # Verified against JiraToolkit._init_jira_client (jiratoolkit.py:889-939): the
     # only auth_type values handled by the static (non oauth2_3lo) client-init path.
-    auth_type: Literal["basic_auth", "token_auth", "oauth"] | None = None
+    auth_type: Literal["basic_auth", "token_auth", "oauth", "oauth2_local"] | None = None
+    knowledge_base: str | None = Field(default=None, description="Path to YAML knowledge base file")
     username: str | None = None
     password: str | None = Field(default=None, json_schema_extra=_SECRET)
     token: str | None = Field(default=None, json_schema_extra=_SECRET)

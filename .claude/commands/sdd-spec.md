@@ -5,7 +5,7 @@ Scaffold a new Feature Specification using the SDD methodology.
 
 ## Usage
 ```
-/sdd-spec [<feature-slug>] [--type feature|hotfix] [--base-branch <branch>] [--interview | --no-interview] [--resume [<staging-dir>]] [--research full|light|none] [--no-gate] [--budget tight|default|loose] [-- <notes>]
+/sdd-spec [<feature-slug>] [--type feature] [--base-branch <branch>] [--interview | --no-interview] [--resume [<staging-dir>]] [--research full|light|none] [--no-gate] [--budget tight|default|loose] [-- <notes>]
 ```
 
 `--type` / `--base-branch` are explicit overrides for the flow resolved in
@@ -183,17 +183,10 @@ TYPE=$(echo "$META" | awk '{print $1}')
 BASE_BRANCH=$(echo "$META" | awk '{print $2}')
 ```
 
-**Validation (hotfix/main):** `resolve_flow()` enforces `type='hotfix' ⇒
-base_branch='main'` internally (it returns a `FlowMeta`, whose own
-cross-field validator raises `ValueError` — this is NOT re-derived as a
-separate bash check). The `python -c` call above therefore exits non-zero
-and prints a traceback when a `--type hotfix --base-branch dev`-style
-combination (or hotfix frontmatter with a non-`main` base) is resolved. On
-that failure, abort with the same message as before:
+**Hotfixes are not specs (FEAT-698):** if `--type hotfix` was passed, or the exploration
+doc's frontmatter says `type: hotfix`, abort before resolving the flow:
 ```
-⚠️  type='hotfix' requires base_branch='main' (got base_branch='<value>').
-   Fix the brainstorm/proposal frontmatter (or --base-branch flag) and
-   re-run /sdd-spec.
+⚠️  /sdd-spec no longer scaffolds hotfixes — use /sdd-brief <source> (FEAT-698).
 ```
 
 **Validation (feature/not-main):** `FlowMeta` does NOT reject
@@ -204,7 +197,7 @@ manual bash condition after the resolver returns successfully. If
 ```
 ⚠️  type='feature' cannot base on 'main'. Features land on dev (default)
    or staging (during a release freeze). For changes that must base on
-   main, set type='hotfix' in the document frontmatter.
+   main, use /sdd-brief <source> (FEAT-698).
 ```
 
 Note: `staging` is a valid `base_branch` for `type: feature` during a release freeze
@@ -498,8 +491,8 @@ stay with the thinking model — eligibility never delegates a design choice.
      match this shape exactly:
      ```yaml
      ---
-     type: feature        # or: hotfix
-     base_branch: dev     # or: main (mandatory for hotfix)
+     type: feature
+     base_branch: dev     # or: staging (release freeze)
      projects: [ai-parrot]  # FEAT-576 — parts of the codebase; carried from the brainstorm/proposal
      tags: [memory]         # FEAT-576 — 2–6 kebab-case keywords; carried from the brainstorm/proposal
      # reuse_feature_id: FEAT-<NNN>   # OPTIONAL — only for an intentional
@@ -511,22 +504,7 @@ stay with the thinking model — eligibility never delegates a design choice.
      exploration doc, derive projects from §4 research (mapping in
      `/sdd-brainstorm` §10) and propose 2–6 tags. Vocabulary: `KNOWN_PROJECTS`
      in `scripts/sdd/sdd_meta.py` (unknown values warn).
-   - **Feature ID — SKIP ENTIRELY when `TYPE == "hotfix"` (FEAT-466).** A
-     bugfix is not a feature and reserves no `FEAT-<NNN>`: ledger ids exist
-     for features and the brainstorm → spec → task SDD flow, and a hotfix is
-     identified by its **Jira issue key** instead. Do NOT call
-     `reserve_ids.py --kind feature` on the hotfix path — write no
-     `FEAT-<NNN>` anywhere in the spec, and use the Jira key as the
-     document's identity line (`**Jira**: <KEY>` in place of `**Feature
-     ID**: FEAT-<NNN>`). This is not an oversight to fix later: it is the
-     whole point — the allocator's "current branch must equal
-     `--base-branch`" precondition (`reserve_ids.py`, `_assert_safe_to_reserve`)
-     would otherwise be
-     unreachable for a hotfix that has to reserve on `main` while another
-     worktree already has `main` checked out. Skipping reservation removes
-     the problem rather than solving it.
-
-     For `TYPE == "feature"`, **first check whether this slug already owns
+   - **Feature ID.** **First check whether this slug already owns
      an ID**. A slug has ONE feature ID for its lifetime: re-running
      `/sdd-spec` over an existing spec must REUSE that number, never
      reserve a second one. A second reservation forks the feature's
@@ -694,7 +672,6 @@ git commit -m "sdd: add spec for FEAT-<ID> — <feature-name>"
 
 ### 7. Output
 
-**`TYPE == "feature"`:**
 ```
 ✅ Spec created and committed: sdd/specs/<feature-name>.spec.md
 
@@ -713,26 +690,6 @@ Next:
   1. Review the spec — check Acceptance Criteria and Architectural Design.
   2. Mark status: approved when ready.
   3. Run /sdd-task sdd/specs/<feature-name>.spec.md
-```
-
-**`TYPE == "hotfix"` (FEAT-466 — no id reserved):**
-```
-✅ Spec created and committed: sdd/specs/<feature-name>.spec.md
-
-   Identity: Jira <KEY> (no FEAT-<NNN> reserved — a bugfix is not a feature)
-   Base branch: main
-
-   To create the worktree (origin/main, never HEAD/dev):
-     git worktree add -b hotfix-<KEY>-<feature-name> \
-       .claude/worktrees/hotfix-<KEY>-<feature-name> origin/main
-
-Next:
-  1. Review the spec — check Acceptance Criteria and Architectural Design.
-  2. Mark status: approved when ready.
-  3. Normally: skip /sdd-task and dispatch straight to development (the
-     single-agent path handles a one-or-two-commit hotfix directly from
-     the spec). Only run /sdd-task if this hotfix genuinely needs
-     decomposition — it will not reserve TASK-<NNN> ids either.
 ```
 
 ## Reference
