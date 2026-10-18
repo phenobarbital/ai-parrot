@@ -16,7 +16,7 @@ tags: [semantic-layer, sidemantic, sqlglot, rls, pbac, mcp]
 
 **Date**: 2026-10-19
 **Author**: Jesus Lara
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: B
 **Source proposal**: `sdd/proposals/semantic-layer.proposal.md` (research of 2026-10-14; still untracked in git at the time of writing)
 
@@ -82,8 +82,16 @@ Decisions taken during discovery (Rounds 0–2):
 - **Positive allowlists only.** sqlglot is a transpiler, not a validator: the guard walks the AST
   and requires every table / column / function to be known. One `Select`, no `Command`/DDL/DML,
   forced `LIMIT`.
-- **Caches never cross security contexts.** Compiled-SQL cache keys include the role-set and
-  tenant digest. No result cache in v1.
+- **PBAC gates every request.** Resolve physical resources and enforce `driver:connect` and
+  `table:read` before returning compiled SQL or executing it, including cache hits, saved queries,
+  dimension-value queries and raw SQL. Governed requests fail closed if the evaluator is unavailable.
+- **Caches contain no governed SQL.** Cache only pre-governance compiler output. Apply current
+  member permissions, PBAC, RLS and masking on every request; never cache authorization decisions.
+  No reusable query-result cache in v1; dataset hand-off uses bounded, expiring, subject-owned handles.
+- **Sensitive-column use is explicit.** A projection mask grants no right to filter, group, order,
+  join or compute on the underlying value. Enforce role-specific usage rights through AST lineage.
+- **Dataset isolation survives hand-off.** Results and attached DatasetManager instances must be
+  scoped to the authenticated subject and session. A shared manager is not an eligible destination.
 - **Dialects:** Postgres, BigQuery, DuckDB in v1 (all three have `AbstractDatabaseSource`
   implementations and entries in `SQLGLOT_DIALECT_MAP`).
 - **Pins:** `sidemantic==0.12.0` (exact — field moves and CLI renames shipped unlabeled; `main`
@@ -155,6 +163,14 @@ ai-parrot owns, on **sqlglot** (own code, full control):
      `exp.Literal`s) **below** any aggregation. Deny-by-default when the model is governed and no
      `PermissionContext` is available.
    - **Column masking**: projection rewrite per role (`null` / `hash` / `partial`) and catalog hiding.
+     Resolve column lineage through aliases, CTEs, subqueries and expressions before rewriting;
+     reject unauthorized sensitive-column use anywhere in the query. `ModelPolicy` declares
+     separate projection and usage rights; absent usage rights deny filters, joins, grouping,
+     ordering, windows and derived expressions over masked/hidden columns. Trusted model metric
+     definitions may explicitly grant an aggregate use without granting arbitrary raw-SQL use;
+     caller-supplied filters and expressions remain subject to the same restrictions. Only
+     compiler-injected RLS predicates and mask expressions have trusted provenance; callers cannot
+     label SQL as trusted. Unresolved lineage fails closed.
    - **Positive guard**: `qualify` with the model-derived schema, allowlist of tables/columns/
      functions, single `Select`, forced/capped `LIMIT`. Applied to compiled SQL (sanity) and to the
      optional free-SQL `run_sql` tool (exploration path).
@@ -169,12 +185,16 @@ ai-parrot owns, on **sqlglot** (own code, full control):
    roles), model, engine, compiled_sql, dialect, row_count, duration_ms, outcome}` persisted
    through the same `AbstractKMSSigner` + async `storage` callable contract `AuditLedger` uses.
 6. **Execution bridge** to `DatabaseQueryToolkit.get_source(driver).query(credentials, sql)`;
-   credentials come from the model's named `connection` (env/navconfig), never from the LLM.
+   first resolve all physical resources and call `DataPlanePolicyGuard.authorize_source()`.
+   The satellite must require an available evaluator for governed models, because the existing
+   guard can fail open when the auth dependency is missing. RLS lookup is not authorization.
+   Credentials come from the model's named `connection` (env/navconfig), never from the LLM.
 7. **Surfaces**: `SemanticLayerToolkit(AbstractToolkit, tool_prefix="sl")`; `parrot mcp-local
    semantic-layer` through a `.parrot/mcp-toolkits.yaml` section (no new server code — `mcp-local`
    already serves any `AbstractToolkit` class path); `SemanticLayerHandler(BaseView)` under
    `/api/v1/agents/semantic/{agent_id}` registered in `manager.py` like `DatasetManagerHandler`;
-   `sl_save_result_as_dataset` → `DatasetManager.add_dataframe()` for pandas/viz follow-ups.
+   `sl_save_result_as_dataset` → a subject/session-scoped `DatasetManager.add_dataframe()` for
+   pandas/viz follow-ups; hosts unable to enforce this isolation do not expose the hand-off tool.
 
 ✅ **Pros:**
 - Richest semantic core available in Python today, compile-only, three dialects, Ossie + dbt +
@@ -318,7 +338,8 @@ compiler" (Round 2b) are reconciled as **one internal `compile()` dispatch on `m
   `sl_list_saved_queries`, `sl_compile_query(query)` → SQL + explanation,
   `sl_query_metrics(query)` → rows + compiled SQL + audit id,
   `sl_run_sql(sql)` (only when `allow_raw_sql=True`; positive-guarded exploration),
-  `sl_save_result_as_dataset(result_id, name)` (only when a `DatasetManager` is attached).
+  `sl_save_result_as_dataset(result_id, name)` (only when a subject/session-scoped `DatasetManager`
+  is attached and authenticated ownership can be enforced on every subsequent read/export).
   Each tool has a single effect and a truthful side-effect annotation.
 - The catalog the LLM sees is already filtered by the caller's roles; asking for an unlisted
   metric returns an error naming the nearest allowed members — never a number.
@@ -340,35 +361,57 @@ compiler" (Round 2b) are reconciled as **one internal `compile()` dispatch on `m
    `load_from_directory` (format auto-detect; Ossie documents first validated against the pinned
    0.1.1 JSON Schema) → parse `*.policy.yaml` into `ModelPolicy` → build the **physical schema
    map** (datasets → `schema.table`, fields → columns/types) used by `qualify`, the guard and RLS.
-   Reject models with `security:`; warn on policy entries referencing unknown members.
+   Reject models with `security:` or policy entries referencing unknown members; a misspelled
+   security binding must not silently remove a restriction.
 2. **Request** → `SemanticQuery` (pydantic, validators: WHERE/HAVING separation, grain required
    for time dims, `saved_query` XOR `metrics`, limit ≤ cap).
 3. **Authorize**: `PermissionContext` from `_permission_context` (`_pre_execute` → ContextVar,
    the `DatasetManager` pattern). Governed model + no context → `SemanticAccessError`.
-   Role allowlist check on every requested member (unlisted → error with suggestions).
-4. **Compile** in `asyncio.to_thread`: `engine == "sidemantic"` → `layer.compile(...)`;
+   Expand saved queries first; check role rights on every referenced member, including filters,
+   ordering and dimension-value requests (unlisted → error with suggestions).
+4. **Compile/cache** in `asyncio.to_thread`: `engine == "sidemantic"` → `layer.compile(...)`;
    `engine == "native"` → sqlglot AST builder. Both return a `CompiledQuery {sql, dialect,
-   engine, members, tables}`.
+   engine, members, tables}`. An in-memory LRU stores only immutable pre-governance output, keyed
+   by `(model digest, policy digest, expanded canonical query JSON, dialect, engine/version,
+   connection/schema identity)`. Cached output must contain no subject-derived predicates or
+   values; bypass the cache for compilation that depends on subject context. Clone the AST before
+   governance. A hit skips compilation only, never authorization or rewriting. Policy/model
+   changes invalidate entries; raw SQL follows the same governance path without this cache.
 5. **Govern** (own sqlglot pass, same for both engines and for `run_sql`):
-   `parse_one(sql, read=dialect)` → `qualify(schema)` → **RLS push-down** (rules via
+   `parse_one(sql, read=dialect)` → `qualify(schema)` → resolve all physical resources and
+   **authorize PBAC** via `DataPlanePolicyGuard.authorize_source(ctx, resources)` → enforce
+   role-specific column usage through full AST lineage → **RLS push-down** (rules via
    `RlsRegistry.lookup(driver, tables)`, rendered with `render(rule, ctx)`, injected as filtered
    scans below aggregation; literals typed) → **masking** rewrite of projected sensitive columns →
    **positive guard** (single `Select`, allowlisted tables/columns/functions, no
-   `Command`/DDL/DML, forced `LIMIT ≤ cap`) → `sql(dialect=)`.
-6. **Cache** compiled governed SQL by `(model digest, canonical query JSON, dialect, roles+tenant
-   digest)` — in-memory LRU per toolkit; never shared across contexts.
+   `Command`/DDL/DML, forced `LIMIT ≤ cap`) → `sql(dialect=)`. Governed requests deny on a
+   missing/unavailable evaluator, denied resource, unresolved lineage or failed RLS rendering.
+   This step also runs for compile-only requests, saved queries and dimension-value lookups.
+6. **Return or execute**: compile-only returns governed SQL only after step 5. Never persist
+   governed SQL in the compilation cache. Each request uses a consistent model/policy snapshot;
+   if its version changes before execution, restart authorization and governance.
 7. **Execute** via `DatabaseQueryToolkit.get_source(driver).query(credentials, sql)`; credentials
    resolved from the model's named connection (env/navconfig), never from tool arguments.
 8. **Audit**: append `SemanticAuditEntry` (signed; `storage` async callable) with the structured
    query, subject digest, engine, compiled SQL, dialect, `row_count`, `duration_ms`, outcome.
    The audit id is returned to the agent.
-9. **Hand-off**: `sl_save_result_as_dataset` turns the cached result into a DataFrame and calls
-   `DatasetManager.add_dataframe(name, df, description, metadata={audit_id, compiled_sql})`.
+9. **Hand-off**: retain results only when enabled, under an opaque random `result_id` in a
+   bounded store with a configured TTL. Bind each handle to agent, authenticated user, tenant,
+   session, model/policy versions and a digest of roles plus all policy-relevant subject metadata.
+   This is temporary hand-off storage, never a query-result cache. On save, verify ownership,
+   expiry and unchanged security context; recheck member rights and PBAC. Changed context or
+   policy requires a fresh query. Then call `DatasetManager.add_dataframe()` on a manager
+   isolated to that owner/session, recording audit id, SQL and security provenance as metadata.
+   Metadata and unguessable IDs alone are not authorization. The host must gate every subsequent
+   dataset read, analysis, export and listing with the same ownership/context/version checks,
+   and invalidate the dataset on expiry, logout or policy/context change. If the host cannot
+   provide those gates, disable hand-off; never place governed rows in a shared manager catalog.
 
 ### Edge Cases & Error Handling
 
 - **No `PermissionContext`** (direct call, mcp-local): governed models deny; ungoverned models
-  (no RLS binding, no role allowlist) compile. For `mcp-local`, an explicit `static_subject`
+  (no RLS binding, role allowlist, mask or column-usage policy) compile. Hand-off always requires
+  authenticated ownership, including for ungoverned models. For `mcp-local`, an explicit `static_subject`
   kwarg (user, tenant, roles) can supply an operator identity — logged on every call.
 - **Role sees no metrics**: catalog returns an empty list with an explicit message, not an error.
 - **Schema drift** (model says column exists, DB disagrees): compile succeeds, execution fails →
@@ -383,8 +426,31 @@ compiler" (Round 2b) are reconciled as **one internal `compile()` dispatch on `m
   layer is never active because `security:` blocks are rejected at load.
 - **Thread-safety**: one `SemanticLayer` per toolkit, compile under an `asyncio.Lock` until
   `compile()` is verified reentrant; cache hits bypass the lock.
-- **Cache key leakage**: tests assert that two contexts with different roles never share a key.
+- **Cache isolation**: a pre-governance cache hit still applies the current subject's RLS and
+  permissions. Different roles, users, tenants, programs or groups must not reuse governed SQL.
+- **PBAC denial**: an allowed semantic metric cannot override a denied driver/table. Denials or
+  evaluator unavailability prevent governed SQL disclosure and execution even on cache hits.
+- **Masked-column inference**: raw SQL such as `SELECT COUNT(*) FROM employees WHERE salary > 100000`
+  is rejected when the role lacks predicate-use rights on masked `salary`; aliases, CTEs and
+  nested expressions do not bypass this rule. Apply the same check to structured-query filters.
+- **Result ownership**: foreign, expired or stale handles fail before DataFrame creation. Dataset
+  names are scoped to the owner/session; subsequent reads cannot cross that boundary.
 - **Dialect without a source** (e.g. `snowflake`): compile allowed (`sl_compile_query`), execution refused.
+
+### Required Security Acceptance Tests
+
+- Warm the compiler cache with user A, then query as B with the same roles/tenant but different
+  programs/groups; assert each SQL/result reflects only that caller's RLS. Repeat after subject
+  metadata and policy changes; ensure the cached AST remains free of injected predicates.
+- Deny `driver:connect` or one joined table's `table:read` while allowing the metric; assert no
+  SQL is returned and no source query is called. Cover cache hits, compile-only, saved queries,
+  dimension-value lookup and raw SQL, plus unavailable evaluators on governed models.
+- Attempt masked-column inference through WHERE, HAVING, JOIN, GROUP BY, ORDER BY, windows,
+  aliases, CTEs and derived expressions. Assert denial without explicit usage rights; verify
+  permitted masked projections and explicitly authorized model aggregates still work.
+- Exercise two users and two sessions against hand-off: reject foreign/expired handles, isolate
+  identical dataset names, and deny reads/exports after policy or context changes. Verify a
+  shared manager or a host without downstream authorization gates cannot enable the tool.
 
 ---
 
@@ -419,7 +485,7 @@ compiler" (Round 2b) are reconciled as **one internal `compile()` dispatch on `m
 | `packages/ai-parrot/src/parrot/tools/databasequery/toolkit.py` | depends on | `get_source(driver)` + `AbstractDatabaseSource.query()`; no change |
 | `packages/ai-parrot/src/parrot/auth/rls_registry.py`, `dataplane_guard.py`, `permission.py`, `context.py` | depends on | RLS rules, PBAC context, ContextVar; no change |
 | `packages/ai-parrot/src/parrot/security/audit_ledger.py` | depends on | signer + storage contract reused by `SemanticAuditEntry`; no change (see OQ on extending `AuditLedgerEntry`) |
-| `packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py` | depends on | `add_dataframe()` for the hand-off |
+| `packages/ai-parrot/src/parrot/tools/dataset_manager/tool.py` | depends on | `add_dataframe()` only on an isolated subject/session manager; the satellite/host integration must gate subsequent access or disable hand-off; metadata alone does not enforce ownership |
 | `packages/ai-parrot-server/src/parrot/handlers/semantic.py` (new) + `manager/manager.py` | extends | `BaseView` handler registered next to `DatasetManagerHandler` (`manager.py:2571`); lazy import, registered only when `parrot.semantic` is importable |
 | `.parrot/mcp-toolkits.yaml`, `.mcp.json` | config | `semantic-layer:` section with `class: parrot.semantic.toolkit.SemanticLayerToolkit` |
 | `parrot/tools/__init__.py` meta-path finder | none | finder redirects `parrot.tools.<x>` → `parrot_tools.<x>`; `parrot.semantic` is a plain namespace subpackage, no finder change |
@@ -644,13 +710,13 @@ from navigator_auth.decorators import is_authenticated, user_session         # h
 
 ## Open Questions
 
-- [ ] Legal: confirm AGPL-3.0 acceptance in writing and decide the `license` field of `ai-parrot-semantic` itself (MIT with an AGPL dependency vs AGPL-3.0 for the satellite). The user accepted AGPL for the embedded dependency during discovery; the distribution's own license text is still a legal call. — *Owner: Jesus Lara*
-- [ ] Reconciliation of "no abstraction" with the native fallback: confirm the single internal `compile()` dispatch on `model.engine ∈ {sidemantic, native}` (no plugin protocol) is the intended reading. — *Owner: Jesus Lara*
-- [ ] Audit storage: separate `SemanticAuditEntry` ledger reusing `AbstractKMSSigner` + the async `storage` callable (recommended, zero core change) vs extending `AuditLedgerEntry` with an optional `payload` field in core (`parrot/security/audit_ledger.py`). Where is the storage callable wired in production (Postgres table like `security_events.sql`, or the existing credential ledger sink)? — *Owner: Jesus Lara*
-- [ ] Deny-by-default scope: governed models deny when `PermissionContext` is `None`. Should *every* model be governed by default (deny unless the policy file opts out), or only models with RLS/allowlist entries (as drafted)? — *Owner: Jesus Lara*
-- [ ] `mcp-local` identity: is a `static_subject` kwarg (user/tenant/roles from `.parrot/mcp-toolkits.yaml`) acceptable for local operators, or must mcp-local calls stay ungoverned-only? — *Owner: Jesus Lara*
-- [ ] Credentials for execution: resolve the model's `connection` name via navconfig env lookups inside the satellite (drafted) vs adding a named-connection resolver to `DatabaseQueryToolkit` in core (a modified capability of `databasetoolkit`). — *Owner: Jesus Lara*
-- [ ] Free SQL (`sl_run_sql`): ship in v1 behind `allow_raw_sql=False`, or defer the exploration path to a follow-up spec and keep v1 metrics-only? — *Owner: Jesus Lara*
+- [x] Legal: confirm AGPL-3.0 acceptance in writing and decide the `license` field of `ai-parrot-semantic` itself (MIT with an AGPL dependency vs AGPL-3.0 for the satellite). The user accepted AGPL for the embedded dependency during discovery; the distribution's own license text is still a legal call. — *Owner: Jesus Lara*: MIT for the satellite (`license = "MIT"` like the other satellites); the AGPL-3.0 dependency and its network clause are documented in the satellite README and the spec; written legal sign-off is tracked as a spec §8 item, not a blocker
+- [x] Reconciliation of "no abstraction" with the native fallback: confirm the single internal `compile()` dispatch on `model.engine ∈ {sidemantic, native}` (no plugin protocol) is the intended reading. — *Owner: Jesus Lara*: confirmed — one internal `compile()` dispatching on `model.engine ∈ {sidemantic, native}`; no plugin protocol, no third-party engine registry
+- [x] Audit storage: separate `SemanticAuditEntry` ledger reusing `AbstractKMSSigner` + the async `storage` callable (recommended, zero core change) vs extending `AuditLedgerEntry` with an optional `payload` field in core (`parrot/security/audit_ledger.py`). Where is the storage callable wired in production (Postgres table like `security_events.sql`, or the existing credential ledger sink)? — *Owner: Jesus Lara*: separate `SemanticAuditEntry` ledger in the satellite, reusing `AbstractKMSSigner`/`LocalHMACSigner` and the async `storage` callable contract; zero core change. Production sink wiring stays configurable (storage callable), default in-memory
+- [x] Deny-by-default scope: governed models deny when `PermissionContext` is `None`. Should *every* model be governed by default (deny unless the policy file opts out), or only models with RLS/allowlist entries (as drafted)? — *Owner: Jesus Lara*: every model is governed by default — compile/execute deny without a `PermissionContext` or evaluator unless the policy file sets `governed: false`
+- [x] `mcp-local` identity: is a `static_subject` kwarg (user/tenant/roles from `.parrot/mcp-toolkits.yaml`) acceptable for local operators, or must mcp-local calls stay ungoverned-only? — *Owner: Jesus Lara*: allowed — `.parrot/mcp-toolkits.yaml` may declare a `static_subject` (user, tenant, roles, metadata) for `parrot mcp-local semantic-layer`; it is logged on every call and recorded in the audit entry
+- [x] Credentials for execution: resolve the model's `connection` name via navconfig env lookups inside the satellite (drafted) vs adding a named-connection resolver to `DatabaseQueryToolkit` in core (a modified capability of `databasetoolkit`). — *Owner: Jesus Lara*: resolved inside the satellite — the model's `connection` name maps to a credentials dict via navconfig/env lookups in `parrot.semantic`; no change to `DatabaseQueryToolkit`
+- [x] Free SQL (`sl_run_sql`): ship in v1 behind `allow_raw_sql=False`, or defer the exploration path to a follow-up spec and keep v1 metrics-only? — *Owner: Jesus Lara*: ship in v1, disabled by default (`allow_raw_sql=False`), on the same governance path (PBAC, lineage, RLS, positive guard, audit)
 - [ ] sidemantic `SemanticLayer.compile` reentrancy: spike needed (parallel compile under a thread pool) to decide lock vs lock-free; also confirm `load_from_directory` accepts Ossie 0.1.1 fixtures from `github.com/apache/ossie` unchanged. — *Owner: implementing lane (a)*
-- [ ] Native compiler v1 subset: confirm "simple aggregations + declared one-to-many joins, no symmetric aggregates, no cumulative/time-comparison metrics" is enough for the fallback's purpose. — *Owner: Jesus Lara*
-- [ ] Should the proposal `sdd/proposals/semantic-layer.proposal.md` be committed to `dev` alongside this brainstorm (it is currently untracked)? — *Owner: Jesus Lara*
+- [x] Native compiler v1 subset: confirm "simple aggregations + declared one-to-many joins, no symmetric aggregates, no cumulative/time-comparison metrics" is enough for the fallback's purpose. — *Owner: Jesus Lara*: confirmed as drafted — simple aggregations, dimensions, `DATE_TRUNC` grains, declared one-to-many joins, filter tree, order/limit; no symmetric aggregates, no cumulative/time-comparison metrics
+- [x] Should the proposal `sdd/proposals/semantic-layer.proposal.md` be committed to `dev` alongside this brainstorm (it is currently untracked)? — *Owner: Jesus Lara*: yes — committed to `dev` together with this brainstorm acceptance
