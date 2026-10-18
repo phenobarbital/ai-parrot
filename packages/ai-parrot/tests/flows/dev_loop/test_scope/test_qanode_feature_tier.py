@@ -25,7 +25,12 @@ def _research(worktree: Path) -> ResearchOutput:
 
 @pytest.mark.asyncio
 async def test_feature_tier_equals_mirror_selection(tmp_path, monkeypatch):
-    (tmp_path / "packages/ai-parrot/tests/flows/dev_loop").mkdir(parents=True)
+    for rel in (
+        "packages/ai-parrot/tests/flows/dev_loop/test_qa.py",
+        "packages/ai-parrot/src/parrot/flows/dev_loop/nodes/qa.py",
+    ):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("")
     files = ["packages/ai-parrot/src/parrot/flows/dev_loop/nodes/qa.py"]
     monkeypatch.setattr(QANode, "_get_changed_files", AsyncMock(return_value=[]))
 
@@ -35,7 +40,9 @@ async def test_feature_tier_equals_mirror_selection(tmp_path, monkeypatch):
     criteria = await node._default_criteria(shared, _research(tmp_path))
 
     got_targets = {op for c in criteria for op in c.command.split() if op.startswith(("packages/", "tests/"))}
+    assert got_targets
     assert got_targets == set(QANode._pytest_targets(files, str(tmp_path)))
+    assert got_targets == {"packages/ai-parrot/tests/flows/dev_loop/test_qa.py"}
 
 
 @pytest.mark.asyncio
