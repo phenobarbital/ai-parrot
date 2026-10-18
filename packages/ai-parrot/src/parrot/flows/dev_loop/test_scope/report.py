@@ -167,11 +167,11 @@ def parse_junit(
             testcase_status = (
                 "failed"
                 if testcase.find("failure") is not None
-                else "error"
-                if testcase.find("error") is not None
-                else "skipped"
-                if testcase.find("skipped") is not None
-                else "passed"
+                else (
+                    "error"
+                    if testcase.find("error") is not None
+                    else "skipped" if testcase.find("skipped") is not None else "passed"
+                )
             )
             nodeid = nodeid_from_testcase(
                 testcase.attrib.get("file"), testcase.attrib.get("classname", ""), testcase.attrib.get("name", "")

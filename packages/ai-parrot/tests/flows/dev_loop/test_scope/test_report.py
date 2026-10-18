@@ -11,7 +11,6 @@ import pytest
 from parrot.flows.dev_loop.test_scope import report
 from parrot.flows.dev_loop.test_scope.datatypes import PytestInvocation
 
-
 XUNIT1 = """<testsuites><testsuite tests="2" failures="1" errors="0" skipped="0">
 <testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x.TestC" name="test_ok"/>
 <testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x" name="test_bad[1]"><failure/></testcase>
