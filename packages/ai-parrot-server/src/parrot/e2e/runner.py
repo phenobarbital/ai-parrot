@@ -34,6 +34,7 @@ from parrot.e2e.errors import (
 )
 from parrot.e2e._verdict import evaluate_required_nodes
 from parrot.e2e.evidence import capture_identity
+from parrot.e2e.live import LIVE_BUDGET_ENV
 from parrot.e2e.models import E2EPlan, E2EVerdict, ScenarioResult, ScenarioSpec
 from parrot.e2e.plan import load_plan
 from parrot.e2e.pytest_plugin import ENV_CONTROL_SOCKET, ENV_OWNER_ID, ENV_RESULTS_PATH, ENV_RUN_ID
@@ -50,13 +51,16 @@ _POINTER_NAME = "latest.json"
 class _LiveBudgetContext:
     """One shared live budget identity for a single runner invocation.
 
-    The optional live adapter currently has no public budget-hook interface.
-    Keeping this single object in the run context prevents the runner from
-    creating per-scenario allowances and documents the hand-off boundary
-    without making a provider call.
+    The runner never calls a provider; it hands the validated plan budget to
+    every live child through :data:`LIVE_BUDGET_ENV` so sequential live
+    scenarios share ONE run-scoped allowance (spec §2 "Live Provider Budget").
     """
 
     plan: E2EPlan
+
+    def child_env(self) -> dict[str, str]:
+        """The one env entry carrying the plan budget into the pytest child (and, forwarded, the fixture agent)."""
+        return {LIVE_BUDGET_ENV: self.plan.budget.model_dump_json()}
 
 
 async def run_plan(plan_path: Path, *, worktree: Path, owner_id: str) -> E2EVerdict:
@@ -178,9 +182,6 @@ async def _run_scenario(
         for target_id in scenario.target_ids:
             state = await supervisor.start(target_id, plan.targets[target_id])
             target_run_ids.append(state.run_id)
-        # The one context is intentionally retained for the entire run.  It
-        # is not consulted by readiness and no model operation occurs here.
-        _ = live_budget
         bridge_path = evidence_dir / f"pytest-{scenario.id}.json"
         process = await asyncio.create_subprocess_exec(
             sys.executable,
@@ -197,6 +198,7 @@ async def _run_scenario(
                 ENV_CONTROL_SOCKET: "",
                 ENV_RESULTS_PATH: str(bridge_path),
                 "PARROT_TEST_E2E": "1",
+                **live_budget.child_env(),
             },
         )
         try:
