@@ -191,8 +191,7 @@ def plan_tests(
                         f"kept {policy.impact_cap}, rest covered by nightly"
                     )
                 targets += [
-                    TestTarget(path=path, distribution=dist, reason="import")
-                    for path in paths[: policy.impact_cap]
+                    TestTarget(path=path, distribution=dist, reason="import") for path in paths[: policy.impact_cap]
                 ]
 
         if index is not None:
