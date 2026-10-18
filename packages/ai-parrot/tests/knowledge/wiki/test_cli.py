@@ -11,6 +11,7 @@ caught here.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -301,10 +302,14 @@ class TestIngestModelResolutionDetectionFallback:
             capture["model"] = model
             raise RuntimeError("stop-after-resolution")
 
-        with patch.object(
-            wiki_cli,
-            "_build_triage_adapters",
-            side_effect=_fake_build_triage_adapters,
+        def _env_only(name: str) -> str | None:
+            # Hermetic: `_env_setting` falls back to navconfig (.env), where a
+            # developer WIKI_MODEL would silently skip the detection branch.
+            return os.environ.get(name) or None
+
+        with (
+            patch.object(wiki_cli, "_build_triage_adapters", side_effect=_fake_build_triage_adapters),
+            patch.object(wiki_cli, "_env_setting", side_effect=_env_only),
         ):
             runner = CliRunner()
             return runner.invoke(

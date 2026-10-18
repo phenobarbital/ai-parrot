@@ -2,6 +2,7 @@ import json
 
 import pytest
 from click.testing import CliRunner
+from parrot.knowledge.wiki.claude_code import assets
 from parrot.knowledge.wiki.claude_code.cli import claude
 from parrot.knowledge.wiki.claude_code.installer import (
     install_claude_integration,
@@ -42,9 +43,11 @@ class TestMCPJsonInstall:
         mcp_json = repo_root / ".mcp.json"
         assert mcp_json.exists()
         data = json.loads(mcp_json.read_text())
-        assert "wikitoolkit" in data["mcpServers"]
-        assert data["mcpServers"]["wikitoolkit"]["command"] == "wikitoolkit"
-        assert data["mcpServers"]["wikitoolkit"]["args"] == ["mcp"]
+        entry = data["mcpServers"]["wikitoolkit"]
+        # TASK-3212: the managed entry pins the resolved binary, never a bare name.
+        assert entry["command"].endswith("wikitoolkit")
+        assert entry["args"] == ["mcp"]
+        assert entry == assets.mcp_json_entry(repo_root)
 
     def test_install_idempotent(self, repo_root):
         install_claude_integration(repo_root)
@@ -61,11 +64,22 @@ class TestMCPJsonInstall:
         assert "wikitoolkit" in data["mcpServers"]
 
     def test_install_updates_stale_entry(self, repo_root):
+        # Managed shape (ends with "wikitoolkit", args == ["mcp"]) but a stale path.
         mcp_json = repo_root / ".mcp.json"
-        mcp_json.write_text(json.dumps({"mcpServers": {"wikitoolkit": {"command": "old-stale-command"}}}))
+        stale = {"command": "/old/venv/bin/wikitoolkit", "args": ["mcp"], "env": {}}
+        mcp_json.write_text(json.dumps({"mcpServers": {"wikitoolkit": stale}}))
         install_claude_integration(repo_root)
         data = json.loads(mcp_json.read_text())
-        assert data["mcpServers"]["wikitoolkit"]["command"] == "wikitoolkit"
+        assert data["mcpServers"]["wikitoolkit"] == assets.mcp_json_entry(repo_root)
+
+    def test_install_leaves_foreign_wikitoolkit_entry_untouched(self, repo_root):
+        # FEAT-485/570: an entry we did not write is never overwritten.
+        mcp_json = repo_root / ".mcp.json"
+        foreign = {"command": "old-stale-command"}
+        mcp_json.write_text(json.dumps({"mcpServers": {"wikitoolkit": foreign}}))
+        install_claude_integration(repo_root)
+        data = json.loads(mcp_json.read_text())
+        assert data["mcpServers"]["wikitoolkit"] == foreign
 
     def test_install_recovers_from_malformed_mcp_servers(self, repo_root):
         # "mcpServers" is not a dict — must not crash, just reset it.

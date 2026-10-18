@@ -132,6 +132,31 @@ this list is the audit trail.
 
 ---
 
+## Amendments — spec rev 0.4 (2026-10-18)
+
+Folded in from `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C17 (decision by
+Jesus Lara, 2026-10-18). Every section below is already edited to match.
+
+- **C17 — `/sdd-brief` (FEAT-698) joins the rewrite.** The enumeration above was made on
+  `6c4ca5482`, before FEAT-698 merged (2026-10-17). Three more shipped files reference moved
+  helpers (verified on `925b0f1a2`): `.claude/commands/sdd-brief.md` (`:18`, `:132`
+  `python -m scripts.sdd.ensure_worktree`; `:151` the prose
+  `scripts.sdd.brief_meta.write_brief_index`; `:154` `python -m scripts.sdd.check_task_graph`),
+  its Codex twin `.agents/skills/sdd-brief/SKILL.md` (`:39-40`), and the Google twin
+  `.agent/workflows/sdd-brief.md`, which **does not exist yet** — FEAT-698 shipped Claude +
+  Codex only. This task creates it the way every other Google twin is built (`---\n`
+  `description: <the command's one-line purpose>` `\n---\n\n` + the byte-identical body of
+  the Claude command) *before* running the rewrite, so the twin parity test
+  (`.claude/commands` ↔ `.agent/workflows`) holds for `sdd-brief` too. `brief_meta` is the
+  21st moved name (TASK-4085 moves it, TASK-4299 adds `plan` / `write-index`): add it to the
+  rewrite script's and the regression test's name list; rule 5a covers the `python -m`
+  forms, and the prose symbol reference is a hand edit (rule 6) to
+  `parrot sdd run brief_meta write-index <brief.md> --tasks <tasks.json> --worktree-root <wt>`.
+  No `python -c` block is involved (`test_shipped_commands_have_no_inline_python` already
+  passes over `sdd-brief.md`).
+
+---
+
 ## Scope
 
 - Rewrite every reference to a moved helper in the 52 files listed below, using EXACTLY the
@@ -228,6 +253,7 @@ produced by the TASK-4070 scanner at run time (see Scope) and is not enumerated 
 | `.agents/agents/sdd-worker/agent.md` | MODIFY | Rewrite 4 line(s): close_task,ensure_worktree,sdd_meta |
 | `.agent/skills/worktree-management/SKILL.md` | MODIFY | Rewrite 3 line(s): ensure_worktree,sdd_meta |
 | `.agents/skills/sdd-brainstorm/SKILL.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
+| `.agents/skills/sdd-brief/SKILL.md` | MODIFY | Rewrite 2 line(s): ensure_worktree,brief_meta,check_task_graph (rev 0.4 C17) |
 | `.agents/skills/sdd-done/SKILL.md` | MODIFY | Rewrite 6 line(s): close_task,heal_orphans,sdd_meta,select_tests |
 | `.agents/skills/sdd-fix/SKILL.md` | MODIFY | Rewrite 2 line(s): ensure_worktree,reserve_ids |
 | `.agents/skills/sdd-fromjira/SKILL.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
@@ -239,6 +265,8 @@ produced by the TASK-4070 scanner at run time (see Scope) and is not enumerated 
 | `.agents/skills/sdd-status/SKILL.md` | MODIFY | Rewrite 4 line(s): doc_taxonomy,worktree_status |
 | `.agents/skills/sdd-task/SKILL.md` | MODIFY | Rewrite 6 line(s): check_task_graph,reserve_ids,sdd_meta |
 | `.agent/workflows/sdd-brainstorm.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
+| `.agent/workflows/sdd-brief.md` | CREATE | Google twin of `.claude/commands/sdd-brief.md` (`description:` frontmatter + byte-identical body), created BEFORE the rewrite so it is rewritten like the Claude copy (rev 0.4 C17) |
+| `.claude/commands/sdd-brief.md` | MODIFY | Rewrite 4 line(s): ensure_worktree ×2, brief_meta (prose `write_brief_index` → `parrot sdd run brief_meta write-index …`), check_task_graph (rev 0.4 C17) |
 | `.agent/workflows/sdd-done.md` | MODIFY | Rewrite 8 line(s): check_task_state,close_task,heal_orphans,sdd_meta,select_tests |
 | `.agent/workflows/sdd-fix.md` | MODIFY | Rewrite 2 line(s): ensure_worktree,reserve_ids |
 | `.agent/workflows/sdd-insight.md` | MODIFY | Rewrite 3 line(s): insight |
@@ -902,6 +930,11 @@ cites (rules 4 / 5b) actually resolves (spec §5). `parents[4]` mirrors
 - [ ] `sdd-insight` (3 hosts): `parrot sdd run insight \` continuation lines intact.
 - [ ] `sdd-spec`/`sdd-task`: the six `sdd_meta` one-liners now read `parrot sdd run sdd_meta parse|taxonomy|resolve-flow …`
       (rule 6); no `from parrot.sdd.scripts.sdd_meta import` remains inside a `python -c` string.
+- [ ] *(rev 0.4 C17)* `sdd-brief` (3 hosts; the Google twin is created first): the two
+      `python -m scripts.sdd.ensure_worktree … --brief-key …` lines read `parrot sdd run ensure_worktree …`,
+      the prose `scripts.sdd.brief_meta.write_brief_index` reads `parrot sdd run brief_meta write-index …`,
+      `python -m scripts.sdd.check_task_graph` reads `parrot sdd run check_task_graph`; the twin parity
+      test covers `sdd-brief` (`.claude/commands` ↔ `.agent/workflows`).
 - [ ] Residual inline `python -c` blocks (`sdd-spec.md:290,362,381,393,542,666` + twin, re-verified
       line numbers) listed in the Completion Note with `file:line`; `:542` still imports
       `parrot.sdd.scripts.reserve_ids` (rule 5b) and is on that list.

@@ -261,7 +261,12 @@ def main(argv: list[str] | None = None) -> int:
             )
             suites.append(suite)
             _record_suite(report_mod, args, suite, head_sha=head_sha, base_ref=base_ref)
-        is_core_escalation = bool(plan.core_hits) or any(target.reason == "core" for target in invocation.targets)
+        # FEAT-699: `plan_tests` no longer emits `core`/`escalated` targets (a core hit is a plan
+        # note, "covered by nightly"), so these FEAT-604 ledger branches fire only for legacy plans.
+        # Gate on the invocation's own targets -- the same rule as
+        # `ValidationSupervisor._record_invocation_outcome` -- never on `plan.core_hits`: a
+        # non-escalated run proves nothing about a suite and must leave the ledger alone.
+        is_core_escalation = any(target.reason == "core" for target in invocation.targets)
         is_cap_escalation = any(target.reason == "escalated" for target in invocation.targets)
         if result.returncode != 0:
             exit_code = 1
@@ -273,16 +278,20 @@ def main(argv: list[str] | None = None) -> int:
                     unclassified_failure = True
                 failed_nodeids.extend(nodes)
             if not args.no_ledger and (is_core_escalation or is_cap_escalation):
+                import test_scope.context as ledger  # noqa: PLC0415 -- path-dependent import
+
                 # R14/AC9c: a red escalation run re-arms it, even when its driving file content is unchanged.
-                kernel.context.record_red_run(worktree, [invocation.distribution])
+                ledger.record_red_run(worktree, [invocation.distribution])
             continue
         if not args.no_ledger and (is_core_escalation or is_cap_escalation):
+            import test_scope.context as ledger  # noqa: PLC0415 -- path-dependent import
+
             dist = invocation.distribution
             core_files = [hit.path for hit in plan.core_hits]
             impact_files = list(plan.cap_hits.get(dist, ()))
             impacted_hashes = {dist: plan.cap_impacted[dist]} if dist in plan.cap_impacted else {}
             if core_files or impact_files:
-                kernel.context.record_green_escalation(
+                ledger.record_green_escalation(
                     worktree, [dist], core_files, impact_files=impact_files, impacted_hashes=impacted_hashes
                 )
 

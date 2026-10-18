@@ -4,21 +4,26 @@ before both SDD closeout surfaces (`.claude/commands/sdd-done.md` Step 4.6,
 merge or clean up a feature.
 
 This is deliberately NOT a set of string-only assertions that mirror the
-docs' own prose. ``evaluate_closeout_gate`` below is the task-local decision
-function both closeout surfaces document in prose; it is proven here against
-the real ``parrot.e2e.evidence.verify_evidence`` validator (TASK-3523) fed
+docs' own prose. ``evaluate_closeout_gate`` is imported from
+``scripts/sdd/check_e2e_closeout.py`` -- the gate both closeout surfaces
+actually invoke (FEAT-703) -- and is proven here against the real
+``parrot.e2e.evidence.verify_evidence`` validator (TASK-3523) fed
 realistic, on-disk evidence artifacts built the same way
 ``packages/ai-parrot-server/tests/unit/e2e/test_evidence.py`` builds them --
-never a mocked validator and never a fabricated ``VerificationResult``. The
-doc-surface checks at the bottom only confirm the two closeout hosts
-document the same required/optional/none policy and the same "force never
-bypasses required" contract as this verified decision function, not merely
-with each other's prose.
+never a mocked validator and never a fabricated ``VerificationResult``.
+
+Before FEAT-703 this module defined its own task-local copy of the decision
+table, so the suite certified a reimplementation rather than the shipped
+gate; that copy is gone and exactly one definition now exists, in
+``scripts/sdd/``. The doc-surface checks at the bottom confirm the two
+closeout hosts delegate to that gate and keep the "force never bypasses
+required" contract, rather than restating the table in prose.
 """
 
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import subprocess
 import sys
@@ -44,6 +49,8 @@ from parrot.e2e.evidence import capture_identity, verify_evidence  # noqa: E402
 from parrot.e2e.models import E2EVerdict, ScenarioResult, SourceIdentity, VerificationResult  # noqa: E402
 from parrot.e2e.plan import load_plan  # noqa: E402
 
+from scripts.sdd.check_e2e_closeout import evaluate_closeout_gate  # noqa: E402
+
 _SDD_DONE_COMMAND = _REPO_ROOT / ".claude" / "commands" / "sdd-done.md"
 _SDD_DONE_SKILL = _REPO_ROOT / ".agents" / "skills" / "sdd-done" / "SKILL.md"
 _DOC_SURFACES = (_SDD_DONE_COMMAND, _SDD_DONE_SKILL)
@@ -54,63 +61,6 @@ _PLAN_RELATIVE = f"sdd/state/{_FEATURE_ID}/e2e-plan.md"
 _REQUIRED_NODE_ID = "tests/e2e/test_mcp_stdio.py::test_roundtrip"
 _SCENARIO_ID = "scn-mcp-stdio"
 _RUN_ID = "run-1"
-
-
-# ---------------------------------------------------------------------------
-# Task-local closeout decision function (Fixed interfaces: "Internal helpers
-# remain task-local" -- no new cross-task public signature). This is exactly
-# the decision table both closeout surfaces document: required/optional/none
-# policy, consuming the same read-only `verify_evidence` validator, with
-# `force` proven to never change a `required` outcome.
-# ---------------------------------------------------------------------------
-
-
-async def evaluate_closeout_gate(
-    *, policy: str, plan_path: Optional[Path], worktree: Path, force: bool
-) -> tuple[bool, list[str]]:
-    """Return whether closeout may proceed, mirroring the documented gate.
-
-    Args:
-        policy: One of ``required``/``optional``/``none`` (or ``invalid`` for
-            a malformed spec ``e2e.policy`` value, treated exactly like
-            ``required`` with missing evidence).
-        plan_path: Path to the feature's ``e2e-plan.md``, or ``None``/missing
-            when no plan was generated.
-        worktree: The feature worktree `verify_evidence` validates against.
-        force: The command's generic ``--force`` flag. Documented (and
-            proven below) to have **no effect** on this decision -- it only
-            ever affects per-task partial-evidence and ledger merge-blocker
-            handling elsewhere in the closeout flow.
-
-    Returns:
-        ``(allowed, reason_codes)``.
-    """
-    del force  # never consulted: AC9 "generic force does not bypass it"
-    if policy == "none":
-        return True, ["e2e_policy_none"]
-
-    if plan_path is None or not plan_path.is_file():
-        if policy in ("required", "invalid"):
-            return False, ["e2e_required_missing_plan"]
-        return True, ["e2e_optional_no_plan"]
-
-    try:
-        result = await verify_evidence(plan_path, worktree=worktree)
-    except (E2EEvidenceError, E2EConfigError) as exc:
-        # Fails closed exactly like a synthesized BLOCKED VerificationResult:
-        # a malformed/tampered/stale evidence blob is never treated as PASS.
-        result = VerificationResult(
-            status="BLOCKED", gate_satisfied=False, reason_codes=[exc.reason_code or "evidence_error"]
-        )
-
-    if policy in ("required", "invalid"):
-        if result.status == "PASS" and result.gate_satisfied:
-            return True, ["e2e_required_satisfied", *result.reason_codes]
-        return False, [f"e2e_required_not_satisfied:{result.status}", *result.reason_codes]
-
-    # optional: advisory only, real status always carried through, never
-    # upgraded to a pass.
-    return True, [f"e2e_optional_advisory:{result.status}", *result.reason_codes]
 
 
 # ---------------------------------------------------------------------------
@@ -284,19 +234,22 @@ def _clean_e2e_environment(monkeypatch: pytest.MonkeyPatch) -> None:
 async def test_required_policy_blocks_on_missing_plan(git_worktree: Path) -> None:
     missing_plan = git_worktree / "sdd" / "state" / _FEATURE_ID / "does-not-exist.md"
 
-    allowed, reasons = await evaluate_closeout_gate(
-        policy="required", plan_path=missing_plan, worktree=git_worktree, force=False
-    )
+    allowed, reasons = await evaluate_closeout_gate(policy="required", plan_path=missing_plan, worktree=git_worktree)
 
     assert allowed is False
     assert "e2e_required_missing_plan" in reasons
 
 
-@pytest.mark.parametrize("force", [False, True])
-async def test_required_policy_blocks_on_missing_evidence_regardless_of_force(git_worktree: Path, force: bool) -> None:
-    """AC9: "generic force does not bypass it" -- proven for both flag values."""
+async def test_required_policy_cannot_be_bypassed_by_force(git_worktree: Path) -> None:
+    """AC9: "generic force does not bypass it" -- now structural, not documented.
+
+    The gate exposes no ``force`` parameter at all, so there is nothing a
+    ``--force`` flag could be threaded into; missing evidence still blocks.
+    """
+    assert "force" not in inspect.signature(evaluate_closeout_gate).parameters
+
     allowed, reasons = await evaluate_closeout_gate(
-        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree, force=force
+        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree
     )
 
     assert allowed is False
@@ -308,7 +261,7 @@ async def test_required_policy_blocks_on_zero_collection(git_worktree: Path) -> 
     await _seed_matching_evidence(git_worktree, collected_node_ids=[], results=[], counts={})
 
     allowed, reasons = await evaluate_closeout_gate(
-        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree, force=True
+        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree
     )
 
     assert allowed is False
@@ -320,7 +273,7 @@ async def test_required_policy_blocks_on_failed_required_node(git_worktree: Path
     await _seed_matching_evidence(git_worktree, results=[_passing_result(outcome="failed", call_outcome="failed")])
 
     allowed, reasons = await evaluate_closeout_gate(
-        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree, force=True
+        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree
     )
 
     assert allowed is False
@@ -332,7 +285,7 @@ async def test_required_policy_blocks_on_incomplete_cleanup(git_worktree: Path) 
     await _seed_matching_evidence(git_worktree, cleanup_results={_RUN_ID: False})
 
     allowed, reasons = await evaluate_closeout_gate(
-        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree, force=True
+        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree
     )
 
     assert allowed is False
@@ -347,7 +300,7 @@ async def test_required_policy_blocks_on_tampered_artifact(git_worktree: Path) -
     await _seed_matching_evidence(git_worktree, artifact_hashes={"junit.xml": "0" * 64})
 
     allowed, reasons = await evaluate_closeout_gate(
-        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree, force=True
+        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree
     )
 
     assert allowed is False
@@ -360,7 +313,7 @@ async def test_required_policy_blocks_on_stale_source_after_relevant_change(git_
     _commit_all(git_worktree, "relevant source change after the E2E run")
 
     allowed, reasons = await evaluate_closeout_gate(
-        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree, force=True
+        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree
     )
 
     assert allowed is False
@@ -371,7 +324,7 @@ async def test_required_policy_allows_on_fully_matching_evidence(git_worktree: P
     await _seed_matching_evidence(git_worktree)
 
     allowed, reasons = await evaluate_closeout_gate(
-        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree, force=False
+        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree
     )
 
     assert allowed is True
@@ -387,7 +340,7 @@ async def test_required_policy_allows_bookkeeping_only_descendant_commit(git_wor
     _commit_all(git_worktree, "sdd: close tasks for FEAT-581 -- bookkeeping only")
 
     allowed, reasons = await evaluate_closeout_gate(
-        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree, force=False
+        policy="required", plan_path=_plan_path(git_worktree), worktree=git_worktree
     )
 
     assert allowed is True
@@ -397,7 +350,7 @@ async def test_required_policy_allows_bookkeeping_only_descendant_commit(git_wor
 async def test_invalid_policy_value_is_blocked_like_required_missing_evidence(git_worktree: Path) -> None:
     """A malformed spec `e2e.policy` value is never coerced to a safe default."""
     allowed, reasons = await evaluate_closeout_gate(
-        policy="invalid", plan_path=_plan_path(git_worktree), worktree=git_worktree, force=True
+        policy="invalid", plan_path=_plan_path(git_worktree), worktree=git_worktree
     )
 
     assert allowed is False
@@ -412,9 +365,7 @@ async def test_invalid_policy_value_is_blocked_like_required_missing_evidence(gi
 async def test_optional_policy_with_no_plan_is_advisory_skip(git_worktree: Path) -> None:
     missing_plan = git_worktree / "sdd" / "state" / _FEATURE_ID / "does-not-exist.md"
 
-    allowed, reasons = await evaluate_closeout_gate(
-        policy="optional", plan_path=missing_plan, worktree=git_worktree, force=False
-    )
+    allowed, reasons = await evaluate_closeout_gate(policy="optional", plan_path=missing_plan, worktree=git_worktree)
 
     assert allowed is True
     assert "e2e_optional_no_plan" in reasons
@@ -424,7 +375,7 @@ async def test_optional_policy_never_blocks_on_failed_required_node(git_worktree
     await _seed_matching_evidence(git_worktree, results=[_passing_result(outcome="failed", call_outcome="failed")])
 
     allowed, reasons = await evaluate_closeout_gate(
-        policy="optional", plan_path=_plan_path(git_worktree), worktree=git_worktree, force=False
+        policy="optional", plan_path=_plan_path(git_worktree), worktree=git_worktree
     )
 
     # Advisory only: closeout proceeds, but the real FAIL status is carried
@@ -435,7 +386,7 @@ async def test_optional_policy_never_blocks_on_failed_required_node(git_worktree
 
 async def test_optional_policy_never_blocks_on_missing_evidence(git_worktree: Path) -> None:
     allowed, reasons = await evaluate_closeout_gate(
-        policy="optional", plan_path=_plan_path(git_worktree), worktree=git_worktree, force=False
+        policy="optional", plan_path=_plan_path(git_worktree), worktree=git_worktree
     )
 
     assert allowed is True
@@ -450,7 +401,7 @@ async def test_optional_policy_never_blocks_on_tampered_artifact(git_worktree: P
     await _seed_matching_evidence(git_worktree, artifact_hashes={"junit.xml": "0" * 64})
 
     allowed, reasons = await evaluate_closeout_gate(
-        policy="optional", plan_path=_plan_path(git_worktree), worktree=git_worktree, force=False
+        policy="optional", plan_path=_plan_path(git_worktree), worktree=git_worktree
     )
 
     assert allowed is True
@@ -469,34 +420,34 @@ async def test_none_policy_never_reads_a_plan_or_evidence(git_worktree: Path) ->
     evidence lookup happens at all."""
     nonexistent_plan = git_worktree / "sdd" / "state" / _FEATURE_ID / "definitely-not-there.md"
 
-    allowed, reasons = await evaluate_closeout_gate(
-        policy="none", plan_path=nonexistent_plan, worktree=git_worktree, force=False
-    )
+    allowed, reasons = await evaluate_closeout_gate(policy="none", plan_path=nonexistent_plan, worktree=git_worktree)
 
     assert allowed is True
     assert reasons == ["e2e_policy_none"]
 
 
 # ---------------------------------------------------------------------------
-# Cross-surface consistency: Claude command and Codex skill document the
-# same required/optional/none policy and the same "force never bypasses a
-# required gate" contract this file's decision function proves behaviorally.
+# Cross-surface consistency: the Claude command and the Codex skill both
+# delegate the decision to the gate script this file proves behaviorally
+# (FEAT-703), rather than restating its decision table in prose.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("path", _DOC_SURFACES, ids=lambda p: p.name)
-def test_each_surface_invokes_verify_before_every_mutating_step(path: Path) -> None:
+def test_each_surface_invokes_the_gate_script(path: Path) -> None:
+    """FEAT-703: enforcement is an invocation, not an instruction."""
     text = path.read_text(encoding="utf-8")
-    assert "parrot e2e verify" in text
+    assert "scripts.sdd.check_e2e_closeout" in text
     for keyword in ("stamp", "push", "merge", "cleanup"):
         assert keyword in text.lower()
 
 
 @pytest.mark.parametrize("path", _DOC_SURFACES, ids=lambda p: p.name)
-def test_each_surface_states_the_three_policy_literals_with_no_coercion(path: Path) -> None:
-    text = path.read_text(encoding="utf-8")
-    assert "required" in text and "optional" in text and "none" in text
-    assert "coerc" in text.lower()
+def test_each_surface_branches_on_the_gate_exit_code(path: Path) -> None:
+    """The surfaces must act on the exit code, not re-derive the decision."""
+    text = path.read_text(encoding="utf-8").lower()
+    assert "exit" in text
+    assert "non-zero" in text or "nonzero" in text
 
 
 @pytest.mark.parametrize("path", _DOC_SURFACES, ids=lambda p: p.name)

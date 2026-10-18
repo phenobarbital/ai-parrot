@@ -168,6 +168,30 @@ def test_missing_dependency_and_legacy_semantics_warned(tmp_path):
     assert _codes(report) == ["legacy-semantics", "possible-missing-dependency"]
 
 
+def test_missing_dependency_suppressed_when_notes_name_the_creator(tmp_path):
+    """A parallelism_notes that names the creating task argues the non-edge (issue 56ba2e9689cd)."""
+    tasks = [
+        {"id": "TASK-1", "files": {"pkg/models.py": "CREATE"}, "validation": _self_validation("TASK-1")},
+        {
+            "id": "TASK-2",
+            "files": {"pkg/api.py": "CREATE"},
+            "contract": "uses `pkg/models.py`",
+            "notes": "mentions pkg/models.py in prose only, so no edge to TASK-1",
+            "validation": _self_validation("TASK-2"),
+        },
+        {
+            "id": "TASK-3",
+            "files": {"pkg/cli.py": "CREATE"},
+            "contract": "uses `pkg/models.py`",
+            "notes": "no edge to TASK-10 (a different task)",
+            "validation": _self_validation("TASK-3"),
+        },
+    ]
+    report = check_graph(_repo(tmp_path, tasks), tmp_path)
+    missing = [f for f in report.findings if f.code == "possible-missing-dependency"]
+    assert [f.tasks for f in missing] == [["TASK-3", "TASK-1"]]
+
+
 def test_missing_validation_commands_error_when_required(tmp_path):
     index = _with_validation(tmp_path, [], required=True)
     report = check_graph(index, tmp_path)

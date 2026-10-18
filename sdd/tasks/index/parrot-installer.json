@@ -597,7 +597,7 @@
       "completed_at": null,
       "effort": "S",
       "depends_on": [],
-      "parallelism_notes": "touches knowledge/wiki/ledger/sdd_meta.py and flows/dev_loop/nodes/{base,research,feature_handoff}.py; no overlap with M6 moves (TASK-4085 only re-exports sdd_meta); mentions parrot.sdd / parrot.sdd.scripts only in prose (TASK-4085 re-exports this module) and neither imports nor creates them, so no edge to TASK-4070/4085 (check_task_graph possible-missing-dependency warnings are false positives)",
+      "parallelism_notes": "touches knowledge/wiki/ledger/sdd_meta.py and flows/dev_loop/nodes/{base,research,feature_handoff}.py; no overlap with M6 moves (TASK-4085 only re-exports sdd_meta); mentions parrot.sdd / parrot.sdd.scripts only in prose (TASK-4085 re-exports this module) and neither imports nor creates them, so no edge to TASK-4070 or TASK-4085 (check_task_graph possible-missing-dependency warnings are false positives; both ids spelled in full so the checker's notes rule matches)",
       "file": "sdd/tasks/active/TASK-4298-branch-policy-single-source.md"
     },
     {
@@ -628,18 +628,19 @@
       "feature_id": "FEAT-633",
       "feature": "parrot-installer",
       "spec": "sdd/specs/parrot-installer.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "parallel": true,
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-10-14T22:05:13+00:00",
+      "completed_at": "2026-10-14T22:07:23+00:00",
       "effort": "M",
       "depends_on": [],
-      "parallelism_notes": "creates scripts/sdd/spec_tools.py and edits the sdd-spec/sdd-task command twins; no dependency — TASK-4088 (moves spec_tools) and TASK-4089 (rewrites its invocations, shares the twin files) depend on it; discovered_from issue:cac5c029bd88; mentions parrot.sdd / parrot.sdd.scripts only in prose and its 'NOT in scope' list (do not import or create them), so no edge to TASK-4070/4085 (check_task_graph possible-missing-dependency warnings are false positives)",
-      "file": "sdd/tasks/active/TASK-4334-sdd-spec-tools-helper.md"
+      "parallelism_notes": "creates scripts/sdd/spec_tools.py and edits the sdd-spec/sdd-task command twins; no dependency — TASK-4088 (moves spec_tools) and TASK-4089 (rewrites its invocations, shares the twin files) depend on it; discovered_from issue:cac5c029bd88; mentions parrot.sdd / parrot.sdd.scripts only in prose and its 'NOT in scope' list (do not import or create them), so no edge to TASK-4070 or TASK-4085 (check_task_graph possible-missing-dependency warnings are false positives; both ids spelled in full so the checker's notes rule matches)",
+      "file": "sdd/tasks/completed/TASK-4334-sdd-spec-tools-helper.md",
+      "verification": "verified"
     }
   ],
-  "amended_at": "2026-10-14T20:36:42+00:00",
-  "spec_revision": "0.2"
+  "amended_at": "2026-10-18T21:29:23+00:00",
+  "spec_revision": "0.4"
 }

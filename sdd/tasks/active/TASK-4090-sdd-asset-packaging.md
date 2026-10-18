@@ -56,6 +56,20 @@ delta for reviewers.
 
 ---
 
+## Amendments — spec rev 0.4 (2026-10-18)
+
+Folded in from `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C17 (decision by
+Jesus Lara, 2026-10-18). Every section below is already edited to match.
+
+- **C17 — `/sdd-brief` (FEAT-698) is in the asset set.** No glob changes: `ASSET_SOURCES`
+  already matches `.claude/commands/sdd-brief.md`, `.agents/skills/sdd-brief/SKILL.md`,
+  `.agent/workflows/sdd-brief.md` (created by TASK-4089, a dependency) and
+  `sdd/templates/brief.md`. The counts change: 15 commands per host, 13 git-tracked
+  templates, **81** manifest entries. Re-count against `git ls-files` at run time — the
+  numbers in this file are the expected values of the sync check, not inputs to it.
+
+---
+
 ## Scope
 
 - Create the stdlib-only `scripts/sdd/check_asset_sync.py` (`--write` regenerates `_assets/` +
@@ -258,21 +272,21 @@ workflows in `.agent/workflows/sdd-*.md` …, skills in `.agents/skills/sdd-*`, 
 
 | Host(s) | Repo source = install target (git-tracked only) | Count | `_assets/` source |
 |---|---|---|---|
-| claude | `.claude/commands/sdd-*.md` | 14 | `claude/commands/` |
+| claude | `.claude/commands/sdd-*.md` | 15 *(rev 0.4 C17: + `sdd-brief`)* | `claude/commands/` |
 | claude | `.claude/agents/sdd-*.md` | 9 | `claude/agents/` |
 | claude | `.claude/hooks/sdd-worker-format.sh` | 1 | `claude/hooks/` |
 | claude | `.claude/rules/worktree-management.md` | 1 | `claude/rules/` |
 | claude | `.claude/skills/second-opinion/SKILL.md` (C9) | 1 | `claude/skills/second-opinion/` |
-| codex, google | `.agents/skills/sdd-*/SKILL.md` | 14 | `agents/skills/<n>/` |
+| codex, google | `.agents/skills/sdd-*/SKILL.md` | 15 *(rev 0.4 C17)* | `agents/skills/<n>/` |
 | codex | `.codex/agents/sdd-worker.toml` | 1 | `codex/agents/` |
-| google | `.agent/workflows/sdd-*.md` | 14 | `agent/workflows/` |
+| google | `.agent/workflows/sdd-*.md` | 15 *(rev 0.4 C17: TASK-4089 creates `sdd-brief.md`)* | `agent/workflows/` |
 | google | `.agents/agents/sdd-*/agent.md` | 8 | `agents/agents/<n>/` |
-| claude, codex, google | `sdd/templates/*` (git-tracked: 12 — `research_plan.schema.json` is untracked and excluded) | 12 | `sdd/sdd_templates/` |
+| claude, codex, google | `sdd/templates/*` (git-tracked: 13 — `research_plan.schema.json` is untracked and excluded; `brief.md` came in with FEAT-698, rev 0.4 C17) | 13 | `sdd/sdd_templates/` |
 | claude, codex, google | `sdd/WORKFLOW.md` | 1 | `sdd/WORKFLOW.md` |
 | claude, codex, google | `sdd/CONVENTIONS.md` — **seed** (`seed: true`; C10) | 1 | `sdd/CONVENTIONS.md` |
 
-**Total: 77 assets** (the two `codebase-conventions.md` rows left; the skill and the seed
-came in). Excluded on purpose: `.claude/rules/codebase-conventions.md` and
+**Total: 81 assets** (the two `codebase-conventions.md` rows left; the skill and the seed
+came in; *rev 0.4 C17*: `sdd-brief` on three hosts and `sdd/templates/brief.md` came in). Excluded on purpose: `.claude/rules/codebase-conventions.md` and
 `.agent/rules/codebase-conventions.md` (C10 — ai-parrot's rulebook never ships; the codex and
 google wiki installers keep rendering `.agent/rules/` from the *repo*, which is untouched),
 `.agent/agents/sdd-*/agent.md` (no host doc names `.agent/agents/` — Antigravity's subagent dir
@@ -530,7 +544,7 @@ _assets/
   manifest.json                      {"schema_version": 1, "assets": [{"source": "claude/commands/sdd-spec.md",
                                        "target": ".claude/commands/sdd-spec.md", "hosts": ["claude"]}, ...,
                                        {"source": "sdd/CONVENTIONS.md", "target": "sdd/CONVENTIONS.md",
-                                        "hosts": ["claude", "codex", "google"], "seed": true}]}  (77 entries)
+                                        "hosts": ["claude", "codex", "google"], "seed": true}]}  (81 entries)
   claude/{commands,agents,hooks,rules}/...
   claude/skills/second-opinion/SKILL.md
   agents/skills/sdd-*/SKILL.md       agents/agents/sdd-*/agent.md

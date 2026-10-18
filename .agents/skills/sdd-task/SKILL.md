@@ -117,7 +117,7 @@ complete. `design_complete: true` is a declaration the task author signs.
 - List every target file with its `action` (`create`/`modify`), and give each
   `modify` target a REAL `expected_sha256` — compute it, never guess:
   `sha256sum <path>` or
-  `python -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" <path>`.
+  `shasum -a 256 <path>` on macOS (both print the hash first; take the first field).
 - Every `create` target needs a block tagged `path=<target>` holding the new
   file's full content; every referenced block id must exist in the task file.
 - Never leave placeholders (`...`, `TODO`, `FIXME`, `XXX`, `<angle>`,

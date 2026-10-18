@@ -13,6 +13,7 @@ from parrot.knowledge.wiki.project import (
     save_project_config,
 )
 from parrot.knowledge.wiki.store import WikiPageRecord, create_wiki_store
+from tests.knowledge.wiki._tool_surface import LEDGER, LOCAL_NO_LEDGER
 
 # The worktree's own package sources must shadow whatever `parrot` is
 # installed (editable) into the active venv's site-packages — otherwise a
@@ -86,16 +87,9 @@ class TestWikiMCPServerIntegration:
 
             resp = await send({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
             names = {t["name"] for t in resp["result"]["tools"]}
-            assert names == {
-                "wiki_query",
-                "wiki_page",
-                "wiki_related",
-                "wiki_remember",
-                "wiki_note",
-                "wiki_status",
-                "wiki_lint",
-                "wiki_standup",
-            }
+            # _seed_wiki creates tmp_path/.git, so find_shared_root() finds a repo and the
+            # ledger overlay is mounted by design (FEAT-566): local surface + ledger tools.
+            assert names == set(LOCAL_NO_LEDGER) | set(LEDGER)
 
             resp = await send(
                 {
@@ -179,5 +173,5 @@ class TestCreateWikiMcpServerArangoBackend:
         mcp_server_module.create_wiki_mcp_server(tmp_path)
 
         assert captured["backend"] == "sqlite"
-        assert captured["kwargs"] == {}
+        assert set(captured["kwargs"]) == {"sqlite_policy"}
         assert config.storage_path(tmp_path).is_dir()
