@@ -32,6 +32,23 @@ doctor reads `base_branch`; C7 option C uses `test_command`; C9 uses `reviewer`.
 
 ---
 
+## Amendments — spec rev 0.4 (2026-10-18)
+
+Folded in from `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C17 (decision by
+Jesus Lara, 2026-10-18). Every section below is already edited to match.
+
+- **C17 — `brief_meta` CLI.** The shipped `/sdd-brief` (FEAT-698) tells the agent to build
+  the per-brief index with `scripts.sdd.brief_meta.write_brief_index` — a Python symbol an
+  installed flow cannot import. In the same style as the `sdd_meta` CLI above, give
+  `parrot/sdd/scripts/brief_meta.py` (moved by TASK-4085) an argparse `main()` with two
+  subcommands: `plan --slug <slug> --key <KEY> --base-branch <base>` → prints
+  `brief_worktree_plan(...)` as JSON; `write-index <brief.md> --tasks <tasks.json>
+  --worktree-root <dir>` → `parse_brief()` + `write_brief_index()`, prints the written path.
+  Add `if __name__ == "__main__": raise SystemExit(main())`. TASK-4089 rewrites the prose
+  reference to `parrot sdd run brief_meta write-index …`.
+
+---
+
 ## Scope
 
 - Create `packages/ai-parrot/src/parrot/sdd/config.py`:
@@ -104,6 +121,7 @@ doctor reads `base_branch`; C7 option C uses `test_command`; C9 uses `reviewer`.
 | `packages/ai-parrot/src/parrot/sdd/config.py` | CREATE | `SddConfig`, `SddConfigError`, `CONFIG_PATH`, `default_sdd_config`, `find_repo_root`, `load_sdd_config`, `write_default_config` |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py` | MODIFY | `config` keyword on `parse`/`resolve_flow`; `FlowMeta.hotfix_base`; configured defaults |
 | `packages/ai-parrot/src/parrot/sdd/scripts/sdd_meta.py` | MODIFY | add argparse `main()` (`parse` / `taxonomy` / `resolve-flow`) to the TASK-4085 re-export module |
+| `packages/ai-parrot/src/parrot/sdd/scripts/brief_meta.py` | MODIFY | add argparse `main()` (`plan` / `write-index`) to the module TASK-4085 moved (rev 0.4 C17) |
 | `sdd/config.json` | CREATE | ai-parrot's own configuration (values above) |
 | `packages/ai-parrot/tests/sdd/test_config.py` | CREATE | model, loader, root discovery, writer |
 | `tests/sdd_scripts/test_sdd_meta_config_defaults.py` | CREATE | policy follows the config; absent config keeps today's behaviour |
@@ -317,6 +335,10 @@ def resolve_flow(*, kind=None, doc_path=None, type_override=None, base_branch_ov
 - [ ] `sdd/config.json` for ai-parrot is committed and `load_sdd_config(Path("."))` from the repo root returns `dev`/`staging`/`main`, `jira`, `trocglobal.atlassian.net`, `codex`.
 - [ ] `python -m parrot.sdd.scripts.sdd_meta parse sdd/specs/parrot-installer.spec.md` prints `feature dev`; `taxonomy` prints the spec's projects/tags JSON; `resolve-flow --kind bug` prints `{"type": "hotfix", "base_branch": "main"}`; the re-export names are unchanged.
 - [ ] `ruff check` passes; no cyclic import (`python -c "import parrot.sdd.config, parrot.knowledge.wiki.ledger.sdd_meta"`).
+- [ ] *(rev 0.4 C17)* `python -m parrot.sdd.scripts.brief_meta plan --slug crew-guards --key NAV-1 --base-branch main`
+      prints the `WorktreePlan` JSON (`branch`/`path` = `hotfix-NAV-1-crew-guards`); `write-index <brief.md>
+      --tasks <tasks.json> --worktree-root <dir>` writes the per-brief index and prints its path;
+      `--help` exits 0 from a foreign cwd; an unknown subcommand exits 2; the module's existing names are unchanged.
 
 ---
 
@@ -353,6 +375,9 @@ prints ai-parrot's values; `python -m scripts.sdd.ensure_worktree --help` still 
 - `test_write_default_config_refuses_overwrite`.
 - CLI (`parrot.sdd.scripts.sdd_meta.main`, via `capsys`): `test_cli_parse_prints_type_and_base`,
   `test_cli_taxonomy_json`, `test_cli_resolve_flow_json`, `test_cli_unknown_subcommand_exits_2`.
+- CLI (`parrot.sdd.scripts.brief_meta.main`, via `capsys` + `tmp_path`; rev 0.4 C17):
+  `test_brief_cli_plan_json`, `test_brief_cli_write_index_writes_file`,
+  `test_brief_cli_unknown_subcommand_exits_2`.
 
 ### `tests/sdd_scripts/test_sdd_meta_config_defaults.py` (CREATE)
 Fixture `foreign_repo(tmp_path, monkeypatch)`: `.git/` dir, `sdd/config.json` with

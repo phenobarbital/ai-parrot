@@ -13,7 +13,7 @@ projects: [ai-parrot, sdd-tooling, dev-loop, docs, ci]
 tags: [installer, sdd-packaging, portability, publication-safety, amendment]
 research_state: sdd/state/FEAT-633/
 created: 2026-10-14
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # FEAT-633 — Amendments: portability safeguards carried over from FEAT-583
@@ -513,6 +513,59 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
   `test_no_repo_script_refs` passes; and C3's foreign-repo test shows the guard denying a
   shared-environment write with only `$PARROT_HOME/bin` on PATH.
 
+### C17 — Ship `/sdd-brief` (FEAT-698) through the installer
+- **Problem**: FEAT-698 (`sdd-brief-hotfix-flow`, merged into `dev` on 2026-10-17 as PR
+  #1715) landed after spec rev 0.3. It added a 15th shipped command
+  (`.claude/commands/sdd-brief.md` + its Codex twin `.agents/skills/sdd-brief/SKILL.md`),
+  a 14th template (`sdd/templates/brief.md`), a new repo-local helper
+  (`scripts/sdd/brief_meta.py`, imported by `scripts/sdd/ensure_worktree.py:20`) and the
+  `ensure_worktree --brief-key` input. `/sdd-spec` no longer scaffolds hotfixes; `/sdd-brief`
+  is the hotfix lane every installed flow needs. Verified on `925b0f1a2`:
+  - The TASK-4090 packaging globs (`.claude/commands/sdd-*.md`, `.agents/skills/sdd-*/SKILL.md`,
+    `sdd/templates/*`) pick the command, the skill and the template up by themselves, but
+    every count the tasks and the spec carry (14 commands, 12/13 templates, 77 manifest
+    entries) is stale.
+  - There is **no Google twin**: `.agent/workflows/sdd-brief.md` does not exist (FEAT-698
+    shipped Claude + Codex only), so a `--host google` install would lack the hotfix lane and
+    the `.agent/workflows/sdd-*.md` row would ship 14 while the other hosts ship 15.
+  - `brief_meta` is in no move task. After TASK-4085 moves `ensure_worktree`, the moved
+    module would still `from scripts.sdd.brief_meta import brief_worktree_plan` — a monorepo
+    import that fails in a foreign repo and that `test_no_repo_script_refs` (C12) and the
+    wheel-only test (C3) both catch. `brief_meta` also has no `main()`, and the shipped
+    command tells the agent to "build the per-brief index with
+    `scripts.sdd.brief_meta.write_brief_index`" — a Python symbol an installed flow cannot
+    import.
+  - `sdd-brief.md` carries four helper invocations TASK-4089's enumeration (made on
+    `6c4ca5482`, before FEAT-698) does not list: `python -m scripts.sdd.ensure_worktree`
+    (`:18`, `:132`), `scripts.sdd.brief_meta.write_brief_index` (`:151`) and
+    `python -m scripts.sdd.check_task_graph` (`:154`); the Codex twin repeats three of them
+    (`SKILL.md:39-40`). The TASK-4070 helper map has no `sdd-brief` row.
+- **Decision** (Jesus Lara, 2026-10-18): fold `/sdd-brief` into the existing tasks; no new
+  task id.
+  - **TASK-4085** moves `brief_meta.py` with the other worktree helpers (`git mv`, one
+    import rewrite `scripts.sdd.sdd_meta` → `parrot.sdd.scripts.sdd_meta`, alias shim left
+    behind; `ensure_worktree.py` now gets two import rewrites). `tests/sdd_scripts/
+    test_brief_meta.py` keeps importing through the shim, unmodified.
+  - **TASK-4299** gives `parrot/sdd/scripts/brief_meta.py` an argparse `main()` in the
+    `sdd_meta` style: `plan --slug <slug> --key <KEY> --base-branch <base>` (prints the
+    `WorktreePlan` JSON) and `write-index <brief.md> --tasks <tasks.json> --worktree-root
+    <dir>` (writes the per-brief index, prints its path).
+  - **TASK-4089** creates `.agent/workflows/sdd-brief.md` (the `description:` frontmatter
+    plus the byte-identical body of `.claude/commands/sdd-brief.md`, as every other Google
+    twin) *before* its rewrite, adds the three `sdd-brief` files to the rewrite table,
+    rewrites the prose `write_brief_index` reference to `parrot sdd run brief_meta
+    write-index …`, and extends the twin parity test to `sdd-brief`.
+  - **TASK-4070** adds the `sdd-brief` row to the pre-seeded helper map
+    (`brief_meta`, `check_task_graph`, `ensure_worktree`) and the new files to the inventory.
+  - **TASK-4090** updates the asset counts (15 commands per host, 13 tracked templates,
+    **81** manifest entries); the globs themselves do not change.
+  - **TASK-4091** adds the C3 scenarios for `ensure_worktree --brief-key` and
+    `brief_meta write-index`, and its `--host google` check expects `agent/workflows/sdd-brief.md`.
+- **Done when**: `parrot sdd install --host claude|codex|google` deploys `/sdd-brief` and
+  `sdd/templates/brief.md` on every host; the installed `sdd-brief.md` references only
+  `parrot sdd run …` forms, each with a C3 scenario; `import scripts.sdd.brief_meta` still
+  works in the monorepo; `check_asset_sync.py` reports 81 entries.
+
 ### What's untouched (non-goals)
 - FEAT-633's core design: the launcher, managed venv, `parrot self`, `--portable`, the
   store gate and the wheel matrix.
@@ -740,3 +793,4 @@ with fixture inputs. This corrects the earlier claim that `resolve_flow()` was a
 | 0.2 | 2026-10-14 | Jesus Lara + Claude | All ⚖️ items, Q1 and C7 resolved; C6 reduced (no `CONFIG.md`, `test_command` added); branch-policy inventory updated (resolver omission corrected in 0.3), `KNOWN_BRANCHES` third copy, `lint_new`/`token_audit` not referenced by shipped files; Q1 resolution section added |
 | 0.3 | 2026-10-14 | Codex, requested by Jesus Lara | C14/C15 scope bootstrap doctor to runtime health; C6 includes existing `resolve_flow()` and fallback tests; C3 retains allowlisted system tools and supplies fixture arguments/state; repeated claims reconciled |
 | 0.4 | 2026-10-17 | Jesus Lara + Claude | C16 added: C12's sweep covered only `scripts/sdd` references and missed the shipped `sdd-coder`/`sdd-worker` hook, which addresses `worktree_environment.py` by monorepo source path; the module is relocated to `parrot/sdd/scripts/` with a re-export shim, invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, and `test_no_repo_script_refs` is widened to any monorepo source path |
+| 0.5 | 2026-10-18 | Jesus Lara + Claude | C17 added: `/sdd-brief` (FEAT-698, merged after rev 0.3) ships through the installer — `brief_meta` joins TASK-4085's move and gets a CLI in TASK-4299, TASK-4089 creates the missing Google twin `.agent/workflows/sdd-brief.md`, counts updated (15 commands per host, 13 tracked templates, 81 manifest entries), C3 scenarios for `ensure_worktree --brief-key` / `brief_meta write-index` |
