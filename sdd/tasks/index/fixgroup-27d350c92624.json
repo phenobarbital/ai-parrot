@@ -16,14 +16,14 @@
       "feature_id": "FEAT-701",
       "feature": "fixgroup-27d350c92624",
       "spec": "sdd/specs/fixgroup-27d350c92624.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single task in this feature; touches e2e/live.py, e2e/runner.py and their unit tests",
-      "assigned_to": "unassigned",
-      "started_at": null,
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-18T21:30:24+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4458-live-budget-handoff.md"
     }
