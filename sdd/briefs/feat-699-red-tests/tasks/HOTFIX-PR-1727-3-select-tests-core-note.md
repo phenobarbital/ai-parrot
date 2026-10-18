@@ -181,6 +181,6 @@ When you pick up this task:
 
 **Completed by**: sdd-worker (sequential fallback: engine cannot assess brief task ids)
 **Date**: 2026-10-19
-**Notes**: Test renamed test_core_change_is_a_note_not_an_escalation with the four assertions; tests/sdd_scripts/test_select_tests.py: 20 green.
+**Notes**: No code change landed from this task. On rebase onto the feature tip (5bf4d6354) the same test was already rewritten upstream as `test_run_core_change_without_contract_is_a_note_never_an_escalation` (same assertions: note, empty escalated/skipped_escalations, core hit, file-level targets). The cherry-pick conflict was resolved by keeping the upstream file; the rename commit was skipped. tests/sdd_scripts/test_select_tests.py: 21 green.
 
-**Deviations from spec**: none
+**Deviations from spec**: Test was not renamed or rewritten here; the equivalent upstream test is kept.
