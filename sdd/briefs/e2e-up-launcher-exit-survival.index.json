@@ -1,0 +1,31 @@
+{
+  "feature": "e2e-up-launcher-exit-survival",
+  "feature_id": "BRIEF-792b6e2a8f25",
+  "spec": "sdd/briefs/e2e-up-launcher-exit-survival.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-10-18",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-792b6e2a8f25-1",
+      "slug": "up-launcher-exit-survival-test",
+      "title": "Real-subprocess launcher-exit survival scenarios for parrot e2e up",
+      "feature_id": "BRIEF-792b6e2a8f25",
+      "feature": "e2e-up-launcher-exit-survival",
+      "spec": "sdd/briefs/e2e-up-launcher-exit-survival.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/e2e-up-launcher-exit-survival/tasks/HOTFIX-792b6e2a8f25-1-up-launcher-exit-survival-test.md"
+    }
+  ]
+}
