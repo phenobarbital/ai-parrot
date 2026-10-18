@@ -17,7 +17,7 @@ e2e:
 **Feature ID**: FEAT-703
 **Date**: 2026-10-19
 **Author**: sdd-fix (Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: 0.29.0
 
 ---
@@ -399,3 +399,4 @@ ledger merge blockers (Step 9), never a required E2E gate (spec AC9)" line — a
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-19 | sdd-fix (Claude) | Initial draft from `issue:4b887b8e3ce0` |
+| 0.2 | 2026-10-19 | sdd-fix (Claude) | Approved — scope fork (code-enforce vs. soften AC9) decided by the user in favour of code enforcement |
