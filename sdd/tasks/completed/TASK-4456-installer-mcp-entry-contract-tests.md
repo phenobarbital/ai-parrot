@@ -174,4 +174,12 @@ See blueprint.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (delegated coder, diff reviewed)
+**Date**: 2026-10-18
+**Notes**: test_install_creates_mcp_json asserts the managed shape and equality
+with assets.mcp_json_entry(repo_root); test_install_updates_stale_entry seeds a
+managed-shape stale path and asserts the refresh; new
+test_install_leaves_foreign_wikitoolkit_entry_untouched. 25 passed.
+
+**Deviations from spec**: none.
+

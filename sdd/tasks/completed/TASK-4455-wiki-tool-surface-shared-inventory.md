@@ -143,7 +143,7 @@ from tests.knowledge.wiki._tool_surface import BULK, LEDGER, LOCAL_NO_LEDGER  # 
 ```python
 # occurrences: 1 (verified: grep -c 'assert names == {' <path>)
 # REPLACE — the `assert names == { ... }` literal (lines 89-98) with:
-            assert names == set(LOCAL_NO_LEDGER)
+            assert names == set(LOCAL_NO_LEDGER) | set(LEDGER)  # _seed_wiki creates .git → ledger overlay mounted (spec rev 0.2)
 # occurrences: 1 (verified: grep -c 'assert captured\["kwargs"\] == {}' <path>)
 # REPLACE line 182 with:
         assert set(captured["kwargs"]) == {"sqlite_policy"}
@@ -166,7 +166,7 @@ BASE_TOOLS = set(LOCAL_NO_LEDGER)
 - [ ] AC1: `test_initialize_and_list_tools`, `test_no_namespaces_keeps_a_plain_store`,
       `test_namespace_is_injected`, `test_no_vault_keeps_base_tool_set`,
       `test_sqlite_backend_unaffected_by_arango_branch` pass.
-- [ ] AC2: `grep -rn '"wiki_decisions_for_symbol"' packages/ai-parrot/tests/knowledge/wiki/` hits only `_tool_surface.py`.
+- [ ] AC2: among the four surface test modules, the inventory literal lives only in `_tool_surface.py` (spec rev 0.2 scope).
 - [ ] AC3: `test_tool_surface_golden.py` still passes (2 tests).
 - [ ] No linting errors on the five files.
 
@@ -202,4 +202,16 @@ See blueprint; no new tests beyond the moved inventory.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (delegated coder + orchestrator amendment)
+**Date**: 2026-10-18
+**Notes**: _tool_surface.py owns LOCAL_NO_LEDGER/LEDGER/BULK; golden, namespaces
+and vault tests import it; test_mcp_server.py's stdio subprocess test asserts
+LOCAL_NO_LEDGER | LEDGER and the sqlite store test pins {"sqlite_policy"}.
+18/18 tests pass across the four files (62/62 across the feature's six files).
+
+**Deviations from spec**: blueprint said `names == set(LOCAL_NO_LEDGER)` for
+test_initialize_and_list_tools; `_seed_wiki` creates tmp_path/.git so the
+ledger overlay is mounted by design — corrected to the union (spec rev 0.2).
+AC2 re-scoped to the four surface modules (other test modules legitimately
+name individual tools).
+

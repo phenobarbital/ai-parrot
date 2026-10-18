@@ -168,4 +168,11 @@ See blueprint (helper change only).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (delegated coder, diff reviewed)
+**Date**: 2026-10-18
+**Notes**: _invoke_ingest patches wiki_cli._env_setting with an os.environ-only
+reader, so the developer .env (WIKI_MODEL set, not exported) no longer skips the
+detection branch. Class 5 passed; whole file 19 passed.
+
+**Deviations from spec**: none.
+

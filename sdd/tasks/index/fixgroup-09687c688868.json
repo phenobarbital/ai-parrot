@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-18T21:40:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-18T21:44:19+00:00",
   "parallel_semantics": "parallel",
   "validation_contract": "required",
   "tasks": [
@@ -16,16 +16,17 @@
       "feature_id": "FEAT-700",
       "feature": "fixgroup-09687c688868",
       "spec": "sdd/specs/fixgroup-09687c688868.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "disjoint files from TASK-4456/4457 (mcp server surface tests only)",
-      "assigned_to": "unassigned",
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4455-wiki-tool-surface-shared-inventory.md"
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-18T21:30:24+00:00",
+      "completed_at": "2026-10-18T21:42:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4455-wiki-tool-surface-shared-inventory.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4456",
@@ -34,16 +35,17 @@
       "feature_id": "FEAT-700",
       "feature": "fixgroup-09687c688868",
       "spec": "sdd/specs/fixgroup-09687c688868.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single file test_installer_mcp.py",
-      "assigned_to": "unassigned",
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4456-installer-mcp-entry-contract-tests.md"
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-18T21:30:24+00:00",
+      "completed_at": "2026-10-18T21:42:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4456-installer-mcp-entry-contract-tests.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4457",
@@ -52,16 +54,17 @@
       "feature_id": "FEAT-700",
       "feature": "fixgroup-09687c688868",
       "spec": "sdd/specs/fixgroup-09687c688868.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "single file test_cli.py",
-      "assigned_to": "unassigned",
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4457-ingest-detection-tests-hermetic.md"
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-18T21:30:24+00:00",
+      "completed_at": "2026-10-18T21:42:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4457-ingest-detection-tests-hermetic.md",
+      "verification": "verified"
     }
   ]
 }
