@@ -4,6 +4,7 @@ import pytest
 
 from parrot.flows.dev_loop.nodes.qa import QANode
 from parrot.flows.dev_loop.test_scope import distribution_of, pytest_targets
+from parrot.flows.dev_loop.test_scope.mirror import pytest_file_target_for, pytest_file_targets
 
 
 @pytest.fixture
@@ -37,3 +38,56 @@ def test_distribution_of():
     assert distribution_of("tests/sdd_scripts/test_x.py") == "root"
     with pytest.raises(ValueError):
         distribution_of("scripts/sdd/x.py")
+
+
+def test_file_mirror_uses_first_existing_test_file(tmp_path):
+    source = tmp_path / "packages" / "ai-parrot" / "src" / "parrot" / "flows" / "dev_loop" / "runner.py"
+    source.parent.mkdir(parents=True)
+    source.touch()
+    shallow = tmp_path / "packages" / "ai-parrot" / "tests" / "flows" / "test_runner.py"
+    shallow.parent.mkdir(parents=True)
+    shallow.touch()
+    deep = tmp_path / "packages" / "ai-parrot" / "tests" / "flows" / "dev_loop" / "test_runner.py"
+    deep.parent.mkdir(parents=True)
+    deep.touch()
+
+    assert (
+        pytest_file_target_for(
+            "packages/ai-parrot/src/parrot/flows/dev_loop/runner.py",
+            str(tmp_path),
+        )
+        == "packages/ai-parrot/tests/flows/dev_loop/test_runner.py"
+    )
+
+
+def test_file_mirror_never_returns_directory(tmp_path):
+    source = tmp_path / "packages" / "ai-parrot" / "src" / "parrot" / "flows" / "runner.py"
+    source.parent.mkdir(parents=True)
+    source.touch()
+    (tmp_path / "packages" / "ai-parrot" / "tests" / "flows").mkdir(parents=True)
+
+    assert pytest_file_targets(["packages/ai-parrot/src/parrot/flows/runner.py"], str(tmp_path)) == []
+
+
+def test_file_mirror_maps_existing_test_to_itself(tmp_path):
+    package_test = tmp_path / "packages" / "ai-parrot" / "tests" / "flows" / "test_runner.py"
+    package_test.parent.mkdir(parents=True)
+    package_test.touch()
+    root_test = tmp_path / "tests" / "test_scripts.py"
+    root_test.parent.mkdir(parents=True)
+    root_test.touch()
+
+    files = ["tests/test_scripts.py", "packages/ai-parrot/tests/flows/test_runner.py"]
+    assert pytest_file_targets(files, str(tmp_path)) == sorted(files)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "packages/ai-parrot/src/parrot/deleted.py",
+        "packages/ai-parrot/src/parrot/data.json",
+        "packages/ai-parrot/src/parrot/__init__.py",
+    ],
+)
+def test_file_mirror_rejects_deleted_non_python_and_init_files(tmp_path, path):
+    assert pytest_file_target_for(path, str(tmp_path)) is None
