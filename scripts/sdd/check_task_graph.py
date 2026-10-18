@@ -23,6 +23,12 @@ Errors (exit 1):
     not a pytest invocation at all (e.g. ``true`` or ``ruff check .``); it is
     silently invisible to ``select_tests.py``'s declared-command handling, so
     the task effectively has no enforced test coverage (FEAT-563).
+  * ``test-contract-malformed`` — the index header's cached ``test_contract``
+    cannot be validated (FEAT-699).
+  * ``test-contract-operand-missing`` — a ``test_contract`` test operand does
+    not exist and no task in the index declares it (FEAT-699).
+  * ``test-contract-real-llm`` — a ``test_contract`` test operand is under a
+    ``real_llm`` directory (FEAT-699).
 
 Warnings (exit 0):
   * ``unjustified-edge`` — B depends on A, but they share no file, B's task
@@ -39,6 +45,8 @@ Warnings (exit 0):
   * ``validation-path-unknown`` — a validation command's operand neither
     exists under ``root`` nor is declared in the task's own
     ``## Files to Create / Modify`` (FEAT-563).
+  * ``test-contract-task-tests-uncovered`` — a task validation test file is
+    absent from the ``test_contract`` operands (FEAT-699).
 
 Usage:
     python -m scripts.sdd.check_task_graph sdd/tasks/index/<feature>.json [--root .] [--json]
@@ -297,6 +305,67 @@ def _check_validation_contract(tasks: dict[str, _Task], root: Path, required: bo
     return findings
 
 
+def _check_test_contract(data: dict, root: Path, tasks: dict[str, _Task]) -> list[Finding]:
+    """Lint the per-spec index header's cached ``test_contract``.
+
+    Args:
+        data: The parsed index JSON (header and tasks).
+        root: Repository root for existence checks.
+        tasks: Parsed tasks (``text`` and ``files`` populated).
+
+    Returns:
+        Findings: test-contract-malformed, test-contract-operand-missing,
+        test-contract-real-llm, test-contract-task-tests-uncovered.
+    """
+    contract_mod = _load_contract()
+    try:
+        contract = contract_mod.contract_from_index_header(data)
+    except ValueError as exc:
+        return [Finding(level="error", code="test-contract-malformed", message=f"test_contract: {exc}")]
+    if contract is None:
+        return []
+
+    findings: list[Finding] = []
+    declared = {path for task in tasks.values() for path in task.files}
+    contract_files = {operand.split("::", 1)[0] for operand in contract.tests}
+    for operand in contract.tests:
+        file_part = operand.split("::", 1)[0]
+        if "real_llm" in PurePosixPath(file_part).parts:
+            findings.append(
+                Finding(
+                    level="error",
+                    code="test-contract-real-llm",
+                    message=f"test_contract operand is under a real_llm directory: {operand}",
+                )
+            )
+        elif not (root / file_part).exists() and file_part not in declared:
+            findings.append(
+                Finding(
+                    level="error",
+                    code="test-contract-operand-missing",
+                    message=f"test_contract operand neither exists nor is declared: {operand}",
+                )
+            )
+
+    for tid, task in tasks.items():
+        if not task.text:
+            continue
+        for argv in contract_mod.parse_validation_commands(task.text):
+            if not contract_mod.is_pytest_invocation(argv):
+                continue
+            for operand in _pytest_operands(argv):
+                if operand not in contract_files:
+                    findings.append(
+                        Finding(
+                            level="warning",
+                            code="test-contract-task-tests-uncovered",
+                            tasks=[tid],
+                            message=f"{tid}: validation test is absent from test_contract: {operand}",
+                        )
+                    )
+    return findings
+
+
 def check_graph(index_path: Path, root: Path) -> GraphReport:
     """Check one per-spec index against its task files.
 
@@ -424,6 +493,7 @@ def check_graph(index_path: Path, root: Path) -> GraphReport:
     report.findings.extend(
         _check_validation_contract(tasks, root, data.get("validation_contract") == VALIDATION_CONTRACT)
     )
+    report.findings.extend(_check_test_contract(data, root, tasks))
     return report
 
 
