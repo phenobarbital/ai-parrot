@@ -58,7 +58,7 @@ from ...agent import BasicAgent
 from ...abstract import AbstractBot, _resolve_supported_client
 from ....clients import AbstractClient
 from ....clients.factory import SUPPORTED_CLIENTS
-from .credentials import GOOGLE_PROVIDER_KEYS, apply_google_api_key
+from .credentials import GOOGLE_PROVIDER_KEYS, apply_google_api_key, has_explicit_google_credential
 from ....tools.manager import ToolManager
 from ....tools.agent import AgentTool
 from ....tools.abstract import AbstractTool, ToolResult
@@ -235,7 +235,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         if isinstance(llm, str):
             client_cls = _resolve_supported_client(SUPPORTED_CLIENTS.get(llm.lower(), None))
             client_kwargs = kwargs
-            if google_api_key and llm.lower() in GOOGLE_PROVIDER_KEYS and "api_key" not in kwargs:
+            if google_api_key and llm.lower() in GOOGLE_PROVIDER_KEYS and not has_explicit_google_credential(kwargs):
                 client_kwargs = {**kwargs, "api_key": google_api_key}
             self._llm = client_cls(**client_kwargs) if client_cls else None
         elif isinstance(llm, AbstractClient):
@@ -243,7 +243,7 @@ class AgentCrew(PersistenceMixin, SynthesisMixin):
         else:
             client_cls = _resolve_supported_client(SUPPORTED_CLIENTS.get("google"))
             client_kwargs = kwargs
-            if google_api_key and "api_key" not in kwargs:
+            if google_api_key and not has_explicit_google_credential(kwargs):
                 client_kwargs = {**kwargs, "api_key": google_api_key}
             self._llm = client_cls(**client_kwargs) if client_cls else None
         self.truncation_length = (
