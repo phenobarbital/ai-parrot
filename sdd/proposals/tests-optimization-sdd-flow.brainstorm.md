@@ -16,7 +16,7 @@ tags: [test-selection, validation-contract, sdd-done, sdd-worker, ci]
 
 **Date**: 2026-10-18
 **Author**: Jesus Lara (with Claude)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A + B (spec-declared Validation Contract with a cross-merge green cache)
 
 ---
@@ -95,6 +95,17 @@ seat outputs, retry multipliers) and reviewers reading an always-red table.
   - Safety net: a **nightly full-suite workflow on `dev`** covering every
     `packages/*/tests`.
 - Targets: merge-tier validation **< 2 min**, `/sdd-done` feature tier **< 5 min**.
+- Decisions from spec kickoff (2026-10-18):
+  - Contract lives in spec §4 as a `### Validation Contract` body subsection,
+    cached by `/sdd-task` into the per-spec index header; the kernel reads only
+    the index.
+  - Baseline re-run happens in a temporary detached checkout of
+    `origin/<base_branch>` with the compiled Cython `.so` copied from the main
+    checkout (same mechanism as sub-worktrees); an unbuildable checkout ⇒
+    *unknown*, treated as failure.
+  - Explicit contract operands override the `integration`/`e2e` marker
+    exclusions (declaring is the opt-in); `real_llm` stays excluded and is
+    lint-flagged by `check_task_graph.py`.
 - Deterministic, stdlib-only kernel (the `test_scope` package is imported by
   path from the system-python native hook — no Pydantic in `__init__`).
 - Backward compatible: specs/task files written before this feature keep
@@ -537,12 +548,12 @@ from parrot.flows.dev_loop.test_scope import (  # test_scope/__init__.py:7-10
 
 ## Open Questions
 
-- [ ] Where does the contract live canonically: spec §4 body subsection (parsed) or spec frontmatter key (like `e2e:`)? Recommendation: body subsection for authors + cached index field for the kernel — *Owner: Jesus Lara*
+- [x] Where does the contract live canonically: spec §4 body subsection (parsed) or spec frontmatter key (like `e2e:`)? — *Owner: Jesus Lara*: body subsection in §4 for authors + cached per-spec index field for the kernel.
 - [ ] Should the `/sdd-done` feature tier bypass the green cache so the closeout table is a fresh end-to-end run of the contract? — *Owner: Jesus Lara*
 - [ ] Once the feature tier is cheap, drop `RERUN_TASK_THRESHOLD` (> 10 tasks ⇒ skip) or raise it? — *Owner: Jesus Lara*
-- [ ] Contract operands under `integration/` dirs are excluded by `AGENT_MARKER_EXPRESSION`: should an explicit contract operand override the exclusion? — *Owner: Jesus Lara*
+- [x] Contract operands under `integration/` dirs are excluded by `AGENT_MARKER_EXPRESSION`: should an explicit contract operand override the exclusion? — *Owner: Jesus Lara*: yes — an explicitly declared operand overrides `integration`/`e2e` exclusion (declaring is the opt-in); `real_llm` is never overridden and is lint-flagged.
 - [ ] Nightly new reds: open a GitHub issue, or write a `wikitoolkit ledger` issue (needs a commit from CI)? — *Owner: Jesus Lara*
-- [ ] Baseline re-run location: temporary detached checkout of `origin/<base>` (Cython `.so` missing there) vs main-checkout code — which is trustworthy enough? — *Owner: Jesus Lara*
+- [x] Baseline re-run location: temporary detached checkout of `origin/<base>` (Cython `.so` missing there) vs main-checkout code — which is trustworthy enough? — *Owner: Jesus Lara*: temporary detached checkout of `origin/<base>` with the compiled `.so` copied from the main checkout; unbuildable ⇒ *unknown* = failure.
 - [ ] Should `/sdd-brief` (hotfix/fix briefs, FEAT-698) also carry an optional contract? — *Owner: Jesus Lara*
 - [ ] Retry-once for flaky tests before classifying as new red? — *Owner: Jesus Lara*
 - [x] Flow type and base — *Owner: Jesus Lara*: `feature` on `dev`.
