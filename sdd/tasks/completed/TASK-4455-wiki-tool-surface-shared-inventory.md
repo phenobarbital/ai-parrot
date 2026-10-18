@@ -202,4 +202,16 @@ See blueprint; no new tests beyond the moved inventory.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (delegated coder + orchestrator amendment)
+**Date**: 2026-10-18
+**Notes**: _tool_surface.py owns LOCAL_NO_LEDGER/LEDGER/BULK; golden, namespaces
+and vault tests import it; test_mcp_server.py's stdio subprocess test asserts
+LOCAL_NO_LEDGER | LEDGER and the sqlite store test pins {"sqlite_policy"}.
+18/18 tests pass across the four files (62/62 across the feature's six files).
+
+**Deviations from spec**: blueprint said `names == set(LOCAL_NO_LEDGER)` for
+test_initialize_and_list_tools; `_seed_wiki` creates tmp_path/.git so the
+ledger overlay is mounted by design — corrected to the union (spec rev 0.2).
+AC2 re-scoped to the four surface modules (other test modules legitimately
+name individual tools).
+
