@@ -16,14 +16,14 @@
       "feature_id": "BRIEF-cs-228",
       "feature": "repo-cache-origin-url-check",
       "spec": "sdd/briefs/repo-cache-origin-url-check.brief.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-18T22:19:02+00:00",
       "completed_at": null,
       "file": "sdd/briefs/repo-cache-origin-url-check/tasks/HOTFIX-cs-228-1-parse-origin-host-before-match.md"
     }
