@@ -173,7 +173,7 @@
       "feature_id": "FEAT-699",
       "feature": "tests-optimization-sdd-flow",
       "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -184,8 +184,9 @@
       "parallelism_notes": "filter_cached rebuilds plans produced by plan_tests contract mode from TASK-4445 (select.py); record_green consumes SuiteResult.nodes/unmapped from TASK-4446 (report.py)",
       "assigned_to": null,
       "started_at": "2026-10-18T20:43:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4447-green-cache.md"
+      "completed_at": "2026-10-18T21:33:31+00:00",
+      "file": "sdd/tasks/completed/TASK-4447-green-cache.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4448",
@@ -194,7 +195,7 @@
       "feature_id": "FEAT-699",
       "feature": "tests-optimization-sdd-flow",
       "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -204,8 +205,9 @@
       "parallelism_notes": "classify_failures reads parse_junit node statuses added by TASK-4446 (test_scope/report.py)",
       "assigned_to": null,
       "started_at": "2026-10-18T20:43:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4448-baseline-verdict.md"
+      "completed_at": "2026-10-18T21:33:31+00:00",
+      "file": "sdd/tasks/completed/TASK-4448-baseline-verdict.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4449",
@@ -214,7 +216,7 @@
       "feature_id": "FEAT-699",
       "feature": "tests-optimization-sdd-flow",
       "spec": "sdd/specs/tests-optimization-sdd-flow.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -224,8 +226,9 @@
       "parallelism_notes": "modifies report.py after TASK-4446 (shared file) and renders SuiteResult.baseline added there",
       "assigned_to": null,
       "started_at": "2026-10-18T20:43:47+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4449-closeout-report-columns-and-rerun-rule.md"
+      "completed_at": "2026-10-18T21:33:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4449-closeout-report-columns-and-rerun-rule.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4450",
