@@ -1,0 +1,31 @@
+{
+  "feature": "gdrive-download-retry",
+  "feature_id": "BRIEF-57bfa5240cab",
+  "spec": "sdd/briefs/gdrive-download-retry.brief.md",
+  "type": "brief",
+  "base_branch": "dev",
+  "created_at": "2026-10-18T08:51:03.219344+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "tasks": [
+    {
+      "id": "HOTFIX-57bfa5240cab-1",
+      "slug": "gdrive-retry-safety",
+      "title": "Fix download retry byte duplication and resumable chunk Retry-After",
+      "feature_id": "BRIEF-57bfa5240cab",
+      "feature": "gdrive-download-retry",
+      "spec": "sdd/briefs/gdrive-download-retry.brief.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/briefs/gdrive-download-retry/tasks/HOTFIX-57bfa5240cab-1-gdrive-retry-safety.md"
+    }
+  ]
+}
