@@ -300,7 +300,9 @@ def main(argv: list[str] | None = None) -> int:
         if set(failed_nodeids) - set(verdict_by_node):
             unclassified_failure = True
         for suite in suites:
-            baseline_nodes = tuple((nodeid, verdict_by_node[nodeid]) for nodeid, _ in suite.nodes if nodeid in verdict_by_node)
+            baseline_nodes = tuple(
+                (nodeid, verdict_by_node[nodeid]) for nodeid, _ in suite.nodes if nodeid in verdict_by_node
+            )
             if baseline_nodes:
                 _record_suite(
                     report_mod,

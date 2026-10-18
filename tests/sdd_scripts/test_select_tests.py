@@ -65,7 +65,9 @@ def test_index_contract_selects_declared_operands(fixture_monorepo, capsys):
 
     kernel = _load_kernel()
     contract = kernel.contract.contract_to_header(
-        kernel.contract.parse_spec_contract("### Validation Contract\n\ntests:\n- packages/a/tests/test_x.py\nmarkers: none\n")
+        kernel.contract.parse_spec_contract(
+            "### Validation Contract\n\ntests:\n- packages/a/tests/test_x.py\nmarkers: none\n"
+        )
     )
     index = _write_index(
         fixture_monorepo,
@@ -167,7 +169,8 @@ def test_baseline_verdict_controls_failure_exit(fixture_monorepo, monkeypatch, s
         junit.write_text(
             '<testsuites><testsuite tests="1" failures="1">'
             '<testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x" name="test_x">'
-            "<failure />" "</testcase></testsuite></testsuites>"
+            "<failure />"
+            "</testcase></testsuite></testsuites>"
         )
         return SimpleNamespace(returncode=1)
 
