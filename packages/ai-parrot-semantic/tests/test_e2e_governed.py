@@ -192,11 +192,6 @@ async def test_e2e_native_engine_switch(
     assert native._ledger.entries[-1].engine == "native"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="production bug: lineage treats a granted metric's aggregate input (SUM(amount)) as a 'derived' "
-    "use requiring a usage grant, so analyst cannot query its granted 'revenue' metric -> usage_denied",
-)
 async def test_e2e_granted_metric_requires_no_usage_grant(
     models_dir, duckdb_warehouse, allow_all_guard, pctx_factory, monkeypatch  # noqa: F811
 ) -> None:

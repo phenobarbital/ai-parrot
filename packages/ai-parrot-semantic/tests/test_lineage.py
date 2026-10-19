@@ -136,3 +136,16 @@ def test_usage_rights_match_physical_column_names() -> None:
     assert policy.mask_for(frozenset({"power"}), "sales.customers.email") is not None
     # Suffix matching is per dotted segment only.
     assert policy.mask_for(frozenset({"power"}), "sales.vipcustomers.email") is None
+
+
+def test_usage_rights_only_restrict_masked_or_sensitive_columns() -> None:
+    """Decision A: unmasked, non-sensitive columns need no usage grant; sensitive members do."""
+    uses = resolve_column_uses(
+        _qualified("SELECT SUM(department_id) AS d FROM sales.orders WHERE customer_id > 1"), SCHEMA
+    )
+    assert {use.context for use in uses} >= {"where", "derived"}
+    enforce_usage_rights(uses, POLICY, frozenset({"analyst"}), trusted_nodes=set())
+    with pytest.raises(SemanticAccessError, match="usage_denied"):
+        enforce_usage_rights(
+            uses, POLICY, frozenset({"analyst"}), trusted_nodes=set(), sensitive_members=frozenset({"customer_id"})
+        )

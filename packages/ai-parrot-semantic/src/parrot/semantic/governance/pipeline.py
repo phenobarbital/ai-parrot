@@ -94,7 +94,13 @@ class GovernancePipeline:
             manifest = await self.pbac.authorize_manifest(ctx, model)
             await self.pbac.authorize(ctx, resources, governed=True, manifest=manifest)
             uses = resolve_column_uses(tree, model.schema)
-            enforce_usage_rights(uses, model.policy, roles, trusted_nodes=set())
+            enforce_usage_rights(
+                uses,
+                model.policy,
+                roles,
+                trusted_nodes=set(),
+                sensitive_members=frozenset(m.name for m in model.members if m.sensitive),
+            )
             tree, rls_applied, rls_trusted_nodes = self.rls.apply(tree, ctx, driver, schema=model.schema)
             tree, masked_columns, mask_trusted_nodes = apply_masks(tree, uses, model.policy, roles, dialect)
             trusted_nodes = rls_trusted_nodes | mask_trusted_nodes

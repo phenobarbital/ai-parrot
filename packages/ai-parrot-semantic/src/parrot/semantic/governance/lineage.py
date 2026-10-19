@@ -180,12 +180,30 @@ def enforce_usage_rights(
     roles: frozenset[str],
     *,
     trusted_nodes: set[int],
+    sensitive_members: frozenset[str] = frozenset(),
 ) -> None:
-    """Deny non-projection physical-column uses without explicit usage rights."""
+    """Deny non-projection uses of restricted columns without explicit usage rights.
+
+    Usage rights apply only to *restricted* columns (spec AC6 "masked or hidden", FEAT-704 decision A,
+    2026-10-19): a column governed by a mask, or one whose name is a member declared ``sensitive: true``.
+    Unrestricted columns (e.g. a granted metric's aggregate input ``SUM(amount)``) need no usage grant;
+    the positive guard still allowlists every table and column.
+
+    Args:
+        uses: Resolved physical-column uses.
+        policy: Model policy holding masks and usage grants.
+        roles: Roles active for the request.
+        trusted_nodes: Unused; trusted AST nodes never become ``ColumnUse`` values.
+        sensitive_members: Names of model members declared ``sensitive``.
+
+    Raises:
+        SemanticAccessError: ``usage_denied`` for a restricted column used without rights.
+    """
     del trusted_nodes  # Trusted AST nodes are removed by the caller before they become ColumnUse values.
     for use in uses:
         if use.context == "projection":
             continue
         column = f"{use.table}.{use.column}"
-        if not policy.usage_allowed(roles, column):
+        restricted = policy.mask_rule(column) is not None or use.column in sensitive_members
+        if restricted and not policy.usage_allowed(roles, column):
             raise SemanticAccessError("usage_denied", details={"column": column})

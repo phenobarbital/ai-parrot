@@ -85,6 +85,10 @@ class ModelPolicy(BaseModel):
             allowed.update(dimension_names if grant.dimensions == "*" else grant.dimensions)
         return allowed
 
+    def mask_rule(self, column: str) -> MaskRule | None:
+        """Return the mask governing ``column`` regardless of roles (``None`` when unmasked)."""
+        return self._mask_rule(column)
+
     def _mask_rule(self, column: str) -> MaskRule | None:
         """Find the mask governing ``column``.
 
