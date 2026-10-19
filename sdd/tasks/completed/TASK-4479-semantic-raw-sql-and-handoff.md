@@ -227,9 +227,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4479
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 379.9s · Tokens: n/a
+- Validation: merge-tier dde5085a:4479:merge completed exit 0 (7 passed).
+- Review: no corrections. run_sql goes through the identical governance pipeline and is audited with raw_sql=True; tools exposed only with allow_raw_sql / dataset_manager_factory; result hand-off re-checks subject/model/policy digests and rejects a shared DatasetManager.
+- Deferred: issue:4adcfffcd99a (major) — raw SQL can project unmasked columns of members not granted to the role; the spec gives raw SQL no member-grant projection check.

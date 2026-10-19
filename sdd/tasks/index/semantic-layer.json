@@ -368,7 +368,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -378,8 +378,9 @@
       "parallelism_notes": "modifies parrot/semantic/toolkit.py created by TASK-4477 and must only start once TASK-4478's e2e security suite (tests/test_e2e_governed.py) is green (spec Worktree Strategy: run_sql/save_result_as_dataset ship last)",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4479-semantic-raw-sql-and-handoff.md"
+      "completed_at": "2026-10-19T14:12:19+00:00",
+      "file": "sdd/tasks/completed/TASK-4479-semantic-raw-sql-and-handoff.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4480",
