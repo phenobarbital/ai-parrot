@@ -51,13 +51,17 @@ class NarrativeMixin(SkillRegistryMixin):
     async def configure(self, *args: Any, **kwargs: Any) -> None:
         await super().configure(*args, **kwargs)
 
-    async def narrate(self, facts: dict[str, Any], skill: str) -> Optional[str]:
+    async def narrate(
+        self, facts: dict[str, Any], skill: str, tenant: Optional[str] = None
+    ) -> Optional[str]:
         """Render ``facts`` as prose using the named skill, or ``None`` on failure.
 
         Args:
             facts: The deterministic facts to render.
             skill: Registered skill name; falls back to
                 :attr:`narrative_skill` when falsy.
+            tenant: Per-tenant skill variant (FEAT-707); falls back to the
+                bound tenant, then the instance default.
 
         Returns:
             The generated, guard-verified prose, or ``None`` on ANY failure
@@ -70,7 +74,12 @@ class NarrativeMixin(SkillRegistryMixin):
             self.logger.warning("narrate() called with no skill name; skipping.")
             return None
         try:
-            definition = await self._load_narrative_skill(name)
+            # Pass ``tenant`` only when given, so overrides of the legacy
+            # one-argument ``_load_narrative_skill(name)`` keep working.
+            if tenant is None:
+                definition = await self._load_narrative_skill(name)
+            else:
+                definition = await self._load_narrative_skill(name, tenant)
             if definition is None:
                 self.logger.warning("Narrative skill %r not found; skipping.", name)
                 return None
@@ -97,7 +106,9 @@ class NarrativeMixin(SkillRegistryMixin):
             return None
         return prose.strip()
 
-    async def _load_narrative_skill(self, name: str) -> Optional[SkillDefinition]:
+    async def _load_narrative_skill(
+        self, name: str, tenant: Optional[str] = None
+    ) -> Optional[SkillDefinition]:
         """Resolve a skill by name via the file-based skill registry.
 
         Lazily configures the registry (idempotent — `_configure_skill_registry`
@@ -106,13 +117,22 @@ class NarrativeMixin(SkillRegistryMixin):
 
         Args:
             name: Skill name as declared in its frontmatter `name:` field.
+            tenant: Optional tenant; resolved through
+                :meth:`current_skill_view` (explicit, bound, instance default).
 
         Returns:
             The matching :class:`SkillDefinition`, or ``None`` if not found
             or no file registry is available.
+
+        Raises:
+            ValueError: ``tenant`` is not a valid tenant id (contained by
+                :meth:`narrate`'s never-fatal handler).
         """
         await self._configure_skill_registry()
-        registry = getattr(self, "_skill_file_registry", None)
+        view_fn = getattr(self, "current_skill_view", None)
+        registry = view_fn(tenant) if callable(view_fn) else None
+        if registry is None:
+            registry = getattr(self, "_skill_file_registry", None)
         if registry is None:
             return None
         return registry.get_by_name(name)
