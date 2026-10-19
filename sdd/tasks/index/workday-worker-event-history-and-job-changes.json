@@ -93,7 +93,7 @@
       "feature_id": "FEAT-706",
       "feature": "workday-worker-event-history-and-job-changes",
       "spec": "sdd/specs/workday-worker-event-history-and-job-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -104,8 +104,9 @@
       "parallelism_notes": "service.py and handlers/__init__.py import WorkerEventHistoryType from TASK-4488 (handlers/worker_event_history.py) and WorkerJobChangesType from TASK-4489 (handlers/worker_job_changes.py).",
       "assigned_to": null,
       "started_at": "2026-10-19T20:34:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4490-register-worker-history-operations.md"
+      "completed_at": "2026-10-19T20:53:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4490-register-worker-history-operations.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4491",
