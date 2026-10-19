@@ -1,0 +1,40 @@
+`SkillRegistryMixin` loads an agent's skills from one place:
+`AGENTS_DIR/{agent_id}/skills/` (authored, incl. composite `{name}/SKILL.md`)
+plus the reserved `skills/learned/` subdirectory. That tree is loaded **once**
+at `configure()` and is shared by every caller of the bot.
+
+Some behaviours are the *same skill* with a *tenant-specific variant*: the
+Revenue of one customer is not computed against the same accounting accounts
+as the Revenue of another. `agents/troc_finance/skills/` already contains
+exactly this family (`revenue_by_division`, `ebitda_breakdown`,
+`ebitda_by_division`, `financial_projection_*`). Today the only way to serve
+two tenants is a single skill carrying every variation — easy for the LLM to
+confuse — or one agent per tenant with copied skill trees.
+
+User's framing (verbatim, Spanish):
+
+> en vez de hacer un skill único con todas las variaciones (y que podrían
+> confundirse fácilmente) se aporta el tenant como parte de un argumento de
+> cada método del SkillMixin y entonces el "Revenue de Pokemon", buscaría el
+> Skill en `$AGENTS_DIR/{agent_id}/{tenant=pokemon}/skills.d/`, para mantener
+> la compatibilidad hacia atrás el per-tenant skill debe ser un flag activable
+> per-agent, si `tenant_based: bool = True`, los skills se buscarán en el
+> per-tenant directory of skills, cayendo en fallback a
+> `$AGENTS_DIR/{agent_id}/skills.d/` para global skills.
+
+**Affected**: agent authors who serve several customers from one agent
+(finance / reporting agents first), and operators who deploy one agent
+instance per environment. **Why now**: very few agents use skills yet
+(7 `agents/*/skills/` trees locally, 3 code consumers of the mixin), so the
+layout decision is cheap today and expensive later.
+
+### Premise correction found during discovery
+
+The code does **not** use `skills.d`. The directory is `skills/`
+(`mixin.py:160`, `file_registry.py:4`), and it already hosts two things that a
+rename would have to drag along: the reserved `learned/` subdirectory and the
+`skills.json` / `versions.json` files the DB-like `SkillRegistry` persists at
+`agents_dir / agent_id / "skills"` (`mixin.py:120`, `store.py:885-903`). The
+"hard-cut rename to `skills.d`" was proposed only to stop a tenant named
+`skills` from shadowing the global directory. The user accepted the alternative
+below (reserved `tenants/` namespace), so **no rename happens**.

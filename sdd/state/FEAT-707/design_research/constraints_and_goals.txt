@@ -1,0 +1,65 @@
+- **Opt-in, backwards compatible**: a new per-agent flag `tenant_based: bool`
+  (default `False`). With the flag off, behaviour is byte-for-byte today's.
+- **Layout** (decided): global tree stays `AGENTS_DIR/{agent_id}/skills/`;
+  tenant trees live at `AGENTS_DIR/{agent_id}/tenants/{tenant}/skills/`.
+  A tenant id can never collide with `skills/`, `prompts/`, `queries/`, `kb/`,
+  `documents/`, `flows/`, `_drafts/`.
+- **Resolution** (decided): tenant view = tenant tree **shadowing** the global
+  tree by skill `name` and by `/trigger`; global skills without a tenant
+  override remain visible (fallback). A tenant must never see another tenant's
+  skills.
+- **Lifetime** (decided): both modes must work — tenant fixed per bot
+  instance *and* tenant varying per request on a shared (singleton) instance.
+- **Tenant sources** (decided, precedence high → low): explicit `tenant=`
+  kwarg on `ask()` / `ask_stream()` / mixin methods → `RequestContext` /
+  `UserContext.metadata["tenant"]` → bot attribute `self._tenant_id`
+  (constructor kwarg / `post_login`) → unresolved. A per-request `ContextVar`
+  is the **internal transport** so LLM-called tools (`load_skill`,
+  `list_skill_commands`, `read_skill_asset`) and the `/trigger` middleware
+  read the already-resolved tenant.
+- **Unresolved tenant with `tenant_based=True`** (decided) → global-only view,
+  no error, DEBUG log (fail-closed to global, never to another tenant).
+- **Known-looking but absent tenant** (decided): a valid tenant id with no
+  `tenants/{tenant}/` directory → global view plus a warning, emitted once per
+  tenant per instance.
+- **`PermissionContext.tenant_id` is NOT a tenant source** in v1: Telegram
+  hard-codes it to `"default"` and `build_principal_context()` defaults it to
+  the principal (user id), so trusting it would silently pick wrong trees.
+- **Channel binding** (decided, in scope): HTTP handlers (`handlers/chat.py`,
+  `handlers/agents/abstract.py`) pass `tenant=` from the server-resolved
+  `RequestScope.tenant` and **discard** any `tenant` key the client body
+  carries (logged); the Telegram wrapper binds a new static
+  `TelegramAgentConfig.tenant` (one bot = one customer) into
+  `UserContext.metadata["tenant"]` and into the permission context's
+  `UserSession.tenant_id` instead of `"default"`.
+- **Tenant key name** (decided): `"tenant"` in both `RequestContext.kwargs`
+  and `UserContext.metadata`.
+- **Loading** (decided): **eager** — `tenants/*/skills/` is scanned at
+  `configure()`; adding a tenant on disk needs a restart or an explicit
+  reload method.
+- **Learned skills** (decided): `save_learned_skill` always writes to the
+  **global** `skills/learned/`, regardless of the active tenant. Learned skills
+  are therefore visible to every tenant.
+- **`global_only` guard** (decided, v1): a global skill may declare
+  `global_only: true` in its frontmatter; a tenant skill with the same name or
+  trigger is rejected at configure (error log, global wins).
+- **DB-like writes** (decided): `document_skill` / `update_skill` write to the
+  active tenant's namespace (`org/agent/{tenant}`), global when no tenant;
+  `extract_skills_from_conversation` follows the learned rule (global).
+- **`NarrativeMixin.narrate()`** (decided): gains `tenant: str | None = None`,
+  falling back to the ContextVar and then the instance default.
+- **Prompt layers** (decided): one `<available_skills>` layer per tenant, no
+  cap in v1 (`skill_prompt_max_entries` bounds each layer's size).
+- **Docs** (decided): new `docs/skills/per-tenant-skills.md` plus a short
+  paragraph in the Skills section of `.agent/CONTEXT.md`.
+- **Scope** (decided): both registries — the file-based `SkillFileRegistry`
+  **and** the DB-like `SkillRegistry` in `store.py` (namespace becomes
+  `org_id/agent_id/{tenant}` with per-tenant persistence under the tenant
+  tree; search falls back to the global namespace).
+- Tenant ids are untrusted input: validate as a single safe path segment
+  (reuse `parrot.utils.paths.validate_path_segment`) and reject reserved
+  names (`learned`, `tenants`, `skills`, …).
+- No new third-party dependencies. Async-first, `aiohttp` only, Pydantic v2.
+- Explicit `skill_paths` (FEAT-188 directory discovery) stay global.
+
+---
