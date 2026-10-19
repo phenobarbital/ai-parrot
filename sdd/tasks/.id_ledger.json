@@ -1,6 +1,6 @@
 {
   "next_task_id": 4487,
-  "next_feature_id": 706,
-  "updated_at": "2026-10-19T14:49:41+00:00",
-  "updated_by": "observability-metrics-fanout-and-env-config"
+  "next_feature_id": 707,
+  "updated_at": "2026-10-19T16:54:16+00:00",
+  "updated_by": "workday-worker-event-history-and-job-changes"
 }
