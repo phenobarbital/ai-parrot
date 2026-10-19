@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-19T21:00:26+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-19T22:34:11+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -347,7 +347,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -361,8 +361,9 @@
       "discovered_from": "issue:8ea16e60de56",
       "assigned_to": "agent:sdd-fix",
       "started_at": "2026-10-19T22:26:16+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4507-per-tenant-skills-hardening.md"
+      "completed_at": "2026-10-19T22:34:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4507-per-tenant-skills-hardening.md",
+      "verification": "verified"
     }
   ]
 }

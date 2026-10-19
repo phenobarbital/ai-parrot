@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-707 — Per-Tenant Skills for `SkillRegistryMixin`
 **Spec**: `sdd/specs/per-tenant-skills.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4496, TASK-4497, TASK-4498, TASK-4501
@@ -104,12 +104,12 @@ def _exit_skill_tenant(self, token) -> None                    # line 188
 
 ## Acceptance Criteria
 
-- [ ] After `ask()` raises before prompt construction, `current_active_skill()` equals its pre-call value.
-- [ ] Tenant reset runs even when a reset placed after it would raise.
-- [ ] A skill description containing `$user_context` renders literally, through both `configure()`+`build()` and `build()` alone.
-- [ ] Tenant layer conditions honour the instance default tenant outside `ask()`.
-- [ ] Handler diffs vs `origin/dev` contain only tenant-binding changes.
-- [ ] Existing FEAT-707 tests pass.
+- [x] After `ask()` raises before prompt construction, `current_active_skill()` equals its pre-call value.
+- [x] Tenant reset runs even when a reset placed after it would raise.
+- [x] A skill description containing `$user_context` renders literally, through both `configure()`+`build()` and `build()` alone.
+- [x] Tenant layer conditions honour the instance default tenant outside `ask()`.
+- [x] Handler diffs vs `origin/dev` contain only tenant-binding changes.
+- [x] Existing FEAT-707 tests pass.
 
 ---
 
@@ -124,4 +124,26 @@ pytest packages/ai-parrot-server/tests/handlers/test_request_tenant_binding.py -
 
 ## Completion Note
 
-_Filled on close._
+**Completed by**: agent:sdd-fix (`/sdd-fix issue:8ea16e60de56`), 2026-10-20 · code commit `22eb900e1`
+
+1. `enter_active_skill_scope()` / `exit_active_skill_scope()` in `tenancy.py`; `ask()`/`ask_stream()` open the
+   scope before the `try` and restore it in the `finally` (the `/trigger` middleware runs inside `ask()` through the
+   INPUT guardrail, so the restore covers every failure path).
+2. The tenant reset and the active-skill restore are now the first statements of both `finally` blocks.
+3. `$$` escaping was rejected: a CONFIGURE layer is substituted once or twice depending on whether it was added
+   before `configure()`, so the escape would be undone. Added `PromptLayer.literal` (verbatim in `render()` and
+   `partial_render()`); `render_skills_prompt_layer()` returns literal layers. Their templates contain no
+   placeholders, so nothing that used to expand is lost.
+4. Bound instead of documented: `tenant_layer_condition()` / `global_layer_condition()` accept a `resolver`
+   (default `current_skill_tenant`, so the signature stays backward compatible); the mixin passes `_layer_tenant()`
+   (bound tenant, else the instance default `tenant_id`, `None` when `tenant_based=False`).
+5. Both handlers restored to the `origin/dev` text plus only the tenant-binding hunks; ruff reports exactly the
+   same 8 pre-existing findings as `origin/dev`.
+
+**Validation**: the task's Validation Commands pass (87 + 7). Wider prompt/skill suites: 230 passed, 2 failed in
+`tests/test_prompt_caching_claude.py` (`AnthropicClient` has no `_backend_name`); these fail identically on
+`origin/dev` and are unrelated.
+
+**Note**: `ensure_worktree` refuses an existing branch, so the worktree was attached by hand to the existing
+`feat-FEAT-707-per-tenant-skills` branch (its stale local pointer held only `origin/dev` commits and was repointed to
+the origin tip). `layers.py` was not black-clean before this change and was left unformatted to avoid churn.
