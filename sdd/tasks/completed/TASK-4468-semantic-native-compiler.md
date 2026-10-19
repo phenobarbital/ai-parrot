@@ -208,9 +208,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4468
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 425.4s · Tokens: n/a
+- Validation: merge-tier ad0839b5:wave5:merge completed exit 0 (24 passed); full satellite suite after review fix 53 passed.
+- Review: coder-review:22109f3b84b65e47c380652e — no corrections.
