@@ -75,9 +75,7 @@ class ModelPolicy(BaseModel):
         by either policy field.
         """
         metric_names = {member.name for member in members if member.kind == "metric"}
-        dimension_names = {
-            member.name for member in members if member.kind in {"dimension", "time_dimension"}
-        }
+        dimension_names = {member.name for member in members if member.kind in {"dimension", "time_dimension"}}
         allowed: set[str] = set()
         for role in roles:
             grant = self.roles.get(role)
