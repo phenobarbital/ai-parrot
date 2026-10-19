@@ -53,7 +53,7 @@
       "feature_id": "FEAT-705",
       "feature": "observability-metrics-fanout-and-env-config",
       "spec": "sdd/specs/observability-metrics-fanout-and-env-config.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -63,8 +63,9 @@
       "parallelism_notes": "Depends on TASK-4483: imports make_metric_exporters, which TASK-4483 creates in observability/exporters.py.",
       "assigned_to": null,
       "started_at": "2026-10-19T14:58:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4484-setup-telemetry-metric-fanout.md"
+      "completed_at": "2026-10-19T15:11:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4484-setup-telemetry-metric-fanout.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4485",
