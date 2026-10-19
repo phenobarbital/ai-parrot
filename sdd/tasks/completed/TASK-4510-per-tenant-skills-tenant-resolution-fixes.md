@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-707 — Per-Tenant Skills for `SkillRegistryMixin`
 **Spec**: `sdd/specs/per-tenant-skills.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: medium
 **Estimated effort**: S (< 2h)
 **Depends-on**: TASK-4497, TASK-4498
@@ -79,11 +79,11 @@ class attribute (a class-level import would be circular).
 
 ## Acceptance Criteria
 
-- [ ] A resolver raising `web.HTTPForbidden` makes `resolve_request_tenant()` raise it.
-- [ ] A resolver returning `tenant=""` makes `resolve_request_tenant()` return `None`.
-- [ ] Any other resolver exception still returns `None` (global view).
-- [ ] `AgentHandler.ask_agent()` propagates the resolver's `HTTPForbidden` and never calls `agent.ask()`.
-- [ ] The tool-less builder drops a layer named `f"{TENANT_SKILLS_LAYER_PREFIX}<tenant>"`
+- [x] A resolver raising `web.HTTPForbidden` makes `resolve_request_tenant()` raise it.
+- [x] A resolver returning `tenant=""` makes `resolve_request_tenant()` return `None`.
+- [x] Any other resolver exception still returns `None` (global view).
+- [x] `AgentHandler.ask_agent()` propagates the resolver's `HTTPForbidden` and never calls `agent.ask()`.
+- [x] The tool-less builder drops a layer named `f"{TENANT_SKILLS_LAYER_PREFIX}<tenant>"`
       without mutating the shared builder.
 
 ---
@@ -99,4 +99,20 @@ PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src pytest packages/
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+**Completed by**: agent:sdd-fix (Claude Opus 5.5), 2026-10-19
+**Implementing commit**: 7f319ed85
+**Resolves**: `issue:ab29c5dd9d83`, `issue:10addb2313ee`
+
+- `resolve_request_tenant()` re-raises `web.HTTPException`; other resolver
+  failures still fall back to the global view (comment corrected); `""` → `None`.
+- `ask_agent()` resolves the tenant before its catch-all `try`, otherwise the
+  re-raised 401/403 would have been wrapped into a `RuntimeError` (500). This
+  file was not named in the ledger issue but the bug fix is ineffective
+  without it.
+- `_toolless_prompt_builder()` uses `TENANT_SKILLS_LAYER_PREFIX` (lazy import).
+- Tests: 4 new (`test_request_tenant_binding.py` ×3,
+  `test_pandasagent_use_tools.py` ×1). Validation: server suite 110 passed,
+  core tenant/toolless suites 32 passed. `ruff`: the 3 findings in
+  `handlers/agents/abstract.py` (B904 ×2, ASYNC230) pre-date this task.
+- Core tests needed the compiled `parrot.utils.types` / `parrot.utils.parsers.toml`
+  extensions copied from the main checkout into the worktree (untracked).
