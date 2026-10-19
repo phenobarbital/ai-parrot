@@ -85,20 +85,39 @@ class ModelPolicy(BaseModel):
             allowed.update(dimension_names if grant.dimensions == "*" else grant.dimensions)
         return allowed
 
+    def _mask_rule(self, column: str) -> MaskRule | None:
+        """Find the mask governing ``column``.
+
+        Mask keys are ``<table>.<member>`` while governance passes physical ``<schema>.<table>.<column>``
+        names, so a key matches the column exactly or as a dotted suffix. Never a partial-segment match.
+        """
+        rule = self.masks.get(column)
+        if rule is not None:
+            return rule
+        for key, candidate in self.masks.items():
+            if column.endswith(f".{key}"):
+                return candidate
+        return None
+
     def usage_allowed(self, roles: frozenset[str], column: str) -> bool:
-        """Return whether ``roles`` may use ``column`` in an expression or predicate."""
-        mask = self.masks.get(column)
+        """Return whether ``roles`` may use ``column`` in an expression or predicate.
+
+        ``column`` may be a bare member name or a physical ``<schema>.<table>.<column>``; usage grants list
+        bare member names, so they match the column's last segment. Masked columns need ``usage_roles``.
+        """
+        mask = self._mask_rule(column)
         if mask is not None:
             return bool(roles.intersection(mask.usage_roles))
+        name = column.rpartition(".")[2]
         for role in roles:
             grant = self.roles.get(role)
-            if grant is not None and (grant.usage == "*" or column in grant.usage):
+            if grant is not None and (grant.usage == "*" or column in grant.usage or name in grant.usage):
                 return True
         return False
 
     def mask_for(self, roles: frozenset[str], column: str) -> MaskRule | None:
         """Return a projection mask unless a role is permitted to see ``column`` unmasked."""
-        rule = self.masks.get(column)
+        rule = self._mask_rule(column)
         if rule is not None and not roles.intersection(rule.projection_roles):
             return rule
         return None

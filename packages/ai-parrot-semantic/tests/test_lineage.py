@@ -115,3 +115,24 @@ def test_lineage_unresolved_column_fails_closed() -> None:
 
     with pytest.raises(SemanticAccessError, match="unresolved_lineage"):
         resolve_column_uses(tree, SCHEMA)
+
+
+def test_usage_rights_match_physical_column_names() -> None:
+    """Physical schema.table.column keys match bare usage grants and table.member mask keys."""
+    from parrot.semantic.policy import ModelPolicy
+
+    policy = ModelPolicy.model_validate(
+        {
+            "connection": "x",
+            "roles": {"analyst": {"usage": ["region"]}, "power": {"usage": "*"}},
+            "masks": {"customers.email": {"strategy": "hash", "usage_roles": ["admin"]}},
+        }
+    )
+    assert policy.usage_allowed(frozenset({"analyst"}), "sales.orders.region")
+    assert not policy.usage_allowed(frozenset({"analyst"}), "sales.orders.amount")
+    # A wildcard usage grant must not bypass a mask on the physical column (inference on masked data).
+    assert not policy.usage_allowed(frozenset({"power"}), "sales.customers.email")
+    assert policy.usage_allowed(frozenset({"admin"}), "sales.customers.email")
+    assert policy.mask_for(frozenset({"power"}), "sales.customers.email") is not None
+    # Suffix matching is per dotted segment only.
+    assert policy.mask_for(frozenset({"power"}), "sales.vipcustomers.email") is None
