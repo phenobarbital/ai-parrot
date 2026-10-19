@@ -1,0 +1,98 @@
+{
+  "version": "0.1.1",
+  "dialects": ["ANSI_SQL"],
+  "semantic_model": [
+    {
+      "name": "orders",
+      "description": "Order metrics for the semantic-layer test warehouse",
+      "datasets": [
+        {
+          "name": "orders",
+          "source": "sales.orders",
+          "primary_key": ["order_id"],
+          "fields": [
+            {
+              "name": "region",
+              "expression": {
+                "dialects": [
+                  {
+                    "dialect": "ANSI_SQL",
+                    "expression": "region"
+                  }
+                ]
+              },
+              "dimension": {
+                "is_time": false
+              }
+            },
+            {
+              "name": "tenant_id",
+              "expression": {
+                "dialects": [
+                  {
+                    "dialect": "ANSI_SQL",
+                    "expression": "tenant_id"
+                  }
+                ]
+              },
+              "dimension": {
+                "is_time": false
+              }
+            },
+            {
+              "name": "order_date",
+              "expression": {
+                "dialects": [
+                  {
+                    "dialect": "ANSI_SQL",
+                    "expression": "order_date"
+                  }
+                ]
+              },
+              "dimension": {
+                "is_time": true
+              }
+            },
+            {
+              "name": "amount",
+              "expression": {
+                "dialects": [
+                  {
+                    "dialect": "ANSI_SQL",
+                    "expression": "amount"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "metrics": [
+        {
+          "name": "revenue",
+          "description": "Total order revenue",
+          "expression": {
+            "dialects": [
+              {
+                "dialect": "ANSI_SQL",
+                "expression": "SUM(orders.amount)"
+              }
+            ]
+          }
+        },
+        {
+          "name": "orders",
+          "description": "Number of orders",
+          "expression": {
+            "dialects": [
+              {
+                "dialect": "ANSI_SQL",
+                "expression": "COUNT(*)"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
