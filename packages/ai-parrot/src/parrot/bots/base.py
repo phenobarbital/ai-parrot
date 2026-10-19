@@ -1056,6 +1056,7 @@ class BaseBot(AbstractBot):
         format_kwargs: dict = None,
         use_tools: bool = True,
         trace_context=None,
+        tenant: Optional[str] = None,
         **kwargs,
     ) -> AIMessage:
         """
@@ -1075,6 +1076,8 @@ class BaseBot(AbstractBot):
             memory: Optional memory handler
             ensemble_config: Configuration for ensemble search
             ctx: Request context
+            tenant: Per-tenant skill scope (FEAT-707); consumed here, never forwarded.
+                Ignored by bots without SkillRegistryMixin.
             output_mode: Output formatting mode ('default', 'terminal', 'html', 'json')
             structured_output: Structured output configuration or model
             format_kwargs: Additional kwargs for formatter (show_metadata, show_sources, etc.)
@@ -1095,6 +1098,7 @@ class BaseBot(AbstractBot):
         # raised before the ContextVars are bound (they are bound AFTER the
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
+        _tenant_token = None
         # FEAT-176 bookkeeping, bound BEFORE the try because every `except`
         # branch below reads both. Anything that raises earlier than their
         # original in-try assignment — the input guardrail pipeline, for one —
@@ -1106,6 +1110,9 @@ class BaseBot(AbstractBot):
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
+            _enter = getattr(self, "_enter_skill_tenant", None)
+            if _enter is not None:
+                _tenant_token = _enter(tenant, ctx)
             # FEAT-224: pre-LLM output-mode routing. Runs once, and only when the
             # caller did not specify a mode (precedence: explicit > router > default).
             # No-op unless a routing mixin (IntentRouterMixin) is present.
@@ -1803,6 +1810,9 @@ class BaseBot(AbstractBot):
                 current_session_id.reset(_session_token)
             if _user_token is not None:
                 current_user_id.reset(_user_token)
+            _exit = getattr(self, "_exit_skill_tenant", None)
+            if _exit is not None and _tenant_token is not None:
+                _exit(_tenant_token)
             current_agent_name.reset(_agent_token)  # FEAT-228
 
     async def ask_stream(
@@ -1825,12 +1835,17 @@ class BaseBot(AbstractBot):
         system_prompt: Optional[str] = None,
         use_tools: bool = True,
         trace_context=None,
+        tenant: Optional[str] = None,
         **kwargs,
     ) -> AsyncIterator[Union[str, AIMessage]]:
         """Stream responses using the same preparation logic as :meth:`ask`.
 
         ``use_tools`` follows the :meth:`ask` contract: ``False`` sends no
         function declarations and drops the tool-dependent prompt layers.
+
+        Args:
+            tenant: Per-tenant skill scope (FEAT-707); consumed here, never
+                forwarded. Ignored by bots without SkillRegistryMixin.
         """
         # FEAT-228: bind agent identity for per-agent cost/usage attribution.
         _agent_token = current_agent_name.set(self.name)
@@ -1838,10 +1853,14 @@ class BaseBot(AbstractBot):
         # raised before the ContextVars are bound (they are bound AFTER the
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
+        _tenant_token = None
         _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
         try:
             if ctx is None:
                 ctx = _current_ctx.get()
+            _enter = getattr(self, "_enter_skill_tenant", None)
+            if _enter is not None:
+                _tenant_token = _enter(tenant, ctx)
             # Agent-level default output mode (constructor output_mode=...)
             # applies when the caller did not specify one. ask_stream has no
             # router pass, so the agent default is the only fallback here.
@@ -2260,4 +2279,7 @@ class BaseBot(AbstractBot):
                 current_session_id.reset(_session_token)
             if _user_token is not None:
                 current_user_id.reset(_user_token)
+            _exit = getattr(self, "_exit_skill_tenant", None)
+            if _exit is not None and _tenant_token is not None:
+                _exit(_tenant_token)
             current_agent_name.reset(_agent_token)  # FEAT-228
