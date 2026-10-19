@@ -149,15 +149,25 @@ async def resolve_request_tenant(app: Any, request: web.Request) -> str | None:
 
     Returns:
         The installed resolver's :attr:`RequestScope.tenant`, or ``None`` when
-        no resolver is installed or scope resolution fails.
+        no resolver is installed, the resolver reports no tenant (``None`` or
+        an empty string), or the resolver fails unexpectedly. ``None`` means
+        the global skill view.
+
+    Raises:
+        web.HTTPException: Re-raised unchanged when the resolver denies the
+            request (for example ``HTTPUnauthorized`` / ``HTTPForbidden``), so a
+            denied request never proceeds with the global skill view.
     """
     if not has_installed_resolver(app):
         return None
     try:
-        return (await get_scope_resolver(app).resolve(request)).tenant
-    except Exception as exc:  # noqa: BLE001 - tenant resolution must fail closed
+        tenant = (await get_scope_resolver(app).resolve(request)).tenant
+    except web.HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - a broken resolver falls back to the global view
         logger.debug("Unable to resolve request tenant: %s", exc)
         return None
+    return tenant or None
 
 
 def normalize_visibility(value: Any) -> str:

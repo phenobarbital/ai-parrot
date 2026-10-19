@@ -34,6 +34,14 @@ class _RaisingResolver:
         raise RuntimeError("session unavailable")
 
 
+class _DenyingResolver:
+    """Resolver that denies the request, as an auth-aware resolver may."""
+
+    async def resolve(self, request: web.Request) -> RequestScope:
+        """Reject the request outright."""
+        raise web.HTTPForbidden()
+
+
 class _FakeBot:
     """Minimal chat bot recording every handler dispatch."""
 
@@ -115,6 +123,17 @@ async def test_resolve_request_tenant_resolver_raises() -> None:
     assert await resolve_request_tenant({"scope_resolver": _RaisingResolver()}, MagicMock()) is None
 
 
+async def test_resolve_request_tenant_reraises_http_denial() -> None:
+    """A resolver's HTTP denial propagates instead of falling back to the global view."""
+    with pytest.raises(web.HTTPForbidden):
+        await resolve_request_tenant({"scope_resolver": _DenyingResolver()}, MagicMock())
+
+
+async def test_resolve_request_tenant_empty_string_is_no_tenant() -> None:
+    """An empty tenant from a resolver means "no tenant", never an invalid tenant id."""
+    assert await resolve_request_tenant({"scope_resolver": _Resolver("")}, MagicMock()) is None
+
+
 async def test_chat_handler_drops_client_tenant(caplog) -> None:
     """Client JSON cannot override the server-resolved chat tenant."""
     handler, bot, request = _chat_handler(resolver=_Resolver())
@@ -182,3 +201,22 @@ async def test_ask_agent_passes_tenant() -> None:
     await handler.ask_agent(query="report")
 
     assert agent.ask.await_args.kwargs["tenant"] == "digimon"
+
+
+async def test_ask_agent_propagates_tenant_denial() -> None:
+    """A resolver's 401/403 reaches the client instead of becoming a RuntimeError."""
+    agent = MagicMock()
+    agent.ask = AsyncMock(return_value=MagicMock(output="report"))
+    request = MagicMock()
+    request.app = {"scope_resolver": _DenyingResolver()}
+    request.session = {"user_id": "u-test"}
+    handler = AgentHandler(request)
+    handler._agent = agent
+    handler._userid = None
+    handler.agent_name = "reporting"
+    handler._agent_response = MagicMock(return_value=MagicMock())
+    handler.logger = logging.getLogger(__name__)
+
+    with pytest.raises(web.HTTPForbidden):
+        await handler.ask_agent(query="report")
+    agent.ask.assert_not_awaited()

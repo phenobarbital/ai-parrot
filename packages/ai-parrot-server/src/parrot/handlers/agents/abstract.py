@@ -883,13 +883,15 @@ class AgentHandler(BaseView):
                 raise ValueError(
                     "No query provided or found in the request."
                 )
+        # Resolved outside the try: a resolver's 401/403 must reach the client, not become a 500.
+        tenant = await resolve_request_tenant(self.request.app, self.request)
         try:
             response = await agent.ask(
                 question=query,
                 use_conversation_history=False,
                 use_vector_context=False,
                 max_tokens=16000,
-                tenant=await resolve_request_tenant(self.request.app, self.request),
+                tenant=tenant,
             )
             if isinstance(response, Exception):
                 raise response

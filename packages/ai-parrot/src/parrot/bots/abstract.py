@@ -1526,12 +1526,14 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         Returns:
             A clone of the shared builder without the tool-dependent layers.
         """
+        from parrot.skills.mixin import TENANT_SKILLS_LAYER_PREFIX  # lazy: skills imports bots
+
         builder = self._prompt_builder.clone()
         for name in self._TOOL_DEPENDENT_PROMPT_LAYERS:
             builder.remove(name)
         # Per-tenant skill layers (FEAT-707) are named ``available_skills:<tenant>``.
         for name in tuple(builder.layer_names):
-            if name.startswith("available_skills:"):
+            if name.startswith(TENANT_SKILLS_LAYER_PREFIX):
                 builder.remove(name)
         return builder
 
