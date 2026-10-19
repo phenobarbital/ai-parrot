@@ -64,6 +64,14 @@ from .tools import (
     create_skill_tools,
 )
 
+from .tenancy import (
+    SkillView,
+    TenantTreeReport,
+    current_active_skill,
+    current_skill_tenant,
+    set_active_skill,
+    validate_tenant_id,
+)
 from .mixin import (
     SkillRegistryMixin,
     SkillRegistryHooks,
@@ -107,4 +115,11 @@ __all__ = [
     # Mixin
     "SkillRegistryMixin",
     "SkillRegistryHooks",
+    # Tenancy (FEAT-707)
+    "SkillView",
+    "TenantTreeReport",
+    "current_active_skill",
+    "current_skill_tenant",
+    "set_active_skill",
+    "validate_tenant_id",
 ]
