@@ -40,7 +40,7 @@ from ...bots.agent import BasicAgent
 from ...tools.abstract import AbstractTool
 from ...models.responses import AgentResponse, AIMessage
 from ...conf import AGENTS_DIR
-
+from ..scope import resolve_request_tenant
 
 class RedisWriter:
     """RedisWriter class."""
@@ -276,7 +276,6 @@ class AgentHandler(BaseView):
 
     def define_tools(self):
         """Define additional tools for the agent."""
-        pass
 
     def db_connection(
         self,
@@ -523,7 +522,7 @@ class AgentHandler(BaseView):
 
     def _create_actors(self, recipients: Union[List[dict], dict] = None) -> List:
         if isinstance(recipients, dict):
-                recipients = [recipients]
+            recipients = [recipients]
         if not recipients:
             return self.error(
                 {'message': 'Recipients are required'},
@@ -538,12 +537,7 @@ class AgentHandler(BaseView):
                     {'message': 'Address is required'},
                     status=400
                 )
-            rcpt = Actor(**{
-                "name": name,
-                "account": {
-                    "address": email
-                }
-            })
+            rcpt = Actor(name=name, account={"address": email})
             rcpts.append(rcpt)
         return rcpts
 
@@ -887,7 +881,8 @@ class AgentHandler(BaseView):
                 question=query,
                 use_conversation_history=False,
                 use_vector_context=False,
-                max_tokens=16000
+                max_tokens=16000,
+                tenant=await resolve_request_tenant(self.request.app, self.request),
             )
             if isinstance(response, Exception):
                 raise response
