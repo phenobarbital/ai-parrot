@@ -1,4 +1,5 @@
 """Fixed-order governance pass over a parsed clone (spec §2 step 3)."""
+
 from __future__ import annotations
 
 import hashlib

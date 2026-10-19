@@ -1,4 +1,5 @@
 """Tests for the fixed-order semantic governance pipeline."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -133,9 +134,7 @@ async def test_govern_denies_without_ctx() -> None:
     pipeline, guard = _pipeline()
 
     with pytest.raises(SemanticAccessError, match="no_subject"):
-        await pipeline.govern(
-            "SELECT region FROM sales.orders", model=_model(), ctx=None, roles=frozenset({"analyst"})
-        )
+        await pipeline.govern("SELECT region FROM sales.orders", model=_model(), ctx=None, roles=frozenset({"analyst"}))
 
     guard.authorize_source.assert_not_awaited()
 
@@ -174,9 +173,7 @@ async def test_cache_hit_re_governs_for_each_subject(pctx_factory: Callable[...,
     pipeline, _ = _pipeline(registry=registry)
     sql = "SELECT region, SUM(amount) AS total FROM sales.orders GROUP BY region"
 
-    europe = await pipeline.govern(
-        sql, model=_model(), ctx=pctx_factory(programs=["EU"]), roles=frozenset({"analyst"})
-    )
+    europe = await pipeline.govern(sql, model=_model(), ctx=pctx_factory(programs=["EU"]), roles=frozenset({"analyst"}))
     united_states = await pipeline.govern(
         sql, model=_model(), ctx=pctx_factory(programs=["US"]), roles=frozenset({"analyst"})
     )
