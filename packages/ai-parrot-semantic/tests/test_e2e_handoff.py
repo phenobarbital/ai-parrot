@@ -171,3 +171,37 @@ async def test_raw_sql_pbac_denial(
         sql="SELECT region FROM sales.orders",
     )
     assert result["error"] == "pbac_denied"
+
+
+async def test_request_scoped_handoff_never_mutates_shared_toolkit(
+    models_dir: Any,
+    duckdb_warehouse: str,
+    allow_all_guard: Any,
+    pctx_factory: Callable[..., PermissionContext],
+    monkeypatch,
+) -> None:
+    """Review I1: concurrent host hand-offs keep their own managers; the shared toolkit is untouched."""
+    import asyncio
+
+    toolkit = _build(models_dir, duckdb_warehouse, allow_all_guard, monkeypatch)
+    excluded_before = tuple(toolkit.exclude_tools)
+    assert "save_result_as_dataset" in excluded_before
+    alice = pctx_factory(user_id="alice", roles=("analyst",), programs=["EU"])
+    bob = pctx_factory(user_id="bob", roles=("analyst",), programs=["US"])
+    sql = "SELECT region, amount FROM sales.orders"
+    res_a = await _call(toolkit, "sl_run_sql", alice, model="orders", sql=sql)
+    res_b = await _call(toolkit, "sl_run_sql", bob, model="orders", sql=sql)
+    manager_a, manager_b = DatasetManager(), DatasetManager()
+
+    saved_a, saved_b = await asyncio.gather(
+        toolkit._save_result_for_request(alice, manager_a, result_id=res_a["result_id"], name="mine"),
+        toolkit._save_result_for_request(bob, manager_b, result_id=res_b["result_id"], name="mine"),
+    )
+
+    assert saved_a["name"] == saved_b["name"] == "mine"
+    rows_a = manager_a.get_dataset_entry("mine")
+    rows_b = manager_b.get_dataset_entry("mine")
+    assert rows_a is not None and rows_b is not None and rows_a is not rows_b
+    assert tuple(toolkit.exclude_tools) == excluded_before
+    assert toolkit._dataset_manager_factory is None
+    assert "sl_save_result_as_dataset" not in {tool.name for tool in toolkit.get_tools()}

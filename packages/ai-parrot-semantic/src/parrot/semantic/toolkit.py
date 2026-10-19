@@ -21,7 +21,7 @@ from parrot.tools.toolkit import AbstractToolkit
 from .audit import SemanticAuditEntry, SemanticAuditLedger
 from .cache import CompileCache
 from .catalog import RoleCatalog
-from .context import _semantic_pctx_var, _static_subject_var, current_pctx
+from .context import _request_dataset_manager_var, _semantic_pctx_var, _static_subject_var, current_pctx
 from .engines import compile as compile_query_sql
 from .errors import (
     SemanticAccessError,
@@ -360,11 +360,34 @@ class SemanticLayerToolkit(AbstractToolkit):
         except SemanticError as error:
             return await self._catalog_error("save_result_as_dataset", loaded, error)
 
+    async def _save_result_for_request(
+        self,
+        pctx: PermissionContext,
+        manager: DatasetManager,
+        *,
+        result_id: str,
+        name: str,
+        description: str | None = None,
+    ) -> dict:
+        """Host entry point: hand a result to a request-scoped manager without mutating the shared toolkit.
+
+        The manager travels in a ContextVar for this call only, so concurrent requests never see each
+        other's manager and the LLM-facing tool exposure (``exclude_tools``) is untouched.
+        """
+        token = _request_dataset_manager_var.set(manager)
+        try:
+            await self._pre_execute("save_result_as_dataset", _permission_context=pctx)
+            return await self.save_result_as_dataset(result_id, name, description)
+        finally:
+            _request_dataset_manager_var.reset(token)
+
     async def _dataset_manager_for(self, ctx: PermissionContext) -> DatasetManager:
         """Return the subject-scoped host manager, rejecting a shared manager instance."""
-        if self._dataset_manager_factory is None:
-            raise SemanticResultError("dataset_manager_unavailable")
-        manager = self._dataset_manager_factory(ctx)
+        manager = _request_dataset_manager_var.get()
+        if manager is None:
+            if self._dataset_manager_factory is None:
+                raise SemanticResultError("dataset_manager_unavailable")
+            manager = self._dataset_manager_factory(ctx)
         if not isinstance(manager, DatasetManager):
             raise SemanticResultError("dataset_manager_unavailable")
         digest = subject_digest(ctx)
@@ -641,4 +664,4 @@ class SemanticLayerToolkit(AbstractToolkit):
     @staticmethod
     def _error_payload(error: SemanticError) -> dict[str, Any]:
         """Return the stable public error envelope."""
-        return {"error": error.code, "message": str(error), "details": error.details}
+        return {"error": error.code, "kind": type(error).__name__, "message": str(error), "details": error.details}

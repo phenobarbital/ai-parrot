@@ -38,3 +38,24 @@ async def test_handler_returns_401_without_session(monkeypatch) -> None:
     response = await SemanticLayerHandler.get.__wrapped__.__wrapped__(handler)
 
     assert response.status == 401
+
+
+@pytest.mark.parametrize(
+    ("kind", "status"),
+    [
+        ("SemanticAccessError", 403),
+        ("SemanticValidationError", 400),
+        ("SemanticResultError", 404),
+        ("SemanticExecutionError", 502),
+    ],
+)
+def test_error_envelope_maps_to_http_status(kind: str, status: int) -> None:
+    """Review I2: a toolkit error envelope is never served as HTTP 200."""
+    handler = SemanticLayerHandler.__new__(SemanticLayerHandler)
+    handler.json_response = lambda content, status=200: type("Response", (), {"content": content, "status": status})()
+
+    response = handler._envelope_response({"error": "no_subject", "kind": kind, "message": "m", "details": {}})
+
+    assert response.status == status
+    assert response.content == {"error": "no_subject", "details": {}}
+    assert handler._envelope_response({"rows": []}).status == 200

@@ -30,7 +30,7 @@ class SemanticLayerHandler(BaseView):
         try:
             pctx = await self._pctx()
             result = await self._call_tool(await self._toolkit(agent_id), "list_models", pctx)
-            return self.json_response(result)
+            return self._envelope_response(result)
         except web.HTTPException as error:
             return self.json_response({"error": error.reason}, status=error.status)
         except Exception as error:  # semantic exceptions are lazily imported with the satellite.
@@ -65,7 +65,7 @@ class SemanticLayerHandler(BaseView):
             else:
                 result_id = tail.split("/")[1]
                 result = await self._save_result_as_dataset(toolkit, agent_id, pctx, result_id, body)
-            return self.json_response(result)
+            return self._envelope_response(result)
         except web.HTTPException as error:
             return self.json_response({"error": error.reason}, status=error.status)
         except ValueError as error:
@@ -150,16 +150,33 @@ class SemanticLayerHandler(BaseView):
             f"{agent_id}_dataset_manager",
             self.logger,
         )
-        toolkit._dataset_manager_factory = lambda _ctx: manager
-        toolkit.exclude_tools = tuple(name for name in toolkit.exclude_tools if name != "save_result_as_dataset")
-        return await self._call_tool(
-            toolkit,
-            "save_result_as_dataset",
+        # Never mutate the shared toolkit per request: the manager is passed request-scoped.
+        return await toolkit._save_result_for_request(
             pctx,
+            manager,
             result_id=result_id,
             name=name,
             description=body.get("description"),
         )
+
+    _ENVELOPE_STATUS = {
+        "SemanticAccessError": 403,
+        "SemanticPolicyError": 403,
+        "SemanticValidationError": 400,
+        "SemanticResultError": 404,
+        "SemanticExecutionError": 502,
+    }
+
+    def _envelope_response(self, result: Any) -> web.Response:
+        """Return a toolkit result, mapping its ``{"error", "kind", ...}`` envelope to an HTTP status.
+
+        Toolkit methods report governance failures as an error envelope inside a successful ``ToolResult``;
+        without this mapping a denial would be served as HTTP 200.
+        """
+        if isinstance(result, dict) and isinstance(result.get("error"), str):
+            status = self._ENVELOPE_STATUS.get(str(result.get("kind")), 400)
+            return self.json_response({"error": result["error"], "details": result.get("details") or {}}, status=status)
+        return self.json_response(result)
 
     def _semantic_error_response(self, error: Exception) -> web.Response:
         """Map semantic failures to their public HTTP status without exposing SQL."""
