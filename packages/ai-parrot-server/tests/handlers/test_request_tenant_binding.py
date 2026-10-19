@@ -1,4 +1,5 @@
 """FEAT-707 — HTTP tenant binding (TASK-4497)."""
+
 from __future__ import annotations
 
 import logging

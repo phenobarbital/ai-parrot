@@ -42,7 +42,6 @@ from ...models.responses import AgentResponse, AIMessage
 from ...conf import AGENTS_DIR
 from ..scope import resolve_request_tenant
 
-
 class RedisWriter:
     """RedisWriter class."""
     def __init__(self):
@@ -277,7 +276,6 @@ class AgentHandler(BaseView):
 
     def define_tools(self):
         """Define additional tools for the agent."""
-        pass
 
     def db_connection(
         self,
@@ -524,7 +522,7 @@ class AgentHandler(BaseView):
 
     def _create_actors(self, recipients: Union[List[dict], dict] = None) -> List:
         if isinstance(recipients, dict):
-                recipients = [recipients]
+            recipients = [recipients]
         if not recipients:
             return self.error(
                 {'message': 'Recipients are required'},
@@ -539,12 +537,7 @@ class AgentHandler(BaseView):
                     {'message': 'Address is required'},
                     status=400
                 )
-            rcpt = Actor(**{
-                "name": name,
-                "account": {
-                    "address": email
-                }
-            })
+            rcpt = Actor(name=name, account={"address": email})
             rcpts.append(rcpt)
         return rcpts
 

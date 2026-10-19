@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Union, TYPE_CHECKING
+from typing import Optional, Union
 from collections import defaultdict
 import re
 import uuid
@@ -451,9 +451,9 @@ class ChatHandler(BaseView):
         stream = data.pop('stream', False)
         if isinstance(stream, str):
             stream = stream.lower() == 'true'
-        if data.pop('tenant', None) is not None:
+        if data.pop("tenant", None) is not None:
             self.logger.warning(
-                "Ignoring client-supplied 'tenant' for chatbot %s (FEAT-707)", getattr(chatbot, 'name', chatbot)
+                "Ignoring client-supplied 'tenant' for chatbot %s (FEAT-707)", getattr(chatbot, "name", chatbot)
             )
         tenant = await resolve_request_tenant(app, self.request)
         try:
@@ -544,7 +544,7 @@ class ChatHandler(BaseView):
                             return_context=return_context,
                             tenant=tenant,
                             request=self.request,
-                            **data
+                            **data,
                         ):
                             payload = json_encoder(event)
                             message = f"data: {payload}\n\n"
@@ -571,7 +571,7 @@ class ChatHandler(BaseView):
                     return_context=return_context,
                     tenant=tenant,
                     request=self.request,
-                    **data
+                    **data,
                 )
                 return web.json_response(
                     response,
@@ -744,12 +744,12 @@ class BotManagement(BaseView):
         except Exception as exc:
             return self.error(
                 response={
-                    "message": f"Error retrieving chatbots.",
+                    "message": "Error retrieving chatbots.",
                     "exception": str(exc),
-                    "stacktrace": str(exc.__traceback__)
+                    "stacktrace": str(exc.__traceback__),
                 },
                 exception=exc,
-                status=400
+                status=400,
             )
         return self.json_response(
             {
