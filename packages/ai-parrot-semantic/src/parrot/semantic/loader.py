@@ -126,6 +126,7 @@ class SemanticModelLoader:
 
         schema = PhysicalSchema(driver=self.driver, tables=self._physical_tables(layer))
         members = self._members(layer)
+        member_columns, table_names = self._member_columns(layer)
         model_digest = self._digest_files(source_files)
         loaded: dict[str, LoadedModel] = {}
         for policy_path in policy_files:
@@ -133,6 +134,7 @@ class SemanticModelLoader:
             if name not in layer.graph.models:
                 raise SemanticPolicyError("policy_model_mismatch", details={"model": name})
             policy = load_policy(policy_path, members, set(schema.tables))
+            policy.bind_physical_columns(member_columns, table_names)
             loaded[name] = LoadedModel(
                 name=name,
                 layer=layer,
@@ -272,6 +274,25 @@ class SemanticModelLoader:
                 ModelMember(name=metric.name, kind="metric", description=getattr(metric, "description", None) or ""),
             )
         return list(members.values())
+
+    @staticmethod
+    def _member_columns(layer: Any) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+        """Map members to the physical ``<schema>.<table>.<column>`` names backing them.
+
+        Returns:
+            ``(member -> physical columns, physical table -> names usable for it in a mask key)``.
+        """
+        member_columns: dict[str, set[str]] = {}
+        table_names: dict[str, set[str]] = {}
+        for model in layer.graph.models.values():
+            if not model.table:
+                continue
+            table_names.setdefault(model.table, set()).update({model.name, model.table, model.table.rpartition(".")[2]})
+            for item in [*model.dimensions, *model.metrics]:
+                expression = getattr(item, "sql", None) or (item.name if item in model.dimensions else None)
+                if expression and expression.isidentifier():
+                    member_columns.setdefault(item.name, set()).add(f"{model.table}.{expression}")
+        return member_columns, table_names
 
     @staticmethod
     def _physical_tables(layer: Any) -> dict[str, dict[str, str]]:

@@ -11,7 +11,7 @@ from typing import Literal
 
 import sqlglot
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 from sqlglot import exp
 
 from parrot.auth import RlsRule
@@ -61,6 +61,8 @@ class ModelPolicy(BaseModel):
     rls: list[RlsRule] = Field(default_factory=list)
     saved_queries: list[SavedQuery] = Field(default_factory=list)
     allowed_functions: list[str] = Field(default_factory=list)
+    _column_members: dict[str, str] = PrivateAttr(default_factory=dict)
+    _mask_columns: dict[str, str] = PrivateAttr(default_factory=dict)
 
     def digest(self) -> str:
         """Return the canonical policy SHA-256 digest."""
@@ -85,6 +87,44 @@ class ModelPolicy(BaseModel):
             allowed.update(dimension_names if grant.dimensions == "*" else grant.dimensions)
         return allowed
 
+    def bind_physical_columns(self, member_columns: dict[str, set[str]], table_names: dict[str, set[str]]) -> None:
+        """Bind member-keyed masks and grants to the physical columns that back them (fail closed).
+
+        Mask keys are ``<table>.<member>`` but governance sees physical ``<schema>.<table>.<column>`` names,
+        and a member's ``sql`` may differ from its name (``email`` -> ``email_address``). Every mask key must
+        resolve to at least one physical column of a table whose model name, full name or bare name equals
+        ``<table>``; otherwise the policy is rejected so a mistyped mask can never silently mask nothing.
+
+        Args:
+            member_columns: Member name -> physical ``<schema>.<table>.<column>`` names backing it.
+            table_names: Physical ``<schema>.<table>`` -> names it may be referred to by in a mask key.
+
+        Raises:
+            SemanticPolicyError: ``unknown_member`` when a mask key resolves to no physical column.
+        """
+        column_members: dict[str, str] = {}
+        for member, columns in member_columns.items():
+            for column in columns:
+                column_members.setdefault(column, member)
+        mask_columns: dict[str, str] = {}
+        for key in self.masks:
+            table_part, _, member = key.rpartition(".")
+            resolved = {
+                column
+                for column in member_columns.get(member, set())
+                if table_part in table_names.get(column.rpartition(".")[0], set())
+            }
+            if not resolved:
+                raise SemanticPolicyError("unknown_member", details={"mask": key})
+            for column in resolved:
+                mask_columns[column] = key
+        self._column_members = column_members
+        self._mask_columns = mask_columns
+
+    def member_for(self, column: str) -> str:
+        """Return the member name backing a physical column (its last segment when unbound)."""
+        return self._column_members.get(column) or column.rpartition(".")[2]
+
     def mask_rule(self, column: str) -> MaskRule | None:
         """Return the mask governing ``column`` regardless of roles (``None`` when unmasked)."""
         return self._mask_rule(column)
@@ -92,12 +132,17 @@ class ModelPolicy(BaseModel):
     def _mask_rule(self, column: str) -> MaskRule | None:
         """Find the mask governing ``column``.
 
-        Mask keys are ``<table>.<member>`` while governance passes physical ``<schema>.<table>.<column>``
-        names, so a key matches the column exactly or as a dotted suffix. Never a partial-segment match.
+        Bound policies (loaded through ``SemanticModelLoader``) resolve physical columns through the binding
+        built by :meth:`bind_physical_columns`. Unbound policies fall back to an exact or dotted-suffix match.
         """
         rule = self.masks.get(column)
         if rule is not None:
             return rule
+        key = self._mask_columns.get(column)
+        if key is not None:
+            return self.masks[key]
+        if self._mask_columns:
+            return None
         for key, candidate in self.masks.items():
             if column.endswith(f".{key}"):
                 return candidate
@@ -112,10 +157,10 @@ class ModelPolicy(BaseModel):
         mask = self._mask_rule(column)
         if mask is not None:
             return bool(roles.intersection(mask.usage_roles))
-        name = column.rpartition(".")[2]
+        names = {column.rpartition(".")[2], self.member_for(column)}
         for role in roles:
             grant = self.roles.get(role)
-            if grant is not None and (grant.usage == "*" or column in grant.usage or name in grant.usage):
+            if grant is not None and (grant.usage == "*" or column in grant.usage or names & set(grant.usage)):
                 return True
         return False
 

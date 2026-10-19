@@ -46,6 +46,19 @@ def apply_masks(
             continue
         physical_name = ".".join(part for part in (table.catalog, table.db, table.name) if part)
         physical_aliases[table.alias_or_name.casefold()] = physical_name.casefold()
+    # RLS push-down wraps a table as `(SELECT * FROM <table> WHERE ...) AS <alias>`: the user's alias now names
+    # the subquery, so map it back to the wrapped physical table or masks would silently not apply.
+    for subquery in tree.find_all(exp.Subquery):
+        inner = subquery.this
+        if not (subquery.alias and isinstance(inner, exp.Select) and not inner.args.get("joins")):
+            continue
+        if len(inner.expressions) != 1 or not isinstance(inner.expressions[0], exp.Star):
+            continue
+        source = inner.args.get("from_") or inner.args.get("from")
+        wrapped = source.this if source is not None else None
+        if isinstance(wrapped, exp.Table):
+            physical_name = ".".join(part for part in (wrapped.catalog, wrapped.db, wrapped.name) if part)
+            physical_aliases[subquery.alias.casefold()] = physical_name.casefold()
 
     masked_columns: list[str] = []
     trusted_nodes: set[int] = set()

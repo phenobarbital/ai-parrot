@@ -204,6 +204,6 @@ def enforce_usage_rights(
         if use.context == "projection":
             continue
         column = f"{use.table}.{use.column}"
-        restricted = policy.mask_rule(column) is not None or use.column in sensitive_members
+        restricted = policy.mask_rule(column) is not None or policy.member_for(column) in sensitive_members
         if restricted and not policy.usage_allowed(roles, column):
             raise SemanticAccessError("usage_denied", details={"column": column})
