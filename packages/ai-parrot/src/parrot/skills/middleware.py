@@ -6,23 +6,27 @@ at the start of user messages, stripping the prefix, setting the activated
 SkillDefinition on the bot instance, and handling reserved /skills and /help
 triggers.
 """
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Optional
 
 from parrot.bots.middleware import PromptMiddleware
 
 from .file_registry import SkillFileRegistry
+from .tenancy import set_active_skill
 
 
 def create_skill_trigger_middleware(
     registry: SkillFileRegistry,
     bot: "AbstractBot",
     priority: int = -10,
+    *,
+    view_provider: Optional[Callable[[], Any]] = None,
 ) -> PromptMiddleware:
     """Create a PromptMiddleware that detects /trigger patterns.
 
     The middleware intercepts user messages starting with ``/``, looks up the
     trigger in the registry, and if found:
-    - Sets ``bot._active_skill`` to the matching SkillDefinition
+    - Sets the request-local active skill to the matching SkillDefinition
+    - Preserves ``bot._active_skill`` for legacy bot implementations
     - Returns the remaining text after the trigger
 
     Reserved triggers ``/skills`` and ``/help`` return a formatted listing
@@ -32,10 +36,17 @@ def create_skill_trigger_middleware(
         registry: The SkillFileRegistry to look up triggers in.
         bot: The bot instance — used to set ``_active_skill`` via closure.
         priority: Middleware priority (lower runs first). Default ``-10``.
+        view_provider: Optional callable returning the current per-request
+            SkillView (FEAT-707). The constructor registry is used when it
+            returns ``None`` or is not provided.
 
     Returns:
         A configured PromptMiddleware instance.
     """
+
+    def _reg() -> Any:
+        current = view_provider() if view_provider is not None else None
+        return current if current is not None else registry
 
     async def transform(query: str, context: Dict[str, Any]) -> str:
         if not query or not query.startswith("/"):
@@ -48,7 +59,7 @@ def create_skill_trigger_middleware(
 
         # Reserved triggers
         if trigger in ("/skills", "/help"):
-            skills = registry.list_skills()
+            skills = _reg().list_skills()
             if not skills:
                 return "No skills available."
             listing = "\n".join(
@@ -59,8 +70,9 @@ def create_skill_trigger_middleware(
             return f"Available skills:\n{listing}"
 
         # Skill lookup
-        skill = registry.get(trigger)
+        skill = _reg().get(trigger)
         if skill is not None:
+            set_active_skill(skill)  # request-local (FEAT-707, S5)
             bot._active_skill = skill  # Set via closure reference
             return remaining
 
