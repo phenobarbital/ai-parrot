@@ -1,4 +1,5 @@
 """Tests for ConnectionResolver and Executor."""
+
 from __future__ import annotations
 
 import duckdb
@@ -47,8 +48,14 @@ def _patch_duckdb_source(toolkit: DatabaseQueryToolkit) -> None:
 
 def _gq(sql: str, limit: int = 100, driver: str = "duckdb") -> GovernedQuery:
     return GovernedQuery(
-        sql=sql, dialect="duckdb", driver=driver, tables=(), rls_applied=(), masked_columns=(),
-        limit=limit, subject_digest="d",
+        sql=sql,
+        dialect="duckdb",
+        driver=driver,
+        tables=(),
+        rls_applied=(),
+        masked_columns=(),
+        limit=limit,
+        subject_digest="d",
     )
 
 

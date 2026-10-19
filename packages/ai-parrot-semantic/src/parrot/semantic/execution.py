@@ -1,4 +1,5 @@
 """Named-connection credential resolution and governed-SQL execution (spec §3 Module 9)."""
+
 from __future__ import annotations
 
 import logging
@@ -44,7 +45,7 @@ class ConnectionResolver:
         creds: dict[str, Any] = dict(get_default_credentials(driver) or {})
         for name, value in self.env.items():
             if name.startswith(prefix) and len(name) > len(prefix):
-                creds[name[len(prefix):].lower()] = value
+                creds[name[len(prefix) :].lower()] = value
         if not creds:
             raise SemanticExecutionError("no_credentials", "no credentials available for the connection")
         return creds

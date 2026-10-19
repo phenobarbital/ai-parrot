@@ -1,4 +1,5 @@
 """Tests for the pre-governance compile cache."""
+
 from __future__ import annotations
 
 from parrot.semantic.cache import CompileCache
