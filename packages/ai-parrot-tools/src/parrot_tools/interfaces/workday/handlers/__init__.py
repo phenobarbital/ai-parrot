@@ -16,19 +16,23 @@ from .custom_punch_field_report import CustomPunchFieldReportType
 from .custom_punch_field_report_rest import CustomPunchFieldReportRestType
 from .recruiting_agency_users import RecruitingAgencyUsersType
 from .references import ReferencesType
+
 # FEAT-027: write handlers
 from .put_time_clock_events import PutTimeClockEventsType
 from .import_time_clock_events import ImportTimeClockEventsType
 from .import_reported_time_blocks import ImportReportedTimeBlocksType
+
 # FEAT-230: new Absence Management handlers
 from .time_off_request import RequestTimeOffType
 from .time_off_eligibility import TimeOffEligibilityType
+
 # FEAT-232: Payroll read handlers (composable-only WSDL routing)
 from .payroll import (
     PayrollBalancesType,
     PayrollResultsType,
     CompanyPaymentDatesType,
 )
+
 # FEAT-706: worker event history + job changes (HR WSDL)
 from .worker_event_history import WorkerEventHistoryType
 from .worker_job_changes import WorkerJobChangesType
