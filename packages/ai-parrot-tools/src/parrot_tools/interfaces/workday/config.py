@@ -97,6 +97,9 @@ _WSDL_ROUTING: dict[str, Any] = {
     # Staffing read ops — Get_Positions is not in the Human Resources WSDL
     "get_positions": WORKDAY_WSDL_STAFFING,
     "get_job_profiles": WORKDAY_WSDL_HUMAN_RESOURCES,
+    # FEAT-706: worker event history + job changes — Get_Worker_Event_History is HR-only
+    "get_worker_event_history": WORKDAY_WSDL_HUMAN_RESOURCES,
+    "get_worker_job_changes": WORKDAY_WSDL_HUMAN_RESOURCES,
 }
 
 

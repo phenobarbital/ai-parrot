@@ -66,6 +66,8 @@ from parrot_tools.interfaces.workday.handlers import (
     TimeOffBalanceType,
     TimeOffEligibilityType,
     TimeRequestType,
+    WorkerEventHistoryType,
+    WorkerJobChangesType,
     WorkerType,
 )
 from parrot_tools.interfaces.workday.handlers.location_hierarchy_assignments import (
@@ -94,6 +96,7 @@ from parrot_tools.interfaces.workday.models.time_off_eligibility import (
 )
 from parrot_tools.interfaces.workday.models.time_request import TimeRequest
 from parrot_tools.interfaces.workday.models.worker import Worker
+from parrot_tools.interfaces.workday.models.worker_event import JobChange, WorkerEvent
 
 # ---------------------------------------------------------------------------
 # Operation-type → Pydantic model class (for fetch_models typed path, C7)
@@ -115,6 +118,8 @@ _OPERATION_MODEL_MAP: dict[str, type] = {
     "get_time_off_balances": TimeOffBalance,
     "get_time_off_eligibility": TimeOffEligibility,
     "get_references": WorkdayReference,
+    "get_worker_event_history": WorkerEvent,
+    "get_worker_job_changes": JobChange,
 }
 
 # REST custom report types that require Basic Auth (workday.py:364)
@@ -308,6 +313,9 @@ class WorkdayService(SOAPClient):
             # FEAT-230: Absence Management handlers
             "request_time_off": RequestTimeOffType(self),
             "get_time_off_eligibility": TimeOffEligibilityType(self),
+            # FEAT-706: worker event history + job changes (HR WSDL)
+            "get_worker_event_history": WorkerEventHistoryType(self),
+            "get_worker_job_changes": WorkerJobChangesType(self),
         }
 
         self.metrics: dict[str, Any] = {}
