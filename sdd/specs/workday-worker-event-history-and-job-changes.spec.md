@@ -10,7 +10,7 @@ tags: [workday, soap, worker-history, job-changes, toolkit]
 **Feature ID**: FEAT-706
 **Date**: 2026-10-19
 **Author**: Jesus Lara (spec drafted with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: TBD
 
 > Adds two read capabilities to the vendored Workday composable
