@@ -17,7 +17,7 @@ tags: [skills, multi-tenant, skill-registry, agents-dir, prompt-layer, telegram]
 **Feature ID**: FEAT-707
 **Date**: 2026-10-19
 **Author**: Jesus Lara (spec drafted with Claude; design research by codex `gpt-5.6-luna`)
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 **Exploration**: `sdd/proposals/per-tenant-skills.brainstorm.md` (accepted 2026-10-19, Recommended Option A)
 
