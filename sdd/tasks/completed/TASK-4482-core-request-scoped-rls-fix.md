@@ -261,9 +261,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4482
+- Feature: semantic-layer
+- Implementation SHA: 6de327d670649e4f233da5b3b67bf41c2e7d3172 (coder c46f220ee + engine lint f07d1e48f)
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 365.3s · Tokens: n/a
+- Validation: merge-tier `ad0839b5:wave2:merge` completed exit 0; auth tests 27 passed, test_datasets_clone 1 passed.
+- Review: _apply_rls returns copy.copy(inner) with fresh _permanent_filter dict; rls.py helpers only write into that dict, so no RLS leaks to the shared inner source. Review recorded coder-review:577907d1051b3c29a1a07eef.
+- Closed via close_task.sh: finalize_task requires implementation_sha == HEAD, which cannot hold for the second task of a chunk after the first one's close commit.
