@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+import pytest
+
 from parrot.observability.config import ObservabilityConfig
 
 # Environment hermeticity is provided by the package-level
@@ -71,3 +73,43 @@ def test_from_env_does_not_import_opentelemetry(monkeypatch) -> None:
     ObservabilityConfig.from_env()
     if not had_otel:
         assert "opentelemetry" not in sys.modules
+
+
+def test_from_env_reads_trace_and_metric_switches(monkeypatch) -> None:
+    """The trace and metric switches are read from their dedicated env keys."""
+    monkeypatch.setenv("OBSERVABILITY_TRACES", "false")
+    monkeypatch.setenv("OBSERVABILITY_METRICS", "0")
+
+    cfg = ObservabilityConfig.from_env()
+
+    assert cfg.enable_traces is False
+    assert cfg.enable_metrics is False
+
+
+def test_from_env_reads_metric_export_interval(monkeypatch) -> None:
+    """A positive metric export interval is read from the environment."""
+    monkeypatch.setenv("OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS", "5000")
+
+    assert ObservabilityConfig.from_env().metric_export_interval_ms == 5000
+
+
+@pytest.mark.parametrize("raw", ["", "abc", "0", "-5"])
+def test_from_env_interval_bad_values_fall_back(monkeypatch, caplog, raw) -> None:
+    """Invalid intervals fall back, warning once unless the value is blank."""
+    monkeypatch.setenv("OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS", raw)
+
+    with caplog.at_level(logging.WARNING, logger="parrot.observability.config"):
+        cfg = ObservabilityConfig.from_env()
+
+    assert cfg.metric_export_interval_ms == 60_000
+    warning_count = sum(record.name == "parrot.observability.config" for record in caplog.records)
+    assert warning_count == (0 if raw == "" else 1)
+
+
+def test_from_env_switches_absent_use_defaults() -> None:
+    """Absent switch and interval keys preserve the model defaults."""
+    cfg = ObservabilityConfig.from_env()
+
+    assert cfg.enable_traces is True
+    assert cfg.enable_metrics is True
+    assert cfg.metric_export_interval_ms == 60_000
