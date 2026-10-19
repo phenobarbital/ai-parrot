@@ -297,9 +297,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4469
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 424.6s · Tokens: n/a
+- Validation: merge-tier ad0839b5:wave5:merge completed exit 0 (24 passed); full satellite suite after review fix 53 passed.
+- Fix commits: c42dcbcb0006df5aad5df967b9da2b8baa027982 — fix(semantic-layer): TASK-4469 review fixes.
+- Review: coder-review:f5dbc4e63376633835b224da. PbacGate fails closed (no_subject / pbac_unavailable / outside_manifest / pbac_denied). Defect found: enforce_usage_rights passes physical schema.table.column, but ModelPolicy matched usage grants by bare member and masks by table.member → (a) granted WHERE uses denied, (b) a usage:"*" role could filter on a masked column (AC6 inference). Correction: ModelPolicy._mask_rule dotted-suffix match + usage grants match last segment; regression test_usage_rights_match_physical_column_names.
+- Classified as a repo/contract lesson (key format never fixed across TASK-4465/4469 contracts), NOT model feedback; convention added to TASK-4470..4472 Codebase Contracts (commit 8ae38f847).

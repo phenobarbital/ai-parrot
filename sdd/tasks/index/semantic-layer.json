@@ -150,7 +150,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -160,8 +160,9 @@
       "parallelism_notes": "needs LoadedModel/PhysicalSchema from TASK-4467 (parrot/semantic/loader.py) and ModelPolicy.usage_allowed from TASK-4465 (reached through LoadedModel.policy); tests use TASK-4467's tests/_models.py",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4469-semantic-pbac-gate-lineage.md"
+      "completed_at": "2026-10-19T13:10:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4469-semantic-pbac-gate-lineage.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4470",
