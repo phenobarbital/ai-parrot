@@ -347,7 +347,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -357,8 +357,9 @@
       "parallelism_notes": "drives SemanticLayerToolkit.query_metrics/compile_query/get_dimension_values from TASK-4477 (parrot/semantic/toolkit.py) end to end with TASK-4467's DuckDB fixtures",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4478-semantic-e2e-security-suite.md"
+      "completed_at": "2026-10-19T13:39:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4478-semantic-e2e-security-suite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4479",
