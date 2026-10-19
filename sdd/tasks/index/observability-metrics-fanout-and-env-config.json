@@ -34,7 +34,7 @@
       "feature_id": "FEAT-705",
       "feature": "observability-metrics-fanout-and-env-config",
       "spec": "sdd/specs/observability-metrics-fanout-and-env-config.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -42,8 +42,9 @@
       "parallelism_notes": "No dependencies: adds a new function to exporters.py and tests to test_exporters_multi.py; no other task touches either file.",
       "assigned_to": null,
       "started_at": "2026-10-19T14:58:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4483-make-metric-exporters.md"
+      "completed_at": "2026-10-19T15:04:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4483-make-metric-exporters.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4484",
@@ -72,7 +73,7 @@
       "feature_id": "FEAT-705",
       "feature": "observability-metrics-fanout-and-env-config",
       "spec": "sdd/specs/observability-metrics-fanout-and-env-config.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -80,8 +81,9 @@
       "parallelism_notes": "No dependencies: only config.py and its own tests (test_config_from_env.py, test_config.py, test_bootstrap.py); runs concurrently with TASK-4483/4484.",
       "assigned_to": null,
       "started_at": "2026-10-19T14:58:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4485-config-env-signal-switches.md"
+      "completed_at": "2026-10-19T15:04:18+00:00",
+      "file": "sdd/tasks/completed/TASK-4485-config-env-signal-switches.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4486",
