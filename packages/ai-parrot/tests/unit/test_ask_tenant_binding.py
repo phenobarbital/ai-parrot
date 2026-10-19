@@ -1,4 +1,5 @@
 """FEAT-707 — tenant binding in ask()/ask_stream() (TASK-4496)."""
+
 from contextvars import ContextVar
 from typing import ClassVar
 from unittest.mock import MagicMock, patch
@@ -50,9 +51,7 @@ class _FakeAsyncClient:
 
 
 def _make_bot(with_hooks: bool, seen: list, calls: list, hook_calls: list):
-    with patch(
-        "parrot.bots.guardrails.builtin.prompt_injection._get_shared_injection_detector"
-    ) as shared:
+    with patch("parrot.bots.guardrails.builtin.prompt_injection._get_shared_injection_detector") as shared:
         det = MagicMock()
         det.detect_injection.return_value = (False, 0.0)
         shared.return_value = det
@@ -64,13 +63,17 @@ def _make_bot(with_hooks: bool, seen: list, calls: list, hook_calls: list):
     async def _fake_execute(client, method, **kw):
         calls.append(kw)
         return AIMessage(
-            input=kw.get("prompt", ""), output="ok", model="m", provider="p",
+            input=kw.get("prompt", ""),
+            output="ok",
+            model="m",
+            provider="p",
             usage=CompletionUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
             session_id="s1",
         )
 
     bot.execute_llm_call = _fake_execute
     if with_hooks:
+
         def _enter(tenant, ctx):
             hook_calls.append((tenant, ctx))
             if tenant == "bad":
