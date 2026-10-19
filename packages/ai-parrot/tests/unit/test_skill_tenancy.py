@@ -1,4 +1,5 @@
 """FEAT-707 — tenancy primitives (TASK-4494)."""
+
 import asyncio
 from pathlib import Path
 
@@ -118,7 +119,9 @@ async def test_skill_view_c3_global_only_name_drops_tenant(tmp_path: Path, caplo
 
 
 @pytest.mark.asyncio
-async def test_skill_view_c4_global_only_trigger_drops_trigger(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+async def test_skill_view_c4_global_only_trigger_drops_trigger(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     """C4: a global-only trigger remains global and is removed from tenant skill."""
     _skill(tmp_path / "global", "locked", ["/same"], global_only=True)
     _skill(tmp_path / "tenant", "tenant", ["/same", "/free"])
@@ -212,6 +215,7 @@ async def test_contextvars_default_none_and_reset(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_contextvars_isolated_between_tasks() -> None:
     """Separate asyncio tasks retain their own tenant bindings."""
+
     async def bound(tenant: str) -> str:
         token = bind_skill_tenant(tenant)
         try:

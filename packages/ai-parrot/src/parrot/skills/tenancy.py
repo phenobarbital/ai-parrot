@@ -3,6 +3,7 @@
 Tenant-id validation, secure tenant paths, per-task ContextVars and the
 read-only :class:`SkillView` overlay of a tenant registry over the global one.
 """
+
 from __future__ import annotations
 
 import logging
@@ -190,7 +191,9 @@ class SkillView:
                         locked_triggers[trigger].file_path,
                     )
                 effective = tenant_skill.model_copy(
-                    update={"triggers": [trigger for trigger in tenant_skill.triggers if trigger not in locked_triggers]}
+                    update={
+                        "triggers": [trigger for trigger in tenant_skill.triggers if trigger not in locked_triggers]
+                    }
                 )
 
             global_name = global_by_name.get(tenant_skill.name)
@@ -200,7 +203,9 @@ class SkillView:
 
             for trigger in effective.triggers:
                 if trigger in global_by_trigger:
-                    self.logger.info("Tenant trigger %s shadowed global skill %s", trigger, global_by_trigger[trigger].name)
+                    self.logger.info(
+                        "Tenant trigger %s shadowed global skill %s", trigger, global_by_trigger[trigger].name
+                    )
                     shadowed_triggers.append(trigger)
             kept.append(effective)
 
