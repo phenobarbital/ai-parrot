@@ -410,9 +410,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4467
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 2 (a1 gpt-5.6-terra empty_delivery) · Duration: 609.1s · Tokens: n/a
+- Validation: merge-tier ad0839b5:wave4:merge completed exit 0 (11 passed).
+- Review: no corrections. compiled.tables only lists declared physical tables — not fail-open because PBAC (TASK-4469) uses model.schema.tables and the positive guard (TASK-4471) rejects undeclared tables. Deferred: issue:46e8f6219bf5 (contains-filter LIKE wildcards unescaped, minor).
+- Note: pydantic warns LoadedModel.schema shadows BaseModel.schema (harmless).

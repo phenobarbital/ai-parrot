@@ -107,7 +107,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -118,8 +118,9 @@
       "parallelism_notes": "loads ModelPolicy via load_policy from TASK-4465 (parrot/semantic/policy.py); calls validate_ossie_document from TASK-4466 (parrot/semantic/ossie.py) and loads its fixture tests/fixtures/ossie/orders.ossie.json; the cache.py reference (TASK-4475) is a TYPE_CHECKING-only string annotation, not a use — no edge",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4467-semantic-loader-sidemantic-engine.md"
+      "completed_at": "2026-10-19T13:01:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4467-semantic-loader-sidemantic-engine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4468",
