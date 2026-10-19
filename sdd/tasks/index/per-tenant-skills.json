@@ -51,7 +51,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -59,8 +59,9 @@
       "parallelism_notes": "No dependencies: only models.py, parsers.py and the new test_skill_global_only.py; no other task touches them.",
       "assigned_to": null,
       "started_at": "2026-10-19T21:15:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4493-skill-global-only-frontmatter.md"
+      "completed_at": "2026-10-19T21:21:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4493-skill-global-only-frontmatter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4494",
@@ -89,7 +90,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -97,8 +98,9 @@
       "parallelism_notes": "No dependencies: providers are plain callables typed as Any, so tools.py does not import tenancy; owns tools.py and test_skill_tenant_toolkits.py.",
       "assigned_to": null,
       "started_at": "2026-10-19T21:15:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4495-skill-toolkit-view-providers.md"
+      "completed_at": "2026-10-19T21:21:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4495-skill-toolkit-view-providers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4496",
