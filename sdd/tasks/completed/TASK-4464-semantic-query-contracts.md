@@ -292,9 +292,15 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4464
+- Feature: semantic-layer
+- Implementation SHA: 6de327d670649e4f233da5b3b67bf41c2e7d3172
+- Closed at (UTC): 2026-10-19T12:38:35+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 77.7s · Tokens: n/a |
