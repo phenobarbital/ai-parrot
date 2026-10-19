@@ -200,9 +200,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4481
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 245.7s · Tokens: n/a
+- Validation: merge-tier dde5085a:final:merge completed exit 0.
+- Fix commits: 04590c8fed53bbec6ccd37759d5f1916aacdce05 — usage-rights paragraph updated to option A (restricted = masked or sensitive member); the decision was made after dispatch.

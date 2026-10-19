@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-19T00:00:00+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-19T14:17:50+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -410,7 +410,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -420,8 +420,9 @@
       "parallelism_notes": "documents and exercises the final tool set incl. sl_run_sql/sl_save_result_as_dataset exposure rules from TASK-4479 (parrot/semantic/toolkit.py)",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4481-semantic-docs-mcp-local.md"
+      "completed_at": "2026-10-19T14:17:50+00:00",
+      "file": "sdd/tasks/completed/TASK-4481-semantic-docs-mcp-local.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4482",
