@@ -16,12 +16,14 @@ Spec §3 Module 5 for the **Codex** host (all of (a)–(d); (e) is Google-only).
 configuration lives in `<root>/.codex/config.toml` inside a marker block
 (`# >>> parrot-wiki Codex MCP >>>`), with a separate bookstore marker block, plus
 `<root>/.codex/rules/parrot-wiki.rules`. Today:
-- `resolve_binary` (codex/assets.py:54) probes `<root>/.venv/bin/<name>` only — no Windows branch;
-- toolkit tables pin an absolute `--config` (codex/assets.py:79, :86) — **FEAT-556 added that pin
-  because Codex's server cwd is unreliable** (the docstring at :73-76: "so `parrot mcp-local`
+- `resolve_binary` (codex/assets.py:55) probes `<root>/.venv/bin/<name>` only — no Windows branch;
+- toolkit tables pin an absolute `--config` (codex/assets.py:80, :87) — **FEAT-556 added that pin
+  because Codex's server cwd is unreliable** (the docstring at :74-77: "so `parrot mcp-local`
   resolves the toolkit regardless of the cwd Codex starts the server from");
 - the bookstore block pins `command = sys.executable` + absolute `cwd` (codex/bookstore.py:43, :45);
-- the rules block adds absolute-path prefix rules (codex/assets.py:124-128).
+- the rules block adds absolute-path prefix rules (codex/assets.py:138-142).
+- FEAT-569 (a6340733f) added `parrot codex install --remote`: `mcp_block(…, remote=…)` emits a
+  `url` + `bearer_token_env_var` wikitoolkit table (codex/assets.py:111-118) instead of the stdio one.
 
 This task adds the Windows branch via `parrot.launcher.script_path` (TASK-4071), a keyword-only
 `portable` on every emitter, `--portable/--no-portable` on `parrot codex install`, and the same
@@ -34,19 +36,26 @@ mode rule as the Claude host (TASK-4082):
   calls (hosts.py:167-170) — preserves the wikitoolkit table verbatim (FEAT-570 AC5) and must emit
   toolkit tables in the same form it finds there. `mcp/hosts.py` is NOT modified.
 - Codex ownership is structural (inside the marker block = ours); foreign tables outside the block
-  keep being warned-and-omitted (`_toolkit_sections`, codex/installer.py:138-169) — unchanged.
+  keep being warned-and-omitted (`_toolkit_sections`, codex/installer.py:144-175) — unchanged.
 
 ---
+
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `codex/assets.py`, `installer.py`, `cli.py` anchors shifted (a6340733f `--remote`); blueprint now keeps the FEAT-569 `remote=` plumbing (`mcp_block`/`_install_mcp`/`install_codex_integration` signatures, else-branch-only command replacement, call sites, CLI option/param/kwarg positions); `import os` confirmed in `local_cli.py`; one Validation Command added. `bookstore.py` unchanged.
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - `--remote` × `--portable` stickiness: a remote wikitoolkit table has `url`, no `command` (codex/assets.py:111-118), so `_wikitoolkit_table_is_portable` reads it as baked and `reconcile_toolkit_tables` (`parrot toolkits`) would emit baked toolkit tables after `--remote --portable`. Spec is silent on remote; inference rule undecided.
+  - `mcp/local_cli.py` scope contradiction (present since the task was written): Files table, Complexity Contract, blueprint and AC modify it (`PARROT_PROJECT` root), while NOT in scope and Does NOT Exist below exclude it, and no test in the Test Specification covers it. `local_cli.py:183` is still `root = Path.cwd()`.
 
 ## Scope
 
 - `codex/assets.py`: `resolve_binary` via `script_path`; `PORTABLE_TOOLKIT_CONFIG`; `portable=` on
-  `toolkit_mcp_block`, `mcp_block`, `rules_block`.
+  `toolkit_mcp_block`, `mcp_block` (stdio branch only; its FEAT-569 `remote` branch is unchanged), `rules_block`.
 - `codex/bookstore.py`: `portable=` on `mcp_block` (portable: `command = "bookstore"`,
   `args = ["mcp"]`, no `cwd` line) and `install_bookstore`.
 - `codex/installer.py`: `_current_portable_mode`, `_wikitoolkit_table_is_portable`;
-  `reconcile_toolkit_tables(root, *, portable: Optional[bool] = None)`; `_install_mcp` / `_install_rules`
-  take `*, portable: bool = False`; `install_codex_integration(…, portable: Optional[bool] = None)`.
+  `reconcile_toolkit_tables(root, *, portable: Optional[bool] = None)`; `_install_mcp` (keeping its
+  `remote` keyword) / `_install_rules` take `*, portable: bool = False`;
+  `install_codex_integration(…, remote=None, portable: Optional[bool] = None)`.
 - `codex/cli.py`: `--portable/--no-portable` (default unset).
 - Write `packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py`.
 
@@ -74,7 +83,7 @@ mode rule as the Claude host (TASK-4082):
 ## Codebase Contract (Anti-Hallucination)
 
 > **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (branch `dev` @ `6c4ca5482`, 2026-10-05).
+> (branch `dev` @ `6c4ca5482`, 2026-10-05; line anchors refreshed against `9f51c7735`, 2026-10-19).
 > The implementing agent MUST use these exact imports, class names, and method signatures.
 > **DO NOT** invent, guess, or assume any import, attribute, or method not listed here.
 > If you need something not listed, VERIFY it exists first with `grep` or `read`.
@@ -89,19 +98,22 @@ from parrot.knowledge.wiki.codex.installer import (                       # test
 from parrot.knowledge.wiki.codex.cli import codex                         # codex/cli.py:37 (click group)
 from parrot.knowledge.wiki.codex import bookstore                         # codex/bookstore.py
 import tomllib                                                            # stdlib; already used in codex/installer.py:7
+from parrot.knowledge.wiki.project import WikiRemoteConfig                # codex/installer.py:14 (already imported, FEAT-569); codex/assets.py:11 (TYPE_CHECKING)
 ```
 
 ### Existing Signatures to Use
 ```python
 # packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py
-MCP_BEGIN = "# >>> parrot-wiki Codex MCP >>>"; MCP_END = "# <<< parrot-wiki Codex MCP <<<"   # lines 15-16
-MCP_TABLE = "mcp_servers.wikitoolkit"                                     # line 19
-def resolve_binary(root: Path, name: str) -> str:                         # line 54; probe line 56: root / ".venv" / "bin" / name
-def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection]) -> str:  # line 62-92
-#   command = json.dumps(resolve_binary(root, "parrot")) line 78; config_path = str(root / ".parrot" / "mcp-toolkits.yaml") line 79
-#   f"args = {json.dumps(['mcp-local', name, '--config', config_path])}" line 86; env inline table lines 88-90
-def mcp_block(root: Path, toolkit_block: str = "") -> str:                # line 95-118; command = json.dumps(resolve_binary(root, "wikitoolkit")) line 106
-def rules_block(root: Path) -> str:                                       # line 121-139 (bare patterns + resolved-path patterns)
+MCP_BEGIN = "# >>> parrot-wiki Codex MCP >>>"; MCP_END = "# <<< parrot-wiki Codex MCP <<<"   # lines 16-17
+MCP_TABLE = "mcp_servers.wikitoolkit"                                     # line 20
+def resolve_binary(root: Path, name: str) -> str:                         # line 55; probe line 57: root / ".venv" / "bin" / name
+def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection]) -> str:  # line 63-93
+#   command = json.dumps(resolve_binary(root, "parrot")) line 79; config_path = str(root / ".parrot" / "mcp-toolkits.yaml") line 80
+#   f"args = {json.dumps(['mcp-local', name, '--config', config_path])}" line 87; env inline table lines 89-91
+def mcp_block(root: Path, toolkit_block: str = "", *, remote: "WikiRemoteConfig | None" = None) -> str:  # line 96-132 (FEAT-569)
+#   if remote is not None: url/bearer_token_env_var table lines 111-118;
+#   else: command = json.dumps(resolve_binary(root, "wikitoolkit")) line 120 (8-space indent), stdio table 121-127
+def rules_block(root: Path) -> str:                                       # line 135-153 (bare patterns + resolved-path patterns)
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/codex/bookstore.py
 import sys                                                                # line 6
@@ -111,18 +123,21 @@ def mcp_block(root: Path) -> str:                                         # line
 def install_bookstore(root: Path) -> list[str]:                           # line 55; _upsert_marker_block(before, mcp_block(root), …) line 73
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py
-def _extract_toml_table(text: str, table: str) -> Optional[str]:          # line 110
-def _toolkit_sections(cfg: Any, existing_tables: set[str]) -> tuple[dict[str, Any], list[str]]:  # line 138
-def reconcile_toolkit_tables(root: Path) -> tuple[list[str], list[str]]:  # line 172; toolkit_block = assets.toolkit_mcp_block(root, sections) line 198 (1st of 2)
-#   wikitoolkit_text = _extract_toml_table(block_body, assets.MCP_TABLE) line 204
-def _install_mcp(root: Path) -> str:                                      # line 235; toolkit_block = … line 262 (2nd of 2); assets.mcp_block(root, toolkit_block) line 267
-def _install_rules(root: Path) -> str:                                    # line 285; assets.rules_block(root) line 290
-def install_codex_integration(root, config=None, gitignore=True, bookstore=True) -> list[str]:  # line 316-321
-#   save_project_config line 342; _install_mcp(root) line 353; _install_rules(root) line 354; install_bookstore(root) line 360
+def _extract_toml_table(text: str, table: str) -> Optional[str]:          # line 116
+def _toolkit_sections(cfg: Any, existing_tables: set[str]) -> tuple[dict[str, Any], list[str]]:  # line 144
+def reconcile_toolkit_tables(root: Path) -> tuple[list[str], list[str]]:  # line 178; toolkit_block = assets.toolkit_mcp_block(root, sections) line 204 (1st of 2)
+#   wikitoolkit_text = _extract_toml_table(block_body, assets.MCP_TABLE) line 210
+def _install_mcp(root: Path, *, remote: Optional[WikiRemoteConfig] = None) -> str:  # line 241 (FEAT-569); toolkit_block = … line 268 (2nd of 2);
+#   assets.mcp_block(root, toolkit_block, remote=remote) line 273
+def _install_rules(root: Path) -> str:                                    # line 291; assets.rules_block(root) line 296
+def install_codex_integration(root, config=None, gitignore=True, bookstore=True, remote=None) -> list[str]:  # line 322-328
+#   save_project_config line 349; _install_mcp(root, remote=remote) line 360; _install_rules(root) line 361; install_bookstore(root) line 367
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py
-#   "--bookstore/--no-bookstore" line 58; "--tool-guards/--no-tool-guards" line 64; def install( line 69;
-#   `    tool_guards: bool,` line 74; install_codex_integration(root, config, gitignore=gitignore, bookstore=bookstore) line 80
+#   "--bookstore/--no-bookstore" line 58; "--tool-guards/--no-tool-guards" line 64;
+#   "--remote" / "--remote-url" / "--token-env" options lines 69-85 (FEAT-569); def install( line 86;
+#   `    token_env: Optional[str],` line 94;
+#   install_codex_integration(root, config, gitignore=gitignore, bookstore=bookstore, remote=remote) line 112
 
 # packages/ai-parrot/src/parrot/mcp/hosts.py:167-170 — CodexAdapter.reconcile -> reconcile_toolkit_tables(root)
 ```
@@ -132,7 +147,7 @@ def install_codex_integration(root, config=None, gitignore=True, bookstore=True)
 - ~~a `portable` parameter / `--portable` flag in `codex/`~~ — new.
 - ~~Codex variable expansion (`${VAR}`) in `config.toml` values~~ — NOT verified; spike S3 (TASK-4069) decides. Never assume it.
 - ~~`parrot mcp-local` reading `PARROT_PROJECT`~~ — it uses `Path.cwd()`; a relative `--config` resolves against the server process cwd.
-- ~~a per-entry managed-shape check for Codex~~ — ownership is structural (codex/installer.py:180-181); do not add one.
+- ~~a per-entry managed-shape check for Codex~~ — ownership is structural (codex/installer.py:186-187); do not add one.
 
 ---
 
@@ -195,7 +210,7 @@ def install_codex_integration(root, config=None, gitignore=True, bookstore=True)
 
 ### Pattern to Follow
 ```python
-# codex/installer.py:200-204 — how reconcile already isolates the wikitoolkit table text;
+# codex/installer.py:206-210 — how reconcile already isolates the wikitoolkit table text;
 # the stickiness rule parses exactly this text:
 if assets.MCP_BEGIN in before:
     _, _, rest = before.partition(assets.MCP_BEGIN)
@@ -216,7 +231,9 @@ if assets.MCP_BEGIN in before:
   variable reference ONLY if the host expands variables, otherwise omit `cwd` and rely on the cwd).
 - Inference parses the preserved wikitoolkit table with `tomllib`; a parse failure means "baked"
   (never raise from inference — `_validate_toml` already guards real corruption).
-- `print(..., file=sys.stderr)` for warnings stays as today (codex/installer.py:260).
+- `print(..., file=sys.stderr)` for warnings stays as today (codex/installer.py:266).
+- `--remote` (FEAT-569) keeps its own wikitoolkit table: `portable` only changes the stdio (else)
+  branch of `mcp_block`; every call that passes `remote=remote` today keeps it.
 
 ### References in Codebase
 - `packages/ai-parrot/src/parrot/mcp/hosts.py:120-173` — CodexAdapter (toolkit-only, structural ownership).
@@ -244,16 +261,16 @@ if assets.MCP_BEGIN in before:
 from parrot.launcher import script_path  # created by TASK-4071 (stdlib-only module)
 
 # occurrences: 1 (verified: grep -c 'RULES_PATH = Path(".codex/rules/parrot-wiki.rules")' packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py)
-# AFTER — `RULES_PATH = Path(".codex/rules/parrot-wiki.rules")` (verified: codex/assets.py:21)
+# AFTER — `RULES_PATH = Path(".codex/rules/parrot-wiki.rules")` (verified: codex/assets.py:22)
 #: Relative toolkit config used by portable toolkit tables (FEAT-633).
 PORTABLE_TOOLKIT_CONFIG = ".parrot/mcp-toolkits.yaml"
 
 # occurrences: 1 (verified: grep -c '    venv_binary = root / ".venv" / "bin" / name' packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py)
-# REPLACE — (verified: codex/assets.py:56)
+# REPLACE — (verified: codex/assets.py:57)
     venv_binary = script_path(root / ".venv", name)
 
 # occurrences: 1 (verified: grep -c 'def toolkit_mcp_block(root: Path, sections: dict\[str, ToolkitSection\]) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py)
-# REPLACE — signature (:62) + lines 78-79 (`    command = json.dumps(resolve_binary(root, "parrot"))`, occurrences 1;
+# REPLACE — signature (:63) + lines 79-80 (`    command = json.dumps(resolve_binary(root, "parrot"))`, occurrences 1;
 #           `    config_path = str(root / ".parrot" / "mcp-toolkits.yaml")`, occurrences 1). Docstring: add `portable`.
 def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection], *, portable: bool = False) -> str:
     if portable:
@@ -262,19 +279,23 @@ def toolkit_mcp_block(root: Path, sections: dict[str, ToolkitSection], *, portab
     else:
         command = json.dumps(resolve_binary(root, "parrot"))
         config_path = str(root / ".parrot" / "mcp-toolkits.yaml")
-    # (loop at lines 80-92 unchanged, except:)
+    # (loop at lines 81-93 unchanged, except:)
     # FILL IN: in portable mode, whether each table also gets a project pin — e.g. an `env`
     # `PARROT_PROJECT` variable reference or `env_vars = ["PARROT_PROJECT"]` pass-through — bounded by
     # spike S3 (TASK-4069) evidence on Codex's server cwd/env and spec §5 (no absolute path anywhere,
     # identical across roots). With no S3 evidence of variable expansion: add nothing.
 
-# occurrences: 1 (verified: grep -c 'def mcp_block(root: Path, toolkit_block: str = "") -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py)
-# REPLACE — signature (:95) and `    command = json.dumps(resolve_binary(root, "wikitoolkit"))` (:106, occurrences 1)
-def mcp_block(root: Path, toolkit_block: str = "", *, portable: bool = False) -> str:
-    command = json.dumps("wikitoolkit" if portable else resolve_binary(root, "wikitoolkit"))
+# occurrences: 1 (verified: grep -c 'def mcp_block(root: Path, toolkit_block: str = "", \*, remote: "WikiRemoteConfig | None" = None) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py)
+# REPLACE — signature (:96; keep `remote`, FEAT-569) and the ELSE-branch line only
+#           `        command = json.dumps(resolve_binary(root, "wikitoolkit"))` (8-space indent, :120, occurrences 1);
+#           the `if remote is not None:` branch (:111-118) stays unchanged
+def mcp_block(
+    root: Path, toolkit_block: str = "", *, remote: "WikiRemoteConfig | None" = None, portable: bool = False
+) -> str:
+        command = json.dumps("wikitoolkit" if portable else resolve_binary(root, "wikitoolkit"))
 
 # occurrences: 1 (verified: grep -c 'def rules_block(root: Path) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py)
-# REPLACE — signature (:121) and wrap the resolved-pattern loop (lines 124-128)
+# REPLACE — signature (:135) and wrap the resolved-pattern loop (lines 138-142)
 def rules_block(root: Path, *, portable: bool = False) -> str:
     """Return allow rules for every supported WikiToolkit CLI surface.
 
@@ -334,7 +355,7 @@ no detection change is needed — the marker block is replaced wholesale (reques
 ```python
 # occurrences: 1 (verified: grep -c 'def _extract_toml_table(text: str, table: str) -> Optional\[str\]:' packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py)
 # AFTER — insert below the end of `_extract_toml_table` (its last line `    return "".join(lines[start:end])`,
-#         verified: codex/installer.py:110-135), i.e. just above `def _toolkit_sections(` (:138)
+#         verified: codex/installer.py:116-141), i.e. just above `def _toolkit_sections(` (:144)
 def _wikitoolkit_table_is_portable(table_text: Optional[str]) -> bool:
     """Whether a preserved ``[mcp_servers.wikitoolkit]`` table uses the bare portable command."""
     if not table_text:
@@ -350,15 +371,15 @@ def _wikitoolkit_table_is_portable(table_text: Optional[str]) -> bool:
 def _current_portable_mode(root: Path) -> bool:
     """Infer the current mode from the managed block's wikitoolkit table (FEAT-633, sticky)."""
     # FILL IN: read root/".codex"/"config.toml" if present, isolate the managed block exactly like
-    # reconcile_toolkit_tables (lines 200-204) and return _wikitoolkit_table_is_portable(...) —
+    # reconcile_toolkit_tables (lines 206-210) and return _wikitoolkit_table_is_portable(...) —
     # bounded by "no new state file" (shared brief) and never raising.
     raise NotImplementedError
 
 # occurrences: 1 (verified: grep -c 'def reconcile_toolkit_tables(root: Path) -> tuple\[list\[str\], list\[str\]\]:' packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py)
-# REPLACE — signature (:172); docstring gains: "portable: None infers from the preserved wikitoolkit
+# REPLACE — signature (:178); docstring gains: "portable: None infers from the preserved wikitoolkit
 #           table (sticky — the `parrot toolkits` path via mcp/hosts.py::CodexAdapter.reconcile)."
 def reconcile_toolkit_tables(root: Path, *, portable: Optional[bool] = None) -> tuple[list[str], list[str]]:
-# MOVE the wikitoolkit_text extraction (lines 200-204) ABOVE the toolkit_block computation (line 198,
+# MOVE the wikitoolkit_text extraction (lines 206-210) ABOVE the toolkit_block computation (line 204,
 # first of 2 occurrences of `    toolkit_block = assets.toolkit_mcp_block(root, sections)`; context:
 #     sections, warnings = _toolkit_sections(cfg, existing_tables)
 #     toolkit_block = assets.toolkit_mcp_block(root, sections)
@@ -368,31 +389,32 @@ def reconcile_toolkit_tables(root: Path, *, portable: Optional[bool] = None) -> 
         portable = _wikitoolkit_table_is_portable(wikitoolkit_text)
     toolkit_block = assets.toolkit_mcp_block(root, sections, portable=portable)
 
-# occurrences: 1 (verified: grep -c 'def _install_mcp(root: Path) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py)
-# REPLACE — signature (:235), the second `    toolkit_block = assets.toolkit_mcp_block(root, sections)` (:262; context line above:
-#           `        print(warning, file=sys.stderr)`) and `        assets.mcp_block(root, toolkit_block),` (:267, occurrences 1)
-def _install_mcp(root: Path, *, portable: bool = False) -> str:
+# occurrences: 1 (verified: grep -c 'def _install_mcp(root: Path, \*, remote: Optional\[WikiRemoteConfig\] = None) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py)
+# REPLACE — signature (:241; keep `remote`, FEAT-569), the second `    toolkit_block = assets.toolkit_mcp_block(root, sections)` (:268; context line above:
+#           `        print(warning, file=sys.stderr)`) and `        assets.mcp_block(root, toolkit_block, remote=remote),` (:273, occurrences 1)
+def _install_mcp(root: Path, *, remote: Optional[WikiRemoteConfig] = None, portable: bool = False) -> str:
     toolkit_block = assets.toolkit_mcp_block(root, sections, portable=portable)
-        assets.mcp_block(root, toolkit_block, portable=portable),
+        assets.mcp_block(root, toolkit_block, remote=remote, portable=portable),
 
 # occurrences: 1 (verified: grep -c 'def _install_rules(root: Path) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py)
-# REPLACE — signature (:285) and `        assets.rules_block(root),` (:290, occurrences 1)
+# REPLACE — signature (:291) and `        assets.rules_block(root),` (:296, occurrences 1)
 def _install_rules(root: Path, *, portable: bool = False) -> str:
         assets.rules_block(root, portable=portable),
 
-# occurrences: 1 (verified: grep -c '    bookstore: bool = True,' packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py)
-# AFTER — `    bookstore: bool = True,` in install_codex_integration's signature (verified: codex/installer.py:320)
+# occurrences: 1 (verified: grep -c '    remote: Optional\[WikiRemoteConfig\] = None,' packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py)
+# AFTER — `    remote: Optional[WikiRemoteConfig] = None,` in install_codex_integration's signature
+#         (verified: codex/installer.py:327; it follows `    bookstore: bool = True,` at :326)
     portable: Optional[bool] = None,
 # Docstring Args: portable — True: bare launcher commands, False: baked absolute paths, None: keep current form.
 
 # occurrences: 1 (verified: grep -c '    save_project_config(root, config)' packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py)
-# AFTER — insert below `    save_project_config(root, config)` (verified: codex/installer.py:342) — it only writes
+# AFTER — insert below `    save_project_config(root, config)` (verified: codex/installer.py:349) — it only writes
 #         .parrot/wiki.json, so inferring after it still precedes every .codex/ write
     if portable is None:
         portable = _current_portable_mode(root)
 
-# REPLACE — call sites (each occurrences 1): :353, :354, :360
-    actions.append(_install_mcp(root, portable=portable))
+# REPLACE — call sites (each occurrences 1): :360 (already passes `remote=remote` — keep it), :361, :367
+    actions.append(_install_mcp(root, remote=remote, portable=portable))
     actions.append(_install_rules(root, portable=portable))
         actions.extend(install_bookstore(root, portable=portable))
 ```
@@ -402,9 +424,10 @@ needs inference.
 
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py` (MODIFY)
 ```python
-# occurrences: 1 (verified: grep -c '    "--tool-guards/--no-tool-guards",' packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py)
-# AFTER — insert a new decorator after the option block that starts with `    "--tool-guards/--no-tool-guards",`
-#         (verified: codex/cli.py:63-68), i.e. directly above `def install(` (cli.py:69)
+# occurrences: 1 (verified: grep -c '    "--token-env",' packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py)
+# AFTER — insert a new decorator after the option block that starts with `    "--token-env",`
+#         (verified: codex/cli.py:81-85, the last of the FEAT-569 `--remote`/`--remote-url`/`--token-env` options),
+#         i.e. directly above `def install(` (cli.py:86)
 @click.option(
     "--portable/--no-portable",
     default=None,
@@ -412,14 +435,14 @@ needs inference.
     "Default: keep the current form (baked absolute paths on a fresh install).",
 )
 
-# occurrences: 1 (verified: grep -c '    tool_guards: bool,' packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py)
-# AFTER — (verified: codex/cli.py:74)
+# occurrences: 1 (verified: grep -c '    token_env: Optional\[str\],' packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py)
+# AFTER — (verified: codex/cli.py:94)
     portable: Optional[bool],
 
-# occurrences: 1 (verified: grep -c '        actions = install_codex_integration(root, config, gitignore=gitignore, bookstore=bookstore)' packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py)
-# REPLACE — (verified: codex/cli.py:80)
+# occurrences: 1 (verified: grep -c '        actions = install_codex_integration(root, config, gitignore=gitignore, bookstore=bookstore, remote=remote)' packages/ai-parrot/src/parrot/knowledge/wiki/codex/cli.py)
+# REPLACE — (verified: codex/cli.py:112); keep `remote=remote` (FEAT-569)
         actions = install_codex_integration(
-            root, config, gitignore=gitignore, bookstore=bookstore, portable=portable
+            root, config, gitignore=gitignore, bookstore=bookstore, remote=remote, portable=portable
         )
 ```
 
@@ -529,7 +552,7 @@ unreliable (the very reason FEAT-556 pinned `--config` absolutely). `PARROT_PROJ
 spec's root pin (spec §3 M1/M5): when a host adapter sets it in the entry's `env`, the
 relative `.parrot/mcp-toolkits.yaml` resolves against the project root regardless of the
 process cwd. Without `PARROT_PROJECT` the behavior is byte-for-byte today's (`Path.cwd()`).
-Add `import os` next to the existing imports if absent (verify), and mention the variable in
+`import os` is already present (verified: local_cli.py:18); mention the variable in
 the command's docstring. This also fixes Google's portable toolkit entries (user-global
 config, arbitrary cwd) — Gemini's emitter task (TASK-4084) cites this behavior but does not
 own the file; this task does.
@@ -564,6 +587,7 @@ Run from the feature worktree with `PYTHONPATH=packages/ai-parrot/src` (the shar
 - `pytest tests/knowledge/wiki/test_codex_installer_toolkit_entries.py -q`
 - `pytest tests/knowledge/wiki/test_codex_integration.py -q`
 - `pytest tests/knowledge/wiki/test_codex_bookstore.py -q`
+- `pytest packages/ai-parrot/tests/knowledge/wiki/test_installer_remote_codex.py -q`
 
 ---
 

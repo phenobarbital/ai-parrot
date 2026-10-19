@@ -33,6 +33,11 @@ Portable form per field (shared brief, cross-cutting decision):
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `claude_code/assets.py` line anchors shifted (+5..+42 after 6b30156ad `mcp_json_entry_remote` and 6164b075b ledger hooks); `ledger_hook_block`/`ledger_hook_new_file` added to NOT-in-scope; `mcp_json_entry_remote` left unchanged; removed the false claim that git hooks get a working Windows fix; two Validation Commands added. `bookstore.py` unchanged.
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - Windows-safe hook bodies: `git_hook_block` (assets.py:206-207) and `ledger_hook_block` (assets.py:236) write `wt_bin` unquoted into a `#!/bin/sh` file, so a `C:\…\Scripts\wikitoolkit.exe` path is mangled by sh (verified: `sh -c 'printf "%s\n" C:\r\.venv\Scripts\wikitoolkit.exe'` → `C:r.venvScriptswikitoolkit.exe`). Extend this task or open a new one.
+
 ## Scope
 
 - Replace the `root / ".venv" / "bin" / <name>` probes in `resolve_wikitoolkit_bin` and
@@ -49,9 +54,12 @@ Portable form per field (shared brief, cross-cutting decision):
 **NOT in scope**:
 - `claude_code/installer.py` and `claude_code/cli.py` (`--portable` flag, reconcile rule,
   stickiness, `PurePosixPath` fixes) — TASK-4082.
-- `git_hook_block` / `git_hook_new_file`: they write into `.git/hooks/`, which is never committed,
-  so they stay baked in both modes (they still get the Windows fix through `resolve_wikitoolkit_bin`).
-- `PERMISSION_RULES` (assets.py:53-68) — keep exactly as is.
+- `git_hook_block` / `git_hook_new_file` and `ledger_hook_block` / `ledger_hook_new_file` (FEAT-694,
+  assets.py:218-243): they write into `.git/hooks/`, which is never committed, so they stay baked in
+  both modes (their Windows behaviour is an open decision — see Readiness review).
+- `mcp_json_entry_remote` (assets.py:128-134, FEAT-569) — already root-independent (no machine path);
+  leave unchanged, no `portable` keyword.
+- `PERMISSION_RULES` (assets.py:58-73) — keep exactly as is.
 - Codex and Google hosts — TASK-4083 / TASK-4084.
 - Making `parrot mcp-local` honour `PARROT_PROJECT` (it resolves its root from `Path.cwd()`,
   `mcp/local_cli.py:183`) — not owned by this task.
@@ -71,7 +79,7 @@ Portable form per field (shared brief, cross-cutting decision):
 ## Codebase Contract (Anti-Hallucination)
 
 > **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (branch `dev` @ `6c4ca5482`, 2026-10-05).
+> (branch `dev` @ `6c4ca5482`, 2026-10-05; line anchors refreshed against `9f51c7735`, 2026-10-19).
 > The implementing agent MUST use these exact imports, class names, and method signatures.
 > **DO NOT** invent, guess, or assume any import, attribute, or method not listed here.
 > If you need something not listed, VERIFY it exists first with `grep` or `read`.
@@ -89,18 +97,20 @@ from parrot.mcp.toolkit_config import ToolkitSection                    # packag
 ### Existing Signatures to Use
 ```python
 # packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py
-PERMISSION_RULES: tuple[str, ...] = (...)                                   # line 53-68 — KEEP UNCHANGED
-MCP_JSON_ENTRY: dict = {"command": "wikitoolkit", "args": ["mcp"], "env": {}}  # line 76-80 (already the portable wikitoolkit shape)
-def resolve_wikitoolkit_bin(root: Path) -> str:                             # line 88; probe at line 100: root / ".venv" / "bin" / "wikitoolkit"
-def hook_command(root: Path) -> str:                                        # line 109 -> f"{resolve_wikitoolkit_bin(root)} claude-hook"
-def mcp_json_entry(root: Path) -> dict:                                     # line 114 -> {"command": abs, "args": ["mcp"], "env": {}}
-def resolve_parrot_bin(root: Path) -> str:                                  # line 123; probe at line 136: root / ".venv" / "bin" / "parrot"
-def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection) -> dict:  # line 145-168
+PERMISSION_RULES: tuple[str, ...] = (...)                                   # line 58-73 — KEEP UNCHANGED
+MCP_JSON_ENTRY: dict = {"command": "wikitoolkit", "args": ["mcp"], "env": {}}  # line 81-85 (already the portable wikitoolkit shape)
+def resolve_wikitoolkit_bin(root: Path) -> str:                             # line 93; probe at line 105: root / ".venv" / "bin" / "wikitoolkit"
+def hook_command(root: Path) -> str:                                        # line 114 -> f"{resolve_wikitoolkit_bin(root)} claude-hook"
+def mcp_json_entry(root: Path) -> dict:                                     # line 119 -> {"command": abs, "args": ["mcp"], "env": {}}
+def mcp_json_entry_remote(url: str, token_env: str) -> dict:                # line 128-134 (FEAT-569 http entry) — unchanged
+def resolve_parrot_bin(root: Path) -> str:                                  # line 137; probe at line 150: root / ".venv" / "bin" / "parrot"
+def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection) -> dict:  # line 159-182
 #   returns {"command": resolve_parrot_bin(root),
 #            "args": ["mcp-local", name, "--config", str(root / ".parrot" / "mcp-toolkits.yaml")],
-#            "cwd": str(root), "env": dict(section.env)}       # FEAT-556 pin, comment at lines 162-164
-def git_hook_block(root: Path) -> str:                                      # line 171 (unchanged)
-def permission_rules(root: Path) -> tuple[str, ...]:                        # line 204-214 (bare -> PERMISSION_RULES; else + f"Bash({resolved}:*)")
+#            "cwd": str(root), "env": dict(section.env)}       # FEAT-556 pin, comment at lines 176-178
+def git_hook_block(root: Path) -> str:                                      # line 185 (unchanged)
+def ledger_hook_block(root: Path, hook_name: str) -> str:                   # line 218 (FEAT-694; unchanged)
+def permission_rules(root: Path) -> tuple[str, ...]:                        # line 246-256 (bare -> PERMISSION_RULES; else + f"Bash({resolved}:*)")
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/bookstore.py
 _MANAGED_ARGS = ["-m", "parrot.knowledge.bookstore.cli", "mcp"]            # line 30
@@ -168,7 +178,7 @@ def uninstall_bookstore(root: Path) -> list[str]:                           # li
 
 ### Pattern to Follow
 ```python
-# The existing "MCP_JSON_ENTRY" constant (assets.py:76) IS the portable wikitoolkit shape.
+# The existing "MCP_JSON_ENTRY" constant (assets.py:81) IS the portable wikitoolkit shape.
 # Portable emitters return fresh copies (never the shared dict/list objects), e.g.:
 {"command": MCP_JSON_ENTRY["command"], "args": list(MCP_JSON_ENTRY["args"]), "env": {}}
 ```
@@ -185,7 +195,7 @@ def uninstall_bookstore(root: Path) -> list[str]:                           # li
 - No `print()`; these are pure functions — no logging needed.
 
 ### References in Codebase
-- `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py:693-743` — the consumer
+- `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py:694-750` — the consumer
   (`_install_mcp_json`) that TASK-4082 threads `portable` into.
 - `packages/ai-parrot/src/parrot/mcp/local_cli.py:164-209` — how `parrot mcp-local` resolves its
   root (`Path.cwd()`) and `--config` (click `Path`, relative to cwd).
@@ -214,23 +224,23 @@ def uninstall_bookstore(root: Path) -> list[str]:                           # li
 from parrot.launcher import script_path  # created by TASK-4071 (stdlib-only module)
 
 # occurrences: 1 (verified: grep -c 'MCP_JSON_ENTRY: dict = {' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py)
-# AFTER — insert below the closing `}` of `MCP_JSON_ENTRY: dict = {` (verified: claude_code/assets.py:76-80)
+# AFTER — insert below the closing `}` of `MCP_JSON_ENTRY: dict = {` (verified: claude_code/assets.py:81-85)
 
 #: Relative toolkit config used by portable toolkit entries (FEAT-633). Resolved by
 #: ``parrot mcp-local`` against the process cwd (mcp/local_cli.py:183).
 PORTABLE_TOOLKIT_CONFIG = ".parrot/mcp-toolkits.yaml"
 
 # occurrences: 1 (verified: grep -c '    venv_bin = root / ".venv" / "bin" / "wikitoolkit"' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py)
-# REPLACE — `    venv_bin = root / ".venv" / "bin" / "wikitoolkit"` (verified: claude_code/assets.py:100)
+# REPLACE — `    venv_bin = root / ".venv" / "bin" / "wikitoolkit"` (verified: claude_code/assets.py:105)
     venv_bin = script_path(root / ".venv", "wikitoolkit")
 # (also update the docstring item 1 to "<root>/.venv/bin/wikitoolkit (``Scripts\\wikitoolkit.exe`` on Windows)")
 
 # occurrences: 1 (verified: grep -c '    venv_bin = root / ".venv" / "bin" / "parrot"' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py)
-# REPLACE — `    venv_bin = root / ".venv" / "bin" / "parrot"` (verified: claude_code/assets.py:136)
+# REPLACE — `    venv_bin = root / ".venv" / "bin" / "parrot"` (verified: claude_code/assets.py:150)
     venv_bin = script_path(root / ".venv", "parrot")
 
 # occurrences: 1 (verified: grep -c 'def hook_command(root: Path) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py)
-# REPLACE — whole function `def hook_command(root: Path) -> str:` (verified: claude_code/assets.py:109-111)
+# REPLACE — whole function `def hook_command(root: Path) -> str:` (verified: claude_code/assets.py:114-116)
 def hook_command(root: Path, *, portable: bool = False) -> str:
     """Build the ``PreToolUse`` hook command.
 
@@ -244,7 +254,8 @@ def hook_command(root: Path, *, portable: bool = False) -> str:
     return f"{resolve_wikitoolkit_bin(root)} claude-hook"
 
 # occurrences: 1 (verified: grep -c 'def mcp_json_entry(root: Path) -> dict:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py)
-# REPLACE — whole function `def mcp_json_entry(root: Path) -> dict:` (verified: claude_code/assets.py:114-120)
+# REPLACE — whole function `def mcp_json_entry(root: Path) -> dict:` (verified: claude_code/assets.py:119-125;
+#           `mcp_json_entry_remote` directly below it, :128-134, stays unchanged)
 def mcp_json_entry(root: Path, *, portable: bool = False) -> dict:
     """Build the ``.mcp.json`` wikitoolkit entry (absolute path, or portable bare command)."""
     if portable:
@@ -263,7 +274,7 @@ def mcp_json_entry(root: Path, *, portable: bool = False) -> dict:
 
 ```python
 # occurrences: 1 (verified: grep -c 'def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection) -> dict:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py)
-# REPLACE — signature line + return statement of `toolkit_mcp_json_entry` (verified: claude_code/assets.py:145, 160-168); keep the docstring, add `portable` to Args/Returns
+# REPLACE — signature line + return statement of `toolkit_mcp_json_entry` (verified: claude_code/assets.py:159, 174-182); keep the docstring, add `portable` to Args/Returns
 def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection, *, portable: bool = False) -> dict:
     # ... existing docstring, plus:
     #     portable: Emit ``{"command": "parrot", "args": ["mcp-local", name, "--config",
@@ -286,7 +297,7 @@ def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection, *, po
     }
 
 # occurrences: 1 (verified: grep -c 'def permission_rules(root: Path) -> tuple[str, ...]:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py)
-# REPLACE — whole function `def permission_rules(root: Path) -> tuple[str, ...]:` (verified: claude_code/assets.py:204-214)
+# REPLACE — whole function `def permission_rules(root: Path) -> tuple[str, ...]:` (verified: claude_code/assets.py:246-256)
 def permission_rules(root: Path, *, portable: bool = False) -> tuple[str, ...]:
     """Return permission rules, plus the absolute-path variant in baked mode.
 
@@ -427,7 +438,7 @@ def test_default_emission_unchanged(tmp_path: Path) -> None:
         "cwd": str(tmp_path.resolve()),
         "env": {},
     }
-    # FILL IN: assert toolkit_mcp_json_entry default == the FEAT-556 pinned dict (assets.py:160-168)
+    # FILL IN: assert toolkit_mcp_json_entry default == the FEAT-556 pinned dict (assets.py:174-182)
     # and permission_rules(tmp_path) ends with f"Bash({venv_bin / 'wikitoolkit'}:*)".
 
 
@@ -473,6 +484,8 @@ Run from the feature worktree with `PYTHONPATH=packages/ai-parrot/src` (the shar
 - `pytest tests/knowledge/wiki/test_claude_code_bookstore.py -q`
 - `pytest tests/knowledge/wiki/test_installer_toolkit_entries.py -q`
 - `pytest tests/knowledge/wiki/test_claude_code.py -q`
+- `pytest tests/knowledge/wiki/test_installer_ledger_hooks.py -q`
+- `pytest packages/ai-parrot/tests/knowledge/wiki/test_installer_remote_claude.py -q`
 
 ---
 

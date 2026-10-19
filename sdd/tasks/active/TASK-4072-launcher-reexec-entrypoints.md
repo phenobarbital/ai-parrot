@@ -36,6 +36,14 @@ Also ships spike **S4** (launcher overhead) method + report (spec §5 AC3, §7 "
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Verified current against dev 9f51c7735; no changes (pyproject `[project.scripts]` 199-207, `entry.py:18/21`,
+  `bookstore/cli.py:609/611`, `cli/__init__.py:19/103-104`; `import parrot` still loads only `parrot` + `parrot.version`).
+- rev 0.3 C16 (spec §3 M1, lines 288-291): the `parrot sdd run worktree_environment --hook` launcher fast path and
+  its S4 latency budget are split into TASK-4509 (depends on TASK-4072, TASK-4085) — not in scope here.
+
+---
+
 ## Scope
 
 - Add `reexec`, `main_parrot`, `main_wikitoolkit`, `main_bookstore` (+ private dispatch helper)

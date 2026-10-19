@@ -38,6 +38,15 @@ must therefore inherit `os.environ` unchanged for every `git` call.
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `close_task.sh` (152 lines), `heal_orphans.sh` (85 lines),
+  `finalize_task.py:394-428` and `tests/sdd/test_close_task_ledger.py` are unchanged since the
+  task was written (C/H-step contract still exact); `find_shared_root` anchor `project.py:1398`→`:1546`
+  (same signature); added `tests/sdd/test_ledger_lifecycle_acceptance.py` (runs `close_task.sh`
+  at `:197`) to Validation Commands. The third `.sh` (`codex_hook.sh`) stays repo-only, out of scope.
+
+---
+
 ## Scope
 
 - Create `parrot/sdd/scripts/close_task.py`, a line-by-line port of `close_task.sh`
@@ -89,7 +98,7 @@ must therefore inherit `os.environ` unchanged for every `git` call.
 # scripts/sdd/close_task.sh:135-137):
 from parrot.knowledge.wiki.ledger.events import LedgerEvent   # ledger/events.py:103 (fields kind, subject, actor, ts, payload)
 from parrot.knowledge.wiki.ledger.log import LedgerLog        # ledger/log.py:10; __init__(self, path: str) :13; append(event) :21
-from parrot.knowledge.wiki.project import find_shared_root    # project.py:1398  def find_shared_root(start: Path | None = None) -> Path | None
+from parrot.knowledge.wiki.project import find_shared_root    # project.py:1546  def find_shared_root(start: Path | None = None) -> Path | None
 # Everything else: stdlib (argparse not required — positional parsing mirrors bash), json, os, shutil, subprocess, sys,
 # datetime, pathlib. No third-party import at module level.
 ```
@@ -168,6 +177,8 @@ subprocess.run(["bash", str(close_script), task_id, feature_slug, _VERIFICATION]
                env={**os.environ, "GIT_INDEX_FILE": str(tmp_index_path)}, capture_output=True, text=True)  # :422-428
 # tests/sdd/test_close_task_ledger.py:18 runs ["bash", str(REPO_ROOT/"scripts/sdd/close_task.sh"), ...] with
 #   PYTHONPATH=<repo>/packages/ai-parrot/src prepended (:54-68); asserts exit codes 0/2 and events.jsonl contents.
+# tests/sdd/test_ledger_lifecycle_acceptance.py:27,197 runs ["bash", str(REPO_ROOT/"scripts/sdd/close_task.sh"), "TASK-9001", …]
+#   with the same PYTHONPATH prepend (:81-91) — verified 2026-10-19.
 # packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_finalize_task.py:33,110-113 copies the real
 #   scripts/sdd/close_task.sh into a tmp repo's scripts/sdd/ and runs finalize_task against it.
 ```
@@ -549,6 +560,7 @@ editable-installed against the main checkout).
 
 - `pytest packages/ai-parrot/tests/sdd/test_scripts_shell_port.py -q`
 - `pytest tests/sdd/test_close_task_ledger.py -q`
+- `pytest tests/sdd/test_ledger_lifecycle_acceptance.py -q` (runs `bash scripts/sdd/close_task.sh` at `:197` with the worktree's `PYTHONPATH`)
 - `pytest packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_finalize_task.py -q`
 - `pytest tests/sdd_scripts/test_check_task_state.py -q`
 

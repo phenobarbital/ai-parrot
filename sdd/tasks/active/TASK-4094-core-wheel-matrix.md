@@ -60,6 +60,20 @@ Jesus Lara). Every section below already reflects this delta; this list is the a
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `pyproject.toml` `[tool.cibuildwheel]` anchors +14 (1043-1051→1057-1065),
+  `[tool.maturin]` 1027-1031→1041-1045, inert-comment block 1005-1026→1012-1040; `smoke-core` now passes
+  `wheel-artifact-pattern: "core-dist-*"`, matching TASK-4068's `pattern:` + `merge-multiple: true` download.
+  `release.yml` anchors unchanged (9dfd1c898 touched two comment lines in `build-server` only).
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - `wikitoolkit mcp` now needs ai-parrot-tools (`wiki/tools.py:69-76`, `mcp_server.py:525-545, 566-574`; core
+    `dependencies` lack it), so a `smoke-core` that installs only the core wheel fails the MCP handshake.
+    Affected: `smoke-core` inputs/needs (e.g. also install the `build-tools` wheel).
+  - No linux-aarch64 leg in the install matrix: TASK-4068's OS list is ubuntu/macos/windows-latest, so the new
+    aarch64 core wheel is never smoke-tested (codex S11). Affected: whether install-matrix gains `ubuntu-24.04-arm`.
+
+---
+
 ## Scope
 
 - Rewrite `build-core`'s matrix as one leg per platform: linux x86_64, linux aarch64, windows
@@ -149,15 +163,15 @@ jobs:
 # packages/ai-parrot/pyproject.toml
 requires-python = ">=3.11,<3.14"                                       # line 18
 "PyYAML>=6.0.2",                                                       # line 58
-[tool.cibuildwheel]                                                    # line 1043
-build = "cp3{11,12,13,14}-*"                                           # line 1044
-skip = "pp* *-musllinux* *-manylinux_i686 *-manylinux_aarch64 *-win32" # line 1045
-[tool.cibuildwheel.linux]                                              # line 1047
-archs = ["x86_64"]                                                     # line 1048
-[tool.cibuildwheel.windows]                                            # line 1050
-archs = ["AMD64"]                                                      # line 1051
-# [build-system] is setuptools + Cython==3.0.11 (lines 1-7); [tool.maturin] (1027-1031) is INERT
-# for the core build (comment block 1005-1026) — the rustup CIBW_BEFORE_BUILD is legacy but harmless.
+[tool.cibuildwheel]                                                    # line 1057
+build = "cp3{11,12,13,14}-*"                                           # line 1058
+skip = "pp* *-musllinux* *-manylinux_i686 *-manylinux_aarch64 *-win32" # line 1059
+[tool.cibuildwheel.linux]                                              # line 1061
+archs = ["x86_64"]                                                     # line 1062
+[tool.cibuildwheel.windows]                                            # line 1064
+archs = ["AMD64"]                                                      # line 1065
+# [build-system] is setuptools + Cython==3.0.11 (lines 1-7); [tool.maturin] (1041-1045) is INERT
+# for the core build (comment block 1012-1040) — the rustup CIBW_BEFORE_BUILD is legacy but harmless.
 ```
 - Reusable workflow from TASK-4068: `.github/workflows/install-matrix.yml` with an
   `on: workflow_call` trigger (input names defined by TASK-4068 — read the file before wiring).
@@ -233,7 +247,9 @@ archs = ["AMD64"]                                                      # line 10
 - `deploy` must `need` the smoke job, and the smoke job must `need` `build-core` — *why*: codex
   S11, an unsmoked wheel never reaches PyPI. Keep `deploy`'s `if: github.event_name == 'release'`.
 - Reusable-workflow calls are a job with `uses:` + `with:` (no `runs-on`/`steps`); the called
-  workflow sees this run's artifacts, so pass the artifact-name pattern (`core-dist-*`), not files.
+  workflow sees this run's artifacts, so pass the artifact-name pattern (`core-dist-*`), not files,
+  through TASK-4068's `wheel-artifact-pattern` input: install-matrix downloads it with `pattern:` +
+  `merge-multiple: true` and each leg picks its own platform wheel from the merged `dist/`.
 - PyYAML parses the top-level `on:` key as boolean `True` — the test must not depend on `on`.
 - **`smoke-sdd-foreign` isolation (C3)**: the fresh venv is created with the runner's
   `python3.12 -m venv`, the wheel is installed with `pip install <wheel>` so PyPI resolves the
@@ -308,9 +324,10 @@ archs = ["AMD64"]                                                      # line 10
   smoke-core:
     needs: [build-core]
     uses: ./.github/workflows/install-matrix.yml
-    # FILL IN: `with:` inputs exactly as declared by TASK-4068's `on: workflow_call` (e.g. an
-    #          artifact pattern `core-dist-*`); if install-matrix.yml has no workflow_call trigger,
-    #          STOP and report — bounded by NOT-in-scope (TASK-4068 owns that file)
+    with:
+      wheel-artifact-pattern: "core-dist-*"   # TASK-4068's workflow_call input (pattern + merge-multiple download)
+    # Re-read TASK-4068's `on: workflow_call` before wiring; if install-matrix.yml has no workflow_call
+    # trigger or no `wheel-artifact-pattern` input, STOP and report — bounded by NOT-in-scope (TASK-4068 owns that file)
 
   # C3 — the RELEASED wheel drives the SDD flow in a foreign repo; guarded until TASK-4089/4091 land
   smoke-sdd-foreign:
@@ -358,19 +375,19 @@ is verified at :541).
 ### `packages/ai-parrot/pyproject.toml` (MODIFY)
 ```toml
 # occurrences: 1 (verified: grep -c 'build = "cp3{11,12,13,14}-\*"' packages/ai-parrot/pyproject.toml)
-# REPLACE — `build = "cp3{11,12,13,14}-*"` (verified: packages/ai-parrot/pyproject.toml:1044) with:
+# REPLACE — `build = "cp3{11,12,13,14}-*"` (verified: packages/ai-parrot/pyproject.toml:1058) with:
 # cp314 is NOT built while requires-python is "<3.14" (spec §7) — keep both in sync.
 build = "cp3{11,12,13}-*"
 
 # occurrences: 1 (verified: grep -c 'skip = "pp\* \*-musllinux\* \*-manylinux_i686 \*-manylinux_aarch64 \*-win32"' packages/ai-parrot/pyproject.toml)
-# REPLACE — :1045 with:
+# REPLACE — :1059 with:
 skip = "pp* *-musllinux* *-manylinux_i686 *-win32"
 
 # occurrences: 1 (verified: grep -c 'archs = \["x86_64"\]' packages/ai-parrot/pyproject.toml)
-# REPLACE — :1048 (`[tool.cibuildwheel.linux]` table) with:
+# REPLACE — :1062 (`[tool.cibuildwheel.linux]` table) with:
 archs = ["auto64"]   # x86_64 on x86 runners, aarch64 on ARM runners; CI overrides via CIBW_ARCHS
 
-# AFTER — `archs = ["AMD64"]` (end of `[tool.cibuildwheel.windows]`, :1051) — append:
+# AFTER — `archs = ["AMD64"]` (end of `[tool.cibuildwheel.windows]`, :1065) — append:
 
 [tool.cibuildwheel.macos]
 archs = ["arm64"]
@@ -457,7 +474,7 @@ cp314 check is conditional on the ceiling so a future relaxation only needs pypr
 ### FILL IN checklist
 - [ ] `release.yml::build-core` — `ubuntu-24.04-arm` availability; QEMU fallback otherwise.
 - [ ] `release.yml::build-core` — `MACOSX_DEPLOYMENT_TARGET` value for the macOS leg.
-- [ ] `release.yml::smoke-core` — `with:` inputs per TASK-4068's `workflow_call` declaration.
+- [ ] `release.yml::smoke-core` — confirm `wheel-artifact-pattern: "core-dist-*"` matches TASK-4068's `workflow_call` declaration.
 - [ ] `release.yml::smoke-sdd-foreign` — `PARROT_WHEEL_PATH` value shape per TASK-4091's hook (file vs dir); action major versions re-grepped.
 - [ ] Verify via `workflow_dispatch` on the feature branch that all four legs + smoke pass (release
       verification needs a tag — spec Worktree Strategy: PR-CI / dispatch only).
