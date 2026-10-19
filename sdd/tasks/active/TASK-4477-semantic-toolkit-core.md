@@ -82,6 +82,16 @@ class AbstractToolkit(ServerManagedToolkit, ABC):   # line 225
 # packages/ai-parrot/src/parrot/auth/rls_registry.py:112 — RlsRegistry.register(rule)
 ```
 
+### As-built signatures from earlier waves (added 2026-10-19 — use these, not the spec skeleton)
+- `RoleCatalog.visible_members(model, roles, *, authorized: bool)` and `RoleCatalog.search(..., *, authorized: dict[str, bool])`
+  — keyword-only `authorized`; pass the PBAC manifest outcome per model (governed + unauthorized ⇒ empty).
+- `SemanticAuditLedger.verify(entry)` is **async** (core `AbstractKMSSigner.sign/verify` are async) — `await` it.
+- `GovernancePipeline.govern(...)` already threads RLS/mask trusted nodes into `PositiveGuard`; never call the
+  guard yourself on governed SQL.
+- `ModelPolicy.usage_allowed/mask_for` take physical `<schema>.<table>.<column>` names.
+- Core DuckDB `databasequery` source is broken in this env (issue:58d44d14dd8a); tests patch the source `query()`
+  the way `tests/test_execution.py` does.
+
 ### Does NOT Exist
 - ~~`_post_execute` receiving `_permission_context`~~ — read the ContextVar set in `_pre_execute`.
 - ~~Storing the subject on `self`~~ — forbidden (concurrent calls); ContextVar only.
