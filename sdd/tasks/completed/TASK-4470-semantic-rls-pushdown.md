@@ -233,9 +233,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4470
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 272.6s · Tokens: n/a
+- Validation: merge-tier ad0839b5:wave6:merge completed exit 0 (41 passed); full satellite suite after review fixes 96 passed.
+- Fix commits: ce31706da30ab84afef4dd9829d01537aacc2d9c — fix(semantic-layer): TASK-4470 review fixes.
+- Review: coder-review:be92db4460f9fbd5c32b7b69. 🔴 CRITICAL fixed: _literal used exp.Literal.number(raw subject value), which renders verbatim → '1 OR 1=1' bypassed RLS on numeric columns. Now parsed int/float (finite) and re-rendered; empty subject values deny instead of 'IN (())'. Regression: test_rls_numeric_literal_rejects_injection.
+- Model feedback recorded: coder-feedback:bba49d347820abe112a4be98 (pattern unvalidated-numeric-sql-literal).
