@@ -51,9 +51,7 @@ class NarrativeMixin(SkillRegistryMixin):
     async def configure(self, *args: Any, **kwargs: Any) -> None:
         await super().configure(*args, **kwargs)
 
-    async def narrate(
-        self, facts: dict[str, Any], skill: str, tenant: Optional[str] = None
-    ) -> Optional[str]:
+    async def narrate(self, facts: dict[str, Any], skill: str, tenant: Optional[str] = None) -> Optional[str]:
         """Render ``facts`` as prose using the named skill, or ``None`` on failure.
 
         Args:
@@ -106,9 +104,7 @@ class NarrativeMixin(SkillRegistryMixin):
             return None
         return prose.strip()
 
-    async def _load_narrative_skill(
-        self, name: str, tenant: Optional[str] = None
-    ) -> Optional[SkillDefinition]:
+    async def _load_narrative_skill(self, name: str, tenant: Optional[str] = None) -> Optional[SkillDefinition]:
         """Resolve a skill by name via the file-based skill registry.
 
         Lazily configures the registry (idempotent — `_configure_skill_registry`
