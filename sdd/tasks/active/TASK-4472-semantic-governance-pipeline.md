@@ -67,6 +67,14 @@ class QueryValidator:   # line 29
 # packages/ai-parrot/src/parrot/auth/permission.py — UserSession.metadata is NOT part of its hash (line 49); hash it explicitly
 ```
 
+### Trusted nodes (added 2026-10-19, TASK-4471 review fix)
+- `PositiveGuard.check_and_limit(tree, *, requested_limit=None, trusted_nodes: set[int] | None = None)`.
+  Pass the UNION of the `set[int]` returned by `RlsPushdown.apply(...)` (3rd element) and `apply_masks(...)`
+  (3rd element) as `trusted_nodes=`; otherwise every RLS-filtered or masked query is denied
+  (`unknown_column *` / `function_not_allowed MD5`).
+- `RlsPushdown._literal` now raises `ValueError` for non-numeric values on numeric columns, and `apply` denies
+  (`rls_unplaceable`) when a subject attribute resolves to no values.
+
 ### Column-key convention (added 2026-10-19, TASK-4469 review fix c42dcbcb0)
 - `ModelPolicy.usage_allowed(roles, column)` and `ModelPolicy.mask_for(roles, column)` take the **physical**
   `<schema>.<table>.<column>` name (as produced by `governance/lineage.py` `ColumnUse`: `f"{use.table}.{use.column}"`).
