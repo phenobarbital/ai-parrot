@@ -288,10 +288,15 @@ See the test block in the Implementation Blueprint.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4487
+- Feature: workday-worker-event-history-and-job-changes
+- Implementation SHA: 597d9fbfd27fbc4fdb06e6026b94b9eb07fc1729
+- Closed at (UTC): 2026-10-19T20:39:27+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 136.9s · Tokens: n/a |
