@@ -91,7 +91,6 @@ from parrot.conf import (
 )
 
 
-
 # -----------------------------
 # Input models (schemas)
 # -----------------------------
