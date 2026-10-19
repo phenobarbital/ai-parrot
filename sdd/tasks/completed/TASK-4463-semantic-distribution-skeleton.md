@@ -445,9 +445,9 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (Claude Opus 5.5), attempt 3 (orchestrator) after both codex seats (gpt-5.6-terra, gpt-5.6-sol) returned empty_delivery with 0 turns
+**Date**: 2026-10-19
+**Commit**: dcec17c959f6ea901a8bc3fe341803cfbb2de3c4
+**Notes**: Satellite skeleton, workspace source, release.py entry, TID251 sidemantic ban + satellite per-file ignore, test-semantic CI job, uv.lock (adds sidemantic 0.12.0 + antlr4 runtime; `uv lock` also refreshed navrules 1.2.2→1.2.3 lock drift). test_packaging.py: 2 passed; ruff clean; `scripts/release.py status` lists ai-parrot-semantic 1.3.0.
+**OPERATOR ACTION REQUIRED**: from the main checkout run `source .venv/bin/activate && uv pip install -e packages/ai-parrot-semantic[duckdb]` — sidemantic is not in the shared venv and worktree agents must not install it.
+**Deviations from spec**: the Makefile DOES enumerate satellite `*_VERSION_FILE` variables, but Makefile is not in this task's file list, so no `SEMANTIC_VERSION_FILE` was added (file fidelity). Follow-up needed if the Makefile release targets must cover the semantic package.
