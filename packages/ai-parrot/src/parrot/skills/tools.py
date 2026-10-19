@@ -18,7 +18,7 @@ dependency:
   :class:`~parrot.skills.file_registry.SkillFileRegistry`.
 """
 import asyncio
-from typing import Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional
 from pathlib import Path
 from pydantic import BaseModel, Field
 from ..tools.abstract import AbstractTool, ToolResult
@@ -85,6 +85,8 @@ class SkillRegistryToolkit(AbstractToolkit):
             skills.
         include_write_tools: When ``False``, ``document_skill`` and
             ``update_skill`` are not exposed.
+        registry_provider: Optional callable returning the registry for the
+            current request. A ``None`` result uses ``registry``.
     """
 
     def __init__(
@@ -92,14 +94,25 @@ class SkillRegistryToolkit(AbstractToolkit):
         registry: SkillRegistry,
         agent_id: str,
         include_write_tools: bool = True,
+        *,
+        registry_provider: Optional[Callable[[], Optional[SkillRegistry]]] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self._registry = registry
+        self._registry_provider = registry_provider
         self._agent_id = agent_id
         # Hide write tools when the caller asked for read-only access.
         if not include_write_tools:
             self.exclude_tools = ("document_skill", "update_skill")
+
+    def _registry_for(self) -> SkillRegistry:
+        """Return the registry for the current request."""
+        if self._registry_provider is not None:
+            current = self._registry_provider()
+            if current is not None:
+                return current
+        return self._registry
 
     @tool_schema(SearchSkillArgs)
     async def search_skills(
@@ -115,7 +128,7 @@ class SkillRegistryToolkit(AbstractToolkit):
         """
         try:
             cat = SkillCategory(category) if category else None
-            results = await self._registry.search_skills(
+            results = await self._registry_for().search_skills(
                 query=query,
                 category=cat,
                 tags=tags,
@@ -177,8 +190,9 @@ class SkillRegistryToolkit(AbstractToolkit):
     ) -> ToolResult:
         """Read the full content of a skill by ID."""
         try:
-            content = await self._registry.read_skill(skill_id, version)
-            skills = await self._registry.list_skills()
+            registry = self._registry_for()
+            content = await registry.read_skill(skill_id, version)
+            skills = await registry.list_skills()
             skill_info = next((s for s in skills if s["skill_id"] == skill_id), None)
 
             return ToolResult(
@@ -206,7 +220,7 @@ class SkillRegistryToolkit(AbstractToolkit):
     async def list_skills(self) -> ToolResult:
         """List all available skills with summary info."""
         try:
-            skills = await self._registry.list_skills()
+            skills = await self._registry_for().list_skills()
 
             if not skills:
                 return ToolResult(
@@ -259,7 +273,7 @@ class SkillRegistryToolkit(AbstractToolkit):
         you discover an effective approach worth remembering.
         """
         try:
-            skill, version = await self._registry.upload_skill(
+            skill, version = await self._registry_for().upload_skill(
                 name=name,
                 content=content,
                 agent_id=self._agent_id,
@@ -301,7 +315,8 @@ class SkillRegistryToolkit(AbstractToolkit):
         """
         try:
             # Get existing skill
-            skills = await self._registry.list_skills()
+            registry = self._registry_for()
+            skills = await registry.list_skills()
             existing = next((s for s in skills if s["skill_id"] == skill_id), None)
 
             if not existing:
@@ -310,7 +325,7 @@ class SkillRegistryToolkit(AbstractToolkit):
                     error=f"Skill not found: {skill_id}",
                 )
 
-            skill, version = await self._registry.upload_skill(
+            skill, version = await registry.upload_skill(
                 name=name or existing["name"],
                 content=content,
                 agent_id=self._agent_id,
@@ -393,6 +408,8 @@ class SkillFileToolkit(AbstractToolkit):
             the ``save_learned_skill`` tool is not exposed.
         max_asset_bytes: Truncation ceiling for ``read_skill_asset``. Defaults
             to 64 KiB.
+        view_provider: Optional callable returning the view for the current
+            request. A ``None`` result uses ``file_registry``.
     """
 
     def __init__(
@@ -400,15 +417,26 @@ class SkillFileToolkit(AbstractToolkit):
         file_registry: "SkillFileRegistry",
         learned_dir: Optional[Path] = None,
         max_asset_bytes: int = 64 * 1024,
+        *,
+        view_provider: Optional[Callable[[], Any]] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self._file_registry = file_registry
+        self._view_provider = view_provider
         self._learned_dir = learned_dir
         self._max_asset_bytes = max_asset_bytes
         # Only expose save_learned_skill when we have somewhere to write.
         if learned_dir is None:
             self.exclude_tools = ("save_learned_skill",)
+
+    def _view(self) -> Any:
+        """Return the current skill view without caching provider results."""
+        if self._view_provider is not None:
+            current = self._view_provider()
+            if current is not None:
+                return current
+        return self._file_registry
 
     async def list_skill_commands(self) -> ToolResult:
         """List all available skills with their descriptions and /trigger
@@ -416,7 +444,7 @@ class SkillFileToolkit(AbstractToolkit):
         available. Reads the live registry, so skills learned during the
         current session are included.
         """
-        skills = self._file_registry.list_skills()
+        skills = self._view().list_skills()
         if not skills:
             return ToolResult(
                 status="done",
@@ -459,7 +487,7 @@ class SkillFileToolkit(AbstractToolkit):
         skills, ``metadata["assets"]`` lists the bundled asset filenames and
         ``metadata["is_composite"]`` is ``True``.
         """
-        skill = self._file_registry.get_by_name(name)
+        skill = self._view().get_by_name(name)
         if not skill:
             return ToolResult(
                 status="error", result=None, error=f"Skill not found: {name}"
@@ -497,7 +525,7 @@ class SkillFileToolkit(AbstractToolkit):
         the directory (traversal) are rejected, and ``SKILL.md`` is reserved
         for ``load_skill``.
         """
-        skill = self._file_registry.get_by_name(skill_name)
+        skill = self._view().get_by_name(skill_name)
         if not skill:
             return ToolResult(
                 status="error", result=None, error=f"Skill not found: {skill_name}"
@@ -638,6 +666,9 @@ def create_skill_tools(
     include_write_tools: bool = True,
     file_registry: Optional["SkillFileRegistry"] = None,
     learned_dir: Optional[Path] = None,
+    *,
+    view_provider: Optional[Callable[[], Any]] = None,
+    registry_provider: Optional[Callable[[], Optional[SkillRegistry]]] = None,
 ) -> List[AbstractTool]:
     """Create skill registry tools for an agent.
 
@@ -655,6 +686,10 @@ def create_skill_tools(
             when ``learned_dir`` is set, ``save_learned_skill``) are included.
         learned_dir: Path to the learned skills directory, required to expose
             the ``save_learned_skill`` tool.
+        view_provider: Optional callable returning the file-skill view for the
+            current request.
+        registry_provider: Optional callable returning the DB registry for the
+            current request.
 
     Returns:
         List of :class:`~parrot.tools.abstract.AbstractTool` instances.
@@ -664,6 +699,7 @@ def create_skill_tools(
             registry=registry,
             agent_id=agent_id,
             include_write_tools=include_write_tools,
+            registry_provider=registry_provider,
         ).get_tools()
     )
 
@@ -675,6 +711,7 @@ def create_skill_tools(
             SkillFileToolkit(
                 file_registry=file_registry,
                 learned_dir=learned_dir,
+                view_provider=view_provider,
             ).get_tools()
         )
 
