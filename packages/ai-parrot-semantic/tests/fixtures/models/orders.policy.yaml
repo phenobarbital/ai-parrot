@@ -1,0 +1,18 @@
+governed: true
+engine: sidemantic
+connection: test_warehouse
+limits: {default: 1000, max: 10000}
+roles:
+  analyst:
+    metrics: [revenue, orders]
+    dimensions: [region, order_date]
+    usage: [region]
+  admin: {metrics: "*", dimensions: "*", usage: "*"}
+masks:
+  customers.email: {strategy: hash, projection_roles: [admin], usage_roles: [admin]}
+rls:
+  - driver: pg
+    table: sales.orders
+    predicate_template: "region IN (:subject.programs)"
+    subject_attribute: programs
+    description: Restrict analysts to assigned regions

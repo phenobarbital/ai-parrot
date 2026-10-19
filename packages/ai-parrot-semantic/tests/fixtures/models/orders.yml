@@ -1,0 +1,20 @@
+version: 1
+models:
+  - name: orders
+    table: sales.orders
+    description: Order facts for semantic-layer tests
+    dimensions:
+      - {name: region, type: categorical, metadata: {data_type: TEXT}}
+      - {name: tenant_id, type: categorical, metadata: {data_type: TEXT}}
+      - {name: order_date, type: time, granularity: day, metadata: {data_type: DATE}}
+      - {name: customer_id, type: numeric, metadata: {data_type: BIGINT}}
+    metrics:
+      - {name: revenue, agg: sum, sql: amount, description: Total order revenue, metadata: {data_type: DECIMAL}}
+      - {name: orders, agg: count, sql: "*", description: Number of orders}
+  - name: customers
+    table: dim.customers
+    description: Customer attributes joined by downstream compilers
+    primary_key: id
+    dimensions:
+      - {name: email, type: categorical, metadata: {data_type: TEXT}}
+      - {name: salary, type: numeric, metadata: {data_type: DECIMAL}}
