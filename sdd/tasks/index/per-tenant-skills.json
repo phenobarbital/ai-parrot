@@ -109,7 +109,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
@@ -117,8 +117,9 @@
       "parallelism_notes": "No dependencies: hooks are looked up with getattr (duck-typed), tests use a stub hook; owns bots/base.py and test_ask_tenant_binding.py.",
       "assigned_to": null,
       "started_at": "2026-10-19T21:15:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4496-ask-tenant-binding.md"
+      "completed_at": "2026-10-19T21:27:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4496-ask-tenant-binding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4497",
