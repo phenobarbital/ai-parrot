@@ -259,3 +259,67 @@ class TestEnforcementChain:
         df = await entry.source.fetch()
         assert len(df) == 1
         mock_guard.authorize_source.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_e2e_dataset_manager_rls_two_users(mock_guard: MagicMock) -> None:
+    """Cloned user managers execute isolated RLS SQL without mutating the agent source."""
+    from parrot.auth.permission import PermissionContext, UserSession
+    from parrot.auth.rls_registry import RlsPredicate
+    from parrot.handlers.datasets import _clone_agent_dm
+    from parrot.tools.dataset_manager.sources.sql import SQLQuerySource
+    from parrot.tools.dataset_manager.tool import DatasetManager, _pctx_var
+
+    class _SubjectRowsSQL(SQLQuerySource):
+        seen: list[str] = []
+
+        async def fetch(self, **params: object) -> pd.DataFrame:
+            type(self).seen.append(self.sql)
+            subject = "user_a" if "program-a" in self.sql else "user_b"
+            return pd.DataFrame({"subject": [subject]})
+
+    async def predicates_for_context(
+        ctx: PermissionContext,
+        resources: object,
+    ) -> list[RlsPredicate]:
+        program = "program-a" if ctx.user_id == "user_a" else "program-b"
+        return [
+            RlsPredicate(
+                table="sales.orders",
+                sql_predicate="program IN (:p0)",
+                bound_params={"p0": [program]},
+            )
+        ]
+
+    mock_guard.rls_predicates = AsyncMock(side_effect=predicates_for_context)
+    original_sql = "SELECT * FROM sales.orders"
+    source = _SubjectRowsSQL(sql=original_sql, driver="pg")
+    source.name = "orders"
+    agent_dm = DatasetManager(dataplane_guard=mock_guard)
+    agent_dm.add_source(source)
+    agent = MagicMock(_dataset_manager=agent_dm)
+
+    user_a_dm = _clone_agent_dm(agent, MagicMock())
+    user_b_dm = _clone_agent_dm(agent, MagicMock())
+    assert user_a_dm is not None and user_b_dm is not None
+
+    async def fetch_as(dm: DatasetManager, user_id: str) -> pd.DataFrame:
+        context = PermissionContext(
+            session=UserSession(user_id=user_id, tenant_id="corp", roles=frozenset({"analyst"}))
+        )
+        token = _pctx_var.set(context)
+        try:
+            return await dm.materialize("orders", force_refresh=True)
+        finally:
+            _pctx_var.reset(token)
+
+    _SubjectRowsSQL.seen.clear()
+    result_a = await fetch_as(user_a_dm, "user_a")
+    result_b = await fetch_as(user_b_dm, "user_b")
+    repeated_a = await fetch_as(user_a_dm, "user_a")
+
+    assert result_a["subject"].tolist() == ["user_a"]
+    assert result_b["subject"].tolist() == ["user_b"]
+    assert repeated_a["subject"].tolist() == ["user_a"]
+    assert all(sql.count("_rls") == 1 for sql in _SubjectRowsSQL.seen)
+    assert source.sql == original_sql

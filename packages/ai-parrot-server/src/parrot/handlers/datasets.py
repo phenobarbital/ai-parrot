@@ -11,6 +11,7 @@ Provides REST endpoints for dataset operations:
 """
 from __future__ import annotations
 
+import copy
 from io import BytesIO
 from typing import TYPE_CHECKING
 
@@ -33,7 +34,7 @@ from ..tools.dataset_manager import DatasetEntry, DatasetManager
 from .user_objects import UserObjectsHandler
 
 if TYPE_CHECKING:
-    pass
+    from ..tools.dataset_manager.sources.base import DataSource
 
 
 # Maximum file size: 50 MB
@@ -43,6 +44,20 @@ MAX_FILE_SIZE = 50 * 1024 * 1024
 # ---------------------------------------------------------------------------
 # Module-level helpers shared by both handlers
 # ---------------------------------------------------------------------------
+
+def _clone_source(source: "DataSource | None") -> "DataSource | None":
+    """Shallow-copy a DataSource for a per-user manager (issue:90cf04ce8edd).
+
+    Connection objects stay shared; mutable filter state (``_permanent_filter``) gets a fresh dict so no
+    two user managers share RLS state. ``None`` stays ``None``.
+    """
+    if source is None:
+        return None
+    clone = copy.copy(source)
+    if hasattr(clone, "_permanent_filter"):
+        clone._permanent_filter = dict(source._permanent_filter)
+    return clone
+
 
 def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None:
     """Clone an agent's DatasetManager into a fresh user-scoped instance.
@@ -67,7 +82,8 @@ def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None:
         try:
             cloned_entry = DatasetEntry(
                 name=name,
-                source=entry.source,
+                # AuthorizingDataSource copies share _inner safely: RLS is request-scoped there.
+                source=_clone_source(entry.source),
                 metadata=dict(entry.metadata or {}),
                 is_active=entry.is_active,
                 auto_detect_types=entry.auto_detect_types,

@@ -6,8 +6,20 @@ import pandas as pd
 from unittest.mock import AsyncMock, MagicMock
 
 from parrot.tools.dataset_manager.sources.authorizing import AuthorizingDataSource
+from parrot.tools.dataset_manager.sources.sql import SQLQuerySource
 from parrot.auth.permission import PermissionContext, UserSession
 from parrot.auth.exceptions import AuthorizationRequired
+
+
+class _RecordingSQL(SQLQuerySource):
+    """SQL source that records the statement executed by each scoped copy."""
+
+    seen: list[str] = []
+
+    async def fetch(self, **params: object) -> pd.DataFrame:
+        """Record the scoped SQL and return a deterministic row."""
+        type(self).seen.append(self.sql)
+        return pd.DataFrame({"id": [1]})
 
 
 @pytest.fixture
@@ -193,8 +205,6 @@ class TestAuthorizingDataSource:
     ) -> None:
         """When guard returns RLS predicates, they are injected before fetch."""
         from parrot.auth.rls_registry import RlsPredicate
-        from parrot.tools.dataset_manager.sources.sql import SQLQuerySource
-
         pred = RlsPredicate(
             table="sales.orders",
             sql_predicate="region IN (:p0)",
@@ -202,10 +212,98 @@ class TestAuthorizingDataSource:
         )
         mock_guard.rls_predicates = AsyncMock(return_value=[pred])
 
-        inner = SQLQuerySource(sql="SELECT * FROM sales.orders", driver="pg")
-        inner.fetch = AsyncMock(return_value=pd.DataFrame({"id": [1]}))
+        _RecordingSQL.seen.clear()
+        original_sql = "SELECT * FROM sales.orders"
+        inner = _RecordingSQL(sql=original_sql, driver="pg")
         source = AuthorizingDataSource(inner, mock_guard, lambda: pctx)
         await source.fetch()
-        # The inner SQL should now be rewritten with the RLS wrapper
-        assert "_rls" in inner.sql
-        assert "WHERE" in inner.sql
+        assert "_rls" in _RecordingSQL.seen[-1]
+        assert "WHERE" in _RecordingSQL.seen[-1]
+        assert inner.sql == original_sql
+
+    @pytest.mark.asyncio
+    async def test_rls_not_persisted_across_fetches(
+        self,
+        mock_guard: MagicMock,
+        pctx: PermissionContext,
+    ) -> None:
+        """Each fetch gets one RLS wrapper while the shared inner SQL stays pristine."""
+        from parrot.auth.rls_registry import RlsPredicate
+
+        pred = RlsPredicate(
+            table="sales.orders",
+            sql_predicate="region IN (:p0)",
+            bound_params={"p0": ["northeast"]},
+        )
+        mock_guard.rls_predicates = AsyncMock(return_value=[pred])
+        _RecordingSQL.seen.clear()
+        original_sql = "SELECT * FROM sales.orders"
+        inner = _RecordingSQL(sql=original_sql, driver="pg")
+        source = AuthorizingDataSource(inner, mock_guard, lambda: pctx)
+
+        await source.fetch()
+        await source.fetch()
+
+        assert len(_RecordingSQL.seen) == 2
+        assert all(sql.count("_rls") == 1 for sql in _RecordingSQL.seen)
+        assert inner.sql == original_sql
+
+    @pytest.mark.asyncio
+    async def test_rls_two_subjects_isolated(
+        self,
+        mock_guard: MagicMock,
+        pctx: PermissionContext,
+    ) -> None:
+        """Subjects and filter-based sources never share request-scoped RLS state."""
+        from parrot.auth.rls_registry import RlsPredicate
+        from parrot.tools.dataset_manager.sources.query_slug import QuerySlugSource
+        from parrot.tools.dataset_manager.sources.table import TableSource
+
+        pctx_b = PermissionContext(
+            session=UserSession(
+                user_id="other_user",
+                tenant_id="corp",
+                roles=frozenset({"Finance"}),
+                metadata={"groups": ["Finance"], "programs": []},
+            )
+        )
+        current = {"context": pctx}
+
+        async def predicates_for_context(
+            ctx: PermissionContext,
+            resources: object,
+        ) -> list[RlsPredicate]:
+            value = "northeast" if ctx.user_id == pctx.user_id else "southwest"
+            return [
+                RlsPredicate(
+                    table="sales.orders",
+                    sql_predicate="region IN (:p0)",
+                    bound_params={"p0": [value]},
+                )
+            ]
+
+        mock_guard.rls_predicates = AsyncMock(side_effect=predicates_for_context)
+        _RecordingSQL.seen.clear()
+        original_sql = "SELECT * FROM sales.orders"
+        inner = _RecordingSQL(sql=original_sql, driver="pg")
+        source = AuthorizingDataSource(inner, mock_guard, lambda: current["context"])
+
+        await source.fetch()
+        current["context"] = pctx_b
+        await source.fetch()
+
+        first_sql, second_sql = _RecordingSQL.seen
+        assert "northeast" in first_sql and "southwest" not in first_sql
+        assert "southwest" in second_sql and "northeast" not in second_sql
+        assert inner.sql == original_sql
+
+        predicate = await predicates_for_context(pctx, object())
+        table = TableSource(table="sales.orders", driver="pg", permanent_filter={"active": True})
+        scoped_table = AuthorizingDataSource(table, mock_guard, lambda: pctx)._apply_rls(predicate, MagicMock())
+        assert table._permanent_filter == {"active": True}
+        assert scoped_table._permanent_filter == {"active": True, "region": ["northeast"]}
+
+        slug = QuerySlugSource(slug="orders", permanent_filter={"active": True})
+        scoped_slug = AuthorizingDataSource(slug, mock_guard, lambda: pctx)._apply_rls(predicate, MagicMock())
+        assert slug._permanent_filter == {"active": True}
+        assert scoped_slug._permanent_filter == {"active": True, "region": ["northeast"]}
