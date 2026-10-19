@@ -64,6 +64,14 @@ class DatasetManager:   # line 499
 # TASK-4477 — SemanticLayerToolkit._run_governed(query, *, execute) ; self._handles: ResultHandleStore ; self._pipeline
 ```
 
+### As-built governance notes (added 2026-10-19 — use these, not the spec skeleton)
+- Raw SQL MUST go through `GovernancePipeline.govern(...)` (it threads RLS/mask trusted nodes into the guard).
+- Usage rights apply only to masked columns and members declared `sensitive: true`
+  (`enforce_usage_rights(..., sensitive_members=...)`, option A chosen by the user 2026-10-19, commit 7761f4483).
+- `ModelPolicy.usage_allowed/mask_for/mask_rule` take physical `<schema>.<table>.<column>` names.
+- `SemanticAuditLedger.verify` is async; core DuckDB source is broken here (issue:58d44d14dd8a) — e2e tests patch
+  the duckdb source `query()` as `tests/test_e2e_governed.py` does.
+
 ### Does NOT Exist
 - ~~Registering a DataSource in the target manager~~ — only a copied DataFrame (`add_dataframe`); never a source (cf. issue:90cf04ce8edd).
 - ~~Trusting `metadata` on the handle for authorization~~ — claim() re-verifies; metadata is descriptive.
