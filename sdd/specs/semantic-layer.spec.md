@@ -10,7 +10,7 @@ tags: [semantic-layer, sidemantic, sqlglot, rls, pbac, mcp]     # FEAT-576 — c
 **Feature ID**: FEAT-704
 **Date**: 2026-10-19
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: 1.3.0
 **Source**: `sdd/proposals/semantic-layer.brainstorm.md` (accepted 2026-10-19, Option B) ← `sdd/proposals/semantic-layer.proposal.md`
 
@@ -74,7 +74,9 @@ Facts the design rests on (from the research proposal and the brainstorm):
 - BSL-over-Ibis or Ibis-direct compilation — rejected as brainstorm Option A (Ibis NO-GO, TASK-1437).
 - sidemantic's `SecurityPolicy` / `security:` blocks — rejected at load; RLS has exactly one semantics (ours).
 - Changes to `DatabaseQueryToolkit`, `AuditLedgerEntry`, `RlsRegistry`, `DataPlanePolicyGuard` or
-  `parrot/clients/base.py` — all are consumed as they are.
+  `parrot/clients/base.py` — all are consumed as they are. The only core edits are M12's behavioural
+  fix of `dataset_manager/sources/authorizing.py` and `handlers/datasets.py` (§8 Q6, `issue:90cf04ce8edd`),
+  which changes no public signature.
 - Dialects other than Postgres, BigQuery, DuckDB for **execution** (compile-only may emit any sqlglot dialect).
 - A metric-authoring UI; Ossie **export**; dbt/LookML import beyond what sidemantic's auto-detect already provides (not tested in v1).
 
@@ -320,6 +322,7 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
 | M9: Execution bridge, compile cache, result handles | yes | `ConnectionResolver` env grammar fixed; LRU keyed by `CompiledQuery.cache_key`; handle fields fixed | — |
 | M10: SemanticLayerToolkit | no | orchestration of M4–M9 with ContextVar + static_subject; exposure rules | integration surface |
 | M11: HTTP handler + MCP config + docs | yes | `BaseView` pattern of `handlers/datasets.py`; YAML/JSON anchors in §6 | — |
+| M12: Core request-scoped RLS fix (`issue:90cf04ce8edd`) | no | — | security-critical rewrite of an enforcement path; the thinking model owns the copy strategy |
 
 ### Module 1: `ai-parrot-semantic` distribution skeleton
 - **Path**: `packages/ai-parrot-semantic/pyproject.toml`, `README.md`, `src/parrot/semantic/__init__.py`, `src/parrot/semantic/version.py`, `tests/__init__.py`, `tests/conftest.py`; MODIFY root `pyproject.toml`, `scripts/release.py`, `ruff.toml`, `.github/workflows/ci.yml`
@@ -389,6 +392,7 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
       roles: dict[str, RoleGrant] = {}; masks: dict[str, MaskRule] = {}
       rls: list[RlsRule] = []            # RlsRule verified: packages/ai-parrot/src/parrot/auth/rls_registry.py:49
       saved_queries: list[SavedQuery] = []
+      allowed_functions: list[str] = []   # §8 Q4 — ADDITIVE per-model extension of DEFAULT_ALLOWED_FUNCTIONS; upper-cased at load; cannot remove a default
       def digest(self) -> str: """SHA-256 of canonical JSON — part of every cache key and audit entry."""
       def allowed_members(self, roles: frozenset[str], members: list[ModelMember]) -> set[str]: """Union of grants over the subject's roles; empty set when no role matches."""
       def usage_allowed(self, roles: frozenset[str], column: str) -> bool: """True only when a matching grant lists the column in `usage` (or `"*"`); masked columns need `usage_roles`."""
@@ -484,6 +488,9 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
       """Rewrite projected masked columns per MaskRule.strategy (null / md5-hash / partial); returns masked column names and trusted node ids."""
 
   # parrot/semantic/governance/guard.py  (new)
+  DEFAULT_ALLOWED_FUNCTIONS: frozenset[str] = frozenset({"SUM", "COUNT", "AVG", "MIN", "MAX", "DATE_TRUNC", "EXTRACT", "COALESCE", "CAST", "LOWER", "UPPER"})   # §8 Q4; COUNT DISTINCT is exp.Count(distinct=True); arithmetic/comparison/boolean are operator nodes, always allowed
+  def effective_allowed_functions(policy: ModelPolicy, extra: frozenset[str] | None) -> frozenset[str]:
+      """DEFAULT_ALLOWED_FUNCTIONS ∪ (extra or ∅) ∪ {f.upper() for f in policy.allowed_functions} — additive only (§8 Q4)."""
   class PositiveGuard:
       def __init__(self, schema: PhysicalSchema, allowed_functions: frozenset[str], limits: Limits) -> None: ...
       def check_and_limit(self, tree: exp.Expression) -> exp.Expression:
@@ -512,7 +519,7 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
   ```
 
 ### Module 8: Semantic audit ledger
-- **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/audit.py`
+- **Path**: `packages/ai-parrot-semantic/src/parrot/semantic/audit.py`, `sql/semantic_audit_events.sql` (§8 Q3)
 - **Responsibility**: `SemanticAuditEntry` (signed) and `SemanticAuditLedger` reusing core signers and the async `storage(json_str)` callable contract of `AuditLedger` (audit_ledger.py:327-336, 380-405). Separate from `AuditLedger` by decision; zero core change.
 - **Depends on**: M2; core `AbstractKMSSigner`.
 - **Interface Skeleton**:
@@ -532,8 +539,12 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
   class SemanticAuditLedger:
       def __init__(self, signer: AbstractKMSSigner | None = None, storage: Callable[[str], Awaitable[None]] | None = None, max_entries: int = 10_000) -> None: ...   # AbstractKMSSigner verified: audit_ledger.py:135
       async def append(self, entry: SemanticAuditEntry, *, required: bool = False) -> SemanticAuditEntry:
-          """Sign, keep in a bounded in-memory deque, forward JSON to `storage`. Storage failure is logged; when `required=True` it raises SemanticExecutionError('audit_unavailable') so the toolkit withholds results (toolkit kwarg `audit_required`, default False — §8 Q5)."""
+          """Sign, keep in a bounded in-memory deque, forward JSON to `storage`. Storage failure is logged; when `required=True` it raises SemanticExecutionError('audit_unavailable') so the toolkit withholds results (toolkit kwarg `audit_required`, resolved per §8 Q5: None → True iff a durable `storage` is configured)."""
       def verify(self, entry: SemanticAuditEntry) -> bool
+      @property
+      def durable(self) -> bool: """True when a `storage` callable is configured — drives the `audit_required=None` resolution in M10."""
+  def postgres_audit_storage(dsn_or_pool: str | Any, *, table: str = "semantic_audit_events") -> Callable[[str], Awaitable[None]]:
+      """§8 Q3 — return an async `storage(json_str)` callable that INSERTs the entry into `table` (DDL: parrot/semantic/sql/semantic_audit_events.sql) via asyncpg (`asyncdb` is NOT used — the satellite depends only on `ai-parrot`'s asyncpg). Connection errors propagate to `append()`, which applies the `required` rule."""
   ```
 
 ### Module 9: Execution bridge, compile cache, result handles
@@ -590,7 +601,7 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
       def __init__(self, **kwargs: Any) -> None:
           """kwargs: models_dir, dialect, dataplane_guard, rls_registry, database_toolkit, signer, audit_storage,
           allow_raw_sql=False, static_subject=None, dataset_manager_factory=None, result_ttl_s=900, result_store_max=256,
-          allowed_functions=None, audit_required=False. Raises SemanticPolicyError when a governed model exists and dataplane_guard is None."""
+          allowed_functions=None, audit_required=None. `audit_required` None → ledger.durable (§8 Q5); explicit bool wins. Raises SemanticPolicyError when a governed model exists and dataplane_guard is None."""
       async def _pre_execute(self, tool_name: str, /, **kwargs) -> None:   # hook contract verified: toolkit.py:491, pctx kwarg toolkit.py:174-178
           """Set ContextVars from kwargs['_permission_context'] or static_subject; log static use."""
       async def _post_execute(self, tool_name: str, result: Any, /, **kwargs) -> Any:   # toolkit.py:506 — serialize pydantic results to dicts
@@ -627,6 +638,33 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
   ```
 
 ---
+
+### Module 12: Core fix — request-scoped RLS in `AuthorizingDataSource`, cloned sources in `_clone_agent_dm` (§8 Q6)
+- **Path**: `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py`, `packages/ai-parrot-server/src/parrot/handlers/datasets.py`
+- **Discovered-from**: `issue:90cf04ce8edd` (vulnerability, major) — the M12 task carries this line so `/sdd-done` closes the issue.
+- **Responsibility**: make RLS injection **request-scoped**. Today `_apply_rls` (authorizing.py:153) rewrites the wrapped source in place (`self._inner.sql = rewritten_sql`, :191; `_permanent_filter` / `required_filter` mutations for Table/QuerySlug/Mongo), so predicates accumulate across fetches and leak to every holder of the same inner object; `_clone_agent_dm` (datasets.py:47) then hands the SAME `entry.source` to every per-user `DatasetManager` (:70). Fix: (1) `_apply_rls` returns a **per-call shallow copy** of the inner source (`copy.copy`, so pools/credentials are shared but the mutable filter state is not) with the rewritten SQL / a copied-and-extended `_permanent_filter` / merged mongo filter applied to the copy, and `fetch()` delegates to that copy; `self._inner` is never mutated. (2) `_clone_agent_dm` builds each `DatasetEntry` with `source=_clone_source(entry.source)` (shallow copy + fresh `dict` for `_permanent_filter` when present) so no two user managers share a source object. No public signature changes (AC17): `_apply_rls`'s return type goes `None → DataSource` (private).
+- **Depends on**: nothing in M1–M11 (core-only; runs concurrently with the satellite tasks).
+- **Interface Skeleton**:
+  ```python
+  # packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py  (modify)
+  import copy                                                             # add next to `import logging` (authorizing.py:27)
+  class AuthorizingDataSource(DataSource):                                # line 41 — unchanged signature
+      async def fetch(self, **params) -> pd.DataFrame:                    # line 74 — Step 5/6 become:
+          # target = self._apply_rls(predicates, resources) if predicates else self._inner
+          # return await target.fetch(**params)
+      def _apply_rls(self, predicates: "list[RlsPredicate]", resources: "PhysicalResources") -> DataSource:   # was -> None
+          """Return a request-scoped copy of ``self._inner`` with RLS applied; NEVER mutate ``self._inner``.
+          scoped = copy.copy(self._inner); SQLQuerySource → scoped.sql = rewritten; TableSource/QuerySlugSource →
+          scoped._permanent_filter = dict(self._inner._permanent_filter) then inject_rls_*(scoped, predicates);
+          MongoSource → merged filter assigned on `scoped` only; unknown source type → return scoped unchanged (existing warning kept)."""
+
+  # packages/ai-parrot-server/src/parrot/handlers/datasets.py  (modify)
+  def _clone_source(source: "DataSource | None") -> "DataSource | None":  # new module-level helper above _clone_agent_dm (datasets.py:47)
+      """Shallow-copy a DataSource for a per-user manager; copy `_permanent_filter` into a fresh dict when the source has one; None stays None."""
+  def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None:   # line 47 — unchanged signature; `source=entry.source,` (:70) → `source=_clone_source(entry.source),`
+  ```
+- **Behavioural guarantees** (tested in §4): two consecutive `fetch()` calls on one `AuthorizingDataSource` apply exactly one RLS wrapper each and leave `inner.sql` untouched; two subjects with different predicates fetching through the same wrapper never see each other's predicate; `_clone_agent_dm` produces entries whose `source` objects are pairwise distinct and whose `_permanent_filter` dicts are not shared with the agent's entry.
+- **Existing test to amend**: `packages/ai-parrot/tests/auth/test_authorizing_data_source.py::test_rls_injected_before_fetch` (line 189) asserts the buggy in-place mutation (`assert "_rls" in inner.sql`, :210) — rewrite it to assert the fetch target carries the wrapper while `inner.sql` is unchanged (use a `SQLQuerySource` subclass whose `fetch` records `self.sql`).
 
 ## 4. Test Specification
 
@@ -665,6 +703,12 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
 | `test_toolkit_shared_manager_rejected` | M10 | factory returning the same manager for two subjects → `SemanticResultError` |
 | `test_handler_routes_and_401` | M11 | registration only when `parrot.semantic` importable; 401 without session |
 | `test_mcp_toolkits_yaml_section` | M11 | `load_toolkits_config` parses the `semantic-layer` section into `ToolkitSection` |
+| `test_policy_allowed_functions_additive` | M3/M6 | `allowed_functions: [REGEXP_REPLACE]` extends the default set; a policy cannot drop `SUM`; lower-case names normalised |
+| `test_audit_required_resolution` | M10 | `audit_required=None` → `True` with `audit_storage`, `False` without; explicit bool wins; `True` + failing sink withholds the result |
+| `test_postgres_audit_storage_insert` | M8 | `postgres_audit_storage` callable INSERTs the JSON row into a fake asyncpg pool; DDL file parses (sqlglot, postgres) |
+| `test_rls_not_persisted_across_fetches` | M12 | two `fetch()` calls → each fetch target has exactly one RLS wrapper; `inner.sql` unchanged (amends `test_rls_injected_before_fetch`) |
+| `test_rls_two_subjects_isolated` | M12 | subjects A/B with different predicates through one `AuthorizingDataSource`; neither sees the other's predicate; Table/QuerySlug `_permanent_filter` of the inner untouched |
+| `test_clone_agent_dm_copies_source` | M12 | `_clone_agent_dm` twice → source objects pairwise distinct from each other and from the agent's; `_permanent_filter` dicts not shared; `None` source preserved (`packages/ai-parrot-server/tests/handlers/test_datasets_clone.py`) |
 
 ### Integration Tests
 | Test | Description |
@@ -676,16 +720,18 @@ class SemanticLayerToolkit(AbstractToolkit):                      # tool_prefix 
 | `test_e2e_handoff_two_users_two_sessions` | foreign/expired handles rejected; identical names isolated; read after policy change denied; shared manager cannot enable the tool |
 | `test_e2e_native_engine_switch` | `engine: native` model produces parity results with sidemantic on DuckDB |
 | `test_e2e_mcp_local_semantic_layer` | `parrot mcp-local semantic-layer --list` resolves the section; tool list matches exposure rules (stdio, no real LLM) |
+| `test_e2e_dataset_manager_rls_two_users` | M12 end-to-end: one agent `DatasetManager` with a SQL source cloned for users A and B (`_clone_agent_dm`), fetched under each `PermissionContext` — rows differ per subject, the agent's source SQL is unchanged, repeated fetches do not stack predicates (`packages/ai-parrot/tests/auth/test_datasetmanager_authz_integration.py`) |
 
 ### Validation Contract
 
 tests:
-- none — fallback
+- packages/ai-parrot/tests/auth/test_authorizing_data_source.py
+- packages/ai-parrot/tests/auth/test_datasetmanager_authz_integration.py
 markers: none
 
-(No existing test exercises the semantic layer; the new files listed above live under
-`packages/ai-parrot-semantic/tests/` and `packages/ai-parrot-server/tests/` and become the contract
-once `/sdd-task` freezes them.)
+> The two existing files above exercise M12's targets. No existing test exercises the satellite; its new
+> files live under `packages/ai-parrot-semantic/tests/` and `packages/ai-parrot-server/tests/` and are each
+> task's own `## Validation Commands`, added by the selector at merge/feature tier.
 
 ### Test Data / Fixtures
 ```python
@@ -732,6 +778,8 @@ def allow_all_guard() / deny_table_guard():
 - [ ] AC17 No public API of core, `ai-parrot-tools` or `ai-parrot-server` changes; `scripts/release.py` lists the new package.
 - [ ] AC18 Release gates: concurrent-compile test, sidemantic↔native normalized-AST parity on the DuckDB fixtures, and postgres/bigquery SQL snapshots all pass; the positive-guard adversarial matrix passes for all three dialects.
 - [ ] AC19 A governed model's catalog (`sl_list_models/metrics`, `sl_get_dimensions`, `sl_search_data_model`, `sl_list_saved_queries`) exposes nothing without an authorized subject; the model's declared resource manifest is authorized before compile and every compiled table is within it.
+- [ ] AC20 (M12, `issue:90cf04ce8edd`) `AuthorizingDataSource.fetch()` never mutates its inner source: after N fetches `inner.sql` / `_permanent_filter` equal their constructor values and each fetch target carries exactly one RLS rewrite; `_clone_agent_dm` yields pairwise-distinct source objects per user manager; `test_authorizing_data_source.py` and `test_datasetmanager_authz_integration.py` pass; the ledger issue is closed by `/sdd-done`.
+- [ ] AC21 (§8 Q3–Q5) `ModelPolicy.allowed_functions` only extends `DEFAULT_ALLOWED_FUNCTIONS`; `audit_required=None` resolves to `True` iff a durable `audit_storage` is configured and then withholds results on sink failure; `postgres_audit_storage` + `semantic_audit_events.sql` ship in the satellite and are documented.
 
 ---
 
@@ -758,6 +806,11 @@ from parrot.security import QueryLanguage, QueryValidator                    # v
 from parrot.security import AuditLedgerEntry, AbstractKMSSigner, LocalHMACSigner, AuditLedger  # verified: security/__init__.py:50-55
 from parrot.security.audit_ledger import AzureKeyVaultSigner                 # verified: audit_ledger.py:199 (not re-exported by __init__)
 from parrot.knowledge.common.sql_dialects import SQLGLOT_DIALECT_MAP         # verified: packages/ai-parrot/src/parrot/knowledge/common/sql_dialects.py:6
+# M12 (core) — verified 2026-10-19
+from parrot.tools.dataset_manager.sources.base import DataSource            # verified: sources/authorizing.py:32 (import site)
+from parrot.tools.dataset_manager.sources.sql import SQLQuerySource          # verified: sources/sql.py:26; `self.sql = sql` at :53
+from parrot.tools.dataset_manager.sources.rls import inject_rls_sql, inject_rls_table_source, inject_rls_query_slug   # verified: sources/rls.py:72,132,172 (table/slug variants mutate `source._permanent_filter` in place — rls.py:138,180)
+from parrot.tools.dataset_manager import DatasetEntry, DatasetManager       # verified: handlers/datasets.py:32 (import site); DatasetEntry.__init__ dataset_manager/tool.py:144-153
 from parrot.tools.dataset_manager.sources.dialects import driver_to_dialect  # verified: dialects.py:41
 from parrot.tools.dataset_manager.sources.resolver import PhysicalResources, resolve_physical_resources  # verified: resolver.py:47,120
 from parrot.tools.dataset_manager.sources.rls import inject_rls_sql          # verified: rls.py:72 (reference only — NOT used by the semantic layer)
@@ -772,6 +825,17 @@ import sqlglot; from sqlglot import exp; from sqlglot.optimizer.qualify import q
 
 ### Existing Class Signatures
 ```python
+# packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py   (M12)
+class AuthorizingDataSource(DataSource):                                  # line 41
+    def __init__(self, inner: DataSource, guard: "DataPlanePolicyGuard", pctx_provider: Callable[[], Optional["PermissionContext"]]) -> None   # line 58; self._inner = inner (:65)
+    async def fetch(self, **params) -> pd.DataFrame                        # line 74; Step 5 `self._apply_rls(predicates, resources)` (:149), Step 6 `return await self._inner.fetch(**params)` (:151)
+    def _apply_rls(self, predicates: "list[RlsPredicate]", resources: "PhysicalResources") -> None   # line 153; mutates self._inner.sql (:191), inject_rls_table_source(self._inner) (:199), inject_rls_query_slug(self._inner) (:207), self._inner.required_filter (:228,:232)
+# packages/ai-parrot/src/parrot/tools/dataset_manager/sources/table.py / query_slug.py
+#   TableSource.__init__(..., permanent_filter: Optional[Dict[str, Any]] = None)   # table.py:188; self._permanent_filter: Dict[str, Any] (:196)
+#   QuerySlugSource: self._permanent_filter: Dict[str, Any]                 # query_slug.py:98
+# packages/ai-parrot-server/src/parrot/handlers/datasets.py   (M12)
+def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None   # line 47; `source=entry.source,` at :70 inside DatasetEntry(name=, source=, metadata=, is_active=, auto_detect_types=, cache_ttl=)
+
 # packages/ai-parrot/src/parrot/tools/databasequery/base.py
 class AbstractDatabaseSource(ABC):                                        # line 323
     driver: str                                                           # line 336
@@ -917,6 +981,10 @@ def get_default_credentials(driver: str) -> dict[str, Any]                # line
 - ~~Server code changes for `mcp-local`~~ — a YAML `class:` section is sufficient (`toolkit_config.py:50`).
 - ~~`ai-parrot-semantic` in `KNOWN_PROJECTS`~~ — `parrot.knowledge.wiki.ledger.sdd_meta.KNOWN_PROJECTS` does not list it (warns only); add it in M1 if the vocabulary is editable in-repo, otherwise leave the warning.
 - ~~A `ruff.toml` entry banning `sidemantic`~~ — the TID251 table (ruff.toml:125-135) bans requests/httpx/starlette/fastapi/uvicorn/langchain*/langgraph/langsmith only; M1 adds `sidemantic`.
+- ~~`DataSource.copy()` / `.clone()` / `model_copy()`~~ — `DataSource` subclasses are plain classes (not pydantic); M12 uses `copy.copy` + explicit `dict()` of `_permanent_filter`.
+- ~~`MongoSource.required_filter` as a dict~~ — `MongoSource.__init__` takes `required_filter: bool` and stores `self._required_filter` (mongo.py:77,84); the attribute `authorizing.py:228,232` assigns is a dynamic one. M12 keeps that branch's semantics but applies it to the per-call copy only; redesigning the Mongo filter is out of scope.
+- ~~`packages/ai-parrot-server/tests/handlers/test_datasets_clone.py`~~ — created by M12.
+- ~~`asyncdb` as a satellite dependency~~ — `postgres_audit_storage` uses `asyncpg` directly (already a transitive dependency of `ai-parrot`).
 - ~~A CI step running `packages/ai-parrot-semantic/tests`~~ — `ci.yml` runs `uv sync --all-packages` (line 27) and per-suite pytest steps (e.g. line 506); M1 adds the satellite step.
 
 ### Edit Sites (Blueprint Anchors)
@@ -956,6 +1024,15 @@ Verified against: `ea2c1224b`
 | `packages/ai-parrot-server/src/parrot/handlers/semantic.py` | CREATE | — | — | — |
 | `packages/ai-parrot-server/tests/unit/test_semantic_handler.py` | CREATE | — | — | — |
 | `docs/tools/semantic-layer.md` | CREATE | — | — | — |
+| `packages/ai-parrot-semantic/src/parrot/semantic/sql/semantic_audit_events.sql` | CREATE (M8) | — | — | — |
+| `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py` | MODIFY (M12) | `import logging` | `authorizing.py:27` | 1 |
+| `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py` | MODIFY (M12) | `            self._apply_rls(predicates, resources)` | `authorizing.py:149` | 1 |
+| `packages/ai-parrot/src/parrot/tools/dataset_manager/sources/authorizing.py` | MODIFY (M12) | `            self._inner.sql = rewritten_sql` | `authorizing.py:191` | 1 |
+| `packages/ai-parrot-server/src/parrot/handlers/datasets.py` | MODIFY (M12) | `def _clone_agent_dm(agent: object, logger: object) -> DatasetManager | None:` | `datasets.py:47` | 1 |
+| `packages/ai-parrot-server/src/parrot/handlers/datasets.py` | MODIFY (M12) | `                source=entry.source,` | `datasets.py:70` | 1 |
+| `packages/ai-parrot/tests/auth/test_authorizing_data_source.py` | MODIFY (M12) | `    async def test_rls_injected_before_fetch(` | `test_authorizing_data_source.py:189` | 1 |
+| `packages/ai-parrot/tests/auth/test_datasetmanager_authz_integration.py` | MODIFY (M12) | — (append a test class) | — | — |
+| `packages/ai-parrot-server/tests/handlers/test_datasets_clone.py` | CREATE (M12) | — | — | — |
 
 - `__init__.py` of the satellite is the only file two modules touch (M1 creates, M10 finalizes); their tasks are serialized.
 - `/sdd-task` MUST re-run `grep -c -F` for every MODIFY row; `grep` in this repo is aliased to `ugrep` by RTK, so use `-F` for anchors containing `(`, `[` or `{`.
@@ -975,7 +1052,7 @@ Verified against: `ea2c1224b`
 - **Worktree testing**: `PYTHONPATH=packages/ai-parrot-semantic/src:packages/ai-parrot/src pytest packages/ai-parrot-semantic/tests`; never `uv sync` inside a worktree; `sidemantic` is installed by the main-checkout operator once M1 lands.
 
 ### Known Risks / Gotchas
-- **AGPL-3.0 network clause** (sidemantic): the satellite is opt-in and documents it; written legal sign-off is §8 Q1. Keep every sidemantic import under `packages/ai-parrot-semantic/` (TID251 backstop, AC1).
+- **AGPL-3.0 network clause** (sidemantic): the satellite is opt-in and documents it; legal sign-off recorded in §8 Q1 (Jesus Lara, 2026-10-19). Keep every sidemantic import under `packages/ai-parrot-semantic/` (TID251 backstop, AC1).
 - **Single maintainer, unlabeled breaking changes** in sidemantic: exact pin `==0.12.0`; upgrade only through a spike task that re-runs the parity and governance suites; `main` already adds a Rust wheel.
 - **`SemanticLayer.compile` reentrancy unknown**: one layer per model, compile under an `asyncio.Lock` until the M4 spike proves it reentrant (§8 Q2); cache hits bypass the lock.
 - **Wrapping RLS is wrong for aggregates**: never call `inject_rls_sql` from the semantic layer; AC5 pins push-down below aggregation with a numeric parity test.
@@ -988,7 +1065,9 @@ Verified against: `ea2c1224b`
 - **RTK/ugrep** aliasing in this repo turns `grep` patterns into regex; use `-F` for anchors.
 - **Dialect without a source** (e.g. `snowflake`): compile allowed, execution refused with a clear error.
 - **`static_subject` is a single operator identity** for `parrot mcp-local`: every call runs as that subject, so the YAML must never grant it broader roles than the operator holds; a per-call signed identity envelope was considered (design research S9) and deferred — mcp-local is a local developer surface, the identity is explicit, logged and flagged in every audit entry.
-- **Core `AuthorizingDataSource` mutates its inner SQL and HTTP clones share `entry.source`** (`sources/authorizing.py:191`, `handlers/datasets.py:70`): outside this feature's scope but relevant to hand-off — the semantic layer never registers a *source*, only a copied DataFrame, and the host factory must hand out subject/session-scoped managers (AC10). Tracked as a ledger issue (§8 Q6).
+- **Core `AuthorizingDataSource` mutates its inner SQL and HTTP clones share `entry.source`** (`sources/authorizing.py:191`, `handlers/datasets.py:70`): fixed by **M12** in this feature (§8 Q6, `issue:90cf04ce8edd`, AC20). Independently of the fix, the semantic layer never registers a *source*, only a copied DataFrame, and the host factory must hand out subject/session-scoped managers (AC10). Gotcha for M12: `copy.copy` shares connection objects by design — only the mutable filter state (`sql`, `_permanent_filter`, mongo filter) must be per-call.
+- **`audit_required` auto-resolves to `True` with a durable sink** (§8 Q5): a misconfigured Postgres DSN makes every governed call fail closed with `audit_unavailable` — surface it at toolkit construction with a startup log line, and document `audit_required=False` as the explicit opt-out.
+- **`allowed_functions` policy additions are a widening of the positive guard** (§8 Q4): review them like RLS text; the loader upper-cases names and rejects anything that is not a bare identifier.
 - **Ossie 0.1.x is a moving spec**: version pinned in the vendored schema; a 0.2 document is rejected, not coerced.
 
 ### External Dependencies
@@ -1017,12 +1096,12 @@ Verified against: `ea2c1224b`
 - [x] Free SQL (`sl_run_sql`) — *Resolved in brainstorm*: ship in v1, disabled by default (`allow_raw_sql=False`), on the same governance path (PBAC, lineage, RLS, positive guard, audit)
 - [x] Native compiler v1 subset — *Resolved in brainstorm*: confirmed as drafted — simple aggregations, dimensions, `DATE_TRUNC` grains, declared one-to-many joins, filter tree, order/limit; no symmetric aggregates, no cumulative/time-comparison metrics
 - [x] Commit the proposal doc — *Resolved in brainstorm*: yes — committed to `dev` together with this brainstorm acceptance
-- [ ] Q1 Written legal sign-off for the AGPL-3.0 dependency (network clause applies to the hosted API); record the approver and date here before `/sdd-done`. — *Owner: Jesus Lara*
-- [ ] Q2 sidemantic `SemanticLayer.compile` reentrancy and `load_from_directory` acceptance of Apache Ossie 0.1.1 fixtures — decided by the M4 spike task (lock vs lock-free; importer fidelity). — *Owner: implementing lane (M4)*
-- [ ] Q3 Production sink for `SemanticAuditLedger.storage` (Postgres table next to `security/security_events.sql`, or the existing credential-ledger sink) — configuration decision, not blocking v1 (default in-memory + callable). — *Owner: Jesus Lara*
-- [ ] Q4 Allowed-function allowlist default for the positive guard (proposed: aggregates + `date_trunc`/`extract`/`coalesce`/`cast`/`lower`/`upper`/arithmetic); per-model override in the policy file? — *Owner: Jesus Lara*
-- [ ] Q5 `audit_required` default: should governed results be **withheld** when the durable audit sink fails (fail closed on audit), or logged-and-served (current default `False`)? Production deployments with a Postgres sink probably want `True`. — *Owner: Jesus Lara*
-- [ ] Q6 Core finding from design research (S2): `AuthorizingDataSource` rewrites `self._inner.sql` in place and `_clone_agent_dm` shares `entry.source` between user managers — ledger issue `90cf04ce8edd` (vulnerability, major) is opened for it; decide whether it is fixed before this feature's hand-off lands or independently. — *Owner: Jesus Lara*
+- [x] Q1 Written legal sign-off for the AGPL-3.0 dependency — *Resolved 2026-10-19*: approved by **Jesus Lara (2026-10-19)**. The satellite stays `license = "MIT"`; sidemantic's AGPL-3.0 network clause (hosted API) is documented in the satellite README and `docs/tools/semantic-layer.md` (M11). No further sign-off gates `/sdd-done` or the 1.3.0 tag.
+- [x] Q2 sidemantic `SemanticLayer.compile` reentrancy and `load_from_directory` acceptance of Apache Ossie 0.1.1 fixtures — *Resolved 2026-10-19 (delegated)*: decided by the M4 spike task against the installed `sidemantic==0.12.0` wheel. Until the spike proves `compile` reentrant, the engine compiles under a per-model `asyncio.Lock` (safe default, §7). The spike's Completion Note records lock vs lock-free and the importer-fidelity outcome; the spec is not reopened for it.
+- [x] Q3 Production sink for `SemanticAuditLedger.storage` — *Resolved 2026-10-19*: **Postgres table shipped by the satellite** — `parrot/semantic/sql/semantic_audit_events.sql` (DDL modelled on `security/security_events.sql`, one row per `SemanticAuditEntry`, JSONB payload + indexed `user_id`/`tenant_id`/`model`/`outcome`/`created_at`) and an opt-in `postgres_audit_storage(dsn_or_pool, table="semantic_audit_events")` factory returning the async `storage(json_str)` callable (M8). Default remains the in-memory ledger; the Postgres callable is wired by the host (toolkit kwarg `audit_storage` / YAML `kwargs`). The credential-ledger sink is NOT reused (two schemas in one table rejected).
+- [x] Q4 Allowed-function allowlist default for the positive guard — *Resolved 2026-10-19*: `DEFAULT_ALLOWED_FUNCTIONS` (M6 `guard.py`) = aggregates `SUM, COUNT, COUNT DISTINCT, AVG, MIN, MAX` + `DATE_TRUNC, EXTRACT, COALESCE, CAST, LOWER, UPPER` + arithmetic / comparison / boolean operators (operators are sqlglot expression nodes, not `exp.Func`, and are always allowed). Per-model **additive** override: `ModelPolicy.allowed_functions: list[str]` (M3) — the effective set is `DEFAULT ∪ toolkit kwarg allowed_functions ∪ policy.allowed_functions`; nothing can remove a default, and DDL/DML/`exp.Command` stay denied regardless.
+- [x] Q5 `audit_required` default — *Resolved 2026-10-19*: the toolkit kwarg becomes `audit_required: bool | None = None` and is **resolved at construction**: `None` → `True` when a durable `audit_storage` callable is configured, `False` when only the in-memory ledger is in use (it cannot fail). An explicit `True`/`False` always wins. With `True`, a storage failure raises `SemanticExecutionError('audit_unavailable')` and the governed result is withheld (M8/M10); AC9's "storage failures never fail the request" applies to the resolved-`False` case only.
+- [x] Q6 Core finding (S2) `AuthorizingDataSource` in-place RLS rewrite + `_clone_agent_dm` shared `entry.source` — *Resolved 2026-10-19*: **folded into this feature as Module 12** (behavioural fix, no public signature change, so AC17 holds). Ledger issue `issue:90cf04ce8edd` is claimed by the M12 task (`**Discovered-from**: issue:90cf04ce8edd`) and closed by `/sdd-done` with the two-key evidence. M12 has no edge to M1–M11 and runs concurrently.
 
 ---
 
@@ -1067,10 +1146,12 @@ Summary: **10** confirmed (two of them partially, with the rejected part recorde
   - M8 → M2 only (`SemanticAuditEntry` is self-contained).
   - M9 → M2, M6 (`Executor.run(GovernedQuery)`; `CompileCache(CompiledQuery)`).
   - M10 → M3…M9.  M11 → M10.
+  - **M12 → nothing** (core-only edit of `sources/authorizing.py` + `handlers/datasets.py`; no satellite import). It may start in wave 1 alongside M1.
   - **Concurrent after M4**: M5, M6, M7, M8, M9 have no edges among themselves (M9 needs only `GovernedQuery`
     from M2/M6's contract, which is fixed in §2 — M9 may start on the model alone).
 - **Shared files**: `packages/ai-parrot-semantic/src/parrot/semantic/__init__.py` (M1 create, M10
-  finalize) — serialized. No other file is touched by two modules.
+  finalize) — serialized. `handlers/datasets.py` is modified by M12 only (M11 creates `handlers/semantic.py` and
+  edits `manager.py`, not `datasets.py`). No other file is touched by two modules.
 - **Exclusive resources**: M1 changes `uv.lock`/workspace membership and requires the main-checkout
   operator to install `sidemantic` into the shared venv (`parallel: false`); M11's `manager.py`,
   `.parrot/mcp-toolkits.yaml`, `.mcp.json` edits are single-task.
@@ -1086,3 +1167,4 @@ Summary: **10** confirmed (two of them partially, with the rejected part recorde
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-19 | Jesus Lara | Initial draft from the accepted brainstorm (Option B), 9 brainstorm questions carried forward as resolved |
+| 0.2 | 2026-10-19 | Jesus Lara | §8 Q1–Q6 resolved: AGPL sign-off recorded; Q2 delegated to the M4 spike; Postgres audit sink + `postgres_audit_storage` (M8); `DEFAULT_ALLOWED_FUNCTIONS` + additive `ModelPolicy.allowed_functions` (M3/M6); `audit_required=None` auto-resolution (M10); core fix `issue:90cf04ce8edd` folded in as **M12** (new tests, AC20–AC21, §6 anchors, validation contract now lists the two existing auth test files) |
