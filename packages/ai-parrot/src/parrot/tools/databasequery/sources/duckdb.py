@@ -1,17 +1,23 @@
 """DuckDB database source for DatabaseToolkit.
 
 Implements ``AbstractDatabaseSource`` for DuckDB embedded analytical database
-using the asyncdb ``duckdb`` driver. Queries ``information_schema.columns``
+using the ``duckdb`` Python API directly, run in a worker thread (the asyncdb
+2.16 ``duckdb`` driver awaits the synchronous ``cursor.fetchall()`` and fails
+on every query — issue:58d44d14dd8a). Queries ``information_schema.columns``
 for metadata discovery. Supports both in-process (file) and in-memory modes.
 Inherits SQL validation from the base class via ``sqlglot_dialect = "duckdb"``.
 
 Part of FEAT-062 — DatabaseToolkit.
 """
+
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Any
+
+import duckdb
 
 from parrot.tools.databasequery.base import (
     AbstractDatabaseSource,
@@ -29,7 +35,7 @@ from parrot.tools.databasequery.sources import register_source
 class DuckDBSource(AbstractDatabaseSource):
     """DuckDB embedded analytical database source.
 
-    Uses the asyncdb ``duckdb`` driver. Validates queries with the
+    Runs the ``duckdb`` Python API in a worker thread. Validates queries with the
     ``duckdb`` sqlglot dialect. Supports file-based and in-memory operation.
     Discovers schema via information_schema.columns.
     """
@@ -64,6 +70,31 @@ class DuckDBSource(AbstractDatabaseSource):
         params = {"database": database}
         return self._get_db("duckdb", None, params)
 
+    @staticmethod
+    def _database(credentials: dict[str, Any]) -> str:
+        """Return the DuckDB database path (``":memory:"`` by default)."""
+        return str(credentials.get("database", credentials.get("dsn", ":memory:")))
+
+    @staticmethod
+    def _execute_sync(database: str, sql: str, params: Any, *, one: bool) -> list[dict[str, Any]]:
+        """Open a short-lived DuckDB connection, execute ``sql`` and return rows as dicts (blocking)."""
+        con = duckdb.connect(database=database)
+        try:
+            cursor = con.execute(sql, params) if params else con.execute(sql)
+            if cursor.description is None:
+                return []
+            columns = [column[0] for column in cursor.description]
+            rows = [cursor.fetchone()] if one else cursor.fetchall()
+            return [dict(zip(columns, row, strict=True)) for row in rows if row is not None]
+        finally:
+            con.close()
+
+    async def _execute(
+        self, credentials: dict[str, Any], sql: str, params: Any = None, *, one: bool = False
+    ) -> list[dict[str, Any]]:
+        """Run :meth:`_execute_sync` off the event loop."""
+        return await asyncio.to_thread(self._execute_sync, self._database(credentials), sql, params, one=one)
+
     async def get_metadata(
         self,
         credentials: dict[str, Any],
@@ -85,31 +116,28 @@ class DuckDBSource(AbstractDatabaseSource):
         else:
             validated_tables = None
 
-        db = self._get_connection(credentials)
-
-        async with await db.connection() as conn:
-            if validated_tables:
-                placeholders = ", ".join([f"'{t}'" for t in validated_tables])
-                sql = f"""
-                    SELECT table_schema, table_name, column_name, data_type,
-                           is_nullable, column_default
-                    FROM information_schema.columns
-                    WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-                      AND table_name IN ({placeholders})
-                    ORDER BY table_name, ordinal_position
-                """
-            else:
-                sql = """
-                    SELECT table_schema, table_name, column_name, data_type,
-                           is_nullable, column_default
-                    FROM information_schema.columns
-                    WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
-                    ORDER BY table_name, ordinal_position
-                """
-            rows = await conn.fetch_all(sql)
+        if validated_tables:
+            placeholders = ", ".join([f"'{t}'" for t in validated_tables])
+            sql = f"""
+                SELECT table_schema, table_name, column_name, data_type,
+                       is_nullable, column_default
+                FROM information_schema.columns
+                WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+                  AND table_name IN ({placeholders})
+                ORDER BY table_name, ordinal_position
+            """
+        else:
+            sql = """
+                SELECT table_schema, table_name, column_name, data_type,
+                       is_nullable, column_default
+                FROM information_schema.columns
+                WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+                ORDER BY table_name, ordinal_position
+            """
+        rows = await self._execute(credentials, sql)
 
         tables_map: dict[str, TableMeta] = {}
-        for row in (rows or []):
+        for row in rows or []:
             row_dict = dict(row) if not isinstance(row, dict) else row
             table_name = row_dict.get("table_name", "")
             if table_name not in tables_map:
@@ -145,16 +173,7 @@ class DuckDBSource(AbstractDatabaseSource):
         """
         self.logger.debug("query called: %s", sql[:100])
         start = time.monotonic()
-        db = self._get_connection(credentials)
-
-        async with await db.connection() as conn:
-            if params:
-                if isinstance(params, dict):
-                    rows = await conn.fetch_all(sql, **params)
-                else:
-                    rows = await conn.fetch_all(sql, *params)
-            else:
-                rows = await conn.fetch_all(sql)
+        rows = await self._execute(credentials, sql, params)
 
         elapsed_ms = (time.monotonic() - start) * 1000
         rows_list = [dict(r) if not isinstance(r, dict) else r for r in (rows or [])]
@@ -186,16 +205,8 @@ class DuckDBSource(AbstractDatabaseSource):
         """
         self.logger.debug("query_row called: %s", sql[:100])
         start = time.monotonic()
-        db = self._get_connection(credentials)
-
-        async with await db.connection() as conn:
-            if params:
-                if isinstance(params, dict):
-                    row = await conn.fetch_one(sql, **params)
-                else:
-                    row = await conn.fetch_one(sql, *params)
-            else:
-                row = await conn.fetch_one(sql)
+        found = await self._execute(credentials, sql, params, one=True)
+        row = found[0] if found else None
 
         elapsed_ms = (time.monotonic() - start) * 1000
         row_dict = dict(row) if row and not isinstance(row, dict) else row

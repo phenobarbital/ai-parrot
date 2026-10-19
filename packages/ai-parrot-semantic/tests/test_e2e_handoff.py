@@ -23,20 +23,8 @@ CONN_ENV = "PARROT_SEMANTIC_CONN_TEST_WAREHOUSE_DATABASE"
 
 
 def _patch_duckdb_source(toolkit: DatabaseQueryToolkit) -> None:
-    """Execute test warehouse queries through in-process DuckDB."""
-    source = toolkit.get_source("duckdb")
-
-    async def _query(credentials: dict, sql: str, params: Any = None) -> QueryResult:
-        con = duckdb.connect(credentials["database"])
-        try:
-            cursor = con.execute(sql)
-            columns = [column[0] for column in cursor.description]
-            rows = [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
-        finally:
-            con.close()
-        return QueryResult(driver="duckdb", rows=rows, row_count=len(rows), columns=columns, execution_time_ms=0.0)
-
-    source.query = _query  # type: ignore[method-assign]
+    """Use the stock duckdb source unchanged (issue:58d44d14dd8a fixed in core)."""
+    toolkit.get_source("duckdb")
 
 
 def _build(

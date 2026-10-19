@@ -24,24 +24,15 @@ def test_connection_resolver_env_overlay(monkeypatch) -> None:
 
 
 def _patch_duckdb_source(toolkit: DatabaseQueryToolkit) -> None:
-    """Route the toolkit's duckdb source through the in-process duckdb module.
-
-    The asyncdb duckdb driver shipped in some environments fails on ``fetch_all``; the executor
-    contract under test is the source ``query(credentials, sql)`` call, so execute it in-process.
-    """
+    """Keep the stock duckdb source (issue:58d44d14dd8a fixed); errors still surface as source failures."""
     source = toolkit.get_source("duckdb")
+    real_query = source.query
 
     async def _query(credentials, sql, params=None):
-        con = duckdb.connect(credentials.get("database", ":memory:"))
         try:
-            cur = con.execute(sql)
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
+            return await real_query(credentials, sql, params)
         except Exception:
             raise RuntimeError("boom") from None
-        finally:
-            con.close()
-        return QueryResult(driver="duckdb", rows=rows, row_count=len(rows), columns=cols, execution_time_ms=0.0)
 
     source.query = _query  # type: ignore[method-assign]
 

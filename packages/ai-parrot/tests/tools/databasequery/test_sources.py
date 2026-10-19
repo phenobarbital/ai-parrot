@@ -161,6 +161,45 @@ class TestDuckDBSource:
         result = await DuckDBSource().validate_query("SELEC FROM")
         assert result.valid is False
 
+    @staticmethod
+    def _warehouse(tmp_path) -> dict:
+        import duckdb
+
+        path = str(tmp_path / "w.duckdb")
+        con = duckdb.connect(path)
+        con.execute("CREATE TABLE orders (id INTEGER, region VARCHAR, amount DOUBLE)")
+        con.execute("INSERT INTO orders VALUES (1, 'EU', 10.0), (2, 'US', 20.0), (3, 'EU', 30.0)")
+        con.close()
+        return {"database": path}
+
+    @pytest.mark.asyncio
+    async def test_query_executes_against_real_file(self, tmp_path):
+        """issue:58d44d14dd8a: real execution, no mocks (asyncdb 2.16 driver awaited a list)."""
+        creds = self._warehouse(tmp_path)
+        result = await DuckDBSource().query(creds, "SELECT region, SUM(amount) AS total FROM orders GROUP BY region ORDER BY region")
+        assert result.columns == ["region", "total"]
+        assert result.rows == [{"region": "EU", "total": 40.0}, {"region": "US", "total": 20.0}]
+        assert result.row_count == 2
+
+    @pytest.mark.asyncio
+    async def test_query_params_and_row(self, tmp_path):
+        creds = self._warehouse(tmp_path)
+        named = await DuckDBSource().query(creds, "SELECT id FROM orders WHERE region = $r ORDER BY id", {"r": "EU"})
+        assert [row["id"] for row in named.rows] == [1, 3]
+        positional = await DuckDBSource().query(creds, "SELECT id FROM orders WHERE amount > ? ORDER BY id", [15])
+        assert [row["id"] for row in positional.rows] == [2, 3]
+        row = await DuckDBSource().query_row(creds, "SELECT id FROM orders WHERE id = 2")
+        assert row.found and row.row == {"id": 2}
+        missing = await DuckDBSource().query_row(creds, "SELECT id FROM orders WHERE id = 99")
+        assert missing.found is False
+
+    @pytest.mark.asyncio
+    async def test_metadata_discovers_columns(self, tmp_path):
+        creds = self._warehouse(tmp_path)
+        meta = await DuckDBSource().get_metadata(creds, ["orders"])
+        assert [t.name for t in meta.tables] == ["orders"]
+        assert [c.name for c in meta.tables[0].columns] == ["id", "region", "amount"]
+
 
 # ---------------------------------------------------------------------------
 # MSSQL with Stored Procedure Support

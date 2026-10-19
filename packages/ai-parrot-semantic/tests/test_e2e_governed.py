@@ -28,19 +28,13 @@ POLICY = "orders.policy.yaml"
 
 
 def _patch_duckdb_source(toolkit: DatabaseQueryToolkit, executed: list[str]) -> None:
-    """Route the duckdb source through in-process duckdb, recording every SQL string executed."""
+    """Record every SQL string the stock duckdb source executes (real driver, no stubbed rows)."""
     source = toolkit.get_source("duckdb")
+    real_query = source.query
 
     async def _query(credentials: dict, sql: str, params: Any = None) -> QueryResult:
         executed.append(sql)
-        con = duckdb.connect(credentials.get("database", ":memory:"))
-        try:
-            cur = con.execute(sql)
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, r, strict=True)) for r in cur.fetchall()]
-        finally:
-            con.close()
-        return QueryResult(driver="duckdb", rows=rows, row_count=len(rows), columns=cols, execution_time_ms=0.0)
+        return await real_query(credentials, sql, params)
 
     source.query = _query  # type: ignore[method-assign]
 
