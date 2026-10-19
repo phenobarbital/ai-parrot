@@ -97,3 +97,15 @@ def test_rls_typed_literals_and_render_failure(pctx_factory: Callable[..., Permi
             schema=SCHEMA,
         )
     assert caught.value.code == "rls_render_failed"
+
+
+def test_rls_numeric_literal_rejects_injection() -> None:
+    """A subject value for a numeric column is parsed, never emitted verbatim."""
+    from parrot.semantic.governance.rls import RlsPushdown
+
+    assert RlsPushdown._literal(" 42 ", "INTEGER").sql() == "42"
+    assert RlsPushdown._literal("1.5", "DECIMAL(10,2)").sql() == "1.5"
+    for hostile in ("1 OR 1=1", "1; DROP TABLE x", "0x10", "nan", "inf", ""):
+        with pytest.raises(ValueError):
+            RlsPushdown._literal(hostile, "INTEGER" if hostile != "nan" and hostile != "inf" else "DOUBLE")
+    assert RlsPushdown._literal("x' OR '1'='1", "VARCHAR").sql() == "'x'' OR ''1''=''1'"

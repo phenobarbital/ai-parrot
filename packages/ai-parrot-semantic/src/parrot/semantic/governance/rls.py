@@ -108,7 +108,8 @@ class RlsPushdown:
 
         for placeholder in list(condition.find_all(exp.Placeholder)):
             values = pred.bound_params.get(placeholder.name)
-            if values is None:
+            if not values:
+                # No subject values (missing or empty list): never render `IN ()` — deny instead.
                 raise SemanticAccessError("rls_unplaceable")
             column = self._placeholder_column(placeholder)
             column_type = schema.tables.get(table, {}).get(column)
@@ -140,8 +141,21 @@ class RlsPushdown:
 
     @staticmethod
     def _literal(value: str, column_type: str) -> exp.Literal:
-        """Create a typed SQL literal using the declared physical column type."""
+        """Create a typed SQL literal using the declared physical column type.
+
+        Numeric values are parsed and re-rendered from the parsed number: ``exp.Literal.number`` emits its
+        argument verbatim, so passing a raw subject attribute through would inject SQL (``1 OR 1=1``).
+
+        Raises:
+            ValueError: If a value for a numeric column is not a finite number.
+        """
         normalized_type = column_type.upper()
         if any(marker in normalized_type for marker in ("INT", "DECIMAL", "NUMERIC", "DOUBLE", "FLOAT", "REAL")):
-            return exp.Literal.number(value)
-        return exp.Literal.string(value)
+            text = str(value).strip()
+            if "INT" in normalized_type:
+                return exp.Literal.number(str(int(text, 10)))
+            number = float(text)
+            if number != number or number in (float("inf"), float("-inf")):
+                raise ValueError("non-finite numeric RLS value")
+            return exp.Literal.number(repr(number))
+        return exp.Literal.string(str(value))
