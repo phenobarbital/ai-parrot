@@ -28,6 +28,7 @@ from .tenancy import (
     discover_tenant_dirs,
     reset_skill_tenant,
     set_active_skill,
+    tenant_skills_dir,
     validate_tenant_id,
 )
 from .tools import create_skill_tools
@@ -119,6 +120,7 @@ class SkillRegistryMixin:
         if default_tenant is not None:
             self._tenant_id = validate_tenant_id(default_tenant)
         self._tenant_registries: Dict[str, "SkillFileRegistry"] = {}
+        self._tenant_store_registries: Dict[str, SkillRegistry] = {}
         self._tenant_views: Dict[str, SkillView] = {}
         self._global_view: Optional[SkillView] = None
         self._known_tenants: set[str] = set()
@@ -263,6 +265,11 @@ class SkillRegistryMixin:
         """
         self._recompose_skill_views()
         self._install_skill_prompt_layers()
+        if self.tenant_based:
+            for tenant in set(self._tenant_store_registries) - self._known_tenants:
+                registry = self._tenant_store_registries.pop(tenant)
+                await registry.cleanup()
+            await self._configure_tenant_store_registries()
 
     def _resolve_agents_dir(self) -> Optional[Path]:
         """Resolve the base AGENTS_DIR for skill persistence.
@@ -320,8 +327,43 @@ class SkillRegistryMixin:
         # Configure file-based skill registry
         await self._configure_skill_file_registry()
 
+        if self.tenant_based:
+            await self._configure_tenant_store_registries()
+
         if hasattr(self, 'logger'):
             self.logger.info("SkillRegistry configured: %s", namespace)
+
+    async def _configure_tenant_store_registries(self) -> None:
+        """Configure one tenant registry per known tenant using the global embedding model."""
+        if self._skill_registry is None:
+            return
+
+        agents_dir = self._resolve_agents_dir()
+        if agents_dir is None:
+            return
+
+        agent_id = getattr(self, "name", None) or getattr(self, "agent_id", "default")
+        org_id = getattr(self, "org_id", "default")
+        agent_root = agents_dir / agent_id
+        embedding_model = getattr(self._skill_registry, "_embedding_model", None)
+
+        for tenant in sorted(self._known_tenants):
+            if tenant in self._tenant_store_registries:
+                continue
+            registry = create_skill_registry(
+                namespace=f"{org_id}/{agent_id}/{tenant}",
+                persistence_path=tenant_skills_dir(agent_root, tenant),
+                extraction_llm=getattr(self, "_llm", None),
+            )
+            await registry.configure(embedding_model=embedding_model)
+            self._tenant_store_registries[tenant] = registry
+
+    def _current_store_registry(self, tenant: Optional[str] = None) -> Optional[SkillRegistry]:
+        """Return the resolved tenant store when known, otherwise the global store."""
+        if not self.tenant_based:
+            return self._skill_registry
+        resolved = self._resolve_tenant(tenant)
+        return self._tenant_store_registries.get(resolved, self._skill_registry)
 
     async def _configure_skill_file_registry(self) -> None:
         """Configure file-based skill registry and trigger middleware.
@@ -617,6 +659,7 @@ category: {category}
             registry=self._skill_registry,
             agent_id=agent_id,
             include_write_tools=True,
+            **({"registry_provider": self._current_store_registry} if self.tenant_based else {}),
         )
 
         tool_manager = getattr(self, 'tool_manager', None)
@@ -633,6 +676,7 @@ category: {category}
         query: str,
         max_skills: Optional[int] = None,
         max_tokens: Optional[int] = None,
+        tenant: Optional[str] = None,
     ) -> str:
         """
         Get relevant skills for context injection.
@@ -642,11 +686,21 @@ category: {category}
         if not self._skill_registry or not self.skill_registry_inject_context:
             return ""
 
-        return await self._skill_registry.get_relevant_skills(
+        registry = self._current_store_registry(tenant)
+        if registry is None:
+            return ""
+        context = await registry.get_relevant_skills(
             query=query,
             max_skills=max_skills or self.skill_registry_max_context_skills,
             max_tokens=max_tokens or self.skill_registry_max_context_tokens,
         )
+        if registry is not self._skill_registry and not context.strip():
+            return await self._skill_registry.get_relevant_skills(
+                query=query,
+                max_skills=max_skills or self.skill_registry_max_context_skills,
+                max_tokens=max_tokens or self.skill_registry_max_context_tokens,
+            )
+        return context
 
     async def document_skill(
         self,
@@ -656,6 +710,7 @@ category: {category}
         category: str = "general",
         tags: Optional[List[str]] = None,
         triggers: Optional[List[str]] = None,
+        tenant: Optional[str] = None,
     ) -> Optional[Skill]:
         """
         Programmatically document a skill.
@@ -666,7 +721,10 @@ category: {category}
             return None
 
         agent_id = getattr(self, 'name', 'agent')
-        skill, _ = await self._skill_registry.upload_skill(
+        registry = self._current_store_registry(tenant)
+        if registry is None:
+            return None
+        skill, _ = await registry.upload_skill(
             name=name,
             content=content,
             agent_id=agent_id,
@@ -704,17 +762,34 @@ category: {category}
         query: str,
         category: Optional[str] = None,
         max_results: int = 5,
+        tenant: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Search for relevant skills."""
         if not self._skill_registry:
             return []
 
         cat = SkillCategory(category) if category else None
-        results = await self._skill_registry.search_skills(
+        global_results = await self._skill_registry.search_skills(
             query=query,
             category=cat,
             max_results=max_results,
         )
+
+        registry = self._current_store_registry(tenant)
+        if registry is self._skill_registry:
+            results = [(result, self._skill_registry.namespace) for result in global_results]
+        else:
+            tenant_results = await registry.search_skills(
+                query=query,
+                category=cat,
+                max_results=max_results,
+            )
+            by_name = {
+                result.skill.metadata.name: (result, self._skill_registry.namespace)
+                for result in global_results
+            }
+            by_name.update({result.skill.metadata.name: (result, registry.namespace) for result in tenant_results})
+            results = sorted(by_name.values(), key=lambda item: item[0].relevance_score, reverse=True)[:max_results]
 
         return [
             {
@@ -723,12 +798,16 @@ category: {category}
                 "description": r.skill.metadata.description,
                 "content": r.content,
                 "relevance": r.relevance_score,
+                "namespace": namespace,
             }
-            for r in results
+            for r, namespace in results
         ]
 
     async def _cleanup_skill_registry(self) -> None:
         """Cleanup skill registry."""
+        for registry in self._tenant_store_registries.values():
+            await registry.cleanup()
+        self._tenant_store_registries.clear()
         if self._skill_registry:
             await self._skill_registry.cleanup()
             self._skill_registry = None
