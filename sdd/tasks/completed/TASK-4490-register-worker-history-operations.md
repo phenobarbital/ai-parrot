@@ -253,10 +253,15 @@ See the test block in the Implementation Blueprint and spec §4 (M4 rows).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4490
+- Feature: workday-worker-event-history-and-job-changes
+- Implementation SHA: 25cb61b082ea22111a860a34a7b16670b62378eb
+- Closed at (UTC): 2026-10-19T20:53:26+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: qwen · Backend: nova · Model: qwen.qwen3-coder-480b-a35b-instruct · Attempts: 1 · Duration: 86.9s · Tokens: 748093/6349 |

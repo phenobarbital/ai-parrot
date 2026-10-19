@@ -295,10 +295,15 @@ See the test block in the Implementation Blueprint and spec §4 (M5 rows).
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4491
+- Feature: workday-worker-event-history-and-job-changes
+- Implementation SHA: 45257fce6006a6109d55dafc08085e587ea57456
+- Closed at (UTC): 2026-10-19T20:44:08+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-luna · Backend: codex · Model: gpt-5.6-luna · Attempts: 1 · Duration: 93.0s · Tokens: n/a |
