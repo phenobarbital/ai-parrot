@@ -86,7 +86,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -96,8 +96,9 @@
       "parallelism_notes": "imports SemanticPolicyError from TASK-4464 (parrot/semantic/errors.py)",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4466-semantic-ossie-validation.md"
+      "completed_at": "2026-10-19T12:46:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4466-semantic-ossie-validation.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4467",
