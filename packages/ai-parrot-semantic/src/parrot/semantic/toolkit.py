@@ -252,7 +252,7 @@ class SemanticLayerToolkit(AbstractToolkit):
         try:
             if loaded is None:
                 raise SemanticValidationError("unknown_model", details={"model": model})
-            governed = await self._pipeline.govern(sql, model=loaded, ctx=ctx, roles=roles)
+            governed = await self._pipeline.govern(sql, model=loaded, ctx=ctx, roles=roles, raw_sql=True)
             rows, row_count, truncated, duration_ms = await self._executor.run(
                 governed, connection=loaded.policy.connection or ""
             )

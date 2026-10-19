@@ -207,3 +207,33 @@ def enforce_usage_rights(
         restricted = policy.mask_rule(column) is not None or policy.member_for(column) in sensitive_members
         if restricted and not policy.usage_allowed(roles, column):
             raise SemanticAccessError("usage_denied", details={"column": column})
+
+
+def enforce_projection_rights(
+    uses: list[ColumnUse],
+    policy: ModelPolicy,
+    roles: frozenset[str],
+    members: list,
+    *,
+    include_derived: bool = False,
+) -> None:
+    """Deny returning a column whose backing member is not granted to ``roles`` (issue:4adcfffcd99a).
+
+    A projected column passes when it backs a member in ``policy.allowed_members(roles, ...)`` or when it is
+    rendered masked for these roles. ``include_derived`` (raw SQL) applies the same rule to derived uses, so
+    wrapping a column in a function (``UPPER(tenant_id)``) cannot return it either; structured compiler output
+    is already member-checked by the catalog and keeps derived metric inputs ungated.
+
+    Raises:
+        SemanticAccessError: ``member_not_granted`` with the offending physical column.
+    """
+    contexts = {"projection", "derived"} if include_derived else {"projection"}
+    allowed = policy.allowed_members(roles, members)
+    for use in uses:
+        if use.context not in contexts:
+            continue
+        column = f"{use.table}.{use.column}"
+        if policy.mask_for(roles, column) is not None:
+            continue
+        if policy.member_for(column) not in allowed:
+            raise SemanticAccessError("member_not_granted", details={"column": column})

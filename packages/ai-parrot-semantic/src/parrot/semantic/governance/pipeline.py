@@ -17,7 +17,7 @@ from ..errors import SemanticValidationError
 from ..loader import LoadedModel
 from ..models import GovernedQuery
 from .guard import PositiveGuard, effective_allowed_functions
-from .lineage import enforce_usage_rights, resolve_column_uses
+from .lineage import enforce_projection_rights, enforce_usage_rights, resolve_column_uses
 from .masking import apply_masks
 from .pbac import PbacGate, resources_from_ast
 from .rls import RlsPushdown
@@ -57,6 +57,7 @@ class GovernancePipeline:
         ctx: PermissionContext | None,
         roles: frozenset[str],
         requested_limit: int | None = None,
+        raw_sql: bool = False,
     ) -> GovernedQuery:
         """Govern a freshly parsed SQL tree and return only fully validated SQL.
 
@@ -66,6 +67,7 @@ class GovernancePipeline:
             ctx: Current authorization subject.
             roles: Roles active for the request.
             requested_limit: Optional requested result limit.
+            raw_sql: True for caller-written SQL: derived uses must also back granted members.
 
         Returns:
             A fully governed query ready for execution.
@@ -101,6 +103,7 @@ class GovernancePipeline:
                 trusted_nodes=set(),
                 sensitive_members=frozenset(m.name for m in model.members if m.sensitive),
             )
+            enforce_projection_rights(uses, model.policy, roles, model.members, include_derived=raw_sql)
             tree, rls_applied, rls_trusted_nodes = self.rls.apply(tree, ctx, driver, schema=model.schema)
             tree, masked_columns, mask_trusted_nodes = apply_masks(tree, uses, model.policy, roles, dialect)
             trusted_nodes = rls_trusted_nodes | mask_trusted_nodes

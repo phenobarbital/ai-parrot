@@ -13,7 +13,7 @@ from parrot.semantic.governance.pbac import PbacGate
 from parrot.semantic.governance.pipeline import GovernancePipeline, subject_digest
 from parrot.semantic.governance.rls import RlsPushdown
 from parrot.semantic.loader import LoadedModel, PhysicalSchema
-from parrot.semantic.models import Limits
+from parrot.semantic.models import Limits, ModelMember
 from parrot.semantic.policy import ModelPolicy, RoleGrant
 
 
@@ -26,9 +26,9 @@ def _model(*, governed: bool = True) -> LoadedModel:
             governed=governed,
             connection="warehouse" if governed else None,
             limits=Limits(default=25, max=100),
-            roles={"analyst": RoleGrant(usage=["region", "amount", "tenant_id"])},
+            roles={"analyst": RoleGrant(dimensions=["region"], usage=["region", "amount", "tenant_id"])},
         ),
-        members=[],
+        members=[ModelMember(name="region", kind="dimension")],
         schema=PhysicalSchema(
             driver="duckdb",
             tables={"sales.orders": {"region": "TEXT", "amount": "DOUBLE", "tenant_id": "TEXT"}},
@@ -182,3 +182,29 @@ async def test_cache_hit_re_governs_for_each_subject(pctx_factory: Callable[...,
     assert "'EU'" in europe.sql
     assert "'US'" in united_states.sql
     assert europe.subject_digest != united_states.subject_digest
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("sql", "raw_sql", "denied"),
+    [
+        ("SELECT tenant_id FROM sales.orders", False, True),
+        ("SELECT tenant_id FROM sales.orders", True, True),
+        ("SELECT UPPER(tenant_id) AS t FROM sales.orders", True, True),
+        ("SELECT region FROM sales.orders", True, False),
+        ("SELECT region FROM sales.orders WHERE tenant_id = 't1'", True, False),
+    ],
+)
+async def test_projection_requires_granted_member(
+    pctx_factory: Callable[..., PermissionContext], sql: str, raw_sql: bool, denied: bool
+) -> None:
+    """issue:4adcfffcd99a: returned columns must back a granted member; raw SQL also gates derived outputs."""
+    pipeline, _ = _pipeline()
+    model = _model()
+    model.members.append(ModelMember(name="tenant_id", kind="dimension"))
+    call = pipeline.govern(sql, model=model, ctx=pctx_factory(), roles=frozenset({"analyst"}), raw_sql=raw_sql)
+    if denied:
+        with pytest.raises(SemanticAccessError, match="member_not_granted"):
+            await call
+    else:
+        assert (await call).sql
