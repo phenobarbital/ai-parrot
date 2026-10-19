@@ -255,9 +255,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4472
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 282.4s · Tokens: n/a
+- Validation: merge-tier ad0839b5:wave7:merge completed exit 0 (5 passed).
+- Review: no corrections. Fixed stage order asserted; RLS + mask trusted nodes threaded into PositiveGuard.check_and_limit(trusted_nodes=); a real RLS rule passes end-to-end through the guard.
+- Gap noted: no end-to-end pipeline test with a projection mask (masking is unit-tested in test_masking.py / guard trusted-node test).

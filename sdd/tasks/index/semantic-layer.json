@@ -214,7 +214,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -226,8 +226,9 @@
       "parallelism_notes": "composes PbacGate/resources_from_ast + lineage from TASK-4469 (governance/pbac.py, lineage.py), RlsPushdown from TASK-4470 (governance/rls.py) and apply_masks/PositiveGuard from TASK-4471 (governance/masking.py, guard.py)",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4472-semantic-governance-pipeline.md"
+      "completed_at": "2026-10-19T13:27:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4472-semantic-governance-pipeline.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4473",
