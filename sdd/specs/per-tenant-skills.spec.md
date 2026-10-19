@@ -729,12 +729,16 @@ tests:
 - packages/ai-parrot/tests/unit/test_skill_active_request_local.py
 - packages/ai-parrot/tests/unit/test_skill_tenant_store.py
 - packages/ai-parrot/tests/unit/test_ask_tenant_binding.py
+- packages/ai-parrot/tests/unit/test_skill_global_only.py
+- packages/ai-parrot/tests/unit/test_skill_tenant_toolkits.py
+- packages/ai-parrot/tests/unit/test_skill_tenant_wiring.py
+- packages/ai-parrot/tests/unit/test_narrative_tenant.py
 - packages/ai-parrot/tests/integration/test_skill_tenant_isolation.py
 - packages/ai-parrot-server/tests/handlers/test_request_tenant_binding.py
 - packages/ai-parrot-integrations/tests/telegram/test_tenant_binding.py
 markers: none
 
-(The first 14 entries exist today and pin the flag-off contract; the rest are created by M12. Run with
+(The first 14 entries exist today and pin the flag-off contract; the rest are created by the feature's tasks — rev 0.2 added the four files the task decomposition needs for M2, M5 toolkits, M3 wiring and M5 narrative. Run with
 `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src:packages/ai-parrot-integrations/src` inside a worktree.)
 
 ### Test Data / Fixtures
@@ -1059,6 +1063,7 @@ AGENTS_DIR = config.get("AGENTS_DIR", fallback=BASE_DIR.joinpath("agents"))   # 
 - ~~`resolve_request_tenant()`~~ — new (M9).
 - ~~`PermissionContext.tenant_id` as a trustworthy tenant~~ — exists (permission.py:134) but is `"default"` on Telegram and the principal id via `build_principal_context()`; not a source.
 - ~~`SkillRegistry` namespace segment validation~~ — the store does not split or validate `namespace` (only documents `"_shared"`), so `org/agent/tenant` is accepted as-is.
+- ~~Editing `parrot.memory.skills.*`~~ — it is a deprecated re-export shim (`from parrot.skills.<mod> import *`, 13 lines per file); never modify it. Existing tests still import through it (e.g. `test_skill_trigger_middleware.py`).
 - ~~`packages/ai-parrot-server/tests/unit/`~~ — server tests live in `packages/ai-parrot-server/tests/handlers/` (and siblings); integrations tests in `packages/ai-parrot-integrations/tests/telegram/`.
 
 ### Edit Sites (Blueprint Anchors)
@@ -1230,3 +1235,4 @@ Summary: **10** confirmed · **1** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-19 | Jesus Lara (with Claude) | Initial draft from the accepted brainstorm; design research folded in; S5 scope decided by the user |
+| 0.2 | 2026-10-19 | Jesus Lara (with Claude) | `/sdd-task`: Validation Contract gains four task test files; `parrot.memory.skills` shim recorded in Does NOT Exist |
