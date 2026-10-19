@@ -217,9 +217,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4476
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 158.8s · Tokens: n/a
+- Validation: merge-tier ad0839b5:wave4:merge completed exit 0 (11 passed).
+- Review: no corrections.

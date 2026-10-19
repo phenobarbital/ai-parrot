@@ -294,7 +294,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -304,8 +304,9 @@
       "parallelism_notes": "raises SemanticResultError from TASK-4464 (parrot/semantic/errors.py); subject_digest is passed in by the caller, so no edge to the governance tasks",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4476-semantic-result-handles.md"
+      "completed_at": "2026-10-19T13:01:17+00:00",
+      "file": "sdd/tasks/completed/TASK-4476-semantic-result-handles.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4477",
