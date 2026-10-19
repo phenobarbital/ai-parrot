@@ -205,3 +205,28 @@ async def test_request_scoped_handoff_never_mutates_shared_toolkit(
     assert tuple(toolkit.exclude_tools) == excluded_before
     assert toolkit._dataset_manager_factory is None
     assert "sl_save_result_as_dataset" not in {tool.name for tool in toolkit.get_tools()}
+
+
+async def test_unexpected_failure_is_audited_and_enveloped(
+    models_dir: Any,
+    duckdb_warehouse: str,
+    allow_all_guard: Any,
+    pctx_factory: Callable[..., PermissionContext],
+    monkeypatch,
+) -> None:
+    """Review I4: a non-semantic exception fails closed, returns an envelope and is still audited."""
+    toolkit = _build(models_dir, duckdb_warehouse, allow_all_guard, monkeypatch)
+    pctx = pctx_factory(user_id="alice", roles=("analyst",), programs=["EU"])
+
+    async def _boom(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("sqlglot exploded")
+
+    monkeypatch.setattr(toolkit._pipeline, "govern", _boom)
+    before = len(toolkit._ledger.entries)
+
+    result = await _call(toolkit, "sl_run_sql", pctx, model="orders", sql="SELECT region FROM sales.orders")
+
+    assert result["error"] == "internal_error"
+    assert "sqlglot exploded" not in str(result)
+    assert len(toolkit._ledger.entries) == before + 1
+    assert toolkit._ledger.entries[-1].outcome != "ok"

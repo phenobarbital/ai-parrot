@@ -299,7 +299,12 @@ class SemanticLayerToolkit(AbstractToolkit):
                 audit_id=entry_id,
                 result_id=result_id,
             )
-        except SemanticError as error:
+        except Exception as raw_error:  # noqa: BLE001 - every failure is audited and returned as an envelope
+            if isinstance(raw_error, SemanticError):
+                error = raw_error
+            else:
+                self.logger.error("semantic %s failed unexpectedly: %s", "request", type(raw_error).__name__)
+                error = SemanticExecutionError("internal_error")
             if error.code == "audit_unavailable":
                 return self._error_payload(error)
             try:
@@ -317,7 +322,9 @@ class SemanticLayerToolkit(AbstractToolkit):
                     ),
                     required=self._audit_required,
                 )
-            except SemanticExecutionError as audit_error:
+            except Exception as audit_error:  # noqa: BLE001 - a failing audit sink never leaks a traceback
+                if not isinstance(audit_error, SemanticError):
+                    audit_error = SemanticExecutionError("audit_unavailable")
                 return self._error_payload(audit_error)
             return self._error_payload(error)
 
@@ -490,7 +497,12 @@ class SemanticLayerToolkit(AbstractToolkit):
                 audit_id=entry_id,
                 result_id=result_id,
             )
-        except SemanticError as error:
+        except Exception as raw_error:  # noqa: BLE001 - every failure is audited and returned as an envelope
+            if isinstance(raw_error, SemanticError):
+                error = raw_error
+            else:
+                self.logger.error("semantic %s failed unexpectedly: %s", "request", type(raw_error).__name__)
+                error = SemanticExecutionError("internal_error")
             if error.code == "audit_unavailable":
                 return self._error_payload(error)
             outcome = self._error_outcome(error)
@@ -508,7 +520,9 @@ class SemanticLayerToolkit(AbstractToolkit):
                     ),
                     required=self._audit_required,
                 )
-            except SemanticExecutionError as audit_error:
+            except Exception as audit_error:  # noqa: BLE001 - a failing audit sink never leaks a traceback
+                if not isinstance(audit_error, SemanticError):
+                    audit_error = SemanticExecutionError("audit_unavailable")
                 return self._error_payload(audit_error)
             return self._error_payload(error)
 
