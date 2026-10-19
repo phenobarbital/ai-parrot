@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-19T21:00:26+00:00",
-  "completed_at": "2026-10-19T22:06:26+00:00",
+  "completed_at": null,
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -339,6 +339,30 @@
       "completed_at": "2026-10-19T22:06:26+00:00",
       "file": "sdd/tasks/completed/TASK-4506-per-tenant-skills-docs.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-4507",
+      "slug": "per-tenant-skills-hardening",
+      "title": "Tenant skill hardening (review follow-ups)",
+      "feature_id": "FEAT-707",
+      "feature": "per-tenant-skills",
+      "spec": "sdd/specs/per-tenant-skills.spec.md",
+      "status": "in-progress",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4496",
+        "TASK-4497",
+        "TASK-4498",
+        "TASK-4501"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Ledger follow-up issue:8ea16e60de56 promoted by /sdd-fix after all FEAT-707 tasks closed.",
+      "discovered_from": "issue:8ea16e60de56",
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-19T22:26:16+00:00",
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4507-per-tenant-skills-hardening.md"
     }
   ]
 }
