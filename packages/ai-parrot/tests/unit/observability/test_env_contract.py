@@ -26,6 +26,8 @@ RECOGNISED_ENV_VARS: frozenset[str] = frozenset({
     "OTEL_EXPORTER_OTLP_ENDPOINT", "OBSERVABILITY_PROM_PORT",
     "OBSERVABILITY_PROM_ADDR", "PARROT_PRICING_PATH", "OTLP_TARGETS",
     "OBSERVABILITY_OPENLIT_RECORDER", "OBSERVABILITY_OPENLIT_RECORDER_ENDPOINT",
+    # FEAT-705 — signal switches and metric export interval.
+    "OBSERVABILITY_TRACES", "OBSERVABILITY_METRICS", "OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS",
 })
 
 _ASSIGNMENT = re.compile(r"^([A-Z][A-Z0-9_]*)=", re.MULTILINE)
@@ -107,3 +109,29 @@ def test_example_contains_no_secrets():
             f"{key}={value!r} looks like an opaque token/secret value, not a "
             "config value"
         )
+
+
+# FEAT-705 AC8 — phrases that described the pre-FEAT-705 limitations.
+_STALE_PHRASES = (
+    "code-only field",
+    "not settable from the environment",
+    "traces only, not metrics",
+    "only env-level way",
+)
+_FEAT_705_DOCS = (
+    "packages/ai-parrot/src/parrot/observability/README.md",
+    "docs/architecture/10-observability.md",
+    "env/.env.observability.example",
+    "docker/grafana/README.md",
+)
+
+
+def test_docs_do_not_call_fields_code_only() -> None:
+    """None of the four docs may still describe the FEAT-705 gaps."""
+    offenders = [
+        (path, phrase)
+        for path in _FEAT_705_DOCS
+        for phrase in _STALE_PHRASES
+        if phrase in (REPO_ROOT / path).read_text(encoding="utf-8").lower()
+    ]
+    assert not offenders, f"stale FEAT-705 documentation phrases: {offenders}"
