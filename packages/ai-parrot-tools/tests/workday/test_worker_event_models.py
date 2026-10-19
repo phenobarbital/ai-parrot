@@ -1,4 +1,5 @@
 """FEAT-706 — worker-event models."""
+
 from datetime import date, datetime
 
 from parrot_tools.interfaces.workday.models import (
@@ -33,7 +34,9 @@ def test_resolved_reference_is_contingent() -> None:
     """Identify contingent workers only when no employee identifier exists."""
     assert not ResolvedWorkerReference(wid="wid", employee_id="employee").is_contingent
     assert ResolvedWorkerReference(wid="wid", contingent_worker_id="contingent").is_contingent
-    assert not ResolvedWorkerReference(wid="wid", employee_id="employee", contingent_worker_id="contingent").is_contingent
+    assert not ResolvedWorkerReference(
+        wid="wid", employee_id="employee", contingent_worker_id="contingent"
+    ).is_contingent
 
 
 def test_job_snapshot_defaults_and_diff_exclude() -> None:

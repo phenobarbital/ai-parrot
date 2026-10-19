@@ -1,4 +1,5 @@
 """Typed rows for Workday worker event history and job changes (FEAT-706)."""
+
 from __future__ import annotations
 
 from datetime import date, datetime
