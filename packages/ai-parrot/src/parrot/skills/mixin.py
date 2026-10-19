@@ -468,12 +468,12 @@ class SkillRegistryMixin:
         from .prompt import global_layer_condition, render_skills_prompt_layer, tenant_layer_condition
         from parrot.bots.prompts import RenderPhase
 
-        prompt_builder = getattr(self, '_prompt_builder', None)
+        prompt_builder = getattr(self, "_prompt_builder", None)
         if prompt_builder is None or self._skill_file_registry is None:
             return
-        if not getattr(self, 'inject_skills_into_prompt', True):
+        if not getattr(self, "inject_skills_into_prompt", True):
             return
-        max_entries = getattr(self, 'skill_prompt_max_entries', None)
+        max_entries = getattr(self, "skill_prompt_max_entries", None)
         logger = self._skill_logger()
 
         if not self.tenant_based:
