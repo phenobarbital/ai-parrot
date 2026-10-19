@@ -1,4 +1,5 @@
 """Route and session coverage for the optional semantic HTTP surface."""
+
 from __future__ import annotations
 
 import ast
@@ -19,8 +20,7 @@ def test_handler_routes_and_401() -> None:
     semantic_guard = next(
         node
         for node in guards
-        if isinstance(node.test, ast.Compare)
-        and "find_spec('parrot.semantic')" in ast.unparse(node.test)
+        if isinstance(node.test, ast.Compare) and "find_spec('parrot.semantic')" in ast.unparse(node.test)
     )
     calls = [ast.unparse(node) for node in ast.walk(semantic_guard) if isinstance(node, ast.Call)]
     assert "router.add_view('/api/v1/agents/semantic/{agent_id}', SemanticLayerHandler)" in calls

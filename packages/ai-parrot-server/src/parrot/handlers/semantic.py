@@ -1,4 +1,5 @@
 """HTTP surface of the semantic layer (FEAT-704 spec §3 Module 11)."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
@@ -42,9 +43,7 @@ class SemanticLayerHandler(BaseView):
             return self.json_response({"error": "agent_id is required"}, status=400)
 
         tail = self.request.match_info.get("tail", "").strip("/")
-        if tail not in {"compile", "query"} and not (
-            tail.startswith("results/") and tail.endswith("/dataset")
-        ):
+        if tail not in {"compile", "query"} and not (tail.startswith("results/") and tail.endswith("/dataset")):
             return self.json_response({"error": "unknown semantic action"}, status=404)
 
         try:
@@ -120,7 +119,9 @@ class SemanticLayerHandler(BaseView):
             extra={"session_id": str(getattr(session, "session_id", ""))},
         )
 
-    async def _call_tool(self, toolkit: "SemanticLayerToolkit", method: str, pctx: PermissionContext, **kwargs: Any) -> Any:
+    async def _call_tool(
+        self, toolkit: "SemanticLayerToolkit", method: str, pctx: PermissionContext, **kwargs: Any
+    ) -> Any:
         """Invoke a semantic method through its ``ToolkitTool`` lifecycle path."""
         tool_name = f"{toolkit.tool_prefix}_{method}"
         for tool in toolkit.get_tools():
