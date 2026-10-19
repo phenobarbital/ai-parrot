@@ -7,16 +7,16 @@ base_branch: dev
 # projects: parts of the codebase this doc concerns. Use `packages/*` dir names
 #   (ai-parrot, ai-parrot-server, parrot-formdesigner, …) or an area
 #   (sdd-tooling, dev-loop, admin-ui, docs, ci). Unknown values warn, not fail.
-projects: [ai-parrot, ai-parrot-integrations]
+projects: [ai-parrot, ai-parrot-integrations, ai-parrot-server]
 # tags: free-form kebab-case keywords for organizing specs (e.g. memory, mcp).
-tags: [skills, multi-tenant, skill-registry, agents-dir, prompt-layer]
+tags: [skills, multi-tenant, skill-registry, agents-dir, prompt-layer, telegram]
 ---
 
 # Brainstorm: Per-Tenant Skills for `SkillRegistryMixin`
 
 **Date**: 2026-10-19
 **Author**: Jesus Lara (discovery with Claude)
-**Status**: exploration
+**Status**: exploration (all open questions resolved 2026-10-19 — ready for `/sdd-spec`)
 **Recommended Option**: A
 
 ---
@@ -85,15 +85,41 @@ below (reserved `tenants/` namespace), so **no rename happens**.
   is the **internal transport** so LLM-called tools (`load_skill`,
   `list_skill_commands`, `read_skill_asset`) and the `/trigger` middleware
   read the already-resolved tenant.
-- **Unresolved tenant with `tenant_based=True`** → global-only view, no error
-  (fail-closed to global, never to another tenant). *Assumption to confirm —
-  see Open Questions.*
+- **Unresolved tenant with `tenant_based=True`** (decided) → global-only view,
+  no error, DEBUG log (fail-closed to global, never to another tenant).
+- **Known-looking but absent tenant** (decided): a valid tenant id with no
+  `tenants/{tenant}/` directory → global view plus a warning, emitted once per
+  tenant per instance.
+- **`PermissionContext.tenant_id` is NOT a tenant source** in v1: Telegram
+  hard-codes it to `"default"` and `build_principal_context()` defaults it to
+  the principal (user id), so trusting it would silently pick wrong trees.
+- **Channel binding** (decided, in scope): HTTP handlers (`handlers/chat.py`,
+  `handlers/agents/abstract.py`) pass `tenant=` from the server-resolved
+  `RequestScope.tenant` and **discard** any `tenant` key the client body
+  carries (logged); the Telegram wrapper binds a new static
+  `TelegramAgentConfig.tenant` (one bot = one customer) into
+  `UserContext.metadata["tenant"]` and into the permission context's
+  `UserSession.tenant_id` instead of `"default"`.
+- **Tenant key name** (decided): `"tenant"` in both `RequestContext.kwargs`
+  and `UserContext.metadata`.
 - **Loading** (decided): **eager** — `tenants/*/skills/` is scanned at
   `configure()`; adding a tenant on disk needs a restart or an explicit
   reload method.
 - **Learned skills** (decided): `save_learned_skill` always writes to the
   **global** `skills/learned/`, regardless of the active tenant. Learned skills
   are therefore visible to every tenant.
+- **`global_only` guard** (decided, v1): a global skill may declare
+  `global_only: true` in its frontmatter; a tenant skill with the same name or
+  trigger is rejected at configure (error log, global wins).
+- **DB-like writes** (decided): `document_skill` / `update_skill` write to the
+  active tenant's namespace (`org/agent/{tenant}`), global when no tenant;
+  `extract_skills_from_conversation` follows the learned rule (global).
+- **`NarrativeMixin.narrate()`** (decided): gains `tenant: str | None = None`,
+  falling back to the ContextVar and then the instance default.
+- **Prompt layers** (decided): one `<available_skills>` layer per tenant, no
+  cap in v1 (`skill_prompt_max_entries` bounds each layer's size).
+- **Docs** (decided): new `docs/skills/per-tenant-skills.md` plus a short
+  paragraph in the Skills section of `.agent/CONTEXT.md`.
 - **Scope** (decided): both registries — the file-based `SkillFileRegistry`
   **and** the DB-like `SkillRegistry` in `store.py` (namespace becomes
   `org_id/agent_id/{tenant}` with per-tenant persistence under the tenant
@@ -129,7 +155,8 @@ layer per tenant plus the global one; explicitly `cacheable=True`).
   The global registry is literally today's object.
 - Both lifetimes fall out naturally: fixed-tenant instances just resolve the
   same tenant every time; singleton instances resolve per request.
-- Shadowing by name/trigger is a view-level rule, trivially testable.
+- Shadowing by name/trigger (and the `global_only` exception) is a
+  view-composition rule, trivially testable.
 - Reload-per-tenant is possible later without redesign.
 
 ❌ **Cons:**
@@ -313,10 +340,18 @@ change to `store.py` persistence paths for the global tree.
   ```
 - A caller supplies the tenant in any of these ways (highest precedence
   first): `await agent.ask("...", tenant="pokemon")`; a `RequestContext`
-  built by the handler (FEAT-421 `requires_tenant()` pattern, `ctx.kwargs
-  ["tenant"]`) or `UserContext.metadata["tenant"]` at `post_login`; a bot-level
-  default `tenant_id="pokemon"` set at construction. With no tenant at all the
-  agent behaves as global-only.
+  carrying `kwargs["tenant"]` or `UserContext.metadata["tenant"]` bound at
+  `post_login`; a bot-level default `tenant_id="pokemon"` set at construction.
+  With no tenant at all the agent behaves as global-only.
+- **HTTP**: the chat and agent handlers resolve the tenant server-side from
+  the Navigator session (`RequestScope.tenant`, the user's single `program`)
+  and pass it as `tenant=`; a `tenant` key in the request body is dropped and
+  logged. A user can never choose a tenant.
+- **Telegram**: the bot YAML declares `tenant: pokemon` on the agent entry;
+  every user of that bot runs under that tenant. Bots without the field stay
+  global-only.
+- A global skill may declare `global_only: true` in its frontmatter; a tenant
+  cannot shadow it (configure-time error log, global wins).
 - For that request: `<available_skills>` lists the pokemon view (pokemon
   overrides + un-overridden globals); `/revenue_by_division` and
   `load_skill(name="revenue_by_division")` resolve to the pokemon file;
@@ -325,8 +360,11 @@ change to `store.py` persistence paths for the global tree.
   invisible.
 - `save_learned_skill` writes to `skills/learned/` and the new skill is
   immediately visible to every tenant.
-- `search_skills` / `document_skill` (DB-like registry) operate on the
-  `org/agent/pokemon` namespace with fallback search into `org/agent`.
+- `search_skills` reads the `org/agent/pokemon` namespace with fallback into
+  `org/agent`; `document_skill` / `update_skill` write to `org/agent/pokemon`
+  (global when no tenant is active).
+- `narrate(facts, skill, tenant=None)` renders with the tenant's skill variant
+  when a tenant is passed or active.
 - Logging at configure: one line per tenant tree loaded (`tenant=pokemon, 3
   skills, 1 shadowing global`) so operators can audit overrides.
 
@@ -341,13 +379,16 @@ change to `store.py` persistence paths for the global tree.
 2. **View composition**: a read-only composite exposing the `SkillFileRegistry`
    read API; `get(trigger)` / `get_by_name(name)` try the tenant registry then
    the global; `list_skills()` returns tenant skills plus globals whose name
-   is not shadowed; `has_trigger()` follows the same rule. The global view is
-   the global registry itself.
+   is not shadowed; `has_trigger()` follows the same rule. Tenant entries that
+   would shadow a `global_only` skill are dropped at configure with an error
+   log. The global view is the global registry itself.
 3. **Tenant resolution**: `_resolve_tenant(explicit, ctx, user_context)`
-   applies the precedence (explicit kwarg → `RequestContext` kwargs /
-   `UserContext.metadata` → `self._tenant_id` → `None`), validates the id and
-   rejects unknown tenants by falling back to global with a warning (not an
-   error — see Open Questions). `ask()` / `ask_stream()` set a module-level
+   applies the precedence (explicit kwarg → `RequestContext.kwargs["tenant"]` /
+   `UserContext.metadata["tenant"]` → `self._tenant_id` → `None`), validates
+   the id (safe path segment + reserved-name list) and maps an absent tenant
+   directory to the global view with a once-per-tenant warning.
+   `PermissionContext.tenant_id` is deliberately not consulted (see
+   Constraints). `ask()` / `ask_stream()` set a module-level
    `ContextVar` for the call's lifetime (same pattern as `session()` with
    `_current_ctx`), reset in `finally`.
 4. **Consumers read the view**: `SkillFileToolkit`, the trigger middleware,
@@ -366,13 +407,25 @@ change to `store.py` persistence paths for the global tree.
    `SkillRegistry` as today plus one per tenant with namespace
    `{org_id}/{agent_id}/{tenant}` and `persistence_path =
    tenants/{tenant}/skills/`. `search_skills` / `get_skill_context` query the
-   tenant registry first and merge global results; `document_skill` writes to
-   the tenant registry when a tenant is active (the DB-like counterpart of
-   authored skills), while `extract_skills_from_conversation` follows the
-   learned rule (global).
+   tenant registry first and merge global results; `document_skill` /
+   `update_skill` write to the tenant registry when a tenant is active (the
+   DB-like counterpart of authored skills), while
+   `extract_skills_from_conversation` follows the learned rule (global).
 7. **Reload**: an explicit `reload_tenant_skills(tenant=None)` method rescans
    one or all tenant trees (the "add a tenant without restart" escape hatch
    the eager decision implies).
+8. **HTTP binding**: `handlers/chat.py` and `handlers/agents/abstract.py`
+   obtain the scope through the installed resolver (the same call
+   `studio_scope_kwargs()` already makes), pop any `tenant` from the client
+   payload (warning log), and pass `tenant=scope.tenant` to `ask()` /
+   `ask_stream()`. When no resolver is installed or the session has zero or
+   several programs, no tenant is passed (global view).
+9. **Telegram binding**: `TelegramAgentConfig` gains `tenant: Optional[str]`;
+   the wrapper copies it into `UserContext.metadata["tenant"]` (so
+   `post_login` can seed the instance default) and uses it as
+   `UserSession.tenant_id` in `_build_permission_context()` instead of the
+   literal `"default"`; `_invoke_agent()` passes `tenant=` explicitly, and
+   `_list_agent_skills()` lists that tenant's view.
 
 ### Edge Cases & Error Handling
 
@@ -386,6 +439,13 @@ change to `store.py` persistence paths for the global tree.
   per request (rate-limited to once per tenant per instance).
 - Invalid tenant id (`..`, `/`, empty, reserved name): `ValueError` from the
   resolver → `ask()` fails fast; never touches the filesystem.
+- Client body carrying `tenant` on HTTP: removed before `ask()` and logged;
+  the server-resolved scope always wins. `tenant_based=False` agents ignore
+  the kwarg anyway.
+- Telegram bot with `tenant:` set but agent `tenant_based=False`: the tenant
+  is ignored with a DEBUG log — the flag stays the single switch.
+- A tenant skill colliding with a `global_only` global skill: dropped from
+  that tenant's view with an error log naming both files.
 - Tenant skill with same `name` as global: tenant wins (shadow), logged at
   configure. Tenant skill with same `/trigger` but different `name` as a
   global skill: tenant wins for that trigger within the view; global skill
@@ -419,7 +479,12 @@ change to `store.py` persistence paths for the global tree.
   REQUEST-phase layers selected by condition, cache-eligible.
 - `tenant-scoped-skill-store`: per-tenant `SkillRegistry` namespaces
   (`org/agent/tenant`) with global fallback for search/context and
-  tenant-local persistence.
+  tenant-local persistence; `document_skill` / `update_skill` write
+  tenant-side.
+- `channel-tenant-binding`: HTTP handlers bind the server-resolved
+  `RequestScope.tenant` (client-supplied `tenant` discarded); Telegram binds a
+  static per-bot `TelegramAgentConfig.tenant` into `UserContext.metadata` and
+  the permission context.
 
 ### Modified Capabilities
 - `skills-tools-toolkit` (FEAT-207, `sdd/specs/skills-tools-toolkit.spec.md`):
@@ -428,8 +493,8 @@ change to `store.py` persistence paths for the global tree.
 - `skill-registry` (`sdd/specs/skill-registry.spec.md`): trigger middleware
   and `/skills` listing become view-based; `SkillRegistryMixin` gains the
   tenant surface.
-- `finance-reporter-tier2-narrative` (`NarrativeMixin.narrate`): resolves the
-  skill through the view (tenant-aware narration).
+- `finance-reporter-tier2-narrative` (`NarrativeMixin.narrate`): gains
+  `tenant: str | None = None` and resolves the skill through the view.
 
 ---
 
@@ -445,15 +510,20 @@ change to `store.py` persistence paths for the global tree.
 | `parrot/skills/prompt.py` | extends | layer name/condition parameters for per-tenant layers |
 | `parrot/skills/store.py` (`SkillRegistry`, `create_skill_registry`) | depends on | one instance per tenant namespace; no behavioural change expected inside |
 | `parrot/bots/base.py` `ask()` / `ask_stream()` | modifies | accept `tenant=` kwarg and bind the ContextVar around the call (cooperative hook, same shape as `session()`) |
-| `parrot/bots/mixins/narrative.py` | modifies | `narrate()` resolves via the view |
-| `parrot/integrations/telegram/wrapper.py` `_list_agent_skills()` | modifies | lists the tenant view when the wrapper knows the tenant (`UserContext.metadata`) |
+| `parrot/bots/mixins/narrative.py` | modifies | `narrate(facts, skill, tenant=None)` resolves via the view |
+| `parrot/skills/parsers.py` + `models.py` | extends | `global_only: bool = False` frontmatter field on `SkillDefinition` |
+| `ai-parrot-server` `handlers/chat.py`, `handlers/agents/abstract.py` | modifies | pass `tenant=scope.tenant` from the installed scope resolver; drop client-supplied `tenant` |
+| `ai-parrot-server` `handlers/scope.py` (`RequestScope`, `SessionScopeResolver`) | depends on | unchanged; the source of the HTTP tenant |
+| `ai-parrot-integrations` `telegram/models.py` (`TelegramAgentConfig`) | extends | new `tenant: Optional[str] = None` |
+| `ai-parrot-integrations` `telegram/wrapper.py` | modifies | `_build_permission_context()` (`tenant_id`), `UserContext.metadata["tenant"]`, `_invoke_agent()` passes `tenant=`, `_list_agent_skills()` lists the view |
 | `parrot/bots/studio/agent.py` (`AgentStudioAgent`) | none | `skill_paths`-only consumer; `tenant_based` stays off |
 | `agents/*/skills/` trees (gitignored) | none | no migration; `tenants/` is additive |
 | docs (`docs/skills/…`, `.agent/CONTEXT.md` Skills section) | extends | document the layout and precedence |
 | tests `packages/ai-parrot/tests/unit/test_skill_*`, `tests/unit/test_skills_*` | extends | new view/resolver/mixin/prompt-layer tests; existing ones unchanged |
 
 Breaking changes: none with the flag off. New dependencies: none.
-Deployment: operators create `tenants/{tenant}/skills/` next to existing trees.
+Deployment: operators create `tenants/{tenant}/skills/` next to existing trees
+and, for Telegram, add `tenant:` to the bot's YAML entry.
 
 ---
 
@@ -602,6 +672,47 @@ def _list_agent_skills(self) -> list[dict]: ...   # reads agent._skill_file_regi
 
 # From packages/ai-parrot/src/parrot/conf.py:181
 AGENTS_DIR = config.get("AGENTS_DIR", fallback=BASE_DIR.joinpath("agents"))   # Path, created if missing
+
+# From packages/ai-parrot/src/parrot/auth/permission.py
+class UserSession: tenant_id: str                                        # line 47
+class PermissionContext:
+    @property
+    def tenant_id(self) -> str: return self.session.tenant_id            # line 134
+def build_principal_context(principal: str, ..., tenant_id: Optional[str] = None, ...) -> PermissionContext  # line 170; tenant_id defaults to `principal` (line 202)
+
+# From packages/ai-parrot-server/src/parrot/handlers/scope.py
+class RequestScope:                                                       # line 38
+    user_id: str | None; tenant: str | None; groups: frozenset[str]; is_superuser: bool; may_author; may_administer; studio_enabled
+class SessionScopeResolver:
+    async def resolve(self, request: web.Request) -> RequestScope: ...   # ~line 85; tenant = programs[0] iff the Navigator session has exactly one program (line 123), else None
+def scope_grants(*, tenant, visibility, allowed_groups, scope) -> bool   # line 153
+
+# From packages/ai-parrot-server/src/parrot/handlers/studio/access.py:73
+async def studio_scope_kwargs(app: Any, request: web.Request, chatbot: Any) -> dict  # {"studio_scope": …} via get_scope_resolver(app).resolve(request); {} when no resolver installed
+
+# From packages/ai-parrot-server/src/parrot/handlers/chat.py
+async with chatbot.session(request=self.request, app=app, llm=llm, **await studio_scope_kwargs(app, self.request, chatbot)) as bot:  # line 454
+response = await bot.ask(question=question, session_id=session_id, user_id=user_id, ..., request=self.request, **data)   # line 556 — client body forwarded as **data
+# agent handler base: packages/ai-parrot-server/src/parrot/handlers/agents/abstract.py:886 — `response = await agent.ask(`
+
+# From packages/ai-parrot/src/parrot/bots/base.py:1037
+async def ask(self, question, ..., ctx: Optional[RequestContext] = None, permission_context: Optional[Any] = None, a2ui_surface_state=None, structured_output=None, system_prompt=None, output_mode=OutputMode.DEFAULT, format_kwargs=None, use_tools=True, trace_context=None, **kwargs) -> AIMessage
+
+# From packages/ai-parrot-integrations/src/parrot/integrations/telegram/models.py:42
+@dataclass
+class TelegramAgentConfig:
+    name: str; chatbot_id: str; bot_token: Optional[str] = None; allowed_chat_ids: Optional[List[int]] = None
+    welcome_message: Optional[str] = None; system_prompt_override: Optional[str] = None; kind: str = "telegram"
+    # … auth_url, enable_login, auth_method, auth_methods, voice_config, post_auth_actions (no tenant field today)
+
+# From packages/ai-parrot-integrations/src/parrot/integrations/telegram/wrapper.py
+def _build_permission_context(self, session, *, chat_id, bot_id) -> PermissionContext   # line 1266; builds UserSession(..., tenant_id="default", ...) at line 1301-1303
+UserContext(channel="telegram", user_id=session.user_id, display_name=..., email=..., session_id=..., metadata=metadata)  # line 1349; metadata keys today: telegram_username, nav_user_id, jira_account_id, jira_cloud_id
+async def _invoke_agent(self, session: TelegramUserSession, question: str, *, memory, output_mode=OutputMode.TELEGRAM, ...)  # line 1450; calls agent.ask(..., permission_context=permission_context, ...) at lines 1514/1540
+def _list_agent_skills(self) -> list[dict]                                 # line 1938
+
+# From packages/ai-parrot-integrations/src/parrot/integrations/telegram/auth.py:47
+class TelegramUserSession: telegram_id: int; nav_user_id: Optional[str]; nav_session_token; nav_email; authenticated: bool; metadata: Dict; jira_*  # no tenant/programs field
 ```
 
 #### Verified Imports
@@ -619,6 +730,10 @@ from parrot.utils.helpers import RequestContext, current_context, _current_ctx  
 from parrot.auth.context import UserContext                           # auth/context.py:39
 from parrot.utils.paths import validate_path_segment, secure_path, SAFE_SEGMENT_RE  # utils/paths.py:33 / :52 / :29
 from parrot.conf import AGENTS_DIR                                    # conf.py:181
+from parrot.auth.permission import PermissionContext, UserSession, build_principal_context  # auth/permission.py:134 / :47 / :170
+from parrot.handlers.scope import RequestScope, SessionScopeResolver, get_scope_resolver, has_installed_resolver  # ai-parrot-server handlers/scope.py:38 / :85 (imported by studio/access.py:79)
+from parrot.handlers.studio.access import studio_scope_kwargs         # ai-parrot-server handlers/studio/access.py:73
+from parrot.integrations.telegram.models import TelegramAgentConfig  # ai-parrot-integrations telegram/models.py:42
 ```
 
 #### Key Attributes & Constants
@@ -641,27 +756,36 @@ from parrot.conf import AGENTS_DIR                                    # conf.py:
 - ~~`parrot.skills.tenancy`~~ — module does not exist yet (proposed name).
 - ~~`BaseBot.ask(tenant=...)`~~ — `tenant` is not a named parameter today; it would only land in `**kwargs`.
 - ~~`validate_path_segment(value, *, what=...)` in `parrot.utils.paths`~~ — that keyword form is the *other* `validate_path_segment` in `knowledge/contracts/evidence.py:54`; the reusable one in `utils/paths.py:33` takes `name=`.
-- ~~`docs/skills/`~~ — no skills docs directory was found under `docs/`; documentation location is an open question.
+- ~~`docs/skills/`~~ — no skills docs directory exists under `docs/` yet; this feature creates `docs/skills/per-tenant-skills.md`.
+- ~~`TelegramAgentConfig.tenant`~~ — no tenant field today (new in this feature).
+- ~~`UserContext.metadata["tenant"]`~~ — no integration wrapper sets this key today; Telegram will.
+- ~~`TelegramUserSession.programs` / `.tenant`~~ — the Navigator login payload parsed in `telegram/auth.py` carries `user_id`, `token`, `display_name`, `email`; no programs/tenant.
+- ~~`parrot.handlers.scope` in core~~ — `RequestScope` / `SessionScopeResolver` live only in `ai-parrot-server`; core code must not import them (the mixin receives a plain `tenant` string).
+- ~~`PermissionContext.tenant_id` as a trustworthy tenant~~ — exists (permission.py:134) but is `"default"` on Telegram and the principal id via `build_principal_context()`; not used as a source.
+- ~~`SkillDefinition.global_only`~~ — new frontmatter field (this feature).
 
 ---
 
 ## Parallelism Assessment
 
 - **Internal parallelism**: moderate. The resolver/ContextVar/validation
-  module and the per-tenant `SkillRegistry` (store) namespace work are
-  independent of each other and of the file-registry view. The view, the
-  mixin wiring, the prompt layer and the consumer migrations (tools,
-  middleware, narrative, telegram) form a dependent chain: view → mixin →
-  consumers.
+  module, the per-tenant `SkillRegistry` (store) namespace work, the
+  `global_only` frontmatter field, the HTTP handler binding
+  (`ai-parrot-server`) and the Telegram config/wrapper binding
+  (`ai-parrot-integrations`) are mutually independent once the mixin's
+  public `tenant=` contract is fixed. The view, the mixin wiring, the prompt
+  layer and the in-core consumer migrations (tools, middleware, narrative)
+  form a dependent chain: view → mixin → consumers.
 - **Cross-feature independence**: no active task touches `parrot/skills/`
   (checked `sdd/tasks/active/`). Draft specs `agent-skill-system` (FEAT-088)
   and `skills-tools-toolkit` (FEAT-207) are historical (their code shipped).
   Shared files with risk of concurrent edits: `bots/base.py` (`ask` /
   `ask_stream` signature) and `bots/abstract.py` — coordinate if any
   in-flight feature changes `ask()` kwargs.
-- **Recommended isolation**: `mixed` — resolver module and store namespace
-  tasks may run in individual sub-worktrees; the view → mixin → consumers
-  chain runs sequentially in the feature worktree.
+- **Recommended isolation**: `mixed` — resolver module, store namespace,
+  `global_only` field, HTTP binding and Telegram binding tasks may run in
+  individual sub-worktrees; the view → mixin → consumers chain runs
+  sequentially in the feature worktree.
 - **Rationale**: the independent pieces have disjoint files; the chain shares
   `mixin.py` and the toolkit constructors, where parallel edits would
   conflict.
@@ -678,11 +802,13 @@ from parrot.conf import AGENTS_DIR                                    # conf.py:
 - [x] Learned skills — *Owner: Jesus Lara*: always written to the global `skills/learned/`.
 - [x] Loading strategy — *Owner: Jesus Lara*: eager scan of `tenants/*` at `configure()`.
 - [x] `store.py` scope — *Owner: Jesus Lara*: in scope; namespace `org_id/agent_id/{tenant}`.
-- [ ] Unresolved tenant with `tenant_based=True`: this brainstorm assumes **global-only view, no error** (fail-closed to global). Confirm, or require an error. — *Owner: Jesus Lara*
-- [ ] Unknown tenant id (valid name, no `tenants/{tenant}/` dir): warn + global view (assumed), or reject? — *Owner: Jesus Lara*
-- [ ] Should a frontmatter guard (`global_only: true`) exist so some global skills can never be shadowed by a tenant (e.g. policy skills)? Deferred; not in v1 unless requested. — *Owner: Jesus Lara*
-- [ ] `document_skill` (DB-like write tool) with an active tenant: write to the tenant namespace (assumed, mirrors authored skills) or always global like learned skills? — *Owner: Jesus Lara*
-- [ ] `NarrativeMixin.narrate(facts, skill)`: gain an explicit `tenant: str | None = None` parameter, or rely purely on the ContextVar / instance default? — *Owner: spec author*
-- [ ] Telegram wrapper `_list_agent_skills()`: which `UserContext.metadata` key carries the tenant (`"tenant"` assumed), and is it set by the wrapper today? Verify during spec. — *Owner: spec author*
-- [ ] Where do skills docs live? No `docs/skills/` found; candidate is a new `docs/skills/per-tenant-skills.md` plus the Skills paragraph in `.agent/CONTEXT.md`. — *Owner: spec author*
-- [ ] Per-tenant `<available_skills>` layers: cap on tenant count before switching to a single REQUEST-phase layer rendered from a `$available_skills` variable supplied by the mixin? Decide threshold in spec. — *Owner: spec author*
+- [x] Unresolved tenant with `tenant_based=True` — *Owner: Jesus Lara*: global-only view, no error (fail-closed to global), DEBUG log.
+- [x] Unknown tenant id (valid name, no `tenants/{tenant}/` dir) — *Owner: Jesus Lara*: warning once per tenant per instance + global view.
+- [x] `global_only: true` frontmatter guard — *Owner: Jesus Lara*: yes, in v1; a tenant skill colliding with a `global_only` global is dropped with an error log, global wins.
+- [x] `document_skill` with an active tenant — *Owner: Jesus Lara*: writes to the tenant namespace `org/agent/{tenant}` (global when no tenant); `extract_skills_from_conversation` stays global like learned skills.
+- [x] `NarrativeMixin.narrate()` tenant — *Owner: Jesus Lara*: explicit `tenant: str | None = None` parameter, falling back to the ContextVar and then the instance default.
+- [x] Tenant key / channel plumbing — *Owner: Jesus Lara*: key is `"tenant"` in both `RequestContext.kwargs` and `UserContext.metadata`; Telegram and the HTTP handlers populate it **in this feature**.
+- [x] HTTP tenant source — *Owner: Jesus Lara*: server-resolved `RequestScope.tenant` (single Navigator `program`) passed as `tenant=`; a `tenant` key in the client body is discarded and logged; no superuser override in v1.
+- [x] Telegram tenant source — *Owner: Jesus Lara*: new static `TelegramAgentConfig.tenant` (one bot = one customer) copied into `UserContext.metadata["tenant"]` and used as `UserSession.tenant_id` instead of `"default"`; bots without it are global-only.
+- [x] Docs location — *Owner: Jesus Lara*: new `docs/skills/per-tenant-skills.md` + a paragraph in the Skills section of `.agent/CONTEXT.md`.
+- [x] Per-tenant `<available_skills>` layer cap — *Owner: Jesus Lara*: one layer per tenant, no cap in v1; `skill_prompt_max_entries` bounds each layer; a single variable-fed REQUEST layer is the documented follow-up if tenant counts grow.
