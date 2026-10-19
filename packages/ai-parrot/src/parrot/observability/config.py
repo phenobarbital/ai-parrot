@@ -208,7 +208,7 @@ class ObservabilityConfig(BaseModel):
     capture_completions: bool = False  # PII: default off
 
     # Metric export tuning
-    metric_export_interval_ms: int = 60_000
+    metric_export_interval_ms: int = Field(default=60_000, gt=0)
     histogram_buckets: Optional[list[float]] = None  # None → LLM-tuned defaults
 
     # Cost pricing override (mirrors PARROT_PRICING_PATH env var)
@@ -274,6 +274,11 @@ class ObservabilityConfig(BaseModel):
         ``OTEL_EXPORTER_OTLP_ENDPOINT``  ``otlp_endpoint``
         ``OBSERVABILITY_PROM_PORT``  ``prometheus_port``
         ``OBSERVABILITY_PROM_ADDR``  ``prometheus_addr``
+        ``OBSERVABILITY_TRACES``     ``enable_traces`` (FEAT-705)
+        ``OBSERVABILITY_METRICS``    ``enable_metrics`` (FEAT-705)
+        ``OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS``  ``metric_export_interval_ms``
+                                      (FEAT-705; positive int, else the
+                                      default plus one warning)
         ``PARROT_PRICING_PATH``      ``pricing_override_path``
         ``OTLP_TARGETS``             ``otlp_targets`` (FEAT-462, JSON list)
         ``OBSERVABILITY_OPENLIT_RECORDER``  ``openlit_recorder_endpoint``
@@ -307,6 +312,13 @@ class ObservabilityConfig(BaseModel):
             "usage_log_level": _as_log_level(get("OBSERVABILITY_LOG_LEVEL"), defaults.usage_log_level),
             "prometheus_port": _as_int(get("OBSERVABILITY_PROM_PORT"), defaults.prometheus_port),
             "prometheus_addr": get("OBSERVABILITY_PROM_ADDR") or defaults.prometheus_addr,
+            "enable_traces": _as_bool(get("OBSERVABILITY_TRACES"), defaults.enable_traces),
+            "enable_metrics": _as_bool(get("OBSERVABILITY_METRICS"), defaults.enable_metrics),
+            "metric_export_interval_ms": _as_positive_int(
+                get("OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS"),
+                defaults.metric_export_interval_ms,
+                key="OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS",
+            ),
         }
 
         backend = get("OBSERVABILITY_BACKEND")
@@ -402,6 +414,34 @@ def _as_int(raw: Optional[str], default: int) -> int:
         return int(raw)
     except (TypeError, ValueError):
         return default
+
+
+def _as_positive_int(raw: Optional[str], default: int, *, key: str) -> int:
+    """Parse a strictly positive int (FEAT-705).
+
+    Absent or blank input returns *default* silently. Non-numeric or
+    non-positive input logs one warning naming *key* and returns *default*.
+    Never raises, so a typo cannot disable the env auto-boot.
+
+    Args:
+        raw: Raw env value, or ``None`` when unset.
+        default: Value to use when *raw* is unusable.
+        key: Env var name, used only in the warning.
+
+    Returns:
+        The parsed positive int, or *default*.
+    """
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        logger.warning("%s=%r is not a positive integer; using %d", key, raw, default)
+        return default
+    if value <= 0:
+        logger.warning("%s=%r is not a positive integer; using %d", key, raw, default)
+        return default
+    return value
 
 
 def _as_log_level(raw: Optional[str], default: int) -> int:
