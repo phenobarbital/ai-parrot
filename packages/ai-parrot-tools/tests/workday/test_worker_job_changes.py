@@ -1,4 +1,5 @@
 """FEAT-706 worker job-changes handler tests using a fake Workday service."""
+
 from datetime import date
 
 import pytest
@@ -25,56 +26,80 @@ def _worker(position_id: str = "MEX559647", title: str = "Payroll Coordinator", 
     return {
         "Worker_Data": {
             "Employment_Data": {
-                "Worker_Job_Data": [{
-                    "Position_Data": {
-                        "Position_Reference": {"ID": [_id("Position_ID", position_id)]},
-                        "Position_Title": title,
-                        "Business_Title": title,
-                        "Effective_Date": "2026-06-08",
-                        "Job_Profile_Summary_Data": {
-                            "Job_Profile_Reference": {"ID": [_id("Job_Profile_ID", "PROFILE-1")]},
-                            "Job_Profile_Name": title,
-                        },
+                "Worker_Job_Data": [
+                    {
+                        "Position_Data": {
+                            "Position_Reference": {"ID": [_id("Position_ID", position_id)]},
+                            "Position_Title": title,
+                            "Business_Title": title,
+                            "Effective_Date": "2026-06-08",
+                            "Job_Profile_Summary_Data": {
+                                "Job_Profile_Reference": {"ID": [_id("Job_Profile_ID", "PROFILE-1")]},
+                                "Job_Profile_Name": title,
+                            },
+                        }
                     }
-                }],
+                ],
                 "Worker_Status_Data": {"Active": True, "Hire_Date": "2022-09-26"},
             },
             "Organization_Data": [],
             "Management_Chain_Data": {},
             "Compensation_Data": {
                 "Compensation_Effective_Date": "2026-05-25",
-                "Salary_and_Hourly_Data": [{
-                    "Amount": str(wage),
-                    "Compensation_Plan_Reference": {"ID": [_id("Compensation_Plan_ID", "BASE")]},
-                    "Compensation_Element_Reference": {"ID": [_id("Compensation_Element_ID", "SALARY")]},
-                    "Currency_Reference": {"ID": [_id("Currency_ID", "USD")]},
-                    "Frequency_Reference": {"ID": [_id("Frequency_ID", "Monthly")]},
-                    "Assignment_Effective_Date": "2026-05-25",
-                }],
-                "Compensation_Guidelines_Data": [{
-                    "Compensation_Package_Reference": {"ID": [_id("Compensation_Package_ID", "PKG")]},
-                    "Compensation_Grade_Reference": {"ID": [_id("Compensation_Grade_ID", "G1")]},
-                    "Compensation_Grade_Profile_Reference": {
-                        "ID": [_id("Compensation_Grade_Profile_ID", "P1")]
-                    },
-                }],
+                "Salary_and_Hourly_Data": [
+                    {
+                        "Amount": str(wage),
+                        "Compensation_Plan_Reference": {"ID": [_id("Compensation_Plan_ID", "BASE")]},
+                        "Compensation_Element_Reference": {"ID": [_id("Compensation_Element_ID", "SALARY")]},
+                        "Currency_Reference": {"ID": [_id("Currency_ID", "USD")]},
+                        "Frequency_Reference": {"ID": [_id("Frequency_ID", "Monthly")]},
+                        "Assignment_Effective_Date": "2026-05-25",
+                    }
+                ],
+                "Compensation_Guidelines_Data": [
+                    {
+                        "Compensation_Package_Reference": {"ID": [_id("Compensation_Package_ID", "PKG")]},
+                        "Compensation_Grade_Reference": {"ID": [_id("Compensation_Grade_ID", "G1")]},
+                        "Compensation_Grade_Profile_Reference": {"ID": [_id("Compensation_Grade_Profile_ID", "P1")]},
+                    }
+                ],
             },
         }
     }
 
 
-REFERENCE_RESPONSE = {
-    "Response_Data": {"Worker": [{"Worker_Reference": {"ID": [_id("WID", WID)]}, "Worker_Data": {}}]}
-}
+REFERENCE_RESPONSE = {"Response_Data": {"Worker": [{"Worker_Reference": {"ID": [_id("WID", WID)]}, "Worker_Data": {}}]}}
 EVENT_HISTORY_RESPONSE = {
-    "Worker_Event_History_Data": {"Event_Data": [
-        {"Event_ID": "hire", "Event_Type_Reference": {"Event_Type_Name": "Hire"}, "Effective_Date": "2022-09-26"},
-        {"Event_ID": "pay", "Event_Type_Reference": {"Event_Type_Name": "Propose Compensation Change"}, "Effective_Date": "2026-05-25"},
-        {"Event_ID": "job", "Event_Type_Reference": {"Event_Type_Name": "Change Job"}, "Effective_Date": "2026-06-08"},
-        {"Event_ID": "org", "Event_Type_Reference": {"Event_Type_Name": "Change Organization Assignments for Worker"}, "Effective_Date": "2026-06-08"},
-        {"Event_ID": "edit", "Event_Type_Reference": {"Event_Type_Name": "Edit Position"}, "Effective_Date": "2026-07-06"},
-        {"Event_ID": "noise", "Event_Type_Reference": {"Event_Type_Name": "Enter Time"}, "Effective_Date": "2026-07-06"},
-    ]}
+    "Worker_Event_History_Data": {
+        "Event_Data": [
+            {"Event_ID": "hire", "Event_Type_Reference": {"Event_Type_Name": "Hire"}, "Effective_Date": "2022-09-26"},
+            {
+                "Event_ID": "pay",
+                "Event_Type_Reference": {"Event_Type_Name": "Propose Compensation Change"},
+                "Effective_Date": "2026-05-25",
+            },
+            {
+                "Event_ID": "job",
+                "Event_Type_Reference": {"Event_Type_Name": "Change Job"},
+                "Effective_Date": "2026-06-08",
+            },
+            {
+                "Event_ID": "org",
+                "Event_Type_Reference": {"Event_Type_Name": "Change Organization Assignments for Worker"},
+                "Effective_Date": "2026-06-08",
+            },
+            {
+                "Event_ID": "edit",
+                "Event_Type_Reference": {"Event_Type_Name": "Edit Position"},
+                "Effective_Date": "2026-07-06",
+            },
+            {
+                "Event_ID": "noise",
+                "Event_Type_Reference": {"Event_Type_Name": "Enter Time"},
+                "Effective_Date": "2026-07-06",
+            },
+        ]
+    }
 }
 SNAPSHOTS = {
     "2022-09-25": {"Response_Data": {"Worker": []}},
@@ -114,7 +139,9 @@ def test_parse_job_snapshot_fields() -> None:
     snapshot = parse_job_snapshot(_worker(), date(2026, 6, 8))
     assert snapshot is not None
     assert (snapshot.position_id, snapshot.position_title, snapshot.hire_date) == (
-        "MEX559647", "Payroll Coordinator", "2022-09-26"
+        "MEX559647",
+        "Payroll Coordinator",
+        "2022-09-26",
     )
     assert snapshot.wage is None
 
@@ -129,7 +156,9 @@ def test_parse_job_snapshot_compensation_opt_in() -> None:
     snapshot = parse_job_snapshot(_worker(wage=22.0), date(2026, 5, 25), include_compensation=True)
     assert snapshot is not None
     assert (snapshot.wage, snapshot.pay_currency, snapshot.pay_frequency) == (22.0, "USD", "Monthly")
-    assert snapshot.compensation_elements == [{"plan": "BASE", "element": "SALARY", "amount": 22.0, "currency": "USD", "frequency": "Monthly"}]
+    assert snapshot.compensation_elements == [
+        {"plan": "BASE", "element": "SALARY", "amount": 22.0, "currency": "USD", "frequency": "Monthly"}
+    ]
 
 
 @pytest.mark.asyncio
@@ -174,7 +203,10 @@ async def test_job_changes_execute_before_after() -> None:
     assert row["before"]["position_id"] == "MEX559647"
     assert row["after"]["position_id"] == "P104998"
     assert {change["field"] for change in row["changes"]} >= {
-        "position_id", "position_title", "business_title", "job_profile_name"
+        "position_id",
+        "position_title",
+        "business_title",
+        "job_profile_name",
     }
 
 
@@ -202,7 +234,9 @@ async def test_job_changes_snapshot_memoised() -> None:
     """Adjacent event dates share the same snapshot call within one execution."""
     service = _FakeService()
     await WorkerJobChangesType(service).execute(WID)
-    snapshots = [kwargs for operation, kwargs in service.calls if operation == "Get_Workers" and "Response_Filter" in kwargs]
+    snapshots = [
+        kwargs for operation, kwargs in service.calls if operation == "Get_Workers" and "Response_Filter" in kwargs
+    ]
     assert len(snapshots) == len({kwargs["Response_Filter"]["As_Of_Effective_Date"] for kwargs in snapshots})
 
 

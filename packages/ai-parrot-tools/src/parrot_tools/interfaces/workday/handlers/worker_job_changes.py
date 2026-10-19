@@ -1,4 +1,5 @@
 """Worker job-changes handler (FEAT-706): as-of snapshots diffed per job event."""
+
 from __future__ import annotations
 
 import asyncio
@@ -63,11 +64,24 @@ def parse_job_snapshot(worker: dict[str, Any], as_of: date, include_compensation
     status = parse_worker_status(worker_data)
     values: dict[str, Any] = {
         "as_of": as_of,
-        **{key: employment.get(key) for key in (
-            "position_id", "position_title", "business_title", "job_profile_id", "job_profile_name",
-            "job_family", "management_level", "job_category", "worker_type", "position_time_type",
-            "pay_rate_type", "scheduled_weekly_hours", "full_time_equivalent_percentage",
-        )},
+        **{
+            key: employment.get(key)
+            for key in (
+                "position_id",
+                "position_title",
+                "business_title",
+                "job_profile_id",
+                "job_profile_name",
+                "job_family",
+                "management_level",
+                "job_category",
+                "worker_type",
+                "position_time_type",
+                "pay_rate_type",
+                "scheduled_weekly_hours",
+                "full_time_equivalent_percentage",
+            )
+        },
         "position_effective_date": (
             str(employment["position_effective_date"])
             if employment.get("position_effective_date") is not None
@@ -75,11 +89,21 @@ def parse_job_snapshot(worker: dict[str, Any], as_of: date, include_compensation
         ),
         "location_name": business_site.get("business_site_name"),
         "location_id": business_site.get("business_site_location_id"),
-        **{key: organization.get(key) for key in (
-            "supervisory_organization_id", "supervisory_organization_name", "cost_center_id",
-            "cost_center_name", "cost_center_hierarchy_name", "company_id", "company_name",
-            "pay_group_id", "pay_group_name", "primary_organization_name",
-        )},
+        **{
+            key: organization.get(key)
+            for key in (
+                "supervisory_organization_id",
+                "supervisory_organization_name",
+                "cost_center_id",
+                "cost_center_name",
+                "cost_center_hierarchy_name",
+                "company_id",
+                "company_name",
+                "pay_group_id",
+                "pay_group_name",
+                "primary_organization_name",
+            )
+        },
         "direct_manager_id": management.get("direct_manager_id"),
         "direct_manager_name": management.get("direct_manager_name"),
         "active": status.get("active"),
@@ -243,9 +267,7 @@ class WorkerJobChangesType(WorkdayTypeBase):
         ref = await resolve_worker_reference(
             self.service, worker_id, worker_id_type, self.max_retries, self.retry_delay
         )
-        groups = group_job_events(
-            await self._fetch_events(ref, effective_from, effective_through), tuple(event_types)
-        )
+        groups = group_job_events(await self._fetch_events(ref, effective_from, effective_through), tuple(event_types))
         memo: dict[date, Any] = {}
         semaphore = asyncio.Semaphore(self.snapshot_concurrency)
         snapshot_pairs = await asyncio.gather(
