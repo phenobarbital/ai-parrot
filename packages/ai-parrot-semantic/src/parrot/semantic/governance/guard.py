@@ -46,12 +46,41 @@ class PositiveGuard:
             parent = parent.parent
         return parent
 
-    def check_and_limit(self, tree: exp.Expression, *, requested_limit: int | None = None) -> exp.Expression:
+    @staticmethod
+    def _exported_columns(
+        subquery: exp.Subquery, schema_tables: dict[str, dict[str, str]], trusted: set[int]
+    ) -> set[str]:
+        """Columns a derived table exports; a trusted ``SELECT * FROM <table>`` (RLS) exports that table's columns."""
+        query = subquery.this
+        if (
+            id(query) in trusted
+            and isinstance(query, exp.Select)
+            and len(query.expressions) == 1
+            and isinstance(query.expressions[0], exp.Star)
+        ):
+            source = query.args.get("from_") or query.args.get("from")
+            table = source.this if source is not None else None
+            if isinstance(table, exp.Table) and not query.args.get("joins"):
+                name = ".".join(part for part in (table.catalog, table.db, table.name) if part).casefold()
+                columns = schema_tables.get(name)
+                if columns is not None:
+                    return {column.casefold() for column in columns}
+        return {name.casefold() for name in query.named_selects}
+
+    def check_and_limit(
+        self,
+        tree: exp.Expression,
+        *,
+        requested_limit: int | None = None,
+        trusted_nodes: set[int] | None = None,
+    ) -> exp.Expression:
         """Validate a single SELECT and inject or clamp its LIMIT.
 
         Args:
             tree: Parsed SQL expression to validate in place.
             requested_limit: Optional caller-requested row limit.
+            trusted_nodes: ``id()`` of nodes injected by RLS push-down / masking (trusted by identity, never by
+                label). They are exempt from the star and function allowlists; tables are still checked.
 
         Returns:
             The validated expression with an enforced LIMIT.
@@ -76,6 +105,7 @@ class PositiveGuard:
         if not isinstance(tree, exp.Select):
             raise SemanticValidationError("not_select")
 
+        trusted = trusted_nodes or set()
         cte_names = {cte.alias_or_name.casefold() for cte in tree.find_all(exp.CTE)}
         schema_tables = {name.casefold(): columns for name, columns in self.schema.tables.items()}
         scoped_sources: dict[int, dict[str, set[str]]] = {}
@@ -89,9 +119,9 @@ class PositiveGuard:
         for subquery in tree.find_all(exp.Subquery):
             owner = self._enclosing_select(subquery)
             if owner is not None and subquery.alias_or_name and isinstance(subquery.this, exp.Query):
-                scoped_sources.setdefault(id(owner), {})[subquery.alias_or_name.casefold()] = {
-                    name.casefold() for name in subquery.this.named_selects
-                }
+                scoped_sources.setdefault(id(owner), {})[subquery.alias_or_name.casefold()] = self._exported_columns(
+                    subquery, schema_tables, trusted
+                )
 
         for table in tree.find_all(exp.Table):
             if table.name.casefold() in cte_names and not table.db and not table.catalog:
@@ -107,12 +137,16 @@ class PositiveGuard:
                 sources[table.alias_or_name.casefold()] = normalized_columns
 
         for star in tree.find_all(exp.Star):
+            if id(star) in trusted:
+                continue
             if not isinstance(star.parent, exp.Count):
                 raise SemanticValidationError("unknown_column", details={"column": "*"})
 
         for column in tree.find_all(exp.Column):
             if isinstance(column.this, exp.Star):
-                continue
+                if id(column) in trusted or id(column.this) in trusted:
+                    continue
+                raise SemanticValidationError("unknown_column", details={"column": column.sql()})
             column_name = column.name.casefold()
             owner = self._enclosing_select(column)
             sources = scoped_sources.get(id(owner), {}) if owner is not None else {}
@@ -128,6 +162,8 @@ class PositiveGuard:
                 raise SemanticValidationError("unknown_column", details={"column": column.sql()})
 
         for function in tree.find_all(exp.Func):
+            if id(function) in trusted:
+                continue
             function_name = function.name if isinstance(function, exp.Anonymous) else function.sql_name()
             if function_name.upper() not in self.allowed_functions:
                 raise SemanticValidationError("function_not_allowed", details={"function": function_name.upper()})

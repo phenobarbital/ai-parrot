@@ -82,3 +82,36 @@ def test_policy_allowed_functions_additive() -> None:
     assert {"SUM", "REGEXP_REPLACE", "ROUND"}.issubset(allowed)
     guard = PositiveGuard(SCHEMA, allowed, Limits())
     guard.check_and_limit(sqlglot.parse_one("SELECT REGEXP_REPLACE(region, 'x', 'y') FROM sales.orders"))
+
+
+def test_guard_accepts_trusted_rls_and_mask_nodes_only() -> None:
+    """RLS/masking output passes only when its injected nodes are trusted by identity."""
+    import sqlglot as _sqlglot
+
+    from parrot.semantic.governance.guard import DEFAULT_ALLOWED_FUNCTIONS as _DEFAULTS
+    from parrot.semantic.governance.guard import PositiveGuard as _Guard
+    from parrot.semantic.loader import PhysicalSchema as _Schema
+    from parrot.semantic.models import Limits as _Limits
+
+    schema = _Schema(driver="pg", tables={"sales.orders": {"region": "TEXT", "amount": "INT"}})
+    guard = _Guard(schema, _DEFAULTS, _Limits())
+    rls_sql = (
+        "SELECT o.region, SUM(o.amount) FROM (SELECT * FROM sales.orders WHERE region IN ('EU')) AS o "
+        "GROUP BY o.region"
+    )
+    tree = _sqlglot.parse_one(rls_sql)
+    with pytest.raises(SemanticValidationError):
+        guard.check_and_limit(tree.copy())
+    injected = tree.find(_sqlglot.exp.Subquery)
+    assert "LIMIT" in guard.check_and_limit(tree, trusted_nodes={id(n) for n in injected.walk()}).sql()
+
+    masked = _sqlglot.parse_one("SELECT MD5(CAST(o.region AS TEXT)) AS region FROM sales.orders AS o")
+    with pytest.raises(SemanticValidationError):
+        guard.check_and_limit(masked.copy())
+    md5 = masked.find(_sqlglot.exp.MD5)
+    guard.check_and_limit(masked, trusted_nodes={id(n) for n in md5.walk()})
+
+    # Trust never extends to unknown tables.
+    hostile = _sqlglot.parse_one("SELECT x.a FROM (SELECT * FROM secret.t) AS x")
+    with pytest.raises(SemanticValidationError):
+        guard.check_and_limit(hostile, trusted_nodes={id(n) for n in hostile.walk()})
