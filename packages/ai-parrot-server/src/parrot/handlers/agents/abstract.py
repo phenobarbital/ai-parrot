@@ -40,6 +40,7 @@ from ...bots.agent import BasicAgent
 from ...tools.abstract import AbstractTool
 from ...models.responses import AgentResponse, AIMessage
 from ...conf import AGENTS_DIR
+from ..scope import resolve_request_tenant
 
 
 class RedisWriter:
@@ -887,7 +888,8 @@ class AgentHandler(BaseView):
                 question=query,
                 use_conversation_history=False,
                 use_vector_context=False,
-                max_tokens=16000
+                max_tokens=16000,
+                tenant=await resolve_request_tenant(self.request.app, self.request),
             )
             if isinstance(response, Exception):
                 raise response
