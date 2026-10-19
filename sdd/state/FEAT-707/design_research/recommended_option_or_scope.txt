@@ -1,0 +1,83 @@
+**Option A** is recommended because:
+
+- It is the only option that satisfies **all** decided constraints: shadowing
+  by name/trigger, strict isolation, both lifetimes, eager loading and a
+  per-request tenant from four sources.
+- Isolation is enforced by construction (a view *is* the tenant), which is
+  the property that matters for a multi-customer finance agent. Option B's
+  "every caller must remember the filter" is the wrong default for
+  accounting data; Option C cannot do per-request tenants; Option D
+  reintroduces the confusion the feature exists to remove.
+- It leaves `SkillFileRegistry` untouched, so the existing unit and
+  integration tests (`test_skill_file_registry.py`, `test_skill_system.py`,
+  loader/middleware/prompt-layer tests) stay green and only *new* tests are
+  needed for the view, the resolver and the mixin wiring.
+- The trade-off accepted: a handful of consumers must be migrated from
+  `_skill_file_registry` to "the current view", and the prompt builder holds
+  one `<available_skills>` layer per tenant. Both are bounded by the number of
+  tenants, which for this use case is small.
+
+**On the `skills.d` hard-cut**: rejected in favour of a reserved `tenants/`
+namespace (user accepted). Rationale: the rename only protected against a
+tenant literally named `skills`, while a tenant named `prompts`, `queries` or
+`kb` would still have collided with other per-agent folders; `tenants/` closes
+the whole class, and a reserved-name check on tenant ids (`learned`,
+`tenants`, `skills`, `prompts`, `queries`, `kb`, `documents`, `flows`,
+`_drafts`) closes the inverse case. No migration of the 7 existing trees, no
+change to `store.py` persistence paths for the global tree.
+
+---
+
+--- Recommended option body ---
+
+Keep one `SkillFileRegistry` per *tree*: the global one (today's) plus one per
+discovered `tenants/{tenant}/skills/`. A small resolver composes a **read-only
+view** per call — "tenant registry first, then global" — exposing the same
+read API (`get`, `get_by_name`, `list_skills`, `has_trigger`). The mixin owns
+a `_resolve_tenant()` (precedence above), binds the result to a `ContextVar`
+for the duration of `ask()` / `ask_stream()`, and every consumer (toolkit,
+middleware, prompt layer, `narrate()`) asks the mixin for *the current view*
+instead of touching `_skill_file_registry` directly. The `<available_skills>`
+block is rendered per tenant at `configure()` (eager) and selected per request
+through the existing `PromptLayer.condition` mechanism (one REQUEST-phase
+layer per tenant plus the global one; explicitly `cacheable=True`).
+
+✅ **Pros:**
+- Isolation is structural: a view never contains another tenant's skills, so
+  no consumer can leak by forgetting a filter.
+- Zero change to `SkillFileRegistry` semantics; existing tests keep passing.
+  The global registry is literally today's object.
+- Both lifetimes fall out naturally: fixed-tenant instances just resolve the
+  same tenant every time; singleton instances resolve per request.
+- Shadowing by name/trigger (and the `global_only` exception) is a
+  view-composition rule, trivially testable.
+- Reload-per-tenant is possible later without redesign.
+
+❌ **Cons:**
+- N+1 registries in memory (negligible: skills are ≤1000 tokens each).
+- Every consumer that reads `_skill_file_registry` must switch to the view
+  (`tools.py`, `middleware.py`, `prompt.py`, `narrative.py`, telegram
+  `_list_agent_skills`); a missed caller silently stays global-only
+  (safe direction, but a functional gap).
+- Per-tenant prompt layers multiply the prompt-builder layer count by the
+  number of tenants (fine for tens, questionable for hundreds).
+
+📊 **Effort:** Medium
+
+📦 **Libraries / Tools:**
+| Package | Purpose | Notes |
+|---|---|---|
+| stdlib `contextvars` | per-task tenant transport | same pattern as `parrot.utils.helpers._current_ctx` and FEAT-525 `read_omitted_content` |
+| `python-frontmatter` (already a dep) | skill parsing | unchanged |
+| `pydantic` v2 (already a dep) | `TenantSkillConfig` / view models | unchanged |
+
+🔗 **Existing Code to Reuse:**
+- `packages/ai-parrot/src/parrot/skills/file_registry.py` — `SkillFileRegistry` as the per-tree primitive (unchanged).
+- `packages/ai-parrot/src/parrot/skills/parsers.py:162` — `discover_skills_in_dir()` for each tenant tree.
+- `packages/ai-parrot/src/parrot/skills/mixin.py:141` — `_configure_skill_file_registry()` grows the tenant scan + view wiring.
+- `packages/ai-parrot/src/parrot/bots/prompts/layers.py:51` — `PromptLayer.condition` for per-tenant `<available_skills>` selection.
+- `packages/ai-parrot/src/parrot/utils/helpers.py:53-58` — `_current_ctx` / `current_context()` precedent for ContextVar scoping.
+- `packages/ai-parrot/src/parrot/utils/paths.py:33` — `validate_path_segment()` for tenant ids.
+- `packages/ai-parrot/src/parrot/skills/store.py:934` — `create_skill_registry(namespace, persistence_path)` instantiated once per tenant namespace.
+
+---

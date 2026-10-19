@@ -256,7 +256,7 @@
         "TASK-4079"
       ],
       "parallel": true,
-      "parallelism_notes": "calls install_component/update/uninstall from TASK-4079 (parrot/self_/components.py); SDD readiness checks import parrot.sdd.{config,installer,audit} lazily and tolerate their absence (TASK-4299/4091/4070 land later)",
+      "parallelism_notes": "calls install_component/update/uninstall from TASK-4079 (parrot/self_/components.py); SDD readiness checks import parrot.sdd.{config,installer,audit} lazily and tolerate their absence (TASK-4299, TASK-4091 and TASK-4070 land later)",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
