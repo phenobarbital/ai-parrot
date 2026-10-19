@@ -70,8 +70,11 @@ saved_queries:
 allowed_functions: [STDDEV]
 ```
 
-Role grants are unions across the subject's roles. `usage` controls whether a column may participate in an expression
-or predicate independently of projection rights. Unknown members, tables, or unsafe RLS expressions reject the policy.
+Role grants are unions across the subject's roles. `usage` controls whether a **restricted** column may participate in
+a filter, join, group, order, window or derived expression, independently of projection rights. A column is restricted
+when it is masked (`masks:`) or backs a member declared `sensitive: true`; masked columns are governed by the mask's
+`usage_roles`. Unrestricted columns — for example the `amount` behind a granted `revenue` metric — need no usage grant.
+Unknown members, tables, or unsafe RLS expressions reject the policy.
 
 `allowed_functions` is additive. The effective allowlist is
 `DEFAULT_ALLOWED_FUNCTIONS ∪ toolkit allowed_functions ∪ policy allowed_functions`; a model can add a function but
