@@ -32,6 +32,11 @@ Contract boundaries (spec §3 M4, codex S6 adopted scoped):
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: ai-parrot-tools pyproject anchors `scraping` 73→74 and `db` 77→78 (extras content unchanged); `toolkit_seed.py` and the 9-template set unchanged since 3677f322b; `querysource/conf.py:38-44` marked unverifiable (querysource not installed) — re-check at pickup.
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - `bounded-source.yaml` / `targeted-writer.yaml` load `parrot_tools.tool_optimizations.*` (ai-parrot-tools; core does not depend on it) but declare no `requires_dist` (`_toolkit_templates/bounded-source.yaml:1-4`, `targeted-writer.yaml:1-4`), so they get no `requires_pip` / `self add` hint. Out of this task's scope as written ("headers for any template other than the four listed") — owner decides whether to add them here or in a new task.
+
 ## Scope
 
 - Add `requires_pip`, `post_install`, `requires_env` (`tuple[str, ...] = ()`) to
@@ -107,13 +112,15 @@ def load_template(name: str) -> ToolkitTemplate:               # line 63
 ```toml
 # packages/ai-parrot-tools/pyproject.toml
 name = "ai-parrot-tools"                                       # line 6 — the PyPI distribution name
-scraping = ["selenium>=4.35", ..., "playwright>=1.52", ...]    # line 73
-db = ["querysource>=5.1.2", "psycopg-binary>=3.2"]             # line 77
+scraping = ["selenium>=4.35", ..., "playwright>=1.52", ...]    # line 74
+db = ["querysource>=5.1.2", "psycopg-binary>=3.2"]             # line 78
 ```
 - `querysource.conf.asyncpg_url` (the DSN the querysource toolkit uses,
   `parrot_tools/querysource/_qs.py:63-64`) is built from `PG_USER`, `PG_PWD`, `PG_HOST`,
   `PG_PORT`, `PG_DATABASE` (`.venv/.../querysource/conf.py:38-44`); only `PG_USER` and
-  `PG_PWD` have no fallback.
+  `PG_PWD` have no fallback. **Not verifiable at the 2026-10-19 readiness review** —
+  querysource is not installed in the shared venv (`find_spec("querysource") is None`);
+  re-check these lines and the no-fallback claim at pickup before writing `requires_env`.
 - LSP: Pyright 1.1.414 + Node.js are operator-provisioned, "Nothing here is automatic"
   (`docs/sdd/lsp-pilot.md:19-37`).
 - Existing tests that must stay green: `tests/mcp/test_toolkit_templates.py`
@@ -258,7 +265,7 @@ every branch and are skipped.
 # parrot:requires_pip: ai-parrot-tools[scraping]
 # parrot:post_install: python -m playwright install chromium
 ```
-**Why**: `playwright>=1.52` ships only in the `scraping` extra (ai-parrot-tools pyproject.toml:73); the browser binary is a separate download.
+**Why**: `playwright>=1.52` ships only in the `scraping` extra (ai-parrot-tools pyproject.toml:74); the browser binary is a separate download.
 
 ### `packages/ai-parrot/src/parrot/mcp/_toolkit_templates/lsp.yaml` (MODIFY)
 ```yaml
@@ -275,7 +282,7 @@ every branch and are skipped.
 # parrot:requires_pip: ai-parrot-tools[db]
 # parrot:requires_env: PG_USER,PG_PWD
 ```
-**Why**: the `db` extra is the declared carrier of `querysource>=5.1.2` (ai-parrot-tools pyproject.toml:77); `PG_USER`/`PG_PWD` are the only `asyncpg_url` inputs with no fallback (querysource/conf.py:39-44). navconfig can also read them from `env/.env` — doctor (TASK-4080) reports them as a warning, not an error.
+**Why**: the `db` extra is the declared carrier of `querysource>=5.1.2` (ai-parrot-tools pyproject.toml:78); `PG_USER`/`PG_PWD` are the only `asyncpg_url` inputs with no fallback (querysource/conf.py:39-44). navconfig can also read them from `env/.env` — doctor (TASK-4080) reports them as a warning, not an error.
 
 ### `packages/ai-parrot/tests/mcp/test_toolkit_seed_install_metadata.py` (CREATE)
 ```python

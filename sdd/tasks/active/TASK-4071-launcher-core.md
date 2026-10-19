@@ -28,6 +28,18 @@ so `import parrot.launcher` stays cheap.
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `wiki/project.py` anchors (`parrot_home` 1223-1235→1371-1383, `PARROT_DIR`
+  :44→:45, `find_project_root` :920→:1034) and wiki `--project` options (cli.py:2734/3907/5496→2983/4445/6026);
+  added the approved rev 0.3 C16 note on the port source (TASK-4085 relocation). `worktree_environment.py`
+  anchors and the three `parrot_home` semantics are unchanged.
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - Launcher walk-up and the system temp dir: 7e961b885 makes `wiki.project.find_project_root` stop at the temp
+    dir and its ancestors (`project.py:1011-1031`, issue:1270bc83b087 — a stray `/tmp/.git`); decide whether the
+    launcher's `.git` walk-up (`find_project_root`, `repository_paths`) mirrors that. Until then, port as written.
+
+---
+
 ## Scope
 
 - Create `packages/ai-parrot/src/parrot/launcher.py` with constants `PARROT_HOME_ENV`,
@@ -71,6 +83,8 @@ from pathlib import Path                         # stdlib
 ```python
 # packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py — PORT SOURCE (copy logic, never import:
 #   importing parrot.flows.* would break the stdlib-only rule)
+#   rev 0.3 C16: if TASK-4085 is done, port from packages/ai-parrot/src/parrot/sdd/scripts/worktree_environment.py;
+#   the old path is a re-export shim (spec §2 Integration Points). Line anchors below are for the dev copy.
 def existing_directory(path: Path) -> Path:                     # line 27 — nearest existing ancestor, resolved
 def repository_paths(cwd: Path) -> tuple[Path, Path | None]:    # lines 53-71
 #   walks cwd + parents; `.git` dir → (root, marker.resolve()); `.git` FILE → must start "gitdir: "
@@ -81,16 +95,16 @@ def shared_environments(cwd: Path) -> tuple[Path, ...]:         # lines 74-92 �
 #   `git_dir.parent / ".venv"` (line 79) and validity = `(resolved / "pyvenv.cfg").is_file()` (line 86)
 
 # The three existing PARROT_HOME readers — semantics parrot_home() MUST reproduce exactly:
-# packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1223-1235
-#   raw = os.environ.get("PARROT_HOME") or f"~/{PARROT_DIR}"   (line 1234; PARROT_DIR = ".parrot", line 44)
+# packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1371-1383
+#   raw = os.environ.get("PARROT_HOME") or f"~/{PARROT_DIR}"   (line 1382; PARROT_DIR = ".parrot", line 45)
 #   return Path(raw).expanduser()                               — read per call, never cached; NO .resolve()
 # packages/ai-parrot/src/parrot/knowledge/bookstore/config.py:66-75  — same, literal "~/.parrot" (line 74)
 # packages/ai-parrot/src/parrot/cli/modes.py:68-74                   — same, literal "~/.parrot" (line 70)
 #   ⇒ empty-string PARROT_HOME falls back to the default (`or`), `~` is expanded, path is NOT resolved.
 
 # Existing CLI options named --project (collision hazard for argv parsing, see Implementation Notes):
-# packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:3907  @click.option("--project", ...)  (entity attribute)
-# packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:2734, :5496  (other subcommand --project options)
+# packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:4445  @click.option("--project", ...)  (entity attribute)
+# packages/ai-parrot/src/parrot/knowledge/wiki/cli.py:2983, :6026  (other subcommand --project options)
 ```
 
 ### Does NOT Exist
@@ -99,7 +113,7 @@ def shared_environments(cwd: Path) -> tuple[Path, ...]:         # lines 74-92 �
 - ~~Windows venv handling (`Scripts\`, `.exe`) anywhere in the repo~~ — `script_path` is the first.
 - ~~`packages/ai-parrot/tests/launcher/`~~ — new dir, created by this task.
 - ~~`parrot.knowledge.wiki.project.find_project_root` as a reusable launcher helper~~ — it exists
-  (project.py:920) but looks for `.parrot/wiki.json` and lives behind pydantic imports; the launcher's
+  (project.py:1034) but looks for `.parrot/wiki.json` and lives behind pydantic imports; the launcher's
   `find_project_root` is a different, stdlib function with a different signature. Never import it.
 
 ---
@@ -148,7 +162,7 @@ file must NOT raise — a launcher crash would take down every console script, s
 - **Symlinks**: compare `os.path.realpath` of both sides in `is_managed` and the self-skip above
   (a symlinked interpreter/venv must still count as managed — spec §4 integration row).
 - **`--project` collision**: wikitoolkit subcommands already define `--project` options with
-  other meanings (cli.py:2734, 3907, 5496). `find_project_root` therefore honours `--project`
+  other meanings (cli.py:2983, 4445, 6026). `find_project_root` therefore honours `--project`
   ONLY in leading position (`argv[0] == "--project"` with `argv[1]`, or `argv[0]` starting with
   `--project=`), i.e. before any subcommand. TASK-4072 strips it before dispatching.
 - **Warnings**: `sys.stderr.write` only (never stdout — spec §5 AC4); at most once per process per
@@ -160,7 +174,7 @@ file must NOT raise — a launcher crash would take down every console script, s
 
 ### References in Codebase
 - `packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py` — port source
-- `packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1223` — PARROT_HOME semantics
+- `packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1371` — PARROT_HOME semantics
 
 ---
 
@@ -187,7 +201,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-PARROT_HOME_ENV = "PARROT_HOME"            # existing convention: knowledge/wiki/project.py:1234
+PARROT_HOME_ENV = "PARROT_HOME"            # existing convention: knowledge/wiki/project.py:1382
 PARROT_VENV_ENV = "PARROT_VENV"            # new explicit override
 PARROT_PROJECT_ENV = "PARROT_PROJECT"      # new project-root pin
 LOOP_GUARD_ENV = "PARROT_LAUNCHER_RESOLVED"
@@ -229,7 +243,7 @@ def repository_paths(cwd: Path) -> tuple[Path, Path | None]:
 def find_project_root(argv: Sequence[str], env: Mapping[str, str], cwd: Path) -> Path | None:
     """Leading ``--project <p>``/``--project=<p>`` → PARROT_PROJECT → CLAUDE_PROJECT_DIR → walk-up to ``.git``."""
     # FILL IN: leading-position --project only (collision with wiki subcommand --project options,
-    #   wiki/cli.py:2734,3907,5496); relative values resolve against cwd; a pinned root that does
+    #   wiki/cli.py:2983,4445,6026); relative values resolve against cwd; a pinned root that does
     #   not exist falls through to the next source; walk-up accepts `.git` dir OR file — bounded by AC-3
     raise NotImplementedError
 

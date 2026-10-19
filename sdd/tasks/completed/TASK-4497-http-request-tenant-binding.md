@@ -246,10 +246,15 @@ See the CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4497
+- Feature: per-tenant-skills
+- Implementation SHA: da3fc0fd326538047d2db4d4d8c64c21e16c2e38
+- Closed at (UTC): 2026-10-19T21:38:13+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 316s · Tokens: n/a |

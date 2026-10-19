@@ -223,10 +223,15 @@ See the CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4496
+- Feature: per-tenant-skills
+- Implementation SHA: a2440c6aa43e008523bbe06c3eb3a56770636843
+- Closed at (UTC): 2026-10-19T21:27:15+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 380s · Tokens: n/a |

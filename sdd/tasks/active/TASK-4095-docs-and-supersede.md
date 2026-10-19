@@ -57,12 +57,18 @@ audit trail.
   the raw-URL bootstrap AND the pinned-uv download the bootstrap performs.
 - **Rev-0.2 behaviours the docs now describe**: helpers run as `parrot sdd run <name>` (Q1);
   the repo config `sdd/config.json` (C6); the `sdd/CONVENTIONS.md` seed (C10);
-  `parrot sdd status` states `missing | current | outdated | edited` (C4); `parrot sdd install
+  `parrot sdd status` states `missing | current | outdated | edited | foreign`, seeds
+  `seed-present | missing` (C4/C10; spec :521, TASK-4091); `parrot sdd install
   --dry-run` (C5); `parrot self doctor --sdd` readiness checks and the bootstrap's
   `--runtime-only` scope (C14/C15). Dependencies grew accordingly (TASK-4074/4075 for the gate +
   plan text, TASK-4089 for the `parrot sdd run` form in shipped markdown).
 
 ---
+
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: no commit since `0b92bda42` touches this task's files and every line anchor still holds; `DocClaim` described as the pydantic `BaseModel` it is (`test_getting_started_claims.py:31`); the `parrot sdd status` states now include `foreign` and the seed states `seed-present | missing` (spec :521, TASK-4091).
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - **FEAT-699 vs C7** (recorded in TASK-4089 / TASK-4091) — whether `sdd/config.json`'s `test_command` overrides `cache_test_contract` / `select_tests` / `test_report` in a foreign repo. The guide's sentence on `test_command` (`sdd/config.json` fields) must describe the resolved behaviour; do not document an override until then.
 
 ## Scope
 
@@ -151,7 +157,7 @@ gemini = google                            # packages/ai-parrot/src/parrot/knowl
 REPO_ROOT = Path(__file__).resolve().parents[4]            # line 20
 GUIDE = REPO_ROOT / "docs" / "getting-started.md"          # line 21
 ANCHOR_RE = re.compile(r"<!--\s*verify:\s*(?P<kind>[\w-]+)=(?P<value>.+?)\s*-->")   # line 28
-class DocClaim:                                            # line 31 (frozen dataclass)
+class DocClaim(BaseModel):                                 # line 31 (pydantic BaseModel, `from pydantic import BaseModel` :17)
     kind: Literal["python-range", "extra", "script", "provider", "envvar", "dep"]   # line 34 — grows by 2 kinds here
     value: str; line: int; source: Path
 def extract_claims(path: Path) -> list[DocClaim]:          # line 40 — line-numbered extraction, loud failures
@@ -186,8 +192,8 @@ def test_named_dep_floors_match() -> None:                 # line 183 — last c
 - Store gate: `WikiStoreVersionError` (TASK-4092) — message names both versions and the fix
   (`parrot self update` / `parrot self add --here`).
 - `parrot sdd` surface (TASK-4091 + C6 task, rev 0.2): `install [--host …] [--dry-run] [--force]`,
-  `uninstall [--dry-run]`, `status` (per-file `missing | current | outdated | edited` from the
-  committed record `sdd/.sdd-installed.json`), `run <name> [args…]`; seeds `sdd/config.json`,
+  `uninstall [--dry-run]`, `status` (per-file `missing | current | outdated | edited | foreign` from the
+  committed record `sdd/.sdd-installed.json`; seed entries `seed-present | missing`), `run <name> [args…]`; seeds `sdd/config.json`,
   `sdd/CONVENTIONS.md`, `sdd/tasks/.id_ledger.json`, the `.claude/worktrees/` ignore block.
 - `parrot self doctor` scopes (TASK-4080, rev 0.2): default, `--sdd` (repo readiness: `origin`,
   base branch, committed ledger, worktrees ignore, `gh` auth, `jq`, SDD files current, host CLIs
@@ -423,7 +429,7 @@ what the run created). Before writing anything the script checks platform, `curl
     parrot sdd install --host claude --dry-run   # preview: write / skip / upgrade per file
     parrot sdd install --host claude
     parrot self doctor --sdd                      # origin, base branch, ledger, gh, jq, host CLI
-    parrot sdd status                             # missing | current | outdated | edited
+    parrot sdd status                             # missing | current | outdated | edited | foreign
     ```
 <!-- FILL IN: edit `sdd/config.json` (base_branch, hotfix_base, issue_tracker, test_command), the
      `sdd/CONVENTIONS.md` seed, first `/sdd-*` command, helpers run as `parrot sdd run <name>`,
@@ -518,7 +524,7 @@ session. Outside the managed venv nothing changes.
     ```
 <!-- FILL IN: helpers run as `parrot sdd run <name>` (never `python -m …`: in a global-only install the
      repo's `python` cannot import parrot); the record `sdd/.sdd-installed.json` and the status states
-     missing | current | outdated | edited; upgrade rule (recorded hash matches → upgrade; differs → kept
+     missing | current | outdated | edited | foreign, and seeds as seed-present | missing; upgrade rule (recorded hash matches → upgrade; differs → kept
      with a warning unless --force; not ours → skipped); `sdd/config.json` fields (base_branch,
      staging_branch, hotfix_base, issue_tracker, jira_host, reviewer, test_command); the
      `sdd/CONVENTIONS.md` seed (created once, never overwritten, even with --force) — bounded by

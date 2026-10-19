@@ -15,23 +15,37 @@
 Spec §3 Module 7 item (b) plus spike S6 (§3 M0: "migration-safety prototype — backup +
 lock + gate vs a concurrent older runtime"). TASK-4092 added the `min_runtime_version`
 stamp and the `WikiStoreVersionError` gate. This task adds the remaining safety rails
-around the EXISTING auto-migration (`_maybe_migrate` → `_migrate`, store.py:1167/1444):
+around the EXISTING auto-migration (`_maybe_migrate` → `_migrate`, store.py:1311/1588):
 
 1. **Backup first, restore on failure** — a timestamped sidecar copy of the plane taken
    right before real migration work; any exception restores it and re-raises.
 2. **Cross-process, Windows-safe migration lock** (codex S7): the store's
-   `asyncio.Lock` (`self._init_lock`, store.py:1041) is per-instance, and the repo's
-   file-lock precedent is POSIX-only — `knowledge/wiki/project.py:38-41` falls back to
+   `asyncio.Lock` (`self._init_lock`, store.py:1185) is per-instance, and the repo's
+   file-lock precedent is POSIX-only — `knowledge/wiki/project.py:39-42` falls back to
    `fcntl = None`, and `wiki_write_lock` "degrades to a no-op and always yields True"
-   on non-POSIX platforms (project.py:96-97). That pattern MUST NOT be reused (spec §7
+   on non-POSIX platforms (project.py:97-98). That pattern MUST NOT be reused (spec §7
    "File locking"). Use an `os.open(..., O_CREAT | O_EXCL)` sidecar lockfile with stale
    handling — atomic on every OS.
 3. **Foreign / read-only planes keep never migrating**: `read_only=True` stores route
-   every read through `_connect_immutable` / `_connect_readonly` (store.py:1203-1225) and
+   every read through `_connect_immutable` / `_connect_readonly` (store.py:1347-1369) and
    never reach `_maybe_migrate`; federation opens foreign namespaces with
    `read_only=True` (federation.py:297-302). This task must not change that.
 
 It also writes the S6 spike report codifying the concurrent-older-runtime scenario.
+
+**Subclass planes**: `LedgerStore` (`ledger.db`, `knowledge/wiki/ledger/store.py:24`) and
+`SchemaStore` (`schema.db`, `knowledge/wiki/schema/store.py:48`) are `SQLiteWikiStore`
+subclasses that also migrate through `_maybe_migrate`, so they get the same backup + lock and
+their `ledger.db.bak-*` / `ledger.db.migrate.lock` (and `schema.db.*`) sidecars appear in
+`.parrot/ledger/` and the schema-plane dir — git-ignored in this repo via `.gitignore`
+`.parrot/*` (line 385).
+
+---
+
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `store.py` anchors ≥ line 948 shifted +144 (6791d81ce inserted the `WikiBackendSpec` registry at store.py:539-694; the `SQLiteWikiStore` body is byte-identical and every blueprint `grep -c` count still matches); `project.py` lock anchors shifted +1; Context notes the `ledger.db`/`schema.db` sidecars; Key Constraints notes that `_has_migration_work` omits the FEAT-627 `page_attrs` probe.
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - **Unwritable plane directory**: with a writable db file in an unwritable dir and live `-wal`/`-shm`, dev today reaches `_maybe_migrate` and migrates (reproduced: `schema_version` 2→3). The blueprint's `os.open(O_CREAT|O_EXCL)` lockfile / `.bak` creation would raise `PermissionError`/`OSError` — `_try_acquire_migration_lock` catches only `FileExistsError`, and `_read`'s degrade ladder (store.py:1377-1379) catches only `sqlite3.OperationalError` — so that open would regress to failing. Decide: raise a clear error vs skip migration (and add a test for the chosen behaviour). A fully read-only plane (file also read-only, e.g. the bwrap mount) degrades in `_open` before `_maybe_migrate` and is unaffected.
 
 ---
 
@@ -68,7 +82,7 @@ is fixed below; other backends.
 
 ### Verified Imports
 ```python
-from parrot.knowledge.wiki.store import SQLiteWikiStore, WikiStoreBusy  # verified: store.py:948,284
+from parrot.knowledge.wiki.store import SQLiteWikiStore, WikiStoreBusy  # verified: store.py:1092,284
 from parrot.knowledge.wiki import store as store_mod  # module-level helpers patched in tests
 # Created by TASK-4092 (dependency):
 from parrot.knowledge.wiki.store import MIN_RUNTIME_KEY, WikiStoreVersionError, _running_version  # TASK-4092
@@ -84,36 +98,36 @@ _FTS_TABLES = ("pages_fts", "symbols_fts")                     # line 244
 class WikiStoreBusy(sqlite3.OperationalError):                 # line 284
     def __init__(self, db_path: Path, operation: str, waited_seconds: float) -> None:  # line 297
 _FTS_TOKEN_RE = re.compile(r"\w+", re.UNICODE)                 # line 309
-class SQLiteWikiStore(BaseWikiStore):                          # line 948
-    self._db_path: Path                                        # line 1009
-    self._read_only: bool                                      # line 1010
-    self._init_lock = asyncio.Lock()                           # line 1041 (per-instance only)
-    self._policy: SQLitePragmaPolicy  (.busy_timeout_s)        # line 1043
-    self._migrated = asyncio.Event()                           # line 1048
-    async def _apply_pragmas(self, conn, *, writable)          # line 1074; `PRAGMA journal_mode = WAL` at 1096 (writable)
-    async def _maybe_migrate(self, conn) -> None:              # line 1167
-        async with self._init_lock:                            # line 1184
-            if not self._migrated.is_set():                    # line 1185
-                await self._migrate(conn)                      # line 1186
-                self._migrated.set()                           # line 1187
-    async def _read(self):                                     # line 1190; read_only branch 1203-1225 (never migrates)
-    async def _migration_needed(self, conn) -> tuple[list[tuple[str, str, str]], bool]:  # line 1413 (pure reads)
-    async def _migrate(self, conn) -> None:                    # line 1444 — _migrate_fts (1461), executescript (1467), ALTERs (1483), restamp (1492-1496)
-    async def _migrate_fts(self, conn) -> None:                # line 1499 (DROP TABLE + executescript on legacy planes)
-    async def _uses_legacy_fts(self, conn, table: str) -> bool:  # line 1558 (read-only probe, cached; _migrate_fts clears cache)
+class SQLiteWikiStore(BaseWikiStore):                          # line 1092
+    self._db_path: Path                                        # line 1153
+    self._read_only: bool                                      # line 1154
+    self._init_lock = asyncio.Lock()                           # line 1185 (per-instance only)
+    self._policy: SQLitePragmaPolicy  (.busy_timeout_s)        # line 1187
+    self._migrated = asyncio.Event()                           # line 1192
+    async def _apply_pragmas(self, conn, *, writable)          # line 1218; `PRAGMA journal_mode = WAL` at 1240 (writable)
+    async def _maybe_migrate(self, conn) -> None:              # line 1311
+        async with self._init_lock:                            # line 1328
+            if not self._migrated.is_set():                    # line 1329
+                await self._migrate(conn)                      # line 1330
+                self._migrated.set()                           # line 1331
+    async def _read(self):                                     # line 1334; read_only branch 1347-1369 (never migrates)
+    async def _migration_needed(self, conn) -> tuple[list[tuple[str, str, str]], bool]:  # line 1557 (pure reads)
+    async def _migrate(self, conn) -> None:                    # line 1588 — _migrate_fts (1605), executescript (1611), ALTERs (1627), restamp (1636-1640)
+    async def _migrate_fts(self, conn) -> None:                # line 1643 (DROP TABLE + executescript on legacy planes)
+    async def _uses_legacy_fts(self, conn, table: str) -> bool:  # line 1702 (read-only probe, cached; _migrate_fts clears cache)
     # TASK-4092 adds: async def _check_runtime_gate(self, conn) -> None
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/project.py — the pattern NOT to reuse
-try:  # POSIX only — see wiki_write_lock().                    # line 38
+try:  # POSIX only — see wiki_write_lock().                    # line 39
     import fcntl
 except ImportError:  # pragma: no cover - non-POSIX platform
-    fcntl = None                                               # line 41
-def wiki_write_lock(store_dir: Path, timeout: float = 0.0) -> Iterator[bool]:  # line 75; no-op w/o fcntl (docstring 96-97)
+    fcntl = None                                               # line 42
+def wiki_write_lock(store_dir: Path, timeout: float = 0.0) -> Iterator[bool]:  # line 76; no-op w/o fcntl (docstring 97-98)
 ```
-- Connections are autocommit (`isolation_level=None`, store.py:1125) and `_migrate` uses
+- Connections are autocommit (`isolation_level=None`, store.py:1269) and `_migrate` uses
   `executescript` (which COMMITs any open transaction in sqlite3) — a single wrapping
   transaction cannot make migration atomic; the backup is the rollback mechanism.
-- Plane runs in WAL mode (module docstring store.py:9; pragma 1096): committed data may
+- Plane runs in WAL mode (module docstring store.py:9; pragma 1240): committed data may
   live in `wiki.db-wal`, so a plain copy of `wiki.db` alone is NOT a consistent backup.
 
 ### Does NOT Exist
@@ -172,7 +186,10 @@ fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
 - Backup + lock ONLY when there is real work: `_migration_needed` reports missing columns
   or a stale version, or `_uses_legacy_fts` is True for any `_FTS_TABLES` entry. A current
   plane keeps today's read-first, zero-write path (AC-4 of TASK-3218; the box comment in
-  `_migrate`).
+  `_migrate`). Note: `_has_migration_work` deliberately omits the FEAT-627 `page_attrs`
+  probe (`_attrs_table_present`, store.py:1803; applied at store.py:1610-1611), so that
+  `executescript(_PAGE_ATTRS_SQL)` still runs without lock/backup — acceptable because it is
+  additive and idempotent (`CREATE TABLE IF NOT EXISTS`).
 - After acquiring the lock: **re-probe** (another process may have migrated while we
   waited) and **re-run `_check_runtime_gate`** (a newer runtime may have stamped a higher
   minimum — the spec §4 concurrent-older-runtime case).
@@ -184,8 +201,8 @@ fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
 - Always release in `finally` (`unlink(missing_ok=True)`).
 
 ### References in Codebase
-- `packages/ai-parrot/src/parrot/knowledge/wiki/store.py:1167-1187, 1413-1497`
-- `packages/ai-parrot/src/parrot/knowledge/wiki/project.py:38-41, 75-110` — the anti-pattern
+- `packages/ai-parrot/src/parrot/knowledge/wiki/store.py:1311-1331, 1557-1641`
+- `packages/ai-parrot/src/parrot/knowledge/wiki/project.py:39-42, 76-111` — the anti-pattern
 
 ---
 
@@ -221,7 +238,7 @@ def _try_acquire_migration_lock(lock_path: Path, *, stale_after_s: float = STALE
     """Create ``lock_path`` atomically (O_CREAT|O_EXCL); True when this caller now holds it.
 
     Works identically on POSIX and Windows — deliberately NOT the fcntl pattern of
-    ``project.py:38-41``, which degrades to a no-op without fcntl. A lock older than
+    ``project.py:39-42``, which degrades to a no-op without fcntl. A lock older than
     ``stale_after_s`` is removed and acquisition retried once.
     """
     for _attempt in range(2):
@@ -244,12 +261,12 @@ def _release_migration_lock(lock_path: Path) -> None:
 ```
 ```python
 # occurrences: 1 (verified: grep -c '                await self._migrate(conn)' packages/ai-parrot/src/parrot/knowledge/wiki/store.py)
-# REPLACE — `                await self._migrate(conn)` inside `_maybe_migrate` (verified: store.py:1186) with:
+# REPLACE — `                await self._migrate(conn)` inside `_maybe_migrate` (verified: store.py:1330) with:
                 await self._migrate_safely(conn)
 ```
 ```python
 # occurrences: 1 (verified: grep -c '                self._migrated.set()' packages/ai-parrot/src/parrot/knowledge/wiki/store.py)
-# AFTER — insert below `                self._migrated.set()` (verified: store.py:1187), i.e. right after `_maybe_migrate`
+# AFTER — insert below `                self._migrated.set()` (verified: store.py:1331), i.e. right after `_maybe_migrate`
 
     async def _has_migration_work(self, conn: aiosqlite.Connection) -> bool:
         """Pure-read probe: columns/version (``_migration_needed``) or a legacy FTS shape."""
@@ -425,7 +442,7 @@ runtime open it concurrently (spec §3 M0 S6 → M7)?
 ## Mechanism under test
 - Backup: SQLite online backup API to `<db>.bak-<UTC>` (WAL-consistent), restore on failure.
 - Lock: `<db>.migrate.lock` via `os.open(O_CREAT|O_EXCL)`; stale after 600 s; why not
-  `project.py:38-41` (fcntl no-op off POSIX).
+  `project.py:39-42` (fcntl no-op off POSIX).
 - Gate: `min_runtime_version` meta row (TASK-4092), re-checked after the lock is acquired.
 
 ## Evidence

@@ -349,10 +349,15 @@ See the CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4499
+- Feature: per-tenant-skills
+- Implementation SHA: da3fc0fd326538047d2db4d4d8c64c21e16c2e38
+- Closed at (UTC): 2026-10-19T21:36:09+00:00
+- Fix commits: none
 
-**Deviations from spec**: adds the `_after_tenant_reload` extension point (not in the skeleton) so TASK-4503/4504 can hook reload without re-editing its body logic.
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 120s · Tokens: n/a |

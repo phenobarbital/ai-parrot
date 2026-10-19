@@ -60,6 +60,16 @@ reflects these deltas; this list is the audit trail.
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Verified current against dev 9f51c7735; no changes (`install-parrot.ps1`, `test_install_powershell.py` and
+  `[project.scripts]` anchors unchanged; no commits since baseline).
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - `wikitoolkit mcp` now needs ai-parrot-tools (`wiki/tools.py:69-76`, `mcp_server.py:525-545, 566-574`; core
+    `dependencies` lack it), so a managed venv with only `ai-parrot[...]` cannot serve it. Affected: the install
+    spec in `Install-Global` (add `ai-parrot-tools`, same `-Version` pin, or a fix on the wiki side).
+
+---
+
 ## Scope
 
 - Add parameters `-Global`, `-Version <X>`, `-With <comma list>`; keep every existing parameter

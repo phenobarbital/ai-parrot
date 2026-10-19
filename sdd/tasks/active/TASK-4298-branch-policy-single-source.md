@@ -17,7 +17,7 @@ approved 2026-10-14). The branch policy of the Git Parrot Flow is defined **four
 
 | Copy | Where | Why it exists |
 |---|---|---|
-| `KNOWN_BRANCHES`, `WORK_KIND_FLOW`, `FlowMeta._hotfix_implies_main`, `parse()` default, `resolve_flow()` fallback | `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py:30,35,106,152,314-315` | the authoritative module (re-exported by `scripts/sdd/sdd_meta.py`) |
+| `KNOWN_BRANCHES`, `WORK_KIND_FLOW`, `FlowMeta._hotfix_implies_main`, `parse()` default, `resolve_flow()` fallback | `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py:30,35,106,152,309-310` | the authoritative module (re-exported by `scripts/sdd/sdd_meta.py`) |
 | `_LONG_LIVED_BRANCHES` | `packages/ai-parrot/src/parrot/flows/dev_loop/nodes/base.py:44` | "LOCAL copy of scripts.sdd.sdd_meta.KNOWN_BRANCHES — NOT an import" (TASK-2504: `scripts.sdd` was not importable from the package) |
 | `_WORK_KIND_BASE_BRANCH` + `_parse_flow_frontmatter` | `packages/ai-parrot/src/parrot/flows/dev_loop/nodes/research.py:63,159` | same reason (TASK-2504) |
 | `_parse_flow_frontmatter` (second copy) | `packages/ai-parrot/src/parrot/flows/dev_loop/nodes/feature_handoff.py:69`, used at `:391` with `or "dev"` | TASK-2505: `research.py` was not in that task's file list |
@@ -32,6 +32,26 @@ The two dev-loop callers rely on a distinction that must survive: `None` when a 
 declares **no** branch (missing file, no frontmatter, malformed YAML, non-string/empty
 value) versus the `"dev"` default they apply themselves. FEAT-583's
 `read_declared_base_branch(doc_path) -> str | None` is the shape that keeps it.
+
+**Residual copies (not edited here — owned by TASK-4299).** The repo-local SDD helpers carry
+further branch literals that this task does not touch, because TASK-4085 `git mv`s both files
+and this task has no dependency on it:
+`scripts/sdd/brief_meta.py:28` (`BRIEF_BASE_BRANCHES = frozenset({"main", "dev", "staging"})`),
+`:74` (`BriefMeta.base_branch = "main"`), `:98` (ledger brief ⇒ `"dev"`), `:166` (`hotfix` prefix
+iff base is `"main"`) — added by FEAT-698 on 2026-10-17 — and `scripts/sdd/ensure_worktree.py:304`
+(`--brief-key` default `"main"`) and `:318` (`--jira-key` ⇒ `"main"`; present since before this
+task was written).
+
+---
+
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: every existing target file (and `test_flow_type_override.py`)
+  is unchanged since `0b92bda42`, so the `nodes/*` anchors still hold;
+  corrected the `resolve_flow()` fallback anchor (`sdd_meta.py:309-310`, warning `:312-317`; the
+  task said `:314-315`); the "no literals" AC grep now excludes docstrings/comments (it would
+  otherwise hit the docstring literals at `sdd_meta.py:142` and `:297`); listed the
+  `brief_meta.py:28,74,98,166` / `ensure_worktree.py:304,318` literals as residual copies owned by
+  TASK-4299.
 
 ---
 
@@ -66,6 +86,8 @@ value) versus the `"dev"` default they apply themselves. FEAT-583's
   or any CLI output of `scripts/sdd/*`.
 - Touching `.claude/`, `sdd/` markdown, or the TASK-4085 move of `sdd_meta` into
   `parrot.sdd.scripts` (that task re-exports whatever this module exports).
+- The residual branch literals in `scripts/sdd/brief_meta.py:28,74,98,166` and
+  `scripts/sdd/ensure_worktree.py:304,318` (see Context) — owned by TASK-4299.
 
 ---
 
@@ -85,7 +107,7 @@ value) versus the `"dev"` default they apply themselves. FEAT-583's
 
 ## Codebase Contract (Anti-Hallucination)
 
-Verified on `dev` @ `ad54fde59` (2026-10-14).
+Verified on `dev` @ `ad54fde59` (2026-10-14); re-verified on `dev` @ `9f51c7735` (2026-10-19).
 
 ### Verified Imports
 ```python
@@ -94,7 +116,7 @@ from parrot.knowledge.wiki.ledger.sdd_meta import (          # sdd_meta.py
     WORK_KIND_FLOW,      # :35  {"bug": ("hotfix", "main"), "enhancement": ("feature", "dev"), "new_feature": ("feature", "dev")}
     FlowMeta,            # :99  (type: Literal["feature","hotfix"], base_branch: str)
     parse,               # :129 -> FlowMeta; default FlowMeta(type="feature", base_branch="dev") at :152
-    resolve_flow,        # :263 -> FlowMeta; `final_base = base_branch_override or resolved_base or "dev"` at :315
+    resolve_flow,        # :263 -> FlowMeta; `final_base = base_branch_override or resolved_base or "dev"` at :310
     _read_frontmatter,   # :112 -> dict | None (None: no leading ---, unterminated, non-mapping)
 )
 import yaml                                                   # already imported by sdd_meta.py:20
@@ -239,7 +261,7 @@ def read_declared_base_branch(doc_path: Path) -> str | None:
 ## Acceptance Criteria
 
 - [ ] `grep -rn "_LONG_LIVED_BRANCHES\|_WORK_KIND_BASE_BRANCH\|def _parse_flow_frontmatter" packages/ai-parrot/src` returns nothing.
-- [ ] `grep -n '"dev"\|"main"' packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py` matches only the two constant definitions and `KNOWN_BRANCHES`.
+- [ ] `grep -nE '"(dev|main)"' packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py | grep -vE '``|^[0-9]+:\s*#'` matches only the two constant definitions and `KNOWN_BRANCHES` (the filter drops docstring literals — e.g. `:142`, `:297` — and comments; on dev it currently matches `:30`, `:36-38`, `:107`, `:152`, `:310`).
 - [ ] `read_declared_base_branch` returns `None` for: missing file, file without `---`, unterminated block, malformed YAML, non-mapping block, missing key, non-string value, blank value; returns the stripped string otherwise.
 - [ ] `scripts.sdd.sdd_meta` re-exports the three new names; the 15 existing names are unchanged.
 - [ ] All of `tests/sdd_scripts/` and `packages/ai-parrot/tests/flows/dev_loop/` pass; `ruff check` passes on every touched file (no unused `yaml`/`Dict` imports).

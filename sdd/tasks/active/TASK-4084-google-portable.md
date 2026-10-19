@@ -43,6 +43,9 @@ Mode rule (same as Claude TASK-4082 and Codex TASK-4083):
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: no change needed — `google/{assets,installer,bookstore,cli}.py`, `mcp/hosts.py` and `mcp/local_cli.py` have no commits since 3677f322b; every Codebase Contract anchor re-verified; all Validation Command test files exist. Dependency watch: TASK-4083 (no ordering edge to this task) plans to make `parrot mcp-local` honour `PARROT_PROJECT` in `mcp/local_cli.py`; if it lands first, the NOT-in-scope bullet and the `PARROT_PROJECT` "Does NOT Exist" bullet below go stale — re-check them at pickup.
+
 ## Scope
 
 - `google/assets.py`: `resolve_binary` via `script_path`; `PORTABLE_TOOLKIT_CONFIG`; keyword-only

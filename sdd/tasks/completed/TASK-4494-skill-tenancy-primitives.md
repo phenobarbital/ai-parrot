@@ -413,10 +413,15 @@ See the CREATE test block; every FILL IN test name is required.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4494
+- Feature: per-tenant-skills
+- Implementation SHA: 57fc6a02179b6ebe55b259f9964c0fa81e3f7f6a
+- Closed at (UTC): 2026-10-19T21:29:43+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 355s · Tokens: n/a |

@@ -26,13 +26,26 @@ older runtime fails fast with `WikiStoreVersionError` naming both versions and t
 honour the gate — a pre-FEAT-633 runtime ignores the row (spec §7 "Version-skew
 auto-migration").
 
+**Subclass planes**: `LedgerStore` (`ledger.db`, `knowledge/wiki/ledger/store.py:24`) and
+`SchemaStore` (`schema.db`, `knowledge/wiki/schema/store.py:48`) are `SQLiteWikiStore`
+subclasses that go through `_write`/`_read` → `_open`, so they are gated and stamped by this
+task too — no extra code needed.
+
+---
+
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `store.py` anchors ≥ line 948 shifted +144 (6791d81ce inserted the `WikiBackendSpec` registry at store.py:539-694; the `SQLiteWikiStore` body is byte-identical and every blueprint `grep -c` count still matches); `version.py:8` is now `"1.2.3"`; `asyncio_mode` is at `pyproject.toml:1048`; Context notes that `ledger.db`/`schema.db` subclasses are gated.
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - **Fresh-plane stamp**: spec §3 M7 anchors `MIN_RUNTIME_KEY` "next to 'schema_version' (store.py:1158)" — the fresh-plane insert in `_ensure_schema` (dev store.py:1300-1303) — but this task stamps only in `_migrate`. `_migration_needed` treats any `!=` as stale (store.py:1585), so a fresh plane built by a newer runtime is unstamped and a gated older runtime "migrates" it, restamping `schema_version` downward. Decide: also stamp in `_ensure_schema`, and/or refuse when stored `schema_version` > `SCHEMA_VERSION`.
+  - **`SourceRegistry` bypass**: `SourceRegistry._connect` (sources.py:795-810) opens the same `wiki.db` with plain `sqlite3`, and `_migrate_sources_columns` (sources.py:983-1003) ALTERs it — no gate (unchanged since baseline). Decide: record as a known bypass under NOT in scope, or a new task to gate it.
+
 ---
 
 ## Scope
 
 - Add module constant `MIN_RUNTIME_KEY = "min_runtime_version"`.
 - Add `WikiStoreVersionError(RuntimeError)` — NOT an `sqlite3.OperationalError` subclass
-  (`_read` catches `OperationalError` to degrade to read-only, store.py:1233; the gate
+  (`_read` catches `OperationalError` to degrade to read-only, store.py:1377; the gate
   must never be swallowed by that ladder).
 - Add module helpers `_running_version() -> str` (reads `parrot.version.__version__` at
   call time — the test seam) and `_release_tuple(version: str) -> tuple[int, ...]`
@@ -45,7 +58,7 @@ auto-migration").
 - Tests in a new file.
 
 **NOT in scope**: pre-migration backup/restore and the cross-process migration lock
-(TASK-4093); stamping from `rebuild_index` (store.py:2620-2636 restamps `schema_version`
+(TASK-4093); stamping from `rebuild_index` (store.py:2764-2780 restamps `schema_version`
 but is not a migration — leave it; it already goes through `_write` → `_open`, so it is
 gated); `PRAGMA user_version` (spec: never introduced); other backends
 (`InMemoryWikiStore`, Arango, Postgres).
@@ -65,8 +78,8 @@ gated); `PRAGMA user_version` (spec: never introduced); other backends
 
 ### Verified Imports
 ```python
-from parrot import version as _parrot_version  # verified: packages/ai-parrot/src/parrot/version.py:8 (__version__ = "1.1.0"); parrot/__init__.py already imports .version → no cycle
-from parrot.knowledge.wiki.store import SCHEMA_VERSION, SQLiteWikiStore  # verified: store.py:51,948
+from parrot import version as _parrot_version  # verified: packages/ai-parrot/src/parrot/version.py:8 (__version__ = "1.2.3"); parrot/__init__.py already imports .version → no cycle
+from parrot.knowledge.wiki.store import SCHEMA_VERSION, SQLiteWikiStore  # verified: store.py:51,1092
 import aiosqlite  # verified: store.py:43
 import sqlite3  # verified: store.py:33
 ```
@@ -77,26 +90,26 @@ import sqlite3  # verified: store.py:33
 SCHEMA_VERSION = "3"                                                        # line 51
 class WikiStoreBusy(sqlite3.OperationalError):                              # line 284
 class AttrsUnsupportedError(RuntimeError):                                  # line 429 — style precedent for the new error
-class SQLiteWikiStore(BaseWikiStore):                                       # line 948
-    def __init__(self, db_path, wiki_name="", *, read_only=False, sqlite_policy=None, persistent_writer=False)  # line 1000-1008
-    def _assert_writable(self) -> None:                                     # line 1061 (raise at 1068)
-    async def _apply_pragmas(self, conn, *, writable: bool) -> None:        # line 1074
-    async def _open(self, *, writable: bool) -> AsyncIterator[aiosqlite.Connection]:  # line 1108; connect 1122; pragmas 1128; _ensure_schema 1130
-    async def _ensure_schema(self, conn) -> None:                           # line 1133 (fresh plane: INSERT OR IGNORE schema_version 1156-1159)
-    async def _maybe_migrate(self, conn) -> None:                           # line 1167
-    async def _read(self):                                                  # line 1190; `except sqlite3.OperationalError` at 1233
-    async def _connect_immutable(self):                                     # line 1301; connect 1311-1313; _log_read_only_once 1317
-    async def _connect_readonly(self):                                      # line 1321; mode=ro rung 1348-1354; immutable rung 1383-1390
-    async def _migration_needed(self, conn) -> tuple[list[...], bool]:      # line 1413 (reads schema_version 1437; stale check 1441)
-    async def _migrate(self, conn) -> None:                                 # line 1444; restamp 1492-1496; commit 1497
-    async def get_meta(self, key: str) -> Optional[str]:                    # line 2202
-    async def set_meta(self, key: str, value: str) -> None:                 # line 2209
-    async def rebuild_index(self) -> dict[str, Any]:                        # line 2620 (restamp 2631-2635 — NOT a migration)
-WikiStore = SQLiteWikiStore                                                 # line 2662
+class SQLiteWikiStore(BaseWikiStore):                                       # line 1092
+    def __init__(self, db_path, wiki_name="", *, read_only=False, sqlite_policy=None, persistent_writer=False)  # line 1144-1152
+    def _assert_writable(self) -> None:                                     # line 1205 (raise at 1212)
+    async def _apply_pragmas(self, conn, *, writable: bool) -> None:        # line 1218
+    async def _open(self, *, writable: bool) -> AsyncIterator[aiosqlite.Connection]:  # line 1252; connect 1266; pragmas 1272; _ensure_schema 1274
+    async def _ensure_schema(self, conn) -> None:                           # line 1277 (fresh plane: INSERT OR IGNORE schema_version 1300-1303)
+    async def _maybe_migrate(self, conn) -> None:                           # line 1311
+    async def _read(self):                                                  # line 1334; `except sqlite3.OperationalError` at 1377
+    async def _connect_immutable(self):                                     # line 1445; connect 1455-1457; _log_read_only_once 1461
+    async def _connect_readonly(self):                                      # line 1465; mode=ro rung 1492-1498; immutable rung 1527-1534
+    async def _migration_needed(self, conn) -> tuple[list[...], bool]:      # line 1557 (reads schema_version 1581; stale check 1585)
+    async def _migrate(self, conn) -> None:                                 # line 1588; restamp 1636-1640; commit 1641
+    async def get_meta(self, key: str) -> Optional[str]:                    # line 2346
+    async def set_meta(self, key: str, value: str) -> None:                 # line 2353
+    async def rebuild_index(self) -> dict[str, Any]:                        # line 2764 (restamp 2775-2779 — NOT a migration)
+WikiStore = SQLiteWikiStore                                                 # line 2806
 ```
 - Foreign planes are opened `read_only=True` (`federation.py:297-302`); they go through
-  `_connect_immutable` / `_connect_readonly` only (store.py:1203-1225) and never migrate.
-- Tests run with `asyncio_mode = "auto"` (packages/ai-parrot/pyproject.toml:1034) — plain
+  `_connect_immutable` / `_connect_readonly` only (store.py:1347-1369) and never migrate.
+- Tests run with `asyncio_mode = "auto"` (packages/ai-parrot/pyproject.toml:1048) — plain
   `async def test_…` (precedent: `tests/knowledge/wiki/test_store_meta.py`).
 
 ### Does NOT Exist
@@ -138,7 +151,7 @@ WikiStore = SQLiteWikiStore                                                 # li
 
 ### Pattern to Follow
 ```python
-# store.py:1437-1438 — reading one meta row
+# store.py:1581-1582 — reading one meta row
 async with conn.execute("SELECT value FROM meta WHERE key = 'schema_version'") as cur:
     row = await cur.fetchone()
 ```
@@ -159,7 +172,7 @@ async with conn.execute("SELECT value FROM meta WHERE key = 'schema_version'") a
   and the fix `parrot self update` (managed runtime) / `parrot self add --here` (project venv).
 
 ### References in Codebase
-- `packages/ai-parrot/src/parrot/knowledge/wiki/store.py:1107-1131, 1300-1395, 1444-1497`
+- `packages/ai-parrot/src/parrot/knowledge/wiki/store.py:1251-1275, 1444-1539, 1588-1641`
 
 ---
 
@@ -225,7 +238,7 @@ class WikiStoreVersionError(RuntimeError):
 ```
 ```python
 # occurrences: 1 (verified: grep -c '            raise PermissionError(f"read-only wiki store: {self._db_path}")' packages/ai-parrot/src/parrot/knowledge/wiki/store.py)
-# AFTER — insert below that line, i.e. after `_assert_writable` (verified: store.py:1068)
+# AFTER — insert below that line, i.e. after `_assert_writable` (verified: store.py:1212)
 
     async def _check_runtime_gate(self, conn: aiosqlite.Connection) -> None:
         """Refuse the plane when its ``min_runtime_version`` exceeds the running version.
@@ -252,34 +265,34 @@ class WikiStoreVersionError(RuntimeError):
 ```
 ```python
 # occurrences: 1 (verified: grep -c '        await self._apply_pragmas(conn, writable=writable)' packages/ai-parrot/src/parrot/knowledge/wiki/store.py)
-# AFTER — insert below that line in `_open` (verified: store.py:1128), BEFORE `if writable: await self._ensure_schema(conn)`
+# AFTER — insert below that line in `_open` (verified: store.py:1272), BEFORE `if writable: await self._ensure_schema(conn)`
             await self._check_runtime_gate(conn)
 ```
 ```python
 # occurrences: 1 (verified: grep -c '^            self._log_read_only_once()$' packages/ai-parrot/src/parrot/knowledge/wiki/store.py)
-# AFTER — insert below the 12-space-indented `self._log_read_only_once()` in `_connect_immutable` (verified: store.py:1317)
+# AFTER — insert below the 12-space-indented `self._log_read_only_once()` in `_connect_immutable` (verified: store.py:1461)
             await self._check_runtime_gate(conn)
 ```
 ```python
 # occurrences: 2 (verified: grep -c '^                self._log_read_only_once()$' packages/ai-parrot/src/parrot/knowledge/wiki/store.py)
 # AFTER — insert below EACH of the two 16-space occurrences in `_connect_readonly`, disambiguated by context:
-#   (1) store.py:1352, in the rung opened by
-#       `async with aiosqlite.connect(f"{base}?mode=ro", uri=True, timeout=self._policy.busy_timeout_s) as conn:` (store.py:1348)
-#   (2) store.py:1388, in the rung opened by
-#       `f"{base}?mode=ro&immutable=1", uri=True, timeout=self._policy.busy_timeout_s` (16-space indent, store.py:1384)
-# Both insertions go BEFORE `yielded = True` (store.py:1353 / 1389) so a gate error is raised, not swallowed.
+#   (1) store.py:1496, in the rung opened by
+#       `async with aiosqlite.connect(f"{base}?mode=ro", uri=True, timeout=self._policy.busy_timeout_s) as conn:` (store.py:1492)
+#   (2) store.py:1532, in the rung opened by
+#       `f"{base}?mode=ro&immutable=1", uri=True, timeout=self._policy.busy_timeout_s` (16-space indent, store.py:1528)
+# Both insertions go BEFORE `yielded = True` (store.py:1497 / 1533) so a gate error is raised, not swallowed.
                 await self._check_runtime_gate(conn)
 ```
 ```python
 # occurrences: 2 (verified: grep -c '                (SCHEMA_VERSION,),' packages/ai-parrot/src/parrot/knowledge/wiki/store.py)
-# AFTER — the `_migrate` occurrence only (store.py:1492-1496), disambiguated by its context:
+# AFTER — the `_migrate` occurrence only (store.py:1636-1640), disambiguated by its context:
 #             await conn.execute(
 #                 "INSERT INTO meta (key, value) VALUES ('schema_version', ?)"
 #                 " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
 #                 (SCHEMA_VERSION,),
 #             )
-#         await conn.commit()          <- store.py:1497; the OTHER occurrence (store.py:2634) is rebuild_index — leave it
-# Insert after the closing `            )` at store.py:1496, still inside `if version_stale:`
+#         await conn.commit()          <- store.py:1641; the OTHER occurrence (store.py:2778) is rebuild_index — leave it
+# Insert after the closing `            )` at store.py:1640, still inside `if version_stale:`
             await conn.execute(
                 "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (MIN_RUNTIME_KEY, _running_version()),

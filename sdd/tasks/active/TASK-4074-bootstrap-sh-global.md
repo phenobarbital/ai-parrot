@@ -60,6 +60,16 @@ Jesus Lara). Every section below already reflects these deltas; this list is the
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: pin-rationale wording only (local uv is now 0.11.29; the pin stays 0.11.28).
+  `install-parrot.sh`, `test_install_posix.py` and `[project.scripts]` anchors unchanged (no commits since baseline).
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - `wikitoolkit mcp` now needs ai-parrot-tools (`wiki/tools.py:69-76`, `mcp_server.py:525-545, 566-574`; core
+    `dependencies` lack it), so a managed venv with only `ai-parrot[...]` cannot serve it. Affected: the install
+    spec in `global_install` (add `ai-parrot-tools`, same `--version` pin, or a fix on the wiki side).
+
+---
+
 ## Scope
 
 - Add flags `--global`, `--version <X>`, `--with <comma list>` to the arg loop; keep every
@@ -156,7 +166,8 @@ parrot = ...               # line 200
 wikitoolkit = ...          # line 204
 bookstore = ...            # line 206
 ```
-- Pinned uv: `0.11.28` (brief cross-cutting decision; matches the locally installed `uv 0.11.28`).
+- Pinned uv: `0.11.28` (brief cross-cutting decision; the pin stays `0.11.28` even though the locally
+  installed uv is now `0.11.29`).
 - uv release asset naming: `uv-<target>.tar.gz` + `uv-<target>.tar.gz.sha256`, targets
   `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`,
   `aarch64-apple-darwin`. The tarball contains a top-level `uv-<target>/` directory holding

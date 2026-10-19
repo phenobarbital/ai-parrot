@@ -49,6 +49,25 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `sdd_meta` anchors (`resolve_flow` fallback `:309-310`, warning
+  `:312-317`), `ensure_worktree.py:21` for the `sdd_meta` import, the six `sdd_meta` one-liners
+  (`sdd-task.md:55`, `sdd-done.md:71`, `agents/sdd-worker.md:152`; `parse_taxonomy` at
+  `sdd-spec.md:523` and `sdd-tojira.md:145`; `resolve_flow` at `sdd-spec.md:175`); Complexity
+  Contract gains the `parrot/sdd/scripts/brief_meta.py` MODIFY target; the C17 AC now names the real
+  `WorktreePlan` fields (`name`, `path`, `base_ref`; `sdd_meta.py:328-333`). `sdd/config.json`,
+  `parrot/sdd/config.py` and the new names still do not exist on dev.
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - **`brief_meta` / `ensure_worktree` ignore `sdd/config.json`.** TASK-4298 hands these branch
+    literals to this task: `scripts/sdd/brief_meta.py:28` (`BRIEF_BASE_BRANCHES`, enforced by
+    `_check_base_branch` `:45-55`), `:74` (default `"main"`), `:98` (ledger brief ⇒ `"dev"`), `:166`
+    (`hotfix` prefix iff `"main"`), and `scripts/sdd/ensure_worktree.py:304` (`--brief-key` default
+    `"main"`), `:318` (`--jira-key` ⇒ `"main"`). With `base_branch: "develop"`, `/sdd-brief` rejects
+    the configured branch. Decide: extend this task's scope to read `SddConfig` there, or record a
+    follow-up. Until then, implement only the `sdd_meta` wiring and the C17 CLI as specified.
+
+---
+
 ## Scope
 
 - Create `packages/ai-parrot/src/parrot/sdd/config.py`:
@@ -83,9 +102,10 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
     (`known = KNOWN_BRANCHES | {cfg.base_branch, cfg.hotfix_base, cfg.staging_branch}`).
 - `plan_worktree()` is unchanged (`origin/<meta.base_branch>` already follows the meta).
 - **Q1 residual — a CLI for `sdd_meta`.** Six shipped one-liners import `sdd_meta` inline
-  (`python -c "from scripts.sdd.sdd_meta import parse …"` ×3 in `sdd-task.md:55` and
-  twins, `parse_taxonomy` ×2 at `sdd-spec.md:590`, `resolve_flow` ×1 at
-  `sdd-spec.md:173`). They cannot go through `parrot sdd run` because the module has no
+  (`python -c "from scripts.sdd.sdd_meta import parse …"` ×3 in `sdd-task.md:55`,
+  `sdd-done.md:71` and `agents/sdd-worker.md:152`, `parse_taxonomy` ×2 at `sdd-spec.md:523` and
+  `sdd-tojira.md:145`, `resolve_flow` ×1 at `sdd-spec.md:175` — re-verified 2026-10-19). They
+  cannot go through `parrot sdd run` because the module has no
   `main()`. Give `parrot/sdd/scripts/sdd_meta.py` (TASK-4085's re-export module) an
   argparse `main()` with three subcommands, output designed for the shell callers:
   - `parse <doc>` → prints `<type> <base_branch>` on one line (what `sdd-task.md:55-57`
@@ -130,7 +150,8 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
 
 ## Codebase Contract (Anti-Hallucination)
 
-Verified on `dev` @ `ad54fde59` (2026-10-14); TASK-4298 additions assumed landed.
+Verified on `dev` @ `ad54fde59` (2026-10-14), re-verified on `dev` @ `9f51c7735` (2026-10-19);
+TASK-4298 additions assumed landed.
 
 ### Verified Imports
 ```python
@@ -151,13 +172,14 @@ class FlowMeta(BaseModel):                       # sdd_meta.py:99
 def parse(doc_path: Path) -> FlowMeta:           # :129 — default at :152
 def emit(meta: FlowMeta) -> str:                 # :156 — renders `type:` and `base_branch:` only
 def resolve_flow(*, kind=None, doc_path=None, type_override=None, base_branch_override=None) -> FlowMeta:  # :263
-#   final_type = type_override or resolved_type or "feature"; final_base = ... or "dev"  (:314-315)
-#   warning when final_base not in KNOWN_BRANCHES (:317-322)
+#   final_type = type_override or resolved_type or "feature"; final_base = ... or "dev"  (:309-310)
+#   warning when final_base not in KNOWN_BRANCHES (:312-317)
 # parrot/sdd/__init__.py — docstring-only package root (TASK-4070); parrot/sdd/scripts/ (TASK-4085)
 ```
 
 ### Callers that must keep working (behaviour identical with ai-parrot's config)
-- `scripts/sdd/ensure_worktree.py:20` — `resolve_flow`, `plan_worktree`.
+- `scripts/sdd/ensure_worktree.py:21` — `resolve_flow`, `plan_worktree` (moved to
+  `parrot/sdd/scripts/ensure_worktree.py` by TASK-4085).
 - `scripts/sdd/worktree_status.py:21`, `scripts/sdd/doc_taxonomy.py:21`, `scripts/sdd/backfill_taxonomy.py:19`.
 - `packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_ingest.py:20-21` — `parse` as `parse_spec_meta`.
 - `flows/dev_loop/nodes/{research,feature_handoff,base}.py` — via TASK-4298's names.
@@ -181,6 +203,7 @@ def resolve_flow(*, kind=None, doc_path=None, type_override=None, base_branch_ov
     {"path": "packages/ai-parrot/src/parrot/knowledge/wiki/ledger/sdd_meta.py", "action": "MODIFY"},
     {"path": "sdd/config.json", "action": "CREATE"},
     {"path": "packages/ai-parrot/src/parrot/sdd/scripts/sdd_meta.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/src/parrot/sdd/scripts/brief_meta.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/sdd/test_config.py", "action": "CREATE"},
     {"path": "tests/sdd_scripts/test_sdd_meta_config_defaults.py", "action": "CREATE"}
   ],
@@ -336,7 +359,8 @@ def resolve_flow(*, kind=None, doc_path=None, type_override=None, base_branch_ov
 - [ ] `python -m parrot.sdd.scripts.sdd_meta parse sdd/specs/parrot-installer.spec.md` prints `feature dev`; `taxonomy` prints the spec's projects/tags JSON; `resolve-flow --kind bug` prints `{"type": "hotfix", "base_branch": "main"}`; the re-export names are unchanged.
 - [ ] `ruff check` passes; no cyclic import (`python -c "import parrot.sdd.config, parrot.knowledge.wiki.ledger.sdd_meta"`).
 - [ ] *(rev 0.4 C17)* `python -m parrot.sdd.scripts.brief_meta plan --slug crew-guards --key NAV-1 --base-branch main`
-      prints the `WorktreePlan` JSON (`branch`/`path` = `hotfix-NAV-1-crew-guards`); `write-index <brief.md>
+      prints the `WorktreePlan` JSON (`name` = `hotfix-NAV-1-crew-guards`, `path` =
+      `.claude/worktrees/hotfix-NAV-1-crew-guards`, `base_ref` = `origin/main`); `write-index <brief.md>
       --tasks <tasks.json> --worktree-root <dir>` writes the per-brief index and prints its path;
       `--help` exits 0 from a foreign cwd; an unknown subcommand exits 2; the module's existing names are unchanged.
 

@@ -16,7 +16,7 @@ Spec §3 Module 3 (CLI + doctor half). TASK-4079 built the engine
 (`parrot.self_.components`). This task exposes it as the lazy `parrot self` Click group —
 `add | update | doctor | env | uninstall` — and implements `parrot self doctor`'s fixed
 check list (spec §3 M3 skeleton, §7 "Gemini config is user-global … `self doctor` flags
-baked-path collisions there"). `parrot status` is TAKEN by agentd (cli/__init__.py:134),
+baked-path collisions there"). `parrot status` is TAKEN by agentd (cli/__init__.py:136),
 so every diagnostic lives under `self`.
 
 ---
@@ -58,6 +58,11 @@ review). Every section below is already rewritten to match; this list is the del
 - **Effort** raised M → L; new test module `packages/ai-parrot/tests/self_/test_doctor_sdd.py`.
 
 ---
+
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: agentd `status` anchor `cli/__init__.py:134`→`:136` (094ec8616 added `jiratoolkit`); Codex `MCP_TABLE` 19→20 and toolkit table 84→85; `_check_python` contract + test now accept `version_info = 3.12` as well as `3.12.x` (repo `.venv` records `3.12`); added the remote-HTTP-entry contract note and `test_remote_http_entry_is_not_flagged`.
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - Doctor reads only Gemini's user-global `mcp_config.json`, but `GoogleAdapter.config_paths` → `toolkit_config_paths` also returns the repo-local `<root>/.agents/plugins/parrot/mcp_config.json` (`knowledge/wiki/google/installer.py:142-152`), and reconcile writes `parrot-<name>` command entries to both (`installer.py:175-200`). Spec §3 M3 says "3 hosts incl. the Gemini user-global file" — owner decides whether `_check_host_configs` also checks the repo-local file.
 
 ## Scope
 
@@ -141,7 +146,7 @@ class LazyGroup(click.Group):                                  # line 19
 #   ⇒ for "self" the module MUST expose a global named `self` (the group object).
 cli._lazy_commands = {                                         # line 109
     "toolkits": "parrot.cli.toolkits",                         # line 117
-    "status": "parrot.integrations.agentd.cli",                # line 134 — TAKEN, never reuse
+    "status": "parrot.integrations.agentd.cli",                # line 136 — TAKEN, never reuse
 }
 
 # packages/ai-parrot/src/parrot/mcp/toolkit_install.py
@@ -162,15 +167,18 @@ class CodexAdapter.config_paths(root) -> (root / ".codex" / "config.toml",)     
 class GoogleAdapter.config_paths(root) -> toolkit_config_paths(root, ...)       # line 185-188
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py
-MCP_TABLE = "mcp_servers.wikitoolkit"   # line 19; toolkit tables `[mcp_servers.parrot-<name>]` line 84
+MCP_TABLE = "mcp_servers.wikitoolkit"   # line 20; toolkit tables `[mcp_servers.parrot-<name>]` line 85
 ```
 - Claude `.mcp.json` shape: `{"mcpServers": {name: {"command": str, "args": [...]}}}`.
-- uv-created `pyvenv.cfg` carries `version_info = 3.12.x` (verified: repo `.venv/pyvenv.cfg`).
+- uv-created `pyvenv.cfg` carries `version_info = 3.12` (venv built on uv's minor-version Python link)
+  or `3.12.x` (verified 2026-10-19: repo `.venv/pyvenv.cfg` has `version_info = 3.12`, `uv = 0.11.29`).
+- Remote MCP entries carry no `command`: Claude `{"type": "http", "url": …, "headers": …}`
+  (`knowledge/wiki/claude_code/assets.py:128-134`), Codex `url = …` (`knowledge/wiki/codex/assets.py:115`).
 - Pinned uv version for the bootstrap: `0.11.28` (shared brief; same value the M2 install scripts pin).
 
 ### Does NOT Exist
 - ~~`parrot self`, `parrot env`, `parrot doctor` commands~~ — `"self"` is added here; never add top-level `env`/`doctor`.
-- ~~reusing `parrot status`~~ — agentd owns it (cli/__init__.py:134).
+- ~~reusing `parrot status`~~ — agentd owns it (cli/__init__.py:136).
 - ~~`parrot.self_.cli` / `parrot.self_.doctor`~~ — created here.
 - ~~a shared host-config parser in core~~ — doctor reads the three files directly (json / tomllib).
 - ~~`parrot sdd` in `_lazy_commands`~~ — TASK-4091's line, not this task's.
@@ -336,7 +344,7 @@ def _check_uv() -> DoctorCheck:
 
 
 def _check_python() -> DoctorCheck:
-    """Managed venv's pyvenv.cfg ``version_info`` starts with MANAGED_PYTHON + '.'."""
+    """Managed venv's pyvenv.cfg ``version_info`` equals MANAGED_PYTHON (uv may record ``3.12``) or starts with MANAGED_PYTHON + '.'."""
     # FILL IN: parse managed_venv()/'pyvenv.cfg' (key = value lines); missing file → ok=False — bounded by spec §3 M3 check 2
     raise NotImplementedError
 
@@ -665,6 +673,15 @@ def test_doctor_flags_broken_host_config(isolated_home: Path, tmp_path: Path) ->
     assert any(not c.ok and str(missing) in c.detail for c in checks)
 
 
+def test_remote_http_entry_is_not_flagged(isolated_home: Path, tmp_path: Path) -> None:
+    """A remote MCP entry has no `command` (claude_code/assets.py:128-134) — never a broken-command finding."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    remote = {"type": "http", "url": "https://wiki.example/mcp", "headers": {"Authorization": "Bearer ${TOKEN}"}}
+    (repo / ".mcp.json").write_text(json.dumps({"mcpServers": {"wikitoolkit": remote}}), encoding="utf-8")
+    assert all(c.ok for c in doctor._check_host_configs(repo))
+
+
 def test_gemini_cross_repo_collision(isolated_home: Path, tmp_path: Path) -> None:
     # FILL IN: ~/.gemini/config/mcp_config.json with wikitoolkit cwd=<other repo>; assert a failed check whose
     # fix mentions --portable — bounded by spec §7 Gemini bullet
@@ -672,7 +689,8 @@ def test_gemini_cross_repo_collision(isolated_home: Path, tmp_path: Path) -> Non
 
 
 def test_python_check_reads_pyvenv_cfg(isolated_home: Path) -> None:
-    # FILL IN: write parrot-home/venv/pyvenv.cfg with version_info = 3.11.9 → ok False; 3.12.3 → ok True — bounded by MANAGED_PYTHON
+    # FILL IN: write parrot-home/venv/pyvenv.cfg with version_info = 3.11.9 → ok False; 3.12.3 → ok True;
+    # 3.12 (uv minor-version link, as in the repo .venv) → ok True; 3.120 → ok False — bounded by MANAGED_PYTHON
     raise NotImplementedError
 
 
@@ -868,7 +886,7 @@ Also, outside the pytest contract: lint with `ruff check packages/ai-parrot/src/
 
 See the CREATE blocks for `test_self_cli.py` (registration, `test_self_env_rule_report`,
 add/uninstall wiring), `test_doctor.py` (`test_doctor_flags_broken_host_config`,
-Gemini collision, Python/PATH/toolkit checks, never-raises) and `test_doctor_sdd.py`
+remote HTTP entry not flagged, Gemini collision, Python/PATH/toolkit checks, never-raises) and `test_doctor_sdd.py`
 (C15 ready-repo baseline + per-prerequisite failure matrix, `gh` unauthenticated, informational
 host CLI, `parrot.sdd.*` absent, C14 `--runtime-only` scope exclusion, mutual exclusion + exit codes).
 

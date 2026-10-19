@@ -30,6 +30,14 @@ which `bookstore.config` already loads as a `parrot.*` submodule).
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `wiki/project.py` anchors (`SchemaPlaneConfig` import :30→:31, `PARROT_DIR`
+  :44→:45 and its other uses, `parrot_home` :1223→:1371, `raw`/`return` :1234/:1235→:1382/:1383). Still exactly
+  three direct `PARROT_HOME` reads; 15 `parrot_home()` occurrences; `bookstore.config` loads no wiki module;
+  `bookstore/config.py` and `cli/modes.py` anchors unchanged.
+
+---
+
 ## Scope
 
 - Make `parrot.knowledge.wiki.project.parrot_home()` return `parrot.launcher.parrot_home()`.
@@ -61,7 +69,7 @@ any other `PARROT_HOME`-like reads elsewhere; launcher code (TASK-4071/4072).
 ### Verified Imports
 ```python
 from parrot.launcher import parrot_home as _launcher_parrot_home  # created by TASK-4071 (packages/ai-parrot/src/parrot/launcher.py)
-from parrot.knowledge.wiki.project import parrot_home             # verified: packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1223
+from parrot.knowledge.wiki.project import parrot_home             # verified: packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1371
 from parrot.knowledge.bookstore.config import _parrot_home        # verified: packages/ai-parrot/src/parrot/knowledge/bookstore/config.py:66
 from parrot.cli.modes import cli_state_dir                        # verified: packages/ai-parrot/src/parrot/cli/modes.py:68
 ```
@@ -69,10 +77,10 @@ from parrot.cli.modes import cli_state_dir                        # verified: pa
 ### Existing Signatures to Use
 ```python
 # packages/ai-parrot/src/parrot/knowledge/wiki/project.py
-PARROT_DIR = ".parrot"                                     # line 44 (still used elsewhere: lines 289, 573, 688 — keep it)
-def parrot_home() -> Path:                                 # line 1223
-    raw = os.environ.get("PARROT_HOME") or f"~/{PARROT_DIR}"   # line 1234
-    return Path(raw).expanduser()                              # line 1235
+PARROT_DIR = ".parrot"                                     # line 45 (still used elsewhere: lines 291, 617, 736, 748, 759, 1008, 1234 — keep it)
+def parrot_home() -> Path:                                 # line 1371
+    raw = os.environ.get("PARROT_HOME") or f"~/{PARROT_DIR}"   # line 1382
+    return Path(raw).expanduser()                              # line 1383
 
 # packages/ai-parrot/src/parrot/knowledge/bookstore/config.py
 def _parrot_home() -> Path:                                # line 66 — docstring lines 67-73 ("Kept local ... never drags the wiki module chain in")
@@ -155,12 +163,12 @@ Function-body delegation; keep every public/private name, signature and docstrin
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/project.py` (MODIFY)
 ```python
 # occurrences: 1 (verified: grep -c 'from parrot.knowledge.wiki.schema.models import SchemaPlaneConfig' packages/ai-parrot/src/parrot/knowledge/wiki/project.py)
-# AFTER — insert below `from parrot.knowledge.wiki.schema.models import SchemaPlaneConfig` (verified: packages/ai-parrot/src/parrot/knowledge/wiki/project.py:30)
+# AFTER — insert below `from parrot.knowledge.wiki.schema.models import SchemaPlaneConfig` (verified: packages/ai-parrot/src/parrot/knowledge/wiki/project.py:31)
 from parrot.launcher import parrot_home as _launcher_parrot_home  # FEAT-633: single PARROT_HOME authority (stdlib-only)
 
 # occurrences: 1 (verified: grep -c '    raw = os.environ.get("PARROT_HOME") or f"~/{PARROT_DIR}"' packages/ai-parrot/src/parrot/knowledge/wiki/project.py)
-# REPLACE — `    raw = os.environ.get("PARROT_HOME") or f"~/{PARROT_DIR}"` (verified: packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1234)
-#   together with the following line `    return Path(raw).expanduser()` (verified: :1235; grep -c → 1)
+# REPLACE — `    raw = os.environ.get("PARROT_HOME") or f"~/{PARROT_DIR}"` (verified: packages/ai-parrot/src/parrot/knowledge/wiki/project.py:1382)
+#   together with the following line `    return Path(raw).expanduser()` (verified: :1383; grep -c → 1)
     return _launcher_parrot_home()
 ```
 **Why**: keeps the public `parrot_home()` (and its docstring, which stays true) while the launcher

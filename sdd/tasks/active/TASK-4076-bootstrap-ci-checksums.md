@@ -22,6 +22,11 @@ when the scripts change without the checksums being regenerated.
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Verified current against dev 9f51c7735; no changes.
+
+---
+
 ## Scope
 
 - Add to `.github/workflows/ci.yml` job `install-guide`:

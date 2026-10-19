@@ -12,6 +12,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Union
 import pytest
 
 from parrot.bots.data import PandasAgent
+from parrot.bots.prompts.layers import PromptLayer
 from parrot.models.basic import CompletionUsage
 from parrot.models.responses import AIMessage
 
@@ -149,6 +150,18 @@ def test_toolless_builder_is_a_clone(agent_and_client: tuple) -> None:
     names = set(toolless.layer_names)
     assert "toolless_data_grounding" in names
     assert names.isdisjoint({"tools", "available_skills", "dataframe_context", "strict_grounding", "data_instructions"})
+
+
+def test_toolless_builder_drops_tenant_skill_layers(agent_and_client: tuple) -> None:
+    """Per-tenant skill layers use the shared skills prefix and are dropped without tools."""
+    from parrot.skills.mixin import TENANT_SKILLS_LAYER_PREFIX
+
+    agent, _ = agent_and_client
+    name = f"{TENANT_SKILLS_LAYER_PREFIX}acme"
+    agent._prompt_builder.add(PromptLayer(name=name, priority=50, template="<available_skills/>"))
+    toolless = agent._toolless_prompt_builder()
+    assert name not in toolless.layer_names
+    assert agent._prompt_builder.get(name) is not None
 
 
 # ── ask_stream() / conversation() follow the same contract ─────
