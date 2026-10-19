@@ -53,7 +53,9 @@ def test_positive_guard() -> None:
 
     injected = guard.check_and_limit(sqlglot.parse_one("SELECT region FROM sales.orders"))
     clamped = guard.check_and_limit(sqlglot.parse_one("SELECT region FROM sales.orders LIMIT 999999"))
-    requested = guard.check_and_limit(sqlglot.parse_one("SELECT region FROM sales.orders LIMIT 10"), requested_limit=500)
+    requested = guard.check_and_limit(
+        sqlglot.parse_one("SELECT region FROM sales.orders LIMIT 10"), requested_limit=500
+    )
 
     assert injected.args["limit"].expression.this == "50"
     assert clamped.args["limit"].expression.this == "100"

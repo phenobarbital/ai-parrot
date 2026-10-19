@@ -17,9 +17,11 @@ DEFAULT_ALLOWED_FUNCTIONS: frozenset[str] = frozenset(
 
 def effective_allowed_functions(policy: ModelPolicy, extra: frozenset[str] | None) -> frozenset[str]:
     """Return the additive default, toolkit, and policy function allowlists."""
-    return DEFAULT_ALLOWED_FUNCTIONS | {function.upper() for function in (extra or frozenset())} | {
-        function.upper() for function in policy.allowed_functions
-    }
+    return (
+        DEFAULT_ALLOWED_FUNCTIONS
+        | {function.upper() for function in (extra or frozenset())}
+        | {function.upper() for function in policy.allowed_functions}
+    )
 
 
 class PositiveGuard:
