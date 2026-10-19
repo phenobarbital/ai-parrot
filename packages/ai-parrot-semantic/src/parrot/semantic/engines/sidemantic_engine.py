@@ -74,7 +74,11 @@ def compile_sidemantic(query: SemanticQuery, model: "LoadedModel", dialect: str)
     metrics = [_qualified(member, owners, model.name) for member in query.metrics]
     dimensions = [_qualified(member, owners, model.name) for member in query.dimensions]
     dimensions.extend(
-        f"{_qualified(item.name, owners, model.name)}__{item.grain}" if item.grain else _qualified(item.name, owners, model.name)
+        (
+            f"{_qualified(item.name, owners, model.name)}__{item.grain}"
+            if item.grain
+            else _qualified(item.name, owners, model.name)
+        )
         for item in query.time_dimensions
     )
     order_by = [
@@ -99,7 +103,8 @@ def compile_sidemantic(query: SemanticQuery, model: "LoadedModel", dialect: str)
         {
             qualified
             for table in tree.find_all(exp.Table)
-            if (qualified := ".".join(part for part in (table.catalog, table.db, table.name) if part)) in physical_tables
+            if (qualified := ".".join(part for part in (table.catalog, table.db, table.name) if part))
+            in physical_tables
         }
     )
     referenced = [*query.metrics, *query.dimensions]

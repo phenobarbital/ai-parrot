@@ -20,7 +20,20 @@ from .policy import ModelPolicy, load_policy
 
 logger = logging.getLogger(__name__)
 
-_MODEL_SUFFIXES = {".aml", ".json", ".lkml", ".malloy", ".sql", ".tds", ".tdsx", ".tml", ".twb", ".twbx", ".yaml", ".yml"}
+_MODEL_SUFFIXES = {
+    ".aml",
+    ".json",
+    ".lkml",
+    ".malloy",
+    ".sql",
+    ".tds",
+    ".tdsx",
+    ".tml",
+    ".twb",
+    ".twbx",
+    ".yaml",
+    ".yml",
+}
 _TYPE_BY_DIMENSION = {"boolean": "BOOLEAN", "categorical": "TEXT", "numeric": "DOUBLE", "time": "TIMESTAMP"}
 
 
@@ -131,7 +144,11 @@ class SemanticModelLoader:
                 engine_version=__version__,
             )
 
-        queryable_names = {name for name in layer.graph.models if name in {path.name.removesuffix(".policy.yaml") for path in policy_files}}
+        queryable_names = {
+            name
+            for name in layer.graph.models
+            if name in {path.name.removesuffix(".policy.yaml") for path in policy_files}
+        }
         if not loaded or queryable_names != set(loaded):
             raise SemanticPolicyError("missing_policy")
         root_names = {self._root_name(path) for path in source_files if self._root_name(path)}
@@ -245,7 +262,9 @@ class SemanticModelLoader:
             for metric in model.metrics:
                 members.setdefault(
                     metric.name,
-                    ModelMember(name=metric.name, kind="metric", description=getattr(metric, "description", None) or ""),
+                    ModelMember(
+                        name=metric.name, kind="metric", description=getattr(metric, "description", None) or ""
+                    ),
                 )
         for metric in layer.graph.metrics.values():
             members.setdefault(

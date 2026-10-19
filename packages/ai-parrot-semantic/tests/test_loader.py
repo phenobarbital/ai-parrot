@@ -25,7 +25,7 @@ def test_loader_loads_native_and_ossie_sources(models_dir: Path) -> None:
 def test_loader_rejects_security_block(models_dir: Path) -> None:
     """Sidemantic model security is rejected in favor of ai-parrot governance."""
     model_path = models_dir / "orders.yml"
-    model_path.write_text(model_path.read_text() + "\n    security:\n      access: \"true\"\n", encoding="utf-8")
+    model_path.write_text(model_path.read_text() + '\n    security:\n      access: "true"\n', encoding="utf-8")
 
     with pytest.raises(SemanticPolicyError) as raised:
         SemanticModelLoader(models_dir, driver="duckdb").load()

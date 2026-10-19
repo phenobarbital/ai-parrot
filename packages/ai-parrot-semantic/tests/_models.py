@@ -40,7 +40,9 @@ def duckdb_warehouse(tmp_path: Path) -> str:
             "('US', 'tenant-b', DATE '2026-02-10', 20.00, 2), "
             "('EU', 'tenant-a', DATE '2026-03-10', 30.00, 1)"
         )
-        connection.execute("INSERT INTO dim.customers VALUES (1, 'a@example.test', 50000), (2, 'b@example.test', 60000)")
+        connection.execute(
+            "INSERT INTO dim.customers VALUES (1, 'a@example.test', 50000), (2, 'b@example.test', 60000)"
+        )
     finally:
         connection.close()
     return path
