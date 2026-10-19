@@ -193,7 +193,9 @@ async def test_two_tenants_concurrent_on_singleton(tenant_bot: _TenantBot) -> No
 
 async def test_trigger_isolation_concurrent(tenant_bot: _TenantBot) -> None:
     """AC-A1: concurrent ``/revenue`` asks render only their tenant body."""
-    await asyncio.gather(_ask(tenant_bot, "/revenue quarterly", "pokemon"), _ask(tenant_bot, "/revenue quarterly", "epson"))
+    await asyncio.gather(
+        _ask(tenant_bot, "/revenue quarterly", "pokemon"), _ask(tenant_bot, "/revenue quarterly", "epson")
+    )
     by_tenant = {call["tenant"]: call["prompt"] for call in tenant_bot.fake_client.calls}
     assert "POKEMON REVENUE" in by_tenant["pokemon"]
     assert "EPSON REVENUE" in by_tenant["epson"]
@@ -203,6 +205,7 @@ async def test_trigger_isolation_concurrent(tenant_bot: _TenantBot) -> None:
 
 async def test_fixed_tenant_instance(agent_tree: Path) -> None:
     """A class-level ``tenant_id='pokemon'`` supplies the default view."""
+
     class FixedTenantBot(_TenantBot):
         tenant_id = "pokemon"
 
@@ -246,9 +249,12 @@ async def test_ask_stream_mid_stream_tool_sees_tenant(tenant_bot: _TenantBot) ->
     """AC-V3: a callback invoked by the streaming client sees the bound tenant."""
     seen: list[str | None] = []
     tenant_bot.fake_client.probe = lambda: seen.append(current_skill_tenant())
-    chunks = [chunk async for chunk in tenant_bot.ask_stream(
-        "stream", tenant="epson", use_vector_context=False, use_conversation_history=False, use_tools=False
-    )]
+    chunks = [
+        chunk
+        async for chunk in tenant_bot.ask_stream(
+            "stream", tenant="epson", use_vector_context=False, use_conversation_history=False, use_tools=False
+        )
+    ]
     assert chunks[0] == "ok"
     assert seen == ["epson"]
     assert current_skill_tenant() is None
