@@ -237,9 +237,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4480
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 160.6s · Tokens: n/a
+- Validation: merge-tier dde5085a:final:merge completed exit 0.
+- Review: no corrections. Authenticated handler; PermissionContext built from the navigator session; route registered only when the satellite is installed.
+- Note: tenant_id falls back to "default" when the session carries neither tenant_id nor program.

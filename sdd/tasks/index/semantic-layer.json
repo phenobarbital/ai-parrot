@@ -389,7 +389,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -399,8 +399,9 @@
       "parallelism_notes": "calls SemanticLayerToolkit.compile_query/query_metrics (TASK-4477) and save_result_as_dataset (TASK-4479, parrot/semantic/toolkit.py) from the HTTP surface",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4480-semantic-http-handler.md"
+      "completed_at": "2026-10-19T14:17:46+00:00",
+      "file": "sdd/tasks/completed/TASK-4480-semantic-http-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4481",
