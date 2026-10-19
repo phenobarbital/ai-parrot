@@ -652,6 +652,9 @@ tests:
 - packages/ai-parrot-tools/tests/workday/test_worker_event_history.py
 - packages/ai-parrot-tools/tests/workday/test_worker_job_changes.py
 - packages/ai-parrot-tools/tests/workday/test_worker_history_toolkit.py
+- packages/ai-parrot-tools/tests/workday/test_worker_event_models.py
+- packages/ai-parrot-tools/tests/workday/test_worker_history_registry.py
+- packages/ai-parrot-tools/tests/workday/test_worker_id_type_fallback.py
 - packages/ai-parrot-tools/tests/workday/test_toolkit_delegates.py
 - packages/ai-parrot-tools/tests/workday/test_position_job_profile.py
 markers: none
@@ -919,3 +922,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 |---|---|---|---|
 | 0.1 | 2026-10-19 | Jesus Lara / Claude | Initial draft from live WSDL + tenant verification |
 | 0.2 | 2026-10-19 | Jesus Lara / Claude | §8 resolved: opt-in `include_compensation` (G7), Employee→Contingent id fallback, docs path confirmed |
+| 0.3 | 2026-10-19 | Jesus Lara / Claude | /sdd-task: Validation Contract adds the model and registry test files (split out of M6) and the `WorkerType` fallback regression suite |
