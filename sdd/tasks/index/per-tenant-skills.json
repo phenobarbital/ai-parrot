@@ -190,7 +190,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -200,8 +200,9 @@
       "parallelism_notes": "Imports set_active_skill from TASK-4494 (skills/tenancy.py) for the /skill command; current_skill_view is duck-typed so no edge to TASK-4499.",
       "assigned_to": null,
       "started_at": "2026-10-19T21:15:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4500-telegram-tenant-binding.md"
+      "completed_at": "2026-10-19T21:48:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4500-telegram-tenant-binding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4501",
@@ -210,7 +211,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -221,8 +222,9 @@
       "parallelism_notes": "Imports current_active_skill/set_active_skill from TASK-4494 (tenancy.py) and build_active_skill_layer from TASK-4498 (prompt.py); owns middleware.py and bots/abstract.py.",
       "assigned_to": null,
       "started_at": "2026-10-19T21:15:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4501-skill-active-request-local.md"
+      "completed_at": "2026-10-19T21:48:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4501-skill-active-request-local.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4502",
@@ -231,7 +233,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -241,8 +243,9 @@
       "parallelism_notes": "Calls SkillRegistryMixin.current_skill_view() created by TASK-4499 (skills/mixin.py); owns bots/mixins/narrative.py.",
       "assigned_to": null,
       "started_at": "2026-10-19T21:15:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4502-narrative-tenant-view.md"
+      "completed_at": "2026-10-19T21:48:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4502-narrative-tenant-view.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4503",
