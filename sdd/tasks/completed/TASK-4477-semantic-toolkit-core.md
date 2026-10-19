@@ -345,9 +345,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4477
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 397.1s · Tokens: n/a
+- Validation: merge-tier ad0839b5:wave8:merge completed exit 0 (3 passed).
+- Review: no corrections. Single governed path verified; required-audit failure withholds rows; all error paths audited.
+- Note: reload() re-registers RLS rules keyed by (driver, table) but never unregisters, so a rule removed from a policy stays active until restart (more restrictive — fail-closed).

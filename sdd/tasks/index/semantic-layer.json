@@ -321,7 +321,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -336,8 +336,9 @@
       "parallelism_notes": "orchestrates: native engine via engines.compile (TASK-4468, engines/native.py), GovernancePipeline/subject_digest (TASK-4472, governance/pipeline.py), RoleCatalog (TASK-4473, catalog.py), SemanticAuditLedger (TASK-4474, audit.py), Executor/ConnectionResolver/CompileCache (TASK-4475, execution.py/cache.py), ResultHandleStore (TASK-4476, results.py); modifies __init__.py created by TASK-4463",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4477-semantic-toolkit-core.md"
+      "completed_at": "2026-10-19T13:35:28+00:00",
+      "file": "sdd/tasks/completed/TASK-4477-semantic-toolkit-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4478",
