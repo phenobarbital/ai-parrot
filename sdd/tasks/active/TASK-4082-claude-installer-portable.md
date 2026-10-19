@@ -16,10 +16,10 @@ Spec §3 Module 5 parts (b), (c) and (e) for **Claude Code**, installer + CLI la
 every Claude emitter a keyword-only `portable` flag; this task exposes `--portable` on
 `parrot claude install`, threads it to the emitters, and fixes the two reconcile paths:
 
-1. `_install_mcp_json` (installer.py:693) — today `if servers.get("wikitoolkit") == entry: … else
-   REPLACE` (installer.py:726-731). Spec §7 calls out that this "will silently revert portable
-   entries" on the next plain `parrot claude install`.
-2. `reconcile_toolkit_entries` (installer.py:616) — called by BOTH `_install_mcp_json` (installer.py:737)
+1. `_install_mcp_json` (installer.py:694) — today, after a foreign-entry guard (installer.py:730-732,
+   FEAT-569), `if servers.get("wikitoolkit") == entry: … else REPLACE` (installer.py:733-738). Spec §7
+   calls out that this "will silently revert portable entries" on the next plain `parrot claude install`.
+2. `reconcile_toolkit_entries` (installer.py:617) — called by BOTH `_install_mcp_json` (installer.py:744)
    AND `parrot toolkits` through `mcp/hosts.py::ClaudeAdapter.reconcile` (hosts.py:95-98). It is the
    one place both paths pass through, so the **sticky** rule lives here (no `mcp/hosts.py` edit).
 
@@ -36,25 +36,33 @@ every Claude emitter a keyword-only `portable` flag; this task exposes `--portab
 - Spec §3 M5(c)'s literal wording ("keeps an existing entry that matches EITHER form") would make an
   explicit `--portable` over a baked entry a no-op, contradicting §5 — the tri-state rule above is
   the reading that satisfies both §4 tests and §5.
-- Ownership is unchanged: the `wikitoolkit` key stays installer-owned exactly as today (a stale
-  non-matching entry is still replaced — `test_install_updates_stale_entry`,
-  `packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py:63`, must keep passing);
-  foreign `parrot-<name>` keys are still warned-and-skipped.
+- Ownership is unchanged from today (FEAT-569, `_is_wikitoolkit_entry`, installer.py:753-762): a
+  managed-shape stale `wikitoolkit` entry is replaced (`test_install_updates_stale_entry`,
+  `packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py:66`); a foreign `wikitoolkit` entry is
+  left untouched (`test_install_leaves_foreign_wikitoolkit_entry_untouched`, same file :75). Both must
+  keep passing. Foreign `parrot-<name>` keys are still warned-and-skipped.
 
-Windows (codex S4): three `PurePosixPath(...).name` call sites (installer.py:151, :590, :877/879)
+Windows (codex S4): three `PurePosixPath(...).name` call sites (installer.py:152, :591, :896/898)
 mis-handle `C:\…\Scripts\parrot.exe`; they move to a separator- and `.exe`-agnostic basename helper.
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: `claude_code/installer.py` and `cli.py` anchors shifted (6b30156ad `--remote`, 6164b075b ledger hooks); blueprint now keeps the FEAT-569 `remote=` plumbing (`_install_mcp_json` signature, else-branch-only entry replacement, call site, CLI option/param/kwarg positions); ownership text updated for the foreign-entry guard (caaa25f73); two Validation Commands added.
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - `_is_wikitoolkit_entry` (installer.py:762) matches `command.endswith("wikitoolkit")`, so a baked Windows `C:\…\Scripts\wikitoolkit.exe` entry is classified foreign (never refreshed or uninstalled; verified by direct call). Whether this task switches it to `_script_basename` is undecided.
+  - `--remote` × `--portable` stickiness: the remote entry is `{"type": "http", …}` (assets.py:134), so `_is_portable_wikitoolkit_entry` reads it as baked; after `--remote --portable`, a plain `--remote` re-install or `parrot toolkits` would revert hook/permissions/toolkit entries to baked. Spec is silent on remote; inference rule for http entries undecided.
+
 ## Scope
 
-- Add `_script_basename(command: str) -> str` and use it at installer.py:151, :590-591, :877, :879.
+- Add `_script_basename(command: str) -> str` and use it at installer.py:152, :591-592, :896, :898.
 - Add `_is_portable_wikitoolkit_entry(entry: Any) -> bool` and `_current_portable_mode(root: Path) -> bool`.
 - `_is_managed_toolkit_entry`: accept the portable shape (bare `parrot`, `--config
   .parrot/mcp-toolkits.yaml` = `assets.PORTABLE_TOOLKIT_CONFIG`).
 - `reconcile_toolkit_entries(root, *, portable: Optional[bool] = None)` — `None` infers (sticky).
-- `_install_mcp_json(root, *, portable: bool = False)` — emits the requested form, passes the
-  resolved mode to `reconcile_toolkit_entries`.
+- `_install_mcp_json(root, *, remote=None, portable: bool = False)` — keeps the FEAT-569 `remote`
+  branch as is, emits the requested stdio form otherwise, passes the resolved mode to
+  `reconcile_toolkit_entries`.
 - `_hook_entry`, `_install_settings_hook`, `_install_permissions` gain `*, portable: bool = False`.
 - `install_claude_integration(…, portable: Optional[bool] = None)` resolves the mode once, before
   any write, and threads it to the settings hook, permissions, `.mcp.json`, and `install_bookstore`.
@@ -65,7 +73,7 @@ mis-handle `C:\…\Scripts\parrot.exe`; they move to a separator- and `.exe`-agn
 - Emitter bodies in `claude_code/assets.py` / `claude_code/bookstore.py` — TASK-4081.
 - `mcp/hosts.py` — unchanged: `ClaudeAdapter.reconcile` calls `reconcile_toolkit_entries(root)`
   without a mode, which is exactly the sticky-inference path.
-- `uninstall_claude_integration` (its `permission_rules(root)` call at installer.py:1144 stays — it
+- `uninstall_claude_integration` (its `permission_rules(root)` call at installer.py:1218 stays — it
   removes the baked rule variant if present, harmless in portable mode).
 - The git post-commit/post-merge hooks (`.git/hooks/` is never committed; stays baked).
 - Codex / Google — TASK-4083 / TASK-4084.
@@ -85,7 +93,7 @@ mis-handle `C:\…\Scripts\parrot.exe`; they move to a separator- and `.exe`-agn
 ## Codebase Contract (Anti-Hallucination)
 
 > **CRITICAL**: This section contains VERIFIED code references from the actual codebase
-> (branch `dev` @ `6c4ca5482`, 2026-10-05).
+> (branch `dev` @ `6c4ca5482`, 2026-10-05; line anchors refreshed against `9f51c7735`, 2026-10-19).
 > The implementing agent MUST use these exact imports, class names, and method signatures.
 > **DO NOT** invent, guess, or assume any import, attribute, or method not listed here.
 > If you need something not listed, VERIFY it exists first with `grep` or `read`.
@@ -97,7 +105,8 @@ from parrot.knowledge.wiki.claude_code.installer import (                # test-
     install_claude_integration, reconcile_toolkit_entries, _is_managed_toolkit_entry, _is_our_command,
 )
 from parrot.knowledge.wiki.claude_code.cli import claude                 # cli.py:49 (click group)
-from parrot.mcp.toolkit_config import load_toolkits_config               # mcp/toolkit_config.py:90 (installer.py:642 lazy import)
+from parrot.mcp.toolkit_config import load_toolkits_config               # mcp/toolkit_config.py:90 (installer.py:643 lazy import)
+from parrot.knowledge.wiki.project import WikiRemoteConfig                # installer.py:37 (already imported, FEAT-569)
 # Created by TASK-4081 (dependency):
 #   assets.mcp_json_entry(root, *, portable=False) / assets.toolkit_mcp_json_entry(root, name, section, *, portable=False)
 #   assets.hook_command(root, *, portable=False) / assets.permission_rules(root, *, portable=False)
@@ -109,23 +118,28 @@ from parrot.mcp.toolkit_config import load_toolkits_config               # mcp/t
 ```python
 # packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py
 from pathlib import Path, PurePosixPath                                   # line 30
-def _hook_entry(root: Path) -> dict[str, Any]:                            # line 109; "command": assets.hook_command(root) line 121
-def _is_our_command(command: Any) -> bool:                                # line 128; PurePosixPath(token).name check line 151
-def _install_settings_hook(root: Path) -> str:                            # line 189; resolved_cmd = assets.hook_command(root) line 205; pre.append(_hook_entry(root)) line 246
-def _install_permissions(root: Path) -> list[str]:                        # line 251; all_rules = assets.permission_rules(root) line 293 (2nd occurrence line 1144 is uninstall — leave)
-def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool: # line 574; bin_name = PurePosixPath(assets.resolve_parrot_bin(root)).name line 590; endswith line 591; is_absolute line 607
-def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]: # line 616; toolkit_entry = assets.toolkit_mcp_json_entry(...) line 655
-def _install_mcp_json(root: Path) -> str:                                 # line 693; entry = assets.mcp_json_entry(root) line 719; reconcile 726-731; reconcile_toolkit_entries(root) line 737
-def _shebang_is_sh_compatible(first_line: str) -> bool:                   # line 863; PurePosixPath(tokens[0]).name line 877; tokens[1] line 879
+def _hook_entry(root: Path) -> dict[str, Any]:                            # line 110; "command": assets.hook_command(root) line 122
+def _is_our_command(command: Any) -> bool:                                # line 129; PurePosixPath(token).name check line 152
+def _install_settings_hook(root: Path) -> str:                            # line 190; resolved_cmd = assets.hook_command(root) line 206; pre.append(_hook_entry(root)) line 247
+def _install_permissions(root: Path) -> list[str]:                        # line 252; all_rules = assets.permission_rules(root) line 294 (2nd occurrence line 1218 is uninstall — leave)
+def _is_managed_toolkit_entry(entry: Any, root: Path, name: str) -> bool: # line 575; bin_name = PurePosixPath(assets.resolve_parrot_bin(root)).name line 591; endswith line 592; is_absolute line 608
+def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]: # line 617; toolkit_entry = assets.toolkit_mcp_json_entry(...) line 656
+def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None) -> str:  # line 694 (FEAT-569)
+#   if remote is not None: entry = assets.mcp_json_entry_remote(...) line 720-721; else: entry = assets.mcp_json_entry(root) line 723;
+#   foreign guard (not _is_wikitoolkit_entry) line 730-732; equality/replace 733-738; reconcile_toolkit_entries(root) line 744
+def _is_wikitoolkit_entry(entry: Any) -> bool:                            # line 753-762 (stdio + http managed shapes; stdio uses command.endswith("wikitoolkit"))
+def _shebang_is_sh_compatible(first_line: str) -> bool:                   # line 882; PurePosixPath(tokens[0]).name line 896; tokens[1] line 898
 def install_claude_integration(root, config=None, git_hook=True, gitignore=True, bookstore=True,
                                approve_mcp=True, compaction=False, typesafe_api_key=None,
-                               plugin_cli=True) -> list[str]:             # line 964-974
-#   save_project_config line 1019; _install_settings_hook line 1022; _install_permissions line 1023;
-#   _install_mcp_json line 1024; install_bookstore(root) line 1045
+                               plugin_cli=True, remote=None) -> list[str]:  # line 1034-1045
+#   save_project_config line 1092; _install_settings_hook line 1095; _install_permissions line 1096;
+#   _install_mcp_json(root, remote=remote) line 1097; install_bookstore(root) line 1119
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py
 #   "--bookstore/--no-bookstore" option line 76; "--plugin-cli/--no-plugin-cli" line 107;
-#   def install(...) line 112, param `plugin_cli: bool,` line 122; call kwarg `plugin_cli=plugin_cli,` line 146
+#   "--remote" / "--remote-url" / "--token-env" options lines 112-125 (FEAT-569);
+#   def install(...) line 126, param `plugin_cli: bool,` line 136, `token_env: Optional[str],` line 139;
+#   call kwargs `plugin_cli=plugin_cli,` line 175, `remote=remote,` line 176
 
 # packages/ai-parrot/src/parrot/mcp/hosts.py — ClaudeAdapter.reconcile (line 95-98) calls
 #   reconcile_toolkit_entries(root); ClaudeAdapter.inspect (line 69-93) calls _is_managed_toolkit_entry(entry, root, name)
@@ -184,9 +198,11 @@ def install_claude_integration(root, config=None, git_hook=True, gitignore=True,
 
 ### Pattern to Follow
 ```python
-# installer.py:726-731 — keep this exact equality/replace shape; only the `entry` it compares
-# against changes (it is now the REQUESTED form). That alone gives "requested mode wins".
-if servers.get("wikitoolkit") == entry:
+# installer.py:730-738 — keep this exact foreign-guard + equality/replace shape; only the `entry` it
+# compares against changes (it is now the REQUESTED form). That alone gives "requested mode wins".
+if "wikitoolkit" in servers and not _is_wikitoolkit_entry(servers["wikitoolkit"]):
+    ...  # foreign — left untouched (FEAT-569)
+elif servers.get("wikitoolkit") == entry:
     wikitoolkit_status = "wikitoolkit entry already current"
 else:
     ...
@@ -205,7 +221,9 @@ else:
 - `_is_managed_toolkit_entry` must stay a superset of today's accepted shapes (pinned absolute
   `--config` inside root, legacy two-arg) and must keep rejecting `--config` outside root.
 - After the edits `PurePosixPath` may be unused — drop it from the line-30 import (ruff F401).
-- Keep warnings on `sys.stderr` exactly as today (installer.py:664); no new `print`.
+- Keep warnings on `sys.stderr` exactly as today (installer.py:665, :731); no new `print`.
+- `--remote` (FEAT-569) keeps its own `wikitoolkit` entry: `portable` only changes the stdio
+  (else) branch of `_install_mcp_json`; every call that passes `remote=remote` today keeps it.
 
 ### References in Codebase
 - `packages/ai-parrot/src/parrot/mcp/hosts.py:58-117` — ClaudeAdapter; proves both CLIs funnel into
@@ -219,7 +237,7 @@ else:
 ### Steps (in order)
 1. Add the three private helpers after `_remove_marker_block` — *why*: one Windows-safe basename
    rule (codex S4) and one portable-shape rule shared by every call site below.
-2. Swap the `PurePosixPath(...).name` uses at :151, :590-591, :877, :879 for `_script_basename` —
+2. Swap the `PurePosixPath(...).name` uses at :152, :591-592, :896, :898 for `_script_basename` —
    *why*: spec §7 "fix it with the Windows branch, not after".
 3. Extend `_is_managed_toolkit_entry` for the portable shape — *why*: otherwise the relative
    `--config` hits `is_absolute()` → foreign, and portable entries are never upgraded or removed.
@@ -234,7 +252,7 @@ else:
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py` (MODIFY)
 ```python
 # occurrences: 1 (verified: grep -c 'def _remove_marker_block(text: str, begin: str, end: str) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# AFTER — insert below the end of `_remove_marker_block` (verified: claude_code/installer.py:71-85)
+# AFTER — insert below the end of `_remove_marker_block` (verified: claude_code/installer.py:72-86)
 
 
 def _script_basename(command: str) -> str:
@@ -261,24 +279,24 @@ def _current_portable_mode(root: Path) -> bool:
 
     No ``.mcp.json``, unparsable JSON, no entry, or a baked entry all mean ``False``.
     """
-    # FILL IN: read root/".mcp.json" leniently (mirror the try/except at installer.py:709-717)
+    # FILL IN: read root/".mcp.json" leniently (mirror the try/except at installer.py:710-718)
     # and return _is_portable_wikitoolkit_entry(mcpServers.get("wikitoolkit")) — bounded by
     # "no new state file" (shared brief) and never raising on a corrupt file.
     raise NotImplementedError
 
 # occurrences: 1 (verified: grep -c '    return any(PurePosixPath(token).name == assets.HOOK_BIN_NAME for token in tokens)' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# REPLACE — `    return any(PurePosixPath(token).name == assets.HOOK_BIN_NAME for token in tokens)` (verified: claude_code/installer.py:151)
+# REPLACE — `    return any(PurePosixPath(token).name == assets.HOOK_BIN_NAME for token in tokens)` (verified: claude_code/installer.py:152)
     # shlex (POSIX mode) eats backslashes in an unquoted Windows path, so also test the raw
     # whitespace split (codex S4).
     return any(_script_basename(token) == assets.HOOK_BIN_NAME for token in [*tokens, *text.split()])
 
 # occurrences: 1 (verified: grep -c '    bin_name = PurePosixPath(assets.resolve_parrot_bin(root)).name' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# REPLACE — lines 590-592 starting `    bin_name = PurePosixPath(assets.resolve_parrot_bin(root)).name` (verified: claude_code/installer.py:590-591)
+# REPLACE — lines 591-593 starting `    bin_name = PurePosixPath(assets.resolve_parrot_bin(root)).name` (verified: claude_code/installer.py:591-592)
     if not isinstance(command, str) or _script_basename(command) != "parrot":
         return False
 
 # occurrences: 1 (verified: grep -c '        if not config_path.is_absolute():' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# REPLACE — lines 605-608 (verified: claude_code/installer.py:605-607); context:
+# REPLACE — lines 606-609 (verified: claude_code/installer.py:606-608); context:
 #     if len(args) >= 4 and args[2] == "--config":
 #         config_path = Path(args[3])
 #         if not config_path.is_absolute():
@@ -289,17 +307,17 @@ def _current_portable_mode(root: Path) -> bool:
         config_path = Path(args[3])
         if not config_path.is_absolute():
             return False
-    # (lines 609-613 unchanged; also add one docstring sentence about the portable shape)
+    # (lines 610-614 unchanged; also add one docstring sentence about the portable shape)
 
 # occurrences: 1 (verified: grep -c 'def reconcile_toolkit_entries(root: Path) -> tuple\[list\[str\], list\[str\]\]:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# REPLACE — signature line (verified: claude_code/installer.py:616); add to the docstring:
+# REPLACE — signature line (verified: claude_code/installer.py:617); add to the docstring:
 #   "portable: None infers the mode from the current wikitoolkit entry (FEAT-633 sticky rule —
 #    the `parrot toolkits` path via mcp/hosts.py::ClaudeAdapter.reconcile); True/False force it."
 def reconcile_toolkit_entries(root: Path, *, portable: Optional[bool] = None) -> tuple[list[str], list[str]]:
 
 # occurrences: 1 (verified: grep -c '        toolkit_entry = assets.toolkit_mcp_json_entry(root, name, cfg.toolkits\[name\])' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# REPLACE — (verified: claude_code/installer.py:655); and BEFORE the `for name in sorted(enabled_names):`
-#           loop (line 653) insert the inference:
+# REPLACE — (verified: claude_code/installer.py:656); and BEFORE the `for name in sorted(enabled_names):`
+#           loop (line 654) insert the inference:
     if portable is None:
         portable = _is_portable_wikitoolkit_entry(servers.get("wikitoolkit"))
     ...
@@ -307,48 +325,51 @@ def reconcile_toolkit_entries(root: Path, *, portable: Optional[bool] = None) ->
 ```
 
 ```python
-# occurrences: 1 (verified: grep -c 'def _install_mcp_json(root: Path) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# REPLACE — signature (verified: claude_code/installer.py:693); docstring gains a `portable` Args line
-def _install_mcp_json(root: Path, *, portable: bool = False) -> str:
+# occurrences: 1 (verified: grep -c 'def _install_mcp_json(root: Path, \*, remote: Optional\[WikiRemoteConfig\] = None) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
+# REPLACE — signature (verified: claude_code/installer.py:694); keep `remote` (FEAT-569); docstring gains a `portable` Args line
+def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None, portable: bool = False) -> str:
 
-# occurrences: 1 (verified: grep -c '    entry = assets.mcp_json_entry(root)' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# REPLACE — (verified: claude_code/installer.py:719)
-    entry = assets.mcp_json_entry(root, portable=portable)
-# Lines 726-731 (`    if servers.get("wikitoolkit") == entry:`, occurrences 1) stay textually unchanged —
+# occurrences: 1 (verified: grep -c '        entry = assets.mcp_json_entry(root)' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
+# REPLACE — the ELSE-branch line only (8-space indent, verified: claude_code/installer.py:723); the
+#           `if remote is not None:` branch (:720-721, `assets.mcp_json_entry_remote(...)`) stays unchanged
+        entry = assets.mcp_json_entry(root, portable=portable)
+# Lines 730-738 (foreign guard `    if "wikitoolkit" in servers and not _is_wikitoolkit_entry(...)` and
+# `    elif servers.get("wikitoolkit") == entry:`, occurrences 1) stay textually unchanged —
 # comparing against the REQUESTED form is the whole fix.
 
 # occurrences: 1 (verified: grep -c '    toolkit_actions, _warnings = reconcile_toolkit_entries(root)' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# REPLACE — (verified: claude_code/installer.py:737)
+# REPLACE — (verified: claude_code/installer.py:744)
     toolkit_actions, _warnings = reconcile_toolkit_entries(root, portable=portable)
 
 # occurrences: 1 (verified: grep -c 'def _hook_entry(root: Path) -> dict\[str, Any\]:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# REPLACE — signature (:109) and `                "command": assets.hook_command(root),` (:121, occurrences 1)
+# REPLACE — signature (:110) and `                "command": assets.hook_command(root),` (:122, occurrences 1)
 def _hook_entry(root: Path, *, portable: bool = False) -> dict[str, Any]:
                 "command": assets.hook_command(root, portable=portable),
 
 # occurrences: 1 (verified: grep -c 'def _install_settings_hook(root: Path) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# REPLACE — signature (:189), `    resolved_cmd = assets.hook_command(root)` (:205, occurrences 1) and
-#           `    pre.append(_hook_entry(root))` (:246, occurrences 1)
+# REPLACE — signature (:190), `    resolved_cmd = assets.hook_command(root)` (:206, occurrences 1) and
+#           `    pre.append(_hook_entry(root))` (:247, occurrences 1)
 def _install_settings_hook(root: Path, *, portable: bool = False) -> str:
     resolved_cmd = assets.hook_command(root, portable=portable)
     pre.append(_hook_entry(root, portable=portable))
 
 # occurrences: 1 (verified: grep -c 'def _install_permissions(root: Path) -> list\[str\]:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# REPLACE — signature (:251) and the FIRST `    all_rules = assets.permission_rules(root)` (occurrences 2:
-#           :293 inside _install_permissions — context line above it is
-#           `        raise RuntimeError(f"{local_path}: 'permissions.allow' is not a list")`; leave :1144 in uninstall)
+# REPLACE — signature (:252) and the FIRST `    all_rules = assets.permission_rules(root)` (occurrences 2:
+#           :294 inside _install_permissions — two lines above it (:292) is the first of two
+#           `        raise RuntimeError(f"{local_path}: 'permissions.allow' is not a list")`; leave :1218 in uninstall)
 def _install_permissions(root: Path, *, portable: bool = False) -> list[str]:
     all_rules = assets.permission_rules(root, portable=portable)
 
 # occurrences: 1 (verified: grep -c '    interpreter = PurePosixPath(tokens\[0\]).name' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# REPLACE — :877 and :879 (`        interpreter = PurePosixPath(tokens[1]).name`, occurrences 1)
+# REPLACE — :896 and :898 (`        interpreter = PurePosixPath(tokens[1]).name`, occurrences 1)
     interpreter = _script_basename(tokens[0])
         interpreter = _script_basename(tokens[1])
 ```
 
 ```python
-# occurrences: 1 (verified: grep -c '    plugin_cli: bool = True,' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# AFTER — insert below `    plugin_cli: bool = True,` in install_claude_integration's signature (verified: claude_code/installer.py:973)
+# occurrences: 1 (verified: grep -c '    remote: Optional\[WikiRemoteConfig\] = None,' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
+# AFTER — insert below `    remote: Optional[WikiRemoteConfig] = None,` in install_claude_integration's signature
+#         (verified: claude_code/installer.py:1044; it follows `    plugin_cli: bool = True,` at :1043)
     portable: Optional[bool] = None,
 # Docstring Args addition:
 #   portable: ``True`` emits bare launcher commands (committable ``.mcp.json``/settings hook, FEAT-633),
@@ -356,15 +377,16 @@ def _install_permissions(root: Path, *, portable: bool = False) -> list[str]:
 #       (inferred from the managed wikitoolkit entry; a fresh repo is baked).
 
 # occurrences: 1 (verified: grep -c '    save_project_config(root, config)' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
-# AFTER — insert below `    save_project_config(root, config)` (verified: claude_code/installer.py:1019)
+# AFTER — insert below `    save_project_config(root, config)` (verified: claude_code/installer.py:1092)
     if portable is None:
         portable = _current_portable_mode(root)
     logger.debug("claude install: portable=%s", portable)
 
-# REPLACE — the four call sites (each occurrences 1, verified :1022, :1023, :1024, :1045):
+# REPLACE — the four call sites (each occurrences 1, verified :1095, :1096, :1097, :1119); the
+#           `.mcp.json` call already passes `remote=remote` (FEAT-569) — keep it:
     actions.append(_install_settings_hook(root, portable=portable))
     actions.extend(_install_permissions(root, portable=portable))
-    actions.append(_install_mcp_json(root, portable=portable))
+    actions.append(_install_mcp_json(root, remote=remote, portable=portable))
         actions.extend(install_bookstore(root, portable=portable))
 ```
 **Why this shape**: resolving the tri-state in one place keeps every lower function a plain
@@ -373,9 +395,9 @@ the public entry point and `reconcile_toolkit_entries` (the shared toolkits path
 
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py` (MODIFY)
 ```python
-# occurrences: 1 (verified: grep -c '    "--plugin-cli/--no-plugin-cli",' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py)
-# AFTER — insert a new decorator after the `--plugin-cli/--no-plugin-cli` option block ends (verified: cli.py:106-111),
-#         i.e. directly above `def install(` (verified: cli.py:112)
+# occurrences: 1 (verified: grep -c '    "--token-env",' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py)
+# AFTER — insert a new decorator after the `--token-env` option block ends (verified: cli.py:121-125, the last of
+#         the FEAT-569 `--remote`/`--remote-url`/`--token-env` options), i.e. directly above `def install(` (verified: cli.py:126)
 @click.option(
     "--portable/--no-portable",
     default=None,
@@ -383,12 +405,12 @@ the public entry point and `reconcile_toolkit_entries` (the shared toolkits path
     "config can be committed. Default: keep the current form (baked absolute paths on a fresh install).",
 )
 
-# occurrences: 1 (verified: grep -c '    plugin_cli: bool,' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py)
-# AFTER — `    plugin_cli: bool,` (verified: cli.py:122)
+# occurrences: 1 (verified: grep -c '    token_env: Optional\[str\],' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py)
+# AFTER — `    token_env: Optional[str],` (verified: cli.py:139)
     portable: Optional[bool],
 
-# occurrences: 1 (verified: grep -c '            plugin_cli=plugin_cli,' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py)
-# AFTER — `            plugin_cli=plugin_cli,` (verified: cli.py:146)
+# occurrences: 1 (verified: grep -c '            remote=remote,' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py)
+# AFTER — `            remote=remote,` (verified: cli.py:176)
             portable=portable,
 ```
 **Why**: the shared brief places the flag beside the other install switches; `default=None` is what
@@ -512,7 +534,7 @@ def test_cli_portable_flag(repo_root: Path) -> None:
 - [ ] `--no-portable` over a portable install restores the exact baked form, and `--portable` over a baked install the exact portable form (spec §4 `test_portable_transitions_both_ways`; §5 "lands exactly the requested form").
 - [ ] `parrot claude install` without the flag keeps the current form; on a fresh repo it is baked and byte-identical to today (spec §4 `test_reconcile_respects_portable`, `test_default_emission_unchanged`).
 - [ ] `reconcile_toolkit_entries(root)` (the `parrot toolkits` path, via `mcp/hosts.py`) emits portable toolkit entries iff the current wikitoolkit entry is portable — `mcp/hosts.py` unmodified.
-- [ ] Foreign `parrot-<name>` entries stay untouched in both modes; `test_install_updates_stale_entry` still passes.
+- [ ] Foreign `parrot-<name>` entries stay untouched in both modes; `test_install_updates_stale_entry` and `test_install_leaves_foreign_wikitoolkit_entry_untouched` still pass; `--remote` (FEAT-569) behaviour is unchanged.
 - [ ] Windows `Scripts\parrot.exe` / `wikitoolkit.exe` commands are recognised as managed (codex S4); no `PurePosixPath(...).name` remains in `claude_code/installer.py`.
 - [ ] `ruff check` clean on both modified files.
 
@@ -528,6 +550,8 @@ Run from the feature worktree with `PYTHONPATH=packages/ai-parrot/src` (the shar
 - `pytest tests/knowledge/wiki/test_installer_mcp_approval.py -q`
 - `pytest tests/knowledge/wiki/test_claude_code.py -q`
 - `pytest tests/knowledge/wiki/test_claude_code_bookstore.py -q`
+- `pytest packages/ai-parrot/tests/knowledge/wiki/test_installer_remote_claude.py -q`
+- `pytest tests/knowledge/wiki/test_installer_ledger_hooks.py -q`
 
 ---
 

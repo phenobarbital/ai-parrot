@@ -26,6 +26,9 @@ from TASK-4077.
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: corrected the `pyvenv.cfg` claim (repo `.venv` records `uv = 0.11.29`, `version_info = 3.12`; uv writes `3.12` or `3.12.x`); added `wikis/` and `jira/` to the kept-user-data list and the uninstall log string (documentation only — `RUNTIME_DIRS` stays an allowlist; nothing on dev writes to `~/.parrot/{bin,venv,python}`). All other contract entries re-verified unchanged.
+
 ## Scope
 
 - Create package `parrot.self_` (trailing underscore: `self` is not a usable module
@@ -79,9 +82,12 @@ def find_project_root(argv: Sequence[str], env: Mapping[str, str], cwd: Path) ->
 def script_path(venv: Path, name: str) -> Path: ...     # venv/bin/name (POSIX); venv/Scripts/name.exe (Windows)
 ```
 - `~/.parrot` live data that must never be removed (spec §7): `wikis.json`, `library/`,
-  `skills/`, `brains/`, `parrot.db`, `services/`, `cli/`.
-- `.venv/pyvenv.cfg` written by uv carries `uv = 0.11.28` and `version_info = 3.12.3`
-  (verified in the repo's own `.venv/pyvenv.cfg`).
+  `skills/`, `brains/`, `parrot.db`, `services/`, `cli/`, `wikis/` (`PARROT_HOME/wikis/{issues,briefs}`,
+  `knowledge/wiki/jira_sync.py:173`, `knowledge/wiki/standup/pipeline.py:432`), `jira/`
+  (`~/.parrot/jira/settings.local.json`, `parrot_tools/jira_local_auth.py:24`).
+- `pyvenv.cfg` written by uv records `version_info` as `3.12` (venv built on uv's minor-version
+  Python link) or `3.12.x` — the repo's own `.venv/pyvenv.cfg` carries `uv = 0.11.29` and
+  `version_info = 3.12` (verified 2026-10-19).
 
 ### Does NOT Exist
 - ~~`parrot.self_` / `parrot/self_/`~~ — created here (and TASK-4080).
@@ -307,7 +313,7 @@ def uninstall_runtime(*, yes: bool) -> list[str]:
         # venv/ cannot be deleted — catch PermissionError/OSError and log the manual removal command
         # instead of failing half-way — bounded by spec §7 "may only touch bin/ and venv/" (+ python/)
         raise NotImplementedError
-    log.append(f"kept user data in {home} (wikis, library, skills, brains, parrot.db, services)")
+    log.append(f"kept user data in {home} (wikis, library, skills, brains, parrot.db, services, jira)")
     return log
 ```
 **Why this shape**: the `here`/managed check lives in the engine so no caller can install

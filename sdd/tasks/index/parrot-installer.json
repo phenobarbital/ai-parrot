@@ -75,7 +75,7 @@
       "effort": "M",
       "depends_on": [],
       "parallel": true,
-      "parallelism_notes": "no deps; creates parrot/launcher.py (parrot_home, is_managed, repository_paths, find_project_root, script_path, resolve_venv)",
+      "parallelism_notes": "no deps; creates parrot/launcher.py (parrot_home, is_managed, repository_paths, find_project_root, script_path, resolve_venv); no edge to TASK-4085 by design: the C16 port-source note only says to port from parrot/sdd/scripts/worktree_environment.py when TASK-4085 is already done (otherwise from flows/dev_loop/worktree_environment.py)",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -439,7 +439,8 @@
         "TASK-4087",
         "TASK-4088",
         "TASK-4299",
-        "TASK-4334"
+        "TASK-4334",
+        "TASK-4508"
       ],
       "parallel": true,
       "parallelism_notes": "needs every helper module to exist (TASK-4086 task-state, TASK-4087 shell ports, TASK-4088 taxonomy/misc) and the assumption inventory from TASK-4070 (parrot/sdd/audit.py); needs sdd/config.json field names from TASK-4299 (C6) and audit kinds org-data/claude-md-ref/branch-literal from TASK-4070 (C11a); TASK-4334 first: it edits the same sdd-spec/sdd-task twins and its spec_tools invocations are rewritten by rule 5a",
@@ -639,6 +640,47 @@
       "parallelism_notes": "creates scripts/sdd/spec_tools.py and edits the sdd-spec/sdd-task command twins; no dependency — TASK-4088 (moves spec_tools) and TASK-4089 (rewrites its invocations, shares the twin files) depend on it; discovered_from issue:cac5c029bd88; mentions parrot.sdd / parrot.sdd.scripts only in prose and its 'NOT in scope' list (do not import or create them), so no edge to TASK-4070 or TASK-4085 (check_task_graph possible-missing-dependency warnings are false positives; both ids spelled in full so the checker's notes rule matches)",
       "file": "sdd/tasks/completed/TASK-4334-sdd-spec-tools-helper.md",
       "verification": "verified"
+    },
+    {
+      "id": "TASK-4508",
+      "slug": "sdd-helpers-move-d",
+      "title": "SDD helpers move D: closeout and Validation Contract helpers into parrot.sdd.scripts",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "parallel": true,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "effort": "M",
+      "depends_on": [
+        "TASK-4085"
+      ],
+      "parallelism_notes": "git mv of scripts/sdd/{cache_test_contract,test_report,check_e2e_closeout,close_resolved_issues}.py into parrot/sdd/scripts/ (package root from TASK-4085) + shims; touches no file of TASK-4086/4087/4088; TASK-4089 depends on it (rewrites their invocations); added by the 2026-10-19 readiness review",
+      "file": "sdd/tasks/active/TASK-4508-sdd-helpers-move-d.md"
+    },
+    {
+      "id": "TASK-4509",
+      "slug": "launcher-sdd-hook-fast-path",
+      "title": "Launcher fast path for `parrot sdd run worktree_environment --hook` (rev 0.3 C16)",
+      "feature_id": "FEAT-633",
+      "feature": "parrot-installer",
+      "spec": "sdd/specs/parrot-installer.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "parallel": true,
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "effort": "M",
+      "depends_on": [
+        "TASK-4072",
+        "TASK-4085"
+      ],
+      "parallelism_notes": "edits parrot/launcher.py after TASK-4072 and imports parrot.sdd.scripts.worktree_environment moved by TASK-4085; also edits dispatchers/claude.py:625 and test_worktree_environment.py; split out of TASK-4072 by the 2026-10-19 readiness review",
+      "file": "sdd/tasks/active/TASK-4509-launcher-sdd-hook-fast-path.md"
     }
   ],
   "amended_at": "2026-10-18T21:29:23+00:00",

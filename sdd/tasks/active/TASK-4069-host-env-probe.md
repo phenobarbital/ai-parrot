@@ -31,6 +31,13 @@ and the report skeleton only.
 
 ---
 
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: host-config anchors in the Codebase Contract (`codex/installer.py:188`→`:194`,
+  `codex/assets.py:19`→`:20`, `claude_code/assets.py:114-120`→`:119-125`); `local_server.py` / `server_base.py`
+  and `google/assets.py` anchors unchanged.
+
+---
+
 ## Scope
 
 - Implement `scripts/install/probe_mcp_env.py`: a stdlib-only newline-JSON stdio MCP server
@@ -82,9 +89,9 @@ async def handle_initialize(self, params) -> dict:                         # lin
 # packages/ai-parrot/src/parrot/knowledge/wiki/google/assets.py:61-63
 def default_mcp_config_path() -> Path:   # Path.home() / ".gemini" / "config" / "mcp_config.json"  (USER-GLOBAL)
 # packages/ai-parrot/src/parrot/knowledge/wiki/google/assets.py:74-80 — wikitoolkit entry today carries "cwd": str(root.resolve())
-# packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py:188 — project config path root / ".codex" / "config.toml"
-# packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py:19 — MCP_TABLE = "mcp_servers.wikitoolkit" (table naming pattern)
-# packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py:114-120 — .mcp.json entry {"command", "args", "env": {}}
+# packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py:194 — project config path root / ".codex" / "config.toml"
+# packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py:20 — MCP_TABLE = "mcp_servers.wikitoolkit" (table naming pattern)
+# packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py:119-125 — .mcp.json entry {"command", "args", "env": {}}
 ```
 
 ### Does NOT Exist

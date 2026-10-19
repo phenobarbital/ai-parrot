@@ -103,7 +103,8 @@ delta for reviewers.
      with its declared runtime dependencies** (`uv pip install <wheel>`, non-editable, no
      monorepo path);
   3. `git init`s an unrelated, non-Python repo with one commit and a local **bare `origin`**;
-  4. runs `parrot sdd install --host claude` there;
+  4. runs `parrot sdd install` there for all three hosts (`--host claude --host codex --host google`;
+     readiness review 2026-10-19 — was `--host claude`, which left the AC's "all three hosts" unproven);
   5. runs **every helper invocation found in the installed markdown using its documented
      command and flags** — placeholders (`<FEAT-ID>`, `<slug>`, `<path>`, `TASK-<NNN>` …)
      substituted with fixture values, and each invocation's required state supplied by a
@@ -125,6 +126,25 @@ delta for reviewers.
   (`test_sdd_flow_in_foreign_repo` now checks the `parrot sdd run` form).
 
 ---
+
+## Amendments — spec rev 0.3 C16 (folded in 2026-10-19)
+
+- **C16 — cover the shared-environment hook in C3's proof** (proposal C16 step 6, approved by
+  Jesus Lara 2026-10-17; spec rev 0.3 lists TASK-4091 as amended). After TASK-4089 the installed
+  `sdd-coder` / `sdd-worker` frontmatter runs `parrot sdd run worktree_environment --hook || exit 2`;
+  `test_wheel_only_foreign_repo.py` gains `test_installed_hook_denies_shared_environment_write` (the
+  installed command, run with only `$PARROT_HOME/bin` + allowlisted tools on PATH, still denies a write
+  into a shared environment), and `worktree_environment` gets a `Scenario` like every other helper
+  (spec §5: "C3's foreign-repo test shows the shared-environment guard denying a write"). The launcher
+  fast path is TASK-4509; this task only proves the behaviour.
+
+---
+
+## Readiness review — 2026-10-19 (dev 9f51c7735)
+- Refreshed against dev 9f51c7735: C3 `Scenario` list extended (`review_checkpoint`, `spec_tools`, `brief_meta`, `worktree_environment`, TASK-4508's `cache_test_contract` / `test_report` / `check_e2e_closeout` / `close_resolved_issues`); `INVOCATION_RE` takes digits, `\`-continuations are joined and argv is cut at shell operators (the C16 hook); the C3 test installs and scans all three hosts as the AC says; `_lazy_commands` has 25 entries; claude-installer anchors `:51` / `:72` / `:1013`; C16 hook-denial test folded in.
+- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
+  - **FEAT-699 vs C7** — the FEAT-633 spec has no Validation Contract; how `cache_test_contract` (`/sdd-task`, `.claude/commands/sdd-task.md:369`), `select_tests` (`.claude/commands/sdd-done.md:185,264`) and `test_report` (`:257,277`) behave in a foreign repo, and whether `sdd/config.json`'s `test_command` overrides them. Blocks the expected outcome (exit code / output) of those three `Scenario`s beyond "runs from the wheel".
+  - **`.gitattributes` + ledger hooks for foreign repos** — ai-parrot relies on `.gitattributes:2-3` (`sdd/ledger/events.jsonl merge=union`, FEAT-694) and on `install_hooks` (`sdd/WORKFLOW.md:376`, FEAT-577 intake-prune hook); `parrot sdd install` writes neither into a target repo. Write vs document vs leave: do not add either to the installer or the C3 fixtures until resolved.
 
 ## Scope
 
@@ -155,7 +175,8 @@ delta for reviewers.
 - Write `packages/ai-parrot/tests/sdd/test_installer.py` (incl. spec §4
   `test_sdd_install_into_empty_repo`, integration `test_sdd_flow_in_foreign_repo`, and the C4 /
   C5 / seed tests), `packages/ai-parrot/tests/sdd/test_sdd_cli.py` (incl. the `run` tests) and
-  `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` (C3, `@pytest.mark.integration`).
+  `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` (C3, `@pytest.mark.integration`;
+  all three hosts; plus the C16 hook-denial check).
 
 **NOT in scope**:
 - Producing / syncing `_assets/` or `manifest.json`, including the `"seed": true` flag on the
@@ -184,7 +205,7 @@ delta for reviewers.
 | `packages/ai-parrot/src/parrot/cli/__init__.py` | MODIFY | `"sdd": "parrot.sdd.cli"` in `cli._lazy_commands` |
 | `packages/ai-parrot/tests/sdd/test_installer.py` | CREATE | Installer unit tests (receipt states, dry-run, seeds) + `test_sdd_flow_in_foreign_repo` integration |
 | `packages/ai-parrot/tests/sdd/test_sdd_cli.py` | CREATE | CliRunner tests for the group, lazy registration, `--dry-run`, `run` |
-| `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` | CREATE | C3: wheel-only managed install + foreign repo with bare origin; every documented `parrot sdd run <name> …` invocation runs with fixture inputs under an allowlisted PATH and scrubbed env (merge tier, `pytestmark = pytest.mark.integration`) |
+| `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` | CREATE | C3: wheel-only managed install + foreign repo with bare origin; every documented `parrot sdd run <name> …` invocation (all three hosts) runs with fixture inputs under an allowlisted PATH and scrubbed env; C16: the installed `worktree_environment --hook` still denies a shared-environment write (merge tier, `pytestmark = pytest.mark.integration`) |
 
 ---
 
@@ -223,13 +244,13 @@ class LazyGroup(click.Group):                                 # line 19
 #   => parrot/sdd/cli.py MUST expose a module attribute named `sdd` (the click group)
 @click.group(cls=LazyGroup)
 def cli(): ...                                                # line 104
-cli._lazy_commands = {                                        # line 109 (24 entries; TASK-4080 adds "self")
+cli._lazy_commands = {                                        # line 109 (25 entries on 9f51c7735 — "jiratoolkit" came with 094ec8616; TASK-4080 adds "self")
     "devloop": "parrot.cli.devloop",                          # line 125 — insertion anchor, grep -c == 1
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py — PATTERN ONLY (copy, never import)
-def _upsert_marker_block(text: str, block: str, begin: str, end: str) -> str:   # line 50
-def _remove_marker_block(text: str, begin: str, end: str) -> str:               # line 71
-def _install_gitignore(root: Path) -> str:                                      # line 943 (non-marker variant)
+def _upsert_marker_block(text: str, block: str, begin: str, end: str) -> str:   # line 51 (re-verified on 9f51c7735)
+def _remove_marker_block(text: str, begin: str, end: str) -> str:               # line 72
+def _install_gitignore(root: Path) -> str:                                      # line 1013 (non-marker variant)
 
 # scripts/sdd/id_ledger.py (moves verbatim to parrot.sdd.scripts.id_ledger in TASK-4085)
 LEDGER_PATH = Path("sdd/tasks/.id_ledger.json")                                 # line 28
@@ -346,7 +367,7 @@ BEGIN marker.
 - Library code logs via `logger = logging.getLogger(__name__)`; only `cli.py` writes output (`click.echo`).
 
 ### References in Codebase
-- `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py:50-90` — marker helpers to copy.
+- `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py:51-91` — marker helpers to copy.
 - `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py:33-53,180-200` — CLI shape (`--path`, `✓` action lines).
 
 ---
@@ -466,13 +487,13 @@ def _selected(entries: list[dict[str, Any]], hosts: Sequence[str]) -> list[dict[
 
 
 def _upsert_marker_block(text: str, block: str, begin: str, end: str) -> str:
-    """Own copy of claude_code/installer.py:50 (keys on BEGIN; repairs a missing END)."""
+    """Own copy of claude_code/installer.py:51 (keys on BEGIN; repairs a missing END)."""
     # FILL IN: copy the body of knowledge/wiki/claude_code/installer.py::_upsert_marker_block verbatim — bounded by spec §6 "own copy"
     raise NotImplementedError
 
 
 def _remove_marker_block(text: str, begin: str, end: str) -> str:
-    """Own copy of claude_code/installer.py:71."""
+    """Own copy of claude_code/installer.py:72."""
     # FILL IN: copy the body of knowledge/wiki/claude_code/installer.py::_remove_marker_block verbatim
     raise NotImplementedError
 
@@ -1116,6 +1137,7 @@ Python/venv/parrot override variable unset. Helpers are never mocked.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -1129,7 +1151,14 @@ import pytest
 pytestmark = pytest.mark.integration  # FEAT-563 auto-mark covers only integration/ dirs — mark explicitly
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-INVOCATION_RE = re.compile(r"parrot sdd run ([a-z_]+)((?: [^\n`]*)?)")
+INVOCATION_RE = re.compile(r"parrot sdd run ([a-z0-9_]+)((?: [^\n`]*)?)")  # digits: check_e2e_closeout
+#: A `\`-continued shell line is one command: join before matching, or the flags on the next lines are lost.
+CONTINUATION_RE = re.compile(r"\\\n[ \t]*")
+#: The argv ends at the first shell control operator — e.g. the C16 frontmatter hook
+#: `parrot sdd run worktree_environment --hook || exit 2'` runs as `worktree_environment --hook`.
+SHELL_CUT_RE = re.compile(r"\s+(?:\|\||&&|\|)\s+|;")
+#: Every host's install tree is scanned (AC: "all three hosts").
+INSTALLED_DIRS = (".claude", ".agents", ".agent", ".codex", "sdd")
 SCRUBBED_ENV = ("PYTHONPATH", "PYTHONHOME", "VIRTUAL_ENV", "PARROT_VENV", "PARROT_PROJECT", "CONDA_PREFIX")
 #: System tools the fixture PATH may expose; anything else must come from the wheel.
 TOOL_ALLOWLIST = ("git", "bash", "jq")
@@ -1146,13 +1175,23 @@ class Scenario:
     prepare: Callable[[Path], None] = lambda repo: None  # creates ledger/task/index/evidence in a fresh clone
     expect_exit: int = 0
     tools: tuple[str, ...] = ("git",)
+    stdin: Callable[[Path], str] | None = None  # e.g. the worktree_environment hook's PreToolUse payload
+    expect_stdout: str = ""  # substring the helper's stdout must contain (e.g. '"permissionDecision": "deny"')
 
 
 # FILL IN: one Scenario per helper name that appears in installed markdown (ensure_worktree, reserve_ids,
 #          close_task, heal_orphans, check_task_state, select_tests, insight, doc_taxonomy, worktree_status,
 #          finalize_task, check_task_graph, backfill_taxonomy, migrate_index, id_ledger, check_id_collisions,
 #          install_hooks, AND sdd_meta — `parrot sdd run sdd_meta parse <spec>` / `taxonomy` / `resolve-flow …`
-#          appear in shipped markdown after TASK-4299). Placeholders: <FEAT-ID>→FEAT-001, <slug>→demo-feature,
+#          appear in shipped markdown after TASK-4299; review_checkpoint (C12, `prepare|validate`); spec_tools
+#          (the seven subcommands, TASK-4334 amendment); brief_meta (`write-index`, rev 0.4 C17);
+#          TASK-4508's cache_test_contract (`--spec <spec-path> --index …`, /sdd-task), test_report
+#          (`decide-rerun|render`, /sdd-done), check_e2e_closeout (`--spec --feat-id --worktree`, /sdd-done; no
+#          `e2e` key → optional → exit 0 without ai-parrot-server) and close_resolved_issues (`--worktree …`,
+#          /sdd-done; shells out to `wikitoolkit ledger close`, so needs a seeded ledger); and worktree_environment
+#          (C16 hook: argv `--hook`, `stdin` = a PreToolUse Write payload into `<clone>/.venv/` after `prepare`
+#          creates `<clone>/.venv/pyvenv.cfg`, `expect_stdout='"permissionDecision": "deny"'`).
+#          Placeholders: <FEAT-ID>→FEAT-001, <slug>→demo-feature,
 #          TASK-<NNN>→TASK-001, <path>→<repo>, <base_branch>→main. `prepare` commits sdd/tasks/.id_ledger.json,
 #          a per-spec index, one active task file and pushes to the bare origin where the helper needs them.
 #          — bounded by proposal C3 step 5 (documented command AND flags, fixture inputs, isolated state)
@@ -1223,11 +1262,21 @@ def test_install_then_every_documented_helper_invocation(
 ) -> None:
     repo, origin = foreign_repo
     env = _env(managed_home, tools_dir)
-    subprocess.run(["parrot", "sdd", "install", "--host", "claude"], cwd=repo, env=env, check=True)
-    texts = "\n".join(p.read_text(encoding="utf-8") for p in (repo / ".claude").rglob("*.md"))
-    texts += "\n" + "\n".join(p.read_text(encoding="utf-8") for p in (repo / "sdd").rglob("*.md"))
+    subprocess.run(
+        ["parrot", "sdd", "install", "--host", "claude", "--host", "codex", "--host", "google"],
+        cwd=repo, env=env, check=True,
+    )
+    texts = "\n".join(
+        p.read_text(encoding="utf-8")
+        for d in INSTALLED_DIRS if (repo / d).is_dir()
+        for p in sorted((repo / d).rglob("*")) if p.is_file() and p.suffix in {".md", ".toml"}
+    )
+    texts = CONTINUATION_RE.sub(" ", texts)
     assert "python -m parrot.sdd.scripts" not in texts, "Q1: shipped markdown must use `parrot sdd run`"
-    invocations = {(m.group(1), m.group(2).strip()) for m in INVOCATION_RE.finditer(texts)}
+    invocations = {
+        (m.group(1), SHELL_CUT_RE.split(m.group(2), maxsplit=1)[0].rstrip(")").strip())
+        for m in INVOCATION_RE.finditer(texts)
+    }
     assert invocations, "no `parrot sdd run` invocations found — TASK-4089 rewrite missing?"
     missing = sorted({name for name, _ in invocations} - set(SCENARIOS))
     assert not missing, f"helpers documented but without a C3 scenario: {missing}"
@@ -1235,13 +1284,39 @@ def test_install_then_every_documented_helper_invocation(
         scenario = SCENARIOS[name]
         clone = tmp_path / f"scenario-{i}-{name}"
         subprocess.run(["git", "clone", "-q", str(origin), str(clone)], check=True)
-        shutil.copytree(repo / ".claude", clone / ".claude", dirs_exist_ok=True)
-        shutil.copytree(repo / "sdd", clone / "sdd", dirs_exist_ok=True)
+        for d in INSTALLED_DIRS:
+            if (repo / d).is_dir():
+                shutil.copytree(repo / d, clone / d, dirs_exist_ok=True)
         scenario.prepare(clone)
         for placeholder, value in scenario.placeholders.items():
             argv = argv.replace(placeholder, value.replace("<repo>", str(clone)))
-        result = subprocess.run(["parrot", "sdd", "run", name, *argv.split()], cwd=clone, env=env, capture_output=True, text=True)
+        stdin = scenario.stdin(clone) if scenario.stdin else None
+        result = subprocess.run(
+            ["parrot", "sdd", "run", name, *argv.split()], cwd=clone, env=env, input=stdin, capture_output=True, text=True
+        )
         assert result.returncode == scenario.expect_exit, f"{name} {argv}\n{result.stdout}\n{result.stderr}"
+        assert scenario.expect_stdout in result.stdout, f"{name} {argv}\n{result.stdout}"
+
+
+def test_installed_hook_denies_shared_environment_write(
+    managed_home: Path, tools_dir: Path, foreign_repo: tuple[Path, Path]
+) -> None:
+    """C16 (proposal step 6): the hook command as installed in the sdd-coder / sdd-worker frontmatter still
+    denies a shared-environment write in a foreign repo, with only $PARROT_HOME/bin + allowlisted tools on PATH."""
+    repo, _ = foreign_repo
+    env = _env(managed_home, tools_dir)
+    subprocess.run(["parrot", "sdd", "install", "--host", "claude"], cwd=repo, env=env, check=True)
+    for agent in ("sdd-coder", "sdd-worker"):
+        front = (repo / ".claude/agents" / f"{agent}.md").read_text(encoding="utf-8").split("---", 2)[1]
+        line = next(ln for ln in front.splitlines() if "worktree_environment --hook" in ln)
+        command = line.split("command:", 1)[1].strip().strip("'")
+        assert command == "parrot sdd run worktree_environment --hook || exit 2", command
+        denied = {"cwd": str(repo), "tool_name": "Write", "tool_input": {"file_path": str(managed_home / "venv" / "x.py")}}
+        result = subprocess.run(["bash", "-c", command], cwd=repo, env=env, input=json.dumps(denied), capture_output=True, text=True)
+        decision = json.loads(result.stdout)["hookSpecificOutput"].get("permissionDecision")
+        assert decision == "deny", f"{agent}: {result.stdout}\n{result.stderr}"
+        # FILL IN: an allowed write (`README.md` in the repo) yields no permissionDecision — bounded by
+        #          worktree_environment.hook_response (deny only for shared environments)
 ```
 **Why**: proposal C3 (rev 0.3) step by step — wheel + declared deps, bare origin, documented
 flags with fixture inputs, allowlisted tools, scrubbed env, managed-resolution assertion, no
@@ -1249,7 +1324,7 @@ mocks. `SCENARIOS` is the only `FILL IN`, and the test fails loudly for any docu
 that lacks one, so coverage of "every documented helper invocation" is enforced, not hoped for.
 
 ### FILL IN checklist
-- [ ] `installer.py::_upsert_marker_block` / `_remove_marker_block` — verbatim copies of claude_code/installer.py:50/:71.
+- [ ] `installer.py::_upsert_marker_block` / `_remove_marker_block` — verbatim copies of claude_code/installer.py:51/:72.
 - [ ] `installer.py::load_receipt` — read/validate; empty receipt on absence or bad schema (C4).
 - [ ] `installer.py::plan_install` state→action mapping; `plan_uninstall` — receipt-matching removal, edited/foreign retention, shared-asset retention, gitignore/receipt removal (C4/C5).
 - [ ] `installer.py::uninstall_sdd_integration` apply step.
@@ -1257,7 +1332,12 @@ that lacks one, so coverage of "every documented helper invocation" is enforced,
 - [ ] `installer.py::sdd_status` — dict shape in the docstring (five states + seeds + flags).
 - [ ] `cli.py::status` — human summary.
 - [ ] `test_installer.py::test_status_shape`, `test_sdd_flow_in_foreign_repo`; `test_sdd_cli.py::test_force_flag_overwrites`.
-- [ ] `test_wheel_only_foreign_repo.py::SCENARIOS` — one per helper name found in installed markdown (C3).
+- [ ] `test_wheel_only_foreign_repo.py::SCENARIOS` — one per helper name found in installed markdown (C3),
+      incl. `review_checkpoint`, `spec_tools`, `brief_meta`, `worktree_environment` (stdin payload) and
+      TASK-4508's four; outcomes of the `cache_test_contract` / `select_tests` / `test_report` scenarios are
+      bounded by the FEAT-699-vs-C7 open decision.
+- [ ] `test_wheel_only_foreign_repo.py::test_installed_hook_denies_shared_environment_write` — the allowed-write
+      counter-check (C16).
 
 ---
 
@@ -1290,7 +1370,12 @@ that lacks one, so coverage of "every documented helper invocation" is enforced,
 - [ ] C3: `test_wheel_only_foreign_repo.py` passes on Linux CI in the merge tier with `-m integration`
       once TASK-4089's rewrite is in: ai-parrot loaded only from the built wheel, every documented
       helper invocation run with fixture inputs under the allowlisted PATH and scrubbed env, `parrot`
-      and the helper interpreter resolved to the temporary managed install, no helper mocked.
+      and the helper interpreter resolved to the temporary managed install, no helper mocked; the
+      invocations are collected from all three hosts' install trees, with `\`-continuations joined.
+- [ ] *(rev 0.3 C16)* `test_installed_hook_denies_shared_environment_write` passes: the installed
+      `sdd-coder` / `sdd-worker` hook command (`parrot sdd run worktree_environment --hook || exit 2`)
+      denies a write into the managed venv in the foreign repo, with only `$PARROT_HOME/bin` + allowlisted
+      tools on PATH (spec §5 C16 bullet).
 - [ ] Unavailable tooling referenced by installed assets is reported as warnings, never as a failure (codex S9).
 - [ ] `parrot sdd --help` lists `install`, `uninstall`, `status`, `run`; `--host` accepts only
       `claude|codex|google`; `parrot status` (agentd) is unchanged.
