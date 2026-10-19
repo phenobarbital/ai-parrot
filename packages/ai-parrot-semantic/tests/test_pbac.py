@@ -60,17 +60,13 @@ async def test_pbac_rejects_tables_outside_manifest(
     manifest = PhysicalResources(driver="duckdb", tables={"duckdb:sales.orders"})
 
     with pytest.raises(SemanticAccessError, match="outside_manifest"):
-        await PbacGate(allow_all_guard).authorize(
-            pctx_factory(), resources, governed=True, manifest=manifest
-        )
+        await PbacGate(allow_all_guard).authorize(pctx_factory(), resources, governed=True, manifest=manifest)
     allow_all_guard.authorize_source.assert_not_called()
 
 
 def test_resources_from_ast_excludes_cte_names() -> None:
     """Only physical tables become PBAC resources."""
-    tree = sqlglot.parse_one(
-        "WITH recent AS (SELECT order_id FROM sales.orders) SELECT order_id FROM recent"
-    )
+    tree = sqlglot.parse_one("WITH recent AS (SELECT order_id FROM sales.orders) SELECT order_id FROM recent")
 
     resources = resources_from_ast(tree, "duckdb")
 

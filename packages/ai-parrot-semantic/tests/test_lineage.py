@@ -47,15 +47,13 @@ def _qualified(sql: str) -> sqlglot.exp.Expression:
         ("SELECT customer_id FROM sales.orders WHERE salary > 100", "where"),
         ("SELECT customer_id FROM sales.orders HAVING SUM(salary) > 100", "having"),
         (
-            "SELECT o.customer_id FROM sales.orders AS o "
-            "JOIN sales.departments AS d ON o.salary = d.salary",
+            "SELECT o.customer_id FROM sales.orders AS o " "JOIN sales.departments AS d ON o.salary = d.salary",
             "join",
         ),
         ("SELECT salary FROM sales.orders GROUP BY salary", "group_by"),
         ("SELECT salary FROM sales.orders ORDER BY salary", "order_by"),
         (
-            "SELECT ROW_NUMBER() OVER (PARTITION BY salary ORDER BY customer_id) AS position "
-            "FROM sales.orders",
+            "SELECT ROW_NUMBER() OVER (PARTITION BY salary ORDER BY customer_id) AS position " "FROM sales.orders",
             "window",
         ),
         ("SELECT salary AS pay FROM sales.orders ORDER BY pay", "order_by"),
@@ -75,8 +73,7 @@ def test_lineage_masked_column_inference(sql: str, expected_context: str) -> Non
     uses = resolve_column_uses(_qualified(sql), SCHEMA)
 
     assert any(
-        use.table == "sales.orders" and use.column == "salary" and use.context == expected_context
-        for use in uses
+        use.table == "sales.orders" and use.column == "salary" and use.context == expected_context for use in uses
     )
     with pytest.raises(SemanticAccessError, match="usage_denied") as caught:
         enforce_usage_rights(uses, POLICY, frozenset({"analyst"}), trusted_nodes=set())
@@ -94,9 +91,7 @@ def test_lineage_projection_does_not_require_usage_rights() -> None:
 
 def test_lineage_usage_role_allows_inference() -> None:
     """An explicit mask usage role permits predicate use."""
-    uses = resolve_column_uses(
-        _qualified("SELECT customer_id FROM sales.orders WHERE salary > 100"), SCHEMA
-    )
+    uses = resolve_column_uses(_qualified("SELECT customer_id FROM sales.orders WHERE salary > 100"), SCHEMA)
 
     enforce_usage_rights(uses, POLICY, frozenset({"manager"}), trusted_nodes=set())
 
@@ -111,10 +106,7 @@ def test_lineage_resolves_correlated_subquery() -> None:
         SCHEMA,
     )
 
-    assert any(
-        use.table == "sales.orders" and use.column == "salary" and use.context == "where"
-        for use in uses
-    )
+    assert any(use.table == "sales.orders" and use.column == "salary" and use.context == "where" for use in uses)
 
 
 def test_lineage_unresolved_column_fails_closed() -> None:
