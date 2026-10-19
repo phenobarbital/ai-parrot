@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional, Union, TYPE_CHECKING
+from typing import Optional, Union
 from collections import defaultdict
 import re
 import uuid
@@ -744,7 +744,7 @@ class BotManagement(BaseView):
         except Exception as exc:
             return self.error(
                 response={
-                    "message": f"Error retrieving chatbots.",
+                    "message": "Error retrieving chatbots.",
                     "exception": str(exc),
                     "stacktrace": str(exc.__traceback__)
                 },

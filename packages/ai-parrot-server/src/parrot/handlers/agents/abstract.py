@@ -277,7 +277,6 @@ class AgentHandler(BaseView):
 
     def define_tools(self):
         """Define additional tools for the agent."""
-        pass
 
     def db_connection(
         self,
@@ -539,12 +538,9 @@ class AgentHandler(BaseView):
                     {'message': 'Address is required'},
                     status=400
                 )
-            rcpt = Actor(**{
-                "name": name,
-                "account": {
+            rcpt = Actor(name=name, account={
                     "address": email
-                }
-            })
+                })
             rcpts.append(rcpt)
         return rcpts
 
