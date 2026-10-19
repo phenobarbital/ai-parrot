@@ -45,6 +45,7 @@ MAX_FILE_SIZE = 50 * 1024 * 1024
 # Module-level helpers shared by both handlers
 # ---------------------------------------------------------------------------
 
+
 def _clone_source(source: "DataSource | None") -> "DataSource | None":
     """Shallow-copy a DataSource for a per-user manager (issue:90cf04ce8edd).
 
@@ -611,5 +612,4 @@ class DatasetManagerHandler(BaseView):
         except Exception as e:
             self.logger.error("Error deleting dataset: %s", e)
             return self.json_response({"error": str(e)}, status=500)
-
 

@@ -22,6 +22,7 @@ Transparent delegation:
 - ``has_builtin_cache`` → delegates to inner.
 - ``prefetch_schema()`` → delegates to inner.
 """
+
 from __future__ import annotations
 
 import copy
@@ -193,24 +194,21 @@ class AuthorizingDataSource(DataSource):
             rewritten_sql, _bound_params = inject_rls_sql(scoped.sql, dialect, predicates)
             scoped.sql = rewritten_sql
             self._logger.debug(
-                "AuthorizingDataSource: injected RLS into SQLQuerySource "
-                "(driver=%s, %d predicates)",
+                "AuthorizingDataSource: injected RLS into SQLQuerySource " "(driver=%s, %d predicates)",
                 scoped.driver,
                 len(predicates),
             )
         elif isinstance(self._inner, TableSource):
             inject_rls_table_source(scoped, predicates)
             self._logger.debug(
-                "AuthorizingDataSource: injected RLS into TableSource "
-                "(table=%s, %d predicates)",
+                "AuthorizingDataSource: injected RLS into TableSource " "(table=%s, %d predicates)",
                 scoped.table,
                 len(predicates),
             )
         elif isinstance(self._inner, QuerySlugSource):
             inject_rls_query_slug(scoped, predicates)
             self._logger.debug(
-                "AuthorizingDataSource: injected RLS into QuerySlugSource "
-                "(slug=%s, %d predicates)",
+                "AuthorizingDataSource: injected RLS into QuerySlugSource " "(slug=%s, %d predicates)",
                 scoped.slug,
                 len(predicates),
             )
