@@ -7,12 +7,15 @@ SkillDefinition on the bot instance, and handling reserved /skills and /help
 triggers.
 """
 
-from typing import Any, Callable, Dict, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from parrot.bots.middleware import PromptMiddleware
 
 from .file_registry import SkillFileRegistry
 from .tenancy import set_active_skill
+
+if TYPE_CHECKING:
+    from parrot.bots.abstract import AbstractBot
 
 
 def create_skill_trigger_middleware(

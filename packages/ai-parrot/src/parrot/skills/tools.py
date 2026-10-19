@@ -19,7 +19,7 @@ dependency:
 """
 
 import asyncio
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 from pathlib import Path
 from pydantic import BaseModel, Field
 from ..tools.abstract import AbstractTool, ToolResult
@@ -30,6 +30,9 @@ from .models import (
     SearchSkillArgs,
 )
 from .store import SkillRegistry
+
+if TYPE_CHECKING:
+    from .file_registry import SkillFileRegistry
 
 
 class DocumentSkillArgs(BaseModel):
