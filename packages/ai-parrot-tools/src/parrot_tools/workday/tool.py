@@ -310,6 +310,40 @@ class GetJobProfileInput(BaseModel):
     )
 
 
+class GetWorkerEventHistoryInput(BaseModel):
+    """Input for retrieving a worker's Workday event history."""
+
+    worker_id: str = Field(description="Worker WID, Employee ID or Contingent Worker ID")
+    worker_id_type: Optional[str] = Field(
+        default=None,
+        description="WID | Employee_ID | Contingent_Worker_ID; omit to auto-detect "
+        "(WID by shape, else Employee_ID then Contingent_Worker_ID)",
+    )
+    effective_from: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires effective_through")
+    effective_through: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires effective_from")
+    updated_from: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires updated_through")
+    updated_through: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires updated_from")
+
+
+class GetWorkerJobChangesInput(BaseModel):
+    """Input for detecting a worker's job position / profile / organization changes."""
+
+    worker_id: str = Field(description="Worker WID, Employee ID or Contingent Worker ID")
+    worker_id_type: Optional[str] = Field(
+        default=None,
+        description="WID | Employee_ID | Contingent_Worker_ID; omit to auto-detect "
+        "(WID by shape, else Employee_ID then Contingent_Worker_ID)",
+    )
+    effective_from: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires effective_through")
+    effective_through: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires effective_from")
+    include_unchanged: bool = Field(default=False, description="Also return job events whose snapshots are identical")
+    include_compensation: bool = Field(
+        default=False,
+        description="Also snapshot and diff compensation (wage, currency, frequency, package/grade/profile) "
+        "and include compensation-change events",
+    )
+
+
 # Homologated read-tool input schemas (FEAT-230 Module 3)
 class FindEmployeeByNameInput(BaseModel):
     """Input for finding a worker by name."""
@@ -1355,6 +1389,70 @@ class WorkdayToolkit(AbstractToolkit):
             for jp in ensure_list((block or {}).get("Job_Profile"))
         ]
         return self._parse_job_profile(profiles[0]) if profiles else {}
+
+    @tool_schema(GetWorkerEventHistoryInput)
+    async def wd_get_worker_event_history(
+        self,
+        worker_id: str,
+        worker_id_type: Optional[str] = None,
+        effective_from: Optional[str] = None,
+        effective_through: Optional[str] = None,
+        updated_from: Optional[str] = None,
+        updated_through: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get the Workday event history of a worker (hire, change job, organization
+        assignment, time entry, time off, benefits, ...).
+
+        Returns one dict per event with event_id, event_type, description,
+        effective_date and completed_at, sorted by effective date. Events are
+        references only: use wd_get_worker_job_changes to see what a job change changed.
+        """
+        if not self._initialized:
+            await self.wd_start()
+        svc = await self._get_composable("get_worker_event_history")
+        models = await svc.fetch_models(
+            "get_worker_event_history",
+            worker_id=worker_id,
+            worker_id_type=worker_id_type,
+            effective_from=effective_from,
+            effective_through=effective_through,
+            updated_from=updated_from,
+            updated_through=updated_through,
+        )
+        return [model.model_dump(mode="json") for model in models]
+
+    @tool_schema(GetWorkerJobChangesInput)
+    async def wd_get_worker_job_changes(
+        self,
+        worker_id: str,
+        worker_id_type: Optional[str] = None,
+        effective_from: Optional[str] = None,
+        effective_through: Optional[str] = None,
+        include_unchanged: bool = False,
+        include_compensation: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get a worker's job changes over time: position, job profile, business title,
+        location, supervisory organization, cost center, company, pay group and manager,
+        and optionally compensation (include_compensation=True).
+
+        Returns one dict per effective date with kind ("hire" | "change" | "no_change"),
+        the triggering events, the before/after job snapshots and the list of changed fields.
+        """
+        if not self._initialized:
+            await self.wd_start()
+        svc = await self._get_composable("get_worker_job_changes")
+        models = await svc.fetch_models(
+            "get_worker_job_changes",
+            worker_id=worker_id,
+            worker_id_type=worker_id_type,
+            effective_from=effective_from,
+            effective_through=effective_through,
+            include_unchanged=include_unchanged,
+            include_compensation=include_compensation,
+        )
+        return [model.model_dump(mode="json") for model in models]
 
     def _parse_job_profile(self, profile: Dict[str, Any]) -> Dict[str, Any]:
         """
