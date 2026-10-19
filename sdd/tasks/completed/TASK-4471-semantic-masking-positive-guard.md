@@ -260,9 +260,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4471
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-sol · Backend: codex · Model: gpt-5.6-sol · Attempts: 1 · Duration: 404.4s · Tokens: n/a
+- Validation: merge-tier ad0839b5:wave6:merge completed exit 0 (41 passed); full satellite suite after review fixes 96 passed.
+- Fix commits: 617cf8981315decb3728207840910e757cc1f27b — fix(semantic-layer): TASK-4471 review fixes.
+- Review: coder-review:7c7c8bf867de2d76c53253cc. Guard denied RLS-injected SELECT * subqueries and masking functions, so the fixed pipeline order (RLS → masking → guard) would deny every governed result. Added keyword-only check_and_limit(..., trusted_nodes=) (identity-trusted, tables still allowlisted). Regression: test_guard_accepts_trusted_rls_and_mask_nodes_only. Contract gap (repo lesson, not model feedback); TASK-4472 contract updated (19eb26a06).
