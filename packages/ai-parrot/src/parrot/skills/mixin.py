@@ -23,9 +23,11 @@ from .tenancy import (
     SkillView,
     TenantTreeReport,
     bind_skill_tenant,
+    current_active_skill,
     current_skill_tenant,
     discover_tenant_dirs,
     reset_skill_tenant,
+    set_active_skill,
     validate_tenant_id,
 )
 from .tools import create_skill_tools
@@ -33,6 +35,11 @@ from .tools import create_skill_tools
 if TYPE_CHECKING:
     from parrot.utils.helpers import RequestContext
     from .file_registry import SkillFileRegistry
+
+GLOBAL_SKILLS_LAYER = "available_skills"
+"""Prompt layer name of the ``<available_skills>`` block (global view / non-tenant mode)."""
+TENANT_SKILLS_LAYER_PREFIX = "available_skills:"
+"""Prompt layer name prefix of the per-tenant ``<available_skills>`` blocks (FEAT-707)."""
 
 
 class SkillRegistryMixin:
@@ -88,7 +95,15 @@ class SkillRegistryMixin:
     # Runtime
     _skill_registry: Optional[SkillRegistry] = None
     _skill_file_registry: Optional["SkillFileRegistry"] = None
-    _active_skill: Optional[SkillDefinition] = None
+    @property
+    def _active_skill(self) -> Optional[SkillDefinition]:
+        """The ``/trigger``-activated skill for the current request (request-local, FEAT-707 S5)."""
+        return current_active_skill()
+
+    @_active_skill.setter
+    def _active_skill(self, skill: Optional[SkillDefinition]) -> None:
+        set_active_skill(skill)
+
     tenant_based: bool = False
     """Opt-in per-tenant skill trees under ``AGENTS_DIR/{agent_id}/tenants/{tenant}/skills/`` (FEAT-707)."""
     tenant_id: Optional[str] = None
@@ -242,8 +257,12 @@ class SkillRegistryMixin:
         return reports
 
     async def _after_tenant_reload(self, reports: Dict[str, TenantTreeReport]) -> None:
-        """Extension point: prompt layers (TASK-4503) and store registries (TASK-4504) refresh here."""
-        return None
+        """Refresh the skill views and the ``<available_skills>`` layers after a tenant (re)load.
+
+        Layers of tenants that disappeared are removed by :meth:`_install_skill_prompt_layers`.
+        """
+        self._recompose_skill_views()
+        self._install_skill_prompt_layers()
 
     def _resolve_agents_dir(self) -> Optional[Path]:
         """Resolve the base AGENTS_DIR for skill persistence.
@@ -354,6 +373,7 @@ class SkillRegistryMixin:
                 mw = create_skill_trigger_middleware(
                     registry=self._skill_file_registry,
                     bot=self,
+                    **({"view_provider": self.current_skill_view} if self.tenant_based else {}),
                 )
                 prompt_pipeline.add(mw)
 
@@ -400,23 +420,8 @@ class SkillRegistryMixin:
             if self.tenant_based and not agents_dir:
                 logger.warning("tenant_based=True but no agents_dir resolved; using global skills only")
 
-        # --- FEAT-188: Prompt layer injection ---
-        if self._skill_file_registry is not None:
-            inject = getattr(self, 'inject_skills_into_prompt', True)
-            if inject and self._skill_file_registry.list_skills():
-                prompt_builder = getattr(self, '_prompt_builder', None)
-                if prompt_builder is not None:
-                    from .prompt import render_skills_prompt_layer
-                    max_entries = getattr(self, 'skill_prompt_max_entries', None)
-                    layer = render_skills_prompt_layer(
-                        self._skill_file_registry,
-                        max_skills=max_entries,
-                    )
-                    prompt_builder.add(layer)
-                    logger.debug(
-                        "Skills prompt layer injected (%d entries)",
-                        len(self._skill_file_registry.list_skills()),
-                    )
+        # --- FEAT-188 / FEAT-707: Prompt layer injection ---
+        self._install_skill_prompt_layers()
 
         # --- FEAT-188: file-based skill tools registration ---
         # Register the SkillFileToolkit (list_skill_commands / load_skill /
@@ -431,6 +436,7 @@ class SkillRegistryMixin:
             toolkit = SkillFileToolkit(
                 file_registry=self._skill_file_registry,
                 learned_dir=self._skill_file_registry.learned_dir,
+                **({"view_provider": self.current_skill_view} if self.tenant_based else {}),
             )
             skill_tools = toolkit.get_tools()
             tool_manager = getattr(self, 'tool_manager', None)
@@ -447,6 +453,78 @@ class SkillRegistryMixin:
             logger.debug(
                 "SkillFileToolkit registered (%d tools)", len(skill_tools)
             )
+
+    def _install_skill_prompt_layers(self) -> None:
+        """Install (replace-by-name) the ``<available_skills>`` layers for the global and tenant views.
+
+        With ``tenant_based=False`` this installs exactly the single FEAT-188 layer
+        (``render_skills_prompt_layer(registry, max_skills=...)``) when skills exist.
+
+        With ``tenant_based=True`` it installs the global layer (rendered only while no
+        known tenant is bound) and one layer per tenant view (rendered only while that
+        tenant is bound), all REQUEST-phase and cacheable. Views with no skills get no
+        layer, and layers of tenants that are no longer known are removed.
+        """
+        from .prompt import global_layer_condition, render_skills_prompt_layer, tenant_layer_condition
+        from parrot.bots.prompts import RenderPhase
+
+        prompt_builder = getattr(self, "_prompt_builder", None)
+        if prompt_builder is None or self._skill_file_registry is None:
+            return
+        if not getattr(self, "inject_skills_into_prompt", True):
+            return
+        max_entries = getattr(self, "skill_prompt_max_entries", None)
+        logger = self._skill_logger()
+
+        if not self.tenant_based:
+            if self._skill_file_registry.list_skills():
+                prompt_builder.add(render_skills_prompt_layer(self._skill_file_registry, max_skills=max_entries))
+                logger.debug(
+                    "Skills prompt layer injected (%d entries)",
+                    len(self._skill_file_registry.list_skills()),
+                )
+            return
+
+        # Live set: the conditions must observe later tenant (re)loads, so never copy it.
+        known_tenants = self.__dict__.setdefault("_known_tenants", set())
+        global_view = self.__dict__.get("_global_view")
+        desired: Dict[str, Any] = {}
+        if global_view is not None and global_view.list_skills():
+            desired[GLOBAL_SKILLS_LAYER] = render_skills_prompt_layer(
+                global_view,
+                max_skills=max_entries,
+                phase=RenderPhase.REQUEST,
+                condition=global_layer_condition(known_tenants),
+                cacheable=True,
+            )
+        for tenant, view in self.__dict__.get("_tenant_views", {}).items():
+            if not view.list_skills():
+                continue
+            name = f"{TENANT_SKILLS_LAYER_PREFIX}{tenant}"
+            desired[name] = render_skills_prompt_layer(
+                view,
+                max_skills=max_entries,
+                name=name,
+                phase=RenderPhase.REQUEST,
+                condition=tenant_layer_condition(tenant),
+                cacheable=True,
+            )
+
+        # Drop previously installed skill layers that are no longer desired.
+        for name in list(prompt_builder.layer_names):
+            if name == GLOBAL_SKILLS_LAYER or name.startswith(TENANT_SKILLS_LAYER_PREFIX):
+                if name not in desired:
+                    prompt_builder.remove(name)
+        for layer in desired.values():
+            prompt_builder.add(layer)
+
+    def _recompose_skill_views(self) -> None:
+        """Recompute the global and every tenant view after a global registry change (learned skills)."""
+        global_view = self.__dict__.get("_global_view")
+        if global_view is not None:
+            global_view.compose()
+        for view in self.__dict__.get("_tenant_views", {}).values():
+            view.compose()
 
     async def save_learned_skill(
         self,
@@ -518,6 +596,8 @@ category: {category}
 
         # Hot-add to registry
         self._skill_file_registry.add(skill)
+        self._recompose_skill_views()
+        self._install_skill_prompt_layers()
         logger.info("Learned skill '%s' saved and hot-added", name)
         return skill
 
