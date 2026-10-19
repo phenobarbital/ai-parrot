@@ -58,6 +58,7 @@ from ..parser import parse_response, ParsedResponse
 from ..media_download import MediaDownloadRefused, allowed_media_hosts, temp_download
 from ...auth.context import UserContext
 from ...models.outputs import OutputMode
+from parrot.skills.tenancy import set_active_skill
 
 if TYPE_CHECKING:
     from aiohttp import web
@@ -1267,6 +1268,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         session: TelegramUserSession,
         chat_id: Optional[int] = None,
         bot_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
     ) -> Any:
         """Construct a ``PermissionContext`` scoped to this Telegram user.
 
@@ -1300,7 +1302,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             return None
         user_session = UserSession(
             user_id=str(session.telegram_id),
-            tenant_id="default",
+            tenant_id=tenant_id or "default",
             roles=frozenset(),
         )
         extra: Dict[str, Any] = {
@@ -1346,6 +1348,8 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
             metadata["jira_account_id"] = session.jira_account_id
         if session.jira_cloud_id:
             metadata["jira_cloud_id"] = session.jira_cloud_id
+        if self.config.tenant:
+            metadata["tenant"] = self.config.tenant
         return UserContext(
             channel="telegram",
             user_id=session.user_id,
@@ -1486,7 +1490,12 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
 
         agent, user_tm = await self._resolve_agent_for_request(session, message=message)
         chat_id = message.chat.id if message is not None else None
-        permission_context = self._build_permission_context(session, chat_id=chat_id, bot_id=self._bot_id)
+        permission_context = self._build_permission_context(
+            session,
+            chat_id=chat_id,
+            bot_id=self._bot_id,
+            tenant_id=self.config.tenant,
+        )
         enriched = self._enrich_question(question, session)
 
         timeout = self.config.agent_timeout
@@ -1518,6 +1527,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                             memory=memory,
                             output_mode=output_mode,
                             permission_context=permission_context,
+                            tenant=self.config.tenant,
                             attachments=attachments,
                         ),
                         timeout=timeout,
@@ -1544,6 +1554,7 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 memory=memory,
                 output_mode=output_mode,
                 permission_context=permission_context,
+                tenant=self.config.tenant,
                 attachments=attachments,
             ),
             timeout=timeout,
@@ -1951,7 +1962,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         seen: set[str] = set()
 
         # File-based skills (SkillFileRegistry) — eager, synchronous listing.
-        file_registry = getattr(self.agent, "_skill_file_registry", None)
+        view_fn = getattr(self.agent, "current_skill_view", None)
+        try:
+            file_registry = view_fn(self.config.tenant) if callable(view_fn) else None
+        except ValueError as exc:
+            self.logger.debug("Failed to resolve tenant skill view: %s", exc)
+            return skills
+        if file_registry is None:
+            file_registry = getattr(self.agent, "_skill_file_registry", None)
         if file_registry is not None and hasattr(file_registry, "list_skills"):
             try:
                 for skill in file_registry.list_skills():
@@ -1996,7 +2014,14 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
         Tries an exact name match first, then a trigger match (with or without a
         leading ``/``). Returns ``None`` when no file skill matches.
         """
-        file_registry = getattr(self.agent, "_skill_file_registry", None)
+        view_fn = getattr(self.agent, "current_skill_view", None)
+        try:
+            file_registry = view_fn(self.config.tenant) if callable(view_fn) else None
+        except ValueError as exc:
+            self.logger.debug("Failed to resolve tenant skill view: %s", exc)
+            return None
+        if file_registry is None:
+            file_registry = getattr(self.agent, "_skill_file_registry", None)
         if file_registry is None:
             return None
 
@@ -2080,10 +2105,11 @@ class TelegramAgentWrapper(OperatorCommandsMixin):
                 if skill_def is not None:
                     # Activate the file skill so its body is injected as a
                     # transient prompt layer for this single ask().
-                    self.agent._active_skill = skill_def
+                    set_active_skill(skill_def)
                     response = await self.agent.ask(
                         question,
                         output_mode=OutputMode.TELEGRAM,
+                        tenant=self.config.tenant,
                     )
                 else:
                     # DB-backed skill: prepend the skill body as instruction.

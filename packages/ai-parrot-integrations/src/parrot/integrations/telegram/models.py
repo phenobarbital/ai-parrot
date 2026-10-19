@@ -52,6 +52,7 @@ class TelegramAgentConfig:
                           If None, the bot is accessible to all chats.
         welcome_message: Custom message sent when user issues /start command.
         system_prompt_override: Override the agent's default system prompt.
+        tenant: Static per-bot tenant used for per-tenant skills.
         commands: Custom commands that map to agent methods.
                   Format: {"command_name": "agent_method_name"}
                   E.g.:   {"report": "generate_report"}
@@ -72,6 +73,8 @@ class TelegramAgentConfig:
     allowed_chat_ids: Optional[List[int]] = None
     welcome_message: Optional[str] = None
     system_prompt_override: Optional[str] = None
+    # FEAT-707: static per-bot tenant (one bot = one customer) for per-tenant skills.
+    tenant: Optional[str] = None
     kind: str = "telegram"
     commands: Dict[str, str] = field(default_factory=dict)
     # Group/channel support settings
@@ -268,6 +271,7 @@ class TelegramAgentConfig:
             allowed_chat_ids=data.get("allowed_chat_ids"),
             welcome_message=data.get("welcome_message"),
             system_prompt_override=data.get("system_prompt_override"),
+            tenant=data.get("tenant"),
             commands=data.get("commands", {}),
             enable_group_mentions=data.get("enable_group_mentions", True),
             enable_group_commands=data.get("enable_group_commands", True),
