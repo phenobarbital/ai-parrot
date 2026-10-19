@@ -146,7 +146,7 @@ def setup_telemetry(
             sampler=TraceIdRatioBased(config.sampling_ratio),
         )
         span_exporters = make_span_exporters(targets, protocol=config.otlp_protocol)
-        for target, exporter in zip(targets, span_exporters):
+        for target, exporter in zip(targets, span_exporters, strict=True):
             tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
             logger.info(
                 "setup_telemetry: attached OTLP target '%s' -> %s",
@@ -210,7 +210,7 @@ def setup_telemetry(
             )
             for exporter in metric_exporters
         ]
-        for target, _ in zip(targets, metric_exporters):
+        for target in targets:
             logger.info(
                 "setup_telemetry: attached OTLP metric target '%s' -> %s",
                 target.name,
