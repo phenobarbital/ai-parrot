@@ -100,11 +100,24 @@ request with tokens, cost and latency.
 
 For **multiple** OTLP destinations at once (e.g. OpenLIT + Grafana Tempo),
 set `OTLP_TARGETS` instead of the single `OTEL_EXPORTER_OTLP_ENDPOINT` — one
-`BatchSpanProcessor` is attached per target on the shared `TracerProvider`:
+`BatchSpanProcessor` and one `PeriodicExportingMetricReader` are attached per
+target. When set, it replaces `OTEL_EXPORTER_OTLP_ENDPOINT` for both signals:
 
 ```bash
 export OTLP_TARGETS='[{"name":"openlit","endpoint":"http://localhost:4318"},{"name":"tempo","endpoint":"http://tempo:4318"}]'
 ```
+
+Each target adds one reader thread and one collection per export interval;
+duplicate entries push twice. This is a breaking change for split routing: the
+former setup with Prometheus as `OTEL_EXPORTER_OTLP_ENDPOINT` and OpenLIT in
+`OTLP_TARGETS` now sends both signals to OpenLIT and no metrics to Prometheus.
+To keep metrics in Prometheus and traces in OpenLIT, use an OTLP collector with
+separate signal pipelines, point `OTEL_EXPORTER_OTLP_ENDPOINT` at it, leave
+`OTLP_TARGETS` unset, and set both signal switches to `true` with nonzero
+sampling. Listing Prometheus and OpenLIT together is not equivalent because
+Prometheus rejects `/v1/traces`; see
+[`Migrating split routing`](../../../../../docs/architecture/10-observability.md#migrating-split-routing-feat-705)
+for the routing table.
 
 For a **cost-only** OpenLIT dashboard without the full trace pipeline (e.g.
 while running the lightweight `logging` backend), use the additive
@@ -198,8 +211,8 @@ globally-registered subscriber (the usage recorder *or* the OTel
 | `otlp_endpoint` | str | `"http://localhost:4318"` | OTLP collector base URL. |
 | `otlp_protocol` | `"http/protobuf"` \| `"grpc"` | `"http/protobuf"` | Transport protocol. gRPC requires `grpcio`. |
 | `otlp_headers` | dict[str, str] | `{}` | Extra HTTP headers (e.g. auth tokens). |
-| `enable_traces` | bool | `True` | Subscribe `GenAIOpenTelemetrySubscriber`. |
-| `enable_metrics` | bool | `True` | Subscribe `MetricsSubscriber`. |
+| `enable_traces` | bool | `True` | Subscribe `GenAIOpenTelemetrySubscriber`. Env: `OBSERVABILITY_TRACES`. |
+| `enable_metrics` | bool | `True` | Subscribe `MetricsSubscriber`. Env: `OBSERVABILITY_METRICS`. |
 | `enable_cost_tracking` | bool | `True` | Build a `CostCalculator` and inject into subscribers. |
 | `otlp_targets` | list[OtlpTarget] | `[]` | FEAT-462: multi-endpoint OTLP export. Empty → falls back to `otlp_endpoint` as a single implicit target. |
 | `openlit_recorder_endpoint` | str \| None | `None` | FEAT-462: OTLP endpoint for the additive `OpenLitUsageRecorder` (usage-only spans, works independent of `usage_backend`). |
@@ -208,7 +221,7 @@ globally-registered subscriber (the usage recorder *or* the OTel
 | `sampling_ratio` | float | `1.0` | `TraceIdRatioBased` sampler rate `[0.0, 1.0]`. |
 | `capture_prompts` | bool | `False` | Include system-prompt SHA-256 hashes in spans. **PII guard: default off.** |
 | `capture_completions` | bool | `False` | Add per-chunk span events for streaming. **PII guard: default off.** |
-| `metric_export_interval_ms` | int | `60_000` | `PeriodicExportingMetricReader` interval (ms). |
+| `metric_export_interval_ms` | int | `60_000` | `PeriodicExportingMetricReader` interval (ms). Env: `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS` (positive int). |
 | `histogram_buckets` | list[float] \| None | `None` | Histogram bucket boundaries. `None` → `[0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0, 60.0]` (LLM-tuned). |
 | `pricing_override_path` | str \| None | `None` | Directory of `<provider>.json` pricing override files. |
 
@@ -230,14 +243,18 @@ globally-registered subscriber (the usage recorder *or* the OTel
 | `OBSERVABILITY_TRACELOOP` | `config.enable_traceloop` | **Deprecated (FEAT-462)** — no-op; emits a `DeprecationWarning`. |
 | `OBSERVABILITY_COST` | `config.enable_cost_tracking` | Set to `"false"` to disable cost tracking. |
 | `OBSERVABILITY_SAMPLING` | `config.sampling_ratio` | Float string `"0.1"` → 10% sampling. |
+| `OBSERVABILITY_TRACES` | `config.enable_traces` | FEAT-705: `"false"` skips the trace subscriber. |
+| `OBSERVABILITY_METRICS` | `config.enable_metrics` | FEAT-705: `"false"` skips the metrics subscriber. |
+| `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS` | `config.metric_export_interval_ms` | FEAT-705: positive int; invalid values log a warning and keep `60000`. |
 | `PARROT_PRICING_PATH` | `config.pricing_override_path` | Path to a custom pricing directory. |
 
 Note: `setup_telemetry` itself only auto-reads `PARROT_PRICING_PATH`. To build a
 config from **all** the variables above, use `ObservabilityConfig.from_env()`, or
 rely on the auto-boot (`OBSERVABILITY_ENABLED=true`) which calls it for you. The
 auto-boot additionally reads `OBSERVABILITY_BACKEND`, `OBSERVABILITY_LOG_LEVEL`,
-`OBSERVABILITY_PROM_PORT`, and `OBSERVABILITY_PROM_ADDR` (see the pluggable
-usage-logging section above).
+`OBSERVABILITY_PROM_PORT`, `OBSERVABILITY_PROM_ADDR`, `OBSERVABILITY_TRACES`,
+`OBSERVABILITY_METRICS`, and `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS` (see the
+pluggable usage-logging section above).
 
 ---
 
