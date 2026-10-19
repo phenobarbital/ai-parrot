@@ -134,13 +134,23 @@ class SemanticModelLoader:
             if name not in layer.graph.models:
                 raise SemanticPolicyError("policy_model_mismatch", details={"model": name})
             policy = load_policy(policy_path, members, set(schema.tables))
-            policy.bind_physical_columns(member_columns, table_names)
+            scope = self._scope_tables(layer, name, policy, table_names)
+            scoped_schema = PhysicalSchema(
+                driver=schema.driver, tables={table: cols for table, cols in schema.tables.items() if table in scope}
+            )
+            policy.bind_physical_columns(
+                {
+                    member: {column for column in columns if column.rpartition(".")[0] in scope}
+                    for member, columns in member_columns.items()
+                },
+                table_names,
+            )
             loaded[name] = LoadedModel(
                 name=name,
                 layer=layer,
                 policy=policy,
                 members=members,
-                schema=schema,
+                schema=scoped_schema,
                 model_digest=model_digest,
                 policy_digest=policy.digest(),
                 engine_version=__version__,
@@ -274,6 +284,35 @@ class SemanticModelLoader:
                 ModelMember(name=metric.name, kind="metric", description=getattr(metric, "description", None) or ""),
             )
         return list(members.values())
+
+    @staticmethod
+    def _scope_tables(layer: Any, name: str, policy: ModelPolicy, table_names: dict[str, set[str]]) -> set[str]:
+        """Physical tables one policy model may touch (its PBAC manifest and positive-guard allowlist).
+
+        Scope = the model's own table, tables of models reachable through declared relationships (either
+        direction), and tables its policy names explicitly in ``masks`` or ``rls``. Any other table of the
+        layer is out of scope, so raw SQL naming it is rejected and PBAC never asks for it.
+        """
+        models = layer.graph.models
+        neighbours: dict[str, set[str]] = {model_name: set() for model_name in models}
+        for model_name, model in models.items():
+            for relationship in getattr(model, "relationships", None) or []:
+                target = relationship.target_model or relationship.name
+                if target in models:
+                    neighbours[model_name].add(target)
+                    neighbours[target].add(model_name)
+        reachable, frontier = {name}, [name]
+        while frontier:
+            for neighbour in neighbours.get(frontier.pop(), set()):
+                if neighbour not in reachable:
+                    reachable.add(neighbour)
+                    frontier.append(neighbour)
+        scope = {models[model_name].table for model_name in reachable if models[model_name].table}
+        scope.update(rule.table for rule in policy.rls)
+        for key in policy.masks:
+            table_part = key.rpartition(".")[0]
+            scope.update(table for table, names in table_names.items() if table_part in names)
+        return scope
 
     @staticmethod
     def _member_columns(layer: Any) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
