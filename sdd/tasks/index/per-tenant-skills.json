@@ -148,7 +148,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -158,8 +158,9 @@
       "parallelism_notes": "Imports current_skill_tenant from TASK-4494 (skills/tenancy.py) for the tenant/global layer conditions.",
       "assigned_to": null,
       "started_at": "2026-10-19T21:15:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4498-skill-tenant-prompt-layers.md"
+      "completed_at": "2026-10-19T21:41:51+00:00",
+      "file": "sdd/tasks/completed/TASK-4498-skill-tenant-prompt-layers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4499",
