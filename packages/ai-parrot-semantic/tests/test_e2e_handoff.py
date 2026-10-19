@@ -78,7 +78,11 @@ async def _call(tk: SemanticLayerToolkit, tool_name: str, pctx: PermissionContex
 
 
 async def test_toolkit_shared_manager_rejected(
-    models_dir: Any, duckdb_warehouse: str, allow_all_guard: Any, pctx_factory: Callable[..., PermissionContext], monkeypatch
+    models_dir: Any,
+    duckdb_warehouse: str,
+    allow_all_guard: Any,
+    pctx_factory: Callable[..., PermissionContext],
+    monkeypatch,
 ) -> None:
     """A host factory must not return one DatasetManager for different subjects."""
     shared = DatasetManager()
@@ -93,7 +97,11 @@ async def test_toolkit_shared_manager_rejected(
 
 
 async def test_e2e_handoff_two_users_two_sessions(
-    models_dir: Any, duckdb_warehouse: str, allow_all_guard: Any, pctx_factory: Callable[..., PermissionContext], monkeypatch
+    models_dir: Any,
+    duckdb_warehouse: str,
+    allow_all_guard: Any,
+    pctx_factory: Callable[..., PermissionContext],
+    monkeypatch,
 ) -> None:
     """Handles remain owner-bound and same-named hand-offs remain manager-isolated."""
     managers: dict[str, DatasetManager] = {}
@@ -114,7 +122,11 @@ async def test_e2e_handoff_two_users_two_sessions(
 
 
 async def test_e2e_masked_inference_matrix(
-    models_dir: Any, duckdb_warehouse: str, allow_all_guard: Any, pctx_factory: Callable[..., PermissionContext], monkeypatch
+    models_dir: Any,
+    duckdb_warehouse: str,
+    allow_all_guard: Any,
+    pctx_factory: Callable[..., PermissionContext],
+    monkeypatch,
 ) -> None:
     """Raw SQL rejects every non-projection use of a masked column without usage rights."""
     policy_path = models_dir / "orders.policy.yaml"
