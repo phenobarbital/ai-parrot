@@ -76,9 +76,9 @@ def fake_exporters():
 
 
 def _readers(provider: Any) -> list[Any]:
-    assert hasattr(provider, "_metric_readers"), (
-        "MeterProvider._metric_readers is missing; this OTel version renamed it — update the test"
-    )
+    assert hasattr(
+        provider, "_metric_readers"
+    ), "MeterProvider._metric_readers is missing; this OTel version renamed it — update the test"
     return list(provider._metric_readers)
 
 
