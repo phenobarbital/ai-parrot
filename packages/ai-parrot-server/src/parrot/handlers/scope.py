@@ -1,4 +1,5 @@
 """Neutral request scope seam shared by UI surfaces and Agent Studio (FEAT-605 M1)."""
+
 from __future__ import annotations
 
 import logging

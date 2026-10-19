@@ -17,6 +17,7 @@ dependency:
   save_learned), sharing a
   :class:`~parrot.skills.file_registry.SkillFileRegistry`.
 """
+
 import asyncio
 from typing import Any, Callable, Dict, List, Optional
 from pathlib import Path
@@ -33,26 +34,21 @@ from .store import SkillRegistry
 
 class DocumentSkillArgs(BaseModel):
     """Arguments for documenting a new skill."""
+
     name: str = Field(..., description="Concise skill name")
     description: str = Field(..., description="What this skill does (1-2 sentences)")
     content: str = Field(..., description="Full skill documentation in Markdown")
     category: str = Field(
-        default="general",
-        description="Category: tool_usage, workflow, domain, error_handling, optimization, general"
+        default="general", description="Category: tool_usage, workflow, domain, error_handling, optimization, general"
     )
     tags: List[str] = Field(default_factory=list, description="Searchable tags")
-    triggers: List[str] = Field(
-        default_factory=list,
-        description="Patterns that should trigger using this skill"
-    )
-    related_tools: List[str] = Field(
-        default_factory=list,
-        description="Tools this skill involves"
-    )
+    triggers: List[str] = Field(default_factory=list, description="Patterns that should trigger using this skill")
+    related_tools: List[str] = Field(default_factory=list, description="Tools this skill involves")
 
 
 class UpdateSkillArgs(BaseModel):
     """Arguments for updating an existing skill."""
+
     skill_id: str = Field(..., description="ID of skill to update")
     content: str = Field(..., description="Updated skill content in Markdown")
     commit_message: str = Field(default="", description="What changed and why")
@@ -62,6 +58,7 @@ class UpdateSkillArgs(BaseModel):
 
 class ReadSkillToolArgs(BaseModel):
     """Arguments for reading a skill."""
+
     skill_id: str = Field(..., description="Skill ID to read")
     version: Optional[int] = Field(default=None, description="Version number (latest if None)")
 
@@ -137,23 +134,21 @@ class SkillRegistryToolkit(AbstractToolkit):
             )
 
             if not results:
-                return ToolResult(
-                    status="done",
-                    result="No relevant skills found.",
-                    metadata={"skills_found": 0}
-                )
+                return ToolResult(status="done", result="No relevant skills found.", metadata={"skills_found": 0})
 
             # Format results
             formatted = []
             for r in results:
-                formatted.append({
-                    "skill_id": r.skill.skill_id,
-                    "name": r.skill.metadata.name,
-                    "description": r.skill.metadata.description,
-                    "relevance": f"{r.relevance_score:.2f}",
-                    "category": r.skill.metadata.category.value,
-                    "version": r.skill.current_version,
-                })
+                formatted.append(
+                    {
+                        "skill_id": r.skill.skill_id,
+                        "name": r.skill.metadata.name,
+                        "description": r.skill.metadata.description,
+                        "relevance": f"{r.relevance_score:.2f}",
+                        "category": r.skill.metadata.category.value,
+                        "version": r.skill.current_version,
+                    }
+                )
 
             summary = self._format_summary(results)
 
@@ -163,7 +158,7 @@ class SkillRegistryToolkit(AbstractToolkit):
                 metadata={
                     "skills_found": len(results),
                     "skills": formatted,
-                }
+                },
             )
         except Exception as e:
             return ToolResult(
@@ -202,7 +197,7 @@ class SkillRegistryToolkit(AbstractToolkit):
                     "skill_id": skill_id,
                     "name": skill_info["name"] if skill_info else "Unknown",
                     "version": version or (skill_info["current_version"] if skill_info else 0),
-                }
+                },
             )
         except KeyError:
             return ToolResult(
@@ -223,11 +218,7 @@ class SkillRegistryToolkit(AbstractToolkit):
             skills = await self._registry_for().list_skills()
 
             if not skills:
-                return ToolResult(
-                    status="done",
-                    result="No skills documented yet.",
-                    metadata={"count": 0}
-                )
+                return ToolResult(status="done", result="No skills documented yet.", metadata={"count": 0})
 
             # Group by category
             by_category: Dict[str, List] = {}
@@ -249,7 +240,7 @@ class SkillRegistryToolkit(AbstractToolkit):
                 metadata={
                     "count": len(skills),
                     "skills": skills,
-                }
+                },
             )
         except Exception as e:
             return ToolResult(
@@ -292,7 +283,7 @@ class SkillRegistryToolkit(AbstractToolkit):
                     "skill_id": skill.skill_id,
                     "version": version.version_number,
                     "category": category,
-                }
+                },
             )
         except Exception as e:
             return ToolResult(
@@ -342,7 +333,7 @@ class SkillRegistryToolkit(AbstractToolkit):
                 metadata={
                     "skill_id": skill_id,
                     "version": version.version_number,
-                }
+                },
             )
         except Exception as e:
             return ToolResult(
@@ -354,6 +345,7 @@ class SkillRegistryToolkit(AbstractToolkit):
 
 class SaveLearnedSkillArgs(BaseModel):
     """Arguments for saving a learned skill as a .md file."""
+
     name: str = Field(..., description="Skill name (used as filename)")
     description: str = Field(..., description="Short description of what the skill does")
     content: str = Field(..., description="Skill instruction body (markdown)")
@@ -454,11 +446,7 @@ class SkillFileToolkit(AbstractToolkit):
 
         lines = [f"**{len(skills)} skills available:**"]
         for skill in skills:
-            triggers = (
-                ", ".join(skill.triggers)
-                if skill.triggers
-                else "(no trigger — load with load_skill)"
-            )
+            triggers = ", ".join(skill.triggers) if skill.triggers else "(no trigger — load with load_skill)"
             lines.append(f"- {skill.name}: {skill.description} — {triggers}")
 
         return ToolResult(
@@ -489,18 +477,13 @@ class SkillFileToolkit(AbstractToolkit):
         """
         skill = self._view().get_by_name(name)
         if not skill:
-            return ToolResult(
-                status="error", result=None, error=f"Skill not found: {name}"
-            )
+            return ToolResult(status="error", result=None, error=f"Skill not found: {name}")
 
         assets: List[str] = []
         if skill.assets_dir:
+
             def _list_assets(assets_dir: Path) -> List[str]:
-                return [
-                    p.name
-                    for p in sorted(assets_dir.iterdir())
-                    if p.is_file() and p.name != "SKILL.md"
-                ]
+                return [p.name for p in sorted(assets_dir.iterdir()) if p.is_file() and p.name != "SKILL.md"]
 
             assets = await asyncio.to_thread(_list_assets, skill.assets_dir)
 
@@ -527,17 +510,12 @@ class SkillFileToolkit(AbstractToolkit):
         """
         skill = self._view().get_by_name(skill_name)
         if not skill:
-            return ToolResult(
-                status="error", result=None, error=f"Skill not found: {skill_name}"
-            )
+            return ToolResult(status="error", result=None, error=f"Skill not found: {skill_name}")
         if not skill.assets_dir:
             return ToolResult(
                 status="error",
                 result=None,
-                error=(
-                    f"Skill '{skill_name}' is a single-file skill and has no "
-                    "bundled assets."
-                ),
+                error=(f"Skill '{skill_name}' is a single-file skill and has no " "bundled assets."),
             )
 
         def _read(assets_dir: Path, rel: str) -> tuple[Optional[str], Optional[str]]:
@@ -612,9 +590,7 @@ class SkillFileToolkit(AbstractToolkit):
                 )
 
         # Sanitize filename
-        safe_name = "".join(
-            c if c.isalnum() or c in ("_", "-") else "_" for c in name
-        )
+        safe_name = "".join(c if c.isalnum() or c in ("_", "-") else "_" for c in name)
         file_path = self._learned_dir / f"{safe_name}.md"
 
         # Build YAML frontmatter

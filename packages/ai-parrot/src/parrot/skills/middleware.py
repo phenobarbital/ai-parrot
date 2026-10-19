@@ -6,6 +6,7 @@ at the start of user messages, stripping the prefix, setting the activated
 SkillDefinition on the bot instance, and handling reserved /skills and /help
 triggers.
 """
+
 from typing import Any, Callable, Dict, Optional
 
 from parrot.bots.middleware import PromptMiddleware

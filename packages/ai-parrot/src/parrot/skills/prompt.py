@@ -17,6 +17,7 @@ Usage::
     layer = render_skills_prompt_layer(registry)
     self._prompt_builder.add(layer)
 """
+
 from __future__ import annotations
 
 from typing import Any, Callable, Collection, Dict, Optional
@@ -100,9 +101,7 @@ def render_skills_prompt_layer(
         lines.append(f"    {skill.description}")
         lines.append(f'    Load with: load_skill(name="{skill.name}")')
         if skill.triggers:
-            lines.append(
-                f"    Also triggerable via: {', '.join(skill.triggers)}"
-            )
+            lines.append(f"    Also triggerable via: {', '.join(skill.triggers)}")
         lines.append("  </skill>")
     lines.append("</available_skills>")
 

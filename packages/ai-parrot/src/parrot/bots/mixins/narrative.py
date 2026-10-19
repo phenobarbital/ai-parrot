@@ -133,9 +133,7 @@ class NarrativeMixin(SkillRegistryMixin):
             return None
         return registry.get_by_name(name)
 
-    def _build_narrative_prompt(
-        self, definition: SkillDefinition, facts: dict[str, Any]
-    ) -> str:
+    def _build_narrative_prompt(self, definition: SkillDefinition, facts: dict[str, Any]) -> str:
         """Build the LLM prompt from the skill body, its assets, and the facts.
 
         Reads `definition.assets_dir` directly as a plain `Path` (the

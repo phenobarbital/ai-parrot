@@ -11,6 +11,7 @@ Provides automatic skill management integration:
 - Static <available_skills> prompt layer injection (FEAT-188)
 - On-demand SkillFileToolkit registration (FEAT-188)
 """
+
 from __future__ import annotations
 import inspect
 import logging
@@ -96,6 +97,7 @@ class SkillRegistryMixin:
     # Runtime
     _skill_registry: Optional[SkillRegistry] = None
     _skill_file_registry: Optional["SkillFileRegistry"] = None
+
     @property
     def _active_skill(self) -> Optional[SkillDefinition]:
         """The ``/trigger``-activated skill for the current request (request-local, FEAT-707 S5)."""
@@ -283,7 +285,7 @@ class SkillRegistryMixin:
         Returns:
             Resolved ``Path`` or ``None`` if neither is available.
         """
-        agents_dir = getattr(self, '_agents_dir', None)
+        agents_dir = getattr(self, "_agents_dir", None)
         if agents_dir is not None:
             return Path(agents_dir)
         try:
@@ -302,8 +304,8 @@ class SkillRegistryMixin:
         if self._skill_registry is not None:
             return
 
-        agent_id = getattr(self, 'name', None) or getattr(self, 'agent_id', 'default')
-        org_id = getattr(self, 'org_id', 'default')
+        agent_id = getattr(self, "name", None) or getattr(self, "agent_id", "default")
+        org_id = getattr(self, "org_id", "default")
         namespace = f"{org_id}/{agent_id}"
 
         # Determine persistence path
@@ -315,7 +317,7 @@ class SkillRegistryMixin:
         self._skill_registry = create_skill_registry(
             namespace=namespace,
             persistence_path=persistence_path,
-            extraction_llm=getattr(self, '_llm', None),
+            extraction_llm=getattr(self, "_llm", None),
         )
 
         await self._skill_registry.configure()
@@ -330,7 +332,7 @@ class SkillRegistryMixin:
         if self.tenant_based:
             await self._configure_tenant_store_registries()
 
-        if hasattr(self, 'logger'):
+        if hasattr(self, "logger"):
             self.logger.info("SkillRegistry configured: %s", namespace)
 
     async def _configure_tenant_store_registries(self) -> None:
@@ -383,9 +385,9 @@ class SkillRegistryMixin:
         if self._skill_file_registry is not None:
             return
 
-        agent_id = getattr(self, 'name', None) or getattr(self, 'agent_id', 'default')
+        agent_id = getattr(self, "name", None) or getattr(self, "agent_id", "default")
         agents_dir = self._resolve_agents_dir()
-        logger = getattr(self, 'logger', logging.getLogger(__name__))
+        logger = getattr(self, "logger", logging.getLogger(__name__))
 
         # --- Original block: only runs when agents_dir is set ---
         if agents_dir:
@@ -410,7 +412,7 @@ class SkillRegistryMixin:
             # always-registered `LegacyPipelineGuardrail` (see
             # `AbstractBot.__init__`), which resolves `self._prompt_pipeline`
             # dynamically rather than snapshotting it at construction time.
-            prompt_pipeline = getattr(self, '_prompt_pipeline', None)
+            prompt_pipeline = getattr(self, "_prompt_pipeline", None)
             if prompt_pipeline is not None:
                 mw = create_skill_trigger_middleware(
                     registry=self._skill_file_registry,
@@ -430,11 +432,12 @@ class SkillRegistryMixin:
                 await self._load_tenant_skill_trees(agents_dir / agent_id)
 
         # --- FEAT-188 extensions: run regardless of agents_dir ---
-        skill_paths = list(getattr(self, 'skill_paths', []))
+        skill_paths = list(getattr(self, "skill_paths", []))
         if skill_paths:
             # Ensure a registry exists even when agents_dir is absent
             if self._skill_file_registry is None:
                 import tempfile
+
                 _tmp = Path(tempfile.mkdtemp(prefix="parrot_skills_"))
                 self._skill_file_registry = SkillFileRegistry(
                     skills_dir=_tmp,
@@ -443,6 +446,7 @@ class SkillRegistryMixin:
                 await self._skill_file_registry.load()
 
             from .loader import SkillsDirectoryLoader
+
             loader = SkillsDirectoryLoader(
                 paths=skill_paths,
                 logger=logger,
@@ -475,26 +479,25 @@ class SkillRegistryMixin:
         # non-empty registry at configure() time would hide them forever.
         if self._skill_file_registry is not None:
             from .tools import SkillFileToolkit
+
             toolkit = SkillFileToolkit(
                 file_registry=self._skill_file_registry,
                 learned_dir=self._skill_file_registry.learned_dir,
                 **({"view_provider": self.current_skill_view} if self.tenant_based else {}),
             )
             skill_tools = toolkit.get_tools()
-            tool_manager = getattr(self, 'tool_manager', None)
-            if tool_manager and hasattr(tool_manager, 'register_tool'):
+            tool_manager = getattr(self, "tool_manager", None)
+            if tool_manager and hasattr(tool_manager, "register_tool"):
                 for tool in skill_tools:
                     result = tool_manager.register_tool(tool)
                     if inspect.isawaitable(result):
                         await result
-            elif hasattr(self, '_tools'):
+            elif hasattr(self, "_tools"):
                 if isinstance(self._tools, list):
                     self._tools.extend(skill_tools)
                 else:
                     self._tools = list(self._tools) + skill_tools
-            logger.debug(
-                "SkillFileToolkit registered (%d tools)", len(skill_tools)
-            )
+            logger.debug("SkillFileToolkit registered (%d tools)", len(skill_tools))
 
     def _install_skill_prompt_layers(self) -> None:
         """Install (replace-by-name) the ``<available_skills>`` layers for the global and tenant views.
@@ -596,7 +599,7 @@ class SkillRegistryMixin:
 
         from .parsers import parse_skill_file
 
-        logger = getattr(self, 'logger', logging.getLogger(__name__))
+        logger = getattr(self, "logger", logging.getLogger(__name__))
 
         # Check name collision
         for existing in self._skill_file_registry.list_skills():
@@ -654,7 +657,7 @@ category: {category}
         if not self._skill_registry:
             return
 
-        agent_id = getattr(self, 'name', 'agent')
+        agent_id = getattr(self, "name", "agent")
         tools = create_skill_tools(
             registry=self._skill_registry,
             agent_id=agent_id,
@@ -662,14 +665,14 @@ category: {category}
             **({"registry_provider": self._current_store_registry} if self.tenant_based else {}),
         )
 
-        tool_manager = getattr(self, 'tool_manager', None)
-        if tool_manager and hasattr(tool_manager, 'register_tool'):
+        tool_manager = getattr(self, "tool_manager", None)
+        if tool_manager and hasattr(tool_manager, "register_tool"):
             for tool in tools:
                 result = tool_manager.register_tool(tool)
                 if inspect.isawaitable(result):
                     await result
-        elif hasattr(self, '_tools'):
-            self._tools = getattr(self, '_tools', []) + tools
+        elif hasattr(self, "_tools"):
+            self._tools = getattr(self, "_tools", []) + tools
 
     async def get_skill_context(
         self,
@@ -680,7 +683,7 @@ category: {category}
     ) -> str:
         """
         Get relevant skills for context injection.
-        
+
         Returns formatted Markdown for system prompt.
         """
         if not self._skill_registry or not self.skill_registry_inject_context:
@@ -714,13 +717,13 @@ category: {category}
     ) -> Optional[Skill]:
         """
         Programmatically document a skill.
-        
+
         Returns created Skill or None.
         """
         if not self._skill_registry:
             return None
 
-        agent_id = getattr(self, 'name', 'agent')
+        agent_id = getattr(self, "name", "agent")
         registry = self._current_store_registry(tenant)
         if registry is None:
             return None
@@ -742,13 +745,13 @@ category: {category}
     ) -> Optional[Skill]:
         """
         Use LLM to extract skills from conversation.
-        
+
         Should be called selectively (expensive).
         """
         if not self._skill_registry or not self.skill_registry_auto_extract:
             return None
 
-        agent_id = getattr(self, 'name', 'agent')
+        agent_id = getattr(self, "name", "agent")
         result = await self._skill_registry.extract_skill_from_conversation(
             conversation=conversation,
             agent_id=agent_id,
@@ -814,27 +817,18 @@ category: {category}
 
 class SkillRegistryHooks:
     """Hook functions for skill registry integration."""
-    
+
     @staticmethod
-    async def pre_ask_hook(
-        agent: SkillRegistryMixin,
-        query: str,
-        **kwargs
-    ) -> Dict[str, Any]:
+    async def pre_ask_hook(agent: SkillRegistryMixin, query: str, **kwargs) -> Dict[str, Any]:
         """Get relevant skills before ask()."""
         context = await agent.get_skill_context(query)
         return {"skill_context": context}
-    
+
     @staticmethod
-    async def post_ask_hook(
-        agent: SkillRegistryMixin,
-        query: str,
-        response: Any,
-        **kwargs
-    ) -> None:
+    async def post_ask_hook(agent: SkillRegistryMixin, query: str, response: Any, **kwargs) -> None:
         """Optionally extract skills after ask()."""
         if not agent.skill_registry_auto_extract:
             return
-        
+
         conversation = f"User: {query}\nAssistant: {response}"
         await agent.extract_skills_from_conversation(conversation)
