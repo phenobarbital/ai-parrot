@@ -34,8 +34,10 @@ def test_catalog_role_filtering_and_suggestions(loaded_models):  # noqa: F811
             SemanticQuery(
                 model="orders",
                 metrics=["revenue"],
-                filters={"op": "and", "items": [{"op": "or", "items": [
-                    {"member": "tenant_id", "op": "equals", "values": ["x"]}]}]},
+                filters={
+                    "op": "and",
+                    "items": [{"op": "or", "items": [{"member": "tenant_id", "op": "equals", "values": ["x"]}]}],
+                },
             ),
             ANALYST,
         )
