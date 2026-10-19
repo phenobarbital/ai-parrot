@@ -272,7 +272,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -282,8 +282,9 @@
       "parallelism_notes": "uses GovernedQuery/CompiledQuery and SemanticExecutionError from TASK-4464 (parrot/semantic/models.py, errors.py); the GovernedQuery contract is fixed by spec §2, so no edge to the governance tasks is needed",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4475-semantic-execution-compile-cache.md"
+      "completed_at": "2026-10-19T12:47:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4475-semantic-execution-compile-cache.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4476",

@@ -279,9 +279,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4475
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: sonnet (native) · Attempts: 1 · Tokens: 83k
+- Validation: merge-tier ad0839b5:wave3:merge completed exit 0 (12 passed).
+- Review: coder-review:cb0e13b33ecba0fc7f4e5e6f — no corrections.
+- **Caveat**: the stock core DuckDB databasequery source is broken (awaits non-awaitable conn.fetch_all) — filed issue:58d44d14dd8a. test_execution.py patches the source's query() with in-process duckdb returning a real QueryResult; executor/resolver/source lookup still exercised.
