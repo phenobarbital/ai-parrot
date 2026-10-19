@@ -50,7 +50,7 @@
       "feature_id": "FEAT-706",
       "feature": "workday-worker-event-history-and-job-changes",
       "spec": "sdd/specs/workday-worker-event-history-and-job-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -60,8 +60,9 @@
       "parallelism_notes": "Imports ResolvedWorkerReference and WorkerEvent from TASK-4487 (models/worker_event.py).",
       "assigned_to": null,
       "started_at": "2026-10-19T20:34:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4488-worker-event-history-handler.md"
+      "completed_at": "2026-10-19T20:43:24+00:00",
+      "file": "sdd/tasks/completed/TASK-4488-worker-event-history-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4489",
@@ -112,7 +113,7 @@
       "feature_id": "FEAT-706",
       "feature": "workday-worker-event-history-and-job-changes",
       "spec": "sdd/specs/workday-worker-event-history-and-job-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -122,8 +123,9 @@
       "parallelism_notes": "Tests build WorkerEvent/JobChange instances from TASK-4487 (models/worker_event.py); _get_composable is stubbed, so it does not wait for the handlers or TASK-4490's routing. Only file is workday/tool.py, touched by no other task.",
       "assigned_to": null,
       "started_at": "2026-10-19T20:34:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4491-worker-history-toolkit-tools.md"
+      "completed_at": "2026-10-19T20:44:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4491-worker-history-toolkit-tools.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4492",
