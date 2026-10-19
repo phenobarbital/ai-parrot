@@ -10,8 +10,8 @@ FEAT-177 TASK-1235.
    target (FEAT-462 — ``config.otlp_targets``, or a single implicit target
    wrapping the legacy ``config.otlp_endpoint``) + ``TraceIdRatioBased``
    sampler, and registers it globally.
-3. Configures a ``MeterProvider`` with ``PeriodicExportingMetricReader`` + histogram
-   ``View`` objects for LLM-optimised bucket boundaries, and registers it globally.
+3. Configures a ``MeterProvider`` with one ``PeriodicExportingMetricReader`` per OTLP target
+   (FEAT-705) + histogram ``View`` objects for LLM-optimised bucket boundaries, and registers it globally.
 4. Optionally builds a ``CostCalculator`` (respects ``PARROT_PRICING_PATH`` env var).
 5. Constructs ``GenAIOpenTelemetrySubscriber`` and/or ``MetricsSubscriber``.
 6. Bundles them into ``ParrotTelemetryProvider`` and calls
@@ -176,7 +176,7 @@ def setup_telemetry(
         _TRACER_PROVIDER = tracer_provider
 
         # --- 3. MeterProvider with histogram Views --------------------------------
-        from parrot.observability.exporters import make_metric_exporter  # noqa: PLC0415
+        from parrot.observability.exporters import make_metric_exporters  # noqa: PLC0415
 
         buckets: list[float] = config.histogram_buckets or [0.01, 0.05, 0.1, 0.5, 1.0, 5.0, 30.0, 60.0]
         _latency_histogram_names = [
@@ -198,14 +198,27 @@ def setup_telemetry(
                 aggregation=ExplicitBucketHistogramAggregation(boundaries=_TOKEN_BUCKETS),
             )
         )
-        metric_exporter = make_metric_exporter(config)
-        reader = PeriodicExportingMetricReader(
-            metric_exporter,
-            export_interval_millis=config.metric_export_interval_ms,
-        )
+        # FEAT-705: one PeriodicExportingMetricReader per OTLP target, reusing
+        # the same `targets` list as the span processors above, so both
+        # signals reach the same destinations. An empty otlp_targets yields
+        # the single implicit target — the pre-FEAT-705 single-reader path.
+        metric_exporters = make_metric_exporters(targets, protocol=config.otlp_protocol)
+        readers = [
+            PeriodicExportingMetricReader(
+                exporter,
+                export_interval_millis=config.metric_export_interval_ms,
+            )
+            for exporter in metric_exporters
+        ]
+        for target, _ in zip(targets, metric_exporters):
+            logger.info(
+                "setup_telemetry: attached OTLP metric target '%s' -> %s",
+                target.name,
+                target.endpoint,
+            )
         meter_provider = MeterProvider(
             resource=resource,
-            metric_readers=[reader],
+            metric_readers=readers,
             views=views,
         )
         otel_metrics.set_meter_provider(meter_provider)
