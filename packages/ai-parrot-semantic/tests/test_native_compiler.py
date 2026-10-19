@@ -32,9 +32,9 @@ def test_native_rejects_fan_out(loaded_models) -> None:
     """A one-to-many path from the aggregate root fails closed as fan-out."""
     orders = loaded_models["orders"]
     customers = orders.layer.graph.models["customers"]
-    customers.metrics.append(type(orders.layer.graph.models["orders"].metrics[0])(
-        name="customer_revenue", agg="sum", sql="salary"
-    ))
+    customers.metrics.append(
+        type(orders.layer.graph.models["orders"].metrics[0])(name="customer_revenue", agg="sum", sql="salary")
+    )
     customer_model = orders.model_copy(
         update={
             "name": "customers",
@@ -72,7 +72,6 @@ def test_native_dialect_snapshots(loaded_models, dialect: str) -> None:
     )
 
     assert (
-        compiled.sql
-        == "SELECT orders.region AS region, SUM(orders.amount) AS revenue "
+        compiled.sql == "SELECT orders.region AS region, SUM(orders.amount) AS revenue "
         "FROM sales.orders AS orders GROUP BY orders.region"
     )

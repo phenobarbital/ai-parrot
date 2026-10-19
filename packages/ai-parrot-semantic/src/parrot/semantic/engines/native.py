@@ -42,9 +42,7 @@ class NativeCompiler:
             requested_members.extend(self._filter_members(query.filters))
         joins = self._joins_for({owners.get(member, self.model.name) for member in requested_members})
 
-        dimensions: dict[str, exp.Expression] = {
-            name: self._dimension_expr(name, owners) for name in query.dimensions
-        }
+        dimensions: dict[str, exp.Expression] = {name: self._dimension_expr(name, owners) for name in query.dimensions}
         for time_dimension in query.time_dimensions:
             dimensions[time_dimension.name] = self._grain_expr(
                 self._dimension_expr(time_dimension.name, owners), time_dimension.grain
@@ -95,7 +93,14 @@ class NativeCompiler:
             dialect=dialect,
             engine="native",
             members=tuple(dict.fromkeys(requested_members)),
-            tables=tuple(sorted({self.model.layer.graph.models[name].table for name in {self.model.name, *[hop.to_model for hop in joins]}})),
+            tables=tuple(
+                sorted(
+                    {
+                        self.model.layer.graph.models[name].table
+                        for name in {self.model.name, *[hop.to_model for hop in joins]}
+                    }
+                )
+            ),
             cache_key="",
         )
 
