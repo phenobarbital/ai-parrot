@@ -1099,6 +1099,11 @@ class BaseBot(AbstractBot):
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
         _tenant_token = None
+        # FEAT-707: a /trigger skill set during this call never outlives it,
+        # even when the call fails before create_system_prompt() consumes it.
+        from parrot.skills.tenancy import enter_active_skill_scope, exit_active_skill_scope
+
+        _skill_scope = enter_active_skill_scope()
         # FEAT-176 bookkeeping, bound BEFORE the try because every `except`
         # branch below reads both. Anything that raises earlier than their
         # original in-try assignment — the input guardrail pipeline, for one —
@@ -1801,6 +1806,12 @@ class BaseBot(AbstractBot):
             self._trigger_event(self.EVENT_TASK_FAILED, agent_name=self.name, error=str(e), session_id=session_id)
             raise
         finally:
+            # FEAT-707: tenant + active-skill resets run first, so a failing
+            # reset below can never leave them bound.
+            _exit = getattr(self, "_exit_skill_tenant", None)
+            if _exit is not None and _tenant_token is not None:
+                _exit(_tenant_token)
+            exit_active_skill_scope(_skill_scope)
             self._exit_task_turn(_task_turn)
             self.status = AgentStatus.IDLE
             self._current_trace_context = None
@@ -1810,9 +1821,6 @@ class BaseBot(AbstractBot):
                 current_session_id.reset(_session_token)
             if _user_token is not None:
                 current_user_id.reset(_user_token)
-            _exit = getattr(self, "_exit_skill_tenant", None)
-            if _exit is not None and _tenant_token is not None:
-                _exit(_tenant_token)
             current_agent_name.reset(_agent_token)  # FEAT-228
 
     async def ask_stream(
@@ -1854,6 +1862,11 @@ class BaseBot(AbstractBot):
         # id defaults, per the FEAT-525 binding-order fix, spec §7).
         _user_token = _session_token = _memkey_token = None
         _tenant_token = None
+        # FEAT-707: a /trigger skill set during this call never outlives it,
+        # even when the call fails before create_system_prompt() consumes it.
+        from parrot.skills.tenancy import enter_active_skill_scope, exit_active_skill_scope
+
+        _skill_scope = enter_active_skill_scope()
         _task_turn = None  # FEAT-538: safe for the `finally` even if the try raises early
         try:
             if ctx is None:
@@ -2274,6 +2287,12 @@ class BaseBot(AbstractBot):
             )
             raise
         finally:
+            # FEAT-707: tenant + active-skill resets run first, so a failing
+            # reset below can never leave them bound.
+            _exit = getattr(self, "_exit_skill_tenant", None)
+            if _exit is not None and _tenant_token is not None:
+                _exit(_tenant_token)
+            exit_active_skill_scope(_skill_scope)
             self._exit_task_turn(_task_turn)
             self._current_trace_context = None
             if _memkey_token is not None:
@@ -2282,7 +2301,4 @@ class BaseBot(AbstractBot):
                 current_session_id.reset(_session_token)
             if _user_token is not None:
                 current_user_id.reset(_user_token)
-            _exit = getattr(self, "_exit_skill_tenant", None)
-            if _exit is not None and _tenant_token is not None:
-                _exit(_tenant_token)
             current_agent_name.reset(_agent_token)  # FEAT-228

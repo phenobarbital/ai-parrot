@@ -69,6 +69,8 @@ def render_skills_prompt_layer(
         - ``template`` containing the ``<available_skills>`` XML block, or
           an empty string if the registry has no skills.
         - ``phase=RenderPhase.CONFIGURE`` by default
+        - ``literal=True``: skill names, descriptions and triggers are
+          author-supplied text, so a ``$name`` in them is never substituted.
     """
     if max_skills == 0:
         return PromptLayer(
@@ -78,6 +80,7 @@ def render_skills_prompt_layer(
             phase=phase,
             condition=condition,
             cacheable=cacheable,
+            literal=True,
         )
 
     skills = registry.list_skills()
@@ -90,6 +93,7 @@ def render_skills_prompt_layer(
             phase=phase,
             condition=condition,
             cacheable=cacheable,
+            literal=True,
         )
 
     if max_skills is not None and len(skills) > max_skills:
@@ -112,17 +116,38 @@ def render_skills_prompt_layer(
         phase=phase,
         condition=condition,
         cacheable=cacheable,
+        literal=True,
     )
 
 
-def tenant_layer_condition(tenant: str) -> Callable[[Dict[str, Any]], bool]:
-    """Return a condition true only while ``tenant`` is bound."""
-    return lambda _ctx: current_skill_tenant() == tenant
+TenantResolver = Callable[[], Optional[str]]
 
 
-def global_layer_condition(known_tenants: Collection[str]) -> Callable[[Dict[str, Any]], bool]:
-    """Return a condition true when no known tenant is currently bound."""
-    return lambda _ctx: current_skill_tenant() not in known_tenants
+def tenant_layer_condition(tenant: str, resolver: Optional[TenantResolver] = None) -> Callable[[Dict[str, Any]], bool]:
+    """Return a condition true only while ``tenant`` is the current tenant.
+
+    Args:
+        tenant: The tenant this layer belongs to.
+        resolver: Returns the current tenant. Defaults to
+            :func:`~parrot.skills.tenancy.current_skill_tenant` (the bound
+            ContextVar only); ``SkillRegistryMixin`` passes one that also falls
+            back to the bot's default ``tenant_id``.
+    """
+    current = resolver or current_skill_tenant
+    return lambda _ctx: current() == tenant
+
+
+def global_layer_condition(
+    known_tenants: Collection[str], resolver: Optional[TenantResolver] = None
+) -> Callable[[Dict[str, Any]], bool]:
+    """Return a condition true when the current tenant is not a known tenant.
+
+    Args:
+        known_tenants: Tenants with their own layer (a live collection is fine).
+        resolver: Returns the current tenant; see :func:`tenant_layer_condition`.
+    """
+    current = resolver or current_skill_tenant
+    return lambda _ctx: current() not in known_tenants
 
 
 def build_active_skill_layer(priority: int = 90) -> PromptLayer:

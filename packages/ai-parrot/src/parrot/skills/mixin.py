@@ -179,6 +179,20 @@ class SkillRegistryMixin:
             logger.warning("Unknown skill tenant %r; falling back to global skills", resolved)
         return global_view
 
+    def _layer_tenant(self) -> Optional[str]:
+        """Current tenant for the tenant prompt-layer conditions.
+
+        Same fallback as :meth:`current_skill_view`: the tenant bound for this
+        ask()/ask_stream() call, else the instance default ``tenant_id`` — so a
+        prompt built outside ask() (e.g. a direct ``create_system_prompt()``)
+        shows the same skills the view resolves. Never raises: both sources
+        were validated when they were set.
+        """
+        if not self.tenant_based:
+            return None
+        bound = current_skill_tenant()
+        return bound if bound is not None else getattr(self, "_tenant_id", None)
+
     def _enter_skill_tenant(self, tenant: Optional[str], ctx: Optional["RequestContext"]) -> Optional[Token]:
         """Bind the resolved tenant for one ask()/ask_stream() call (called by BaseBot, TASK-4496)."""
         if not self.tenant_based:
@@ -539,7 +553,7 @@ class SkillRegistryMixin:
                 global_view,
                 max_skills=max_entries,
                 phase=RenderPhase.REQUEST,
-                condition=global_layer_condition(known_tenants),
+                condition=global_layer_condition(known_tenants, self._layer_tenant),
                 cacheable=True,
             )
         for tenant, view in self.__dict__.get("_tenant_views", {}).items():
@@ -551,7 +565,7 @@ class SkillRegistryMixin:
                 max_skills=max_entries,
                 name=name,
                 phase=RenderPhase.REQUEST,
-                condition=tenant_layer_condition(tenant),
+                condition=tenant_layer_condition(tenant, self._layer_tenant),
                 cacheable=True,
             )
 

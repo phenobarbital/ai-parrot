@@ -103,6 +103,21 @@ def set_active_skill(skill: Optional[SkillDefinition]) -> None:
     _active_skill.set(skill)
 
 
+def enter_active_skill_scope() -> Token:
+    """Snapshot the active skill so :func:`exit_active_skill_scope` can restore it.
+
+    ``ask()``/``ask_stream()`` open this scope so a skill a ``/trigger`` set
+    during a call never outlives that call, even when the call fails before
+    the system prompt consumes it.
+    """
+    return _active_skill.set(_active_skill.get())
+
+
+def exit_active_skill_scope(token: Token) -> None:
+    """Restore the active skill captured by :func:`enter_active_skill_scope`."""
+    _active_skill.reset(token)
+
+
 @dataclass(frozen=True)
 class TenantTreeReport:
     """Configure-time audit of one tenant tree."""
