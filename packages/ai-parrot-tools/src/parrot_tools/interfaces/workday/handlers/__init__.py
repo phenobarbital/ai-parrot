@@ -29,6 +29,9 @@ from .payroll import (
     PayrollResultsType,
     CompanyPaymentDatesType,
 )
+# FEAT-706: worker event history + job changes (HR WSDL)
+from .worker_event_history import WorkerEventHistoryType
+from .worker_job_changes import WorkerJobChangesType
 
 __all__ = [
     "TimeBlockType",
@@ -60,4 +63,7 @@ __all__ = [
     "PayrollBalancesType",
     "PayrollResultsType",
     "CompanyPaymentDatesType",
+    # FEAT-706
+    "WorkerEventHistoryType",
+    "WorkerJobChangesType",
 ]
