@@ -708,6 +708,8 @@ TelegramAgentConfig.tenant: Optional[str] = None     # YAML key `tenant`
 
 ### Validation Contract
 
+> The first 14 entries exist today and pin the flag-off contract; the rest are created by the feature's tasks — rev 0.2 added the four files the task decomposition needs for M2, M5 toolkits, M3 wiring and M5 narrative, plus the existing `test_request_scope.py` that guards the `handlers/scope.py` edit. Run with `PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src:packages/ai-parrot-integrations/src` inside a worktree.
+
 tests:
 - packages/ai-parrot/tests/unit/test_skill_file_registry.py
 - packages/ai-parrot/tests/unit/test_skill_trigger_middleware.py
@@ -735,11 +737,9 @@ tests:
 - packages/ai-parrot/tests/unit/test_narrative_tenant.py
 - packages/ai-parrot/tests/integration/test_skill_tenant_isolation.py
 - packages/ai-parrot-server/tests/handlers/test_request_tenant_binding.py
+- packages/ai-parrot-server/tests/handlers/test_request_scope.py
 - packages/ai-parrot-integrations/tests/telegram/test_tenant_binding.py
 markers: none
-
-(The first 14 entries exist today and pin the flag-off contract; the rest are created by the feature's tasks — rev 0.2 added the four files the task decomposition needs for M2, M5 toolkits, M3 wiring and M5 narrative. Run with
-`PYTHONPATH=packages/ai-parrot/src:packages/ai-parrot-server/src:packages/ai-parrot-integrations/src` inside a worktree.)
 
 ### Test Data / Fixtures
 ```python
