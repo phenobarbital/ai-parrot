@@ -1,0 +1,108 @@
+{
+  "feature": "observability-metrics-fanout-and-env-config",
+  "feature_id": "FEAT-705",
+  "spec": "sdd/specs/observability-metrics-fanout-and-env-config.spec.md",
+  "type": "feature",
+  "base_branch": "dev",
+  "created_at": "2026-10-19T14:53:57+00:00",
+  "completed_at": null,
+  "parallel_semantics": "exclusive",
+  "validation_contract": "required",
+  "test_contract": {
+    "schema": 1,
+    "tests": [
+      "packages/ai-parrot/tests/unit/observability/test_exporters_multi.py",
+      "packages/ai-parrot/tests/unit/observability/test_exporters.py",
+      "packages/ai-parrot/tests/unit/observability/test_endpoint_composition.py",
+      "packages/ai-parrot/tests/unit/observability/test_setup_multi_target.py",
+      "packages/ai-parrot/tests/unit/observability/test_setup_metrics_fanout.py",
+      "packages/ai-parrot/tests/unit/observability/test_setup.py",
+      "packages/ai-parrot/tests/unit/observability/test_config_from_env.py",
+      "packages/ai-parrot/tests/unit/observability/test_config.py",
+      "packages/ai-parrot/tests/unit/observability/test_bootstrap.py",
+      "packages/ai-parrot/tests/unit/observability/test_env_contract.py",
+      "packages/ai-parrot/tests/integration/observability/test_poc.py"
+    ],
+    "markers": [],
+    "digest": "sha256:e79ad349e7db45bccb8ac7c136c98b82cd85f7aa58d49dea5f7884b279ebba7d"
+  },
+  "tasks": [
+    {
+      "id": "TASK-4483",
+      "slug": "make-metric-exporters",
+      "title": "make_metric_exporters — one OTLP metric exporter per target",
+      "feature_id": "FEAT-705",
+      "feature": "observability-metrics-fanout-and-env-config",
+      "spec": "sdd/specs/observability-metrics-fanout-and-env-config.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: adds a new function to exporters.py and tests to test_exporters_multi.py; no other task touches either file.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4483-make-metric-exporters.md"
+    },
+    {
+      "id": "TASK-4484",
+      "slug": "setup-telemetry-metric-fanout",
+      "title": "Per-target metric readers in setup_telemetry",
+      "feature_id": "FEAT-705",
+      "feature": "observability-metrics-fanout-and-env-config",
+      "spec": "sdd/specs/observability-metrics-fanout-and-env-config.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4483"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-4483: imports make_metric_exporters, which TASK-4483 creates in observability/exporters.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4484-setup-telemetry-metric-fanout.md"
+    },
+    {
+      "id": "TASK-4485",
+      "slug": "config-env-signal-switches",
+      "title": "Env keys for enable_traces / enable_metrics / metric_export_interval_ms",
+      "feature_id": "FEAT-705",
+      "feature": "observability-metrics-fanout-and-env-config",
+      "spec": "sdd/specs/observability-metrics-fanout-and-env-config.spec.md",
+      "status": "pending",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": true,
+      "parallelism_notes": "No dependencies: only config.py and its own tests (test_config_from_env.py, test_config.py, test_bootstrap.py); runs concurrently with TASK-4483/4484.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4485-config-env-signal-switches.md"
+    },
+    {
+      "id": "TASK-4486",
+      "slug": "observability-docs-env-contract",
+      "title": "Docs, env example and env contract for metrics fan-out and env switches",
+      "feature_id": "FEAT-705",
+      "feature": "observability-metrics-fanout-and-env-config",
+      "spec": "sdd/specs/observability-metrics-fanout-and-env-config.spec.md",
+      "status": "pending",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4484",
+        "TASK-4485"
+      ],
+      "parallel": true,
+      "parallelism_notes": "Depends on TASK-4485: RECOGNISED_ENV_VARS may only list keys ObservabilityConfig.from_env() reads, and TASK-4485 adds OBSERVABILITY_TRACES/METRICS/METRIC_EXPORT_INTERVAL_MS to config.py. Depends on TASK-4484: documents the per-target metric reader fan-out it implements in setup.py.",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": null,
+      "file": "sdd/tasks/active/TASK-4486-observability-docs-env-contract.md"
+    }
+  ]
+}
