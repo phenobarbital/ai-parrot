@@ -14,13 +14,24 @@ Provides automatic skill management integration:
 from __future__ import annotations
 import inspect
 import logging
+from contextvars import Token
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from .models import SkillCategory, SkillDefinition, Skill
 from .store import SkillRegistry, create_skill_registry
+from .tenancy import (
+    SkillView,
+    TenantTreeReport,
+    bind_skill_tenant,
+    current_skill_tenant,
+    discover_tenant_dirs,
+    reset_skill_tenant,
+    validate_tenant_id,
+)
 from .tools import create_skill_tools
 
 if TYPE_CHECKING:
+    from parrot.utils.helpers import RequestContext
     from .file_registry import SkillFileRegistry
 
 
@@ -78,6 +89,161 @@ class SkillRegistryMixin:
     _skill_registry: Optional[SkillRegistry] = None
     _skill_file_registry: Optional["SkillFileRegistry"] = None
     _active_skill: Optional[SkillDefinition] = None
+    tenant_based: bool = False
+    """Opt-in per-tenant skill trees under ``AGENTS_DIR/{agent_id}/tenants/{tenant}/skills/`` (FEAT-707)."""
+    tenant_id: Optional[str] = None
+    """Instance-level default tenant (lowest precedence). Class attribute or ``tenant_id=`` kwarg."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        tenant_based = kwargs.pop("tenant_based", None)
+        tenant_id = kwargs.pop("tenant_id", None)
+        super().__init__(*args, **kwargs)
+        if tenant_based is not None:
+            self.tenant_based = bool(tenant_based)
+        default_tenant = tenant_id if tenant_id is not None else type(self).tenant_id
+        if default_tenant is not None:
+            self._tenant_id = validate_tenant_id(default_tenant)
+        self._tenant_registries: Dict[str, "SkillFileRegistry"] = {}
+        self._tenant_views: Dict[str, SkillView] = {}
+        self._global_view: Optional[SkillView] = None
+        self._known_tenants: set[str] = set()
+        self._warned_tenants: set[str] = set()
+        self._warned_flags: set[str] = set()
+
+    def _skill_logger(self) -> logging.Logger:
+        return getattr(self, "logger", None) or logging.getLogger(__name__)
+
+    def _resolve_tenant(self, explicit: Optional[str] = None, ctx: Optional["RequestContext"] = None) -> Optional[str]:
+        """Resolve the skill tenant: explicit, ctx.kwargs["tenant"], bound ContextVar, instance default.
+
+        Raises:
+            ValueError: the first non-empty candidate is not a valid tenant id.
+        """
+        ctx_tenant = None
+        ctx_kwargs = getattr(ctx, "kwargs", None) if ctx is not None else None
+        if isinstance(ctx_kwargs, dict):
+            ctx_tenant = ctx_kwargs.get("tenant")
+        candidates = (
+            explicit,
+            ctx_tenant,
+            current_skill_tenant(),
+            getattr(self, "_tenant_id", None) or type(self).tenant_id,
+        )
+        chosen = next((c for c in candidates if c), None)
+        if not self.tenant_based:
+            if chosen and "ignored" not in self.__dict__.get("_warned_flags", set()):
+                self.__dict__.setdefault("_warned_flags", set()).add("ignored")
+                self._skill_logger().debug("tenant_based=False: ignoring skill tenant %r", chosen)
+            return None
+        if chosen is None:
+            return None
+        return validate_tenant_id(chosen)
+
+    def known_tenants(self) -> frozenset[str]:
+        """Tenants with a loaded skill tree."""
+        return frozenset(self.__dict__.get("_known_tenants", ()))
+
+    def current_skill_view(self, tenant: Optional[str] = None) -> Optional[SkillView]:
+        """View for ``tenant`` (resolved when ``None``); global view for unresolved/unknown tenants."""
+        global_view = self.__dict__.get("_global_view")
+        resolved = self._resolve_tenant(tenant)
+        logger = self._skill_logger()
+        if resolved is None:
+            logger.debug("No skill tenant resolved; using global skill view")
+            return global_view
+        view = self.__dict__.get("_tenant_views", {}).get(resolved)
+        if view is not None:
+            return view
+        warned = self.__dict__.setdefault("_warned_tenants", set())
+        if resolved not in warned:
+            warned.add(resolved)
+            logger.warning("Unknown skill tenant %r; falling back to global skills", resolved)
+        return global_view
+
+    def _enter_skill_tenant(self, tenant: Optional[str], ctx: Optional["RequestContext"]) -> Optional[Token]:
+        """Bind the resolved tenant for one ask()/ask_stream() call (called by BaseBot, TASK-4496)."""
+        if not self.tenant_based:
+            return None
+        return bind_skill_tenant(self._resolve_tenant(tenant, ctx))
+
+    def _exit_skill_tenant(self, token: Optional[Token]) -> None:
+        """Undo :meth:`_enter_skill_tenant`."""
+        if token is not None:
+            reset_skill_tenant(token)
+
+    async def _load_tenant_skill_trees(self, agent_root: Path) -> Dict[str, TenantTreeReport]:
+        """Discover and load every ``tenants/<t>/skills`` tree into a registry + view; one INFO per tenant."""
+        from .file_registry import SkillFileRegistry
+
+        logger = self._skill_logger()
+        self._tenant_registries.clear()
+        self._tenant_views.clear()
+        self._known_tenants.clear()
+        reports: Dict[str, TenantTreeReport] = {}
+        if self._skill_file_registry is None:
+            return reports
+        for tenant, skills_dir in discover_tenant_dirs(agent_root, logger).items():
+            if (skills_dir / "learned").exists():
+                logger.warning(
+                    "Tenant %s has a learned/ directory (%s); it is ignored, learned skills are global",
+                    tenant,
+                    skills_dir / "learned",
+                )
+            reg = SkillFileRegistry(skills_dir=skills_dir, learned_dir=skills_dir / ".learned-disabled")
+            await reg.load()
+            view = SkillView(self._skill_file_registry, reg, tenant=tenant, logger=logger)
+            self._tenant_registries[tenant] = reg
+            self._tenant_views[tenant] = view
+            self._known_tenants.add(tenant)
+            report = view.report
+            if report is not None:
+                reports[tenant] = report
+                logger.info(
+                    "tenant=%s skills=%d shadowing=%s dropped=%s",
+                    tenant,
+                    report.loaded,
+                    list(report.shadowing),
+                    list(report.dropped),
+                )
+        return reports
+
+    async def reload_tenant_skills(self, tenant: Optional[str] = None) -> Dict[str, TenantTreeReport]:
+        """Rescan one (``tenant``) or all tenant trees and rebuild their views; then ``_after_tenant_reload``."""
+        from .file_registry import SkillFileRegistry
+        from .tenancy import tenant_skills_dir
+
+        agents_dir = self._resolve_agents_dir()
+        if self._skill_file_registry is None or not agents_dir:
+            return {}
+        agent_id = getattr(self, "name", None) or getattr(self, "agent_id", "default")
+        agent_root = agents_dir / agent_id
+        logger = self._skill_logger()
+        if tenant is None:
+            reports = await self._load_tenant_skill_trees(agent_root)
+        else:
+            validate_tenant_id(tenant)
+            reports = {}
+            skills_dir = tenant_skills_dir(agent_root, tenant)
+            if skills_dir.is_dir():
+                reg = SkillFileRegistry(skills_dir=skills_dir, learned_dir=skills_dir / ".learned-disabled")
+                await reg.load()
+                view = SkillView(self._skill_file_registry, reg, tenant=tenant, logger=logger)
+                self._tenant_registries[tenant] = reg
+                self._tenant_views[tenant] = view
+                self._known_tenants.add(tenant)
+                self._warned_tenants.discard(tenant)
+                if view.report is not None:
+                    reports[tenant] = view.report
+            else:
+                self._tenant_registries.pop(tenant, None)
+                self._tenant_views.pop(tenant, None)
+                self._known_tenants.discard(tenant)
+        await self._after_tenant_reload(reports)
+        return reports
+
+    async def _after_tenant_reload(self, reports: Dict[str, TenantTreeReport]) -> None:
+        """Extension point: prompt layers (TASK-4503) and store registries (TASK-4504) refresh here."""
+        return None
 
     def _resolve_agents_dir(self) -> Optional[Path]:
         """Resolve the base AGENTS_DIR for skill persistence.
@@ -119,19 +285,19 @@ class SkillRegistryMixin:
         agents_dir = self._resolve_agents_dir()
         if agents_dir:
             persistence_path = agents_dir / agent_id / "skills"
-        
+
         self._skill_registry = create_skill_registry(
             namespace=namespace,
             persistence_path=persistence_path,
             extraction_llm=getattr(self, '_llm', None),
         )
-        
+
         await self._skill_registry.configure()
-        
+
         # Add tools
         if self.skill_registry_expose_tools:
             await self._add_skill_tools()
-        
+
         # Configure file-based skill registry
         await self._configure_skill_file_registry()
 
@@ -197,6 +363,9 @@ class SkillRegistryMixin:
                 n_skills,
                 skills_dir,
             )
+            self._global_view = SkillView(self._skill_file_registry, logger=logger)
+            if self.tenant_based:
+                await self._load_tenant_skill_trees(agents_dir / agent_id)
 
         # --- FEAT-188 extensions: run regardless of agents_dir ---
         skill_paths = list(getattr(self, 'skill_paths', []))
@@ -222,6 +391,14 @@ class SkillRegistryMixin:
                 loaded,
                 [str(p) for p in skill_paths],
             )
+
+        if self._skill_file_registry is not None:
+            # Rebuild so skill_paths skills are included in every view.
+            self._global_view = SkillView(self._skill_file_registry, logger=logger)
+            for tenant_view in self._tenant_views.values():
+                tenant_view.compose()
+            if self.tenant_based and not agents_dir:
+                logger.warning("tenant_based=True but no agents_dir resolved; using global skills only")
 
         # --- FEAT-188: Prompt layer injection ---
         if self._skill_file_registry is not None:
@@ -370,7 +547,7 @@ category: {category}
                     await result
         elif hasattr(self, '_tools'):
             self._tools = getattr(self, '_tools', []) + tools
-    
+
     async def get_skill_context(
         self,
         query: str,
@@ -384,13 +561,13 @@ category: {category}
         """
         if not self._skill_registry or not self.skill_registry_inject_context:
             return ""
-        
+
         return await self._skill_registry.get_relevant_skills(
             query=query,
             max_skills=max_skills or self.skill_registry_max_context_skills,
             max_tokens=max_tokens or self.skill_registry_max_context_tokens,
         )
-    
+
     async def document_skill(
         self,
         name: str,
@@ -407,7 +584,7 @@ category: {category}
         """
         if not self._skill_registry:
             return None
-        
+
         agent_id = getattr(self, 'name', 'agent')
         skill, _ = await self._skill_registry.upload_skill(
             name=name,
@@ -419,7 +596,7 @@ category: {category}
             triggers=triggers or [],
         )
         return skill
-    
+
     async def extract_skills_from_conversation(
         self,
         conversation: str,
@@ -432,16 +609,16 @@ category: {category}
         """
         if not self._skill_registry or not self.skill_registry_auto_extract:
             return None
-        
+
         agent_id = getattr(self, 'name', 'agent')
         result = await self._skill_registry.extract_skill_from_conversation(
             conversation=conversation,
             agent_id=agent_id,
             context=context,
         )
-        
+
         return result[0] if result else None
-    
+
     async def search_skills(
         self,
         query: str,
@@ -451,14 +628,14 @@ category: {category}
         """Search for relevant skills."""
         if not self._skill_registry:
             return []
-        
+
         cat = SkillCategory(category) if category else None
         results = await self._skill_registry.search_skills(
             query=query,
             category=cat,
             max_results=max_results,
         )
-        
+
         return [
             {
                 "skill_id": r.skill.skill_id,
@@ -469,7 +646,7 @@ category: {category}
             }
             for r in results
         ]
-    
+
     async def _cleanup_skill_registry(self) -> None:
         """Cleanup skill registry."""
         if self._skill_registry:
