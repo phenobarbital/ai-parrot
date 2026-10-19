@@ -385,10 +385,10 @@ See the CREATE block above; the seven test names are fixed by spec §4.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by seat gpt-5.6-terra (codex), 1 attempt, 380s. Merge-tier validation green (100 passed). Worker diff review: no defects.
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder gpt-5.6-terra)
+**Date**: 2026-10-19
 **Notes**:
 
 **Deviations from spec**: none

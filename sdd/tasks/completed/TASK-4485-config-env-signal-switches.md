@@ -315,10 +315,10 @@ See the three test blueprint blocks above; names are fixed by spec §4.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
+Implemented by seat gpt-5.6-luna (codex), 1 attempt, 75s. Merge-tier validation green (91 passed). Worker diff review: no defects.
 
-**Completed by**:
-**Date**:
+**Completed by**: sdd-worker (coder gpt-5.6-luna)
+**Date**: 2026-10-19
 **Notes**:
 
 **Deviations from spec**: none
