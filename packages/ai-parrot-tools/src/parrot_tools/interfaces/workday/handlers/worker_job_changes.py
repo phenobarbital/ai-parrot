@@ -280,7 +280,7 @@ class WorkerJobChangesType(WorkdayTypeBase):
             )
         )
         rows: list[JobChange] = []
-        for (event_date, events), (before, after) in zip(groups.items(), snapshot_pairs):
+        for (event_date, events), (before, after) in zip(groups.items(), snapshot_pairs, strict=True):
             if after is None:
                 self._logger.warning("No worker snapshot available for %s as of %s", ref.wid, event_date)
                 continue
