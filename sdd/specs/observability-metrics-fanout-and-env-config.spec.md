@@ -13,7 +13,7 @@ tags: [observability, opentelemetry, metrics, otlp, configuration]
 **Feature ID**: FEAT-705
 **Date**: 2026-10-19
 **Author**: Jesus Lara
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
@@ -70,7 +70,8 @@ than letting them shorten it.
 - G4. `metric_export_interval_ms` is validated as a **positive** int: the
   Pydantic field rejects `<= 0`, and `from_env()` falls back to the default
   (with a warning log) on a non-numeric or non-positive string instead of
-  raising — `from_env()` never raises today and must not start.
+  raising for this key. Existing validation errors from unrelated env fields
+  remain outside this feature's scope.
 - G5. The env auto-boot honours the three keys with **no change** to
   `bootstrap.py`: it already calls `from_env()` and passes the config to
   `setup_telemetry()`.
@@ -121,7 +122,7 @@ that same list, wraps each exporter in its own
 `PeriodicExportingMetricReader(exporter, export_interval_millis=config.metric_export_interval_ms)`
 and passes the list as `MeterProvider(metric_readers=readers)` — the OTel SDK
 supports N readers on one provider natively (verified on opentelemetry-sdk
-1.45.1: `MeterProvider._all_metric_readers` holds every reader), so there is no
+1.45.1: each provider's `_metric_readers` holds its attached readers), so there is no
 composite exporter to write. `shutdown_telemetry()` is unchanged:
 `MeterProvider.shutdown()` already flushes every attached reader.
 
@@ -131,14 +132,44 @@ three lookups using the existing helpers (`_as_bool`, `config.py:380`; a new
 becomes `metric_export_interval_ms: int = Field(default=60_000, gt=0)` so a
 programmatic `ObservabilityConfig(metric_export_interval_ms=0)` fails at
 construction, while `from_env()` degrades to the default with a warning on bad
-input, consistent with `sampling_ratio` (`Field(ge=0.0, le=1.0)` + `_as_float`
-fallback). `_hash_config()` (`setup.py:395`) serialises the whole model, so the
+input. Unlike `_as_float`, which only handles parse failures, the new helper
+also handles out-of-range values before model validation. `_hash_config()`
+(`setup.py:395`) serialises the whole model, so the
 idempotency check picks the new values up automatically.
 
 **Why bootstrap.py is untouched.** `_do_bootstrap()` (`bootstrap.py:62-108`)
 calls `ObservabilityConfig.from_env()` and, on the `otel` backend, passes that
 config straight to `setup_telemetry(config)`. The new fields ride that path
 with no code change; a test pins it (§4).
+
+### Routing compatibility and migration
+
+Nonempty `OTLP_TARGETS` replaces `OTEL_EXPORTER_OTLP_ENDPOINT` for **both**
+signals; the single endpoint is not an additional metrics destination. The
+G2 compatibility guarantee applies only when `otlp_targets=[]`.
+
+This changes the previously documented split configuration:
+
+| Configuration | Before FEAT-705 | After FEAT-705 |
+|---|---|---|
+| Endpoint = Prometheus; targets = OpenLIT | Metrics to Prometheus; traces to OpenLIT | Both signals to OpenLIT; no metrics to Prometheus |
+| Endpoint = Prometheus; targets empty; traces disabled | Metrics to Prometheus | Unchanged |
+| Endpoint = collector; targets empty | Both signals to collector | Unchanged |
+
+To preserve metrics-to-Prometheus and traces-to-OpenLIT routing, configure an
+OTLP collector with separate signal pipelines: metrics to Prometheus's OTLP
+receiver, traces to OpenLIT. Point `OTEL_EXPORTER_OTLP_ENDPOINT` at that
+collector, unset `OTLP_TARGETS` (or set it to `[]`), and enable both subscribers
+with `OBSERVABILITY_TRACES=true` and `OBSERVABILITY_METRICS=true`. Ensure trace
+sampling is nonzero if the old Prometheus-only example set it to `0.0`.
+Provisioning that collector is an operator prerequisite, not a new runtime
+dependency or implementation module in this feature.
+
+Listing Prometheus and OpenLIT together is not equivalent: both enabled
+signals go to each target, and Prometheus rejects `/v1/traces`. Global signal
+switches cannot express per-target routing. M4 must document this breaking
+change and migration in the README and architecture guide, with a migration
+pointer in the env example and Grafana guide.
 
 ### Component Diagram
 
@@ -291,6 +322,7 @@ New env keys (all optional, read by `from_env()`):
 - **Responsibility**: Drop every "code-only" / "metrics go to one endpoint only" caveat; document the three keys; present `OBSERVABILITY_TRACES=false` as the way to silence traces and `OBSERVABILITY_SAMPLING` as sampling.
 - **Depends on**: M1–M3 (documents what shipped).
 - **Interface Skeleton**: not code. Required content, per file:
+  - **Migration requirement** — apply §2's routing compatibility and migration contract to all four files. Update the architecture guide's endpoint table row at `:108` as well as its targets row; do not retain advice that the fallback endpoint still receives metrics when explicit targets are set.
   - **README.md** — `## navconfig / env-var keys` table (`README.md:217-233`) gains the three rows; the paragraph at `README.md:101-107` says `OTLP_TARGETS` fans out **traces and metrics** (one span processor and one metric reader per target); the field-table rows `README.md:201-202,211` gain "env: `OBSERVABILITY_…`" mentions; the note at `README.md:235` lists the new auto-boot keys.
   - **10-observability.md** — env block comment (`:64-71`) replaces the `enable_traces is a code-only field` justification with `OBSERVABILITY_TRACES=false`; the `OTLP_TARGETS` paragraph (`:84-88`) says metrics fan out too; table rows `:107,109` rewritten (`OBSERVABILITY_SAMPLING` is a sampling ratio; `OTLP_TARGETS` carries both signals; `OTEL_EXPORTER_OTLP_ENDPOINT` is the single implicit target); the blockquote `:112-117` becomes the three new rows plus "set `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS` to see metrics sooner than 60 s".
   - **env/.env.observability.example** — replace `OBSERVABILITY_SAMPLING=0.0` + its comment (`:28-32`) with `OBSERVABILITY_TRACES=false` + comment; add commented `OBSERVABILITY_METRICS=true` and `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS=60000` examples; fix line `:39` (`OTLP_TARGETS - multi-endpoint export; traces AND metrics`). Every uncommented key must be in `RECOGNISED_ENV_VARS` (M5).
@@ -316,10 +348,13 @@ New env keys (all optional, read by `from_env()`):
 | `TestMakeMetricExporters::test_endpoint_suffix_matches_single_helper` | M1 | one http target yields the same endpoint string as `make_metric_exporter(ObservabilityConfig(otlp_endpoint=…))` — the G2 byte-for-byte guarantee |
 | `TestMakeMetricExporters::test_grpc_protocol` | M1 | grpc branch builds the grpc exporter with bare endpoint and tuple headers |
 | `TestMakeMetricExporters::test_multiple_targets_preserve_order` | M1 | exporter order == target order |
-| `TestSetupTelemetryMetricsFanOut::test_two_targets_attach_two_metric_readers` | M2 | `setup_telemetry` with 2 `otlp_targets` → `len(otel_metrics.get_meter_provider()._all_metric_readers) == 2` (private attr verified on opentelemetry-sdk 1.45.1; assert `hasattr` first, same discipline as `conftest.py:43-53`) |
+| `TestSetupTelemetryMetricsFanOut::test_two_targets_attach_two_metric_readers` | M2 | `setup_telemetry` with 2 `otlp_targets` → `len(otel_metrics.get_meter_provider()._metric_readers) == 2` (private attr verified on opentelemetry-sdk 1.45.1; assert `hasattr` first, same discipline as `conftest.py:43-53`) |
 | `TestSetupTelemetryMetricsFanOut::test_single_endpoint_fallback_one_reader` | M2 | empty `otlp_targets` → exactly 1 reader |
 | `TestSetupTelemetryMetricsFanOut::test_readers_use_configured_interval` | M2 | `metric_export_interval_ms=5_000` reaches every reader (patch `PeriodicExportingMetricReader` where `setup.py` imports it and assert `export_interval_millis=5000` on each call) |
 | `TestSetupTelemetryMetricsFanOut::test_span_and_metric_target_counts_match` | M2 | 3 targets → 3 span processors **and** 3 metric readers |
+| `TestSetupTelemetryMetricsFanOut::test_reader_count_excludes_other_providers` | M2 | Keep an unrelated `MeterProvider` with an `InMemoryMetricReader` alive while configuring two targets. Assert the configured provider has exactly its two readers and excludes the unrelated reader; shut down the unrelated provider in `finally`. Do not mutate the SDK-wide registry |
+| `TestSetupTelemetryMetricsFanOut::test_explicit_targets_override_single_endpoint_for_both_signals` | M2 | Set `otlp_endpoint` to Prometheus and explicit targets to OpenLIT. Capture exporter constructor arguments at their origin modules; assert only OpenLIT receives both signal exporters and no metric exporter uses Prometheus. Use fake exporters to avoid network traffic |
+| `TestSetupTelemetryMetricsFanOut::test_signal_switches_skip_subscribers_keep_providers` | M2/M3 | Parametrize traces off, metrics off, and both off. Call real `setup_telemetry()` with fake exporters; assert the corresponding subscribers are absent while both SDK providers and their configured processors/readers still exist |
 | `test_from_env_reads_trace_and_metric_switches` | M3 | `OBSERVABILITY_TRACES=false`, `OBSERVABILITY_METRICS=0` → both fields `False` |
 | `test_from_env_reads_metric_export_interval` | M3 | `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS=5000` → `5000` |
 | `test_from_env_interval_bad_values_fall_back` (parametrized: `""`, `"abc"`, `"0"`, `"-5"`) | M3 | field stays `60_000`; non-blank bad values emit one `WARNING` on `parrot.observability.config` (`caplog`) |
@@ -334,7 +369,7 @@ New env keys (all optional, read by `from_env()`):
 
 | Test | Description |
 |---|---|
-| `tests/integration/observability/test_poc.py` (existing, unchanged) | Scenario 1 (`enable_metrics=False`) and Scenario 2 (`enable_traces=False`) keep passing; they prove the construct-but-skip-subscriber semantics this spec preserves |
+| `tests/integration/observability/test_poc.py` (existing, unchanged) | Scenarios 1 and 2 keep passing as subscriber-level regression coverage. They construct subscribers manually and do not exercise setup or its config switches; `test_signal_switches_skip_subscribers_keep_providers` in the unit-test table pins those semantics |
 
 ### Validation Contract
 
@@ -360,20 +395,27 @@ the OTel provider latches around every test (`conftest.py:75-82`) and pins
 start with `OBSERVABILITY` so the hermetic fixture clears them automatically
 (`conftest.py:122`).
 
+The reader-isolation regression adds an unrelated provider inside its test and
+owns its teardown. Existing global-reset fixtures do not clear the SDK-wide
+reader registry and must not be extended to do so. Every reader-count assertion
+uses the configured provider's own readers, regardless of other live providers.
+
 ---
 
 ## 5. Acceptance Criteria
 
 - [ ] AC1. `setup_telemetry()` with N `otlp_targets` registers a `MeterProvider` carrying exactly N `PeriodicExportingMetricReader`s, each wrapping an exporter built from that target's `endpoint` and `headers`.
-- [ ] AC2. With `otlp_targets=[]`, exactly one reader is built from `otlp_endpoint`/`otlp_headers`, and its http endpoint string equals what `make_metric_exporter()` produces for the same config (no behaviour change for every existing `.env`).
+- [ ] AC2. With `otlp_targets=[]`, exactly one reader is built from `otlp_endpoint`/`otlp_headers`, and its http endpoint string equals what `make_metric_exporter()` produces for the same config (endpoint-routing compatibility for existing configurations with empty targets only; see §2 migration).
 - [ ] AC3. Every reader uses `config.metric_export_interval_ms`; `shutdown_telemetry()` is unchanged and still flushes all readers (`MeterProvider.shutdown()`).
-- [ ] AC4. `from_env()` maps `OBSERVABILITY_TRACES`, `OBSERVABILITY_METRICS`, `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS` with the parsing rules in §2; absent keys yield `True`/`True`/`60_000`; bad interval strings fall back to `60_000` with one warning and never raise.
+- [ ] AC4. `from_env()` maps `OBSERVABILITY_TRACES`, `OBSERVABILITY_METRICS`, `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS` with the parsing rules in §2; absent keys yield `True`/`True`/`60_000`; non-blank invalid interval strings fall back to `60_000` with one warning and never raise for this key; absent or blank values use the default silently.
 - [ ] AC5. `ObservabilityConfig(metric_export_interval_ms=<=0)` raises `ValidationError`.
 - [ ] AC6. `OBSERVABILITY_ENABLED=true OBSERVABILITY_BACKEND=otel OBSERVABILITY_TRACES=false` reaches `setup_telemetry()` with `enable_traces=False` through `ensure_observability_bootstrapped()` with **no change** to `bootstrap.py` (`git diff --stat` shows no hunk there).
 - [ ] AC7. `env/.env.observability.example` uses `OBSERVABILITY_TRACES=false` instead of `OBSERVABILITY_SAMPLING=0.0`, documents the other two keys, and `test_env_contract.py` passes.
 - [ ] AC8. None of `observability/README.md`, `docs/architecture/10-observability.md`, `env/.env.observability.example`, `docker/grafana/README.md` still contains `code-only field`, `not settable from the environment`, `traces only, not metrics` or `only env-level way` (test-enforced).
 - [ ] AC9. `make_metric_exporter()` still exists with its current signature and `test_endpoint_composition.py` passes unchanged.
 - [ ] AC10. All files in the Validation Contract pass; `ruff check` clean on every touched Python file; no new third-party dependency.
+- [ ] AC11. With a distinct single endpoint and nonempty explicit targets, both signal exporters use only the explicit targets. Docs explain the breaking change for existing split routing and the collector migration in §2; they do not recommend keeping Prometheus solely in the fallback endpoint to preserve its metrics.
+- [ ] AC12. Reader-count tests remain correct with an unrelated live provider, use provider-local readers or constructor capture, and never count or clear the SDK-wide `_all_metric_readers` registry.
 
 ---
 
@@ -445,7 +487,7 @@ def _hash_config(config: ObservabilityConfig) -> str   # line 395
 def _do_bootstrap() -> None                        # line 62; config = ObservabilityConfig.from_env() at 67; setup_telemetry(config) at 89
 
 # opentelemetry-sdk 1.45.1 (installed; pyproject pins >=1.25,<2.0 at packages/ai-parrot/pyproject.toml:809)
-class MeterProvider:  __init__(..., metric_readers: Sequence[MetricReader] = (), ...);  ._all_metric_readers  (private, holds every reader)
+class MeterProvider:  __init__(..., metric_readers: Sequence[MetricReader] = (), ...);  ._metric_readers  (private, instance-owned attached readers)
 class PeriodicExportingMetricReader:  __init__(self, exporter, export_interval_millis: float | None = None, export_timeout_millis: float | None = None)
 ```
 
@@ -463,10 +505,10 @@ class PeriodicExportingMetricReader:  __init__(self, exporter, export_interval_m
 - ~~`CompositeMetricExporter` / `MultiMetricExporter`~~ — no such class in the OTel SDK or in parrot; fan-out is N readers on one `MeterProvider`.
 - ~~`OtlpTarget.protocol` / `OtlpTarget.export_interval_ms`~~ — per-target protocol/interval are out of scope (§1 Non-Goals); `OtlpTarget` has only `name`, `endpoint`, `headers`.
 - ~~`OBSERVABILITY_ENABLE_TRACES` / `OBSERVABILITY_METRIC_INTERVAL`~~ — the key names are exactly `OBSERVABILITY_TRACES`, `OBSERVABILITY_METRICS`, `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS`.
-- ~~`MeterProvider._sdk_config.metric_readers`~~ — on opentelemetry-sdk 1.45.1 `SdkConfiguration` has only `exemplar_filter`, `resource`, `views`; readers live in `MeterProvider._all_metric_readers`.
+- ~~`MeterProvider._sdk_config.metric_readers`~~ — on opentelemetry-sdk 1.45.1 `SdkConfiguration` has only `exemplar_filter`, `resource`, `views`; attached readers live in the instance’s `_metric_readers`. `_all_metric_readers` is a class-wide weak set for duplicate-registration detection, not a per-provider list.
 - ~~`config.py` events.py / `parrot.core.events.lifecycle.events`~~ — the typed events now come from `navigator_eventbus`; nothing in this feature touches them.
 - ~~`ensure_observability_bootstrapped(config=...)`~~ — takes no arguments (`bootstrap.py:41`); the env is the only input.
-- ~~a `from_env()` that raises~~ — every helper falls back to the default; keep it that way.
+- A blanket claim that `from_env()` never raises is incorrect: for example, `OBSERVABILITY_SAMPLING=2` parses but fails model validation. Only invalid values of the new interval key must fall back without raising.
 
 ### Edit Sites (Blueprint Anchors)
 
@@ -505,17 +547,17 @@ Verified against: `a32e7d22e`
 ### Patterns to Follow
 - **Copy the span path, don't redesign it.** `make_metric_exporters` is `make_span_exporters` with `trace_exporter`→`metric_exporter` and `/v1/traces`→`/v1/metrics`; the metrics block in `setup_telemetry` is the span loop at `setup.py:148-154` with readers instead of processors. Lazy imports inside functions, `# noqa: PLC0415`, as everywhere in the package.
 - **One log line per target** for metrics, mirroring `setup.py:150-154`, so the boot log shows both signal fan-outs.
-- **`from_env()` never raises.** Bad input → default + `logger.warning` on `parrot.observability.config` (same logger the `OTLP_TARGETS` branch uses, `config.py:353`).
+- **Invalid interval input must not raise.** Non-blank non-numeric or non-positive values of the new key → default + `logger.warning` on `parrot.observability.config` (same logger the `OTLP_TARGETS` branch uses, `config.py:353`).
 - **Patch at the origin module in tests.** `make_metric_exporter(s)` import the exporter class inside the function, so tests patch `opentelemetry.exporter.otlp.proto.http.metric_exporter.OTLPMetricExporter` (see `test_endpoint_composition.py:19-34`), and patch `PeriodicExportingMetricReader` on `opentelemetry.sdk.metrics.export` for the interval assertion.
-- **Private OTel attribute discipline.** `MeterProvider._all_metric_readers` is private; assert `hasattr` with an explanatory message before using it (the convention `conftest.py:43-53` sets).
+- **Private OTel attribute discipline.** Count only the provider instance’s `_metric_readers`; assert `hasattr` with an explanatory message before using it (the convention `conftest.py:43-53` sets). Never count or clear `_all_metric_readers`: it is a process-wide weak set shared by all providers, and shutdown does not remove its entries. Constructor-argument capture is also valid when testing reader wiring.
 - Docs stay in the existing register: short, table-first, line references to code where the current docs have them (update the `config.py:NNN` references you touch, since §3 moves `metric_export_interval_ms` by zero lines but `from_env`'s body grows).
 
 ### Known Risks / Gotchas
 - **Prometheus has no `/v1/traces`.** With `OTEL_EXPORTER_OTLP_ENDPOINT` pointed at Prometheus and traces left on, every span batch 404s — today's docs solve it with sampling 0.0; after this feature the documented answer is `OBSERVABILITY_TRACES=false`. Keep `OBSERVABILITY_SAMPLING=0.0` working (it does; nothing changes in the sampler) so existing `.env` files are not broken.
-- **Fan-out is symmetric, which can be surprising.** After this feature, `OTLP_TARGETS=[prometheus, openlit]` sends *metrics* to OpenLIT too. OpenLIT accepts OTLP metrics, so this is harmless, but the docs must say "both signals go to every target" so operators who want traces-only to OpenLIT know to keep Prometheus on `OTEL_EXPORTER_OTLP_ENDPOINT` and not list it twice. Listing the same endpoint twice means duplicate pushes — mention it.
+- **Fan-out changes existing split routing.** Explicit targets replace the single endpoint for both signals; keeping Prometheus only in `OTEL_EXPORTER_OTLP_ENDPOINT` while listing OpenLIT in `OTLP_TARGETS` drops Prometheus metrics. Follow the collector migration in §2 for separate destinations. Listing Prometheus alongside OpenLIT sends traces to Prometheus too; it is not a supported split-routing workaround. Duplicate entries inside `OTLP_TARGETS` produce duplicate pushes, but an endpoint also present in the ignored fallback does not.
 - **N readers = N export threads.** Each `PeriodicExportingMetricReader` runs its own timer thread and collects the provider's instruments independently; with 2–3 targets this is negligible, with a long list it is N collections per interval. Note it in the README; no cap is enforced (same as span processors today).
 - **Idempotency hash.** `_hash_config` serialises every field, so merely *reading* the new env keys cannot change the hash of an unchanged `.env`; but a test that sets `OBSERVABILITY_TRACES` and reuses a cached provider from a previous test would hit `ConfigurationError` — the `conftest.py` autouse reset already prevents this.
-- **`Field(gt=0)` is a behaviour change for programmatic misuse.** `ObservabilityConfig(metric_export_interval_ms=0)` used to "work" (the OTel reader would export continuously); it now raises. No in-repo caller passes `<= 0` (`grep -rn metric_export_interval_ms` finds only the field, `setup.py:204`, `test_config.py:28`, docs).
+- **`Field(gt=0)` is a behaviour change for programmatic misuse.** `ObservabilityConfig(metric_export_interval_ms=0)` previously passed model validation, but the OTel reader rejects non-positive intervals during setup; it now raises earlier, at config construction. No in-repo caller passes `<= 0` (`grep -rn metric_export_interval_ms` finds only the field, `setup.py:204`, `test_config.py:28`, docs).
 - **`test_env_contract.py` is a tripwire.** Adding a key to the example file without extending `RECOGNISED_ENV_VARS` fails `test_every_declared_key_is_read_by_from_env`. That is intentional (FEAT-548 AC-2); M4 and M5 land in the same task or the test set is red between them.
 
 ### External Dependencies
@@ -544,8 +586,8 @@ No new dependency.
 
 ## 8. Open Questions
 
-- [x] Q1. Should `enable_traces=False` / `enable_metrics=False` also skip building the `TracerProvider` / `MeterProvider` and their exporters? — *Resolved at spec time (author)*: **No.** Keep today's construct-but-skip-subscriber semantics (`setup.py:235-256`, pinned by `test_poc.py` scenarios 1–2). Without a subscriber no parrot spans/points exist, so nothing is exported; changing construction would widen the diff and risk the global-provider latch behaviour the test suite resets around. Revisit only if a non-parrot span source on the global tracer turns out to matter.
-- [x] Q2. Fallback or raise on a bad `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS`? — *Resolved at spec time (author)*: fall back to the default with a warning (G4); `from_env()` never raises, and the auto-boot swallows exceptions at DEBUG (`bootstrap.py:56-57`), which would otherwise silently disable observability on a typo.
+- [x] Q1. Should `enable_traces=False` / `enable_metrics=False` also skip building the `TracerProvider` / `MeterProvider` and their exporters? — *Resolved at spec time (author)*: **No.** Keep today's construct-but-skip-subscriber semantics (`setup.py:235-256`, to be pinned by `test_signal_switches_skip_subscribers_keep_providers`; the PoC scenarios only exercise subscribers directly). Without a subscriber no parrot spans/points exist, so nothing is exported; changing construction would widen the diff and risk the global-provider latch behaviour the test suite resets around. Revisit only if a non-parrot span source on the global tracer turns out to matter.
+- [x] Q2. Fallback or raise on a bad `OBSERVABILITY_METRIC_EXPORT_INTERVAL_MS`? — *Resolved at spec time (author)*: fall back to the default with a warning (G4); invalid values of this new key must not raise, because the auto-boot swallows exceptions at DEBUG (`bootstrap.py:56-57`), which would otherwise silently disable observability on a typo.
 - [x] Q3. Keep `make_metric_exporter()`? — *Resolved at spec time (author)*: yes, unchanged; it is the single-config helper that `test_endpoint_composition.py` uses to pin the Prometheus endpoint composition (FEAT-548 AC-1), and `make_metric_exporters` must produce the identical string for one target (AC2).
 - [ ] Q4. Should `docker/grafana/README.md`'s `.env` block keep `OBSERVABILITY_SAMPLING=0.0` alongside `OBSERVABILITY_TRACES=false` for one release as a belt-and-braces example, or switch outright? — *Owner: Jesus Lara* (does not block implementation; default is switch outright, consistent with `env/.env.observability.example`).
 
@@ -569,3 +611,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-19 | Jesus Lara | Initial draft (seeded from inline notes; closes the two gaps FEAT-548 left documented) |
+| 0.2 | 2026-10-19 | Codex | Resolve review issues `a6bdcdea233a` and `d2985cf2a1bc`: explicit routing migration, provider-local reader contracts and regression tests; correct env-validation and PoC coverage claims. |
