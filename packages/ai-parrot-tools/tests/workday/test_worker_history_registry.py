@@ -1,4 +1,5 @@
 """FEAT-706 — routing, registry and fetch_models round-trip for the worker-history operations."""
+
 from datetime import date
 import logging
 
@@ -37,13 +38,13 @@ def test_type_handlers_registered():
         token_url="https://example.invalid/token",
         refresh_token="r",
         tenant="t",
-        workday_url="https://example.invalid"
+        workday_url="https://example.invalid",
     )
-    
+
     # Test with get_worker_event_history
     svc1 = WorkdayService(config=config, operation_type="get_worker_event_history")
     assert isinstance(svc1._type_handlers[KEYS[0]], WorkerEventHistoryType)
-    
+
     # Test with get_worker_job_changes
     svc2 = WorkdayService(config=config, operation_type="get_worker_job_changes")
     assert isinstance(svc2._type_handlers[KEYS[1]], WorkerJobChangesType)
@@ -55,26 +56,14 @@ async def test_fetch_models_roundtrip(monkeypatch):
     #   build a JobChange(kind="change", before=JobSnapshot(...), after=JobSnapshot(...), changes=[FieldChange(...)]);
     #   fake fetch returns pd.DataFrame([jc.model_dump()]); models = await svc.fetch_models("get_worker_job_changes");
     #   assert models == [jc] (nested before/after/changes intact).
-    
+
     # Create a JobChange with nested data
-    before_snapshot = JobSnapshot(
-        as_of=date(2023, 1, 1),
-        position_id="P1",
-        position_title="Developer"
-    )
-    
-    after_snapshot = JobSnapshot(
-        as_of=date(2023, 2, 1),
-        position_id="P2",
-        position_title="Senior Developer"
-    )
-    
-    field_change = FieldChange(
-        field="position_title",
-        before="Developer",
-        after="Senior Developer"
-    )
-    
+    before_snapshot = JobSnapshot(as_of=date(2023, 1, 1), position_id="P1", position_title="Developer")
+
+    after_snapshot = JobSnapshot(as_of=date(2023, 2, 1), position_id="P2", position_title="Senior Developer")
+
+    field_change = FieldChange(field="position_title", before="Developer", after="Senior Developer")
+
     jc = JobChange(
         worker_wid="W123",
         effective_date=date(2023, 2, 1),
@@ -84,13 +73,13 @@ async def test_fetch_models_roundtrip(monkeypatch):
         descriptions=["Promotion"],
         before=before_snapshot,
         after=after_snapshot,
-        changes=[field_change]
+        changes=[field_change],
     )
-    
+
     # Mock the fetch method to return our test data
     async def mock_fetch(operation_type, **params):
         return pd.DataFrame([jc.model_dump()])
-    
+
     # Set up the service with minimal config
     config = WorkdayConfig(
         client_id="cid",
@@ -98,13 +87,13 @@ async def test_fetch_models_roundtrip(monkeypatch):
         token_url="https://example.invalid/token",
         refresh_token="r",
         tenant="t",
-        workday_url="https://example.invalid"
+        workday_url="https://example.invalid",
     )
     svc = WorkdayService(config=config, operation_type="get_worker_job_changes")
     svc._logger = logging.getLogger("test")
-    
+
     monkeypatch.setattr(svc, "fetch", mock_fetch)
-    
+
     # Test the round-trip
     models = await svc.fetch_models("get_worker_job_changes")
     assert len(models) == 1
@@ -112,7 +101,7 @@ async def test_fetch_models_roundtrip(monkeypatch):
     assert models[0].worker_wid == jc.worker_wid
     assert models[0].effective_date == jc.effective_date
     assert models[0].kind == jc.kind
-    
+
     # Check nested data integrity
     assert models[0].before is not None
     assert models[0].before.position_id == "P1"
