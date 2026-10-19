@@ -129,7 +129,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
@@ -137,8 +137,9 @@
       "parallelism_notes": "No dependencies: ai-parrot-server only (scope.py, chat.py, agents/abstract.py); tests use a fake bot so the core tenant= kwarg from TASK-4496 is not required.",
       "assigned_to": null,
       "started_at": "2026-10-19T21:15:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4497-http-request-tenant-binding.md"
+      "completed_at": "2026-10-19T21:38:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4497-http-request-tenant-binding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4498",
@@ -167,7 +168,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -177,8 +178,9 @@
       "parallelism_notes": "Imports SkillView, discover_tenant_dirs, bind_skill_tenant, validate_tenant_id from TASK-4494 (skills/tenancy.py); first of three serialized mixin.py edits.",
       "assigned_to": null,
       "started_at": "2026-10-19T21:15:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4499-skill-mixin-tenant-core.md"
+      "completed_at": "2026-10-19T21:36:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4499-skill-mixin-tenant-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4500",
