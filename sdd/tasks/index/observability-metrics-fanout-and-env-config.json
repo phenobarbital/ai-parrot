@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-19T14:53:57+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-19T15:16:21+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -93,7 +93,7 @@
       "feature_id": "FEAT-705",
       "feature": "observability-metrics-fanout-and-env-config",
       "spec": "sdd/specs/observability-metrics-fanout-and-env-config.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -104,8 +104,9 @@
       "parallelism_notes": "Depends on TASK-4485: RECOGNISED_ENV_VARS may only list keys ObservabilityConfig.from_env() reads, and TASK-4485 adds OBSERVABILITY_TRACES/METRICS/METRIC_EXPORT_INTERVAL_MS to config.py. Depends on TASK-4484: documents the per-target metric reader fan-out it implements in setup.py.",
       "assigned_to": null,
       "started_at": "2026-10-19T14:58:17+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4486-observability-docs-env-contract.md"
+      "completed_at": "2026-10-19T15:16:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4486-observability-docs-env-contract.md",
+      "verification": "verified"
     }
   ]
 }
