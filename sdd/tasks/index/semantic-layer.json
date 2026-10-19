@@ -251,7 +251,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -261,8 +261,9 @@
       "parallelism_notes": "raises SemanticExecutionError from TASK-4464 (parrot/semantic/errors.py) for audit_unavailable; otherwise self-contained",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4474-semantic-audit-ledger.md"
+      "completed_at": "2026-10-19T12:47:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4474-semantic-audit-ledger.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4475",

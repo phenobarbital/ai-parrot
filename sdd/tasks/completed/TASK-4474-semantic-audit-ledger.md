@@ -268,9 +268,12 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4474
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: opus (native) · Attempts: 1 · Tokens: 56k
+- Validation: merge-tier ad0839b5:wave3:merge completed exit 0 (12 passed).
+- Review: coder-review:22fa92a2043aec3fce7e4d58 — no corrections.
+- **Deviation**: SemanticAuditLedger.verify is `async def` (spec §3 skeleton shows sync `def verify(...) -> bool`). Forced: core AbstractKMSSigner.sign/verify are async (parrot/security/audit_ledger.py). Callers must `await ledger.verify(entry)`.
+- Unspecified behaviour: append(required=True) with no storage configured raises SemanticExecutionError('audit_unavailable') (fail-closed).
