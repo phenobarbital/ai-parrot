@@ -51,6 +51,13 @@ from parrot.tools.databasequery.toolkit import DatabaseQueryToolkit   # verified
 #             tools invoked through get_tools() so _pre_execute receives _permission_context (toolkit.py:174-178)
 ```
 
+### DuckDB driver workaround (added 2026-10-19)
+- The core `DatabaseQueryToolkit().get_source("duckdb").query(...)` is broken in this environment
+  (`await conn.fetch_all()` on a list — issue:58d44d14dd8a; out of scope here). Patch the toolkit's duckdb
+  source `query` exactly as `packages/ai-parrot-semantic/tests/test_execution.py` does (in-process `duckdb`
+  executing the GOVERNED SQL against the fixture file and returning a real `QueryResult`). Assert on rows
+  computed by DuckDB from the governed SQL — never stub rows. Record the workaround in your summary.
+
 ### Does NOT Exist
 - ~~Calling tool methods directly to test PBAC~~ — direct calls bypass `_pre_execute`; invoke through the generated `ToolkitTool.execute(..., _permission_context=pctx)` path.
 - ~~A real Postgres/BigQuery~~ — DuckDB only (SQL snapshots cover other dialects).
