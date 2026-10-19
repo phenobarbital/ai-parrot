@@ -281,9 +281,10 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4465
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 341.3s · Tokens: n/a
+- Validation: merge-tier ad0839b5:wave3:merge completed exit 0 (12 passed).
+- Review: coder-review:b28abef8d685be35d1d732de — fail-closed policy loader verified, no corrections.
