@@ -133,6 +133,7 @@ ignore = [
 "langchain_community".msg = "LangChain was removed; use parrot primitives."
 "langgraph".msg           = "LangGraph is banned; use AgentsFlow / AgentCrew (parrot.bots.flows)."
 "langsmith".msg           = "LangSmith is banned; use parrot observability."
+"sidemantic".msg          = "AGPL-3.0 dependency confined to ai-parrot-semantic; import it only under packages/ai-parrot-semantic/."
 
 [lint.per-file-ignores]
 # PEP 420 namespace packages and deliberate re-export surfaces: these
@@ -146,6 +147,9 @@ ignore = [
 # readable.
 "**/tests/**/*.py" = ["F401", "F811", "F841", "B011", "B017", "ASYNC230", "ASYNC240"]
 "**/conftest.py" = ["F401", "F403"]
+
+# FEAT-704: the AGPL sidemantic dependency may be imported only inside its satellite.
+"packages/ai-parrot-semantic/**" = ["TID251"]
 
 # Examples are illustrative snippets, not shipped code.
 "examples/**/*.py" = ["F401", "F841", "E402"]

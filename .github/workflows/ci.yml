@@ -505,6 +505,44 @@ jobs:
       - name: Run tool-optimizations tests
         run: uv run pytest packages/ai-parrot-tools/tests/tool_optimizations -q --tb=short
 
+  test-semantic:
+    name: "Test ai-parrot-semantic (Python ${{ matrix.python-version }})"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libffi-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "latest"
+
+      # FEAT-704: separate job — the tool-optimizations job syncs only
+      # ai-parrot-tools, so sidemantic would be missing there.
+      - name: Sync semantic package
+        run: uv sync --package ai-parrot-semantic --extra duckdb
+
+      - name: Scaffold NavConfig environment
+        run: mkdir -p env/dev && touch env/dev/.env
+
+      - name: Run semantic-layer tests
+        run: uv run pytest packages/ai-parrot-semantic/tests -q --tb=short
+
   test-loaders:
     name: "Test ai-parrot-loaders (Python ${{ matrix.python-version }})"
     runs-on: ubuntu-latest
