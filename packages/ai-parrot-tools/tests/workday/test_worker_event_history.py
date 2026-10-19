@@ -18,7 +18,10 @@ WID = "0123456789abcdef0123456789abcdef"
 
 
 def _ref(**ids):
-    return {"ID": [{"type": identifier_type, "_value_1": value} for identifier_type, value in ids.items()], "Descriptor": None}
+    return {
+        "ID": [{"type": identifier_type, "_value_1": value} for identifier_type, value in ids.items()],
+        "Descriptor": None,
+    }
 
 
 WORKER_RESPONSE = {
@@ -37,12 +40,48 @@ WORKER_RESPONSE = {
 EVENT_HISTORY_RESPONSE = {
     "Worker_Event_History_Data": {
         "Event_Data": [
-            {"Event_ID": "EV-1", "Event_Type_Reference": {"Event_Type_Name": "Change Job"}, "Description": "Job change", "Completed_DateTime": datetime(2026, 6, 9, 9), "Effective_Date": date(2026, 6, 8)},
-            {"Event_ID": "EV-2", "Event_Type_Reference": {"Event_Type_Name": "Hire"}, "Description": "Hire", "Completed_DateTime": datetime(2022, 9, 27, 9), "Effective_Date": date(2022, 9, 26)},
-            {"Event_ID": "EV-3", "Event_Type_Reference": {"Event_Type_Name": "Enter Time"}, "Description": "Time", "Completed_DateTime": datetime(2026, 5, 1, 9), "Effective_Date": date(2026, 5, 1)},
-            {"Event_ID": "EV-4", "Event_Type_Reference": {"Event_Type_Name": "Change Job"}, "Description": "Another job change", "Completed_DateTime": datetime(2026, 6, 8, 10), "Effective_Date": date(2026, 6, 8)},
-            {"Event_ID": "EV-5", "Event_Type_Reference": {"Event_Type_Name": "Change Organization Assignments for Worker"}, "Description": "Organization", "Completed_DateTime": datetime(2026, 5, 1, 8), "Effective_Date": date(2026, 5, 1)},
-            {"Event_ID": "EV-6", "Event_Type_Reference": {"Event_Type_Name": "Edit Position"}, "Description": "Position", "Completed_DateTime": datetime(2026, 7, 1, 9), "Effective_Date": date(2026, 7, 1)},
+            {
+                "Event_ID": "EV-1",
+                "Event_Type_Reference": {"Event_Type_Name": "Change Job"},
+                "Description": "Job change",
+                "Completed_DateTime": datetime(2026, 6, 9, 9),
+                "Effective_Date": date(2026, 6, 8),
+            },
+            {
+                "Event_ID": "EV-2",
+                "Event_Type_Reference": {"Event_Type_Name": "Hire"},
+                "Description": "Hire",
+                "Completed_DateTime": datetime(2022, 9, 27, 9),
+                "Effective_Date": date(2022, 9, 26),
+            },
+            {
+                "Event_ID": "EV-3",
+                "Event_Type_Reference": {"Event_Type_Name": "Enter Time"},
+                "Description": "Time",
+                "Completed_DateTime": datetime(2026, 5, 1, 9),
+                "Effective_Date": date(2026, 5, 1),
+            },
+            {
+                "Event_ID": "EV-4",
+                "Event_Type_Reference": {"Event_Type_Name": "Change Job"},
+                "Description": "Another job change",
+                "Completed_DateTime": datetime(2026, 6, 8, 10),
+                "Effective_Date": date(2026, 6, 8),
+            },
+            {
+                "Event_ID": "EV-5",
+                "Event_Type_Reference": {"Event_Type_Name": "Change Organization Assignments for Worker"},
+                "Description": "Organization",
+                "Completed_DateTime": datetime(2026, 5, 1, 8),
+                "Effective_Date": date(2026, 5, 1),
+            },
+            {
+                "Event_ID": "EV-6",
+                "Event_Type_Reference": {"Event_Type_Name": "Edit Position"},
+                "Description": "Position",
+                "Completed_DateTime": datetime(2026, 7, 1, 9),
+                "Effective_Date": date(2026, 7, 1),
+            },
         ]
     }
 }
@@ -84,12 +123,16 @@ def test_candidate_worker_id_types():
 
 def test_build_event_history_worker_reference_employee():
     ref = ResolvedWorkerReference(wid=WID, employee_id="100001")
-    assert build_event_history_worker_reference(ref) == {"Employee_Reference": {"Integration_ID_Reference": {"ID": {"_value_1": WID, "System_ID": "WD-WID"}}}}
+    assert build_event_history_worker_reference(ref) == {
+        "Employee_Reference": {"Integration_ID_Reference": {"ID": {"_value_1": WID, "System_ID": "WD-WID"}}}
+    }
 
 
 def test_build_event_history_worker_reference_contingent():
     ref = ResolvedWorkerReference(wid=WID, contingent_worker_id="CW-1")
-    assert build_event_history_worker_reference(ref) == {"Contingent_Worker_Reference": {"Integration_ID_Reference": {"ID": {"_value_1": WID, "System_ID": "WD-WID"}}}}
+    assert build_event_history_worker_reference(ref) == {
+        "Contingent_Worker_Reference": {"Integration_ID_Reference": {"ID": {"_value_1": WID, "System_ID": "WD-WID"}}}
+    }
 
 
 def test_build_event_date_range_pairs():
@@ -132,14 +175,23 @@ async def test_resolve_worker_reference_contingent_fallback():
         "Response_Data": {
             "Worker": {
                 "Worker_Reference": _ref(WID=WID, Contingent_Worker_ID="CW-1"),
-                "Worker_Data": {"Personal_Data": {"Name_Data": {"Legal_Name_Data": {"Name_Detail_Data": {"Formatted_Name": "Jane Doe"}}}}},
+                "Worker_Data": {
+                    "Personal_Data": {
+                        "Name_Data": {"Legal_Name_Data": {"Name_Detail_Data": {"Formatted_Name": "Jane Doe"}}}
+                    }
+                },
             }
         }
     }
-    service = _FakeService(faults_by_id_type={"Employee_ID": [_invalid("Employee_ID")], "Contingent_Worker_ID": [contingent_response]})
+    service = _FakeService(
+        faults_by_id_type={"Employee_ID": [_invalid("Employee_ID")], "Contingent_Worker_ID": [contingent_response]}
+    )
     resolved = await resolve_worker_reference(service, "CW-1")
     assert resolved.contingent_worker_id == "CW-1"
-    assert [call[1]["Request_References"]["Worker_Reference"][0]["ID"]["type"] for call in service.calls] == ["Employee_ID", "Contingent_Worker_ID"]
+    assert [call[1]["Request_References"]["Worker_Reference"][0]["ID"]["type"] for call in service.calls] == [
+        "Employee_ID",
+        "Contingent_Worker_ID",
+    ]
 
 
 @pytest.mark.asyncio
@@ -148,7 +200,12 @@ async def test_resolve_worker_reference_not_found():
     with pytest.raises(LookupError):
         await resolve_worker_reference(service, "missing", "Employee_ID")
 
-    rejected = _FakeService(faults_by_id_type={"Employee_ID": [_invalid("Employee_ID")], "Contingent_Worker_ID": [_invalid("Contingent_Worker_ID")]})
+    rejected = _FakeService(
+        faults_by_id_type={
+            "Employee_ID": [_invalid("Employee_ID")],
+            "Contingent_Worker_ID": [_invalid("Contingent_Worker_ID")],
+        }
+    )
     with pytest.raises(LookupError):
         await resolve_worker_reference(rejected, "missing")
 
