@@ -98,9 +98,7 @@ class SemanticLayerToolkit(AbstractToolkit):
         self._executor = Executor(database_toolkit or DatabaseQueryToolkit(), ConnectionResolver())
         self._static_subject = StaticSubject.model_validate(static_subject) if static_subject is not None else None
         self._audit_required = self._ledger.durable if audit_required is None else bool(audit_required)
-        self.logger.info(
-            "semantic audit_required=%s (durable sink=%s)", self._audit_required, self._ledger.durable
-        )
+        self.logger.info("semantic audit_required=%s (durable sink=%s)", self._audit_required, self._ledger.durable)
 
     async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
         """Set both ContextVars from the call context or configured static subject."""
