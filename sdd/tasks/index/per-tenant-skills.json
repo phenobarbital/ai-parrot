@@ -70,7 +70,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -80,8 +80,9 @@
       "parallelism_notes": "Needs SkillDefinition.global_only from TASK-4493 (skills/models.py) for collision rows C3/C4 in SkillView.compose().",
       "assigned_to": null,
       "started_at": "2026-10-19T21:15:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4494-skill-tenancy-primitives.md"
+      "completed_at": "2026-10-19T21:29:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4494-skill-tenancy-primitives.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4495",
