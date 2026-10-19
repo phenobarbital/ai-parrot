@@ -214,9 +214,11 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**:
-**Date**:
-**Notes**:
-**Deviations from spec**: none | describe if any
+- Task: TASK-4473
+- Feature: semantic-layer
+- Closed at (UTC): 2026-10-19
+- Fix commits: none
+- Seat: opus (native) · Attempts: 1 · Tokens: 61k
+- Validation: merge-tier ad0839b5:wave5:merge completed exit 0 (24 passed); full satellite suite after review fix 53 passed.
+- Review: coder-review:d50e7ac12860b5e38ad69018 — no corrections.
+- Deviations (recorded per blueprint): search() takes keyword-only authorized=; unknown model raises SemanticValidationError('unknown_model'); expanded saved query with offset but no order_by raises 'offset_requires_order_by'.

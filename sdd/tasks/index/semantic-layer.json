@@ -234,7 +234,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -244,8 +244,9 @@
       "parallelism_notes": "reads LoadedModel.members/policy from TASK-4467 (parrot/semantic/loader.py) and ModelPolicy.allowed_members/mask_for from TASK-4465; tests use TASK-4467's tests/_models.py",
       "assigned_to": null,
       "started_at": "2026-10-19T12:19:04+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4473-semantic-role-catalog.md"
+      "completed_at": "2026-10-19T13:10:59+00:00",
+      "file": "sdd/tasks/completed/TASK-4473-semantic-role-catalog.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4474",
