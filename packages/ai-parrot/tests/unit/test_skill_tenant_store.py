@@ -143,7 +143,9 @@ async def test_cleanup_closes_tenant_stores(host: tuple[SkillRegistryMixin, list
 @pytest.mark.asyncio
 async def test_flag_off_no_tenant_stores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The disabled flag preserves a global-only registry."""
-    factory = MagicMock(side_effect=lambda namespace, persistence_path=None, **_: FakeRegistry(namespace, persistence_path))
+    factory = MagicMock(
+        side_effect=lambda namespace, persistence_path=None, **_: FakeRegistry(namespace, persistence_path)
+    )
     monkeypatch.setattr("parrot.skills.mixin.create_skill_registry", factory)
 
     class Host(SkillRegistryMixin):

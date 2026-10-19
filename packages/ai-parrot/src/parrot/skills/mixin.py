@@ -785,8 +785,7 @@ category: {category}
                 max_results=max_results,
             )
             by_name = {
-                result.skill.metadata.name: (result, self._skill_registry.namespace)
-                for result in global_results
+                result.skill.metadata.name: (result, self._skill_registry.namespace) for result in global_results
             }
             by_name.update({result.skill.metadata.name: (result, registry.namespace) for result in tenant_results})
             results = sorted(by_name.values(), key=lambda item: item[0].relevance_score, reverse=True)[:max_results]
