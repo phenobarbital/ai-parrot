@@ -20,7 +20,8 @@ tags: [workday, soap, worker-history, job-changes, toolkit]
 > **(2)** **job position / profile change detection** — the before/after
 > values of each job-related event (position, business title, job profile,
 > job family, management level, location, worker/time type, supervisory
-> organization, cost center, company, pay group, manager), reconstructed
+> organization, cost center, company, pay group, manager, and — opt-in —
+> compensation: wage, currency, frequency, package / grade / profile), reconstructed
 > from as-of-date `Get_Workers` snapshots because Workday exposes no read
 > operation that returns the delta of a `Change Job` event.
 >
@@ -67,7 +68,8 @@ references (never `WID`, which `Get_Workers` accepts directly), and
 
 - **G1 — Event history handler.** A composable handler
   `get_worker_event_history` (HR WSDL) that resolves any worker identifier
-  (WID, Employee ID, Contingent Worker ID) and returns the worker's events,
+  (WID, Employee ID, Contingent Worker ID — without the caller having to
+  state which) and returns the worker's events,
   optionally bounded by effective and/or updated date ranges, as a
   `DataFrame` / `list[WorkerEvent]`.
 - **G2 — Job change handler.** A composable handler
@@ -89,19 +91,27 @@ references (never `WID`, which `Get_Workers` accepts directly), and
 - **G5 — Reuse, don't re-parse.** Snapshot parsing composes the existing
   `parsers.worker_parsers` functions (`parse_employment_data`,
   `parse_worker_organization_data`, `parse_management_chain_data`,
-  `parse_business_site`, `parse_worker_status`) instead of adding a parallel
-  XML-path walker.
+  `parse_business_site`, `parse_worker_status`, and — opt-in —
+  `parse_compensation_data`) instead of adding a parallel XML-path walker.
 - **G6 — No live tenant in CI.** Every test runs against recorded,
   redacted SOAP response fixtures via the `_FakeService` /
   `_get_composable` monkeypatch patterns already used in
   `packages/ai-parrot-tools/tests/workday/`.
+- **G7 — Opt-in compensation delta.** `get_worker_job_changes(
+  include_compensation=True)` adds `Include_Compensation` to the snapshot
+  `Response_Group`, fills the compensation fields of `JobSnapshot` through
+  the existing `parse_compensation_data`, widens the default event filter
+  with the two compensation event types, and diffs pay like any other
+  field. Off by default: a default call never requests the compensation
+  security domain.
 
 ### Non-Goals (explicitly out of scope)
 
-- Compensation history (`Propose Compensation Change`,
-  `Request Compensation Change` deltas). `JobSnapshot` deliberately excludes
-  pay data; a compensation-diff follow-up can reuse the same snapshot/diff
-  engine with `Include_Compensation`.
+- A standalone compensation-history feed. Pay is diffed only through G7
+  (`include_compensation=True`, per effective date, same snapshot/diff
+  engine); bonus / one-time payment / stock plans beyond
+  `Salary_and_Hourly_Data` and the compensation summary totals are not
+  surfaced. The default `JobSnapshot` carries no pay data.
 - `Get_Previous_System_Job_History` (pre-Workday legacy job history). Not
   loaded in this tenant; separate operation, separate feature if needed.
 - The `Get_Workers` transaction log (`Include_Transaction_Log_Data` /
@@ -129,9 +139,14 @@ present in `humanresources_troc_44_2.wsdl`; verified with zeep on
 **Worker reference resolution (shared).** Both handlers start with one
 `Get_Workers` call (`Response_Group.Include_Reference=True`,
 `Include_Personal_Information=True`) using the caller's identifier typed as
-`WID`, `Employee_ID` or `Contingent_Worker_ID` (auto-detected when not
-given: a 32-character lowercase hex string is a WID, anything else an
-`Employee_ID`). The response's `Worker_Reference.ID[]` yields the WID, the
+`WID`, `Employee_ID` or `Contingent_Worker_ID`. When `worker_id_type` is not
+given, the candidates come from the value: a 32-character lowercase hex
+string is tried as `WID` only; anything else is tried as `Employee_ID`
+first and, when Workday rejects the reference with an `"Invalid ID value"`
+fault, as `Contingent_Worker_ID` — the same loop
+`WorkerType._fetch_single_worker` runs (`workers.py:101-130`), so a
+contingent worker costs one extra call and an employee none. An explicit
+`worker_id_type` disables the fallback. The response's `Worker_Reference.ID[]` yields the WID, the
 Employee ID or Contingent Worker ID, and the legal `Formatted_Name`. From
 then on every call uses the **WID**:
 
@@ -171,6 +186,23 @@ worker for a pre-hire as-of date) is reported with `kind="hire"` and
 `before=None`; a date whose diff is empty (e.g. a `Change Job` that only
 carried compensation / service-date edits) is `kind="no_change"` and is
 dropped unless `include_unchanged=True`.
+
+**Compensation opt-in (M3, G7).** `include_compensation=True` adds
+`Include_Compensation` to the snapshot `Response_Group`, runs the existing
+`parse_compensation_data` over each snapshot to fill the compensation
+fields of `JobSnapshot` (`wage`, `pay_currency`, `pay_frequency`,
+`compensation_package`, `compensation_grade`, `compensation_grade_profile`,
+`compensation_effective_date`, `compensation_elements`), and — unless the
+caller passed an explicit `event_types` — widens the default filter to
+`JOB_CHANGE_EVENT_TYPES + COMPENSATION_EVENT_TYPES` (`Propose Compensation
+Change`, `Request Compensation Change`) so a pay-only date is snapshotted
+too. `wage` / `pay_currency` / `pay_frequency` come from the first
+`Salary_and_Hourly_Data` node carrying an `Amount` (exactly what
+`parse_compensation_data` already does); `compensation_elements` keeps
+every node (`plan`, `element`, `amount`, `currency`, `frequency`) so
+allowance-level edits are still visible. With the default `False` the
+compensation fields stay `None` on both sides — hence never produce a
+`FieldChange` — and the compensation security domain is never requested.
 
 **Toolkit (M5).** `wd_get_worker_event_history` and
 `wd_get_worker_job_changes` are thin `@tool_schema` wrappers that call
@@ -219,7 +251,7 @@ WorkdayService (interfaces/workday/service.py)  ── get_wsdl_path() ──►
 ```python
 # parrot_tools/interfaces/workday/models/worker_event.py  (NEW — M1)
 from datetime import date, datetime
-from typing import Any, Literal, Optional
+from typing import Any, ClassVar, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -282,6 +314,15 @@ class JobSnapshot(BaseModel):
     # Worker_Status_Data (via parse_worker_status)
     active: Optional[bool] = None
     hire_date: Optional[str] = None
+    # Compensation_Data (via parse_compensation_data) — populated only with include_compensation=True
+    wage: Optional[float] = None
+    pay_currency: Optional[str] = None
+    pay_frequency: Optional[str] = None
+    compensation_package: Optional[str] = None
+    compensation_grade: Optional[str] = None
+    compensation_grade_profile: Optional[str] = None
+    compensation_effective_date: Optional[str] = None
+    compensation_elements: Optional[list[dict[str, Any]]] = None   # salary_and_hourly rows: plan, element, amount, currency, frequency
 
     DIFF_EXCLUDE: ClassVar[frozenset[str]] = frozenset({"as_of"})
 
@@ -303,6 +344,7 @@ class JobChange(BaseModel):
     before: Optional[JobSnapshot] = None
     after: JobSnapshot
     changes: list[FieldChange] = Field(default_factory=list)
+    includes_compensation: bool = False      # echoes the flag so consumers know None pay fields mean "not requested"
 ```
 
 ### New Public Interfaces
@@ -315,7 +357,7 @@ await svc.fetch("get_worker_event_history", worker_id=..., worker_id_type=None,
 await svc.fetch_models("get_worker_event_history", ...) -> list[WorkerEvent]
 await svc.fetch("get_worker_job_changes", worker_id=..., worker_id_type=None,
                 effective_from=None, effective_through=None,
-                event_types=JOB_CHANGE_EVENT_TYPES, include_unchanged=False) -> pd.DataFrame
+                event_types=None, include_unchanged=False, include_compensation=False) -> pd.DataFrame
 await svc.fetch_models("get_worker_job_changes", ...) -> list[JobChange]
 
 # WorkdayToolkit — two new agent tools (auto-exposed by AbstractToolkit):
@@ -324,7 +366,7 @@ await toolkit.wd_get_worker_event_history(worker_id, worker_id_type=None,
         updated_from=None, updated_through=None) -> List[Dict[str, Any]]
 await toolkit.wd_get_worker_job_changes(worker_id, worker_id_type=None,
         effective_from=None, effective_through=None,
-        include_unchanged=False) -> List[Dict[str, Any]]
+        include_unchanged=False, include_compensation=False) -> List[Dict[str, Any]]
 ```
 
 ---
@@ -336,8 +378,8 @@ await toolkit.wd_get_worker_job_changes(worker_id, worker_id_type=None,
 | Module | Eligible? | Decided patterns / exact contracts | Why not (if no) |
 |---|---|---|---|
 | M1: Models | yes | Pydantic v2 classes exactly as in §2 Data Models; `pydantic.BaseModel`, `Field`; no validators beyond type coercion | — |
-| M2: Event history handler | yes | `WorkdayTypeBase` subclass; request shapes fixed in §2 Overview and §6; `ValueError` on date-pair misuse; `LookupError` when `Get_Workers` returns no worker | — |
-| M3: Job changes handler | yes | Imports M2's `resolve_worker_reference` and `WorkerEventHistoryType`; snapshot `Response_Group` fixed; `asyncio.Semaphore(4)`; memo dict keyed by as-of date; diff excludes `as_of` | — |
+| M2: Event history handler | yes | `WorkdayTypeBase` subclass; request shapes fixed in §2 Overview and §6; candidate id types + `"Invalid ID value"` fallback loop copied from `workers.py:101-130`; `ValueError` on date-pair misuse; `LookupError` when every candidate is rejected or no worker is returned | — |
+| M3: Job changes handler | yes | Imports M2's `resolve_worker_reference` and `WorkerEventHistoryType`; snapshot `Response_Group` fixed (+ `Include_Compensation` when `include_compensation`); `parse_compensation_data` fills the pay fields; `asyncio.Semaphore(4)`; memo dict keyed by as-of date; diff excludes `as_of` | — |
 | M4: Registration | yes | Four edit sites in §6 Edit Sites; names fixed here | — |
 | M5: Toolkit tools | yes | Mirror `wd_get_position` (`tool.py:1258-1314`): `@tool_schema`, `_get_composable`, `fetch_models`, `model_dump(mode="json")` | — |
 | M6: Tests & docs | yes | Fixture + `_FakeService` + `monkeypatch _get_composable` patterns from existing tests; doc page path fixed | — |
@@ -364,6 +406,12 @@ await toolkit.wd_get_worker_job_changes(worker_id, worker_id_type=None,
       "Edit Position",
   )
   """Event_Type_Name values treated as job-related (all four observed live 2026-10-19)."""
+
+  COMPENSATION_EVENT_TYPES: tuple[str, ...] = (
+      "Propose Compensation Change",
+      "Request Compensation Change",
+  )
+  """Appended to the default filter only when include_compensation=True (both observed live 2026-10-19)."""
   ```
   ```python
   # parrot_tools/interfaces/workday/models/__init__.py  (modifies models/__init__.py:15, :36)
@@ -385,8 +433,11 @@ await toolkit.wd_get_worker_job_changes(worker_id, worker_id_type=None,
   WORKER_ID_TYPES: tuple[str, ...] = ("WID", "Employee_ID", "Contingent_Worker_ID")
   SYSTEM_ID_WID: str = "WD-WID"
 
-  def detect_worker_id_type(worker_id: str) -> str:
-      """Return "WID" for a 32-char lowercase-hex id, else "Employee_ID"."""
+  INVALID_ID_FAULT: str = "Invalid ID value"      # verified: workers.py:115
+
+  def candidate_worker_id_types(worker_id: str, worker_id_type: str | None = None) -> tuple[str, ...]:
+      """Explicit type → (type,); 32-char lowercase-hex id → ("WID",); anything else →
+      ("Employee_ID", "Contingent_Worker_ID"). Raises ValueError for an unknown explicit type."""
 
   def build_event_history_worker_reference(ref: ResolvedWorkerReference) -> dict:
       """Build the Worker_Reference choice element for Worker_Event_History_Get.
@@ -405,10 +456,13 @@ await toolkit.wd_get_worker_job_changes(worker_id, worker_id_type=None,
   async def resolve_worker_reference(
       service: Any, worker_id: str, worker_id_type: str | None = None,
   ) -> ResolvedWorkerReference:
-      """One Get_Workers call (Include_Reference + Include_Personal_Information) by the
-      given/auto-detected id type. Raises LookupError when no worker is returned and
-      ValueError for an unknown worker_id_type. Uses service.call_operation and
-      service.serialize_object (verified: service.py:319, :586)."""
+      """Try each candidate id type in order with one Get_Workers call each
+      (Include_Reference + Include_Personal_Information). A zeep Fault whose message
+      contains INVALID_ID_FAULT moves on to the next type (pattern: workers.py:111-118);
+      any other error propagates. Raises LookupError when every candidate was rejected
+      or the accepted response carries no worker, ValueError for an unknown
+      worker_id_type. Uses service.call_operation and service.serialize_object
+      (verified: service.py:319, :586)."""
 
   class WorkerEventHistoryType(WorkdayTypeBase):
       """Handler for ``get_worker_event_history`` (HR WSDL, Get_Worker_Event_History)."""
@@ -433,21 +487,25 @@ await toolkit.wd_get_worker_job_changes(worker_id, worker_id_type=None,
   # parrot_tools/interfaces/workday/handlers/worker_job_changes.py  (new)
   from .base import WorkdayTypeBase                                   # verified: handlers/base.py:11
   from .worker_event_history import WorkerEventHistoryType, resolve_worker_reference   # M2
-  from ..models.worker_event import JOB_CHANGE_EVENT_TYPES, FieldChange, JobChange, JobSnapshot, WorkerEvent  # M1
+  from ..models.worker_event import (                                  # M1
+      COMPENSATION_EVENT_TYPES, JOB_CHANGE_EVENT_TYPES, FieldChange, JobChange, JobSnapshot, WorkerEvent,
+  )
   from ..parsers.worker_parsers import (                               # verified: parsers/__init__.py:5-16
-      parse_business_site, parse_employment_data, parse_management_chain_data,
-      parse_worker_organization_data, parse_worker_status,
+      parse_business_site, parse_compensation_data, parse_employment_data,
+      parse_management_chain_data, parse_worker_organization_data, parse_worker_status,
   )
 
   SNAPSHOT_RESPONSE_GROUP: dict[str, bool] = {
       "Include_Reference": True, "Include_Employment_Information": True,
       "Include_Organizations": True, "Include_Management_Chain_Data": True,
   }
+  # + {"Include_Compensation": True} when include_compensation (pattern: workers.py:75)
 
-  def parse_job_snapshot(worker: dict[str, Any], as_of: date) -> JobSnapshot | None:
-      """Compose the five worker parsers over one serialized Get_Workers Worker element.
-      Returns None when the element has no Worker_Data.Employment_Data.Worker_Job_Data
-      (pre-hire as-of date)."""
+  def parse_job_snapshot(worker: dict[str, Any], as_of: date, include_compensation: bool = False) -> JobSnapshot | None:
+      """Compose the five worker parsers (six with include_compensation, adding
+      parse_compensation_data — verified: worker_parsers.py:757) over one serialized
+      Get_Workers Worker element. Returns None when the element has no
+      Worker_Data.Employment_Data.Worker_Job_Data (pre-hire as-of date)."""
 
   def diff_snapshots(before: JobSnapshot | None, after: JobSnapshot) -> list[FieldChange]:
       """Field-by-field comparison over JobSnapshot fields minus DIFF_EXCLUDE;
@@ -460,18 +518,20 @@ await toolkit.wd_get_worker_job_changes(worker_id, worker_id_type=None,
       """Handler for ``get_worker_job_changes`` (HR WSDL: Get_Worker_Event_History + as-of Get_Workers)."""
       snapshot_concurrency: int = 4
       def _get_default_payload(self) -> dict: ...        # {}
-      async def _snapshot(self, wid: str, as_of: date) -> JobSnapshot | None:
+      async def _snapshot(self, wid: str, as_of: date, include_compensation: bool = False) -> JobSnapshot | None:
           """Get_Workers by WID with Response_Filter.As_Of_Effective_Date=as_of (ISO string) and
-          SNAPSHOT_RESPONSE_GROUP; memoised per as_of for the lifetime of one execute()."""
+          SNAPSHOT_RESPONSE_GROUP (+ Include_Compensation when asked); memoised per as_of for
+          the lifetime of one execute()."""
       async def execute(
           self, worker_id: str, worker_id_type: str | None = None,
           effective_from: date | str | None = None, effective_through: date | str | None = None,
-          event_types: tuple[str, ...] = JOB_CHANGE_EVENT_TYPES, include_unchanged: bool = False,
-          **kwargs: Any,
+          event_types: tuple[str, ...] | None = None, include_unchanged: bool = False,
+          include_compensation: bool = False, **kwargs: Any,
       ) -> pd.DataFrame:
           """One JobChange row per distinct effective date, ascending; before = as_of - 1 day.
-          Rows with kind="no_change" are dropped unless include_unchanged. self.parsed holds
-          the list[JobChange]."""
+          event_types=None means JOB_CHANGE_EVENT_TYPES, plus COMPENSATION_EVENT_TYPES when
+          include_compensation. Rows with kind="no_change" are dropped unless include_unchanged.
+          self.parsed holds the list[JobChange]."""
   ```
 
 ### Module 4: Registration (service, config, package exports)
@@ -508,7 +568,7 @@ await toolkit.wd_get_worker_job_changes(worker_id, worker_id_type=None,
   class GetWorkerEventHistoryInput(BaseModel):   # pattern verified: tool.py:293-302
       """Input for retrieving a worker's Workday event history."""
       worker_id: str = Field(description="Worker WID, Employee ID or Contingent Worker ID")
-      worker_id_type: Optional[str] = Field(default=None, description="WID | Employee_ID | Contingent_Worker_ID (auto-detected when omitted)")
+      worker_id_type: Optional[str] = Field(default=None, description="WID | Employee_ID | Contingent_Worker_ID; omit to auto-detect (WID by shape, else Employee_ID then Contingent_Worker_ID)")
       effective_from: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires effective_through")
       effective_through: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires effective_from")
       updated_from: Optional[str] = Field(default=None, description="YYYY-MM-DD; requires updated_through")
@@ -521,6 +581,7 @@ await toolkit.wd_get_worker_job_changes(worker_id, worker_id_type=None,
       effective_from: Optional[str] = Field(default=None, ...)
       effective_through: Optional[str] = Field(default=None, ...)
       include_unchanged: bool = Field(default=False, description="Also return job events whose snapshots are identical")
+      include_compensation: bool = Field(default=False, description="Also snapshot and diff compensation (wage, currency, frequency, package/grade/profile) and include compensation-change events")
 
   class WorkdayToolkit(AbstractToolkit):                   # verified: tool.py:368
       @tool_schema(GetWorkerEventHistoryInput)             # tool_schema verified: tool.py:71
@@ -536,9 +597,10 @@ await toolkit.wd_get_worker_job_changes(worker_id, worker_id_type=None,
       @tool_schema(GetWorkerJobChangesInput)
       async def wd_get_worker_job_changes(self, worker_id: str, worker_id_type: Optional[str] = None,
               effective_from: Optional[str] = None, effective_through: Optional[str] = None,
-              include_unchanged: bool = False) -> List[Dict[str, Any]]:
-          """Get a worker's job position / job profile / organization changes over time.
-          Returns one dict per effective date with kind, before, after and changed fields."""
+              include_unchanged: bool = False, include_compensation: bool = False) -> List[Dict[str, Any]]:
+          """Get a worker's job position / job profile / organization changes over time,
+          optionally with compensation. Returns one dict per effective date with kind,
+          before, after and changed fields."""
   ```
 
 ### Module 6: Tests and documentation
@@ -554,15 +616,19 @@ await toolkit.wd_get_worker_job_changes(worker_id, worker_id_type=None,
 ### Unit Tests
 | Test | Module | Description |
 |---|---|---|
-| `test_detect_worker_id_type` | M2 | 32-hex → `WID`; `835104` → `Employee_ID` |
+| `test_candidate_worker_id_types` | M2 | 32-hex → `("WID",)`; `835104` → `("Employee_ID", "Contingent_Worker_ID")`; explicit type → that one only; unknown explicit type → `ValueError` |
 | `test_build_event_history_worker_reference_employee` / `_contingent` | M2 | choice element + `WD-WID` System_ID |
 | `test_build_event_date_range_pairs` | M2 | half-set pair, From > Through, future Updated_Through → `ValueError`; both pairs → 4 datetimes |
 | `test_resolve_worker_reference_by_wid` / `_by_employee_id` | M2 | request `ID.type` matches; returns wid/employee_id/name from fixture |
-| `test_resolve_worker_reference_not_found` | M2 | empty `Response_Data` → `LookupError` |
+| `test_resolve_worker_reference_contingent_fallback` | M2 | fake raises `Fault("... Invalid ID value ...")` for `Employee_ID` → second call uses `Contingent_Worker_ID`; exactly 2 calls; non-matching `Fault` propagates after 1 call |
+| `test_resolve_worker_reference_not_found` | M2 | empty `Response_Data` → `LookupError`; both candidates rejected → `LookupError` |
 | `test_event_history_execute_rows_sorted` | M2 | fixture of 6 events → DataFrame sorted; `parsed` is `list[WorkerEvent]` |
 | `test_event_history_passes_date_range` | M2 | `Event_Date_Range_Data` forwarded only when given |
 | `test_parse_job_snapshot_fields` | M3 | fixture (redacted live 2026-06-08 snapshot) → every `JobSnapshot` field |
 | `test_parse_job_snapshot_prehire_returns_none` | M3 | worker without `Worker_Job_Data` → `None` |
+| `test_parse_job_snapshot_compensation_opt_in` | M3 | fixture with `Compensation_Data`: default → all pay fields `None`; `include_compensation=True` → `wage`, `pay_currency`, `pay_frequency`, package/grade/profile, `compensation_elements` populated |
+| `test_snapshot_response_group_compensation_flag` | M3 | `Include_Compensation` present in `Response_Group` only when `include_compensation=True` |
+| `test_job_changes_compensation_diff` | M3 | 2026-05-25 fixture (same job, wage 20.00 → 22.00): default → `no_change` (dropped); `include_compensation=True` → `kind="change"` with `FieldChange(wage)` and `FieldChange(compensation_elements)`, `includes_compensation=True`; `Propose Compensation Change` dates enter the filter only with the flag |
 | `test_diff_snapshots` | M3 | position/title/profile change → 4 `FieldChange`; identical → `[]`; `as_of` never diffed |
 | `test_group_job_events_filters_and_groups` | M3 | 122-event fixture → 5 dates for the default types; custom tuple honoured |
 | `test_job_changes_execute_before_after` | M3 | fake service answering Get_Workers by `As_Of_Effective_Date` → `kind="change"` on 2026-06-08, `kind="hire"` on 2022-09-26, `no_change` dropped; call count = 1 + 1 + 2×dates |
@@ -607,7 +673,7 @@ EVENT_HISTORY_RESPONSE = {           # serialized Worker_Event_History (6 events
 
 SNAPSHOTS = {  # As_Of_Effective_Date → serialized Get_Workers response (Worker_Data with
     "2026-06-07": {...},  # Employment_Data.Worker_Job_Data[0].Position_Data, Organization_Data,
-    "2026-06-08": {...},  # Management_Chain_Data) — redacted copy of the prototype's live output
+    "2026-06-08": {...},  # Management_Chain_Data, Compensation_Data) — redacted copy of the prototype's live output
 }
 
 class _FakeService:   # pattern verified: test_payroll_handlers.py:18
@@ -623,18 +689,19 @@ class _FakeService:   # pattern verified: test_payroll_handlers.py:18
 
 - [ ] `get_wsdl_path("get_worker_event_history")` and `get_wsdl_path("get_worker_job_changes")` both return `WORKDAY_WSDL_HUMAN_RESOURCES`.
 - [ ] `WorkdayService._type_handlers` contains both keys; `_OPERATION_MODEL_MAP` maps them to `WorkerEvent` / `JobChange`; `fetch_models` returns typed instances with nested `before`/`after` intact.
-- [ ] `resolve_worker_reference` sends `ID.type` equal to the explicit or auto-detected type (`WID` for a 32-hex id, `Employee_ID` otherwise, `Contingent_Worker_ID` when requested) and returns the WID, Employee ID / Contingent Worker ID and formatted name; raises `LookupError` on no worker.
+- [ ] `resolve_worker_reference` sends `ID.type` equal to the explicit type when given; otherwise `WID` for a 32-hex id, else `Employee_ID` and — only after a `Fault` containing `"Invalid ID value"` — `Contingent_Worker_ID`. It returns the WID, Employee ID / Contingent Worker ID and formatted name; raises `LookupError` when every candidate is rejected or no worker is returned; any other `Fault` propagates unchanged.
 - [ ] `Get_Worker_Event_History` requests use `Employee_Reference` (or `Contingent_Worker_Reference` for contingent workers) → `Integration_ID_Reference.ID` with `_value_1=<wid>` and `System_ID="WD-WID"`.
 - [ ] Date-range validation raises `ValueError` client-side for a half-set pair, `From > Through`, or `Updated_Through` in the future; no SOAP call is made.
 - [ ] `WorkerEventHistoryType.execute` returns rows sorted by `(effective_date, completed_at)` with columns exactly `WorkerEvent.model_fields`.
 - [ ] `WorkerJobChangesType.execute` issues exactly `1 + 1 + 2 × (distinct effective dates)` SOAP calls before memoisation and never more than that after it; snapshots are fetched with `Response_Filter.As_Of_Effective_Date` as an ISO date string.
-- [ ] `JobSnapshot` is built only through `parse_employment_data`, `parse_business_site`, `parse_worker_organization_data`, `parse_management_chain_data`, `parse_worker_status` (no new XML-path walking of `Position_Data` / `Organization_Data`).
+- [ ] `JobSnapshot` is built only through `parse_employment_data`, `parse_business_site`, `parse_worker_organization_data`, `parse_management_chain_data`, `parse_worker_status` and, with `include_compensation=True`, `parse_compensation_data` (no new XML-path walking of `Position_Data` / `Organization_Data` / `Compensation_Data`).
+- [ ] With the default `include_compensation=False`, no `Get_Workers` request carries `Include_Compensation`, every `JobSnapshot` pay field is `None`, and no `FieldChange` names a pay field. With `True`, `Include_Compensation` is sent, the pay fields are populated, the default event filter includes `COMPENSATION_EVENT_TYPES`, and the 2026-05-25 fixture yields `kind="change"` with a `wage` `FieldChange`; `JobChange.includes_compensation` echoes the flag.
 - [ ] The end-to-end fixture reports for 2026-06-08: `kind="change"`, `FieldChange` rows for `position_id` (`MEX559647 → P104998`), `position_title`, `business_title`, `job_profile_name` (`Payroll Coordinator → Payroll Specialist`), and no `FieldChange` for unchanged organization fields.
 - [ ] The hire-date row has `kind="hire"`, `before=None`, `changes=[]`; `no_change` rows are absent by default and present with `include_unchanged=True`.
 - [ ] `WorkdayToolkit.get_tools()` exposes `wd_get_worker_event_history` and `wd_get_worker_job_changes`; both return `list[dict]` that `json.dumps` accepts.
 - [ ] No existing test under `packages/ai-parrot-tools/tests/workday/` changes behaviour (`test_worker_id_type_fallback.py` in particular is untouched).
 - [ ] `ruff check` passes on every touched file; no `requests`/`httpx`/LangChain imports.
-- [ ] `docs/tools/workday-worker-history.md` documents both tools, the WID/`WD-WID` resolution, the call budget formula, and the "references only, no delta" limitation of `Get_Worker_Event_History`.
+- [ ] `docs/tools/workday-worker-history.md` documents both tools, the WID/`WD-WID` resolution and the Employee→Contingent fallback, the `include_compensation` flag and its security-domain requirement, the call budget formula, and the "references only, no delta" limitation of `Get_Worker_Event_History`.
 
 ---
 
@@ -655,6 +722,7 @@ from parrot_tools.interfaces.workday.parsers.worker_parsers import (            
     parse_management_chain_data,      # worker_parsers.py:1292
     parse_worker_organization_data,   # worker_parsers.py:669
     parse_worker_reference,           # worker_parsers.py:260
+    parse_compensation_data,          # worker_parsers.py:757 (M3, include_compensation only)
 )
 from parrot_tools.interfaces.workday.models.worker import Worker                   # verified: models/worker.py:13
 from parrot_tools.workday.tool import WorkdayToolkit                               # verified: tool.py:368
@@ -694,7 +762,7 @@ def get_wsdl_path(operation_type: str) -> Any                                   
 # packages/ai-parrot-tools/src/parrot_tools/interfaces/workday/handlers/workers.py
 class WorkerType(WorkdayTypeBase)                                                  # __init__ line 36
     def _get_default_payload(self) -> Dict[str, Any]                               # line 46 — Request_Criteria + Response_Filter(As_Of 1y ahead) + Response_Group
-    async def _fetch_single_worker(self, worker_id: str, id_types: List[str]) -> Any   # line 87 — payload {"Request_References": {"Worker_Reference": [{"ID": {"type": id_type, "_value_1": worker_id}}]}}
+    async def _fetch_single_worker(self, worker_id: str, id_types: List[str]) -> Any   # line 87 — payload {"Request_References": {"Worker_Reference": [{"ID": {"type": id_type, "_value_1": worker_id}}]}}; `"Invalid ID value" in str(exc)` → next id type (line 115), else retry/raise; raises last_invalid at line 130 — M2 copies this loop, it does NOT import it
     async def execute(self, **kwargs) -> pd.DataFrame                              # line 132 — worker_id_type ∈ {Employee_ID, Contingent_Worker_ID}; WID is NOT tried (line 175)
 
 # packages/ai-parrot-tools/src/parrot_tools/interfaces/workday/parsers/worker_parsers.py  (all take the serialized Worker_Data dict)
@@ -704,6 +772,7 @@ def parse_worker_status(worker_data) -> Dict              # 1159 → keys: activ
 def parse_business_site(worker_data) -> Dict              # 1247 → business_site_name, business_site_location_id, …
 def parse_management_chain_data(worker_data) -> Dict      # 1292 → management_chain, direct_manager_id, direct_manager_name, matrix_management_chain   (return at 1395-1400)
 def parse_worker_reference(worker_response) -> Dict       # 260 — main Worker_Reference WID
+def parse_compensation_data(worker_data) -> Dict          # 757 → keys: wage (first Salary_and_Hourly node with Amount), compensation_effective_date, compensation_guidelines{package,grade,profile}, salary_and_hourly[{plan,element,amount,currency,frequency,assignment_effective_date}] (via _parse_salary_nodes:1675), compensation_summary, reason_references   (return at 815-825)
 
 # packages/ai-parrot-tools/src/parrot_tools/workday/tool.py
 class WorkdayToolkit(AbstractToolkit)                                              # line 368
@@ -735,6 +804,7 @@ request = {
     "Response_Filter": {"As_Of_Effective_Date": "2026-06-08"},          # ISO string accepted (pattern: workers.py:71)
     "Response_Group": {"Include_Reference": True, "Include_Employment_Information": True,
                        "Include_Organizations": True, "Include_Management_Chain_Data": True},
+    # + "Include_Compensation": True  (workers.py:75 already sends it) → Worker_Data.Compensation_Data.{Salary_and_Hourly_Data[], Compensation_Guidelines_Data[], Compensation_Effective_Date, Reason_Reference}
 }
 # serialized: Response_Data.Worker[0] → Worker_Reference.ID[] (types WID, Employee_ID), Worker_Data.{Personal_Data.Name_Data.Legal_Name_Data.Name_Detail_Data.Formatted_Name,
 #             Employment_Data.{Worker_Job_Data[0].Position_Data, Worker_Status_Data}, Organization_Data.Worker_Organization_Data[], Management_Chain_Data}
@@ -748,7 +818,7 @@ request = {
 | both handlers | `WorkdayService._type_handlers` | registry entries | `service.py:279-311` |
 | `WorkerEvent`, `JobChange` | `WorkdayService.fetch_models()` | `_OPERATION_MODEL_MAP` | `service.py:102-118`, `:359-396` |
 | both keys | `get_wsdl_path()` | `_WSDL_ROUTING` | `config.py:67-100` |
-| `parse_job_snapshot` | worker parsers | function calls on `Worker_Data` | `worker_parsers.py:669, :1030, :1159, :1247, :1292` |
+| `parse_job_snapshot` | worker parsers | function calls on `Worker_Data` | `worker_parsers.py:669, :1030, :1159, :1247, :1292` (+ `:757` with `include_compensation`) |
 | `wd_get_worker_*` tools | `WorkdayToolkit._get_composable()` | `await self._get_composable(<key>)` then `fetch_models` | `tool.py:484` |
 
 ### Does NOT Exist (Anti-Hallucination)
@@ -793,7 +863,7 @@ Verified against: `bc93fe741`
 
 ### Patterns to Follow
 - Handlers: subclass `WorkdayTypeBase`, override `_get_default_payload` to `{}` (unpaged ops) and implement `execute(**kwargs) -> pd.DataFrame`; keep the parsed Pydantic list on `self.parsed` (mirrors `payroll.py`). Use `self.service.call_operation` for every SOAP call and `self.service.serialize_object` for responses.
-- Wrap `zeep.exceptions.Fault` only where a specific message is expected (`"Invalid ID value"` → `LookupError`, pattern `tool.py:1303-1307`); let other faults propagate.
+- Wrap `zeep.exceptions.Fault` only where a specific message is expected: in `resolve_worker_reference` an `"Invalid ID value"` fault advances to the next candidate id type (loop copied from `workers.py:101-130`) and becomes `LookupError` once the candidates are exhausted (pattern `tool.py:1303-1307`); let other faults propagate.
 - Dates: accept `date | str` in handlers, normalise with `date.fromisoformat`; send `As_Of_Effective_Date` as an ISO string (as `workers.py:71` does) and `Event_Date_Range_Data` values as `datetime` (From at `00:00:00`, Through at `23:59:59`).
 - Toolkit tools: `@tool_schema(<Input>)`, `if not self._initialized: await self.wd_start()`, `svc = await self._get_composable(<key>)`, `fetch_models`, return `[m.model_dump(mode="json") for m in models]`.
 - Async-first, `self._logger` / `self.logger` only, Pydantic v2, Google docstrings, 120 columns, no `requests`/`httpx`.
@@ -801,7 +871,8 @@ Verified against: `bc93fe741`
 
 ### Known Risks / Gotchas
 - **`WD-WID` is the only verified `System_ID`.** `WD-EMPLID` (Employee ID as integration id) is the standard Workday value but was not exercised; the design avoids it entirely by resolving to a WID first. Do not add an Employee-ID fallback without a live check.
-- **Contingent branch untested live.** `Contingent_Worker_Reference` has the identical `Integration_ID_Reference` shape in the WSDL, but the tenant worker used was an employee. Covered by a fixture test only; flagged in the doc page.
+- **Contingent branch untested live.** `Contingent_Worker_Reference` has the identical `Integration_ID_Reference` shape in the WSDL, and the `Employee_ID → Contingent_Worker_ID` fallback relies on the same `"Invalid ID value"` fault text `WorkerType` already depends on (`workers.py:115`), but the tenant worker used was an employee. Both are covered by fixture tests only; flagged in the doc page.
+- **Compensation security domain.** `Include_Compensation` needs the integration user to hold the compensation domains; a tenant that denies them returns `Worker_Data` without `Compensation_Data` (pay fields `None`, no error) or a security `Fault`. The flag is opt-in precisely so the default call never depends on it; document the symptom. `wage` is the first `Salary_and_Hourly_Data` node with an `Amount` (parser behaviour, `worker_parsers.py:773-776`), so a worker with several plans still gets one scalar plus the full `compensation_elements` list.
 - **Pre-hire as-of snapshot.** `Get_Workers` as-of a date before the hire may return the worker with no `Worker_Job_Data`, or a validation `Fault`. `parse_job_snapshot` returns `None` for the former; `_snapshot` must map a `Fault` whose message contains `"Invalid ID value"` or an empty `Response_Data` to `None` as well, so the row becomes `kind="hire"` rather than an error.
 - **Same-day multiple positions.** `parse_employment_data` reads `Worker_Job_Data[0]` only (primary job). Additional jobs are out of scope; documented.
 - **`fetch_models` reconstruction.** `_record_to_model_kwargs` (`service.py:136`) rebuilds models from DataFrame rows; nested `before`/`after`/`changes` must survive as dicts/lists in the row (keep them as Python objects in the DataFrame, never JSON strings). AC covers the round-trip; if it fails, expose `handler.parsed` through `fetch_models` for these two keys instead of changing `_record_to_model_kwargs`.
@@ -823,9 +894,9 @@ No new dependencies.
 
 ## 8. Open Questions
 
-- [ ] Should `wd_get_worker_job_changes` also surface compensation deltas (`Include_Compensation` in the snapshot) behind an opt-in flag, or stay strictly job/org (current decision: strictly job/org; compensation is a follow-up)? — *Owner: Jesus Lara*
-- [ ] Default `worker_id_type` auto-detection treats any non-32-hex id as `Employee_ID`; contingent workers must pass `worker_id_type="Contingent_Worker_ID"` explicitly. Acceptable, or should the handler try `Contingent_Worker_ID` as a fallback like `WorkerType` does (one extra call on miss)? — *Owner: Jesus Lara*
-- [ ] Doc page location `docs/tools/workday-worker-history.md` (new directory) vs. the package-local `parrot_tools/workday/MULTI_WSDL_EXAMPLE.md` style — confirm before M6. — *Owner: Jesus Lara*
+- [x] Should `wd_get_worker_job_changes` also surface compensation deltas behind an opt-in flag? — *Resolved 2026-10-19 by Jesus Lara*: **yes, behind `include_compensation=False`.** Landed as G7, the §2 "Compensation opt-in" paragraph, the pay fields on `JobSnapshot`, `COMPENSATION_EVENT_TYPES` (M1), the `include_compensation` parameter on M3 / M5, three M3 tests and one acceptance criterion. Reuses `parse_compensation_data` (`worker_parsers.py:757`); no new parser.
+- [x] Should a non-WID id fall back from `Employee_ID` to `Contingent_Worker_ID` automatically? — *Resolved 2026-10-19 by Jesus Lara*: **yes, auto-fallback like `WorkerType`.** `candidate_worker_id_types` yields `("Employee_ID", "Contingent_Worker_ID")` for a non-32-hex id; `resolve_worker_reference` advances on an `"Invalid ID value"` fault (loop copied from `workers.py:101-130`, not imported); an explicit `worker_id_type` disables the fallback. One extra call only on a miss.
+- [x] Doc page location? — *Resolved 2026-10-19 by Jesus Lara*: **`docs/tools/workday-worker-history.md`** (new `docs/tools/` directory in the repo-wide docs tree, indexed by the wiki build). M6 path unchanged.
 
 ---
 
@@ -847,3 +918,4 @@ Summary: **0** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-19 | Jesus Lara / Claude | Initial draft from live WSDL + tenant verification |
+| 0.2 | 2026-10-19 | Jesus Lara / Claude | §8 resolved: opt-in `include_compensation` (G7), Employee→Contingent id fallback, docs path confirmed |
