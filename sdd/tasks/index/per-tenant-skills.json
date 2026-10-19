@@ -254,7 +254,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -267,8 +267,9 @@
       "parallelism_notes": "Edits mixin.py after TASK-4499 (same file, uses _tenant_views/_after_tenant_reload); uses tenant_layer_condition/global_layer_condition from TASK-4498, SkillFileToolkit(view_provider=) from TASK-4495, create_skill_trigger_middleware(view_provider=) from TASK-4501.",
       "assigned_to": null,
       "started_at": "2026-10-19T21:15:33+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4503-skill-mixin-tenant-wiring.md"
+      "completed_at": "2026-10-19T21:56:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4503-skill-mixin-tenant-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4504",
