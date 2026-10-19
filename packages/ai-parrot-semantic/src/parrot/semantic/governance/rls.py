@@ -1,4 +1,5 @@
 """RLS push-down: filtered base scans below aggregation, typed literals, fail closed."""
+
 from __future__ import annotations
 
 import logging

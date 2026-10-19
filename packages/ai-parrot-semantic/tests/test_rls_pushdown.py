@@ -1,4 +1,5 @@
 """RLS push-down tests for governed semantic SQL."""
+
 from __future__ import annotations
 
 from typing import Callable
@@ -13,7 +14,6 @@ from parrot.semantic.governance.rls import RlsPushdown
 from parrot.semantic.loader import PhysicalSchema
 
 from ._models import duckdb_warehouse  # noqa: F401
-
 
 SCHEMA = PhysicalSchema(
     driver="duckdb",
