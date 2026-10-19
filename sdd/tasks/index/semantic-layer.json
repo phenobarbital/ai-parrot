@@ -25,14 +25,14 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": false,
       "parallelism_notes": "exclusive: edits root pyproject.toml [tool.uv.sources] and uv.lock (workspace membership), ruff.toml TID251 table and .github/workflows/ci.yml; the main-checkout operator must install sidemantic==0.12.0 into the shared venv before any other task can import it",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4463-semantic-distribution-skeleton.md"
     },
@@ -43,7 +43,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -52,7 +52,7 @@
       "parallel": true,
       "parallelism_notes": "needs the parrot.semantic package root created by TASK-4463 (packages/ai-parrot-semantic/src/parrot/semantic/__init__.py) to import parrot.semantic.models/errors",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4464-semantic-query-contracts.md"
     },
@@ -63,7 +63,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -72,7 +72,7 @@
       "parallel": true,
       "parallelism_notes": "imports SemanticQuery, ModelMember, Limits and SemanticPolicyError from TASK-4464 (parrot/semantic/models.py, errors.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4465-semantic-model-policy.md"
     },
@@ -83,7 +83,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -92,7 +92,7 @@
       "parallel": true,
       "parallelism_notes": "imports SemanticPolicyError from TASK-4464 (parrot/semantic/errors.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4466-semantic-ossie-validation.md"
     },
@@ -103,7 +103,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -113,7 +113,7 @@
       "parallel": true,
       "parallelism_notes": "loads ModelPolicy via load_policy from TASK-4465 (parrot/semantic/policy.py); calls validate_ossie_document from TASK-4466 (parrot/semantic/ossie.py) and loads its fixture tests/fixtures/ossie/orders.ossie.json; the cache.py reference (TASK-4475) is a TYPE_CHECKING-only string annotation, not a use — no edge",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4467-semantic-loader-sidemantic-engine.md"
     },
@@ -124,7 +124,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "L",
       "depends_on": [
@@ -133,7 +133,7 @@
       "parallel": true,
       "parallelism_notes": "compiles a LoadedModel/PhysicalSchema from TASK-4467 (parrot/semantic/loader.py) and is imported lazily by its compile() dispatch (engines/__init__.py); parity tests use TASK-4467's tests/_models.py fixtures",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4468-semantic-native-compiler.md"
     },
@@ -144,7 +144,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -153,7 +153,7 @@
       "parallel": true,
       "parallelism_notes": "needs LoadedModel/PhysicalSchema from TASK-4467 (parrot/semantic/loader.py) and ModelPolicy.usage_allowed from TASK-4465 (reached through LoadedModel.policy); tests use TASK-4467's tests/_models.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4469-semantic-pbac-gate-lineage.md"
     },
@@ -164,7 +164,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -174,7 +174,7 @@
       "parallel": true,
       "parallelism_notes": "needs PhysicalSchema column types from TASK-4467 (parrot/semantic/loader.py) for typed literals and its tests/_models.py DuckDB fixture; lives in the governance/ subpackage whose __init__.py TASK-4469 creates (parrot/semantic/governance/__init__.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4470-semantic-rls-pushdown.md"
     },
@@ -185,7 +185,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -194,7 +194,7 @@
       "parallel": true,
       "parallelism_notes": "masking consumes ColumnUse from TASK-4469 (parrot/semantic/governance/lineage.py); guard uses PhysicalSchema/Limits/ModelPolicy from TASK-4467/4464/4465 reached through that chain",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4471-semantic-masking-positive-guard.md"
     },
@@ -205,7 +205,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -216,7 +216,7 @@
       "parallel": true,
       "parallelism_notes": "composes PbacGate/resources_from_ast + lineage from TASK-4469 (governance/pbac.py, lineage.py), RlsPushdown from TASK-4470 (governance/rls.py) and apply_masks/PositiveGuard from TASK-4471 (governance/masking.py, guard.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4472-semantic-governance-pipeline.md"
     },
@@ -227,7 +227,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -236,7 +236,7 @@
       "parallel": true,
       "parallelism_notes": "reads LoadedModel.members/policy from TASK-4467 (parrot/semantic/loader.py) and ModelPolicy.allowed_members/mask_for from TASK-4465; tests use TASK-4467's tests/_models.py",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4473-semantic-role-catalog.md"
     },
@@ -247,7 +247,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -256,7 +256,7 @@
       "parallel": true,
       "parallelism_notes": "raises SemanticExecutionError from TASK-4464 (parrot/semantic/errors.py) for audit_unavailable; otherwise self-contained",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4474-semantic-audit-ledger.md"
     },
@@ -267,7 +267,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -276,7 +276,7 @@
       "parallel": true,
       "parallelism_notes": "uses GovernedQuery/CompiledQuery and SemanticExecutionError from TASK-4464 (parrot/semantic/models.py, errors.py); the GovernedQuery contract is fixed by spec §2, so no edge to the governance tasks is needed",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4475-semantic-execution-compile-cache.md"
     },
@@ -287,7 +287,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -296,7 +296,7 @@
       "parallel": true,
       "parallelism_notes": "raises SemanticResultError from TASK-4464 (parrot/semantic/errors.py); subject_digest is passed in by the caller, so no edge to the governance tasks",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4476-semantic-result-handles.md"
     },
@@ -307,7 +307,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -321,7 +321,7 @@
       "parallel": true,
       "parallelism_notes": "orchestrates: native engine via engines.compile (TASK-4468, engines/native.py), GovernancePipeline/subject_digest (TASK-4472, governance/pipeline.py), RoleCatalog (TASK-4473, catalog.py), SemanticAuditLedger (TASK-4474, audit.py), Executor/ConnectionResolver/CompileCache (TASK-4475, execution.py/cache.py), ResultHandleStore (TASK-4476, results.py); modifies __init__.py created by TASK-4463",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4477-semantic-toolkit-core.md"
     },
@@ -332,7 +332,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -341,7 +341,7 @@
       "parallel": true,
       "parallelism_notes": "drives SemanticLayerToolkit.query_metrics/compile_query/get_dimension_values from TASK-4477 (parrot/semantic/toolkit.py) end to end with TASK-4467's DuckDB fixtures",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4478-semantic-e2e-security-suite.md"
     },
@@ -352,7 +352,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -361,7 +361,7 @@
       "parallel": true,
       "parallelism_notes": "modifies parrot/semantic/toolkit.py created by TASK-4477 and must only start once TASK-4478's e2e security suite (tests/test_e2e_governed.py) is green (spec Worktree Strategy: run_sql/save_result_as_dataset ship last)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4479-semantic-raw-sql-and-handoff.md"
     },
@@ -372,7 +372,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -381,7 +381,7 @@
       "parallel": true,
       "parallelism_notes": "calls SemanticLayerToolkit.compile_query/query_metrics (TASK-4477) and save_result_as_dataset (TASK-4479, parrot/semantic/toolkit.py) from the HTTP surface",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4480-semantic-http-handler.md"
     },
@@ -392,7 +392,7 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -401,7 +401,7 @@
       "parallel": true,
       "parallelism_notes": "documents and exercises the final tool set incl. sl_run_sql/sl_save_result_as_dataset exposure rules from TASK-4479 (parrot/semantic/toolkit.py)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4481-semantic-docs-mcp-local.md"
     },
@@ -412,14 +412,14 @@
       "feature_id": "FEAT-704",
       "feature": "semantic-layer",
       "spec": "sdd/specs/semantic-layer.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "no dependency: core-only edit of dataset_manager/sources/authorizing.py and handlers/datasets.py, files no other FEAT-704 task touches (TASK-4480 creates handlers/semantic.py and only imports datasets._resolve_dataset_manager)",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T12:19:04+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4482-core-request-scoped-rls-fix.md"
     }
