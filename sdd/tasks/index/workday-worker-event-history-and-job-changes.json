@@ -31,14 +31,14 @@
       "feature_id": "FEAT-706",
       "feature": "workday-worker-event-history-and-job-changes",
       "spec": "sdd/specs/workday-worker-event-history-and-job-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: creates models/worker_event.py and test_worker_event_models.py and appends exports to models/__init__.py; no other task touches these files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T20:34:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4487-worker-event-models.md"
     },
@@ -49,7 +49,7 @@
       "feature_id": "FEAT-706",
       "feature": "workday-worker-event-history-and-job-changes",
       "spec": "sdd/specs/workday-worker-event-history-and-job-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -58,7 +58,7 @@
       "parallel": true,
       "parallelism_notes": "Imports ResolvedWorkerReference and WorkerEvent from TASK-4487 (models/worker_event.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T20:34:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4488-worker-event-history-handler.md"
     },
@@ -69,7 +69,7 @@
       "feature_id": "FEAT-706",
       "feature": "workday-worker-event-history-and-job-changes",
       "spec": "sdd/specs/workday-worker-event-history-and-job-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -79,7 +79,7 @@
       "parallel": true,
       "parallelism_notes": "Imports JobSnapshot/JobChange/FieldChange and both event-type tuples from TASK-4487 (models/worker_event.py); imports resolve_worker_reference, build_event_history_worker_reference, build_event_date_range and INVALID_ID_FAULT from TASK-4488 (handlers/worker_event_history.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T20:34:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4489-worker-job-changes-handler.md"
     },
@@ -90,7 +90,7 @@
       "feature_id": "FEAT-706",
       "feature": "workday-worker-event-history-and-job-changes",
       "spec": "sdd/specs/workday-worker-event-history-and-job-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -100,7 +100,7 @@
       "parallel": true,
       "parallelism_notes": "service.py and handlers/__init__.py import WorkerEventHistoryType from TASK-4488 (handlers/worker_event_history.py) and WorkerJobChangesType from TASK-4489 (handlers/worker_job_changes.py).",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T20:34:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4490-register-worker-history-operations.md"
     },
@@ -111,7 +111,7 @@
       "feature_id": "FEAT-706",
       "feature": "workday-worker-event-history-and-job-changes",
       "spec": "sdd/specs/workday-worker-event-history-and-job-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -120,7 +120,7 @@
       "parallel": true,
       "parallelism_notes": "Tests build WorkerEvent/JobChange instances from TASK-4487 (models/worker_event.py); _get_composable is stubbed, so it does not wait for the handlers or TASK-4490's routing. Only file is workday/tool.py, touched by no other task.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T20:34:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4491-worker-history-toolkit-tools.md"
     },
@@ -131,7 +131,7 @@
       "feature_id": "FEAT-706",
       "feature": "workday-worker-event-history-and-job-changes",
       "spec": "sdd/specs/workday-worker-event-history-and-job-changes.spec.md",
-      "status": "pending",
+      "status": "in-progress",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -141,7 +141,7 @@
       "parallel": true,
       "parallelism_notes": "Documents the operation keys and HR routing registered by TASK-4490 (config.py, service.py) and the tool names/parameters added by TASK-4491 (workday/tool.py); its validation runs both tasks' test files.",
       "assigned_to": null,
-      "started_at": null,
+      "started_at": "2026-10-19T20:34:57+00:00",
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4492-worker-history-docs.md"
     }
