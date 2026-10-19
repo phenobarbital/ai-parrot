@@ -16,7 +16,6 @@ from parrot.observability.exporters import (
     make_span_exporters,
 )
 
-
 class TestMakeSpanExporters:
     def test_multi_target(self) -> None:
         targets = [
@@ -137,9 +136,10 @@ class TestMakeMetricExporters:
 
     def test_endpoint_suffix_matches_single_helper(self) -> None:
         config = ObservabilityConfig(otlp_endpoint="http://default:4318/")
-        assert make_metric_exporter(config)._endpoint == make_metric_exporters(
-            [OtlpTarget(name="default", endpoint=config.otlp_endpoint)]
-        )[0]._endpoint
+        assert (
+            make_metric_exporter(config)._endpoint
+            == make_metric_exporters([OtlpTarget(name="default", endpoint=config.otlp_endpoint)])[0]._endpoint
+        )
 
     def test_grpc_protocol(self) -> None:
         target = OtlpTarget(name="a", endpoint="http://a:4317", headers={"k": "v"})
