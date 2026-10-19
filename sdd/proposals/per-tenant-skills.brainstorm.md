@@ -16,7 +16,7 @@ tags: [skills, multi-tenant, skill-registry, agents-dir, prompt-layer, telegram]
 
 **Date**: 2026-10-19
 **Author**: Jesus Lara (discovery with Claude)
-**Status**: exploration (all open questions resolved 2026-10-19 — ready for `/sdd-spec`)
+**Status**: accepted (all open questions resolved 2026-10-19)
 **Recommended Option**: A
 
 ---
