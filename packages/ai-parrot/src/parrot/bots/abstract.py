@@ -3565,32 +3565,32 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         """
         # Use composable prompt builder if available
         if self._prompt_builder:
-            # Inject transient skill layer if a skill was activated via /trigger
-            _has_active_skill = hasattr(self, "_active_skill") and self._active_skill is not None
-            if _has_active_skill:
-                from parrot.bots.prompts.layers import PromptLayer, RenderPhase
+            # FEAT-707 (S5): the /trigger skill is request-local; the layer is
+            # permanent and conditional.
+            from parrot.skills.prompt import build_active_skill_layer
+            from parrot.skills.tenancy import current_active_skill, set_active_skill
 
-                skill_layer = PromptLayer(
-                    name="skill_active",
-                    priority=90,  # After CUSTOM(80)
-                    template=self._active_skill.template_body,
-                    phase=RenderPhase.REQUEST,
+            _legacy_attr = "_active_skill" in vars(self)
+            _context_skill = current_active_skill()
+            active = _context_skill or getattr(self, "_active_skill", None)
+            if self._prompt_builder.get("skill_active") is None:
+                self._prompt_builder.add(build_active_skill_layer())
+
+            kwargs.pop("active_skill_body", None)
+            try:
+                result = self._build_prompt(
+                    user_context=user_context,
+                    vector_context=vector_context,
+                    kb_context=kb_context,
+                    pageindex_context=pageindex_context,
+                    metadata=metadata,
+                    active_skill_body=(active.template_body if active is not None else ""),
+                    **kwargs,
                 )
-                self._prompt_builder.add(skill_layer)
-
-            result = self._build_prompt(
-                user_context=user_context,
-                vector_context=vector_context,
-                kb_context=kb_context,
-                pageindex_context=pageindex_context,
-                metadata=metadata,
-                **kwargs,
-            )
-
-            # Remove transient skill layer and clear active skill
-            if _has_active_skill:
-                self._prompt_builder.remove("skill_active")
-                self._active_skill = None
+            finally:
+                set_active_skill(None)
+                if _legacy_attr and _context_skill is None:
+                    self._active_skill = None
 
             if memory_context:
                 # FEAT-181: result may be List[CacheableSegment] when prompt_caching=True
