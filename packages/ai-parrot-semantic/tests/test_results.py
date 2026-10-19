@@ -104,10 +104,13 @@ def test_result_handle_ownership(pctx_factory: Callable[..., PermissionContext])
             policy_digest="policy-v1",
         )
     assert exc_info.value.code == "result_unavailable"
-    assert bounded_store.claim(
-        retained_id,
-        ctx=owner,
-        subject_digest="subject-v1",
-        model_digest="model-v1",
-        policy_digest="policy-v1",
-    ).result_id == retained_id
+    assert (
+        bounded_store.claim(
+            retained_id,
+            ctx=owner,
+            subject_digest="subject-v1",
+            model_digest="model-v1",
+            policy_digest="policy-v1",
+        ).result_id
+        == retained_id
+    )

@@ -51,9 +51,7 @@ class ResultHandleStore:
             result_id = secrets.token_urlsafe(24)
             while result_id in self._data:
                 result_id = secrets.token_urlsafe(24)
-            self._data[result_id] = handle.model_copy(
-                update={"result_id": result_id, "expires_at": now + self.ttl}
-            )
+            self._data[result_id] = handle.model_copy(update={"result_id": result_id, "expires_at": now + self.ttl})
             while len(self._data) > self.max_entries:
                 self._data.popitem(last=False)
         return result_id
