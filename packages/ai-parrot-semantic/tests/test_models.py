@@ -1,4 +1,5 @@
 """Tests for semantic-layer request and result contracts."""
+
 from __future__ import annotations
 
 import pytest

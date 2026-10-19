@@ -1,4 +1,5 @@
 """Semantic-layer exception hierarchy (spec §3 Module 2)."""
+
 from __future__ import annotations
 
 from typing import Any

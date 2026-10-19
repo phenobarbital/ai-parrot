@@ -1,4 +1,5 @@
 """Pydantic request and response contracts for semantic-layer queries (spec §2)."""
+
 from __future__ import annotations
 
 import json
