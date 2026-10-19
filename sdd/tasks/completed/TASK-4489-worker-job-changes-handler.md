@@ -354,10 +354,15 @@ See the test block in the Implementation Blueprint and spec §4 (M3 rows, integr
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4489
+- Feature: workday-worker-event-history-and-job-changes
+- Implementation SHA: fa56855b7dea2223e3eed25045b19294758d81d5
+- Closed at (UTC): 2026-10-19T20:50:33+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 279.5s · Tokens: n/a |

@@ -71,7 +71,7 @@
       "feature_id": "FEAT-706",
       "feature": "workday-worker-event-history-and-job-changes",
       "spec": "sdd/specs/workday-worker-event-history-and-job-changes.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -82,8 +82,9 @@
       "parallelism_notes": "Imports JobSnapshot/JobChange/FieldChange and both event-type tuples from TASK-4487 (models/worker_event.py); imports resolve_worker_reference, build_event_history_worker_reference, build_event_date_range and INVALID_ID_FAULT from TASK-4488 (handlers/worker_event_history.py).",
       "assigned_to": null,
       "started_at": "2026-10-19T20:34:57+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4489-worker-job-changes-handler.md"
+      "completed_at": "2026-10-19T20:50:33+00:00",
+      "file": "sdd/tasks/completed/TASK-4489-worker-job-changes-handler.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4490",
