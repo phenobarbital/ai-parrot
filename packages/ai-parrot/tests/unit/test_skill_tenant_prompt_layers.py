@@ -41,7 +41,7 @@ def test_render_layer_defaults_unchanged(tmp_path: Path) -> None:
     assert layer.condition is None
     assert layer.template == (
         '<available_skills>\n  <skill name="summarize">\n'
-        "    Summarize text\n    Load with: load_skill(name=\"summarize\")\n"
+        '    Summarize text\n    Load with: load_skill(name="summarize")\n'
         "    Also triggerable via: /summary\n  </skill>\n</available_skills>"
     )
 
