@@ -270,10 +270,15 @@ See the CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4495
+- Feature: per-tenant-skills
+- Implementation SHA: 7f7dce775f15331f7475087cf52a8aa44e482375
+- Closed at (UTC): 2026-10-19T21:21:27+00:00
+- Fix commits: none
 
-**Deviations from spec**: the helper is `_registry_for()` instead of the skeleton's `_registry()` (name clash with the existing attribute) — expected.
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-luna · Backend: codex · Model: gpt-5.6-luna · Attempts: 1 · Duration: 87s · Tokens: n/a |

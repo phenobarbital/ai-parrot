@@ -139,10 +139,6 @@ Documentation task — the validation command guards that the documented core st
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: none | describe if any
+**Completed by**: sdd-worker (seat gpt-5.6-luna, codex, 1 attempt, 69s)
+**Date**: 2026-10-19
+**Notes**: Merged via coder_merge; merge-tier validation green (feature tier 107+66 passed). Closed with close_task.sh.

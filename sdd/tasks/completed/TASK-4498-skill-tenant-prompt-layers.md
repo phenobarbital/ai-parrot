@@ -231,10 +231,8 @@ See the CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+**Completed by**: sdd-worker (seat gpt-5.6-luna, codex, 1 attempt, 99s)
+**Date**: 2026-10-19
+**Notes**: Merged via coder_merge; merge-tier validation green (107 passed). Closed with close_task.sh because finalize_task requires HEAD == implementation commit.
 
 **Deviations from spec**: adds `tenant_layer_condition` / `global_layer_condition` helpers not named in the spec skeleton (they encode the skeleton's lambdas).

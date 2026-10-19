@@ -247,10 +247,6 @@ See the CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: `_resolve_skill_definition` (wrapper.py:1993) is also made view-based — it reads `_skill_file_registry` like `_list_agent_skills` and was missing from the spec's M10 list.
+**Completed by**: sdd-worker (seat gpt-5.6-terra, codex, 1 attempt, 233s)
+**Date**: 2026-10-19
+**Notes**: Merged via coder_merge; merge-tier validation green (107 passed). Closed with close_task.sh.

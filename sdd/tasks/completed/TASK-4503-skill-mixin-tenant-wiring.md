@@ -268,10 +268,6 @@ See the CREATE block.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
-
-**Deviations from spec**: adds private helper `_recompose_skill_views()`.
+**Completed by**: sdd-worker (seat haiku, native, 1 attempt, 319s)
+**Date**: 2026-10-19
+**Notes**: Merged via coder_merge; merge-tier validation green (107 passed). Closed with close_task.sh.

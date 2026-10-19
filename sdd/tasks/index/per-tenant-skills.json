@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-19T21:00:26+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-19T22:37:58+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -51,16 +51,17 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: only models.py, parsers.py and the new test_skill_global_only.py; no other task touches them.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4493-skill-global-only-frontmatter.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T21:21:23+00:00",
+      "file": "sdd/tasks/completed/TASK-4493-skill-global-only-frontmatter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4494",
@@ -69,7 +70,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -78,9 +79,10 @@
       "parallel": true,
       "parallelism_notes": "Needs SkillDefinition.global_only from TASK-4493 (skills/models.py) for collision rows C3/C4 in SkillView.compose().",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4494-skill-tenancy-primitives.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T21:29:43+00:00",
+      "file": "sdd/tasks/completed/TASK-4494-skill-tenancy-primitives.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4495",
@@ -89,16 +91,17 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: providers are plain callables typed as Any, so tools.py does not import tenancy; owns tools.py and test_skill_tenant_toolkits.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4495-skill-toolkit-view-providers.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T21:21:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4495-skill-toolkit-view-providers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4496",
@@ -107,16 +110,17 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: hooks are looked up with getattr (duck-typed), tests use a stub hook; owns bots/base.py and test_ask_tenant_binding.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4496-ask-tenant-binding.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T21:27:15+00:00",
+      "file": "sdd/tasks/completed/TASK-4496-ask-tenant-binding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4497",
@@ -125,16 +129,17 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "No dependencies: ai-parrot-server only (scope.py, chat.py, agents/abstract.py); tests use a fake bot so the core tenant= kwarg from TASK-4496 is not required.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4497-http-request-tenant-binding.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T21:38:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4497-http-request-tenant-binding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4498",
@@ -143,7 +148,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "S",
       "depends_on": [
@@ -152,9 +157,10 @@
       "parallel": true,
       "parallelism_notes": "Imports current_skill_tenant from TASK-4494 (skills/tenancy.py) for the tenant/global layer conditions.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4498-skill-tenant-prompt-layers.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T21:41:51+00:00",
+      "file": "sdd/tasks/completed/TASK-4498-skill-tenant-prompt-layers.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4499",
@@ -163,7 +169,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -172,9 +178,10 @@
       "parallel": true,
       "parallelism_notes": "Imports SkillView, discover_tenant_dirs, bind_skill_tenant, validate_tenant_id from TASK-4494 (skills/tenancy.py); first of three serialized mixin.py edits.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4499-skill-mixin-tenant-core.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T21:36:09+00:00",
+      "file": "sdd/tasks/completed/TASK-4499-skill-mixin-tenant-core.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4500",
@@ -183,7 +190,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -192,9 +199,10 @@
       "parallel": true,
       "parallelism_notes": "Imports set_active_skill from TASK-4494 (skills/tenancy.py) for the /skill command; current_skill_view is duck-typed so no edge to TASK-4499.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4500-telegram-tenant-binding.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T21:48:41+00:00",
+      "file": "sdd/tasks/completed/TASK-4500-telegram-tenant-binding.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4501",
@@ -203,7 +211,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -213,9 +221,10 @@
       "parallel": true,
       "parallelism_notes": "Imports current_active_skill/set_active_skill from TASK-4494 (tenancy.py) and build_active_skill_layer from TASK-4498 (prompt.py); owns middleware.py and bots/abstract.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4501-skill-active-request-local.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T21:48:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4501-skill-active-request-local.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4502",
@@ -224,7 +233,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -233,9 +242,10 @@
       "parallel": true,
       "parallelism_notes": "Calls SkillRegistryMixin.current_skill_view() created by TASK-4499 (skills/mixin.py); owns bots/mixins/narrative.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4502-narrative-tenant-view.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T21:48:42+00:00",
+      "file": "sdd/tasks/completed/TASK-4502-narrative-tenant-view.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4503",
@@ -244,7 +254,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -256,9 +266,10 @@
       "parallel": true,
       "parallelism_notes": "Edits mixin.py after TASK-4499 (same file, uses _tenant_views/_after_tenant_reload); uses tenant_layer_condition/global_layer_condition from TASK-4498, SkillFileToolkit(view_provider=) from TASK-4495, create_skill_trigger_middleware(view_provider=) from TASK-4501.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4503-skill-mixin-tenant-wiring.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T21:56:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4503-skill-mixin-tenant-wiring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4504",
@@ -267,7 +278,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -277,9 +288,10 @@
       "parallel": true,
       "parallelism_notes": "Edits mixin.py after TASK-4503 (same file, extends _after_tenant_reload and __init__); passes create_skill_tools(registry_provider=) from TASK-4495 (tools.py).",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4504-skill-tenant-store.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T22:03:10+00:00",
+      "file": "sdd/tasks/completed/TASK-4504-skill-tenant-store.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4505",
@@ -288,7 +300,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -298,9 +310,10 @@
       "parallel": true,
       "parallelism_notes": "Exercises BaseBot.ask(tenant=) binding from TASK-4496 (bots/base.py) against the fully wired mixin from TASK-4503 (skills/mixin.py); creates only test_skill_tenant_isolation.py.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4505-skill-tenant-isolation-integration.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T22:03:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4505-skill-tenant-isolation-integration.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4506",
@@ -309,7 +322,7 @@
       "feature_id": "FEAT-707",
       "feature": "per-tenant-skills",
       "spec": "sdd/specs/per-tenant-skills.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -322,9 +335,58 @@
       "parallel": true,
       "parallelism_notes": "Documents shipped names: resolve_request_tenant from TASK-4497, TelegramAgentConfig.tenant from TASK-4500, narrate(tenant=) from TASK-4502, store merge rules from TASK-4504; runs after the integration suite of TASK-4505.",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4506-per-tenant-skills-docs.md"
+      "started_at": "2026-10-19T21:15:33+00:00",
+      "completed_at": "2026-10-19T22:06:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4506-per-tenant-skills-docs.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4507",
+      "slug": "per-tenant-skills-hardening",
+      "title": "Tenant skill hardening (review follow-ups)",
+      "feature_id": "FEAT-707",
+      "feature": "per-tenant-skills",
+      "spec": "sdd/specs/per-tenant-skills.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4496",
+        "TASK-4497",
+        "TASK-4498",
+        "TASK-4501"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Ledger follow-up issue:8ea16e60de56 promoted by /sdd-fix after all FEAT-707 tasks closed.",
+      "discovered_from": "issue:8ea16e60de56",
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-19T22:26:16+00:00",
+      "completed_at": "2026-10-19T22:34:11+00:00",
+      "file": "sdd/tasks/completed/TASK-4507-per-tenant-skills-hardening.md",
+      "verification": "verified"
+    },
+    {
+      "id": "TASK-4510",
+      "slug": "per-tenant-skills-tenant-resolution-fixes",
+      "title": "Tenant resolution fixes (review follow-ups)",
+      "feature_id": "FEAT-707",
+      "feature": "per-tenant-skills",
+      "spec": "sdd/specs/per-tenant-skills.spec.md",
+      "status": "done",
+      "priority": "medium",
+      "effort": "S",
+      "depends_on": [
+        "TASK-4497",
+        "TASK-4498"
+      ],
+      "parallel": false,
+      "parallelism_notes": "Ledger follow-ups issue:ab29c5dd9d83 and issue:10addb2313ee promoted by /sdd-fix after all FEAT-707 tasks closed.",
+      "discovered_from": "issue:ab29c5dd9d83, issue:10addb2313ee",
+      "assigned_to": "agent:sdd-fix",
+      "started_at": "2026-10-19T22:37:37+00:00",
+      "completed_at": "2026-10-19T22:37:58+00:00",
+      "file": "sdd/tasks/completed/TASK-4510-per-tenant-skills-tenant-resolution-fixes.md",
+      "verification": "verified"
     }
   ]
 }

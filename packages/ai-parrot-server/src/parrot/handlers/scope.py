@@ -1,4 +1,5 @@
 """Neutral request scope seam shared by UI surfaces and Agent Studio (FEAT-605 M1)."""
+
 from __future__ import annotations
 
 import logging
@@ -30,6 +31,7 @@ __all__ = [
     "get_scope_resolver",
     "has_installed_resolver",
     "normalize_visibility",
+    "resolve_request_tenant",
     "scope_grants",
 ]
 
@@ -140,6 +142,32 @@ def has_installed_resolver(app: Any) -> bool:
 def get_scope_resolver(app: Any) -> ScopeResolver:
     """``app["scope_resolver"]`` → ``app["ui_surfaces_scope_resolver"]`` → module default."""
     return _app_get(app, SCOPE_RESOLVER_APP_KEY) or _app_get(app, LEGACY_SCOPE_RESOLVER_APP_KEY) or _DEFAULT_RESOLVER
+
+
+async def resolve_request_tenant(app: Any, request: web.Request) -> str | None:
+    """Return the server-resolved tenant for ``request``, never client input.
+
+    Returns:
+        The installed resolver's :attr:`RequestScope.tenant`, or ``None`` when
+        no resolver is installed, the resolver reports no tenant (``None`` or
+        an empty string), or the resolver fails unexpectedly. ``None`` means
+        the global skill view.
+
+    Raises:
+        web.HTTPException: Re-raised unchanged when the resolver denies the
+            request (for example ``HTTPUnauthorized`` / ``HTTPForbidden``), so a
+            denied request never proceeds with the global skill view.
+    """
+    if not has_installed_resolver(app):
+        return None
+    try:
+        tenant = (await get_scope_resolver(app).resolve(request)).tenant
+    except web.HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - a broken resolver falls back to the global view
+        logger.debug("Unable to resolve request tenant: %s", exc)
+        return None
+    return tenant or None
 
 
 def normalize_visibility(value: Any) -> str:

@@ -244,10 +244,15 @@ See the CREATE block above; all four tests must pass.
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**: What was implemented, any deviations from scope, issues encountered.
+- Task: TASK-4493
+- Feature: per-tenant-skills
+- Implementation SHA: 7f7dce775f15331f7475087cf52a8aa44e482375
+- Closed at (UTC): 2026-10-19T21:21:23+00:00
+- Fix commits: none
 
-**Deviations from spec**: none | describe if any
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: gpt-5.6-terra · Backend: codex · Model: gpt-5.6-terra · Attempts: 1 · Duration: 169s · Tokens: n/a |
