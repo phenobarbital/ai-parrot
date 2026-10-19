@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import uuid
+import weakref
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+import pandas as pd
 from pydantic import BaseModel, Field
 
 from parrot.auth import DataPlanePolicyGuard, PermissionContext, RlsRegistry, UserSession
 from parrot.auth.context import _pctx_var
 from parrot.security import AbstractKMSSigner
+from parrot.tools.dataset_manager import DatasetManager
 from parrot.tools.databasequery.toolkit import DatabaseQueryToolkit
 from parrot.tools.toolkit import AbstractToolkit
 
@@ -20,7 +23,14 @@ from .cache import CompileCache
 from .catalog import RoleCatalog
 from .context import _semantic_pctx_var, _static_subject_var, current_pctx
 from .engines import compile as compile_query_sql
-from .errors import SemanticError, SemanticExecutionError, SemanticPolicyError, SemanticValidationError
+from .errors import (
+    SemanticAccessError,
+    SemanticError,
+    SemanticExecutionError,
+    SemanticPolicyError,
+    SemanticResultError,
+    SemanticValidationError,
+)
 from .execution import ConnectionResolver, Executor
 from .governance.pbac import PbacGate
 from .governance.pipeline import GovernancePipeline, subject_digest
@@ -68,8 +78,10 @@ class SemanticLayerToolkit(AbstractToolkit):
         result_store_max = int(kwargs.pop("result_store_max", 256))
         allowed_functions = frozenset(str(item).upper() for item in (kwargs.pop("allowed_functions", None) or ()))
         audit_required = kwargs.pop("audit_required", None)
-        kwargs.pop("allow_raw_sql", False)
-        kwargs.pop("dataset_manager_factory", None)
+        allow_raw_sql = bool(kwargs.pop("allow_raw_sql", False))
+        dataset_manager_factory: Callable[[PermissionContext], DatasetManager] | None = kwargs.pop(
+            "dataset_manager_factory", None
+        )
         super().__init__(**kwargs)
 
         self._models_dir = Path(models_dir)
@@ -98,6 +110,12 @@ class SemanticLayerToolkit(AbstractToolkit):
         self._executor = Executor(database_toolkit or DatabaseQueryToolkit(), ConnectionResolver())
         self._static_subject = StaticSubject.model_validate(static_subject) if static_subject is not None else None
         self._audit_required = self._ledger.durable if audit_required is None else bool(audit_required)
+        self._dataset_manager_factory = dataset_manager_factory
+        self._dataset_manager_subjects: weakref.WeakKeyDictionary[DatasetManager, str] = weakref.WeakKeyDictionary()
+        if allow_raw_sql:
+            self.exclude_tools = tuple(name for name in self.exclude_tools if name != "run_sql")
+        if dataset_manager_factory is not None:
+            self.exclude_tools = tuple(name for name in self.exclude_tools if name != "save_result_as_dataset")
         self.logger.info("semantic audit_required=%s (durable sink=%s)", self._audit_required, self._ledger.durable)
 
     async def _pre_execute(self, tool_name: str, /, **kwargs: Any) -> None:
@@ -223,6 +241,138 @@ class SemanticLayerToolkit(AbstractToolkit):
     async def query_metrics(self, query: SemanticQuery) -> SemanticQueryResult | dict:
         """Compile, govern, execute and audit a structured metric query."""
         return await self._run_governed(query, execute=True)
+
+    async def run_sql(self, model: str, sql: str) -> SemanticQueryResult | dict:
+        """Run free read-only SQL through PBAC, lineage, RLS, masking, guard, and audit."""
+        ctx = current_pctx()
+        roles = self._roles()
+        loaded = self._models.get(model)
+        governed: GovernedQuery | None = None
+        entry_id = str(uuid.uuid4())
+        try:
+            if loaded is None:
+                raise SemanticValidationError("unknown_model", details={"model": model})
+            governed = await self._pipeline.govern(sql, model=loaded, ctx=ctx, roles=roles)
+            rows, row_count, truncated, duration_ms = await self._executor.run(
+                governed, connection=loaded.policy.connection or ""
+            )
+            await self._ledger.append(
+                self._audit_entry(
+                    entry_id,
+                    "run_sql",
+                    loaded,
+                    None,
+                    sql,
+                    governed,
+                    outcome="ok",
+                    raw_sql=True,
+                    row_count=row_count,
+                    duration_ms=duration_ms,
+                ),
+                required=self._audit_required,
+            )
+            columns = list(rows[0]) if rows else []
+            result_id = self._handles.put(
+                ResultHandle(
+                    agent_id=ctx.extra.get("agent_id") if ctx else None,
+                    user_id=ctx.user_id if ctx else "",
+                    tenant_id=ctx.tenant_id if ctx else "",
+                    session_id=ctx.extra.get("session_id") if ctx else None,
+                    subject_digest=governed.subject_digest,
+                    model=loaded.name,
+                    model_digest=loaded.model_digest,
+                    policy_digest=loaded.policy_digest,
+                    expires_at=datetime.now(timezone.utc),
+                    columns=columns,
+                    rows=rows,
+                    audit_id=entry_id,
+                    governed_sql=governed.sql,
+                )
+            )
+            return SemanticQueryResult(
+                columns=columns,
+                rows=rows,
+                row_count=row_count,
+                truncated=truncated,
+                duration_ms=duration_ms,
+                compiled_sql=governed.sql,
+                audit_id=entry_id,
+                result_id=result_id,
+            )
+        except SemanticError as error:
+            if error.code == "audit_unavailable":
+                return self._error_payload(error)
+            try:
+                await self._ledger.append(
+                    self._audit_entry(
+                        entry_id,
+                        "run_sql",
+                        loaded,
+                        None,
+                        sql,
+                        governed,
+                        outcome=self._error_outcome(error),
+                        error=error,
+                        raw_sql=True,
+                    ),
+                    required=self._audit_required,
+                )
+            except SemanticExecutionError as audit_error:
+                return self._error_payload(audit_error)
+            return self._error_payload(error)
+
+    async def save_result_as_dataset(self, result_id: str, name: str, description: str | None = None) -> dict:
+        """Save a prior governed result in the current subject's DatasetManager."""
+        ctx = current_pctx()
+        if ctx is None:
+            return self._error_payload(SemanticAccessError("no_subject"))
+        digest = subject_digest(ctx)
+        handle: ResultHandle | None = None
+        loaded: LoadedModel | None = None
+        for candidate in self._models.values():
+            try:
+                handle = self._handles.claim(
+                    result_id,
+                    ctx=ctx,
+                    subject_digest=digest,
+                    model_digest=candidate.model_digest,
+                    policy_digest=candidate.policy_digest,
+                )
+                loaded = candidate
+                break
+            except SemanticResultError:
+                continue
+        if handle is None or loaded is None:
+            return self._error_payload(SemanticResultError("result_unavailable"))
+        try:
+            authorized = await self._is_authorized(loaded)
+            if not self._catalog.visible_members(loaded.name, self._roles(), authorized=authorized):
+                raise SemanticAccessError("member_not_granted")
+            manager = await self._dataset_manager_for(ctx)
+            dataset_id = manager.add_dataframe(
+                name,
+                pd.DataFrame(handle.rows, columns=handle.columns),
+                description=description,
+                metadata={"semantic_audit_id": handle.audit_id, "model": handle.model},
+            )
+            await self._audit_catalog("save_result_as_dataset", loaded, outcome="ok")
+            return {"dataset_id": dataset_id, "name": name}
+        except SemanticError as error:
+            return await self._catalog_error("save_result_as_dataset", loaded, error)
+
+    async def _dataset_manager_for(self, ctx: PermissionContext) -> DatasetManager:
+        """Return the subject-scoped host manager, rejecting a shared manager instance."""
+        if self._dataset_manager_factory is None:
+            raise SemanticResultError("dataset_manager_unavailable")
+        manager = self._dataset_manager_factory(ctx)
+        if not isinstance(manager, DatasetManager):
+            raise SemanticResultError("dataset_manager_unavailable")
+        digest = subject_digest(ctx)
+        previous_digest = self._dataset_manager_subjects.get(manager)
+        if previous_digest is not None and previous_digest != digest:
+            raise SemanticResultError("shared_dataset_manager")
+        self._dataset_manager_subjects[manager] = digest
+        return manager
 
     async def _run_governed(self, query: SemanticQuery, *, execute: bool) -> Any:
         """Run the single catalog, compile, govern, execute and audit path."""
@@ -428,6 +578,7 @@ class SemanticLayerToolkit(AbstractToolkit):
         *,
         outcome: str,
         error: SemanticError | None = None,
+        raw_sql: bool = False,
         row_count: int | None = None,
         duration_ms: int | None = None,
     ) -> SemanticAuditEntry:
@@ -451,7 +602,7 @@ class SemanticLayerToolkit(AbstractToolkit):
             engine=model.policy.engine if model else "unknown",
             tool=tool_name,
             structured_query=query.model_dump(mode="json") if query else None,
-            raw_sql=False,
+            raw_sql=raw_sql,
             compiled_sql=compiled_sql,
             governed_sql=governed.sql if governed else None,
             dialect=governed.dialect if governed else self._dialect,
