@@ -113,9 +113,7 @@ class SemanticAuditLedger:
             except Exception as exc:  # noqa: BLE001 - any sink failure is an audit failure
                 self.logger.error("Semantic audit storage failed for %s: %s", entry.entry_id, type(exc).__name__)
                 if required:
-                    raise SemanticExecutionError(
-                        "audit_unavailable", details={"audit_id": entry.entry_id}
-                    ) from exc
+                    raise SemanticExecutionError("audit_unavailable", details={"audit_id": entry.entry_id}) from exc
         elif required:
             raise SemanticExecutionError("audit_unavailable", details={"audit_id": entry.entry_id})
         return entry
