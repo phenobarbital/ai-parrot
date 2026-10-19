@@ -182,11 +182,7 @@ def test_create_skill_tools_forwards_providers(tmp_path: Path) -> None:
         registry_provider=registry_provider,
     )
 
-    registry_toolkit = next(
-        tool.bound_method.__self__ for tool in tools if tool.name == "search_skills"
-    )
-    file_toolkit = next(
-        tool.bound_method.__self__ for tool in tools if tool.name == "list_skill_commands"
-    )
+    registry_toolkit = next(tool.bound_method.__self__ for tool in tools if tool.name == "search_skills")
+    file_toolkit = next(tool.bound_method.__self__ for tool in tools if tool.name == "list_skill_commands")
     assert registry_toolkit._registry_provider is registry_provider
     assert file_toolkit._view_provider is view_provider

@@ -18,7 +18,7 @@ dependency:
   :class:`~parrot.skills.file_registry.SkillFileRegistry`.
 """
 import asyncio
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional
 from pathlib import Path
 from pydantic import BaseModel, Field
 from ..tools.abstract import AbstractTool, ToolResult
