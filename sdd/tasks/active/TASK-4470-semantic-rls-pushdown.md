@@ -60,6 +60,12 @@ class RlsRegistry:               # line 87
     def render(self, rule: RlsRule, ctx: PermissionContext) -> RlsPredicate   # line 150 — missing attribute → sql_predicate "1=0"
 ```
 
+### Column-key convention (added 2026-10-19, TASK-4469 review fix c42dcbcb0)
+- `ModelPolicy.usage_allowed(roles, column)` and `ModelPolicy.mask_for(roles, column)` take the **physical**
+  `<schema>.<table>.<column>` name (as produced by `governance/lineage.py` `ColumnUse`: `f"{use.table}.{use.column}"`).
+  Mask keys (`<table>.<member>`) match as a dotted suffix; usage grants (bare member names) match the last segment.
+  Do NOT pass bare names or re-implement key matching at the call site.
+
 ### Does NOT Exist
 - ~~RLS push-down below aggregation in core~~ — `inject_rls_sql` (rls.py:72) only WRAPS the statement; the semantic layer must NOT call it.
 - ~~`RlsPredicate.to_sqlglot()`~~ — no such method; parse `sql_predicate` with sqlglot and substitute `bound_params` placeholders (`:p0`) with typed `exp.Literal`s yourself.

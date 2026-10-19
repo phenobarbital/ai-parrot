@@ -59,6 +59,12 @@ from parrot.semantic.errors import SemanticValidationError            # TASK-446
 # no core signature used directly; QueryValidator is invoked by the pipeline (TASK-4472)
 ```
 
+### Column-key convention (added 2026-10-19, TASK-4469 review fix c42dcbcb0)
+- `ModelPolicy.usage_allowed(roles, column)` and `ModelPolicy.mask_for(roles, column)` take the **physical**
+  `<schema>.<table>.<column>` name (as produced by `governance/lineage.py` `ColumnUse`: `f"{use.table}.{use.column}"`).
+  Mask keys (`<table>.<member>`) match as a dotted suffix; usage grants (bare member names) match the last segment.
+  Do NOT pass bare names or re-implement key matching at the call site.
+
 ### Does NOT Exist
 - ~~A positive table/column allowlist in core~~ — `QueryValidator.validate_sql_ast` and `SQLToolkit._check_query_safety` are negative guards.
 - ~~`add_row_limit` for LIMIT injection~~ — string-level (base.py:213); the guard works on the AST.

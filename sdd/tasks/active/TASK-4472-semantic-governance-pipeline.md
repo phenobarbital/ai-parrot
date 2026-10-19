@@ -67,6 +67,12 @@ class QueryValidator:   # line 29
 # packages/ai-parrot/src/parrot/auth/permission.py — UserSession.metadata is NOT part of its hash (line 49); hash it explicitly
 ```
 
+### Column-key convention (added 2026-10-19, TASK-4469 review fix c42dcbcb0)
+- `ModelPolicy.usage_allowed(roles, column)` and `ModelPolicy.mask_for(roles, column)` take the **physical**
+  `<schema>.<table>.<column>` name (as produced by `governance/lineage.py` `ColumnUse`: `f"{use.table}.{use.column}"`).
+  Mask keys (`<table>.<member>`) match as a dotted suffix; usage grants (bare member names) match the last segment.
+  Do NOT pass bare names or re-implement key matching at the call site.
+
 ### Does NOT Exist
 - ~~`QueryValidator.validate_sql_ast` raising~~ — it RETURNS a dict; inspect its result keys (read query_validator.py:165-) and map a failure to `SemanticValidationError('unsafe_sql')`.
 - ~~Caching a `GovernedQuery`~~ — never; only pre-governance `CompiledQuery` is cacheable (AC8).
