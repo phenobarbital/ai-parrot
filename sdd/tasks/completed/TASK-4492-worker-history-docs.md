@@ -158,10 +158,15 @@ None beyond the Validation Commands: they confirm the documented tools and keys 
 
 ## Completion Note
 
-*(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+- Task: TASK-4492
+- Feature: workday-worker-event-history-and-job-changes
+- Implementation SHA: f0a52c177ba8423bc7a837e90b765a79f232fbd6
+- Closed at (UTC): 2026-10-19T20:57:38+00:00
+- Fix commits: none
 
-**Deviations from spec**: none
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: minimax · Backend: nova · Model: minimax.minimax-m2.5 · Attempts: 1 · Duration: 195.0s · Tokens: 552032/6322 |
