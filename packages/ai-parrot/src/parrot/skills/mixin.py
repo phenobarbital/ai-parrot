@@ -111,11 +111,9 @@ class SkillRegistryMixin:
         self._warned_flags: set[str] = set()
 
     def _skill_logger(self) -> logging.Logger:
-        return getattr(self, 'logger', None) or logging.getLogger(__name__)
+        return getattr(self, "logger", None) or logging.getLogger(__name__)
 
-    def _resolve_tenant(
-        self, explicit: Optional[str] = None, ctx: Optional["RequestContext"] = None
-    ) -> Optional[str]:
+    def _resolve_tenant(self, explicit: Optional[str] = None, ctx: Optional["RequestContext"] = None) -> Optional[str]:
         """Resolve the skill tenant: explicit, ctx.kwargs["tenant"], bound ContextVar, instance default.
 
         Raises:
@@ -217,7 +215,7 @@ class SkillRegistryMixin:
         agents_dir = self._resolve_agents_dir()
         if self._skill_file_registry is None or not agents_dir:
             return {}
-        agent_id = getattr(self, 'name', None) or getattr(self, 'agent_id', 'default')
+        agent_id = getattr(self, "name", None) or getattr(self, "agent_id", "default")
         agent_root = agents_dir / agent_id
         logger = self._skill_logger()
         if tenant is None:
@@ -287,19 +285,19 @@ class SkillRegistryMixin:
         agents_dir = self._resolve_agents_dir()
         if agents_dir:
             persistence_path = agents_dir / agent_id / "skills"
-        
+
         self._skill_registry = create_skill_registry(
             namespace=namespace,
             persistence_path=persistence_path,
             extraction_llm=getattr(self, '_llm', None),
         )
-        
+
         await self._skill_registry.configure()
-        
+
         # Add tools
         if self.skill_registry_expose_tools:
             await self._add_skill_tools()
-        
+
         # Configure file-based skill registry
         await self._configure_skill_file_registry()
 
@@ -549,7 +547,7 @@ category: {category}
                     await result
         elif hasattr(self, '_tools'):
             self._tools = getattr(self, '_tools', []) + tools
-    
+
     async def get_skill_context(
         self,
         query: str,
@@ -563,13 +561,13 @@ category: {category}
         """
         if not self._skill_registry or not self.skill_registry_inject_context:
             return ""
-        
+
         return await self._skill_registry.get_relevant_skills(
             query=query,
             max_skills=max_skills or self.skill_registry_max_context_skills,
             max_tokens=max_tokens or self.skill_registry_max_context_tokens,
         )
-    
+
     async def document_skill(
         self,
         name: str,
@@ -586,7 +584,7 @@ category: {category}
         """
         if not self._skill_registry:
             return None
-        
+
         agent_id = getattr(self, 'name', 'agent')
         skill, _ = await self._skill_registry.upload_skill(
             name=name,
@@ -598,7 +596,7 @@ category: {category}
             triggers=triggers or [],
         )
         return skill
-    
+
     async def extract_skills_from_conversation(
         self,
         conversation: str,
@@ -611,16 +609,16 @@ category: {category}
         """
         if not self._skill_registry or not self.skill_registry_auto_extract:
             return None
-        
+
         agent_id = getattr(self, 'name', 'agent')
         result = await self._skill_registry.extract_skill_from_conversation(
             conversation=conversation,
             agent_id=agent_id,
             context=context,
         )
-        
+
         return result[0] if result else None
-    
+
     async def search_skills(
         self,
         query: str,
@@ -630,14 +628,14 @@ category: {category}
         """Search for relevant skills."""
         if not self._skill_registry:
             return []
-        
+
         cat = SkillCategory(category) if category else None
         results = await self._skill_registry.search_skills(
             query=query,
             category=cat,
             max_results=max_results,
         )
-        
+
         return [
             {
                 "skill_id": r.skill.skill_id,
@@ -648,7 +646,7 @@ category: {category}
             }
             for r in results
         ]
-    
+
     async def _cleanup_skill_registry(self) -> None:
         """Cleanup skill registry."""
         if self._skill_registry:

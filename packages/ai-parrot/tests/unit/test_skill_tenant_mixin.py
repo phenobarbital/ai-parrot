@@ -1,4 +1,5 @@
 """FEAT-707 — SkillRegistryMixin tenant core (TASK-4499)."""
+
 import logging
 from pathlib import Path
 
@@ -11,9 +12,7 @@ from parrot.utils.helpers import RequestContext
 
 def _skill(path: Path, name: str, trigger: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        f"---\nname: {name}\ndescription: {name} desc\ntriggers:\n  - /{trigger}\n---\n\nBody of {name}\n"
-    )
+    path.write_text(f"---\nname: {name}\ndescription: {name} desc\ntriggers:\n  - /{trigger}\n---\n\nBody of {name}\n")
 
 
 @pytest.fixture
