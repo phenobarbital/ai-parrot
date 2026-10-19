@@ -146,7 +146,7 @@ class SkillRegistryMixin:
             current_skill_tenant(),
             getattr(self, "_tenant_id", None) or type(self).tenant_id,
         )
-        chosen = next((c for c in candidates if c), None)
+        chosen = next((c for c in candidates if c is not None), None)
         if not self.tenant_based:
             if chosen and "ignored" not in self.__dict__.get("_warned_flags", set()):
                 self.__dict__.setdefault("_warned_flags", set()).add("ignored")

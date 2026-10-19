@@ -1529,6 +1529,10 @@ class AbstractBot(MCPEnabledMixin, DBInterface, LocalKBMixin, EventEmitterMixin,
         builder = self._prompt_builder.clone()
         for name in self._TOOL_DEPENDENT_PROMPT_LAYERS:
             builder.remove(name)
+        # Per-tenant skill layers (FEAT-707) are named ``available_skills:<tenant>``.
+        for name in tuple(builder.layer_names):
+            if name.startswith("available_skills:"):
+                builder.remove(name)
         return builder
 
     async def configure_kb(self):

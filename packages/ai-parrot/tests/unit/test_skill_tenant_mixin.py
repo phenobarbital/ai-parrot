@@ -161,3 +161,9 @@ async def test_skill_paths_only_agent_tenant_based_warns(tmp_path, caplog):
         await host._configure_skill_file_registry()
     assert any("global skills only" in r.getMessage() for r in caplog.records)
     assert host.current_skill_view("x").get("/pskill") is not None
+
+
+def test_resolve_tenant_empty_string_raises(tmp_path):
+    host = make_host(tmp_path, tenant_based=True)
+    with pytest.raises(ValueError):
+        host._resolve_tenant("")
