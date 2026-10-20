@@ -43,6 +43,13 @@ def _build_parser() -> argparse.ArgumentParser:
     baseline.add_argument("--baseline", dest="baseline", action="store_true", default=True)
     baseline.add_argument("--no-baseline", dest="baseline", action="store_false")
     parser.add_argument("--timeout-baseline", type=int, default=600, metavar="SECONDS")
+    parser.add_argument(
+        "--timeout-total",
+        type=int,
+        default=3600,
+        metavar="SECONDS",
+        help="Overall wall-clock cap across every planned invocation (0 disables).",
+    )
     parser.add_argument("--task-file", action="append", default=[], type=Path)
     parser.add_argument("--worktree", type=Path, default=Path.cwd())
     parser.add_argument("--run", action="store_true")
@@ -172,14 +179,23 @@ def _run_verdict_mode(
         _write_verdict(verdict)
         return 2
 
-    registry = load_registry(worktree)
+    try:
+        registry = load_registry(worktree)
+    except (ValueError, OSError) as exc:
+        _write_verdict(_blocked_verdict(kernel, tier=args.tier, note=f"cannot load the runner registry: {exc}"))
+        return 2
     reports = []
     evidence: list[str] = []
     log_path = log_dir / "validation.log"
     log_lines = [f"tier: {args.tier}", f"base: {base_ref}"]
+    deadline = None if not args.timeout_total else time.monotonic() + args.timeout_total
 
     for ordinal, invocation in enumerate(plan.invocations):
-        adapter = registry.adapter_for_kind(invocation.runner)
+        try:
+            adapter = registry.adapter_for_kind(invocation.runner)
+        except (KeyError, ModuleNotFoundError) as exc:
+            _write_verdict(_blocked_verdict(kernel, tier=args.tier, note=f"unusable runner: {exc}"))
+            return 2
         report_path = log_dir / (
             f"{ordinal:02d}-{_safe_report_name(invocation.runner)}-"
             f"{_safe_report_name(invocation.distribution)}{_report_suffix(invocation.report_format)}"
@@ -200,6 +216,26 @@ def _run_verdict_mode(
 
         run_cwd = worktree / invocation.cwd
         timeout_s = invocation.timeout_s or registry.timeout_for(invocation.runner)
+        suite = report_mod.suite_name(run_invocation)
+        remaining = None if deadline is None else deadline - time.monotonic()
+        if remaining is not None and remaining <= 0:
+            # Spec S9: the overall cap is spent -- report this invocation as timed out WITHOUT
+            # launching it. Evidence already collected by the invocations that did run is kept.
+            reports.append(
+                adapter.parse_report(
+                    report_path=report_path,
+                    exit_code=124,
+                    stdout="",
+                    stderr="",
+                    duration_s=0.0,
+                    timed_out=True,
+                    suite=suite,
+                )
+            )
+            log_lines.extend(("", f"$ {shlex.join(argv)}", f"cwd: {run_cwd}", "skipped: overall deadline exceeded"))
+            continue
+        if remaining is not None:
+            timeout_s = max(1, min(timeout_s, int(remaining)))
         started = time.monotonic()
         timed_out = False
         try:
@@ -225,7 +261,6 @@ def _run_verdict_mode(
             stderr = str(exc)
 
         duration_s = time.monotonic() - started
-        suite = report_mod.suite_name(run_invocation)
         report = adapter.parse_report(
             report_path=report_path,
             exit_code=exit_code,
@@ -312,13 +347,22 @@ def main(argv: list[str] | None = None) -> int:
             continue
         declared.extend(kernel.contract.parse_validation_commands(text))
 
-    plan = kernel.plan_tests(
-        worktree=worktree,
-        changed_files=kernel.changed_files(worktree, base_ref),
-        tier=args.tier,
-        declared=declared,
-        contract=contract,
-    )
+    try:
+        plan = kernel.plan_tests(
+            worktree=worktree,
+            changed_files=kernel.changed_files(worktree, base_ref),
+            tier=args.tier,
+            declared=declared,
+            contract=contract,
+        )
+    except (ValueError, KeyError, ModuleNotFoundError) as exc:
+        # A malformed `.parrot/test_runners.toml` or an unknown runner kind must not escape as a
+        # traceback: under --verdict the only legal stdout is one verdict object.
+        if args.verdict:
+            _write_verdict(_blocked_verdict(kernel, tier=args.tier, note=f"cannot plan validation: {exc}"))
+            return 2
+        print(f"error: {exc}", file=sys.stderr)  # noqa: T201 - CLI output
+        return 2
     if index_notes:
         plan = replace(plan, notes=(*plan.notes, *index_notes))
 

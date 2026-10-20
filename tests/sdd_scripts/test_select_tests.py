@@ -561,3 +561,153 @@ def test_empty_plan_selection_error(fixture_monorepo, monkeypatch, tmp_path):
     record = records["TASK-4412"]
     assert record.notes == ("selection_error: no test invocations planned",)
     assert record.suites[0].status == "selection_error"
+
+
+# -- TASK-4543: --verdict fails closed and honours an overall deadline -------------------
+
+
+def _write_runner_config(root: Path, body: str) -> None:
+    (root / ".parrot").mkdir(parents=True, exist_ok=True)
+    (root / ".parrot/test_runners.toml").write_text(body)
+
+
+def test_verdict_blocked_on_malformed_runner_config(fixture_monorepo, capsys):
+    """Malformed .parrot/test_runners.toml yields one blocked verdict, not a traceback."""
+    _write_runner_config(fixture_monorepo, "this is not = = toml\n")
+
+    rc = main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--verdict"])
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert captured.err == ""
+    payload = json.loads(captured.out)  # exactly one object, nothing else
+    assert payload["status"] == "blocked"
+    assert "test_runners.toml" in " ".join(payload["notes"])
+
+
+def test_non_verdict_mode_keeps_stderr_error_on_malformed_config(fixture_monorepo, capsys):
+    """Without --verdict the pre-existing stderr contract is unchanged."""
+    _write_runner_config(fixture_monorepo, "this is not = = toml\n")
+
+    rc = main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo)])
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "error:" in captured.err
+    assert captured.out == ""
+
+
+def test_verdict_blocked_on_unknown_runner_kind(fixture_monorepo, capsys):
+    """A runner kind with no adapter blocks instead of escaping as KeyError."""
+    _write_runner_config(fixture_monorepo, '[runners.not-a-runner]\ntimeout_s = 10\n')
+
+    rc = main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--verdict"])
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert captured.err == ""
+    payload = json.loads(captured.out)
+    assert payload["status"] == "blocked"
+    assert "not-a-runner" in " ".join(payload["notes"])
+
+
+def _two_invocation_plan():
+    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
+
+    def _inv(dist: str, target: str):
+        return Invocation(
+            distribution=dist,
+            argv=("pytest", target),
+            targets=(TestTarget(path=target, distribution=dist, reason="declared"),),
+        )
+
+    return ScopePlan(
+        tier="task",
+        invocations=(_inv("a", "packages/a/tests/test_x.py"), _inv("b", "packages/b/tests/test_y.py")),
+        escalated=(),
+        core_hits=(),
+        skipped_escalations=(),
+        notes=(),
+    )
+
+
+def _green_junit_runner(monkeypatch, select_tests_mod, calls):
+    """subprocess.run stub that writes a passing junit report and records each call."""
+
+    def _run(argv, **kwargs):
+        calls.append(kwargs.get("timeout"))
+        report_path = Path(
+            next(value for value in argv if value.startswith("--junitxml=")).removeprefix("--junitxml=")
+        ).resolve()
+        report_path.write_text(
+            '<testsuites><testsuite tests="1" failures="0">'
+            '<testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x" name="test_x">'
+            "</testcase></testsuite></testsuites>"
+        )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(select_tests_mod.subprocess, "run", _run)
+
+
+def test_timeout_total_zero_disables_the_overall_cap(fixture_monorepo, tmp_path, monkeypatch, capsys):
+    """--timeout-total 0 leaves each invocation's own timeout untouched."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    import scripts.sdd.select_tests as select_tests_mod
+
+    monkeypatch.setattr(kernel, "plan_tests", lambda **_: _two_invocation_plan())
+    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
+    calls: list[int | None] = []
+    _green_junit_runner(monkeypatch, select_tests_mod, calls)
+
+    rc = main(
+        [
+            "--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo),
+            "--verdict", "--no-baseline", "--timeout-total", "0",
+            "--log-dir", str(tmp_path / "validation"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert json.loads(captured.out)["status"] == "passed"
+    # The pytest registry default (60s) reaches subprocess.run unclamped, for both invocations.
+    assert calls == [60, 60]
+
+
+def test_exhausted_overall_deadline_marks_unstarted_invocations_timed_out(
+    fixture_monorepo, tmp_path, monkeypatch, capsys
+):
+    """Finished evidence is kept; only unfinished invocations are timed_out (spec S9)."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    import scripts.sdd.select_tests as select_tests_mod
+
+    monkeypatch.setattr(kernel, "plan_tests", lambda **_: _two_invocation_plan())
+    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
+    calls: list[int | None] = []
+    _green_junit_runner(monkeypatch, select_tests_mod, calls)
+
+    # Burn the whole budget inside the first invocation: the clock jumps past the cap once.
+    ticks = iter([0.0, 0.0, 0.0, 0.0, 10_000.0, 10_000.0, 10_000.0, 10_000.0, 10_000.0, 10_000.0])
+    monkeypatch.setattr(select_tests_mod.time, "monotonic", lambda: next(ticks, 10_000.0))
+
+    rc = main(
+        [
+            "--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo),
+            "--verdict", "--no-baseline", "--timeout-total", "60",
+            "--log-dir", str(tmp_path / "validation"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert rc == 1  # a timed-out runner is not a pass
+    assert captured.err == ""
+    # Exactly one child was launched; the second never started.
+    assert len(calls) == 1
+    runners = payload["runners"]
+    assert len(runners) == 2
+    assert "overall deadline exceeded" in (tmp_path / "validation" / "validation.log").read_text()
