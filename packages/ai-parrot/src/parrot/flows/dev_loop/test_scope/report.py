@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .datatypes import Invocation
+from .datatypes import Invocation, RunReport
 from .planner import OVERRIDE_MARKER_EXPRESSION
 
 try:  # POSIX only
@@ -103,13 +103,19 @@ def junit_path_for(feature_id: str, task_id: str, suite: str, ordinal: int) -> P
     return path
 
 
-def with_junit(invocation: Invocation, junit_path: Path) -> tuple[str, ...]:
-    """Invocation argv + isolated junit path, forcing xunit1 so testcases carry ``file`` (FEAT-699)."""
-    return (*invocation.argv, "-o", "junit_family=xunit1", f"--junitxml={junit_path}")
+def with_report(invocation: Invocation, report_path: Path) -> tuple[str, ...]:
+    """Return report arguments for pytest; other runners already carry them."""
+    if invocation.runner == "pytest":
+        return (*invocation.argv, "-o", "junit_family=xunit1", f"--junitxml={report_path}")
+    return tuple(invocation.argv)
 
 
-def nodeid_from_testcase(file_attr: str | None, classname: str, name: str) -> str | None:
-    """Canonical pytest node id for one xunit1 testcase, or None when it cannot be built safely."""
+def nodeid_from_testcase(
+    file_attr: str | None, classname: str, name: str, *, runner: str = "pytest"
+) -> str | None:
+    """Return a canonical pytest node id or ``<file>::<name>`` for another runner."""
+    if runner != "pytest":
+        return f"{file_attr}::{name}" if file_attr else None
     if not file_attr or not file_attr.endswith(".py"):
         return None
 
@@ -126,6 +132,9 @@ def nodeid_from_testcase(file_attr: str | None, classname: str, name: str) -> st
 
 def suite_name(invocation: Invocation) -> str:
     """Record key for one invocation: ``<dist>``, ``<dist>[contract]`` or ``<dist>[markers]``."""
+    if invocation.runner != "pytest":
+        return f"{invocation.runner}:{invocation.distribution}"
+
     try:
         marker_expression = invocation.argv[invocation.argv.index("-m") + 1]
     except (ValueError, IndexError):
@@ -143,6 +152,77 @@ def _empty_result(suite: str, argv: tuple[str, ...], exit_code: int, duration_s:
     return SuiteResult(suite, 0, 0, 0, 0, 0, duration_s, exit_code, argv, status)
 
 
+def parse_junit_report(
+    junit_path: Path,
+    *,
+    runner: str,
+    suite: str,
+    exit_code: int,
+    duration_s: float,
+    timed_out: bool = False,
+) -> RunReport:
+    """Parse any junit file into a report while retaining failure text per node."""
+    unavailable_status = "timed_out" if timed_out else "no_report"
+    if not junit_path.exists():
+        return RunReport(runner, suite, 0, 0, 0, 0, 0, duration_s, exit_code, unavailable_status)
+
+    try:
+        root = ET.parse(junit_path).getroot()
+        counts = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
+        for node in root.iter("testsuite"):
+            for name in counts:
+                counts[name] += int(node.attrib.get(name, "0"))
+
+        nodes: list[tuple[str, str]] = []
+        failure_text: dict[str, str] = {}
+        unmapped = 0
+        for testcase in root.iter("testcase"):
+            failure = testcase.find("failure")
+            error = testcase.find("error")
+            testcase_status = (
+                "failed"
+                if failure is not None
+                else "error" if error is not None else "skipped" if testcase.find("skipped") is not None else "passed"
+            )
+            nodeid = nodeid_from_testcase(
+                testcase.attrib.get("file"),
+                testcase.attrib.get("classname", ""),
+                testcase.attrib.get("name", ""),
+                runner=runner,
+            )
+            if nodeid is None:
+                unmapped += 1
+                continue
+            nodes.append((nodeid, testcase_status))
+            failure_node = failure if failure is not None else error
+            if failure_node is not None:
+                failure_text[nodeid] = f"{failure_node.attrib.get('message', '')}\n{failure_node.text or ''}"
+    except (ET.ParseError, OSError, ValueError):
+        return RunReport(runner, suite, 0, 0, 0, 0, 0, duration_s, exit_code, unavailable_status)
+
+    failed = counts["failures"]
+    errors = counts["errors"]
+    skipped = counts["skipped"]
+    tests = counts["tests"]
+    passed = max(0, tests - failed - errors - skipped)
+    status = "timed_out" if timed_out else "failed" if exit_code != 0 or failed or errors else "ok"
+    return RunReport(
+        runner=runner,
+        suite=suite,
+        tests=tests,
+        passed=passed,
+        failed=failed,
+        errors=errors,
+        skipped=skipped,
+        duration_s=duration_s,
+        exit_code=exit_code,
+        status=status,
+        nodes=tuple(sorted(nodes)),
+        failure_text=failure_text,
+        unmapped=unmapped,
+    )
+
+
 def parse_junit(
     junit_path: Path,
     *,
@@ -153,56 +233,30 @@ def parse_junit(
     timed_out: bool = False,
 ) -> SuiteResult:
     """Parse junit counters without allowing absent or invalid reports to raise."""
-    if not junit_path.exists():
-        return _empty_result(suite, argv, exit_code, duration_s, "timed_out" if timed_out else "no_junit")
-
-    try:
-        root = ET.parse(junit_path).getroot()
-        counts = {"tests": 0, "failures": 0, "errors": 0, "skipped": 0}
-        for node in root.iter("testsuite"):
-            for name in counts:
-                counts[name] += int(node.attrib.get(name, "0"))
-        nodes: list[tuple[str, str]] = []
-        unmapped = 0
-        for testcase in root.iter("testcase"):
-            testcase_status = (
-                "failed"
-                if testcase.find("failure") is not None
-                else (
-                    "error"
-                    if testcase.find("error") is not None
-                    else "skipped" if testcase.find("skipped") is not None else "passed"
-                )
-            )
-            nodeid = nodeid_from_testcase(
-                testcase.attrib.get("file"), testcase.attrib.get("classname", ""), testcase.attrib.get("name", "")
-            )
-            if nodeid is None:
-                unmapped += 1
-            else:
-                nodes.append((nodeid, testcase_status))
-    except (ET.ParseError, OSError, ValueError):
-        return _empty_result(suite, argv, exit_code, duration_s, "timed_out" if timed_out else "report_parse_error")
-
-    failed = counts["failures"]
-    errors = counts["errors"]
-    skipped = counts["skipped"]
-    tests = counts["tests"]
-    passed = max(0, tests - failed - errors - skipped)
-    status = "timed_out" if timed_out else "failed" if exit_code != 0 or failed or errors else "ok"
+    report = parse_junit_report(
+        junit_path,
+        runner="pytest",
+        suite=suite,
+        exit_code=exit_code,
+        duration_s=duration_s,
+        timed_out=timed_out,
+    )
+    status = report.status
+    if status == "no_report":
+        status = "report_parse_error" if junit_path.exists() else "no_junit"
     return SuiteResult(
-        suite,
-        tests,
-        passed,
-        failed,
-        errors,
-        skipped,
-        duration_s,
-        exit_code,
+        report.suite,
+        report.tests,
+        report.passed,
+        report.failed,
+        report.errors,
+        report.skipped,
+        report.duration_s,
+        report.exit_code,
         argv,
         status,
-        nodes=tuple(sorted(nodes)),
-        unmapped=unmapped,
+        nodes=report.nodes,
+        unmapped=report.unmapped,
     )
 
 
@@ -447,11 +501,14 @@ def render_markdown(
         for index, value in enumerate(values):
             grand_total[index] += value
         label = f"{suite}{' ❌' if values[2] or values[4] else ''}"
-        new_red, baseline_red, unknown = _baseline_counts(suites.get(suite, ()))
-        if new_red is None:
+        if ":" in suite:
+            baseline_cells = ("n/a", "n/a", "n/a")
+        else:
+            new_red, baseline_red, unknown = _baseline_counts(suites.get(suite, ()))
+        if ":" not in suite and new_red is None:
             unclassified_failures = True
             baseline_cells = ("—", "—", "—")
-        else:
+        elif ":" not in suite:
             baseline_totals[0] += new_red
             baseline_totals[1] += baseline_red
             baseline_totals[2] += unknown
