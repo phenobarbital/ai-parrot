@@ -16,7 +16,7 @@ tags: [test-scope, sdd-coder, validation-contract, runners, task-tier, token-bud
 
 **Date**: 2026-10-20
 **Author**: Jesus Lara (with Claude)
-**Status**: exploration
+**Status**: accepted
 **Recommended Option**: A
 
 ---
