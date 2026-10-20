@@ -269,7 +269,7 @@ timeout -k 10 1800 python -m scripts.sdd.select_tests --tier feature --base orig
 The feature tier is driven by the index's `test_contract` and always runs fresh (`--fresh` is the feature-tier
 default). The rendered table has **New red**, **Baseline red** and **Unknown** columns, a `cached` line for
 unchanged green targets, and a gate line: the PR is blocked only by new reds or unknowns; baseline reds are
-reported, not blocking.
+reported, not blocking. Rows are labeled `<runner>:<distribution>` with `n/a` for cache/baseline for non-pytest runners.
 
 Then render the section (always, even when the re-run was skipped or failed):
 

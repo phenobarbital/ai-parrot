@@ -35,7 +35,7 @@ from parrot.flows.dev_loop.sdd_coder.background import (
 )
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore
 from parrot.flows.dev_loop.sdd_coder.optimization_models import BackgroundRegistration, BackgroundStatus
-from parrot.flows.dev_loop.test_scope.datatypes import PytestInvocation, ScopePlan
+from parrot.flows.dev_loop.test_scope.datatypes import Invocation, ScopePlan
 
 
 def _make_supervisor(
@@ -52,7 +52,7 @@ def _make_supervisor(
 
 def _single_invocation_plan(argv: tuple[str, ...], *, tier: str = "merge") -> ScopePlan:
     """A `ScopePlan` carrying exactly one controlled, synthetic pytest-shaped invocation."""
-    invocation = PytestInvocation(distribution="root", argv=argv, targets=())
+    invocation = Invocation(distribution="root", argv=argv, targets=())
     return ScopePlan(tier=tier, invocations=(invocation,), escalated=(), core_hits=(), skipped_escalations=(), notes=())
 
 
@@ -75,7 +75,7 @@ async def test_idempotent_launch_and_scope(tmp_path: Path, monkeypatch: pytest.M
     plan_calls: list[str] = []
 
     def _fake_plan_tests(
-        *, worktree: Path, changed_files: list[str], tier: str, declared=(), contract=None, policy=None
+        *, worktree: Path, changed_files: list[str], tier: str, declared=(), contract=None, policy=None, registry=None
     ) -> ScopePlan:
         plan_calls.append(tier)
         return _single_invocation_plan((sys.executable, "-c", "import sys; sys.exit(0)"), tier=tier)
@@ -348,7 +348,7 @@ def _patch_recording(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, argv: tupl
     monkeypatch.setattr(
         background_module,
         "plan_tests",
-        lambda *, worktree, changed_files, tier, declared=(), contract=None, policy=None: _single_invocation_plan(
+        lambda *, worktree, changed_files, tier, declared=(), contract=None, policy=None, registry=None: _single_invocation_plan(
             argv, tier=tier
         ),
     )

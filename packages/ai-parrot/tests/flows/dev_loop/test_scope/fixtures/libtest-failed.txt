@@ -1,0 +1,26 @@
+
+running 3 tests
+test tests::adds ... ok
+test tests::divides ... FAILED
+test tests::parses ... FAILED
+
+failures:
+
+---- tests::divides stdout ----
+thread 'tests::divides' panicked at src/lib.rs:20:9:
+assertion `left == right` failed
+  left: 3
+ right: 2
+
+---- tests::parses stdout ----
+thread 'tests::parses' panicked at src/lib.rs:31:9:
+called `Result::unwrap()` on an `Err` value: ParseIntError { kind: InvalidDigit }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::divides
+    tests::parses
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

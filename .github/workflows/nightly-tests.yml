@@ -47,6 +47,7 @@ jobs:
           - ai-parrot-visualizations
           - navrules
           - parrot-formdesigner
+          - admin-ui
         timeout: [30]
         include:
           - suite: ai-parrot
@@ -57,30 +58,51 @@ jobs:
           ref: dev
 
       - name: Set up Python
+        if: matrix.suite != 'admin-ui'
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Install uv
+        if: matrix.suite != 'admin-ui'
         uses: astral-sh/setup-uv@v10.2.0
         with:
           version: "latest"
 
       - name: Sync all workspace packages
+        if: matrix.suite != 'admin-ui'
         run: uv sync --all-packages
+
+      - name: Set up Node.js
+        if: matrix.suite == 'admin-ui'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Enable pnpm via corepack
+        if: matrix.suite == 'admin-ui'
+        run: corepack enable && corepack prepare pnpm@9 --activate
+
+      - name: Install Node dependencies
+        if: matrix.suite == 'admin-ui'
+        run: pnpm install --frozen-lockfile
 
       - name: Run suite
         env:
           SUITE: ${{ matrix.suite }}
         run: |
           mkdir -p junit
-          if [ "$SUITE" = "root" ]; then
-            TESTS_PATH=tests
+          if [ "$SUITE" = "admin-ui" ]; then
+            pnpm --filter ./packages/ai-parrot-server/ui exec vitest run --reporter=junit --outputFile=../../../junit/admin-ui.xml
           else
-            TESTS_PATH="packages/$SUITE/tests"
+            if [ "$SUITE" = "root" ]; then
+              TESTS_PATH=tests
+            else
+              TESTS_PATH="packages/$SUITE/tests"
+            fi
+            uv run pytest "$TESTS_PATH" -q -m "not real_llm" -o junit_family=xunit1 \
+              --junitxml="junit/$SUITE.xml" --continue-on-collection-errors -p no:cacheprovider
           fi
-          uv run pytest "$TESTS_PATH" -q -m "not real_llm" -o junit_family=xunit1 \
-            --junitxml="junit/$SUITE.xml" --continue-on-collection-errors -p no:cacheprovider
 
       - name: Upload junit
         if: always()

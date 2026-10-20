@@ -1052,6 +1052,7 @@ markers = [
     "live: needs provider credentials; opt-in with -m live",
     "integration: test lives under an integration/ directory (FEAT-563 auto-mark)",
     "e2e: test lives under an e2e/ directory (FEAT-563 auto-mark)",
+    "task_tier_gate: exercises the sdd-coder task-tier validation gate itself; opts out of the conftest stub that keeps the gate green for every other test (FEAT-709)",
 ]
 
 [tool.cibuildwheel]

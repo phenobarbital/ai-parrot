@@ -6,12 +6,12 @@ import subprocess
 from pathlib import Path, PurePosixPath
 from typing import Sequence
 
-from .contract import is_broad_pytest
 from .datatypes import CoreHit, ScopePlan, TestContract, TestTarget
 from .impact import ImportIndex, detect_core, impacted_tests, module_name_for
-from .mirror import distribution_of, pytest_file_targets
+from .mirror import distribution_of
 from .planner import build_plan
 from .policy import TIERS, ScopePolicy
+from .runners.registry import RunnerRegistry, load_registry
 
 _FLAG_WITH_VALUE = frozenset({"-m", "-k", "-o", "-p", "-c", "-n", "--rootdir", "--confcutdir", "--tb", "--ignore"})
 _PYTEST_MODULE_FORMS = (("python", "-m", "pytest"), ("python3", "-m", "pytest"))
@@ -88,22 +88,38 @@ def _operands(argv: Sequence[str]) -> list[str]:
     return operands
 
 
-def _declared_targets(declared: Sequence[Sequence[str]], notes: list[str], *, worktree: Path) -> list[str]:
-    """Path operands of declared pytest argvs; broad ones (or unmappable ones) are dropped with a note."""
-    targets: list[str] = []
+def _declared_targets(
+    declared: Sequence[Sequence[str]],
+    notes: list[str],
+    *,
+    worktree: Path,
+    registry: RunnerRegistry | None = None,
+    tier: str = "task",
+) -> list[TestTarget]:
+    """Return bounded declared targets classified by their registered runner."""
+    registry = registry or load_registry(worktree)
+    targets: list[TestTarget] = []
     for argv in declared:
         if not argv:
             continue
-        if is_broad_pytest(argv, worktree=worktree):
+        adapter = registry.adapter_for_argv(argv)
+        if adapter is None:
+            continue
+        if tier not in registry.tiers_for(adapter.kind):
+            notes.append(f"{adapter.kind}: not eligible for tier {tier}")
+            continue
+        if adapter.is_broad(argv, worktree=worktree):
             notes.append(f"declared command is over-broad, dropped: {' '.join(argv)}")
             continue
-        for operand in _operands(argv):
+        for operand in adapter.operands(argv) or ():
             try:
-                distribution_of(operand.split("::", 1)[0])
+                distribution = adapter.distribution_of(
+                    operand.split("::", 1)[0], settings=registry.settings_for(adapter.kind)
+                )
             except ValueError:
                 notes.append(f"declared path does not map to a distribution, dropped: {operand}")
                 continue
-            targets.append(operand)
+            targets.append(TestTarget(operand, distribution, "declared", runner=adapter.kind))
     return targets
 
 
@@ -128,30 +144,54 @@ def plan_tests(
     declared: Sequence[Sequence[str]] = (),
     contract: TestContract | None = None,
     policy: ScopePolicy | None = None,
+    registry: RunnerRegistry | None = None,
 ) -> ScopePlan:
     """Plan bounded tests using either a declared contract or direct-import fallback."""
     if tier not in TIERS:
         raise ValueError(f"unknown tier {tier!r}; expected one of {TIERS}")
     policy = policy or ScopePolicy()
+    registry = registry or load_registry(worktree)
     mode = "contract" if contract is not None else "fallback"
     notes: list[str] = []
-    targets = [
-        TestTarget(path=p, distribution=_dist(p), reason="declared")
-        for p in _declared_targets(declared, notes, worktree=worktree)
-    ]
-    targets += [
-        TestTarget(path=p, distribution=_dist(p), reason="mirror")
-        for p in pytest_file_targets(list(changed_files), str(worktree))
-    ]
+    targets = _declared_targets(declared, notes, worktree=worktree, registry=registry, tier=tier)
+    if contract is None:
+        runner_blocks = (("pytest", registry.settings_for("pytest"), registry.tiers_for("pytest")),)
+    else:
+        runner_blocks = tuple((block.kind, block.settings, block.tiers) for block in contract.runners)
+    for kind, settings, contract_tiers in runner_blocks:
+        if tier not in contract_tiers or tier not in registry.tiers_for(kind):
+            notes.append(f"{kind}: not eligible for tier {tier}")
+            continue
+        adapter = registry.adapter_for_kind(kind)
+        targets += [
+            TestTarget(
+                path=path,
+                distribution=adapter.distribution_of(path, settings=settings),
+                reason="mirror",
+                runner=kind,
+            )
+            for path in adapter.mirror_targets(list(changed_files), worktree=worktree, settings=settings)
+        ]
     hits: list[CoreHit] = []
 
     if tier != "task" and contract is not None:
-        for operand in contract.tests:
-            operand_path = operand.split("::", 1)[0]
-            if not (worktree / operand_path).is_file():
-                notes.append(f"contract operand missing on disk, skipped: {operand}")
+        for runner in contract.runners:
+            if tier not in runner.tiers or tier not in registry.tiers_for(runner.kind):
                 continue
-            targets.append(TestTarget(path=operand, distribution=_dist(operand), reason="contract"))
+            adapter = registry.adapter_for_kind(runner.kind)
+            for operand in runner.targets or ("",):
+                operand_path = operand.split("::", 1)[0]
+                if operand_path and not (worktree / operand_path).is_file():
+                    notes.append(f"contract operand missing on disk, skipped: {operand}")
+                    continue
+                targets.append(
+                    TestTarget(
+                        path=operand,
+                        distribution=adapter.distribution_of(operand_path, settings=runner.settings),
+                        reason="contract",
+                        runner=runner.kind,
+                    )
+                )
 
     if tier != "task":
         index: ImportIndex | None = None
@@ -212,4 +252,5 @@ def plan_tests(
         notes=notes,
         contract=contract,
         mode=mode,
+        registry=registry,
     )

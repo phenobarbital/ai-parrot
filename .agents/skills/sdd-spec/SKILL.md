@@ -131,6 +131,8 @@ stay with the thinking model — eligibility never delegates a design choice.
    - mandatory Codebase Contract
    - Worktree Strategy
    - `### Validation Contract` in §4 (FEAT-699): explicit pytest operands or `none — fallback`
+     — or the FEAT-709 `runners:` form (pytest/vitest/cargo/parrot-e2e blocks; kinds, tiers and settings from
+     `.parrot/test_runners.toml`; `parrot-e2e` never at task tier). The flat form is lifted on read to one pytest runner.
    - optional `e2e` frontmatter and `### E2E Scenarios` subsection (FEAT-581)
      only when the feature exercises the deterministic E2E gate: `policy`
      must be exactly `required`, `optional` or `none` (never coerced when

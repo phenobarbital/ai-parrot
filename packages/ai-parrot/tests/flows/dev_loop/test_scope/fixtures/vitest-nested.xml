@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="vitest nested">
+  <testsuite name="src/lib/nested.test.ts">
+    <testsuite name="outer" tests="1" failures="0" errors="0" skipped="0">
+      <testcase classname="src/lib/nested.test.ts" file="src/lib/nested.test.ts" name="runs outer"/>
+    </testsuite>
+    <testsuite name="inner" tests="1" failures="0" errors="0" skipped="0">
+      <testcase classname="src/lib/nested.test.ts" file="src/lib/nested.test.ts" name="runs inner"/>
+    </testsuite>
+  </testsuite>
+</testsuites>

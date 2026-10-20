@@ -605,9 +605,10 @@ class SddCoderToolkit(AbstractToolkit):
         worktree: str,
         execution_id: str,
         task_ids: List[str],
-        tier: Literal["merge", "feature"],
+        tier: Literal["task", "merge", "feature"],
         timeout_seconds: int,
         request_id: str,
+        attempt_uid: Optional[str] = None,
     ) -> CoderResult:
         """Launch only a declared SDD validation and return a bg_handle without waiting for it.
 
@@ -622,9 +623,23 @@ class SddCoderToolkit(AbstractToolkit):
         handle; a DIFFERENT payload under a reused `request_id` is rejected,
         never a second silent process. Every admitted validation must settle
         before `coder_end_execution`/`coder_cleanup` on this worktree.
+
+        `tier='task'` (FEAT-709) validates ONE task on its attempt worktree: it
+        needs exactly one id in `task_ids` and the `attempt_uid` of an attempt
+        this execution issued; the engine resolves that attempt's worktree and
+        supplies the fork SHA as `base_ref` itself.
         """
         return await self._run(
             "coder_run_validation",
-            self._engine.run_validation(feature, worktree, execution_id, task_ids, tier, timeout_seconds, request_id),
+            self._engine.run_validation(
+                feature,
+                worktree,
+                execution_id,
+                task_ids,
+                tier,
+                timeout_seconds,
+                request_id,
+                attempt_uid=attempt_uid,
+            ),
             exclusive=True,
         )

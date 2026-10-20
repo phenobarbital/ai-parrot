@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="vitest missing file">
+  <testsuite name="anonymous" tests="1" failures="1" errors="0" skipped="0">
+    <testcase classname="anonymous" name="cannot be mapped">
+      <failure message="missing file attribute">AssertionError: expected a file attribute</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from parrot.flows.dev_loop.test_scope import baseline
 from parrot.flows.dev_loop.test_scope.baseline import classify_failures, gate_failed, summarize
 
 PASS = "def test_x():\n    assert True\n"
@@ -78,6 +79,23 @@ def test_empty_input(hermetic_repo):
     repo, base = hermetic_repo
     assert classify_failures(worktree=repo, base_ref=base, failed_nodeids=[], timeout_s=1) == ()
     assert not gate_failed(())
+
+
+def test_non_pytest_failure_is_unknown_without_checkout(hermetic_repo, monkeypatch):
+    repo, base = hermetic_repo
+
+    def fail_if_called(**kwargs):
+        raise AssertionError("baseline checkout must not be created")
+
+    monkeypatch.setattr(baseline, "prepare_baseline_checkout", fail_if_called)
+    verdicts = classify_failures(
+        worktree=repo,
+        base_ref=base,
+        failed_nodeids=["src/example.test.ts::runs"],
+        timeout_s=60,
+        runner_of={"src/example.test.ts::runs": "vitest"},
+    )
+    assert [(verdict.status, verdict.detail) for verdict in verdicts] == [("unknown", "baseline only supports pytest")]
 
 
 def test_checkout_always_removed(hermetic_repo, tmp_path):

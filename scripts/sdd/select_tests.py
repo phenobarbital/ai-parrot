@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import replace
+import json
 import shlex
 import subprocess
 import sys
@@ -46,6 +47,13 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--worktree", type=Path, default=Path.cwd())
     parser.add_argument("--run", action="store_true")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--verdict", action="store_true", help="run the plan and print only verdict JSON")
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=Path("artifacts/logs/validation"),
+        help="verdict-mode report and child-output directory",
+    )
     parser.add_argument("--feature", default=None, help="FEAT-<NNN>: record structured results (FEAT-695)")
     parser.add_argument("--report-task", default=None, help="TASK-<NNN> or _rerun: record owner (FEAT-695)")
     parser.add_argument("--no-ledger", action="store_true", help="report-only: never touch the escalation ledger")
@@ -108,6 +116,176 @@ def _record_suite(
         )
 
 
+def _write_verdict(verdict: object) -> None:
+    """Write exactly one compact verdict JSON object to stdout."""
+    import test_scope.verdict as verdict_mod  # noqa: PLC0415 — path-dependent import
+
+    sys.stdout.write(json.dumps(verdict_mod.verdict_to_json(verdict), sort_keys=True) + "\n")
+
+
+def _blocked_verdict(kernel: ModuleType, *, tier: str, note: str) -> object:
+    """Build the blocked payload used when a task-tier plan is empty."""
+    return kernel.ValidationVerdict(
+        schema=1,
+        status="blocked",
+        tier=tier,
+        runners=(),
+        failures=(),
+        notes=(note,),
+    )
+
+
+def _report_suffix(report_format: str) -> str:
+    """Return a stable file suffix for one adapter report format."""
+    return {
+        "junit": ".xml",
+        "e2e-verdict": ".json",
+        "libtest": ".txt",
+        "exit-code": ".txt",
+    }.get(report_format, ".report")
+
+
+def _safe_report_name(value: str) -> str:
+    """Make a runner or suite label safe for a report filename."""
+    return "".join(character if character.isalnum() or character in {"-", "_"} else "-" for character in value)
+
+
+def _run_verdict_mode(
+    *,
+    args: argparse.Namespace,
+    kernel: ModuleType,
+    plan: object,
+    worktree: Path,
+    base_ref: str,
+) -> int:
+    """Run a plan through its adapters and emit only the normalized verdict."""
+    import test_scope.baseline as baseline_mod  # noqa: PLC0415 — path-dependent import
+    import test_scope.report as report_mod  # noqa: PLC0415 — path-dependent import
+    import test_scope.verdict as verdict_mod  # noqa: PLC0415 — path-dependent import
+    from test_scope.runners.registry import load_registry  # noqa: PLC0415 — path-dependent import
+
+    log_dir = args.log_dir if args.log_dir.is_absolute() else worktree / args.log_dir
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        verdict = _blocked_verdict(kernel, tier=args.tier, note=f"cannot create validation log directory: {exc}")
+        _write_verdict(verdict)
+        return 2
+
+    registry = load_registry(worktree)
+    reports = []
+    evidence: list[str] = []
+    log_path = log_dir / "validation.log"
+    log_lines = [f"tier: {args.tier}", f"base: {base_ref}"]
+
+    for ordinal, invocation in enumerate(plan.invocations):
+        adapter = registry.adapter_for_kind(invocation.runner)
+        report_path = log_dir / (
+            f"{ordinal:02d}-{_safe_report_name(invocation.runner)}-"
+            f"{_safe_report_name(invocation.distribution)}{_report_suffix(invocation.report_format)}"
+        )
+        try:
+            report_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+        run_invocation = replace(invocation, report_path=str(report_path))
+        argv = list(run_invocation.argv)
+        if invocation.runner == "pytest":
+            argv = list(report_mod.with_report(run_invocation, report_path))
+        elif invocation.report_format == "junit":
+            argv = [
+                f"--outputFile={report_path}" if argument.startswith("--outputFile=") else argument for argument in argv
+            ]
+
+        run_cwd = worktree / invocation.cwd
+        timeout_s = invocation.timeout_s or registry.timeout_for(invocation.runner)
+        started = time.monotonic()
+        timed_out = False
+        try:
+            result = subprocess.run(
+                argv,
+                cwd=run_cwd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_s,
+            )
+            exit_code = result.returncode
+            stdout = result.stdout
+            stderr = result.stderr
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            exit_code = 124
+            stdout = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else exc.stdout or ""
+            stderr = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr or ""
+        except OSError as exc:
+            exit_code = 127
+            stdout = ""
+            stderr = str(exc)
+
+        duration_s = time.monotonic() - started
+        suite = report_mod.suite_name(run_invocation)
+        report = adapter.parse_report(
+            report_path=report_path,
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
+            duration_s=duration_s,
+            timed_out=timed_out,
+            suite=suite,
+        )
+        reports.append(report)
+        log_lines.extend(
+            (
+                "",
+                f"$ {shlex.join(argv)}",
+                f"cwd: {run_cwd}",
+                f"exit: {exit_code}",
+                "stdout:",
+                stdout,
+                "stderr:",
+                stderr,
+            )
+        )
+        try:
+            evidence.append(report_path.relative_to(worktree).as_posix())
+        except ValueError:
+            evidence.append(str(report_path))
+
+    pytest_failures = [
+        nodeid
+        for report in reports
+        if report.runner == "pytest"
+        for nodeid, status in report.nodes
+        if status in {"failed", "error"}
+    ]
+    baseline = ()
+    if pytest_failures and args.baseline:
+        baseline = baseline_mod.classify_failures(
+            worktree=worktree,
+            base_ref=base_ref,
+            failed_nodeids=pytest_failures,
+            timeout_s=args.timeout_baseline or 600,
+        )
+
+    log_path.write_text("\n".join(log_lines) + "\n", encoding="utf-8")
+    try:
+        evidence.append(log_path.relative_to(worktree).as_posix())
+    except ValueError:
+        evidence.append(str(log_path))
+    verdict = verdict_mod.build_verdict(
+        tier=args.tier,
+        reports=reports,
+        baseline=baseline,
+        cached=plan.cached,
+        notes=plan.notes,
+        evidence=evidence,
+    )
+    _write_verdict(verdict)
+    return 0 if verdict.status == "passed" else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point: 0 ok, 1 an invocation failed, 2 usage error / empty task-tier plan."""
     try:
@@ -160,9 +338,14 @@ def main(argv: list[str] | None = None) -> int:
     if not plan.invocations and args.tier == "task":
         import test_scope.guard as guard_mod  # noqa: PLC0415 — path-dependent import
 
+        if args.verdict:
+            _write_verdict(_blocked_verdict(kernel, tier=args.tier, note=guard_mod.BLOCK_MESSAGE))
+            return 2
         print(guard_mod.BLOCK_MESSAGE)  # noqa: T201 - CLI output
         return 2
 
+    if args.verdict:
+        return _run_verdict_mode(args=args, kernel=kernel, plan=plan, worktree=worktree, base_ref=base_ref)
     if args.json:
         import test_scope.models as models_mod  # noqa: PLC0415 — the only kernel module importing pydantic
 
@@ -244,8 +427,13 @@ def main(argv: list[str] | None = None) -> int:
                     distribution=invocation.distribution,
                     argv=tuple(argv),
                     targets=invocation.targets,
+                    runner=invocation.runner,
+                    cwd=invocation.cwd,
+                    report_path=invocation.report_path,
+                    report_format=invocation.report_format,
+                    timeout_s=invocation.timeout_s,
                 )
-                argv = list(report_mod.with_junit(invocation_copy, junit))
+                argv = list(report_mod.with_report(invocation_copy, junit))
             except OSError:
                 junit = None
         started = time.monotonic()
