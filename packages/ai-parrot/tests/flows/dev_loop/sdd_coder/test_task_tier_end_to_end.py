@@ -34,6 +34,15 @@ async def _run_git(*args: str, cwd: Path) -> None:
     assert proc.returncode == 0, f"git {' '.join(args)} failed in {cwd}: {err.decode()}\n{out.decode()}"
 
 
+async def _git_out(*args: str, cwd: Path) -> str:
+    proc = await asyncio.create_subprocess_exec(
+        "git", *args, cwd=str(cwd), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+    )
+    out, err = await proc.communicate()
+    assert proc.returncode == 0, f"git {' '.join(args)} failed in {cwd}: {err.decode()}"
+    return out.decode()
+
+
 async def _write_and_commit(repo: Path, filename: str, content: str, message: str) -> None:
     path = repo / filename
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -251,8 +260,8 @@ async def test_task_tier_end_to_end_pytest(git_sandbox_feature):
     """Red gate on attempt 1, repaired by the same seat on attempt 2, merged once green."""
     worktree, feature_branch, base_path, _index_path = git_sandbox_feature
 
-    # Build engine with fake dispatcher that fails on first attempt
-    builder = fake_builder_factory("ok", fail_on_first=True)
+    # Fake dispatcher delivers a failing test on attempt 1 and a passing one on attempt 2
+    builder = fake_builder_factory("ok")
     roster = _roster(("a", "nova"), ("b", "codex"), ("c", "google-compat"))
     roster = roster.model_copy(update={"runners": RunnerConfig(same_seat_repair=True)})
 
@@ -291,6 +300,9 @@ async def test_task_tier_end_to_end_pytest(git_sandbox_feature):
         or "test_foo" in calls[1]["brief"].validation_verdict
     ), "Second attempt should have validation verdict in brief"
 
-    # Verify the branch history: attempt-1 commit is ancestor of attempt-2 branch
-    rc, _out, _ = await _run_git("merge-base", "--is-ancestor", f"{feature_branch}--TASK-0001-a1", "HEAD", cwd=worktree)
-    assert rc == 0, "Attempt 1 branch should be ancestor of attempt 2 branch (repair is seeded from failed branch)"
+    # Verify the branch history: the attempt-1 branch is an ancestor of the merged feature HEAD
+    # (the repair attempt was seeded from the failed branch).
+    refs = await _git_out("for-each-ref", "--format=%(refname:short)", "refs/heads/*TASK-0001-a1*", cwd=worktree)
+    a1_branches = [line for line in refs.splitlines() if line.strip()]
+    assert len(a1_branches) == 1, f"Expected exactly one attempt-1 branch, got {a1_branches}"
+    await _run_git("merge-base", "--is-ancestor", a1_branches[0], "HEAD", cwd=worktree)

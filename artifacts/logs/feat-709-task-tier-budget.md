@@ -1,43 +1,28 @@
 # FEAT-709 Task-tier Gate Budget Evidence
 
-**Generated**: 2026-10-20
+**Generated**: 2026-10-20 (orchestrator, replacing the coder's placeholder)
 **Feature**: FEAT-709 — Language-agnostic validation runners and an engine-owned task-tier gate
 
-## Context
+## Budget
 
-This file records the task-tier gate wall clock measurements for FEAT-699 tasks replayed against their merge commits, as required by spec §5 criterion: "the task-tier gate on a FEAT-699 replay stays under the pytest budget in `.parrot/test_runners.toml`".
+`.parrot/test_runners.toml`: pytest `timeout_s = 60`.
 
-## Pytest Budget
+## Integration test
 
-From `.parrot/test_runners.toml`:
-- **pytest timeout**: 60 seconds
+`packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_task_tier_end_to_end.py::test_task_tier_end_to_end_pytest`
+runs in the feature worktree: 1 passed, call time ~0.4 s (red gate on attempt 1, same-seat repair seeded from the red
+branch, green gate, merged).
 
-## Measurement Results
+## Wall clock of FEAT-699 task validation commands (this worktree, process wall time incl. interpreter start)
 
-| Task | Runner | Tests | Duration (s) | Under Budget? |
-|------|--------|-------|--------------|---------------|
-| TASK-4445 | pytest | — | — | — |
-| TASK-4447 | pytest | — | — | — |
-| TASK-4451 | pytest | — | — | — |
+| Task | Command target | Tests | Wall clock (s) | Under 60 s budget |
+|------|----------------|-------|----------------|-------------------|
+| TASK-4445 | test_scope/test_select_contract_mode.py | 4 | 3.69 | yes |
+| TASK-4447 | test_scope/test_green_cache.py | 16 | 4.21 | yes |
+| TASK-4451 | not measured (validation commands not recoverable from its note) | — | — | — |
 
-## Notes
+## Caveats
 
-**Measurement not completed**: The worktree environment lacks compiled Cython modules (`parrot.utils.types` is a `.pyx` file that requires compilation). The integration test `test_task_tier_end_to_end.py` was created but could not be executed in this environment.
-
-To complete the measurement:
-1. Run the test in an environment with compiled Cython modules
-2. Replay TASK-4445, TASK-4447, TASK-4451 against their merge commits
-3. Record the wall-clock time for each task-tier gate run
-4. Update this table with actual measurements
-
-## Proposed Budget (if measurements exceed current)
-
-If any measurement exceeds 60s, propose the new value here:
-- (pending measurement)
-
-## Validation Commands Reference
-
-From the completed FEAT-699 tasks:
-- TASK-4445: `pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select_contract_mode.py -q`
-- TASK-4447: `pytest packages/ai-parrot/tests/flows/dev_loop/test_scope/test_green_cache.py -q`
-- TASK-4451: (see TASK-4451 completion note for validation commands)
+- This measures the tasks' pytest validation commands directly on the current worktree, not a replay of the engine
+  task-tier gate against each historical merge commit.
+- No budget change is proposed.
