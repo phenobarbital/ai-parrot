@@ -11,7 +11,7 @@ tags: [telemetry, observability, eventbus, tenancy, cost, chat-storage]
 **Jira**: NVP-506 (epic NVP-502) — replaces the FEAT-775 draft of the closed PR #1747
 **Date**: 2026-10-20
 **Author**: Jesús Lara (with Claude)
-**Status**: draft
+**Status**: approved
 **Target version**: next minor
 
 ---
