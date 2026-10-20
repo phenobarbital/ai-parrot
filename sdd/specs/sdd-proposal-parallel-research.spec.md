@@ -500,6 +500,7 @@ logic live entirely within the skill command text as agent instructions.
 tests:
 - tests/sdd_scripts/test_proposal_parallel.py
 - tests/sdd_scripts/test_contract_validation.py
+- tests/sdd_scripts/test_command_twin_parity.py
 markers: none
 
 ### Test Data / Fixtures
