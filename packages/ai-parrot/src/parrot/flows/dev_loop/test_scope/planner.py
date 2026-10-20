@@ -8,6 +8,7 @@ from pathlib import Path
 from .datatypes import CoreHit, Invocation, ScopePlan, TestContract, TestTarget
 from .mirror import prune_nested
 from .policy import AGENT_FLAGS, TIERS, ScopePolicy
+from .runners.registry import RunnerRegistry, load_registry
 
 # Decision from spike S2 (artifacts/logs/feat-563-s2-conftest-rootdir.md). Placeholders: {worktree}, {dist_root}.
 PER_DIST_EXTRA_ARGS: tuple[str, ...] = ("--confcutdir", "{worktree}")
@@ -78,27 +79,53 @@ def build_plan(
     notes: Sequence[str] = (),
     contract: TestContract | None = None,
     mode: str = "fallback",
+    registry: RunnerRegistry | None = None,
 ) -> ScopePlan:
-    """Group by distribution, prune nested, add flags/markers/xdist → one Invocation per group.
+    """Group targets by runner/distribution and construct runner-owned invocations.
 
     Raises:
         ValueError: when ``tier`` is not one of ``TIERS``.
     """
     if tier not in TIERS:
         raise ValueError(f"unknown tier: {tier}")
-    groups: dict[str, list[TestTarget]] = {}
+    registry = registry or load_registry(worktree)
+    groups: dict[tuple[str, str], list[TestTarget]] = {}
     for target in targets:
-        groups.setdefault(target.distribution, []).append(target)
+        groups.setdefault((target.runner, target.distribution), []).append(target)
 
     invocations: list[Invocation] = []
-    for distribution in sorted(groups):
-        group = groups[distribution]
+    for runner, distribution in sorted(groups):
+        group = groups[(runner, distribution)]
+        adapter = registry.adapter_for_kind(runner)
+        settings = registry.settings_for(runner)
+        if runner != "pytest":
+            invocations.append(
+                adapter.invocation(
+                    group,
+                    distribution=distribution,
+                    worktree=worktree,
+                    settings=settings,
+                    policy=policy,
+                    report_path="",
+                )
+            )
+            continue
+
         contract_paths = {target.path for target in group if target.reason == "contract"}
         default_targets = [target for target in group if target.path not in contract_paths]
         contract_targets = [target for target in group if target.reason == "contract"]
 
         if default_targets:
-            invocations.append(_invocation(distribution, default_targets, worktree=worktree, policy=policy))
+            invocations.append(
+                adapter.invocation(
+                    default_targets,
+                    distribution=distribution,
+                    worktree=worktree,
+                    settings=settings,
+                    policy=policy,
+                    report_path="",
+                )
+            )
         if contract_targets:
             invocations.append(
                 _invocation(
