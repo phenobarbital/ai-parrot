@@ -60,6 +60,85 @@ def test_empty_task_plan_exits_2(fixture_monorepo):
     assert main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo)]) == 2
 
 
+def test_empty_task_plan_verdict_is_blocked_json_only(fixture_monorepo, capsys):
+    """Verdict mode turns an empty task plan into the structured blocked payload."""
+    rc = main(["--tier", "task", "--base", "HEAD", "--worktree", str(fixture_monorepo), "--verdict"])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert rc == 2
+    assert payload["status"] == "blocked"
+    assert payload["notes"]
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize(("failed", "expected_status", "expected_exit"), [(False, "passed", 0), (True, "failed", 1)])
+def test_select_tests_verdict_mode_json_only(
+    fixture_monorepo, tmp_path, monkeypatch, capsys, failed, expected_status, expected_exit
+):
+    """Verdict mode captures child output, parses the adapter report, and maps exit codes."""
+    from scripts.sdd.select_tests import _load_kernel
+
+    kernel = _load_kernel()
+    import scripts.sdd.select_tests as select_tests_mod
+    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
+
+    target = "packages/a/tests/test_x.py"
+    plan = ScopePlan(
+        tier="task",
+        invocations=(
+            Invocation(
+                distribution="a",
+                argv=("pytest", target),
+                targets=(TestTarget(path=target, distribution="a", reason="declared"),),
+            ),
+        ),
+        escalated=(),
+        core_hits=(),
+        skipped_escalations=(),
+        notes=(),
+    )
+    monkeypatch.setattr(kernel, "plan_tests", lambda **_: plan)
+    monkeypatch.setattr(kernel, "changed_files", lambda *_: [])
+
+    def _run(argv, **kwargs):
+        report_path = Path(
+            next(value for value in argv if value.startswith("--junitxml=")).removeprefix("--junitxml=")
+        ).resolve()
+        failure = '<failure message="broken">assert False</failure>' if failed else ""
+        report_path.write_text(
+            f'<testsuites><testsuite tests="1" failures="{int(failed)}">'
+            '<testcase file="packages/a/tests/test_x.py" classname="packages.a.tests.test_x" name="test_x">'
+            f"{failure}</testcase></testsuite></testsuites>"
+        )
+        return SimpleNamespace(returncode=int(failed), stdout="child stdout\n", stderr="child stderr\n")
+
+    monkeypatch.setattr(select_tests_mod.subprocess, "run", _run)
+    log_dir = tmp_path / "validation"
+    rc = main(
+        [
+            "--tier",
+            "task",
+            "--base",
+            "HEAD",
+            "--worktree",
+            str(fixture_monorepo),
+            "--verdict",
+            "--no-baseline",
+            "--log-dir",
+            str(log_dir),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert rc == expected_exit
+    assert payload["status"] == expected_status
+    assert captured.err == ""
+    assert "child stdout" not in captured.out
+    assert "child stdout" in (log_dir / "validation.log").read_text()
+
+
 def test_index_contract_selects_declared_operands(fixture_monorepo, capsys):
     """An explicit contract selects its operands instead of import-derived targets."""
     from scripts.sdd.select_tests import _load_kernel
@@ -141,13 +220,13 @@ def test_baseline_verdict_controls_failure_exit(fixture_monorepo, monkeypatch, s
     kernel = _load_kernel()
     import scripts.sdd.select_tests as sel
     import test_scope.baseline as baseline
-    from test_scope.datatypes import BaselineVerdict, PytestInvocation, ScopePlan, TestTarget
+    from test_scope.datatypes import BaselineVerdict, Invocation, ScopePlan, TestTarget
 
     target = "packages/a/tests/test_x.py"
     plan = ScopePlan(
         tier="merge",
         invocations=(
-            PytestInvocation(
+            Invocation(
                 distribution="a",
                 argv=("pytest", target),
                 targets=(TestTarget(path=target, distribution="a", reason="declared"),),
@@ -331,13 +410,13 @@ def test_run_records_green_cap_escalation(fixture_monorepo, monkeypatch):
     from scripts.sdd.select_tests import _load_kernel
 
     kernel = _load_kernel()
-    from test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
+    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
 
     driving_file = "packages/a/src/pa/x.py"
     plan = ScopePlan(
         tier="merge",
         invocations=(
-            PytestInvocation(
+            Invocation(
                 distribution="a",
                 argv=("pytest", "packages/a/tests"),
                 targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
@@ -371,12 +450,12 @@ def test_run_rearms_red_cap_escalation(fixture_monorepo, monkeypatch):
     from scripts.sdd.select_tests import _load_kernel
 
     kernel = _load_kernel()
-    from test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
+    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
 
     plan = ScopePlan(
         tier="merge",
         invocations=(
-            PytestInvocation(
+            Invocation(
                 distribution="a",
                 argv=("pytest", "packages/a/tests"),
                 targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),
@@ -530,12 +609,12 @@ def test_no_ledger_skips_escalation_ledger(fixture_monorepo, monkeypatch):
     from scripts.sdd.select_tests import _load_kernel
 
     kernel = _load_kernel()
-    from test_scope.datatypes import PytestInvocation, ScopePlan, TestTarget
+    from test_scope.datatypes import Invocation, ScopePlan, TestTarget
 
     plan = ScopePlan(
         tier="merge",
         invocations=(
-            PytestInvocation(
+            Invocation(
                 distribution="a",
                 argv=("pytest", "packages/a/tests"),
                 targets=(TestTarget(path="packages/a/tests", distribution="a", reason="escalated"),),

@@ -21,13 +21,41 @@ markers: none
 ### Next
 """
 
+RUNNERS_SPEC = """## 4. Test Specification
+### Validation Contract
+runners:
+- kind: pytest
+  tests:
+  - packages/ai-parrot/tests/flows/dev_loop/test_scope/test_select.py
+  markers: [unit, integration]
+- kind: vitest
+  cwd: packages/ai-parrot-server/ui
+  tests:
+  - src/lib/components/FormRenderer.test.ts
+  tiers: [task, merge]
+
+### Next
+"""
+
 
 def test_parse_spec_contract_roundtrip():
     """A normal contract preserves test order and round-trips through an index header."""
     contract = parse_spec_contract(SPEC)
     assert contract is not None
-    assert contract.tests[1].endswith("::test_x")
-    assert contract.markers == ()
+    assert contract.pytest is not None
+    assert contract.pytest.targets[1].endswith("::test_x")
+    assert contract.pytest.settings["markers"] == ""
+    assert contract_from_index_header({"test_contract": contract_to_header(contract)}) == contract
+
+
+def test_parse_runner_contract_roundtrip():
+    """The multi-runner form normalizes settings and survives the schema-2 header."""
+    contract = parse_spec_contract(RUNNERS_SPEC)
+    assert contract is not None
+    assert [runner.kind for runner in contract.runners] == ["pytest", "vitest"]
+    assert contract.pytest is not None
+    assert contract.pytest.settings["markers"] == "integration,unit"
+    assert contract.runners[1].tiers == ("task", "merge")
     assert contract_from_index_header({"test_contract": contract_to_header(contract)}) == contract
 
 
@@ -55,7 +83,7 @@ def test_absent_and_unknown_schema_header():
     """Legacy headers fall back, but unknown cached schemas fail closed."""
     assert contract_from_index_header({}) is None
     with pytest.raises(ValueError):
-        contract_from_index_header({"test_contract": {"schema": 2}})
+        contract_from_index_header({"test_contract": {"schema": 99}})
 
 
 def test_tampered_digest_fails_closed():

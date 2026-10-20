@@ -407,6 +407,7 @@ consolidate, and own SDD state. Coders (`sdd-coder`) run one task each in their 
    - `failed` with `diagnostics` starting `empty_delivery:` → the seat delivered no file change (the engine never
      answers `merged` for an empty branch). On `coder_run_chunk` the retry ladder already ran; treat as `failed` below.
    - `fidelity_violation` → treat as `failed` (a coder touched `sdd/tasks/`/`sdd/ledger/` or unlisted files — a declared `sdd/` doc such as `sdd/WORKFLOW.md` is fine —, OR its diff adds a banned import — `diagnostics` starts with `BannedImport:`; never merge it by hand, fix it yourself in attempt 3).
+   - `validation_failed` → the task's validation gate was red; `coder_run_validation(tier="task")` is available to iterate before merge. The engine re-dispatches the **same seat** once in a fresh session with the verdict under `## Validation verdict`; fix exactly those failures.
    - `failed` → attempt 3 is yours, but **only for a `standard` classification with confirmed evidence**: implement the
      task in THIS worktree with steps c)–f) of the Fallback loop, then (g). **DO NOT automatically implement a task
      yourself** when it is blocked with `complex_model_unavailable` or its complexity assessment is unavailable — wait

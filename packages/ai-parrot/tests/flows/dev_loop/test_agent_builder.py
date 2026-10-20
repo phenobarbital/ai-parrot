@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from parrot.flows.dev_loop.agent_builder import (
+    scaled_max_turns,
     DEFAULT_LLM_MAX_TURNS,
     ENV_LLM_MAX_TURNS,
     build_dispatcher,
@@ -205,3 +206,31 @@ class TestResolvePoolMax:
 
     def test_clamped_to_at_least_one(self):
         assert resolve_pool_max(fake_getter({"DEV_LOOP_DEV_POOL_MAX": "0"})) == 1
+
+
+class TestScaledMaxTurns:
+    """Per-task turn scaling: the configured budget is the floor, the profile limit (100) the ceiling."""
+
+    @pytest.mark.parametrize(
+        ("declared", "expected"),
+        [(None, 60), (0, 60), (1, 60), (2, 60), (5, 60), (6, 66), (9, 84), (11, 96), (12, 100), (40, 100)],
+    )
+    def test_scaling_curve(self, declared, expected):
+        assert scaled_max_turns(60, declared) == expected
+
+    def test_base_above_ceiling_is_clamped(self):
+        assert scaled_max_turns(150, 3) == 100
+        assert scaled_max_turns(150, None) == 100
+
+    def test_never_below_base(self):
+        assert scaled_max_turns(90, 2) == 90
+
+    def test_per_file_is_tunable(self):
+        assert scaled_max_turns(60, 9, per_file=3) == 60
+        assert scaled_max_turns(60, 9, per_file=8) == 100
+
+    def test_ceiling_matches_the_profile_field_limit(self):
+        from parrot.flows.dev_loop.agent_builder import LLM_TURNS_CEILING
+
+        limit = next(m.le for m in LLMCodeDispatchProfile.model_fields["max_turns"].metadata if hasattr(m, "le"))
+        assert LLM_TURNS_CEILING == limit

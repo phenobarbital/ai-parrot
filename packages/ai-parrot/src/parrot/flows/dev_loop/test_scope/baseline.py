@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from .datatypes import BaselineVerdict
@@ -160,11 +160,17 @@ def classify_failures(
     failed_nodeids: Sequence[str],
     timeout_s: int,
     scratch: Path | None = None,
+    runner_of: Mapping[str, str] | None = None,
 ) -> tuple[BaselineVerdict, ...]:
     """Run ONLY ``failed_nodeids`` on the baseline; one verdict per input node id, input order kept."""
     nodeids = list(failed_nodeids)
     if not nodeids:
         return ()
+
+    non_pytest = {nodeid for nodeid in nodeids if runner_of is not None and runner_of.get(nodeid) != "pytest"}
+    pytest_nodeids = [nodeid for nodeid in nodeids if nodeid not in non_pytest]
+    if not pytest_nodeids:
+        return tuple(BaselineVerdict(nodeid, "unknown", "baseline only supports pytest") for nodeid in nodeids)
 
     owns_scratch = scratch is None
     scratch_dir = Path(tempfile.mkdtemp(prefix="parrot-baseline-")) if scratch is None else Path(scratch)
@@ -174,11 +180,18 @@ def classify_failures(
         try:
             checkout = prepare_baseline_checkout(worktree=worktree, base_ref=base_ref, scratch=scratch_dir)
         except BaselineUnavailable as exc:
-            return tuple(BaselineVerdict(n, "unknown", str(exc)) for n in nodeids)
+            return tuple(
+                (
+                    BaselineVerdict(nodeid, "unknown", "baseline only supports pytest")
+                    if nodeid in non_pytest
+                    else BaselineVerdict(nodeid, "unknown", str(exc))
+                )
+                for nodeid in nodeids
+            )
 
         verdicts: dict[str, BaselineVerdict] = {}
         groups: dict[str, list[str]] = {}
-        for nodeid in nodeids:
+        for nodeid in pytest_nodeids:
             file_part = _file_part(nodeid)
             if not (checkout / file_part).exists():
                 verdicts[nodeid] = BaselineVerdict(nodeid, "new_red", "test only on branch")
@@ -192,7 +205,9 @@ def classify_failures(
 
         for dist, group in groups.items():
             verdicts.update(_classify_group(checkout, dist, group, timeout_s, tmp_dir))
-        return tuple(verdicts[n] for n in nodeids)
+        for nodeid in non_pytest:
+            verdicts[nodeid] = BaselineVerdict(nodeid, "unknown", "baseline only supports pytest")
+        return tuple(verdicts[nodeid] for nodeid in nodeids)
     finally:
         if checkout is not None:
             remove_baseline_checkout(worktree, checkout)

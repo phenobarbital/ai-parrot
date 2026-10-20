@@ -545,6 +545,13 @@ directory, never a `real_llm` test. It replaces heuristic test breadth in every 
 narrows local coverage (the nightly workflow is the backstop). Write `none — fallback` only when no
 existing test exercises the feature yet; the selector then uses its bounded fallback.
 
+**Runners, tiers and lift-on-read (FEAT-709):** the contract may also use the multi-runner `runners:` form
+(`- kind: pytest|vitest|cargo|parrot-e2e` blocks, see `sdd/templates/spec.md`) when the feature has
+non-pytest tests. Kinds, eligible tiers and settings come from the runner registry (built-ins merged with
+`.parrot/test_runners.toml`); `parrot-e2e` is merge/feature tier only, never task. The flat
+`tests:`/`markers:` form stays valid and is lifted on read to one pytest runner; `/sdd-task` always caches
+schema 2.
+
 **E2E plan hint (new section in spec, FEAT-581 — optional):**
 Only add this when the feature exercises the deterministic E2E gate
 (`parrot e2e run` / `parrot e2e verify`); otherwise omit both the

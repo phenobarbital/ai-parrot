@@ -14,9 +14,17 @@ def _load() -> dict:
     return yaml.safe_load(WF.read_text(encoding="utf-8"))
 
 
+#: Matrix suites that are NOT a ``packages/*/tests`` directory: the repo-root suite, and the
+#: admin UI's vitest suite (FEAT-709 TASK-4537), which lives at ``packages/ai-parrot-server/ui``
+#: and runs on the workflow's Node/pnpm path rather than the Python one.
+NON_PACKAGE_SUITES = ("root", "admin-ui")
+
+
 def test_matrix_covers_every_package_suite():
     suites = _load()["jobs"]["suites"]["strategy"]["matrix"]["suite"]
-    expected = sorted(p.parent.name for p in ROOT.glob("packages/*/tests")) + ["root"]
+    expected = sorted(p.parent.name for p in ROOT.glob("packages/*/tests")) + list(NON_PACKAGE_SUITES)
+    # Strict equality on purpose: a new packages/*/tests directory that nobody added to the
+    # matrix still fails here, and so does a matrix entry that matches nothing.
     assert sorted(suites) == sorted(expected)
     assert _load()["jobs"]["suites"]["strategy"]["fail-fast"] is False
 

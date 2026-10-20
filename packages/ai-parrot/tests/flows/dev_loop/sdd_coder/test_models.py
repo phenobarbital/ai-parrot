@@ -455,3 +455,36 @@ class TestExecutionModels:
         report_args = CoderFeedbackReportArgs(feature="f", worktree="/abs")
         assert report_args.feature == "f"
         assert not hasattr(report_args, "execution_id")
+
+
+class TestValidationVerdictModels:
+    """FEAT-709 TASK-4531: verdict mirror, outcome and defaulted fields."""
+
+    def test_from_kernel_round_trips(self):
+        from parrot.flows.dev_loop.sdd_coder.models import ValidationVerdictModel
+        from parrot.flows.dev_loop.test_scope.datatypes import Failure, RunnerSummary, ValidationVerdict
+        from parrot.flows.dev_loop.test_scope.verdict import verdict_to_json
+
+        kernel = ValidationVerdict(
+            schema=1,
+            status="failed",
+            tier="task",
+            runners=(RunnerSummary("pytest", "s", 3, 2, 1, 0, 0, 0, 1.5, 1, "failed"),),
+            failures=(Failure("pytest", "t.py::x", "new_red", "boom"),),
+            notes=("n",),
+        )
+        model = ValidationVerdictModel.from_kernel(kernel)
+        assert model.schema_version == 1
+        assert model.failures[0].verdict == "new_red"
+        assert model.model_dump(by_alias=True) == verdict_to_json(kernel)
+
+    def test_new_fields_default(self):
+        from parrot.flows.dev_loop.models import TaskScopedBrief
+        from parrot.flows.dev_loop.sdd_coder.models import AttemptRecord, RunnerConfig, TaskResult
+
+        result = TaskResult(task_id="TASK-1", outcome="validation_failed")
+        assert result.validation is None
+        assert AttemptRecord(attempt=1, seat_label="s", started_at="t").validation_status == ""
+        assert RunnerConfig().gate_overall_timeout_s == 600
+        assert RunnerConfig().same_seat_repair is True
+        assert "validation_verdict" in TaskScopedBrief.model_fields

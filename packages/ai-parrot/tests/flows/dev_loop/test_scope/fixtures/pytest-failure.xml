@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="pytest failure">
+  <testsuite name="pytest" tests="1" failures="1" errors="0" skipped="0">
+    <testcase file="packages/ai-parrot/tests/test_long.py" classname="packages.ai-parrot.tests.test_long" name="test_long_failure">
+      <failure message="long failure" type="AssertionError">line 01
+line 02
+line 03
+line 04
+line 05
+line 06
+line 07
+line 08
+line 09
+line 10
+line 11
+line 12
+line 13
+line 14
+line 15
+line 16
+line 17
+line 18
+line 19
+line 20
+line 21
+line 22
+line 23
+line 24
+line 25
+line 26
+line 27
+line 28
+line 29
+line 30
+line 31
+line 32</failure>
+    </testcase>
+  </testsuite>
+</testsuites>

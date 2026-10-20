@@ -330,7 +330,7 @@ async def test_mixed_delivery_checkpoint_fresh_review(
         )
     )
     log_dir = durable_root / "executions" / execution_id / "background_logs"
-    log_dir.mkdir(parents=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "validation.log"
     log_path.write_text("2 passed\n", encoding="utf-8")
     await engine._background_registry._record_transition(  # noqa: SLF001

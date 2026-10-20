@@ -310,8 +310,18 @@ def _load_guard_bash() -> Any:
 _COMPOUND_MARKERS = ("&&", "||", ";", "|")
 
 
-def _is_lone_pytest(command: str) -> bool:
-    """True when `command` is a single pytest/python invocation with no shell compounding."""
+_RUNNER_HEADS = frozenset({"pytest", "python", "python3", "vitest", "pnpm", "npx", "cargo", "uv"})
+
+
+def _is_lone_runner_command(command: str) -> bool:
+    """True for a single runner invocation (pytest, vitest, pnpm/npx, cargo, uv) with no shell compounding.
+
+    Args:
+        command: The Bash command the seat issued.
+
+    Returns:
+        Whether it is one runner command; compounds are never lone (brainstorm Q6).
+    """
     stripped = command.strip()
     if any(marker in stripped for marker in _COMPOUND_MARKERS):
         return False
@@ -319,7 +329,7 @@ def _is_lone_pytest(command: str) -> bool:
         argv = shlex.split(stripped)
     except ValueError:
         return False
-    return bool(argv) and Path(argv[0]).name in {"pytest", "python", "python3"}
+    return bool(argv) and Path(argv[0]).name in _RUNNER_HEADS
 
 
 def _scope_guard(command: str, cwd: Path) -> tuple[str, str | None]:
@@ -330,7 +340,7 @@ def _scope_guard(command: str, cwd: Path) -> tuple[str, str | None]:
         cwd: The hook's working directory.
 
     Returns:
-        ``("allow", None)``, ``("rewrite", <command>)`` or ``("block", <message>)``.
+        ``("allow", None)``, ``("rewrite"|"verdict", <command>)`` or ``("block", <message>)``.
         Import failures and guard errors always yield ``("allow", None)``.
     """
     try:
@@ -341,14 +351,14 @@ def _scope_guard(command: str, cwd: Path) -> tuple[str, str | None]:
         return "allow", None
     if outcome.action == "block":
         return "block", outcome.message
-    if outcome.action == "rewrite" and rewritten:
-        # The kernel's rewritten command is root-relative; when the hook's cwd is a
-        # different directory, a lone pytest invocation needs an explicit `cd` first
-        # so the rewritten (repo-relative) paths still resolve (spec R2). A command
-        # that already mixes its own `cd`/segments keeps its author's cwd handling.
-        if root != cwd and _is_lone_pytest(command):
+    if outcome.action in ("rewrite", "verdict") and rewritten:
+        # The kernel's verdict command already begins with `cd <root> &&`; a plain
+        # rewrite is root-relative, so a lone runner invocation issued from a different
+        # directory needs an explicit `cd` first (spec R2). A command that already
+        # mixes its own `cd`/segments keeps its author's cwd handling.
+        if outcome.action == "rewrite" and root != cwd and _is_lone_runner_command(command):
             rewritten = f"cd {shlex.quote(str(root))} && {rewritten}"
-        return "rewrite", rewritten
+        return outcome.action, rewritten
     return "allow", None
 
 
@@ -445,7 +455,7 @@ def hook_response(payload: dict[str, Any]) -> dict[str, Any]:
             action, value = _scope_guard(command, cwd)
             if action == "block":
                 raise ValueError(value or "over-broad pytest blocked by the test-scope guard")
-            if action == "rewrite" and value:
+            if action in ("rewrite", "verdict") and value:
                 command = value
             wrapped = protected_argv(cwd, bounded_shell_argv(command, tool_input))
             # Preserve timeout/background/description without granting approval

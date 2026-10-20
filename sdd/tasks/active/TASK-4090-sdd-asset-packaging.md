@@ -67,6 +67,8 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   `sdd/templates/brief.md`. The counts change: 15 commands per host, 13 git-tracked
   templates, **81** manifest entries. Re-count against `git ls-files` at run time — the
   numbers in this file are the expected values of the sync check, not inputs to it.
+  *(Superseded by rev 0.5 C22: `/sdd-insight` leaves every host — 14 commands per host; with `sdd-contract-probe`
+  on claude and google, **80** entries.)*
 
 ---
 
@@ -78,54 +80,52 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
 - **C16 — no shipped monorepo source path.** The packaging gates widen past C12's `scripts/sdd`
   sweep: `check_asset_sync.py --check` and `--wheel` report every shipped line naming a monorepo
   source path — `packages/`, `scripts/`, `$CLAUDE_PROJECT_DIR/…` — as `monorepo-path`, with the
-  same pattern as TASK-4089's `test_no_repo_script_refs` and an exemption set that stays empty
-  until the open decision below is resolved. The two agent-frontmatter hooks are rewritten by
-  TASK-4089 (rule 7); this task only gates.
+  same pattern as TASK-4089's `test_no_repo_script_refs` and an exemption set that rev 0.5 C22 fixes
+  to the single `sdd-worker-format.sh:76` line (see the Readiness review). The two agent-frontmatter
+  hooks are rewritten by TASK-4089 (rule 7); this task only gates.
 
 ---
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: asset counts re-verified (81 = 15+9+1+1+1+15+1+15+8+13+1+1), "77 files" → 81 everywhere; three more tests that read `_subagent_data/` added as MODIFY rows; pyproject anchors updated (package-data `:970`, `parrot.flows` `:983`, `dev_loop` `:984`, FEAT-412 comment `:985-986`, `dev_flow` `:987`); stale `test_prompt_parity` note corrected (copies are byte-identical on 9f51c7735); C16 `monorepo-path` gate folded in.
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - **C16 gate vs existing paths** — after TASK-4089's rewrite, `monorepo-path` would still flag 33 `packages/` lines in 20 shipped files (e.g. `sdd/templates/spec.md:157-158`, `.claude/commands/sdd-task.md:381-416`, `.claude/agents/sdd-autopilot.md:663-664`, `sdd/WORKFLOW.md:135`) and `.claude/hooks/sdd-worker-format.sh:76` (`${CLAUDE_PROJECT_DIR:-}/.venv/bin`); four `tests/sdd_scripts/…` references (`.claude/commands/sdd-done.md:239`, `.claude/commands/sdd-task.md:386` + twin `:382`, `sdd/templates/task.md:281`) are outside C16's wording. Rewrite vs allowlist, per file: `MONOREPO_PATH_ALLOWLIST` stays empty and the `--check` / `--wheel` C16 pass stays red until resolved.
-
-## Spec rev 0.5 — 2026-10-20
-
-- **Resolved (rev 0.5 D3): C16 gate vs existing paths.** TASK-4089 (a dependency) rewrites or
-  allowlists every hit by category: (a) templates → generic placeholder; (b) runnable commands →
-  `parrot sdd run …` or a `sdd/config.json` value; (c) prose about ai-parrot itself → allowlist;
-  (d) `sdd-worker-format.sh:76` → `PATH` first, `.venv/bin` fallback. This task builds the gate to
-  match: `MONOREPO_PATH_ALLOWLIST` becomes `dict[str, str]` (install target → written reason), one
-  entry per file, with the same files and reasons as TASK-4089's `_C16_ALLOWLIST`; an allowlisted
-  target is skipped as a whole. `MONOREPO_PATH_RE` gains `tests/sdd_scripts/` (D3 widens C16 to
-  the four `tests/sdd_scripts/…` references), so it stays the same pattern as TASK-4089's
-  `_MONOREPO_PATH`. `--check` and `--wheel` must be green on the repo; the C16 pass is no longer
-  allowed to stay red. Both C16 tests plant their line in `sdd/WORKFLOW.md`, which D3 names as a
-  category-(c) example, so they now clear the allowlist with `monkeypatch` (marked in the test
-  block). Stale Readiness anchors: `sdd-task.md:381-416` → `:422-457`, `sdd-task.md:386` → `:427`,
-  twin `:382` → `:423`; `sdd-done.md:239`, `sdd/templates/task.md:281`,
-  `sdd-autopilot.md:663-664`, `sdd/WORKFLOW.md:135`, `sdd-worker-format.sh:76` unchanged.
-- **New shipped agent `sdd-contract-probe`** (`.claude/agents/sdd-contract-probe.md`,
-  `cbbe243a7`, 2026-10-20). It is invoked by the shipped `/sdd-task`, `/sdd-brainstorm`,
-  `/sdd-proposal` and their `.agent/workflows/` twins, so it ships (spec M6: 10 agents). No glob
-  changes: `.claude/agents/sdd-*.md` picks it up. It has no `_subagent_data/` copy and is not a
-  dev-loop name, so C2 is unchanged (still nine copies deleted). *[rev 0.5, fixed on dev
-  2026-10-20]* It no longer has `packages/` lines, and its Antigravity copy
-  `.agents/agents/sdd-contract-probe/agent.md` now exists (same body; locked by
-  `tests/sdd_scripts/test_contract_probe_hosts.py`), so it ships on both hosts.
-- **Google `sdd-brief` twin exists.** `.agent/workflows/sdd-brief.md` was committed on
-  2026-10-20 (`69fb12a41`), not by TASK-4089. The Google host has 15 workflows today.
-- **Counts / anchors (re-verified 2026-10-20 on dev `69fb12a41`).** Manifest entries 81 →
-  **83** = 15 commands + **10** agents + 1 hook + 1 rule + 1 skill + 15 codex/google skills + 1
-  codex TOML + 15 google workflows + **9** google agents (+ `sdd-contract-probe`) + 13 tracked templates + `WORKFLOW.md` + the
-  `CONVENTIONS.md` seed. `dev_loop/_subagent_defs.py` `_VALID_NAMES` (`:56`) holds **8** names
-  (no `sdd-autopilot`), not 9; the `_subagent_data/` files are still 9 (`sdd-autopilot` included)
-  + 1 in `dev_flow`. Unchanged: pyproject package-data `:970`, `"parrot.flows"` `:983`,
-  `"parrot.flows.dev_loop"` `:984`, FEAT-412 comment `:985-986`, `"parrot.flows.dev_flow"` `:987`;
-  `_subagent_defs.py:70,95,114` (dev_loop) and `:31,65,86` (dev_flow); `sdd/WORKFLOW.md:404-405`;
-  `codex/assets.py:143`; `google/assets.py:139`.
-- **Google probe gap — resolved on dev 2026-10-20:** `.agents/agents/sdd-contract-probe/agent.md`
-  exists, so the Google workflows that call the probe have it (9 Google agents).
+- FEAT-708 drift (merged on `dev` 2026-10-20, after this review's baseline): it added
+  `.claude/agents/sdd-contract-probe.md` (10 Claude agents) and, later the same day (`b53d93ba4`), its Antigravity
+  copy `.agents/agents/sdd-contract-probe/agent.md` (9 Google agents) *[rev 0.5]*. `/sdd-task`, `/sdd-brainstorm` and
+  `/sdd-proposal` and their twins call it, so it ships on both hosts (spec M6: 10 agents). No glob changes:
+  `.claude/agents/sdd-*.md` and `.agents/agents/sdd-*/agent.md` pick it up. It has no `_subagent_data/` copy and is not
+  a dev-loop name, so C2 is unchanged (still nine copies deleted). It no longer has `packages/` lines (the `import`
+  check resolves modules with `git ls-files`; locked by `tests/sdd_scripts/test_contract_probe_hosts.py`), so
+  TASK-4089 does not touch it. FEAT-708 also inserted lines into those three commands (+41/+39/+153); the new anchors
+  are under "Counts / anchors" below.
+- Resolved by spec rev 0.5 (2026-10-20; approved by Jesus Lara — every decision D1–D18 is closed):
+  - C22 / D3 (C16 gate vs existing paths) — TASK-4089 (a dependency) rewrites the lines by categories A–E, which
+    the spec's D3 clause states as rules (a)–(d): (a) templates → generic placeholder = A; (b) runnable commands →
+    `parrot sdd run …` or a `sdd/config.json` value = B; (c) prose about ai-parrot itself → rewritten or moved to the
+    unshipped `codebase-conventions.md` twins = B/C, nothing allowlisted for it; (d) `sdd-worker-format.sh:76` →
+    `PATH` first, `.venv/bin` fallback, and that one line is the ONLY allowlist entry = D. This task builds the gate
+    to match: `MONOREPO_PATH_ALLOWLIST` holds only `.claude/hooks/sdd-worker-format.sh:76` (the same single
+    `(target, line)` pair as TASK-4089's `_C16_ALLOWLIST`); `--check` / `--wheel` add the second pattern
+    `tests/sdd_scripts/|\bfrom navconfig\b|PYTHONPATH=|reference/sdd-insight/` (D3 widens C16 to the four
+    `tests/sdd_scripts/…` references — that pattern is what catches them, `MONOREPO_PATH_RE` itself is unchanged and
+    stays the same pattern as TASK-4089's `_MONOREPO_PATH`). `--check` and `--wheel` must be green on the repo once
+    TASK-4089 has landed; the C16 pass is no longer allowed to stay red. `/sdd-insight` is excluded on every host
+    (`EXCLUDED_TARGETS`), so 83 → **80** assets (14 commands per host); the `sdd/CONVENTIONS.md` seed gains
+    `## Repository layout` and `## Project areas`.
+- Verified on `dev` `69fb12a41` (2026-10-20) *[rev 0.5]*:
+  - **Google `sdd-brief` twin exists.** `.agent/workflows/sdd-brief.md` was committed on 2026-10-20
+    (`69fb12a41`), not by TASK-4089. The Google host has 15 workflows today (14 shipped: C22 drops `sdd-insight`).
+  - **Counts / anchors.** Manifest entries 81 → 83 on dev = 15 commands + **10** agents + 1 hook + 1 rule +
+    1 skill + 15 codex/google skills + 1 codex TOML + 15 google workflows + **9** google agents
+    (+ `sdd-contract-probe`) + 13 tracked templates + `WORKFLOW.md` + the `CONVENTIONS.md` seed — **80** once C22
+    removes `/sdd-insight` from the three hosts (14 + 10 + 1 + 1 + 1 + 14 + 1 + 14 + 9 + 13 + 1 + 1).
+    `dev_loop/_subagent_defs.py` `_VALID_NAMES` (`:56`) holds **8** names (no `sdd-autopilot`), not 9; the
+    `_subagent_data/` files are still 9 (`sdd-autopilot` included) + 1 in `dev_flow`. Unchanged: pyproject
+    package-data `:970`, `"parrot.flows"` `:983`, `"parrot.flows.dev_loop"` `:984`, FEAT-412 comment `:985-986`,
+    `"parrot.flows.dev_flow"` `:987`; `_subagent_defs.py:70,95,114` (dev_loop) and `:31,65,86` (dev_flow);
+    `sdd/WORKFLOW.md:404-405`; `codex/assets.py:143`; `google/assets.py:139`. Readiness anchors that moved:
+    `sdd-task.md:381-416` → `:422-457`, `sdd-task.md:386` → `:427`, twin `:382` → `:423`; `sdd-done.md:239`,
+    `sdd/templates/task.md:281`, `sdd-autopilot.md:663-664`, `sdd/WORKFLOW.md:135`, `sdd-worker-format.sh:76`
+    unchanged.
 
 ## Scope
 
@@ -133,10 +133,13 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
   `manifest.json`; default / `--check` exits 1 listing diverging, missing and extra files;
   `--wheel <path>` verifies a built wheel contains `manifest.json` and every manifest entry
   **and** contains nothing matching the publication deny-list — C11d; both `--check` and
-  `--wheel` also report every shipped line naming a monorepo source path — C16).
+  `--wheel` also report every shipped line naming a monorepo source path — C16 — or matching
+  C22's second pattern, except the single allowlisted line).
 - Create the neutral seed `sdd/CONVENTIONS.md` in the repo (C10); it is packaged like any
-  other asset and flagged `seed: true` in the manifest.
-- Generate `packages/ai-parrot/src/parrot/sdd/_assets/` (83 files *[rev 0.5]* + `manifest.json`) with `--write`.
+  other asset and flagged `seed: true` in the manifest. *(rev 0.5 C22 B)* It carries
+  `## Repository layout` and `## Project areas` sections, which the shipped text now points to.
+- Generate `packages/ai-parrot/src/parrot/sdd/_assets/` (80 files *[rev 0.5]* + `manifest.json`; rev 0.5 C22: no
+  `/sdd-insight` on any host; `sdd-contract-probe` on claude and google) with `--write`.
 - Declare the asset tree in `[tool.setuptools.package-data]` and in `MANIFEST.in`.
 - Add the sync-check step, the publication scan step (C11c) and a wheel-content job to
   `.github/workflows/ci.yml`.
@@ -168,7 +171,7 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
 | File | Action | Description |
 |---|---|---|
 | `scripts/sdd/check_asset_sync.py` | CREATE | Stdlib sync/check/wheel-verify tool; owns the source→asset mapping |
-| `packages/ai-parrot/src/parrot/sdd/_assets/` | CREATE | Generated asset tree (83 files *[rev 0.5]*) — produced ONLY by `check_asset_sync.py --write` |
+| `packages/ai-parrot/src/parrot/sdd/_assets/` | CREATE | Generated asset tree (80 files *[rev 0.5]*) — produced ONLY by `check_asset_sync.py --write` |
 | `packages/ai-parrot/src/parrot/sdd/_assets/manifest.json` | CREATE | Generated manifest (`schema_version: 1`, one entry per asset) |
 | `packages/ai-parrot/pyproject.toml` | MODIFY | `"parrot.sdd"` package-data with explicit per-subdir patterns |
 | `packages/ai-parrot/MANIFEST.in` | MODIFY | `graft src/parrot/sdd/_assets` so the sdist (and wheel-from-sdist) carry the tree |
@@ -339,21 +342,24 @@ workflows in `.agent/workflows/sdd-*.md` …, skills in `.agents/skills/sdd-*`, 
 
 | Host(s) | Repo source = install target (git-tracked only) | Count | `_assets/` source |
 |---|---|---|---|
-| claude | `.claude/commands/sdd-*.md` | 15 *(rev 0.4 C17: + `sdd-brief`)* | `claude/commands/` |
+| claude | `.claude/commands/sdd-*.md` | 14 *(rev 0.4 C17: + `sdd-brief`; rev 0.5 C22: − `sdd-insight`)* | `claude/commands/` |
 | claude | `.claude/agents/sdd-*.md` | 10 *[rev 0.5]* (+ `sdd-contract-probe`) | `claude/agents/` |
 | claude | `.claude/hooks/sdd-worker-format.sh` | 1 | `claude/hooks/` |
 | claude | `.claude/rules/worktree-management.md` | 1 | `claude/rules/` |
 | claude | `.claude/skills/second-opinion/SKILL.md` (C9) | 1 | `claude/skills/second-opinion/` |
-| codex, google | `.agents/skills/sdd-*/SKILL.md` | 15 *(rev 0.4 C17)* | `agents/skills/<n>/` |
+| codex, google | `.agents/skills/sdd-*/SKILL.md` | 14 *(rev 0.4 C17; rev 0.5 C22: − `sdd-insight`)* | `agents/skills/<n>/` |
 | codex | `.codex/agents/sdd-worker.toml` | 1 | `codex/agents/` |
-| google | `.agent/workflows/sdd-*.md` | 15 *[rev 0.5]* (`sdd-brief.md` committed in `69fb12a41`) | `agent/workflows/` |
+| google | `.agent/workflows/sdd-*.md` | 14 *(rev 0.4 C17: `sdd-brief.md`, committed in `69fb12a41` — 15 on dev; rev 0.5 C22: − `sdd-insight`)* | `agent/workflows/` |
 | google | `.agents/agents/sdd-*/agent.md` | 9 *[rev 0.5]* (+ `sdd-contract-probe`) | `agents/agents/<n>/` |
 | claude, codex, google | `sdd/templates/*` (git-tracked: 13 — `research_plan.schema.json` is untracked and excluded; `brief.md` came in with FEAT-698, rev 0.4 C17) | 13 | `sdd/sdd_templates/` |
 | claude, codex, google | `sdd/WORKFLOW.md` | 1 | `sdd/WORKFLOW.md` |
 | claude, codex, google | `sdd/CONVENTIONS.md` — **seed** (`seed: true`; C10) | 1 | `sdd/CONVENTIONS.md` |
 
-**Total: 83 assets** *[rev 0.5]* (`sdd-contract-probe` came in on claude and google; the two `codebase-conventions.md` rows left; the skill and the seed
-came in; *rev 0.4 C17*: `sdd-brief` on three hosts and `sdd/templates/brief.md` came in). Excluded on purpose: `.claude/rules/codebase-conventions.md` and
+**Total: 80 assets** *[rev 0.5]* = 14+10+1+1+1+14+1+14+9+13+1+1 (`sdd-contract-probe` came in on claude and google; the two
+`codebase-conventions.md` rows left; the skill and the seed came in; *rev 0.4 C17*: `sdd-brief` on three hosts and
+`sdd/templates/brief.md` came in; *rev 0.5 C22*: `/sdd-insight` left on all three hosts — `.claude/commands/sdd-insight.md`,
+`.agents/skills/sdd-insight/SKILL.md`, `.agent/workflows/sdd-insight.md` — because it depends on unshipped
+`reference/sdd-insight/` and `.claude/workflows/sdd-insight.js`; 83 before that exclusion). Excluded on purpose: `.claude/rules/codebase-conventions.md` and
 `.agent/rules/codebase-conventions.md` (C10 — ai-parrot's rulebook never ships; the codex and
 google wiki installers keep rendering `.agent/rules/` from the *repo*, which is untouched),
 `.agent/agents/sdd-*/agent.md` (no host doc names `.agent/agents/` — Antigravity's subagent dir
@@ -420,15 +426,15 @@ the manifest alone.
 0. Create `sdd/CONVENTIONS.md` (seed block below) and commit it — *why*: it must be git-tracked
    before `--write` can package it.
 1. Write `scripts/sdd/check_asset_sync.py` — *why*: it owns the mapping; the tree is generated from it.
-2. Run `python scripts/sdd/check_asset_sync.py --write`, then `--check` (expect exit 0, 83 assets *[rev 0.5]*;
-   the C16 `monorepo-path` pass is green once TASK-4089's D3 rewrites and allowlist are in *[rev 0.5]*)
+2. Run `python scripts/sdd/check_asset_sync.py --write`, then `--check` (expect exit 0, 80 assets *[rev 0.5]*;
+   the C16/C22 `monorepo-path` pass is green once TASK-4089's category A–E (D3) rewrite has landed)
    — *why*: `_assets/` and `manifest.json` must never be hand-written.
 2b. Edit both `_subagent_defs.py` loaders, `git rm` the nine duplicated `_subagent_data/` prompts,
    drop the `parrot.flows.dev_flow` package-data line, adapt the tests listed in the Files table
    — *why*: the packaged asset is now the only copy (C2); do this right after step 2 so the
    loaders have something to read.
 3. `git add -f` is NOT needed (no ignored path in the tree) — verify with
-   `git status --porcelain -uall packages/ai-parrot/src/parrot/sdd/_assets | wc -l` == 83 — *why*: a silently
+   `git status --porcelain -uall packages/ai-parrot/src/parrot/sdd/_assets | wc -l` == 80 — *why*: a silently
    ignored asset would ship nowhere.
 4. Add the package-data block and the `MANIFEST.in` graft — *why*: wheel and sdist must both carry the tree.
 5. Locally: `uv build --package ai-parrot --out-dir /tmp/<scratch>/dist` then
@@ -441,7 +447,8 @@ the manifest alone.
 
 Modes: ``--write`` regenerate _assets/ + manifest.json; ``--check`` (default) exit 1 on divergence;
 ``--wheel <whl>`` verify a built wheel carries every manifest entry. ``--check`` and ``--wheel`` also
-report any shipped line naming a monorepo source path (C16). Stdlib only — never import parrot.
+report any shipped line naming a monorepo source path (C16) or other monorepo-specific text (C22).
+Stdlib only — never import parrot.
 """
 
 from __future__ import annotations
@@ -478,6 +485,11 @@ ASSET_SOURCES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("sdd/WORKFLOW.md", HOST_ORDER),
     ("sdd/CONVENTIONS.md", HOST_ORDER),                               # C10 — seed, see SEED_TARGETS
 )
+#: rev 0.5 C22 — `/sdd-insight` does not ship on any host (it depends on unshipped `reference/sdd-insight/`
+#: and `.claude/workflows/sdd-insight.js`); these targets match the globs above and are dropped.
+EXCLUDED_TARGETS: frozenset[str] = frozenset({
+    ".claude/commands/sdd-insight.md", ".agents/skills/sdd-insight/SKILL.md", ".agent/workflows/sdd-insight.md",
+})
 #: Targets written once by the installer and never overwritten/removed (manifest `"seed": true`).
 SEED_TARGETS: frozenset[str] = frozenset({"sdd/CONVENTIONS.md"})
 #: Wheel paths (relative to WHEEL_PREFIX) that must never ship — C11d. fnmatch on the posix path.
@@ -487,11 +499,16 @@ DENY_PATTERNS: tuple[str, ...] = (
 )
 #: C16 — a monorepo source path in shipped content (`packages/…`, `scripts/…`, `$CLAUDE_PROJECT_DIR/…`);
 #: the same pattern as TASK-4089's `test_no_repo_script_refs._MONOREPO_PATH`.
-#: [rev 0.5 D3] `tests/sdd_scripts/` added.
-MONOREPO_PATH_RE = re.compile(r"(?<![\w./-])(?:packages|scripts|tests/sdd_scripts)/|\$\{?CLAUDE_PROJECT_DIR\b[^/\s]*/")
-#: [rev 0.5 D3] install target -> written reason; one entry per file, the whole file is exempt from C16.
-#: Same files and reasons as TASK-4089's `_C16_ALLOWLIST` (category (c): prose about ai-parrot itself).
-MONOREPO_PATH_ALLOWLIST: dict[str, str] = {}  # FILL IN: copy the entries TASK-4089 committed
+MONOREPO_PATH_RE = re.compile(r"(?<![\w./-])(?:packages|scripts)/|\$\{?CLAUDE_PROJECT_DIR\b[^/\s]*/")
+#: rev 0.5 C22 — the second pattern both C16 gates add (same as TASK-4089's `_MONOREPO_TEXT`); [rev 0.5 D3] it is what
+#: makes the four `tests/sdd_scripts/…` references count as monorepo paths.
+MONOREPO_TEXT_RE = re.compile(r"tests/sdd_scripts/|\bfrom navconfig\b|PYTHONPATH=|reference/sdd-insight/")
+#: (target, stripped line) pairs exempted from both patterns — C22 category D (= D3 (d)): the ONLY entry, the same single
+#: entry as TASK-4089's `_C16_ALLOWLIST` (`${CLAUDE_PROJECT_DIR:-}/.venv/bin` is the target repo's own venv, the
+#: PATH-first fallback). Add nothing else; D3 (c) prose is rewritten by TASK-4089, never allowlisted.
+MONOREPO_PATH_ALLOWLIST: frozenset[tuple[str, str]] = frozenset({
+    (".claude/hooks/sdd-worker-format.sh", 'for candidate in "$CWD/.venv/bin" "${CLAUDE_PROJECT_DIR:-}/.venv/bin" \\'),
+})
 #: target prefix -> asset prefix. No dot-dirs (nested .claude/ discovery) and no `templates/` (.gitignore:273).
 PREFIX_MAP: tuple[tuple[str, str], ...] = (
     (".claude/", "claude/"),
@@ -536,8 +553,8 @@ def expected_entries(root: Path) -> list[AssetEntry]:
     """Resolve ``ASSET_SOURCES`` against the git-tracked files of ``root``, sorted by target."""
     # FILL IN: one `git -C root ls-files -z -- <pathspecs>` call, glob-match each tracked path to the
     #          FIRST matching ASSET_SOURCES row (fnmatch on the posix path), merge hosts if a target
-    #          matches twice (keep HOST_ORDER), seed=(target in SEED_TARGETS) — bounded by "git-tracked
-    #          only" + deterministic order
+    #          matches twice (keep HOST_ORDER), seed=(target in SEED_TARGETS), skip any target in
+    #          EXCLUDED_TARGETS (C22) — bounded by "git-tracked only" + deterministic order + 80 entries [rev 0.5]
     raise NotImplementedError
 
 
@@ -548,9 +565,10 @@ def build_manifest(entries: list[AssetEntry]) -> str:
 
 
 def monorepo_path_problems(target: str, data: bytes) -> list[str]:
-    """C16: one ``monorepo-path: <target>:<line>: <text>`` per shipped line naming a monorepo source path."""
-    # FILL IN: decode utf-8 (undecodable bytes → no finding), enumerate lines from 1, skip pairs in
-    #          targets in MONOREPO_PATH_ALLOWLIST (per file [rev 0.5 D3]) — bounded by test_monorepo_path_is_reported
+    """C16 + C22: one ``monorepo-path: <target>:<line>: <text>`` per shipped line matching ``MONOREPO_PATH_RE``
+    or ``MONOREPO_TEXT_RE``."""
+    # FILL IN: decode utf-8 (undecodable bytes → no finding), enumerate lines from 1, test both patterns, skip
+    #          pairs in MONOREPO_PATH_ALLOWLIST (target, line.strip()) — bounded by test_monorepo_path_is_reported
     raise NotImplementedError
 
 
@@ -559,8 +577,8 @@ def find_problems(root: Path, assets_dir: Path) -> list[str]:
 
     Problem kinds: ``missing`` (expected asset absent), ``diverged`` (bytes differ from the repo
     source), ``extra`` (file under ``assets_dir`` not in the expected set), ``manifest`` (committed
-    ``manifest.json`` differs from ``build_manifest``), ``monorepo-path`` (C16, a shipped source line
-    names a monorepo source path).
+    ``manifest.json`` differs from ``build_manifest``), ``monorepo-path`` (C16/C22, a shipped source line
+    names a monorepo source path or other monorepo-specific text).
     """
     # FILL IN: byte comparison per entry (read_bytes), rglob for extras (ignore manifest.json),
     #          manifest text equality, then monorepo_path_problems(entry.target, source bytes) per entry —
@@ -632,7 +650,7 @@ _assets/
   manifest.json                      {"schema_version": 1, "assets": [{"source": "claude/commands/sdd-spec.md",
                                        "target": ".claude/commands/sdd-spec.md", "hosts": ["claude"]}, ...,
                                        {"source": "sdd/CONVENTIONS.md", "target": "sdd/CONVENTIONS.md",
-                                        "hosts": ["claude", "codex", "google"], "seed": true}]}  (83 entries [rev 0.5])
+                                        "hosts": ["claude", "codex", "google"], "seed": true}]}  (80 entries [rev 0.5])
   claude/{commands,agents,hooks,rules}/...
   claude/skills/second-opinion/SKILL.md
   agents/skills/sdd-*/SKILL.md       agents/agents/sdd-*/agent.md
@@ -655,6 +673,16 @@ with `entry.get("seed", False)`. No `agent/rules/` subtree exists any more (C10)
 ## Stack
 <!-- Languages, frameworks, runtime versions. -->
 
+## Repository layout
+<!-- Source roots and test roots (for example `src/<package>/` and `tests/`), how the repository is
+     split into packages or modules, and the exact command that runs ONE test file. The SDD
+     commands send layout and environment questions here. -->
+
+## Project areas
+<!-- One line per area name that SDD documents use in their `projects:` frontmatter, with the
+     paths it covers (for example `api: src/api/, tests/api/`). List the same names in `projects`
+     in sdd/config.json to have them validated; unknown names only warn. -->
+
 ## Package manager and environment
 <!-- How dependencies are declared and installed; how a shell is prepared. -->
 
@@ -669,7 +697,9 @@ with `entry.get("seed", False)`. No `agent/rules/` subtree exists any more (C10)
 ```
 **Why**: shipped files no longer mandate a language, framework or package manager (C10); the
 team describes its own. The text is neutral on purpose — it ships verbatim to every host and
-must produce zero scanner findings.
+must produce zero scanner findings. *(rev 0.5 C22 B)* `## Repository layout` and `## Project areas`
+are where TASK-4089's rewritten text sends layout, environment and `projects` questions.
+Resolved (PR #1746 review, 2026-10-20): the wording above is final. It is neutral (no language, framework or package manager; no `packages/`/`scripts/` path, so C16/C22 gates and the C11 scan stay clean) and it tells adopters exactly what the rewritten commands look for.
 
 ### `flows/dev_loop/_subagent_defs.py` and `flows/dev_flow/_subagent_defs.py` (MODIFY — C2)
 ```python
@@ -743,8 +773,9 @@ wheel) could lose the tree (spec §3 M6, codex S8).
 
       # FEAT-633: parrot/sdd/_assets/ is a generated copy of the SDD sources (.claude/, .agents/,
       # .agent/, .codex/, sdd/); fail on any byte divergence. Fix: python scripts/sdd/check_asset_sync.py --write
-      # C16: also fails on a shipped line naming a monorepo source path (packages/, scripts/,
-      # $CLAUDE_PROJECT_DIR/…). Fix: edit the SOURCE file, then --write.
+      # C16/C22: also fails on a shipped line naming a monorepo source path (packages/, scripts/,
+      # $CLAUDE_PROJECT_DIR/…) or monorepo-specific text (tests/sdd_scripts/, from navconfig,
+      # PYTHONPATH=, reference/sdd-insight/). Fix: edit the SOURCE file, then --write.
       - name: Check packaged SDD assets are in sync (FEAT-633)
         run: python scripts/sdd/check_asset_sync.py --check
 
@@ -872,21 +903,40 @@ def test_check_wheel_rejects_forbidden_paths(tmp_path: Path, planted: str) -> No
     assert cas.check_wheel(wheel) == [f"forbidden in wheel: {cas.WHEEL_PREFIX}{planted}"]
 
 
-def test_monorepo_path_is_reported(
-    mini_repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """C16: a shipped source line naming a monorepo source path fails --check."""
-    monkeypatch.setattr(cas, "MONOREPO_PATH_ALLOWLIST", {})  # [rev 0.5 D3] sdd/WORKFLOW.md may be allowlisted
-    (mini_repo / "sdd/WORKFLOW.md").write_text("run packages/ai-parrot/src/x.py\n", encoding="utf-8")
+@pytest.mark.parametrize(
+    "line",
+    [
+        "run packages/ai-parrot/src/x.py",  # C16
+        "see tests/sdd_scripts/test_x.py",  # C22 second pattern
+        'eval "$(python -c "from navconfig import config")"',
+        "PYTHONPATH=src pytest",
+        "read reference/sdd-insight/x.md",
+    ],
+)
+def test_monorepo_path_is_reported(mini_repo: Path, capsys: pytest.CaptureFixture[str], line: str) -> None:
+    """C16 + C22: a shipped source line matching either pattern fails --check."""
+    (mini_repo / "sdd/WORKFLOW.md").write_text(line + "\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=mini_repo, check=True)
     _run(mini_repo, "--write")
     assert _run(mini_repo, "--check") == 1
-    assert "monorepo-path: sdd/WORKFLOW.md:1: run packages/ai-parrot/src/x.py" in capsys.readouterr().err
+    assert f"monorepo-path: sdd/WORKFLOW.md:1: {line}" in capsys.readouterr().err
 
 
-def test_check_wheel_reports_monorepo_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_allowlisted_hook_line_passes_and_insight_never_ships(mini_repo: Path) -> None:
+    """C22 D: the single allowlisted hook line is not a finding; C22: /sdd-insight is never packaged."""
+    (target, text), = cas.MONOREPO_PATH_ALLOWLIST
+    for rel, body in ((target, text + "\n"), (".claude/commands/sdd-insight.md", "# insight\n")):
+        (mini_repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (mini_repo / rel).write_text(body, encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=mini_repo, check=True)
+    assert _run(mini_repo, "--write") == 0
+    assert _run(mini_repo, "--check") == 0
+    targets = {e["target"] for e in json.loads((mini_repo / "assets" / "manifest.json").read_text())["assets"]}
+    assert target in targets and ".claude/commands/sdd-insight.md" not in targets
+
+
+def test_check_wheel_reports_monorepo_path(tmp_path: Path) -> None:
     """C16: the wheel check reads each shipped entry FROM THE WHEEL and flags a monorepo source path."""
-    monkeypatch.setattr(cas, "MONOREPO_PATH_ALLOWLIST", {})  # [rev 0.5 D3] sdd/WORKFLOW.md may be allowlisted
     wheel = tmp_path / "ai_parrot-0-py3-none-any.whl"
     manifest = {"schema_version": 1, "assets": [{"source": "sdd/WORKFLOW.md", "target": "sdd/WORKFLOW.md", "hosts": ["claude"]}]}
     hook = 'command: python3 "$CLAUDE_PROJECT_DIR/packages/x.py" --hook'
@@ -915,6 +965,8 @@ def test_no_rulebook_and_no_dot_rules_ship() -> None:
     assert ".claude/rules/worktree-management.md" in targets
     assert ".claude/skills/second-opinion/SKILL.md" in targets          # C9
     assert "sdd/CONVENTIONS.md" in targets                              # C10
+    assert not any("sdd-insight" in t for t in targets)                  # rev 0.5 C22
+    assert len(targets) == 80                                           # rev 0.5 C22 (+ probe on claude and google)
 
 
 def test_assets_have_no_publication_findings() -> None:
@@ -981,11 +1033,11 @@ publication findings, single-copy prompts). The last three tests import `parrot.
   `test_subagent_defs_conventions.py`: unchanged (they call the loader).
 
 ### FILL IN checklist
-- [ ] `check_asset_sync.py::expected_entries` — git ls-files + first-match glob + `seed`; bounded by "git-tracked only", deterministic order.
+- [ ] `check_asset_sync.py::expected_entries` — git ls-files + first-match glob + `seed` + `EXCLUDED_TARGETS` (C22); bounded by "git-tracked only", deterministic order, 80 entries on the repo *[rev 0.5]*.
 - [ ] `check_asset_sync.py::find_problems` — byte compare, extras, manifest text; bounded by AC-2.
 - [ ] `check_asset_sync.py::write_assets` — wholesale regeneration, idempotent; bounded by AC-1.
 - [ ] `check_asset_sync.py::check_wheel` — deny-list pass after the completeness pass; bounded by `test_check_wheel_rejects_forbidden_paths`.
-- [ ] `check_asset_sync.py::monorepo_path_problems` (C16) — line scan + allowlist; bounded by `test_monorepo_path_is_reported` / `test_check_wheel_reports_monorepo_path`. `MONOREPO_PATH_ALLOWLIST` holds the D3 per-file entries from TASK-4089 *[rev 0.5]*.
+- [ ] `check_asset_sync.py::monorepo_path_problems` (C16/C22) — line scan over both patterns + allowlist; bounded by `test_monorepo_path_is_reported` / `test_check_wheel_reports_monorepo_path` / `test_allowlisted_hook_line_passes_and_insight_never_ships`. `MONOREPO_PATH_ALLOWLIST` is fixed by C22 D (the one hook line); add nothing else.
 - [ ] `test_divergence_missing_and_extra_fail` — final stderr assertions.
 - [ ] Both `load_subagent_definition` edits + module docstrings; bounded by `test_dev_loop_prompts_load_from_packaged_assets`.
 
@@ -993,11 +1045,14 @@ publication findings, single-copy prompts). The last three tests import `parrot.
 
 ## Acceptance Criteria
 
-- [ ] `python scripts/sdd/check_asset_sync.py --write` produces `_assets/` with 83 assets *[rev 0.5]* +
-      `manifest.json`; a second `--write` leaves `git status` clean (idempotent).
-- [ ] *(C16)* `--check` and `--wheel` report every shipped line naming a monorepo source path
-      (`monorepo-path: <target>:<line>: …`); green on the repo *[rev 0.5]* (D3: every hit rewritten by
-      TASK-4089 or its file in `MONOREPO_PATH_ALLOWLIST` with a reason).
+- [ ] `python scripts/sdd/check_asset_sync.py --write` produces `_assets/` with 80 assets *[rev 0.5]* +
+      `manifest.json` (rev 0.5 C22: no `/sdd-insight` on any host; 14 commands per host; `sdd-contract-probe`
+      on claude and google); a second `--write` leaves `git status` clean (idempotent).
+- [ ] *(C16 / rev 0.5 C22)* `--check` and `--wheel` report every shipped line matching
+      `MONOREPO_PATH_RE` or the second pattern `tests/sdd_scripts/|\bfrom navconfig\b|PYTHONPATH=|reference/sdd-insight/`
+      (`monorepo-path: <target>:<line>: …`), and pass on the repo with the single allowlisted line
+      (`.claude/hooks/sdd-worker-format.sh:76`) once TASK-4089's category A–E (D3) rewrite has landed.
+- [ ] *(rev 0.5 C22 B)* The `sdd/CONVENTIONS.md` seed has `## Repository layout` and `## Project areas`.
 - [ ] `python scripts/sdd/check_asset_sync.py` (default `--check`) exits 0 on the repo and exits 1
       naming every diverging / missing / extra file otherwise (spec §5: "`check_asset_sync.py` gates
       CI on `.claude/` ↔ `_assets/` divergence").
@@ -1061,8 +1116,9 @@ Also, outside the pytest contract (the CI gate of C11c): `python -m parrot.sdd.a
 #   test_untracked_source_is_not_packaged          git-tracked only
 #   test_check_wheel_reports_missing_entry         wheel verifier
 #   test_check_wheel_rejects_forbidden_paths       C11d deny-list (parametrized over 5 planted paths)
-#   test_monorepo_path_is_reported                 C16 monorepo-path in --check
+#   test_monorepo_path_is_reported                 C16 + C22 second pattern in --check (parametrized over 5 lines)
 #   test_check_wheel_reports_monorepo_path         C16 monorepo-path in --wheel
+#   test_allowlisted_hook_line_passes_and_insight_never_ships  C22 D allowlist + /sdd-insight exclusion
 #   test_seed_entry_is_flagged                     C10 `seed: true` only on sdd/CONVENTIONS.md
 #   test_no_rulebook_and_no_dot_rules_ship         C9/C10 manifest content
 #   test_assets_have_no_publication_findings       C11c zero org-data/claude-md-ref/branch-literal

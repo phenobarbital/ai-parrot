@@ -1,0 +1,19 @@
+# FEAT-709 — runner adapters for the SDD test-scope kernel. The ONLY extension point (vendored kernels read it too).
+# Timeouts are placeholders until measured (spec §8 Q4; evidence in artifacts/logs/).
+
+[runners.pytest]
+timeout_s = 60
+
+[runners.vitest]
+cwd = "packages/ai-parrot-server/ui"
+timeout_s = 120
+
+[runners.cargo]
+timeout_s = 300
+
+[runners.parrot-e2e]
+tiers = ["merge", "feature"]
+timeout_s = 900
+
+[extensions]
+# kind = "dotted.module:AdapterClass"

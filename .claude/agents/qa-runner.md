@@ -73,6 +73,10 @@ also edits can mask the very defects it should surface.
    Add `--json` once (without `--run`) to record in the report which tests ran and why
    (`declared` / `mirror` / `core` / `escalated`, plus `skipped_escalations`).
    Use `pytest-asyncio` conventions already in the repo for async tests.
+   
+   **Note**: Non-pytest runners in the plan (vitest, cargo, parrot-e2e) gate on **any** red 
+   in v1 (no green cache, no baseline classification). Cache and baseline are explicitly 
+   pytest-scoped.
 4. **Lint and type-check the changed files only:**
    ```bash
    ruff check <changed-files>

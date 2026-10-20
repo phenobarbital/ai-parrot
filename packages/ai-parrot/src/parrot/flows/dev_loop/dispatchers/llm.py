@@ -21,9 +21,10 @@ import re
 import shlex
 import shutil
 import time
+from contextvars import ContextVar
 from contextlib import AsyncExitStack
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence, Tuple, Type
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Protocol, Sequence, Tuple, Type
 
 from pydantic import BaseModel, ValidationError
 
@@ -62,6 +63,26 @@ from parrot.observability.context import usage_attribution
 
 if TYPE_CHECKING:
     from parrot.core.events.lifecycle import EventRegistry
+
+
+class ValidationCapability(Protocol):
+    """Engine-injected task-tier validation runner (FEAT-709).
+
+    The dispatcher never imports the engine: the owner binds an object with
+    this shape through :meth:`LLMCodeDispatcher.set_validation_runner`.
+    """
+
+    async def run(self, *, targets: Sequence[str]) -> Dict[str, Any]:
+        """Run the task's validation and return a structured verdict dict."""
+        ...
+
+
+# The capability bound for the current dispatch. A ContextVar (not an instance
+# attribute) because one dispatcher may serve ``max_concurrent`` dispatches at
+# once; each asyncio task carries its own binding.
+_VALIDATION_CAPABILITY_CTX: ContextVar[Optional[ValidationCapability]] = ContextVar(
+    "llm_dispatcher_validation_capability", default=None
+)
 
 
 class LLMCodeDispatcher:
@@ -111,6 +132,22 @@ class LLMCodeDispatcher:
                 tracked registry (e.g. never wired, or already closed).
         """
         self._event_registry_resolver = resolver
+
+    def set_validation_runner(self, capability: Optional[ValidationCapability]) -> None:
+        """Bind (or unbind with ``None``) the validation capability (FEAT-709).
+
+        The binding is stored in a ContextVar, so it applies to the calling
+        asyncio context and the dispatches awaited from it, never to other
+        concurrent dispatches served by this dispatcher.
+
+        Args:
+            capability: Object whose ``run(targets=...)`` returns a verdict dict.
+        """
+        _VALIDATION_CAPABILITY_CTX.set(capability)
+
+    def _current_validation_capability(self) -> Optional[ValidationCapability]:
+        """Return the capability bound for the current dispatch, if any."""
+        return _VALIDATION_CAPABILITY_CTX.get()
 
     @property
     def event_registry_resolver(self) -> Optional[Callable[[str], Optional["EventRegistry"]]]:
@@ -1420,6 +1457,15 @@ class LLMCodeDispatcher:
                 },
             ),
             self._function_tool(
+                "run_validation",
+                "Runs this task's validation and returns a structured verdict. Never returns raw test output.",
+                {
+                    "type": "object",
+                    "properties": {"targets": {"type": "array", "items": {"type": "string"}}},
+                    "additionalProperties": False,
+                },
+            ),
+            self._function_tool(
                 "run_command",
                 "Run an allow-listed argv command in the repository. There is "
                 "NO shell: `argv` is exec'd directly, so pipes, redirection, "
@@ -1492,6 +1538,8 @@ class LLMCodeDispatcher:
                 return self._tool_edit_file(cwd, tool_args, profile)
             if tool_name == "apply_patch":
                 return await self._tool_apply_patch(cwd, tool_args, profile)
+            if tool_name == "run_validation":
+                return await self._tool_run_validation(cwd, tool_args, profile)
             if tool_name == "run_command":
                 return await self._tool_run_command(cwd, tool_args, profile)
             return {"ok": False, "error": f"unknown tool {tool_name!r}"}
@@ -1891,6 +1939,20 @@ class LLMCodeDispatcher:
             ),
         }
 
+    async def _tool_run_validation(
+        self,
+        cwd: str,
+        args: Dict[str, Any],
+        profile: LLMCodeDispatchProfile,
+    ) -> Dict[str, Any]:
+        """Run the bound task-tier validation; verdict data only (FEAT-709)."""
+        capability = self._current_validation_capability()
+        if capability is None:
+            return {"ok": False, "error": "validation capability not bound for this dispatch"}
+        targets = [str(t) for t in (args.get("targets") or [])]
+        verdict = await capability.run(targets=targets)
+        return {"ok": verdict.get("status") == "passed", "verdict": verdict}
+
     async def _tool_run_command(
         self,
         cwd: str,
@@ -1900,6 +1962,18 @@ class LLMCodeDispatcher:
         argv = args.get("argv")
         if not isinstance(argv, list) or not argv or not all(isinstance(v, str) for v in argv):
             raise ValueError("argv must be a non-empty list of strings")
+        # Runner recognition runs BEFORE the allow-list so `pnpm exec vitest` /
+        # `cargo test` reach the capability even when the binary is not allow-listed.
+        try:
+            outcome: Optional[GuardOutcome] = await asyncio.to_thread(guard_argv, argv, worktree=Path(cwd))
+        except Exception as exc:  # noqa: BLE001 — a broken guard must never break the seat's command
+            self.logger.warning("test-scope guard failed for %s: %s — running command unchanged", argv, exc)
+            outcome = None
+        if outcome is not None and outcome.action == "block":
+            return {"ok": False, "exit_code": None, "stdout": "", "stderr": outcome.message}
+        if outcome is not None and outcome.action == "verdict":
+            self.logger.info("test-scope guard routed %s to the validation capability", argv)
+            return await self._tool_run_validation(cwd, {}, profile)
         command = os.path.basename(argv[0])
         if command not in set(profile.allowed_commands):
             return {
@@ -1941,16 +2015,6 @@ class LLMCodeDispatcher:
             int(args.get("timeout_seconds") or profile.command_timeout_seconds),
             profile.command_timeout_seconds,
         )
-        try:
-            outcome: Optional[GuardOutcome] = await asyncio.to_thread(guard_argv, argv, worktree=Path(cwd))
-        except Exception as exc:  # noqa: BLE001 — a broken guard must never break the seat's command
-            self.logger.warning("test-scope guard failed for %s: %s — running command unchanged", argv, exc)
-            outcome = None
-        if outcome is not None and outcome.action == "block":
-            return {"ok": False, "exit_code": None, "stdout": "", "stderr": outcome.message}
-        if outcome is not None and outcome.action == "rewrite":
-            self.logger.info("test-scope guard rewrote %s into %d invocation(s)", argv, len(outcome.argvs))
-            return await self._run_guarded_invocations(outcome.argvs, cwd=cwd, timeout=timeout, hint=outcome.message)
         if policy_error := command_policy_error(Path(run_cwd), argv):
             return {"ok": False, "exit_code": None, "stdout": "", "stderr": policy_error}
         result = await self._run_argv(argv, cwd=run_cwd, timeout=timeout)
@@ -2131,48 +2195,6 @@ class LLMCodeDispatcher:
             f"{', '.join(profile.allowed_commands)}. Use read_file / "
             "search_files / write_file / edit_file for file work."
         )
-
-    async def _run_guarded_invocations(
-        self,
-        argvs: Sequence[Sequence[str]],
-        *,
-        cwd: str,
-        timeout: int,
-        hint: str,
-    ) -> Dict[str, Any]:
-        """Run the guard's replacement pytest invocations in order.
-
-        Each invocation runs from the attempt worktree root (plan paths are
-        repo-relative) through ``_run_argv``, so sandboxing is unchanged.
-
-        Args:
-            argvs: Replacement argvs produced by ``guard_argv``.
-            cwd: The attempt worktree root.
-            timeout: Per-invocation timeout in seconds.
-            hint: The guard's explanation, surfaced to the seat.
-
-        Returns:
-            One ``run_command`` result: merged stdout/stderr, the first
-            non-zero exit code (0 when all passed), ``ok`` and ``hint``.
-        """
-        stdout_parts: List[str] = []
-        stderr_parts: List[str] = []
-        exit_code: Optional[int] = 0
-        for invocation in argvs:
-            result = await self._run_argv(list(invocation), cwd=cwd, timeout=timeout)
-            header = f"$ {shlex.join(invocation)}\n"
-            stdout_parts.append(header + (result.get("stdout") or ""))
-            stderr_parts.append(result.get("stderr") or "")
-            invocation_exit = result.get("exit_code")
-            if exit_code == 0 and invocation_exit != 0:
-                exit_code = invocation_exit if invocation_exit is not None else 1
-        return {
-            "ok": exit_code == 0,
-            "exit_code": exit_code,
-            "stdout": "\n".join(stdout_parts),
-            "stderr": "\n".join(p for p in stderr_parts if p),
-            "hint": hint,
-        }
 
     async def _run_argv(
         self,

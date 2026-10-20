@@ -172,11 +172,12 @@ If ANY check fails, fix it or STOP and report.
 - Do NOT run `ruff`/`black` or spend turns on style: the engine runs `ruff check --fix` plus the
   repo formatter on your committed files at merge time and commits the result itself. Style debt
   that remains is fixed once, feature-wide, by `/sdd-done`.
-- Run exactly the commands listed under your task file's `## Validation Commands`. Do not run
-  `pytest` on a directory, `tests/`, `packages/<dist>/tests` or with no path: inside an sdd-coder
-  attempt the harness rewrites such a command to your task's scoped tests (MCP and native seats),
-  blocks it when nothing is scoped, or denies it with the scoped command to run (codex).
-  The task tier runs your task's own Validation Commands plus file-level mirror tests; a directory mirror no longer happens.
+- Validate with the `run_validation` tool when you have it (MCP seats). On a native seat, run your task's
+  `## Validation Commands` with Bash: inside an attempt the harness turns a test command into a JSON
+  **verdict** (counts, failing node ids, ≤30-line excerpts) — you never see raw test output, and a command
+  with nothing scoped is blocked. Do not run a directory, `tests/` or a bare `pytest`/`vitest run`.
+- After you commit, the engine re-runs your task's validation itself. If it is red, the task comes back to
+  you ONCE in a fresh session with that verdict under `## Validation verdict`; fix exactly those failures.
 - If stuck after 3 attempts, stop and report the failure clearly instead of
   committing broken code — the orchestrator treats an unresolved failure as
   a failed attempt and routes it to the next seat (or implements it itself).

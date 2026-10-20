@@ -416,6 +416,12 @@ It writes the spec §4 `### Validation Contract` into the header as `test_contra
 missing — fix the spec, do not skip the step. Each task's `## Validation Commands` lists that task's OWN
 test files; the contract is added by the selector at merge/feature tier, never copied into every task.
 
+The script accepts both authoring forms (flat `tests:`/`markers:` and the FEAT-709 `runners:` form) and always
+writes schema 2 (`runners` blocks + digest); a legacy schema-1 header is lifted on read to one pytest runner.
+Kinds, tiers and settings are validated against the runner registry (`.parrot/test_runners.toml`, `--root`);
+`check_task_graph.py` then flags `test-contract-unknown-runner`, `-tier-forbidden`, `-settings-invalid`,
+`-extension-invalid`, and warns `validation-command-unrecognised` for a task command no adapter matches.
+
 #### Validation Commands (mandatory, per task — FEAT-563)
 
 Every generated task MUST carry a `## Validation Commands` section placed right

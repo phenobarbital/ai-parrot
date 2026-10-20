@@ -5,12 +5,54 @@ from pathlib import Path
 import pytest
 
 from parrot.flows.dev_loop.test_scope import TestContract, TestTarget
+from parrot.flows.dev_loop.test_scope.datatypes import Invocation, RunnerContract
 from parrot.flows.dev_loop.test_scope.planner import OVERRIDE_MARKER_EXPRESSION, build_plan, marker_expression_for
 from parrot.flows.dev_loop.test_scope.policy import AGENT_FLAGS, AGENT_MARKER_EXPRESSION, ScopePolicy
+from parrot.flows.dev_loop.test_scope.runners.registry import RunnerRegistry
+from parrot.flows.dev_loop.test_scope.select import plan_tests
 
 
 def _t(path, dist, reason="mirror"):
     return TestTarget(path=path, distribution=dist, reason=reason)
+
+
+class FakeAdapter:
+    """Minimal non-pytest adapter used to exercise runner-aware grouping."""
+
+    kind = "fake"
+    binaries = ("fake-test",)
+    default_tiers = frozenset({"task", "merge", "feature"})
+    report_format = "exit-code"
+
+    def matches(self, argv):
+        return bool(argv) and argv[0] == "fake-test"
+
+    def operands(self, argv):
+        return list(argv[1:]) if self.matches(argv) else None
+
+    def is_broad(self, argv, *, worktree):
+        return False
+
+    def mirror_targets(self, changed, *, worktree, settings):
+        return []
+
+    def distribution_of(self, target, *, settings):
+        return "root"
+
+    def invocation(self, targets, *, distribution, worktree, settings, policy, report_path):
+        return Invocation(
+            distribution=distribution,
+            argv=("fake-test", *(target.path for target in targets)),
+            targets=tuple(targets),
+            runner=self.kind,
+            report_format=self.report_format,
+        )
+
+    def parse_report(self, *, report_path, exit_code, stdout, stderr, duration_s, timed_out, suite):
+        raise AssertionError("not exercised")
+
+    def validate_settings(self, settings, *, worktree):
+        return []
 
 
 def test_plan_groups_per_distribution(tmp_path: Path):
@@ -115,7 +157,7 @@ def test_contract_markers_add_distribution_sweep(tmp_path: Path):
     assert len(plan.invocations) == 2
     sweep = plan.invocations[1]
     assert sweep.targets == (_t("packages/a/tests", "a", "contract"),)
-    assert sweep.argv[sweep.argv.index("-m") + 1] == "(integration or e2e) and not real_llm"
+    assert sweep.argv[sweep.argv.index("-m") + 1] == "(e2e or integration) and not real_llm"
 
 
 def test_marker_expression_requires_all_contract_targets():
@@ -128,3 +170,41 @@ def test_marker_expression_requires_all_contract_targets():
     assert marker_expression_for([_t("tests/test_x.py", "root", "mirror")], contract=contract, policy=policy) == (
         AGENT_MARKER_EXPRESSION
     )
+
+
+def test_plan_groups_contract_targets_by_runner_and_distribution(tmp_path: Path):
+    registry = RunnerRegistry({"fake": FakeAdapter()}, {})
+    contract = TestContract(
+        schema=2,
+        runners=(
+            RunnerContract(kind="pytest", targets=("tests/test_pytest.py",)),
+            RunnerContract(kind="fake", targets=("tests/test_fake.py",)),
+        ),
+        digest="sha256:test",
+    )
+    for path in ("tests/test_pytest.py", "tests/test_fake.py"):
+        target = tmp_path / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("")
+
+    plan = plan_tests(worktree=tmp_path, changed_files=[], tier="merge", contract=contract, registry=registry)
+
+    assert [(invocation.runner, invocation.distribution) for invocation in plan.invocations] == [
+        ("fake", "root"),
+        ("pytest", "root"),
+    ]
+
+
+def test_non_pytest_declared_command_produces_runner_target(tmp_path: Path):
+    registry = RunnerRegistry({"fake": FakeAdapter()}, {})
+
+    plan = plan_tests(
+        worktree=tmp_path,
+        changed_files=[],
+        tier="task",
+        declared=(("fake-test", "tests/test_fake.py"),),
+        registry=registry,
+    )
+
+    assert plan.invocations[0].runner == "fake"
+    assert plan.invocations[0].targets == (TestTarget("tests/test_fake.py", "root", "declared", runner="fake"),)

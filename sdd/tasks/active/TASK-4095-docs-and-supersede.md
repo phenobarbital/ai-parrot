@@ -67,31 +67,34 @@ audit trail.
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: no commit since `0b92bda42` touches this task's files and every line anchor still holds; `DocClaim` described as the pydantic `BaseModel` it is (`test_getting_started_claims.py:31`); the `parrot sdd status` states now include `foreign` and the seed states `seed-present | missing` (spec :521, TASK-4091).
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - **FEAT-699 vs C7** (recorded in TASK-4089 / TASK-4091) — whether `sdd/config.json`'s `test_command` overrides `cache_test_contract` / `select_tests` / `test_report` in a foreign repo. The guide's sentence on `test_command` (`sdd/config.json` fields) must describe the resolved behaviour; do not document an override until then.
-
-## Spec rev 0.5 — 2026-10-20
-
-- **Resolved (rev 0.5 D2): FEAT-699 vs C7.** Document `test_command` exactly as TASK-4089
-  (a dependency) ships it, and only once that has landed: when `sdd/config.json` sets
-  `test_command`, `/sdd-task` and `/sdd-done` skip the FEAT-699 steps (`cache_test_contract`,
-  `select_tests`, `test_report`) and run `test_command` instead; when it is unset, those steps run
-  as in ai-parrot and stop with a clear message (no traceback) if the FEAT-699 kernel cannot be
-  loaded. Re-read the shipped `sdd-task` / `sdd-done` text before writing the sentence; do not
-  describe more than they say.
-- **D5 (TASK-4091) adds two things `parrot sdd install` writes:** a managed `.gitattributes`
-  block with the ledger's `merge=union` lines (recorded in `sdd/.sdd-installed.json`) and the
-  `parrot-ledger` git hooks; `parrot self doctor --sdd` checks both (TASK-4080). The reference
-  page's list of what install writes includes them.
-- Counts / anchors re-verified 2026-10-20 on dev `69fb12a41`: every anchor in the Codebase
-  Contract holds (`cli/__init__.py:16,19,37,71,99-100,103-104,109,117,120-123`; host CLI groups
-  `claude_code/cli.py:49`, `codex/cli.py:37`, `google/cli.py:37,137`; harness `:17,20,21,28,31,34,40,59,125,161,183`;
-  guide `:13,84,134,266,272,291,319`; `ci.yml:113,133`; `INSTALL.md:9,158`;
-  `docs/INSTALL.md:3,8,16,20`; `parrot-install-guide.spec.md:332-335`). Stale: "spec :521" (the
-  status states) → **`:557`** (C4 clause; also `:237`).
-- **D8 corrected (2026-10-20):** gate by schema number; `min_runtime_version` informational. The
-  version-skew text must say the store refuses only a runtime with an older schema; a same-schema
-  store opens whatever release wrote it.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C21 — the guide documents the `test_command` switch. When `sdd/config.json` sets it, shipped
+    test steps run it once from the repo root instead of the FEAT-699 selection/report steps, and a
+    run with no tests shows "⚠️ not run". When it is null (ai-parrot), the FEAT-699 path applies.
+    `parrot sdd install` warns when it is null. A foreign-repo validation phase is v1.1, not documented as available.
+  - C20 — the `--global` sections say the managed runtime installs `ai-parrot-tools` alongside
+    `ai-parrot` at the same version, needed by `wikitoolkit mcp`.
+  - C22 — `/sdd-insight` is not among the installed commands. The seed `sdd/CONVENTIONS.md` has
+    `## Repository layout` and `## Project areas`, and `sdd/config.json` may set `projects`.
+  - C23 — `parrot sdd install` writes a marked `.gitattributes` block (`merge=union` for the
+    ledger log) and installs the four ledger git hooks, and `doctor --sdd` checks both.
+  - D2 (→ C21) — document `test_command` exactly as TASK-4089 (a dependency) ships it, and only once
+    that has landed: the skipped steps are `cache_test_contract` in `/sdd-task` and `select_tests` /
+    `test_report` in `/sdd-done`; when it is unset and the FEAT-699 kernel cannot be loaded, those steps
+    stop with a clear message (no traceback). Re-read the shipped `sdd-task` / `sdd-done` text before
+    writing the sentence; do not describe more than they say. Spec §4 holds the curated FEAT-633
+    Validation Contract (scope map), not a fallback.
+  - D5 (→ C23) — the `.gitattributes` block is recorded in `sdd/.sdd-installed.json` and the hooks are
+    the `parrot-ledger` ones; the reference page's list of what install writes includes both.
+  - D8 (→ C24, corrected 2026-10-20): the gate compares `schema_version` only; `min_runtime_version` is
+    stamped but informational (quoted in the error). The version-skew text must say the store refuses only
+    a runtime with an older **schema**; a same-schema store opens whatever release wrote it.
+  - Counts / anchors re-verified 2026-10-20 on dev `69fb12a41`: every anchor in the Codebase Contract
+    holds (`cli/__init__.py:16,19,37,71,99-100,103-104,109,117,120-123`; host CLI groups
+    `claude_code/cli.py:49`, `codex/cli.py:37`, `google/cli.py:37,137`; harness
+    `:17,20,21,28,31,34,40,59,125,161,183`; guide `:13,84,134,266,272,291,319`; `ci.yml:113,133`;
+    `INSTALL.md:9,158`; `docs/INSTALL.md:3,8,16,20`; `parrot-install-guide.spec.md:332-335`). Stale:
+    "spec :521" (the status states) → **`:557`** (C4 clause; also `:237`).
 
 ## Scope
 
@@ -458,8 +461,9 @@ what the run created). Before writing anything the script checks platform, `curl
     parrot self doctor --sdd                      # origin, base branch, ledger, gh, jq, host CLI
     parrot sdd status                             # missing | current | outdated | edited | foreign
     ```
-<!-- FILL IN: edit `sdd/config.json` (base_branch, hotfix_base, issue_tracker, test_command), the
-     `sdd/CONVENTIONS.md` seed, first `/sdd-*` command, helpers run as `parrot sdd run <name>`,
+<!-- FILL IN: edit `sdd/config.json` (base_branch, hotfix_base, issue_tracker, test_command — set it
+     unless the repo uses ai-parrot's FEAT-699 selection: shipped test steps then run it, rev 0.5 C21), the
+     `sdd/CONVENTIONS.md` seed (`## Repository layout`, `## Project areas`, rev 0.5 C22), first `/sdd-*` command, helpers run as `parrot sdd run <name>`,
      re-running install upgrades untouched files and keeps edited ones — bounded by TASK-4091 + C6 task -->
 ```
 **Why**: the guide is the canonical entry point (C13); every command is explained in the AC8 shape
@@ -553,10 +557,13 @@ session. Outside the managed venv nothing changes.
      repo's `python` cannot import parrot); the record `sdd/.sdd-installed.json` and the status states
      missing | current | outdated | edited | foreign, and seeds as seed-present | missing; upgrade rule (recorded hash matches → upgrade; differs → kept
      with a warning unless --force; not ours → skipped); `sdd/config.json` fields (base_branch,
-     staging_branch, hotfix_base, issue_tracker, jira_host, reviewer, test_command — [rev 0.5 D2] when set,
-     /sdd-task and /sdd-done skip the FEAT-699 test steps and run it); the
-     `sdd/CONVENTIONS.md` seed (created once, never overwritten, even with --force) — bounded by
-     TASK-4091 and the C6 task -->
+     staging_branch, hotfix_base, issue_tracker, jira_host, reviewer, test_command, projects); what
+     `test_command` switches (rev 0.5 C21/D2: when set, /sdd-task and /sdd-done skip the FEAT-699
+     selection/report steps and run it; zero tests → "⚠️ not run"; install warns when null); the
+     `.gitattributes` ledger block and the four ledger hooks `parrot sdd install` adds (rev 0.5 C23);
+     `/sdd-insight` is not shipped (rev 0.5 C22); the managed runtime includes `ai-parrot-tools`
+     (rev 0.5 C20); the `sdd/CONVENTIONS.md` seed (created once, never overwritten, even with --force)
+     — bounded by TASK-4091, TASK-4299 and the C6 task -->
 
 ### Version skew
 <!-- FILL IN: quote WikiStoreVersionError's message as emitted (TASK-4092) and the fix

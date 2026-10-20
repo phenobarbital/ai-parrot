@@ -113,7 +113,7 @@ session and run `/skills` or `/agent` again.
 
 ## Start From A Single Bug Or Alert
 
-Use `$sdd-brief` for a single issue or hotfix; it replaces `sdd-spec --type hotfix`.
+Use `$sdd-brief` for a single issue or hotfix; `sdd-spec` no longer has a hotfix path (FEAT-698).
 
 ```text
 $sdd-brief NAV-9001

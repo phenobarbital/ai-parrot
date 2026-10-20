@@ -5,7 +5,7 @@
   "type": "feature",
   "base_branch": "dev",
   "created_at": "2026-10-20T01:34:54+00:00",
-  "completed_at": null,
+  "completed_at": "2026-10-20T19:00:03+00:00",
   "parallel_semantics": "exclusive",
   "validation_contract": "required",
   "test_contract": {
@@ -63,16 +63,17 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [],
       "parallel": true,
       "parallelism_notes": "root task: creates Invocation/RunReport/ValidationVerdict in test_scope/datatypes.py that every other task imports",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4520-kernel-invocation-datatypes.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T13:30:03+00:00",
+      "file": "sdd/tasks/completed/TASK-4520-kernel-invocation-datatypes.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4521",
@@ -81,7 +82,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -90,9 +91,10 @@
       "parallel": true,
       "parallelism_notes": "imports Invocation/RunReport/TestTarget from TASK-4520 (test_scope/datatypes.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4521-runner-protocol-registry.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T13:38:44+00:00",
+      "file": "sdd/tasks/completed/TASK-4521-runner-protocol-registry.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4522",
@@ -101,7 +103,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -111,9 +113,10 @@
       "parallel": true,
       "parallelism_notes": "edits test_scope/datatypes.py after TASK-4520; validates kinds/tiers through RunnerRegistry from TASK-4521 (runners/registry.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4522-contract-schema-2.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T14:13:16+00:00",
+      "file": "sdd/tasks/completed/TASK-4522-contract-schema-2.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4523",
@@ -122,7 +125,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -131,9 +134,10 @@
       "parallel": true,
       "parallelism_notes": "edits test_scope/report.py after TASK-4520 renamed its Invocation import; returns RunReport from TASK-4520",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4523-report-parser-spine.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T13:46:13+00:00",
+      "file": "sdd/tasks/completed/TASK-4523-report-parser-spine.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4524",
@@ -142,7 +146,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -153,9 +157,10 @@
       "parallel": true,
       "parallelism_notes": "implements RunnerAdapter from TASK-4521 (runners/base.py); reads TestContract v2 from TASK-4522; uses with_report from TASK-4523 (report.py); edits planner.py/select.py after TASK-4522",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4524-pytest-adapter-planner.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T14:28:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4524-pytest-adapter-planner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4525",
@@ -164,7 +169,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -176,9 +181,10 @@
       "parallel": true,
       "parallelism_notes": "guard uses RunnerRegistry.adapter_for_argv over all four adapters (TASK-4524 pytest.py, TASK-4526 vitest.py, TASK-4527 cargo.py, TASK-4528 parrot_e2e.py); green_cache.py edited after TASK-4522",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4525-guard-cache-baseline-runner-scope.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T14:37:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4525-guard-cache-baseline-runner-scope.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4526",
@@ -187,7 +193,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -197,9 +203,10 @@
       "parallel": true,
       "parallelism_notes": "implements RunnerAdapter from TASK-4521 (runners/base.py); parses with parse_junit_report and the vitest fixtures from TASK-4523 (report.py, fixtures/vitest-*.xml)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4526-vitest-adapter.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T13:58:27+00:00",
+      "file": "sdd/tasks/completed/TASK-4526-vitest-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4527",
@@ -208,7 +215,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -217,9 +224,10 @@
       "parallel": true,
       "parallelism_notes": "implements RunnerAdapter from TASK-4521 (runners/base.py); returns RunReport from TASK-4520",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4527-cargo-adapter.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T13:58:32+00:00",
+      "file": "sdd/tasks/completed/TASK-4527-cargo-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4528",
@@ -228,7 +236,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -237,9 +245,10 @@
       "parallel": true,
       "parallelism_notes": "implements RunnerAdapter from TASK-4521 (runners/base.py); returns RunReport from TASK-4520",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4528-parrot-e2e-adapter.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T13:58:34+00:00",
+      "file": "sdd/tasks/completed/TASK-4528-parrot-e2e-adapter.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4529",
@@ -248,7 +257,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -256,11 +265,12 @@
         "TASK-4524"
       ],
       "parallel": true,
-      "parallelism_notes": "builds verdicts from RunReport via parse_junit_report (TASK-4523, report.py); plans through plan_tests(registry=…) from TASK-4524 (select.py)",
+      "parallelism_notes": "builds verdicts from RunReport via parse_junit_report (TASK-4523, report.py); plans through plan_tests(registry=\u2026) from TASK-4524 (select.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4529-verdict-builder-cli.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T14:37:26+00:00",
+      "file": "sdd/tasks/completed/TASK-4529-verdict-builder-cli.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4530",
@@ -269,7 +279,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -278,9 +288,10 @@
       "parallel": true,
       "parallelism_notes": "uses build_verdict/verdict_to_json from TASK-4529 (test_scope/verdict.py); background.py edited after TASK-4520/TASK-4523 (transitive)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4530-supervisor-task-tier.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T14:50:31+00:00",
+      "file": "sdd/tasks/completed/TASK-4530-supervisor-task-tier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4531",
@@ -289,7 +300,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -298,9 +309,10 @@
       "parallel": true,
       "parallelism_notes": "ValidationVerdictModel.from_kernel mirrors ValidationVerdict/verdict_to_json from TASK-4529 (test_scope/verdict.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4531-verdict-models-repair-worktree.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T14:50:35+00:00",
+      "file": "sdd/tasks/completed/TASK-4531-verdict-models-repair-worktree.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4532",
@@ -309,7 +321,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "XL",
       "depends_on": [
@@ -319,9 +331,10 @@
       "parallel": true,
       "parallelism_notes": "calls ValidationSupervisor.start(tier='task')/wait_verdict from TASK-4530 (background.py); returns TaskResult.validation/validation_failed and uses create(base=) from TASK-4531 (models.py, worktree_manager.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4532-engine-task-tier-gate.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T15:01:12+00:00",
+      "file": "sdd/tasks/completed/TASK-4532-engine-task-tier-gate.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4533",
@@ -330,7 +343,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -340,9 +353,10 @@
       "parallel": true,
       "parallelism_notes": "handles GuardOutcome action 'verdict' from TASK-4525 (test_scope/guard.py); returns verdict JSON shaped by verdict_to_json from TASK-4529",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4533-dispatcher-run-validation-tool.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T14:50:37+00:00",
+      "file": "sdd/tasks/completed/TASK-4533-dispatcher-run-validation-tool.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4534",
@@ -351,7 +365,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -361,9 +375,10 @@
       "parallel": true,
       "parallelism_notes": "edits engine.py after TASK-4532; calls set_validation_runner/ValidationCapability from TASK-4533 (dispatchers/llm.py); native rewrite uses GuardOutcome 'verdict' from TASK-4525 (transitive)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4534-capability-binding-native-rewrite.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T15:06:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4534-capability-binding-native-rewrite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4535",
@@ -372,18 +387,19 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
         "TASK-4522"
       ],
       "parallel": true,
-      "parallelism_notes": "lint consumes contract_from_index_header(registry=…) from TASK-4522 (contract.py) and load_registry from TASK-4521; edits check_task_graph.py after TASK-4522",
+      "parallelism_notes": "lint consumes contract_from_index_header(registry=\u2026) from TASK-4522 (contract.py) and load_registry from TASK-4521; edits check_task_graph.py after TASK-4522",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4535-contract-lint-authoring.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T14:37:28+00:00",
+      "file": "sdd/tasks/completed/TASK-4535-contract-lint-authoring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4536",
@@ -392,7 +408,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -400,11 +416,12 @@
         "TASK-4534"
       ],
       "parallel": true,
-      "parallelism_notes": "documents gate/repair semantics from TASK-4532 (engine.py) and the tool/native rewrite from TASK-4534 (worktree_environment.py) — semantics must be frozen first",
+      "parallelism_notes": "documents gate/repair semantics from TASK-4532 (engine.py) and the tool/native rewrite from TASK-4534 (worktree_environment.py) \u2014 semantics must be frozen first",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4536-docs-and-prompts.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T15:17:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4536-docs-and-prompts.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4537",
@@ -413,7 +430,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "low",
       "effort": "S",
       "depends_on": [
@@ -422,9 +439,10 @@
       "parallel": true,
       "parallelism_notes": "TOML [runners.vitest] keys must match VitestAdapter.validate_settings from TASK-4526 (runners/vitest.py)",
       "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4537-repo-runner-config-nightly.md"
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T14:13:21+00:00",
+      "file": "sdd/tasks/completed/TASK-4537-repo-runner-config-nightly.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4538",
@@ -433,7 +451,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -443,9 +461,50 @@
       "parallel": true,
       "parallelism_notes": "exercises the full path wired by TASK-4534 (engine capability + native rewrite) with the repo TOML from TASK-4537",
       "assigned_to": null,
+      "started_at": "2026-10-20T01:36:32+00:00",
+      "completed_at": "2026-10-20T15:17:25+00:00",
+      "file": "sdd/tasks/completed/TASK-4538-task-tier-end-to-end-evidence.md",
+      "verification": "verified"
+    },
+    {
+      "feature_id": "FEAT-709",
+      "feature": "language-agnostic-validation-runners",
+      "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
+      "status": "done",
+      "assigned_to": null,
       "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4538-task-tier-end-to-end-evidence.md"
+      "completed_at": "2026-10-20T19:00:03+00:00",
+      "id": "TASK-4540",
+      "slug": "fail-closed-task-tier-gate",
+      "title": "The task-tier gate fails closed",
+      "priority": "high",
+      "effort": "S",
+      "depends_on": [],
+      "parallel": false,
+      "parallelism_notes": "exclusive on _task_tier_gate and its caller; TASK-4541 builds on it",
+      "file": "sdd/tasks/completed/TASK-4540-fail-closed-task-tier-gate.md",
+      "verification": "verified"
+    },
+    {
+      "feature_id": "FEAT-709",
+      "feature": "language-agnostic-validation-runners",
+      "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
+      "status": "done",
+      "assigned_to": null,
+      "started_at": null,
+      "completed_at": "2026-10-20T19:00:03+00:00",
+      "id": "TASK-4541",
+      "slug": "gate-hygiene-and-budget-replay",
+      "title": "Gate state hygiene, request identity, and a real budget replay",
+      "priority": "medium",
+      "effort": "M",
+      "depends_on": [
+        "TASK-4540"
+      ],
+      "parallel": false,
+      "parallelism_notes": "edits the same gate body as TASK-4540; runs after it",
+      "file": "sdd/tasks/completed/TASK-4541-gate-hygiene-and-budget-replay.md",
+      "verification": "verified"
     }
   ]
 }

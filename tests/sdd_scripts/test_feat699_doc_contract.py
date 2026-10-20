@@ -63,4 +63,7 @@ def test_worker_merge_gate_wording(rel):
 
 @pytest.mark.parametrize("rel", [".claude/agents/sdd-coder.md", f"{SUBAGENT}/sdd-coder.md"])
 def test_coder_task_tier_sentence(rel):
-    assert "file-level mirror tests" in _text(rel)
+    # FEAT-709 replaced the "file-level mirror tests" sentence: the coder now validates through
+    # `run_validation` / a JSON verdict and the engine re-runs the task tier itself.
+    text = _text(rel)
+    assert "verdict" in text and "re-runs your task's validation" in text

@@ -497,8 +497,11 @@ async def test_run_validation_routes_through_run(three_seat_roster, monkeypatch)
     toolkit = _toolkit(three_seat_roster)
     seen = {}
 
-    async def _run_validation(feature, worktree, execution_id, task_ids, tier, timeout_seconds, request_id):
+    async def _run_validation(
+        feature, worktree, execution_id, task_ids, tier, timeout_seconds, request_id, *, attempt_uid=None
+    ):
         seen["args"] = (feature, worktree, execution_id, task_ids, tier, timeout_seconds, request_id)
+        seen["attempt_uid"] = attempt_uid
         return BackgroundRegistration(
             handle="req-1",
             execution_id=execution_id,
@@ -524,6 +527,22 @@ async def test_run_validation_routes_through_run(three_seat_roster, monkeypatch)
     assert result.status == "ok"
     assert result.data["handle"] == "req-1"
     assert seen["args"] == ("f", "/abs", VALID_EXECUTION_ID, ["TASK-1"], "merge", 60, "req-1")
+    assert seen["attempt_uid"] is None
+
+    # FEAT-709: tier='task' is admitted through the toolkit and carries the attempt_uid.
+    result = await toolkit.coder_run_validation(
+        feature="f",
+        worktree="/abs",
+        execution_id=VALID_EXECUTION_ID,
+        task_ids=["TASK-1"],
+        tier="task",
+        timeout_seconds=60,
+        request_id="req-2",
+        attempt_uid="uid-1",
+    )
+    assert result.status == "ok"
+    assert seen["args"][4] == "task"
+    assert seen["attempt_uid"] == "uid-1"
 
     async def _raise(*args, **kwargs):
         raise CoderFailure("validation_request_conflict", "x")
