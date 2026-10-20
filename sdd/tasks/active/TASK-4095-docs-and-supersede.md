@@ -89,6 +89,9 @@ audit trail.
   guide `:13,84,134,266,272,291,319`; `ci.yml:113,133`; `INSTALL.md:9,158`;
   `docs/INSTALL.md:3,8,16,20`; `parrot-install-guide.spec.md:332-335`). Stale: "spec :521" (the
   status states) → **`:557`** (C4 clause; also `:237`).
+- **D8 corrected (2026-10-20):** gate by schema number; `min_runtime_version` informational. The
+  version-skew text must say the store refuses only a runtime with an older schema; a same-schema
+  store opens whatever release wrote it.
 
 ## Scope
 
@@ -210,8 +213,10 @@ def test_named_dep_floors_match() -> None:                 # line 183 — last c
   main checkout) → `VIRTUAL_ENV` → managed; warn once per session on stderr.
 - `--portable` stickiness (brief cross-cutting decision): `parrot toolkits` re-emits a host's toolkit
   entries in portable form iff that host's current managed `wikitoolkit` entry is portable.
-- Store gate: `WikiStoreVersionError` (TASK-4092) — message names both versions and the fix
-  (`parrot self update` / `parrot self add --here`).
+- Store gate: `WikiStoreVersionError` (TASK-4092) — raised only when the store's `schema_version` is
+  newer than the runtime's (schema number, never release number); message names both schemas, the
+  release that wrote the store, the running version and the fix (`parrot self update` /
+  `parrot self add --here`). *[rev 0.5]*
 - `parrot sdd` surface (TASK-4091 + C6 task, rev 0.2): `install [--host …] [--dry-run] [--force]`,
   `uninstall [--dry-run]`, `status` (per-file `missing | current | outdated | edited | foreign` from the
   committed record `sdd/.sdd-installed.json`; seed entries `seed-present | missing`), `run <name> [args…]`; seeds `sdd/config.json`,
@@ -555,8 +560,9 @@ session. Outside the managed venv nothing changes.
 
 ### Version skew
 <!-- FILL IN: quote WikiStoreVersionError's message as emitted (TASK-4092) and the fix
-     (`parrot self update`, or `parrot self add --here` for a project venv); note that runtimes
-     older than this release have no gate. -->
+     (`parrot self update`, or `parrot self add --here` for a project venv); say the gate compares
+     the store's schema number only — a store written by a newer release with the same schema
+     opens normally [rev 0.5]; note that runtimes older than this release have no gate. -->
 ```
 **Why this shape**: one page owns the managed-runtime story. Rendering conventions of THIS task
 file: the inner code fences are indented only to nest inside the block, and every heading inside

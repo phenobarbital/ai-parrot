@@ -54,6 +54,7 @@ their `ledger.db.bak-*` / `ledger.db.migrate.lock` (and `schema.db.*`) sidecars 
   - The gate re-check after the lock (`_check_runtime_gate`) now also refuses a stored `schema_version` greater than `SCHEMA_VERSION` (TASK-4092, rev 0.5) — no extra code here.
   - **`SourceRegistry` follow-up.** When this task closes (M7 lands), file a ledger item: `wikitoolkit ledger open --kind tech_debt --discovered-from spec:FEAT-633 --about sym:packages/ai-parrot/src/parrot/knowledge/wiki/sources.py#SourceCollectionManager._connect --title "SourceCollectionManager bypasses the wiki store version gate" ...` (severity chosen by the filer). Its plain `sqlite3` `_connect` (sources.py:796-811) and `_migrate_sources_columns` (sources.py:983-1003, ALTERs `sources`) never run the gate. There is no `SourceRegistry` class in any package; the spec's name means `SourceCollectionManager` (sources.py:73).
 - Anchor corrections: none needed in this file — every `store.py`, `project.py`, `federation.py` and `.gitignore` anchor was re-checked on the working tree (dev 69fb12a41).
+- **D8 corrected (2026-10-20):** gate by schema number; `min_runtime_version` informational. "Older runtime" below means an older `SCHEMA_VERSION`; a release-number skew with the same schema opens normally. `test_store_migrate_then_old_open` therefore mocks `SCHEMA_VERSION`, not `_running_version`.
 
 ---
 
@@ -206,8 +207,8 @@ fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
   `executescript(_PAGE_ATTRS_SQL)` still runs without lock/backup — acceptable because it is
   additive and idempotent (`CREATE TABLE IF NOT EXISTS`).
 - After acquiring the lock: **re-probe** (another process may have migrated while we
-  waited) and **re-run `_check_runtime_gate`** (a newer runtime may have stamped a higher
-  minimum — the spec §4 concurrent-older-runtime case).
+  waited) and **re-run `_check_runtime_gate`** (a newer runtime may have migrated the plane to a
+  newer schema — the spec §4 concurrent-older-runtime case). *[rev 0.5]*
 - Lock wait: poll with `await asyncio.sleep(0.1)` up to `self._policy.busy_timeout_s`; on
   timeout raise `WikiStoreBusy(self._db_path, "migrate", timeout)`.
 - Stale lock: the file records `"<pid> <epoch>"`; a lock older than
@@ -307,7 +308,7 @@ def _release_migration_lock(lock_path: Path) -> None:
             await self._migrate(conn)  # still read-first: attrs/FTS-trigger self-heal probes only
             return
         async with self._migration_lock():
-            await self._check_runtime_gate(conn)  # TASK-4092 — a newer runtime may have stamped while we waited
+            await self._check_runtime_gate(conn)  # TASK-4092 — a newer runtime may have migrated while we waited [rev 0.5]
             if not await self._has_migration_work(conn):
                 await self._migrate(conn)
                 return
@@ -417,10 +418,11 @@ async def test_current_plane_takes_no_backup(tmp_path: Path) -> None:
 
 
 async def test_store_migrate_then_old_open(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Spec §4 integration — migrate, then an older runtime (mocked version) fails fast."""
+    """Spec §4 integration — migrate, then an older runtime (mocked older SCHEMA_VERSION) fails fast."""
     db = await _stale_plane(tmp_path)
     await SQLiteWikiStore(db, "t").get_meta("k")  # migrates + stamps (TASK-4092)
-    monkeypatch.setattr(store_mod, "_running_version", lambda: "0.0.1")
+    # [rev 0.5] the gate compares schema numbers only; an older release with the same schema would open
+    monkeypatch.setattr(store_mod, "SCHEMA_VERSION", str(int(store_mod.SCHEMA_VERSION) - 1))
     with pytest.raises(WikiStoreVersionError):
         await SQLiteWikiStore(db, "t").get_meta("k")
 
@@ -502,7 +504,8 @@ runtime open it concurrently (spec §3 M0 S6 → M7)?
 - Backup: SQLite online backup API to `<db>.bak-<UTC>` (WAL-consistent), restore on failure.
 - Lock: `<db>.migrate.lock` via `os.open(O_CREAT|O_EXCL)`; stale after 600 s; why not
   `project.py:39-42` (fcntl no-op off POSIX).
-- Gate: `min_runtime_version` meta row (TASK-4092), re-checked after the lock is acquired.
+- Gate: stored `schema_version` vs the running `SCHEMA_VERSION` (TASK-4092), re-checked after the lock
+  is acquired; the `min_runtime_version` meta row is informational, quoted in the error only. *[rev 0.5]*
 
 ## Evidence
 <!-- FILL IN: the pytest command lines + pass output for test_store_migration_safety.py and
@@ -512,7 +515,7 @@ runtime open it concurrently (spec §3 M0 S6 → M7)?
 | Scenario | Expected | Observed |
 |---|---|---|
 | failed migration | backup restored, error re-raised | <!-- FILL IN --> |
-| newer migrates, older opens | WikiStoreVersionError naming both versions | <!-- FILL IN --> |
+| newer schema migrates, older schema opens *[rev 0.5]* | WikiStoreVersionError naming both schemas and the stamped release | <!-- FILL IN --> |
 | two processes race the lock | exactly one holds it | <!-- FILL IN --> |
 | fcntl unavailable | lock still exclusive | <!-- FILL IN --> |
 | read-only/foreign plane | never migrated, no backup/lock | <!-- FILL IN --> |

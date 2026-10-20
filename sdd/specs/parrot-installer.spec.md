@@ -165,7 +165,9 @@ Store safety: `SQLiteWikiStore` already auto-migrates on `schema_version` mismat
 required for the skew policy: pre-migration backup, migration under an exclusive lock,
 and a `min_runtime_version` meta row stamped by migration — an older runtime opening the
 store fails fast naming both versions and the fix (`parrot self update` /
-`parrot self add --here`).
+`parrot self add --here`). *[rev 0.5 D8]* "Older" means an older **schema**: the gate
+compares `schema_version`, never release numbers, so any runtime with the same schema opens
+the store; `min_runtime_version` only feeds the error message.
 
 ### Component Diagram
 
@@ -225,7 +227,8 @@ class ToolkitTemplate(BaseModel):
 
 # knowledge/wiki/store.py — meta rows (key/value in the existing `meta` table; no new table)
 #   'schema_version'      — existing (SCHEMA_VERSION = "3", store.py:51)
-#   'min_runtime_version' — NEW: lowest wikitoolkit version allowed to open this store
+#   'min_runtime_version' — NEW: ai-parrot version that last created/migrated this store;
+#                           informational only, quoted in the error message, never compared [rev 0.5 D8]
 ```
 
 ### New Public Interfaces
@@ -506,8 +509,9 @@ class ToolkitTemplate(BaseModel):
   `main()` (`plan`, `write-index`) in TASK-4299 so installed markdown can say
   `parrot sdd run brief_meta …`; the missing Google twin `.agent/workflows/sdd-brief.md` is
   created by TASK-4089 before its rewrite; TASK-4070's helper map, TASK-4090's asset counts
-  (15 commands per host, 13 tracked templates, 81 manifest entries — *[rev 0.5]* 82 with
-  `sdd-contract-probe`; the Google host has 14 workflows until TASK-4089 adds its
+  (15 commands per host, 13 tracked templates, 81 manifest entries — *[rev 0.5]* 83 with
+  `sdd-contract-probe` on Claude and on Google (`.agents/agents/sdd-contract-probe/agent.md`,
+  added 2026-10-20); the Google host has 14 workflows until TASK-4089 adds its
   `sdd-brief` twin) and TASK-4091's C3
   scenarios (`ensure_worktree --brief-key`, `brief_meta write-index`) cover the new files.
 - **M6 helper inventory** *[rev 0.5]* (verified against `dev` `206b4cd80`, 2026-10-20;
@@ -623,8 +627,9 @@ class ToolkitTemplate(BaseModel):
   (b) run the migration under an exclusive transaction/lock (pragmas applied in
   `_apply_pragmas`, :1218); (c) stamp `min_runtime_version` in `meta` alongside
   `schema_version` (:1637-1638); (d) `_open` (:1252) and `_connect_readonly` (:1465)
-  check the gate first — an older runtime raises `WikiStoreVersionError` naming the
-  store's minimum, the running version, and the fix. No `PRAGMA user_version` exists or
+  check the gate first — a runtime whose `SCHEMA_VERSION` is older than the store's raises
+  `WikiStoreVersionError` naming the store's schema and stamped `min_runtime_version`, the
+  running version, and the fix *[rev 0.5 D8: decided by schema number, see (2) below]*. No `PRAGMA user_version` exists or
   is introduced; the `meta` key/value mechanism is extended. The migration lock must be
   **cross-process and Windows-safe** (codex S7): the store's asyncio lock is
   per-instance and the repo's existing file-lock precedent is `fcntl`-based
@@ -637,6 +642,12 @@ class ToolkitTemplate(BaseModel):
   (store.py:1585) and `_migrate` overwrites it (`ON CONFLICT DO UPDATE`), so an older
   runtime silently rewrites a newer store's version down. A stored version greater than
   the running `SCHEMA_VERSION` raises `WikiStoreVersionError` and never migrates.
+  **This schema comparison is the whole gate.** `min_runtime_version` is stamped with the
+  running ai-parrot version (at creation and at migration) but is never compared: a store
+  created or migrated by 1.2.4 opens in 1.2.3 when both carry the same `SCHEMA_VERSION`.
+  Comparing release numbers was rejected as too strict, and a per-schema "minimum release"
+  constant cannot be known when `SCHEMA_VERSION` is bumped (the release is cut later).
+  A missing or non-integer stored `schema_version` keeps today's behaviour (stale → migrate).
   (3) When the store's directory is not writable, the backup and the `O_EXCL` lockfile
   cannot be created: migration stops with a clear error naming the directory and the
   fix, and leaves the store untouched (never a silent skip, never a partial migrate).
@@ -650,8 +661,9 @@ class ToolkitTemplate(BaseModel):
   MIN_RUNTIME_KEY = "min_runtime_version"   # new meta row next to 'schema_version' (store.py:1302)
 
   class WikiStoreVersionError(RuntimeError):
-      """Raised when the store's min_runtime_version exceeds the running wikitoolkit
-      version; message names both versions and the fix."""
+      """Raised when the store's schema_version is newer than the running SCHEMA_VERSION
+      [rev 0.5 D8]; message names both schemas, the store's min_runtime_version (the
+      release that wrote it) and the fix."""
 
   async def _check_runtime_gate(self, conn) -> None: ...   # called from _open (store.py:1252)
                                                            # and _connect_readonly (store.py:1465)
@@ -817,7 +829,7 @@ binds the tasks it names. Implementers build the part a clause covers exactly as
 | `test_doctor_sdd_readiness` | M3 | fixture repo missing each prerequisite fails the matching check with its fix; `--runtime-only` excludes repo/host checks; `--sdd` + `--runtime-only` rejected [rev 0.2 C14/C15] |
 | `test_install_global_pre_install_gate` | M2 | each failed gate exits before any write; failed post-install `doctor --runtime-only` rolls back; repo-readiness failures do not [rev 0.2 C14] |
 | `test_docs_claims_cli_verb_flag` | docs | claim harness verifies `cli-verb`/`flag` claims against the real click commands [rev 0.2 C13] |
-| `test_gate_blocks_older_runtime` | M7 | store stamped with higher min_runtime ⇒ `WikiStoreVersionError` with both versions in message |
+| `test_gate_blocks_older_runtime` | M7 | store with a higher `schema_version` ⇒ `WikiStoreVersionError` with both schemas and the stamped `min_runtime_version` in the message; a higher `min_runtime_version` with the same schema opens normally [rev 0.5 D8] |
 | `test_migration_backup_and_restore` | M7 | failed migration restores the sidecar backup |
 | `test_migration_lock_windows_safe` | M7 | cross-process lock is not a no-op when `fcntl` is unavailable |
 | `test_portable_transitions_both_ways` | M5 | default→portable and portable→default re-installs land exactly the requested form |
@@ -919,8 +931,9 @@ def linked_worktree_repo(tmp_path):
       `parrot self doctor --runtime-only` afterwards (runtime failure rolls back; repo
       readiness never does); `parrot self doctor` reports SDD readiness with a fix per check.
 - [ ] Wiki store migration takes a sidecar backup first, restores it on failure, runs
-      locked, stamps `min_runtime_version`; an older runtime opening a newer store fails
-      fast with both versions and the fix in the message (read-only paths included).
+      locked, stamps `min_runtime_version`; a runtime with an older `SCHEMA_VERSION` opening
+      a newer store fails fast with both versions and the fix in the message (read-only paths
+      included); a same-schema store opens whatever release wrote it *[rev 0.5 D8]*.
 - [ ] `release.yml` builds core wheels for linux x86_64 + aarch64, windows AMD64 and
       macOS arm64 (cp311–cp313 minimum); the redundant quadruple ubuntu legs are gone.
 - [x] `sdd/specs/portable-sdd-flow.spec.md` is stamped `Status: superseded` referencing
@@ -1209,7 +1222,7 @@ Rev 0.5 readiness decisions (Jesus Lara, 2026-10-20; register in
 - [x] D5 foreign-repo ledger — `parrot sdd install` writes `.gitattributes` + ledger hooks; doctor checks them.
 - [x] D6 Windows hook bodies — quoted forward-slash paths; basename match without `.exe`.
 - [x] D7 `--remote` × `--portable` — mode inferred from managed `parrot-*` entries.
-- [x] D8 store versioning — stamp at creation and migration, refuse downgrade, clear error in an unwritable directory, `SourceCollectionManager._connect` bypass as a follow-up.
+- [x] D8 store versioning — stamp at creation and migration, refuse downgrade (gate by schema number; `min_runtime_version` informational), clear error in an unwritable directory, `SourceCollectionManager._connect` bypass as a follow-up.
 
 ---
 
@@ -1247,4 +1260,5 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.2 | 2026-10-14 | Jesus Lara + Claude | Amendments C2–C6, C8–C15, Q1, C7 folded in (proposal `parrot-installer-amendments` rev 0.3): `parrot sdd run`, install receipt, `--dry-run`, `sdd/config.json` + single branch policy (TASK-4298/4299), conventions seed, publication safety, canonical docs, bootstrap gate + `doctor --runtime-only`, SDD readiness checks; FEAT-583 stamp marked done |
 | 0.3 | 2026-10-17 | Jesus Lara + Claude | Amendment C16 folded in (proposal rev 0.4): `worktree_environment` enters scope — relocated to `parrot/sdd/scripts/` with a re-export shim, hook invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, `test_no_repo_script_refs` widened to any monorepo source path (amends TASK-4085, 4072, 4089, 4090, 4091) |
 | 0.4 | 2026-10-18 | Jesus Lara + Claude | Amendment C17 folded in (proposal rev 0.5): `/sdd-brief` (FEAT-698, merged after rev 0.3) ships through the installer — `brief_meta` moves with TASK-4085 and gets a CLI (`plan`, `write-index`) in TASK-4299, TASK-4089 creates the missing Google twin `.agent/workflows/sdd-brief.md` and rewrites the three `sdd-brief` files, counts updated to 15 commands per host / 14 templates / 81 manifest entries (TASK-4070, 4090), C3 scenarios for `ensure_worktree --brief-key` and `brief_meta write-index` (TASK-4091) |
-| 0.5 | 2026-10-20 | Jesus Lara + Claude | Readiness decisions D1–D8 answered (checkpoint 2026-10-19): core-only `wikitoolkit mcp` (D1), §4 Validation Contract `none — fallback` + `test_command` skips FEAT-699 steps (D2), monorepo-path rules (D3), `worktree_environment` move mechanics (D4), foreign-repo ledger wiring (D5), Windows hook bodies (D6), `--remote` × `--portable` (D7), store stamp/downgrade/unwritable-dir rules in M7 (D8). M6 helper inventory: 26 modules + `__init__` by owning task, the 7 Python helpers + `codex_hook.sh` + 2 baselines that stay, five path loaders made package-relative; C12 premise marked stale. Counts re-verified on `dev`: 13 tracked templates (a 14th on disk, `research_plan.schema.json`, was never committed and nothing uses it), 30 Python helpers + `__init__` + 3 `.sh` + 2 baselines, 26 helpers behind `parrot sdd run`, 4 `[project.scripts]` entries (3 behind the launcher), 25 `_lazy_commands`, 10 agents (+ `sdd-contract-probe`) → 82 manifest entries. Anchors re-verified on `9625844f5` (spec-wide, not only §6): `store.py` +144, `project.py` `parrot_home` +148, `claude_code/{assets,installer}.py`, `codex/{assets,installer}.py`, `mcp/hosts.py`, `pyproject.toml` (`[project.scripts]` 199-206, package-data 970/983, `[tool.cibuildwheel]` 1057-1059), `release.yml` (`build-parrot-codec` 408-479); two anchor texts changed (`_open` signature, `elif servers.get(...)`), `_migrate` anchor made unique; D6's `_is_wikitoolkit_entry` corrected to :753 |
+| 0.5 | 2026-10-20 | Jesus Lara + Claude | Readiness decisions D1–D8 answered (checkpoint 2026-10-19): core-only `wikitoolkit mcp` (D1), §4 Validation Contract `none — fallback` + `test_command` skips FEAT-699 steps (D2), monorepo-path rules (D3), `worktree_environment` move mechanics (D4), foreign-repo ledger wiring (D5), Windows hook bodies (D6), `--remote` × `--portable` (D7), store stamp/downgrade/unwritable-dir rules in M7 (D8). M6 helper inventory: 26 modules + `__init__` by owning task, the 7 Python helpers + `codex_hook.sh` + 2 baselines that stay, five path loaders made package-relative; C12 premise marked stale. Counts re-verified on `dev`: 13 tracked templates (a 14th on disk, `research_plan.schema.json`, was never committed and nothing uses it), 30 Python helpers + `__init__` + 3 `.sh` + 2 baselines, 26 helpers behind `parrot sdd run`, 4 `[project.scripts]` entries (3 behind the launcher), 25 `_lazy_commands`, 10 agents (+ `sdd-contract-probe`) → 82 manifest entries (83 after the Google probe copy, see the next row). Anchors re-verified on `9625844f5` (spec-wide, not only §6): `store.py` +144, `project.py` `parrot_home` +148, `claude_code/{assets,installer}.py`, `codex/{assets,installer}.py`, `mcp/hosts.py`, `pyproject.toml` (`[project.scripts]` 199-206, package-data 970/983, `[tool.cibuildwheel]` 1057-1059), `release.yml` (`build-parrot-codec` 408-479); two anchor texts changed (`_open` signature, `elif servers.get(...)`), `_migrate` anchor made unique; D6's `_is_wikitoolkit_entry` corrected to :753 |
+| 0.5 | 2026-10-20 | Jesus Lara + Claude | D8 corrected (owner: too strict): the store gate compares `schema_version` only; `min_runtime_version` is stamped but informational (error message), so a same-schema store opens whatever release wrote it. `sdd-contract-probe` invocation fixed on dev: Antigravity copy `.agents/agents/sdd-contract-probe/agent.md`, host-neutral invocation in `sdd-task`/`sdd-brainstorm`/`sdd-proposal` (both hosts), module lookup via `git ls-files` (no monorepo path) → 83 manifest entries, 9 Google agents; TASK-4070/4089/4090/4092/4093/4095 updated |

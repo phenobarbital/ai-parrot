@@ -109,22 +109,23 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
   `cbbe243a7`, 2026-10-20). It is invoked by the shipped `/sdd-task`, `/sdd-brainstorm`,
   `/sdd-proposal` and their `.agent/workflows/` twins, so it ships (spec M6: 10 agents). No glob
   changes: `.claude/agents/sdd-*.md` picks it up. It has no `_subagent_data/` copy and is not a
-  dev-loop name, so C2 is unchanged (still nine copies deleted). Its three `packages/` lines
-  (`:19`, `:62`, `:84`) are TASK-4089's D3 work.
+  dev-loop name, so C2 is unchanged (still nine copies deleted). *[rev 0.5, fixed on dev
+  2026-10-20]* It no longer has `packages/` lines, and its Antigravity copy
+  `.agents/agents/sdd-contract-probe/agent.md` now exists (same body; locked by
+  `tests/sdd_scripts/test_contract_probe_hosts.py`), so it ships on both hosts.
 - **Google `sdd-brief` twin exists.** `.agent/workflows/sdd-brief.md` was committed on
   2026-10-20 (`69fb12a41`), not by TASK-4089. The Google host has 15 workflows today.
 - **Counts / anchors (re-verified 2026-10-20 on dev `69fb12a41`).** Manifest entries 81 →
-  **82** = 15 commands + **10** agents + 1 hook + 1 rule + 1 skill + 15 codex/google skills + 1
-  codex TOML + 15 google workflows + 8 google agents + 13 tracked templates + `WORKFLOW.md` + the
+  **83** = 15 commands + **10** agents + 1 hook + 1 rule + 1 skill + 15 codex/google skills + 1
+  codex TOML + 15 google workflows + **9** google agents (+ `sdd-contract-probe`) + 13 tracked templates + `WORKFLOW.md` + the
   `CONVENTIONS.md` seed. `dev_loop/_subagent_defs.py` `_VALID_NAMES` (`:56`) holds **8** names
   (no `sdd-autopilot`), not 9; the `_subagent_data/` files are still 9 (`sdd-autopilot` included)
   + 1 in `dev_flow`. Unchanged: pyproject package-data `:970`, `"parrot.flows"` `:983`,
   `"parrot.flows.dev_loop"` `:984`, FEAT-412 comment `:985-986`, `"parrot.flows.dev_flow"` `:987`;
   `_subagent_defs.py:70,95,114` (dev_loop) and `:31,65,86` (dev_flow); `sdd/WORKFLOW.md:404-405`;
   `codex/assets.py:143`; `google/assets.py:139`.
-- **Not resolved (report to owner):** the Google `/sdd-task`, `/sdd-brainstorm`, `/sdd-proposal`
-  workflows call `sdd-contract-probe`, but `.agents/agents/` has no `sdd-contract-probe/agent.md`
-  (8 Google agents). This task ships what is git-tracked and does not create one.
+- **Google probe gap — resolved on dev 2026-10-20:** `.agents/agents/sdd-contract-probe/agent.md`
+  exists, so the Google workflows that call the probe have it (9 Google agents).
 
 ## Scope
 
@@ -135,7 +136,7 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
   `--wheel` also report every shipped line naming a monorepo source path — C16).
 - Create the neutral seed `sdd/CONVENTIONS.md` in the repo (C10); it is packaged like any
   other asset and flagged `seed: true` in the manifest.
-- Generate `packages/ai-parrot/src/parrot/sdd/_assets/` (82 files *[rev 0.5]* + `manifest.json`) with `--write`.
+- Generate `packages/ai-parrot/src/parrot/sdd/_assets/` (83 files *[rev 0.5]* + `manifest.json`) with `--write`.
 - Declare the asset tree in `[tool.setuptools.package-data]` and in `MANIFEST.in`.
 - Add the sync-check step, the publication scan step (C11c) and a wheel-content job to
   `.github/workflows/ci.yml`.
@@ -167,7 +168,7 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
 | File | Action | Description |
 |---|---|---|
 | `scripts/sdd/check_asset_sync.py` | CREATE | Stdlib sync/check/wheel-verify tool; owns the source→asset mapping |
-| `packages/ai-parrot/src/parrot/sdd/_assets/` | CREATE | Generated asset tree (82 files *[rev 0.5]*) — produced ONLY by `check_asset_sync.py --write` |
+| `packages/ai-parrot/src/parrot/sdd/_assets/` | CREATE | Generated asset tree (83 files *[rev 0.5]*) — produced ONLY by `check_asset_sync.py --write` |
 | `packages/ai-parrot/src/parrot/sdd/_assets/manifest.json` | CREATE | Generated manifest (`schema_version: 1`, one entry per asset) |
 | `packages/ai-parrot/pyproject.toml` | MODIFY | `"parrot.sdd"` package-data with explicit per-subdir patterns |
 | `packages/ai-parrot/MANIFEST.in` | MODIFY | `graft src/parrot/sdd/_assets` so the sdist (and wheel-from-sdist) carry the tree |
@@ -346,12 +347,12 @@ workflows in `.agent/workflows/sdd-*.md` …, skills in `.agents/skills/sdd-*`, 
 | codex, google | `.agents/skills/sdd-*/SKILL.md` | 15 *(rev 0.4 C17)* | `agents/skills/<n>/` |
 | codex | `.codex/agents/sdd-worker.toml` | 1 | `codex/agents/` |
 | google | `.agent/workflows/sdd-*.md` | 15 *[rev 0.5]* (`sdd-brief.md` committed in `69fb12a41`) | `agent/workflows/` |
-| google | `.agents/agents/sdd-*/agent.md` | 8 | `agents/agents/<n>/` |
+| google | `.agents/agents/sdd-*/agent.md` | 9 *[rev 0.5]* (+ `sdd-contract-probe`) | `agents/agents/<n>/` |
 | claude, codex, google | `sdd/templates/*` (git-tracked: 13 — `research_plan.schema.json` is untracked and excluded; `brief.md` came in with FEAT-698, rev 0.4 C17) | 13 | `sdd/sdd_templates/` |
 | claude, codex, google | `sdd/WORKFLOW.md` | 1 | `sdd/WORKFLOW.md` |
 | claude, codex, google | `sdd/CONVENTIONS.md` — **seed** (`seed: true`; C10) | 1 | `sdd/CONVENTIONS.md` |
 
-**Total: 82 assets** *[rev 0.5]* (`sdd-contract-probe` came in; the two `codebase-conventions.md` rows left; the skill and the seed
+**Total: 83 assets** *[rev 0.5]* (`sdd-contract-probe` came in on claude and google; the two `codebase-conventions.md` rows left; the skill and the seed
 came in; *rev 0.4 C17*: `sdd-brief` on three hosts and `sdd/templates/brief.md` came in). Excluded on purpose: `.claude/rules/codebase-conventions.md` and
 `.agent/rules/codebase-conventions.md` (C10 — ai-parrot's rulebook never ships; the codex and
 google wiki installers keep rendering `.agent/rules/` from the *repo*, which is untouched),
@@ -419,7 +420,7 @@ the manifest alone.
 0. Create `sdd/CONVENTIONS.md` (seed block below) and commit it — *why*: it must be git-tracked
    before `--write` can package it.
 1. Write `scripts/sdd/check_asset_sync.py` — *why*: it owns the mapping; the tree is generated from it.
-2. Run `python scripts/sdd/check_asset_sync.py --write`, then `--check` (expect exit 0, 82 assets *[rev 0.5]*;
+2. Run `python scripts/sdd/check_asset_sync.py --write`, then `--check` (expect exit 0, 83 assets *[rev 0.5]*;
    the C16 `monorepo-path` pass is green once TASK-4089's D3 rewrites and allowlist are in *[rev 0.5]*)
    — *why*: `_assets/` and `manifest.json` must never be hand-written.
 2b. Edit both `_subagent_defs.py` loaders, `git rm` the nine duplicated `_subagent_data/` prompts,
@@ -427,7 +428,7 @@ the manifest alone.
    — *why*: the packaged asset is now the only copy (C2); do this right after step 2 so the
    loaders have something to read.
 3. `git add -f` is NOT needed (no ignored path in the tree) — verify with
-   `git status --porcelain -uall packages/ai-parrot/src/parrot/sdd/_assets | wc -l` == 82 — *why*: a silently
+   `git status --porcelain -uall packages/ai-parrot/src/parrot/sdd/_assets | wc -l` == 83 — *why*: a silently
    ignored asset would ship nowhere.
 4. Add the package-data block and the `MANIFEST.in` graft — *why*: wheel and sdist must both carry the tree.
 5. Locally: `uv build --package ai-parrot --out-dir /tmp/<scratch>/dist` then
@@ -631,7 +632,7 @@ _assets/
   manifest.json                      {"schema_version": 1, "assets": [{"source": "claude/commands/sdd-spec.md",
                                        "target": ".claude/commands/sdd-spec.md", "hosts": ["claude"]}, ...,
                                        {"source": "sdd/CONVENTIONS.md", "target": "sdd/CONVENTIONS.md",
-                                        "hosts": ["claude", "codex", "google"], "seed": true}]}  (82 entries [rev 0.5])
+                                        "hosts": ["claude", "codex", "google"], "seed": true}]}  (83 entries [rev 0.5])
   claude/{commands,agents,hooks,rules}/...
   claude/skills/second-opinion/SKILL.md
   agents/skills/sdd-*/SKILL.md       agents/agents/sdd-*/agent.md
@@ -992,7 +993,7 @@ publication findings, single-copy prompts). The last three tests import `parrot.
 
 ## Acceptance Criteria
 
-- [ ] `python scripts/sdd/check_asset_sync.py --write` produces `_assets/` with 82 assets *[rev 0.5]* +
+- [ ] `python scripts/sdd/check_asset_sync.py --write` produces `_assets/` with 83 assets *[rev 0.5]* +
       `manifest.json`; a second `--write` leaves `git status` clean (idempotent).
 - [ ] *(C16)* `--check` and `--wheel` report every shipped line naming a monorepo source path
       (`monorepo-path: <target>:<line>: …`); green on the repo *[rev 0.5]* (D3: every hit rewritten by

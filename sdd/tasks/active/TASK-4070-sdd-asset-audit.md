@@ -134,11 +134,11 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
 - New shipped agent: `.claude/agents/sdd-contract-probe.md` (`cbbe243a7`, 2026-10-20). It is
   invoked by the shipped `/sdd-task`, `/sdd-brainstorm`, `/sdd-proposal`, so it ships
   (spec M6: 10 agents). `.claude/agents/sdd-*.md` already globs it. It references no
-  `scripts/sdd` helper (its oracle row is "none"), but it yields three `monorepo-path`
-  findings: `sdd-contract-probe.md:19` and `:84` (examples with
-  `packages/ai-parrot/src/parrot/mcp/toolkit_seed.py`) and `:62` (the `import` check resolves
-  modules "under `packages/*/src/`"). They go into the report and the Conclusions like any
-  other hit (TASK-4089 rewrites them under D3).
+  `scripts/sdd` helper (its oracle row is "none"). *[rev 0.5, fixed on dev 2026-10-20]* It has
+  no `monorepo-path` finding any more (the `import` check resolves modules with `git ls-files`,
+  the examples use generic paths), and its Antigravity copy
+  `.agents/agents/sdd-contract-probe/agent.md` exists (oracle row "none" too). The default
+  scanner globs do not cover `.agents/agents/`; that stays part of the open D11.
 - Counts re-verified 2026-10-20 on dev `69fb12a41`: 15 commands, **10 agents** (was 9),
   13 tracked templates. A dev checkout may also hold an untracked
   `sdd/templates/research_plan.schema.json` (ignored by the global `templates/` rule,

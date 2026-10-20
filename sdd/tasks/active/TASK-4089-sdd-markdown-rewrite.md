@@ -224,11 +224,13 @@ open, exactly as written above.
   script like the Claude copy), and `sdd-brief` does **not** join `_TWINNED`; its parity stays
   with that test. The Google host now has 15 workflows.
 - **New shipped agent `sdd-contract-probe`** (`cbbe243a7`, 10 agents now). It has no
-  `scripts/sdd` reference, but three `packages/` lines fall under D3: `sdd-contract-probe.md:19`,
-  `:84` (examples) and `:62` (the `import` check resolves modules "under `packages/*/src/`").
-  `:62` is a run-time rule, yet `SddConfig` has no source-root field, so (b) has no config value
-  to read. **Do not allowlist `:62` without the owner's answer** — write it in the Completion Note
-  if no rewrite fits.
+  `scripts/sdd` reference. *[rev 0.5, fixed on dev 2026-10-20]* Its three `packages/` lines are
+  gone: the `import` check now resolves modules with `git ls-files` (any source root) and the
+  examples use generic paths, so this task does not touch it. The same change added the
+  Antigravity copy `.agents/agents/sdd-contract-probe/agent.md` and made the probe invocation in
+  `sdd-task` / `sdd-brainstorm` / `sdd-proposal` (both hosts) name each host; locked by
+  `tests/sdd_scripts/test_contract_probe_hosts.py`. Rule 6 / the substitution table must keep
+  those host lines intact.
 - **`_TWINNED` changed on dev.** `tests/sdd_scripts/test_command_twin_parity.py:22` is now
   `("sdd-brainstorm", "sdd-next", "sdd-proposal", "sdd-spec", "sdd-status", "sdd-task")`;
   `_SUBSTITUTIONS` (`:29-50`) has five anchors (adds `sdd-brainstorm.md:277`,
@@ -238,9 +240,9 @@ open, exactly as written above.
   `total=216` → **`total=220 residual=0`** (the extra 4 are the Google `sdd-brief` twin).
   `.claude/agents/sdd-*.md`: 9 → **10**. C16 hits in the shipped set beyond the two rule-7 hooks,
   measured with `_MONOREPO_PATH` (lines that also name `scripts/sdd` left out): 33 `packages/` lines
-  in 20 files → **34 lines in 19 files** (the 3 probe lines included; the old figure was a looser
+  in 20 files → **31 lines in 18 files** (34 in 19 before the probe fix; the old figure was a looser
   `grep packages/` count), plus `sdd-worker-format.sh:76`. With the widened pattern the gate sees
-  **41 lines in 21 files** (the two hooks, `:76` and the four `tests/sdd_scripts` lines included). `.claude/commands/sdd-task.md:381-416` → **`:422-457`**;
+  **38 lines in 20 files** (the two hooks, `:76` and the four `tests/sdd_scripts` lines included). `.claude/commands/sdd-task.md:381-416` → **`:422-457`**;
   `sdd-task.md:386` → **`:427`**; `.agent/workflows/sdd-task.md:382` → **`:423`**;
   `cache_test_contract` `sdd-task.md:369` → **`:410`**. Unchanged: `sdd-done.md:185,239,257,264,277`,
   `sdd/templates/task.md:281,329,344`, `sdd-autopilot.md:663-664`, `sdd/WORKFLOW.md:135`,
@@ -424,7 +426,6 @@ script reports `total=216 residual=0`. Rows marked *(C16)* carry the hand-rewrit
 | `tests/sdd/test_codex_sdd_sync.py` | MODIFY | Codex worker TOML asserts `parrot sdd run finalize_task` |
 | `packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py` | MODIFY | Orchestrator-loop assert uses `parrot sdd run finalize_task` |
 | `packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_start_optimization_contract.py` | MODIFY | Closure-block markers: new finalize_task / close_task module form |
-| `.claude/agents/sdd-contract-probe.md` | MODIFY | *[rev 0.5]* D3: `:19`, `:84`, `:62` (`packages/` lines; see the Spec rev 0.5 section for `:62`) |
 | `.claude/hooks/sdd-worker-format.sh` | MODIFY | *[rev 0.5]* D3 (d): resolve `black`/`pylint` via `PATH` first, `.venv/bin` candidates (`:76-77`) as fallback |
 | `.agents/agents/sdd-autopilot/agent.md` | MODIFY | *[rev 0.5]* D3: `:669-670` (`packages/` lines) |
 | `sdd/templates/spec.md`, `brainstorm.md`, `proposal.md`, `design_research.prompt.md` | MODIFY | *[rev 0.5]* D3 (a): `spec.md:7,157-158,273-274`, `brainstorm.md:7`, `proposal.md:16`, `design_research.prompt.md:16` → generic placeholders |
@@ -846,10 +847,6 @@ def test_start_twins_preserve_semantic_gates(tmp_path: Path) -> None:  # line 30
       "action": "CREATE"
     },
     {
-      "path": ".claude/agents/sdd-contract-probe.md",
-      "action": "MODIFY"
-    },
-    {
       "path": ".claude/hooks/sdd-worker-format.sh",
       "action": "MODIFY"
     },
@@ -1256,7 +1253,7 @@ the sixth is C16's widened gate ("fails on any monorepo source path in a shipped
 `9f51c7735` the sixth would flag, besides the two hooks rule 7 fixes and the `scripts/sdd` lines
 the rewrite removes, 33 more `packages/` lines in 20 shipped files and
 `.claude/hooks/sdd-worker-format.sh:76` — *[rev 0.5]* resolved by D3: every hit is rewritten or its file
-allowlisted, then the sixth test is green (41 lines in 21 files on `69fb12a41` with the widened pattern). `parents[4]`
+allowlisted, then the sixth test is green (38 lines in 20 files with the widened pattern, after the 2026-10-20 probe fix). `parents[4]`
 mirrors `tests/sdd_scripts/test_command_twin_parity.py`'s fixed-depth root.
 
 ### Per-file checklist (after `--write`)
