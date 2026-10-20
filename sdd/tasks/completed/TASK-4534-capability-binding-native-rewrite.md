@@ -180,8 +180,15 @@ Tests live in the files declared above; write the cases named in Acceptance Crit
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
 
-**Deviations from spec**: none
+- Task: TASK-4534
+- Feature: language-agnostic-validation-runners
+- Implementation SHA: 57dc03deafd9f2a5e29a01199ab69a1affe1ab9a
+- Closed at (UTC): 2026-10-20T15:06:57+00:00
+- Fix commits: none
+
+| Metric | Value |
+|---|---|
+| validation_refs | 1 |
+| fix_commits | 0 |
+| seat_summary | Seat: sonnet · Backend: native · Model: sonnet · Attempts: 1 · Duration: 199.7s · Tokens: n/a |

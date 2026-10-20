@@ -365,7 +365,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "M",
       "depends_on": [
@@ -376,8 +376,9 @@
       "parallelism_notes": "edits engine.py after TASK-4532; calls set_validation_runner/ValidationCapability from TASK-4533 (dispatchers/llm.py); native rewrite uses GuardOutcome 'verdict' from TASK-4525 (transitive)",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4534-capability-binding-native-rewrite.md"
+      "completed_at": "2026-10-20T15:06:57+00:00",
+      "file": "sdd/tasks/completed/TASK-4534-capability-binding-native-rewrite.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4535",
