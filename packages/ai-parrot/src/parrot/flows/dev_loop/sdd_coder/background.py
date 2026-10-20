@@ -1010,9 +1010,7 @@ class ValidationSupervisor:
                         stderr=asyncio.subprocess.STDOUT,
                         start_new_session=True,
                     )
-                    runner_deadline = min(
-                        deadline, time.monotonic() + runner_registry.timeout_for(invocation.runner)
-                    )
+                    runner_deadline = min(deadline, time.monotonic() + runner_registry.timeout_for(invocation.runner))
                 except Exception:
                     self.logger.exception(
                         "validation supervisor failed to launch a chained invocation for handle=%s", handle
@@ -1127,8 +1125,7 @@ class ValidationSupervisor:
             argv = list(test_report.with_report(prepared, report_path))
         elif prepared.runner == "vitest" and report_path is not None:
             argv = [
-                f"--outputFile={report_path}" if argument.startswith("--outputFile=") else argument
-                for argument in argv
+                f"--outputFile={report_path}" if argument.startswith("--outputFile=") else argument for argument in argv
             ]
             prepared = replace(prepared, argv=tuple(argv))
         return prepared, argv, report_path
