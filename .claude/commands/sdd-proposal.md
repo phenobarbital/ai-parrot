@@ -224,7 +224,60 @@ Update `state.json`:
 
 ### 4. Phase 2 — Execute Research
 
+#### 4.0 Dispatch — parallel lanes or sequential (FEAT-708)
+
+Decide the execution mode first. Run **sequentially** (skip to §4a, record
+`phases.research.parallel = {"enabled": false, "fallback_reason": "<why>"}`)
+when the per-lane allocation in §1 says so (tight, custom, `--no-parallel`).
+Otherwise:
+
+1. **Partition** the approved plan by query `type`:
+
+   | Lane | Prefix | Query types |
+   |---|---|---|
+   | codebase | `FC` | `grep`, `glob`, `read`, `tree` |
+   | git | `FG` | `git_log` |
+   | wiki | `FW` | `wiki_query`, `wiki_page`, `wiki_related` |
+
+   A query with a `parent_id` stays in its parent's lane, so `wiki_query → wiki_page`
+   chains never split. An empty lane is not dispatched (status `completed`, 0 findings).
+2. **Allocate** each lane its quota from the §1 per-lane table.
+3. **Dispatch** all non-empty lanes in ONE message — one `Agent` call per lane:
+
+   ```
+   Agent({
+     subagent_type: "fork",
+     description: "<lane> research lane",
+     prompt: "Lane: <lane>. Prefix: <FC|FG|FW>. STATE_DIR: <abs path>.
+              Limits: <lane quota JSON>. Queries: <lane query list JSON>.
+              Follow §4a of /sdd-proposal for each query. Write findings ONLY as
+              ${STATE_DIR}/findings/<PREFIX>-<NNN>-<slug>.md. Do NOT write state.json.
+              Record any follow-up that belongs to another lane as a Notes line
+              `[cross-lane: type=<type>, intent=<text>]`. End with a JSON line:
+              {\"lane\":..., \"queries_executed\":N, \"queries_skipped\":N,
+               \"files_read\":N, \"grep_calls\":N, \"git_calls\":N, \"findings\":[ids]}"
+   })
+   ```
+
+   The prompt carries no `source.md`/Jira text — forks read the state dir on disk.
+   **If the Agent call errors** (tool unavailable, fork not supported), this IS the
+   capability probe: record `fallback_reason: "agent-unavailable"` and run §4a sequentially.
+4. **Collect** each fork's completion. The parent stops waiting at
+   `floor(0.85 × wall_seconds)`; a lane still running at that point is failed. Keep
+   completed lanes' findings. Re-run a failed or timed-out lane's queries sequentially
+   through §4a; if that retry also fails, set the lane `status: failed`,
+   `error: <msg>`, and continue.
+5. **Checkpoint** `state.json` (parent only): set `phases.research.parallel.lanes.<lane>`
+   (`lane_record`), add every lane's counters into `consumed.*`, then go to §4c (merge).
+
+**Resume.** On `--resume` in Phase 2: a lane whose `<PREFIX>-*` findings exist AND whose
+`lanes.<lane>.completed_at` is set is skipped; a lane with findings but no
+`completed_at` is re-dispatched (its partial `<PREFIX>-*` files are moved to
+`findings/.audit/partial/` first).
+
 #### 4a. Iteration loop
+
+This loop is the sequential path and the per-lane procedure each fork follows.
 
 For each query in the approved plan, in priority order:
 
@@ -247,13 +300,15 @@ For each query in the approved plan, in priority order:
    - `git_log` → `git log --follow --since=<window> -- <path>`
    - `tree` → `find <path> -type f -maxdepth N`
 3. **Persist a digest** at `${STATE_DIR}/findings/F<NNN>-<slug>.md` using the
-   format in `sdd/templates/finding.md`. The digest is **compact** — never
-   inline full file content; cite line ranges and excerpts only. For wiki
-   findings, cite the wiki page ID and score alongside file paths.
+   format in `sdd/templates/finding.md`. Inside a fork, use
+   `${STATE_DIR}/findings/<PREFIX>-<NNN>-<slug>.md` instead. The digest is
+   **compact** — never inline full file content; cite line ranges and excerpts
+   only. For wiki findings, cite the wiki page ID and score alongside file paths.
 4. **Decide on recursion.** If a finding surfaces a new file/symbol that
    strongly warrants exploration AND `depth_reached < max_depth`, add a
    follow-up query to the plan with `parent_id: F<NNN>` and re-enter the loop.
 5. **Update `state.json`** after each query: `consumed.*`, `phases.research.*`.
+   Inside a fork, do NOT write `state.json`; the parent is the sole state writer.
 
 #### 4b. Stop conditions
 
