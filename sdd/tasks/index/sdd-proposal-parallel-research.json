@@ -147,7 +147,7 @@
       "feature_id": "FEAT-708",
       "feature": "sdd-proposal-parallel-research",
       "spec": "sdd/specs/sdd-proposal-parallel-research.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "S",
       "depends_on": [
@@ -158,8 +158,9 @@
       "parallelism_notes": "copies final bodies of sdd-brainstorm.md (TASK-4515) and sdd-proposal.md (TASK-4516) into .agent/workflows twins",
       "assigned_to": null,
       "started_at": "2026-10-20T00:27:06+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4517-twin-file-sync.md"
+      "completed_at": "2026-10-20T00:41:08+00:00",
+      "file": "sdd/tasks/completed/TASK-4517-twin-file-sync.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4518",
