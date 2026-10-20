@@ -84,15 +84,15 @@ def test_load_registry_reads_toml_settings_and_extension(tmp_path, monkeypatch):
     """TOML settings and protocol-compliant extension classes are loaded fail-closed."""
     module = tmp_path / "fake_runner_extension.py"
     module.write_text(
-        "from test_runners_registry import FakeAdapter\\nclass Adapter(FakeAdapter):\\n    kind = 'extension'\\n"
+        "from test_runners_registry import FakeAdapter\nclass Adapter(FakeAdapter):\n    kind = 'extension'\n"
     )
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.setitem(sys.modules, "test_runners_registry", sys.modules[__name__])
     config = tmp_path / ".parrot" / "test_runners.toml"
     config.parent.mkdir()
     config.write_text(
-        "[runners.vitest]\\ntest_script = false\\ntimeout_s = 45\\ntiers = ['task', 'merge']\\n"
-        "[runners.extension]\\ntiers = ['task']\\n[extensions]\\nextension = 'fake_runner_extension:Adapter'\\n"
+        "[runners.vitest]\ntest_script = false\ntimeout_s = 45\ntiers = ['task', 'merge']\n"
+        "[runners.extension]\ntiers = ['task']\n[extensions]\nextension = 'fake_runner_extension:Adapter'\n"
     )
 
     registry = load_registry(tmp_path)
@@ -106,11 +106,11 @@ def test_load_registry_reads_toml_settings_and_extension(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "config",
     [
-        "[runners.pytest\\n",
-        "[unknown]\\nvalue = 1\\n",
-        "[runners.pytest]\\ntiers = ['invalid']\\n",
-        "[extensions]\\nmissing = 'missing_runner_module:Adapter'\\n",
-        "[extensions]\\nwrong = 'test_runners_registry:object'\\n",
+        "[runners.pytest\n",
+        "[unknown]\nvalue = 1\n",
+        "[runners.pytest]\ntiers = ['invalid']\n",
+        "[extensions]\nmissing = 'missing_runner_module:Adapter'\n",
+        "[extensions]\nwrong = 'test_runners_registry:object'\n",
     ],
 )
 def test_load_registry_fails_closed_for_invalid_configuration(tmp_path, config):
