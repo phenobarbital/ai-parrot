@@ -569,9 +569,7 @@ def contract_from_index_header(
         tiers = raw_runner["tiers"]
         if not isinstance(targets, list) or not isinstance(settings, Mapping) or not isinstance(tiers, list):
             raise ValueError("test_contract contains a malformed runner block")
-        runners.append(
-            _normalize_runner(kind=kind, targets=targets, settings=settings, tiers=tiers, registry=registry)
-        )
+        runners.append(_normalize_runner(kind=kind, targets=targets, settings=settings, tiers=tiers, registry=registry))
     contract = _build_contract(runners)
     if digest != contract.digest:
         raise ValueError("test_contract digest does not match its content")
