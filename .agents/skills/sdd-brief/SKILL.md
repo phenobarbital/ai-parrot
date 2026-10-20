@@ -21,7 +21,7 @@ brief — research first, a short Q&A, no FEAT/TASK id reservation.
 
 ## Guardrails
 
-- Write nothing under the main checkout's `sdd/`; artifacts go in the provisioned worktree.
+- Write committed artifacts only inside the provisioned worktree. The git-ignored draft staging directory in step 8 is the sole exception under the main checkout's `sdd/`.
 - Provision the worktree only through `python -m scripts.sdd.ensure_worktree`.
 - Brief task IDs are local `HOTFIX-<KEY>-<N>` IDs; never allocate global IDs.
 - Never push to or merge into `main`; never check out a base branch in the main checkout.
@@ -39,4 +39,4 @@ brief — research first, a short Q&A, no FEAT/TASK id reservation.
 9. **Provision**: `python -m scripts.sdd.ensure_worktree --json --slug <slug> --brief-key <KEY> --base-branch <base>`; capture `<wt>`.
 10. **Write artifacts inside `<wt>`**: `sdd/briefs/<slug>.brief.md` from `sdd/templates/brief.md` (with `ledger_issue` for ledger sources), task files `sdd/briefs/<slug>/tasks/HOTFIX-<KEY>-<N>-<task-slug>.md`, the per-brief index via `scripts.sdd.brief_meta.write_brief_index`, then `python -m scripts.sdd.check_task_graph <wt>/sdd/briefs/<slug>.index.json`.
 11. **Commit and push from `<wt>`**: stage only the brief, tasks and index; commit `sdd: add brief for <KEY> — <slug>`; `git -C <wt> push -u origin <branch>`.
-12. **Hand off**: report worktree, brief path, task IDs; offer manual implementation or `cd <wt> && claude --agent sdd-worker --model sonnet --verbose`; finish with `/sdd-done <KEY>`.
+12. **Hand off**: report worktree, brief path, task IDs; offer manual implementation or open `<wt>` in Codex and ask: "Use the sdd-worker agent to implement <KEY>." Finish with `$sdd-done <KEY>`. Do not launch the Claude CLI from the source procedure.
