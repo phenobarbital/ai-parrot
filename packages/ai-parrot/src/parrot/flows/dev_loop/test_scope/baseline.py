@@ -181,9 +181,11 @@ def classify_failures(
             checkout = prepare_baseline_checkout(worktree=worktree, base_ref=base_ref, scratch=scratch_dir)
         except BaselineUnavailable as exc:
             return tuple(
-                BaselineVerdict(nodeid, "unknown", "baseline only supports pytest")
-                if nodeid in non_pytest
-                else BaselineVerdict(nodeid, "unknown", str(exc))
+                (
+                    BaselineVerdict(nodeid, "unknown", "baseline only supports pytest")
+                    if nodeid in non_pytest
+                    else BaselineVerdict(nodeid, "unknown", str(exc))
+                )
                 for nodeid in nodeids
             )
 

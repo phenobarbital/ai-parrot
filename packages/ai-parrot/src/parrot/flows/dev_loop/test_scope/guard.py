@@ -118,8 +118,11 @@ def guard_bash(command: str, *, worktree: Path) -> tuple[GuardOutcome, str | Non
 
         verdict_argv = (*VERDICT_ARGV, "--worktree", str(worktree))
         rewritten = f"cd {shlex.quote(str(worktree))} && {shlex.join(verdict_argv)}"
-        return GuardOutcome(
-            action="verdict", argvs=(verdict_argv,), message="runner command uses validation verdict (tier=task)"
-        ), rewritten
+        return (
+            GuardOutcome(
+                action="verdict", argvs=(verdict_argv,), message="runner command uses validation verdict (tier=task)"
+            ),
+            rewritten,
+        )
     except Exception:  # noqa: BLE001 — a broken guard must never break a seat
         return GuardOutcome(action="allow"), None

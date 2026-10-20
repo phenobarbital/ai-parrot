@@ -8,7 +8,6 @@ from parrot.flows.dev_loop.test_scope import guard as guard_mod
 from parrot.flows.dev_loop.test_scope.datatypes import Invocation, ScopePlan
 from parrot.flows.dev_loop.test_scope.guard import VERDICT_ARGV, guard_argv, guard_bash
 
-
 def _plan(*argvs: tuple[str, ...]) -> ScopePlan:
     return ScopePlan(
         tier="task",
@@ -62,7 +61,10 @@ def test_guard_bash_returns_verdict_command(tmp_path, with_plan):
     with_plan(_plan(("pytest", "a.py")))
     outcome, rewritten = guard_bash("pytest packages/a/tests", worktree=tmp_path)
     assert outcome.action == "verdict"
-    assert rewritten == f"cd {tmp_path} && python scripts/sdd/select_tests.py --tier task --run --verdict --worktree {tmp_path}"
+    assert (
+        rewritten
+        == f"cd {tmp_path} && python scripts/sdd/select_tests.py --tier task --run --verdict --worktree {tmp_path}"
+    )
 
 
 # --- Hardening regressions: env-var prefix, `uv run`, `--maxfail`, multi-segment compounds ---
