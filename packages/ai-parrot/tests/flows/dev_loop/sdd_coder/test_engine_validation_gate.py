@@ -231,3 +231,34 @@ async def test_run_validation_task_tier_requires_issued_attempt(git_sandbox_feat
     engine._branch_attempts["some-branch"] = ("uid-1", EXECUTION_ID, "/abs/path", 1)
     path, base_ref = await engine._task_tier_scope(ctx, ["TASK-0001"], EXECUTION_ID, "uid-1", "abc123")
     assert (path, base_ref) == ("/abs/path", "abc123")
+
+
+class TestProfileTurnScaling:
+    """The engine raises an in-process seat's max_turns with the task's declared file count."""
+
+    def test_scales_nova_profile_for_a_many_file_task(self):
+        from parrot.flows.dev_loop.models import NovaCodeDispatchProfile
+
+        profile = NovaCodeDispatchProfile(model="m", max_turns=60)
+        scaled = SddCoderEngine._profile_with_scaled_turns(profile, 9)
+        assert scaled.max_turns == 84
+        assert profile.max_turns == 60  # the original is untouched
+
+    def test_small_or_unknown_tasks_keep_the_configured_budget(self):
+        from parrot.flows.dev_loop.models import NovaCodeDispatchProfile
+
+        profile = NovaCodeDispatchProfile(model="m", max_turns=60)
+        assert SddCoderEngine._profile_with_scaled_turns(profile, 2) is profile
+        assert SddCoderEngine._profile_with_scaled_turns(profile, None) is profile
+
+    def test_cli_profiles_without_a_turn_budget_are_untouched(self):
+        from parrot.flows.dev_loop.models import CodexCodeDispatchProfile
+
+        profile = CodexCodeDispatchProfile(model="gpt-5.5")
+        assert SddCoderEngine._profile_with_scaled_turns(profile, 30) is profile
+
+    def test_scaled_value_respects_the_profile_ceiling(self):
+        from parrot.flows.dev_loop.models import NovaCodeDispatchProfile
+
+        profile = NovaCodeDispatchProfile(model="m", max_turns=60)
+        assert SddCoderEngine._profile_with_scaled_turns(profile, 50).max_turns == 100

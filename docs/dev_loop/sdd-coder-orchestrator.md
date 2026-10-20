@@ -466,7 +466,7 @@ as the unbudgeted comparison baseline.
   Set `REDIS_URL` to enable live event streams.
 - **`LLM code dispatch exceeded max_turns=…`** — the in-process seats' library default is 40 turns
   (`LLMCodeDispatchProfile.max_turns`, FEAT-553); the roster path sets 60 via `build_dispatcher`
-  (`DEV_LOOP_LLM_MAX_TURNS`). The effective value is in the `dispatch.completed` payload.
+  (`DEV_LOOP_LLM_MAX_TURNS`), raised per task by the engine from the declared file count (`DEV_LOOP_LLM_TURNS_PER_FILE`, default 6: `min(100, max(base, 30 + 6 × files))`). The effective value is in the `dispatch.completed` payload.
 
 ## Execution lifecycle and suspension policy
 

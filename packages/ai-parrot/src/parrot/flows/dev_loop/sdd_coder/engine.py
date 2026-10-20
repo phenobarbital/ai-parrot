@@ -41,7 +41,12 @@ from parrot.knowledge.wiki.ledger.coder_reviews import (
 )
 from parrot.knowledge.wiki.store import estimate_tokens
 from parrot.flows.dev_loop.procs import git_env, run_bounded
-from parrot.flows.dev_loop.agent_builder import build_dispatcher  # verified: agent_builder.py:135
+from parrot.flows.dev_loop.agent_builder import (
+    DEFAULT_LLM_TURNS_PER_FILE,
+    ENV_LLM_TURNS_PER_FILE,
+    build_dispatcher,
+    scaled_max_turns,
+)
 from parrot.flows.dev_loop.models import (  # verified: models/base.py:412, :763, :497, :340, :458
     DevAgentSpec,
     DevelopmentOutput,
@@ -1342,6 +1347,26 @@ class SddCoderEngine:
         """Execution that issued the attempt on *branch*, or None (legacy/no-execution scope)."""
         known = self._branch_attempts.get(branch)
         return (known[1] or None) if known is not None else None
+
+    @staticmethod
+    def _profile_with_scaled_turns(profile: Any, declared_files: Optional[int]) -> Any:
+        """Scale an in-process seat's ``max_turns`` with the task's declared file count.
+
+        Only profiles with an integer ``max_turns`` (the in-process chat loops) are
+        touched — agentic CLI profiles have none or ``None``. The configured budget is
+        the floor, so a scaled value is never lower than what the profile already had.
+        """
+        current = getattr(profile, "max_turns", None)
+        if not isinstance(current, int) or isinstance(current, bool):
+            return profile
+        try:
+            per_file = int(conf.config.get(ENV_LLM_TURNS_PER_FILE, fallback=DEFAULT_LLM_TURNS_PER_FILE))
+        except (TypeError, ValueError):
+            per_file = DEFAULT_LLM_TURNS_PER_FILE
+        scaled = max(current, scaled_max_turns(current, declared_files, per_file=per_file))
+        if scaled == current:
+            return profile
+        return profile.model_copy(update={"max_turns": scaled})
 
     def _profile_with_runner_binaries(self, profile: Any, path: str) -> Any:
         """Extend the attempt profile's ``allowed_commands`` with the registry's runner binaries (FEAT-709).
@@ -3471,6 +3496,9 @@ class SddCoderEngine:
             )
             profile = profile.model_copy(update={"subagent": "sdd-coder"})  # S7 — every profile defaults to sdd-worker
             profile = self._profile_with_runner_binaries(profile, path)
+            profile = self._profile_with_scaled_turns(
+                profile, collector.declared_files if collector.declared_files_known else None
+            )
             feedback_context = await self._feedback_for(ctx, task, seat.backend, seat.model)
             self._feedback_contexts[attempt_uid] = feedback_context
             capability = self._validation_capability(
