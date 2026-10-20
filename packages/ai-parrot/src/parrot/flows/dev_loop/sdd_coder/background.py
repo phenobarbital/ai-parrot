@@ -1026,7 +1026,7 @@ class ValidationSupervisor:
             return list(invocation.argv), None
         try:
             junit = test_report.junit_path_for(feature_id, task_id, invocation.distribution, ordinal)
-            return list(test_report.with_junit(invocation, junit)), junit
+            return list(test_report.with_report(invocation, junit)), junit
         except Exception:  # noqa: BLE001 — recording setup must never block a validation
             logger.warning("could not prepare a junit report path for %s", invocation.distribution, exc_info=True)
             return list(invocation.argv), None

@@ -244,8 +244,13 @@ def main(argv: list[str] | None = None) -> int:
                     distribution=invocation.distribution,
                     argv=tuple(argv),
                     targets=invocation.targets,
+                    runner=invocation.runner,
+                    cwd=invocation.cwd,
+                    report_path=invocation.report_path,
+                    report_format=invocation.report_format,
+                    timeout_s=invocation.timeout_s,
                 )
-                argv = list(report_mod.with_junit(invocation_copy, junit))
+                argv = list(report_mod.with_report(invocation_copy, junit))
             except OSError:
                 junit = None
         started = time.monotonic()
