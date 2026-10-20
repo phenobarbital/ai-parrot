@@ -86,7 +86,13 @@ non-pytest rows), and maintainers of sibling SDD repos (no Rust/JS validation).
     registry.
   - Adapters are code in the kernel, with a per-repo extension/override hook
     (`.parrot/test_runners.toml`) so sibling repos add runners without editing
-    the kernel.
+    the kernel. Sibling repos vendor `scripts/sdd/` + `test_scope` by path
+    (`parrot-installer`, FEAT-633, has not landed), so the TOML is the **only**
+    extension point in v1.
+  - Resolved after the interview (see Open Questions): fresh-conversation
+    same-seat re-dispatch; `parrot-e2e` never in the task tier; cargo parses
+    stable libtest text; native guard rewrites lone commands only; excerpts
+    come from junit (or the adapter's own parse); schema 1 lifts on read.
   - Native-seat Bash that runs pytest/vitest/cargo inside an attempt is
     intercepted by the guard and **rewritten to the verdict-producing path**, so
     the seat gets the verdict instead of stdout and cannot bypass evidence.
@@ -737,11 +743,11 @@ from parrot.knowledge.wiki.ledger.coder_feedback import CoderFeedback, CoderFeed
 
 ## Open Questions
 
-- [ ] How do flowtask/querysource consume the kernel — vendored `scripts/sdd/` + `test_scope` by path, or an installed `ai-parrot` dependency? Decides whether `.parrot/test_runners.toml` must be the *only* extension point or whether a Python entry-point registry is also acceptable. — *Owner: Jesus*
-- [ ] Same-seat re-dispatch: fresh conversation seeded with the failed branch + verdict (simple, matches today's per-dispatch `_dispatch_loop`), or resume the seat's message history (needs persistence the dispatcher does not have)? Brainstorm assumes **fresh + verdict**. — *Owner: Jesus*
-- [ ] Should `parrot-e2e` ever run in the task tier? Brainstorm assumes **no** (merge/feature only by default, overridable per contract via `tiers`). — *Owner: Jesus*
-- [ ] Task-tier gate budgets per runner (pytest 60 s, vitest 120 s, cargo 300 s assumed) and whether a timeout should re-dispatch the same seat or go straight to the ladder. — *Owner: Jesus*
-- [ ] Cargo adapter: stable libtest text parsing only, or require `cargo nextest` (junit, per-test timing) in sibling repos? — *Owner: Jesus*
-- [ ] Guard scope for native Bash: rewrite only *lone* `pytest|vitest|cargo` commands (as `_is_lone_pytest` does today) or also the supported `&&`/`;` compound subset handled by `guard_bash`? — *Owner: Claude (spec)*
-- [ ] Where does the verdict excerpt come from for pytest: the junit `<failure>` text (already captured with `--tb=short`) or a separately captured stdout block? Junit is assumed. — *Owner: Claude (spec)*
-- [ ] Schema-2 migration of existing indexes: automatic lift on read only, or a one-shot `cache_test_contract.py --migrate` run over `sdd/tasks/index/*.json` committed to `dev`? — *Owner: Jesus*
+- [x] How do flowtask/querysource consume the kernel — vendored `scripts/sdd/` + `test_scope` by path, or an installed `ai-parrot` dependency? — *Owner: Jesus*: **vendored copy for now** (`parrot-installer`, FEAT-633, has not landed). Consequence: `.parrot/test_runners.toml` is the **only** extension point in v1 (adapters by dotted module path resolved relative to the vendored `test_scope`); no Python entry-point registry, nothing that assumes an installed `parrot` distribution.
+- [x] Same-seat re-dispatch: fresh conversation or resumed history? — *Owner: Jesus*: **fresh conversation + verdict**. The re-dispatch is an ordinary `_run_attempt` on the same seat, in a fresh sub-worktree seeded from the failed attempt branch, with the verdict rendered into the prompt beside `coder_feedback`; no dispatcher message persistence.
+- [x] Should `parrot-e2e` ever run in the task tier? — *Owner: Jesus*: **no**. The adapter's default `tiers` is `(merge, feature)`; the task tier ignores `parrot-e2e` runner blocks even if a contract lists `task` (lint warns).
+- [ ] Task-tier gate budgets per runner (pytest 60 s, vitest 120 s, cargo 300 s assumed) and whether a timeout re-dispatches the same seat or goes straight to the ladder. — *Owner: Jesus*: not decided yet — the spec keeps the assumed defaults in `.parrot/test_runners.toml` and measures them in the FEAT-563/699 style (`artifacts/logs/`) before freezing.
+- [x] Cargo adapter: stable libtest text or `cargo nextest`? — *Owner: Jesus*: **stable libtest text** (`test <name> ... ok|FAILED|ignored` lines + the `failures:` section for excerpts). nextest/junit is a later, optional upgrade.
+- [x] Guard scope for native Bash. — *Owner: Jesus*: **lone commands only** — rewrite a single `pytest|vitest|cargo test` invocation (what `_is_lone_pytest` does today, generalised through the adapter registry); compound commands keep today's conservative `guard_bash` handling, and the engine gate covers whatever slips through.
+- [x] Where does the verdict excerpt come from? — *Owner: Claude (spec)*: **junit**, recommended for three reasons: (1) the supervisor already runs every pytest invocation with `--junitxml` (`_argv_with_junit`, `with_junit`) and `--tb=short`, so the `<failure>` body *is* the short traceback with no second capture; (2) junit is node-level, so the excerpt is attached to the exact failing `nodeid` and the same mapping feeds baseline classification and the green cache; (3) vitest (`--reporter=junit`) and playwright produce the same shape, so one bounding rule (last 30 lines of `<failure>`/`<error>` text) serves three runners. Caveats the spec must state: pytest's junit omits captured stdout/stderr unless `-o junit_logging=…`, which is the desired behaviour (excerpt = traceback, never log); runners without junit (cargo, `parrot-e2e`) take their excerpt from the adapter's own parse (libtest `failures:` block, `results[*].detail`), bounded by the same rule.
+- [x] Schema-2 migration of existing indexes. — *Owner: Jesus*: **lift on read**. `contract_from_index_header` accepts schema 1 and returns the schema-2 shape (one pytest runner); indexes are rewritten to schema 2 only when `/sdd-task` or `cache_test_contract.py` next touches them. No one-shot migration commit.
