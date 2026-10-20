@@ -141,7 +141,7 @@ you reference in the brainstorm, you MUST:
 
 **Delegate the flat checks (FEAT-708).** Turn every reference you intend to put in
 Code Context into a probe check, then hand them to the shared read-only Haiku
-subagent `sdd-contract-probe` (the same one `/sdd-task` §3 uses):
+subagent `sdd-contract-probe` (the same one `/sdd-task` §3 uses; Haiku on Claude Code):
 
 | Claim | Probe check |
 |---|---|
@@ -151,11 +151,15 @@ subagent `sdd-contract-probe` (the same one `/sdd-task` §3 uses):
 | `"Does NOT exist: X"` | `{"id": "cN", "kind": "absent", "name": "X", "scope": "<whole module dir>"}` |
 | `path:NN` + verbatim line | `{"id": "cN", "kind": "anchor", "path": "<file>", "anchor": "<line>"}` |
 
-Launch the probes in ONE message (groups of ≤ ~40 checks, grouped by file):
-`Agent({subagent_type: "sdd-contract-probe", description: "Verify codebase claims",
-prompt: "Repository root: <abs path>\nProbe sheet: <JSON array>"})`.
-Do not wait — continue with Step 5. With fewer than ~10 checks, or without the
-Agent tool, verify inline as above instead.
+Launch the probes in ONE message (groups of ≤ ~40 checks, grouped by file), each
+with only the repository root and its probe sheet:
+- Claude Code: `Agent({subagent_type: "sdd-contract-probe", description: "Verify codebase claims",
+  prompt: "Repository root: <abs path>\nProbe sheet: <JSON array>"})`;
+- Antigravity: ask the `sdd-contract-probe` subagent
+  (`.agents/agents/sdd-contract-probe/agent.md`) with that same prompt;
+- any other host (Codex included) has no probe agent: verify inline.
+Do not wait — continue with Step 5. With fewer than ~10 checks, or when your host
+cannot launch the probe, verify inline as above instead.
 
 ### 5. Generate Options
 If contract probes are running (Step 4), generate options now; their results are applied in Step 10.
