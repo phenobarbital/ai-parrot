@@ -471,7 +471,7 @@ def test_release_tuple_rejects_garbage() -> None:
 - [ ] `_migrate` stamps `min_runtime_version` alongside `schema_version`; unstamped (pre-FEAT-633) and brand-new planes open normally.
 - [ ] *[rev 0.5 C24]* `_ensure_schema` stamps `min_runtime_version` on a fresh plane (`test_fresh_plane_stamped`).
 - [ ] *[rev 0.5 C24]* A stored `schema_version` greater than `SCHEMA_VERSION`, compared as integers, raises `WikiStoreVersionError` and is left unchanged — never migrated or re-stamped downward (`test_newer_schema_version_refused`; spec §5 "A newer `schema_version` is refused, not re-stamped").
-- [ ] Ledger `issue:f249c19e8a4d` is closed: `wikitoolkit ledger close issue:f249c19e8a4d --resolved-by task:TASK-4092 --reason "<one line: fresh-plane stamp + integer schema_version refusal>"`.
+- [ ] Ledger `issue:f249c19e8a4d` is closed: `wikitoolkit ledger close issue:f249c19e8a4d --resolved-by task:TASK-4092 --reason "<one line: fresh-plane stamp + integer schema_version refusal>"`; `wikitoolkit ledger show issue:f249c19e8a4d` then reports it closed, resolved by `task:TASK-4092`.
 - [ ] Existing store tests still pass (`test_store_meta.py`, `test_store_rebuild_index.py`, `test_store_attrs.py`, `test_sqlite_fts_external_content.py`).
 - [ ] No new dependency; `ruff check packages/ai-parrot/src/parrot/knowledge/wiki/store.py` clean.
 
@@ -487,7 +487,6 @@ editable-installed against the main checkout).
 - `pytest packages/ai-parrot/tests/knowledge/wiki/test_store_rebuild_index.py -q`
 - `pytest packages/ai-parrot/tests/knowledge/wiki/test_store_attrs.py -q`
 - `pytest packages/ai-parrot/tests/knowledge/wiki/test_sqlite_fts_external_content.py -q`
-- `wikitoolkit ledger show issue:f249c19e8a4d` — closed, resolved by `task:TASK-4092` (after Agent Instructions step 11)
 
 ---
 

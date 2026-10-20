@@ -142,9 +142,10 @@ delta for reviewers.
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: C3 `Scenario` list extended (`review_checkpoint`, `spec_tools`, `brief_meta`, `worktree_environment`, TASK-4508's `cache_test_contract` / `test_report` / `check_e2e_closeout` / `close_resolved_issues`); `INVOCATION_RE` takes digits, `\`-continuations are joined and argv is cut at shell operators (the C16 hook); the C3 test installs and scans all three hosts as the AC says; `_lazy_commands` has 25 entries; claude-installer anchors `:51` / `:72` / `:1013`; C16 hook-denial test folded in.
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - **FEAT-699 vs C7** — the FEAT-633 spec has no Validation Contract; how `cache_test_contract` (`/sdd-task`, `.claude/commands/sdd-task.md:369`), `select_tests` (`.claude/commands/sdd-done.md:185,264`) and `test_report` (`:257,277`) behave in a foreign repo, and whether `sdd/config.json`'s `test_command` overrides them. Blocks the expected outcome (exit code / output) of those three `Scenario`s beyond "runs from the wheel".
-  - **`.gitattributes` + ledger hooks for foreign repos** — ai-parrot relies on `.gitattributes:2-3` (`sdd/ledger/events.jsonl merge=union`, FEAT-694) and on `install_hooks` (`sdd/WORKFLOW.md:376`, FEAT-577 intake-prune hook); `parrot sdd install` writes neither into a target repo. Write vs document vs leave: do not add either to the installer or the C3 fixtures until resolved.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C21 (FEAT-699 vs C7) — `parrot sdd install` warns when `sdd/config.json` `test_command` is null; new C3 test `test_c21_test_step_outcomes` pins the outcomes (`cache_test_contract`: `none — fallback` spec → exit 0 printing `fallback`, missing section → exit 2; `test_report decide-rerun` → `rerun`; `test_report render` → exit 0; `select_tests --tier task` with nothing selected → exit 2).
+  - C23 (`.gitattributes` + ledger hooks) — `parrot sdd install` (any host) writes a marker-delimited `.gitattributes` block (`merge=union` for `sdd/ledger/events.jsonl` and `sdd/ledger/archive/*.jsonl`), records it in the receipt, `uninstall` removes it, and installs the four ledger hooks through the existing `claude_code/installer.py::_install_ledger_hooks` (`:973`); C3 asserts both after `--host codex`. FEAT-577's `install_hooks` (intake-prune hook) is not named by C23 and stays out.
+  - C22 — no `/sdd-insight` scenarios (it is not shipped); counts follow TASK-4090 (14 commands per host, 78 manifest entries).
 
 ## Scope
 
@@ -160,7 +161,13 @@ delta for reviewers.
   write per install/uninstall, sorted keys, trailing newline.
 - `--dry-run` for `install` and `uninstall` (C5): print the plan, write nothing.
 - Add a managed `.gitignore` marker block ignoring `.claude/worktrees/` (own copy of the
-  marker helpers — do NOT import the claude installer).
+  marker helpers — do NOT import the claude installer for them).
+- *(rev 0.5 C23)* For any host, write a marker-delimited `.gitattributes` block (`merge=union` for
+  `sdd/ledger/events.jsonl` and `sdd/ledger/archive/*.jsonl`), record it in the receipt (`uninstall`
+  removes it), and install the four ledger hooks (`pre-commit`, `post-merge`, `post-checkout`,
+  `post-rewrite`) through the existing `parrot.knowledge.wiki.claude_code.installer._install_ledger_hooks`
+  — imported lazily inside that step, so module load stays free of `parrot.knowledge.wiki`.
+- *(rev 0.5 C21)* After install, warn when `sdd/config.json` `test_command` is null.
 - Seed `sdd/tasks/.id_ledger.json` when absent (decided below — `reserve_ids` cannot run without it).
 - Seed `sdd/config.json` from `parrot.sdd.config.default_sdd_config()` when absent (C6,
   TASK-4299) and every manifest entry flagged `"seed": true` (today `sdd/CONVENTIONS.md`) when
@@ -176,7 +183,8 @@ delta for reviewers.
   `test_sdd_install_into_empty_repo`, integration `test_sdd_flow_in_foreign_repo`, and the C4 /
   C5 / seed tests), `packages/ai-parrot/tests/sdd/test_sdd_cli.py` (incl. the `run` tests) and
   `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` (C3, `@pytest.mark.integration`;
-  all three hosts; plus the C16 hook-denial check).
+  all three hosts; plus the C16 hook-denial check, the C21 pinned test-step outcomes and the C23
+  `.gitattributes` / ledger-hook assertions after `--host codex`).
 
 **NOT in scope**:
 - Producing / syncing `_assets/` or `manifest.json`, including the `"seed": true` flag on the
@@ -193,6 +201,9 @@ delta for reviewers.
   the receipt and the seeds are written to disk and the action log tells the user to commit them.
 - A per-file hash comment or a `.parrot/`-resident receipt — rejected in the proposal (JSON/TOML
   assets cannot carry comments; `.parrot/` is gitignored).
+- `parrot self doctor --sdd` checking the C23 block and hooks (TASK-4080); `test_command` semantics
+  (TASK-4299); FEAT-577's `install_hooks` intake-prune hook (not named by C23); a foreign-repo
+  validation phase (rev 0.5 C21: deferred to v1.1).
 
 ---
 
@@ -200,12 +211,12 @@ delta for reviewers.
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/sdd/installer.py` | CREATE | plan / install / uninstall / status over `_assets/manifest.json`; C4 receipt (`sdd/.sdd-installed.json`); C5 dry-run; gitignore block; ledger, config (C6) and conventions (C10) seeds; S9 audit |
+| `packages/ai-parrot/src/parrot/sdd/installer.py` | CREATE | plan / install / uninstall / status over `_assets/manifest.json`; C4 receipt (`sdd/.sdd-installed.json`); C5 dry-run; gitignore block; ledger, config (C6) and conventions (C10) seeds; S9 audit; C23 `.gitattributes` block + four ledger hooks; C21 null-`test_command` warning |
 | `packages/ai-parrot/src/parrot/sdd/cli.py` | CREATE | click group `sdd`: `install` / `uninstall` / `status` / `run` (Q1); `--dry-run` on install/uninstall |
 | `packages/ai-parrot/src/parrot/cli/__init__.py` | MODIFY | `"sdd": "parrot.sdd.cli"` in `cli._lazy_commands` |
-| `packages/ai-parrot/tests/sdd/test_installer.py` | CREATE | Installer unit tests (receipt states, dry-run, seeds) + `test_sdd_flow_in_foreign_repo` integration |
+| `packages/ai-parrot/tests/sdd/test_installer.py` | CREATE | Installer unit tests (receipt states, dry-run, seeds, C23 block + hooks, C21 warning) + `test_sdd_flow_in_foreign_repo` integration |
 | `packages/ai-parrot/tests/sdd/test_sdd_cli.py` | CREATE | CliRunner tests for the group, lazy registration, `--dry-run`, `run` |
-| `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` | CREATE | C3: wheel-only managed install + foreign repo with bare origin; every documented `parrot sdd run <name> …` invocation (all three hosts) runs with fixture inputs under an allowlisted PATH and scrubbed env; C16: the installed `worktree_environment --hook` still denies a shared-environment write (merge tier, `pytestmark = pytest.mark.integration`) |
+| `packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py` | CREATE | C3: wheel-only managed install + foreign repo with bare origin; every documented `parrot sdd run <name> …` invocation (all three hosts) runs with fixture inputs under an allowlisted PATH and scrubbed env; C16: the installed `worktree_environment --hook` still denies a shared-environment write; C21: pinned test-step outcomes; C23: `.gitattributes` block + four ledger hooks after `--host codex` (merge tier, `pytestmark = pytest.mark.integration`) |
 
 ---
 
@@ -232,6 +243,10 @@ from parrot.sdd.scripts.id_ledger import LEDGER_PATH, bootstrap_ledger, save_led
                                                # scripts/sdd/id_ledger.py:28,145,69 — same names)
 from parrot.sdd.config import CONFIG_PATH, default_sdd_config  # TASK-4299 (C6): CONFIG_PATH = Path("sdd/config.json");
                                                # default_sdd_config() -> SddConfig (Pydantic v2; .model_dump_json(indent=2))
+from parrot.sdd.config import load_sdd_config  # TASK-4299: load_sdd_config(root: Path | None = None) -> SddConfig
+                                               # (absent → defaults; bad → SddConfigError); field test_command: str | None (C21)
+# rev 0.5 C23 — imported LAZILY inside the ledger-hook step only (never at module load):
+from parrot.knowledge.wiki.claude_code.installer import _install_ledger_hooks   # :973, verified on dev 0263f0724
 ```
 
 ### Existing Signatures to Use
@@ -264,6 +279,24 @@ def _read_ledger_at(root: Path, base_sha: str) -> IdLedger:                     
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py
 path_option = click.option("--path", "path_", default=None, help="Repo root (default: auto-detect).")  # line 33 (style precedent)
+
+# rev 0.5 C23 — verified on dev 0263f0724
+# packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py — CALLED (the "same installer function")
+def _install_ledger_hooks(root: Path) -> list[str]:        # line 973 — one action line per event; a non-git root
+                                                            #   yields "git <event> ledger hook — skipped (not a git repository)" (:927-928)
+def _uninstall_ledger_hooks(root: Path) -> list[str]:      # line 993 — strips only the parrot-ledger block
+# packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py
+LEDGER_HOOK_BEGIN = "# >>> parrot-ledger >>>"             # line 51
+LEDGER_HOOK_EVENTS = ("pre-commit", "post-merge", "post-checkout", "post-rewrite")  # line 53
+# .gitattributes (ai-parrot, lines 1-3) — the entries C23 reproduces in a target repo:
+#   # FEAT-694: the shared ledger event log is append-only on every machine; take both sides.
+#   sdd/ledger/events.jsonl merge=union
+#   sdd/ledger/archive/*.jsonl merge=union
+
+# rev 0.5 C21 — the outcomes C3 pins (verified on dev 0263f0724, scripts/sdd/ before TASK-4508 moves them)
+# cache_test_contract.py:17,46   — `none — fallback` → prints "fallback", exit 0; missing/malformed section → exit 2
+# test_report.py:87-92           — decide-rerun prints "rerun" for a non-empty index, exit 0; render returns 0 (:107)
+# select_tests.py:160-164        — `--tier task` with no invocation selected → exit 2
 ```
 
 ### Does NOT Exist
@@ -273,6 +306,10 @@ path_option = click.option("--path", "path_", default=None, help="Repo root (def
 - ~~an `sdd` console script, `packages/ai-parrot-sdd/`, `parrot_sdd`~~ — rejected design (spec §6).
 - ~~a public marker helper to import~~ — `_upsert_marker_block` is private to the claude installer;
   copy it (spec §6 Integration Points: "same discipline (own copy)").
+- ~~a public ledger-hook installer~~ — C23 names the existing private
+  `claude_code/installer.py::_install_ledger_hooks`; call it (lazy import), do not copy it.
+- ~~a `.gitattributes` writer anywhere in `parrot`~~ (C23 problem statement: nothing writes it in another
+  repo) — new here.
 - ~~ledger auto-creation inside `reserve_ids`~~ — it raises; seeding is the installer's job.
 - ~~exec-bit preservation from wheel package data~~ — not guaranteed; chmod `.sh` targets on install.
 - ~~`sdd/.sdd-installed.json`, `load_receipt`, `classify_entry`, `PlannedAction`, `plan_install`,
@@ -308,6 +345,7 @@ path_option = click.option("--path", "path_", default=None, help="Repo root (def
     {"path": "packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py", "action": "CREATE"}
   ],
   "contract_symbols": [
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#_install_ledger_hooks",
     "sym:packages/ai-parrot/src/parrot/cli/__init__.py#LazyGroup",
     "sym:packages/ai-parrot/src/parrot/cli/__init__.py#LazyGroup.get_command",
     "sym:packages/ai-parrot/src/parrot/cli/__init__.py#cli",
@@ -383,8 +421,9 @@ BEGIN marker.
    `resources.files("parrot.sdd") / "_assets" / "manifest.json"` exist, and whether the manifest
    already carries `"seed": true` on `sdd/CONVENTIONS.md` — *why*: all come from dependency tasks.
 2. Write `installer.py` (manifest + receipt loader → `classify_entry` → `plan_install` /
-   `plan_uninstall` → `apply` → gitignore → ledger / config / conventions seeds → receipt write
-   → audit) — *why*: the CLI is a thin shell over it, and `--dry-run` is just "plan without apply".
+   `plan_uninstall` → `apply` → gitignore → *(C23)* `.gitattributes` block + ledger hooks → ledger /
+   config / conventions seeds → receipt write → *(C21)* null-`test_command` warning → audit) — *why*:
+   the CLI is a thin shell over it, and `--dry-run` is just "plan without apply".
 3. Write `cli.py` exposing the group as attribute `sdd`, with `install` / `uninstall` (`--dry-run`),
    `status` and `run` — *why*: `LazyGroup.get_command` resolves `getattr(mod, "sdd")` (cli/__init__.py:99-100).
 4. Add the `_lazy_commands` entry — *why*: lazy import keeps `parrot --help` cheap.
@@ -425,15 +464,24 @@ RECEIPT_SCHEMA_VERSION = 1
 GITIGNORE_BEGIN = "# >>> parrot sdd (managed) >>>"
 GITIGNORE_END = "# <<< parrot sdd (managed) <<<"
 GITIGNORE_BLOCK = f"{GITIGNORE_BEGIN}\n# SDD feature worktrees (parrot sdd run ensure_worktree)\n.claude/worktrees/\n{GITIGNORE_END}"
+#: rev 0.5 C23 — the shared ledger's union merge (FEAT-694), same marker pair as the .gitignore block.
+GITATTRIBUTES_BLOCK = (
+    f"{GITIGNORE_BEGIN}\n"
+    "# FEAT-694: the shared ledger event log is append-only on every machine; take both sides.\n"
+    "sdd/ledger/events.jsonl merge=union\n"
+    "sdd/ledger/archive/*.jsonl merge=union\n"
+    f"{GITIGNORE_END}"
+)
 
 FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
 #: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
-#: seed | skip-seed | gitignore | ledger-seed | config-seed. uninstall: remove | keep-edited | keep-foreign |
-#: skip-missing | keep-shared | gitignore-remove | receipt-remove.
+#: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed. uninstall: remove |
+#: keep-edited | keep-foreign | skip-missing | keep-shared | gitignore-remove | gitattributes-remove | receipt-remove.
 PlanAction = Literal[
     "write", "upgrade", "overwrite", "skip-current", "skip-edited", "skip-foreign",
-    "seed", "skip-seed", "gitignore", "ledger-seed", "config-seed",
-    "remove", "keep-edited", "keep-foreign", "skip-missing", "keep-shared", "gitignore-remove", "receipt-remove",
+    "seed", "skip-seed", "gitignore", "gitattributes", "ledger-hooks", "ledger-seed", "config-seed",
+    "remove", "keep-edited", "keep-foreign", "skip-missing", "keep-shared", "gitignore-remove",
+    "gitattributes-remove", "receipt-remove",
 ]
 
 
@@ -556,6 +604,8 @@ def plan_install(root: Path, hosts: Sequence[str], *, force: bool = False) -> li
         #          never overwritten") — bounded by the C4 rule in the module docstring
         raise NotImplementedError
     plan.append(PlannedAction(action="gitignore", target=".gitignore"))
+    plan.append(PlannedAction(action="gitattributes", target=".gitattributes"))  # rev 0.5 C23, any host
+    plan.append(PlannedAction(action="ledger-hooks", target=".git/hooks"))       # rev 0.5 C23, any host
     if not (root / "sdd/tasks/.id_ledger.json").exists():
         plan.append(PlannedAction(action="ledger-seed", target="sdd/tasks/.id_ledger.json"))
     if not (root / "sdd/config.json").exists():
@@ -567,7 +617,8 @@ def plan_uninstall(root: Path, hosts: Sequence[str]) -> list[PlannedAction]:
     """Pure: ``remove`` only targets whose on-disk SHA matches the receipt; keep edited/foreign; keep shared
     assets another installed host still needs; seeds and state are never planned for removal."""
     # FILL IN: per selected non-seed entry — current/outdated→remove (shared+still needed→keep-shared);
-    #          edited→keep-edited; foreign→keep-foreign; missing→skip-missing; then gitignore-remove and
+    #          edited→keep-edited; foreign→keep-foreign; missing→skip-missing; then gitignore-remove,
+    #          gitattributes-remove (C23: the receipt records the block, so uninstall removes it) and
     #          receipt-remove when no recorded file would remain — bounded by Key Constraints
     raise NotImplementedError
 
@@ -612,6 +663,32 @@ def _install_gitignore(root: Path) -> str:
         return ".gitignore — .claude/worktrees/ block up to date"
     path.write_text(updated, encoding="utf-8")
     return ".gitignore — managed .claude/worktrees/ block written"
+
+
+def _install_gitattributes(root: Path, receipt: dict[str, Any]) -> str:
+    """rev 0.5 C23: upsert ``GITATTRIBUTES_BLOCK`` into ``<root>/.gitattributes`` and record it in the receipt."""
+    # FILL IN: same upsert as _install_gitignore (foreign lines in the file untouched), then record the block
+    #          in `receipt` — bounded by C23 ("records it in the receipt") and the uninstall removal
+    raise NotImplementedError
+
+
+def _install_ledger_hooks_step(root: Path) -> list[str]:
+    """rev 0.5 C23: the four FEAT-694 ledger hooks through the claude installer's own function (lazy import)."""
+    from parrot.knowledge.wiki.claude_code.installer import _install_ledger_hooks  # C23: "the same installer function"
+
+    return _install_ledger_hooks(root)
+
+
+def _test_command_warning(root: Path) -> str | None:
+    """rev 0.5 C21: one ``warning:`` line when ``sdd/config.json`` ``test_command`` is null, else None."""
+    from parrot.sdd.config import load_sdd_config  # TASK-4299
+
+    if load_sdd_config(root).test_command is not None:
+        return None
+    return (
+        "warning: sdd/config.json test_command is null — set it to the command that runs this repo's tests; "
+        "the shipped test steps run it once from the repo root (C21)"
+    )
 
 
 def _seed_id_ledger(root: Path) -> str | None:
@@ -669,12 +746,17 @@ def install_sdd_integration(
             actions.append(_apply_asset(root, by_target[step.target], step, receipt))
         elif step.action == "gitignore":
             actions.append(_install_gitignore(root))
+        elif step.action == "gitattributes":
+            actions.append(_install_gitattributes(root, receipt))
+        elif step.action == "ledger-hooks":
+            actions.extend(_install_ledger_hooks_step(root))
         elif step.action == "ledger-seed":
             actions.append(_seed_id_ledger(root) or "")
         elif step.action == "config-seed":
             actions.append(_seed_config(root))
     _save_receipt(root, receipt)
     actions.append(f"{RECEIPT_PATH} — written; commit it with the installed files (it drives upgrades and uninstall)")
+    actions.append(_test_command_warning(root) or "")
     if "claude" in hosts:
         actions.append(HOOK_WIRING_NOTE)
     installed = [root / t for t in receipt["files"] if (root / t).is_file()]
@@ -685,7 +767,8 @@ def install_sdd_integration(
 def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *, dry_run: bool = False) -> list[str]:
     """Remove SDD assets for ``hosts`` whose on-disk SHA matches the receipt (edited/foreign files are kept and reported).
 
-    The ``.gitignore`` block and the receipt are removed only when no recorded file remains;
+    The ``.gitignore`` block, the recorded ``.gitattributes`` block (C23) and the receipt are removed only
+    when no recorded file remains;
     ``sdd/tasks/.id_ledger.json``, ``sdd/config.json`` and seeds are never removed (state / team-owned).
     ``dry_run`` returns the plan and writes nothing.
     """
@@ -693,7 +776,8 @@ def uninstall_sdd_integration(root: Path, hosts: Sequence[str] = ("claude",), *,
     if dry_run:
         return [str(step) for step in plan]
     # FILL IN: apply — remove → unlink + prune now-empty parents up to root + drop from receipt;
-    #          keep-edited/keep-foreign → 'warning: … kept'; gitignore-remove via _remove_marker_block;
+    #          keep-edited/keep-foreign → 'warning: … kept'; gitignore-remove and gitattributes-remove
+    #          (only when the receipt records the block, C23) via _remove_marker_block;
     #          receipt-remove → unlink RECEIPT_PATH, else _save_receipt — bounded by the C4 rule
     raise NotImplementedError
 
@@ -718,6 +802,12 @@ older file from a team edit without `--force`. `plan_*` are pure so `--dry-run` 
 absent from the base commit — a fresh repo could otherwise never run `/sdd-spec`. Seeding only
 when absent and never removing it keeps installs idempotent and uninstall state-safe; the same
 rule covers `sdd/config.json` (C6) and `sdd/CONVENTIONS.md` (C10).
+*(rev 0.5 C23)* The `.gitattributes` block and the ledger hooks are written for every host because
+`/sdd-done` step 9.1 calls `wikitoolkit ledger export-log` / `rotate-log` in any repo; the hooks go
+through `_install_ledger_hooks` itself, so FEAT-694's hook bodies have one owner.
+Note for implementer: C23 gives neither the marker text nor the receipt shape for the `.gitattributes` block — the blueprint reuses the `.gitignore` marker pair and leaves the receipt key to `_install_gitattributes`; keep `receipt["files"]` meaning "whole files we wrote" and confirm both in review.
+Note for implementer: C23 says nothing about `uninstall` and the ledger hooks (`_uninstall_ledger_hooks`, `installer.py:993`, exists) — leave the hooks in place unless the clause is extended.
+Note for implementer: the C21 warning reads `sdd/config.json` through `load_sdd_config` (TASK-4299), which raises `SddConfigError` on a bad file — C21 does not say what install does then; confirm in review.
 
 ### `packages/ai-parrot/src/parrot/sdd/cli.py` (CREATE)
 ```python
@@ -1021,6 +1111,32 @@ def test_existing_gitignore_content_preserved(empty_repo: Path) -> None:
     assert (empty_repo / ".gitignore").read_text().startswith("node_modules/\n")
 
 
+@pytest.mark.parametrize("host", ["claude", "codex", "google"])
+def test_gitattributes_block_written_recorded_and_removed(empty_repo: Path, host: str) -> None:
+    """rev 0.5 C23: any host writes the ledger merge=union block, keeps foreign lines, uninstall removes it."""
+    (empty_repo / ".gitattributes").write_text("*.png binary\n")
+    install_sdd_integration(empty_repo, hosts=(host,))
+    text = (empty_repo / ".gitattributes").read_text()
+    assert text.startswith("*.png binary\n")
+    assert "sdd/ledger/events.jsonl merge=union" in text and "sdd/ledger/archive/*.jsonl merge=union" in text
+    # FILL IN: assert the receipt records the block — bounded by _install_gitattributes' receipt shape (Note)
+    uninstall_sdd_integration(empty_repo, hosts=(host,))
+    assert (empty_repo / ".gitattributes").read_text() == "*.png binary\n"
+
+
+def test_ledger_hooks_installed_for_any_host(empty_repo: Path) -> None:
+    """rev 0.5 C23: the four FEAT-694 ledger hooks are installed through the claude installer's function."""
+    install_sdd_integration(empty_repo, hosts=("codex",))
+    for event in ("pre-commit", "post-merge", "post-checkout", "post-rewrite"):
+        assert "# >>> parrot-ledger >>>" in (empty_repo / ".git/hooks" / event).read_text()
+
+
+def test_install_warns_when_test_command_is_null(empty_repo: Path) -> None:
+    """rev 0.5 C21: a seeded (or existing) sdd/config.json with test_command null yields one warning line."""
+    actions = install_sdd_integration(empty_repo)
+    assert any(a.startswith("warning:") and "test_command" in a for a in actions)
+
+
 def test_unknown_host_rejected(empty_repo: Path) -> None:
     with pytest.raises(ValueError):
         install_sdd_integration(empty_repo, hosts=("vim",))
@@ -1180,7 +1296,8 @@ class Scenario:
 
 
 # FILL IN: one Scenario per helper name that appears in installed markdown (ensure_worktree, reserve_ids,
-#          close_task, heal_orphans, check_task_state, select_tests, insight, doc_taxonomy, worktree_status,
+#          close_task, heal_orphans, check_task_state, select_tests, doc_taxonomy, worktree_status,
+#          (NOT insight — rev 0.5 C22: /sdd-insight is not shipped, so no installed markdown invokes it),
 #          finalize_task, check_task_graph, backfill_taxonomy, migrate_index, id_ledger, check_id_collisions,
 #          install_hooks, AND sdd_meta — `parrot sdd run sdd_meta parse <spec>` / `taxonomy` / `resolve-flow …`
 #          appear in shipped markdown after TASK-4299; review_checkpoint (C12, `prepare|validate`); spec_tools
@@ -1317,7 +1434,43 @@ def test_installed_hook_denies_shared_environment_write(
         assert decision == "deny", f"{agent}: {result.stdout}\n{result.stderr}"
         # FILL IN: an allowed write (`README.md` in the repo) yields no permissionDecision — bounded by
         #          worktree_environment.hook_response (deny only for shared environments)
+
+
+def test_c21_test_step_outcomes(managed_home: Path, tools_dir: Path, foreign_repo: tuple[Path, Path]) -> None:
+    """rev 0.5 C21 ("C3 pins each step's outcome"): the FEAT-699 helpers behave as pinned in a foreign repo."""
+    repo, _ = foreign_repo
+    env = _env(managed_home, tools_dir)
+    subprocess.run(["parrot", "sdd", "install", "--host", "claude"], cwd=repo, env=env, check=True)
+
+    def run(*argv: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["parrot", "sdd", "run", *argv], cwd=repo, env=env, capture_output=True, text=True)
+
+    # FILL IN: fixtures — a spec from the installed sdd/templates/spec.md whose §4 Validation Contract is
+    #          `none — fallback`, a copy without the section, and a per-spec index with one task — bounded by
+    #          cache_test_contract.py / test_report.py / select_tests.py as listed in the Codebase Contract.
+    fallback = run("cache_test_contract", "--spec", "<fallback-spec>", "--index", "<index>")
+    assert (fallback.returncode, fallback.stdout.strip()) == (0, "fallback")
+    assert run("cache_test_contract", "--spec", "<spec-without-section>", "--index", "<index>").returncode == 2
+    decide = run("test_report", "decide-rerun", "--index", "<index>")
+    assert (decide.returncode, decide.stdout.strip()) == (0, "rerun")
+    assert run("test_report", "render", "--index", "<index>").returncode == 0
+    assert run("select_tests", "--tier", "task", "<flags for a task with nothing to select>").returncode == 2
+
+
+def test_c23_codex_install_writes_ledger_gitattributes_and_hooks(
+    managed_home: Path, tools_dir: Path, foreign_repo: tuple[Path, Path]
+) -> None:
+    """rev 0.5 C23 done-when: after `parrot sdd install --host codex` the foreign repo has the block and the hooks."""
+    repo, _ = foreign_repo
+    env = _env(managed_home, tools_dir)
+    subprocess.run(["parrot", "sdd", "install", "--host", "codex"], cwd=repo, env=env, check=True)
+    attributes = (repo / ".gitattributes").read_text(encoding="utf-8")
+    assert "sdd/ledger/events.jsonl merge=union" in attributes
+    assert "sdd/ledger/archive/*.jsonl merge=union" in attributes
+    for event in ("pre-commit", "post-merge", "post-checkout", "post-rewrite"):
+        assert "# >>> parrot-ledger >>>" in (repo / ".git/hooks" / event).read_text(encoding="utf-8")
 ```
+Note for implementer: the angle-bracket arguments in `test_c21_test_step_outcomes` are fixture placeholders (the `FILL IN` above); C21 fixes the outcomes, not the fixture shapes.
 **Why**: proposal C3 (rev 0.3) step by step — wheel + declared deps, bare origin, documented
 flags with fixture inputs, allowlisted tools, scrubbed env, managed-resolution assertion, no
 mocks. `SCENARIOS` is the only `FILL IN`, and the test fails loudly for any documented helper
@@ -1334,10 +1487,13 @@ that lacks one, so coverage of "every documented helper invocation" is enforced,
 - [ ] `test_installer.py::test_status_shape`, `test_sdd_flow_in_foreign_repo`; `test_sdd_cli.py::test_force_flag_overwrites`.
 - [ ] `test_wheel_only_foreign_repo.py::SCENARIOS` — one per helper name found in installed markdown (C3),
       incl. `review_checkpoint`, `spec_tools`, `brief_meta`, `worktree_environment` (stdin payload) and
-      TASK-4508's four; outcomes of the `cache_test_contract` / `select_tests` / `test_report` scenarios are
-      bounded by the FEAT-699-vs-C7 open decision.
+      TASK-4508's four (no `insight` — rev 0.5 C22); the outcomes of the `cache_test_contract` /
+      `select_tests` / `test_report` steps are pinned by `test_c21_test_step_outcomes` (rev 0.5 C21).
 - [ ] `test_wheel_only_foreign_repo.py::test_installed_hook_denies_shared_environment_write` — the allowed-write
       counter-check (C16).
+- [ ] `test_wheel_only_foreign_repo.py::test_c21_test_step_outcomes` — the fixture spec / index (C21).
+- [ ] `installer.py::_install_gitattributes` — upsert + receipt record; bounded by
+      `test_gitattributes_block_written_recorded_and_removed` (C23).
 
 ---
 
@@ -1376,11 +1532,24 @@ that lacks one, so coverage of "every documented helper invocation" is enforced,
       `sdd-coder` / `sdd-worker` hook command (`parrot sdd run worktree_environment --hook || exit 2`)
       denies a write into the managed venv in the foreign repo, with only `$PARROT_HOME/bin` + allowlisted
       tools on PATH (spec §5 C16 bullet).
+- [ ] *(rev 0.5 C21)* `parrot sdd install` warns when `sdd/config.json` `test_command` is null
+      (`test_install_warns_when_test_command_is_null`); `test_c21_test_step_outcomes` pins
+      `cache_test_contract` (`none — fallback` → exit 0 `fallback`; missing section → exit 2),
+      `test_report decide-rerun` → `rerun`, `test_report render` → exit 0, and `select_tests --tier task`
+      with nothing selected → exit 2.
+- [ ] *(rev 0.5 C23)* Any host writes the marker-delimited `.gitattributes` block (`merge=union` for
+      `sdd/ledger/events.jsonl` and `sdd/ledger/archive/*.jsonl`), records it in the receipt, and
+      `uninstall` removes it while keeping foreign lines; the four ledger hooks are installed through
+      `claude_code/installer.py::_install_ledger_hooks`; after `parrot sdd install --host codex` the C3
+      foreign repo has both (`test_c23_codex_install_writes_ledger_gitattributes_and_hooks`).
+- [ ] *(rev 0.5 C22)* No C3 scenario or assertion involves `/sdd-insight`; counts follow TASK-4090
+      (14 commands per host, 78 manifest entries).
 - [ ] Unavailable tooling referenced by installed assets is reported as warnings, never as a failure (codex S9).
 - [ ] `parrot sdd --help` lists `install`, `uninstall`, `status`, `run`; `--host` accepts only
       `claude|codex|google`; `parrot status` (agentd) is unchanged.
-- [ ] `parrot.sdd.installer` does not import `parrot.knowledge.wiki.*`; `parrot.sdd.cli` imports no
-      helper module at load time.
+- [ ] `parrot.sdd.installer` does not import `parrot.knowledge.wiki.*` at module load (the C23
+      ledger-hook step imports `_install_ledger_hooks` lazily, inside the step); `parrot.sdd.cli` imports
+      no helper module at load time.
 - [ ] `ruff check` passes on all six files; all tests below pass.
 
 ---
@@ -1415,14 +1584,18 @@ Also, outside the pytest contract: lint with `ruff check packages/ai-parrot/src/
 #   test_untouched_file_upgrades_from_older_record (C4 outdated), test_foreign_file_never_touched_even_with_force (C4 foreign),
 #   test_unrecorded_identical_file_is_adopted (C4 adoption), test_dry_run_changes_nothing (C5),
 #   test_seeds_written_once_never_overwritten_or_removed (C6/C10), test_existing_gitignore_content_preserved,
-#   test_unknown_host_rejected, test_status_shape, test_sdd_flow_in_foreign_repo[claude|codex|google] (spec §4 integration)
+#   test_unknown_host_rejected, test_status_shape, test_sdd_flow_in_foreign_repo[claude|codex|google] (spec §4 integration),
+#   test_gitattributes_block_written_recorded_and_removed[claude|codex|google], test_ledger_hooks_installed_for_any_host (C23),
+#   test_install_warns_when_test_command_is_null (C21)
 # packages/ai-parrot/tests/sdd/test_sdd_cli.py — see the CREATE block:
 #   test_lazy_registration, test_install_status_uninstall_roundtrip, test_unknown_host_is_a_usage_error,
 #   test_force_flag_overwrites, test_dry_run_flag_prints_plan_and_writes_nothing (C5),
 #   test_run_dispatches_helper_help, test_run_unknown_helper_lists_available, test_run_sdd_meta_is_dispatchable,
 #   test_run_propagates_helper_exit_code (Q1)
 # packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py — see the CREATE block (C3, merge tier):
-#   test_parrot_resolves_to_managed_install, test_install_then_every_documented_helper_invocation
+#   test_parrot_resolves_to_managed_install, test_install_then_every_documented_helper_invocation,
+#   test_installed_hook_denies_shared_environment_write (C16), test_c21_test_step_outcomes (C21),
+#   test_c23_codex_install_writes_ledger_gitattributes_and_hooks (C23)
 ```
 
 ---

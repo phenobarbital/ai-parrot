@@ -131,7 +131,7 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   `sdd-brief.md` row (`brief_meta`, `check_task_graph`, `ensure_worktree`; verified on
   `925b0f1a2`: `sdd-brief.md:18,132` ensure_worktree, `:151` brief_meta, `:154`
   check_task_graph), the asset inventory counts 15 commands and 14 templates
-  (`sdd/templates/brief.md`), and AC-4 checks the new row. The scanner itself does not
+  (`sdd/templates/brief.md`) *(readiness 2026-10-19: 13 git-tracked templates on dev; rev 0.5 C22: `/sdd-insight` is not shipped)*, and AC-4 checks the new row. The scanner itself does not
   change — it globs `.claude/commands/sdd-*.md`.
 
 ---

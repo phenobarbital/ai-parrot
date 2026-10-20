@@ -40,9 +40,9 @@ path), it uses only the stdlib, and nothing shipped references it.
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Created by the readiness review; no prior version. Spec §2/M6's helper list and the C12 premise
   are stale. Spec rev 0.5 should list these four modules (see `sdd/state/FEAT-633/`).
-- Open decisions: none for the move itself. How `cache_test_contract`/`test_report` behave in a
-  foreign repo (FEAT-699 vs C7, the `test_command` override) is a spec rev 0.5 decision. It does not
-  block this mechanical move.
+- Resolved by spec rev 0.5 (2026-10-20): C18 confirms this move and the package-relative loaders.
+  C21 settles how `cache_test_contract`/`test_report` behave in a foreign repo (`test_command`
+  switch, TASK-4089/4299/4091). This task stays a mechanical move with no behaviour change.
 
 ---
 

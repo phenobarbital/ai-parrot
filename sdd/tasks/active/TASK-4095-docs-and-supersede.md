@@ -67,8 +67,17 @@ audit trail.
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: no commit since `0b92bda42` touches this task's files and every line anchor still holds; `DocClaim` described as the pydantic `BaseModel` it is (`test_getting_started_claims.py:31`); the `parrot sdd status` states now include `foreign` and the seed states `seed-present | missing` (spec :521, TASK-4091).
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - **FEAT-699 vs C7** (recorded in TASK-4089 / TASK-4091) — whether `sdd/config.json`'s `test_command` overrides `cache_test_contract` / `select_tests` / `test_report` in a foreign repo. The guide's sentence on `test_command` (`sdd/config.json` fields) must describe the resolved behaviour; do not document an override until then.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C21 — the guide documents the `test_command` switch. When `sdd/config.json` sets it, shipped
+    test steps run it once from the repo root instead of the FEAT-699 selection/report steps, and a
+    run with no tests shows "⚠️ not run". When it is null (ai-parrot), the FEAT-699 path applies.
+    `parrot sdd install` warns when it is null. A foreign-repo validation phase is v1.1, not documented as available.
+  - C20 — the `--global` sections say the managed runtime installs `ai-parrot-tools` alongside
+    `ai-parrot` at the same version, needed by `wikitoolkit mcp`.
+  - C22 — `/sdd-insight` is not among the installed commands. The seed `sdd/CONVENTIONS.md` has
+    `## Repository layout` and `## Project areas`, and `sdd/config.json` may set `projects`.
+  - C23 — `parrot sdd install` writes a marked `.gitattributes` block (`merge=union` for the
+    ledger log) and installs the four ledger git hooks, and `doctor --sdd` checks both.
 
 ## Scope
 
@@ -431,8 +440,9 @@ what the run created). Before writing anything the script checks platform, `curl
     parrot self doctor --sdd                      # origin, base branch, ledger, gh, jq, host CLI
     parrot sdd status                             # missing | current | outdated | edited | foreign
     ```
-<!-- FILL IN: edit `sdd/config.json` (base_branch, hotfix_base, issue_tracker, test_command), the
-     `sdd/CONVENTIONS.md` seed, first `/sdd-*` command, helpers run as `parrot sdd run <name>`,
+<!-- FILL IN: edit `sdd/config.json` (base_branch, hotfix_base, issue_tracker, test_command — set it
+     unless the repo uses ai-parrot's FEAT-699 selection: shipped test steps then run it, rev 0.5 C21), the
+     `sdd/CONVENTIONS.md` seed (`## Repository layout`, `## Project areas`, rev 0.5 C22), first `/sdd-*` command, helpers run as `parrot sdd run <name>`,
      re-running install upgrades untouched files and keeps edited ones — bounded by TASK-4091 + C6 task -->
 ```
 **Why**: the guide is the canonical entry point (C13); every command is explained in the AC8 shape
@@ -526,9 +536,12 @@ session. Outside the managed venv nothing changes.
      repo's `python` cannot import parrot); the record `sdd/.sdd-installed.json` and the status states
      missing | current | outdated | edited | foreign, and seeds as seed-present | missing; upgrade rule (recorded hash matches → upgrade; differs → kept
      with a warning unless --force; not ours → skipped); `sdd/config.json` fields (base_branch,
-     staging_branch, hotfix_base, issue_tracker, jira_host, reviewer, test_command); the
-     `sdd/CONVENTIONS.md` seed (created once, never overwritten, even with --force) — bounded by
-     TASK-4091 and the C6 task -->
+     staging_branch, hotfix_base, issue_tracker, jira_host, reviewer, test_command, projects); what
+     `test_command` switches (rev 0.5 C21: replaces the FEAT-699 selection/report steps, zero tests →
+     "⚠️ not run", install warns when null); the `.gitattributes` ledger block and the four ledger hooks
+     `parrot sdd install` adds (rev 0.5 C23); `/sdd-insight` is not shipped (rev 0.5 C22); the managed
+     runtime includes `ai-parrot-tools` (rev 0.5 C20); the `sdd/CONVENTIONS.md` seed (created once,
+     never overwritten, even with --force) — bounded by TASK-4091, TASK-4299 and the C6 task -->
 
 ### Version skew
 <!-- FILL IN: quote WikiStoreVersionError's message as emitted (TASK-4092) and the fix
