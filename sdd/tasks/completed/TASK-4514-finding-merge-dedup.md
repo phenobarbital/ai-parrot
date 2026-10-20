@@ -134,10 +134,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (orchestrator) — coder seat qwen.qwen3-coder-480b-a35b-instruct (nova), attempt 1
+**Date**: 2026-10-20
+**Notes**: added §4c finding merge/dedup and Phase 3 input rule to sdd-proposal.md. Orchestrator read the full diff (518022b67); merge-tier validation green. Seat: qwen.qwen3-coder-480b-a35b-instruct · Backend: nova · Attempts: 1 · Duration: 41.2s. Closed via close_task.sh (finalize_task unavailable: no review EvidenceRef resolvable from the engine store).
 
 **Deviations from spec**: none

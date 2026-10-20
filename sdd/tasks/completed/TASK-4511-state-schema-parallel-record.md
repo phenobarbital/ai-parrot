@@ -179,10 +179,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (orchestrator) — coder seat gpt-5.6-terra (codex), attempt 1
+**Date**: 2026-10-20
+**Notes**: added `parallel` + `$defs/lane_record` to research schema; JSON valid. Orchestrator read the full diff (bf92b37bc); merge-tier validation green (tests/sdd_scripts/test_command_twin_parity.py, 4 passed). Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 40.7s. Closed via close_task.sh (finalize_task unavailable: no review EvidenceRef resolvable from the engine store).
 
 **Deviations from spec**: none

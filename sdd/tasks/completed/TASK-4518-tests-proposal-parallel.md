@@ -184,10 +184,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (orchestrator) — coder seat gemini-3.5-flash (google-compat), attempt 1
+**Date**: 2026-10-20
+**Notes**: created tests/sdd_scripts/test_proposal_parallel.py (13 tests); attempt terminal state was 'salvaged'; orchestrator fixed 2 ruff E741 in 61a2ff101 (fix commit). Orchestrator read the full diff (047c71d42); merge-tier validation green. Seat: gemini-3.5-flash · Backend: google-compat · Attempts: 1 · Duration: 138.8s. Closed via close_task.sh (finalize_task unavailable: no review EvidenceRef resolvable from the engine store).
 
 **Deviations from spec**: none

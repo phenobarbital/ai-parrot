@@ -184,10 +184,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (orchestrator) — coder seat gpt-5.6-terra (codex), attempt 1
+**Date**: 2026-10-20
+**Notes**: added §4.0 parallel dispatch subsection and fork-lane notes to sdd-proposal.md. Orchestrator read the full diff (e59c0f7f9); merge-tier validation green. Seat: gpt-5.6-terra · Backend: codex · Attempts: 1 · Duration: 47.9s. Closed via close_task.sh (finalize_task unavailable: no review EvidenceRef resolvable from the engine store).
 
 **Deviations from spec**: none

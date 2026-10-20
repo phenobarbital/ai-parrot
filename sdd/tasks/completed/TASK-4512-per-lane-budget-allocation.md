@@ -151,10 +151,8 @@ When you pick up this task:
 
 ## Completion Note
 
-*(Agent fills this in when done)*
-
-**Completed by**: <session or agent ID>
-**Date**: YYYY-MM-DD
-**Notes**:
+**Completed by**: sdd-worker (orchestrator) — coder seat gpt-5.6-sol (codex), attempt 1
+**Date**: 2026-10-20
+**Notes**: added --no-parallel flag and per-lane allocation table to sdd-proposal.md. Orchestrator read the full diff (964acf61d); merge-tier validation green (tests/sdd_scripts/test_command_twin_parity.py, 4 passed). Seat: gpt-5.6-sol · Backend: codex · Attempts: 1 · Duration: 97.3s. Closed via close_task.sh (finalize_task unavailable: no review EvidenceRef resolvable from the engine store).
 
 **Deviations from spec**: none
