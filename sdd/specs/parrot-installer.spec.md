@@ -287,7 +287,8 @@ class ToolkitTemplate(BaseModel):
 - **Responsibility**: de-risk before building. S1 clean-machine install matrix
   (macOS arm64 / Win11 x64 / Ubuntu x64, no compiler: `uv venv --python 3.12` +
   `uv pip install ai-parrot` + `wikitoolkit mcp` answers `initialize`; records every
-  sdist fallback; *[rev 0.5 D1]* core-only must pass, see the D1 clause). S2 Windows stdio re-exec prototype. S3 host cwd/env probe (3 hosts,
+  sdist fallback; *[rev 0.5 D1]* S1 passes on the managed runtime — core + `ai-parrot-tools` at the
+  same pin; a bare core-only pass is the D1 follow-up, see the D1 clause). S2 Windows stdio re-exec prototype. S3 host cwd/env probe (3 hosts,
   incl. Gemini user-global config). S4 launcher overhead timing. S5 SDD portability
   dry-run (assumption inventory for the markdown rewrite). S6 migration-safety prototype
   (backup + lock + gate vs a concurrent older runtime).
@@ -790,9 +791,9 @@ class ToolkitTemplate(BaseModel):
 Answers to the readiness checkpoint of 2026-10-19 (Jesus Lara, 2026-10-20). Each clause
 binds the tasks it names. Implementers build the part a clause covers exactly as stated.
 
-- **D1 — core serves `wikitoolkit mcp` on its own** *[rev 0.5 D1]* (TASK-4068, 4074,
-  4075, 4094). A core-only install (`ai-parrot`, no satellites) must answer MCP
-  `initialize` and list the wiki tools. Facts this rests on: the MCP base and the stdio
+- **D1 — `wikitoolkit mcp` on the managed runtime; core-only is the follow-up** *[rev 0.5 D1]*
+  (TASK-4068, 4074, 4075, 4094). Goal (follow-up below, not a v1 condition): a core-only install
+  (`ai-parrot`, no satellites) answers MCP `initialize` and lists the wiki tools. Facts this rests on: the MCP base and the stdio
   transport are already core (`parrot/mcp/server_base.py`, `parrot/mcp/local_server.py`,
   `parrot/mcp/adapter.py`; stdlib + `parrot.tools.abstract` only), and so are the
   transport-neutral wiki operation descriptors (`knowledge/wiki/transport.py:482`). What
@@ -828,13 +829,15 @@ binds the tasks it names. Implementers build the part a clause covers exactly as
   (`<source-root>`, `<test-path>`); (b) runnable commands (e.g. `PYTHONPATH=packages/…`
   in `.claude/commands/sdd-task.md:381-416`, `.claude/agents/sdd-autopilot.md:663-664`)
   → rewrite to `parrot sdd run …` or to a value read from `sdd/config.json`;
-  (c) prose that describes ai-parrot itself (e.g. `sdd/WORKFLOW.md:135`) → allowlist in
-  `MONOREPO_PATH_ALLOWLIST`, one entry per file with a written reason;
+  (c) prose that describes ai-parrot itself (e.g. `sdd/WORKFLOW.md:135`) → rewritten by TASK-4089
+  per C22 B/C (pointed at `sdd/CONVENTIONS.md`, or moved to the unshipped `codebase-conventions.md`
+  twins), never allowlisted;
   (d) `.claude/hooks/sdd-worker-format.sh:76` (`.venv/bin`) → resolve the formatter via
   `PATH` first, keep `.venv/bin` as a fallback. The four `tests/sdd_scripts/…`
   references count as monorepo paths too: C16's wording widens to cover them, and they
   follow rule (b) or (c). The C16 gate goes green only when every hit is rewritten or
-  allowlisted. *[C22]* Rules (a)–(d) are categories A–D of the C22 clause in M6; category E
+  allowlisted; the only allowlist entry is (d)'s `.venv/bin` fallback line (TASK-4089 `_C16_ALLOWLIST`,
+  TASK-4090 `MONOREPO_PATH_ALLOWLIST`). *[C22]* C22 in M6 refines (a)–(d) into categories A–E; category E
   (navconfig one-liners become an env-var precondition) covers D18, and `/sdd-insight`
   leaves the shipped set (14 commands per host, 80 manifest entries). FEAT-708's
   `sdd-contract-probe` names no monorepo path since `b53d93ba4`, so it adds no hits.
