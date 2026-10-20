@@ -217,8 +217,36 @@ git-ignored — commit it with `git add -f`.
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Opus 5 (/sdd-fix, issue:3edabb9b953e)
+**Date**: 2026-10-20
+**Notes**: All four findings addressed. `_forget_task_state` prunes `_branch_attempts` /
+`_validation_reds` for a settled task, called from a thin `_run_task` wrapper (the body moved to
+`_run_task_attempts`) so all four returns and any exception prune exactly once, after the ladder and the
+same-seat repair have consumed what they need -- written as "discard if present", never an assert. The
+gate `request_id` carries the attempt HEAD SHA, degrading to the uid-only id when `rev-parse` fails.
+`wait_verdict` expires `_GATE_WAIT_MARGIN_S` (5 s) before the supervisor deadline.
 
-**Deviations from spec**: none
+Budget evidence regenerated as a real gate replay: `start(tier="task", base_ref=C^)` + `wait_verdict`,
+each FEAT-699 merge commit `C` checked out in its own detached worktree so the diff is that task's
+change alone. All three tasks measured, TASK-4451 included -- its validation commands were recoverable
+from its task file all along, contrary to the superseded note. Worst invocation 20.99 s against the
+pytest `timeout_s = 60` budget (~2.9x headroom); worst whole gate 44.41 s against the 600 s cap;
+consistent ~16-18 s fixed overhead for planning, Bubblewrap and interpreter start.
+
+`test_engine_validation_gate.py::TestGateBookkeepingIsBounded` adds four cases (state pruned, repair
+still works despite pruning, request_id tracks HEAD, wait strictly inside the deadline).
+sdd_coder + test_scope: 851 passed, ruff clean.
+
+Two harness traps, recorded in the evidence file so they are not re-derived: a first replay pointed
+`base_ref` at the merge commit while the worktree sat at the branch tip 84 commits later, so the gate
+diffed the whole range, escalated to five invocations and reported `timed_out` at 92-97 s -- an artefact,
+not a gate property. And importing `parrot` installs uvloop's event-loop policy, whose
+`get_child_watcher()` raises `NotImplementedError` on 3.12 when the stdlib subprocess transport asks for
+one; the gate spawns runners via `create_subprocess_exec`, so any such harness must pin
+`asyncio.DefaultEventLoopPolicy()` first.
+
+**Deviations from spec**: no budget change proposed -- the measurements support keeping pytest
+`timeout_s = 60`, and spec SS8 Q4 is the user's call. TASK-4451's replay verdict is `failed` (2 of 40
+tests): that commit's tree runs against today's virtualenv and the task is recorded `partial` in the
+FEAT-699 index, so the red is a property of the replay, not the gate -- which behaved correctly by
+reporting it. Not investigated further; this run measures cost.
