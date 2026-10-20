@@ -34,6 +34,7 @@ then asks targeted questions about genuine unknowns.
 /sdd-proposal NAV-8421 --no-gate                # skip user gates (autopilot mode)
 /sdd-proposal --resume FEAT-156                 # resume interrupted run
 /sdd-proposal NAV-8421 --budget=loose           # tight | default | loose
+/sdd-proposal NAV-8421 --no-parallel
 ```
 
 ## Guardrails
@@ -73,7 +74,7 @@ You must be on `dev`, `staging`, or the integration branch when starting. The
 
 Extract from the user's invocation:
 - **source**: Jira key (regex `^[A-Z]+-\d+$`), inline string, or path to file.
-- **flags**: `--mode`, `--no-gate`, `--resume`, `--budget`.
+- **flags**: `--mode`, `--no-gate`, `--resume`, `--budget`, `--no-parallel`.
 
 If `--resume <FEAT-ID>` is set, jump to **Step R** at the bottom.
 
@@ -100,6 +101,31 @@ Initialize `${STATE_DIR}/state.json` per the schema in
 | `tight`     |         15 |         10 |         5 |     1 |          120 |
 | `default`   |         40 |         25 |        10 |     2 |          300 |
 | `loose`     |        100 |         60 |        20 |     3 |          900 |
+
+#### Per-lane allocation (parallel research, FEAT-708)
+
+When Phase 2 runs in parallel (§4a), each of the three research lanes gets a
+fixed slice of the profile. All fractions use `floor()` so the lanes together
+never exceed the profile; unused quota in one lane is **not** reclaimable by
+another.
+
+| Lane | files_read | grep_calls | git_calls | depth | wall_seconds |
+|------|-----------:|-----------:|----------:|------:|-------------:|
+| codebase | `floor(0.60 × files_read)` | `floor(0.80 × grep_calls)` | 0 | profile | `floor(0.85 × wall_seconds)` |
+| git      | `floor(0.20 × files_read)` | 0 | `git_calls` | 1 | `floor(0.85 × wall_seconds)` |
+| wiki     | `floor(0.20 × files_read)` | `floor(0.20 × grep_calls)` | 0 | profile | `floor(0.85 × wall_seconds)` |
+
+Wiki queries remain free against the budget, as specified by the Phase 2
+iteration rule.
+
+The remaining `wall_seconds − floor(0.85 × wall_seconds)` (~15%) is the
+**merge window**, reserved for join + dedup + checkpoint (§4c).
+
+Phase 2 runs **sequentially** (no lanes, no forks) when any of:
+- `--budget=tight` — fork overhead is not justified for 15 files / 120 s;
+- any non-standard (custom) budget — per-lane custom limits are not supported;
+- `--no-parallel` was passed;
+- the Agent tool is unavailable (detected at dispatch, §4a).
 
 ### 2. Phase 0 — Resolve Source
 
