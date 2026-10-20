@@ -328,8 +328,9 @@ def _check_test_contract(data: dict, root: Path, tasks: dict[str, _Task]) -> lis
 
     findings: list[Finding] = []
     declared = {path for task in tasks.values() for path in task.files}
-    contract_files = {operand.split("::", 1)[0] for operand in contract.tests}
-    for operand in contract.tests:
+    pytest_ops = contract.pytest.targets if contract.pytest is not None else ()
+    contract_files = {operand.split("::", 1)[0] for operand in pytest_ops}
+    for operand in pytest_ops:
         file_part = operand.split("::", 1)[0]
         if "real_llm" in PurePosixPath(file_part).parts:
             findings.append(

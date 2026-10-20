@@ -146,7 +146,8 @@ def plan_tests(
     hits: list[CoreHit] = []
 
     if tier != "task" and contract is not None:
-        for operand in contract.tests:
+        pytest_block = contract.pytest
+        for operand in (pytest_block.targets if pytest_block is not None else ()):
             operand_path = operand.split("::", 1)[0]
             if not (worktree / operand_path).is_file():
                 notes.append(f"contract operand missing on disk, skipped: {operand}")
