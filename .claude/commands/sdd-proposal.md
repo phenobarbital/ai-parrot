@@ -344,9 +344,25 @@ Skip when Phase 2 ran sequentially (findings are already `F<NNN>`).
    input_count, output_count, merged_count: input_count − output_count,
    audit_dir: "findings/.audit"}`, then set `phase: "research_complete"`.
 
+#### 4d. Citation probe (FEAT-708)
+
+Extract every citation from `${STATE_DIR}/findings/F*.md` (`## Citations`),
+dedupe across findings, and map each to an `sdd-contract-probe` check
+(`file` for `path:NN`, `symbol` for a cited class/function — keep the cited
+signature as `expected` — `anchor` for a quoted line, `import` for an import,
+`absent` for a "does not exist" claim; ids `c0, c1, …`, keep a
+check-id → finding-id map). Launch the probes in ONE message
+(≤ ~40 checks each, grouped by file):
+`Agent({subagent_type: "sdd-contract-probe", description: "Verify finding citations",
+prompt: "Repository root: <abs path>\nProbe sheet: <JSON array>"})`
+and continue with §5a. With fewer than ~10 citations, or without the Agent
+tool, run the same checks inline.
+
 ### 5. Phase 3 — Synthesis
 
 #### 5a. Build the synthesis input
+
+If §4d probes are running, assemble the input now; tags are applied before §5b.
 
 Concatenate, in order:
 - `${STATE_DIR}/source.md` content
@@ -356,6 +372,21 @@ Concatenate, in order:
 - A `<mode>` block with the resolved mode (forced or auto-detected)
 
 #### 5b. Run the synthesis prompt
+
+**First, collect the §4d probes.** Verify each report with `/sdd-task` §3's
+rules for `sdd-contract-probe`, classify every check:
+
+| Probe result | Claim status |
+|---|---|
+| `import` `found`/`reexported`; `file` `found`; `anchor` `found`; `absent` `absent` | `verified` (evidence = `path:lines[0]`) |
+| `symbol` `found` and `signature` == `expected` (whitespace-normalized) | `verified` |
+| `symbol` `found` and `signature` ≠ `expected` | `stale` (evidence = actual `signature` + line) |
+| `anchor` `ambiguous`; `absent` `present` (the "missing" thing exists) | `stale` |
+| `import` `missing`/`module-missing`; `symbol`/`file`/`anchor` `missing`; `file` `short` | `missing` |
+
+and for each `stale` or `missing` check append
+`[citation-check: stale|missing] <path:line> — <evidence>` to the owning
+finding's `## Notes`. Re-read the tagged findings into the §5a input.
 
 Invoke `sdd/templates/synthesis.prompt.md`. The agent produces a JSON object
 conforming to the synthesis output schema embedded in that prompt.
