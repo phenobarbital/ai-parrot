@@ -181,11 +181,12 @@ def sample_budget_profile() -> dict:
 
 # Unit Tests
 
+
 def test_partition_by_type(sample_research_plan):
     lanes = _partition(sample_research_plan)
     assert len(lanes["codebase"]) == 1  # Q001
-    assert len(lanes["git"]) == 2       # Q002, Q005 (child of Q002)
-    assert len(lanes["wiki"]) == 2      # Q003, Q004 (child of Q003)
+    assert len(lanes["git"]) == 2  # Q002, Q005 (child of Q002)
+    assert len(lanes["wiki"]) == 2  # Q003, Q004 (child of Q003)
 
 
 def test_partition_preserves_parent_chains(sample_research_plan):
