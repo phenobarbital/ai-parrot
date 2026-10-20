@@ -49,7 +49,8 @@ What is missing:
 
 - G1. Forward `AfterInvokeEvent`, `InvokeFailedEvent`, `AfterClientCallEvent` and `ClientCallFailedEvent` to an
   `EventBus`, behind a config flag (default off), so any consumer, in-process or not, can subscribe.
-- G2. Make the four events self-describing: add `tenant: Optional[str]` to all four, and `cost_usd: Optional[float]`
+- G2. Make the four events self-describing: add `tenant: Optional[str]` to all four, `user_id`/`session_id`
+  to `AfterInvokeEvent` and `InvokeFailedEvent` (today only `BeforeInvokeEvent` has them, and it is not forwarded), and `cost_usd: Optional[float]`
   to `AfterClientCallEvent`. Cost is computed **once**, at the origin, with the process-shared `CostCalculator`.
 - G3. Use one generic `current_tenant` ContextVar, bound on every `ask()`/`ask_stream()`, that
   `skills/tenancy.py` reuses. There is no `program`/`program_slug` concept anywhere in ai-parrot.
@@ -139,6 +140,8 @@ See Overview.
 ```python
 # core/events/lifecycle/events/invoke.py  — AfterInvokeEvent, InvokeFailedEvent
 tenant: Optional[str] = None          # server-resolved tenant id (FEAT-707), never client-supplied
+user_id: Optional[str] = None         # NEW on both invoke events (today only BeforeInvokeEvent has it)
+session_id: Optional[str] = None      # NEW on both invoke events
 
 # core/events/lifecycle/events/client.py
 # AfterClientCallEvent
@@ -180,6 +183,7 @@ class LifecycleBusForwarder: ...                      # EventProvider
 | M3 shared cost calculator | yes | module-level holder; bootstrap installs; clients read |
 | M4 bus forwarder | yes | signatures below; channel `f"{prefix}.{cls}"`; denylist |
 | M6 single cost computation | yes | subscribers read `event.cost_usd`; own calculator only as fallback when no shared calculator is installed |
+| M7 chat hot-tier metadata | yes | `{**(metadata or {}), **fixed_keys}` at the Redis `ConversationTurn` |
 | M5 AgentTalk tenant + metadata | yes | copy `chat.py:454-458`; metadata dict shape above |
 
 ### Module 1: generic `current_tenant`
@@ -205,7 +209,9 @@ _skill_tenant = current_tenant   # verified: packages/ai-parrot/src/parrot/skill
 
 Add the fields from §2 Data Models. Fill them at the construction sites: `clients/base.py:751/801` read
 `current_tenant.get()` at construction time (same FEAT-228 rule as `agent_name`), and the nine `bots/base.py`
-sites pass `tenant=current_tenant.get()`. `cost_usd` is computed at `clients/base.py:751` with
+sites pass `tenant=current_tenant.get()`, `user_id=current_user_id.get()` and `session_id=current_session_id.get()`.
+The origin also writes the computed cost into the response's `CompletionUsage.estimated_cost` (`models/basic.py:91`)
+when that field is `None`, so AgentTalk can persist it without recomputing (design research S4). `cost_usd` is computed at `clients/base.py:751` with
 `get_shared_cost_calculator()` (M3). When it returns `None`, or pricing is unknown, `cost_usd=None`. Computing
 cost must never raise into the call path.
 
@@ -220,7 +226,9 @@ cost_usd: Optional[float] = None
 Add a process-level holder so the origin and the existing subscribers share one `CostCalculator`.
 `bootstrap.py:115` installs the calculator it already builds, via `set_shared_cost_calculator(cost_calc)`, and
 `shutdown_usage_recording()` clears it. The OTel path in `setup.py:245` installs its calculator the same way.
-`UsageRecordingSubscriber` keeps receiving its calculator by injection, unchanged.
+`UsageRecordingSubscriber` keeps receiving its calculator by injection, unchanged. When
+`PARROT_EVENT_FANOUT_ENABLED` is true but local observability is off, the fan-out setup installs the shared
+calculator itself (honoring `PARROT_PRICING_PATH`), so `cost_usd` is never absent because of local config (S3).
 
 ```python
 def get_shared_cost_calculator() -> "Optional[CostCalculator]":
@@ -240,9 +248,9 @@ def set_shared_cost_calculator(calc: "Optional[CostCalculator]") -> None:
 def resolve_event_cost(event: "AfterClientCallEvent", fallback: "Optional[CostCalculator]") -> "Optional[float]":
     """Return the call's USD cost, computing it only when the origin did not.
 
-    When a shared calculator is installed, the origin computed the cost: return ``event.cost_usd``
-    (``None`` = pricing unknown; never recompute). Otherwise (no bootstrap, e.g. tests that inject a
-    calculator) fall back to ``fallback.cost_usd(...)``.
+    Returns ``event.cost_usd`` when it is not ``None`` (the origin already computed it). Only when it is
+    ``None`` — emitters that bypass ``AbstractClient`` such as ``flows/dev_loop/dispatchers/claude.py:980``,
+    or pricing unknown — compute with the shared calculator, else ``fallback``.
     """
 ```
 
@@ -270,9 +278,13 @@ class LifecycleBusForwarder:
     def register(self, registry: "EventRegistry") -> list[str]: ...
     async def _forward(self, event: "LifecycleEvent") -> None:
         """Schedule bus.emit(f'{prefix}.{type(event).__name__}', redacted payload); never raises."""
-    def stats(self) -> dict[str, int]: ...          # forwarded, failed
+    def stats(self) -> dict[str, int]: ...          # forwarded, failed (publish failures counted, logged every 100)
     async def aclose(self) -> None: ...
 ```
+
+Setup is idempotent: one forwarder per process, exactly four subscriptions, IDs retained; a second setup is a
+no-op, and `shutdown_usage_recording()` unsubscribes and closes it. Bots must NOT also receive the same bus via
+`AbstractBot(event_bus=...)` for these events, or every event is published twice (S2).
 
 ### Module 5: AgentTalk tenant and per-turn metadata
 
@@ -281,7 +293,15 @@ In `handlers/agent.py`, copy the `chat.py:454-458` pattern: pop and warn on a cl
 `bot.ask_stream(` (:2653). In both `save_turn(` calls (:2729 streaming, `ai_message`; :2968 non-streaming,
 `response`), pass
 `metadata={"usage": msg.usage.model_dump() if msg.usage else None, "cost_usd": <sum of the turn's LLM-call costs or msg.usage.estimated_cost>, "tenant": tenant, "agent": agent_name}`.
-The cost source is §8 Q3. `_get_user_session` is not modified.
+`cost_usd` comes from `msg.usage.estimated_cost`, filled at the origin (M2). `_get_user_session` is not modified.
+The background `save_turn` task receives the tenant explicitly in `metadata`, never by reading a ContextVar
+that may already be reset (S6).
+
+### Module 7: ChatStorage hot tier keeps caller metadata
+
+`storage/chat.py` builds the Redis `ConversationTurn` with a fixed `metadata` dict (`output_mode`, `model`,
+`provider`, `response_time_ms`) and drops the caller's `metadata`. Merge the caller metadata into it (fixed keys
+win), so `usage`/`cost_usd`/`tenant`/`agent` survive hot-tier reads (S12).
 
 ---
 
@@ -303,6 +323,12 @@ The cost source is §8 Q3. `_get_user_session` is not modified.
 - `test_cost_computed_once_per_call`: with a shared calculator spy and all three subscribers registered, one
   LLM call triggers exactly one `cost_usd()` call, and every sink sees the same value.
 - `test_subscriber_fallback_without_shared_calculator`: with no shared calculator, an injected one is still used.
+- `test_invoke_events_carry_user_and_session`.
+- `test_dispatcher_events_still_priced`: an `AfterClientCallEvent` from the dev-loop dispatcher (no `cost_usd`)
+  is still priced by the subscribers.
+- `test_forwarder_setup_idempotent`: two setups → four subscriptions, one publish per event.
+- `test_nested_tenant_reset`: nested `ask()` calls restore the outer tenant.
+- `test_chat_hot_tier_keeps_metadata`: the Redis `ConversationTurn.metadata` contains `usage` and `tenant`.
 - `test_usage_record_unchanged`: `UsageRecord` still has no user, session or tenant fields.
 - `test_agenttalk_ignores_client_tenant_and_passes_resolved`.
 - `test_agenttalk_save_turn_metadata`: both call sites, with mocked ChatStorage.
@@ -342,7 +368,11 @@ bundled pricing.
   `UsageRecordingSubscriber`, `MetricsSubscriber` and the trace subscriber consume `event.cost_usd`.
 - [ ] There is exactly one tenant ContextVar in the codebase; `program`/`program_slug` appears nowhere in ai-parrot.
 - [ ] FEAT-707 per-tenant skills behave as before (its tests pass unchanged).
-- [ ] Both AgentTalk `save_turn` calls persist `metadata.usage`, `metadata.cost_usd`, `metadata.tenant`, `metadata.agent`.
+- [ ] `AfterInvokeEvent` and `InvokeFailedEvent` carry `user_id` and `session_id`.
+- [ ] Events not built by `AbstractClient` (dev-loop dispatcher) are still priced exactly as today.
+- [ ] Forwarder setup is idempotent: one bus publish per event, never duplicated.
+- [ ] Both AgentTalk `save_turn` calls persist `metadata.usage`, `metadata.cost_usd`, `metadata.tenant`, `metadata.agent`,
+  in both the Redis hot tier and the cold tier.
 - [ ] `UsageRecord`, the Prometheus labels and the OTel span attributes are unchanged.
 
 ---
@@ -424,6 +454,7 @@ See §2 table.
 | `packages/ai-parrot/src/parrot/observability/subscribers/metrics.py` | `cost = self._cost.cost_usd(` | 244 | 1 | modify |
 | `packages/ai-parrot/src/parrot/observability/subscribers/trace.py` | `cost = self._cost.cost_usd(` | 277 | 1 | modify |
 | `packages/ai-parrot/src/parrot/observability/fanout.py` | — | — | — | create |
+| `packages/ai-parrot/src/parrot/storage/chat.py` | `"response_time_ms": response_time_ms,` (inside the Redis `ConversationTurn(` metadata) | 197 | 1 | modify |
 | `packages/ai-parrot-server/src/parrot/handlers/agent.py` | `response: AIMessage = await bot.ask(` | 1883 | 1 | modify |
 | `packages/ai-parrot-server/src/parrot/handlers/agent.py` | `async for chunk in bot.ask_stream(` | 2653 | 1 | modify |
 | `packages/ai-parrot-server/src/parrot/handlers/agent.py` | `chat_storage.save_turn(` | 2729, 2968 | 2 — first is streaming (`ai_message`), second non-streaming (`response`) | modify |
@@ -454,6 +485,9 @@ See §2 table.
   break (all known sites use keywords; re-check `flows/dev_loop/dispatchers/claude.py:980/1039`).
 - **Tenant alias:** making `_skill_tenant` the same ContextVar means a non-`tenant_based` bot now has a bound
   value. The skill code must keep gating on `tenant_based` (covered by a regression test).
+- **Delivery is at-most-once.** Fire-and-forget publishing plus Redis pub/sub (`navigator_eventbus/backends/redis_pubsub.py:10`)
+  loses events on worker crash or Redis outage, so BigQuery totals can undercount. This is accepted for v1 and
+  documented for consumers; `stats()` exposes failed publishes. A durable transport is §8 Q4 (S10).
 - **PII:** `user_id`/`session_id` already travel on these events (spans only). With fan-out they cross the
   process boundary. The consumer (NVP-505) owns retention and access control.
 
@@ -470,9 +504,10 @@ See §2 table.
   literal `forward_to_bus=True` route can replace `LifecycleBusForwarder` later? — *Owner: Jesús Lara*
 - [ ] Q2. Should the server reuse the autonomous orchestrator's `EventBus` instance when both are active, or
   always build a dedicated forwarding bus? — *Owner: Jesús Lara*
-- [ ] Q3. Source of `metadata.cost_usd` per turn: the sum of `AfterClientCallEvent.cost_usd` for the turn
-  (needs a per-turn accumulator), or `CompletionUsage.estimated_cost` backfilled with the shared calculator?
-  — *Owner: implementer, decide in /sdd-task*
+- [x] Q3. Source of `metadata.cost_usd` per turn — *Resolved by design research S4*: the origin writes the cost
+  into `CompletionUsage.estimated_cost`; AgentTalk copies it and never recomputes.
+- [ ] Q4. Is at-most-once delivery acceptable for billing-grade accounting, or does the consumer need a durable
+  transport (Redis Streams / outbox)? — *Owner: Jesús Lara* (S10)
 - [x] Program vs tenant — *Resolved with the user (2026-10-20)*: use the generic `tenant`; `program_slug` is
   TROC-specific and its mapping lives in the external consumer.
 - [x] Where the BigQuery sink lives — *Resolved with the user (2026-10-20)*: outside ai-parrot (NVP-505).
@@ -481,10 +516,23 @@ See §2 table.
 
 ## 9. Design Research Cross-Check
 
-Status: skipped (no accepted exploration document; spec drafted from a reviewed design discussion of PR #1747)
+Model: gpt-5.6-luna (codex-cli 0.162.1) · Status: completed · Brief: §1 problem/goals + agreed scope + code paths only (no §2–§7 draft).
+All 12 `affected_paths` passed containment and existence checks.
 
 | # | Suggestion | Disposition | Reason | Landed in |
 |---|---|---|---|---|
+| S1 | Explicit global EventBus config on the registry | REJECT (partial) | No public attach API and `forward_to_bus` forwards unredacted payloads; the forwarder owns the bus. Shutdown/unsubscribe part adopted. | §3 M4 |
+| S2 | One idempotent forwarding provider | CONFIRM | Duplicate publishes possible if bots also get the bus | §3 M4, §4, §5 |
+| S3 | Cost independent of local observability setup | CONFIRM | Fan-out on + observability off left `cost_usd` empty | §3 M3 |
+| S4 | How origin cost reaches AgentTalk | CONFIRM | Verified `CompletionUsage.estimated_cost` (`basic.py:91`); origin fills it | §3 M2, M5, §8 Q3 |
+| S5 | One tenant ContextVar bound on every ask | CONFIRM | Already the design | §3 M1 |
+| S6 | Resolve/strip AgentTalk tenant once; explicit metadata to background task | CONFIRM | Already the design; background-task note added | §3 M5 |
+| S7 | `user_id`/`session_id` on invoke events | CONFIRM | Verified missing (`invoke.py:34-72`) | §2, §3 M2, §5 |
+| S8 | Sanitize failed-event payloads | CONFIRM | Already the design (denylist) | §3 M4 |
+| S9 | Non-AbstractClient emitters | CONFIRM | Verified `dispatchers/claude.py:980/1039`; `resolve_event_cost` recomputes only when `cost_usd is None` | §3 M6, §4, §5 |
+| S10 | Don't promise durable accounting over pub/sub | CONFIRM + ESCALATE | Verified at-most-once (`redis_pubsub.py:10`); documented, durability decision escalated | §7, §8 Q4 |
+| S11 | Cross-layer test matrix | CONFIRM | Tests added | §4 |
+| S12 | Redis hot tier drops caller metadata | CONFIRM | Verified `chat.py` `ConversationTurn` metadata | §3 M7, §5 |
 
 ---
 
@@ -493,7 +541,7 @@ Status: skipped (no accepted exploration document; spec drafted from a reviewed 
 - Isolation: one feature worktree `feat-FEAT-710-parrot-telemetry-event-fanout`; the sdd-coder engine gives
   each task its own sub-worktree.
 - Module graph: M2 → M1 (events read `current_tenant`); M2 → M3 (`cost_usd` uses
-  `get_shared_cost_calculator`); M6 → M2 + M3 (reads `event.cost_usd`, checks the shared holder); M4 → M2 (forwards the new fields, tests assert `tenant`); M5 → M1 (tenant
+  `get_shared_cost_calculator`); M6 → M2 + M3 (reads `event.cost_usd`, checks the shared holder); M4 → M2 (forwards the new fields, tests assert `tenant`); M7 has no edge; M5 → M2 (reads `estimated_cost`) and M5 → M1 (tenant
   binding through `ask`). M1 and M3 have no edge and can run concurrently.
 - Shared files: `bots/base.py` (M1 binding + M2 event sites), `observability/bootstrap.py` (M3 + M4) —
   serialize those tasks.
@@ -508,3 +556,4 @@ Status: skipped (no accepted exploration document; spec drafted from a reviewed 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-20 | Jesús Lara / Claude | Initial draft, replacing the FEAT-775 draft of PR #1747 |
+| 0.2 | 2026-10-20 | Jesús Lara / Claude | Codex design research folded in (S1–S12); M7 added; Q3 resolved; Q4 added |
