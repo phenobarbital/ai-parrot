@@ -8,14 +8,16 @@ from pathlib import Path
 from typing import Sequence
 
 from .context import read_attempt_context
-from .contract import env_prefix_of, is_broad_pytest, normalize_pytest_argv, parse_validation_commands
+from .contract import parse_validation_commands
 from .datatypes import ScopePlan
+from .runners.registry import load_registry
 from .select import changed_files, plan_tests
 
 BLOCK_MESSAGE: str = (
     "no scoped tests for this attempt — add test paths to the task's `## Validation Commands` "
     "or run a specific test file"
 )
+VERDICT_ARGV: tuple[str, ...] = ("python", "scripts/sdd/select_tests.py", "--tier", "task", "--run", "--verdict")
 _ALLOW_SEPARATORS: frozenset[str] = frozenset({"&&", "||", ";", "|"})
 
 
@@ -23,22 +25,17 @@ _ALLOW_SEPARATORS: frozenset[str] = frozenset({"&&", "||", ";", "|"})
 class GuardOutcome:
     """Guard decision for one command."""
 
-    action: str  # "allow" | "rewrite" | "block"
+    action: str  # "allow" | "verdict" | "block"
     argvs: tuple[tuple[str, ...], ...] = ()
     message: str = ""
 
 
-def _is_pytest_argv(argv: Sequence[str]) -> bool:
-    """True for pytest / python -m pytest / python3 -m pytest, past a leading `NAME=value` env
-    prefix and/or a `uv run [flags]` launcher prefix (both documented idioms in
-    `.claude/rules/worktree-management.md` for running pytest inside a worktree)."""
-    argv = normalize_pytest_argv(argv)
-    if not argv:
-        return False
-    head = Path(argv[0]).name
-    if head == "pytest":
-        return True
-    return head in {"python", "python3"} and list(argv[1:3]) == ["-m", "pytest"]
+def _runner_for(argv: Sequence[str], *, worktree: Path) -> "RunnerAdapter | None":
+    """Return the registered runner for ``argv``, or None when registry loading fails."""
+    try:
+        return load_registry(worktree).adapter_for_argv(argv)
+    except ValueError:
+        return None
 
 
 def _task_plan(worktree: Path) -> ScopePlan | None:
@@ -60,44 +57,27 @@ def _task_plan(worktree: Path) -> ScopePlan | None:
 
 
 def guard_argv(argv: Sequence[str], *, worktree: Path) -> GuardOutcome:
-    """allow when no attempt context or not broad; else rewrite to the task-tier plan, or block when empty."""
+    """Return a task-tier validation verdict for a broad registered runner command."""
     try:
-        if not _is_pytest_argv(argv) or not is_broad_pytest(argv, worktree=worktree):
+        runner = _runner_for(argv, worktree=worktree)
+        if runner is None or not runner.is_broad(argv, worktree=worktree):
             return GuardOutcome(action="allow")
         plan = _task_plan(worktree)
         if plan is None:
             return GuardOutcome(action="allow")
         if not plan.invocations:
             return GuardOutcome(action="block", message=BLOCK_MESSAGE)
-        # NOTE: unlike `guard_bash` below, `argvs` here are executed as literal subprocess argv
-        # lists, never through a shell — a `NAME=value` token has no special meaning there (it
-        # would be exec'd as a program name and fail), so the original command's env-assignment
-        # prefix is intentionally NOT re-applied. In practice this path's caller (the MCP seat)
-        # already rejects a `NAME=value` argv[0] via its own command allowlist before the guard
-        # ever runs, so `argv` reaching here with such a prefix should not occur.
-        argvs = tuple(inv.argv for inv in plan.invocations)
-        rendered = " ; ".join(shlex.join(a) for a in argvs)
         return GuardOutcome(
-            action="rewrite", argvs=argvs, message=f"rewritten `{shlex.join(argv)}` → `{rendered}` (tier=task)"
+            action="verdict",
+            argvs=((*VERDICT_ARGV, "--worktree", str(worktree)),),
+            message=f"`{shlex.join(argv)}` runs through the validation verdict (tier=task)",
         )
     except Exception:  # noqa: BLE001 — a broken guard must never break a seat
         return GuardOutcome(action="allow")
 
 
-def _subshell(argvs: Sequence[tuple[str, ...]], *, env_prefix: Sequence[str] = ()) -> str:
-    """`( [ENV] a; r=$?; [ENV] b; r=$((r|$?)); ...; exit $r )` — every invocation runs, exit is the OR
-    of all codes. `env_prefix` (e.g. `PYTHONPATH=x`) is re-applied to each invocation — this runs
-    through a real shell, so a `NAME=value` simple-command prefix is valid before every piece."""
-    prefix = f"{shlex.join(env_prefix)} " if env_prefix else ""
-    pieces = [f"{prefix}{shlex.join(argv)}" for argv in argvs]
-    body = f"{pieces[0]}; r=$?"
-    for piece in pieces[1:]:
-        body += f"; {piece}; r=$((r|$?))"
-    return f"( {body}; exit $r )"
-
-
 def guard_bash(command: str, *, worktree: Path) -> tuple[GuardOutcome, str | None]:
-    """Same decision for a bash string; returns (outcome, rewritten command or None)."""
+    """Return a verdict command for one broad runner command; compounds remain allowed."""
     try:
         if "$(" in command or "`" in command or "<<" in command:
             return GuardOutcome(action="allow", message="compound command outside the supported subset"), None
@@ -123,12 +103,11 @@ def guard_bash(command: str, *, worktree: Path) -> tuple[GuardOutcome, str | Non
             else:
                 segments[-1].append(token)
 
-        broad_indices = [
-            i
-            for i, seg in enumerate(segments)
-            if seg and _is_pytest_argv(seg) and is_broad_pytest(seg, worktree=worktree)
-        ]
-        if not broad_indices:
+        if separators or len(segments) != 1:
+            return GuardOutcome(action="allow"), None
+        argv = segments[0]
+        runner = _runner_for(argv, worktree=worktree)
+        if runner is None or not runner.is_broad(argv, worktree=worktree):
             return GuardOutcome(action="allow"), None
 
         plan = _task_plan(worktree)
@@ -137,16 +116,10 @@ def guard_bash(command: str, *, worktree: Path) -> tuple[GuardOutcome, str | Non
         if not plan.invocations:
             return GuardOutcome(action="block", message=BLOCK_MESSAGE), None
 
-        argvs = tuple(inv.argv for inv in plan.invocations)
-        broad_set = set(broad_indices)
-        pieces_out: list[str] = []
-        for i, seg in enumerate(segments):
-            # Every broad segment is rewritten (a compound `pytest a ; pytest b` with two broad
-            # halves must not leave the second one unscoped), each keeping its own env prefix.
-            pieces_out.append(_subshell(argvs, env_prefix=env_prefix_of(seg)) if i in broad_set else shlex.join(seg))
-            if i < len(separators):
-                pieces_out.append(separators[i])
-        rewritten = " ".join(pieces_out)
-        return GuardOutcome(action="rewrite", argvs=argvs, message="rewritten pytest segment(s) (tier=task)"), rewritten
+        verdict_argv = (*VERDICT_ARGV, "--worktree", str(worktree))
+        rewritten = f"cd {shlex.quote(str(worktree))} && {shlex.join(verdict_argv)}"
+        return GuardOutcome(
+            action="verdict", argvs=(verdict_argv,), message="runner command uses validation verdict (tier=task)"
+        ), rewritten
     except Exception:  # noqa: BLE001 — a broken guard must never break a seat
         return GuardOutcome(action="allow"), None
