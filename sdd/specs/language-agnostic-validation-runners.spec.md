@@ -768,6 +768,26 @@ tests:
 - tests/sdd_scripts/test_select_tests.py
 - tests/sdd_scripts/test_cache_test_contract.py
 - tests/sdd_scripts/test_check_task_graph.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_datatypes_runners.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_models.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_runners_registry.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_contract_schema2.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_runner_pytest.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_runner_vitest.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_runner_cargo.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_runner_parrot_e2e.py
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_verdict.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_background_task_tier.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_supervisor_ledger.py
+- packages/ai-parrot/tests/flows/dev_loop/test_worktree_manager.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_validation_gate.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_plan_merge.py
+- packages/ai-parrot/tests/flows/dev_loop/test_llm_family_parity.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_capability.py
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_task_tier_end_to_end.py
+- tests/sdd_scripts/test_feat699_doc_contract.py
+- tests/sdd_scripts/test_feat709_doc_contract.py
+- tests/sdd_scripts/test_repo_runner_config.py
 markers: none
 
 ### Test Data / Fixtures
@@ -1316,3 +1336,4 @@ Summary: **12** confirmed · **0** rejected · **0** escalated.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-10-20 | Jesus Lara (with Claude) | Initial draft from the accepted brainstorm + codex design research (12/12 confirmed) |
+| 0.2 | 2026-10-20 | Jesus Lara (with Claude) | Approved; Validation Contract extended with every task's own test files (/sdd-task graph check) |
