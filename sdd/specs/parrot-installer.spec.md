@@ -14,8 +14,8 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 **Target version**: Next release (assigned by release tooling)
 **Revision**: 0.5 (2026-10-20) — answers decisions D1–D8 of the readiness checkpoint
 (`sdd/state/FEAT-633/readiness-checkpoint-2026-10-19.md`); clauses in §3 "Rev 0.5
-decision clauses", Validation Contract added to §4. Other rev 0.5 items (M6 helper list,
-counts, §6 anchor refresh) are still pending.
+decision clauses", Validation Contract added to §4, M6 helper inventory in §3 M6. Other
+rev 0.5 items (counts, §6 anchor refresh) are still pending.
 **Revision 0.4** (2026-10-18) — folds in C17 of
 `sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.5): `/sdd-brief` (FEAT-698)
 ships through the installer (amends TASK-4070, 4085, 4089, 4090, 4091, 4299).
@@ -473,11 +473,9 @@ class ToolkitTemplate(BaseModel):
   (`worktree-management`, after C11's rewrite), the `second-opinion` skill, a
   `CONVENTIONS.md` seed and 14 templates *[rev 0.4 C17]* as package data *[rev 0.2 C9/C10]*; `parrot sdd install [--host …]` deploys them with the
   marker-block discipline (template: `claude_code/installer.py` `_upsert_marker_block`,
-  installer.py:50). The 18 doc-referenced helpers (`sdd_meta`, `reserve_ids`,
-  `ensure_worktree`, `close_task`, `heal_orphans`, `check_task_state`, `select_tests`,
-  `insight`, `doc_taxonomy`, `worktree_status`, `finalize_task`, `check_task_graph`,
-  `backfill_taxonomy`, `migrate_index`, `id_ledger`, `check_id_collisions`,
-  `install_hooks`, + `__init__`) move to `parrot/sdd/scripts/`; *[rev 0.3 C16]* so does
+  installer.py:50). *[rev 0.5]* 26 helper modules plus `__init__` move to
+  `parrot/sdd/scripts/` (full list, owning task and the modules that stay behind: "M6 helper
+  inventory" below); *[rev 0.3 C16]* one of them is
   `flows/dev_loop/worktree_environment.py` — not because it is unpackaged (it already
   ships) but because the shipped `sdd-coder`/`sdd-worker` frontmatter addresses it by
   monorepo path, and its current parent package `parrot.flows.dev_loop` imports the
@@ -508,6 +506,35 @@ class ToolkitTemplate(BaseModel):
   created by TASK-4089 before its rewrite; TASK-4070's helper map, TASK-4090's asset counts
   (15 commands per host, 13 tracked templates, 81 manifest entries) and TASK-4091's C3
   scenarios (`ensure_worktree --brief-key`, `brief_meta write-index`) cover the new files.
+- **M6 helper inventory** *[rev 0.5]* (verified against `dev` `206b4cd80`, 2026-10-20;
+  replaces rev 0.2's list of 18). A helper moves when a shipped file invokes it, or when a
+  moving helper needs it at run time. 26 modules + `__init__`:
+
+  | Task | Modules moved to `parrot/sdd/scripts/` | Why the non-obvious ones move |
+  |---|---|---|
+  | TASK-4085 (A) | `__init__`, `sdd_meta`, `reserve_ids`, `id_ledger`, `check_id_collisions`, `ensure_worktree`, `brief_meta`, `worktree_environment` | `brief_meta`: `ensure_worktree` imports it (C17). `worktree_environment`: C16, mechanics in D4 |
+  | TASK-4086 (B1) | `check_task_state`, `check_task_graph`, `finalize_task`, `worktree_status`, `review_checkpoint` | `review_checkpoint`: C12 |
+  | TASK-4087 (B2) | `close_task`, `heal_orphans` | ported from the `.sh` files, which stay as wrappers |
+  | TASK-4088 (C) | `select_tests`, `insight`, `doc_taxonomy`, `backfill_taxonomy`, `migrate_index`, `install_hooks`, `spec_tools`, `prune_intake` | `spec_tools`: TASK-4334's helper for the former inline `python -c` blocks. `prune_intake`: no shipped file names it, but the hook `install_hooks` renders runs it (`install_hooks.py:69`) |
+  | TASK-4508 (D) | `cache_test_contract`, `test_report`, `check_e2e_closeout`, `close_resolved_issues` | FEAT-699 / FEAT-703 / 2026-10-16 additions, invoked by `/sdd-task` and `/sdd-done` |
+
+  **Stay in `scripts/sdd/`** (monorepo-only; no shipped file names them, checked across
+  `.claude/{commands,agents,hooks,rules}`, `sdd/templates`, `.agents/skills`,
+  `.agent/workflows`): `calibrate_rlimit_as`, `lint_new`, `nightly_red_set`,
+  `profile_execution`, `regen_core_paths`, `tag_yaml_fixtures`, `token_audit`, plus
+  `codex_hook.sh` (wired only by the repo's own `.codex/hooks.json`; it runs
+  `parrot_tools.tool_optimizations.hooks`, not an SDD helper) and the two baselines
+  `.collision_baseline.json` / `.task_state_baseline.json`. A new helper that a shipped
+  file starts invoking must join this table (the C12 test catches it).
+
+  **Path loaders become package-relative.** Five moving modules locate the FEAT-563/699
+  `test_scope` kernel through a path into the monorepo, which does not exist in an
+  installed wheel: `_KERNEL_PARENT` in `cache_test_contract` (`:15`), `select_tests` and
+  `test_report`; `_KERNEL_DIR` in `check_task_graph` (`:68`); and `worktree_environment`'s
+  `_load_guard_bash` (D4). Each resolves the kernel relative to the installed `parrot`
+  package (`parrot/flows/dev_loop/test_scope`), still loading it by path so it never
+  imports `parrot.flows.dev_loop`. `regen_core_paths` keeps its monorepo paths because it
+  stays.
 - **Rev 0.2 amendments** (details and "done when" in the amendments proposal §3):
   - **C2 — one copy of each agent prompt.** `load_subagent_definition()`
     (`flows/dev_loop/_subagent_defs.py`) reads the packaged `_assets/` copy, stripping
@@ -551,7 +578,9 @@ class ToolkitTemplate(BaseModel):
     check also enforces a deny-list (`sdd/references/`, `sdd/state/`, `.parrot/`, `*.jsonl`,
     `*.db`, ledger files) (TASK-4090).
   - **C12 — no shipped reference to monorepo-only helpers.** `review_checkpoint` moves
-    into `parrot.sdd.scripts` (TASK-4086); `test_no_repo_script_refs` fails on ANY
+    into `parrot.sdd.scripts` (TASK-4086). *[rev 0.5]* It is no longer the only such
+    helper: `spec_tools`, `brief_meta` and the four TASK-4508 helpers were added after
+    rev 0.2, and all of them move (see "M6 helper inventory"). `test_no_repo_script_refs` fails on ANY
     `scripts.sdd.*` / `scripts/sdd/*` reference in a shipped file (TASK-4089).
   - **Q1 — `parrot sdd run <name> [args…]`** replaces `python -m` as the single form in
     ALL markdown (installed and monorepo). It runs the helper via `runpy.run_module` in
@@ -1160,7 +1189,7 @@ Rev 0.2 amendment decisions (Jesus Lara, 2026-10-14; full text in
 - [x] C4 install receipt — approved; the non-goal rejected FEAT-583's packaging manifest, not a receipt.
 - [x] C6 repo config — approved, reduced: one `sdd/config.json`, no `CONFIG.md`, `test_command` added, `sync_down` dropped.
 - [x] C10 conventions seed — approved; `codebase-conventions.md` stays an ai-parrot repo file.
-- [x] C12 monorepo-only helpers — approved; `review_checkpoint` is the only one a shipped file references.
+- [x] C12 monorepo-only helpers — approved; `review_checkpoint` is the only one a shipped file references. *(Stale since rev 0.5: see §3 "M6 helper inventory".)*
 - [x] Q1 helper invocation — `parrot sdd run <name>`; `parrot-python` shim rejected.
 - [x] C7 test-selection policy — option C for v1 (`test_command`); option A revisited in v1.1 with evidence.
 
@@ -1211,4 +1240,4 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.2 | 2026-10-14 | Jesus Lara + Claude | Amendments C2–C6, C8–C15, Q1, C7 folded in (proposal `parrot-installer-amendments` rev 0.3): `parrot sdd run`, install receipt, `--dry-run`, `sdd/config.json` + single branch policy (TASK-4298/4299), conventions seed, publication safety, canonical docs, bootstrap gate + `doctor --runtime-only`, SDD readiness checks; FEAT-583 stamp marked done |
 | 0.3 | 2026-10-17 | Jesus Lara + Claude | Amendment C16 folded in (proposal rev 0.4): `worktree_environment` enters scope — relocated to `parrot/sdd/scripts/` with a re-export shim, hook invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, `test_no_repo_script_refs` widened to any monorepo source path (amends TASK-4085, 4072, 4089, 4090, 4091) |
 | 0.4 | 2026-10-18 | Jesus Lara + Claude | Amendment C17 folded in (proposal rev 0.5): `/sdd-brief` (FEAT-698, merged after rev 0.3) ships through the installer — `brief_meta` moves with TASK-4085 and gets a CLI (`plan`, `write-index`) in TASK-4299, TASK-4089 creates the missing Google twin `.agent/workflows/sdd-brief.md` and rewrites the three `sdd-brief` files, counts updated to 15 commands per host / 14 templates / 81 manifest entries (TASK-4070, 4090), C3 scenarios for `ensure_worktree --brief-key` and `brief_meta write-index` (TASK-4091) |
-| 0.5 | 2026-10-20 | Jesus Lara + Claude | Readiness decisions D1–D8 answered (checkpoint 2026-10-19): core-only `wikitoolkit mcp` (D1), §4 Validation Contract `none — fallback` + `test_command` skips FEAT-699 steps (D2), monorepo-path rules (D3), `worktree_environment` move mechanics (D4), foreign-repo ledger wiring (D5), Windows hook bodies (D6), `--remote` × `--portable` (D7), store stamp/downgrade/unwritable-dir rules in M7 (D8). Still pending for rev 0.5: M6 helper list (26 + `__init__`), counts, §6 anchor refresh |
+| 0.5 | 2026-10-20 | Jesus Lara + Claude | Readiness decisions D1–D8 answered (checkpoint 2026-10-19): core-only `wikitoolkit mcp` (D1), §4 Validation Contract `none — fallback` + `test_command` skips FEAT-699 steps (D2), monorepo-path rules (D3), `worktree_environment` move mechanics (D4), foreign-repo ledger wiring (D5), Windows hook bodies (D6), `--remote` × `--portable` (D7), store stamp/downgrade/unwritable-dir rules in M7 (D8). M6 helper inventory: 26 modules + `__init__` by owning task, the 7 Python helpers + `codex_hook.sh` + 2 baselines that stay, five path loaders made package-relative; C12 premise marked stale. Still pending for rev 0.5: counts, §6 anchor refresh |
