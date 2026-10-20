@@ -71,6 +71,13 @@ Jesus Lara). Every section below already reflects this delta; this list is the a
     Key Constraints, blueprint, test, AC).
   - C24 — `install-matrix` gains a linux-aarch64 leg so the aarch64 core wheel is smoke-tested: this task now
     MODIFIES `.github/workflows/install-matrix.yml` (that one leg only; Files, Complexity Contract, blueprint, test, AC).
+  - D1 (→ C20) — the smoke passes with `ai-parrot-tools` installed alongside core; `mcp_ok` (TASK-4068) also
+    requires the wiki `tools/list` to hold `wiki_query`. A core-only `wikitoolkit mcp` is follow-up
+    `issue:2c263fd19a1a`, outside FEAT-633: never make `smoke-core` core-only, never block on that fix.
+  - D15 (→ C24) — the linux-aarch64 leg is decided (second bullet above).
+  - Anchors re-checked on dev 2026-10-20: `release.yml` `build-parrot-codec` is 408-479 (was "408-468" in
+    References); every other `release.yml` anchor (13-82, 18-22, 34, 52-69, 72, 79, 84, 419-421, 422-428,
+    430-431, 531-534, 541) and every `pyproject.toml` anchor (18, 58, 1041-1045, 1057-1065) is current.
 
 ---
 
@@ -290,7 +297,7 @@ archs = ["AMD64"]                                                      # line 10
 
 ### References in Codebase
 - `.github/workflows/release.yml:13-82` — `build-core`.
-- `.github/workflows/release.yml:408-468` — macOS/aarch64 precedent (maturin, different tool).
+- `.github/workflows/release.yml:408-479` — macOS/aarch64 precedent (maturin, different tool). *[rev 0.5]* anchor was 408-468
 - `.github/workflows/release.yml:531-564` — `deploy`.
 
 ---

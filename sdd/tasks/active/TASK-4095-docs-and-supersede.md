@@ -78,6 +78,23 @@ audit trail.
     `## Repository layout` and `## Project areas`, and `sdd/config.json` may set `projects`.
   - C23 — `parrot sdd install` writes a marked `.gitattributes` block (`merge=union` for the
     ledger log) and installs the four ledger git hooks, and `doctor --sdd` checks both.
+  - D2 (→ C21) — document `test_command` exactly as TASK-4089 (a dependency) ships it, and only once
+    that has landed: the skipped steps are `cache_test_contract` in `/sdd-task` and `select_tests` /
+    `test_report` in `/sdd-done`; when it is unset and the FEAT-699 kernel cannot be loaded, those steps
+    stop with a clear message (no traceback). Re-read the shipped `sdd-task` / `sdd-done` text before
+    writing the sentence; do not describe more than they say. Spec §4 holds the curated FEAT-633
+    Validation Contract (scope map), not a fallback.
+  - D5 (→ C23) — the `.gitattributes` block is recorded in `sdd/.sdd-installed.json` and the hooks are
+    the `parrot-ledger` ones; the reference page's list of what install writes includes both.
+  - D8 (→ C24, corrected 2026-10-20): the gate compares `schema_version` only; `min_runtime_version` is
+    stamped but informational (quoted in the error). The version-skew text must say the store refuses only
+    a runtime with an older **schema**; a same-schema store opens whatever release wrote it.
+  - Counts / anchors re-verified 2026-10-20 on dev `69fb12a41`: every anchor in the Codebase Contract
+    holds (`cli/__init__.py:16,19,37,71,99-100,103-104,109,117,120-123`; host CLI groups
+    `claude_code/cli.py:49`, `codex/cli.py:37`, `google/cli.py:37,137`; harness
+    `:17,20,21,28,31,34,40,59,125,161,183`; guide `:13,84,134,266,272,291,319`; `ci.yml:113,133`;
+    `INSTALL.md:9,158`; `docs/INSTALL.md:3,8,16,20`; `parrot-install-guide.spec.md:332-335`). Stale:
+    "spec :521" (the status states) → **`:557`** (C4 clause; also `:237`).
 
 ## Scope
 
@@ -99,7 +116,8 @@ audit trail.
   `parrot self add|env|doctor|update|uninstall` (incl. `doctor --sdd` / `--runtime-only`), the
   launcher resolution order, `--portable` per host and its stickiness rule, `parrot sdd
   install|uninstall|status|run` with the conflict rule, the installed-record states, `--dry-run`,
-  `sdd/config.json` fields, the `sdd/CONVENTIONS.md` seed, Windows notes, and the wiki store
+  the `.gitattributes` ledger block and ledger git hooks (D5) *[rev 0.5]*, `sdd/config.json` fields (incl. the
+  D2 `test_command` rule) *[rev 0.5]*, the `sdd/CONVENTIONS.md` seed, Windows notes, and the wiki store
   version-skew gate message + fix. Same claim anchors as the guide.
 - Reduce `INSTALL.md` and `docs/INSTALL.md` to short pointers: one paragraph each sending the
   reader to `docs/getting-started.md` (and the reference page), keeping any content that is not
@@ -198,12 +216,15 @@ def test_named_dep_floors_match() -> None:                 # line 183 — last c
   main checkout) → `VIRTUAL_ENV` → managed; warn once per session on stderr.
 - `--portable` stickiness (brief cross-cutting decision): `parrot toolkits` re-emits a host's toolkit
   entries in portable form iff that host's current managed `wikitoolkit` entry is portable.
-- Store gate: `WikiStoreVersionError` (TASK-4092) — message names both versions and the fix
-  (`parrot self update` / `parrot self add --here`).
+- Store gate: `WikiStoreVersionError` (TASK-4092) — raised only when the store's `schema_version` is
+  newer than the runtime's (schema number, never release number); message names both schemas, the
+  release that wrote the store, the running version and the fix (`parrot self update` /
+  `parrot self add --here`). *[rev 0.5]*
 - `parrot sdd` surface (TASK-4091 + C6 task, rev 0.2): `install [--host …] [--dry-run] [--force]`,
   `uninstall [--dry-run]`, `status` (per-file `missing | current | outdated | edited | foreign` from the
   committed record `sdd/.sdd-installed.json`; seed entries `seed-present | missing`), `run <name> [args…]`; seeds `sdd/config.json`,
-  `sdd/CONVENTIONS.md`, `sdd/tasks/.id_ledger.json`, the `.claude/worktrees/` ignore block.
+  `sdd/CONVENTIONS.md`, `sdd/tasks/.id_ledger.json`, the `.claude/worktrees/` ignore block; *[rev 0.5 D5]* also
+  writes the `.gitattributes` ledger block (recorded in the receipt) and the `parrot-ledger` git hooks.
 - `parrot self doctor` scopes (TASK-4080, rev 0.2): default, `--sdd` (repo readiness: `origin`,
   base branch, committed ledger, worktrees ignore, `gh` auth, `jq`, SDD files current, host CLIs
   informational), `--runtime-only` (bootstrap scope); `--sdd` and `--runtime-only` are mutually
@@ -537,16 +558,18 @@ session. Outside the managed venv nothing changes.
      missing | current | outdated | edited | foreign, and seeds as seed-present | missing; upgrade rule (recorded hash matches → upgrade; differs → kept
      with a warning unless --force; not ours → skipped); `sdd/config.json` fields (base_branch,
      staging_branch, hotfix_base, issue_tracker, jira_host, reviewer, test_command, projects); what
-     `test_command` switches (rev 0.5 C21: replaces the FEAT-699 selection/report steps, zero tests →
-     "⚠️ not run", install warns when null); the `.gitattributes` ledger block and the four ledger hooks
-     `parrot sdd install` adds (rev 0.5 C23); `/sdd-insight` is not shipped (rev 0.5 C22); the managed
-     runtime includes `ai-parrot-tools` (rev 0.5 C20); the `sdd/CONVENTIONS.md` seed (created once,
-     never overwritten, even with --force) — bounded by TASK-4091, TASK-4299 and the C6 task -->
+     `test_command` switches (rev 0.5 C21/D2: when set, /sdd-task and /sdd-done skip the FEAT-699
+     selection/report steps and run it; zero tests → "⚠️ not run"; install warns when null); the
+     `.gitattributes` ledger block and the four ledger hooks `parrot sdd install` adds (rev 0.5 C23);
+     `/sdd-insight` is not shipped (rev 0.5 C22); the managed runtime includes `ai-parrot-tools`
+     (rev 0.5 C20); the `sdd/CONVENTIONS.md` seed (created once, never overwritten, even with --force)
+     — bounded by TASK-4091, TASK-4299 and the C6 task -->
 
 ### Version skew
 <!-- FILL IN: quote WikiStoreVersionError's message as emitted (TASK-4092) and the fix
-     (`parrot self update`, or `parrot self add --here` for a project venv); note that runtimes
-     older than this release have no gate. -->
+     (`parrot self update`, or `parrot self add --here` for a project venv); say the gate compares
+     the store's schema number only — a store written by a newer release with the same schema
+     opens normally [rev 0.5]; note that runtimes older than this release have no gate. -->
 ```
 **Why this shape**: one page owns the managed-runtime story. Rendering conventions of THIS task
 file: the inner code fences are indented only to nest inside the block, and every heading inside

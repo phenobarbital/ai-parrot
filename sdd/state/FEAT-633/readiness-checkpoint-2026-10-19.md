@@ -32,7 +32,7 @@
   convention). It is cached in the index, and `cache_test_contract --check` exits 0.
 - **Ledger:**
   - D8 → `issue:f249c19e8a4d` (bug: older runtime re-stamps a newer plane, fixed by TASK-4092) and
-    `issue:1555e747bcb9` (SourceRegistry bypass).
+    `issue:1555e747bcb9` (`SourceCollectionManager._connect` bypass; filed as `SourceRegistry`, a name that does not exist).
   - Follow-ups outside FEAT-633 → `issue:2c263fd19a1a` (core-only `wikitoolkit mcp`),
     `issue:7a366d6004de` (duplicate `StdioMCPServer`, Jesus's consolidation idea),
     `issue:dee91130fa06` (foreign-repo validation phase, v1.1).
@@ -41,10 +41,14 @@
     created by its dependency TASK-4298).
   - Every Complexity Contract JSON parses.
   - Every task's `Depends-on` header matches the index.
-- **Drift after the review (FEAT-708, merged 2026-10-20):** a Claude-only `sdd-contract-probe` agent
-  appeared, and `/sdd-task`, `/sdd-brainstorm`, `/sdd-proposal` grew (+41/+39/+153 lines).
-  - Folded in: 10 Claude agents, **79** assets (TASK-4090/4091, spec), its `packages/` lines added to
-    TASK-4089's C22 rewrite, and TASK-4508's anchors.
+- **Drift after the review (FEAT-708, merged 2026-10-20):** a `sdd-contract-probe` agent appeared
+  (Claude-only at first; `b53d93ba4` added the Google copy and removed its monorepo paths), and `/sdd-task`, `/sdd-brainstorm`, `/sdd-proposal` grew (+41/+39/+153 lines).
+  - Folded in: 10 Claude agents, 9 Google agents, **80** assets (TASK-4090/4091, spec) once `dev`'s
+    Google probe copy and `/sdd-brief` twin (`69fb12a41`) are counted, and TASK-4508's anchors.
+- **Merged with `dev`'s own rev 0.5 (2026-10-20):** `dev` carried a parallel rev 0.5 (clauses D1–D8, M6
+  helper inventory, anchors re-verified on `9625844f5`, 21 tasks). The merge keeps C18–C24 and the
+  curated Validation Contract, takes `dev`'s anchors and counts, and adopts the owner's later D8
+  correction: the store gate compares `schema_version` only; `min_runtime_version` is informational.
   - Other anchors in those three commands must be re-located by `grep` at pickup. `dev` keeps
     moving, and every task re-verifies its Codebase Contract before coding.
 - **Ready to run:** the dependency graph alone now decides order.

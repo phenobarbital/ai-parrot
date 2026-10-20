@@ -78,6 +78,25 @@ Jesus Lara on 2026-10-14). Already applied to the sections below; this list is t
 
 ---
 
+## Spec rev 0.5 — 2026-10-20
+
+Spec §3 Module 6 "M6 helper inventory" (approved by Jesus Lara, 2026-10-20). The readiness
+review listed no open D1–D8 decision for this task.
+
+- **Module list.** Matches the inventory row for TASK-4086 exactly: `check_task_state`,
+  `check_task_graph`, `finalize_task`, `worktree_status`, `review_checkpoint`. No change.
+- **Package-relative path loader.** Already covered: Scope makes `_KERNEL_DIR` (`check_task_graph.py:68`)
+  resolve to `<parrot package>/flows/dev_loop`, still loaded by path as top-level `test_scope`;
+  AC-3 and `test_check_task_graph_kernel_is_package_relative` check it against `parrot.__file__`,
+  so it holds in an installed wheel with no monorepo checkout. No change.
+- **C12 wording.** Spec rev 0.5 notes `review_checkpoint` is no longer the only shipped-referenced
+  helper; that changes nothing in this task.
+- **`finalize_task.py:394` follow-up.** Rev 0.5 does not assign it; it stays a Completion Note item.
+- **Anchors re-verified** on the working tree (2026-10-20): all line anchors hold. Fixed one stale
+  fact: the core pydantic pin is `"pydantic>=2.12.5,<3"`, not `"pydantic==2.12.5"`.
+
+---
+
 ## Scope
 
 - `git mv` `finalize_task.py`, `check_task_state.py`, `check_task_graph.py`,
@@ -139,7 +158,7 @@ from parrot.flows.dev_loop.sdd_coder.checkpoint import (...)                    
 from parrot.flows.dev_loop.sdd_coder.evidence import ExecutionEvidenceStore                               # review_checkpoint.py:28
 from parrot.flows.dev_loop.sdd_coder.optimization_models import ReviewCheckpoint                          # review_checkpoint.py:29
 from parrot.flows.dev_loop.sdd_coder.telemetry import resolve_durable_root                                # review_checkpoint.py:30
-# third-party in all five modules: pydantic only — core dep ("pydantic==2.12.5")
+# third-party in all five modules: pydantic only — core dep ("pydantic>=2.12.5,<3") *[rev 0.5: pin re-verified]*
 ```
 
 ### Existing Signatures to Use

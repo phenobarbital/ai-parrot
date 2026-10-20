@@ -65,6 +65,9 @@ review). Every section below is already rewritten to match; this list is the del
   - C24 — `_check_host_configs` checks both Gemini MCP config files (user-global + `<root>/.agents/plugins/parrot/mcp_config.json`, via `toolkit_config_paths`); the cross-repo collision check runs on the user-global one only. New test `test_gemini_repo_local_config_checked`.
   - C20 — new `_check_tools_wiki()` (all three scopes, including `--runtime-only`): `parrot_tools.wiki` must import in the managed venv; fix `parrot self update`. New test `test_tools_wiki_check`.
   - C23 — `doctor --sdd` adds `sdd: ledger merge=union` (`.gitattributes` ledger block) and `sdd: ledger hooks` (pre-commit, post-merge, post-checkout, post-rewrite carry the `parrot-ledger` block); `ready_repo` fixture and the failure matrix extended.
+  - C23 / D5 details (dev 2026-10-20): `LEDGER_HOOK_EVENTS` = `pre-commit`, `post-merge`, `post-checkout`, `post-rewrite` (`claude_code/assets.py:53`), each hook must contain `LEDGER_HOOK_BEGIN` (`claude_code/assets.py:51`); the hook file is resolved through `git rev-parse --git-path hooks/<event>` (follows `core.hooksPath` and linked worktrees). Doctor only reads; writing them is TASK-4091's job (and `parrot claude install`, `claude_code/installer.py:973`). The `.gitattributes` check matches the two `merge=union` lines (PR #1746 review), never TASK-4091's marker text.
+  - D13 (Gemini repo-local file) is resolved by C24 above — implement it.
+- Anchors re-verified on dev 2026-10-20: all unchanged.
 
 ## Scope
 
@@ -82,9 +85,10 @@ review). Every section below is already rewritten to match; this list is the del
 - Implement the SDD readiness checks (C15): `origin` remote; configured base branch on `origin`;
   ledger git-tracked; `.claude/worktrees/` ignored; `gh` present + authenticated; `jq` present
   while referenced; installed SDD files current (`sdd_status`); host CLIs present (informational);
-  *[spec rev 0.5 C23]* the `.gitattributes` ledger block (`merge=union` for `sdd/ledger/events.jsonl`
+  *[spec rev 0.5 C23 / D5]* the `.gitattributes` ledger block (`merge=union` for `sdd/ledger/events.jsonl`
   and `sdd/ledger/archive/*.jsonl`) and the four ledger hooks (pre-commit, post-merge, post-checkout,
-  post-rewrite). All `parrot.sdd.*` imports lazy and absence-tolerant.
+  post-rewrite) — both plain failures with fix `parrot sdd install`. All `parrot.sdd.*` imports lazy
+  and absence-tolerant.
 - `parrot self doctor [--sdd | --runtime-only]`: mutually exclusive flags (usage error, exit 2);
   exit 1 iff a non-informational check in the selected scope failed.
 - Register `"self": "parrot.self_.cli"` in `cli._lazy_commands`.
@@ -471,7 +475,9 @@ def _check_sdd(root: Path) -> list[DoctorCheck]:
     #   [rev 0.5 C23] "sdd: ledger hooks": lazy-import claude_code.assets + installer._git_hook_path; for each
     #     event in claude_assets.LEDGER_HOOK_EVENTS the hook file exists and contains claude_assets.LEDGER_HOOK_BEGIN;
     #     _git_hook_path → None (not a git repo) or any event missing → ok=False, detail lists the events,
-    #     fix "parrot sdd install (installs the four ledger hooks)"
+    #     fix "parrot sdd install (installs the four ledger hooks)". [rev 0.5 D5] _git_hook_path resolves
+    #     `git rev-parse --git-path hooks/<event>` (follows core.hooksPath and linked worktrees); doctor only
+    #     reads — writing the block and the hooks is TASK-4091's job (and `parrot claude install`, installer.py:973).
     raise NotImplementedError
 
 

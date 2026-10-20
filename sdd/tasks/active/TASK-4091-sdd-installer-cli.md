@@ -142,15 +142,44 @@ delta for reviewers.
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: C3 `Scenario` list extended (`review_checkpoint`, `spec_tools`, `brief_meta`, `worktree_environment`, TASK-4508's `cache_test_contract` / `test_report` / `check_e2e_closeout` / `close_resolved_issues`); `INVOCATION_RE` takes digits, `\`-continuations are joined and argv is cut at shell operators (the C16 hook); the C3 test installs and scans all three hosts as the AC says; `_lazy_commands` has 25 entries; claude-installer anchors `:51` / `:72` / `:1013`; C16 hook-denial test folded in.
-- FEAT-708 drift (merged on `dev` 2026-10-20, after this review's baseline): it added the Claude-only
-  `.claude/agents/sdd-contract-probe.md` (10 Claude agents). `/sdd-task`, `/sdd-brainstorm` and
+- FEAT-708 drift (merged on `dev` 2026-10-20, after this review's baseline): it added
+  `.claude/agents/sdd-contract-probe.md` (10 Claude agents; Claude-only until `b53d93ba4` added
+  `.agents/agents/sdd-contract-probe/agent.md`, 9 Google agents). `/sdd-task`, `/sdd-brainstorm` and
   `/sdd-proposal` and their twins call it. FEAT-708 also inserted lines into those three commands
   (+41/+39/+153, e.g. `cache_test_contract` `sdd-task.md:369` → `:410`), so anchors in those files
   must be re-located by `grep` at pickup.
 - Resolved by spec rev 0.5 (2026-10-20):
   - C21 (FEAT-699 vs C7) — `parrot sdd install` warns when `sdd/config.json` `test_command` is null; new C3 test `test_c21_test_step_outcomes` pins the outcomes (`cache_test_contract`: `none — fallback` spec → exit 0 printing `fallback`, missing section → exit 2; `test_report decide-rerun` → `rerun`; `test_report render` → exit 0; `select_tests --tier task` with nothing selected → exit 2).
   - C23 (`.gitattributes` + ledger hooks) — `parrot sdd install` (any host) writes a marker-delimited `.gitattributes` block (`merge=union` for `sdd/ledger/events.jsonl` and `sdd/ledger/archive/*.jsonl`), records it in the receipt, `uninstall` removes it, and installs the four ledger hooks through the existing `claude_code/installer.py::_install_ledger_hooks` (`:973`); C3 asserts both after `--host codex`. FEAT-577's `install_hooks` (intake-prune hook) is not named by C23 and stays out.
-  - C22 — no `/sdd-insight` scenarios (it is not shipped); counts follow TASK-4090 (14 commands per host, 79 manifest entries).
+  - C22 — no `/sdd-insight` scenarios (it is not shipped); counts follow TASK-4090 (14 commands per host, 80 manifest entries:
+    `sdd-contract-probe` ships on Claude and Google, the Google `sdd-brief` twin exists).
+  - Folded in from dev's rev 0.5 D2 / D5 notes (2026-10-20):
+    - D2 = C21. Spec §4 carries the curated Validation Contract (scope map + FEAT-699 operand list, not
+      `none — fallback`). TASK-4089 (owner) makes the shipped `/sdd-task` and `/sdd-done` skip
+      `cache_test_contract`, `select_tests` and `test_report` and run `test_command` when `sdd/config.json`
+      sets it; when it is unset the steps run, and each helper exits with a one-line message, never a
+      traceback, if the FEAT-699 kernel cannot be loaded. For C3 this fixes the expected outcome of those
+      three `Scenario`s (run from the wheel: success, or non-zero with no `Traceback` on stderr), and C3 also
+      asserts that the installed `sdd-task` / `sdd-done` files (all three hosts) carry the `test_command` rule.
+    - D5 = C23, receipt shape: the `.gitattributes` block is the ledger's two `merge=union` lines
+      (ai-parrot's `.gitattributes:2-3`) through the same own-copy marker helpers as the `.gitignore` block;
+      foreign lines are never touched; the receipt records it under `"blocks"` (`{".gitattributes": "<sha256 of
+      the managed block text>"}`, `schema_version` stays 1, a missing key means no block); `uninstall` removes
+      the block only when it still matches the record, otherwise keeps it and warns (`keep-gitattributes`);
+      `status` reports it. The hooks go through `_install_ledger_hooks` (lazy import, C23 — not a copy; a test
+      still asserts the written block equals `assets.ledger_hook_block` modulo the "Installed by" line);
+      uninstall follows the PR #1746 rule below (removed only when this integration created them and
+      `parrot claude install` is not present), which supersedes dev's "uninstall leaves the hooks in place".
+      `sdd_status` gains `"gitattributes": bool` and `"ledger_hooks": bool` for `parrot self doctor --sdd`
+      (TASK-4080). The FEAT-577 `install_hooks` intake-prune hook stays out of scope.
+    - The Google `sdd-brief` twin exists on dev (`69fb12a41`, 2026-10-20), so `--host google` writes
+      `.agent/workflows/sdd-brief.md` from the packaged copy; TASK-4089 modifies it, it does not create it.
+    - Anchors re-verified on dev `9625844f5` / `69fb12a41` (2026-10-20): `cli/__init__.py` `LazyGroup` `:19`,
+      `get_command` `:71`, `:99-100`, `cli` `:104`, `_lazy_commands` `:109` (25 entries, `"toolkits"` `:117`),
+      `"devloop"` `:125`; `claude_code/installer.py` `:51`, `:72`, `:1013`; `claude_code/cli.py:33`;
+      `scripts/sdd/id_ledger.py:28,69,145`; `scripts/sdd/reserve_ids.py:54,259`; `.gitignore:411`;
+      `sdd/WORKFLOW.md:376` — all unchanged. Stale: `.claude/commands/sdd-task.md:369` → `:410`
+      (`cache_test_contract`); `sdd-done.md:185,257,264,277` unchanged.
 
 ## Scope
 
@@ -169,8 +198,8 @@ delta for reviewers.
 - Add a managed `.gitignore` marker block ignoring `.claude/worktrees/` (own copy of the
   marker helpers — do NOT import the claude installer for them).
 - *(rev 0.5 C23)* For any host, write a marker-delimited `.gitattributes` block (`merge=union` for
-  `sdd/ledger/events.jsonl` and `sdd/ledger/archive/*.jsonl`), record it in the receipt (`uninstall`
-  removes it), and install the four ledger hooks (`pre-commit`, `post-merge`, `post-checkout`,
+  `sdd/ledger/events.jsonl` and `sdd/ledger/archive/*.jsonl`), record it in the receipt's `"blocks"` map
+  (`uninstall` removes it when it still matches the record, D5), and install the four ledger hooks (`pre-commit`, `post-merge`, `post-checkout`,
   `post-rewrite`) through the existing `parrot.knowledge.wiki.claude_code.installer._install_ledger_hooks`
   — imported lazily inside that step, so module load stays free of `parrot.knowledge.wiki`.
 - *(rev 0.5 C21)* After install, warn when `sdd/config.json` `test_command` is null.
@@ -217,7 +246,7 @@ delta for reviewers.
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/sdd/installer.py` | CREATE | plan / install / uninstall / status over `_assets/manifest.json`; C4 receipt (`sdd/.sdd-installed.json`); C5 dry-run; gitignore block; ledger, config (C6) and conventions (C10) seeds; S9 audit; C23 `.gitattributes` block + four ledger hooks; C21 null-`test_command` warning |
+| `packages/ai-parrot/src/parrot/sdd/installer.py` | CREATE | plan / install / uninstall / status over `_assets/manifest.json`; C4 receipt (`sdd/.sdd-installed.json`); C5 dry-run; gitignore block; ledger, config (C6) and conventions (C10) seeds; S9 audit; C23 / D5 `.gitattributes` block + four ledger hooks (+ receipt `blocks` / `ledger_hooks`); C21 null-`test_command` warning |
 | `packages/ai-parrot/src/parrot/sdd/cli.py` | CREATE | click group `sdd`: `install` / `uninstall` / `status` / `run` (Q1); `--dry-run` on install/uninstall |
 | `packages/ai-parrot/src/parrot/cli/__init__.py` | MODIFY | `"sdd": "parrot.sdd.cli"` in `cli._lazy_commands` |
 | `packages/ai-parrot/tests/sdd/test_installer.py` | CREATE | Installer unit tests (receipt states, dry-run, seeds, C23 block + hooks, C21 warning) + `test_sdd_flow_in_foreign_repo` integration |
@@ -272,6 +301,23 @@ cli._lazy_commands = {                                        # line 109 (25 ent
 def _upsert_marker_block(text: str, block: str, begin: str, end: str) -> str:   # line 51 (re-verified on 9f51c7735)
 def _remove_marker_block(text: str, begin: str, end: str) -> str:               # line 72
 def _install_gitignore(root: Path) -> str:                                      # line 1013 (non-marker variant)
+# [rev 0.5 C23 / D5] ledger-hook helpers — reference anchors (verified on dev 9625844f5). Imported LAZILY inside the
+# ledger-hook step only (see above), never at module load; tests may import `assets`:
+def _git_hook_path(root: Path, hook_name: str = "post-commit") -> Optional[Path]:  # line 832
+def _shebang_is_sh_compatible(first_line: str) -> bool:                          # line 882
+def _install_managed_git_hook(root, hook_name, label, *, block=None, new_file=None,
+                              begin_marker=None, manual_hint=None) -> str:      # line 902 — chain / create / chmod
+def _install_ledger_hooks(root: Path) -> list[str]:                             # line 973
+def _uninstall_ledger_hooks(root: Path) -> list[str]:                           # line 993
+# packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py — tests may import it, installer.py may not
+LEDGER_HOOK_BEGIN = "# >>> parrot-ledger >>>"                                   # line 51
+LEDGER_HOOK_END = "# <<< parrot-ledger <<<"                                     # line 52
+LEDGER_HOOK_EVENTS = ("pre-commit", "post-merge", "post-checkout", "post-rewrite")  # line 53
+def ledger_hook_block(root: Path, hook_name: str) -> str:                       # line 218 — pre-commit: `ledger export-log
+#   --stage --quiet`, others: `ledger import-log --quiet`, each `>/dev/null 2>&1 || true`
+# .gitattributes:2-3 (ai-parrot) — the D5 block body:
+#   sdd/ledger/events.jsonl merge=union
+#   sdd/ledger/archive/*.jsonl merge=union
 
 # scripts/sdd/id_ledger.py (moves verbatim to parrot.sdd.scripts.id_ledger in TASK-4085)
 LEDGER_PATH = Path("sdd/tasks/.id_ledger.json")                                 # line 28
@@ -483,12 +529,12 @@ FileState = Literal["missing", "current", "outdated", "edited", "foreign"]
 #: Plan vocabulary (C5). install: write | upgrade | overwrite | skip-current | skip-edited | skip-foreign |
 #: seed | skip-seed | gitignore | gitattributes | ledger-hooks | ledger-seed | config-seed. uninstall: remove |
 #: keep-edited | keep-foreign | skip-missing | keep-shared | gitignore-remove | gitattributes-remove |
-#: ledger-hooks-remove | keep-ledger-hooks | receipt-remove.
+#: keep-gitattributes | ledger-hooks-remove | keep-ledger-hooks | receipt-remove.   [rev 0.5 C23 / D5]
 PlanAction = Literal[
     "write", "upgrade", "overwrite", "skip-current", "skip-edited", "skip-foreign",
     "seed", "skip-seed", "gitignore", "gitattributes", "ledger-hooks", "ledger-seed", "config-seed",
     "remove", "keep-edited", "keep-foreign", "skip-missing", "keep-shared", "gitignore-remove",
-    "gitattributes-remove", "ledger-hooks-remove", "keep-ledger-hooks", "receipt-remove",
+    "gitattributes-remove", "keep-gitattributes", "ledger-hooks-remove", "keep-ledger-hooks", "receipt-remove",
 ]
 
 
@@ -627,7 +673,8 @@ def plan_uninstall(root: Path, hosts: Sequence[str]) -> list[PlannedAction]:
     assets another installed host still needs; seeds and state are never planned for removal."""
     # FILL IN: per selected non-seed entry — current/outdated→remove (shared+still needed→keep-shared);
     #          edited→keep-edited; foreign→keep-foreign; missing→skip-missing; then gitignore-remove,
-    #          gitattributes-remove (C23: only when receipt["blocks"] records it); then the ledger hooks
+    #          gitattributes-remove (C23: only when receipt["blocks"] records it AND the block on disk still matches;
+#          recorded but changed → keep-gitattributes with a warning, D5); then the ledger hooks
     #          (PR #1746 review): receipt["ledger_hooks"] non-empty AND the post-commit hook has no
     #          `claude_assets.GIT_HOOK_BEGIN` block → ledger-hooks-remove; recorded but that block present →
     #          keep-ledger-hooks (note "shared with parrot claude install"); nothing recorded → keep-ledger-hooks
@@ -827,6 +874,7 @@ def sdd_status(root: Path) -> dict[str, Any]:
 
     ``{"hosts": {h: {"current": [...], "outdated": [...], "edited": [...], "foreign": [...], "missing": [...]}},
     "seeds": {"<target>": "seed-present" | "missing"}, "config": bool, "gitignore": bool, "id_ledger": bool,
+    "gitattributes": bool, "ledger_hooks": bool,  # [rev 0.5 D5]
     "receipt_version": str | None}`` (targets are repo-relative strings). Import-cheap: ``parrot self
     doctor`` (TASK-4080) imports this lazily and treats ``outdated``/``edited`` as "not current".
     """
@@ -1565,7 +1613,8 @@ that lacks one, so coverage of "every documented helper invocation" is enforced,
 - [ ] `test_wheel_only_foreign_repo.py::SCENARIOS` — one per helper name found in installed markdown (C3),
       incl. `review_checkpoint`, `spec_tools`, `brief_meta`, `worktree_environment` (stdin payload) and
       TASK-4508's four (no `insight` — rev 0.5 C22); the outcomes of the `cache_test_contract` /
-      `select_tests` / `test_report` steps are pinned by `test_c21_test_step_outcomes` (rev 0.5 C21).
+      `select_tests` / `test_report` steps are pinned by `test_c21_test_step_outcomes` (rev 0.5 C21 / D2):
+      each passes on exit 0 or on a non-zero exit whose stderr has no `Traceback`.
 - [ ] `test_wheel_only_foreign_repo.py::test_installed_hook_denies_shared_environment_write` — the allowed-write
       counter-check (C16).
 - [ ] `test_wheel_only_foreign_repo.py::test_c21_test_step_outcomes` — the fixture spec / index (C21).
@@ -1577,7 +1626,8 @@ that lacks one, so coverage of "every documented helper invocation" is enforced,
 ## Acceptance Criteria
 
 - [ ] `parrot sdd install` into an empty non-Python git repo deploys every manifest asset for the
-      requested host(s), writes the `.gitignore` marker block, seeds `sdd/tasks/.id_ledger.json`,
+      requested host(s), writes the `.gitignore` marker block, *[rev 0.5]* the `.gitattributes` ledger block
+      (recorded in the receipt's `"blocks"`) and the four `parrot-ledger` git hooks, seeds `sdd/tasks/.id_ledger.json`,
       `sdd/config.json` (C6) and `sdd/CONVENTIONS.md` (C10), and writes `sdd/.sdd-installed.json`
       (spec §5 rev 0.2: "`parrot sdd install` deploys the flow into an empty non-Python repo").
 - [ ] Every helper referenced by installed markdown is invoked as `parrot sdd run <name>` and
@@ -1625,8 +1675,14 @@ that lacks one, so coverage of "every documented helper invocation" is enforced,
       (`test_ledger_hooks_removed_on_uninstall_when_sdd_created_them`) and keeps, with a report line, hooks
       shared with `parrot claude install` (`test_ledger_hooks_kept_when_shared_with_claude_integration`).
 - [ ] *(rev 0.5 C22)* No C3 scenario or assertion involves `/sdd-insight`; counts follow TASK-4090
-      (14 commands per host, 79 manifest entries).
+      (14 commands per host, 80 manifest entries).
 - [ ] Unavailable tooling referenced by installed assets is reported as warnings, never as a failure (codex S9).
+- [ ] *[rev 0.5]* D5: re-running `install`, or running `parrot claude install` after it, adds no second ledger block
+      or `.gitattributes` block; `uninstall` removes the `.gitattributes` block when it matches the receipt and
+      otherwise keeps it with a warning (`keep-gitattributes`); the ledger hooks follow the PR #1746 rule above;
+      a non-shell existing hook is skipped with a manual hint; `status` reports `gitattributes` and `ledger_hooks`.
+- [ ] *[rev 0.5]* D2: C3's FEAT-699 scenarios never print a traceback, and the installed `sdd-task` / `sdd-done`
+      (all three hosts) carry the `test_command` rule.
 - [ ] `parrot sdd --help` lists `install`, `uninstall`, `status`, `run`; `--host` accepts only
       `claude|codex|google`; `parrot status` (agentd) is unchanged.
 - [ ] `parrot.sdd.installer` does not import `parrot.knowledge.wiki.*` at module load (the C23

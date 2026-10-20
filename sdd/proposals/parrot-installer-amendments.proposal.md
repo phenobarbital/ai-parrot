@@ -765,10 +765,13 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
   - The plane is stamped at creation (`_ensure_schema`) as well as in `_migrate`.
   - A stored `schema_version` greater than `SCHEMA_VERSION`, compared as integers, raises
     `WikiStoreVersionError` instead of being migrated and re-stamped downward. This fixes
-    ledger `issue:f249c19e8a4d`.
+    ledger `issue:f249c19e8a4d`. That schema comparison is the whole gate: `min_runtime_version`
+    is stamped at creation and at migration but only quoted in the error, never compared
+    (owner, 2026-10-20: comparing release numbers was too strict).
   - Lock or backup creation failing with any `OSError` other than `FileExistsError` raises
     a clear error that names the directory; migration is never silently skipped.
-  - `SourceRegistry` opening `wiki.db` directly stays a known bypass, outside scope:
+  - `SourceCollectionManager._connect` opening `wiki.db` directly stays a known bypass, outside scope
+    (filed as `SourceRegistry`, a name that does not exist):
     ledger `issue:1555e747bcb9`. (TASK-4092, 4093)
 - **SDD**:
   - TASK-4089 ports the E2E gate to the Google `/sdd-done` twin.

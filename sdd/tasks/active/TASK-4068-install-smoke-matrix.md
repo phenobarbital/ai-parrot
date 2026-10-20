@@ -39,6 +39,15 @@ codex S11 requires ("build success is not the gate").
     inputs; `--wheel` repeatable so core + tools wheels install together); the decision rule treats a
     `parrot_tools` import error as a missing-dependency failure; S1 records per leg whether ai-parrot-tools'
     deps (PyGithub → cryptography/pynacl, ruamel-yaml) install compiler-free.
+  - D1 (→ C20) — why the bridge: core-only `wikitoolkit mcp` fails today because `build_framework_tools`
+    (`mcp_server.py:347`) imports `create_wiki_tools` from `knowledge/wiki/tools.py`, whose `_EXPORTS` at :69
+    point at `parrot_tools.wiki.*` (wiki rows :70-78); the transport-neutral descriptors already live in core
+    (`knowledge/wiki/transport.py:482`, `build_operation_descriptors`). A core-only fallback is follow-up
+    `issue:2c263fd19a1a`, outside FEAT-633 — never a new FEAT-633 task and never a condition for closing this one.
+  - `mcp_ok` is stricter than a bare handshake: `initialize` answers AND a `tools/list` sent after
+    `notifications/initialized` lists the wiki tools (at least `wiki_query`). A unit test covers that check
+    against a fake stdio server.
+  - Anchors re-checked on dev 2026-10-20: all Codebase Contract anchors are current.
 
 ---
 
@@ -49,7 +58,8 @@ codex S11 requires ("build success is not the gate").
   *[rev 0.5 C20]*; or local wheels) with `--no-build` by
   default, runs the three console scripts' `--help`, builds a wiki in a temp git repo and
   performs a JSON-RPC `initialize` against `wikitoolkit mcp` over stdio, and writes a
-  JSON `SmokeReport`.
+  JSON `SmokeReport`. *[rev 0.5 D1]* After `initialize` it sends `notifications/initialized` and
+  `tools/list`; `mcp_ok` needs the wiki tools (at least `wiki_query`) in that list.
 - *[rev 0.5 C20]* S1 also records, per leg, whether ai-parrot-tools' dependencies
   (PyGithub → cryptography/pynacl, ruamel-yaml) install without a compiler.
 - Add `.github/workflows/install-matrix.yml` (`workflow_dispatch` + `workflow_call`) running
@@ -61,7 +71,8 @@ codex S11 requires ("build success is not the gate").
 **NOT in scope**: running the workflow on GitHub (a human triggers it; results are pasted
 into the report); changing `release.yml` or `[tool.cibuildwheel]` (TASK-4094); the
 `--global` bootstrap (TASK-4074/4075); any launcher code (TASK-4071/4072); the linux-aarch64
-install-matrix leg (TASK-4094, *[rev 0.5 C24]*).
+install-matrix leg (TASK-4094, *[rev 0.5 C24]*); *[rev 0.5 C20]* a core-only `wikitoolkit mcp`
+(follow-up `issue:2c263fd19a1a`, outside FEAT-633).
 
 ---
 
@@ -309,6 +320,7 @@ def run_smoke(spec: str | None, wheels: list[Path], python: str, no_build: bool)
         #   mcp_server.py:731-735), then mcp_initialize([wikitoolkit, "mcp"], repo) → mcp_ok; a
         #   `parrot_tools` import error in the stderr tail is recorded in `errors` as a missing-dependency
         #   failure, not stdout pollution — bounded by the decision rule (rev 0.5 C20)
+        #   *[rev 0.5 D1]* mcp_ok also needs tools/list (after notifications/initialized) to hold wiki_query
         raise NotImplementedError
     return report
 
@@ -483,7 +495,8 @@ def test_venv_script_reads_os_name(smoke, tmp_path, monkeypatch):
   extra, upstream wheel, in-repo wheel build) here.
 - `mcp_ok=false` with install green ⇒ a `parrot_tools` import error in the MCP stderr is a
   missing-dependency failure (the install spec lacks ai-parrot-tools, rev 0.5 C20) — fix the spec;
-  otherwise file a ledger issue (stdio/stdout pollution) — blocks M1/M2.
+  otherwise file a ledger issue (stdio/stdout pollution) — blocks M1/M2. *[rev 0.5 D1]* `mcp_ok` also
+  requires `tools/list` to hold `wiki_query`; a handshake without the wiki tools is not a pass.
 - Per leg, record whether ai-parrot-tools' dependencies (PyGithub → cryptography/pynacl, ruamel-yaml)
   installed without a compiler (none of them in `sdist_failures`) — rev 0.5 C20.
 
@@ -508,7 +521,8 @@ def test_venv_script_reads_os_name(smoke, tmp_path, monkeypatch):
 - [ ] `S1-install-matrix.md` contains trigger instructions, the per-OS table and the spec §3 M0 decision rule.
 - [ ] *[rev 0.5 C20]* The default install spec is `ai-parrot ai-parrot-tools` in `smoke_install.py` (`DEFAULT_SPEC`) and in both `install-matrix.yml` `spec` inputs; `--wheel` is repeatable (core + tools wheels).
 - [ ] *[rev 0.5 C20]* The decision rule treats a `parrot_tools` import error as a missing-dependency failure, and the per-OS table records whether ai-parrot-tools' dependencies (PyGithub → cryptography/pynacl, ruamel-yaml) install without a compiler.
-- [ ] A local run `uv run --no-project --python 3.12 scripts/install/smoke_install.py --allow-build` on Linux reports `mcp_ok: true` (evidence pasted into the Completion Note).
+- [ ] A local run `uv run --no-project --python 3.12 scripts/install/smoke_install.py --allow-build` on Linux reports `mcp_ok: true` (evidence pasted into the Completion Note). *[rev 0.5 D1]* `mcp_ok` includes `tools/list` (after `notifications/initialized`) holding `wiki_query`.
+- [ ] *[rev 0.5 D1]* A unit test covers the `tools/list` check against a fake stdio server (lists `wiki_query` → ok; no wiki tools → `SmokeError`). The `mcp_initialize` signature stays as the blueprint fixes it.
 - [ ] `ruff check scripts/install/smoke_install.py packages/ai-parrot/tests/docs/test_smoke_install.py` passes.
 
 ---

@@ -14,8 +14,9 @@
 
 Spec §3 Module 6 moves the doc-referenced SDD helpers into `parrot/sdd/scripts/`. The
 `scripts/sdd/*.py` files become thin wrappers. The spec §5 bullet is: "every helper
-referenced by installed markdown resolves as `python -m parrot.sdd.scripts.<name>`;
-`scripts/sdd/` wrappers keep the monorepo's existing invocations working".
+referenced by installed markdown is invoked as `parrot sdd run <name>` and runs from a
+wheel-only managed install (C3 test); `scripts/sdd/` wrappers keep the monorepo's existing
+invocations working". *[rev 0.5: quote refreshed; `python -m parrot.sdd.scripts.<name>` still works for direct use]*
 
 This is move **C**, the remaining six Python helpers: `doc_taxonomy`,
 `backfill_taxonomy`, `migrate_index`, `select_tests`, `insight` and `install_hooks` — plus
@@ -34,7 +35,7 @@ module assumes and how it locates the repository:
 | `backfill_taxonomy` | `--root` default `Path(".")` (:149); `_SDD_TOOLING_RE = r"scripts/sdd/\|\.claude/commands/\|sdd/templates/"` (:41) classifies docs as SDD tooling | cwd | import rewrite only (regex: see NOT in scope) |
 | `migrate_index` | `--source sdd/tasks/.index.json`, `--dest sdd/tasks/index` (:158,:164) | cwd | none |
 | `select_tests` | `_KERNEL_PARENT = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"` (:19), which **breaks in site-packages**. `--worktree` default `Path.cwd()` (:46). The kernel calls `git` with `cwd=worktree`. The kernel's planning encodes the monorepo `packages/<dist>/{src,tests}` layout (`test_scope/mirror.py:62-64,132`; `policy.py:17+`) | cwd (`--worktree`) + git inside the kernel | make `_KERNEL_PARENT` package-relative |
-| `insight` | stdlib-only. `--sdd-dir` default `$SDD_DIR` or `"sdd"` (:1923). Report goes to `./ai_fluency_report.html`. Transcripts come from `~/.claude/projects` (:59). It is invoked as **`python3 scripts/sdd/insight.py`** (a path, not `-m`) in `.claude/commands/sdd-insight.md:51,85` | cwd + `~` | no change to the module; the shim gets a bare-interpreter fallback (see blueprint) |
+| `insight` | stdlib-only. `--sdd-dir` default `$SDD_DIR` or `"sdd"` (:1918 *[rev 0.5: was :1923]*). Report goes to `./ai_fluency_report.html`. Transcripts come from `~/.claude/projects` (:59). It is invoked as **`python3 scripts/sdd/insight.py`** (a path, not `-m`) in `.claude/commands/sdd-insight.md:51,85` | cwd + `~` | no change to the module; the shim gets a bare-interpreter fallback (see blueprint) |
 | `install_hooks` | `--repo-root` default `Path.cwd()` (:147). Hooks dir from `git rev-parse --git-path hooks` (:24-30, honours `core.hooksPath`), with a fallback to `<root>/.git/hooks` (:156). The rendered hook bakes `sys.executable` (:170) and runs `python -m scripts.sdd.prune_intake` from the primary checkout resolved by `primary_checkout()` (:33, `git rev-parse --git-common-dir`; f-string :69), and **`prune_intake` is not in the spec's move list** (moved here by the 2026-10-05 decision below) | cwd + git | retarget the rendered hook (see Scope) |
 
 None of the modules derives the **repository root** from `__file__`. Only `select_tests`
@@ -52,6 +53,27 @@ uses `__file__`, and it does so to find a sibling package. That becomes package-
   Validation Commands; note on the new by-path `select_tests` invocation
   (`tests/sdd_scripts/test_select_tests.py:289`). `cache_test_contract` / `test_report` (same
   `_KERNEL_PARENT` pattern) are moved by TASK-4508, not here.
+
+---
+
+## Spec rev 0.5 — 2026-10-20
+
+Spec §3 Module 6 "M6 helper inventory" (approved by Jesus Lara, 2026-10-20). The readiness
+review listed no open D1–D8 decision for this task.
+
+- **Module list.** Matches the inventory row for TASK-4088 exactly: `select_tests`, `insight`,
+  `doc_taxonomy`, `backfill_taxonomy`, `migrate_index`, `install_hooks`, `spec_tools`,
+  `prune_intake`. The spec gives the same reason for `prune_intake` (the rendered hook runs it,
+  `install_hooks.py:69`). No change.
+- **Package-relative path loader.** Already covered: Scope makes `_KERNEL_PARENT`
+  (`select_tests.py:19`) resolve to `<parrot package>/flows/dev_loop`, still loaded by path as
+  top-level `test_scope`; AC-3 and `test_select_tests_kernel_is_package_relative` check it against
+  `parrot.__file__`, so it holds in an installed wheel with no monorepo checkout. No change.
+- **D2 (not owned here).** How `/sdd-done` skips or guards `select_tests` in a foreign repo is
+  TASK-4089's (D2). The "`select_tests` in foreign repos" NOT-in-scope item stands.
+- **Anchors re-verified** on the working tree (2026-10-20). Fixed: `insight` `--sdd-dir` is `:1918`
+  (was `:1923`, twice); the Files-table `install_hooks` retarget points at `:67`/`:69` (was `:38-40`).
+  Refreshed the spec §5 quote in Context. All other anchors hold.
 
 ---
 
@@ -112,7 +134,7 @@ uses `__file__`, and it does so to find a sibling package. That becomes package-
 | `packages/ai-parrot/src/parrot/sdd/scripts/migrate_index.py` | CREATE | `git mv` (no line changes) |
 | `packages/ai-parrot/src/parrot/sdd/scripts/select_tests.py` | CREATE | `git mv` + package-relative `_KERNEL_PARENT` |
 | `packages/ai-parrot/src/parrot/sdd/scripts/insight.py` | CREATE | `git mv` (no line changes; 2079 lines) |
-| `packages/ai-parrot/src/parrot/sdd/scripts/install_hooks.py` | CREATE | `git mv` + hook retarget to `parrot.sdd.scripts.prune_intake` (:38-40) |
+| `packages/ai-parrot/src/parrot/sdd/scripts/install_hooks.py` | CREATE | `git mv` + hook retarget to `parrot.sdd.scripts.prune_intake` (marker `:67`, f-string `:69` *[rev 0.5: was :38-40]*) |
 | `packages/ai-parrot/src/parrot/sdd/scripts/prune_intake.py` | CREATE | `git mv` (no line changes; no `__file__`, pydantic is core) |
 | `scripts/sdd/doc_taxonomy.py` | MODIFY | Becomes alias shim |
 | `scripts/sdd/backfill_taxonomy.py` | MODIFY | Becomes alias shim |
@@ -171,7 +193,7 @@ if __name__ == "__main__": raise SystemExit(main())             # :358-359
 # scripts/sdd/insight.py (2079 lines, git mode 100644, shebang :1 "#!/usr/bin/env python3")
 DEFAULT_DIRS = ["~/.claude/projects", "~/.claude/sessions"]     # :59
 def main(argv=None):                                            # :1894 — returns 0/1 (:1956,1961,1990,2050,2075)
-    ap.add_argument("--sdd-dir", default=os.environ.get("SDD_DIR", "sdd"), ...)   # :1923
+    ap.add_argument("--sdd-dir", default=os.environ.get("SDD_DIR", "sdd"), ...)   # :1918 [rev 0.5: was :1923]
 if __name__ == "__main__": raise SystemExit(main())             # :2078-2079
 # Invoked by path: .claude/commands/sdd-insight.md:51,85 `python3 scripts/sdd/insight.py \`
 

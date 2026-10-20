@@ -37,6 +37,8 @@ Portable form per field (shared brief, cross-cutting decision):
 - Refreshed against dev 9f51c7735: `claude_code/assets.py` line anchors shifted (+5..+42 after 6b30156ad `mcp_json_entry_remote` and 6164b075b ledger hooks); `ledger_hook_block`/`ledger_hook_new_file` added to NOT-in-scope; `mcp_json_entry_remote` left unchanged; removed the false claim that git hooks get a working Windows fix; two Validation Commands added. `bookstore.py` unchanged.
 - Resolved by spec rev 0.5 (2026-10-20):
   - C24 Windows (M5 (a)) — scope now covers the `git_hook_block`/`ledger_hook_block` bodies: the binary path is quoted and written with forward slashes (assets.py:206-207, :236; today `sh` strips the backslashes); `ledger_hook_block`/`ledger_hook_new_file` moved from NOT-in-scope into Scope; new test `test_hook_windows_path_survives_sh`.
+  - C24 / D6 details (dev 2026-10-20): both bodies write the binary through one private helper `_sh_path(path: str) -> str: return shlex.quote(path.replace("\\", "/"))` — forward slashes, then POSIX-quoted. A normal POSIX path has no character `shlex.quote` escapes, so default POSIX hook output stays byte-identical; a Windows path becomes `C:/…/Scripts/wikitoolkit.exe` (quoted when it holds a space). Hooks stay baked in both modes (no `portable` keyword on them). The other D6 half (`_is_wikitoolkit_entry` basename match, `claude_code/installer.py:753`) is TASK-4082.
+- Anchors re-verified on dev 2026-10-20: all unchanged.
 
 ## Scope
 
@@ -49,17 +51,18 @@ Portable form per field (shared brief, cross-cutting decision):
 - In `claude_code/bookstore.py`: add `portable` to `mcp_json_entry` (portable form
   `{"command": "bookstore", "args": ["mcp"], "env": {}}`), teach `_is_managed_entry` to recognise
   the portable shape, and thread `portable` through `install_bookstore` (keyword-only, default False).
-- *[spec rev 0.5 C24]* Git-hook bodies: `git_hook_block` (assets.py:185-210) and `ledger_hook_block`
-  (FEAT-694, assets.py:218-238) quote the binary path and write it with forward slashes, so a Windows
-  `Scripts\wikitoolkit.exe` path survives `sh`; `git_hook_new_file` / `ledger_hook_new_file` wrap those
-  blocks and inherit the fix.
+- *[spec rev 0.5 C24 / D6]* Git-hook bodies: `git_hook_block` (assets.py:185-210) and `ledger_hook_block`
+  (FEAT-694, assets.py:218-238) interpolate the binary as `_sh_path(wt_bin)` (forward slashes, then
+  `shlex.quote`; add `import shlex` and the private helper), so a Windows `Scripts\wikitoolkit.exe` path
+  survives `sh`; `git_hook_new_file` / `ledger_hook_new_file` wrap those blocks and inherit the fix.
 - Write `packages/ai-parrot/tests/knowledge/wiki/test_claude_portable_emitters.py`.
 
 **NOT in scope**:
 - `claude_code/installer.py` and `claude_code/cli.py` (`--portable` flag, reconcile rule,
   stickiness, `PurePosixPath` fixes) — TASK-4082.
-- A `portable` form for the git-hook emitters (`git_hook_*`, `ledger_hook_*`): they write into
-  `.git/hooks/`, which is never committed, so they stay baked in both modes.
+- A `portable` keyword on `git_hook_block` / `git_hook_new_file` and `ledger_hook_block` /
+  `ledger_hook_new_file` (FEAT-694, assets.py:218-243): they write into `.git/hooks/`, which is never
+  committed, so they stay baked in both modes. *[rev 0.5 C24 / D6]* Their quoting fix IS in scope (above).
 - `mcp_json_entry_remote` (assets.py:128-134, FEAT-569) — already root-independent (no machine path);
   leave unchanged, no `portable` keyword.
 - `PERMISSION_RULES` (assets.py:58-73) — keep exactly as is.
@@ -73,7 +76,7 @@ Portable form per field (shared brief, cross-cutting decision):
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py` | MODIFY | Windows branch via `script_path`; `portable=` on hook/MCP/toolkit/permission emitters; `PORTABLE_TOOLKIT_CONFIG`; quoted forward-slash binary path in the git/ledger hook bodies (C24) |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py` | MODIFY | Windows branch via `script_path`; `portable=` on hook/MCP/toolkit/permission emitters; `PORTABLE_TOOLKIT_CONFIG`; quoted forward-slash binary path in the git/ledger hook bodies (C24 / D6, `_sh_path`) |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/bookstore.py` | MODIFY | Portable bookstore entry (`bookstore mcp`), portable-aware managed detection, `install_bookstore(portable=)` |
 | `packages/ai-parrot/tests/knowledge/wiki/test_claude_portable_emitters.py` | CREATE | Unit tests for both emitter modes + Windows branch + Windows path surviving `sh` in hook bodies |
 
@@ -111,9 +114,9 @@ def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection) -> di
 #   returns {"command": resolve_parrot_bin(root),
 #            "args": ["mcp-local", name, "--config", str(root / ".parrot" / "mcp-toolkits.yaml")],
 #            "cwd": str(root), "env": dict(section.env)}       # FEAT-556 pin, comment at lines 176-178
-def git_hook_block(root: Path) -> str:                                      # line 185; wt_bin = resolve_wikitoolkit_bin(root) line 197; interpolated unquoted lines 206-207
+def git_hook_block(root: Path) -> str:                                      # line 185; wt_bin = resolve_wikitoolkit_bin(root) line 197; f"    {wt_bin} …" interpolated unquoted at lines 206-207 — [rev 0.5] D6: becomes _sh_path(wt_bin)
 def git_hook_new_file(root: Path) -> str:                                   # line 213 -> f"#!/bin/sh\n{git_hook_block(root)}"
-def ledger_hook_block(root: Path, hook_name: str) -> str:                   # line 218 (FEAT-694); wt_bin line 230; interpolated unquoted line 236
+def ledger_hook_block(root: Path, hook_name: str) -> str:                   # line 218 (FEAT-694); wt_bin line 230; f"{wt_bin} {sub} …" interpolated unquoted at line 236 — [rev 0.5] D6: becomes _sh_path(wt_bin)
 def ledger_hook_new_file(root: Path, hook_name: str) -> str:                # line 241 -> f"#!/bin/sh\n{ledger_hook_block(root, hook_name)}"
 def permission_rules(root: Path) -> tuple[str, ...]:                        # line 246-256 (bare -> PERMISSION_RULES; else + f"Bash({resolved}:*)")
 
@@ -192,6 +195,8 @@ def uninstall_bookstore(root: Path) -> list[str]:                           # li
 ### Key Constraints
 - **Default output is byte-identical to today** on POSIX (same keys, same key order, same values).
   The only default-mode change is that `.venv\Scripts\<name>.exe` is found on Windows.
+  *[rev 0.5]* D6: hook bodies change only where `shlex.quote` must quote (a space or shell character
+  in the path) or a backslash is present — never for an ordinary POSIX path.
 - `portable` is **keyword-only** on every emitter (`*, portable: bool = False`) so no positional
   caller changes meaning.
 - Portable emission must be **root-independent**: two different roots produce equal dicts (this is
@@ -324,12 +329,18 @@ def permission_rules(root: Path, *, portable: bool = False) -> tuple[str, ...]:
 `--config` made relative per the per-field contract (spec §3 M5(d)).
 
 ```python
+# AFTER `import shutil` (verified: claude_code/assets.py:11)
+import shlex
+
+# AFTER the binary-resolution helpers
+def _sh_path(path: str) -> str:
+    """Return ``path`` safe to interpolate into a ``#!/bin/sh`` hook body (rev 0.5 C24 / D6)."""
+    return shlex.quote(path.replace("\\", "/"))
+
 # occurrences: 2 (verified: grep -c '    wt_bin = resolve_wikitoolkit_bin(root)' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py)
 # REPLACE — BOTH occurrences: :197 in `git_hook_block` (used at :206-207) and :230 in `ledger_hook_block`
-#           (used at :236). Spec rev 0.5 C24: quote the binary path and write it with forward slashes.
-    wt_bin = resolve_wikitoolkit_bin(root).replace("\\", "/")
-    # FILL IN: quote wt_bin for sh before the f-string interpolation below — bounded by spec rev 0.5 C24
-    # ("quote the binary path") and test_hook_windows_path_survives_sh.
+#           (used at :236). Spec rev 0.5 C24 / D6: forward slashes, then POSIX-quoted.
+    wt_bin = _sh_path(resolve_wikitoolkit_bin(root))
 # `git_hook_new_file` (:213) and `ledger_hook_new_file` (:241) wrap these blocks — no change needed.
 ```
 **Resolved (PR #1746 review, 2026-10-20)**: convert the path to forward slashes, then apply `shlex.quote`.
@@ -498,6 +509,17 @@ def test_hook_windows_path_survives_sh(
     token = line.strip().split(" ", 1)[0]  # the (quoted) binary path; the test path has no spaces
     out = subprocess.run(["sh", "-c", f'printf "%s" {token}'], capture_output=True, text=True, check=True).stdout
     assert out == "C:/r/.venv/Scripts/wikitoolkit.exe"
+
+
+def test_hook_bodies_quote_and_use_forward_slashes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """[rev 0.5] D6: a Windows path is quoted and slash-normalised; a plain POSIX path is unchanged."""
+    monkeypatch.setattr(assets, "resolve_wikitoolkit_bin", lambda root: r"C:\Users\A B\.venv\Scripts\wikitoolkit.exe")
+    want = "'C:/Users/A B/.venv/Scripts/wikitoolkit.exe'"
+    assert f"    {want} upsert --changed" in assets.git_hook_block(tmp_path)
+    for event in assets.LEDGER_HOOK_EVENTS:
+        assert assets.ledger_hook_block(tmp_path, event).splitlines()[3].startswith(f"{want} ledger ")
+    monkeypatch.setattr(assets, "resolve_wikitoolkit_bin", lambda root: "/opt/repo/.venv/bin/wikitoolkit")
+    assert "    /opt/repo/.venv/bin/wikitoolkit upsert --changed" in assets.git_hook_block(tmp_path)
 ```
 
 ### FILL IN checklist
@@ -516,6 +538,7 @@ def test_hook_windows_path_survives_sh(
 - [ ] Portable entries are equal for two different roots.
 - [ ] `bookstore._is_managed_entry` accepts both managed shapes and rejects foreign ones; `install_bookstore(root, portable=True)` writes the portable entry.
 - [ ] *[spec rev 0.5 C24]* `git_hook_block` and `ledger_hook_block` write the binary path quoted and with forward slashes; a Windows-style path (`C:\r\.venv\Scripts\wikitoolkit.exe`) survives `sh` as `C:/r/.venv/Scripts/wikitoolkit.exe` (`test_hook_windows_path_survives_sh`).
+- [ ] *[rev 0.5]* D6: with a Windows binary path (`C:\Users\A B\.venv\Scripts\wikitoolkit.exe`), `git_hook_block` and every `ledger_hook_block` event write `'C:/Users/A B/.venv/Scripts/wikitoolkit.exe'`; an ordinary POSIX path is written unchanged (`test_hook_bodies_quote_and_use_forward_slashes`).
 - [ ] Existing suites still pass (see Validation Commands); `ruff check` clean on both modified files.
 
 ---
@@ -541,7 +564,7 @@ Run from the feature worktree with `PYTHONPATH=packages/ai-parrot/src` (the shar
 See the CREATE block above (`test_claude_portable_emitters.py`): `test_portable_entries_no_abs_paths`,
 `test_portable_entries_root_independent`, `test_default_emission_unchanged`,
 `test_windows_scripts_branch`, `test_bookstore_managed_detection_accepts_portable`,
-`test_hook_windows_path_survives_sh`.
+`test_hook_windows_path_survives_sh` and `test_hook_bodies_quote_and_use_forward_slashes` (C24 / D6).
 
 ---
 

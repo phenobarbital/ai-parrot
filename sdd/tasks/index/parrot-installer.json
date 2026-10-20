@@ -102,6 +102,7 @@
       "packages/ai-parrot/tests/sdd/test_scripts_task_state.py",
       "packages/ai-parrot/tests/sdd/test_scripts_taxonomy_misc.py",
       "packages/ai-parrot/tests/sdd/test_sdd_cli.py",
+      "packages/ai-parrot/tests/sdd/test_test_command_fallback.py",
       "packages/ai-parrot/tests/sdd/test_wheel_only_foreign_repo.py",
       "packages/ai-parrot/tests/self_/test_components.py",
       "packages/ai-parrot/tests/self_/test_doctor.py",
@@ -193,7 +194,7 @@
       "tests/sdd_scripts/test_worktree_status.py"
     ],
     "markers": [],
-    "digest": "sha256:00ba6aae9ebf8b4d3dd253da10baf1167150549220226b344d540d527f57e196"
+    "digest": "sha256:703ec9862869a588d674efd6514bc92916a959e215ed2ec54ccda9e7a4a0b38a"
   },
   "tasks": [
     {

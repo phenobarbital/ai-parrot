@@ -203,8 +203,10 @@ file, the task is too big.
 The checks behind the two contracts above are flat and deterministic: does this
 symbol still exist and what is its signature, how many times does this anchor
 occur and on which line, is this "Does NOT Exist" name really absent, what is
-this file's `sha256`. When the `Agent` tool is available you MAY hand them to
-`sdd-contract-probe` subagents (Haiku, read-only) and keep your own effort for
+this file's `sha256`. When your host can launch the `sdd-contract-probe` subagent
+(Claude Code: the `Agent` tool, Haiku; Antigravity: the
+`.agents/agents/sdd-contract-probe/agent.md` subagent; Codex and other hosts: none)
+you MAY hand them to it (read-only) and keep your own effort for
 the judgement: the decomposition, the graph, what goes into each contract, and
 the blueprints.
 
@@ -230,8 +232,8 @@ the blueprints.
    - Copy only verified facts into the contracts: signatures from `signature`,
      line numbers from `lines`, occurrence counts from `count`, hashes from
      `output`. A count of `0` is drift: stop and report it, as in rule 5 above.
-5. **Do it yourself instead** when the `Agent` tool is not available (e.g. the
-   dev-loop `sdd-planner` runs this command with no `Agent` tool) or when the
+5. **Do it yourself instead** when your host cannot launch the probe (Codex; the
+   dev-loop `sdd-planner`, which runs this command with no `Agent` tool) or when the
    whole spec needs fewer than ~10 checks — the fan-out costs more than it
    saves. The contract rules above are the same either way.
 

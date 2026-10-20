@@ -66,6 +66,13 @@ Jesus Lara). Every section below already reflects these deltas; this list is the
 - Resolved by spec rev 0.5 (2026-10-20):
   - C20 — `global_install` installs `ai-parrot-tools` alongside `ai-parrot[<extras>]` at the same `--version` pin
     (Scope, blueprint `tools` spec + `print_plan`, `test_global_flags_parse`, AC).
+  - D1 (→ C20) — the install is in the same `uv pip install` call as `ai-parrot[<extras>]`; both packages
+    share one version (today `1.2.3`). It is the v1 design, not a temporary bridge: a core-only
+    `wikitoolkit mcp` is follow-up `issue:2c263fd19a1a`, outside FEAT-633. Never add `ai-parrot-tools` to
+    the extras mapping or to core `dependencies`.
+  - Anchors re-checked on dev 2026-10-20: `install-parrot.sh` (:23, :28, :33, :37, :39-41, :47-54, :56-100,
+    :70-73, :74-77, :102-115, :149-177, :180), `test_install_posix.py` (:5-9, :11-12, :15, :21, :36) and
+    `pyproject.toml` `[project.scripts]` (:199-206) are all current.
 
 ---
 

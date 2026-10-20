@@ -16,7 +16,7 @@ description: |
 
   Context: /sdd-task has planned 6 tasks and needs the current state of 30
   imports, signatures and edit-site anchors before writing the contracts.
-  user: "Probe sheet: [{id: c1, kind: anchor, path: packages/ai-parrot/src/parrot/mcp/toolkit_seed.py, anchor: 'def seed_toolkit_sections('}, ...]"
+  user: "Probe sheet: [{id: c1, kind: anchor, path: src/app/seed.py, anchor: 'def seed_sections('}, ...]"
   assistant: "I run the fixed command for each check and return the JSON report with each command and its raw output."
 model: haiku
 color: cyan
@@ -59,7 +59,7 @@ a result that does not reproduce makes the whole report unusable.
 | kind | fields | command | status |
 |---|---|---|---|
 | `symbol` | `path`, `name` | `grep -nE '^[[:space:]]*(async def|def|class) <name>\b' <path>` | `found` (1 line), `ambiguous` (>1), `missing` (0) |
-| `import` | `module`, `name` | resolve `module` to a file under `packages/*/src/` (`<module with / >.py` or `<…>/__init__.py`; use `ls`), then the `symbol` command on that file; if not defined there, `grep -nE '^(from|import) .*\b<name>\b' <file>` to detect a re-export | `found`, `reexported`, `missing`, `module-missing` |
+| `import` | `module`, `name` | resolve `module` (dots → `/`) to tracked files with `git ls-files -- '<mod>.py' '*/<mod>.py' '<mod>/__init__.py' '*/<mod>/__init__.py'` — this finds it under any source root; namespace packages may match several files, so check each — then the `symbol` command on each file; if not defined there, `grep -nE '^(from|import) .*\b<name>\b' <file>` to detect a re-export | `found`, `reexported`, `missing`, `module-missing` (no file matched) |
 | `anchor` | `path`, `anchor` | `grep -cF '<anchor>' <path>` then `grep -nF '<anchor>' <path>` | `found` (count 1), `ambiguous` (count >1), `missing` (0) |
 | `absent` | `name`, `scope` (file or dir) | `grep -rnw '<name>' <scope> --include=*.py` | `absent` (no match), `present` (≥1 match) |
 | `sha256` | `path` | `sha256sum <path>` | `found` / `missing` |
@@ -81,7 +81,7 @@ and put that verbatim text in `signature`.
       "id": "c1",
       "kind": "anchor",
       "status": "found",
-      "command": "grep -cF 'def seed_toolkit_sections(' packages/ai-parrot/src/parrot/mcp/toolkit_seed.py",
+      "command": "grep -cF 'def seed_sections(' src/app/seed.py",
       "output": "1",
       "count": 1,
       "lines": [304],

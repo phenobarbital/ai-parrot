@@ -58,7 +58,7 @@ generated report must reproduce it (it is the scanner's acceptance oracle). Help
 | `.claude/agents/sdd-planner.md` | ensure_worktree, sdd_meta |
 | `.claude/agents/sdd-research.md` | ensure_worktree |
 | `.claude/agents/sdd-worker.md` | close_task, ensure_worktree, finalize_task, review_checkpoint, sdd_meta, select_tests |
-| `.claude/agents/sdd-coder.md`, `sdd-feedback.md`, `sdd-qa.md`, `sdd-secondopinion.md` | none |
+| `.claude/agents/sdd-coder.md`, `sdd-contract-probe.md` *[rev 0.5]*, `sdd-feedback.md`, `sdd-qa.md`, `sdd-secondopinion.md` | none |
 | `.claude/rules/worktree-management.md` | ensure_worktree, sdd_meta |
 | `.claude/rules/codebase-conventions.md`, `.claude/hooks/sdd-worker-format.sh` | none |
 | `sdd/templates/intake.procedure.md` | reserve_ids |
@@ -89,7 +89,7 @@ spec rev 0.5). They differ from their `.claude/` sources until TASK-4089 rewrite
 | `.agent/agents/sdd-autopilot/agent.md` | select_tests |
 | `.agents/agents/sdd-ideation/agent.md`, `.agent/agents/sdd-ideation/agent.md` | sdd_meta |
 | `.agents/agents/sdd-research/agent.md`, `.agent/agents/sdd-research/agent.md` | ensure_worktree |
-| `.agents/agents/sdd-{autopilot,feedback,planner,qa,secondopinion}/agent.md`, `.agent/agents/sdd-{feedback,planner,qa,secondopinion}/agent.md` | none |
+| `.agents/agents/sdd-{autopilot,contract-probe,feedback,planner,qa,secondopinion}/agent.md` *(`contract-probe`: rev 0.5)*, `.agent/agents/sdd-{feedback,planner,qa,secondopinion}/agent.md` | none |
 
 External-tool sample (files containing the token, same asset set): `jq` 9, `gh` 34,
 `tmux` 1, `codex` 9, `git-lfs` 0, `source .venv` 3, `.venv/bin` 4, `uv run` 3, `/tmp/` 2,
@@ -144,17 +144,33 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   does not exist — also supersedes the "14 templates" count in the rev 0.4 bullet above);
   anchors `sdd-done.md:172`→`:184`, the `E2E_STATUS … jq` lines are gone (0af88638e),
   `pyproject.toml:960-963`→`:965-968`; move-list wording updated.
-- FEAT-708 drift (merged on `dev` 2026-10-20, after this review's baseline): it added the Claude-only
-  `.claude/agents/sdd-contract-probe.md` (10 Claude agents). `/sdd-task`, `/sdd-brainstorm` and
-  `/sdd-proposal` and their twins call it. FEAT-708 also inserted lines into those three commands
-  (+41/+39/+153, e.g. `cache_test_contract` `sdd-task.md:369` → `:410`), so anchors in those files
-  must be re-located by `grep` at pickup.
-  Here: the inventory gains `sdd-contract-probe` (no helper references; three `packages/` example lines).
-- Resolved by spec rev 0.5 (2026-10-20):
-  - C24 — S5 also scans `.agents/` and `.agent/`: `DEFAULT_GLOBS` gains `.agents/skills/sdd-*/SKILL.md`,
+- FEAT-708 drift (merged on `dev` 2026-10-20, after this review's baseline): it added
+  `.claude/agents/sdd-contract-probe.md` (`cbbe243a7`; 10 Claude agents) and, later the same day (`b53d93ba4`), its
+  Antigravity copy `.agents/agents/sdd-contract-probe/agent.md` (9 Google agents) *[rev 0.5]*. `/sdd-task`,
+  `/sdd-brainstorm` and `/sdd-proposal` and their twins call it, so it ships (spec M6: 10 agents);
+  `.claude/agents/sdd-*.md` and `.agents/agents/sdd-*/agent.md` already glob it. FEAT-708 also inserted lines into
+  those three commands (+41/+39/+153, e.g. `cache_test_contract` `sdd-task.md:369` → `:410`), so anchors in those
+  files must be re-located by `grep` at pickup.
+  Here: the inventory gains `sdd-contract-probe` on both hosts. It references no `scripts/sdd` helper (its oracle
+  rows are "none") and, since `b53d93ba4`, has no `monorepo-path` finding any more (the `import` check resolves
+  modules with `git ls-files`, the examples use generic paths; locked by
+  `tests/sdd_scripts/test_contract_probe_hosts.py`).
+- Resolved by spec rev 0.5 (2026-10-20; approved by Jesus Lara — every decision D1–D18 is closed, D11 included):
+  - C24 / D11 — S5 also scans `.agents/` and `.agent/`: `DEFAULT_GLOBS` gains `.agents/skills/sdd-*/SKILL.md`,
     `.agents/agents/sdd-*/agent.md`, `.agent/workflows/sdd-*.md` and `.agent/agents/sdd-*/agent.md`;
-    the asset inventory, the reference map (twin table) and AC-4 cover them; a test pins the globs.
+    the asset inventory, the reference map (twin table) and AC-4 cover them; a test pins the globs. No other
+    D1–D8 clause applies here.
   - C22 — `/sdd-insight` is not shipped in v1; its rows stay in the map, marked "not shipped (C22)".
+- Verified on `dev` `69fb12a41` (2026-10-20) *[rev 0.5]*:
+  - Counts: 15 commands, **10 agents** (was 9), 13 tracked templates; the Google host has 15 workflows
+    (`.agent/workflows/sdd-brief.md` committed in `69fb12a41`) and 9 `.agents/agents/` agents. A dev checkout may
+    also hold an untracked `sdd/templates/research_plan.schema.json` (ignored by the global `templates/` rule,
+    `.gitignore:273`); the `sdd/templates/*` glob picks it up, it has no helper reference, and the report must not
+    depend on it (scan from a clean worktree).
+  - Anchors re-verified, unchanged: `sdd-insight.md:51,85`, `sdd-done.md:184,206,356`,
+    `sdd-brief.md:18,132,151,154`, `.claude/skills/second-opinion/SKILL.md:8`, `sdd-worker-format.sh:1`,
+    `pyproject.toml:965-968`. Helper map regenerated with the verification grep: identical to the Context table
+    except the new `sdd-contract-probe.md` / `agent.md` rows ("none").
 
 ---
 
@@ -231,8 +247,8 @@ from pathlib import Path
 # Asset set to scan (all verified to exist 2026-10-05):
 #   .claude/commands/sdd-*.md   (15 files: brainstorm, brief [rev 0.4 C17], codereview, done, explain,
 #                                fix, fromjira, insight, next, proposal, spec, start, status, task, tojira)
-#   .claude/agents/sdd-*.md     (9 files: autopilot, coder, feedback, ideation, planner, qa,
-#                                research, secondopinion, worker)
+#   .claude/agents/sdd-*.md     (10 files [rev 0.5]: autopilot, coder, contract-probe, feedback, ideation,
+#                                planner, qa, research, secondopinion, worker)
 #   .claude/rules/*.md          (codebase-conventions.md, worktree-management.md)
 #   .claude/hooks/sdd-worker-format.sh
 #   sdd/templates/*             (13 files, re-verified 2026-10-19: brainstorm.md, brief.md [rev 0.4 C17],
@@ -242,8 +258,9 @@ from pathlib import Path
 #   sdd/WORKFLOW.md
 #   rev 0.5 C24 — the Codex/Google twins (verified 2026-10-20 on db7277048):
 #   .agents/skills/sdd-*/SKILL.md     (15: the .claude/commands set, incl. brief and insight)
-#   .agents/agents/sdd-*/agent.md     (8: autopilot, feedback, ideation, planner, qa, research, secondopinion, worker)
-#   .agent/workflows/sdd-*.md         (14: no sdd-brief.md yet — TASK-4089 creates it)
+#   .agents/agents/sdd-*/agent.md     (9 [rev 0.5]: autopilot, contract-probe (b53d93ba4), feedback, ideation, planner,
+#                                      qa, research, secondopinion, worker)
+#   .agent/workflows/sdd-*.md         (15 [rev 0.5]: sdd-brief.md committed in 69fb12a41 — TASK-4089 modifies it)
 #   .agent/agents/sdd-*/agent.md      (8: same names as .agents/agents/)
 #   /sdd-insight (command + both twins) is not shipped in v1 (C22) but is still scanned.
 
