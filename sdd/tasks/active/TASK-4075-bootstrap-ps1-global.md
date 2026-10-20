@@ -63,10 +63,9 @@ reflects these deltas; this list is the audit trail.
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Verified current against dev 9f51c7735; no changes (`install-parrot.ps1`, `test_install_powershell.py` and
   `[project.scripts]` anchors unchanged; no commits since baseline).
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - `wikitoolkit mcp` now needs ai-parrot-tools (`wiki/tools.py:69-76`, `mcp_server.py:525-545, 566-574`; core
-    `dependencies` lack it), so a managed venv with only `ai-parrot[...]` cannot serve it. Affected: the install
-    spec in `Install-Global` (add `ai-parrot-tools`, same `-Version` pin, or a fix on the wiki side).
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C20 — `Install-Global` installs `ai-parrot-tools` alongside `ai-parrot[<extras>]` at the same `-Version` pin
+    (Scope, blueprint `$tools` spec + `Write-Plan`, `test_global_dry_run`, AC).
 
 ---
 
@@ -85,7 +84,9 @@ reflects these deltas; this list is the audit trail.
   `$PARROT_HOME\bin` write-then-rename. Never touch a user's own uv.
 - `$env:UV_PYTHON_INSTALL_DIR = "$PARROT_HOME\python"`; `uv venv "$PARROT_HOME\venv" --python <py>
   --python-preference only-managed` (default `<py>` = `3.12`).
-- `uv pip install --python "$PARROT_HOME\venv\Scripts\python.exe" "ai-parrot[<extras>]==<ver>"`.
+- `uv pip install --python "$PARROT_HOME\venv\Scripts\python.exe" "ai-parrot[<extras>]==<ver>" "ai-parrot-tools==<ver>"`
+  — *[rev 0.5 C20]* `ai-parrot-tools` at the same version pin (unpinned when `-Version` is not given):
+  `wikitoolkit mcp`'s wiki tools live in `parrot_tools.wiki`, so a core-only venv cannot answer MCP `initialize`.
 - Shims: COPY `venv\Scripts\{parrot,wikitoolkit,bookstore}.exe` into `$PARROT_HOME\bin` (copy to
   `*.tmp` then `Move-Item -Force`). Do NOT put `venv\Scripts` on PATH — it would shadow `python`.
 - Add `$PARROT_HOME\bin` to the **User** PATH idempotently via
@@ -353,9 +354,11 @@ function Install-Global {
   $asset = "uv-$target.zip"
   $url = "https://github.com/astral-sh/uv/releases/download/$UvVersion/$asset"
   $spec = "ai-parrot[$AllExtras]"; if ($Version) { $spec = "$spec==$Version" }
+  # rev 0.5 C20 — ai-parrot-tools at the same version pin (wikitoolkit mcp's wiki tools live in parrot_tools.wiki)
+  $tools = 'ai-parrot-tools'; if ($Version) { $tools = "$tools==$Version" }
   $bin = Join-Path $home_ 'bin'; $venv = Join-Path $home_ 'venv'; $uv = Join-Path $bin 'uv.exe'
   $dl = Join-Path ([IO.Path]::GetTempPath()) "parrot-uv-$PID"
-  Write-Plan $url $spec $home_ $py      # C14a — before anything else
+  Write-Plan $url "$spec $tools" $home_ $py      # C14a — before anything else
   Test-Preflight $home_                 # C14b — exits 1 on any failed gate; nothing written yet
   $script:Created = [System.Collections.Generic.List[string]]::new()
   try {
@@ -377,7 +380,7 @@ function Install-Global {
       if (-not $DryRun) { $Created.Add($venv) }
       Run -Why "create the managed venv (Python $py)" -Cmd { & $uv venv $venv --python $py --python-preference only-managed }
     }
-    Run -Why "install $spec into the managed venv" -Cmd { & $uv pip install --python (Join-Path $venv 'Scripts\python.exe') $spec }
+    Run -Why "install $spec $tools into the managed venv" -Cmd { & $uv pip install --python (Join-Path $venv 'Scripts\python.exe') $spec $tools }
     foreach ($s in @('parrot', 'wikitoolkit', 'bookstore')) {
       $src = Join-Path $venv "Scripts\$s.exe"; $dst = Join-Path $bin "$s.exe"
       Run -Why "expose $s" -Cmd { Copy-Item $src "$dst.tmp" -Force; Move-Item "$dst.tmp" $dst -Force }
@@ -513,6 +516,7 @@ def test_global_dry_run(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "unsupported Python" not in result.stderr
     assert "==9.9.9" in result.stdout and "self add sdd" in result.stdout
+    assert "ai-parrot-tools==9.9.9" in result.stdout      # rev 0.5 C20: same version pin as ai-parrot
     assert not home.exists()
     # C14a/C14b: plan paragraph and gate summary precede the first "->" announcement
     assert "never used or modified" in result.stdout and "SHA256SUMS" in result.stdout
@@ -561,6 +565,8 @@ doctor before components) because that order is the whole safety argument. FILL 
 - [ ] Pinned uv `0.11.28` is downloaded for `x86_64`/`aarch64` `pc-windows-msvc` and verified with
       `Get-FileHash` against the release `.sha256`; a user's own uv is never touched.
 - [ ] Managed Python lives under `$PARROT_HOME\python`; venv built with Python 3.12 by default.
+- [ ] *[rev 0.5 C20]* The managed venv gets `ai-parrot-tools` alongside `ai-parrot[<extras>]`, at the
+      same version pin (`-Version 9.9.9` ⇒ `ai-parrot-tools==9.9.9` in the announced install).
 - [ ] `parrot.exe`/`wikitoolkit.exe`/`bookstore.exe` are COPIED into `$PARROT_HOME\bin`
       (write-then-rename); `venv\Scripts` is never put on PATH.
 - [ ] User PATH (never Machine) edited idempotently via `[Environment]::SetEnvironmentVariable`,
@@ -601,7 +607,7 @@ editable-installed against the main checkout).
 def test_global_params_declared(): ...                 # static
 def test_global_branch_precedes_python_guard(): ...    # static, codex S10
 def test_global_pins_and_verifies_uv(): ...            # static: 0.11.28, Get-FileHash, User not Machine
-def test_global_dry_run(tmp_path): ...                 # pwsh-gated runtime dry run (+ C14a plan, gate summary before "->")
+def test_global_dry_run(tmp_path): ...                 # pwsh-gated runtime dry run (+ C14a plan, gate summary before "->"; ai-parrot-tools==<ver>, rev 0.5 C20)
 def test_preflight_gate_precedes_first_write(): ...    # static, C14b order: Write-Plan < Test-Preflight < $Created < New-Item
 def test_post_install_doctor_precedes_components(): ...# static, C14b: Add-UserPath < self doctor --runtime-only < self add; PARROT_VENV pinned
 def test_global_gate_unwritable_home_exits_before_write(tmp_path): ...  # pwsh-gated: read-only parent → exit 1, nothing written

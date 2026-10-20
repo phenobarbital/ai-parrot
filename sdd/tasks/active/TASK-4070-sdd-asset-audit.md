@@ -45,7 +45,7 @@ generated report must reproduce it (it is the scanner's acceptance oracle). Help
 |---|---|
 | `.claude/commands/sdd-done.md` | check_e2e_closeout¹, check_task_state, close_resolved_issues¹, close_task, heal_orphans, sdd_meta, select_tests, test_report¹ |
 | `.claude/commands/sdd-fix.md` | ensure_worktree, reserve_ids |
-| `.claude/commands/sdd-insight.md` | insight (invoked as `python3 scripts/sdd/insight.py`, lines 51/85) |
+| `.claude/commands/sdd-insight.md` — not shipped (C22) | insight (invoked as `python3 scripts/sdd/insight.py`, lines 51/85) |
 | `.claude/commands/sdd-next.md`, `sdd-status.md` | doc_taxonomy, worktree_status |
 | `.claude/commands/sdd-spec.md` | reserve_ids, sdd_meta, spec_tools |
 | `.claude/commands/sdd-start.md` | close_task, ensure_worktree, finalize_task, sdd_meta |
@@ -65,6 +65,31 @@ generated report must reproduce it (it is the scanner's acceptance oracle). Help
 | `sdd/templates/task.md` | close_task, ensure_worktree |
 | `sdd/templates/*` (the other 11) | none |
 | `sdd/WORKFLOW.md` | backfill_taxonomy, check_id_collisions, close_task, doc_taxonomy, ensure_worktree, id_ledger, install_hooks, migrate_index, reserve_ids |
+
+*(rev 0.5 C24)* Codex/Google twins, same grep, re-verified 2026-10-20 on `db7277048` (dev `0263f0724` +
+spec rev 0.5). They differ from their `.claude/` sources until TASK-4089 rewrites them:
+
+| Asset | Helpers referenced |
+|---|---|
+| `.agents/skills/sdd-done/SKILL.md` | check_e2e_closeout¹, close_resolved_issues¹, close_task, heal_orphans, sdd_meta, select_tests, test_report¹ |
+| `.agent/workflows/sdd-done.md` | check_task_state, close_resolved_issues¹, close_task, heal_orphans, sdd_meta, select_tests, test_report¹ |
+| `.agents/skills/sdd-task/SKILL.md`, `.agent/workflows/sdd-task.md` | cache_test_contract¹, check_task_graph, reserve_ids, sdd_meta |
+| `.agents/skills/sdd-spec/SKILL.md` | reserve_ids, sdd_meta |
+| `.agent/workflows/sdd-spec.md` | reserve_ids, sdd_meta, spec_tools |
+| `.agents/skills/sdd-start/SKILL.md` | ensure_worktree, finalize_task |
+| `.agent/workflows/sdd-start.md` | close_task, ensure_worktree, finalize_task, sdd_meta |
+| `.agents/skills/sdd-brief/SKILL.md` *(no Google twin yet — TASK-4089)* | brief_meta, check_task_graph, ensure_worktree |
+| `.agents/skills/sdd-fix/SKILL.md`, `.agent/workflows/sdd-fix.md` | ensure_worktree, reserve_ids |
+| `.agents/skills/sdd-{next,status}/SKILL.md`, `.agent/workflows/sdd-{next,status}.md` | doc_taxonomy, worktree_status |
+| `.agents/skills/sdd-insight/SKILL.md`, `.agent/workflows/sdd-insight.md` — not shipped (C22) | insight |
+| `.agents/skills/sdd-{brainstorm,fromjira,proposal}/SKILL.md`, `.agent/workflows/sdd-{brainstorm,proposal,tojira}.md` | sdd_meta |
+| `.agents/skills/sdd-{codereview,explain,tojira}/SKILL.md`, `.agent/workflows/sdd-{codereview,explain,fromjira}.md` | none |
+| `.agents/agents/sdd-worker/agent.md` | close_task, ensure_worktree, sdd_meta |
+| `.agent/agents/sdd-worker/agent.md` | close_task, ensure_worktree, finalize_task, sdd_meta, select_tests |
+| `.agent/agents/sdd-autopilot/agent.md` | select_tests |
+| `.agents/agents/sdd-ideation/agent.md`, `.agent/agents/sdd-ideation/agent.md` | sdd_meta |
+| `.agents/agents/sdd-research/agent.md`, `.agent/agents/sdd-research/agent.md` | ensure_worktree |
+| `.agents/agents/sdd-{autopilot,feedback,planner,qa,secondopinion}/agent.md`, `.agent/agents/sdd-{feedback,planner,qa,secondopinion}/agent.md` | none |
 
 External-tool sample (files containing the token, same asset set): `jq` 9, `gh` 34,
 `tmux` 1, `codex` 9, `git-lfs` 0, `source .venv` 3, `.venv/bin` 4, `uv run` 3, `/tmp/` 2,
@@ -119,12 +144,11 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   does not exist — also supersedes the "14 templates" count in the rev 0.4 bullet above);
   anchors `sdd-done.md:172`→`:184`, the `E2E_STATUS … jq` lines are gone (0af88638e),
   `pyproject.toml:960-963`→`:965-968`; move-list wording updated.
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - `DEFAULT_GLOBS` scans only `.claude/` + `sdd/`, but TASK-4090 also ships the Codex/Google
-    twins (`TASK-4090-*.md:65-66,267-269`). Twin-only helper references are missed by the S5
-    report, e.g. `.agents/skills/sdd-insight/SKILL.md:46,55` (`python3 scripts/sdd/insight.py`),
-    `.agents/skills/sdd-done/SKILL.md:100,131,162`. Decide whether to add
-    `.agents/skills/sdd-*/SKILL.md` and `.agent/workflows/sdd-*.md` to `DEFAULT_GLOBS` (and the oracle).
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C24 — S5 also scans `.agents/` and `.agent/`: `DEFAULT_GLOBS` gains `.agents/skills/sdd-*/SKILL.md`,
+    `.agents/agents/sdd-*/agent.md`, `.agent/workflows/sdd-*.md` and `.agent/agents/sdd-*/agent.md`;
+    the asset inventory, the reference map (twin table) and AC-4 cover them; a test pins the globs.
+  - C22 — `/sdd-insight` is not shipped in v1; its rows stay in the map, marked "not shipped (C22)".
 
 ---
 
@@ -210,6 +234,12 @@ from pathlib import Path
 #                                intake.procedure.md, intake.schema.json, proposal.md, research_plan.prompt.md,
 #                                spec.md, state.schema.json, synthesis.prompt.md, task.md)
 #   sdd/WORKFLOW.md
+#   rev 0.5 C24 — the Codex/Google twins (verified 2026-10-20 on db7277048):
+#   .agents/skills/sdd-*/SKILL.md     (15: the .claude/commands set, incl. brief and insight)
+#   .agents/agents/sdd-*/agent.md     (8: autopilot, feedback, ideation, planner, qa, research, secondopinion, worker)
+#   .agent/workflows/sdd-*.md         (14: no sdd-brief.md yet — TASK-4089 creates it)
+#   .agent/agents/sdd-*/agent.md      (8: same names as .agents/agents/)
+#   /sdd-insight (command + both twins) is not shipped in v1 (C22) but is still scanned.
 
 # Verified sample references (line numbers):
 #   .claude/commands/sdd-insight.md:51,85   python3 scripts/sdd/insight.py \
@@ -362,6 +392,10 @@ DEFAULT_GLOBS: tuple[str, ...] = (
     ".claude/hooks/sdd-worker-format.sh",
     "sdd/templates/*",
     "sdd/WORKFLOW.md",
+    ".agents/skills/sdd-*/SKILL.md",      # rev 0.5 C24 — Codex/Google twins
+    ".agents/agents/sdd-*/agent.md",
+    ".agent/workflows/sdd-*.md",
+    ".agent/agents/sdd-*/agent.md",
 )
 REPO_SCRIPT_RE = re.compile(r"scripts[./]sdd[./](?P<name>[A-Za-z_][A-Za-z0-9_]*)(?:\.py|\.sh)?")
 # Command position only (line start, backtick, `$(`, pipe, `&&`, `;`) so prose like "ask codex for…" never matches.
@@ -544,7 +578,9 @@ are generator output, not literal text.
   select_tests, test_report}, `sdd-task.md` to {cache_test_contract, check_task_graph, reserve_ids,
   sdd_meta} (`check_e2e_closeout`, `close_resolved_issues`, `test_report`, `cache_test_contract`:
   moved by TASK-4508), and `sdd-brief.md` to {brief_meta, check_task_graph, ensure_worktree}
-  *(rev 0.4 C17)*.
+  *(rev 0.4 C17)*. *(rev 0.5 C24)* The twin rows match the second Context table (e.g.
+  `.agents/skills/sdd-done/SKILL.md` and `.agent/workflows/sdd-done.md` each include `test_report` and
+  `close_resolved_issues`); `/sdd-insight` rows are kept and labelled "not shipped (C22)".
 - [ ] AC-5: `missing_tools` returns only tools `shutil.which` cannot resolve (tested with
   monkeypatch).
 - [ ] AC-6: `sdd/state/FEAT-633/spikes/S5-sdd-assumptions.md` is committed, generated by
@@ -656,6 +692,13 @@ def test_real_assets_reference_map() -> None:
     findings = scan_paths([REPO_ROOT / ".claude/commands/sdd-spec.md"])
     names = {m.group("name") for f in findings if f.kind == "repo-script" for m in audit.REPO_SCRIPT_RE.finditer(f.snippet)}
     assert {"reserve_ids", "sdd_meta"} <= names
+
+
+def test_default_globs_cover_codex_and_google_twins() -> None:  # rev 0.5 C24
+    assert {
+        ".agents/skills/sdd-*/SKILL.md", ".agents/agents/sdd-*/agent.md",
+        ".agent/workflows/sdd-*.md", ".agent/agents/sdd-*/agent.md",
+    } <= set(audit.DEFAULT_GLOBS)
 
 
 def test_main_empty_root_exits_2(tmp_path: Path) -> None:

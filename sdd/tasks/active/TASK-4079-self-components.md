@@ -17,7 +17,8 @@ installs a toolkit template's `requires_pip` into the **managed** venv (`~/.parr
 with the bundled, pinned `uv` (`~/.parrot/bin/uv`), then runs the template's
 `post_install` argv. `--here` is the only path that installs into a **project** venv
 (spec §1 non-goal "no implicit modification of a project's dependencies"; §7 "Explicit
-over implicit"). `update` upgrades ai-parrot in the managed venv; `uninstall` removes the
+over implicit"). `update` upgrades the base runtime in the managed venv — `ai-parrot` and,
+since spec rev 0.5 C20, `ai-parrot-tools` at the same version pin; `uninstall` removes the
 managed runtime only — `~/.parrot` is a live data directory (spec §7).
 
 This task builds the engine (`parrot.self_.components`); the Click group and doctor are
@@ -28,6 +29,8 @@ from TASK-4077.
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: corrected the `pyvenv.cfg` claim (repo `.venv` records `uv = 0.11.29`, `version_info = 3.12`; uv writes `3.12` or `3.12.x`); added `wikis/` and `jira/` to the kept-user-data list and the uninstall log string (documentation only — `RUNTIME_DIRS` stays an allowlist; nothing on dev writes to `~/.parrot/{bin,venv,python}`). All other contract entries re-verified unchanged.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C20 — `parrot self` treats `ai-parrot-tools` as part of the base runtime (same version pin as `ai-parrot`): `update_runtime` now upgrades both together (`BASE_DISTS`), with the contract facts, blueprint, test and acceptance criterion updated.
 
 ## Scope
 
@@ -36,7 +39,8 @@ from TASK-4077.
 - Implement in `parrot/self_/components.py`:
   - `bundled_uv() -> Path`
   - `install_component(name: str, *, venv: Path, here: bool = False) -> list[str]`
-  - `update_runtime(version: str | None = None) -> list[str]`
+  - `update_runtime(version: str | None = None) -> list[str]` — upgrades the base runtime:
+    `ai-parrot` + `ai-parrot-tools`, same version pin (spec rev 0.5 C20)
   - `uninstall_runtime(*, yes: bool) -> list[str]`
 - Tests with `subprocess.run` mocked (no network, no real uv).
 
@@ -88,6 +92,10 @@ def script_path(venv: Path, name: str) -> Path: ...     # venv/bin/name (POSIX);
 - `pyvenv.cfg` written by uv records `version_info` as `3.12` (venv built on uv's minor-version
   Python link) or `3.12.x` — the repo's own `.venv/pyvenv.cfg` carries `uv = 0.11.29` and
   `version_info = 3.12` (verified 2026-10-19).
+- Base runtime (spec rev 0.5 C20): `ai-parrot-tools` is the PyPI name (`packages/ai-parrot-tools/pyproject.toml:6`);
+  it depends on `"ai-parrot>=1.2.3"` (`:29`) and versions in lockstep with core
+  (`parrot_tools/version.py:5` and `parrot/version.py:8` are both `"1.2.3"`). `wikitoolkit mcp`'s wiki
+  tools live in `parrot_tools.wiki` (FEAT-540), so a core-only managed venv cannot serve MCP.
 
 ### Does NOT Exist
 - ~~`parrot.self_` / `parrot/self_/`~~ — created here (and TASK-4080).
@@ -194,6 +202,9 @@ logger = logging.getLogger(__name__)
 RUNTIME_DIRS: tuple[str, ...] = ("bin", "venv", "python")
 #: Distribution upgraded by ``update_runtime``.
 CORE_DIST: str = "ai-parrot"
+#: Spec rev 0.5 C20 — part of the base runtime, always at the same version pin as CORE_DIST.
+TOOLS_DIST: str = "ai-parrot-tools"
+BASE_DISTS: tuple[str, ...] = (CORE_DIST, TOOLS_DIST)
 
 
 def managed_venv() -> Path:
@@ -285,14 +296,19 @@ def install_component(name: str, *, venv: Path, here: bool = False) -> list[str]
 
 
 def update_runtime(version: str | None = None) -> list[str]:
-    """Upgrade ai-parrot in the managed venv (``==version`` when given)."""
+    """Upgrade the base runtime (ai-parrot + ai-parrot-tools, spec rev 0.5 C20) in the managed venv.
+
+    Both distributions get the same ``==version`` pin when one is given.
+    """
     python = _venv_python(managed_venv())
-    requirement = f"{CORE_DIST}=={version}" if version else CORE_DIST
+    requirements = [f"{dist}=={version}" for dist in BASE_DISTS] if version else list(BASE_DISTS)
     log: list[str] = []
     # FILL IN: whether to re-pass extras installed by the bootstrap (`--with`) — no state file exists,
-    # and uv keeps already-installed packages, so the default is a plain `--upgrade <requirement>`;
+    # and uv keeps already-installed packages, so the default is a plain `--upgrade <requirements>`;
     # bounded by spec §1 non-goal (no new state) and §7
-    _run([str(bundled_uv()), "pip", "install", "--python", str(python), "--upgrade", requirement], log)
+    # Note for implementer: C20 fixes "same version pin" for an explicit `version`; it does not say whether
+    # an unpinned `update` must pin ai-parrot-tools to the resolved ai-parrot version — confirm in review.
+    _run([str(bundled_uv()), "pip", "install", "--python", str(python), "--upgrade", *requirements], log)
     return log
 
 
@@ -396,7 +412,7 @@ def test_bundled_uv_falls_back_to_path_with_warning(tmp_path: Path, monkeypatch,
 def test_update_runtime_pins_version(fake_managed_home: Path) -> None:
     with mock.patch.object(components.subprocess, "run") as run:
         components.update_runtime("9.9.9")
-    assert run.call_args.args[0][-1] == "ai-parrot==9.9.9"
+    assert run.call_args.args[0][-2:] == ["ai-parrot==9.9.9", "ai-parrot-tools==9.9.9"]  # rev 0.5 C20: same pin
 
 
 def test_uninstall_keeps_user_data(fake_managed_home: Path) -> None:
@@ -427,6 +443,7 @@ call is mocked, so the tests prove argv shape without network or a real uv.
 - [ ] `here=True` targets the project venv; `here=False` with any non-managed `venv` raises `ValueError` (spec §5 "`--here` … is the only way dependencies enter a project").
 - [ ] Core-only templates (empty `requires_pip`) run no subprocess.
 - [ ] `bundled_uv()` prefers `~/.parrot/bin/uv[.exe]`, falls back to PATH with a logged warning, else `FileNotFoundError`.
+- [ ] *[spec rev 0.5 C20]* `update_runtime(version)` upgrades `ai-parrot` and `ai-parrot-tools` in one `uv pip install --upgrade` call, both `==version` when a version is given (`test_update_runtime_pins_version`).
 - [ ] `uninstall_runtime(yes=True)` removes only `bin/`, `venv/`, `python/`; user data survives (spec §7).
 - [ ] No `shell=True`, no `print`; `ruff check packages/ai-parrot/src/parrot/self_/` clean.
 

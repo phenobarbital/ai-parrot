@@ -35,8 +35,8 @@ Portable form per field (shared brief, cross-cutting decision):
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: `claude_code/assets.py` line anchors shifted (+5..+42 after 6b30156ad `mcp_json_entry_remote` and 6164b075b ledger hooks); `ledger_hook_block`/`ledger_hook_new_file` added to NOT-in-scope; `mcp_json_entry_remote` left unchanged; removed the false claim that git hooks get a working Windows fix; two Validation Commands added. `bookstore.py` unchanged.
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - Windows-safe hook bodies: `git_hook_block` (assets.py:206-207) and `ledger_hook_block` (assets.py:236) write `wt_bin` unquoted into a `#!/bin/sh` file, so a `C:\…\Scripts\wikitoolkit.exe` path is mangled by sh (verified: `sh -c 'printf "%s\n" C:\r\.venv\Scripts\wikitoolkit.exe'` → `C:r.venvScriptswikitoolkit.exe`). Extend this task or open a new one.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C24 Windows (M5 (a)) — scope now covers the `git_hook_block`/`ledger_hook_block` bodies: the binary path is quoted and written with forward slashes (assets.py:206-207, :236; today `sh` strips the backslashes); `ledger_hook_block`/`ledger_hook_new_file` moved from NOT-in-scope into Scope; new test `test_hook_windows_path_survives_sh`.
 
 ## Scope
 
@@ -49,14 +49,17 @@ Portable form per field (shared brief, cross-cutting decision):
 - In `claude_code/bookstore.py`: add `portable` to `mcp_json_entry` (portable form
   `{"command": "bookstore", "args": ["mcp"], "env": {}}`), teach `_is_managed_entry` to recognise
   the portable shape, and thread `portable` through `install_bookstore` (keyword-only, default False).
+- *[spec rev 0.5 C24]* Git-hook bodies: `git_hook_block` (assets.py:185-210) and `ledger_hook_block`
+  (FEAT-694, assets.py:218-238) quote the binary path and write it with forward slashes, so a Windows
+  `Scripts\wikitoolkit.exe` path survives `sh`; `git_hook_new_file` / `ledger_hook_new_file` wrap those
+  blocks and inherit the fix.
 - Write `packages/ai-parrot/tests/knowledge/wiki/test_claude_portable_emitters.py`.
 
 **NOT in scope**:
 - `claude_code/installer.py` and `claude_code/cli.py` (`--portable` flag, reconcile rule,
   stickiness, `PurePosixPath` fixes) — TASK-4082.
-- `git_hook_block` / `git_hook_new_file` and `ledger_hook_block` / `ledger_hook_new_file` (FEAT-694,
-  assets.py:218-243): they write into `.git/hooks/`, which is never committed, so they stay baked in
-  both modes (their Windows behaviour is an open decision — see Readiness review).
+- A `portable` form for the git-hook emitters (`git_hook_*`, `ledger_hook_*`): they write into
+  `.git/hooks/`, which is never committed, so they stay baked in both modes.
 - `mcp_json_entry_remote` (assets.py:128-134, FEAT-569) — already root-independent (no machine path);
   leave unchanged, no `portable` keyword.
 - `PERMISSION_RULES` (assets.py:58-73) — keep exactly as is.
@@ -70,9 +73,9 @@ Portable form per field (shared brief, cross-cutting decision):
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py` | MODIFY | Windows branch via `script_path`; `portable=` on hook/MCP/toolkit/permission emitters; `PORTABLE_TOOLKIT_CONFIG` |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py` | MODIFY | Windows branch via `script_path`; `portable=` on hook/MCP/toolkit/permission emitters; `PORTABLE_TOOLKIT_CONFIG`; quoted forward-slash binary path in the git/ledger hook bodies (C24) |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/bookstore.py` | MODIFY | Portable bookstore entry (`bookstore mcp`), portable-aware managed detection, `install_bookstore(portable=)` |
-| `packages/ai-parrot/tests/knowledge/wiki/test_claude_portable_emitters.py` | CREATE | Unit tests for both emitter modes + Windows branch |
+| `packages/ai-parrot/tests/knowledge/wiki/test_claude_portable_emitters.py` | CREATE | Unit tests for both emitter modes + Windows branch + Windows path surviving `sh` in hook bodies |
 
 ---
 
@@ -108,8 +111,10 @@ def toolkit_mcp_json_entry(root: Path, name: str, section: ToolkitSection) -> di
 #   returns {"command": resolve_parrot_bin(root),
 #            "args": ["mcp-local", name, "--config", str(root / ".parrot" / "mcp-toolkits.yaml")],
 #            "cwd": str(root), "env": dict(section.env)}       # FEAT-556 pin, comment at lines 176-178
-def git_hook_block(root: Path) -> str:                                      # line 185 (unchanged)
-def ledger_hook_block(root: Path, hook_name: str) -> str:                   # line 218 (FEAT-694; unchanged)
+def git_hook_block(root: Path) -> str:                                      # line 185; wt_bin = resolve_wikitoolkit_bin(root) line 197; interpolated unquoted lines 206-207
+def git_hook_new_file(root: Path) -> str:                                   # line 213 -> f"#!/bin/sh\n{git_hook_block(root)}"
+def ledger_hook_block(root: Path, hook_name: str) -> str:                   # line 218 (FEAT-694); wt_bin line 230; interpolated unquoted line 236
+def ledger_hook_new_file(root: Path, hook_name: str) -> str:                # line 241 -> f"#!/bin/sh\n{ledger_hook_block(root, hook_name)}"
 def permission_rules(root: Path) -> tuple[str, ...]:                        # line 246-256 (bare -> PERMISSION_RULES; else + f"Bash({resolved}:*)")
 
 # packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/bookstore.py
@@ -159,6 +164,7 @@ def uninstall_bookstore(root: Path) -> list[str]:                           # li
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py#resolve_parrot_bin",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py#toolkit_mcp_json_entry",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py#git_hook_block",
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py#ledger_hook_block",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py#permission_rules",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py#PERMISSION_RULES",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py#MCP_JSON_ENTRY",
@@ -214,7 +220,10 @@ def uninstall_bookstore(root: Path) -> list[str]:                           # li
 4. Bookstore: portable `mcp_json_entry`, portable-aware `_is_managed_entry`, `install_bookstore(…,
    *, portable=False)` — *why*: spec §3 M5(b)/(d), bookstore `sys.executable` pin replaced in
    portable mode; a portable entry must still be recognised as ours so re-install/uninstall manage it.
-5. Write the tests — *why*: spec §4 `test_portable_entries_no_abs_paths`, `test_default_emission_unchanged`.
+5. Git-hook bodies: quoted, forward-slash binary path in `git_hook_block` / `ledger_hook_block` —
+   *why*: spec rev 0.5 C24, M5 (a) covers the git-hook bodies (`sh` strips Windows backslashes).
+6. Write the tests — *why*: spec §4 `test_portable_entries_no_abs_paths`, `test_default_emission_unchanged`;
+   C24 `test_hook_windows_path_survives_sh`.
 
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py` (MODIFY)
 ```python
@@ -314,6 +323,18 @@ def permission_rules(root: Path, *, portable: bool = False) -> tuple[str, ...]:
 **Why**: portable entries must carry no absolute path in any field (spec §5); `cwd` is dropped and
 `--config` made relative per the per-field contract (spec §3 M5(d)).
 
+```python
+# occurrences: 2 (verified: grep -c '    wt_bin = resolve_wikitoolkit_bin(root)' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py)
+# REPLACE — BOTH occurrences: :197 in `git_hook_block` (used at :206-207) and :230 in `ledger_hook_block`
+#           (used at :236). Spec rev 0.5 C24: quote the binary path and write it with forward slashes.
+    wt_bin = resolve_wikitoolkit_bin(root).replace("\\", "/")
+    # FILL IN: quote wt_bin for sh before the f-string interpolation below — bounded by spec rev 0.5 C24
+    # ("quote the binary path") and test_hook_windows_path_survives_sh.
+# `git_hook_new_file` (:213) and `ledger_hook_new_file` (:241) wrap these blocks — no change needed.
+```
+**Note for implementer**: C24 does not fix the quoting form. `shlex.quote` leaves a plain POSIX path
+byte-identical, while always-quoting changes today's POSIX hook text. Record the choice in the Completion Note.
+
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/bookstore.py` (MODIFY)
 ```python
 # occurrences: 1 (verified: grep -c '_MANAGED_ARGS = \["-m", "parrot.knowledge.bookstore.cli", "mcp"\]' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/bookstore.py)
@@ -369,9 +390,11 @@ branch. `uninstall_bookstore` removes portable entries too because it reuses `_i
 from __future__ import annotations
 
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 import pytest
 from parrot.knowledge.wiki.claude_code import assets, bookstore
@@ -455,12 +478,32 @@ def test_bookstore_managed_detection_accepts_portable() -> None:
     assert bookstore._is_managed_entry({"command": "bookstore", "args": ["mcp"], "env": {}})
     assert bookstore._is_managed_entry({"command": "/x/python", "args": ["-m", "parrot.knowledge.bookstore.cli", "mcp"]})
     assert not bookstore._is_managed_entry({"command": "my-bookstore", "args": ["mcp"]})
+
+
+@pytest.mark.skipif(shutil.which("sh") is None, reason="needs sh")
+@pytest.mark.parametrize(
+    "build",
+    [assets.git_hook_block, lambda root: assets.ledger_hook_block(root, "post-merge")],
+    ids=["git_hook_block", "ledger_hook_block"],
+)
+def test_hook_windows_path_survives_sh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, build: Callable[[Path], str]
+) -> None:
+    """Spec rev 0.5 C24: a Windows-style binary path in a hook body survives `sh` (quoted, forward slashes)."""
+    monkeypatch.setattr(assets, "resolve_wikitoolkit_bin", lambda root: "C:\\r\\.venv\\Scripts\\wikitoolkit.exe")
+    line = next(
+        text for text in build(tmp_path).splitlines() if "wikitoolkit" in text and not text.lstrip().startswith("#")
+    )
+    token = line.strip().split(" ", 1)[0]  # the (quoted) binary path; the test path has no spaces
+    out = subprocess.run(["sh", "-c", f'printf "%s" {token}'], capture_output=True, text=True, check=True).stdout
+    assert out == "C:/r/.venv/Scripts/wikitoolkit.exe"
 ```
 
 ### FILL IN checklist
 - [ ] `assets.py::mcp_json_entry` / `toolkit_mcp_json_entry` — `PARROT_PROJECT` env pin or omit; bounded by spike S3 (TASK-4069) evidence and spec §5 (no absolute path, env included).
 - [ ] `test_claude_portable_emitters.py::_section` — minimal `ToolkitSection`; bounded by its verified fields.
 - [ ] `test_default_emission_unchanged` — toolkit + permission assertions; bounded by AC "default emission unchanged".
+- [ ] `assets.py` hook bodies — quoting form for `wt_bin`; bounded by spec rev 0.5 C24 and `test_hook_windows_path_survives_sh`.
 
 ---
 
@@ -471,6 +514,7 @@ def test_bookstore_managed_detection_accepts_portable() -> None:
 - [ ] Portable wikitoolkit, toolkit, bookstore entries and the portable hook command contain no absolute path, no `sys.executable`, no `cwd` (spec §5, codex S5).
 - [ ] Portable entries are equal for two different roots.
 - [ ] `bookstore._is_managed_entry` accepts both managed shapes and rejects foreign ones; `install_bookstore(root, portable=True)` writes the portable entry.
+- [ ] *[spec rev 0.5 C24]* `git_hook_block` and `ledger_hook_block` write the binary path quoted and with forward slashes; a Windows-style path (`C:\r\.venv\Scripts\wikitoolkit.exe`) survives `sh` as `C:/r/.venv/Scripts/wikitoolkit.exe` (`test_hook_windows_path_survives_sh`).
 - [ ] Existing suites still pass (see Validation Commands); `ruff check` clean on both modified files.
 
 ---
@@ -486,6 +530,8 @@ Run from the feature worktree with `PYTHONPATH=packages/ai-parrot/src` (the shar
 - `pytest tests/knowledge/wiki/test_claude_code.py -q`
 - `pytest tests/knowledge/wiki/test_installer_ledger_hooks.py -q`
 - `pytest packages/ai-parrot/tests/knowledge/wiki/test_installer_remote_claude.py -q`
+- `pytest packages/ai-parrot/tests/knowledge/wiki/test_schema_hook_assets.py -q`
+- `pytest packages/ai-parrot/tests/knowledge/wiki/schema/test_cli_schema.py -q`
 
 ---
 
@@ -493,7 +539,8 @@ Run from the feature worktree with `PYTHONPATH=packages/ai-parrot/src` (the shar
 
 See the CREATE block above (`test_claude_portable_emitters.py`): `test_portable_entries_no_abs_paths`,
 `test_portable_entries_root_independent`, `test_default_emission_unchanged`,
-`test_windows_scripts_branch`, `test_bookstore_managed_detection_accepts_portable`.
+`test_windows_scripts_branch`, `test_bookstore_managed_detection_accepts_portable`,
+`test_hook_windows_path_survives_sh`.
 
 ---
 

@@ -49,9 +49,9 @@ shim)"; approved by Jesus Lara, 2026-10-17).
   `parrot.flows.dev_loop` imports the whole dev-loop stack at module load. Spec text: "the module
   itself moves to `parrot/sdd/scripts/` (light parent) and leaves a re-export shim behind … for
   its three in-core importers". This task does only that move + shim. The launcher fast path
-  (TASK-4072), the frontmatter rewrite (TASK-4089), the widened `test_no_repo_script_refs`
-  (TASK-4090) and the C3 coverage (TASK-4091) belong to other tasks. **Implementation of the C16
-  rows is gated by the open decisions in the Readiness review below.**
+  and the programmatic hook command (TASK-4509), the frontmatter rewrite (TASK-4089), the widened
+  `test_no_repo_script_refs` (TASK-4090) and the C3 coverage (TASK-4091) belong to other tasks.
+  The move mechanics are fixed by spec rev 0.5 **C19** (see the Readiness review below).
 
 ---
 
@@ -83,21 +83,16 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   `"pydantic>=2.12.5,<3"`; added the three brief suites to Validation Commands; folded in the
   rev 0.3 C16 move of `flows/dev_loop/worktree_environment.py` + re-export shim (the proposal's
   `sdd_coder/background.py:49` importer is now `:57`).
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - **C16 kernel lookup.** `_load_guard_bash` (`flows/dev_loop/worktree_environment.py:294-307`)
-    imports `.test_scope.guard` relative to its package, or top-level `test_scope` from its own
-    directory when run as a script. After the move neither resolves, and `_scope_guard`
-    (`:336-340`) turns the ImportError into "allow": the FEAT-563 over-broad-pytest guard would be
-    silently disabled, and `test_worktree_environment.py:273-283` would fail. A package-relative
-    kernel path (as TASK-4086 does for `check_task_graph`) is not in the spec text.
-  - **C16 shim form and by-path callers.** Live hooks run the OLD path by file with bare `python3`
-    and `|| exit 2` (`.claude/agents/sdd-coder.md:21`, `.claude/agents/sdd-worker.md:32`,
-    `flows/dev_loop/_subagent_data/sdd-{coder,worker}.md:21/32`), and `dispatchers/claude.py:625`
-    builds `[sys.executable, Path(worktree_environment.__file__).resolve(), "--hook"]` (proposal §3
-    C16 item 3, now owned by TASK-4509, which depends on this task). Until TASK-4509/4089 land, a shim that is not runnable by
-    path without `parrot` importable denies every `sdd-coder`/`sdd-worker` tool call. Decide the
-    shim form (by-path `__main__` + bare-interpreter fallback, like TASK-4088's `insight` shim?)
-    and what `claude.py:625` points at; `test_worktree_environment.py:231-236,286-295` depend on it.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C19 (1) kernel lookup — the C16 rows are ungated: in both module and script mode the moved
+    `_load_guard_bash` puts the package-relative kernel parent (`parents[2] / "flows" / "dev_loop"`) on
+    `sys.path` and imports `test_scope.guard`, never `parrot.flows.dev_loop`; `_scope_guard` is
+    otherwise unchanged; `test_worktree_environment.py:273-283` is adapted to the moved module.
+  - C19 (2) shim — the old path is a re-export shim for importers and, run as a script, executes the
+    moved file by package-relative path through `runpy.run_path(..., run_name="__main__")` with the
+    stdlib only, so the live `python3 <old path> --hook` hooks keep working; tests added for (1) and (2).
+  - C19 (3) — `dispatchers/claude.py:625` (and its test, `test_worktree_environment.py:285-295`) belong to
+    TASK-4509, not this task.
 
 ---
 
@@ -113,12 +108,20 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
 - Recreate each `scripts/sdd/<name>.py` as the alias shim. The module object becomes
   identical to the moved module, so existing tests that monkeypatch private names keep
   working.
-- *(rev 0.3 C16 — gated by the Readiness review open decisions)* `git mv`
+- *(rev 0.3 C16, mechanics rev 0.5 C19)* `git mv`
   `packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py` to
-  `packages/ai-parrot/src/parrot/sdd/scripts/worktree_environment.py`; the old path becomes a
-  re-export shim for its three in-core importers (`flows/dev_loop/dispatchers/claude.py:66`,
-  `flows/dev_loop/dispatchers/llm.py:58`, `flows/dev_loop/sdd_coder/background.py:57`).
-- Add `packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py`.
+  `packages/ai-parrot/src/parrot/sdd/scripts/worktree_environment.py`, then:
+  - rewrite `_load_guard_bash` so that, in both module and script mode, it puts the package-relative
+    kernel parent `Path(__file__).resolve().parents[2] / "flows" / "dev_loop"` on `sys.path` and imports
+    `test_scope.guard` — never `parrot.flows.dev_loop`. `_scope_guard` is otherwise unchanged;
+  - the old path becomes a re-export shim for its three in-core importers
+    (`flows/dev_loop/dispatchers/claude.py:66`, `flows/dev_loop/dispatchers/llm.py:58`,
+    `flows/dev_loop/sdd_coder/background.py:57`) which, run as a script (`__name__ == "__main__"`),
+    executes the moved file by package-relative path via `runpy.run_path(..., run_name="__main__")`
+    using only the stdlib, so a bare `python3 <old path> --hook` keeps working;
+  - adapt `test_standalone_loader_resolves_kernel_by_path`
+    (`packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py:273-283`) to the moved module.
+- Add `packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py` (including the C19 tests).
 
 **NOT in scope**:
 - Moving any other helper (TASK-4086/4087/4088).
@@ -129,10 +132,12 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   reference rewrite.
 - Changing `scripts/sdd/sdd_meta.py` or `scripts/sdd/__init__.py`.
 - Changing any test under `tests/sdd_scripts/`. The shim keeps them passing unmodified.
-- *(C16)* The launcher fast path for `parrot sdd run worktree_environment --hook` (TASK-4072),
-  rewriting the `sdd-coder`/`sdd-worker` frontmatter hooks (TASK-4089), widening
-  `test_no_repo_script_refs` (TASK-4090), C3 foreign-repo coverage (TASK-4091), and
-  `dispatchers/claude.py:625` (open decision — see Readiness review).
+- *(C16/C19)* The launcher fast path for `parrot sdd run worktree_environment --hook` and the
+  programmatic hook command in `dispatchers/claude.py:625`, with its test
+  `test_programmatic_claude_protection_does_not_depend_on_project_settings`
+  (`test_worktree_environment.py:285-295`) — all TASK-4509; rewriting the `sdd-coder`/`sdd-worker`
+  frontmatter hooks (TASK-4089); widening `test_no_repo_script_refs` (TASK-4090); C3 foreign-repo
+  coverage (TASK-4091).
 
 ---
 
@@ -152,9 +157,10 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
 | `scripts/sdd/check_id_collisions.py` | MODIFY | Becomes alias shim |
 | `scripts/sdd/ensure_worktree.py` | MODIFY | Becomes alias shim |
 | `scripts/sdd/brief_meta.py` | MODIFY | Becomes alias shim (rev 0.4 C17) |
-| `packages/ai-parrot/src/parrot/sdd/scripts/worktree_environment.py` | CREATE | `git mv` of `packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py` (rev 0.3 C16 — gated, see Readiness review) |
-| `packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py` | MODIFY | Becomes re-export shim for its three in-core importers (rev 0.3 C16 — gated) |
-| `packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py` | CREATE | Importability, `-m --help`, shim identity, help parity |
+| `packages/ai-parrot/src/parrot/sdd/scripts/worktree_environment.py` | CREATE | `git mv` of `packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py` + package-relative `_load_guard_bash` (rev 0.3 C16, rev 0.5 C19) |
+| `packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py` | MODIFY | Becomes re-export shim for its three in-core importers; run as a script it `runpy`s the moved file (rev 0.3 C16, rev 0.5 C19) |
+| `packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py` | MODIFY | Adapt `test_standalone_loader_resolves_kernel_by_path` (`:273-283`) to the moved module (rev 0.5 C19) |
+| `packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py` | CREATE | Importability, `-m --help`, shim identity, help parity; C19 kernel-lookup and bare-interpreter `--hook` tests |
 
 ---
 
@@ -232,7 +238,9 @@ def write_brief_index(meta: BriefMeta, tasks: list[dict[str, Any]], worktree_roo
 def main() -> None:                                                   # :464 — NO argv; --hook required (:467)
 if __name__ == "__main__": main()                                     # :483-484
 def _load_guard_bash() -> Any:                                        # :294-307 — `.test_scope.guard` when
-#   __package__ is set, else top-level `test_scope.guard` from this file's directory (see open decision)
+#   __package__ is set, else top-level `test_scope.guard` from this file's directory (body :303-307 ← REWRITE, C19)
+def _scope_guard(command: str, cwd: Path) -> tuple[str, str | None]:  # :325 — ImportError ⇒ ("allow", None) (:336-340)
+#   stdlib already imported: `from pathlib import Path` (:13), `import sys` (:16)
 #   in-core importers (keep working through the shim):
 #     flows/dev_loop/dispatchers/claude.py:66   from parrot.flows.dev_loop import worktree_environment
 #     flows/dev_loop/dispatchers/llm.py:58      from parrot.flows.dev_loop.worktree_environment import
@@ -251,7 +259,10 @@ def _load_guard_bash() -> Any:                                        # :294-307
 #   tests/sdd_scripts/test_brief_scaffold_integration.py (brief_meta + ensure_worktree main :12-13)
 #   tests/sdd_scripts/test_brief_template_contract.py   (from scripts.sdd.brief_meta import parse_brief :7)
 #   packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py
-#       (from parrot.flows.dev_loop import worktree_environment as policy :17; monkeypatches policy.* — C16)
+#       (from parrot.flows.dev_loop import worktree_environment as policy :17; monkeypatches policy.* — C16:
+#        policy.CLAUDE_SCRATCH_ROOT :27, policy.shutil :106…, policy._scope_guard :243,251,
+#        policy._load_guard_bash :263; runs [sys.executable, policy.__file__, "--hook"] :231-236;
+#        test_standalone_loader_resolves_kernel_by_path :273-283 ← adapted here (C19))
 ```
 
 ### Does NOT Exist
@@ -263,7 +274,7 @@ def _load_guard_bash() -> Any:                                        # :294-307
   `-m scripts.sdd.<name>` and `-m parrot.sdd.scripts.<name>`. Keep it that way.
 - ~~Any `__file__`-based repo-root derivation in these five modules~~ — none (grep-verified,
   `brief_meta` included 2026-10-19). `worktree_environment` derives no repo root from `__file__`
-  either, but resolves its `test_scope` kernel relative to its own location (open decision).
+  either; C19 makes its `test_scope` kernel lookup package-relative (`parents[2] / "flows" / "dev_loop"`).
 - ~~`parrot.sdd.scripts.test_scope`~~ — does not exist; the kernel stays at
   `parrot/flows/dev_loop/test_scope/`.
 
@@ -289,6 +300,7 @@ def _load_guard_bash() -> Any:                                        # :294-307
     {"path": "scripts/sdd/brief_meta.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/src/parrot/sdd/scripts/worktree_environment.py", "action": "CREATE"},
     {"path": "packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py", "action": "MODIFY"},
+    {"path": "packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py", "action": "MODIFY"},
     {"path": "packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py", "action": "CREATE"}
   ],
   "contract_symbols": [
@@ -307,7 +319,9 @@ def _load_guard_bash() -> Any:                                        # :294-307
     "sym:scripts/sdd/check_id_collisions.py#main",
     "sym:scripts/sdd/ensure_worktree.py#main",
     "sym:scripts/sdd/brief_meta.py#brief_worktree_plan",
-    "sym:packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py#main"
+    "sym:packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py#main",
+    "sym:packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py#_load_guard_bash",
+    "sym:packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py#_scope_guard"
   ]
 }
 ```
@@ -370,9 +384,11 @@ sys.modules[__name__] = _impl
    content.
 5. Write the five shims at the original paths. *Why*: existing `python -m scripts.sdd.*`
    invocations and `tests/sdd_scripts/` must keep working.
-6. *(rev 0.3 C16 — only after the Readiness review open decisions are resolved)* `git mv`
-   `worktree_environment.py` into `parrot/sdd/scripts/`, commit the rename on its own, then
-   write the re-export shim at the old path.
+6. *(rev 0.3 C16, rev 0.5 C19)* `git mv` `worktree_environment.py` into `parrot/sdd/scripts/`,
+   commit the rename on its own, then rewrite `_load_guard_bash`, write the shim at the old path,
+   and adapt `test_standalone_loader_resolves_kernel_by_path`. *Why*: the live `sdd-coder` /
+   `sdd-worker` hooks run the old path with a bare `python3` until TASK-4089/4509 land, and
+   FEAT-563's guard must not fail open.
 7. Write the test file and run the Validation Commands. *Why*: they prove the alias and
    the byte-identical help output.
 
@@ -452,11 +468,28 @@ from parrot.sdd.scripts.sdd_meta import WORKTREE_ROOT, WorktreePlan
 # No other line changes. No main() here — TASK-4299 adds the argparse CLI.
 ```
 
-### `packages/ai-parrot/src/parrot/sdd/scripts/worktree_environment.py` (CREATE — rev 0.3 C16, gated)
+### `packages/ai-parrot/src/parrot/sdd/scripts/worktree_environment.py` (CREATE — rev 0.3 C16, rev 0.5 C19)
 ```python
 # git mv packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py packages/ai-parrot/src/parrot/sdd/scripts/worktree_environment.py
-# Line changes: NONE decided yet. `_load_guard_bash` (:294-307) needs a kernel lookup that works from
-# parrot/sdd/scripts/ — blocked on the Readiness review open decision "C16 kernel lookup".
+# then ONE edit — the body of _load_guard_bash (docstring kept):
+# occurrences: 1 (verified 2026-10-20: grep -c "else:  # run as a script: this file.s directory is sys.path\[0\]"
+#   packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py — run before the git mv)
+# REPLACE — lines :303-307 (verified on dev 0263f0724):
+#     if __package__:
+#         from .test_scope.guard import guard_bash
+#     else:  # run as a script: this file's directory is sys.path[0]
+#         from test_scope.guard import guard_bash
+#     return guard_bash
+# WITH (module AND script mode; never imports parrot.flows.dev_loop — C19 (1)):
+    # parrot/sdd/scripts/worktree_environment.py -> parents[2] is the `parrot` package dir (package-relative).
+    kernel_parent = Path(__file__).resolve().parents[2] / "flows" / "dev_loop"
+    if str(kernel_parent) not in sys.path:
+        sys.path.insert(0, str(kernel_parent))
+    from test_scope.guard import guard_bash
+
+    return guard_bash
+# `Path` (:13) and `sys` (:16) are already imported. No other line changes: _scope_guard (:325-352) keeps
+# turning an ImportError into ("allow", None).
 ```
 
 ### `scripts/sdd/id_ledger.py` (MODIFY)
@@ -508,7 +541,7 @@ sys.modules[__name__] = _impl
 ```python
 # occurrences: 1 (verified: grep -c '"""Idempotent feature/hotfix worktree provisioning for SDD commands (FEAT-552).' scripts/sdd/ensure_worktree.py)
 # REPLACE — whole file; first line was `"""Idempotent feature/hotfix worktree provisioning for SDD commands (FEAT-552).`
-#           (verified: scripts/sdd/ensure_worktree.py:1). original main: `def main(argv: Sequence[str] | None = None) -> int:` (:225)
+#           (verified: scripts/sdd/ensure_worktree.py:1). original main: `def main(argv: Sequence[str] | None = None) -> int:` (:265)
 """Compatibility shim — moved to ``parrot.sdd.scripts.ensure_worktree`` (FEAT-633)."""
 import sys
 
@@ -535,14 +568,52 @@ if __name__ == "__main__":
 sys.modules[__name__] = _impl
 ```
 
-### `packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py` (MODIFY — rev 0.3 C16, gated)
+### `packages/ai-parrot/src/parrot/flows/dev_loop/worktree_environment.py` (MODIFY — rev 0.3 C16, rev 0.5 C19)
 ```python
-# REPLACE — whole file (original moved by git mv) with the re-export shim. Its exact form is blocked on the
-# Readiness review open decision "C16 shim form and by-path callers". Fixed requirements from the spec text:
-#   - the three in-core importers keep working unchanged: dispatchers/claude.py:66 (module object),
-#     dispatchers/llm.py:58 (command_policy_error, protected_argv, validate_write_path),
-#     sdd_coder/background.py:57 (protected_argv);
-#   - packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py passes unmodified.
+# REPLACE — whole file (original moved by git mv; first line was
+#   `"""Protect shared Python environments when executing SDD worktree commands.`, verified :1).
+# Requirements (C19 (2)): the three in-core importers keep working unchanged — dispatchers/claude.py:66 (module
+# object), dispatchers/llm.py:58 (command_policy_error, protected_argv, validate_write_path),
+# sdd_coder/background.py:57 (protected_argv); run as a script it executes the moved file by package-relative
+# path via runpy.run_path(..., run_name="__main__") using only the stdlib.
+"""Compatibility shim — moved to ``parrot.sdd.scripts.worktree_environment`` (FEAT-633 C16/C19).
+
+Importers keep ``from parrot.flows.dev_loop.worktree_environment import …``. Run as a script (the live
+``python3 <this path> --hook`` hooks), it executes the moved file with the stdlib only, so a bare
+interpreter keeps working.
+"""
+import sys
+
+if __name__ == "__main__":
+    import runpy
+    from pathlib import Path
+
+    # parrot/flows/dev_loop/worktree_environment.py -> parents[2] is the `parrot` package dir.
+    runpy.run_path(
+        str(Path(__file__).resolve().parents[2] / "sdd" / "scripts" / "worktree_environment.py"),
+        run_name="__main__",
+    )
+else:
+    from parrot.sdd.scripts import worktree_environment as _impl
+
+    sys.modules[__name__] = _impl
+```
+Note for implementer: C19 says "re-export shim" without fixing its form; the block uses the FEAT-633 alias
+form (`sys.modules[__name__] = _impl`) because `test_worktree_environment.py` monkeypatches module globals the
+moved code reads (`policy._scope_guard` :243/:251, `policy._load_guard_bash` :263, `policy.CLAUDE_SCRATCH_ROOT`
+:27), which a `from … import *` copy would not reach.
+
+### `packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py` (MODIFY — rev 0.5 C19)
+```python
+# REPLACE — the first line of test_standalone_loader_resolves_kernel_by_path (verified :274):
+#     hook_dir = str(Path(policy.__file__).parent)
+# WITH (load the hook from the MOVED module's directory, which has no test_scope/ next to it, so the test
+# proves the package-relative lookup in script mode):
+    from parrot.sdd.scripts import worktree_environment as moved
+
+    hook_dir = str(Path(moved.__file__).parent)
+# The rest of the test (:275-283) is unchanged. No other test in this file changes here
+# (:285-295 belongs to TASK-4509).
 ```
 
 ### `packages/ai-parrot/tests/sdd/test_scripts_ledger_worktree.py` (CREATE)
@@ -550,7 +621,7 @@ See **Test Specification**. That block is the starting file.
 
 ### FILL IN checklist
 - [ ] None in production code: every change is mechanical (`git mv` + four import lines +
-  five fixed shims). The C16 `worktree_environment` rows wait for the open decisions.
+  five fixed shims, plus the C19 `_load_guard_bash` body and the `worktree_environment` shim above).
 - [ ] `test_scripts_ledger_worktree.py`: confirm `--help` parity holds on the
   interpreter in use. Python 3.14 changed argparse's default `prog` for `-m`; the venv is
   3.12.3. If parity breaks on a newer interpreter, report it and do NOT add `prog=`
@@ -575,11 +646,17 @@ See **Test Specification**. That block is the starting file.
   shows the pre-move history.
 - [ ] AC-7: `ruff check packages/ai-parrot/src/parrot/sdd/scripts scripts/sdd packages/ai-parrot/tests/sdd`
   is clean.
-- [ ] AC-8 (rev 0.3 C16, gated): `parrot.sdd.scripts.worktree_environment` imports without
+- [ ] AC-8 (rev 0.3 C16, rev 0.5 C19): `parrot.sdd.scripts.worktree_environment` imports without
   importing `parrot.flows.dev_loop`; `command_policy_error`, `protected_argv`,
   `validate_write_path` imported from `parrot.flows.dev_loop.worktree_environment` are the
   objects of `parrot.sdd.scripts.worktree_environment`; `test_worktree_environment.py` passes
-  unmodified.
+  against the moved module, with only `test_standalone_loader_resolves_kernel_by_path` adapted.
+- [ ] AC-9 (rev 0.5 C19 (1)): in module mode, `parrot.sdd.scripts.worktree_environment._load_guard_bash()`
+  returns `test_scope.guard.guard_bash` and leaves no `parrot.flows.dev_loop*` module in `sys.modules`; in
+  script mode (imported by path from `parrot/sdd/scripts/`) it resolves `test_scope.guard` as well.
+- [ ] AC-10 (rev 0.5 C19 (2)): `python3 -I -S <old path> --hook` and `python3 -I -S <moved path> --hook`
+  (stdlib only: no site-packages, no `PYTHONPATH`) both answer `{}` on stdin with exit 0 and a
+  `permissionDecision: "deny"` JSON.
 - [ ] Spec §5: "`scripts/sdd/` wrappers keep the monorepo's existing invocations working"
   (for these five).
 
@@ -600,7 +677,7 @@ editable-installed against the main checkout).
 - `pytest tests/sdd_scripts/test_brief_meta.py -q` (rev 0.4 C17)
 - `pytest tests/sdd_scripts/test_brief_scaffold_integration.py -q` (rev 0.4 C17)
 - `pytest tests/sdd_scripts/test_brief_template_contract.py -q` (rev 0.4 C17)
-- `pytest packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py -q` (rev 0.3 C16, once ungated)
+- `pytest packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py -q` (rev 0.3 C16, rev 0.5 C19)
 
 ---
 
@@ -612,6 +689,7 @@ editable-installed against the main checkout).
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import subprocess
 import sys
@@ -622,6 +700,8 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SRC = REPO_ROOT / "packages" / "ai-parrot" / "src"
 MOVED = ("id_ledger", "reserve_ids", "check_id_collisions", "ensure_worktree")
+MOVED_HOOK = SRC / "parrot" / "sdd" / "scripts" / "worktree_environment.py"  # rev 0.3 C16
+OLD_HOOK = SRC / "parrot" / "flows" / "dev_loop" / "worktree_environment.py"  # rev 0.5 C19 shim
 MOVED_LIBS = ("brief_meta",)  # rev 0.4 C17: library module, no main() until TASK-4299 adds the CLI
 SDD_META_NAMES = (
     "KNOWN_BRANCHES", "KNOWN_PROJECTS", "PROJECT_ALIASES", "WORK_KIND_FLOW", "WORKTREE_ROOT", "DocTaxonomy",
@@ -667,7 +747,38 @@ def test_sdd_meta_reexport_identity() -> None:
     src = importlib.import_module("parrot.knowledge.wiki.ledger.sdd_meta")
     for name in SDD_META_NAMES:
         assert getattr(pkg, name) is getattr(src, name), name
+
+
+def test_worktree_environment_shim_reexports_moved_module() -> None:  # rev 0.3 C16 / AC-8
+    old = importlib.import_module("parrot.flows.dev_loop.worktree_environment")
+    moved = importlib.import_module("parrot.sdd.scripts.worktree_environment")
+    for name in ("command_policy_error", "protected_argv", "validate_write_path"):
+        assert getattr(old, name) is getattr(moved, name), name
+
+
+def test_guard_loader_module_mode_never_imports_dev_loop() -> None:  # rev 0.5 C19 (1) / AC-9
+    code = (
+        "import sys; from parrot.sdd.scripts import worktree_environment as we; "
+        "print(we._load_guard_bash().__module__); "
+        "print(any(m == 'parrot.flows.dev_loop' or m.startswith('parrot.flows.dev_loop.') for m in sys.modules))"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], env=_env(), capture_output=True, text=True, timeout=30)
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.split() == ["test_scope.guard", "False"]
+
+
+@pytest.mark.parametrize("hook", (MOVED_HOOK, OLD_HOOK))
+def test_hook_answers_with_bare_interpreter(hook: Path, tmp_path: Path) -> None:  # rev 0.5 C19 (2) / AC-10
+    # -I -S: stdlib only (no site-packages, no PYTHONPATH, no script dir on sys.path).
+    proc = subprocess.run(
+        [sys.executable, "-I", "-S", str(hook), "--hook"],
+        input="{}", cwd=tmp_path, capture_output=True, text=True, timeout=10,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert json.loads(proc.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
 ```
+Script-mode kernel lookup from `parrot/sdd/scripts/` (C19 (1), AC-9) is covered by the adapted
+`test_standalone_loader_resolves_kernel_by_path` in `test_worktree_environment.py`.
 
 ---
 

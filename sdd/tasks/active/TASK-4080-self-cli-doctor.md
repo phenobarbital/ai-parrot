@@ -61,8 +61,10 @@ review). Every section below is already rewritten to match; this list is the del
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: agentd `status` anchor `cli/__init__.py:134`→`:136` (094ec8616 added `jiratoolkit`); Codex `MCP_TABLE` 19→20 and toolkit table 84→85; `_check_python` contract + test now accept `version_info = 3.12` as well as `3.12.x` (repo `.venv` records `3.12`); added the remote-HTTP-entry contract note and `test_remote_http_entry_is_not_flagged`.
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - Doctor reads only Gemini's user-global `mcp_config.json`, but `GoogleAdapter.config_paths` → `toolkit_config_paths` also returns the repo-local `<root>/.agents/plugins/parrot/mcp_config.json` (`knowledge/wiki/google/installer.py:142-152`), and reconcile writes `parrot-<name>` command entries to both (`installer.py:175-200`). Spec §3 M3 says "3 hosts incl. the Gemini user-global file" — owner decides whether `_check_host_configs` also checks the repo-local file.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C24 — `_check_host_configs` checks both Gemini MCP config files (user-global + `<root>/.agents/plugins/parrot/mcp_config.json`, via `toolkit_config_paths`); the cross-repo collision check runs on the user-global one only. New test `test_gemini_repo_local_config_checked`.
+  - C20 — new `_check_tools_wiki()` (full / sdd scopes): `parrot_tools.wiki` must import in the managed venv; fix `parrot self update`. New test `test_tools_wiki_check`.
+  - C23 — `doctor --sdd` adds `sdd: ledger merge=union` (`.gitattributes` ledger block) and `sdd: ledger hooks` (pre-commit, post-merge, post-checkout, post-rewrite carry the `parrot-ledger` block); `ready_repo` fixture and the failure matrix extended.
 
 ## Scope
 
@@ -78,8 +80,10 @@ review). Every section below is already rewritten to match; this list is the del
   `"sdd"` = `"full"` with the SDD checks forced on.
 - Implement the SDD readiness checks (C15): `origin` remote; configured base branch on `origin`;
   ledger git-tracked; `.claude/worktrees/` ignored; `gh` present + authenticated; `jq` present
-  while referenced; installed SDD files current (`sdd_status`); host CLIs present (informational).
-  All `parrot.sdd.*` imports lazy and absence-tolerant.
+  while referenced; installed SDD files current (`sdd_status`); host CLIs present (informational);
+  *[spec rev 0.5 C23]* the `.gitattributes` ledger block (`merge=union` for `sdd/ledger/events.jsonl`
+  and `sdd/ledger/archive/*.jsonl`) and the four ledger hooks (pre-commit, post-merge, post-checkout,
+  post-rewrite). All `parrot.sdd.*` imports lazy and absence-tolerant.
 - `parrot self doctor [--sdd | --runtime-only]`: mutually exclusive flags (usage error, exit 2);
   exit 1 iff a non-informational check in the selected scope failed.
 - Register `"self": "parrot.self_.cli"` in `cli._lazy_commands`.
@@ -88,8 +92,11 @@ review). Every section below is already rewritten to match; this list is the del
 - Doctor checks (spec §3 M3): pinned uv present + version; managed venv Python is 3.12;
   PATH contains `~/.parrot/bin`; host configs whose command paths don't exist (Claude
   `<root>/.mcp.json`, Codex `<root>/.codex/config.toml`, Google user-global
-  `~/.gemini/config/mcp_config.json`) incl. the Gemini cross-repo baked-path collision;
-  installed toolkits with unmet `requires_dist` / `requires_env`.
+  `~/.gemini/config/mcp_config.json` and *[spec rev 0.5 C24]* Google repo-local
+  `<root>/.agents/plugins/parrot/mcp_config.json`) incl. the Gemini cross-repo baked-path
+  collision — checked on the user-global file only (C24);
+  installed toolkits with unmet `requires_dist` / `requires_env`; *[spec rev 0.5 C20]*
+  `parrot_tools.wiki` imports in the managed venv (ai-parrot-tools is part of the base runtime).
 - Tests for the CLI and doctor.
 
 **NOT in scope**: the engine (TASK-4079); fixing anything doctor reports (it only
@@ -110,8 +117,8 @@ bootstrap scripts' call to `parrot self doctor --runtime-only` and their rollbac
 | `packages/ai-parrot/src/parrot/self_/doctor.py` | CREATE | `DoctorCheck`, `run_doctor`, `installed_version` |
 | `packages/ai-parrot/src/parrot/cli/__init__.py` | MODIFY | Lazy `"self"` entry |
 | `packages/ai-parrot/tests/self_/test_self_cli.py` | CREATE | CLI tests (registration, env, add/uninstall wiring) |
-| `packages/ai-parrot/tests/self_/test_doctor.py` | CREATE | Doctor check tests (runtime / host / toolkits) |
-| `packages/ai-parrot/tests/self_/test_doctor_sdd.py` | CREATE | C15 SDD readiness checks, `--sdd` / `--runtime-only` scopes, exit-code rule (fixture repo per missing prerequisite) |
+| `packages/ai-parrot/tests/self_/test_doctor.py` | CREATE | Doctor check tests (runtime / host incl. both Gemini files / toolkits / `parrot_tools.wiki`) |
+| `packages/ai-parrot/tests/self_/test_doctor_sdd.py` | CREATE | C15 SDD readiness checks (+ rev 0.5 C23 ledger block and hooks), `--sdd` / `--runtime-only` scopes, exit-code rule (fixture repo per missing prerequisite) |
 
 ---
 
@@ -123,6 +130,9 @@ from parrot.cli import cli  # verified: packages/ai-parrot/src/parrot/cli/__init
 from parrot.mcp.toolkit_seed import available_templates  # verified: packages/ai-parrot/src/parrot/mcp/toolkit_seed.py:49
 from parrot.mcp.toolkit_install import ToolkitState, inventory  # verified: packages/ai-parrot/src/parrot/mcp/toolkit_install.py:32,94
 from parrot.knowledge.wiki.google.assets import default_mcp_config_path  # verified: packages/ai-parrot/src/parrot/knowledge/wiki/google/assets.py:61
+from parrot.knowledge.wiki.google.installer import toolkit_config_paths  # verified: packages/ai-parrot/src/parrot/knowledge/wiki/google/installer.py:142 (rev 0.5 C24)
+from parrot.knowledge.wiki.claude_code import assets as claude_assets  # verified: claude_code/assets.py:51-53 LEDGER_HOOK_* (rev 0.5 C23)
+from parrot.knowledge.wiki.claude_code.installer import _git_hook_path  # verified: claude_code/installer.py:832 (private; read-only use, rev 0.5 C23)
 import tomllib  # stdlib (requires-python >=3.11, packages/ai-parrot/pyproject.toml:18)
 # Created by dependency tasks:
 from parrot.launcher import MANAGED_PYTHON, find_project_root, parrot_home, resolve_venv, script_path  # TASK-4071
@@ -166,8 +176,25 @@ class ClaudeAdapter.config_paths(root) -> (root / ".mcp.json",)                 
 class CodexAdapter.config_paths(root) -> (root / ".codex" / "config.toml",)     # line 125-126
 class GoogleAdapter.config_paths(root) -> toolkit_config_paths(root, ...)       # line 185-188
 
+# packages/ai-parrot/src/parrot/knowledge/wiki/google/installer.py  (rev 0.5 C24)
+def toolkit_config_paths(root: Path, mcp_path: Optional[Path] = None) -> tuple[Path, ...]:  # line 142
+#   → (mcp_path or default_mcp_config_path(), root / assets.PLUGIN_DIR / "mcp_config.json")  # line 151-152
+#   PLUGIN_DIR = Path(".agents/plugins/parrot")  — google/assets.py:19
+#   reconcile_toolkit_entries writes `parrot-<name>` entries (with "command") into BOTH files (line 155-200)
+
 # packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py
 MCP_TABLE = "mcp_servers.wikitoolkit"   # line 20; toolkit tables `[mcp_servers.parrot-<name>]` line 85
+
+# packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py  (rev 0.5 C23 — FEAT-694 ledger hooks)
+LEDGER_HOOK_BEGIN = "# >>> parrot-ledger >>>"                                            # line 51
+LEDGER_HOOK_END = "# <<< parrot-ledger <<<"                                              # line 52
+LEDGER_HOOK_EVENTS = ("pre-commit", "post-merge", "post-checkout", "post-rewrite")      # line 53
+
+# packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py  (rev 0.5 C23)
+def _git_hook_path(root: Path, hook_name: str = "post-commit") -> Optional[Path]:        # line 832 — None if not a git repo;
+#   linked worktrees resolve hooks/ against the common git dir
+def _install_ledger_hooks(root: Path) -> list[str]:                                      # line 973 — writes LEDGER_HOOK_BEGIN
+#   block into each LEDGER_HOOK_EVENTS hook (the installer C23 reuses for `parrot sdd install`)
 ```
 - Claude `.mcp.json` shape: `{"mcpServers": {name: {"command": str, "args": [...]}}}`.
 - uv-created `pyvenv.cfg` carries `version_info = 3.12` (venv built on uv's minor-version Python link)
@@ -175,12 +202,18 @@ MCP_TABLE = "mcp_servers.wikitoolkit"   # line 20; toolkit tables `[mcp_servers.
 - Remote MCP entries carry no `command`: Claude `{"type": "http", "url": …, "headers": …}`
   (`knowledge/wiki/claude_code/assets.py:128-134`), Codex `url = …` (`knowledge/wiki/codex/assets.py:115`).
 - Pinned uv version for the bootstrap: `0.11.28` (shared brief; same value the M2 install scripts pin).
+- *[rev 0.5 C20]* `parrot_tools.wiki` is a package in ai-parrot-tools
+  (`packages/ai-parrot-tools/src/parrot_tools/wiki/__init__.py`); `wikitoolkit mcp`'s wiki tools live there
+  since FEAT-540, so a managed venv without it cannot answer MCP `initialize`.
+- *[rev 0.5 C23]* The two `merge=union` lines the ledger block carries — ai-parrot's own `.gitattributes:2-3`
+  (unmarked, FEAT-694): `sdd/ledger/events.jsonl merge=union`, `sdd/ledger/archive/*.jsonl merge=union`.
 
 ### Does NOT Exist
 - ~~`parrot self`, `parrot env`, `parrot doctor` commands~~ — `"self"` is added here; never add top-level `env`/`doctor`.
 - ~~reusing `parrot status`~~ — agentd owns it (cli/__init__.py:136).
 - ~~`parrot.self_.cli` / `parrot.self_.doctor`~~ — created here.
-- ~~a shared host-config parser in core~~ — doctor reads the three files directly (json / tomllib).
+- ~~a shared host-config parser in core~~ — doctor reads the four files directly (json / tomllib; two Gemini files since rev 0.5 C24).
+- ~~marker strings for the `.gitattributes` ledger block on `dev`~~ — C23's block is written by `parrot sdd install` (TASK-4091), which defines its markers.
 - ~~`parrot sdd` in `_lazy_commands`~~ — TASK-4091's line, not this task's.
 - ~~`parrot.sdd.config`, `parrot.sdd.installer`, `parrot.sdd.audit` on `dev` today~~ — created by
   TASK-4299 / TASK-4091 / TASK-4070; the SDD checks must work (report "unavailable") when any is missing.
@@ -211,7 +244,10 @@ MCP_TABLE = "mcp_servers.wikitoolkit"   # line 20; toolkit tables `[mcp_servers.
     "sym:packages/ai-parrot/src/parrot/mcp/toolkit_install.py#ToolkitState",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/google/assets.py#default_mcp_config_path",
     "sym:packages/ai-parrot/src/parrot/mcp/hosts.py#ClaudeAdapter.config_paths",
-    "sym:packages/ai-parrot/src/parrot/mcp/hosts.py#CodexAdapter.config_paths"
+    "sym:packages/ai-parrot/src/parrot/mcp/hosts.py#CodexAdapter.config_paths",
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/google/installer.py#toolkit_config_paths",
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#_git_hook_path",
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#_install_ledger_hooks"
   ]
 }
 ```
@@ -244,9 +280,11 @@ def toolkits() -> None:
   — synchronous is correct in a one-shot CLI (no event loop).
 - **Scopes (C14/C15)**: `"runtime-only"` runs exactly `_check_uv`, `_check_python`,
   `_check_entrypoints`, `_check_path` — nothing that touches `root`, a host config, a toolkit
-  or the network. `"full"` adds host configs + toolkits, and `_check_sdd(root)` iff
+  or the network. `"full"` adds `_check_tools_wiki` (rev 0.5 C20) + host configs + toolkits, and `_check_sdd(root)` iff
   `(root / "sdd").is_dir()`. `"sdd"` forces `_check_sdd`. The `--runtime-only` scope must stay
   cheap and offline: the bootstrap runs it on a machine that may have no repo at all.
+  Note for implementer: C20 does not say whether the `parrot_tools.wiki` check joins `--runtime-only` (C14 fixes
+  that scope to uv, Python, entry points, PATH) — kept out of it until review decides.
 - **SDD checks are lazy and absence-tolerant**: every `parrot.sdd.*` import sits inside the
   `_check_sdd_*` function that needs it; `ImportError` → `DoctorCheck(ok=True, informational=True,
   detail="… unavailable in this ai-parrot build")`. Git probes use `subprocess.run(["git", "-C", root, …],
@@ -259,7 +297,9 @@ def toolkits() -> None:
 - **Fix strings are concrete commands**, e.g. `git remote add origin <url>`,
   `git push -u origin dev`, `git add sdd/tasks/.id_ledger.json && git commit -m "sdd: seed id ledger"`,
   `parrot sdd install` (adds the `.gitignore` block), `gh auth login`, `parrot sdd install`
-  (outdated files), `parrot sdd status` (edited files).
+  (outdated files), `parrot sdd status` (edited files), `parrot sdd install` (writes the
+  `.gitattributes` ledger block / installs the four ledger hooks — rev 0.5 C23), `parrot self update`
+  (`parrot_tools.wiki` missing — rev 0.5 C20).
 
 ### References in Codebase
 - `packages/ai-parrot/src/parrot/cli/toolkits.py` — CLI style, lazy imports
@@ -277,10 +317,10 @@ def toolkits() -> None:
 
 ### `packages/ai-parrot/src/parrot/self_/doctor.py` (CREATE)
 ```python
-"""`parrot self doctor` checks (FEAT-633, spec §3 M3; rev 0.2 C14/C15). Read-only diagnostics.
+"""`parrot self doctor` checks (FEAT-633, spec §3 M3; rev 0.2 C14/C15; rev 0.5 C20/C23/C24). Read-only diagnostics.
 
 Scopes: "runtime-only" (bootstrap: uv, Python, entry points, PATH — offline, repo-free),
-"full" (runtime + host configs + toolkits + SDD readiness iff <root>/sdd exists),
+"full" (runtime + parrot_tools.wiki + host configs + toolkits + SDD readiness iff <root>/sdd exists),
 "sdd" (full with SDD readiness forced). Every parrot.sdd.* import is lazy and absence-tolerant.
 """
 
@@ -367,6 +407,15 @@ def _check_entrypoints() -> DoctorCheck:
     )
 
 
+def _check_tools_wiki() -> DoctorCheck:
+    """Rev 0.5 C20: ``parrot_tools.wiki`` imports in the managed venv (ai-parrot-tools is base runtime)."""
+    python = script_path(managed_venv(), "python")
+    # FILL IN: DoctorCheck(name="parrot_tools.wiki", …); no interpreter → ok=False; else subprocess.run([python, "-c", "import parrot_tools.wiki"],
+    # capture_output=True, text=True, check=False) (same pattern as installed_version); non-zero → ok=False,
+    # detail = last stderr line, fix "parrot self update" — bounded by spec rev 0.5 C20
+    raise NotImplementedError
+
+
 # --- C15: SDD readiness (lazy, absence-tolerant; run only in "full" with <root>/sdd present, or "sdd") ---
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -410,6 +459,15 @@ def _check_sdd(root: Path) -> list[DoctorCheck]:
     #     detail lists them, fix "parrot sdd install" (outdated) / "parrot sdd status" (edited)
     #   host CLIs: for each host with installed assets (sdd_status hosts with any current target),
     #     shutil.which(HOST_CLIS[host]) → ALWAYS informational=True
+    #   [rev 0.5 C23] "sdd: ledger merge=union": <root>/.gitattributes carries the ledger block — `merge=union` for
+    #     `sdd/ledger/events.jsonl` and `sdd/ledger/archive/*.jsonl`; absent file/line → ok=False, detail names
+    #     the missing pattern(s), fix "parrot sdd install (writes the .gitattributes ledger block)"
+    #     Note for implementer: C23 fixes no marker strings (TASK-4091 defines them) nor says whether
+    #     ai-parrot's unmarked `.gitattributes:2-3` satisfy the check — this blueprint checks the two lines; confirm in review.
+    #   [rev 0.5 C23] "sdd: ledger hooks": lazy-import claude_code.assets + installer._git_hook_path; for each
+    #     event in claude_assets.LEDGER_HOOK_EVENTS the hook file exists and contains claude_assets.LEDGER_HOOK_BEGIN;
+    #     _git_hook_path → None (not a git repo) or any event missing → ok=False, detail lists the events,
+    #     fix "parrot sdd install (installs the four ledger hooks)"
     raise NotImplementedError
 
 
@@ -423,19 +481,20 @@ def _command_problem(entry: Any, root: Path) -> str | None:
 
 
 def _check_host_configs(root: Path) -> list[DoctorCheck]:
-    """Claude .mcp.json, Codex .codex/config.toml, Google user-global mcp_config.json.
+    """Claude .mcp.json, Codex .codex/config.toml, both Google mcp_config.json files (rev 0.5 C24).
 
-    Google also flags the cross-repo collision: a ``wikitoolkit`` / ``parrot-*`` entry whose
-    ``cwd`` (or absolute ``--config`` arg) belongs to another root — fix: re-install with
-    ``--portable`` (spec §7).
+    The user-global Google file also flags the cross-repo collision: a ``wikitoolkit`` / ``parrot-*``
+    entry whose ``cwd`` (or absolute ``--config`` arg) belongs to another root — fix: re-install with
+    ``--portable`` (spec §7). The repo-local Google file gets the command check only (C24).
     """
-    from parrot.knowledge.wiki.google.assets import default_mcp_config_path  # verified: google/assets.py:61
+    from parrot.knowledge.wiki.google.installer import toolkit_config_paths  # verified: google/installer.py:142
 
     claude = root / ".mcp.json"
     codex = root / ".codex" / "config.toml"
-    google = default_mcp_config_path()
+    google, google_local = toolkit_config_paths(root)  # (default_mcp_config_path(), root/.agents/plugins/parrot/mcp_config.json)
     # FILL IN: absent file → skip (no check); unparsable → ok=False; json servers under "mcpServers",
-    # toml under data["mcp_servers"]; one DoctorCheck per file listing broken entries — bounded by spec §3 M3 check 4
+    # toml under data["mcp_servers"]; one DoctorCheck per file listing broken entries; collision check on
+    # `google` only — bounded by spec §3 M3 check 4 and rev 0.5 C24
     raise NotImplementedError
 
 
@@ -456,12 +515,14 @@ def _check_toolkits(root: Path) -> list[DoctorCheck]:
 def run_doctor(root: Path, *, scope: DoctorScope = "full") -> list[DoctorCheck]:
     """Run the checks of ``scope`` in spec order; never raises for a broken environment.
 
-    "runtime-only" (C14 bootstrap) touches neither ``root`` nor the network; "full" adds host configs,
-    toolkits and — iff ``root/sdd`` exists — the C15 SDD readiness checks; "sdd" forces the latter.
+    "runtime-only" (C14 bootstrap) touches neither ``root`` nor the network; "full" adds parrot_tools.wiki
+    (rev 0.5 C20), host configs, toolkits and — iff ``root/sdd`` exists — the C15 SDD readiness checks;
+    "sdd" forces the latter.
     """
     checks = [_check_uv(), _check_python(), _check_entrypoints(), _check_path()]
     if scope == "runtime-only":
         return checks
+    checks.append(_check_tools_wiki())
     checks.extend(_check_host_configs(root))
     checks.extend(_check_toolkits(root))
     if scope == "sdd" or (root / "sdd").is_dir():
@@ -688,6 +749,28 @@ def test_gemini_cross_repo_collision(isolated_home: Path, tmp_path: Path) -> Non
     raise NotImplementedError
 
 
+def test_gemini_repo_local_config_checked(isolated_home: Path, tmp_path: Path) -> None:
+    """Rev 0.5 C24 — the repo-local Gemini file is command-checked too."""
+    repo = tmp_path / "repo"
+    local = repo / ".agents" / "plugins" / "parrot" / "mcp_config.json"
+    local.parent.mkdir(parents=True)
+    missing = tmp_path / "gone" / "parrot"
+    local.write_text(
+        json.dumps({"mcpServers": {"parrot-memory": {"command": str(missing), "args": ["mcp-local", "memory"]}}}),
+        encoding="utf-8",
+    )
+    checks = doctor._check_host_configs(repo)
+    assert any(not c.ok and str(missing) in c.detail for c in checks)
+    # FILL IN: an entry in the repo-local file whose cwd is another repo yields NO collision (--portable)
+    # failure — the collision check runs on the user-global file only — bounded by rev 0.5 C24
+
+
+def test_tools_wiki_check(isolated_home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # FILL IN: managed venv with a python stub; patch doctor.subprocess.run → returncode 1 → check "parrot_tools.wiki"
+    # ok=False, fix "parrot self update"; returncode 0 → ok=True; no interpreter → ok=False — bounded by rev 0.5 C20
+    raise NotImplementedError
+
+
 def test_python_check_reads_pyvenv_cfg(isolated_home: Path) -> None:
     # FILL IN: write parrot-home/venv/pyvenv.cfg with version_info = 3.11.9 → ok False; 3.12.3 → ok True;
     # 3.12 (uv minor-version link, as in the repo .venv) → ok True; 3.120 → ok False — bounded by MANAGED_PYTHON
@@ -739,7 +822,10 @@ def _git(root: Path, *args: str) -> None:
 
 @pytest.fixture
 def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A repo satisfying EVERY C15 prerequisite: bare origin with 'dev', tracked ledger, ignored worktrees, config."""
+    """A repo satisfying EVERY C15 + rev 0.5 C23 prerequisite: bare origin with 'dev', tracked ledger, ignored
+    worktrees, config, the `.gitattributes` ledger lines and the four ledger hooks."""
+    from parrot.knowledge.wiki.claude_code.installer import _install_ledger_hooks  # verified: installer.py:973
+
     origin = tmp_path / "origin.git"
     subprocess.run(["git", "init", "-q", "--bare", "-b", "dev", str(origin)], check=True)
     repo = tmp_path / "repo"
@@ -748,9 +834,12 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (repo / "sdd/tasks/.id_ledger.json").write_text('{"task": 0, "feature": 0}\n')
     (repo / "sdd/config.json").write_text(json.dumps({"base_branch": "dev", "hotfix_base": "main"}) + "\n")
     (repo / ".gitignore").write_text(".claude/worktrees/\n")
+    # FILL IN: wrap in TASK-4091's marker lines if review requires the marker (see the C23 note in _check_sdd)
+    (repo / ".gitattributes").write_text("sdd/ledger/events.jsonl merge=union\nsdd/ledger/archive/*.jsonl merge=union\n")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "seed")
     _git(repo, "push", "-q", "-u", "origin", "dev")
+    _install_ledger_hooks(repo)  # after the seed commit, so the pre-commit ledger hook never fires here
     monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/usr/bin/{name}")  # gh, jq, claude present
     monkeypatch.setattr(doctor.subprocess, "run", _gh_ok(doctor.subprocess.run))
     return repo
@@ -775,8 +864,10 @@ def test_ready_repo_has_no_sdd_failures(ready_repo: Path) -> None:
     [
         (lambda r: _git(r, "remote", "remove", "origin"), "sdd: origin remote", "git remote add origin"),
         (lambda r: subprocess.run(["git", "-C", str(r), "push", "-q", "origin", "--delete", "dev"], check=True), "sdd: base branch on origin", "git push -u origin dev"),
-        (lambda r: (_git(r, "rm", "-q", "--cached", "sdd/tasks/.id_ledger.json"), _git(r, "commit", "-qm", "untrack")), "sdd: id ledger tracked", "git add sdd/tasks/.id_ledger.json"),
+        (lambda r: (_git(r, "rm", "-q", "--cached", "sdd/tasks/.id_ledger.json"), _git(r, "commit", "-q", "--no-verify", "-m", "untrack")), "sdd: id ledger tracked", "git add sdd/tasks/.id_ledger.json"),
         (lambda r: (r / ".gitignore").write_text(""), "sdd: worktrees ignored", "parrot sdd install"),
+        (lambda r: (r / ".gitattributes").write_text(""), "sdd: ledger merge=union", "parrot sdd install"),  # rev 0.5 C23
+        (lambda r: (r / ".git" / "hooks" / "post-merge").unlink(), "sdd: ledger hooks", "parrot sdd install"),  # rev 0.5 C23
     ],
 )
 def test_each_missing_prerequisite_fails_its_check_with_a_fix(ready_repo: Path, break_it, check_name: str, fix_fragment: str) -> None:
@@ -846,9 +937,10 @@ rules at the CLI layer. The ImportError test pins the circularity rule (TASK-409
 - [ ] `doctor.py::_check_uv` — presence + version compare; bounded by spec §3 M3 check 1
 - [ ] `doctor.py::_check_python` — pyvenv.cfg parse; bounded by MANAGED_PYTHON (3.12)
 - [ ] `doctor.py::_check_path` — OS-specific fix text; bounded by spec §5 PATH bullets
-- [ ] `doctor.py::_command_problem` / `_check_host_configs` — per-file checks + Gemini collision; bounded by spec §3 M3 check 4, §7
+- [ ] `doctor.py::_command_problem` / `_check_host_configs` — per-file checks (both Gemini files) + Gemini collision on the user-global file only; bounded by spec §3 M3 check 4, §7, rev 0.5 C24
+- [ ] `doctor.py::_check_tools_wiki` — managed-venv import probe; bounded by rev 0.5 C20
 - [ ] `doctor.py::_check_toolkits` — dist/env checks; bounded by spec §3 M3 check 5
-- [ ] `doctor.py::_check_sdd` — the seven remaining C15 checks after `origin`; bounded by Key Constraints (lazy, absence-tolerant, informational rules)
+- [ ] `doctor.py::_check_sdd` — the seven remaining C15 checks after `origin` + the two rev 0.5 C23 ledger checks; bounded by Key Constraints (lazy, absence-tolerant, informational rules)
 - [ ] `cli.py::update` — bounded by add's error mapping (`doctor`'s exit code is now fully specified in the blueprint)
 - [ ] tests marked FILL IN in all three test files
 
@@ -859,6 +951,9 @@ rules at the CLI layer. The ImportError test pins the circularity rule (TASK-409
 - [ ] `parrot self --help` lists `add`, `update`, `doctor`, `env`, `uninstall`; `parrot status` is untouched.
 - [ ] `parrot self env` prints the resolved venv, the rule (`PARROT_VENV|project|VIRTUAL_ENV|managed`), and both ai-parrot versions (spec §4 `test_self_env_rule_report`).
 - [ ] `parrot self doctor` reports every spec §3 M3 check; a host config pointing at a missing binary is flagged (spec §4 `test_doctor_flags_broken_host_config`); the Gemini cross-repo collision is flagged with a `--portable` fix (spec §7).
+- [ ] *[rev 0.5 C24]* Both Gemini MCP config files are command-checked (user-global + `<root>/.agents/plugins/parrot/mcp_config.json`); the cross-repo collision is checked on the user-global one only (`test_gemini_repo_local_config_checked`).
+- [ ] *[rev 0.5 C20]* Outside `--runtime-only`, doctor checks that `parrot_tools.wiki` imports in the managed venv; failure fix `parrot self update` (`test_tools_wiki_check`).
+- [ ] *[rev 0.5 C23]* `doctor --sdd` (or `full` with an `sdd/` tree) checks the `.gitattributes` ledger block (`merge=union` for `sdd/ledger/events.jsonl` and `sdd/ledger/archive/*.jsonl`) and the four ledger hooks (pre-commit, post-merge, post-checkout, post-rewrite), each with fix `parrot sdd install` (matrix rows in `test_each_missing_prerequisite_fails_its_check_with_a_fix`).
 - [ ] C15: with an `sdd/` tree (or `--sdd`), doctor reports `origin` remote, configured base branch on `origin` (from `sdd/config.json`, default `dev`), ledger git-tracked, `.claude/worktrees/` ignored, `gh` present + authenticated, `jq` present while referenced, installed SDD files current, and host CLIs (informational); a fixture repo missing each prerequisite gets exactly that check failing with a concrete `fix` (`test_each_missing_prerequisite_fails_its_check_with_a_fix`).
 - [ ] C14: `parrot self doctor --runtime-only` runs only uv, Python, runtime entry points and PATH — no repository, host-config or toolkit check, no network — and a repo with a broken host config, uncommitted ledger or unauthenticated `gh` does not fail it (`test_scope_runtime_only_excludes_repo_host_and_component_checks`).
 - [ ] `--sdd` and `--runtime-only` together are a usage error (exit 2); doctor exits 1 iff a non-informational check in the selected scope failed; informational host-CLI checks never fail it (`test_cli_flags_mutually_exclusive_and_exit_codes`).
@@ -886,8 +981,9 @@ Also, outside the pytest contract: lint with `ruff check packages/ai-parrot/src/
 
 See the CREATE blocks for `test_self_cli.py` (registration, `test_self_env_rule_report`,
 add/uninstall wiring), `test_doctor.py` (`test_doctor_flags_broken_host_config`,
-remote HTTP entry not flagged, Gemini collision, Python/PATH/toolkit checks, never-raises) and `test_doctor_sdd.py`
-(C15 ready-repo baseline + per-prerequisite failure matrix, `gh` unauthenticated, informational
+remote HTTP entry not flagged, Gemini collision, Gemini repo-local file (C24), `parrot_tools.wiki` (C20),
+Python/PATH/toolkit checks, never-raises) and `test_doctor_sdd.py`
+(C15 ready-repo baseline + per-prerequisite failure matrix incl. the C23 ledger block / hooks, `gh` unauthenticated, informational
 host CLI, `parrot.sdd.*` absent, C14 `--runtime-only` scope exclusion, mutual exclusion + exit codes).
 
 ---

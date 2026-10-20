@@ -18,9 +18,12 @@ different ai-parrot versions can open the same `wiki.db`. `SQLiteWikiStore` alre
 auto-migrates silently on `schema_version` mismatch (`_maybe_migrate` → `_migrate`);
 nothing ever refuses an open (spec §6 "Today a version mismatch is ALWAYS migrated
 silently"). The owner's skew policy (spec §8 "Skew concurrency guard") is a **store-side
-min-runtime gate**: migration stamps `min_runtime_version` into the existing `meta`
-key/value table, and every connection — read-write AND read-only — checks it first; an
-older runtime fails fast with `WikiStoreVersionError` naming both versions and the fix.
+min-runtime gate**: plane creation and migration stamp `min_runtime_version` into the
+existing `meta` key/value table (rev 0.5 C24), and every connection — read-write AND
+read-only — checks it first; an older runtime fails fast with `WikiStoreVersionError` naming
+both versions and the fix. A stored `schema_version` newer than the runtime's is refused the
+same way instead of being migrated and re-stamped downward (rev 0.5 C24; ledger
+`issue:f249c19e8a4d`).
 
 **Known limitation (document in the docstring)**: only runtimes that contain this task
 honour the gate — a pre-FEAT-633 runtime ignores the row (spec §7 "Version-skew
@@ -35,9 +38,9 @@ task too — no extra code needed.
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: `store.py` anchors ≥ line 948 shifted +144 (6791d81ce inserted the `WikiBackendSpec` registry at store.py:539-694; the `SQLiteWikiStore` body is byte-identical and every blueprint `grep -c` count still matches); `version.py:8` is now `"1.2.3"`; `asyncio_mode` is at `pyproject.toml:1048`; Context notes that `ledger.db`/`schema.db` subclasses are gated.
-- Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
-  - **Fresh-plane stamp**: spec §3 M7 anchors `MIN_RUNTIME_KEY` "next to 'schema_version' (store.py:1158)" — the fresh-plane insert in `_ensure_schema` (dev store.py:1300-1303) — but this task stamps only in `_migrate`. `_migration_needed` treats any `!=` as stale (store.py:1585), so a fresh plane built by a newer runtime is unstamped and a gated older runtime "migrates" it, restamping `schema_version` downward. Decide: also stamp in `_ensure_schema`, and/or refuse when stored `schema_version` > `SCHEMA_VERSION`.
-  - **`SourceRegistry` bypass**: `SourceRegistry._connect` (sources.py:795-810) opens the same `wiki.db` with plain `sqlite3`, and `_migrate_sources_columns` (sources.py:983-1003) ALTERs it — no gate (unchanged since baseline). Decide: record as a known bypass under NOT in scope, or a new task to gate it.
+- Resolved by spec rev 0.5 (2026-10-20):
+  - C24 Store (fresh-plane stamp + newer schema): `_ensure_schema` now stamps `min_runtime_version` beside the fresh-plane `schema_version` insert (store.py:1300-1303), and `_check_runtime_gate` refuses a stored `schema_version` > `SCHEMA_VERSION` (integers) with `WikiStoreVersionError` instead of letting `_migrate` re-stamp it downward (store.py:1585, 1636-1640) — Scope, Key Constraints, blueprint, tests and ACs updated; closes ledger `issue:f249c19e8a4d`.
+  - C24 Store (`SourceRegistry`): known bypass, recorded under NOT in scope (ledger `issue:1555e747bcb9`).
 
 ---
 
@@ -55,13 +58,21 @@ task too — no extra code needed.
   used/yielded.
 - In `_migrate`, stamp `min_runtime_version = _running_version()` alongside the
   `schema_version` restamp.
+- *[rev 0.5 C24]* In `_ensure_schema`, stamp `min_runtime_version = _running_version()`
+  alongside the fresh-plane `schema_version` insert (store.py:1300-1303).
+- *[rev 0.5 C24]* `_check_runtime_gate` also refuses a stored `schema_version` greater than
+  `SCHEMA_VERSION`, compared as integers, with `WikiStoreVersionError` — so it is never
+  migrated and re-stamped downward (ledger `issue:f249c19e8a4d`).
 - Tests in a new file.
+- Close ledger `issue:f249c19e8a4d` when done.
 
 **NOT in scope**: pre-migration backup/restore and the cross-process migration lock
 (TASK-4093); stamping from `rebuild_index` (store.py:2764-2780 restamps `schema_version`
 but is not a migration — leave it; it already goes through `_write` → `_open`, so it is
 gated); `PRAGMA user_version` (spec: never introduced); other backends
-(`InMemoryWikiStore`, Arango, Postgres).
+(`InMemoryWikiStore`, Arango, Postgres); `SourceRegistry` opening `wiki.db` directly with
+plain `sqlite3` (`sources.py:795-810`; `_migrate_sources_columns`, `sources.py:983-1003`) — a
+known bypass of the gate, out of scope per spec rev 0.5 C24 (ledger `issue:1555e747bcb9`).
 
 ---
 
@@ -69,7 +80,7 @@ gated); `PRAGMA user_version` (spec: never introduced); other backends
 
 | File | Action | Description |
 |---|---|---|
-| `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` | MODIFY | Gate constant, error, helpers, check, stamp |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` | MODIFY | Gate constant, error, helpers, check (min-runtime + newer `schema_version`), stamps (creation + migration) |
 | `packages/ai-parrot/tests/knowledge/wiki/test_store_runtime_gate.py` | CREATE | Gate + stamp tests |
 
 ---
@@ -117,6 +128,7 @@ WikiStore = SQLiteWikiStore                                                 # li
 - ~~`PRAGMA user_version`~~ anywhere in `knowledge/wiki/` — never introduce it.
 - ~~`packaging` as a core ai-parrot dependency~~ — absent from `packages/ai-parrot/pyproject.toml`; do not import it.
 - ~~any open-time version refusal today~~ — this task adds the first one.
+- ~~any refusal of a newer `schema_version`~~ — `_migration_needed` treats any `!=` as stale (store.py:1585) and `_migrate` restamps it downward (store.py:1636-1640); ledger `issue:f249c19e8a4d` — fixed here.
 - ~~`_backup_store` / migration lock~~ — TASK-4093.
 
 ---
@@ -133,6 +145,8 @@ WikiStore = SQLiteWikiStore                                                 # li
   "contract_symbols": [
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/store.py#SQLiteWikiStore",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/store.py#SQLiteWikiStore._open",
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/store.py#SQLiteWikiStore._ensure_schema",
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/store.py#SQLiteWikiStore._migration_needed",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/store.py#SQLiteWikiStore._read",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/store.py#SQLiteWikiStore._connect_immutable",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/store.py#SQLiteWikiStore._connect_readonly",
@@ -163,9 +177,22 @@ async with conn.execute("SELECT value FROM meta WHERE key = 'schema_version'") a
   `min_runtime_version` row (pre-FEAT-633 plane) opens normally.
 - In `_open`, check AFTER `_apply_pragmas` (so `busy_timeout` covers the SELECT) and
   BEFORE `_ensure_schema` (so an older runtime writes nothing to a newer plane).
-- Stamp only inside `_migrate`'s `if version_stale:` block — a plane whose schema did not
-  change keeps accepting older runtimes. Because the gate already refused any runtime older
-  than an existing stamp, writing the running version never lowers it.
+- Stamp in exactly two places (rev 0.5 C24): `_ensure_schema`'s fresh-plane insert and
+  `_migrate`'s `if version_stale:` block. A plane neither created nor migrated by a gated
+  runtime (pre-FEAT-633) stays unstamped and keeps accepting older runtimes. Because the gate
+  already refused any runtime older than an existing stamp, writing the running version
+  never lowers it.
+- Newer `schema_version` (rev 0.5 C24): `_check_runtime_gate` compares the stored
+  `schema_version` with `SCHEMA_VERSION` as integers (`"10" > "3"`); greater → raise
+  `WikiStoreVersionError`. The gate runs before `_ensure_schema` / `_maybe_migrate`, so the
+  newer plane is never migrated or re-stamped downward.
+- Note for implementer: C24 fixes the class (`WikiStoreVersionError`) but not the message
+  for the `schema_version` case — keep the `__init__(db_path, store_minimum, running)`
+  callers working, make the message name the store path, both schema versions and the fix,
+  and record the wording in the Completion Note.
+- Note for implementer: C24 says nothing about a non-integer stored `schema_version`; do not
+  refuse on it (today `_migration_needed` treats it as stale, store.py:1585) and record that
+  in the Completion Note.
 - Unparsable stamp → log a warning and allow the open (the row is written only by this
   code; failing closed on garbage would brick a plane with no fix path).
 - Error message must contain: the store path, the store's minimum, the running version,
@@ -180,10 +207,10 @@ async with conn.execute("SELECT value FROM meta WHERE key = 'schema_version'") a
 
 ### Steps (in order)
 1. Add the constant, helpers and error class — *why*: spec §3 M7 skeleton names are fixed.
-2. Add `_check_runtime_gate` to `SQLiteWikiStore` — *why*: one implementation for all four connect sites.
+2. Add `_check_runtime_gate` to `SQLiteWikiStore` — *why*: one implementation for all four connect sites (min-runtime stamp + newer `schema_version`, rev 0.5 C24).
 3. Call it in `_open`, `_connect_immutable`, and both `_connect_readonly` rungs — *why*: spec §5 "read-only paths included".
-4. Stamp in `_migrate` — *why*: spec §3 M7 (c).
-5. Write tests — *why*: spec §4 `test_gate_blocks_older_runtime`.
+4. Stamp in `_ensure_schema` and `_migrate` — *why*: spec §3 M7 (c) + rev 0.5 C24.
+5. Write tests — *why*: spec §4 `test_gate_blocks_older_runtime`; §5 "A newer `schema_version` is refused, not re-stamped".
 
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` (MODIFY)
 ```python
@@ -191,7 +218,8 @@ async with conn.execute("SELECT value FROM meta WHERE key = 'schema_version'") a
 # AFTER — insert below `SCHEMA_VERSION = "3"` (verified: store.py:51)
 
 #: FEAT-633: lowest ai-parrot (wikitoolkit) version allowed to open a plane; a ``meta`` row
-#: stamped by ``SQLiteWikiStore._migrate``. Only runtimes containing this gate honour it.
+#: stamped by ``SQLiteWikiStore._ensure_schema`` and ``_migrate``. Only runtimes containing
+#: this gate honour it.
 MIN_RUNTIME_KEY = "min_runtime_version"
 
 
@@ -221,7 +249,8 @@ def _release_tuple(version: str) -> tuple[int, ...]:
 
 
 class WikiStoreVersionError(RuntimeError):
-    """The plane's ``min_runtime_version`` exceeds the running ai-parrot version.
+    """The plane needs a newer runtime: its ``min_runtime_version`` exceeds the running
+    ai-parrot version, or its ``schema_version`` exceeds ``SCHEMA_VERSION`` (rev 0.5 C24).
 
     Deliberately NOT a :class:`sqlite3.OperationalError`: the read ladder in
     ``SQLiteWikiStore._read`` degrades on OperationalError, and this must never degrade.
@@ -241,26 +270,33 @@ class WikiStoreVersionError(RuntimeError):
 # AFTER — insert below that line, i.e. after `_assert_writable` (verified: store.py:1212)
 
     async def _check_runtime_gate(self, conn: aiosqlite.Connection) -> None:
-        """Refuse the plane when its ``min_runtime_version`` exceeds the running version.
+        """Refuse the plane when it needs a newer runtime.
 
-        One indexed read per connection. A plane without a ``meta`` table (brand new) or
-        without the row (pre-FEAT-633) passes.
+        One indexed read per connection. Refuses when ``min_runtime_version`` exceeds the
+        running version, or when ``schema_version`` exceeds ``SCHEMA_VERSION`` compared as
+        integers (rev 0.5 C24). A plane without a ``meta`` table (brand new) or without the
+        rows (pre-FEAT-633) passes.
 
         Raises:
             WikiStoreVersionError: the store requires a newer runtime.
         """
         try:
-            async with conn.execute("SELECT value FROM meta WHERE key = ?", (MIN_RUNTIME_KEY,)) as cur:
-                row = await cur.fetchone()
+            async with conn.execute(
+                "SELECT key, value FROM meta WHERE key IN (?, ?)", (MIN_RUNTIME_KEY, "schema_version")
+            ) as cur:
+                rows = {row[0]: row[1] for row in await cur.fetchall()}
         except sqlite3.OperationalError as exc:
             if "no such table" in str(exc):
                 return
             raise
-        if row is None:
-            return
-        running = _running_version()
-        # FILL IN: parse both with _release_tuple; ValueError → self.logger.warning + return (fail open,
-        # see Key Constraints); store tuple > running tuple → raise WikiStoreVersionError(self._db_path, row[0], running)
+        stamp = rows.get(MIN_RUNTIME_KEY)
+        if stamp is not None:
+            running = _running_version()
+            # FILL IN: parse both with _release_tuple; ValueError → self.logger.warning + skip this check (fail
+            # open, see Key Constraints); store tuple > running tuple → raise WikiStoreVersionError(self._db_path, stamp, running)
+        stored_schema = rows.get("schema_version")
+        # FILL IN: stored_schema is not None and int(stored_schema) > int(SCHEMA_VERSION) → raise WikiStoreVersionError
+        # (rev 0.5 C24; message per the Key Constraints "Note for implementer"); int() ValueError → no refusal
         raise NotImplementedError
 ```
 ```python
@@ -268,6 +304,17 @@ class WikiStoreVersionError(RuntimeError):
 # AFTER — insert below that line in `_open` (verified: store.py:1272), BEFORE `if writable: await self._ensure_schema(conn)`
             await self._check_runtime_gate(conn)
 ```
+```python
+# occurrences: 1 (verified: grep -c '("schema_version", SCHEMA_VERSION),' packages/ai-parrot/src/parrot/knowledge/wiki/store.py)
+# AFTER — rev 0.5 C24: insert below the closing `                )` of that `INSERT OR IGNORE` in `_ensure_schema`
+# (verified: store.py:1300-1303), still inside `async with self._init_lock:` and before the `wiki_name` insert
+                await conn.execute(
+                    "INSERT OR IGNORE INTO meta (key, value)" " VALUES (?, ?)",
+                    (MIN_RUNTIME_KEY, _running_version()),
+                )
+```
+**Why**: mirrors the adjacent fresh-plane `schema_version` insert; the gate in `_open` already
+ran, so any existing stamp is ≤ the running version and `OR IGNORE` keeps it.
 ```python
 # occurrences: 1 (verified: grep -c '^            self._log_read_only_once()$' packages/ai-parrot/src/parrot/knowledge/wiki/store.py)
 # AFTER — insert below the 12-space-indented `self._log_read_only_once()` in `_connect_immutable` (verified: store.py:1461)
@@ -318,7 +365,7 @@ from parrot.knowledge.wiki.store import MIN_RUNTIME_KEY, SQLiteWikiStore, WikiSt
 
 async def _built_plane(tmp_path: Path) -> Path:
     db = tmp_path / "wiki.db"
-    await SQLiteWikiStore(db, "t").set_meta("k", "v")  # builds schema
+    await SQLiteWikiStore(db, "t").set_meta("k", "v")  # builds schema (and stamps min_runtime_version — rev 0.5 C24)
     return db
 
 
@@ -330,9 +377,35 @@ def _stamp(db: Path, key: str, value: str) -> None:
         )
 
 
+def _meta(db: Path, key: str) -> str | None:
+    with sqlite3.connect(db) as conn:
+        row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return None if row is None else row[0]
+
+
 async def test_unstamped_plane_opens(tmp_path: Path) -> None:
+    """A pre-FEAT-633 plane (no min_runtime_version row) opens normally."""
     db = await _built_plane(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute("DELETE FROM meta WHERE key = ?", (MIN_RUNTIME_KEY,))
     assert await SQLiteWikiStore(db, "t").get_meta("k") == "v"
+
+
+async def test_fresh_plane_stamped(tmp_path: Path) -> None:
+    """Rev 0.5 C24 — `_ensure_schema` stamps min_runtime_version at creation."""
+    db = await _built_plane(tmp_path)
+    assert _meta(db, MIN_RUNTIME_KEY) == store_mod._running_version()
+
+
+async def test_newer_schema_version_refused(tmp_path: Path) -> None:
+    """Rev 0.5 C24 / issue:f249c19e8a4d — a newer schema_version is refused, not re-stamped downward."""
+    db = await _built_plane(tmp_path)
+    newer = str(int(store_mod.SCHEMA_VERSION) + 7)  # "10" sorts below "3" as text — proves integer comparison
+    _stamp(db, "schema_version", newer)
+    with pytest.raises(WikiStoreVersionError):
+        await SQLiteWikiStore(db, "t").get_meta("k")
+    # FILL IN: same refusal for SQLiteWikiStore(db, "t", read_only=True).get_meta — bounded by spec §5 "read-only paths included"
+    assert _meta(db, "schema_version") == newer
 
 
 async def test_gate_blocks_older_runtime(tmp_path: Path) -> None:
@@ -359,6 +432,7 @@ async def test_gate_blocks_writes_before_any_write(tmp_path: Path) -> None:
 async def test_migration_stamps_running_version(tmp_path: Path) -> None:
     """A stale schema_version migrates and stamps min_runtime_version = running version."""
     db = await _built_plane(tmp_path)
+    _stamp(db, MIN_RUNTIME_KEY, "0.0.1")  # older stamp, so only `_migrate`'s upsert can produce the running version
     _stamp(db, "schema_version", "2")
     await SQLiteWikiStore(db, "t").get_meta("k")  # first open migrates
     assert await SQLiteWikiStore(db, "t").get_meta(MIN_RUNTIME_KEY) == store_mod._running_version()
@@ -384,8 +458,8 @@ def test_release_tuple_rejects_garbage() -> None:
 
 ### FILL IN checklist
 - [ ] `store.py::_release_tuple` — regex + strip trailing zeros; bounded by "release segment only"
-- [ ] `store.py::SQLiteWikiStore._check_runtime_gate` — compare + fail-open on garbage; bounded by Key Constraints
-- [ ] `test_store_runtime_gate.py` — the three FILL IN tests; bounded by spec §5 / §3 M7 (d)
+- [ ] `store.py::SQLiteWikiStore._check_runtime_gate` — min-runtime compare + fail-open on garbage, and the integer `schema_version` refusal (rev 0.5 C24); bounded by Key Constraints
+- [ ] `test_store_runtime_gate.py` — the three FILL IN tests plus the read-only line in `test_newer_schema_version_refused`; bounded by spec §5 / §3 M7 (d)
 
 ---
 
@@ -395,6 +469,9 @@ def test_release_tuple_rejects_garbage() -> None:
 - [ ] A plane stamped with a higher `min_runtime_version` raises `WikiStoreVersionError` on `_open` AND on the read-only connects, before any write (spec §5 "read-only paths included"; §4 `test_gate_blocks_older_runtime`).
 - [ ] The message names the store minimum, the running version and the fix (`parrot self update` / `parrot self add --here`).
 - [ ] `_migrate` stamps `min_runtime_version` alongside `schema_version`; unstamped (pre-FEAT-633) and brand-new planes open normally.
+- [ ] *[rev 0.5 C24]* `_ensure_schema` stamps `min_runtime_version` on a fresh plane (`test_fresh_plane_stamped`).
+- [ ] *[rev 0.5 C24]* A stored `schema_version` greater than `SCHEMA_VERSION`, compared as integers, raises `WikiStoreVersionError` and is left unchanged — never migrated or re-stamped downward (`test_newer_schema_version_refused`; spec §5 "A newer `schema_version` is refused, not re-stamped").
+- [ ] Ledger `issue:f249c19e8a4d` is closed: `wikitoolkit ledger close issue:f249c19e8a4d --resolved-by task:TASK-4092 --reason "<one line: fresh-plane stamp + integer schema_version refusal>"`.
 - [ ] Existing store tests still pass (`test_store_meta.py`, `test_store_rebuild_index.py`, `test_store_attrs.py`, `test_sqlite_fts_external_content.py`).
 - [ ] No new dependency; `ruff check packages/ai-parrot/src/parrot/knowledge/wiki/store.py` clean.
 
@@ -410,6 +487,7 @@ editable-installed against the main checkout).
 - `pytest packages/ai-parrot/tests/knowledge/wiki/test_store_rebuild_index.py -q`
 - `pytest packages/ai-parrot/tests/knowledge/wiki/test_store_attrs.py -q`
 - `pytest packages/ai-parrot/tests/knowledge/wiki/test_sqlite_fts_external_content.py -q`
+- `wikitoolkit ledger show issue:f249c19e8a4d` — closed, resolved by `task:TASK-4092` (after Agent Instructions step 11)
 
 ---
 
@@ -417,7 +495,7 @@ editable-installed against the main checkout).
 
 See the CREATE block for `packages/ai-parrot/tests/knowledge/wiki/test_store_runtime_gate.py`
 (`test_gate_blocks_older_runtime` per spec §4, read-only gate, write gate, migration stamp,
-version parsing).
+version parsing; rev 0.5 C24: `test_fresh_plane_stamped`, `test_newer_schema_version_refused`).
 
 ---
 
@@ -445,6 +523,8 @@ When you pick up this task:
    — it moves this file to `sdd/tasks/completed/` and marks it `"done"` in the
    index; never move or copy the file by hand
 10. **Fill in the Completion Note** below, then commit the staged SDD state
+11. **Close the ledger issue** this task fixes (rev 0.5 C24):
+    `wikitoolkit ledger close issue:f249c19e8a4d --resolved-by task:TASK-4092 --reason "<one line>"`
 
 ---
 
