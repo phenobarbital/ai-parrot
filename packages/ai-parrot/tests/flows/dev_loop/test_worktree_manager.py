@@ -263,3 +263,20 @@ async def test_merge_sequential_aborts_an_interrupted_merge(tmp_path, monkeypatc
         await task
     assert ("merge", "--abort") in calls
     assert calls.index(("merge", "--abort")) > calls.index(("merge", "--no-ff", "feat--w1", "-m", "merge feat--w1"))
+
+
+@pytest.mark.asyncio
+async def test_create_with_base_forks_from_that_branch(git_sandbox) -> None:
+    """FEAT-709: create(base=...) starts the new branch at the given branch."""
+    base_worktree, feature_branch, worktree_base_path = git_sandbox
+    await _run_git("checkout", "-b", "attempt-a1", cwd=base_worktree)
+    await _write_and_commit(base_worktree, "fix.txt", "x\n", "attempt commit")
+    await _run_git("checkout", feature_branch, cwd=base_worktree)
+    manager = SubWorktreeManager(
+        base_worktree=str(base_worktree),
+        feature_branch=feature_branch,
+        worktree_base_path=str(worktree_base_path),
+    )
+    path = await manager.create("development.w9", base="attempt-a1")
+    assert (Path(path) / "fix.txt").exists()
+    await _run_git("merge-base", "--is-ancestor", "attempt-a1", "HEAD", cwd=Path(path))

@@ -133,6 +133,9 @@ class SubWorktreeManager:
 
         Args:
             worker_id: e.g. ``"development.w1"``.
+            base: Start point of the new branch; defaults to the feature
+                branch (FEAT-709 repair attempts fork from the failed
+                attempt's branch).
 
         Returns:
             The suffix with ``.`` replaced by ``-`` (git refs reject
@@ -140,7 +143,7 @@ class SubWorktreeManager:
         """
         return worker_id.replace(".", "-")
 
-    async def create(self, worker_id: str) -> str:
+    async def create(self, worker_id: str, *, base: Optional[str] = None) -> str:
         """Create a sub-worktree + branch for one pool worker.
 
         Args:
@@ -162,7 +165,7 @@ class SubWorktreeManager:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
 
         rc, _out, err = await self._git(
-            "worktree", "add", "-b", branch, path, self.feature_branch, cwd=self.base_worktree
+            "worktree", "add", "-b", branch, path, base or self.feature_branch, cwd=self.base_worktree
         )
         if rc != 0:
             raise SubWorktreeMergeError(
