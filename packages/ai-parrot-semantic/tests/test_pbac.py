@@ -71,3 +71,40 @@ def test_resources_from_ast_excludes_cte_names() -> None:
     resources = resources_from_ast(tree, "duckdb")
 
     assert resources.tables == {"duckdb:sales.orders"}
+
+
+def test_pbac_available_probes_the_module_the_core_guard_imports(
+    allow_all_guard: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A present navigator_auth root with a missing evaluator module must not report PBAC as available.
+
+    DataPlanePolicyGuard fails open on an ImportError of
+    ``navigator_auth.abac.policies.environment``; probing only the root would claim enforcement
+    while the guard silently allows everything.
+    """
+    from parrot.semantic.governance import pbac as pbac_module
+
+    def _find_spec(name: str) -> Any:
+        if name == pbac_module._EVALUATOR_MODULE:
+            return None
+        return object()
+
+    monkeypatch.setattr(importlib.util, "find_spec", _find_spec)
+    assert PbacGate(allow_all_guard).available is False
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: object())
+    assert PbacGate(allow_all_guard).available is True
+
+
+def test_pbac_available_survives_a_missing_parent_package(
+    allow_all_guard: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """find_spec raises when a parent package is absent; the probe must report unavailable, not crash."""
+
+    def _raise(name: str) -> Any:
+        raise ModuleNotFoundError(f"No module named {name!r}")
+
+    monkeypatch.setattr(importlib.util, "find_spec", _raise)
+    assert PbacGate(allow_all_guard).available is False

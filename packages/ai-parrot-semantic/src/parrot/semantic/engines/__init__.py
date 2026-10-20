@@ -50,5 +50,5 @@ async def compile(
         compiled = await asyncio.to_thread(compile_sidemantic, query, model, dialect)
     compiled = compiled.model_copy(update={"cache_key": key})
     if cache is not None:
-        cache.put(compiled)
+        cache.put(compiled, model_digest=model.model_digest)
     return compiled

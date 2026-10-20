@@ -15,13 +15,26 @@ from ..errors import SemanticAccessError
 from ..loader import LoadedModel
 
 
+# DataPlanePolicyGuard fails open on an ImportError of this module, not of the ``navigator_auth`` root,
+# so probing the root would report PBAC as enforceable while the guard silently allows everything.
+_EVALUATOR_MODULE = "navigator_auth.abac.policies.environment"
+
+
+def _evaluator_importable() -> bool:
+    """Return whether the navigator-auth module the core guard imports at call time resolves."""
+    try:
+        return importlib.util.find_spec(_EVALUATOR_MODULE) is not None
+    except (ImportError, ValueError):  # missing parent package, or a namespace package without a spec
+        return False
+
+
 class PbacGate:
     """Fail-closed adapter around the core data-plane policy guard."""
 
     def __init__(self, guard: DataPlanePolicyGuard | None) -> None:
         """Probe evaluator availability at construction (navigator-auth importable, guard not None)."""
         self.guard = guard
-        self.available = guard is not None and importlib.util.find_spec("navigator_auth") is not None
+        self.available = guard is not None and _evaluator_importable()
         self.logger = logging.getLogger(__name__)
 
     async def authorize_manifest(self, ctx: PermissionContext | None, model: LoadedModel) -> PhysicalResources:

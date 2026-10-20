@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from parrot.semantic.cache import CompileCache
-from parrot.semantic.models import CompiledQuery
+from parrot.semantic.engines import compile as compile_query
+from parrot.semantic.models import CompiledQuery, SemanticQuery
+
+from ._models import loaded_models, models_dir  # noqa: F401 - pytest fixtures
 
 
 def _cq(key: str) -> CompiledQuery:
@@ -21,3 +24,16 @@ def test_compile_cache_pre_governance_only() -> None:
     assert cache.invalidate_model("m1") == 2
     assert cache.get("a") is None and cache.get("c") is None
     assert cache.invalidate_model("m1") == 0
+
+
+async def test_compile_registers_model_digest_for_invalidation(loaded_models) -> None:
+    """compile() must record the model digest, or invalidate_model can never drop its entries."""
+    model = loaded_models["orders"]
+    cache = CompileCache()
+    query = SemanticQuery(model="orders", metrics=["revenue"], dimensions=["region"])
+
+    compiled = await compile_query(query, model, "duckdb", cache=cache)
+
+    assert cache.get(compiled.cache_key) is not None
+    assert cache.invalidate_model(model.model_digest) == 1
+    assert cache.get(compiled.cache_key) is None
