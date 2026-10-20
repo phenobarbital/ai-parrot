@@ -24,7 +24,9 @@ def _plan(**overrides: object) -> ScopePlan:
             Invocation(
                 distribution="ai-parrot",
                 argv=("pytest", "packages/ai-parrot/tests/a.py"),
-                targets=(TestTarget(path="packages/ai-parrot/tests/a.py", distribution="ai-parrot", reason="declared"),),
+                targets=(
+                    TestTarget(path="packages/ai-parrot/tests/a.py", distribution="ai-parrot", reason="declared"),
+                ),
             ),
         ),
         "escalated": ("ai-parrot",),
