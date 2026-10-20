@@ -158,6 +158,24 @@ tests:
 - packages/<dist>/tests/path/test_file.py::test_node
 markers: none
 
+> Multi-runner form (FEAT-709) — use it INSTEAD of the flat form above when the feature has non-pytest tests
+> (replace the flat lines; never write both). Kinds, tiers and settings come from `.parrot/test_runners.toml`;
+> the flat form stays valid and is lifted on read to one pytest runner.
+>
+>     runners:
+>     - kind: pytest
+>       tests:
+>       - packages/<dist>/tests/path/test_file.py
+>       markers: none
+>     - kind: vitest
+>       cwd: packages/ai-parrot-server/ui
+>       tests:
+>       - src/lib/path/file.test.ts
+>     - kind: cargo
+>       crate: <crate dir or package>
+>     - kind: parrot-e2e
+>       plan: sdd/state/FEAT-<NNN>/e2e-plan.md   # merge/feature tiers only — never task
+
 ### Test Data / Fixtures
 ```python
 # Key fixtures needed

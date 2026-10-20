@@ -107,7 +107,10 @@ never bare pytest or directory-wide test operands. Set new index headers to
 `"validation_contract": "required"` so missing or broad commands fail validation.
 
 Each task lists its OWN test files only; the spec-wide contract is cached once with
-`python -m scripts.sdd.cache_test_contract --spec <spec> --index <index>` (never hand-write `test_contract`).
+`python -m scripts.sdd.cache_test_contract --spec <spec> --index <index>` (never hand-write `test_contract`). It accepts the flat
+and the FEAT-709 `runners:` forms and always writes schema 2 (schema 1 is lifted on read to one pytest runner);
+runner kinds, tiers and settings are checked against `.parrot/test_runners.toml`, and `check_task_graph.py` flags
+unknown runners, forbidden tiers, invalid settings/extensions and unrecognised validation commands.
 
 #### Delegation Contract (optional, per task)
 
