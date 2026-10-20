@@ -2,7 +2,7 @@
 
 **Feature**: FEAT-709 — Language-agnostic validation runners and an engine-owned task-tier gate
 **Spec**: `sdd/specs/language-agnostic-validation-runners.spec.md`
-**Status**: pending
+**Status**: done
 **Priority**: high
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4542
@@ -345,8 +345,33 @@ TASK-4542 must be `done` first — it edits the same `--run` loop region.
 
 *(Agent fills this in when done)*
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: Claude Opus 5 (/sdd-fix, agent:sdd-fix)
+**Date**: 2026-10-21
+**Notes**: Guarded the plan construction in `main()` (the real first failure
+point, since `plan_tests` loads its own registry) plus `load_registry()` and
+each `adapter_for_kind()` inside `_run_verdict_mode`; every escape funnels into
+the existing `_blocked_verdict` + `_write_verdict` + `return 2` idiom, so the
+"only one JSON object on stdout" contract holds. Added `--timeout-total`
+(default 3600, `0` disables) and enforced it with the supervisor's semantics
+from `background.py:986-1013`: each invocation's timeout is clamped to the
+remaining budget, and an invocation that can no longer start is reported as
+timed out (exit 124, `timed_out=True`, `duration_s=0.0`) without being
+launched, so evidence from invocations that did run is kept (spec S9).
+Hoisted the `suite = report_mod.suite_name(run_invocation)` assignment above
+the budget check so both the skipped and the normal path share it.
+Evidence: 5 new tests; all 5 verified to FAIL against the pre-fix tree and
+pass after (`git show HEAD:scripts/sdd/select_tests.py` swap-in run).
+`tests/sdd_scripts/` 685 passed; `test_verdict`/`test_runners_registry`/
+`test_guard` 32 passed; `ruff check` clean.
+Full `packages/ai-parrot/tests/flows/dev_loop` = 15 failed / 2737 passed; the
+same 15 fail with both production files reverted to the pre-task commit
+(`test_llm_code_dispatcher.py`, `test_pr_enrichment.py`,
+`test_recovery_lifecycle.py`), so they are pre-existing and unrelated.
 
-**Deviations from spec**: none | describe if any
+**Deviations from spec**: `--timeout-total` defaults to 3600 rather than being
+opt-in, so the cap bites without a caller change (`guard.VERDICT_ARGV` is
+unmodified, as scoped). That default is a judgement call, not a spec value —
+flagged for review. Also, the non-verdict path turned out to raise a traceback
+on a malformed config too, not just the verdict path; the same guard now gives
+it the documented `error: …` + exit 2, which the task file had assumed was
+already the behaviour.
