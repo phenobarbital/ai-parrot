@@ -656,4 +656,4 @@ full state for re-verification of the codebase contract.
 - Research-plan prompt:     `sdd/templates/research_plan.prompt.md`
 - Finding digest template:  `sdd/templates/finding.md`
 - SDD methodology:          `sdd/WORKFLOW.md`
-- Worktree policy:          `CLAUDE.md` (section "Worktree Policy")
+- Worktree policy:          `AGENTS.md` and `sdd/WORKFLOW.md`

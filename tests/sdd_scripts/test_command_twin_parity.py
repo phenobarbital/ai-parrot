@@ -25,8 +25,16 @@ _TWINNED = ("sdd-brainstorm", "sdd-next", "sdd-proposal", "sdd-spec", "sdd-statu
 # appear exactly once in its respective file today; see TASK-3098's
 # Completion Note for how these were re-verified against a stale assumption.
 # A twinned command with no entry here must match its twin byte-for-byte
-# (modulo frontmatter) — `sdd-brainstorm`, `sdd-proposal`, and `sdd-status` do today.
+# (modulo frontmatter) — `sdd-status` does today.
 _SUBSTITUTIONS: dict[str, tuple[str, str]] = {
+    "sdd-brainstorm": (
+        '- Worktree policy: `CLAUDE.md` (section "Worktree Policy")',
+        "- Worktree policy: `AGENTS.md` and `sdd/WORKFLOW.md`",
+    ),
+    "sdd-proposal": (
+        '- Worktree policy:          `CLAUDE.md` (section "Worktree Policy")',
+        "- Worktree policy:          `AGENTS.md` and `sdd/WORKFLOW.md`",
+    ),
     "sdd-next": (
         '- Worktree policy: `CLAUDE.md` (section "Worktree Policy")',
         "- Worktree policy: `AGENTS.md` and `sdd/WORKFLOW.md`",
