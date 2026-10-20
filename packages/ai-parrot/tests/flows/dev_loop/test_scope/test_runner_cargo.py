@@ -46,7 +46,12 @@ def test_adapter_argv_and_operands(tmp_path: Path) -> None:
     assert ADAPTER.validate_settings({"crate": "demo"}, worktree=tmp_path) == []
     assert ADAPTER.validate_settings({"crate": "./crates/demo"}, worktree=tmp_path)
     report = ADAPTER.parse_report(
-        report_path=None, exit_code=0, stdout=(FIXTURES / "libtest-ok.txt").read_text(), stderr="",
-        duration_s=0.0, timed_out=False, suite="cargo:demo",
+        report_path=None,
+        exit_code=0,
+        stdout=(FIXTURES / "libtest-ok.txt").read_text(),
+        stderr="",
+        duration_s=0.0,
+        timed_out=False,
+        suite="cargo:demo",
     )
     assert report.nodes[0][0] == "cargo:demo::tests::adds"
