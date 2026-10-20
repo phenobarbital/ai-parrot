@@ -301,8 +301,8 @@ Tests live in the files declared above; write the cases named in Acceptance Crit
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator); implemented by gpt-5.6-sol (codex), attempt 2 after attempt 1 infrastructure failure/fidelity violation
+**Date**: 2026-10-20
+**Notes**: Merge-tier validation: only 5 pre-existing bwrap failures plus 2 expected downstream reds caused by schema-2 contract normalisation (markers stored sorted; TestContract.tests removed): test_planner.py::test_contract_markers_add_distribution_sweep (owned by TASK-4524) and test_background_contract.py::test_supervisor_passes_declared_and_contract (owned by TASK-4530). Closed via close_task.sh.
 
 **Deviations from spec**: none
