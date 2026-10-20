@@ -66,7 +66,6 @@ from pydantic import BaseModel, Field
 PARALLEL_SEMANTICS = "exclusive"
 VALIDATION_CONTRACT = "required"
 _KERNEL_DIR = Path(__file__).resolve().parents[2] / "packages/ai-parrot/src/parrot/flows/dev_loop"
-_FLAG_WITH_VALUE = frozenset({"-m", "-k", "-o", "-p", "-c", "--rootdir", "--confcutdir"})
 
 _HEADING = re.compile(r"^## Files to Create ?/ ?Modify\s*$", re.M)
 _NEXT_HEADING = re.compile(r"^## ", re.M)
@@ -215,20 +214,64 @@ def _load_contract():
     return importlib.import_module("test_scope.contract")
 
 
-def _pytest_operands(argv: list[str]) -> list[str]:
-    """Positional operands of a pytest argv, ``::node`` suffix stripped."""
-    operands: list[str] = []
-    skip_next = False
-    for token in argv[1:]:
-        if skip_next:
-            skip_next = False
+def _load_registry_module():
+    """Import ``test_scope.runners.registry`` by path, never via ``parrot``."""
+    import importlib
+
+    _load_contract()
+    return importlib.import_module("test_scope.runners.registry")
+
+
+def _pytest_targets(argv: list[str]) -> list[str]:
+    """Pytest path operands via the kernel's pytest adapter, ``::node`` suffix stripped."""
+    adapter = _load_registry_module().RunnerRegistry({}, {}).adapter_for_kind("pytest")
+    return [operand.split("::", 1)[0] for operand in adapter.operands(argv) or []]
+
+
+def _isolated_extension_errors(root: Path) -> list[str]:
+    """Re-check every configured extension adapter under an isolated (``-I``) interpreter.
+
+    Args:
+        root: Repository root holding ``.parrot/test_runners.toml``.
+
+    Returns:
+        One message per extension that cannot be imported and constructed.
+    """
+    import subprocess
+    import sys
+    import tomllib
+
+    registry_mod = _load_registry_module()
+    path = root / registry_mod.CONFIG_PATH
+    if not path.is_file():
+        return []
+    try:
+        extensions = tomllib.loads(path.read_text(encoding="utf-8")).get("extensions", {})
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError):
+        return []  # the registry loader reports the invalid TOML itself
+    if not isinstance(extensions, dict):
+        return []
+    errors: list[str] = []
+    probe = "import importlib,sys;m,c=sys.argv[1].split(':',1);getattr(importlib.import_module(m),c)()"
+    for kind, target in extensions.items():
+        if not isinstance(target, str) or target.count(":") != 1:
+            errors.append(f"extension {kind!r} must be 'module:Class'")
             continue
-        if token.startswith("-"):
-            if token in _FLAG_WITH_VALUE:
-                skip_next = True
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-I", "-c", probe, target],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"extension {kind!r} ({target}) could not be checked: {exc}")
             continue
-        operands.append(token.split("::", 1)[0])
-    return operands
+        if proc.returncode != 0:
+            last = (proc.stderr.strip().splitlines() or ["import failed"])[-1]
+            errors.append(f"extension {kind!r} ({target}) fails under isolated python: {last}")
+    return errors
 
 
 def _check_validation_contract(tasks: dict[str, _Task], root: Path, required: bool) -> list[Finding]:
@@ -283,7 +326,7 @@ def _check_validation_contract(tasks: dict[str, _Task], root: Path, required: bo
                     )
                 )
                 continue
-            for operand in _pytest_operands(argv):
+            for operand in _pytest_targets(argv):
                 candidate = root / operand
                 if candidate.is_dir():
                     findings.append(
@@ -307,26 +350,98 @@ def _check_validation_contract(tasks: dict[str, _Task], root: Path, required: bo
 
 
 def _check_test_contract(data: dict, root: Path, tasks: dict[str, _Task]) -> list[Finding]:
-    """Lint the per-spec index header's cached ``test_contract``.
+    """Lint the per-spec index header's cached ``test_contract`` against the runner registry.
+
+    The registry (built-ins merged with ``.parrot/test_runners.toml`` under ``root``) and the
+    kernel contract loader are the single source of truth: no runner parsing is duplicated here.
 
     Args:
         data: The parsed index JSON (header and tasks).
-        root: Repository root for existence checks.
+        root: Repository root for existence checks and registry loading.
         tasks: Parsed tasks (``text`` and ``files`` populated).
 
     Returns:
-        Findings: test-contract-malformed, test-contract-operand-missing,
-        test-contract-real-llm, test-contract-task-tests-uncovered.
+        Findings: test-contract-malformed, test-contract-unknown-runner, test-contract-tier-forbidden,
+        test-contract-settings-invalid, test-contract-extension-invalid, test-contract-operand-missing,
+        test-contract-real-llm, test-contract-task-tests-uncovered, validation-command-unrecognised.
     """
     contract_mod = _load_contract()
-    try:
-        contract = contract_mod.contract_from_index_header(data)
-    except ValueError as exc:
-        return [Finding(level="error", code="test-contract-malformed", message=f"test_contract: {exc}")]
-    if contract is None:
-        return []
-
+    registry_mod = _load_registry_module()
     findings: list[Finding] = []
+
+    for message in _isolated_extension_errors(root):
+        findings.append(Finding(level="error", code="test-contract-extension-invalid", message=message))
+    try:
+        registry = registry_mod.load_registry(root)
+    except ValueError as exc:
+        text = str(exc)
+        code = "test-contract-extension-invalid" if "extension" in text else "test-contract-settings-invalid"
+        already_reported = code == "test-contract-extension-invalid" and bool(findings)
+        if not already_reported:
+            findings.append(Finding(level="error", code=code, message=f"runner registry: {text}"))
+        registry = registry_mod.RunnerRegistry({}, {})
+
+    payload = data.get("test_contract")
+    runner_blocks = payload.get("runners") if isinstance(payload, dict) and payload.get("schema") == 2 else None
+    blocking = False
+    for block in runner_blocks if isinstance(runner_blocks, list) else []:
+        if not isinstance(block, dict) or not isinstance(block.get("kind"), str):
+            continue  # shape problems surface as test-contract-malformed below
+        kind = block["kind"]
+        try:
+            adapter = registry.adapter_for_kind(kind)
+        except (KeyError, ModuleNotFoundError) as exc:
+            findings.append(
+                Finding(level="error", code="test-contract-unknown-runner", message=f"test_contract: {exc}")
+            )
+            blocking = True
+            continue
+        try:
+            allowed = registry.tiers_for(kind)
+        except ValueError as exc:
+            findings.append(
+                Finding(level="error", code="test-contract-settings-invalid", message=f"test_contract: {exc}")
+            )
+            blocking = True
+            continue
+        tiers = block.get("tiers")
+        forbidden = sorted(set(tiers) - set(allowed)) if isinstance(tiers, list) and all(
+            isinstance(t, str) for t in tiers
+        ) else []
+        if forbidden:
+            findings.append(
+                Finding(
+                    level="error",
+                    code="test-contract-tier-forbidden",
+                    message=f"test_contract: runner {kind!r} is not allowed in tiers: {', '.join(forbidden)}",
+                )
+            )
+            blocking = True
+        settings = block.get("settings")
+        if isinstance(settings, dict) and all(isinstance(v, str) for v in settings.values()):
+            diagnostics = adapter.validate_settings({**registry.settings_for(kind), **settings}, worktree=root)
+            for diagnostic in diagnostics:
+                findings.append(
+                    Finding(
+                        level="error",
+                        code="test-contract-settings-invalid",
+                        message=f"test_contract: runner {kind!r}: {diagnostic}",
+                    )
+                )
+                blocking = True
+    if blocking:
+        return findings
+
+    kinds = {b.get("kind") for b in runner_blocks if isinstance(b, dict)} if isinstance(runner_blocks, list) else set()
+    builtin_only = kinds <= set(contract_mod.KNOWN_RUNNER_KINDS)
+    try:
+        contract = contract_mod.contract_from_index_header(data, registry=None if builtin_only else registry)
+    except ValueError as exc:
+        findings.append(Finding(level="error", code="test-contract-malformed", message=f"test_contract: {exc}"))
+        return findings
+    if contract is None:
+        return findings
+
     declared = {path for task in tasks.values() for path in task.files}
     pytest_ops = contract.pytest.targets if contract.pytest is not None else ()
     contract_files = {operand.split("::", 1)[0] for operand in pytest_ops}
@@ -353,9 +468,20 @@ def _check_test_contract(data: dict, root: Path, tasks: dict[str, _Task]) -> lis
         if not task.text:
             continue
         for argv in contract_mod.parse_validation_commands(task.text):
-            if not contract_mod.is_pytest_invocation(argv):
+            adapter = registry.adapter_for_argv(argv)
+            if adapter is None:
+                findings.append(
+                    Finding(
+                        level="warning",
+                        code="validation-command-unrecognised",
+                        tasks=[tid],
+                        message=f"{tid}: no runner adapter recognises validation command: {' '.join(argv)}",
+                    )
+                )
                 continue
-            for operand in _pytest_operands(argv):
+            if adapter.kind != "pytest":
+                continue
+            for operand in _pytest_targets(argv):
                 if operand not in contract_files:
                     findings.append(
                         Finding(

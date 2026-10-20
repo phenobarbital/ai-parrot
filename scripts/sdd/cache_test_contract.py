@@ -1,7 +1,12 @@
 """``cache_test_contract.py`` — cache a spec's §4 Validation Contract into its per-spec index (FEAT-699).
 
+Both authoring forms are accepted — the flat ``tests:``/``markers:`` form (lifted to one pytest runner)
+and the FEAT-709 ``runners:`` form — and the header is always written as schema 2. Runner kinds,
+tiers and settings are validated against the registry under ``--root`` (``.parrot/test_runners.toml``).
+
 Usage:
-    python -m scripts.sdd.cache_test_contract --spec sdd/specs/<slug>.spec.md --index sdd/tasks/index/<slug>.json [--check]
+    python -m scripts.sdd.cache_test_contract --spec sdd/specs/<slug>.spec.md --index sdd/tasks/index/<slug>.json \
+        [--root .] [--check]
 """
 
 from __future__ import annotations
@@ -22,6 +27,18 @@ def _load_contract() -> ModuleType:
     import test_scope.contract as contract_mod  # noqa: PLC0415 -- path-dependent import
 
     return contract_mod
+
+
+def _load_registry(root: Path):
+    """Load the runner registry for ``root`` by path (never ``import parrot``).
+
+    Raises:
+        ValueError: If ``.parrot/test_runners.toml`` is invalid.
+    """
+    _load_contract()
+    import test_scope.runners.registry as registry_mod  # noqa: PLC0415 -- path-dependent import
+
+    return registry_mod.load_registry(root)
 
 
 def _with_contract(index: dict, value: dict | None) -> dict:
@@ -47,6 +64,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Cache a spec's Validation Contract into its index header.")
     parser.add_argument("--spec", required=True, type=Path)
     parser.add_argument("--index", required=True, type=Path)
+    parser.add_argument("--root", type=Path, default=Path("."), help="repo root holding .parrot/test_runners.toml")
     parser.add_argument("--check", action="store_true")
     try:
         args = parser.parse_args(argv)
@@ -63,7 +81,8 @@ def main(argv: list[str] | None = None) -> int:
         print("error: index is not a JSON object", file=sys.stderr)
         return 2
     try:
-        contract = contract_mod.parse_spec_contract(spec_md)
+        registry = _load_registry(args.root)
+        contract = contract_mod.parse_spec_contract(spec_md, registry=registry)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
