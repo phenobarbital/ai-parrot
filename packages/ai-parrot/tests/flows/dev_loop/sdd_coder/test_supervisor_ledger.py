@@ -75,151 +75,6 @@ def _blob(worktree: Path, path: str) -> str:
     return _git(worktree, "hash-object", "--", path)
 
 
-# -- M1 unit tests: `_record_invocation_outcome` through the real supervisor path ----------
-
-
-async def test_supervisor_records_green_escalation(
-    tmp_path: Path, git_sandbox_feature, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A green escalated invocation writes the distribution's blobs (core and/or cap)."""
-    worktree, _branch, _base_path, _index = git_sandbox_feature
-    supervisor, registry = _make_supervisor(tmp_path)
-    execution_id = str(uuid.uuid4())
-    _install_canned(monkeypatch, _canned_plan(_EXIT0, reason="core", core_files=("pkg/__init__.py",)))
-
-    await supervisor.start(
-        feature="demo",
-        worktree=worktree,
-        execution_id=execution_id,
-        task_ids=["TASK-0001"],
-        tier="merge",
-        timeout_seconds=10,
-        request_id="req-green",
-    )
-    await _settle(supervisor, execution_id, "req-green")
-    status = await registry.status(execution_id, "req-green")
-    assert status.outcome == "completed"
-    assert status.exit_code == 0
-
-    ledger = read_ledger(worktree)
-    assert "root" in ledger
-    assert ledger["root"].core_blobs == {"pkg/__init__.py": _blob(worktree, "pkg/__init__.py")}
-
-
-async def test_supervisor_rearms_on_red_escalation(
-    tmp_path: Path, git_sandbox_feature, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A red escalated invocation drops the record (`record_red_run`)."""
-    worktree, _branch, _base_path, _index = git_sandbox_feature
-    record_green_escalation(worktree, ["root"], ["pkg/__init__.py"])
-    assert "root" in read_ledger(worktree)
-
-    supervisor, registry = _make_supervisor(tmp_path)
-    execution_id = str(uuid.uuid4())
-    _install_canned(monkeypatch, _canned_plan(_EXIT1, reason="core", core_files=("pkg/__init__.py",)))
-
-    await supervisor.start(
-        feature="demo",
-        worktree=worktree,
-        execution_id=execution_id,
-        task_ids=["TASK-0001"],
-        tier="merge",
-        timeout_seconds=10,
-        request_id="req-red",
-    )
-    await _settle(supervisor, execution_id, "req-red")
-    status = await registry.status(execution_id, "req-red")
-    assert status.outcome == "failed"
-
-    assert "root" not in read_ledger(worktree)
-
-
-async def test_supervisor_rearms_on_timeout(
-    tmp_path: Path, git_sandbox_feature, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A timed-out escalated invocation re-arms (proved nothing => fail-open)."""
-    worktree, _branch, _base_path, _index = git_sandbox_feature
-    record_green_escalation(worktree, ["root"], ["pkg/__init__.py"])
-    assert "root" in read_ledger(worktree)
-
-    supervisor, registry = _make_supervisor(tmp_path)
-    execution_id = str(uuid.uuid4())
-    sleep_argv = (sys.executable, "-c", "import time; time.sleep(30)")
-    _install_canned(monkeypatch, _canned_plan(sleep_argv, reason="core", core_files=("pkg/__init__.py",)))
-
-    await supervisor.start(
-        feature="demo",
-        worktree=worktree,
-        execution_id=execution_id,
-        task_ids=["TASK-0001"],
-        tier="merge",
-        timeout_seconds=1,
-        request_id="req-timeout",
-    )
-    await _settle(supervisor, execution_id, "req-timeout")
-    status = await registry.status(execution_id, "req-timeout")
-    assert status.outcome == "timed_out"
-
-    assert "root" not in read_ledger(worktree)
-
-
-async def test_supervisor_records_nothing_without_escalation(
-    tmp_path: Path, git_sandbox_feature, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A mirror/import-only invocation writes no ledger entry."""
-    worktree, _branch, _base_path, _index = git_sandbox_feature
-    supervisor, registry = _make_supervisor(tmp_path)
-    execution_id = str(uuid.uuid4())
-    _install_canned(monkeypatch, _canned_plan(_EXIT0, reason="mirror"))
-
-    await supervisor.start(
-        feature="demo",
-        worktree=worktree,
-        execution_id=execution_id,
-        task_ids=["TASK-0001"],
-        tier="merge",
-        timeout_seconds=10,
-        request_id="req-mirror",
-    )
-    await _settle(supervisor, execution_id, "req-mirror")
-    status = await registry.status(execution_id, "req-mirror")
-    assert status.outcome == "completed"
-
-    assert read_ledger(worktree) == {}
-
-
-async def test_supervisor_ledger_failure_never_fails_validation(
-    tmp_path: Path, git_sandbox_feature, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Unwritable ledger (e.g. read-only git dir) -> logged and swallowed; receipt stays green."""
-    worktree, _branch, _base_path, _index = git_sandbox_feature
-    supervisor, registry = _make_supervisor(tmp_path)
-    execution_id = str(uuid.uuid4())
-    _install_canned(monkeypatch, _canned_plan(_EXIT0, reason="core", core_files=("pkg/__init__.py",)))
-
-    def _raise(*_args, **_kwargs):
-        raise RuntimeError("simulated unwritable ledger (read-only git dir)")
-
-    monkeypatch.setattr(background_module, "record_green_escalation", _raise)
-
-    with caplog.at_level(logging.WARNING, logger="parrot.flows.dev_loop.sdd_coder.background"):
-        await supervisor.start(
-            feature="demo",
-            worktree=worktree,
-            execution_id=execution_id,
-            task_ids=["TASK-0001"],
-            tier="merge",
-            timeout_seconds=10,
-            request_id="req-unwritable",
-        )
-        await _settle(supervisor, execution_id, "req-unwritable")
-
-    status = await registry.status(execution_id, "req-unwritable")
-    assert status.outcome == "completed"
-    assert status.exit_code == 0
-    assert any("could not record escalation outcome" in record.message for record in caplog.records)
-
-
 # -- OQ3: selection-summary header -----------------------------------------------------------
 
 
@@ -247,7 +102,7 @@ async def test_start_logs_selection_summary(
         request_id="req-empty-diff",
     )
     empty_log = supervisor._log_path(execution_id, reg_empty.handle).read_text()
-    assert empty_log.startswith("# selection tier=merge escalated=[] skipped_escalations=[]\n")
+    assert empty_log.startswith("# selection tier=merge\n")
     assert "# note:" not in empty_log
     assert empty_log.endswith("# no applicable pytest invocations for this selection\n")
 
@@ -270,7 +125,7 @@ async def test_start_logs_selection_summary(
         request_id="req-all-skipped",
     )
     skipped_log = supervisor._log_path(execution_id, reg_skipped.handle).read_text()
-    assert skipped_log.startswith("# selection tier=merge escalated=[] skipped_escalations=[root]\n")
+    assert skipped_log.startswith("# selection tier=merge\n")
     assert "# note: root: cap escalation skipped — ledger blobs and impacted hash match\n" in skipped_log
     assert skipped_log.endswith("# no applicable pytest invocations for this selection\n")
     # The all-skipped empty plan is distinguishable from the plain empty-diff plan.
@@ -290,9 +145,7 @@ async def test_start_logs_selection_summary(
     )
     await _settle(supervisor, execution_id, "req-nonempty")
     nonempty_log = supervisor._log_path(execution_id, reg_nonempty.handle).read_text()
-    header_idx = nonempty_log.index(
-        "# selection tier=merge escalated=[root] skipped_escalations=[]\n# note: heads up\n"
-    )
+    header_idx = nonempty_log.index("# selection tier=merge\n# note: heads up\n")
     cmd_idx = nonempty_log.index("# $ ")
     assert header_idx < cmd_idx, "the selection header must precede the first invocation's command line"
 

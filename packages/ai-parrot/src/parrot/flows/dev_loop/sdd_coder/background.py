@@ -51,7 +51,6 @@ from parrot.flows.dev_loop.test_scope.contract import (
     load_index_header,
     parse_validation_commands,
 )
-from parrot.flows.dev_loop.test_scope.context import record_green_escalation, record_red_run
 from parrot.flows.dev_loop.test_scope.datatypes import BaselineVerdict, RunReport, ValidationVerdict
 from parrot.flows.dev_loop.test_scope.runners.registry import RunnerRegistry, load_registry
 from parrot.flows.dev_loop.test_scope.select import changed_files, plan_tests
@@ -1033,9 +1032,6 @@ class ValidationSupervisor:
             )
             stdout = await asyncio.to_thread(self._read_log_since, log_path, log_offset)
             last_exit_code = exit_code
-            await self._record_invocation_outcome(
-                worktree=worktree, invocation=invocation, plan=plan, exit_code=exit_code
-            )
             report = await self._parse_invocation_report(
                 registry=runner_registry,
                 invocation=invocation,
@@ -1414,37 +1410,6 @@ class ValidationSupervisor:
             and all(verdicts[nodeid] == "baseline_red" for nodeid in failed_nodes)
         )
 
-    async def _record_invocation_outcome(
-        self, *, worktree: Path, invocation: "Invocation", plan: "ScopePlan", exit_code: int
-    ) -> None:
-        """Record this invocation's escalation verdict in the per-worktree ledger.
-
-        Green (exit 0) records the blobs that escalation covered; anything else
-        re-arms (`record_red_run`) — a timed-out suite proved nothing, so
-        re-running is the fail-open direction. An invocation with no escalated
-        target records nothing. Never raises: a ledger failure is logged and
-        swallowed — it degrades the NEXT selection, never THIS validation.
-        """
-        try:
-            is_core = any(t.reason == "core" for t in invocation.targets)
-            is_cap = any(t.reason == "escalated" for t in invocation.targets)
-            if not (is_core or is_cap):
-                return
-            dist = invocation.distribution
-            if exit_code != 0:
-                await asyncio.to_thread(record_red_run, worktree, [dist])
-                return
-            core_files = [hit.path for hit in plan.core_hits if dist in hit.distributions]
-            impact_files = list(plan.cap_hits.get(dist, ()))
-            impacted_hashes = {dist: plan.cap_impacted[dist]} if dist in plan.cap_impacted else {}
-            if not core_files and not impact_files:
-                return
-            await asyncio.to_thread(
-                record_green_escalation, worktree, [dist], core_files, impact_files, impacted_hashes
-            )
-        except Exception:  # noqa: BLE001 — ledger writes must never fail a validation
-            self.logger.warning("could not record escalation outcome for %s", invocation.distribution, exc_info=True)
-
     async def _await_one(
         self, *, process: "asyncio.subprocess.Process", log_path: Path, deadline: float
     ) -> Tuple[Literal["completed", "failed", "timed_out"], int]:
@@ -1510,11 +1475,7 @@ class ValidationSupervisor:
     @staticmethod
     def _selection_header(plan: "ScopePlan") -> str:
         """One `# selection …` line + one `# note: …` line per plan note (FEAT-604, OQ3)."""
-        lines = [
-            f"# selection tier={plan.tier}"
-            f" escalated=[{', '.join(plan.escalated)}]"
-            f" skipped_escalations=[{', '.join(plan.skipped_escalations)}]\n"
-        ]
+        lines = [f"# selection tier={plan.tier}\n"]
         lines += [f"# note: {note}\n" for note in plan.notes]
         lines += [f"# cached: {target}\n" for target in plan.cached]
         return "".join(lines)
