@@ -382,7 +382,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "medium",
       "effort": "M",
       "depends_on": [
@@ -392,8 +392,9 @@
       "parallelism_notes": "lint consumes contract_from_index_header(registry=…) from TASK-4522 (contract.py) and load_registry from TASK-4521; edits check_task_graph.py after TASK-4522",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4535-contract-lint-authoring.md"
+      "completed_at": "2026-10-20T14:37:28+00:00",
+      "file": "sdd/tasks/completed/TASK-4535-contract-lint-authoring.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4536",

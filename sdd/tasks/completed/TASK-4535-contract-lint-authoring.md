@@ -217,8 +217,8 @@ Tests live in the files declared above; write the cases named in Acceptance Crit
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator); implemented by opus (native) after two empty deliveries from codex seats; engine merge read a stale attempt record so the branch was merged by hand after confirming the diff was exactly the 11 declared files
+**Date**: 2026-10-20
+**Notes**: Merge-tier validation: only 5 pre-existing bwrap failures + test_background_contract.py (owned by TASK-4530). Closed via close_task.sh.
 
 **Deviations from spec**: none
