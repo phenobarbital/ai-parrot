@@ -355,14 +355,17 @@ check-id → finding-id map). Launch the probes in ONE message
 (≤ ~40 checks each, grouped by file):
 `Agent({subagent_type: "sdd-contract-probe", description: "Verify finding citations",
 prompt: "Repository root: <abs path>\nProbe sheet: <JSON array>"})`
-and continue with §5a. With fewer than ~10 citations, or without the Agent
+and continue with §5a — that assembly is **provisional**, because §5b re-runs it
+over the tagged findings. With fewer than ~10 citations, or without the Agent
 tool, run the same checks inline.
 
 ### 5. Phase 3 — Synthesis
 
 #### 5a. Build the synthesis input
 
-If §4d probes are running, assemble the input now; tags are applied before §5b.
+If §4d probes are running, assemble the input now as a **provisional** pass; §5b
+collects the probes, tags the findings, and then re-runs this concatenation to
+produce the input the synthesis prompt actually receives.
 
 Concatenate, in order:
 - `${STATE_DIR}/source.md` content
@@ -386,7 +389,9 @@ rules for `sdd-contract-probe`, classify every check:
 
 and for each `stale` or `missing` check append
 `[citation-check: stale|missing] <path:line> — <evidence>` to the owning
-finding's `## Notes`. Re-read the tagged findings into the §5a input.
+finding's `## Notes`. **Then re-run §5a** over the tagged findings and use that
+second assembly as the synthesis input; the provisional one is discarded, never
+patched in place.
 
 Invoke `sdd/templates/synthesis.prompt.md`. The agent produces a JSON object
 conforming to the synthesis output schema embedded in that prompt.
