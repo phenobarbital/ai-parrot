@@ -804,16 +804,32 @@ class ToolkitTemplate(BaseModel):
 | `test_wheel_only_foreign_repo` | *(replaces `test_sdd_flow_in_foreign_repo` [rev 0.2 C3])* build the wheel, install it into a temp `PARROT_HOME`, `parrot sdd install` into a tmp non-Python git repo, run every helper invocation from the installed markdown with fixture inputs and only `$PARROT_HOME/bin` + an allowlist of system tools on PATH |
 | `test_store_migrate_then_old_open` | migrate a fixture store, reopen with a mocked older version ⇒ fail-fast gate (spike S6 codified) |
 
+### Test scope map
+> *[rev 0.5, Jesus Lara 2026-10-20: "define the tests to run in this installer FEAT — what it touches and therefore which tests to run"]*
+
+| What FEAT-633 touches | Tests in the contract |
+|---|---|
+| New code (launcher, `parrot self`, `parrot sdd`, `parrot.sdd.scripts`, store gate) | every pytest file a task's Validation Commands name (the FEAT-699 convention, enforced by `check_task_graph`) |
+| Shipped SDD markdown, templates, rules and workflows that TASK-4089/4090 rewrite | every existing test that **reads** one of those files (command/skill/template contract tests, guard and fidelity tests): they break first when the text moves |
+| Modified modules with a mirrored test file | the mirror (`test_scope.mirror.pytest_file_target_for`) |
+| Modified non-hub modules (`claude_code`, `codex`, `google` installers/assets/cli, `mcp/local_cli`, `mcp/toolkit_install`, `dispatchers/claude`, `_subagent_defs`, `sdd_meta` via `scripts.sdd`) | every test that imports them directly |
+| Hub modules (`wiki/store.py`, `wiki/project.py`, `parrot.cli`, `bookstore/config.py`, dev-loop `nodes`) | only the tests of the behaviour that changes: migration, locking, schema and SQLite policy (M7); project and shared roots, env config (M1/TASK-4073); CLI lazy wiring and `mcp-local` (M3/M6); base-branch policy (TASK-4298); MCP transport selection (C20) |
+
+Excluded on purpose: the ~175 other tests that merely import a hub module for an unrelated feature
+(FEAT-699's merge tier still adds import-impact selection on top of this contract), every
+`real_llm` test, and directory operands. Rebuild this map when a task adds a touched surface.
+
 ### Validation Contract
-> *[rev 0.5 C21]* Merge- and feature-tier selection for FEAT-633 (FEAT-699 format).
-> The contract covers every pytest file that a FEAT-633 task's Validation Commands name, following
-> the FEAT-699 convention that `check_task_graph` enforces (`test-contract-task-tests-uncovered`).
-> It also includes the module-level suites listed per module above. Operands that tasks create
-> are skipped until they exist. `test_wheel_only_foreign_repo` (TASK-4091) runs `uv build` and
-> exists only from TASK-4091 onward. Each comment lists the declaring tasks, or `spec` for a
-> module-level suite.
+> *[rev 0.5 C21; scope map above]* Merge- and feature-tier selection for FEAT-633 (FEAT-699 format).
+> Operands that tasks create are skipped until they exist; each task's own tests still run at
+> `/sdd-done` through `--task-file`. `test_wheel_only_foreign_repo` (TASK-4091) runs `uv build` and
+> exists only from TASK-4091 onward. Comments name the declaring tasks or the scope-map row.
 
 tests:
+- packages/ai-parrot-server/tests/unit/e2e/test_pytest_plugin.py  # reads
+- packages/ai-parrot-tools/tests/tool_optimizations/test_hooks.py  # reads
+- packages/ai-parrot-tools/tests/tool_optimizations/test_installation.py  # imports(non-hub)
+- packages/ai-parrot/tests/cli/devloop/test_click_wiring.py  # CLI wiring (M3/M6 lazy groups)
 - packages/ai-parrot/tests/cli/test_modes.py  # 4073
 - packages/ai-parrot/tests/cli/test_toolkits_cli.py  # 4078,4080,spec
 - packages/ai-parrot/tests/docs/test_ci_install_wiring.py  # 4076
@@ -823,9 +839,13 @@ tests:
 - packages/ai-parrot/tests/docs/test_probe_mcp_env.py  # 4069
 - packages/ai-parrot/tests/docs/test_release_matrix.py  # 4094
 - packages/ai-parrot/tests/docs/test_smoke_install.py  # 4068
+- packages/ai-parrot/tests/flows/dev_flow/test_ideation_graph_search.py  # imports(non-hub)
+- packages/ai-parrot/tests/flows/dev_flow/test_ideation_partner_seam.py  # imports(non-hub)
 - packages/ai-parrot/tests/flows/dev_flow/test_subagent_defs.py  # 4090
 - packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_done_optimization_contract.py  # 4090
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_engine_plan_merge.py  # reads
 - packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_execution_pool_integration.py  # 4090
+- packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_fidelity.py  # reads
 - packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_finalize_task.py  # 4086,4087
 - packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_optimization_workflow_contracts.py  # 4086
 - packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_review_checkpoint.py  # 4086
@@ -833,10 +853,16 @@ tests:
 - packages/ai-parrot/tests/flows/dev_loop/sdd_coder/test_start_optimization_contract.py  # 4089
 - packages/ai-parrot/tests/flows/dev_loop/test_base_branch_guard.py  # 4298
 - packages/ai-parrot/tests/flows/dev_loop/test_branch_policy_single_source.py  # 4298
+- packages/ai-parrot/tests/flows/dev_loop/test_claude_dispatcher_events.py  # imports(non-hub)
+- packages/ai-parrot/tests/flows/dev_loop/test_dispatch_legibility_integration.py  # imports(non-hub)
+- packages/ai-parrot/tests/flows/dev_loop/test_feature_handoff.py  # mirror
 - packages/ai-parrot/tests/flows/dev_loop/test_flow_type_override.py  # 4298
 - packages/ai-parrot/tests/flows/dev_loop/test_planner_node.py  # 4090
 - packages/ai-parrot/tests/flows/dev_loop/test_pool_wiring.py  # 4090
+- packages/ai-parrot/tests/flows/dev_loop/test_research.py  # mirror
+- packages/ai-parrot/tests/flows/dev_loop/test_research_base_branch.py  # dev-loop branch policy (TASK-4298)
 - packages/ai-parrot/tests/flows/dev_loop/test_rules_parity.py  # 4089,4090
+- packages/ai-parrot/tests/flows/dev_loop/test_scope/test_guard.py  # reads
 - packages/ai-parrot/tests/flows/dev_loop/test_secondopinion_brief.py  # 4090
 - packages/ai-parrot/tests/flows/dev_loop/test_subagent_codereview.py  # 4090
 - packages/ai-parrot/tests/flows/dev_loop/test_subagent_defs.py  # 4090
@@ -846,29 +872,40 @@ tests:
 - packages/ai-parrot/tests/flows/dev_loop/test_worktree_environment.py  # 4085,4509
 - packages/ai-parrot/tests/knowledge/bookstore/test_config.py  # 4073
 - packages/ai-parrot/tests/knowledge/wiki/schema/test_cli_schema.py  # 4081
+- packages/ai-parrot/tests/knowledge/wiki/schema/test_store.py  # store (M7 gate/lock/backup)
 - packages/ai-parrot/tests/knowledge/wiki/test_claude_installer_portable.py  # 4082
 - packages/ai-parrot/tests/knowledge/wiki/test_claude_portable_emitters.py  # 4081
+- packages/ai-parrot/tests/knowledge/wiki/test_cli.py  # mirror
 - packages/ai-parrot/tests/knowledge/wiki/test_codex_installer_conventions.py  # 4083
 - packages/ai-parrot/tests/knowledge/wiki/test_codex_portable.py  # 4083
 - packages/ai-parrot/tests/knowledge/wiki/test_google_installer_conventions.py  # 4084
 - packages/ai-parrot/tests/knowledge/wiki/test_google_portable.py  # 4084
+- packages/ai-parrot/tests/knowledge/wiki/test_hook_prefilter.py  # imports(non-hub)
+- packages/ai-parrot/tests/knowledge/wiki/test_hook_startup.py  # imports(non-hub)
 - packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py  # 4081,4082
 - packages/ai-parrot/tests/knowledge/wiki/test_installer_remote_claude.py  # 4081,4082
 - packages/ai-parrot/tests/knowledge/wiki/test_installer_remote_codex.py  # 4083
+- packages/ai-parrot/tests/knowledge/wiki/test_mcp_transport_selector.py  # wikitoolkit MCP transport (C20)
+- packages/ai-parrot/tests/knowledge/wiki/test_project_roots.py  # project roots / PARROT_HOME (M1, TASK-4073)
 - packages/ai-parrot/tests/knowledge/wiki/test_schema_hook_assets.py  # 4081
 - packages/ai-parrot/tests/knowledge/wiki/test_sqlite_fts_external_content.py  # 4092,4093
+- packages/ai-parrot/tests/knowledge/wiki/test_sqlite_fts_reprobe.py  # store (M7 gate/lock/backup)
+- packages/ai-parrot/tests/knowledge/wiki/test_sqlite_policy.py  # store (M7 gate/lock/backup)
 - packages/ai-parrot/tests/knowledge/wiki/test_store_attrs.py  # 4092,4093
 - packages/ai-parrot/tests/knowledge/wiki/test_store_meta.py  # 4092,4093,spec
 - packages/ai-parrot/tests/knowledge/wiki/test_store_migration_safety.py  # 4093
 - packages/ai-parrot/tests/knowledge/wiki/test_store_rebuild_index.py  # 4092
 - packages/ai-parrot/tests/knowledge/wiki/test_store_runtime_gate.py  # 4092,spec
+- packages/ai-parrot/tests/knowledge/wiki/test_wiki_backend_spec.py  # store (M7 gate/lock/backup)
 - packages/ai-parrot/tests/launcher/test_launcher_core.py  # 4071
 - packages/ai-parrot/tests/launcher/test_launcher_reexec.py  # 4072,spec
 - packages/ai-parrot/tests/launcher/test_launcher_sdd_hook.py  # 4509
 - packages/ai-parrot/tests/launcher/test_launcher_stdlib_only.py  # 4072,spec
 - packages/ai-parrot/tests/launcher/test_parrot_home_consolidation.py  # 4073
 - packages/ai-parrot/tests/mcp/test_lsp_template.py  # 4077
+- packages/ai-parrot/tests/mcp/test_owned_toolkit_lifecycle.py  # imports(non-hub)
 - packages/ai-parrot/tests/mcp/test_toolkit_install.py  # 4078
+- packages/ai-parrot/tests/mcp/test_toolkit_matrix.py  # imports(non-hub)
 - packages/ai-parrot/tests/mcp/test_toolkit_seed_install_metadata.py  # 4077
 - packages/ai-parrot/tests/sdd/test_audit.py  # 4070,spec
 - packages/ai-parrot/tests/sdd/test_config.py  # 4299,spec
@@ -885,26 +922,44 @@ tests:
 - packages/ai-parrot/tests/self_/test_doctor.py  # 4080
 - packages/ai-parrot/tests/self_/test_doctor_sdd.py  # 4080,spec
 - packages/ai-parrot/tests/self_/test_self_cli.py  # 4080
+- packages/ai-parrot/tests/test_coding_agents.py  # imports(non-hub)
 - tests/knowledge/wiki/test_claude_code.py  # 4081,4082,spec
 - tests/knowledge/wiki/test_claude_code_bookstore.py  # 4081,4082
+- tests/knowledge/wiki/test_claude_code_compaction.py  # imports(non-hub)
 - tests/knowledge/wiki/test_codex_bookstore.py  # 4083
 - tests/knowledge/wiki/test_codex_installer_toolkit_entries.py  # 4083
 - tests/knowledge/wiki/test_codex_integration.py  # 4083,spec
 - tests/knowledge/wiki/test_codex_toolkit_reconcile.py  # 4083
+- tests/knowledge/wiki/test_env_call_sites.py  # imports(non-hub)
+- tests/knowledge/wiki/test_env_config.py  # project roots / PARROT_HOME (M1, TASK-4073)
 - tests/knowledge/wiki/test_google_bookstore.py  # 4084
 - tests/knowledge/wiki/test_google_installer_toolkit_entries.py  # 4084
 - tests/knowledge/wiki/test_google_integration.py  # 4084,spec
 - tests/knowledge/wiki/test_installer_ledger_hooks.py  # 4081,4082
 - tests/knowledge/wiki/test_installer_mcp_approval.py  # 4082
 - tests/knowledge/wiki/test_installer_toolkit_entries.py  # 4081,4082
+- tests/knowledge/wiki/test_installer_worktree_guard.py  # imports(non-hub)
+- tests/knowledge/wiki/test_ledger_store.py  # store (M7 gate/lock/backup)
+- tests/knowledge/wiki/test_project_lock.py  # project roots / PARROT_HOME (M1, TASK-4073)
 - tests/knowledge/wiki/test_project_namespaces.py  # 4073
+- tests/knowledge/wiki/test_project_shared_root.py  # project roots / PARROT_HOME (M1, TASK-4073)
+- tests/knowledge/wiki/test_project_sqlite_config.py  # project roots / PARROT_HOME (M1, TASK-4073)
+- tests/knowledge/wiki/test_sqlite_policy_plumbing.py  # store (M7 gate/lock/backup)
+- tests/knowledge/wiki/test_store.py  # store (M7 gate/lock/backup)
+- tests/knowledge/wiki/test_store_concurrency.py  # store (M7 gate/lock/backup)
+- tests/knowledge/wiki/test_store_migration_v2.py  # store (M7 gate/lock/backup)
+- tests/mcp/test_local_cli.py  # CLI wiring (M3/M6 lazy groups)
+- tests/mcp/test_mcp_local_e2e.py  # CLI wiring (M3/M6 lazy groups)
 - tests/mcp/test_toolkit_seed.py  # 4077,spec
 - tests/mcp/test_toolkit_templates.py  # 4077
+- tests/scripts/test_generate_a2ui_css.py  # reads
 - tests/sdd/test_close_task_ledger.py  # 4087
 - tests/sdd/test_codex_sdd_sync.py  # 4089
 - tests/sdd/test_ledger_lifecycle_acceptance.py  # 4087
 - tests/sdd/test_ledger_workflow_twins.py  # 4089,4508
+- tests/sdd/test_sdd_fix_docs.py  # reads
 - tests/sdd_scripts/test_backfill_taxonomy.py  # 4088
+- tests/sdd_scripts/test_brainstorm_intake_contract.py  # reads
 - tests/sdd_scripts/test_brief_meta.py  # 4085,4299
 - tests/sdd_scripts/test_brief_scaffold_integration.py  # 4085,4086,4299
 - tests/sdd_scripts/test_brief_template_contract.py  # 4085,4299
@@ -920,22 +975,34 @@ tests:
 - tests/sdd_scripts/test_design_research_templates.py  # 4334
 - tests/sdd_scripts/test_doc_taxonomy.py  # 4088
 - tests/sdd_scripts/test_e2e_closeout_contract.py  # 4089,4508
+- tests/sdd_scripts/test_e2e_spec_contract.py  # reads
 - tests/sdd_scripts/test_ensure_worktree.py  # 4085,4298,4299,spec
+- tests/sdd_scripts/test_feat581_plan.py  # reads
 - tests/sdd_scripts/test_feat699_doc_contract.py  # 4090
 - tests/sdd_scripts/test_id_ledger.py  # 4085
 - tests/sdd_scripts/test_insight_sdd.py  # 4088
 - tests/sdd_scripts/test_install_hooks.py  # 4088
+- tests/sdd_scripts/test_intake_docs.py  # reads
+- tests/sdd_scripts/test_intake_procedure.py  # reads
 - tests/sdd_scripts/test_migrate_index.py  # 4088
+- tests/sdd_scripts/test_pr_policy_wording_contract.py  # reads
+- tests/sdd_scripts/test_proposal_parallel.py  # reads
 - tests/sdd_scripts/test_prune_intake.py  # 4088
 - tests/sdd_scripts/test_reserve_ids.py  # 4085
 - tests/sdd_scripts/test_sdd_brief_command_contract.py  # 4089
 - tests/sdd_scripts/test_sdd_brief_twin_contract.py  # 4089
+- tests/sdd_scripts/test_sdd_done_brief_contract.py  # reads
 - tests/sdd_scripts/test_sdd_meta.py  # 4085
 - tests/sdd_scripts/test_sdd_meta_branch_policy.py  # 4298,4299
 - tests/sdd_scripts/test_sdd_meta_config_defaults.py  # 4299
 - tests/sdd_scripts/test_sdd_meta_resolve_flow.py  # 4298,4299
+- tests/sdd_scripts/test_sdd_spec_hotfix_removed_contract.py  # reads
+- tests/sdd_scripts/test_sdd_spec_intake_contract.py  # reads
+- tests/sdd_scripts/test_sdd_taxonomy.py  # imports(non-hub)
 - tests/sdd_scripts/test_select_tests.py  # 4088
 - tests/sdd_scripts/test_spec_tools.py  # 4088,4334
+- tests/sdd_scripts/test_spec_validation_contract_template.py  # reads
+- tests/sdd_scripts/test_template_taxonomy.py  # imports(non-hub)
 - tests/sdd_scripts/test_test_report.py  # 4508
 - tests/sdd_scripts/test_worktree_plan.py  # 4085,4298,4299
 - tests/sdd_scripts/test_worktree_status.py  # 4086

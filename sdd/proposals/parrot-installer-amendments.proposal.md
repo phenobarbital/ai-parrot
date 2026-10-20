@@ -648,6 +648,21 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
   Verified on `dev` `0263f0724`: the base is already in core. What is missing on a core-only
   install is the wiki tool wrappers, so the interim above, plus the follow-up, implements
   the intent without undoing FEAT-540.
+- **Follow-up decision note** (Jesus Lara, 2026-10-20 11:58): "the MCP abstract + the stdio
+  transport must be migrated to core, leaving the rest (the other MCP transports) in
+  ai-parrot-server." Verified on `dev` `4a06b88ab`:
+  - **Already in core** (FEAT-403, TASK-2077/2078, 2026-08-03): `parrot/mcp/server_base.py`
+    (`MCPServerBase`) and `parrot/mcp/local_server.py` (`LocalMCPServerBase`, `StdioMCPServer`).
+  - **Already in `ai-parrot-server`**: the other transports (`transports/{http,sse,streamable_http,
+    websocket,unix,quic}.py` on `RemoteMCPServerBase`).
+  - **Still to do:** ai-parrot-server keeps an older duplicate `transports/stdio.py`
+    (`StdioMCPServer` + the `StdioMCPSession` client), used by `server.py:20` and
+    `simple_server.py:12`. That is `issue:7a366d6004de`.
+  - **Not part of the request:** the blocker for a core-only `wikitoolkit mcp` is the wiki tool
+    wrappers in `parrot_tools.wiki` (FEAT-540), not the MCP base (`issue:2c263fd19a1a`).
+
+  Still open: is the stdio consolidation a FEAT-633 task or a separate fix-lane item? The C20
+  interim (ai-parrot-tools in the managed runtime) does not depend on it.
 - **Done when**: S1 shows `wikitoolkit mcp` answering `initialize` from the managed runtime
   on every leg.
 
@@ -866,7 +881,9 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
   waits for spike S3 (TASK-4069). With no evidence of variable expansion, nothing is added.
 
 ### Unresolved
-- None. Rev 0.6 folds into FEAT-633 spec revision 0.5; the PR #1746 review resolutions are recorded in the spec with `[PR #1746 review]` tags.
+- C20 follow-up (Jesus Lara, 2026-10-20): the stdio consolidation (`issue:7a366d6004de`) as a FEAT-633
+  task or a fix-lane item. It does not block any FEAT-633 task (see C20).
+- Otherwise none. Rev 0.6 folds into FEAT-633 spec revision 0.5; the PR #1746 review resolutions are recorded in the spec with `[PR #1746 review]` tags.
 
 ---
 
