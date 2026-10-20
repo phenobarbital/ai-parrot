@@ -94,6 +94,7 @@ _TASK_TEMPLATE = """# {task_id}: Demo task {n}
 
 # === Fixtures ===
 
+
 @pytest.fixture
 async def git_sandbox_feature(tmp_path):
     """Temp repo with `dev` + `feat-FEAT-709-demo` branches, a per-spec index."""
@@ -138,6 +139,7 @@ async def git_sandbox_feature(tmp_path):
 
 # === Fake components ===
 
+
 class FakeDispatcher:
     """Fulfils the dispatcher Protocol's `dispatch()` shape.
 
@@ -181,18 +183,13 @@ class FakeDispatcher:
         else:
             # Second attempt: passing test
             (Path(cwd) / test_file).write_text(
-                f"import pytest\nfrom pkg.t{int(n)} import foo\n\n"
-                f"def test_foo():\n    assert foo() == 42\n"
+                f"import pytest\nfrom pkg.t{int(n)} import foo\n\n" f"def test_foo():\n    assert foo() == 42\n"
             )
 
         await _run_git("add", pkg_file, cwd=Path(cwd))
         await _run_git("add", test_file, cwd=Path(cwd))
         await _run_git("commit", "-m", f"impl {task_id}", cwd=Path(cwd))
-        return DevelopmentOutput(
-            files_changed=[pkg_file, test_file],
-            commit_shas=["deadbeef"],
-            summary=task_id
-        )
+        return DevelopmentOutput(files_changed=[pkg_file, test_file], commit_shas=["deadbeef"], summary=task_id)
 
 
 def fake_builder_factory(behaviour: str = "ok", *, fail_on_first: bool = False):
@@ -220,6 +217,7 @@ def _roster(*labels_backends: tuple[str, str]) -> RosterConfig:
 
 def _noop_probe():
     from parrot.flows.dev_loop.sdd_coder.roster import RosterProbe
+
     return RosterProbe(config_getter=lambda k, fallback=None: "x", which=lambda b: "/usr/bin/" + b, smoke=None)
 
 
@@ -236,16 +234,18 @@ class FakeSupervisor:
 
     async def wait_verdict(self, execution_id, handle, timeout_s):
         status = self.statuses.pop(0) if self.statuses else "passed"
-        failures = () if status == "passed" else (
-            Failure("pytest", "tests/test_t1.py::test_foo", "new_red", "expected 100 but got 42"),
+        failures = (
+            ()
+            if status == "passed"
+            else (Failure("pytest", "tests/test_t1.py::test_foo", "new_red", "expected 100 but got 42"),)
         )
         return ValidationVerdict(
-            schema=1, status=status, tier="task", runners=(), failures=failures,
-            notes=(), cached=(), evidence=()
+            schema=1, status=status, tier="task", runners=(), failures=failures, notes=(), cached=(), evidence=()
         )
 
 
 # === The test ===
+
 
 async def test_task_tier_end_to_end_pytest(git_sandbox_feature):
     """Red gate on attempt 1, repaired by the same seat on attempt 2, merged once green."""
@@ -276,19 +276,21 @@ async def test_task_tier_end_to_end_pytest(git_sandbox_feature):
 
     # Assertions
     assert task.outcome == "merged", f"Expected merged, got {task.outcome}: {task.diagnostics}"
-    assert [a.attempt for a in task.attempts] == [1, 2], f"Expected 2 attempts, got {[a.attempt for a in task.attempts]}"
+    assert [a.attempt for a in task.attempts] == [
+        1,
+        2,
+    ], f"Expected 2 attempts, got {[a.attempt for a in task.attempts]}"
     assert task.attempts[0].seat_label == task.attempts[1].seat_label, "Same seat should handle both attempts"
 
     # Verify validation verdict is in the repair brief
     calls = builder.dispatcher.calls
     assert len(calls) == 2, f"Expected 2 dispatch calls, got {len(calls)}"
     assert calls[0]["brief"].validation_verdict == "", "First attempt should have no verdict"
-    assert calls[1]["brief"].validation_verdict.startswith("## Validation verdict") or "test_foo" in calls[1]["brief"].validation_verdict, \
-        "Second attempt should have validation verdict in brief"
+    assert (
+        calls[1]["brief"].validation_verdict.startswith("## Validation verdict")
+        or "test_foo" in calls[1]["brief"].validation_verdict
+    ), "Second attempt should have validation verdict in brief"
 
     # Verify the branch history: attempt-1 commit is ancestor of attempt-2 branch
-    rc, _out, _ = await _run_git(
-        "merge-base", "--is-ancestor", f"{feature_branch}--TASK-0001-a1", "HEAD",
-        cwd=worktree
-    )
+    rc, _out, _ = await _run_git("merge-base", "--is-ancestor", f"{feature_branch}--TASK-0001-a1", "HEAD", cwd=worktree)
     assert rc == 0, "Attempt 1 branch should be ancestor of attempt 2 branch (repair is seeded from failed branch)"
