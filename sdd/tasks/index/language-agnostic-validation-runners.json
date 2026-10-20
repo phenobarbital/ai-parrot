@@ -279,7 +279,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -289,8 +289,9 @@
       "parallelism_notes": "uses build_verdict/verdict_to_json from TASK-4529 (test_scope/verdict.py); background.py edited after TASK-4520/TASK-4523 (transitive)",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4530-supervisor-task-tier.md"
+      "completed_at": "2026-10-20T14:50:31+00:00",
+      "file": "sdd/tasks/completed/TASK-4530-supervisor-task-tier.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4531",

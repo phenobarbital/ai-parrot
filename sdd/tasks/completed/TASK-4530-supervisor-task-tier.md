@@ -197,8 +197,8 @@ Tests live in the files declared above; write the cases named in Acceptance Crit
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator); implemented by gpt-5.6-sol (codex), 1 attempt, 566.3s
+**Date**: 2026-10-20
+**Notes**: Merge-tier validation: only the 5 pre-existing bwrap failures in test_llm_code_dispatcher.py remain. Closed via close_task.sh. Stale TestContract.tests assertion fixed in 81713ef2f.
 
 **Deviations from spec**: none
