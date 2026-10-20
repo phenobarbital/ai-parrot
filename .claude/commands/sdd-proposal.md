@@ -320,6 +320,30 @@ Update `state.json`:
 - `phase: "research_complete"`
 - `phases.research.completed_at`, `duration_seconds`, `files_read`, etc.
 
+#### 4c. Merge lane findings (parallel mode only)
+
+Skip when Phase 2 ran sequentially (findings are already `F<NNN>`).
+
+1. Read every `${STATE_DIR}/findings/{FC,FG,FW}-*.md` and extract each
+   citation as a `(path, symbol, line_range)` tuple from its `## Citations`.
+2. **Group by citation identity**: two findings merge when they share a
+   `(path, symbol)` and their line ranges overlap. Same path but different
+   symbols → separate findings (never merge on path alone).
+   Findings with **no** citations (e.g. a pure wiki overview): define them as never merging —
+   each stays its own canonical finding (bounded by "never merge on path alone").
+3. **Merge** a group: union of citations (overlapping ranges collapsed),
+   summaries concatenated, the deeper `depth` kept, `## Notes` combined
+   (cross-lane notes preserved verbatim).
+4. **Renumber** the merged set `F001`, `F002`, … in lane order codebase → git → wiki,
+   then by original number. Write them to `${STATE_DIR}/findings/F<NNN>-<slug>.md`.
+5. **Archive** the lane originals: move every `FC-*`, `FG-*`, `FW-*` to
+   `${STATE_DIR}/findings/.audit/`.
+6. **Validate**: no two canonical findings share a `(path, symbol)`; IDs run
+   `F001..F<N>` with no gaps. A failure here is fixed before Phase 3, never skipped.
+7. **Checkpoint** `phases.research.parallel.merge` = `{started_at, completed_at,
+   input_count, output_count, merged_count: input_count − output_count,
+   audit_dir: "findings/.audit"}`, then set `phase: "research_complete"`.
+
 ### 5. Phase 3 — Synthesis
 
 #### 5a. Build the synthesis input
@@ -327,7 +351,7 @@ Update `state.json`:
 Concatenate, in order:
 - `${STATE_DIR}/source.md` content
 - `${STATE_DIR}/research_plan.json` content
-- All `${STATE_DIR}/findings/*.md` digests, wrapped in `<finding id="F00N">` tags
+- All `${STATE_DIR}/findings/F<NNN>-*.md` digests (never `findings/.audit/`), wrapped in `<finding id="F00N">` tags
 - A `<budget_status>` block with `consumed`, `truncated`, `truncation_reason`
 - A `<mode>` block with the resolved mode (forced or auto-detected)
 
