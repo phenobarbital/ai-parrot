@@ -70,6 +70,26 @@ audit trail.
 - Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
   - **FEAT-699 vs C7** (recorded in TASK-4089 / TASK-4091) — whether `sdd/config.json`'s `test_command` overrides `cache_test_contract` / `select_tests` / `test_report` in a foreign repo. The guide's sentence on `test_command` (`sdd/config.json` fields) must describe the resolved behaviour; do not document an override until then.
 
+## Spec rev 0.5 — 2026-10-20
+
+- **Resolved (rev 0.5 D2): FEAT-699 vs C7.** Document `test_command` exactly as TASK-4089
+  (a dependency) ships it, and only once that has landed: when `sdd/config.json` sets
+  `test_command`, `/sdd-task` and `/sdd-done` skip the FEAT-699 steps (`cache_test_contract`,
+  `select_tests`, `test_report`) and run `test_command` instead; when it is unset, those steps run
+  as in ai-parrot and stop with a clear message (no traceback) if the FEAT-699 kernel cannot be
+  loaded. Re-read the shipped `sdd-task` / `sdd-done` text before writing the sentence; do not
+  describe more than they say.
+- **D5 (TASK-4091) adds two things `parrot sdd install` writes:** a managed `.gitattributes`
+  block with the ledger's `merge=union` lines (recorded in `sdd/.sdd-installed.json`) and the
+  `parrot-ledger` git hooks; `parrot self doctor --sdd` checks both (TASK-4080). The reference
+  page's list of what install writes includes them.
+- Counts / anchors re-verified 2026-10-20 on dev `69fb12a41`: every anchor in the Codebase
+  Contract holds (`cli/__init__.py:16,19,37,71,99-100,103-104,109,117,120-123`; host CLI groups
+  `claude_code/cli.py:49`, `codex/cli.py:37`, `google/cli.py:37,137`; harness `:17,20,21,28,31,34,40,59,125,161,183`;
+  guide `:13,84,134,266,272,291,319`; `ci.yml:113,133`; `INSTALL.md:9,158`;
+  `docs/INSTALL.md:3,8,16,20`; `parrot-install-guide.spec.md:332-335`). Stale: "spec :521" (the
+  status states) → **`:557`** (C4 clause; also `:237`).
+
 ## Scope
 
 - Extend `docs/getting-started.md` (canonical guide) with: a "Global install (managed runtime)"
@@ -90,7 +110,8 @@ audit trail.
   `parrot self add|env|doctor|update|uninstall` (incl. `doctor --sdd` / `--runtime-only`), the
   launcher resolution order, `--portable` per host and its stickiness rule, `parrot sdd
   install|uninstall|status|run` with the conflict rule, the installed-record states, `--dry-run`,
-  `sdd/config.json` fields, the `sdd/CONVENTIONS.md` seed, Windows notes, and the wiki store
+  the `.gitattributes` ledger block and ledger git hooks (D5) *[rev 0.5]*, `sdd/config.json` fields (incl. the
+  D2 `test_command` rule) *[rev 0.5]*, the `sdd/CONVENTIONS.md` seed, Windows notes, and the wiki store
   version-skew gate message + fix. Same claim anchors as the guide.
 - Reduce `INSTALL.md` and `docs/INSTALL.md` to short pointers: one paragraph each sending the
   reader to `docs/getting-started.md` (and the reference page), keeping any content that is not
@@ -194,7 +215,8 @@ def test_named_dep_floors_match() -> None:                 # line 183 — last c
 - `parrot sdd` surface (TASK-4091 + C6 task, rev 0.2): `install [--host …] [--dry-run] [--force]`,
   `uninstall [--dry-run]`, `status` (per-file `missing | current | outdated | edited | foreign` from the
   committed record `sdd/.sdd-installed.json`; seed entries `seed-present | missing`), `run <name> [args…]`; seeds `sdd/config.json`,
-  `sdd/CONVENTIONS.md`, `sdd/tasks/.id_ledger.json`, the `.claude/worktrees/` ignore block.
+  `sdd/CONVENTIONS.md`, `sdd/tasks/.id_ledger.json`, the `.claude/worktrees/` ignore block; *[rev 0.5 D5]* also
+  writes the `.gitattributes` ledger block (recorded in the receipt) and the `parrot-ledger` git hooks.
 - `parrot self doctor` scopes (TASK-4080, rev 0.2): default, `--sdd` (repo readiness: `origin`,
   base branch, committed ledger, worktrees ignore, `gh` auth, `jq`, SDD files current, host CLIs
   informational), `--runtime-only` (bootstrap scope); `--sdd` and `--runtime-only` are mutually
@@ -526,7 +548,8 @@ session. Outside the managed venv nothing changes.
      repo's `python` cannot import parrot); the record `sdd/.sdd-installed.json` and the status states
      missing | current | outdated | edited | foreign, and seeds as seed-present | missing; upgrade rule (recorded hash matches → upgrade; differs → kept
      with a warning unless --force; not ours → skipped); `sdd/config.json` fields (base_branch,
-     staging_branch, hotfix_base, issue_tracker, jira_host, reviewer, test_command); the
+     staging_branch, hotfix_base, issue_tracker, jira_host, reviewer, test_command — [rev 0.5 D2] when set,
+     /sdd-task and /sdd-done skip the FEAT-699 test steps and run it); the
      `sdd/CONVENTIONS.md` seed (created once, never overwritten, even with --force) — bounded by
      TASK-4091 and the C6 task -->
 

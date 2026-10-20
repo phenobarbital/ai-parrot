@@ -68,6 +68,19 @@ reflects these deltas; this list is the audit trail.
     `dependencies` lack it), so a managed venv with only `ai-parrot[...]` cannot serve it. Affected: the install
     spec in `Install-Global` (add `ai-parrot-tools`, same `-Version` pin, or a fix on the wiki side).
 
+## Spec rev 0.5 — 2026-10-20
+- Resolved (rev 0.5 D1): the real fix is on the wiki side — core serves `wikitoolkit mcp` on its own
+  (wiki operation descriptors over core's stdio server); it is not part of this task. Until that fix
+  lands, `Install-Global` also installs `ai-parrot-tools` as a bridge, in the same `uv pip install` call,
+  with the same pin as `ai-parrot` (`ai-parrot-tools==<Version>` when `-Version` is given; both packages
+  share one version, today `1.2.3`). Mark it with a `# D1 bridge` comment. The change that lands the D1
+  fix removes that line; if the fix is already on the branch when this task is implemented, do not add
+  the bridge at all. Never add `ai-parrot-tools` to the extras mapping or to core `dependencies`.
+  Keep the bridge identical to TASK-4074's.
+- Anchors re-checked on the working tree 2026-10-20: `install-parrot.ps1` (:33, :36-48, :63-72, :74-85,
+  :101-121), `test_install_powershell.py` (:11-12, :15-16) and `pyproject.toml` `[project.scripts]`
+  (:199-206) are all current.
+
 ---
 
 ## Scope
@@ -86,6 +99,8 @@ reflects these deltas; this list is the audit trail.
 - `$env:UV_PYTHON_INSTALL_DIR = "$PARROT_HOME\python"`; `uv venv "$PARROT_HOME\venv" --python <py>
   --python-preference only-managed` (default `<py>` = `3.12`).
 - `uv pip install --python "$PARROT_HOME\venv\Scripts\python.exe" "ai-parrot[<extras>]==<ver>"`.
+  *[rev 0.5]* Until the D1 fix lands, the same call also installs `ai-parrot-tools==<ver>` (`# D1 bridge`;
+  removed by the change that lands the fix).
 - Shims: COPY `venv\Scripts\{parrot,wikitoolkit,bookstore}.exe` into `$PARROT_HOME\bin` (copy to
   `*.tmp` then `Move-Item -Force`). Do NOT put `venv\Scripts` on PATH — it would shadow `python`.
 - Add `$PARROT_HOME\bin` to the **User** PATH idempotently via
@@ -353,6 +368,8 @@ function Install-Global {
   $asset = "uv-$target.zip"
   $url = "https://github.com/astral-sh/uv/releases/download/$UvVersion/$asset"
   $spec = "ai-parrot[$AllExtras]"; if ($Version) { $spec = "$spec==$Version" }
+  # D1 bridge *[rev 0.5]* — core-only `wikitoolkit mcp` still needs parrot_tools; same pin; drop when the D1 fix lands
+  $toolsSpec = 'ai-parrot-tools'; if ($Version) { $toolsSpec = "$toolsSpec==$Version" }
   $bin = Join-Path $home_ 'bin'; $venv = Join-Path $home_ 'venv'; $uv = Join-Path $bin 'uv.exe'
   $dl = Join-Path ([IO.Path]::GetTempPath()) "parrot-uv-$PID"
   Write-Plan $url $spec $home_ $py      # C14a — before anything else
@@ -377,7 +394,7 @@ function Install-Global {
       if (-not $DryRun) { $Created.Add($venv) }
       Run -Why "create the managed venv (Python $py)" -Cmd { & $uv venv $venv --python $py --python-preference only-managed }
     }
-    Run -Why "install $spec into the managed venv" -Cmd { & $uv pip install --python (Join-Path $venv 'Scripts\python.exe') $spec }
+    Run -Why "install $spec into the managed venv" -Cmd { & $uv pip install --python (Join-Path $venv 'Scripts\python.exe') $spec $toolsSpec }  # *[rev 0.5]* $toolsSpec = D1 bridge
     foreach ($s in @('parrot', 'wikitoolkit', 'bookstore')) {
       $src = Join-Path $venv "Scripts\$s.exe"; $dst = Join-Path $bin "$s.exe"
       Run -Why "expose $s" -Cmd { Copy-Item $src "$dst.tmp" -Force; Move-Item "$dst.tmp" $dst -Force }
@@ -513,6 +530,7 @@ def test_global_dry_run(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert "unsupported Python" not in result.stderr
     assert "==9.9.9" in result.stdout and "self add sdd" in result.stdout
+    assert "ai-parrot-tools==9.9.9" in result.stdout   # *[rev 0.5]* D1 bridge, same pin — remove with the bridge
     assert not home.exists()
     # C14a/C14b: plan paragraph and gate summary precede the first "->" announcement
     assert "never used or modified" in result.stdout and "SHA256SUMS" in result.stdout
@@ -561,6 +579,9 @@ doctor before components) because that order is the whole safety argument. FILL 
 - [ ] Pinned uv `0.11.28` is downloaded for `x86_64`/`aarch64` `pc-windows-msvc` and verified with
       `Get-FileHash` against the release `.sha256`; a user's own uv is never touched.
 - [ ] Managed Python lives under `$PARROT_HOME\python`; venv built with Python 3.12 by default.
+- [ ] *[rev 0.5]* D1 bridge: until the core-only `wikitoolkit mcp` fix lands, the install call also
+      installs `ai-parrot-tools` with the same pin as `ai-parrot` (one `uv pip install`, `# D1 bridge`);
+      if the fix is already on the branch, no bridge is added.
 - [ ] `parrot.exe`/`wikitoolkit.exe`/`bookstore.exe` are COPIED into `$PARROT_HOME\bin`
       (write-then-rename); `venv\Scripts` is never put on PATH.
 - [ ] User PATH (never Machine) edited idempotently via `[Environment]::SetEnvironmentVariable`,

@@ -58,7 +58,7 @@ generated report must reproduce it (it is the scanner's acceptance oracle). Help
 | `.claude/agents/sdd-planner.md` | ensure_worktree, sdd_meta |
 | `.claude/agents/sdd-research.md` | ensure_worktree |
 | `.claude/agents/sdd-worker.md` | close_task, ensure_worktree, finalize_task, review_checkpoint, sdd_meta, select_tests |
-| `.claude/agents/sdd-coder.md`, `sdd-feedback.md`, `sdd-qa.md`, `sdd-secondopinion.md` | none |
+| `.claude/agents/sdd-coder.md`, `sdd-contract-probe.md` *[rev 0.5]*, `sdd-feedback.md`, `sdd-qa.md`, `sdd-secondopinion.md` | none |
 | `.claude/rules/worktree-management.md` | ensure_worktree, sdd_meta |
 | `.claude/rules/codebase-conventions.md`, `.claude/hooks/sdd-worker-format.sh` | none |
 | `sdd/templates/intake.procedure.md` | reserve_ids |
@@ -125,6 +125,30 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
     report, e.g. `.agents/skills/sdd-insight/SKILL.md:46,55` (`python3 scripts/sdd/insight.py`),
     `.agents/skills/sdd-done/SKILL.md:100,131,162`. Decide whether to add
     `.agents/skills/sdd-*/SKILL.md` and `.agent/workflows/sdd-*.md` to `DEFAULT_GLOBS` (and the oracle).
+
+---
+
+## Spec rev 0.5 — 2026-10-20
+- No D1–D8 clause applies here. The open decision above is **D11** (scanner globs) and stays
+  open: do not widen `DEFAULT_GLOBS` until it is decided.
+- New shipped agent: `.claude/agents/sdd-contract-probe.md` (`cbbe243a7`, 2026-10-20). It is
+  invoked by the shipped `/sdd-task`, `/sdd-brainstorm`, `/sdd-proposal`, so it ships
+  (spec M6: 10 agents). `.claude/agents/sdd-*.md` already globs it. It references no
+  `scripts/sdd` helper (its oracle row is "none"), but it yields three `monorepo-path`
+  findings: `sdd-contract-probe.md:19` and `:84` (examples with
+  `packages/ai-parrot/src/parrot/mcp/toolkit_seed.py`) and `:62` (the `import` check resolves
+  modules "under `packages/*/src/`"). They go into the report and the Conclusions like any
+  other hit (TASK-4089 rewrites them under D3).
+- Counts re-verified 2026-10-20 on dev `69fb12a41`: 15 commands, **10 agents** (was 9),
+  13 tracked templates. A dev checkout may also hold an untracked
+  `sdd/templates/research_plan.schema.json` (ignored by the global `templates/` rule,
+  `.gitignore:273`); the `sdd/templates/*` glob picks it up, it has no helper reference, and
+  the report must not depend on it (scan from a clean worktree).
+- Anchors re-verified, unchanged: `sdd-insight.md:51,85`, `sdd-done.md:184,206,356`,
+  `sdd-brief.md:18,132,151,154`, `.claude/skills/second-opinion/SKILL.md:8`,
+  `sdd-worker-format.sh:1`, `pyproject.toml:965-968`. Helper map regenerated with the
+  verification grep: identical to the Context table except the new `sdd-contract-probe.md`
+  ("none").
 
 ---
 
@@ -201,8 +225,8 @@ from pathlib import Path
 # Asset set to scan (all verified to exist 2026-10-05):
 #   .claude/commands/sdd-*.md   (15 files: brainstorm, brief [rev 0.4 C17], codereview, done, explain,
 #                                fix, fromjira, insight, next, proposal, spec, start, status, task, tojira)
-#   .claude/agents/sdd-*.md     (9 files: autopilot, coder, feedback, ideation, planner, qa,
-#                                research, secondopinion, worker)
+#   .claude/agents/sdd-*.md     (10 files [rev 0.5]: autopilot, coder, contract-probe, feedback, ideation,
+#                                planner, qa, research, secondopinion, worker)
 #   .claude/rules/*.md          (codebase-conventions.md, worktree-management.md)
 #   .claude/hooks/sdd-worker-format.sh
 #   sdd/templates/*             (13 files, re-verified 2026-10-19: brainstorm.md, brief.md [rev 0.4 C17],

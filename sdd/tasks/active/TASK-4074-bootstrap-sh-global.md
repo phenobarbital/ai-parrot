@@ -68,6 +68,19 @@ Jesus Lara). Every section below already reflects these deltas; this list is the
     `dependencies` lack it), so a managed venv with only `ai-parrot[...]` cannot serve it. Affected: the install
     spec in `global_install` (add `ai-parrot-tools`, same `--version` pin, or a fix on the wiki side).
 
+## Spec rev 0.5 — 2026-10-20
+- Resolved (rev 0.5 D1): the real fix is on the wiki side — core serves `wikitoolkit mcp` on its own
+  (wiki operation descriptors over core's stdio server); it is not part of this task. Until that fix
+  lands, `global_install` also installs `ai-parrot-tools` as a bridge, in the same `uv pip install` call,
+  with the same pin as `ai-parrot` (`ai-parrot-tools==<version>` when `--version` is given; both
+  packages share one version, today `1.2.3`). Mark the bridge with a `# D1 bridge` comment. The change
+  that lands the D1 fix removes that line; if the fix is already on the branch when this task is
+  implemented, do not add the bridge at all. Never add `ai-parrot-tools` to the extras mapping or to
+  core `dependencies`.
+- Anchors re-checked on the working tree 2026-10-20: `install-parrot.sh` (:23, :28, :33, :37, :39-41,
+  :47-54, :56-100, :70-73, :74-77, :102-115, :149-177, :180), `test_install_posix.py` (:5-9, :11-12,
+  :15, :21, :36) and `pyproject.toml` `[project.scripts]` (:199-206) are all current.
+
 ---
 
 ## Scope
@@ -87,7 +100,8 @@ Jesus Lara). Every section below already reflects these deltas; this list is the
   (managed CPython lives under the home), default `<py>` = `3.12`.
 - Install `ai-parrot[<extras>]` (`==<version>` when `--version` is given) with
   `uv pip install --python "$PARROT_HOME/venv/bin/python"`; extras come from the existing
-  `--provider`/`--extras` mapping.
+  `--provider`/`--extras` mapping. *[rev 0.5]* Until the D1 fix lands, the same call also installs
+  `ai-parrot-tools` with the same pin (`# D1 bridge`; removed by the change that lands the fix).
 - Expose `$PARROT_HOME/bin/{parrot,wikitoolkit,bookstore}` as symlinks to the venv scripts,
   created write-then-rename (`ln -s` to a temp name + `mv -f`).
 - Add `$PARROT_HOME/bin` to PATH via a marker block (`# >>> parrot >>>` … `# <<< parrot <<<`) in
@@ -386,10 +400,12 @@ add_path_block() {
 global_install() {
   # FILL IN: refuse --venv/--with-wiki/--system-deps with --global (exit 1) — bounded by Key Constraints
   PARROT_HOME="${PARROT_HOME:-$HOME/.parrot}"; [ "$PYTHON_SET" -eq 1 ] || PYTHON="3.12"; resolve_extras
-  local target asset url spec dl uv s c
+  local target asset url spec tools_spec dl uv s c   # *[rev 0.5]* + tools_spec (D1 bridge)
   target="$(uv_target)"; asset="uv-$target.tar.gz"; uv="$PARROT_HOME/bin/uv"
   url="https://github.com/astral-sh/uv/releases/download/$UV_VERSION/$asset"
   spec="ai-parrot[$ALL_EXTRAS]"; [ -z "$PARROT_VERSION" ] || spec="$spec==$PARROT_VERSION"
+  # D1 bridge *[rev 0.5]* — core-only `wikitoolkit mcp` still needs parrot_tools; same pin; drop when the D1 fix lands
+  tools_spec="ai-parrot-tools"; [ -z "$PARROT_VERSION" ] || tools_spec="$tools_spec==$PARROT_VERSION"
   dl="${TMPDIR:-/tmp}/parrot-uv.$$"
   print_plan "$url" "$spec"    # C14a — before anything else
   preflight                    # C14b — exits 1 on any failed gate; nothing written yet
@@ -408,7 +424,7 @@ global_install() {
     [ "$DRY_RUN" -eq 1 ] || CREATED+=("$PARROT_HOME/venv")
     run "create the managed venv (Python $PYTHON)" "$uv" venv "$PARROT_HOME/venv" --python "$PYTHON" --python-preference only-managed
   fi
-  run "install $spec into the managed venv" "$uv" pip install --python "$PARROT_HOME/venv/bin/python" "$spec"
+  run "install $spec into the managed venv" "$uv" pip install --python "$PARROT_HOME/venv/bin/python" "$spec" "$tools_spec"  # *[rev 0.5]* "$tools_spec" = D1 bridge
   for s in parrot wikitoolkit bookstore; do run "expose $s" install_shim "$PARROT_HOME/venv/bin/$s" "$PARROT_HOME/bin/$s"; done
   run "add $PARROT_HOME/bin to PATH" add_path_block
   # C14b — runtime scope only, pinned to the venv just built; a non-zero exit under set -e fires the rollback trap
@@ -473,6 +489,7 @@ def test_global_flags_parse(tmp_path: Path) -> None:
     result = _run_global(tmp_path, "--version", "9.9.9", "--with", "sdd,scraping")
     assert result.returncode == 0, result.stderr
     assert "==9.9.9" in result.stdout
+    assert "ai-parrot-tools==9.9.9" in result.stdout   # *[rev 0.5]* D1 bridge, same pin — remove with the bridge
     assert "self add sdd" in result.stdout
     assert "self add scraping" in result.stdout
 
@@ -594,6 +611,9 @@ binaries the gate and the install consult (`uname`, `curl`, `uv`, `parrot`) — 
       `0.11.28` release, checksum-verified; `venv/` built by uv with Python 3.12 from
       `$PARROT_HOME/python`; shims `bin/{parrot,wikitoolkit,bookstore}` created write-then-rename
       (spec §5 bootstrap AC).
+- [ ] *[rev 0.5]* D1 bridge: until the core-only `wikitoolkit mcp` fix lands, the install call also
+      installs `ai-parrot-tools` with the same pin as `ai-parrot` (one `uv pip install`, `# D1 bridge`);
+      if the fix is already on the branch, no bridge is added.
 - [ ] A user-installed `uv` on PATH is never modified or used.
 - [ ] On failure, only paths this run created are removed; pre-existing `~/.parrot` content
       (wikis.json, library/, skills/, brains/, parrot.db) is untouched.

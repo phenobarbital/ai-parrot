@@ -32,7 +32,7 @@ The two `.sh` files become thin wrappers that exec the Python modules. Every exi
 `finalize_task.py:394/423` keeps working until TASK-4089 rewrites the references.
 
 `close_task.sh` is load-bearing. `finalize_task` (moved by TASK-4086) runs it under an
-**isolated `GIT_INDEX_FILE`** (`finalize_task.py:415-424`), and its internal
+**isolated `GIT_INDEX_FILE`** (`finalize_task.py:416-428` *[rev 0.5: was :415-424]*), and its internal
 `git add -u sdd/tasks/active` must keep honouring that environment variable. The port
 must therefore inherit `os.environ` unchanged for every `git` call.
 
@@ -44,6 +44,21 @@ must therefore inherit `os.environ` unchanged for every `git` call.
   task was written (C/H-step contract still exact); `find_shared_root` anchor `project.py:1398`→`:1546`
   (same signature); added `tests/sdd/test_ledger_lifecycle_acceptance.py` (runs `close_task.sh`
   at `:197`) to Validation Commands. The third `.sh` (`codex_hook.sh`) stays repo-only, out of scope.
+
+---
+
+## Spec rev 0.5 — 2026-10-20
+
+Spec §3 Module 6 "M6 helper inventory" (approved by Jesus Lara, 2026-10-20). The readiness
+review listed no open D1–D8 decision for this task.
+
+- **Module list.** Matches the inventory row for TASK-4087 exactly: `close_task`, `heal_orphans`,
+  ported from the `.sh` files, which stay as wrappers. `codex_hook.sh` stays in `scripts/sdd/`
+  (inventory "Stay" list). No change.
+- **Package-relative path loaders.** None of these modules loads the `test_scope` kernel. Not applicable.
+- **Anchors re-verified** on the working tree (2026-10-20). Fixed: the isolated-index block in
+  `finalize_task.py` is `:416-428` (was `:415-424`, twice), and `_close_task_isolated` spans
+  `:375-466` (was `:375-460`). All other anchors hold.
 
 ---
 
@@ -263,7 +278,7 @@ def _run_git(args, *, cwd, env=None, check=True) -> subprocess.CompletedProcess[
 
 ### References in Codebase
 - `scripts/sdd/close_task.sh`, `scripts/sdd/heal_orphans.sh` — the sources being ported.
-- `parrot/sdd/scripts/finalize_task.py:375-460` — the isolated-index caller.
+- `parrot/sdd/scripts/finalize_task.py:375-466` *[rev 0.5: was :375-460]* — the isolated-index caller.
 
 ---
 
@@ -506,7 +521,7 @@ See **Test Specification**. That block is the starting file.
 **Why**: in the monorepo the wrapper is preferred (byte-identical behavior, existing tests
 copy the real `.sh` into tmp repos — test_finalize_task.py:33,110-113 keep passing); in a
 foreign repo the module port is the only thing installed. Thread `close_argv` into the
-existing subprocess call at finalize_task.py:415-424 in place of the hardcoded
+existing subprocess call at finalize_task.py:422-428 *[rev 0.5: was :415-424]* in place of the hardcoded
 `["bash", str(close_script)]` form — verify the exact call shape there and keep the
 inherited env untouched. Check `sys` is already imported (it is — verify).
 

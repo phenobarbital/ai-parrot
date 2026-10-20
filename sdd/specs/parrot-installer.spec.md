@@ -454,7 +454,7 @@ class ToolkitTemplate(BaseModel):
   ```python
   # knowledge/wiki/claude_code/assets.py
   def resolve_wikitoolkit_bin(root: Path) -> str: ...   # modifies claude_code/assets.py:93 — Windows branch
-  def mcp_json_entry(root: Path, *, portable: bool = False) -> dict: ...  # modifies :114
+  def mcp_json_entry(root: Path, *, portable: bool = False) -> dict: ...  # modifies :119
   # knowledge/wiki/codex/assets.py
   def resolve_binary(root: Path, name: str) -> str: ...  # modifies codex/assets.py:55
   def mcp_block(root: Path, toolkit_block: str = "", *, portable: bool = False) -> str: ...
@@ -640,8 +640,8 @@ class ToolkitTemplate(BaseModel):
   (3) When the store's directory is not writable, the backup and the `O_EXCL` lockfile
   cannot be created: migration stops with a clear error naming the directory and the
   fix, and leaves the store untouched (never a silent skip, never a partial migrate).
-  Read-only opens keep working through `_connect_readonly`. (4) `SourceRegistry`
-  (`sources.py:795-810`) opens the same SQLite with plain `sqlite3` and bypasses the
+  Read-only opens keep working through `_connect_readonly`. (4) `SourceCollectionManager._connect`
+  (`sources.py:796-811`; the checkpoint called it `SourceRegistry`, which does not exist) opens the same SQLite with plain `sqlite3` and bypasses the
   gate. That is out of scope here: file it as a ledger follow-up when M7 lands.
 - **Depends on**: spike S6 (validates the concurrent-older-runtime failure mode).
 - **Interface Skeleton**:
@@ -690,7 +690,8 @@ binds the tasks it names. Implementers build the part a clause covers exactly as
   `parrot/mcp/adapter.py`; stdlib + `parrot.tools.abstract` only), and so are the
   transport-neutral wiki operation descriptors (`knowledge/wiki/transport.py:482`). What
   breaks today is `build_framework_tools` (`knowledge/wiki/mcp_server.py`), which reaches
-  `parrot_tools.wiki.tools` through the `knowledge/wiki/tools.py:70-75` re-export. The
+  `parrot_tools.wiki.tools` (and `parrot_tools.wiki.ledger`) through the `_EXPORTS` re-export in
+  `knowledge/wiki/tools.py:69` (wiki tool rows :70-78, ledger rows after them). The
   SDK fallback is not a fix for core-only: the `mcp` SDK ships only in the `agents`,
   `agents-lite` and `mcp` extras (`packages/ai-parrot/pyproject.toml:436,490,525`), not
   in core `dependencies`.
@@ -1208,7 +1209,7 @@ Rev 0.5 readiness decisions (Jesus Lara, 2026-10-20; register in
 - [x] D5 foreign-repo ledger — `parrot sdd install` writes `.gitattributes` + ledger hooks; doctor checks them.
 - [x] D6 Windows hook bodies — quoted forward-slash paths; basename match without `.exe`.
 - [x] D7 `--remote` × `--portable` — mode inferred from managed `parrot-*` entries.
-- [x] D8 store versioning — stamp at creation and migration, refuse downgrade, clear error in an unwritable directory, `SourceRegistry` as a follow-up.
+- [x] D8 store versioning — stamp at creation and migration, refuse downgrade, clear error in an unwritable directory, `SourceCollectionManager._connect` bypass as a follow-up.
 
 ---
 

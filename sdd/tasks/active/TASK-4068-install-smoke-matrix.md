@@ -40,6 +40,20 @@ codex S11 requires ("build success is not the gate").
     `--spec ai-parrot` reports `mcp_ok=false` for a missing dependency. Affected: the `--spec` default and the
     decision rule's `mcp_ok=false` bullet (install `ai-parrot-tools` too, or make `auto` fall back).
 
+## Spec rev 0.5 — 2026-10-20
+- Resolved (rev 0.5 D1): a core-only install must pass. Keep `--spec ai-parrot` as the default — never add
+  `ai-parrot-tools` to the smoke. `mcp_ok` means: `initialize` answers AND a `tools/list` after
+  `notifications/initialized` returns the wiki tools (at least `wiki_query`). The fix is core serving the
+  wiki operation descriptors (`knowledge/wiki/transport.py:482`, `build_operation_descriptors`) through its own
+  stdio server when `parrot_tools` is not importable; it is NOT part of this task. It must be on the branch
+  before this task closes. Today it has not landed (`build_framework_tools`, `mcp_server.py:347`, still
+  imports `create_wiki_tools` from `knowledge/wiki/tools.py`, whose `_EXPORTS` at :69 point at
+  `parrot_tools.wiki.*`, wiki rows :70-78). If it is still missing when the rest of this task is done, stop
+  and ask the owner for the new FEAT-633 task (ids via `/sdd-task`), ordered before this one.
+- Because the fix is not on PyPI until a release, the local Linux evidence run installs a core wheel built
+  from the branch (`--wheel`), not the published `ai-parrot`.
+- Anchors re-checked on the working tree 2026-10-20: all Codebase Contract anchors are current.
+
 ---
 
 ## Scope
@@ -48,7 +62,8 @@ codex S11 requires ("build success is not the gate").
   uv venv, installs ai-parrot (from a requirement or a local wheel) with `--no-build` by
   default, runs the three console scripts' `--help`, builds a wiki in a temp git repo and
   performs a JSON-RPC `initialize` against `wikitoolkit mcp` over stdio, and writes a
-  JSON `SmokeReport`.
+  JSON `SmokeReport`. *[rev 0.5]* After `initialize` it sends `notifications/initialized` and
+  `tools/list`; `mcp_ok` needs the wiki tools (at least `wiki_query`) in that list (D1).
 - Add `.github/workflows/install-matrix.yml` (`workflow_dispatch` + `workflow_call`) running
   the script on ubuntu/macos/windows with a uv-managed Python only.
 - Write unit tests for `mcp_initialize` (fake stdio server) and `venv_script` (both platforms).
@@ -58,6 +73,8 @@ codex S11 requires ("build success is not the gate").
 **NOT in scope**: running the workflow on GitHub (a human triggers it; results are pasted
 into the report); changing `release.yml` or `[tool.cibuildwheel]` (TASK-4094); the
 `--global` bootstrap (TASK-4074/4075); any launcher code (TASK-4071/4072).
+*[rev 0.5]* The D1 core-only `wikitoolkit mcp` fix itself (separate fix or new FEAT-633 task; it must
+land before this task closes).
 
 ---
 
@@ -293,6 +310,7 @@ def run_smoke(spec: str | None, wheel: Path | None, python: str, no_build: bool)
         # FILL IN: git init <repo>, write one tracked file, `wikitoolkit build --quiet --no-export
         #   --no-graph` (exact flags/needs of a fresh repo decided by running it — bounded by
         #   mcp_server.py:731-735), then mcp_initialize([wikitoolkit, "mcp"], repo) → mcp_ok
+        #   *[rev 0.5]* mcp_ok also needs tools/list (after notifications/initialized) to hold wiki_query (D1)
         raise NotImplementedError
     return report
 
@@ -464,6 +482,8 @@ def test_venv_script_reads_os_name(smoke, tmp_path, monkeypatch):
   ships BEFORE the bootstrap; list each failing package and its proposed remedy (marker-guarded
   extra, upstream wheel, in-repo wheel build) here.
 - `mcp_ok=false` with install green ⇒ file a ledger issue (stdio/stdout pollution) — blocks M1/M2.
+  *[rev 0.5]* On a core-only install S1 expects a PASS (D1); a missing-`parrot_tools` failure means the
+  D1 fix has not landed — S1 is not passed, and the fix is never replaced by installing `ai-parrot-tools`.
 
 ## Verdict
 <!-- pass | fail — with date and run URLs -->
@@ -484,7 +504,9 @@ def test_venv_script_reads_os_name(smoke, tmp_path, monkeypatch):
 - [ ] `--no-build` is on by default; an sdist fallback makes `install_ok` false and is listed in `sdist_failures`.
 - [ ] `install-matrix.yml` has `workflow_dispatch` and `workflow_call` triggers, 3-OS matrix, `astral-sh/setup-uv@v10.2.0`, no `setup-python`, `UV_PYTHON_PREFERENCE: only-managed`, and uploads the JSON report even on failure.
 - [ ] `S1-install-matrix.md` contains trigger instructions, the per-OS table and the spec §3 M0 decision rule.
-- [ ] A local run `uv run --no-project --python 3.12 scripts/install/smoke_install.py --allow-build` on Linux reports `mcp_ok: true` (evidence pasted into the Completion Note).
+- [ ] A local run `uv run --no-project --python 3.12 scripts/install/smoke_install.py --allow-build` on Linux reports `mcp_ok: true` (evidence pasted into the Completion Note). *[rev 0.5]* The run installs core only (`--wheel` of a core wheel built from the branch with the D1 fix, no `ai-parrot-tools`), and `mcp_ok` includes `tools/list` holding `wiki_query`.
+- [ ] *[rev 0.5]* A unit test covers the `tools/list` check against a fake stdio server (lists `wiki_query` → ok; no wiki tools → `SmokeError`). The `mcp_initialize` signature stays as the blueprint fixes it.
+- [ ] *[rev 0.5]* The D1 core-only fix is on the branch before this task closes (D1 ownership).
 - [ ] `ruff check scripts/install/smoke_install.py packages/ai-parrot/tests/docs/test_smoke_install.py` passes.
 
 ---

@@ -72,6 +72,18 @@ Jesus Lara). Every section below already reflects this delta; this list is the a
   - No linux-aarch64 leg in the install matrix: TASK-4068's OS list is ubuntu/macos/windows-latest, so the new
     aarch64 core wheel is never smoke-tested (codex S11). Affected: whether install-matrix gains `ubuntu-24.04-arm`.
 
+## Spec rev 0.5 — 2026-10-20
+- Resolved (rev 0.5 D1): `smoke-core` installs the core wheel only (`wheel-artifact-pattern: "core-dist-*"`)
+  — never the `build-tools` wheel or `ai-parrot-tools` — and must pass, MCP handshake and wiki `tools/list`
+  included. Core serves `wikitoolkit mcp` on its own; that fix lands before TASK-4068 closes, and this task
+  depends on TASK-4068, so it is on the branch here. If `smoke-core` fails only because `parrot_tools` is
+  missing, the D1 fix is absent: stop and report, do not add the tools wheel.
+- Still open: D15 (the linux-aarch64 install-matrix leg, second bullet above) is NOT decided by rev 0.5 —
+  do not implement that part until it is resolved.
+- Anchors re-checked on the working tree 2026-10-20: `release.yml` `build-parrot-codec` is 408-479 (was
+  "408-468" in References); every other `release.yml` anchor (13-82, 18-22, 34, 52-69, 72, 79, 84, 419-421,
+  422-428, 430-431, 531-534, 541) and every `pyproject.toml` anchor (18, 58, 1041-1045, 1057-1065) is current.
+
 ---
 
 ## Scope
@@ -83,7 +95,8 @@ Jesus Lara). Every section below already reflects this delta; this list is the a
 - Keep the sdist built exactly once (linux x86_64 leg).
 - Make artifact names unique per leg (`core-dist-<platform>-<arch>`).
 - Add a `smoke-core` job that calls `.github/workflows/install-matrix.yml` (TASK-4068) via
-  `workflow_call` with the built core wheels, and add it to `deploy.needs`.
+  `workflow_call` with the built core wheels, and add it to `deploy.needs`. *[rev 0.5]* Core wheels only —
+  no tools wheel; the smoke expects a pass on that core-only install (D1).
 - Add a `smoke-sdd-foreign` job (ubuntu-latest, `needs: [build-core]`): download
   `core-dist-linux-x86_64`, create a fresh venv, `pip install <wheel>` (runtime dependencies
   resolved from PyPI — never `-e`, never the checkout), then — guarded by `parrot sdd --help`
@@ -266,7 +279,7 @@ archs = ["AMD64"]                                                      # line 10
 
 ### References in Codebase
 - `.github/workflows/release.yml:13-82` — `build-core`.
-- `.github/workflows/release.yml:408-468` — macOS/aarch64 precedent (maturin, different tool).
+- `.github/workflows/release.yml:408-479` — macOS/aarch64 precedent (maturin, different tool). *[rev 0.5]* anchor was 408-468
 - `.github/workflows/release.yml:531-564` — `deploy`.
 
 ---
@@ -489,6 +502,7 @@ cp314 check is conditional on the ceiling so a future relaxation only needs pypr
 - [ ] `*-manylinux_aarch64` is no longer skipped; `[tool.cibuildwheel.macos] archs = ["arm64"]`.
 - [ ] The sdist is built once (linux x86_64 leg); artifact names are unique per leg.
 - [ ] `smoke-core` runs TASK-4068's install matrix against the built wheels and `deploy` needs it (codex S11).
+      *[rev 0.5]* It passes only `core-dist-*` (no tools wheel) and expects `mcp_ok` on that core-only install (D1).
 - [ ] **C3**: `smoke-sdd-foreign` installs the released linux x86_64 wheel with its runtime
       dependencies into a fresh venv (never editable, never the checkout), probes for `parrot sdd`
       and the wheel-only test, and — when present — runs

@@ -64,6 +64,19 @@ review). Every section below is already rewritten to match; this list is the del
 - Open decisions — do not implement the affected part until resolved (spec rev 0.5 / owner):
   - Doctor reads only Gemini's user-global `mcp_config.json`, but `GoogleAdapter.config_paths` → `toolkit_config_paths` also returns the repo-local `<root>/.agents/plugins/parrot/mcp_config.json` (`knowledge/wiki/google/installer.py:142-152`), and reconcile writes `parrot-<name>` command entries to both (`installer.py:175-200`). Spec §3 M3 says "3 hosts incl. the Gemini user-global file" — owner decides whether `_check_host_configs` also checks the repo-local file.
 
+## Spec rev 0.5 — 2026-10-20
+- Resolved (rev 0.5 D5): the SDD checks gain two failures-with-fix. (1) `sdd: ledger gitattributes` —
+  `git -C <root> check-attr merge -- sdd/ledger/events.jsonl sdd/ledger/archive/x.jsonl` must report
+  `merge: union` for both paths. (2) `sdd: ledger hooks` — each hook of `LEDGER_HOOK_EVENTS`
+  (`pre-commit`, `post-merge`, `post-checkout`, `post-rewrite`; `claude_code/assets.py:53`) exists and
+  contains `LEDGER_HOOK_BEGIN` (`claude_code/assets.py:51`); resolve the hook file with
+  `git rev-parse --git-path hooks/<event>` (follows `core.hooksPath` and linked worktrees). Fix for both:
+  `parrot sdd install`. Doctor only reads; writing them is TASK-4091's job (and `parrot claude install`,
+  `claude_code/installer.py:973`). Check the effective attribute, not the marker text — the marker is
+  TASK-4091's to name.
+- Still open: D13 above (Gemini repo-local file). Do not implement that part yet.
+- Anchors re-verified on the working tree 2026-10-20: all unchanged.
+
 ## Scope
 
 - Create `parrot/self_/cli.py`: `@click.group(name="self")` `self_group` with
@@ -80,6 +93,8 @@ review). Every section below is already rewritten to match; this list is the del
   ledger git-tracked; `.claude/worktrees/` ignored; `gh` present + authenticated; `jq` present
   while referenced; installed SDD files current (`sdd_status`); host CLIs present (informational).
   All `parrot.sdd.*` imports lazy and absence-tolerant.
+- *[rev 0.5]* D5: ledger `.gitattributes` (`merge=union` effective on the two ledger paths) and the
+  ledger git hooks present — both plain failures with fix `parrot sdd install`.
 - `parrot self doctor [--sdd | --runtime-only]`: mutually exclusive flags (usage error, exit 2);
   exit 1 iff a non-informational check in the selected scope failed.
 - Register `"self": "parrot.self_.cli"` in `cli._lazy_commands`.
@@ -133,6 +148,7 @@ from parrot.sdd.config import load_sdd_config        # TASK-4299 — load_sdd_co
 from parrot.sdd.installer import sdd_status          # TASK-4091 — sdd_status(root) -> {"hosts": {h: {"current"|"outdated"|"edited"|"foreign"|"missing": [...]}}, ...}
 from parrot.sdd.audit import scan_paths, missing_tools  # TASK-4070 — external-tool findings over installed files (jq)
 import shutil, subprocess  # stdlib — shutil.which for gh/jq/claude/codex/agy; git/gh probes via subprocess.run
+from parrot.knowledge.wiki.claude_code.assets import LEDGER_HOOK_BEGIN, LEDGER_HOOK_EVENTS  # verified: claude_code/assets.py:51,53 (stdlib-only module) *[rev 0.5]* D5
 ```
 
 ### Existing Signatures to Use
@@ -299,6 +315,7 @@ from pydantic import BaseModel
 
 from parrot.launcher import MANAGED_PYTHON, parrot_home, script_path  # TASK-4071
 from parrot.self_.components import managed_venv  # TASK-4079
+from parrot.knowledge.wiki.claude_code.assets import LEDGER_HOOK_BEGIN, LEDGER_HOOK_EVENTS  # [rev 0.5] D5 — stdlib-only module
 
 logger = logging.getLogger(__name__)
 
@@ -410,6 +427,10 @@ def _check_sdd(root: Path) -> list[DoctorCheck]:
     #     detail lists them, fix "parrot sdd install" (outdated) / "parrot sdd status" (edited)
     #   host CLIs: for each host with installed assets (sdd_status hosts with any current target),
     #     shutil.which(HOST_CLIS[host]) → ALWAYS informational=True
+    #   [rev 0.5] D5 ledger gitattributes: `git check-attr merge -- sdd/ledger/events.jsonl sdd/ledger/archive/x.jsonl`
+    #     → both lines end "merge: union", else ok=False fix "parrot sdd install"
+    #   [rev 0.5] D5 ledger hooks: for event in LEDGER_HOOK_EVENTS, path = `git rev-parse --git-path hooks/<event>`
+    #     (relative to root); missing file or no LEDGER_HOOK_BEGIN → ok=False, detail lists the events, fix "parrot sdd install"
     raise NotImplementedError
 
 
@@ -730,6 +751,7 @@ import pytest
 from click.testing import CliRunner
 
 from parrot.cli import cli
+from parrot.knowledge.wiki.claude_code.assets import LEDGER_HOOK_BEGIN, LEDGER_HOOK_EVENTS  # [rev 0.5] D5
 from parrot.self_ import doctor
 
 
@@ -748,9 +770,12 @@ def ready_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (repo / "sdd/tasks/.id_ledger.json").write_text('{"task": 0, "feature": 0}\n')
     (repo / "sdd/config.json").write_text(json.dumps({"base_branch": "dev", "hotfix_base": "main"}) + "\n")
     (repo / ".gitignore").write_text(".claude/worktrees/\n")
+    (repo / ".gitattributes").write_text("sdd/ledger/events.jsonl merge=union\nsdd/ledger/archive/*.jsonl merge=union\n")  # [rev 0.5] D5
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "seed")
     _git(repo, "push", "-q", "-u", "origin", "dev")
+    for event in LEDGER_HOOK_EVENTS:  # [rev 0.5] D5 — ledger hooks present
+        (repo / ".git/hooks" / event).write_text(f"#!/bin/sh\n{LEDGER_HOOK_BEGIN}\n")
     monkeypatch.setattr(doctor.shutil, "which", lambda name: f"/usr/bin/{name}")  # gh, jq, claude present
     monkeypatch.setattr(doctor.subprocess, "run", _gh_ok(doctor.subprocess.run))
     return repo
@@ -777,6 +802,8 @@ def test_ready_repo_has_no_sdd_failures(ready_repo: Path) -> None:
         (lambda r: subprocess.run(["git", "-C", str(r), "push", "-q", "origin", "--delete", "dev"], check=True), "sdd: base branch on origin", "git push -u origin dev"),
         (lambda r: (_git(r, "rm", "-q", "--cached", "sdd/tasks/.id_ledger.json"), _git(r, "commit", "-qm", "untrack")), "sdd: id ledger tracked", "git add sdd/tasks/.id_ledger.json"),
         (lambda r: (r / ".gitignore").write_text(""), "sdd: worktrees ignored", "parrot sdd install"),
+        (lambda r: (r / ".gitattributes").write_text(""), "sdd: ledger gitattributes", "parrot sdd install"),  # [rev 0.5] D5
+        (lambda r: (r / ".git/hooks/post-merge").unlink(), "sdd: ledger hooks", "parrot sdd install"),  # [rev 0.5] D5
     ],
 )
 def test_each_missing_prerequisite_fails_its_check_with_a_fix(ready_repo: Path, break_it, check_name: str, fix_fragment: str) -> None:
@@ -848,7 +875,7 @@ rules at the CLI layer. The ImportError test pins the circularity rule (TASK-409
 - [ ] `doctor.py::_check_path` — OS-specific fix text; bounded by spec §5 PATH bullets
 - [ ] `doctor.py::_command_problem` / `_check_host_configs` — per-file checks + Gemini collision; bounded by spec §3 M3 check 4, §7
 - [ ] `doctor.py::_check_toolkits` — dist/env checks; bounded by spec §3 M3 check 5
-- [ ] `doctor.py::_check_sdd` — the seven remaining C15 checks after `origin`; bounded by Key Constraints (lazy, absence-tolerant, informational rules)
+- [ ] `doctor.py::_check_sdd` — the seven remaining C15 checks after `origin`, plus the two D5 ledger checks *[rev 0.5]*; bounded by Key Constraints (lazy, absence-tolerant, informational rules)
 - [ ] `cli.py::update` — bounded by add's error mapping (`doctor`'s exit code is now fully specified in the blueprint)
 - [ ] tests marked FILL IN in all three test files
 
@@ -860,6 +887,7 @@ rules at the CLI layer. The ImportError test pins the circularity rule (TASK-409
 - [ ] `parrot self env` prints the resolved venv, the rule (`PARROT_VENV|project|VIRTUAL_ENV|managed`), and both ai-parrot versions (spec §4 `test_self_env_rule_report`).
 - [ ] `parrot self doctor` reports every spec §3 M3 check; a host config pointing at a missing binary is flagged (spec §4 `test_doctor_flags_broken_host_config`); the Gemini cross-repo collision is flagged with a `--portable` fix (spec §7).
 - [ ] C15: with an `sdd/` tree (or `--sdd`), doctor reports `origin` remote, configured base branch on `origin` (from `sdd/config.json`, default `dev`), ledger git-tracked, `.claude/worktrees/` ignored, `gh` present + authenticated, `jq` present while referenced, installed SDD files current, and host CLIs (informational); a fixture repo missing each prerequisite gets exactly that check failing with a concrete `fix` (`test_each_missing_prerequisite_fails_its_check_with_a_fix`).
+- [ ] *[rev 0.5]* D5: with an `sdd/` tree (or `--sdd`), doctor also fails `sdd: ledger gitattributes` when `merge=union` is not effective on `sdd/ledger/events.jsonl` / `sdd/ledger/archive/*.jsonl`, and `sdd: ledger hooks` when any `LEDGER_HOOK_EVENTS` hook lacks the `parrot-ledger` block; both fix with `parrot sdd install` (same parametrized test, two new rows).
 - [ ] C14: `parrot self doctor --runtime-only` runs only uv, Python, runtime entry points and PATH — no repository, host-config or toolkit check, no network — and a repo with a broken host config, uncommitted ledger or unauthenticated `gh` does not fail it (`test_scope_runtime_only_excludes_repo_host_and_component_checks`).
 - [ ] `--sdd` and `--runtime-only` together are a usage error (exit 2); doctor exits 1 iff a non-informational check in the selected scope failed; informational host-CLI checks never fail it (`test_cli_flags_mutually_exclusive_and_exit_codes`).
 - [ ] Every `parrot.sdd.*` import is lazy and its absence degrades to an informational check (`test_sdd_modules_absent_degrade_to_informational`); doctor never writes and never raises.
@@ -887,7 +915,7 @@ Also, outside the pytest contract: lint with `ruff check packages/ai-parrot/src/
 See the CREATE blocks for `test_self_cli.py` (registration, `test_self_env_rule_report`,
 add/uninstall wiring), `test_doctor.py` (`test_doctor_flags_broken_host_config`,
 remote HTTP entry not flagged, Gemini collision, Python/PATH/toolkit checks, never-raises) and `test_doctor_sdd.py`
-(C15 ready-repo baseline + per-prerequisite failure matrix, `gh` unauthenticated, informational
+(C15 ready-repo baseline + per-prerequisite failure matrix incl. the two D5 ledger rows *[rev 0.5]*, `gh` unauthenticated, informational
 host CLI, `parrot.sdd.*` absent, C14 `--runtime-only` scope exclusion, mutual exclusion + exit codes).
 
 ---

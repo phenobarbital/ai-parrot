@@ -25,17 +25,20 @@ every Claude emitter a keyword-only `portable` flag; this task exposes `--portab
 
 **Mode-resolution rule (decided here; reconciles spec §3 M5(c), §4 and §5):**
 - The flag is tri-state: `--portable` → portable, `--no-portable` → baked, *absent* → **keep the
-  host's current form** (inferred from the existing managed `wikitoolkit` entry in `.mcp.json`;
-  no entry / baked entry → baked). An explicit request always wins and lands exactly the requested
+  host's current form** — *[rev 0.5]* D7: inferred from the managed `parrot-*` entries in `.mcp.json`,
+  never from the `wikitoolkit` entry; no managed `parrot-*` entry → baked. An explicit request always wins and lands exactly the requested
   form (spec §5: "re-running `parrot claude install` (either mode) lands exactly the requested form
   without reverting the other"; §4 `test_portable_transitions_both_ways`). A plain re-install never
   reverts a portable entry (§4 `test_reconcile_respects_portable`). A fresh install without the flag
   is baked, so default emission is unchanged (§5).
-- `parrot toolkits` (no flag at all) writes toolkit entries in portable form iff the current managed
-  `wikitoolkit` entry is portable (shared brief: "`--portable` is STICKY per host config").
+- `parrot toolkits` (no flag at all) writes toolkit entries in portable form iff the existing managed
+  `parrot-*` entries are portable *[rev 0.5]* (shared brief: "`--portable` is STICKY per host config").
 - Spec §3 M5(c)'s literal wording ("keeps an existing entry that matches EITHER form") would make an
   explicit `--portable` over a baked entry a no-op, contradicting §5 — the tri-state rule above is
   the reading that satisfies both §4 tests and §5.
+  *[rev 0.5]* With the flag *absent*, the M5(c) rule now applies to the `wikitoolkit` key: an existing
+  entry equal to the baked or the portable managed form is kept as is (that is what keeps a portable
+  `wikitoolkit` entry when there is no `parrot-*` entry to infer from).
 - Ownership is unchanged from today (FEAT-569, `_is_wikitoolkit_entry`, installer.py:753-762): a
   managed-shape stale `wikitoolkit` entry is replaced (`test_install_updates_stale_entry`,
   `packages/ai-parrot/tests/knowledge/wiki/test_installer_mcp.py:66`); a foreign `wikitoolkit` entry is
@@ -53,16 +56,40 @@ mis-handle `C:\…\Scripts\parrot.exe`; they move to a separator- and `.exe`-agn
   - `_is_wikitoolkit_entry` (installer.py:762) matches `command.endswith("wikitoolkit")`, so a baked Windows `C:\…\Scripts\wikitoolkit.exe` entry is classified foreign (never refreshed or uninstalled; verified by direct call). Whether this task switches it to `_script_basename` is undecided.
   - `--remote` × `--portable` stickiness: the remote entry is `{"type": "http", …}` (assets.py:134), so `_is_portable_wikitoolkit_entry` reads it as baked; after `--remote --portable`, a plain `--remote` re-install or `parrot toolkits` would revert hook/permissions/toolkit entries to baked. Spec is silent on remote; inference rule for http entries undecided.
 
+## Spec rev 0.5 — 2026-10-20
+- Resolved (rev 0.5 D6): `_is_wikitoolkit_entry` (`claude_code/installer.py:753` — the review above
+  cites :762, which is the `endswith` line inside it) matches the stdio command with
+  `_script_basename(command) == "wikitoolkit"` instead of `command.endswith("wikitoolkit")`, so a
+  `C:\…\Scripts\wikitoolkit.exe` entry is managed — refreshed and uninstalled, not foreign. The http
+  branch is unchanged. (The hook-body half of D6 is TASK-4081.)
+- Resolved (rev 0.5 D7): `--remote` decides only the `wikitoolkit` key. The mode for everything else
+  (settings hook, permissions, `parrot-*` entries, bookstore) is the explicit flag, or, when absent,
+  inferred from the managed `parrot-*` entries: portable iff at least one managed `parrot-*` entry
+  exists and every managed one is in portable shape (`--config` == `assets.PORTABLE_TOOLKIT_CONFIG`,
+  no `cwd`). The `wikitoolkit` entry is never read for the mode. `_is_portable_wikitoolkit_entry` is
+  replaced by `_is_portable_toolkit_entry`. With the flag absent, an existing `wikitoolkit` entry equal
+  to either managed stdio form is kept (spec §3 M5(c)).
+- Known gap, not decided by rev 0.5: a portable install with no `parrot-*` entry infers baked on a
+  plain re-install, so the settings hook, permissions and bookstore go back to baked (the `wikitoolkit`
+  key is kept by the M5(c) rule); the first `parrot toolkits` enable is baked too. Pass `--portable`
+  explicitly. Do not invent another signal (no state file, no `wikitoolkit` inference).
+- Anchors re-verified on the working tree 2026-10-20: all unchanged (`_install_mcp_json` :694,
+  `entry = assets.mcp_json_entry(root)` :723, foreign guard :730, `elif servers.get("wikitoolkit") == entry:`
+  :733, reconcile range 733-738, `_is_wikitoolkit_entry` :753, `install_claude_integration` :1034).
+
 ## Scope
 
 - Add `_script_basename(command: str) -> str` and use it at installer.py:152, :591-592, :896, :898.
-- Add `_is_portable_wikitoolkit_entry(entry: Any) -> bool` and `_current_portable_mode(root: Path) -> bool`.
+- Add `_is_portable_toolkit_entry(entry: Any) -> bool` and `_current_portable_mode(root: Path) -> bool`
+  (infers from the managed `parrot-*` entries) *[rev 0.5]* D7.
+- *[rev 0.5]* D6: `_is_wikitoolkit_entry` matches the stdio command by `_script_basename(command) == "wikitoolkit"` (:762).
 - `_is_managed_toolkit_entry`: accept the portable shape (bare `parrot`, `--config
   .parrot/mcp-toolkits.yaml` = `assets.PORTABLE_TOOLKIT_CONFIG`).
 - `reconcile_toolkit_entries(root, *, portable: Optional[bool] = None)` — `None` infers (sticky).
-- `_install_mcp_json(root, *, remote=None, portable: bool = False)` — keeps the FEAT-569 `remote`
-  branch as is, emits the requested stdio form otherwise, passes the resolved mode to
-  `reconcile_toolkit_entries`.
+- `_install_mcp_json(root, *, remote=None, portable: bool = False, keep_managed: bool = False)` — keeps
+  the FEAT-569 `remote` branch as is, emits the requested stdio form otherwise, passes the resolved mode
+  to `reconcile_toolkit_entries`. *[rev 0.5]* `keep_managed=True` (flag absent) keeps an existing
+  `wikitoolkit` entry equal to either managed stdio form.
 - `_hook_entry`, `_install_settings_hook`, `_install_permissions` gain `*, portable: bool = False`.
 - `install_claude_integration(…, portable: Optional[bool] = None)` resolves the mode once, before
   any write, and threads it to the settings hook, permissions, `.mcp.json`, and `install_bookstore`.
@@ -127,7 +154,7 @@ def reconcile_toolkit_entries(root: Path) -> tuple[list[str], list[str]]: # line
 def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None) -> str:  # line 694 (FEAT-569)
 #   if remote is not None: entry = assets.mcp_json_entry_remote(...) line 720-721; else: entry = assets.mcp_json_entry(root) line 723;
 #   foreign guard (not _is_wikitoolkit_entry) line 730-732; equality/replace 733-738; reconcile_toolkit_entries(root) line 744
-def _is_wikitoolkit_entry(entry: Any) -> bool:                            # line 753-762 (stdio + http managed shapes; stdio uses command.endswith("wikitoolkit"))
+def _is_wikitoolkit_entry(entry: Any) -> bool:                            # line 753-762 (stdio + http managed shapes; stdio uses command.endswith("wikitoolkit") at line 762 — [rev 0.5] D6: becomes _script_basename(command) == "wikitoolkit")
 def _shebang_is_sh_compatible(first_line: str) -> bool:                   # line 882; PurePosixPath(tokens[0]).name line 896; tokens[1] line 898
 def install_claude_integration(root, config=None, git_hook=True, gitignore=True, bookstore=True,
                                approve_mcp=True, compaction=False, typesafe_api_key=None,
@@ -148,7 +175,7 @@ def install_claude_integration(root, config=None, git_hook=True, gitignore=True,
 ### Does NOT Exist
 - ~~a `portable` parameter / `--portable` flag anywhere in `claude_code/installer.py` or `cli.py`~~ — new here.
 - ~~a state file recording the chosen mode~~ — forbidden (shared brief: inferred from existing config only).
-- ~~`_script_basename`, `_is_portable_wikitoolkit_entry`, `_current_portable_mode`~~ — new private helpers.
+- ~~`_script_basename`, `_is_portable_toolkit_entry`, `_current_portable_mode`~~ — new private helpers. *[rev 0.5]* (`_is_portable_wikitoolkit_entry` is dropped: D7 never infers from the `wikitoolkit` entry.)
 - ~~a shared host-adapter path for the wikitoolkit entry~~ — `mcp/hosts.py` reconciles toolkit entries only (spec §6).
 - ~~`parrot mcp-local` honouring `PARROT_PROJECT`~~ — it uses `Path.cwd()` (mcp/local_cli.py:183).
 
@@ -181,6 +208,7 @@ def install_claude_integration(root, config=None, git_hook=True, gitignore=True,
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#_is_managed_toolkit_entry",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#reconcile_toolkit_entries",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#_install_mcp_json",
+    "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#_is_wikitoolkit_entry",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#_shebang_is_sh_compatible",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py#install_claude_integration",
     "sym:packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py#install",
@@ -212,18 +240,20 @@ else:
 ### Key Constraints
 - Resolve the mode ONCE in `install_claude_integration`, **before** `_install_settings_hook`
   writes anything — later steps must not re-infer from a half-written state.
-- The portable-vs-baked inference compares the **shape** (`command == "wikitoolkit"` and
-  `args == ["mcp"]`), never a resolved path. Known edge: when baked resolution degenerates to the
-  bare name (no `.venv`, nothing on PATH) the baked entry is byte-identical to the portable one, so a
-  later `parrot toolkits` run infers portable. This is accepted (the two forms are then genuinely
-  indistinguishable) — tests must create `<root>/.venv/bin/wikitoolkit` (or monkeypatch
-  `assets.resolve_wikitoolkit_bin`) to get a distinguishable baked entry.
+- *[rev 0.5]* D7: the portable-vs-baked inference compares the **shape** of the managed `parrot-*`
+  entries (relative `--config` == `assets.PORTABLE_TOOLKIT_CONFIG`, no `cwd`), never a resolved path and
+  never the `wikitoolkit` entry. A baked toolkit entry always carries an absolute `--config` and `cwd`,
+  so the two forms stay distinguishable even when `resolve_parrot_bin` degenerates to bare `parrot`.
+  For the M5(c) keep rule, tests still create `<root>/.venv/bin/wikitoolkit` so the baked and portable
+  `wikitoolkit` entries differ.
 - `_is_managed_toolkit_entry` must stay a superset of today's accepted shapes (pinned absolute
   `--config` inside root, legacy two-arg) and must keep rejecting `--config` outside root.
 - After the edits `PurePosixPath` may be unused — drop it from the line-30 import (ruff F401).
 - Keep warnings on `sys.stderr` exactly as today (installer.py:665, :731); no new `print`.
 - `--remote` (FEAT-569) keeps its own `wikitoolkit` entry: `portable` only changes the stdio
   (else) branch of `_install_mcp_json`; every call that passes `remote=remote` today keeps it.
+  *[rev 0.5]* D7: with `--remote`, the settings hook, permissions, `parrot-*` entries and bookstore still
+  follow the resolved mode, and an http `wikitoolkit` entry never changes that mode.
 
 ### References in Codebase
 - `packages/ai-parrot/src/parrot/mcp/hosts.py:58-117` — ClaudeAdapter; proves both CLIs funnel into
@@ -235,7 +265,8 @@ else:
 ## Implementation Blueprint
 
 ### Steps (in order)
-1. Add the three private helpers after `_remove_marker_block` — *why*: one Windows-safe basename
+1. Add the private helpers after `_remove_marker_block` (*[rev 0.5]* four: `_script_basename`,
+   `_is_portable_toolkit_entry`, `_portable_from_servers`, `_current_portable_mode`) — *why*: one Windows-safe basename
    rule (codex S4) and one portable-shape rule shared by every call site below.
 2. Swap the `PurePosixPath(...).name` uses at :152, :591-592, :896, :898 for `_script_basename` —
    *why*: spec §7 "fix it with the Windows branch, not after".
@@ -248,6 +279,7 @@ else:
 6. Resolve the tri-state in `install_claude_integration` and add the CLI flag — *why*: spec §2 New
    Public Interfaces (`--portable` on `parrot claude install`).
 7. Write the tests — *why*: spec §4 `test_reconcile_respects_portable`, `test_portable_transitions_both_ways`.
+8. *[rev 0.5]* D6: `_is_wikitoolkit_entry` stdio match via `_script_basename` (:762) — *why*: a Windows entry must not be foreign.
 
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py` (MODIFY)
 ```python
@@ -265,22 +297,37 @@ def _script_basename(command: str) -> str:
     return name[:-4] if name.lower().endswith(".exe") else name
 
 
-def _is_portable_wikitoolkit_entry(entry: Any) -> bool:
-    """Whether a ``.mcp.json`` wikitoolkit entry is in the portable (bare-command) form."""
+def _is_portable_toolkit_entry(entry: Any) -> bool:  # [rev 0.5] D7 — replaces _is_portable_wikitoolkit_entry
+    """Whether a managed ``parrot-<name>`` entry is in the portable form (relative config, no cwd)."""
+    args = entry.get("args") if isinstance(entry, dict) else None
     return (
-        isinstance(entry, dict)
-        and entry.get("command") == assets.HOOK_BIN_NAME
-        and entry.get("args") == ["mcp"]
+        isinstance(args, list)
+        and len(args) >= 4
+        and args[2] == "--config"
+        and args[3] == assets.PORTABLE_TOOLKIT_CONFIG
+        and "cwd" not in entry
     )
 
 
-def _current_portable_mode(root: Path) -> bool:
-    """Infer the host's current mode from the managed wikitoolkit entry (FEAT-633, sticky).
+def _portable_from_servers(servers: dict[str, Any], root: Path) -> bool:  # [rev 0.5] D7
+    """Portable iff >= 1 managed ``parrot-*`` entry exists and every managed one is portable.
 
-    No ``.mcp.json``, unparsable JSON, no entry, or a baked entry all mean ``False``.
+    Never reads the ``wikitoolkit`` key (an http/url entry must not decide the mode).
+    """
+    managed = [
+        entry for key, entry in servers.items()
+        if key.startswith("parrot-") and _is_managed_toolkit_entry(entry, root, key[len("parrot-"):])
+    ]
+    return bool(managed) and all(_is_portable_toolkit_entry(entry) for entry in managed)
+
+
+def _current_portable_mode(root: Path) -> bool:
+    """Infer the host's current mode from the managed ``parrot-*`` entries (FEAT-633 sticky; rev 0.5 D7).
+
+    No ``.mcp.json``, unparsable JSON, no managed ``parrot-*`` entry, or a baked one all mean ``False``.
     """
     # FILL IN: read root/".mcp.json" leniently (mirror the try/except at installer.py:710-718)
-    # and return _is_portable_wikitoolkit_entry(mcpServers.get("wikitoolkit")) — bounded by
+    # and return _portable_from_servers(mcpServers, root) — bounded by
     # "no new state file" (shared brief) and never raising on a corrupt file.
     raise NotImplementedError
 
@@ -311,7 +358,7 @@ def _current_portable_mode(root: Path) -> bool:
 
 # occurrences: 1 (verified: grep -c 'def reconcile_toolkit_entries(root: Path) -> tuple\[list\[str\], list\[str\]\]:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
 # REPLACE — signature line (verified: claude_code/installer.py:617); add to the docstring:
-#   "portable: None infers the mode from the current wikitoolkit entry (FEAT-633 sticky rule —
+#   "portable: None infers the mode from the managed parrot-* entries ([rev 0.5] D7; FEAT-633 sticky rule —
 #    the `parrot toolkits` path via mcp/hosts.py::ClaudeAdapter.reconcile); True/False force it."
 def reconcile_toolkit_entries(root: Path, *, portable: Optional[bool] = None) -> tuple[list[str], list[str]]:
 
@@ -319,7 +366,7 @@ def reconcile_toolkit_entries(root: Path, *, portable: Optional[bool] = None) ->
 # REPLACE — (verified: claude_code/installer.py:656); and BEFORE the `for name in sorted(enabled_names):`
 #           loop (line 654) insert the inference:
     if portable is None:
-        portable = _is_portable_wikitoolkit_entry(servers.get("wikitoolkit"))
+        portable = _portable_from_servers(servers, root)  # [rev 0.5] D7 — never the wikitoolkit key
     ...
         toolkit_entry = assets.toolkit_mcp_json_entry(root, name, cfg.toolkits[name], portable=portable)
 ```
@@ -327,7 +374,9 @@ def reconcile_toolkit_entries(root: Path, *, portable: Optional[bool] = None) ->
 ```python
 # occurrences: 1 (verified: grep -c 'def _install_mcp_json(root: Path, \*, remote: Optional\[WikiRemoteConfig\] = None) -> str:' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
 # REPLACE — signature (verified: claude_code/installer.py:694); keep `remote` (FEAT-569); docstring gains a `portable` Args line
-def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None, portable: bool = False) -> str:
+def _install_mcp_json(
+    root: Path, *, remote: Optional[WikiRemoteConfig] = None, portable: bool = False, keep_managed: bool = False
+) -> str:  # [rev 0.5] keep_managed — spec §3 M5(c) when the flag is absent
 
 # occurrences: 1 (verified: grep -c '        entry = assets.mcp_json_entry(root)' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
 # REPLACE — the ELSE-branch line only (8-space indent, verified: claude_code/installer.py:723); the
@@ -336,6 +385,12 @@ def _install_mcp_json(root: Path, *, remote: Optional[WikiRemoteConfig] = None, 
 # Lines 730-738 (foreign guard `    if "wikitoolkit" in servers and not _is_wikitoolkit_entry(...)` and
 # `    elif servers.get("wikitoolkit") == entry:`, occurrences 1) stay textually unchanged —
 # comparing against the REQUESTED form is the whole fix.
+# [rev 0.5] M5(c) keep rule — INSERT after the `servers` normalisation (verified: installer.py:725-727),
+#           before the foreign guard (:730):
+    if remote is None and keep_managed and servers.get("wikitoolkit") in (
+        assets.mcp_json_entry(root), assets.mcp_json_entry(root, portable=True)
+    ):
+        entry = servers["wikitoolkit"]  # flag absent: keep either managed stdio form as is
 
 # occurrences: 1 (verified: grep -c '    toolkit_actions, _warnings = reconcile_toolkit_entries(root)' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
 # REPLACE — (verified: claude_code/installer.py:744)
@@ -360,6 +415,10 @@ def _install_settings_hook(root: Path, *, portable: bool = False) -> str:
 def _install_permissions(root: Path, *, portable: bool = False) -> list[str]:
     all_rules = assets.permission_rules(root, portable=portable)
 
+# [rev 0.5] D6 — occurrences: 1 (verified: grep -c '    return isinstance(command, str) and command.endswith("wikitoolkit") and entry.get("args") == \["mcp"\]' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
+# REPLACE — (verified: claude_code/installer.py:762, inside _is_wikitoolkit_entry :753); also fix its docstring ("basename is wikitoolkit")
+    return isinstance(command, str) and _script_basename(command) == "wikitoolkit" and entry.get("args") == ["mcp"]
+
 # occurrences: 1 (verified: grep -c '    interpreter = PurePosixPath(tokens\[0\]).name' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
 # REPLACE — :896 and :898 (`        interpreter = PurePosixPath(tokens[1]).name`, occurrences 1)
     interpreter = _script_basename(tokens[0])
@@ -374,19 +433,21 @@ def _install_permissions(root: Path, *, portable: bool = False) -> list[str]:
 # Docstring Args addition:
 #   portable: ``True`` emits bare launcher commands (committable ``.mcp.json``/settings hook, FEAT-633),
 #       ``False`` bakes absolute paths (today's default), ``None`` keeps the host's current form
-#       (inferred from the managed wikitoolkit entry; a fresh repo is baked).
+#       (inferred from the managed ``parrot-*`` entries, never the wikitoolkit entry — [rev 0.5] D7;
+#       a fresh repo is baked).
 
 # occurrences: 1 (verified: grep -c '    save_project_config(root, config)' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)
 # AFTER — insert below `    save_project_config(root, config)` (verified: claude_code/installer.py:1092)
+    keep_managed = portable is None  # [rev 0.5] M5(c) keep rule for the wikitoolkit key
     if portable is None:
-        portable = _current_portable_mode(root)
+        portable = _current_portable_mode(root)  # [rev 0.5] D7 — from parrot-* entries
     logger.debug("claude install: portable=%s", portable)
 
 # REPLACE — the four call sites (each occurrences 1, verified :1095, :1096, :1097, :1119); the
 #           `.mcp.json` call already passes `remote=remote` (FEAT-569) — keep it:
     actions.append(_install_settings_hook(root, portable=portable))
     actions.extend(_install_permissions(root, portable=portable))
-    actions.append(_install_mcp_json(root, remote=remote, portable=portable))
+    actions.append(_install_mcp_json(root, remote=remote, portable=portable, keep_managed=keep_managed))  # [rev 0.5]
         actions.extend(install_bookstore(root, portable=portable))
 ```
 **Why this shape**: resolving the tri-state in one place keeps every lower function a plain
@@ -403,6 +464,7 @@ the public entry point and `reconcile_toolkit_entries` (the shared toolkits path
     default=None,
     help="Emit bare launcher commands (wikitoolkit/parrot/bookstore) with no absolute paths, so the "
     "config can be committed. Default: keep the current form (baked absolute paths on a fresh install).",
+    # [rev 0.5] D7: "current form" = the managed parrot-* entries; --remote does not change it.
 )
 
 # occurrences: 1 (verified: grep -c '    token_env: Optional\[str\],' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/cli.py)
@@ -433,9 +495,11 @@ from parrot.knowledge.wiki.claude_code.cli import claude
 from parrot.knowledge.wiki.claude_code.installer import (
     _is_managed_toolkit_entry,
     _is_our_command,
+    _is_wikitoolkit_entry,  # [rev 0.5] D6
     install_claude_integration,
     reconcile_toolkit_entries,
 )
+from parrot.knowledge.wiki.project import WikiRemoteConfig  # [rev 0.5] D7
 
 
 @pytest.fixture
@@ -457,8 +521,10 @@ def _servers(root: Path) -> dict:
     return json.loads((root / ".mcp.json").read_text())["mcpServers"]
 
 
-def _install(root: Path, portable: bool | None) -> None:
-    install_claude_integration(root, git_hook=False, gitignore=False, bookstore=False, portable=portable)
+def _install(root: Path, portable: bool | None, remote: WikiRemoteConfig | None = None) -> None:  # [rev 0.5] remote
+    install_claude_integration(
+        root, git_hook=False, gitignore=False, bookstore=False, portable=portable, remote=remote
+    )
 
 
 def test_default_install_unchanged(repo_root: Path) -> None:
@@ -483,10 +549,30 @@ def test_reconcile_respects_portable(repo_root: Path) -> None:
     _install(repo_root, True)
     _install(repo_root, None)
     assert _servers(repo_root)["wikitoolkit"] == assets.mcp_json_entry(repo_root, portable=True)
-    del_servers = _servers(repo_root)
-    del_servers.pop("parrot-bounded-source")
-    (repo_root / ".mcp.json").write_text(json.dumps({"mcpServers": del_servers}))
+    # [rev 0.5] D7: a toolkit enabled later follows the existing portable parrot-* entries
+    cfg = repo_root / ".parrot" / "mcp-toolkits.yaml"
+    cfg.write_text(cfg.read_text() + "  reader:\n    class: parrot_tools.tool_optimizations.reader.BoundedSourceToolkit\n    kwargs: {}\n")
     reconcile_toolkit_entries(repo_root)  # what mcp/hosts.py::ClaudeAdapter.reconcile calls
+    assert "cwd" not in _servers(repo_root)["parrot-reader"]
+
+
+def test_plain_reinstall_keeps_portable_wikitoolkit_without_toolkits(repo_root: Path) -> None:
+    """[rev 0.5] spec §3 M5(c): with no parrot-* entry to infer from, the managed wikitoolkit entry is kept."""
+    (repo_root / ".parrot" / "mcp-toolkits.yaml").write_text("toolkits: {}\n")
+    _install(repo_root, True)
+    _install(repo_root, None)
+    assert _servers(repo_root)["wikitoolkit"] == assets.mcp_json_entry(repo_root, portable=True)
+
+
+def test_remote_does_not_reset_portable_mode(repo_root: Path) -> None:
+    """[rev 0.5] D7: --remote decides only the wikitoolkit key; the mode comes from the parrot-* entries."""
+    _install(repo_root, True)
+    _install(repo_root, None, remote=WikiRemoteConfig(url="https://h/mcp/w", token_env="WT"))
+    assert _servers(repo_root)["wikitoolkit"]["type"] == "http"
+    assert "cwd" not in _servers(repo_root)["parrot-bounded-source"]
+    settings = (repo_root / ".claude" / "settings.json").read_text()
+    assert assets.hook_command(repo_root, portable=True) in settings and str(repo_root) not in settings
+    reconcile_toolkit_entries(repo_root)
     assert "cwd" not in _servers(repo_root)["parrot-bounded-source"]
 
 
@@ -513,6 +599,13 @@ def test_windows_paths_detected(repo_root: Path) -> None:
     assert _is_our_command("C:\\r\\.venv\\Scripts\\wikitoolkit.exe claude-hook")
 
 
+def test_windows_wikitoolkit_entry_is_managed() -> None:
+    """[rev 0.5] D6: basename match without .exe; a different basename stays foreign."""
+    assert _is_wikitoolkit_entry({"command": "C:\\r\\.venv\\Scripts\\wikitoolkit.exe", "args": ["mcp"]})
+    assert _is_wikitoolkit_entry({"command": "/r/.venv/bin/wikitoolkit", "args": ["mcp"]})
+    assert not _is_wikitoolkit_entry({"command": "/r/bin/my-wikitoolkit", "args": ["mcp"]})
+
+
 def test_cli_portable_flag(repo_root: Path) -> None:
     result = CliRunner().invoke(
         claude, ["install", "--path", str(repo_root), "--no-build", "--no-compaction", "--no-git-hook", "--portable"]
@@ -522,7 +615,7 @@ def test_cli_portable_flag(repo_root: Path) -> None:
 ```
 
 ### FILL IN checklist
-- [ ] `installer.py::_current_portable_mode` — lenient `.mcp.json` read; bounded by "no new state file" and never raising.
+- [ ] `installer.py::_current_portable_mode` — lenient `.mcp.json` read, then `_portable_from_servers` *[rev 0.5]*; bounded by "no new state file" and never raising.
 - [ ] `test_portable_install_no_abs_paths` — recursive string walk; bounded by spec §5 ("no absolute path in any field").
 - [ ] Docstrings for every changed signature (Google style) — bounded by codebase conventions.
 
@@ -532,8 +625,10 @@ def test_cli_portable_flag(repo_root: Path) -> None:
 
 - [ ] `parrot claude install --portable` writes the portable wikitoolkit entry, portable toolkit entries (relative `--config`, no `cwd`), the bare `wikitoolkit claude-hook` settings hook and the portable bookstore entry; nothing it writes contains an absolute path (spec §5).
 - [ ] `--no-portable` over a portable install restores the exact baked form, and `--portable` over a baked install the exact portable form (spec §4 `test_portable_transitions_both_ways`; §5 "lands exactly the requested form").
-- [ ] `parrot claude install` without the flag keeps the current form; on a fresh repo it is baked and byte-identical to today (spec §4 `test_reconcile_respects_portable`, `test_default_emission_unchanged`).
-- [ ] `reconcile_toolkit_entries(root)` (the `parrot toolkits` path, via `mcp/hosts.py`) emits portable toolkit entries iff the current wikitoolkit entry is portable — `mcp/hosts.py` unmodified.
+- [ ] `parrot claude install` without the flag keeps the current form; on a fresh repo it is baked and byte-identical to today (spec §4 `test_reconcile_respects_portable`, `test_default_emission_unchanged`). *[rev 0.5]* Without the flag, an existing `wikitoolkit` entry in either managed stdio form is kept (`test_plain_reinstall_keeps_portable_wikitoolkit_without_toolkits`).
+- [ ] *[rev 0.5]* D7: `reconcile_toolkit_entries(root)` (the `parrot toolkits` path, via `mcp/hosts.py`) emits portable toolkit entries iff the existing managed `parrot-*` entries are portable; the `wikitoolkit` entry is never read for the mode — `mcp/hosts.py` unmodified.
+- [ ] *[rev 0.5]* D7: `--remote` without `--portable/--no-portable` over a portable install keeps the hook, permissions and `parrot-*` entries portable (`test_remote_does_not_reset_portable_mode`).
+- [ ] *[rev 0.5]* D6: `_is_wikitoolkit_entry` accepts `C:\…\Scripts\wikitoolkit.exe` (basename without `.exe`) and rejects other basenames (`test_windows_wikitoolkit_entry_is_managed`).
 - [ ] Foreign `parrot-<name>` entries stay untouched in both modes; `test_install_updates_stale_entry` and `test_install_leaves_foreign_wikitoolkit_entry_untouched` still pass; `--remote` (FEAT-569) behaviour is unchanged.
 - [ ] Windows `Scripts\parrot.exe` / `wikitoolkit.exe` commands are recognised as managed (codex S4); no `PurePosixPath(...).name` remains in `claude_code/installer.py`.
 - [ ] `ruff check` clean on both modified files.
@@ -559,7 +654,9 @@ Run from the feature worktree with `PYTHONPATH=packages/ai-parrot/src` (the shar
 
 See the CREATE block above: `test_default_install_unchanged`, `test_portable_transitions_both_ways`,
 `test_reconcile_respects_portable`, `test_portable_install_no_abs_paths`,
-`test_foreign_toolkit_entry_untouched`, `test_windows_paths_detected`, `test_cli_portable_flag`.
+`test_foreign_toolkit_entry_untouched`, `test_windows_paths_detected`, `test_cli_portable_flag`;
+*[rev 0.5]* `test_plain_reinstall_keeps_portable_wikitoolkit_without_toolkits`, `test_remote_does_not_reset_portable_mode` (D7),
+`test_windows_wikitoolkit_entry_is_managed` (D6).
 
 ---
 
