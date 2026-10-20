@@ -1,0 +1,4 @@
+.claude/commands/sdd-proposal.md
+.agents/skills/sdd-proposal/SKILL.md
+sdd/templates/state.schema.json
+sdd/templates/finding.md

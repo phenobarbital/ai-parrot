@@ -113,7 +113,34 @@
                 "grep_calls": {"type": "integer", "minimum": 0},
                 "git_calls": {"type": "integer", "minimum": 0},
                 "truncated": {"type": "boolean"},
-                "truncation_reason": {"type": ["string", "null"]}
+                "truncation_reason": {"type": ["string", "null"]},
+                "parallel": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {"type": "boolean"},
+                    "fallback_reason": {"type": ["string", "null"]},
+                    "lanes": {
+                      "type": "object",
+                      "properties": {
+                        "codebase": {"$ref": "#/$defs/lane_record"},
+                        "git": {"$ref": "#/$defs/lane_record"},
+                        "wiki": {"$ref": "#/$defs/lane_record"}
+                      }
+                    },
+                    "merge": {
+                      "type": "object",
+                      "properties": {
+                        "started_at": {"type": "string", "format": "date-time"},
+                        "completed_at": {"type": "string", "format": "date-time"},
+                        "input_count": {"type": "integer", "minimum": 0},
+                        "output_count": {"type": "integer", "minimum": 0},
+                        "merged_count": {"type": "integer", "minimum": 0},
+                        "audit_dir": {"type": "string"}
+                      }
+                    }
+                  }
+                }
               }
             }
           ]
@@ -236,6 +263,19 @@
         "started_at": {"type": ["string", "null"], "format": "date-time"},
         "completed_at": {"type": ["string", "null"], "format": "date-time"},
         "duration_seconds": {"type": ["number", "null"], "minimum": 0}
+      }
+    },
+    "lane_record": {
+      "type": "object",
+      "properties": {
+        "status": {"enum": ["pending", "running", "completed", "failed"]},
+        "started_at": {"type": ["string", "null"], "format": "date-time"},
+        "completed_at": {"type": ["string", "null"], "format": "date-time"},
+        "duration_seconds": {"type": ["number", "null"], "minimum": 0},
+        "findings_count": {"type": "integer", "minimum": 0},
+        "queries_executed": {"type": "integer", "minimum": 0},
+        "queries_skipped": {"type": "integer", "minimum": 0},
+        "error": {"type": ["string", "null"]}
       }
     }
   }

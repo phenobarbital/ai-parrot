@@ -1,0 +1,9 @@
+- Must preserve the existing budget profiles (tight, default, loose) — no breaking changes to the --budget flag semantics.
+- tight profile (15 files, 120s) stays sequential — fork overhead is not justified at this scale.
+- The twin-file structure (.claude/commands/sdd-proposal.md + .agents/skills/sdd-proposal/SKILL.md) must be updated consistently.
+- The finding file format (sdd/templates/finding.md) is unchanged.
+- State schema (sdd/templates/state.schema.json) additions must be backwards-compatible (new optional fields only).
+- Single-agent fallback must work automatically when the Agent tool is unavailable.
+- Wiki queries remain budget-free.
+- Token cost increase should be bounded — per-lane budget at ~60% of profile limits.
+- Merged findings must feed the existing Phase 3 synthesis input format unchanged.

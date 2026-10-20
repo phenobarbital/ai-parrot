@@ -1,0 +1,14 @@
+Option A: Fork-per-Lane with Shared Findings Directory
+
+Each of 3 research lanes runs as a Claude Code fork (subagent_type: "fork"). Forks inherit the full conversation context (including the resolved source and approved research plan). Each fork writes findings to the existing ${STATE_DIR}/findings/ directory using lane-prefixed IDs:
+- Codebase lane: FC-001, FC-002, ... — handles grep, glob, read, tree queries.
+- Git lane: FG-001, FG-002, ... — handles git_log queries.
+- Wiki lane: FW-001, FW-002, ... — handles wiki_query, wiki_page, wiki_related queries.
+
+The main agent waits for all 3 forks to complete, then runs a dedup pass: scans all findings, groups by file path, and merges overlapping citations into consolidated F001...F<NNN> findings for synthesis.
+
+Per-lane budget allocation:
+- Codebase: 60% files_read, 80% grep_calls, 0 git_calls
+- Git: 20% files_read, 0 grep_calls, 100% git_calls
+- Wiki: 20% files_read, 20% grep_calls, 0 git_calls
+- Wall-clock per lane: 0.7 * profile.wall_seconds

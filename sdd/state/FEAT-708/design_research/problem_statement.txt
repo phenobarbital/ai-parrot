@@ -1,0 +1,3 @@
+The /sdd-proposal research phase (Phase 2) runs as a sequential loop: each query in the research plan executes one at a time, checking budget limits after each step. For the loose budget profile (100 files, 60 greps, 20 git calls, depth 3), this can take up to 15 minutes of wall-clock time — most of it blocked waiting for tool responses.
+
+The three dominant query types (codebase exploration, git history, wiki queries) are independent: a grep for symbol references does not depend on a git log for authorship, and neither depends on a wikitoolkit query for architectural context. Running them in parallel would cut wall-clock time roughly by a factor of 3, limited only by the slowest lane.

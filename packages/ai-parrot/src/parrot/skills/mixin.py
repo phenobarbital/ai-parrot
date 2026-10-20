@@ -475,7 +475,9 @@ class SkillRegistryMixin:
         if self._skill_file_registry is not None:
             # Rebuild so skill_paths skills are included in every view.
             self._global_view = SkillView(self._skill_file_registry, logger=logger)
-            for tenant_view in self._tenant_views.values():
+            # __dict__.get: a host that skips the mixin __init__ (skill_paths-only bots, test doubles)
+            # has no tenant state yet — same guard as current_skill_view() and the prompt-layer walk.
+            for tenant_view in self.__dict__.get("_tenant_views", {}).values():
                 tenant_view.compose()
             if self.tenant_based and not agents_dir:
                 logger.warning("tenant_based=True but no agents_dir resolved; using global skills only")
