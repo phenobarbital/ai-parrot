@@ -612,7 +612,13 @@ See the Interface Skeletons in §3 — `RunnerAdapter`, `load_registry`,
                            timeout_seconds, request_id, *, attempt_uid: Optional[str] = None, base_ref: Optional[str] = None) -> BackgroundRegistration: ...
   async def _task_tier_gate(self, ctx: _FeatureCtx, task: PlannedTask, *, path: str, branch: str, diff_base: str,
                             attempt_uid: str, execution_id: Optional[str]) -> ValidationVerdict:
-      """Runs after lint autofix + banned-import gate, before the merge lock; base_ref = diff_base."""
+      """Runs after lint autofix + banned-import gate, before the merge lock; base_ref = diff_base.
+
+      Fail-closed (S13): ALWAYS returns a verdict, never ``None``. When the gate cannot run --
+      no validation supervisor bound, or the attempt has no ``execution_id`` (a plain
+      ``run_chunk``) -- it returns a synthetic ``status="unavailable"`` verdict naming the
+      cause, which ``_consolidate`` treats like any other non-``passed`` status. An
+      unvalidated merge is never silently allowed."""
   def _validation_capability(self, ctx: _FeatureCtx, task: PlannedTask, *, path: str, attempt_uid: str,
                              execution_id: Optional[str]) -> "ValidationCapability":
       """Bound to ONE task + attempt worktree; handed to the dispatcher via set_validation_runner (M8)."""
@@ -727,6 +733,7 @@ See the Interface Skeletons in §3 — `RunnerAdapter`, `load_registry`,
 | `test_supervisor_task_tier` | M6 | `tier="task"` admission (one id, explicit base_ref), per-invocation timeouts, partial run ⇒ `timed_out`, no green cache (S9) |
 | `test_supervisor_verdict_persisted` | M6 | `put_artifact` called before the receipt; `wait_verdict` returns the stored verdict (S1) |
 | `test_consolidate_gate_placement` | M7 | gate runs after lint autofix and before the merge lock; red ⇒ `validation_failed`, no merge (S2) |
+| `test_consolidate_gate_fail_closed` | M7 | no supervisor bound, and attempt without `execution_id` ⇒ `unavailable` verdict, `validation_failed`, feature branch HEAD unchanged (S13) |
 | `test_run_task_same_seat_repair` | M7 | red ⇒ same seat, `attempt=2`, worktree from failed branch, verdict in brief; second red ⇒ ladder; no suspension (S8) |
 | `test_worktree_manager_create_base` | M7 | `create(base=<branch>)` forks from it |
 | `test_dispatcher_run_validation_tool` | M8 | tool present; unbound capability ⇒ hard error; `run_command pytest …` ⇒ capability, verdict only (S4, S7) |
@@ -840,6 +847,11 @@ def feature_worktree_with_attempt(tmp_path):
 - [ ] `_consolidate` runs the task-tier gate after lint autofix and the banned-import
       gate, before the merge lock, against the fork SHA; a red verdict returns
       `validation_failed` with the verdict and nothing is merged.
+- [ ] The gate is fail-closed (S13): with no validation supervisor bound, or an attempt
+      with no `execution_id`, it returns an `unavailable` verdict naming the cause and
+      `_consolidate` returns `validation_failed` -- never a silent unvalidated merge.
+      `unavailable` is reported distinctly from a test-failure red so an operator can
+      tell a misconfigured gate from a genuinely broken attempt.
 - [ ] A red gate re-dispatches the same seat once (fresh sub-worktree seeded from the
       failed branch, verdict rendered in the brief, `attempt + 1`, its own outcome
       emission); a second red follows `_select_retry_seat`; validation reds never
@@ -1295,6 +1307,7 @@ Verified against: `7dd48d3c2`
 | S10 | Add runner-specific evidence fixtures before changing the parser spine (testing) | CONFIRM | Fixtures for TS junit, nested suites, missing `file`, libtest, e2e JSON, missing report, truncation land in the first M4 task; `parse_junit` accepts non-`.py` and keeps failure text | M4, §4 |
 | S11 | Enforce runner tier eligibility at admission (api) | CONFIRM | Forbidden tier is a contract validation error with a diagnostic, never an empty green plan | M2, M9, §5 |
 | S12 | Constrain TOML adapter loading to the stdlib kernel contract (risk) | CONFIRM | Extensions imported under kernel rules, protocol-checked at load, lint re-checks under isolated Python; fail closed naming the config path | M1, M9 |
+| S13 | Make the task-tier gate fail closed (correctness) | CONFIRM | Raised post-spec as `issue:72c4d5c42095`: the M7 task sanctioned returning `None` (merge proceeds, warning logged) when no supervisor is bound or the attempt has no `execution_id`, which this spec never granted. The gate always returns a verdict; the unrunnable cases yield `status="unavailable"` and `validation_failed` | M7 |
 
 Summary: **12** confirmed · **0** rejected · **0** escalated.
 
