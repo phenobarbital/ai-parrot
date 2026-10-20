@@ -972,7 +972,7 @@ class ValidationSupervisor:
         cache_candidates: list[tuple["Invocation", test_report.SuiteResult]] = []
         invocation_records = [(first_invocation, process, first_report_path, invocation_deadline)]
 
-        for ordinal, invocation in enumerate(remaining_invocations, start=1):
+        for invocation in remaining_invocations:
             invocation_records.append((invocation, None, None, 0.0))
 
         last_exit_code = 0

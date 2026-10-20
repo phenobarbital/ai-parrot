@@ -154,7 +154,7 @@ def load_registry(worktree: Path) -> RunnerRegistry:
         setting = _settings_from_toml(raw_settings)
         tiers = setting.get("tiers")
         if tiers is not None:
-            invalid = set(tier.strip() for tier in tiers.split(",") if tier.strip()) - set(TIERS)
+            invalid = {tier.strip() for tier in tiers.split(",") if tier.strip()} - set(TIERS)
             if invalid:
                 raise ValueError(f"{CONFIG_PATH}: invalid tiers for {kind!r}: {', '.join(sorted(invalid))}")
         settings[kind] = setting

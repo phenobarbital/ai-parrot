@@ -122,7 +122,7 @@ async def _second_sandbox(base_path: Path) -> Path:
 
 
 def _fast_plan_tests(argv: tuple[str, ...]):
-    def _plan(*, worktree, changed_files, tier, declared=(), policy=None, contract=None) -> ScopePlan:
+    def _plan(*, worktree, changed_files, tier, declared=(), policy=None, contract=None, registry=None, **_kw) -> ScopePlan:
         invocation = Invocation(distribution="root", argv=argv, targets=())
         return ScopePlan(
             tier=tier, invocations=(invocation,), escalated=(), core_hits=(), skipped_escalations=(), notes=()
@@ -457,6 +457,8 @@ async def test_run_chunk_settles_handle_when_runner_beats_registration(
     )
     execution_id = str(uuid.uuid4())
     await engine.begin_execution("FEAT-9001", str(worktree2), execution_id)
+    # This test is about handle registration, not validation: bypass the task-tier gate (FEAT-709).
+    engine._validation_supervisor = None
 
     registry = engine._background_registry  # noqa: SLF001
     original_register = registry.register

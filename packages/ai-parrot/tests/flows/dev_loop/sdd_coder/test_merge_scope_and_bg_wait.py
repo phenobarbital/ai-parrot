@@ -74,7 +74,7 @@ async def _merged_attempt(repo: Path, feature_branch: str, task_id: str, executi
 
 
 def _fast_plan(argv: tuple[str, ...]):
-    def _plan(*, worktree, changed_files, tier, declared=(), policy=None, contract=None) -> ScopePlan:
+    def _plan(*, worktree, changed_files, tier, declared=(), policy=None, contract=None, registry=None, **_kw) -> ScopePlan:
         invocation = Invocation(distribution="root", argv=argv, targets=())
         return ScopePlan(
             tier=tier, invocations=(invocation,), escalated=(), core_hits=(), skipped_escalations=(), notes=()

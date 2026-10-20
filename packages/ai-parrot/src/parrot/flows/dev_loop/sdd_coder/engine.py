@@ -3962,6 +3962,7 @@ class SddCoderEngine:
         attempts: List[AttemptRecord] = []
         tried_seats: set[str] = {seat.label}  # Track seats we've already tried
         validation_red = False  # FEAT-709: the pending `err` is a repaired attempt's red gate
+        last_red_validation = None  # verdict of the repaired attempt's red gate, kept for the final outcome
 
         rec, out, err, manager, branch, path = await self._run_attempt(
             ctx, task, seat, attempt=1, job_id=job_id, execution_id=execution_id, pool=pool
@@ -3994,6 +3995,7 @@ class SddCoderEngine:
                 attempts.append(rec)
                 validation_red = result is not None and result.outcome == "validation_failed"
                 if validation_red:
+                    last_red_validation = result.validation
                     result = None
             if result is not None:
                 final_result = result.model_copy(update={"attempts": attempts, "development_output": out})
@@ -4147,11 +4149,12 @@ class SddCoderEngine:
             self._latest_attempt[task.task_id] = rec
             return TaskResult(
                 task_id=task.task_id,
-                outcome="failed",
+                outcome="validation_failed" if validation_red else "failed",
                 branch=branch,
                 worktree_path=path,
                 attempts=attempts,
                 diagnostics="\n".join(a.error for a in attempts if a.error),
+                validation=last_red_validation if validation_red else None,
             )
 
         result = await self._consolidate(ctx, manager, task, branch=branch, path=path)
