@@ -395,6 +395,9 @@ class ToolkitTemplate(BaseModel):
   `doctor` checks that `parrot_tools.wiki` imports. `doctor --sdd` checks the `.gitattributes`
   ledger block and the four ledger hooks. Both Gemini MCP config files are checked, with
   cross-repo collisions checked only on the user-global one.
+  *[rev 0.5, PR #1746 review]* `--runtime-only` includes the `parrot_tools.wiki` check, so the
+  bootstrap rolls back a runtime that cannot serve `wikitoolkit mcp`. An unpinned `parrot self update`
+  upgrades `ai-parrot`, then pins `ai-parrot-tools` to the version uv resolved, keeping them in lockstep.
 - **Depends on**: M1 (home paths, `resolve_venv` for `env`); M4 (component metadata).
 - **Interface Skeleton**:
   ```python
@@ -475,6 +478,9 @@ class ToolkitTemplate(BaseModel):
   the script basename (`.exe` included). `--remote` (FEAT-569) composes with `--portable`:
   `--remote` decides only the `wikitoolkit` key. When that entry is http, url-only, absent or
   foreign, the portable mode is inferred from the managed `parrot-*` entries.
+  *[rev 0.5, PR #1746 review]* Hook paths are written with forward slashes and then `shlex.quote`d,
+  so a plain POSIX path stays byte-identical. With mixed managed `parrot-*` entries, the mode is
+  portable if any of them is portable; with none, it is baked.
 - **Depends on**: M1 (`script_path`; portable form assumes launcher on PATH).
 - **Interface Skeleton**:
   ```python
@@ -557,6 +563,9 @@ class ToolkitTemplate(BaseModel):
     - Zero tests is reported "⚠️ not run", never ✅.
     - The spec template hints `none — fallback` for such repos, and `parrot sdd install`
       warns when `test_command` is null. (TASK-4089, TASK-4299, TASK-4091)
+    - *[PR #1746 review]* `parrot sdd install` validates an existing `sdd/config.json` before planning
+      or writing anything. A malformed file exits 1 and leaves the repository untouched, `--dry-run`
+      included.
   - **C22 — monorepo-specific text.** Five categories, applied to all twins:
     - A: examples become placeholders.
     - B: layout and environment point to `sdd/CONVENTIONS.md`, which gains `## Repository
@@ -574,6 +583,10 @@ class ToolkitTemplate(BaseModel):
     marker-delimited `.gitattributes` block (`merge=union` for `sdd/ledger/events.jsonl` and
     `archive/*.jsonl`), records it in the receipt, and installs the four ledger hooks.
     (TASK-4091, TASK-4080)
+    *[PR #1746 review]* The receipt gains `blocks` and `ledger_hooks`. `parrot sdd uninstall` removes the
+    ledger hooks only when the receipt says this integration created them and no `parrot-wiki`
+    post-commit block shows that `parrot claude install`, which owns the same blocks, is also present.
+    Otherwise the hooks are kept and the reason is reported.
   - **C24 (SDD part).** TASK-4089 ports the E2E gate to the Google `/sdd-done` twin.
     `brief_meta`/`ensure_worktree` read `SddConfig` (TASK-4299). S5 also scans `.agents/` and
     `.agent/` (TASK-4070).
@@ -673,6 +686,10 @@ class ToolkitTemplate(BaseModel):
   `FileExistsError` raises a clear error naming the directory; migration is never silently
   skipped. `SourceRegistry` opening `wiki.db` directly is a known bypass, out of scope
   (ledger `issue:1555e747bcb9`).
+  *[rev 0.5, PR #1746 review]* That clear error is a new `WikiStoreMigrationError(RuntimeError)`,
+  never a `sqlite3.OperationalError`. The backup step also wraps `sqlite3.OperationalError`, whose
+  code 14 would otherwise reach the read-only ladder. The newer-schema refusal uses
+  `WikiStoreVersionError.newer_schema(...)`.
 - **Depends on**: spike S6 (validates the concurrent-older-runtime failure mode).
 - **Interface Skeleton**:
   ```python
@@ -1346,4 +1363,4 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.2 | 2026-10-14 | Jesus Lara + Claude | Amendments C2–C6, C8–C15, Q1, C7 folded in (proposal `parrot-installer-amendments` rev 0.3): `parrot sdd run`, install receipt, `--dry-run`, `sdd/config.json` + single branch policy (TASK-4298/4299), conventions seed, publication safety, canonical docs, bootstrap gate + `doctor --runtime-only`, SDD readiness checks; FEAT-583 stamp marked done |
 | 0.3 | 2026-10-17 | Jesus Lara + Claude | Amendment C16 folded in (proposal rev 0.4): `worktree_environment` enters scope — relocated to `parrot/sdd/scripts/` with a re-export shim, hook invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, `test_no_repo_script_refs` widened to any monorepo source path (amends TASK-4085, 4072, 4089, 4090, 4091) |
 | 0.4 | 2026-10-18 | Jesus Lara + Claude | Amendment C17 folded in (proposal rev 0.5): `/sdd-brief` (FEAT-698, merged after rev 0.3) ships through the installer — `brief_meta` moves with TASK-4085 and gets a CLI (`plan`, `write-index`) in TASK-4299, TASK-4089 creates the missing Google twin `.agent/workflows/sdd-brief.md` and rewrites the three `sdd-brief` files, counts updated to 15 commands per host / 14 templates / 81 manifest entries (TASK-4070, 4090), C3 scenarios for `ensure_worktree --brief-key` and `brief_meta write-index` (TASK-4091) |
-| 0.5 | 2026-10-20 | Arturo Martinez + Claude, decisions by Jesus Lara | Amendments C18–C24 folded in (proposal rev 0.6) from the 2026-10-19 readiness review: four more helpers to move (TASK-4508) and package-relative loaders; C16 move mechanics and the TASK-4509 fast path; `ai-parrot-tools` in the managed runtime for `wikitoolkit mcp` (core-only fallback is a follow-up); test steps in foreign repos via `test_command`, own §4 Validation Contract, validation phase deferred to v1.1; monorepo-text rules A–E, `/sdd-insight` not shipped (79 assets with FEAT-708's `sdd-contract-probe`); `.gitattributes` + ledger hooks in foreign repos; Windows hook quoting, `--remote` × `--portable`, store downgrade refusal (`issue:f249c19e8a4d`), `SourceRegistry` bypass recorded (`issue:1555e747bcb9`); counts and §6 anchor note |
+| 0.5 | 2026-10-20 | Arturo Martinez + Claude, decisions by Jesus Lara; `[PR #1746 review]` resolutions (Codex P1/P2, implementer notes) | Amendments C18–C24 folded in (proposal rev 0.6) from the 2026-10-19 readiness review: four more helpers to move (TASK-4508) and package-relative loaders; C16 move mechanics and the TASK-4509 fast path; `ai-parrot-tools` in the managed runtime for `wikitoolkit mcp` (core-only fallback is a follow-up); test steps in foreign repos via `test_command`, own §4 Validation Contract, validation phase deferred to v1.1; monorepo-text rules A–E, `/sdd-insight` not shipped (79 assets with FEAT-708's `sdd-contract-probe`); `.gitattributes` + ledger hooks in foreign repos; Windows hook quoting, `--remote` × `--portable`, store downgrade refusal (`issue:f249c19e8a4d`), `SourceRegistry` bypass recorded (`issue:1555e747bcb9`); counts and §6 anchor note |

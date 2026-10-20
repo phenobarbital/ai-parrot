@@ -247,9 +247,10 @@ if assets.MCP_BEGIN in before:
   (never raise from inference — `_validate_toml` already guards real corruption).
 - *[spec rev 0.5 C24]* When the managed block's wikitoolkit table is http, url-only (no `command`),
   absent or foreign, inference reads the managed `parrot-*` tables instead (portable iff
-  `args[-1] == PORTABLE_TOOLKIT_CONFIG`). **Note for implementer**: C24 does not say how several
-  `parrot-*` tables in mixed forms resolve, nor what applies when none exists (baked keeps "a fresh
-  install is byte-identical"). Record the choice in the Completion Note.
+  `args[-1] == PORTABLE_TOOLKIT_CONFIG`). **Resolved (PR #1746 review, 2026-10-20)**: if **any** managed `parrot-*` table is portable, the
+  mode is portable, because the user opted in at some point and the mode is sticky; the reconcile then
+  rewrites every managed table in that mode. With no managed `parrot-*` table the mode is baked, so a fresh
+  install stays baked (spec default).
 - `print(..., file=sys.stderr)` for warnings stays as today (codex/installer.py:266).
 - `--remote` (FEAT-569) keeps its own wikitoolkit table: `portable` only changes the stdio (else)
   branch of `mcp_block`; every call that passes `remote=remote` today keeps it.
@@ -402,7 +403,7 @@ def _current_portable_mode(root: Path) -> bool:
     # reconcile_toolkit_tables (lines 206-210). Stdio wikitoolkit table → _wikitoolkit_table_is_portable(...);
     # otherwise parse the block's [mcp_servers.parrot-<name>] tables with tomllib and treat
     # args[-1] == assets.PORTABLE_TOOLKIT_CONFIG as portable — bounded by spec rev 0.5 C24,
-    # "no new state file" (shared brief) and never raising. See the Note for implementer under Key Constraints.
+    # "no new state file" (shared brief) and never raising. Mixed managed tables → portable if ANY is portable; none → False (Key Constraints, resolved).
     raise NotImplementedError
 
 # occurrences: 1 (verified: grep -c 'def reconcile_toolkit_tables(root: Path) -> tuple\[list\[str\], list\[str\]\]:' packages/ai-parrot/src/parrot/knowledge/wiki/codex/installer.py)
@@ -586,6 +587,17 @@ def test_mcp_local_parrot_project_root(root: Path, tmp_path: Path, monkeypatch: 
     assert "memory" not in CliRunner().invoke(mcp_local, ["--list"]).output  # falls back to Path.cwd()
 
 
+def test_mcp_local_relative_config_resolves_against_root(root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A relative explicit ``--config`` resolves against the PARROT_PROJECT root, not the process cwd."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    monkeypatch.setenv("PARROT_PROJECT", str(root))
+    result = CliRunner().invoke(mcp_local, ["--config", ".parrot/mcp-toolkits.yaml", "--list"])
+    assert result.exit_code == 0, result.output
+    assert "memory" in result.output
+
+
 def test_portable_root_independent(tmp_path: Path) -> None:
     a, b = tmp_path / "a", tmp_path / "b"
     a.mkdir()
@@ -607,6 +619,8 @@ def test_windows_scripts_branch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 # occurrences: 1 (verified: grep -cF '    root = Path.cwd()' packages/ai-parrot/src/parrot/mcp/local_cli.py)
 # REPLACE — the line `    root = Path.cwd()` (verified: packages/ai-parrot/src/parrot/mcp/local_cli.py:183)
     root = Path(os.environ.get("PARROT_PROJECT") or Path.cwd())
+    if config_path is not None and not config_path.is_absolute():
+        config_path = root / config_path  # resolved in the PR #1746 review (2026-10-20): same root as the default
 ```
 **Why**: a portable toolkit entry has no absolute `--config` and Codex's server cwd is
 unreliable (the very reason FEAT-556 pinned `--config` absolutely). `PARROT_PROJECT` is the
@@ -620,7 +634,7 @@ own the file; this task does.
 
 ### FILL IN checklist
 - [ ] `assets.py::toolkit_mcp_block` portable project pin — bounded by spike S3 (TASK-4069) evidence; spec §5 (no absolute path, root-independent).
-- [ ] `local_cli.py` — whether `--config` given explicitly should ALSO resolve against `PARROT_PROJECT` when relative (recommended: yes, same root) — bounded by FEAT-556's "config pinned regardless of cwd" intent.
+- [x] `local_cli.py` — a relative explicit `--config` resolves against the same root (`PARROT_PROJECT`, else `Path.cwd()`); resolved in the PR #1746 review (2026-10-20), matching the acceptance criterion.
 - [ ] `installer.py::_current_portable_mode` — lenient read of the managed block, `parrot-*` inference for an http/url-only/absent/foreign wikitoolkit table; bounded by spec rev 0.5 C24 and "no new state file".
 - [ ] Google-style docstrings for every changed signature.
 

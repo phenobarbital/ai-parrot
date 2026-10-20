@@ -839,8 +839,34 @@ Each amendment lists the problem (pointing to §2.2), the change, the task it am
   Jesus answered D1, D2, D3, D4 and D8 directly (quoted in each clause). The rest adopt
   the review's recommendations and are confirmed in the PR review.
 
+### Resolved (PR #1746 review, 2026-10-20)
+- [x] **Codex review findings** on TASK-4091:
+  - **P1** — validate an existing `sdd/config.json` before any write; a malformed file aborts the
+    install and leaves the repo untouched.
+  - **P2** — ledger hooks on uninstall. Adopted with a correction: removing them unconditionally
+    would break `parrot claude install`, which owns the same blocks. The receipt therefore records
+    which hooks this integration created, and uninstall removes only those when no `parrot-wiki`
+    block shows the integration is shared.
+- [x] **The ~20 "Note for implementer" items the readiness pass left** are resolved in the tasks:
+  - Lockstep `ai-parrot-tools` on an unpinned update (4079).
+  - `parrot_tools.wiki` in `--runtime-only`, and `.gitattributes` checked by its lines (4080).
+  - Forward slashes plus `shlex.quote` for hook paths (4081).
+  - Mixed `parrot-*` entries resolve to portable if any is portable (4082/4083).
+  - A relative `--config` resolves against the project root (4083).
+  - The shim uses the alias form (4085).
+  - qa-runner edited; zero tests always reported ⚠️; the third `codebase-conventions.md` twin edited
+    within budget; Google twin added to `_DOC_SURFACES` (4089).
+  - Final seed wording (4090).
+  - Receipt `blocks`/`ledger_hooks` (4091).
+  - `WikiStoreVersionError.newer_schema` message; a non-integer `schema_version` is never refused (4092).
+  - `WikiStoreMigrationError`, with backup `OperationalError` wrapped (4093).
+  - Hosted `ubuntu-24.04-arm` runner, since the repo is public (4094).
+  - `projects` and `brief_meta` get the config through `_config_for` and pydantic validation context (4299).
+- One item stays deliberately evidence-gated, with an explicit default: TASK-4083's Codex project pin
+  waits for spike S3 (TASK-4069). With no evidence of variable expansion, nothing is added.
+
 ### Unresolved
-- None. Rev 0.6 folds into FEAT-633 spec revision 0.5.
+- None. Rev 0.6 folds into FEAT-633 spec revision 0.5; the PR #1746 review resolutions are recorded in the spec with `[PR #1746 review]` tags.
 
 ---
 
@@ -1012,5 +1038,5 @@ with fixture inputs. This corrects the earlier claim that `resolve_flow()` was a
 | 0.2 | 2026-10-14 | Jesus Lara + Claude | All ⚖️ items, Q1 and C7 resolved; C6 reduced (no `CONFIG.md`, `test_command` added); branch-policy inventory updated (resolver omission corrected in 0.3), `KNOWN_BRANCHES` third copy, `lint_new`/`token_audit` not referenced by shipped files; Q1 resolution section added |
 | 0.3 | 2026-10-14 | Codex, requested by Jesus Lara | C14/C15 scope bootstrap doctor to runtime health; C6 includes existing `resolve_flow()` and fallback tests; C3 retains allowlisted system tools and supplies fixture arguments/state; repeated claims reconciled |
 | 0.4 | 2026-10-17 | Jesus Lara + Claude | C16 added: C12's sweep covered only `scripts/sdd` references and missed the shipped `sdd-coder`/`sdd-worker` hook, which addresses `worktree_environment.py` by monorepo source path; the module is relocated to `parrot/sdd/scripts/` with a re-export shim, invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, and `test_no_repo_script_refs` is widened to any monorepo source path |
-| 0.6 | 2026-10-20 | Arturo Martinez + Claude, decisions by Jesus Lara | C18–C24 added from the 2026-10-19 readiness review against `dev` `9f51c7735`/`0263f0724`: helper inventory completed (TASK-4508); C16 move mechanics (kernel lookup, by-path shim, programmatic hook command, TASK-4509); `wikitoolkit mcp` needs ai-parrot-tools on a core-only install (interim + follow-up); test steps in foreign repos (C7 follow-through, own Validation Contract, validation phase deferred to v1.1); monorepo-specific text rules (78 assets, `/sdd-insight` not shipped); shared ledger in foreign repos; host/store follow-through (ledger `issue:f249c19e8a4d`, `issue:1555e747bcb9`) |
+| 0.6 | 2026-10-20 | Arturo Martinez + Claude, decisions by Jesus Lara; PR #1746 review resolutions (Codex P1/P2 + implementer notes) | C18–C24 added from the 2026-10-19 readiness review against `dev` `9f51c7735`/`0263f0724`: helper inventory completed (TASK-4508); C16 move mechanics (kernel lookup, by-path shim, programmatic hook command, TASK-4509); `wikitoolkit mcp` needs ai-parrot-tools on a core-only install (interim + follow-up); test steps in foreign repos (C7 follow-through, own Validation Contract, validation phase deferred to v1.1); monorepo-specific text rules (78 assets, `/sdd-insight` not shipped); shared ledger in foreign repos; host/store follow-through (ledger `issue:f249c19e8a4d`, `issue:1555e747bcb9`) |
 | 0.5 | 2026-10-18 | Jesus Lara + Claude | C17 added: `/sdd-brief` (FEAT-698, merged after rev 0.3) ships through the installer — `brief_meta` joins TASK-4085's move and gets a CLI in TASK-4299, TASK-4089 creates the missing Google twin `.agent/workflows/sdd-brief.md`, counts updated (15 commands per host, 13 tracked templates, 81 manifest entries), C3 scenarios for `ensure_worktree --brief-key` / `brief_meta write-index` |

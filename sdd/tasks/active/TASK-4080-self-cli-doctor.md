@@ -63,7 +63,7 @@ review). Every section below is already rewritten to match; this list is the del
 - Refreshed against dev 9f51c7735: agentd `status` anchor `cli/__init__.py:134`→`:136` (094ec8616 added `jiratoolkit`); Codex `MCP_TABLE` 19→20 and toolkit table 84→85; `_check_python` contract + test now accept `version_info = 3.12` as well as `3.12.x` (repo `.venv` records `3.12`); added the remote-HTTP-entry contract note and `test_remote_http_entry_is_not_flagged`.
 - Resolved by spec rev 0.5 (2026-10-20):
   - C24 — `_check_host_configs` checks both Gemini MCP config files (user-global + `<root>/.agents/plugins/parrot/mcp_config.json`, via `toolkit_config_paths`); the cross-repo collision check runs on the user-global one only. New test `test_gemini_repo_local_config_checked`.
-  - C20 — new `_check_tools_wiki()` (full / sdd scopes): `parrot_tools.wiki` must import in the managed venv; fix `parrot self update`. New test `test_tools_wiki_check`.
+  - C20 — new `_check_tools_wiki()` (all three scopes, including `--runtime-only`): `parrot_tools.wiki` must import in the managed venv; fix `parrot self update`. New test `test_tools_wiki_check`.
   - C23 — `doctor --sdd` adds `sdd: ledger merge=union` (`.gitattributes` ledger block) and `sdd: ledger hooks` (pre-commit, post-merge, post-checkout, post-rewrite carry the `parrot-ledger` block); `ready_repo` fixture and the failure matrix extended.
 
 ## Scope
@@ -75,7 +75,8 @@ review). Every section below is already rewritten to match; this list is the del
   `run_doctor(root: Path, *, scope: DoctorScope = "full") -> list[DoctorCheck]`,
   `installed_version(venv) -> str | None`, `failed(checks) -> list[DoctorCheck]` (non-informational
   failures only).
-- Implement the three scopes (C14/C15): `"runtime-only"` = uv, Python, runtime entry points, PATH;
+- Implement the three scopes (C14/C15): `"runtime-only"` = uv, Python, runtime entry points, PATH,
+  `parrot_tools.wiki` (rev 0.5 C20; PR #1746 review);
   `"full"` = runtime + host configs + toolkits + SDD checks iff `<root>/sdd/` exists;
   `"sdd"` = `"full"` with the SDD checks forced on.
 - Implement the SDD readiness checks (C15): `origin` remote; configured base branch on `origin`;
@@ -279,12 +280,14 @@ def toolkits() -> None:
   inside a venv uses `subprocess.run([python, "-c", ...], capture_output=True, text=True)`
   — synchronous is correct in a one-shot CLI (no event loop).
 - **Scopes (C14/C15)**: `"runtime-only"` runs exactly `_check_uv`, `_check_python`,
-  `_check_entrypoints`, `_check_path` — nothing that touches `root`, a host config, a toolkit
-  or the network. `"full"` adds `_check_tools_wiki` (rev 0.5 C20) + host configs + toolkits, and `_check_sdd(root)` iff
+  `_check_entrypoints`, `_check_path`, `_check_tools_wiki` — nothing that touches `root`, a host config, a toolkit
+  or the network. `"full"` adds host configs + toolkits, and `_check_sdd(root)` iff
   `(root / "sdd").is_dir()`. `"sdd"` forces `_check_sdd`. The `--runtime-only` scope must stay
   cheap and offline: the bootstrap runs it on a machine that may have no repo at all.
-  Note for implementer: C20 does not say whether the `parrot_tools.wiki` check joins `--runtime-only` (C14 fixes
-  that scope to uv, Python, entry points, PATH) — kept out of it until review decides.
+  Resolved (PR #1746 review, 2026-10-20): `_check_tools_wiki` is part of `--runtime-only`. C20 makes
+  ai-parrot-tools part of the base runtime, and a managed venv where `parrot_tools.wiki` does not import
+  cannot serve `wikitoolkit mcp`. The bootstrap must roll back on it. The check is offline, repo-free,
+  and runs one interpreter probe.
 - **SDD checks are lazy and absence-tolerant**: every `parrot.sdd.*` import sits inside the
   `_check_sdd_*` function that needs it; `ImportError` → `DoctorCheck(ok=True, informational=True,
   detail="… unavailable in this ai-parrot build")`. Git probes use `subprocess.run(["git", "-C", root, …],
@@ -319,8 +322,8 @@ def toolkits() -> None:
 ```python
 """`parrot self doctor` checks (FEAT-633, spec §3 M3; rev 0.2 C14/C15; rev 0.5 C20/C23/C24). Read-only diagnostics.
 
-Scopes: "runtime-only" (bootstrap: uv, Python, entry points, PATH — offline, repo-free),
-"full" (runtime + parrot_tools.wiki + host configs + toolkits + SDD readiness iff <root>/sdd exists),
+Scopes: "runtime-only" (bootstrap: uv, Python, entry points, PATH, parrot_tools.wiki — offline, repo-free),
+"full" (runtime + host configs + toolkits + SDD readiness iff <root>/sdd exists),
 "sdd" (full with SDD readiness forced). Every parrot.sdd.* import is lazy and absence-tolerant.
 """
 
@@ -462,8 +465,9 @@ def _check_sdd(root: Path) -> list[DoctorCheck]:
     #   [rev 0.5 C23] "sdd: ledger merge=union": <root>/.gitattributes carries the ledger block — `merge=union` for
     #     `sdd/ledger/events.jsonl` and `sdd/ledger/archive/*.jsonl`; absent file/line → ok=False, detail names
     #     the missing pattern(s), fix "parrot sdd install (writes the .gitattributes ledger block)"
-    #     Note for implementer: C23 fixes no marker strings (TASK-4091 defines them) nor says whether
-    #     ai-parrot's unmarked `.gitattributes:2-3` satisfy the check — this blueprint checks the two lines; confirm in review.
+    #     Resolved (PR #1746 review, 2026-10-20): the check matches the two `merge=union` lines, not TASK-4091's
+    #     marker pair, so ai-parrot's own unmarked `.gitattributes:2-3` passes and a repo that adds the
+    #     lines by hand is not flagged.
     #   [rev 0.5 C23] "sdd: ledger hooks": lazy-import claude_code.assets + installer._git_hook_path; for each
     #     event in claude_assets.LEDGER_HOOK_EVENTS the hook file exists and contains claude_assets.LEDGER_HOOK_BEGIN;
     #     _git_hook_path → None (not a git repo) or any event missing → ok=False, detail lists the events,
@@ -515,14 +519,13 @@ def _check_toolkits(root: Path) -> list[DoctorCheck]:
 def run_doctor(root: Path, *, scope: DoctorScope = "full") -> list[DoctorCheck]:
     """Run the checks of ``scope`` in spec order; never raises for a broken environment.
 
-    "runtime-only" (C14 bootstrap) touches neither ``root`` nor the network; "full" adds parrot_tools.wiki
-    (rev 0.5 C20), host configs, toolkits and — iff ``root/sdd`` exists — the C15 SDD readiness checks;
+    "runtime-only" (C14 bootstrap) touches neither ``root`` nor the network and includes parrot_tools.wiki
+    (rev 0.5 C20); "full" adds host configs, toolkits and — iff ``root/sdd`` exists — the C15 SDD readiness checks;
     "sdd" forces the latter.
     """
-    checks = [_check_uv(), _check_python(), _check_entrypoints(), _check_path()]
+    checks = [_check_uv(), _check_python(), _check_entrypoints(), _check_path(), _check_tools_wiki()]
     if scope == "runtime-only":
         return checks
-    checks.append(_check_tools_wiki())
     checks.extend(_check_host_configs(root))
     checks.extend(_check_toolkits(root))
     if scope == "sdd" or (root / "sdd").is_dir():
@@ -909,7 +912,7 @@ def test_scope_runtime_only_excludes_repo_host_and_component_checks(tmp_path: Pa
     (repo / "sdd").mkdir(parents=True)  # no git at all → every SDD check would fail in "full"
     (repo / ".mcp.json").write_text(json.dumps({"mcpServers": {"wikitoolkit": {"command": "/nope/wikitoolkit"}}}))
     names = {c.name for c in doctor.run_doctor(repo, scope="runtime-only")}
-    assert names == {"uv", "python", "runtime entry points", "PATH"} or all(
+    assert names == {"uv", "python", "runtime entry points", "PATH", "parrot_tools.wiki"} or all(
         not n.startswith("sdd:") and "mcp" not in n.lower() and "toolkit" not in n.lower() for n in names
     )
     assert any(c.name.startswith("sdd:") for c in doctor.run_doctor(repo, scope="full"))

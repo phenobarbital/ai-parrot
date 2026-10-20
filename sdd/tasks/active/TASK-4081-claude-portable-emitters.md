@@ -332,8 +332,9 @@ def permission_rules(root: Path, *, portable: bool = False) -> tuple[str, ...]:
     # ("quote the binary path") and test_hook_windows_path_survives_sh.
 # `git_hook_new_file` (:213) and `ledger_hook_new_file` (:241) wrap these blocks — no change needed.
 ```
-**Note for implementer**: C24 does not fix the quoting form. `shlex.quote` leaves a plain POSIX path
-byte-identical, while always-quoting changes today's POSIX hook text. Record the choice in the Completion Note.
+**Resolved (PR #1746 review, 2026-10-20)**: convert the path to forward slashes, then apply `shlex.quote`.
+A plain POSIX path stays byte-identical, so today's hook text and its tests do not change. A Windows
+path (`C:/…/wikitoolkit.exe`) or any path with spaces is quoted, so `sh` keeps it intact.
 
 ### `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/bookstore.py` (MODIFY)
 ```python

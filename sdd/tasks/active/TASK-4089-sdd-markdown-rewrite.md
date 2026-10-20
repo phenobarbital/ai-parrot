@@ -366,6 +366,7 @@ C22 category edits (A–E) touch a superset of the shipped files, produced at ru
 | `.claude/rules/worktree-management.md` | MODIFY | Rewrite 4 line(s): ensure_worktree,sdd_meta; *(C22 B)* `PYTHONPATH=` / shared-venv rule `:52` moves to `codebase-conventions.md` |
 | `.claude/rules/codebase-conventions.md` | MODIFY | *(C22 B)* receives ai-parrot's own layout / environment rules removed from shipped files (not shipped) |
 | `.agent/rules/codebase-conventions.md` | MODIFY | *(C22 B)* byte twin of the row above (`test_rules_parity.py::test_claude_rules_twin_is_identical`) |
+| `packages/ai-parrot/src/parrot/flows/_rules_data/codebase-conventions.md` | MODIFY | *(C22 B, PR #1746 review)* third byte twin (`test_package_rules_copy_is_identical`; `_rules_data` ≤ 8,000 bytes) |
 | `.codex/agents/sdd-worker.toml` | MODIFY | Rewrite 3 line(s): finalize_task,sdd_meta |
 | `docs/sdd/WORKFLOW.md` | MODIFY | Rewrite 4 line(s): close_task,ensure_worktree,reserve_ids,select_tests |
 | `sdd/templates/intake.procedure.md` | MODIFY | Rewrite 1 line(s): reserve_ids |
@@ -376,7 +377,7 @@ C22 category edits (A–E) touch a superset of the shipped files, produced at ru
 | `tests/sdd_scripts/test_command_twin_parity.py` | MODIFY | `_TWINNED` gains `"sdd-brief"`; `_SUBSTITUTIONS` anchors follow the C11b `CLAUDE.md`-pointer edits |
 | `tests/sdd_scripts/test_sdd_brief_command_contract.py` | MODIFY | `:18` asserts `parrot sdd run ensure_worktree` |
 | `tests/sdd_scripts/test_sdd_brief_twin_contract.py` | MODIFY | `_SHARED_TOKENS` `:12` → `"parrot sdd run ensure_worktree"` |
-| `tests/sdd_scripts/test_e2e_closeout_contract.py` | MODIFY | `:440` asserts `parrot sdd run check_e2e_closeout` |
+| `tests/sdd_scripts/test_e2e_closeout_contract.py` | MODIFY | `:440` asserts `parrot sdd run check_e2e_closeout`; `_DOC_SURFACES` (`:56`) gains `.agent/workflows/sdd-done.md` (C24, PR #1746 review) |
 | `tests/sdd/test_ledger_workflow_twins.py` | MODIFY | `:129` asserts `parrot sdd run close_resolved_issues` |
 | `tests/sdd/test_codex_sdd_sync.py` | MODIFY | Codex worker TOML asserts `parrot sdd run finalize_task` |
 | `packages/ai-parrot/tests/flows/dev_loop/test_worker_prompt_orchestrator.py` | MODIFY | Orchestrator-loop assert uses `parrot sdd run finalize_task` |
@@ -506,7 +507,7 @@ def test_coder_rules_fit_the_prompt_budget() -> None:          # sum of _rules_d
   wrappers. Markdown must call the module, never the `.sh`.
 - ~~any reference to moved helpers in `AGENTS.md`, `.claude/skills/`, `.agent/rules/`,
   `flows/_rules_data/`~~ — verified zero hits; do not touch them for the helper rewrite (C22 B
-  edits the two `codebase-conventions.md` twins for a different reason).
+  edits the three `codebase-conventions.md` twins, `_rules_data` included, for a different reason).
 - ~~`SddConfig.projects`~~ on `dev` today — added by TASK-4299 (C22 B: replaces `KNOWN_PROJECTS`
   when set). Prose may cite it only once it exists in `parrot/sdd/config.py`.
 - ~~`parrot.sdd.scripts.lint_new` / `token_audit` / `codex_hook`~~ — not moved and (verified
@@ -745,6 +746,10 @@ def test_coder_rules_fit_the_prompt_budget() -> None:          # sum of _rules_d
       "action": "MODIFY"
     },
     {
+      "path": "packages/ai-parrot/src/parrot/flows/_rules_data/codebase-conventions.md",
+      "action": "MODIFY"
+    },
+    {
       "path": "sdd/WORKFLOW.md",
       "action": "MODIFY"
     },
@@ -930,8 +935,8 @@ non-blank — owned by TASK-4299). Sites: the rows tagged *(C21)* in the Files t
 5. `/sdd-task` continues past a missing Validation Contract section only when `test_command` is set;
    `cache_test_contract` stays strict.
 
-Note for implementer: `.claude/agents/qa-runner.md` is not in TASK-4090's asset mapping (`.claude/agents/sdd-*.md`); C21 names it, so edit it anyway.
-Note for implementer: C21 does not say which line renders item 3 on the null path, where `test_report render` still prints ✅ for zero tests (its zero-test gate is deferred to v1.1) — state it in the reporting prose; do not change `report.py`.
+Resolved (PR #1746 review, 2026-10-20): `.claude/agents/qa-runner.md` is not in TASK-4090's asset mapping (`.claude/agents/sdd-*.md`), so it does not ship. Edit it anyway, because C21 names it and ai-parrot's own qa-runner follows the same `test_command` rule. No asset or count change follows.
+Resolved (PR #1746 review, 2026-10-20): on both paths the shipped reporting prose owns item 3. When the selected run executed **zero** tests (no `pytest` invocation, or 0 collected), the report line is "⚠️ not run — no tests selected", even when `test_report render` prints its ✅ gate line. `report.py` is unchanged; its own zero-test gate is v1.1 (`issue:dee91130fa06`).
 
 **C22 — monorepo-specific text** (oracle: `test_no_monorepo_source_paths_in_shipped_files`, both patterns):
 
@@ -944,13 +949,13 @@ Note for implementer: C21 does not say which line renders item 3 on the null pat
 | E | Repo code through `python`: navconfig one-liners become a precondition ("export `JIRA_INSTANCE`, `JIRA_USERNAME`, `JIRA_API_TOKEN`; see `sdd/CONVENTIONS.md`"); the `sdd-start` evidence reference lists its fields inline. | `.claude/commands/sdd-done.md:781`, `.agent/workflows/sdd-done.md:664`, `sdd-tojira.md:66` + twin, `sdd-fromjira.md:55` + twin; `.agents/skills/sdd-start/SKILL.md:132-133` (`TaskCompletionEvidence`) |
 
 `/sdd-insight` (all hosts) is excluded: not rewritten, not shipped, not scanned.
-Note for implementer: `parrot/flows/_rules_data/codebase-conventions.md` is a third byte twin (`test_rules_parity.py::test_package_rules_copy_is_identical`, 8,000-byte budget, 5,642 today) that C22 does not name — escalate before editing it; the parity test (Validation Commands) fails if the twins diverge.
+Resolved (PR #1746 review, 2026-10-20): edit all **three** byte twins identically, including `packages/ai-parrot/src/parrot/flows/_rules_data/codebase-conventions.md`. The dev-loop coder seats load that copy, and they work in ai-parrot worktrees where the moved rules (worktree `PYTHONPATH` prefix, no `uv sync` in a worktree, venv activation) apply. Put the rules as 2–3 lines under the existing `## Repository layout` / `## Tooling` sections (~400 bytes). `test_rules_parity.py` enforces byte identity and the 8,000-byte `_rules_data` budget (5,642 today). If the addition would exceed the budget, STOP and report; do not trim other rules.
 
 **C24 — E2E gate on the Google `/sdd-done` twin.** Port the Claude §4.6 "Verify E2E Evidence"
 (`.claude/commands/sdd-done.md:193-243`, as rewritten — `parrot sdd run check_e2e_closeout …`, with the
 C22 C citation dropped) into `.agent/workflows/sdd-done.md` between §4.5 (`:126`) and §4.7 (`:158`),
 and its `E2E:` lines into that twin's Step 5 report and Step 12 output (Claude `:296`, `:899`, `:915`).
-Note for implementer: C24 does not say whether `tests/sdd_scripts/test_e2e_closeout_contract.py::_DOC_SURFACES` (`:56`, Claude + Codex) gains the Google twin — do not extend it without confirmation.
+Resolved (PR #1746 review, 2026-10-20): `tests/sdd_scripts/test_e2e_closeout_contract.py::_DOC_SURFACES` (`:56`) gains the Google twin `.agent/workflows/sdd-done.md`. C24 ports the gate there, so the contract test covers all three surfaces.
 
 ### All 53 markdown / TOML targets (MODIFY — one-off script, NOT committed)
 ```python

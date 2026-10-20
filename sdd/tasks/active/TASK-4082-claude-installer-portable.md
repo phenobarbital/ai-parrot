@@ -239,9 +239,10 @@ else:
   (else) branch of `_install_mcp_json`; every call that passes `remote=remote` today keeps it.
 - *[spec rev 0.5 C24]* `--remote` decides only the `wikitoolkit` key; when that entry is http,
   url-only, absent or foreign, the mode comes from the managed `parrot-*` entries.
-  **Note for implementer**: C24 does not say how several managed `parrot-*` entries in mixed forms
-  resolve, nor what applies when none exists (baked keeps "a fresh install is baked"). Record
-  the choice in the Completion Note.
+  **Resolved (PR #1746 review, 2026-10-20)**: if **any** managed `parrot-*` entry is portable, the
+  mode is portable, because the user opted in at some point and the mode is sticky; the reconcile then
+  rewrites every managed entry in that mode. With no managed `parrot-*` entry the mode is baked, so a fresh
+  install stays baked (spec default).
 
 ### References in Codebase
 - `packages/ai-parrot/src/parrot/mcp/hosts.py:58-117` — ClaudeAdapter; proves both CLIs funnel into
@@ -306,7 +307,7 @@ def _current_portable_mode(root: Path) -> bool:
     # return _is_portable_wikitoolkit_entry(it); otherwise inspect the managed parrot-<name> entries
     # (_is_managed_toolkit_entry(entry, root, name)) and treat args[3] == assets.PORTABLE_TOOLKIT_CONFIG
     # as portable — bounded by spec rev 0.5 C24, "no new state file" (shared brief) and never raising
-    # on a corrupt file. See the Note for implementer under Key Constraints.
+    # on a corrupt file. Mixed managed entries → portable if ANY is portable; none → False (Key Constraints, resolved).
     raise NotImplementedError
 
 # occurrences: 1 (verified: grep -c '    return any(PurePosixPath(token).name == assets.HOOK_BIN_NAME for token in tokens)' packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py)

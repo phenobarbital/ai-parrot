@@ -40,7 +40,8 @@ from TASK-4077.
   - `bundled_uv() -> Path`
   - `install_component(name: str, *, venv: Path, here: bool = False) -> list[str]`
   - `update_runtime(version: str | None = None) -> list[str]` — upgrades the base runtime:
-    `ai-parrot` + `ai-parrot-tools`, same version pin (spec rev 0.5 C20)
+    `ai-parrot` + `ai-parrot-tools`, always in lockstep (spec rev 0.5 C20). An unpinned update upgrades
+    `ai-parrot` and then pins `ai-parrot-tools` to the version uv resolved (PR #1746 review, 2026-10-20).
   - `uninstall_runtime(*, yes: bool) -> list[str]`
 - Tests with `subprocess.run` mocked (no network, no real uv).
 
@@ -298,18 +299,30 @@ def install_component(name: str, *, venv: Path, here: bool = False) -> list[str]
 def update_runtime(version: str | None = None) -> list[str]:
     """Upgrade the base runtime (ai-parrot + ai-parrot-tools, spec rev 0.5 C20) in the managed venv.
 
-    Both distributions get the same ``==version`` pin when one is given.
+    Both distributions always end at the same version (lockstep, C20). With ``version`` both get
+    ``==version``. Without it, ``ai-parrot`` is upgraded first and ``ai-parrot-tools`` is then pinned
+    to the ``ai-parrot`` version that uv resolved (resolved in the PR #1746 review, 2026-10-20).
     """
     python = _venv_python(managed_venv())
-    requirements = [f"{dist}=={version}" for dist in BASE_DISTS] if version else list(BASE_DISTS)
+    uv = str(bundled_uv())
     log: list[str] = []
     # FILL IN: whether to re-pass extras installed by the bootstrap (`--with`) — no state file exists,
     # and uv keeps already-installed packages, so the default is a plain `--upgrade <requirements>`;
     # bounded by spec §1 non-goal (no new state) and §7
-    # Note for implementer: C20 fixes "same version pin" for an explicit `version`; it does not say whether
-    # an unpinned `update` must pin ai-parrot-tools to the resolved ai-parrot version — confirm in review.
-    _run([str(bundled_uv()), "pip", "install", "--python", str(python), "--upgrade", *requirements], log)
+    if version:
+        _run([uv, "pip", "install", "--python", str(python), "--upgrade", *(f"{d}=={version}" for d in BASE_DISTS)], log)
+        return log
+    _run([uv, "pip", "install", "--python", str(python), "--upgrade", CORE_DIST], log)
+    resolved = _installed_version(python, CORE_DIST)
+    _run([uv, "pip", "install", "--python", str(python), f"{TOOLS_DIST}=={resolved}"], log)
     return log
+
+
+def _installed_version(python: Path, dist: str) -> str:
+    """Return ``dist``'s installed version inside the venv of ``python`` (``importlib.metadata``)."""
+    # FILL IN: subprocess.run([str(python), "-c", f"import importlib.metadata as m; print(m.version({dist!r}))"],
+    #          capture_output=True, text=True, check=True).stdout.strip() — bounded by "no network, mocked in tests"
+    raise NotImplementedError
 
 
 def uninstall_runtime(*, yes: bool) -> list[str]:
@@ -415,6 +428,16 @@ def test_update_runtime_pins_version(fake_managed_home: Path) -> None:
     assert run.call_args.args[0][-2:] == ["ai-parrot==9.9.9", "ai-parrot-tools==9.9.9"]  # rev 0.5 C20: same pin
 
 
+def test_update_runtime_unpinned_keeps_lockstep(fake_managed_home: Path) -> None:
+    """Unpinned update: upgrade ai-parrot, then pin ai-parrot-tools to the resolved version."""
+    with mock.patch.object(components.subprocess, "run") as run, \
+         mock.patch.object(components, "_installed_version", return_value="9.9.9"):
+        components.update_runtime()
+    calls = [c.args[0] for c in run.call_args_list]
+    assert calls[0][-2:] == ["--upgrade", "ai-parrot"]
+    assert calls[-1][-1] == "ai-parrot-tools==9.9.9"
+
+
 def test_uninstall_keeps_user_data(fake_managed_home: Path) -> None:
     components.uninstall_runtime(yes=True)
     assert not (fake_managed_home / "venv").exists() and not (fake_managed_home / "bin").exists()
@@ -431,6 +454,7 @@ call is mocked, so the tests prove argv shape without network or a real uv.
 ### FILL IN checklist
 - [ ] `components.py::_project_venv` — root/venv resolution + errors; bounded by spec §5 `--here`
 - [ ] `components.py::update_runtime` — extras policy; bounded by spec §1 (no state file)
+- [ ] `components.py::_installed_version` — `importlib.metadata` in the target venv; bounded by "mocked in tests"
 - [ ] `components.py::uninstall_runtime` — per-dir removal, symlink + Windows handling; bounded by spec §7
 - [ ] `test_components.py::test_install_here_targets_project_venv` — bounded by spec §5
 - [ ] `test_components.py::test_bundled_uv_falls_back_to_path_with_warning` — bounded by brief (logged fallback)

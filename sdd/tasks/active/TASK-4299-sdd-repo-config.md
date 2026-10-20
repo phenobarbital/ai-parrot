@@ -89,10 +89,15 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   - *(rev 0.5 C22)* `projects`: when set, it replaces `KNOWN_PROJECTS` as the vocabulary
     `normalize_project` checks; when unset, `KNOWN_PROJECTS` applies and unknown values warn and
     never fail (today's behaviour, `sdd_meta.py:198-199`).
-    Note for implementer: C22 does not fix how the configured list reaches `normalize_project`
-    (called from `DocTaxonomy._norm_projects`, `sdd_meta.py:224-233`, via `parse_taxonomy`,
-    `:247-260`), nor whether a value outside a configured list fails; keep warn-only and record the
-    mechanism you chose in the Completion Note.
+    Resolved (PR #1746 review, 2026-10-20), the same `_config_for` pattern as `resolve_flow`:
+    - `normalize_project(raw, *, known: frozenset[str] | None = None)`, where `None` means `KNOWN_PROJECTS`.
+    - `parse_taxonomy(doc_path, *, config: SddConfig | None = None)` resolves `cfg = _config_for(doc_path,
+      config)` and `known = frozenset(cfg.projects) if cfg.projects else KNOWN_PROJECTS`. It validates with
+      `DocTaxonomy.model_validate(data, context={"known_projects": known})`.
+    - `DocTaxonomy._norm_projects(cls, value, info: ValidationInfo)` passes
+      `(info.context or {}).get("known_projects")` to `normalize_project`.
+    - A value outside the configured list **warns, never fails**, exactly like today's `KNOWN_PROJECTS`
+      rule (`sdd_meta.py:198-199`).
   - `default_sdd_config() -> SddConfig`.
   - `find_repo_root(start: Path | None = None) -> Path | None`: walk up from `start`
     (default `Path.cwd()`) to the first directory containing `.git` (dir **or** file —
@@ -127,10 +132,16 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
     `hotfix_base`.
   With ai-parrot's config (or no config) every value equals today's literal, so behaviour and the
   `ensure_worktree` CLI (flags, help, output) are unchanged.
-  Note for implementer: C24 does not fix how the config reaches `BriefMeta` / `brief_worktree_plan`
-  (a pydantic field default at `:74`, a keyword-only function at `:150`) or which root
-  `ensure_worktree` loads it from (it already uses `Path.cwd()` as repo root, `:343`); record the
-  choice in the Completion Note.
+  Resolved (PR #1746 review, 2026-10-20):
+  - `brief_worktree_plan(*, slug, key, base_branch, config: SddConfig | None = None)`, where `None` means
+    `load_sdd_config()` from the current repository root.
+  - `BriefMeta` gets its config through pydantic's validation context:
+    `BriefMeta.model_validate(data, context={"sdd_config": cfg})`. A `model_validator(mode="before")`
+    fills a missing `base_branch` with `cfg.hotfix_base`, replacing the `"main"` field default at `:74`.
+    The `base_branch` validator checks membership in the config-derived set.
+  - `ensure_worktree.main()` loads the config **once** from the root it already uses (`Path.cwd()`,
+    `:343`) and passes `config=cfg` both to `brief_worktree_plan` and to the `--brief-key` / `--jira-key`
+    defaults (`:304`, `:318`).
 - **Q1 residual — a CLI for `sdd_meta`.** Six shipped one-liners import `sdd_meta` inline
   (`python -c "from scripts.sdd.sdd_meta import parse …"` ×3 in `sdd-task.md:55`,
   `sdd-done.md:71` and `agents/sdd-worker.md:152`, `parse_taxonomy` ×2 at `sdd-spec.md:523` and
@@ -406,7 +417,9 @@ def resolve_flow(*, kind=None, doc_path=None, type_override=None, base_branch_ov
     #   return FlowMeta(type=final_type, base_branch=final_base, hotfix_base=cfg.hotfix_base)
 
 # rev 0.5 C22 — normalize_project's vocabulary: cfg.projects when set, else KNOWN_PROJECTS; warning only.
-#   FILL IN: mechanism (see the Scope "Note for implementer").
+#   normalize_project(raw, *, known=None); parse_taxonomy(doc_path, *, config=None) → _config_for → known set →
+#   DocTaxonomy.model_validate(data, context={"known_projects": known}); _norm_projects reads info.context.
+#   Outside the configured list → warning only (PR #1746 review).
 ```
 
 ```python
@@ -416,7 +429,9 @@ def resolve_flow(*, kind=None, doc_path=None, type_override=None, base_branch_ov
 #   brief_meta :98  ledger brief != "dev"          → != cfg.base_branch
 #   brief_meta :166 "hotfix" iff == "main"         → iff == cfg.hotfix_base (else "fix")
 #   ensure_worktree :304 / :318 "main"             → cfg.hotfix_base
-#   FILL IN: how cfg reaches these call sites (see the Scope "Note for implementer").
+#   brief_worktree_plan(*, slug, key, base_branch, config=None) (None → load_sdd_config());
+#   BriefMeta.model_validate(data, context={"sdd_config": cfg}) + model_validator(mode="before") default for
+#   base_branch; ensure_worktree.main() loads cfg once from its root (Path.cwd(), :343) and passes it down.
 ```
 
 ---

@@ -45,7 +45,7 @@ their `ledger.db.bak-*` / `ledger.db.migrate.lock` (and `schema.db.*`) sidecars 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: `store.py` anchors ≥ line 948 shifted +144 (6791d81ce inserted the `WikiBackendSpec` registry at store.py:539-694; the `SQLiteWikiStore` body is byte-identical and every blueprint `grep -c` count still matches); `project.py` lock anchors shifted +1; Context notes the `ledger.db`/`schema.db` sidecars; Key Constraints notes that `_has_migration_work` omits the FEAT-627 `page_attrs` probe.
 - Resolved by spec rev 0.5 (2026-10-20):
-  - C24 Store (unwritable plane directory): lock or backup creation failing with any `OSError` other than `FileExistsError` raises a clear error naming the directory; migration is never silently skipped — Scope, Key Constraints (with two "Note for implementer" lines), blueprint FILL INs, `test_lock_or_backup_unwritable_dir`, S6 scenario row and AC added. A fully read-only plane still degrades in `_open` before `_maybe_migrate` and is unaffected.
+  - C24 Store (unwritable plane directory): lock or backup creation failing with any `OSError` other than `FileExistsError` raises a clear error naming the directory; migration is never silently skipped — Scope, Key Constraints (error class and backup wrapping, resolved in the PR #1746 review), blueprint FILL INs, `test_lock_or_backup_unwritable_dir`, S6 scenario row and AC added. A fully read-only plane still degrades in `_open` before `_maybe_migrate` and is unaffected.
 
 ---
 
@@ -135,7 +135,7 @@ def wiki_write_lock(store_dir: Path, timeout: float = 0.0) -> Iterator[bool]:  #
   live in `wiki.db-wal`, so a plain copy of `wiki.db` alone is NOT a consistent backup.
 
 ### Does NOT Exist
-- ~~`_backup_store`, `_restore_store`, `_migration_lock`, `_migrate_safely`, `_try_acquire_migration_lock`~~ — added here.
+- ~~`_backup_store`, `_restore_store`, `_migration_lock`, `_migrate_safely`, `_try_acquire_migration_lock`, `WikiStoreMigrationError`~~ — added here.
 - ~~a cross-process lock in store.py~~ — only the per-instance `asyncio.Lock`.
 - ~~`import os` / `import time` in store.py~~ — not imported today (imports at store.py:29-44).
 - ~~`portalocker` / `filelock` dependencies~~ — not core deps; never add them (spec §5 "no new runtime dependency").
@@ -203,13 +203,16 @@ fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
   dir, verified 2026-10-19) raises a clear error that names the directory; migration is never
   silently skipped. Today such a plane (writable file, unwritable dir, live `-wal`/`-shm`)
   migrates fine, so this must surface as an error, never as an unmigrated open.
-- Note for implementer: C24 does not name the error class — do not make it a
-  `sqlite3.OperationalError` (`_read`'s ladder, store.py:1377-1379, could degrade it into a
-  silent read-only open); record the chosen class in the Completion Note.
-- Note for implementer: the backup is created by `sqlite3.connect(backup)`, which fails as
-  `sqlite3.OperationalError` code 14 (verified 2026-10-19), not `OSError` — code 14 is in
-  `_READONLY_ENV_CODES` (store.py:1129), so unwrapped it reaches `_read`'s ladder as a silent
-  read-only open; C24 names only `OSError` — handle it the same way or record why not.
+- Resolved (PR #1746 review, 2026-10-20): the clear error is a new
+  `WikiStoreMigrationError(RuntimeError)` in store.py. It is deliberately **not** a
+  `sqlite3.OperationalError`, so `_read`'s ladder (store.py:1377-1379) cannot degrade it into a
+  silent read-only open. Its message names the directory, the failed step and the fix (make the
+  directory writable, or open the store read-only).
+- Resolved (PR #1746 review, 2026-10-20): the backup step treats `sqlite3.OperationalError` the same
+  as `OSError`. Creating `<db>.bak-*` with `sqlite3.connect(backup)` fails as `OperationalError`
+  code 14 (verified 2026-10-19), which is in `_READONLY_ENV_CODES` (store.py:1129). Unwrapped it
+  would become the silently skipped migration C24 forbids, so `_backup_store` wraps it in
+  `WikiStoreMigrationError` (`from exc`) too.
 - Lock wait: poll with `await asyncio.sleep(0.1)` up to `self._policy.busy_timeout_s`; on
   timeout raise `WikiStoreBusy(self._db_path, "migrate", timeout)`.
 - Stale lock: the file records `"<pid> <epoch>"`; a lock older than
@@ -251,6 +254,20 @@ def _migration_lock_path(db_path: Path) -> Path:
     return db_path.with_name(db_path.name + ".migrate.lock")
 
 
+class WikiStoreMigrationError(RuntimeError):
+    """A stale plane cannot be migrated safely: the migration lock or the pre-migration backup could not be
+    created (spec rev 0.5 C24; PR #1746 review). Never a ``sqlite3.OperationalError`` — ``_read`` must not
+    degrade it into a read-only open."""
+
+    def __init__(self, directory: Path, step: str, cause: BaseException) -> None:
+        self.directory = directory
+        self.step = step
+        super().__init__(
+            f"cannot migrate the wiki store: could not {step} in {directory} "
+            f"({type(cause).__name__}: {cause}). Make {directory} writable, or open the store read-only."
+        )
+
+
 def _try_acquire_migration_lock(lock_path: Path, *, stale_after_s: float = STALE_MIGRATION_LOCK_S) -> bool:
     """Create ``lock_path`` atomically (O_CREAT|O_EXCL); True when this caller now holds it.
 
@@ -267,9 +284,8 @@ def _try_acquire_migration_lock(lock_path: Path, *, stale_after_s: float = STALE
             # stat (holder just released) → continue — bounded by Key Constraints "Stale lock"
             raise NotImplementedError
         except OSError as exc:
-            # FILL IN: rev 0.5 C24 — raise the clear error naming `lock_path.parent` (class: see Key Constraints
-            # "Note for implementer"), chained `from exc`; never return False/True here — bounded by "never silently skipped"
-            raise NotImplementedError from exc
+            # rev 0.5 C24 / PR #1746 review: never return False/True here — "never silently skipped"
+            raise WikiStoreMigrationError(lock_path.parent, "create the migration lock", exc) from exc
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(f"{os.getpid()} {time.time()}")
         return True
@@ -342,8 +358,9 @@ def _release_migration_lock(lock_path: Path) -> None:
         backup = self._db_path.with_name(f"{self._db_path.name}.bak-{stamp}")
         # FILL IN: sqlite3.connect(self._db_path) as src, sqlite3.connect(backup) as dst → src.backup(dst);
         # close both explicitly (sqlite3's context manager does NOT close) — bounded by WAL constraint.
-        # Rev 0.5 C24: an `OSError` (other than FileExistsError) creating the backup → the same clear error naming
-        # `backup.parent`; for the sqlite3.OperationalError case see Key Constraints "Note for implementer"
+        # Rev 0.5 C24 / PR #1746 review: `OSError` (other than FileExistsError) OR `sqlite3.OperationalError`
+        # creating/writing the backup → raise WikiStoreMigrationError(backup.parent, "create the pre-migration
+        # backup", exc) from exc (code 14 must not reach _read's read-only ladder)
         raise NotImplementedError
 
     def _restore_store(self, backup: Path) -> None:
@@ -465,7 +482,7 @@ async def test_lock_or_backup_unwritable_dir(tmp_path: Path, monkeypatch: pytest
     holder.execute("SELECT 1").fetchone()
     tmp_path.chmod(0o555)
     try:
-        # FILL IN: (1) pytest.raises(<clear error — Key Constraints "Note for implementer">) around
+        # FILL IN: (1) pytest.raises(store_mod.WikiStoreMigrationError) around
         # SQLiteWikiStore(db, "t").get_meta("k"); assert str(tmp_path) in the message (lock path).
         # (2) monkeypatch store_mod._try_acquire_migration_lock to `lambda *a, **k: True` so the backup step
         # fails instead → same clear error naming the directory — bounded by spec rev 0.5 C24

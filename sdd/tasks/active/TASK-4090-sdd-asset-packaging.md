@@ -641,11 +641,14 @@ with `entry.get("seed", False)`. No `agent/rules/` subtree exists any more (C10)
 <!-- Languages, frameworks, runtime versions. -->
 
 ## Repository layout
-<!-- Where source, tests and docs live; how the repository is split into packages or modules. -->
+<!-- Source roots and test roots (for example `src/<package>/` and `tests/`), how the repository is
+     split into packages or modules, and the exact command that runs ONE test file. The SDD
+     commands send layout and environment questions here. -->
 
 ## Project areas
-<!-- The area names SDD documents use in their `projects:` frontmatter (mirror them in
-     `projects` in sdd/config.json to have them validated). -->
+<!-- One line per area name that SDD documents use in their `projects:` frontmatter, with the
+     paths it covers (for example `api: src/api/, tests/api/`). List the same names in `projects`
+     in sdd/config.json to have them validated; unknown names only warn. -->
 
 ## Package manager and environment
 <!-- How dependencies are declared and installed; how a shell is prepared. -->
@@ -663,7 +666,7 @@ with `entry.get("seed", False)`. No `agent/rules/` subtree exists any more (C10)
 team describes its own. The text is neutral on purpose — it ships verbatim to every host and
 must produce zero scanner findings. *(rev 0.5 C22 B)* `## Repository layout` and `## Project areas`
 are where TASK-4089's rewritten text sends layout, environment and `projects` questions.
-Note for implementer: C22 gives only the two headings; the comment text under them is a placeholder — confirm wording in review.
+Resolved (PR #1746 review, 2026-10-20): the wording above is final. It is neutral (no language, framework or package manager; no `packages/`/`scripts/` path, so C16/C22 gates and the C11 scan stay clean) and it tells adopters exactly what the rewritten commands look for.
 
 ### `flows/dev_loop/_subagent_defs.py` and `flows/dev_flow/_subagent_defs.py` (MODIFY — C2)
 ```python

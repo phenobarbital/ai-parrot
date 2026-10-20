@@ -19,6 +19,15 @@
 - **Tasks:** no task carries an open decision any more. Each readiness section now says "Resolved by
   spec rev 0.5". Where a clause leaves a detail open, the task carries a "Note for implementer" to
   settle in review or record in the Completion Note: 13 tasks, about 30 notes.
+- **PR #1746 review (2026-10-20):** Codex flagged two lifecycle choices that TASK-4091 had left as
+  "notes for implementer". Both are fixed:
+  - an existing `sdd/config.json` is validated before any write;
+  - uninstall removes the ledger hooks only when the receipt says this integration created them and
+    the Claude/wiki integration does not share them.
+
+  Every other implementer note was triaged and resolved in its task, recorded with
+  `[PR #1746 review]` tags in the spec. **No task carries an implementer note any more.** One item
+  stays evidence-gated with an explicit default: the Codex project pin waits for spike S3.
 - **Validation Contract:** spec §4 now covers the 125 pytest files the tasks declare (FEAT-699
   convention). It is cached in the index, and `cache_test_contract --check` exits 0.
 - **Ledger:**

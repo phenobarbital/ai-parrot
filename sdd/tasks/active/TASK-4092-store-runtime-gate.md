@@ -186,13 +186,15 @@ async with conn.execute("SELECT value FROM meta WHERE key = 'schema_version'") a
   `schema_version` with `SCHEMA_VERSION` as integers (`"10" > "3"`); greater → raise
   `WikiStoreVersionError`. The gate runs before `_ensure_schema` / `_maybe_migrate`, so the
   newer plane is never migrated or re-stamped downward.
-- Note for implementer: C24 fixes the class (`WikiStoreVersionError`) but not the message
-  for the `schema_version` case — keep the `__init__(db_path, store_minimum, running)`
-  callers working, make the message name the store path, both schema versions and the fix,
-  and record the wording in the Completion Note.
-- Note for implementer: C24 says nothing about a non-integer stored `schema_version`; do not
-  refuse on it (today `_migration_needed` treats it as stale, store.py:1585) and record that
-  in the Completion Note.
+- Resolved (PR #1746 review, 2026-10-20): the `schema_version` case uses a classmethod,
+  `WikiStoreVersionError.newer_schema(db_path, stored, supported, running)`, so existing
+  `__init__(db_path, store_minimum, running)` callers keep working. Its message is: "wiki store
+  {db_path} has schema_version {stored}, newer than this runtime supports ({supported}, ai-parrot
+  {running}); it was written by a newer wikitoolkit. Upgrade: `parrot self update` (managed
+  runtime) or `parrot self add --here` (project venv)."
+- Resolved (PR #1746 review, 2026-10-20): a non-integer stored `schema_version` is never refused.
+  `int()` raising `ValueError` means no refusal, and the open keeps today's stale → migrate path
+  (`_migration_needed`, store.py:1585).
 - Unparsable stamp → log a warning and allow the open (the row is written only by this
   code; failing closed on garbage would brick a plane with no fix path).
 - Error message must contain: the store path, the store's minimum, the running version,
@@ -256,13 +258,28 @@ class WikiStoreVersionError(RuntimeError):
     ``SQLiteWikiStore._read`` degrades on OperationalError, and this must never degrade.
     """
 
-    def __init__(self, db_path: Path, store_minimum: str, running: str) -> None:
+    def __init__(self, db_path: Path, store_minimum: str, running: str, *, message: str | None = None) -> None:
         self.db_path = db_path
         self.store_minimum = store_minimum
         self.running = running
         super().__init__(
-            f"wiki store {db_path} requires ai-parrot >= {store_minimum}, but this runtime is {running}. "
+            message
+            or f"wiki store {db_path} requires ai-parrot >= {store_minimum}, but this runtime is {running}. "
             "Upgrade: `parrot self update` (managed runtime) or `parrot self add --here` (project venv)."
+        )
+
+    @classmethod
+    def newer_schema(cls, db_path: Path, stored: str, supported: str, running: str) -> "WikiStoreVersionError":
+        """Rev 0.5 C24: the plane's ``schema_version`` is newer than ``SCHEMA_VERSION``."""
+        return cls(
+            db_path,
+            store_minimum=f"schema {stored}",
+            running=running,
+            message=(
+                f"wiki store {db_path} has schema_version {stored}, newer than this runtime supports "
+                f"({supported}, ai-parrot {running}); it was written by a newer wikitoolkit. "
+                "Upgrade: `parrot self update` (managed runtime) or `parrot self add --here` (project venv)."
+            ),
         )
 ```
 ```python
@@ -295,8 +312,9 @@ class WikiStoreVersionError(RuntimeError):
             # FILL IN: parse both with _release_tuple; ValueError → self.logger.warning + skip this check (fail
             # open, see Key Constraints); store tuple > running tuple → raise WikiStoreVersionError(self._db_path, stamp, running)
         stored_schema = rows.get("schema_version")
-        # FILL IN: stored_schema is not None and int(stored_schema) > int(SCHEMA_VERSION) → raise WikiStoreVersionError
-        # (rev 0.5 C24; message per the Key Constraints "Note for implementer"); int() ValueError → no refusal
+        # FILL IN: stored_schema is not None and int(stored_schema) > int(SCHEMA_VERSION) →
+        # raise WikiStoreVersionError.newer_schema(self._db_path, stored_schema, SCHEMA_VERSION, _running_version())
+        # (rev 0.5 C24; PR #1746 review); int() ValueError → no refusal
         raise NotImplementedError
 ```
 ```python
@@ -402,7 +420,7 @@ async def test_newer_schema_version_refused(tmp_path: Path) -> None:
     db = await _built_plane(tmp_path)
     newer = str(int(store_mod.SCHEMA_VERSION) + 7)  # "10" sorts below "3" as text — proves integer comparison
     _stamp(db, "schema_version", newer)
-    with pytest.raises(WikiStoreVersionError):
+    with pytest.raises(WikiStoreVersionError, match=f"schema_version {newer}, newer than this runtime supports"):
         await SQLiteWikiStore(db, "t").get_meta("k")
     # FILL IN: same refusal for SQLiteWikiStore(db, "t", read_only=True).get_meta — bounded by spec §5 "read-only paths included"
     assert _meta(db, "schema_version") == newer

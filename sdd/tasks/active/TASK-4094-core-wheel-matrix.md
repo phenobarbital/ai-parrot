@@ -270,8 +270,10 @@ archs = ["AMD64"]                                                      # line 10
   *[rev 0.5 C20]* The pattern must also match the `dist-tools` artifact (release.yml:107) so each leg
   gets the `ai_parrot_tools` wheel too.
 - *[rev 0.5 C24]* `install-matrix.yml` gains a linux-aarch64 leg (the only edit this task makes to that file).
-  Note for implementer: the clause names no runner label — use the same ARM runner as `build-core`'s aarch64
-  leg (`ubuntu-24.04-arm`), and record in the Completion Note if it is unavailable (no fallback is specified).
+  Resolved (PR #1746 review, 2026-10-20): the leg runs on GitHub's hosted `ubuntu-24.04-arm` runner, the same
+  label this task gives `build-core`'s native aarch64 leg. `phenobarbital/ai-parrot` is a public repository, so
+  hosted ARM runners are available at no cost and no fallback is needed. A smoke test needs real ARM hardware;
+  cross-compiling as `parrot-codec` does (`release.yml:419`) is not enough.
 - PyYAML parses the top-level `on:` key as boolean `True` — the test must not depend on `on`.
 - **`smoke-sdd-foreign` isolation (C3)**: the fresh venv is created with the runner's
   `python3.12 -m venv`, the wheel is installed with `pip install <wheel>` so PyPI resolves the
@@ -518,7 +520,7 @@ cp314 check is conditional on the ceiling so a future relaxation only needs pypr
 - [ ] `release.yml::build-core` — `ubuntu-24.04-arm` availability; QEMU fallback otherwise.
 - [ ] `release.yml::build-core` — `MACOSX_DEPLOYMENT_TARGET` value for the macOS leg.
 - [ ] `release.yml::smoke-core` — confirm `wheel-artifact-pattern` matches TASK-4068's `workflow_call` declaration, and widen the pattern to also match `dist-tools` (rev 0.5 C20).
-- [ ] `install-matrix.yml` linux-aarch64 leg — runner availability (Note for implementer in Key Constraints; rev 0.5 C24).
+- [ ] `install-matrix.yml` linux-aarch64 leg on `ubuntu-24.04-arm` (rev 0.5 C24; runner resolved in the PR #1746 review).
 - [ ] `release.yml::smoke-sdd-foreign` — `PARROT_WHEEL_PATH` value shape per TASK-4091's hook (file vs dir); action major versions re-grepped.
 - [ ] Verify via `workflow_dispatch` on the feature branch that all four legs + smoke pass (release
       verification needs a tag — spec Worktree Strategy: PR-CI / dispatch only).

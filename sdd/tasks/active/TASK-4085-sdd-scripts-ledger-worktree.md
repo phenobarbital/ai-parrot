@@ -598,8 +598,8 @@ else:
 
     sys.modules[__name__] = _impl
 ```
-Note for implementer: C19 says "re-export shim" without fixing its form; the block uses the FEAT-633 alias
-form (`sys.modules[__name__] = _impl`) because `test_worktree_environment.py` monkeypatches module globals the
+Resolved (PR #1746 review, 2026-10-20): C19's "re-export shim" is the FEAT-633 alias form
+(`sys.modules[__name__] = _impl`), as the block shows, because `test_worktree_environment.py` monkeypatches module globals the
 moved code reads (`policy._scope_guard` :243/:251, `policy._load_guard_bash` :263, `policy.CLAUDE_SCRATCH_ROOT`
 :27), which a `from … import *` copy would not reach.
 
