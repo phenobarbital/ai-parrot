@@ -265,7 +265,8 @@ requires the navigator-eventbus release that contains FEAT-711; bump the pin in 
    `EventBus(redis_url=PARROT_EVENT_FANOUT_REDIS_URL, transport="streams", publish_only=True,
    channel_prefix=PARROT_EVENT_FANOUT_CHANNEL_PREFIX or "parrot:events:",
    outbox=f"{PARROT_EVENT_FANOUT_OUTBOX_DIR}/{hostname}-{pid}.db")`.
-   `publish_only` keeps parrot workers out of the consumer group, and the outbox gives at-least-once delivery
+   This is a dedicated instance, never the autonomous orchestrator's bus (§8 Q2). An injected bus must be
+   Streams + `publish_only`, otherwise setup fails. `publish_only` keeps parrot workers out of the consumer group, and the outbox gives at-least-once delivery
    across Redis outages and restarts.
 2. `get_global_registry().attach_bus(bus, serializer=redact_usage_event)`.
 3. Register a no-op callback with `forward_to_bus=True` for each of the four events, and keep the subscription ids.
@@ -512,8 +513,16 @@ See §2 table.
 
 - [x] Q1. Payload-serializer hook / `attach_bus()` upstream — *Resolved with the user (2026-10-20)*: implemented in
   navigator-eventbus FEAT-711; ai-parrot uses native `forward_to_bus=True` and no forwarder class.
-- [ ] Q2. Should the server reuse the autonomous orchestrator's `EventBus` instance when both are active, or
-  always build a dedicated forwarding bus? — *Owner: Jesús Lara*
+- [x] Q2. Reuse the autonomous orchestrator's `EventBus`? — *Resolved with the user (2026-10-21)*: same class
+  (`navigator_eventbus.EventBus`, already migrated by FEAT-317), **dedicated instance**. The orchestrator's
+  instance is pub/sub, consumes (`hooks.*`, `subscribe_agent_to_event`, listener), exists only in autonomous /
+  Telegram deployments and dies with `orchestrator.stop()`; telemetry needs Streams + outbox, `publish_only`,
+  every bot process (incl. the HTTP server) and process lifetime. They share `redis_url` (default for
+  `PARROT_EVENT_FANOUT_REDIS_URL`) and the `parrot:events:` prefix, never the instance. `setup_event_fanout(bus=...)`
+  rejects an injected bus that is not Streams + `publish_only` (fails at startup).
+  *Future option (not in scope)*: one bus per process via navigator-eventbus `CompositeBackend`
+  (`backends/composite.py`), routing `lifecycle.*` to Streams/publish-only and everything else to pub/sub. It needs
+  an app-level bus singleton (or the orchestrator in the HTTP server), so it is deferred.
 - [x] Q3. Source of `metadata.cost_usd` per turn — *Resolved by design research S4*: the origin writes the cost
   into `CompletionUsage.estimated_cost`; AgentTalk copies it and never recomputes.
 - [x] Q4. Durability — *Resolved with the user (2026-10-20)*: losing events is not acceptable; Redis Streams +
@@ -568,4 +577,5 @@ All 12 `affected_paths` passed containment and existence checks.
 |---|---|---|---|
 | 0.1 | 2026-10-20 | Jesús Lara / Claude | Initial draft, replacing the FEAT-775 draft of PR #1747 |
 | 0.2 | 2026-10-20 | Jesús Lara / Claude | Codex design research folded in (S1–S12); M7 added; Q3 resolved; Q4 added |
+| 0.4 | 2026-10-21 | Jesús Lara / Claude | Q2 resolved: dedicated `EventBus` instance; `CompositeBackend` noted as future option |
 | 0.3 | 2026-10-20 | Jesús Lara / Claude | Forwarder class dropped: native `forward_to_bus` + durable Streams/outbox via navigator-eventbus FEAT-711; Q1 and Q4 resolved |
