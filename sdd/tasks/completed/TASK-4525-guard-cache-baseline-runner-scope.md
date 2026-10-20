@@ -203,8 +203,8 @@ Tests live in the files declared above; write the cases named in Acceptance Crit
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator); implemented by gpt-5.6-terra (codex), 1 attempt, 375.8s
+**Date**: 2026-10-20
+**Notes**: Merge-tier validation: only 5 pre-existing bwrap failures + test_background_contract.py (owned by TASK-4530). Closed via close_task.sh. F821 in guard.py fixed in 8d3170aff.
 
 **Deviations from spec**: none
