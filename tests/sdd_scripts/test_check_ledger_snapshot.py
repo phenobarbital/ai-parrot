@@ -219,3 +219,33 @@ def test_real_repo_snapshot_is_clean() -> None:
     if probe.returncode != 0:
         pytest.skip("origin/dev is not available in this checkout")
     assert main(["--base-ref", "origin/dev"]) == 0
+
+
+class TestCiWiring:
+    """FEAT-712 AC10: the guard must actually run inside lint-and-registry."""
+
+    @staticmethod
+    def _guard_step() -> dict:
+        yaml = pytest.importorskip("yaml")
+        # Resolve from this file, never the cwd: pytest runs with the MAIN checkout as
+        # its working directory even inside a worktree, so a relative path would check
+        # the wrong tree's workflow and pass or fail for the wrong reason.
+        repo_root = Path(__file__).resolve().parents[2]
+        workflow = yaml.safe_load((repo_root / ".github/workflows/ci.yml").read_text())
+        steps = workflow["jobs"]["lint-and-registry"]["steps"]
+        matches = [s for s in steps if s.get("name") == "Check SDD ledger snapshot removals (FEAT-712)"]
+        assert matches, f"guard step missing from lint-and-registry: {[s.get('name') for s in steps]}"
+        return matches[0]
+
+    def test_guard_step_is_registered_in_lint_and_registry(self) -> None:
+        """Membership of THAT job, not mere presence somewhere in the file."""
+        assert "check_ledger_snapshot" in self._guard_step()["run"]
+
+    def test_guard_step_fetches_the_base_ref_first(self) -> None:
+        """actions/checkout is depth-1 here, so the base ref must be fetched before the check."""
+        run = self._guard_step()["run"]
+        assert run.index("git fetch") < run.index("check_ledger_snapshot")
+
+    def test_guard_step_falls_back_to_dev_off_pull_requests(self) -> None:
+        """github.base_ref is empty on push events; the guard must still have a base."""
+        assert "github.base_ref || 'dev'" in self._guard_step()["run"]

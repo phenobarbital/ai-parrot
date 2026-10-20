@@ -106,6 +106,24 @@ jobs:
           uv run python -m scripts.sdd.check_task_state \
             --baseline scripts/sdd/.task_state_baseline.json
 
+      # FEAT-712: sdd/ledger/issues.jsonl has silently lost open issues twice
+      # (ccbfef606, 769ca8516 — 25 issues, 14 of them open, including a
+      # vulnerability), and the loss is invisible in review inside a 350+ line
+      # generated JSONL diff. export_snapshot reconciles since FEAT-671, so this
+      # is the independent backstop: it fails the build when a row that is open
+      # or claimed at the base ref disappears. An open -> closed transition is
+      # normal and passes; dropping a closed row is legal compaction. Intentional
+      # removals carry a `Ledger-Removal: issue:<id>` trailer on the removing
+      # commit. actions/checkout is depth-1 here, so the base branch is fetched
+      # first — the guard treats an unresolvable base ref as an error, never as
+      # a silent pass.
+      - name: Check SDD ledger snapshot removals (FEAT-712)
+        run: |
+          BASE="${{ github.base_ref || 'dev' }}"
+          git fetch --depth=50 origin "$BASE"
+          uv run python -m scripts.sdd.check_ledger_snapshot \
+            --base-ref "origin/$BASE"
+
   # FEAT-586: keeps docs/getting-started.md's factual claims honest (the
   # claim-verification harness) and both installer scripts parseable.
   # Single OS (ubuntu-latest) only — no OS matrix (spec AC13). --system-deps
