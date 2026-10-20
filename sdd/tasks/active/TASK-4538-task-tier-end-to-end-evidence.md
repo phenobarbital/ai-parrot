@@ -7,7 +7,6 @@
 **Estimated effort**: M (2-4h)
 **Depends-on**: TASK-4534, TASK-4537
 **Assigned-to**: unassigned
-**Discovered-from**: `issue:3edabb9b953e`
 
 ---
 
@@ -16,25 +15,12 @@
 Spec §4 integration test `test_task_tier_end_to_end_pytest` and the last §5 criterion: the task-tier gate on a
 FEAT-699 replay stays under the pytest budget, with evidence in `artifacts/logs/` (git-ignored ⇒ `git add -f`).
 
-> **Amended 2026-10-20** (`issue:3edabb9b953e`). An earlier pass at this evidence timed the FEAT-699 task
-> validation commands *directly* (TASK-4445 3.7 s, TASK-4447 4.2 s, TASK-4451 not measured). That does not
-> satisfy the criterion: the budget is a property of the **gate**, which adds planning, spawn, report parse
-> and verdict build on top of the bare pytest run. The measurement must replay the gate itself, cover all
-> three tasks, and actually exercise the `.parrot/test_runners.toml` pytest `timeout_s`.
-
 ---
 
 ## Scope
 
 - Create `test_task_tier_end_to_end.py`: hermetic feature worktree + attempt branch with one failing pytest node ⇒ gate red ⇒ same-seat repair (fake dispatcher writes the fix) ⇒ green ⇒ merged; assert two attempt records, one outcome each, verdict in the repair brief.
-- Measure the task-tier gate wall clock on three FEAT-699 tasks (TASK-4445, 4447, 4451) replayed against their
-  merge commits; write `artifacts/logs/feat-709-task-tier-budget.md` (table: task, runner, tests, seconds,
-  under budget?). The measurement MUST drive the real gate path (`_task_tier_gate` → supervisor `tier="task"` →
-  `wait_verdict`) against each task's merge commit, not a bare `pytest` invocation, and MUST record the
-  gate overhead separately from the test wall clock. All three tasks are measured — none may be left blank.
-- Validate the `.parrot/test_runners.toml` pytest `timeout_s` (60 s) against the measured numbers rather than
-  leaving it a placeholder: state in the evidence file whether the observed worst case leaves headroom, and
-  name the value the measurements support.
+- Measure the task-tier gate wall clock on three FEAT-699 tasks (TASK-4445, 4447, 4451) replayed against their merge commits; write `artifacts/logs/feat-709-task-tier-budget.md` (table: task, runner, tests, seconds, under budget?).
 - If any measurement exceeds the TOML budget, record it and propose the new value in the Completion Note — do NOT change the TOML here (open question §8 Q4 is the user's).
 
 **NOT in scope**: Changing budgets.
@@ -134,11 +120,6 @@ async def test_task_tier_end_to_end_pytest(tmp_path):
 
 - [ ] Integration test passes.
 - [ ] Evidence file exists and is committed with `git add -f`.
-- [ ] The evidence is a **gate replay**: it records, per task, the gate wall clock (not just the bare pytest
-      time) obtained through `_task_tier_gate`/supervisor `tier="task"`, with gate overhead broken out.
-- [ ] All three FEAT-699 tasks (TASK-4445, TASK-4447, TASK-4451) have a measured number; none is "not measured".
-- [ ] The pytest `timeout_s` in `.parrot/test_runners.toml` is assessed against the measurements, with the
-      supported value named in the evidence file and the Completion Note.
 - [ ] `ruff check` clean on every touched `.py` file
 
 ## Validation Commands

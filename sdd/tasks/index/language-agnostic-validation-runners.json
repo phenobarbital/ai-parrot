@@ -256,7 +256,7 @@
         "TASK-4524"
       ],
       "parallel": true,
-      "parallelism_notes": "builds verdicts from RunReport via parse_junit_report (TASK-4523, report.py); plans through plan_tests(registry=\u2026) from TASK-4524 (select.py)",
+      "parallelism_notes": "builds verdicts from RunReport via parse_junit_report (TASK-4523, report.py); plans through plan_tests(registry=…) from TASK-4524 (select.py)",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -379,7 +379,7 @@
         "TASK-4522"
       ],
       "parallel": true,
-      "parallelism_notes": "lint consumes contract_from_index_header(registry=\u2026) from TASK-4522 (contract.py) and load_registry from TASK-4521; edits check_task_graph.py after TASK-4522",
+      "parallelism_notes": "lint consumes contract_from_index_header(registry=…) from TASK-4522 (contract.py) and load_registry from TASK-4521; edits check_task_graph.py after TASK-4522",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -400,7 +400,7 @@
         "TASK-4534"
       ],
       "parallel": true,
-      "parallelism_notes": "documents gate/repair semantics from TASK-4532 (engine.py) and the tool/native rewrite from TASK-4534 (worktree_environment.py) \u2014 semantics must be frozen first",
+      "parallelism_notes": "documents gate/repair semantics from TASK-4532 (engine.py) and the tool/native rewrite from TASK-4534 (worktree_environment.py) — semantics must be frozen first",
       "assigned_to": null,
       "started_at": null,
       "completed_at": null,
@@ -446,24 +446,6 @@
       "started_at": null,
       "completed_at": null,
       "file": "sdd/tasks/active/TASK-4538-task-tier-end-to-end-evidence.md"
-    },
-    {
-      "id": "TASK-4539",
-      "slug": "max-turns-never-suspends-seat",
-      "title": "A max_turns overrun never suspends the seat",
-      "feature_id": "FEAT-709",
-      "feature": "language-agnostic-validation-runners",
-      "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "pending",
-      "priority": "high",
-      "effort": "S",
-      "depends_on": [],
-      "parallel": true,
-      "parallelism_notes": "touches only _classify_failure_reason in engine.py; no overlap with the gate edits in TASK-4532",
-      "assigned_to": null,
-      "started_at": null,
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4539-max-turns-never-suspends-seat.md"
     }
   ]
 }
