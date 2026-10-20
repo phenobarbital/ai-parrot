@@ -232,8 +232,8 @@ Tests live in the files declared above; write the cases named in Acceptance Crit
 
 ## Completion Note
 
-**Completed by**:
-**Date**:
-**Notes**:
+**Completed by**: sdd-worker (orchestrator); implemented by gpt-5.6-terra (codex), attempt 1, 627.6s
+**Date**: 2026-10-20
+**Notes**: Merge-tier validation: test_planner marker-order assertion fixed in 7967c8710 (review fix); remaining reds: 5 pre-existing bwrap failures + test_background_contract.py (owned by TASK-4530). Closed via close_task.sh.
 
 **Deviations from spec**: none

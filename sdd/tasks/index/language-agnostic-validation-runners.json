@@ -146,7 +146,7 @@
       "feature_id": "FEAT-709",
       "feature": "language-agnostic-validation-runners",
       "spec": "sdd/specs/language-agnostic-validation-runners.spec.md",
-      "status": "in-progress",
+      "status": "done",
       "priority": "high",
       "effort": "L",
       "depends_on": [
@@ -158,8 +158,9 @@
       "parallelism_notes": "implements RunnerAdapter from TASK-4521 (runners/base.py); reads TestContract v2 from TASK-4522; uses with_report from TASK-4523 (report.py); edits planner.py/select.py after TASK-4522",
       "assigned_to": null,
       "started_at": "2026-10-20T01:36:32+00:00",
-      "completed_at": null,
-      "file": "sdd/tasks/active/TASK-4524-pytest-adapter-planner.md"
+      "completed_at": "2026-10-20T14:28:01+00:00",
+      "file": "sdd/tasks/completed/TASK-4524-pytest-adapter-planner.md",
+      "verification": "verified"
     },
     {
       "id": "TASK-4525",
