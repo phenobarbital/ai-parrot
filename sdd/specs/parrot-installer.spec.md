@@ -14,8 +14,8 @@ tags: [installer, bootstrap, uv, launcher, mcp, windows, sdd-packaging]
 **Target version**: Next release (assigned by release tooling)
 **Revision**: 0.5 (2026-10-20) — answers decisions D1–D8 of the readiness checkpoint
 (`sdd/state/FEAT-633/readiness-checkpoint-2026-10-19.md`); clauses in §3 "Rev 0.5
-decision clauses", Validation Contract added to §4, M6 helper inventory in §3 M6, counts re-verified. The §6 anchor
-refresh is still pending.
+decision clauses", Validation Contract added to §4, M6 helper inventory in §3 M6, counts re-verified, every line anchor
+re-verified on `dev` `9625844f5`. Rev 0.5 is complete; the task files have not been updated yet.
 **Revision 0.4** (2026-10-18) — folds in C17 of
 `sdd/proposals/parrot-installer-amendments.proposal.md` (rev 0.5): `/sdd-brief` (FEAT-698)
 ships through the installer (amends TASK-4070, 4085, 4089, 4090, 4091, 4299).
@@ -158,7 +158,7 @@ Host wiring stays with the three existing per-host installers (`mcp/hosts.py` ad
 reconcile *toolkit* entries only). All three `assets.py` gain the Windows branch;
 `--portable` threads through the install CLIs down to the entry emitters, and
 `_install_mcp_json`'s reconcile learns to respect a portable entry instead of reverting
-it (today it force-replaces any differing `wikitoolkit` entry, installer.py:726–731).
+it (today it force-replaces any differing `wikitoolkit` entry, installer.py:733-738).
 
 Store safety: `SQLiteWikiStore` already auto-migrates on `schema_version` mismatch
 (store.py `_maybe_migrate`/`_migrate`). This feature adds the safety rails the owner
@@ -264,7 +264,7 @@ class ToolkitTemplate(BaseModel):
 | M5: host portability | yes | `portable: bool = False` keyword threaded; Windows branch via `parrot.launcher.script_path`; reconcile rule fixed below | — |
 | M6: SDD packaging | partial | asset tree, sync check, module migration list fixed | markdown rewrite needs spike S5's assumption inventory |
 | M7: store gate | no | — | migration/locking semantics interact with live stores; spike S6 |
-| M8: wheel matrix | yes | target matrix fixed below; follows build-parrot-codec's macOS/aarch64 precedent (release.yml:408–468) | — |
+| M8: wheel matrix | yes | target matrix fixed below; follows build-parrot-codec's macOS/aarch64 precedent (release.yml:408-479) | — |
 
 ### Module 0: Spike validation (S1–S6)
 - **Path**: `sdd/state/FEAT-633/spikes/` (reports only; no production code)
@@ -297,7 +297,7 @@ class ToolkitTemplate(BaseModel):
 - **Interface Skeleton**:
   ```python
   # packages/ai-parrot/src/parrot/launcher.py  (new; stdlib-only)
-  PARROT_HOME_ENV = "PARROT_HOME"           # existing convention verified: knowledge/wiki/project.py:1234
+  PARROT_HOME_ENV = "PARROT_HOME"           # existing convention verified: knowledge/wiki/project.py:1382
   PARROT_VENV_ENV = "PARROT_VENV"           # new explicit override
   PARROT_PROJECT_ENV = "PARROT_PROJECT"     # new project-root pin (adapters set it when cwd is unreliable)
   LOOP_GUARD_ENV = "PARROT_LAUNCHER_RESOLVED"
@@ -305,7 +305,7 @@ class ToolkitTemplate(BaseModel):
 
   def parrot_home() -> Path:
       """$PARROT_HOME or ~/.parrot. Single authority; the three existing copies delegate here
-      (knowledge/wiki/project.py:1223, knowledge/bookstore/config.py:66, cli/modes.py:68)."""
+      (knowledge/wiki/project.py:1371, knowledge/bookstore/config.py:66, cli/modes.py:68)."""
 
   def is_managed(prefix: str | None = None) -> bool:
       """True iff (prefix or sys.prefix) is under parrot_home()/'venv'."""
@@ -334,7 +334,7 @@ class ToolkitTemplate(BaseModel):
   def main_bookstore() -> int: ...    # bookstore
       # Each: if not is_managed() or LOOP_GUARD_ENV set -> import and call the real entry
       # (parrot.cli:cli / parrot.knowledge.wiki.entry:main / parrot.knowledge.bookstore.cli:main)
-      # verified: packages/ai-parrot/pyproject.toml:199-207
+      # verified: packages/ai-parrot/pyproject.toml:199-206
   ```
 
 ### Module 2: Bootstrap `--global` mode
@@ -442,7 +442,7 @@ class ToolkitTemplate(BaseModel):
   (replacing the `sys.executable -m …` pin) — plus `PARROT_PROJECT` in `env` where cwd
   is unreliable (per spike S3); (c) reconcile rule: `_install_mcp_json` keeps an existing
   entry that matches EITHER the baked or the portable managed form — it only replaces
-  entries matching neither (fixes installer.py:726-731 reverting portable entries);
+  entries matching neither (fixes installer.py:733-738 reverting portable entries);
   (d) **portable is a per-host field contract, not just a bare command** (codex S5):
   for each host define exactly which fields are omitted or made runtime-relative —
   Google's absolute `cwd`, toolkit entries' absolute `--config`, bookstore's absolute
@@ -453,15 +453,15 @@ class ToolkitTemplate(BaseModel):
 - **Interface Skeleton**:
   ```python
   # knowledge/wiki/claude_code/assets.py
-  def resolve_wikitoolkit_bin(root: Path) -> str: ...   # modifies claude_code/assets.py:88 — Windows branch
+  def resolve_wikitoolkit_bin(root: Path) -> str: ...   # modifies claude_code/assets.py:93 — Windows branch
   def mcp_json_entry(root: Path, *, portable: bool = False) -> dict: ...  # modifies :114
   # knowledge/wiki/codex/assets.py
-  def resolve_binary(root: Path, name: str) -> str: ...  # modifies codex/assets.py:54
+  def resolve_binary(root: Path, name: str) -> str: ...  # modifies codex/assets.py:55
   def mcp_block(root: Path, toolkit_block: str = "", *, portable: bool = False) -> str: ...
   # knowledge/wiki/google/assets.py
   def bookstore_mcp_entry(root: Path, *, portable: bool = False) -> dict[str, Any]: ...  # modifies google/assets.py:107
   # knowledge/wiki/claude_code/installer.py
-  def _install_mcp_json(root: Path, *, portable: bool = False) -> str: ...  # modifies installer.py:693
+  def _install_mcp_json(root: Path, *, portable: bool = False) -> str: ...  # modifies installer.py:694
   ```
 
 ### Module 6: SDD asset packaging + installer
@@ -475,7 +475,7 @@ class ToolkitTemplate(BaseModel):
   (`worktree-management`, after C11's rewrite), the `second-opinion` skill, a
   `CONVENTIONS.md` seed and 13 templates *[rev 0.5: tracked count; rev 0.4 said 14]* as package data *[rev 0.2 C9/C10]*; `parrot sdd install [--host …]` deploys them with the
   marker-block discipline (template: `claude_code/installer.py` `_upsert_marker_block`,
-  installer.py:50). *[rev 0.5]* 26 helper modules plus `__init__` move to
+  installer.py:51). *[rev 0.5]* 26 helper modules plus `__init__` move to
   `parrot/sdd/scripts/` (full list, owning task and the modules that stay behind: "M6 helper
   inventory" below); *[rev 0.3 C16]* one of them is
   `flows/dev_loop/worktree_environment.py` — not because it is unpackaged (it already
@@ -618,11 +618,11 @@ class ToolkitTemplate(BaseModel):
 ### Module 7: Store migration safety (backup + lock + min-runtime gate)
 - **Path**: `knowledge/wiki/store.py`
 - **Responsibility**: harden the EXISTING auto-migration (`_maybe_migrate`,
-  store.py:1167; `_migration_needed`, :1413; `_migrate`, :1444): (a) before migrating,
+  store.py:1311; `_migration_needed`, :1557; `_migrate`, :1588): (a) before migrating,
   copy the db file to a timestamped sidecar backup and restore it if migration fails;
   (b) run the migration under an exclusive transaction/lock (pragmas applied in
-  `_apply_pragmas`, :1074); (c) stamp `min_runtime_version` in `meta` alongside
-  `schema_version` (:1493-1495); (d) `_open` (:1108) and `_connect_readonly` (:1321)
+  `_apply_pragmas`, :1218); (c) stamp `min_runtime_version` in `meta` alongside
+  `schema_version` (:1637-1638); (d) `_open` (:1252) and `_connect_readonly` (:1465)
   check the gate first — an older runtime raises `WikiStoreVersionError` naming the
   store's minimum, the running version, and the fix. No `PRAGMA user_version` exists or
   is introduced; the `meta` key/value mechanism is extended. The migration lock must be
@@ -646,16 +646,16 @@ class ToolkitTemplate(BaseModel):
 - **Depends on**: spike S6 (validates the concurrent-older-runtime failure mode).
 - **Interface Skeleton**:
   ```python
-  # knowledge/wiki/store.py  (modifies class SQLiteWikiStore, store.py:948)
-  MIN_RUNTIME_KEY = "min_runtime_version"   # new meta row next to 'schema_version' (store.py:1158)
+  # knowledge/wiki/store.py  (modifies class SQLiteWikiStore, store.py:1092)
+  MIN_RUNTIME_KEY = "min_runtime_version"   # new meta row next to 'schema_version' (store.py:1302)
 
   class WikiStoreVersionError(RuntimeError):
       """Raised when the store's min_runtime_version exceeds the running wikitoolkit
       version; message names both versions and the fix."""
 
-  async def _check_runtime_gate(self, conn) -> None: ...   # called from _open (store.py:1108)
-                                                           # and _connect_readonly (store.py:1321)
-  def _backup_store(self) -> Path: ...                     # sidecar copy before _migrate (store.py:1444)
+  async def _check_runtime_gate(self, conn) -> None: ...   # called from _open (store.py:1252)
+                                                           # and _connect_readonly (store.py:1465)
+  def _backup_store(self) -> Path: ...                     # sidecar copy before _migrate (store.py:1588)
   ```
 
 ### Module 8: Core wheel matrix
@@ -663,7 +663,7 @@ class ToolkitTemplate(BaseModel):
   (`[tool.cibuildwheel]`)
 - **Responsibility**: build-core gains macOS arm64 (macos-latest, following
   build-parrot-codec's precedent at release.yml:430-432) and linux aarch64
-  (drop `*-manylinux_aarch64` from the skip string, pyproject.toml:1043-1051; add
+  (drop `*-manylinux_aarch64` from the skip string, `[tool.cibuildwheel]` pyproject.toml:1057-1059; add
   QEMU/archs config); collapse the four redundant ubuntu legs (each currently rebuilds
   the same cp311–314 set) into one.
 - **Depends on**: nothing; can land first (and MUST land first if spike S1 fails).
@@ -744,7 +744,7 @@ binds the tasks it names. Implementers build the part a clause covers exactly as
   `parrot self doctor --sdd` checks both.
 - **D6 — Windows hook bodies** *[rev 0.5 D6]* (TASK-4081, 4082). Hook bodies quote the
   interpolated path and use forward slashes (`claude_code/assets.py:206-207,236`).
-  `_is_wikitoolkit_entry` (`installer.py:762`) matches on the command's basename without
+  `_is_wikitoolkit_entry` (`installer.py:753`) matches on the command's basename without
   the `.exe` suffix, so a Windows entry is not treated as foreign.
 - **D7 — `--remote` × `--portable`** *[rev 0.5 D7]* (TASK-4082, 4083). `--remote`
   decides only the `wikitoolkit` key. Portable mode is inferred from the managed
@@ -771,7 +771,7 @@ binds the tasks it names. Implementers build the part a clause covers exactly as
   - M0, M4, M8 have no incoming edges — expected to run concurrently with everything.
 - **Shared files** (tasks touching them get serialized):
   - `packages/ai-parrot/pyproject.toml` — M1 (`[project.scripts]`, :199) + M6
-    (package-data, :969) + M8 (`[tool.cibuildwheel]`, :1043)
+    (package-data, :970; `parrot.flows` :983) + M8 (`[tool.cibuildwheel]`, :1057)
   - `cli/__init__.py` — M3 (`self`) + M6 (`sdd`), both in `_lazy_commands` (:109)
 - **Exclusive resources**: `.github/workflows/release.yml` (M8 only — but release
   verification requires a tag, so M8's validation is PR-CI only); no extension rebuild
@@ -934,17 +934,18 @@ def linked_worktree_repo(tmp_path):
 
 ## 6. Codebase Contract
 
-> Verified on branch `dev` @ `56ff8cd58` (2026-10-05) by direct source reads.
+> Verified on branch `dev` @ `56ff8cd58` (2026-10-05) by direct source reads;
+> *[rev 0.5]* every line anchor re-verified on `dev` @ `9625844f5` (2026-10-20).
 > Paths relative to `packages/ai-parrot/src/parrot/` unless noted.
 
 ### Verified Imports
 ```python
 from parrot.mcp.toolkit_seed import ToolkitTemplate, available_templates, load_template  # mcp/toolkit_seed.py:27,49,63
 from parrot.mcp.toolkit_install import dist_available, inventory, install_toolkits      # mcp/toolkit_install.py:60,94,152
-from parrot.mcp.hosts import HostKind, detect_hosts                                     # mcp/hosts.py:18,~235
+from parrot.mcp.hosts import HostKind, detect_hosts                                     # mcp/hosts.py:18,233
 from parrot.knowledge.wiki.claude_code import assets                                    # claude_code/assets.py
-from parrot.knowledge.wiki.claude_code.installer import install_claude_integration      # claude_code/installer.py:964
-from parrot.knowledge.wiki.codex.installer import install_codex_integration             # codex/installer.py:316
+from parrot.knowledge.wiki.claude_code.installer import install_claude_integration      # claude_code/installer.py:1034
+from parrot.knowledge.wiki.codex.installer import install_codex_integration             # codex/installer.py:322
 from parrot.knowledge.wiki.google.installer import install_google_integration           # google/installer.py:285
 ```
 
@@ -972,21 +973,22 @@ cli._lazy_commands = {                                 # line 109; 25 entries [r
 #   NO self / sdd / env / doctor; `parrot status` is TAKEN (agentd)
 
 # knowledge/wiki/claude_code/assets.py
-def resolve_wikitoolkit_bin(root: Path) -> str:        # line 88  (.venv/bin → which → bare; NO Windows branch)
-def mcp_json_entry(root: Path) -> dict:                # line 114 ({"command": abs, "args": ["mcp"], "env": {}})
-def resolve_parrot_bin(root: Path) -> str:             # line 123
+def resolve_wikitoolkit_bin(root: Path) -> str:        # line 93  (.venv/bin → which → bare; NO Windows branch)
+def mcp_json_entry(root: Path) -> dict:                # line 119 ({"command": abs, "args": ["mcp"], "env": {}})
+def resolve_parrot_bin(root: Path) -> str:             # line 137
 
 # knowledge/wiki/claude_code/installer.py
-def _install_mcp_json(root: Path) -> str:              # line 693; entry = assets.mcp_json_entry(root) line 719
-#   lines 726-731: `if servers.get("wikitoolkit") == entry:` else REPLACE — reverts portable entries
-#   marker discipline: _upsert_marker_block line 50, _remove_marker_block line 71
+def _install_mcp_json(root: Path) -> str:              # line 694; entry = assets.mcp_json_entry(root) line 723
+#   lines 733-738: `elif servers.get("wikitoolkit") == entry:` else REPLACE — reverts portable entries
+#   (line 730 first leaves a foreign entry untouched, via _is_wikitoolkit_entry line 753)
+#   marker discipline: _upsert_marker_block line 51, _remove_marker_block line 72
 
 # knowledge/wiki/claude_code/bookstore.py
 #   "command": sys.executable,                          # line 36 (inside mcp_json_entry, line 33)
 #   _MANAGED_ARGS = ["-m", "parrot.knowledge.bookstore.cli", "mcp"]  # line 30
 
 # knowledge/wiki/codex/assets.py
-def resolve_binary(root: Path, name: str) -> str:      # line 54 (same order, no Windows branch)
+def resolve_binary(root: Path, name: str) -> str:      # line 55 (same order, no Windows branch)
 # knowledge/wiki/codex/bookstore.py: f"command = {json.dumps(sys.executable)}"  # line 43
 
 # knowledge/wiki/google/assets.py
@@ -995,20 +997,20 @@ def bookstore_mcp_entry(root: Path) -> dict[str, Any]: # line 107; "command": sy
 #   default_mcp_config_path() = ~/.gemini/config/mcp_config.json (USER-GLOBAL)  # line 61
 
 # knowledge/wiki/store.py — the wiki SQLite plane
-class SQLiteWikiStore(BaseWikiStore):                  # line 948
+class SQLiteWikiStore(BaseWikiStore):                  # line 1092
 SCHEMA_VERSION = "3"                                   # line 51
-async def _apply_pragmas(self, conn, *, writable):     # line 1074 (busy_timeout line 1092)
-async def _open(self, *, writable: bool):              # line 1108 (sole RW connect, line 1122)
-async def _ensure_schema(...):                         # line 1133 (schema_version INSERT OR IGNORE line 1158)
-async def _maybe_migrate(...):                         # line 1167 (shared by _read line 1190 / _write line 1240)
-def _connect_immutable / _connect_readonly:            # lines 1301 / 1321 (RO opens)
-def _migration_needed:                                 # line 1413 (reads meta.schema_version line 1437)
-def _migrate:                                          # line 1444 (restamps version lines 1493-1495)
+async def _apply_pragmas(self, conn, *, writable):     # line 1218 (busy_timeout line 1236)
+async def _open(self, *, writable: bool) -> AsyncIterator[aiosqlite.Connection]:  # line 1252 (sole RW connect, line 1266)
+async def _ensure_schema(...):                         # line 1277 (schema_version INSERT OR IGNORE line 1302)
+async def _maybe_migrate(...):                         # line 1311 (called at lines 1373 / 1402)
+def _connect_immutable / _connect_readonly:            # lines 1445 / 1465 (RO opens)
+def _migration_needed:                                 # line 1557 (reads meta.schema_version line 1581)
+def _migrate:                                          # line 1588 (restamps version lines 1637-1638, ON CONFLICT DO UPDATE)
 # NO `PRAGMA user_version` anywhere in knowledge/wiki/; versioning = meta key/value rows only.
 # Today a version mismatch is ALWAYS migrated silently; nothing is ever refused.
 
 # parrot_home() copies to consolidate
-def parrot_home() -> Path:                             # knowledge/wiki/project.py:1223 (env read line 1234)
+def parrot_home() -> Path:                             # knowledge/wiki/project.py:1371 (env read line 1382)
 def _parrot_home() -> Path:                            # knowledge/bookstore/config.py:66 (kept local on purpose — note its docstring)
 def cli_state_dir() -> Path:                           # cli/modes.py:68 (inline PARROT_HOME read line 70)
 
@@ -1020,13 +1022,13 @@ def shared_environments(cwd: Path) -> tuple[Path, ...]:        # lines 74-92
 ### Integration Points
 | New Component | Connects To | Via | Verified At |
 |---|---|---|---|
-| `parrot.launcher.main_*` | `parrot.cli:cli`, `wiki.entry:main`, `bookstore.cli:main` | lazy import + call | `pyproject.toml:199-207` |
+| `parrot.launcher.main_*` | `parrot.cli:cli`, `wiki.entry:main`, `bookstore.cli:main` | lazy import + call | `pyproject.toml:199-206` |
 | `parrot.self_.components` | `ToolkitTemplate.requires_pip` (new) | template lookup | `mcp/toolkit_seed.py:27` |
 | `cli/toolkits.py` hint | `dist_available` row flag | existing condition | `cli/toolkits.py:134` |
-| `--portable` emitters | `_install_mcp_json` reconcile | keyword thread | `claude_code/installer.py:693,726-731` |
-| `parrot.sdd.installer` | `_upsert_marker_block` pattern | same discipline (own copy) | `claude_code/installer.py:50` |
-| `_check_runtime_gate` | `_open` / `_connect_readonly` | call before use | `store.py:1108,1321` |
-| `_backup_store` | `_maybe_migrate` → `_migrate` | wrap | `store.py:1167,1444` |
+| `--portable` emitters | `_install_mcp_json` reconcile | keyword thread | `claude_code/installer.py:694,733-738` |
+| `parrot.sdd.installer` | `_upsert_marker_block` pattern | same discipline (own copy) | `claude_code/installer.py:51` |
+| `_check_runtime_gate` | `_open` / `_connect_readonly` | call before use | `store.py:1252,1465` |
+| `_backup_store` | `_maybe_migrate` → `_migrate` | wrap | `store.py:1311,1588` |
 
 ### Does NOT Exist (Anti-Hallucination)
 - ~~`parrot/launcher.py`, any launcher module, `PARROT_VENV`/`PARROT_PROJECT`/`PARROT_LAUNCHER_RESOLVED` env vars~~ — all new in M1.
@@ -1034,7 +1036,7 @@ def shared_environments(cwd: Path) -> tuple[Path, ...]:        # lines 74-92
 - ~~Windows venv handling (`Scripts\`, `.exe`) in any assets/installer/resolver~~ — none exists anywhere.
 - ~~`requires_pip` / `post_install` / `requires_env` template headers~~ — parser knows exactly 3 keys today.
 - ~~`PRAGMA user_version` or any store open-time version refusal~~ — versioning is `meta.schema_version` only, and mismatches are silently migrated today.
-- ~~macOS or linux-aarch64 core wheels~~ — only `parrot-codec` builds them (release.yml:408-468).
+- ~~macOS or linux-aarch64 core wheels~~ — only `parrot-codec` builds them (release.yml:408-479).
 - ~~`packages/ai-parrot-sdd/`, `parrot_sdd`, an `sdd` console script~~ — FEAT-583 was never implemented AND is rejected; never create these.
 - ~~a root-level `install.sh`/`install.ps1` or uv-download code in the installers~~ — FEAT-586 scripts live in `scripts/install/` and use python -m venv + pip; uv appears only in `Makefile install-uv` and docs.
 - ~~a shared host-adapter path for the wikitoolkit MCP entry~~ — `mcp/hosts.py` adapters reconcile toolkit entries only; each wiki installer owns its wikitoolkit block.
@@ -1046,35 +1048,35 @@ def shared_environments(cwd: Path) -> tuple[Path, ...]:        # lines 74-92
 
 ### Edit Sites (Blueprint Anchors)
 
-Verified against: `56ff8cd58`
+Verified against: `56ff8cd58`; *[rev 0.5]* re-verified against `9625844f5` (2026-10-20)
 
 | File | Action | Verbatim anchor line | Verified at | Occurrences |
 |---|---|---|---|---|
 | `packages/ai-parrot/pyproject.toml` | MODIFY | `[project.scripts]` | `pyproject.toml:199` | 1 |
-| `packages/ai-parrot/pyproject.toml` | MODIFY | `"parrot.flows" = ["_rules_data/*.md"]` | `pyproject.toml:969` | 1 |
+| `packages/ai-parrot/pyproject.toml` | MODIFY | `"parrot.flows" = ["_rules_data/*.md"]` | `pyproject.toml:983` | 1 |
 | `packages/ai-parrot/src/parrot/cli/__init__.py` | MODIFY | `cli._lazy_commands = {` | `cli/__init__.py:109` | 1 |
 | `packages/ai-parrot/src/parrot/mcp/toolkit_seed.py` | MODIFY | (ambiguous one-liner; context) `requires_llm: bool = False` ␤ `summary: str = ""` ␤ `requires_dist: tuple[str, ...] = ()` | `toolkit_seed.py:32-34` | field line count 2 (local var at :81) — use 3-line context |
 | `packages/ai-parrot/src/parrot/mcp/toolkit_seed.py` | MODIFY | `        elif meta_content.startswith("requires_dist:"):` | `toolkit_seed.py:96` | 1 |
 | `packages/ai-parrot/src/parrot/mcp/toolkit_install.py` | MODIFY | `def dist_available(requires_dist: Sequence[str]) -> bool:` | `toolkit_install.py:60` | 1 |
 | `packages/ai-parrot/src/parrot/cli/toolkits.py` | MODIFY | `        if row.requires_dist and not row.dist_available:` | `cli/toolkits.py:134` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py` | MODIFY | `def resolve_wikitoolkit_bin(root: Path) -> str:` | `claude_code/assets.py:88` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py` | MODIFY | `def mcp_json_entry(root: Path) -> dict:` | `claude_code/assets.py:114` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py` | MODIFY | `    if servers.get("wikitoolkit") == entry:` | `claude_code/installer.py:726` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py` | MODIFY | `def resolve_wikitoolkit_bin(root: Path) -> str:` | `claude_code/assets.py:93` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/assets.py` | MODIFY | `def mcp_json_entry(root: Path) -> dict:` | `claude_code/assets.py:119` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/installer.py` | MODIFY | `    elif servers.get("wikitoolkit") == entry:` | `claude_code/installer.py:733` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/claude_code/bookstore.py` | MODIFY | `        "command": sys.executable,` | `claude_code/bookstore.py:36` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py` | MODIFY | `def resolve_binary(root: Path, name: str) -> str:` | `codex/assets.py:54` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/codex/assets.py` | MODIFY | `def resolve_binary(root: Path, name: str) -> str:` | `codex/assets.py:55` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/codex/bookstore.py` | MODIFY | `            f"command = {json.dumps(sys.executable)}",` | `codex/bookstore.py:43` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/google/assets.py` | MODIFY | `def resolve_binary(root: Path, name: str) -> str:` | `google/assets.py:66` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/wiki/google/assets.py` | MODIFY | `def bookstore_mcp_entry(root: Path) -> dict[str, Any]:` | `google/assets.py:107` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` | MODIFY | `async def _open(self, *, writable: bool):` *(signature line; see store refs above)* | `store.py:1108` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` | MODIFY | `def _migrate` *(see store refs; restamp at :1493-1495)* | `store.py:1444` | 1 |
-| `packages/ai-parrot/src/parrot/knowledge/wiki/project.py` | MODIFY | `def parrot_home() -> Path:` | `project.py:1223` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` | MODIFY | `    async def _open(self, *, writable: bool) -> AsyncIterator[aiosqlite.Connection]:` *(signature line; see store refs above)* | `store.py:1252` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/store.py` | MODIFY | `    async def _migrate(self, conn: aiosqlite.Connection) -> None:` *(see store refs; restamp at :1637-1638; bare `def _migrate` also hits `_migrate_fts`)* | `store.py:1588` | 1 |
+| `packages/ai-parrot/src/parrot/knowledge/wiki/project.py` | MODIFY | `def parrot_home() -> Path:` | `project.py:1371` | 1 |
 | `packages/ai-parrot/src/parrot/knowledge/bookstore/config.py` | MODIFY | `def _parrot_home() -> Path:` | `bookstore/config.py:66` | 1 |
 | `packages/ai-parrot/src/parrot/cli/modes.py` | MODIFY | `def cli_state_dir() -> Path:` | `cli/modes.py:68` | 1 |
 | `packages/ai-parrot/MANIFEST.in` | MODIFY | *(Cython-sources-only today; grows the SDD asset tree — codex S8)* | `MANIFEST.in` | — |
 | `scripts/install/install-parrot.sh` | MODIFY | `    --with-wiki)` | `install-parrot.sh:74` | 1 |
 | `scripts/install/install-parrot.ps1` | MODIFY | `  [switch]$WithWiki,` | `install-parrot.ps1:42` | 1 |
 | `.github/workflows/release.yml` | MODIFY | `        os: [ubuntu-latest]` | `release.yml:18` | 1 |
-| `packages/ai-parrot/pyproject.toml` | MODIFY | `skip = "pp* *-musllinux* *-manylinux_i686 *-manylinux_aarch64 *-win32"` | `pyproject.toml:~1045` | 1 |
+| `packages/ai-parrot/pyproject.toml` | MODIFY | `skip = "pp* *-musllinux* *-manylinux_i686 *-manylinux_aarch64 *-win32"` | `pyproject.toml:1059` | 1 |
 | `packages/ai-parrot/src/parrot/launcher.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/self_/{__init__,cli,components,doctor}.py` | CREATE | — | — | — |
 | `packages/ai-parrot/src/parrot/sdd/{__init__,cli,installer}.py` + `scripts/` + `_assets/` | CREATE | — | — | — |
@@ -1098,7 +1100,7 @@ Anchors go stale between spec time and task time — `/sdd-task` MUST re-run the
 - **stderr-only diagnostics** in anything on the MCP launch path
   (`mcp/local_cli.py::_configure_stderr_logging` precedent, local_cli.py:99).
 - **Marker-block/merge discipline** for every file the installers touch
-  (`_upsert_marker_block`, claude_code/installer.py:50): never clobber foreign content,
+  (`_upsert_marker_block`, claude_code/installer.py:51): never clobber foreign content,
   warn-and-skip on collisions.
 - **Lenient template parser stays lenient** — new header keys follow the existing
   `elif meta_content.startswith(...)` shape (toolkit_seed.py:96); never make unknown
@@ -1120,7 +1122,7 @@ Anchors go stale between spec time and task time — `/sdd-task` MUST re-run the
   If S1 fails, M8 ships first and M2 waits.
 - **Windows stdio re-exec (S2)**: stray stdout bytes or orphaned children break stdio
   MCP. Fallback: Option D (Rust launcher) for the launcher only — do not redesign B′.
-- **`_install_mcp_json` force-replace** (installer.py:726-731) will silently revert
+- **`_install_mcp_json` force-replace** (installer.py:733-738) will silently revert
   portable entries unless the reconcile learns both managed forms — covered by
   `test_reconcile_respects_portable`.
 - **Version-skew auto-migration**: migration is already silent today; the new backup +
@@ -1244,4 +1246,4 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.2 | 2026-10-14 | Jesus Lara + Claude | Amendments C2–C6, C8–C15, Q1, C7 folded in (proposal `parrot-installer-amendments` rev 0.3): `parrot sdd run`, install receipt, `--dry-run`, `sdd/config.json` + single branch policy (TASK-4298/4299), conventions seed, publication safety, canonical docs, bootstrap gate + `doctor --runtime-only`, SDD readiness checks; FEAT-583 stamp marked done |
 | 0.3 | 2026-10-17 | Jesus Lara + Claude | Amendment C16 folded in (proposal rev 0.4): `worktree_environment` enters scope — relocated to `parrot/sdd/scripts/` with a re-export shim, hook invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, `test_no_repo_script_refs` widened to any monorepo source path (amends TASK-4085, 4072, 4089, 4090, 4091) |
 | 0.4 | 2026-10-18 | Jesus Lara + Claude | Amendment C17 folded in (proposal rev 0.5): `/sdd-brief` (FEAT-698, merged after rev 0.3) ships through the installer — `brief_meta` moves with TASK-4085 and gets a CLI (`plan`, `write-index`) in TASK-4299, TASK-4089 creates the missing Google twin `.agent/workflows/sdd-brief.md` and rewrites the three `sdd-brief` files, counts updated to 15 commands per host / 14 templates / 81 manifest entries (TASK-4070, 4090), C3 scenarios for `ensure_worktree --brief-key` and `brief_meta write-index` (TASK-4091) |
-| 0.5 | 2026-10-20 | Jesus Lara + Claude | Readiness decisions D1–D8 answered (checkpoint 2026-10-19): core-only `wikitoolkit mcp` (D1), §4 Validation Contract `none — fallback` + `test_command` skips FEAT-699 steps (D2), monorepo-path rules (D3), `worktree_environment` move mechanics (D4), foreign-repo ledger wiring (D5), Windows hook bodies (D6), `--remote` × `--portable` (D7), store stamp/downgrade/unwritable-dir rules in M7 (D8). M6 helper inventory: 26 modules + `__init__` by owning task, the 7 Python helpers + `codex_hook.sh` + 2 baselines that stay, five path loaders made package-relative; C12 premise marked stale. Counts re-verified on `dev`: 13 tracked templates (a 14th on disk, `research_plan.schema.json`, was never committed and nothing uses it), 30 Python helpers + `__init__` + 3 `.sh` + 2 baselines, 26 helpers behind `parrot sdd run`, 4 `[project.scripts]` entries (3 behind the launcher), 25 `_lazy_commands`, 10 agents (+ `sdd-contract-probe`) → 82 manifest entries. Still pending for rev 0.5: §6 anchor refresh |
+| 0.5 | 2026-10-20 | Jesus Lara + Claude | Readiness decisions D1–D8 answered (checkpoint 2026-10-19): core-only `wikitoolkit mcp` (D1), §4 Validation Contract `none — fallback` + `test_command` skips FEAT-699 steps (D2), monorepo-path rules (D3), `worktree_environment` move mechanics (D4), foreign-repo ledger wiring (D5), Windows hook bodies (D6), `--remote` × `--portable` (D7), store stamp/downgrade/unwritable-dir rules in M7 (D8). M6 helper inventory: 26 modules + `__init__` by owning task, the 7 Python helpers + `codex_hook.sh` + 2 baselines that stay, five path loaders made package-relative; C12 premise marked stale. Counts re-verified on `dev`: 13 tracked templates (a 14th on disk, `research_plan.schema.json`, was never committed and nothing uses it), 30 Python helpers + `__init__` + 3 `.sh` + 2 baselines, 26 helpers behind `parrot sdd run`, 4 `[project.scripts]` entries (3 behind the launcher), 25 `_lazy_commands`, 10 agents (+ `sdd-contract-probe`) → 82 manifest entries. Anchors re-verified on `9625844f5` (spec-wide, not only §6): `store.py` +144, `project.py` `parrot_home` +148, `claude_code/{assets,installer}.py`, `codex/{assets,installer}.py`, `mcp/hosts.py`, `pyproject.toml` (`[project.scripts]` 199-206, package-data 970/983, `[tool.cibuildwheel]` 1057-1059), `release.yml` (`build-parrot-codec` 408-479); two anchor texts changed (`_open` signature, `elif servers.get(...)`), `_migrate` anchor made unique; D6's `_is_wikitoolkit_entry` corrected to :753 |
