@@ -21,7 +21,7 @@ before spec rev 0.3/0.4; the other two came with FEAT-699 and FEAT-703.
 
 | Helper | Shipped callers on dev | Notes |
 |---|---|---|
-| `cache_test_contract` | `.claude/commands/sdd-task.md:369`, `.agents/skills/sdd-task/SKILL.md:110`, `.agent/workflows/sdd-task.md:365` | FEAT-699. Finds `test_scope` through a monorepo `_KERNEL_PARENT` (`:15`) |
+| `cache_test_contract` | `.claude/commands/sdd-task.md:410`, `.agents/skills/sdd-task/SKILL.md:110`, `.agent/workflows/sdd-task.md:406` (after FEAT-708, 2026-10-20) | FEAT-699. Finds `test_scope` through a monorepo `_KERNEL_PARENT` (`:15`) |
 | `test_report` | `.claude/commands/sdd-done.md:257,277`, `.agents/skills/sdd-done/SKILL.md:131,134`, `.agent/workflows/sdd-done.md:170,190` | FEAT-695. Monorepo `_KERNEL_PARENT` (`:18`) |
 | `check_e2e_closeout` | `.claude/commands/sdd-done.md:206`, `.agents/skills/sdd-done/SKILL.md:100` | FEAT-703. Imports `yaml` (core dependency `PyYAML>=6.0.2`) and, lazily, `parrot.e2e` (ai-parrot-server), reporting MISSING when that is absent |
 | `close_resolved_issues` | `.claude/commands/sdd-done.md:414` and both twins | Uses `pydantic` (core), the `wikitoolkit` CLI and `git` through `subprocess` |

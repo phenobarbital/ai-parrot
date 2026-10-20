@@ -144,6 +144,12 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   does not exist — also supersedes the "14 templates" count in the rev 0.4 bullet above);
   anchors `sdd-done.md:172`→`:184`, the `E2E_STATUS … jq` lines are gone (0af88638e),
   `pyproject.toml:960-963`→`:965-968`; move-list wording updated.
+- FEAT-708 drift (merged on `dev` 2026-10-20, after this review's baseline): it added the Claude-only
+  `.claude/agents/sdd-contract-probe.md` (10 Claude agents). `/sdd-task`, `/sdd-brainstorm` and
+  `/sdd-proposal` and their twins call it. FEAT-708 also inserted lines into those three commands
+  (+41/+39/+153, e.g. `cache_test_contract` `sdd-task.md:369` → `:410`), so anchors in those files
+  must be re-located by `grep` at pickup.
+  Here: the inventory gains `sdd-contract-probe` (no helper references; three `packages/` example lines).
 - Resolved by spec rev 0.5 (2026-10-20):
   - C24 — S5 also scans `.agents/` and `.agent/`: `DEFAULT_GLOBS` gains `.agents/skills/sdd-*/SKILL.md`,
     `.agents/agents/sdd-*/agent.md`, `.agent/workflows/sdd-*.md` and `.agent/agents/sdd-*/agent.md`;

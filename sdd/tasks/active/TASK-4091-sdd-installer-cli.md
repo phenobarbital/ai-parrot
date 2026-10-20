@@ -142,10 +142,15 @@ delta for reviewers.
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: C3 `Scenario` list extended (`review_checkpoint`, `spec_tools`, `brief_meta`, `worktree_environment`, TASK-4508's `cache_test_contract` / `test_report` / `check_e2e_closeout` / `close_resolved_issues`); `INVOCATION_RE` takes digits, `\`-continuations are joined and argv is cut at shell operators (the C16 hook); the C3 test installs and scans all three hosts as the AC says; `_lazy_commands` has 25 entries; claude-installer anchors `:51` / `:72` / `:1013`; C16 hook-denial test folded in.
+- FEAT-708 drift (merged on `dev` 2026-10-20, after this review's baseline): it added the Claude-only
+  `.claude/agents/sdd-contract-probe.md` (10 Claude agents). `/sdd-task`, `/sdd-brainstorm` and
+  `/sdd-proposal` and their twins call it. FEAT-708 also inserted lines into those three commands
+  (+41/+39/+153, e.g. `cache_test_contract` `sdd-task.md:369` → `:410`), so anchors in those files
+  must be re-located by `grep` at pickup.
 - Resolved by spec rev 0.5 (2026-10-20):
   - C21 (FEAT-699 vs C7) — `parrot sdd install` warns when `sdd/config.json` `test_command` is null; new C3 test `test_c21_test_step_outcomes` pins the outcomes (`cache_test_contract`: `none — fallback` spec → exit 0 printing `fallback`, missing section → exit 2; `test_report decide-rerun` → `rerun`; `test_report render` → exit 0; `select_tests --tier task` with nothing selected → exit 2).
   - C23 (`.gitattributes` + ledger hooks) — `parrot sdd install` (any host) writes a marker-delimited `.gitattributes` block (`merge=union` for `sdd/ledger/events.jsonl` and `sdd/ledger/archive/*.jsonl`), records it in the receipt, `uninstall` removes it, and installs the four ledger hooks through the existing `claude_code/installer.py::_install_ledger_hooks` (`:973`); C3 asserts both after `--host codex`. FEAT-577's `install_hooks` (intake-prune hook) is not named by C23 and stays out.
-  - C22 — no `/sdd-insight` scenarios (it is not shipped); counts follow TASK-4090 (14 commands per host, 78 manifest entries).
+  - C22 — no `/sdd-insight` scenarios (it is not shipped); counts follow TASK-4090 (14 commands per host, 79 manifest entries).
 
 ## Scope
 
@@ -1543,7 +1548,7 @@ that lacks one, so coverage of "every documented helper invocation" is enforced,
       `claude_code/installer.py::_install_ledger_hooks`; after `parrot sdd install --host codex` the C3
       foreign repo has both (`test_c23_codex_install_writes_ledger_gitattributes_and_hooks`).
 - [ ] *(rev 0.5 C22)* No C3 scenario or assertion involves `/sdd-insight`; counts follow TASK-4090
-      (14 commands per host, 78 manifest entries).
+      (14 commands per host, 79 manifest entries).
 - [ ] Unavailable tooling referenced by installed assets is reported as warnings, never as a failure (codex S9).
 - [ ] `parrot sdd --help` lists `install`, `uninstall`, `status`, `run`; `--host` accepts only
       `claude|codex|google`; `parrot status` (agentd) is unchanged.

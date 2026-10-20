@@ -65,10 +65,9 @@ Jesus Lara, 2026-10-18). Every section below is already edited to match.
   already matches `.claude/commands/sdd-brief.md`, `.agents/skills/sdd-brief/SKILL.md`,
   `.agent/workflows/sdd-brief.md` (created by TASK-4089, a dependency) and
   `sdd/templates/brief.md`. The counts change: 15 commands per host, 13 git-tracked
-  templates, **81** manifest entries *(superseded by spec rev 0.5 C22: 14 commands per host,
-  **78** entries — `/sdd-insight` is excluded)*. Re-count against `git ls-files` at run time — the
+  templates, **81** manifest entries. Re-count against `git ls-files` at run time — the
   numbers in this file are the expected values of the sync check, not inputs to it.
-  *(Superseded by rev 0.5 C22: `/sdd-insight` leaves every host — 14 commands per host, **78** entries.)*
+  *(Superseded by rev 0.5 C22: `/sdd-insight` leaves every host — 14 commands per host, **79** entries.)*
 
 ---
 
@@ -88,8 +87,15 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: asset counts re-verified (81 = 15+9+1+1+1+15+1+15+8+13+1+1), "77 files" → 81 everywhere; three more tests that read `_subagent_data/` added as MODIFY rows; pyproject anchors updated (package-data `:970`, `parrot.flows` `:983`, `dev_loop` `:984`, FEAT-412 comment `:985-986`, `dev_flow` `:987`); stale `test_prompt_parity` note corrected (copies are byte-identical on 9f51c7735); C16 `monorepo-path` gate folded in.
+- FEAT-708 drift (merged on `dev` 2026-10-20, after this review's baseline): it added the Claude-only
+  `.claude/agents/sdd-contract-probe.md` (10 Claude agents). `/sdd-task`, `/sdd-brainstorm` and
+  `/sdd-proposal` and their twins call it. FEAT-708 also inserted lines into those three commands
+  (+41/+39/+153, e.g. `cache_test_contract` `sdd-task.md:369` → `:410`), so anchors in those files
+  must be re-located by `grep` at pickup.
+  Here: `.claude/agents/sdd-*.md` already globs it, so the count is **79**; TASK-4089 rewrites its
+  `packages/` lines (C22 A/B).
 - Resolved by spec rev 0.5 (2026-10-20):
-  - C22 (C16 gate vs existing paths) — TASK-4089 rewrites the lines by categories A–E; `MONOREPO_PATH_ALLOWLIST` holds only `.claude/hooks/sdd-worker-format.sh:76` (category D); `--check` / `--wheel` add the second pattern `tests/sdd_scripts/|\bfrom navconfig\b|PYTHONPATH=|reference/sdd-insight/`; `/sdd-insight` is excluded on every host, so 81 → **78** assets (14 commands per host); the `sdd/CONVENTIONS.md` seed gains `## Repository layout` and `## Project areas`.
+  - C22 (C16 gate vs existing paths) — TASK-4089 rewrites the lines by categories A–E; `MONOREPO_PATH_ALLOWLIST` holds only `.claude/hooks/sdd-worker-format.sh:76` (category D); `--check` / `--wheel` add the second pattern `tests/sdd_scripts/|\bfrom navconfig\b|PYTHONPATH=|reference/sdd-insight/`; `/sdd-insight` is excluded on every host, so 81 → **79** assets (14 commands per host); the `sdd/CONVENTIONS.md` seed gains `## Repository layout` and `## Project areas`.
 
 ## Scope
 
@@ -102,7 +108,7 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
 - Create the neutral seed `sdd/CONVENTIONS.md` in the repo (C10); it is packaged like any
   other asset and flagged `seed: true` in the manifest. *(rev 0.5 C22 B)* It carries
   `## Repository layout` and `## Project areas` sections, which the shipped text now points to.
-- Generate `packages/ai-parrot/src/parrot/sdd/_assets/` (78 files + `manifest.json`; rev 0.5 C22: no
+- Generate `packages/ai-parrot/src/parrot/sdd/_assets/` (79 files + `manifest.json`; rev 0.5 C22: no
   `/sdd-insight` on any host) with `--write`.
 - Declare the asset tree in `[tool.setuptools.package-data]` and in `MANIFEST.in`.
 - Add the sync-check step, the publication scan step (C11c) and a wheel-content job to
@@ -135,7 +141,7 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
 | File | Action | Description |
 |---|---|---|
 | `scripts/sdd/check_asset_sync.py` | CREATE | Stdlib sync/check/wheel-verify tool; owns the source→asset mapping |
-| `packages/ai-parrot/src/parrot/sdd/_assets/` | CREATE | Generated asset tree (78 files) — produced ONLY by `check_asset_sync.py --write` |
+| `packages/ai-parrot/src/parrot/sdd/_assets/` | CREATE | Generated asset tree (79 files) — produced ONLY by `check_asset_sync.py --write` |
 | `packages/ai-parrot/src/parrot/sdd/_assets/manifest.json` | CREATE | Generated manifest (`schema_version: 1`, one entry per asset) |
 | `packages/ai-parrot/pyproject.toml` | MODIFY | `"parrot.sdd"` package-data with explicit per-subdir patterns |
 | `packages/ai-parrot/MANIFEST.in` | MODIFY | `graft src/parrot/sdd/_assets` so the sdist (and wheel-from-sdist) carry the tree |
@@ -306,7 +312,7 @@ workflows in `.agent/workflows/sdd-*.md` …, skills in `.agents/skills/sdd-*`, 
 | Host(s) | Repo source = install target (git-tracked only) | Count | `_assets/` source |
 |---|---|---|---|
 | claude | `.claude/commands/sdd-*.md` | 14 *(rev 0.4 C17: + `sdd-brief`; rev 0.5 C22: − `sdd-insight`)* | `claude/commands/` |
-| claude | `.claude/agents/sdd-*.md` | 9 | `claude/agents/` |
+| claude | `.claude/agents/sdd-*.md` | 10 | `claude/agents/` |
 | claude | `.claude/hooks/sdd-worker-format.sh` | 1 | `claude/hooks/` |
 | claude | `.claude/rules/worktree-management.md` | 1 | `claude/rules/` |
 | claude | `.claude/skills/second-opinion/SKILL.md` (C9) | 1 | `claude/skills/second-opinion/` |
@@ -318,7 +324,7 @@ workflows in `.agent/workflows/sdd-*.md` …, skills in `.agents/skills/sdd-*`, 
 | claude, codex, google | `sdd/WORKFLOW.md` | 1 | `sdd/WORKFLOW.md` |
 | claude, codex, google | `sdd/CONVENTIONS.md` — **seed** (`seed: true`; C10) | 1 | `sdd/CONVENTIONS.md` |
 
-**Total: 78 assets** = 14+9+1+1+1+14+1+14+8+13+1+1 (the two `codebase-conventions.md` rows left; the skill and the seed
+**Total: 79 assets** = 14+10+1+1+1+14+1+14+8+13+1+1 (the two `codebase-conventions.md` rows left; the skill and the seed
 came in; *rev 0.4 C17*: `sdd-brief` on three hosts and `sdd/templates/brief.md` came in; *rev 0.5 C22*:
 `/sdd-insight` left on all three hosts — `.claude/commands/sdd-insight.md`, `.agents/skills/sdd-insight/SKILL.md`,
 `.agent/workflows/sdd-insight.md` — because it depends on unshipped `reference/sdd-insight/` and
@@ -389,7 +395,7 @@ the manifest alone.
 0. Create `sdd/CONVENTIONS.md` (seed block below) and commit it — *why*: it must be git-tracked
    before `--write` can package it.
 1. Write `scripts/sdd/check_asset_sync.py` — *why*: it owns the mapping; the tree is generated from it.
-2. Run `python scripts/sdd/check_asset_sync.py --write`, then `--check` (expect exit 0, 78 assets;
+2. Run `python scripts/sdd/check_asset_sync.py --write`, then `--check` (expect exit 0, 79 assets;
    the C16/C22 `monorepo-path` pass is green once TASK-4089's category A–E rewrite has landed)
    — *why*: `_assets/` and `manifest.json` must never be hand-written.
 2b. Edit both `_subagent_defs.py` loaders, `git rm` the nine duplicated `_subagent_data/` prompts,
@@ -515,7 +521,7 @@ def expected_entries(root: Path) -> list[AssetEntry]:
     # FILL IN: one `git -C root ls-files -z -- <pathspecs>` call, glob-match each tracked path to the
     #          FIRST matching ASSET_SOURCES row (fnmatch on the posix path), merge hosts if a target
     #          matches twice (keep HOST_ORDER), seed=(target in SEED_TARGETS), skip any target in
-    #          EXCLUDED_TARGETS (C22) — bounded by "git-tracked only" + deterministic order + 78 entries
+    #          EXCLUDED_TARGETS (C22) — bounded by "git-tracked only" + deterministic order + 79 entries
     raise NotImplementedError
 
 
@@ -611,7 +617,7 @@ _assets/
   manifest.json                      {"schema_version": 1, "assets": [{"source": "claude/commands/sdd-spec.md",
                                        "target": ".claude/commands/sdd-spec.md", "hosts": ["claude"]}, ...,
                                        {"source": "sdd/CONVENTIONS.md", "target": "sdd/CONVENTIONS.md",
-                                        "hosts": ["claude", "codex", "google"], "seed": true}]}  (78 entries)
+                                        "hosts": ["claude", "codex", "google"], "seed": true}]}  (79 entries)
   claude/{commands,agents,hooks,rules}/...
   claude/skills/second-opinion/SKILL.md
   agents/skills/sdd-*/SKILL.md       agents/agents/sdd-*/agent.md
@@ -924,7 +930,7 @@ def test_no_rulebook_and_no_dot_rules_ship() -> None:
     assert ".claude/skills/second-opinion/SKILL.md" in targets          # C9
     assert "sdd/CONVENTIONS.md" in targets                              # C10
     assert not any("sdd-insight" in t for t in targets)                  # rev 0.5 C22
-    assert len(targets) == 78                                           # rev 0.5 C22
+    assert len(targets) == 79                                           # rev 0.5 C22
 
 
 def test_assets_have_no_publication_findings() -> None:
@@ -991,7 +997,7 @@ publication findings, single-copy prompts). The last three tests import `parrot.
   `test_subagent_defs_conventions.py`: unchanged (they call the loader).
 
 ### FILL IN checklist
-- [ ] `check_asset_sync.py::expected_entries` — git ls-files + first-match glob + `seed` + `EXCLUDED_TARGETS` (C22); bounded by "git-tracked only", deterministic order, 78 entries on the repo.
+- [ ] `check_asset_sync.py::expected_entries` — git ls-files + first-match glob + `seed` + `EXCLUDED_TARGETS` (C22); bounded by "git-tracked only", deterministic order, 79 entries on the repo.
 - [ ] `check_asset_sync.py::find_problems` — byte compare, extras, manifest text; bounded by AC-2.
 - [ ] `check_asset_sync.py::write_assets` — wholesale regeneration, idempotent; bounded by AC-1.
 - [ ] `check_asset_sync.py::check_wheel` — deny-list pass after the completeness pass; bounded by `test_check_wheel_rejects_forbidden_paths`.
@@ -1003,7 +1009,7 @@ publication findings, single-copy prompts). The last three tests import `parrot.
 
 ## Acceptance Criteria
 
-- [ ] `python scripts/sdd/check_asset_sync.py --write` produces `_assets/` with 78 assets +
+- [ ] `python scripts/sdd/check_asset_sync.py --write` produces `_assets/` with 79 assets +
       `manifest.json` (rev 0.5 C22: no `/sdd-insight` on any host; 14 commands per host); a second
       `--write` leaves `git status` clean (idempotent).
 - [ ] *(C16 / rev 0.5 C22)* `--check` and `--wheel` report every shipped line matching

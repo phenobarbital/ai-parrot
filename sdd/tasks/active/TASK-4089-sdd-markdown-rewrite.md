@@ -178,6 +178,11 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
 
 ## Readiness review — 2026-10-19 (dev 9f51c7735)
 - Refreshed against dev 9f51c7735: TASK-4508's four helpers (`cache_test_contract`, `test_report`, `check_e2e_closeout`, `close_resolved_issues`) and C16's `worktree_environment` join the name lists (26) and Depends-on; Files table re-enumerated (56 files, dry run `total=216 residual=0`; + both `sdd-research/agent.md`, the `sdd-coder` hook, 5 more test files incl. `test_command_twin_parity.py`); rule 6 covers all 13 `sdd_meta` one-liners; name regexes `[a-z0-9_]+`; stale inline-python residual list, line anchors and the `test_prompt_parity` note corrected; C16 folded in.
+- FEAT-708 drift (merged on `dev` 2026-10-20, after this review's baseline): it added the Claude-only
+  `.claude/agents/sdd-contract-probe.md` (10 Claude agents). `/sdd-task`, `/sdd-brainstorm` and
+  `/sdd-proposal` and their twins call it. FEAT-708 also inserted lines into those three commands
+  (+41/+39/+153, e.g. `cache_test_contract` `sdd-task.md:369` → `:410`), so anchors in those files
+  must be re-located by `grep` at pickup.
 - Resolved by spec rev 0.5 (2026-10-20):
   - C22 (C16 widened test vs existing paths) — categories A–E are applied to all twins in this task's single pass (Scope, "C21 / C22 / C24 hand edits"); `_C16_ALLOWLIST` holds only `.claude/hooks/sdd-worker-format.sh:76`; both gate patterns are in `test_no_repo_script_refs.py`; `/sdd-insight` left the rewrite and shipped sets (53 files, dry run `total=206 residual=0`); both `codebase-conventions.md` twins added as MODIFY rows.
   - C21 (FEAT-699 vs C7) — `test_command` prose rules added for `/sdd-done`'s feature tier, sdd-worker's merge step, qa-runner, sdd-autopilot, `/sdd-task` and the `/sdd-spec` hint; `sdd/templates/spec.md` added (MODIFY).
@@ -201,7 +206,7 @@ From `sdd/proposals/parrot-installer-amendments.proposal.md` §3 C16 (approved b
   `tests/sdd_scripts/test_command_twin_parity.py`). (`_subagent_data/` copies are retired by
   TASK-4090 / C2 and are not twins of this task.)
 - Apply the C11b / C6 / C9 text edits to every file in TASK-4090's shipped set (the 14
-  `.claude/commands/sdd-*.md`, 9 `.claude/agents/sdd-*.md`, 14 `.agents/skills/sdd-*/SKILL.md` — no `sdd-insight`, C22,
+  `.claude/commands/sdd-*.md`, 10 `.claude/agents/sdd-*.md` (incl. FEAT-708's `sdd-contract-probe`), 14 `.agents/skills/sdd-*/SKILL.md` — no `sdd-insight`, C22,
   8 `.agents/agents/sdd-*/agent.md`, `.codex/agents/sdd-worker.toml`, the 2 rules,
   `sdd/WORKFLOW.md`, `sdd/templates/*`, plus their `.agent/workflows/` twins):
   - Atlassian hosts → `https://your-org.atlassian.net`; real ticket keys → `PROJ-123`
@@ -340,6 +345,7 @@ C22 category edits (A–E) touch a superset of the shipped files, produced at ru
 | `.agent/workflows/sdd-task.md` | MODIFY | Rewrite 6 line(s): cache_test_contract,check_task_graph,reserve_ids,sdd_meta; *(C21)* `:361-370` |
 | `.agent/workflows/sdd-tojira.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
 | `.claude/agents/qa-runner.md` | MODIFY | Rewrite 1 line(s): select_tests; *(C21)* `:69` |
+| `.claude/agents/sdd-contract-probe.md` | MODIFY | *(C22, FEAT-708)* `:19`, `:84` example paths → category A placeholders; `:62` `packages/*/src/` resolution rule → category B (the repo's source roots per `sdd/CONVENTIONS.md` § Repository layout); re-locate by `grep` |
 | `.claude/agents/sdd-autopilot.md` | MODIFY | Rewrite 2 line(s): ensure_worktree,select_tests; *(C21)* `:567` |
 | `.claude/agents/sdd-coder.md` | MODIFY | *(C16)* hook `:21` → `parrot sdd run worktree_environment --hook \|\| exit 2` (rule 7); C10 pointer `:157` |
 | `.claude/agents/sdd-ideation.md` | MODIFY | Rewrite 1 line(s): sdd_meta |
@@ -640,6 +646,10 @@ def test_coder_rules_fit_the_prompt_budget() -> None:          # sum of _rules_d
     },
     {
       "path": ".claude/agents/sdd-autopilot.md",
+      "action": "MODIFY"
+    },
+    {
+      "path": ".claude/agents/sdd-contract-probe.md",
       "action": "MODIFY"
     },
     {

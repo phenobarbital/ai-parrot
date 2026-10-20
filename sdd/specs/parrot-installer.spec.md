@@ -57,7 +57,7 @@ Codex or Gemini/Antigravity assumes a developer who already has Python and a pro
    three hosts. Gemini's config is **user-global** (`~/.gemini/config/mcp_config.json`),
    so absolute per-project paths collide across repos.
 4. **The SDD flow is not installable.** 15 `/sdd-*` commands *[rev 0.4 C17: `/sdd-brief`,
-   FEAT-698]*, 9 `sdd-*` agents, hooks, rules, 13 templates and ~31 `scripts/sdd/` helpers
+   FEAT-698]*, 10 `sdd-*` agents *[rev 0.5: + `sdd-contract-probe`, FEAT-708]*, hooks, rules, 13 templates and ~31 `scripts/sdd/` helpers
    *[rev 0.5: recounted on `dev` `0263f0724`]* live only in this repo. *[rev 0.5 C22]* 14 of
    the 15 commands ship in v1; `/sdd-insight` stays repo-local.
 5. **Toolkit exposure installs nothing.** Templates carry only
@@ -495,7 +495,7 @@ class ToolkitTemplate(BaseModel):
   `installer.py`, `scripts/`, `_assets/{commands,agents,hooks,rules,templates}/`),
   `cli/__init__.py` (lazy `sdd`), `pyproject.toml` (package-data),
   `scripts/sdd/check_asset_sync.py` (new CI check), `scripts/sdd/*.py` (thin wrappers)
-- **Responsibility**: package 14 of the 15 commands *[rev 0.4 C17; rev 0.5 C22: not `/sdd-insight`]*, 9 agents, SDD hooks, **one** rule
+- **Responsibility**: package 14 of the 15 commands *[rev 0.4 C17; rev 0.5 C22: not `/sdd-insight`]*, 10 agents *[rev 0.5: + `sdd-contract-probe`]*, SDD hooks, **one** rule
   (`worktree-management`, after C11's rewrite), the `second-opinion` skill, a
   `CONVENTIONS.md` seed and 13 templates *[rev 0.4 C17; rev 0.5: 13]* as package data *[rev 0.2 C9/C10]*; `parrot sdd install [--host …]` deploys them with the
   marker-block discipline (template: `claude_code/installer.py` `_upsert_marker_block`,
@@ -533,7 +533,7 @@ class ToolkitTemplate(BaseModel):
   `parrot sdd run brief_meta …`; the missing Google twin `.agent/workflows/sdd-brief.md` is
   created by TASK-4089 before its rewrite; TASK-4070's helper map, TASK-4090's asset counts
   (15 commands per host, 13 tracked templates, 81 manifest entries; *[rev 0.5 C22]* 14 commands
-  and **78** entries once `/sdd-insight` is excluded) and TASK-4091's C3
+  and **79** entries once `/sdd-insight` is excluded and FEAT-708's `sdd-contract-probe` is added) and TASK-4091's C3
   scenarios (`ensure_worktree --brief-key`, `brief_meta write-index`) cover the new files.
 - **Rev 0.5 amendments C18–C24 (M6 part)** (details and "done when" in the amendments
   proposal §3, rev 0.6):
@@ -567,7 +567,8 @@ class ToolkitTemplate(BaseModel):
     - E: navconfig one-liners become an env-var precondition.
 
     Both C16 gates add `tests/sdd_scripts/|\bfrom navconfig\b|PYTHONPATH=|reference/sdd-insight/`.
-    `/sdd-insight` does not ship, so there are **78** manifest entries. (TASK-4089, 4090,
+    `/sdd-insight` does not ship, so there are **79** manifest entries, counting FEAT-708's
+    Claude-only `sdd-contract-probe` agent; its `packages/` example lines fall under A/B. (TASK-4089, 4090,
     4091, 4299)
   - **C23 — shared ledger in foreign repos.** `parrot sdd install` (any host) writes a
     marker-delimited `.gitattributes` block (`merge=union` for `sdd/ledger/events.jsonl` and
@@ -1017,7 +1018,7 @@ def linked_worktree_repo(tmp_path):
       reports ⚠️, and none reports ✅ on zero tests. `cache_test_contract --check` passes on
       this spec and its index.
 - [ ] *[rev 0.5 C22]* Both C16 gates pass with the single allowlisted line;
-      `check_asset_sync.py` reports 78 entries.
+      `check_asset_sync.py` reports 79 entries (re-derived from `git ls-files` at run time).
 - [ ] *[rev 0.5 C23]* After `parrot sdd install --host codex`, the C3 foreign repo has the
       `.gitattributes` ledger block and the four ledger hooks.
 - [ ] *[rev 0.5 C24]* A newer `schema_version` is refused, not re-stamped (`issue:f249c19e8a4d`
@@ -1345,4 +1346,4 @@ Summary: **11** confirmed (1 scoped) · **0** rejected · **0** escalated.
 | 0.2 | 2026-10-14 | Jesus Lara + Claude | Amendments C2–C6, C8–C15, Q1, C7 folded in (proposal `parrot-installer-amendments` rev 0.3): `parrot sdd run`, install receipt, `--dry-run`, `sdd/config.json` + single branch policy (TASK-4298/4299), conventions seed, publication safety, canonical docs, bootstrap gate + `doctor --runtime-only`, SDD readiness checks; FEAT-583 stamp marked done |
 | 0.3 | 2026-10-17 | Jesus Lara + Claude | Amendment C16 folded in (proposal rev 0.4): `worktree_environment` enters scope — relocated to `parrot/sdd/scripts/` with a re-export shim, hook invoked as `parrot sdd run worktree_environment --hook` behind a launcher fast path, `test_no_repo_script_refs` widened to any monorepo source path (amends TASK-4085, 4072, 4089, 4090, 4091) |
 | 0.4 | 2026-10-18 | Jesus Lara + Claude | Amendment C17 folded in (proposal rev 0.5): `/sdd-brief` (FEAT-698, merged after rev 0.3) ships through the installer — `brief_meta` moves with TASK-4085 and gets a CLI (`plan`, `write-index`) in TASK-4299, TASK-4089 creates the missing Google twin `.agent/workflows/sdd-brief.md` and rewrites the three `sdd-brief` files, counts updated to 15 commands per host / 14 templates / 81 manifest entries (TASK-4070, 4090), C3 scenarios for `ensure_worktree --brief-key` and `brief_meta write-index` (TASK-4091) |
-| 0.5 | 2026-10-20 | Arturo Martinez + Claude, decisions by Jesus Lara | Amendments C18–C24 folded in (proposal rev 0.6) from the 2026-10-19 readiness review: four more helpers to move (TASK-4508) and package-relative loaders; C16 move mechanics and the TASK-4509 fast path; `ai-parrot-tools` in the managed runtime for `wikitoolkit mcp` (core-only fallback is a follow-up); test steps in foreign repos via `test_command`, own §4 Validation Contract, validation phase deferred to v1.1; monorepo-text rules A–E, `/sdd-insight` not shipped (78 assets); `.gitattributes` + ledger hooks in foreign repos; Windows hook quoting, `--remote` × `--portable`, store downgrade refusal (`issue:f249c19e8a4d`), `SourceRegistry` bypass recorded (`issue:1555e747bcb9`); counts and §6 anchor note |
+| 0.5 | 2026-10-20 | Arturo Martinez + Claude, decisions by Jesus Lara | Amendments C18–C24 folded in (proposal rev 0.6) from the 2026-10-19 readiness review: four more helpers to move (TASK-4508) and package-relative loaders; C16 move mechanics and the TASK-4509 fast path; `ai-parrot-tools` in the managed runtime for `wikitoolkit mcp` (core-only fallback is a follow-up); test steps in foreign repos via `test_command`, own §4 Validation Contract, validation phase deferred to v1.1; monorepo-text rules A–E, `/sdd-insight` not shipped (79 assets with FEAT-708's `sdd-contract-probe`); `.gitattributes` + ledger hooks in foreign repos; Windows hook quoting, `--remote` × `--portable`, store downgrade refusal (`issue:f249c19e8a4d`), `SourceRegistry` bypass recorded (`issue:1555e747bcb9`); counts and §6 anchor note |

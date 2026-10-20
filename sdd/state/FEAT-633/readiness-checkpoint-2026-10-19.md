@@ -32,6 +32,12 @@
     created by its dependency TASK-4298).
   - Every Complexity Contract JSON parses.
   - Every task's `Depends-on` header matches the index.
+- **Drift after the review (FEAT-708, merged 2026-10-20):** a Claude-only `sdd-contract-probe` agent
+  appeared, and `/sdd-task`, `/sdd-brainstorm`, `/sdd-proposal` grew (+41/+39/+153 lines).
+  - Folded in: 10 Claude agents, **79** assets (TASK-4090/4091, spec), its `packages/` lines added to
+    TASK-4089's C22 rewrite, and TASK-4508's anchors.
+  - Other anchors in those three commands must be re-located by `grep` at pickup. `dev` keeps
+    moving, and every task re-verifies its Codebase Contract before coding.
 - **Ready to run:** the dependency graph alone now decides order.
   - Wave 1: TASK-4068, 4069, 4070, 4071, 4077, 4092 and 4298 (TASK-4334 is already done).
   - The M6 chain starts at TASK-4070 → 4085. TASK-4508 and TASK-4509 follow TASK-4085, and
